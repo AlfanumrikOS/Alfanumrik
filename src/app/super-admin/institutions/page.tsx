@@ -2,11 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import DataTable, { Column } from '../_components/DataTable';
-import DetailDrawer from '../_components/DetailDrawer';
-import StatusBadge from '../_components/StatusBadge';
-import StatCard from '../_components/StatCard';
-import { colors, S } from '../_components/admin-styles';
+import {
+  StatCard,
+  StatusBadge,
+  DataTable,
+  DetailDrawer,
+  type Column,
+} from '@/components/admin-ui';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -110,7 +112,7 @@ function healthColor(score: number): string {
 }
 
 function utilizationColor(used: number, total: number): string {
-  if (total === 0) return colors.text3;
+  if (total === 0) return '#9CA3AF';
   const pct = (used / total) * 100;
   if (pct >= 80) return '#22C55E';
   if (pct >= 50) return '#EAB308';
@@ -132,7 +134,7 @@ function HealthBar({ score }: { score: number }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <div style={{
-        width: 60, height: 6, borderRadius: 3, background: colors.borderLight, overflow: 'hidden',
+        width: 60, height: 6, borderRadius: 3, background: '#F3F4F6', overflow: 'hidden',
       }}>
         <div style={{
           width: `${Math.min(100, Math.max(0, score))}%`, height: '100%',
@@ -153,11 +155,11 @@ function HealthBar({ score }: { score: number }) {
 function MiniBar({ label, value }: { label: string; value: number }) {
   return (
     <div style={{ marginBottom: 10 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: colors.text2, marginBottom: 3 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6B7280', marginBottom: 3 }}>
         <span>{label}</span>
-        <span style={{ fontWeight: 600, color: colors.text1 }}>{value}/100</span>
+        <span style={{ fontWeight: 600, color: '#111827' }}>{value}/100</span>
       </div>
-      <div style={{ width: '100%', height: 5, borderRadius: 3, background: colors.borderLight, overflow: 'hidden' }}>
+      <div style={{ width: '100%', height: 5, borderRadius: 3, background: '#F3F4F6', overflow: 'hidden' }}>
         <div style={{
           width: `${Math.min(100, Math.max(0, value))}%`, height: '100%',
           borderRadius: 3, background: healthColor(value), transition: 'width 0.3s',
@@ -180,7 +182,7 @@ function CircularGauge({ score }: { score: number }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 16 }}>
       <svg width={110} height={110} viewBox="0 0 110 110">
-        <circle cx={55} cy={55} r={r} fill="none" stroke={colors.borderLight} strokeWidth={8} />
+        <circle cx={55} cy={55} r={r} fill="none" stroke={'#F3F4F6'} strokeWidth={8} />
         <circle
           cx={55} cy={55} r={r} fill="none" stroke={color} strokeWidth={8}
           strokeDasharray={circumference} strokeDashoffset={circumference - filled}
@@ -193,7 +195,7 @@ function CircularGauge({ score }: { score: number }) {
           {score}
         </text>
       </svg>
-      <span style={{ fontSize: 11, color: colors.text3, marginTop: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>
+      <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>
         Health Score
       </span>
     </div>
@@ -221,13 +223,20 @@ function ProvisionModal({
   const canSubmit = form.school_name.trim() && form.admin_email.trim() && form.admin_name.trim() && !submitting;
 
   const inputStyle: React.CSSProperties = {
-    ...S.searchInput,
+    padding: '8px 12px',
+    borderRadius: 6,
+    border: '1px solid #E5E7EB',
+    background: '#FFFFFF',
+    color: '#111827',
+    fontSize: 13,
+    outline: 'none',
+    fontFamily: 'inherit',
     width: '100%',
     boxSizing: 'border-box',
   };
 
   const labelStyle: React.CSSProperties = {
-    fontSize: 11, fontWeight: 600, color: colors.text2, marginBottom: 4,
+    fontSize: 11, fontWeight: 600, color: '#6B7280', marginBottom: 4,
     textTransform: 'uppercase', letterSpacing: 0.8, display: 'block',
   };
 
@@ -239,30 +248,30 @@ function ProvisionModal({
       <div style={{
         position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
         width: 560, maxHeight: '90vh', overflowY: 'auto',
-        background: colors.bg, borderRadius: 12, zIndex: 1000,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.12)', border: `1px solid ${colors.border}`,
+        background: '#FFFFFF', borderRadius: 12, zIndex: 1000,
+        boxShadow: '0 8px 32px rgba(0,0,0,0.12)', border: `1px solid ${'#E5E7EB'}`,
       }}>
         {/* Header */}
         <div style={{
-          padding: '16px 20px', borderBottom: `1px solid ${colors.border}`,
+          padding: '16px 20px', borderBottom: `1px solid ${'#E5E7EB'}`,
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         }}>
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: colors.text1, margin: 0 }}>Provision New School</h3>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: '#111827', margin: 0 }}>Provision New School</h3>
           <button onClick={onClose} style={{
-            background: 'none', border: `1px solid ${colors.border}`, borderRadius: 6,
-            padding: '4px 10px', fontSize: 13, cursor: 'pointer', color: colors.text2,
+            background: 'none', border: `1px solid ${'#E5E7EB'}`, borderRadius: 6,
+            padding: '4px 10px', fontSize: 13, cursor: 'pointer', color: '#6B7280',
           }}>Close</button>
         </div>
 
         {/* Body */}
         <div style={{ padding: 20 }}>
-          <div style={{ fontSize: 12, color: colors.text3, marginBottom: 16 }}>
+          <div style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 16 }}>
             This will create the school record, subscription, and school administrator account.
           </div>
 
           {/* School Details */}
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: colors.text1, marginBottom: 10, borderBottom: `1px solid ${colors.borderLight}`, paddingBottom: 6 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', marginBottom: 10, borderBottom: `1px solid ${'#F3F4F6'}`, paddingBottom: 6 }}>
               School Details
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -272,7 +281,7 @@ function ProvisionModal({
               </div>
               <div>
                 <label style={labelStyle}>Board</label>
-                <select style={{ ...S.select, width: '100%', boxSizing: 'border-box' as const }} value={form.board} onChange={e => set('board', e.target.value)}>
+                <select className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer" style={{ boxSizing: 'border-box' as const }} value={form.board} onChange={e => set('board', e.target.value)}>
                   <option value="CBSE">CBSE</option>
                   <option value="ICSE">ICSE</option>
                   <option value="State Board">State Board</option>
@@ -299,13 +308,13 @@ function ProvisionModal({
 
           {/* Subscription */}
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: colors.text1, marginBottom: 10, borderBottom: `1px solid ${colors.borderLight}`, paddingBottom: 6 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', marginBottom: 10, borderBottom: `1px solid ${'#F3F4F6'}`, paddingBottom: 6 }}>
               Subscription
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
               <div>
                 <label style={labelStyle}>Plan</label>
-                <select style={{ ...S.select, width: '100%', boxSizing: 'border-box' as const }} value={form.plan} onChange={e => set('plan', e.target.value)}>
+                <select className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer" style={{ boxSizing: 'border-box' as const }} value={form.plan} onChange={e => set('plan', e.target.value)}>
                   <option value="trial">Trial</option>
                   <option value="pro">Pro</option>
                   <option value="premium">Premium</option>
@@ -324,7 +333,7 @@ function ProvisionModal({
 
           {/* Admin Account */}
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: colors.text1, marginBottom: 10, borderBottom: `1px solid ${colors.borderLight}`, paddingBottom: 6 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', marginBottom: 10, borderBottom: `1px solid ${'#F3F4F6'}`, paddingBottom: 6 }}>
               School Administrator Account
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -342,15 +351,15 @@ function ProvisionModal({
 
         {/* Footer */}
         <div style={{
-          padding: '12px 20px', borderTop: `1px solid ${colors.border}`,
+          padding: '12px 20px', borderTop: `1px solid ${'#E5E7EB'}`,
           display: 'flex', justifyContent: 'flex-end', gap: 8,
         }}>
-          <button onClick={onClose} style={S.secondaryBtn}>Cancel</button>
+          <button onClick={onClose} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Cancel</button>
           <button
             onClick={() => canSubmit && onSubmit(form)}
             disabled={!canSubmit}
+            className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
             style={{
-              ...S.primaryBtn,
               opacity: canSubmit ? 1 : 0.5,
               cursor: canSubmit ? 'pointer' : 'not-allowed',
             }}
@@ -371,10 +380,10 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div style={{
       display: 'flex', justifyContent: 'space-between', padding: '7px 0',
-      borderBottom: `1px solid ${colors.borderLight}`,
+      borderBottom: `1px solid ${'#F3F4F6'}`,
     }}>
-      <span style={{ fontSize: 12, color: colors.text3 }}>{label}</span>
-      <span style={{ fontSize: 12, color: colors.text1, fontWeight: 500, textAlign: 'right', maxWidth: '60%' }}>
+      <span style={{ fontSize: 12, color: '#9CA3AF' }}>{label}</span>
+      <span style={{ fontSize: 12, color: '#111827', fontWeight: 500, textAlign: 'right', maxWidth: '60%' }}>
         {value ?? '—'}
       </span>
     </div>
@@ -696,8 +705,8 @@ function InstitutionsContent() {
       key: 'name', label: 'School',
       render: r => (
         <div>
-          <strong style={{ color: colors.text1, fontSize: 13 }}>{r.name || '—'}</strong>
-          {r.board && <div style={{ fontSize: 11, color: colors.text3 }}>{r.board}</div>}
+          <strong style={{ color: '#111827', fontSize: 13 }}>{r.name || '—'}</strong>
+          {r.board && <div style={{ fontSize: 11, color: '#9CA3AF' }}>{r.board}</div>}
         </div>
       ),
     },
@@ -705,7 +714,7 @@ function InstitutionsContent() {
     {
       key: 'health_score', label: 'Health',
       render: r => r.health ? <HealthBar score={r.health.health_score} /> : (
-        <span style={{ fontSize: 11, color: colors.text3 }}>{healthLoading ? '...' : '—'}</span>
+        <span style={{ fontSize: 11, color: '#9CA3AF' }}>{healthLoading ? '...' : '—'}</span>
       ),
     },
     {
@@ -751,9 +760,15 @@ function InstitutionsContent() {
         <button
           onClick={e => { e.stopPropagation(); toggleInstitution(r); }}
           style={{
-            ...S.actionBtn,
-            color: r.is_active !== false ? colors.danger : colors.success,
-            borderColor: r.is_active !== false ? colors.danger : colors.success,
+            background: 'none',
+            border: '1px solid #E5E7EB',
+            borderRadius: 5,
+            padding: '4px 10px',
+            fontSize: 12,
+            cursor: 'pointer',
+            fontWeight: 500,
+            color: r.is_active !== false ? '#DC2626' : '#16A34A',
+            borderColor: r.is_active !== false ? '#DC2626' : '#16A34A',
           }}
         >
           {r.is_active !== false ? 'Suspend' : 'Activate'}
@@ -771,12 +786,12 @@ function InstitutionsContent() {
       {error && (
         <div style={{
           padding: '10px 16px', marginBottom: 16, borderRadius: 6,
-          background: colors.dangerLight, color: colors.danger, fontSize: 13,
+          background: '#FEF2F2', color: '#DC2626', fontSize: 13,
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         }}>
           <span>{error}</span>
           <button onClick={() => setError(null)} style={{
-            background: 'none', border: 'none', color: colors.danger,
+            background: 'none', border: 'none', color: '#DC2626',
             cursor: 'pointer', fontWeight: 600, fontSize: 14,
           }}>x</button>
         </div>
@@ -785,23 +800,23 @@ function InstitutionsContent() {
       {/* Header */}
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <h1 style={S.h1}>School CRM</h1>
-          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>
+          <h1 className="text-xl font-bold text-foreground">School CRM</h1>
+          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>
             Manage school lifecycle, health, and billing
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => setShowProvision(true)} style={S.primaryBtn}>
+          <button onClick={() => setShowProvision(true)} className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90">
             Provision School
           </button>
-          <button onClick={exportCSV} style={S.secondaryBtn}>Export CSV</button>
+          <button onClick={exportCSV} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Export CSV</button>
         </div>
       </div>
 
       {/* Pipeline View */}
       <div style={{
         display: 'flex', gap: 0, marginBottom: 24,
-        border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden',
+        border: `1px solid ${'#E5E7EB'}`, borderRadius: 8, overflow: 'hidden',
       }}>
         {PIPELINE_STAGES.map((stage, idx) => {
           const count = pipelineCounts[stage.key];
@@ -814,15 +829,15 @@ function InstitutionsContent() {
                 flex: 1,
                 padding: '14px 16px',
                 cursor: 'pointer',
-                background: isActive ? stage.color + '12' : colors.bg,
-                borderRight: idx < PIPELINE_STAGES.length - 1 ? `1px solid ${colors.border}` : 'none',
+                background: isActive ? stage.color + '12' : '#FFFFFF',
+                borderRight: idx < PIPELINE_STAGES.length - 1 ? `1px solid ${'#E5E7EB'}` : 'none',
                 borderBottom: isActive ? `2px solid ${stage.color}` : '2px solid transparent',
                 textAlign: 'center',
                 transition: 'background 0.15s, border-bottom 0.15s',
                 position: 'relative',
               }}
-              onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = colors.surfaceHover; }}
-              onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = isActive ? stage.color + '12' : colors.bg; }}
+              onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#F3F4F6'; }}
+              onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = isActive ? stage.color + '12' : '#FFFFFF'; }}
             >
               <div style={{
                 fontSize: 24, fontWeight: 800, color: stage.color,
@@ -831,7 +846,7 @@ function InstitutionsContent() {
                 {count}
               </div>
               <div style={{
-                fontSize: 11, fontWeight: 600, color: isActive ? stage.color : colors.text3,
+                fontSize: 11, fontWeight: 600, color: isActive ? stage.color : '#9CA3AF',
                 textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 4,
               }}>
                 {stage.label}
@@ -840,7 +855,7 @@ function InstitutionsContent() {
               {idx < PIPELINE_STAGES.length - 1 && (
                 <span style={{
                   position: 'absolute', right: -6, top: '50%', transform: 'translateY(-50%)',
-                  fontSize: 10, color: colors.text3, zIndex: 1,
+                  fontSize: 10, color: '#9CA3AF', zIndex: 1,
                 }}>
                   &#9654;
                 </span>
@@ -855,19 +870,26 @@ function InstitutionsContent() {
         <div style={{
           marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8,
         }}>
-          <span style={{ fontSize: 12, color: colors.text3 }}>
-            Filtered by: <strong style={{ color: colors.text1 }}>{STAGE_LABELS[pipelineFilter]}</strong>
+          <span style={{ fontSize: 12, color: '#9CA3AF' }}>
+            Filtered by: <strong style={{ color: '#111827' }}>{STAGE_LABELS[pipelineFilter]}</strong>
           </span>
           <button onClick={() => setPipelineFilter(null)} style={{
-            ...S.actionBtn, fontSize: 11, padding: '2px 8px',
+            background: 'none',
+            border: '1px solid #E5E7EB',
+            borderRadius: 5,
+            cursor: 'pointer',
+            fontWeight: 500,
+            color: '#6B7280',
+            fontSize: 11,
+            padding: '2px 8px',
           }}>Clear</button>
         </div>
       )}
 
       {/* Stat Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
-        <StatCard label="Total Schools" value={total} icon="&#9875;" accentColor={colors.accent} />
-        <StatCard label="Total Students" value={totalStudents} icon="&#9733;" accentColor={colors.success} />
+        <StatCard label="Total Schools" value={total} icon="&#9875;" accentColor={'#2563EB'} />
+        <StatCard label="Total Students" value={totalStudents} icon="&#9733;" accentColor={'#16A34A'} />
         <StatCard
           label="Avg Health"
           value={avgHealth}
@@ -879,14 +901,14 @@ function InstitutionsContent() {
           label="MRR"
           value={`₹${totalMRR.toLocaleString('en-IN')}`}
           icon="&#8377;"
-          accentColor={colors.accent}
+          accentColor={'#2563EB'}
         />
         <StatCard label="Active Trials" value={activeTrials} icon="&#9711;" accentColor="#3B82F6" />
         <StatCard label="At Risk" value={atRiskCount} icon="&#9888;" accentColor="#EAB308" />
       </div>
 
       {/* School count */}
-      <div style={{ fontSize: 12, color: colors.text3, marginBottom: 8 }}>
+      <div style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 8 }}>
         {pipelineFilter ? `${filteredRows.length} schools in ${STAGE_LABELS[pipelineFilter]}` : `${total} schools found`}
       </div>
 
@@ -902,11 +924,11 @@ function InstitutionsContent() {
 
       {/* Pagination */}
       <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center', alignItems: 'center' }}>
-        <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={S.pageBtn}>Prev</button>
-        <span style={{ fontSize: 12, color: colors.text3, padding: '6px 12px' }}>
+        <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="rounded-md border border-surface-3 bg-surface-1 px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2">Prev</button>
+        <span style={{ fontSize: 12, color: '#9CA3AF', padding: '6px 12px' }}>
           Page {page} of {Math.max(1, Math.ceil(total / 25))}
         </span>
-        <button disabled={institutions.length < 25} onClick={() => setPage(p => p + 1)} style={S.pageBtn}>Next</button>
+        <button disabled={institutions.length < 25} onClick={() => setPage(p => p + 1)} className="rounded-md border border-surface-3 bg-surface-1 px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2">Next</button>
       </div>
 
       {/* Provision Modal */}
@@ -930,15 +952,15 @@ function InstitutionsContent() {
             {h ? (
               <CircularGauge score={h.health_score} />
             ) : (
-              <div style={{ textAlign: 'center', padding: '20px 0', color: colors.text3, fontSize: 13 }}>
+              <div style={{ textAlign: 'center', padding: '20px 0', color: '#9CA3AF', fontSize: 13 }}>
                 {healthLoading ? 'Loading health data...' : 'No health data available'}
               </div>
             )}
 
             {/* Score Breakdown */}
             {h && (
-              <div style={{ ...S.card, marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+              <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
                   Score Breakdown
                 </div>
                 <MiniBar label="Engagement" value={h.engagement_score} />
@@ -953,9 +975,14 @@ function InstitutionsContent() {
               <button
                 onClick={e => { e.stopPropagation(); toggleInstitution(selected); setSelected(null); }}
                 style={{
-                  ...S.actionBtn,
-                  color: selected.is_active !== false ? colors.danger : colors.success,
-                  borderColor: selected.is_active !== false ? colors.danger : colors.success,
+                  background: 'none',
+                  border: '1px solid #E5E7EB',
+                  borderRadius: 5,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  fontWeight: 500,
+                  color: selected.is_active !== false ? '#DC2626' : '#16A34A',
+                  borderColor: selected.is_active !== false ? '#DC2626' : '#16A34A',
                   padding: '6px 14px',
                 }}
               >
@@ -964,7 +991,16 @@ function InstitutionsContent() {
               {selected.slug && (
                 <button
                   onClick={() => window.open(`/super-admin/view-as?school=${selected.slug}`, '_blank')}
-                  style={{ ...S.actionBtn, padding: '6px 14px' }}
+                  style={{
+                    background: 'none',
+                    border: '1px solid #E5E7EB',
+                    borderRadius: 5,
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    fontWeight: 500,
+                    color: '#6B7280',
+                    padding: '6px 14px',
+                  }}
                 >
                   View as Admin
                 </button>
@@ -972,8 +1008,8 @@ function InstitutionsContent() {
             </div>
 
             {/* School Info */}
-            <div style={{ ...S.card, marginBottom: 16 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+            <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
                 School Info
               </div>
               <InfoRow label="Name" value={selected.name} />
@@ -986,7 +1022,7 @@ function InstitutionsContent() {
               {selected.subdomain && (
                 <InfoRow label="Subdomain" value={
                   <a href={`https://${selected.subdomain}.alfanumrik.com`} target="_blank" rel="noopener noreferrer"
-                    style={{ color: colors.accent, textDecoration: 'none', fontSize: 12 }}>
+                    style={{ color: '#2563EB', textDecoration: 'none', fontSize: 12 }}>
                     {selected.subdomain}.alfanumrik.com
                   </a>
                 } />
@@ -1012,7 +1048,7 @@ function InstitutionsContent() {
                   value={selected.tenant_type || 'school'}
                   disabled={changingType === selected.id}
                   onChange={e => changeTenantType(selected, e.target.value as TenantType)}
-                  style={{ ...S.select, fontSize: 12, padding: '4px 8px' }}
+                  className="rounded-md border border-surface-3 bg-surface-1 cursor-pointer" style={{ fontSize: 12, padding: '4px 8px' }}
                 >
                   <option value="school">School</option>
                   <option value="coaching">Coaching Institute</option>
@@ -1023,8 +1059,8 @@ function InstitutionsContent() {
             </div>
 
             {/* Custom Domain — white-label routing */}
-            <div style={{ ...S.card, marginBottom: 16 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+            <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
                 Custom Domain
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
@@ -1034,26 +1070,26 @@ function InstitutionsContent() {
                   onChange={e => setDomainInput(e.target.value)}
                   placeholder="learn.dps.com (leave blank to remove)"
                   disabled={savingDomain || verifyingDomain}
-                  style={{ ...S.input, flex: 1, fontSize: 12 }}
+                  style={{ flex: 1, fontSize: 12 }}
                 />
                 <button
                   onClick={() => saveCustomDomain(selected, domainInput)}
                   disabled={savingDomain || verifyingDomain || domainInput === (selected.custom_domain ?? '')}
-                  style={{ ...S.button, fontSize: 12 }}
+                  style={{ fontSize: 12 }}
                 >
                   {savingDomain ? 'Saving…' : 'Save'}
                 </button>
                 <button
                   onClick={() => verifyCustomDomain(selected)}
                   disabled={savingDomain || verifyingDomain || !selected.custom_domain}
-                  style={{ ...S.button, fontSize: 12, background: colors.accent, color: '#fff' }}
+                  style={{ fontSize: 12, background: '#2563EB', color: '#fff' }}
                 >
                   {verifyingDomain ? 'Checking…' : 'Verify'}
                 </button>
               </div>
 
               {selected.custom_domain && (
-                <div style={{ fontSize: 11, color: colors.text2, marginBottom: 8 }}>
+                <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 8 }}>
                   Status:{' '}
                   {selected.domain_verified ? (
                     <StatusBadge label="verified" variant="success" />
@@ -1067,8 +1103,8 @@ function InstitutionsContent() {
                 <div
                   style={{
                     fontSize: 11,
-                    color: verifyResult.verified ? colors.success : colors.text2,
-                    background: verifyResult.verified ? `${colors.success}10` : colors.surface,
+                    color: verifyResult.verified ? '#16A34A' : '#6B7280',
+                    background: verifyResult.verified ? `${'#16A34A'}10` : '#F9FAFB',
                     padding: 10,
                     borderRadius: 4,
                     marginTop: 6,
@@ -1081,11 +1117,11 @@ function InstitutionsContent() {
                   {!verifyResult.verified && (
                     <div style={{ fontFamily: 'monospace', fontSize: 11 }}>
                       <div>TXT record name:</div>
-                      <div style={{ background: colors.bg, padding: 4, borderRadius: 3, marginBottom: 4 }}>
+                      <div style={{ background: '#FFFFFF', padding: 4, borderRadius: 3, marginBottom: 4 }}>
                         {verifyResult.expectedRecord}
                       </div>
                       <div>TXT record value:</div>
-                      <div style={{ background: colors.bg, padding: 4, borderRadius: 3 }}>
+                      <div style={{ background: '#FFFFFF', padding: 4, borderRadius: 3 }}>
                         {verifyResult.expectedToken}
                       </div>
                     </div>
@@ -1096,22 +1132,22 @@ function InstitutionsContent() {
               {/* Vercel attach — independent of ownership verification.
                   Pairs with the DNS-TXT verify above. */}
               {selected.custom_domain && (
-                <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${colors.border}` }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: colors.text2, marginBottom: 6 }}>
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${'#E5E7EB'}` }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', marginBottom: 6 }}>
                     Vercel routing + TLS
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button
                       onClick={() => attachVercelDomain(selected, 'attach')}
                       disabled={attachingVercel || savingDomain || verifyingDomain}
-                      style={{ ...S.button, fontSize: 11 }}
+                      style={{ fontSize: 11 }}
                     >
                       {attachingVercel ? 'Calling Vercel…' : 'Attach to Vercel'}
                     </button>
                     <button
                       onClick={() => attachVercelDomain(selected, 'status')}
                       disabled={attachingVercel || savingDomain || verifyingDomain}
-                      style={{ ...S.button, fontSize: 11 }}
+                      style={{ fontSize: 11 }}
                     >
                       Refresh status
                     </button>
@@ -1121,8 +1157,8 @@ function InstitutionsContent() {
                     <div
                       style={{
                         fontSize: 11,
-                        color: vercelResult.verified ? colors.success : colors.text2,
-                        background: vercelResult.verified ? `${colors.success}10` : colors.surface,
+                        color: vercelResult.verified ? '#16A34A' : '#6B7280',
+                        background: vercelResult.verified ? `${'#16A34A'}10` : '#F9FAFB',
                         padding: 10,
                         borderRadius: 4,
                         marginTop: 6,
@@ -1154,10 +1190,10 @@ function InstitutionsContent() {
                             <div style={{ fontFamily: 'monospace', fontSize: 11 }}>
                               <div style={{ marginBottom: 4 }}>Required DNS records:</div>
                               {vercelResult.verification.map((rec, i) => (
-                                <div key={i} style={{ background: colors.bg, padding: 4, borderRadius: 3, marginBottom: 4 }}>
+                                <div key={i} style={{ background: '#FFFFFF', padding: 4, borderRadius: 3, marginBottom: 4 }}>
                                   <div>{rec.type} {rec.domain}</div>
-                                  <div style={{ color: colors.text3 }}>→ {rec.value}</div>
-                                  {rec.reason && <div style={{ color: colors.text3, marginTop: 2 }}>{rec.reason}</div>}
+                                  <div style={{ color: '#9CA3AF' }}>→ {rec.value}</div>
+                                  {rec.reason && <div style={{ color: '#9CA3AF', marginTop: 2 }}>{rec.reason}</div>}
                                 </div>
                               ))}
                             </div>
@@ -1172,15 +1208,15 @@ function InstitutionsContent() {
 
             {/* Subscription */}
             {h && (
-              <div style={{ ...S.card, marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+              <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
                   Subscription
                 </div>
                 <InfoRow label="Plan" value={selected.subscription_plan || 'free'} />
                 <InfoRow label="Seats" value={`${h.active_students} used / ${h.total_seats} total`} />
                 <InfoRow label="Price / Seat" value={`₹${h.price_per_seat}`} />
                 <InfoRow label="MRR" value={
-                  <span style={{ fontWeight: 700, color: colors.text1 }}>₹{h.mrr.toLocaleString('en-IN')}</span>
+                  <span style={{ fontWeight: 700, color: '#111827' }}>₹{h.mrr.toLocaleString('en-IN')}</span>
                 } />
                 {h.subscription_start && (
                   <InfoRow label="Period" value={
@@ -1192,8 +1228,8 @@ function InstitutionsContent() {
 
             {/* Activity */}
             {h && (
-              <div style={{ ...S.card, marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+              <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
                   Activity
                 </div>
                 <InfoRow label="Last Quiz" value={
@@ -1205,7 +1241,7 @@ function InstitutionsContent() {
                 <InfoRow label="Days Since Activity" value={
                   h.days_since_activity != null ? (
                     <span style={{
-                      color: h.days_since_activity > 14 ? colors.danger : h.days_since_activity > 7 ? colors.warning : colors.success,
+                      color: h.days_since_activity > 14 ? '#DC2626' : h.days_since_activity > 7 ? '#D97706' : '#16A34A',
                       fontWeight: 600,
                     }}>
                       {h.days_since_activity} days
@@ -1216,11 +1252,11 @@ function InstitutionsContent() {
             )}
 
             {/* ID */}
-            <div style={{ marginTop: 16, fontSize: 10, color: colors.text3 }}>
+            <div style={{ marginTop: 16, fontSize: 10, color: '#9CA3AF' }}>
               ID: <code style={{ fontSize: 10 }}>{selected.id}</code>
             </div>
             {selected.created_at && (
-              <div style={{ fontSize: 10, color: colors.text3, marginTop: 4 }}>
+              <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 4 }}>
                 Created: {new Date(selected.created_at).toLocaleDateString('en-IN')}
               </div>
             )}

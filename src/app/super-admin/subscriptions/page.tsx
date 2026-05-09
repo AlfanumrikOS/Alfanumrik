@@ -2,10 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import StatCard from '../_components/StatCard';
-import StatusBadge from '../_components/StatusBadge';
-import DetailDrawer from '../_components/DetailDrawer';
-import { colors, S } from '../_components/admin-styles';
+import { StatCard, StatusBadge, DetailDrawer } from '@/components/admin-ui';
 import { PRICING, yearlyPerMonth } from '@/lib/plans';
 import PaymentOpsTab from './_components/PaymentOpsTab';
 
@@ -19,6 +16,19 @@ interface AnalyticsData {
   revenue: { plan: string; count: number }[];
   retention: { period: string; count: number }[];
 }
+
+// Hex literal palette (matches deprecated admin-styles.ts colors).
+const C = {
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  surface: '#F9FAFB',
+  border: '#E5E7EB',
+  borderLight: '#F3F4F6',
+  accent: '#2563EB',
+  success: '#16A34A',
+  warning: '#D97706',
+};
 
 function SubscriptionsContent() {
   const { apiFetch } = useAdmin();
@@ -94,40 +104,31 @@ function SubscriptionsContent() {
   const totalSubs = analytics?.revenue.reduce((sum, r) => sum + r.count, 0) || 0;
   const paidSubs = analytics?.revenue.filter(r => r.plan !== 'free').reduce((sum, r) => sum + r.count, 0) || 0;
 
+  const filterBtnBase = 'rounded-md border border-surface-3 bg-surface-1 px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2';
+  const filterBtnActive = 'rounded-md border border-foreground bg-foreground px-3.5 py-1.5 text-xs font-medium text-surface-1';
+
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 style={S.h1}>Subscriptions & Billing</h1>
-          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>Plan distribution, entitlement inspection, and manual overrides</p>
+          <h1 className="text-xl font-bold tracking-tight text-foreground">Subscriptions & Billing</h1>
+          <p className="m-0 text-[13px] text-muted-foreground">Plan distribution, entitlement inspection, and manual overrides</p>
         </div>
       </div>
 
       {/* Tab Switcher */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: `1px solid ${colors.border}`, paddingBottom: 0 }}>
+      <div className="mb-6 flex gap-1 border-b border-surface-3 pb-0">
         <button
           onClick={() => setActiveTab('revenue')}
-          style={{
-            ...S.filterBtn,
-            borderRadius: '6px 6px 0 0',
-            borderBottom: activeTab === 'revenue' ? `2px solid ${colors.text1}` : '2px solid transparent',
-            fontWeight: activeTab === 'revenue' ? 700 : 500,
-            color: activeTab === 'revenue' ? colors.text1 : colors.text2,
-            background: activeTab === 'revenue' ? colors.surface : 'transparent',
-          }}
+          className={`rounded-t-md px-3.5 py-1.5 text-xs ${activeTab === 'revenue' ? 'bg-surface-2 font-bold text-foreground' : 'bg-transparent font-medium text-muted-foreground'}`}
+          style={{ borderBottom: activeTab === 'revenue' ? `2px solid ${C.text1}` : '2px solid transparent' }}
         >
           Revenue & Entitlements
         </button>
         <button
           onClick={() => setActiveTab('ops')}
-          style={{
-            ...S.filterBtn,
-            borderRadius: '6px 6px 0 0',
-            borderBottom: activeTab === 'ops' ? `2px solid ${colors.text1}` : '2px solid transparent',
-            fontWeight: activeTab === 'ops' ? 700 : 500,
-            color: activeTab === 'ops' ? colors.text1 : colors.text2,
-            background: activeTab === 'ops' ? colors.surface : 'transparent',
-          }}
+          className={`rounded-t-md px-3.5 py-1.5 text-xs ${activeTab === 'ops' ? 'bg-surface-2 font-bold text-foreground' : 'bg-transparent font-medium text-muted-foreground'}`}
+          style={{ borderBottom: activeTab === 'ops' ? `2px solid ${C.text1}` : '2px solid transparent' }}
         >
           Payment Ops
         </button>
@@ -159,40 +160,40 @@ function SubscriptionsContent() {
         const conversionRate = totalSubs > 0 ? Math.round((paidSubs / totalSubs) * 100) : 0;
 
         return (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
-            <StatCard label="Total Students" value={totalSubs} accentColor={colors.accent} />
-            <StatCard label="Paid Plans" value={paidSubs} accentColor={colors.success} />
-            <StatCard label="Free Plan" value={totalSubs - paidSubs} accentColor={colors.text3} />
-            <StatCard label="Conversion Rate" value={`${conversionRate}%`} accentColor={conversionRate >= 5 ? colors.success : colors.warning} />
-            <StatCard label="Est. MRR" value={`₹${estimatedMRR.toLocaleString('en-IN')}`} accentColor={colors.warning} icon="₹" />
-            <StatCard label="Est. ARR" value={`₹${(estimatedMRR * 12).toLocaleString('en-IN')}`} accentColor={colors.accent} />
+          <div className="mb-6 grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+            <StatCard label="Total Students" value={totalSubs} accentColor={C.accent} />
+            <StatCard label="Paid Plans" value={paidSubs} accentColor={C.success} />
+            <StatCard label="Free Plan" value={totalSubs - paidSubs} accentColor={C.text3} />
+            <StatCard label="Conversion Rate" value={`${conversionRate}%`} accentColor={conversionRate >= 5 ? C.success : C.warning} />
+            <StatCard label="Est. MRR" value={`₹${estimatedMRR.toLocaleString('en-IN')}`} accentColor={C.warning} icon="₹" />
+            <StatCard label="Est. ARR" value={`₹${(estimatedMRR * 12).toLocaleString('en-IN')}`} accentColor={C.accent} />
           </div>
         );
       })()}
 
       {/* Plan Distribution */}
       {analytics && (
-        <div style={{ marginBottom: 24 }}>
-          <h2 style={S.h2}>Plan Distribution</h2>
-          <div style={S.card}>
+        <div className="mb-6">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Plan Distribution</h2>
+          <div className="rounded-lg border border-surface-3 bg-surface-1 p-4">
             {analytics.revenue.map(r => {
               const maxCount = Math.max(...analytics.revenue.map(x => x.count), 1);
               const pctOfTotal = totalSubs > 0 ? ((r.count / totalSubs) * 100).toFixed(1) : '0';
               const planColor: Record<string, string> = {
-                free: colors.text3, starter_monthly: colors.warning, starter_yearly: '#B45309',
-                pro_monthly: colors.accent, pro_yearly: '#1D4ED8',
-                ultimate_monthly: colors.success, ultimate_yearly: '#15803D',
+                free: C.text3, starter_monthly: C.warning, starter_yearly: '#B45309',
+                pro_monthly: C.accent, pro_yearly: '#1D4ED8',
+                ultimate_monthly: C.success, ultimate_yearly: '#15803D',
               };
               return (
-                <div key={r.plan} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-                  <span style={{ fontSize: 13, color: colors.text2, width: 140, textTransform: 'capitalize', flexShrink: 0 }}>
+                <div key={r.plan} className="mb-2.5 flex items-center gap-3">
+                  <span className="w-[140px] flex-shrink-0 text-[13px] capitalize text-muted-foreground">
                     {r.plan.replace(/_/g, ' ')}
                   </span>
-                  <div style={{ flex: 1, height: 22, background: colors.surface, borderRadius: 4, overflow: 'hidden' }}>
-                    <div style={{ width: `${(r.count / maxCount) * 100}%`, height: '100%', background: planColor[r.plan] || colors.text3, borderRadius: 4, minWidth: r.count > 0 ? 4 : 0 }} />
+                  <div className="h-[22px] flex-1 overflow-hidden rounded bg-surface-2">
+                    <div style={{ width: `${(r.count / maxCount) * 100}%`, height: '100%', background: planColor[r.plan] || C.text3, borderRadius: 4, minWidth: r.count > 0 ? 4 : 0 }} />
                   </div>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: colors.text1, width: 50, textAlign: 'right' }}>{r.count}</span>
-                  <span style={{ fontSize: 11, color: colors.text3, width: 50, textAlign: 'right' }}>{pctOfTotal}%</span>
+                  <span className="w-[50px] text-right text-[13px] font-bold text-foreground">{r.count}</span>
+                  <span className="w-[50px] text-right text-[11px] text-muted-foreground">{pctOfTotal}%</span>
                 </div>
               );
             })}
@@ -201,26 +202,31 @@ function SubscriptionsContent() {
       )}
 
       {/* Entitlement Inspector */}
-      <div style={{ marginBottom: 24 }}>
-        <h2 style={S.h2}>Entitlement Inspector</h2>
-        <div style={{ ...S.card, borderLeft: `3px solid ${colors.accent}` }}>
-          <p style={{ fontSize: 12, color: colors.text3, marginBottom: 12 }}>Look up a student by name/email to inspect their subscription entitlement.</p>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input value={lookupEmail} onChange={e => setLookupEmail(e.target.value)} placeholder="Search by name..."
-              style={{ ...S.searchInput, flex: 1 }} onKeyDown={e => e.key === 'Enter' && lookupUser()} />
-            <button onClick={lookupUser} style={S.primaryBtn}>Lookup</button>
+      <div className="mb-6">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Entitlement Inspector</h2>
+        <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: `3px solid ${C.accent}` }}>
+          <p className="mb-3 text-xs text-muted-foreground">Look up a student by name/email to inspect their subscription entitlement.</p>
+          <div className="flex gap-2">
+            <input
+              value={lookupEmail}
+              onChange={e => setLookupEmail(e.target.value)}
+              placeholder="Search by name..."
+              className="flex-1 rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              onKeyDown={e => e.key === 'Enter' && lookupUser()}
+            />
+            <button onClick={lookupUser} className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90">Lookup</button>
           </div>
           {lookupResult && (
-            <div style={{ marginTop: 12, padding: 12, background: colors.surface, borderRadius: 6 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="mt-3 rounded-md bg-surface-2 p-3">
+              <div className="flex items-center justify-between">
                 <div>
-                  <strong style={{ color: colors.text1 }}>{lookupResult.name}</strong>
-                  <span style={{ fontSize: 12, color: colors.text3, marginLeft: 8 }}>{lookupResult.email}</span>
+                  <strong className="text-foreground">{lookupResult.name}</strong>
+                  <span className="ml-2 text-xs text-muted-foreground">{lookupResult.email}</span>
                 </div>
                 <StatusBadge label={lookupResult.subscription_plan || 'free'} variant={lookupResult.subscription_plan && lookupResult.subscription_plan !== 'free' ? 'success' : 'neutral'} />
               </div>
-              <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-                <select value={overridePlan} onChange={e => { setOverridePlan(e.target.value); setOverrideMsg(null); }} style={S.select}>
+              <div className="mt-2 flex items-center gap-2">
+                <select value={overridePlan} onChange={e => { setOverridePlan(e.target.value); setOverrideMsg(null); }} className="cursor-pointer rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm">
                   <option value="">Change plan to...</option>
                   {plans.map(p => <option key={p} value={p}>{p.replace(/_/g, ' ')}</option>)}
                 </select>
@@ -228,65 +234,77 @@ function SubscriptionsContent() {
                   <button
                     onClick={() => changePlan(lookupResult, overridePlan, true)}
                     disabled={overrideLoading}
-                    style={{ ...S.actionBtn, color: colors.accent, borderColor: colors.accent, opacity: overrideLoading ? 0.6 : 1 }}>
+                    className="rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium hover:bg-surface-2"
+                    style={{ color: C.accent, borderColor: C.accent, opacity: overrideLoading ? 0.6 : 1 }}
+                  >
                     {overrideLoading ? 'Applying…' : 'Apply Override'}
                   </button>
                 )}
               </div>
               {overrideMsg && (
-                <div style={{ marginTop: 8, padding: '7px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, background: overrideMsg.ok ? '#16a34a18' : '#dc262618', color: overrideMsg.ok ? '#16a34a' : '#dc2626', border: `1px solid ${overrideMsg.ok ? '#16a34a' : '#dc2626'}30` }}>
+                <div className={`mt-2 rounded-md px-3 py-1.5 text-xs font-semibold ${overrideMsg.ok ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`} style={{ border: `1px solid ${overrideMsg.ok ? '#16a34a' : '#dc2626'}30` }}>
                   {overrideMsg.ok ? '✓ ' : '✗ '}{overrideMsg.text}
                 </div>
               )}
             </div>
           )}
           {lookupEmail && !lookupResult && !loading && (
-            <div style={{ marginTop: 8, fontSize: 12, color: colors.text3 }}>No student found matching that search.</div>
+            <div className="mt-2 text-xs text-muted-foreground">No student found matching that search.</div>
           )}
         </div>
       </div>
 
       {/* Subscription Table */}
-      <h2 style={S.h2}>Student Subscriptions</h2>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-        <button onClick={() => setFilterPlan('')} style={{ ...S.filterBtn, ...(filterPlan === '' ? S.filterActive : {}) }}>All</button>
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Student Subscriptions</h2>
+      <div className="mb-3 flex gap-1.5">
+        <button onClick={() => setFilterPlan('')} className={filterPlan === '' ? filterBtnActive : filterBtnBase}>All</button>
         {plans.map(p => (
-          <button key={p} onClick={() => setFilterPlan(p)} style={{ ...S.filterBtn, ...(filterPlan === p ? S.filterActive : {}), fontSize: 11 }}>
+          <button
+            key={p}
+            onClick={() => setFilterPlan(p)}
+            className={`${filterPlan === p ? filterBtnActive : filterBtnBase} text-[11px]`}
+          >
             {p.replace(/_/g, ' ')}
           </button>
         ))}
       </div>
 
-      <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
-        <table style={S.table}>
+      <div className="overflow-hidden rounded-lg border border-surface-3">
+        <table className="w-full border-collapse text-[13px]">
           <thead>
             <tr>
-              <th style={S.th}>Name</th>
-              <th style={S.th}>Email</th>
-              <th style={S.th}>Grade</th>
-              <th style={S.th}>Plan</th>
-              <th style={S.th}>Status</th>
-              <th style={S.th}>Joined</th>
-              <th style={S.th}>Actions</th>
+              <th className="border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Name</th>
+              <th className="border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Email</th>
+              <th className="border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Grade</th>
+              <th className="border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Plan</th>
+              <th className="border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
+              <th className="border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Joined</th>
+              <th className="border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={7} style={{ ...S.td, textAlign: 'center', color: colors.text3, padding: 24 }}>Loading...</td></tr>}
+            {loading && <tr><td colSpan={7} className="border-b border-surface-2 px-3.5 py-6 text-center text-muted-foreground">Loading...</td></tr>}
             {!loading && users.filter(u => !filterPlan || (u.subscription_plan || 'free') === filterPlan).length === 0 && (
-              <tr><td colSpan={7} style={{ ...S.td, textAlign: 'center', color: colors.text3, padding: 24 }}>No students found</td></tr>
+              <tr><td colSpan={7} className="border-b border-surface-2 px-3.5 py-6 text-center text-muted-foreground">No students found</td></tr>
             )}
             {!loading && users.filter(u => !filterPlan || (u.subscription_plan || 'free') === filterPlan).map(u => (
-              <tr key={u.id} onClick={() => setSelectedUser(u)} style={{ cursor: 'pointer' }}
-                onMouseEnter={e => e.currentTarget.style.background = colors.surfaceHover}
-                onMouseLeave={e => e.currentTarget.style.background = ''}>
-                <td style={S.td}><strong>{u.name || '—'}</strong></td>
-                <td style={{ ...S.td, fontSize: 12, color: colors.text2 }}>{u.email || '—'}</td>
-                <td style={S.td}>{u.grade || '—'}</td>
-                <td style={S.td}><StatusBadge label={u.subscription_plan || 'free'} variant={u.subscription_plan && u.subscription_plan !== 'free' ? 'info' : 'neutral'} /></td>
-                <td style={S.td}><StatusBadge label={u.is_active !== false ? 'Active' : 'Banned'} variant={u.is_active !== false ? 'success' : 'danger'} /></td>
-                <td style={{ ...S.td, fontSize: 12, color: colors.text2 }}>{new Date(u.created_at).toLocaleDateString()}</td>
-                <td style={S.td} onClick={e => e.stopPropagation()}>
-                  <select defaultValue="" onChange={e => { if (e.target.value) changePlan(u, e.target.value); e.target.value = ''; }} style={{ ...S.select, fontSize: 11, padding: '4px 6px' }}>
+              <tr
+                key={u.id}
+                onClick={() => setSelectedUser(u)}
+                className="cursor-pointer hover:bg-surface-2"
+              >
+                <td className="border-b border-surface-2 px-3.5 py-2.5 text-[13px] text-foreground"><strong>{u.name || '—'}</strong></td>
+                <td className="border-b border-surface-2 px-3.5 py-2.5 text-xs text-muted-foreground">{u.email || '—'}</td>
+                <td className="border-b border-surface-2 px-3.5 py-2.5 text-[13px] text-foreground">{u.grade || '—'}</td>
+                <td className="border-b border-surface-2 px-3.5 py-2.5 text-[13px] text-foreground"><StatusBadge label={u.subscription_plan || 'free'} variant={u.subscription_plan && u.subscription_plan !== 'free' ? 'info' : 'neutral'} /></td>
+                <td className="border-b border-surface-2 px-3.5 py-2.5 text-[13px] text-foreground"><StatusBadge label={u.is_active !== false ? 'Active' : 'Banned'} variant={u.is_active !== false ? 'success' : 'danger'} /></td>
+                <td className="border-b border-surface-2 px-3.5 py-2.5 text-xs text-muted-foreground">{new Date(u.created_at).toLocaleDateString()}</td>
+                <td className="border-b border-surface-2 px-3.5 py-2.5 text-[13px] text-foreground" onClick={e => e.stopPropagation()}>
+                  <select
+                    defaultValue=""
+                    onChange={e => { if (e.target.value) changePlan(u, e.target.value); e.target.value = ''; }}
+                    className="cursor-pointer rounded-md border border-surface-3 bg-surface-1 px-1.5 py-1 text-[11px]"
+                  >
                     <option value="" disabled>Change plan</option>
                     {plans.map(p => <option key={p} value={p}>{p.replace(/_/g, ' ')}</option>)}
                   </select>
@@ -298,19 +316,19 @@ function SubscriptionsContent() {
       </div>
 
       {/* Pagination */}
-      <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center', alignItems: 'center' }}>
-        <button disabled={userPage <= 1} onClick={() => setUserPage(p => p - 1)} style={S.pageBtn}>Prev</button>
-        <span style={{ fontSize: 12, color: colors.text3, padding: '6px 12px' }}>Page {userPage} of {Math.max(1, Math.ceil(userTotal / 25))}</span>
-        <button disabled={users.length < 25} onClick={() => setUserPage(p => p + 1)} style={S.pageBtn}>Next</button>
+      <div className="mt-3.5 flex items-center justify-center gap-2">
+        <button disabled={userPage <= 1} onClick={() => setUserPage(p => p - 1)} className={filterBtnBase}>Prev</button>
+        <span className="px-3 py-1.5 text-xs text-muted-foreground">Page {userPage} of {Math.max(1, Math.ceil(userTotal / 25))}</span>
+        <button disabled={users.length < 25} onClick={() => setUserPage(p => p + 1)} className={filterBtnBase}>Next</button>
       </div>
 
       {/* Detail Drawer */}
       <DetailDrawer open={!!selectedUser} onClose={() => setSelectedUser(null)} title="Subscription Detail">
         {selectedUser && (
           <div>
-            <div style={{ marginBottom: 16 }}>
-              <h4 style={{ fontSize: 16, fontWeight: 700, color: colors.text1, margin: 0 }}>{selectedUser.name}</h4>
-              <div style={{ fontSize: 13, color: colors.text3 }}>{selectedUser.email}</div>
+            <div className="mb-4">
+              <h4 className="m-0 text-base font-bold text-foreground">{selectedUser.name}</h4>
+              <div className="text-[13px] text-muted-foreground">{selectedUser.email}</div>
             </div>
             {[
               { label: 'Current Plan', value: selectedUser.subscription_plan || 'free' },
@@ -318,17 +336,20 @@ function SubscriptionsContent() {
               { label: 'Status', value: selectedUser.is_active !== false ? 'Active' : 'Banned' },
               { label: 'Joined', value: new Date(selectedUser.created_at).toLocaleString() },
             ].map(f => (
-              <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderLight}` }}>
-                <span style={{ fontSize: 13, color: colors.text3 }}>{f.label}</span>
-                <span style={{ fontSize: 13, color: colors.text1, fontWeight: 500 }}>{f.value}</span>
+              <div key={f.label} className="flex justify-between border-b border-surface-2 py-2">
+                <span className="text-[13px] text-muted-foreground">{f.label}</span>
+                <span className="text-[13px] font-medium text-foreground">{f.value}</span>
               </div>
             ))}
-            <div style={{ marginTop: 16 }}>
-              <div style={{ fontSize: 11, color: colors.text3, marginBottom: 6, fontWeight: 600 }}>Override Plan</div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <div className="mt-4">
+              <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">Override Plan</div>
+              <div className="flex flex-wrap gap-1.5">
                 {plans.map(p => (
-                  <button key={p} onClick={() => changePlan(selectedUser, p)}
-                    style={{ ...S.filterBtn, ...(selectedUser.subscription_plan === p ? S.filterActive : {}), fontSize: 11, padding: '4px 10px' }}>
+                  <button
+                    key={p}
+                    onClick={() => changePlan(selectedUser, p)}
+                    className={`${selectedUser.subscription_plan === p ? filterBtnActive : filterBtnBase} px-2.5 py-1 text-[11px]`}
+                  >
                     {p.replace(/_/g, ' ')}
                   </button>
                 ))}

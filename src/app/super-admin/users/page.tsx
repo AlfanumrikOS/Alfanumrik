@@ -3,10 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import DataTable, { Column } from '../_components/DataTable';
-import DetailDrawer from '../_components/DetailDrawer';
-import StatusBadge from '../_components/StatusBadge';
-import { colors, S } from '../_components/admin-styles';
+import { DataTable, type Column, DetailDrawer, StatusBadge } from '@/components/admin-ui';
 
 interface UserRecord {
   id: string; auth_user_id: string; name: string; email: string; role: string;
@@ -19,7 +16,7 @@ interface RoleRecord { id: string; name: string; display_name: string; hierarchy
 interface UserRoleRecord { id: string; auth_user_id: string; role_id: string; is_active: boolean; created_at: string; roles: { name: string; display_name: string } | null; }
 
 function UsersContent() {
-  const { apiFetch, headers } = useAdmin();
+  const { apiFetch } = useAdmin();
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [userTotal, setUserTotal] = useState(0);
   const [userRole, setUserRole] = useState('student');
@@ -121,12 +118,16 @@ function UsersContent() {
     URL.revokeObjectURL(url);
   };
 
+  const filterBtnBase = 'rounded-md border border-surface-3 bg-surface-1 px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2';
+  const filterBtnActive = 'rounded-md border border-foreground bg-foreground px-3.5 py-1.5 text-xs font-medium text-surface-1';
+  const actionBtnBase = 'rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium hover:bg-surface-2';
+
   const columns: Column<UserRecord>[] = [
-    { key: 'name', label: 'Name', render: r => <strong style={{ color: colors.text1 }}>{r.name || '—'}</strong> },
-    { key: 'email', label: 'Email', render: r => <span style={{ fontSize: 12, color: colors.text2 }}>{r.email || '—'}</span> },
+    { key: 'name', label: 'Name', render: r => <strong className="text-foreground">{r.name || '—'}</strong> },
+    { key: 'email', label: 'Email', render: r => <span className="text-xs text-muted-foreground">{r.email || '—'}</span> },
     ...(userRole === 'student' ? [
       { key: 'grade', label: 'Grade' } as Column<UserRecord>,
-      { key: 'xp_total', label: 'XP', render: (r: UserRecord) => <span style={{ fontWeight: 600 }}>{r.xp_total ?? 0}</span> } as Column<UserRecord>,
+      { key: 'xp_total', label: 'XP', render: (r: UserRecord) => <span className="font-semibold">{r.xp_total ?? 0}</span> } as Column<UserRecord>,
       { key: 'subscription_plan', label: 'Plan', render: (r: UserRecord) => {
         const plan = r.subscription_plan || 'free';
         const variant = plan === 'unlimited' || plan === 'ultimate_yearly' ? 'success' : plan.startsWith('pro') ? 'info' : plan.startsWith('starter') ? 'warning' : 'neutral';
@@ -139,30 +140,31 @@ function UsersContent() {
     { key: 'is_active', label: 'Status', render: r => (
       <StatusBadge label={r.is_active !== false ? 'Active' : 'Banned'} variant={r.is_active !== false ? 'success' : 'danger'} />
     )},
-    { key: 'created_at', label: 'Joined', render: r => <span style={{ fontSize: 12, color: colors.text2 }}>{new Date(r.created_at).toLocaleDateString()}</span> },
+    { key: 'created_at', label: 'Joined', render: r => <span className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleDateString()}</span> },
     { key: '_actions', label: 'Actions', sortable: false, render: r => (
-      <button onClick={e => { e.stopPropagation(); toggleUser(r); }} style={{
-        ...S.actionBtn,
-        color: r.is_active !== false ? colors.danger : colors.success,
-        borderColor: r.is_active !== false ? colors.danger : colors.success,
-      }}>{r.is_active !== false ? 'Ban' : 'Unban'}</button>
+      <button
+        onClick={e => { e.stopPropagation(); toggleUser(r); }}
+        className={`${actionBtnBase} ${r.is_active !== false ? 'border-danger text-danger' : 'border-success text-success'}`}
+      >
+        {r.is_active !== false ? 'Ban' : 'Unban'}
+      </button>
     )},
   ];
 
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+      <div className="mb-5 flex items-center justify-between">
         <div>
-          <h1 style={S.h1}>Users & Roles</h1>
-          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>Manage users, roles, and test accounts</p>
+          <h1 className="text-xl font-bold tracking-tight text-foreground">Users & Roles</h1>
+          <p className="m-0 text-[13px] text-muted-foreground">Manage users, roles, and test accounts</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={downloadCSV} style={S.secondaryBtn}>Export CSV</button>
-          <button onClick={() => setShowTestForm(!showTestForm)} style={S.primaryBtn}>
+        <div className="flex gap-2">
+          <button onClick={downloadCSV} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Export CSV</button>
+          <button onClick={() => setShowTestForm(!showTestForm)} className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90">
             {showTestForm ? 'Cancel' : '+ Test Account'}
           </button>
-          <button onClick={() => setShowRolePanel(!showRolePanel)} style={S.secondaryBtn}>
+          <button onClick={() => setShowRolePanel(!showRolePanel)} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">
             {showRolePanel ? 'Hide Roles' : 'Manage Roles'}
           </button>
         </div>
@@ -170,87 +172,91 @@ function UsersContent() {
 
       {/* Test Account Form */}
       {showTestForm && (
-        <div style={{ ...S.card, marginBottom: 20, borderLeft: `3px solid ${colors.accent}` }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, color: colors.text1, marginBottom: 12 }}>Create Test Account</h3>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div className="mb-5 rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid #2563EB' }}>
+          <h3 className="mb-3 text-sm font-bold text-foreground">Create Test Account</h3>
+          <div className="flex flex-wrap items-end gap-2">
             <div>
-              <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4 }}>Role</label>
-              <select value={testRole} onChange={e => setTestRole(e.target.value)} style={S.select}>
+              <label className="mb-1 block text-[11px] text-muted-foreground">Role</label>
+              <select value={testRole} onChange={e => setTestRole(e.target.value)} className="cursor-pointer rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm">
                 <option value="student">Student</option>
                 <option value="teacher">Teacher</option>
                 <option value="parent">Parent</option>
               </select>
             </div>
             <div>
-              <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4 }}>Name</label>
-              <input value={testName} onChange={e => setTestName(e.target.value)} placeholder="Test User" style={S.searchInput} />
+              <label className="mb-1 block text-[11px] text-muted-foreground">Name</label>
+              <input value={testName} onChange={e => setTestName(e.target.value)} placeholder="Test User" className="w-56 rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
             <div>
-              <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4 }}>Email</label>
-              <input value={testEmail} onChange={e => setTestEmail(e.target.value)} placeholder="test@alfanumrik.com" style={{ ...S.searchInput, width: 260 }} />
+              <label className="mb-1 block text-[11px] text-muted-foreground">Email</label>
+              <input value={testEmail} onChange={e => setTestEmail(e.target.value)} placeholder="test@alfanumrik.com" className="w-[260px] rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
-            <button onClick={createTestAccount} style={S.primaryBtn}>Create</button>
+            <button onClick={createTestAccount} className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90">Create</button>
           </div>
-          {testResult && <div style={{ marginTop: 8, fontSize: 12, color: testResult.startsWith('Created') ? colors.success : colors.danger }}>{testResult}</div>}
+          {testResult && <div className={`mt-2 text-xs ${testResult.startsWith('Created') ? 'text-success' : 'text-danger'}`}>{testResult}</div>}
         </div>
       )}
 
       {/* Role Management Panel */}
       {showRolePanel && (
-        <div style={{ ...S.card, marginBottom: 20, borderLeft: `3px solid ${colors.warning}` }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, color: colors.text1, marginBottom: 12 }}>Role Management</h3>
+        <div className="mb-5 rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid #D97706' }}>
+          <h3 className="mb-3 text-sm font-bold text-foreground">Role Management</h3>
 
           {/* Assign Role */}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-            <input value={assignUserId} onChange={e => setAssignUserId(e.target.value)} placeholder="auth_user_id (UUID)" style={{ ...S.searchInput, flex: 1, minWidth: 200 }} />
-            <select value={assignRoleName} onChange={e => setAssignRoleName(e.target.value)} style={S.select}>
+          <div className="mb-4 flex flex-wrap gap-2">
+            <input value={assignUserId} onChange={e => setAssignUserId(e.target.value)} placeholder="auth_user_id (UUID)" className="min-w-[200px] flex-1 rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+            <select value={assignRoleName} onChange={e => setAssignRoleName(e.target.value)} className="cursor-pointer rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm">
               <option value="">Select role</option>
               {allRoles.map(r => <option key={r.id} value={r.name}>{r.display_name || r.name}</option>)}
             </select>
-            <button onClick={assignRole} style={S.primaryBtn}>Assign Role</button>
+            <button onClick={assignRole} className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90">Assign Role</button>
           </div>
 
           {/* Available Roles */}
-          <div style={{ fontSize: 11, color: colors.text3, marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Available Roles ({allRoles.length})
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8, marginBottom: 16 }}>
+          <div className="mb-4 grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
             {allRoles.map(r => (
-              <div key={r.id} style={{ ...S.card, padding: 10, borderLeft: `3px solid ${r.hierarchy_level >= 90 ? colors.danger : r.hierarchy_level >= 50 ? colors.warning : colors.text3}` }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: colors.text1 }}>{r.display_name || r.name}</div>
-                <div style={{ fontSize: 10, color: colors.text3 }}>Level {r.hierarchy_level}</div>
-                {r.description && <div style={{ fontSize: 10, color: colors.text3, marginTop: 2 }}>{r.description}</div>}
+              <div
+                key={r.id}
+                className="rounded-lg border border-surface-3 bg-surface-1 p-2.5"
+                style={{ borderLeft: `3px solid ${r.hierarchy_level >= 90 ? '#DC2626' : r.hierarchy_level >= 50 ? '#D97706' : '#9CA3AF'}` }}
+              >
+                <div className="text-[13px] font-semibold text-foreground">{r.display_name || r.name}</div>
+                <div className="text-[10px] text-muted-foreground">Level {r.hierarchy_level}</div>
+                {r.description && <div className="mt-0.5 text-[10px] text-muted-foreground">{r.description}</div>}
               </div>
             ))}
           </div>
 
           {/* Current Assignments */}
-          <div style={{ fontSize: 11, color: colors.text3, marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Current Assignments ({userRolesTotal})
           </div>
-          <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
-            <table style={S.table}>
+          <div className="overflow-hidden rounded-lg border border-surface-3">
+            <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
-                  <th style={S.th}>User ID</th>
-                  <th style={S.th}>Role</th>
-                  <th style={S.th}>Status</th>
-                  <th style={S.th}>Assigned</th>
-                  <th style={S.th}>Actions</th>
+                  <th className="border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">User ID</th>
+                  <th className="border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Role</th>
+                  <th className="border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
+                  <th className="border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Assigned</th>
+                  <th className="border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {userRoles.length === 0 && (
-                  <tr><td colSpan={5} style={{ ...S.td, textAlign: 'center', color: colors.text3, padding: 20 }}>No assignments</td></tr>
+                  <tr><td colSpan={5} className="border-b border-surface-3 px-3.5 py-5 text-center text-[13px] text-muted-foreground">No assignments</td></tr>
                 )}
                 {userRoles.map(ur => (
                   <tr key={ur.id}>
-                    <td style={{ ...S.td, fontSize: 11 }}><code>{ur.auth_user_id?.slice(0, 12)}...</code></td>
-                    <td style={S.td}><strong>{ur.roles?.display_name || ur.roles?.name || '—'}</strong></td>
-                    <td style={S.td}><StatusBadge label={ur.is_active ? 'Active' : 'Inactive'} variant={ur.is_active ? 'success' : 'neutral'} /></td>
-                    <td style={{ ...S.td, fontSize: 12 }}>{ur.created_at ? new Date(ur.created_at).toLocaleDateString() : '—'}</td>
-                    <td style={S.td}>
-                      <button onClick={() => revokeRole(ur.id)} style={{ ...S.actionBtn, color: colors.danger, borderColor: colors.danger }}>Revoke</button>
+                    <td className="border-b border-surface-3 px-3.5 py-2.5 text-[11px] text-foreground"><code>{ur.auth_user_id?.slice(0, 12)}...</code></td>
+                    <td className="border-b border-surface-3 px-3.5 py-2.5 text-[13px] text-foreground"><strong>{ur.roles?.display_name || ur.roles?.name || '—'}</strong></td>
+                    <td className="border-b border-surface-3 px-3.5 py-2.5 text-[13px] text-foreground"><StatusBadge label={ur.is_active ? 'Active' : 'Inactive'} variant={ur.is_active ? 'success' : 'neutral'} /></td>
+                    <td className="border-b border-surface-3 px-3.5 py-2.5 text-xs text-foreground">{ur.created_at ? new Date(ur.created_at).toLocaleDateString() : '—'}</td>
+                    <td className="border-b border-surface-3 px-3.5 py-2.5 text-[13px] text-foreground">
+                      <button onClick={() => revokeRole(ur.id)} className={`${actionBtnBase} border-danger text-danger`}>Revoke</button>
                     </td>
                   </tr>
                 ))}
@@ -261,27 +267,35 @@ function UsersContent() {
       )}
 
       {/* Filters */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-        <div style={{ display: 'flex', gap: 6 }}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-1.5">
           {[
             { key: 'student', label: 'Students' },
             { key: 'teacher', label: 'Teachers' },
             { key: 'guardian', label: 'Parents' },
           ].map(r => (
-            <button key={r.key} onClick={() => { setUserRole(r.key); setUserPage(1); }}
-              style={{ ...S.filterBtn, ...(userRole === r.key ? S.filterActive : {}) }}>
+            <button
+              key={r.key}
+              onClick={() => { setUserRole(r.key); setUserPage(1); }}
+              className={userRole === r.key ? filterBtnActive : filterBtnBase}
+            >
               {r.label}
             </button>
           ))}
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input value={userSearch} onChange={e => setUserSearch(e.target.value)} placeholder="Search name..."
-            style={S.searchInput} onKeyDown={e => e.key === 'Enter' && fetchUsers()} />
-          <button onClick={downloadCSV} style={S.secondaryBtn}>Export CSV</button>
+        <div className="flex gap-2">
+          <input
+            value={userSearch}
+            onChange={e => setUserSearch(e.target.value)}
+            placeholder="Search name..."
+            className="w-56 rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            onKeyDown={e => e.key === 'Enter' && fetchUsers()}
+          />
+          <button onClick={downloadCSV} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Export CSV</button>
         </div>
       </div>
 
-      <div style={{ fontSize: 12, color: colors.text3, marginBottom: 8 }}>
+      <div className="mb-2 text-xs text-muted-foreground">
         {userTotal} {userRole === 'guardian' ? 'parent' : userRole}s found
       </div>
 
@@ -300,35 +314,33 @@ function UsersContent() {
 
       {/* Bulk Actions */}
       {selectedIds.size > 0 && (
-        <div style={{
-          position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
-          background: colors.text1, color: colors.bg, padding: '10px 20px',
-          borderRadius: 8, display: 'flex', gap: 12, alignItems: 'center',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.15)', zIndex: 50,
-        }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>{selectedIds.size} selected</span>
-          <button onClick={() => setSelectedIds(new Set())} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: colors.bg, padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
+        <div
+          className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-foreground px-5 py-2.5 text-surface-1"
+          style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}
+        >
+          <span className="text-[13px] font-semibold">{selectedIds.size} selected</span>
+          <button onClick={() => setSelectedIds(new Set())} className="rounded border-0 bg-white/20 px-3 py-1 text-xs text-surface-1 cursor-pointer">
             Clear
           </button>
-          <button onClick={downloadCSV} style={{ background: colors.bg, color: colors.text1, border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+          <button onClick={downloadCSV} className="rounded border-0 bg-surface-1 px-3 py-1 text-xs font-semibold text-foreground cursor-pointer">
             Export Selected
           </button>
         </div>
       )}
 
       {/* Pagination */}
-      <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center', alignItems: 'center' }}>
-        <button disabled={userPage <= 1} onClick={() => setUserPage(p => p - 1)} style={S.pageBtn}>Prev</button>
-        <span style={{ fontSize: 12, color: colors.text3, padding: '6px 12px' }}>Page {userPage} of {Math.max(1, Math.ceil(userTotal / 25))}</span>
-        <button disabled={users.length < 25} onClick={() => setUserPage(p => p + 1)} style={S.pageBtn}>Next</button>
+      <div className="mt-3.5 flex items-center justify-center gap-2">
+        <button disabled={userPage <= 1} onClick={() => setUserPage(p => p - 1)} className={filterBtnBase}>Prev</button>
+        <span className="px-3 py-1.5 text-xs text-muted-foreground">Page {userPage} of {Math.max(1, Math.ceil(userTotal / 25))}</span>
+        <button disabled={users.length < 25} onClick={() => setUserPage(p => p + 1)} className={filterBtnBase}>Next</button>
       </div>
 
       {/* User Detail Drawer */}
       <DetailDrawer open={!!selectedUser} onClose={() => setSelectedUser(null)} title={selectedUser?.name || 'User Details'}>
         {selectedUser && (
           <div>
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 11, color: colors.text3, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, fontWeight: 600 }}>Profile</div>
+            <div className="mb-5">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Profile</div>
               {[
                 { label: 'Name', value: selectedUser.name },
                 { label: 'Email', value: selectedUser.email },
@@ -338,50 +350,48 @@ function UsersContent() {
                 { label: 'School', value: selectedUser.school_name },
                 { label: 'Joined', value: new Date(selectedUser.created_at).toLocaleString() },
               ].filter(f => f.value).map(f => (
-                <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderLight}` }}>
-                  <span style={{ fontSize: 13, color: colors.text3 }}>{f.label}</span>
-                  <span style={{ fontSize: 13, color: colors.text1, fontWeight: 500 }}>{f.value}</span>
+                <div key={f.label} className="flex justify-between border-b border-surface-2 py-2">
+                  <span className="text-[13px] text-muted-foreground">{f.label}</span>
+                  <span className="text-[13px] font-medium text-foreground">{f.value}</span>
                 </div>
               ))}
             </div>
 
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 11, color: colors.text3, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, fontWeight: 600 }}>Status & Subscription</div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <div className="mb-5">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Status & Subscription</div>
+              <div className="mt-2 flex gap-2">
                 <StatusBadge label={selectedUser.is_active !== false ? 'Active' : 'Banned'} variant={selectedUser.is_active !== false ? 'success' : 'danger'} />
                 {selectedUser.subscription_plan && <StatusBadge label={selectedUser.subscription_plan} variant="info" />}
               </div>
               {selectedUser.xp_total != null && (
-                <div style={{ marginTop: 12 }}>
-                  <span style={{ fontSize: 13, color: colors.text3 }}>XP: </span>
-                  <span style={{ fontSize: 16, fontWeight: 700, color: colors.text1 }}>{selectedUser.xp_total}</span>
+                <div className="mt-3">
+                  <span className="text-[13px] text-muted-foreground">XP: </span>
+                  <span className="text-base font-bold text-foreground">{selectedUser.xp_total}</span>
                   {selectedUser.streak_days != null && (
-                    <span style={{ fontSize: 13, color: colors.text3, marginLeft: 16 }}>Streak: {selectedUser.streak_days}d</span>
+                    <span className="ml-4 text-[13px] text-muted-foreground">Streak: {selectedUser.streak_days}d</span>
                   )}
                 </div>
               )}
             </div>
 
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button onClick={() => { toggleUser(selectedUser); setSelectedUser(null); }} style={{
-                ...S.actionBtn,
-                color: selectedUser.is_active !== false ? colors.danger : colors.success,
-                borderColor: selectedUser.is_active !== false ? colors.danger : colors.success,
-                padding: '8px 16px',
-              }}>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => { toggleUser(selectedUser); setSelectedUser(null); }}
+                className={`rounded-md border bg-transparent px-4 py-2 text-xs font-medium hover:bg-surface-2 ${selectedUser.is_active !== false ? 'border-danger text-danger' : 'border-success text-success'}`}
+              >
                 {selectedUser.is_active !== false ? 'Ban User' : 'Unban User'}
               </button>
             </div>
 
             {selectedUser.role === 'student' && selectedUser.id && (
-              <div style={{ marginTop: 12 }}>
+              <div className="mt-3">
                 <Link href={`/super-admin/students/${selectedUser.id}`} className="text-sm text-blue-600 hover:underline">
                   View Full Profile &rarr;
                 </Link>
               </div>
             )}
 
-            <div style={{ marginTop: 20, fontSize: 10, color: colors.text3 }}>
+            <div className="mt-5 text-[10px] text-muted-foreground">
               ID: <code>{selectedUser.id}</code><br />
               Auth ID: <code>{selectedUser.auth_user_id}</code>
             </div>

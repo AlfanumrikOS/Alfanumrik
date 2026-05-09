@@ -2,9 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import DataTable, { Column } from '../_components/DataTable';
-import StatusBadge from '../_components/StatusBadge';
-import { colors, S } from '../_components/admin-styles';
+import { StatCard, StatusBadge, DataTable, type Column } from '@/components/admin-ui';
 
 /* ── Types ── */
 interface DashboardStats {
@@ -52,7 +50,7 @@ type TabKey = 'dashboard' | 'elevations' | 'impersonation' | 'delegations';
 
 /* ── Helpers ── */
 function relativeTime(dateStr: string): string {
-  if (!dateStr) return '\u2014';
+  if (!dateStr) return '—';
   const now = Date.now();
   const target = new Date(dateStr).getTime();
   const diff = target - now;
@@ -76,8 +74,8 @@ function statusVariant(status: string): 'success' | 'danger' | 'neutral' | 'warn
 }
 
 function truncateId(id: string | undefined | null): string {
-  if (!id) return '\u2014';
-  return id.length > 12 ? id.slice(0, 12) + '\u2026' : id;
+  if (!id) return '—';
+  return id.length > 12 ? id.slice(0, 12) + '…' : id;
 }
 
 /* ── Main Content ── */
@@ -249,21 +247,28 @@ function RBACContent() {
     } catch { showMsg('Request failed', 'error'); }
   };
 
+  const dangerActionClass = "rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium hover:bg-surface-2";
+  const dangerActionStyle: React.CSSProperties = { color: '#DC2626', borderColor: '#DC2626' };
+
   /* ── Column Definitions ── */
   const elevationColumns: Column<ElevationRecord>[] = [
     { key: 'user_id', label: 'User ID', render: r => <code style={{ fontSize: 11 }}>{truncateId(r.user_id)}</code> },
     { key: 'role_id', label: 'Role ID', render: r => <code style={{ fontSize: 11 }}>{truncateId(r.role_id)}</code> },
     { key: 'granted_by', label: 'Granted By', render: r => <code style={{ fontSize: 11 }}>{truncateId(r.granted_by)}</code> },
-    { key: 'reason', label: 'Reason', render: r => <span style={{ fontSize: 12, color: colors.text2 }}>{r.reason || '\u2014'}</span> },
+    { key: 'reason', label: 'Reason', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{r.reason || '—'}</span> },
     { key: 'status', label: 'Status', render: r => <StatusBadge label={r.status} variant={statusVariant(r.status)} /> },
-    { key: 'expires_at', label: 'Expires At', render: r => <span style={{ fontSize: 12, color: colors.text2 }}>{relativeTime(r.expires_at)}</span> },
+    { key: 'expires_at', label: 'Expires At', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{relativeTime(r.expires_at)}</span> },
     {
       key: '_actions', label: 'Actions', sortable: false, render: r =>
         r.status === 'active' ? (
-          <button onClick={e => { e.stopPropagation(); revokeElevation(r.id); }} style={{ ...S.actionBtn, color: colors.danger, borderColor: colors.danger }}>
+          <button
+            onClick={e => { e.stopPropagation(); revokeElevation(r.id); }}
+            className={dangerActionClass}
+            style={dangerActionStyle}
+          >
             Revoke
           </button>
-        ) : <span style={{ fontSize: 12, color: colors.text3 }}>\u2014</span>,
+        ) : <span style={{ fontSize: 12, color: '#9CA3AF' }}>{'—'}</span>,
     },
   ];
 
@@ -272,33 +277,41 @@ function RBACContent() {
     { key: 'target_user_id', label: 'Target User ID', render: r => <code style={{ fontSize: 11 }}>{truncateId(r.target_user_id)}</code> },
     { key: 'status', label: 'Status', render: r => <StatusBadge label={r.status} variant={statusVariant(r.status)} /> },
     { key: 'action_count', label: 'Action Count', render: r => <span style={{ fontWeight: 600 }}>{r.action_count ?? 0}</span> },
-    { key: 'started_at', label: 'Started At', render: r => <span style={{ fontSize: 12, color: colors.text2 }}>{r.started_at ? new Date(r.started_at).toLocaleString() : '\u2014'}</span> },
-    { key: 'expires_at', label: 'Expires At', render: r => <span style={{ fontSize: 12, color: colors.text2 }}>{relativeTime(r.expires_at)}</span> },
+    { key: 'started_at', label: 'Started At', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{r.started_at ? new Date(r.started_at).toLocaleString() : '—'}</span> },
+    { key: 'expires_at', label: 'Expires At', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{relativeTime(r.expires_at)}</span> },
     {
       key: '_actions', label: 'Actions', sortable: false, render: r =>
         r.status === 'active' ? (
-          <button onClick={e => { e.stopPropagation(); endImpersonation(r.id); }} style={{ ...S.actionBtn, color: colors.danger, borderColor: colors.danger }}>
+          <button
+            onClick={e => { e.stopPropagation(); endImpersonation(r.id); }}
+            className={dangerActionClass}
+            style={dangerActionStyle}
+          >
             End Session
           </button>
-        ) : <span style={{ fontSize: 12, color: colors.text3 }}>\u2014</span>,
+        ) : <span style={{ fontSize: 12, color: '#9CA3AF' }}>{'—'}</span>,
     },
   ];
 
   const delegationColumns: Column<DelegationRecord>[] = [
     { key: 'granter', label: 'Granter', render: r => <code style={{ fontSize: 11 }}>{truncateId(r.granter)}</code> },
-    { key: 'grantee', label: 'Grantee', render: r => <span style={{ fontSize: 12 }}>{r.grantee ? <code style={{ fontSize: 11 }}>{truncateId(r.grantee)}</code> : <em style={{ color: colors.text3 }}>Bearer</em>}</span> },
+    { key: 'grantee', label: 'Grantee', render: r => <span style={{ fontSize: 12 }}>{r.grantee ? <code style={{ fontSize: 11 }}>{truncateId(r.grantee)}</code> : <em style={{ color: '#9CA3AF' }}>Bearer</em>}</span> },
     { key: 'school_id', label: 'School ID', render: r => <code style={{ fontSize: 11 }}>{truncateId(r.school_id)}</code> },
-    { key: 'permissions', label: 'Permissions', render: r => <span style={{ fontSize: 12, color: colors.text2 }}>{Array.isArray(r.permissions) ? r.permissions.join(', ') : '\u2014'}</span> },
+    { key: 'permissions', label: 'Permissions', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{Array.isArray(r.permissions) ? r.permissions.join(', ') : '—'}</span> },
     { key: 'status', label: 'Status', render: r => <StatusBadge label={r.status} variant={statusVariant(r.status)} /> },
     { key: 'use_count', label: 'Uses', render: r => <span style={{ fontSize: 12 }}>{r.use_count ?? 0}{r.max_uses != null ? `/${r.max_uses}` : ''}</span> },
-    { key: 'expires_at', label: 'Expires At', render: r => <span style={{ fontSize: 12, color: colors.text2 }}>{relativeTime(r.expires_at)}</span> },
+    { key: 'expires_at', label: 'Expires At', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{relativeTime(r.expires_at)}</span> },
     {
       key: '_actions', label: 'Actions', sortable: false, render: r =>
         r.status === 'active' ? (
-          <button onClick={e => { e.stopPropagation(); revokeDelegation(r.id); }} style={{ ...S.actionBtn, color: colors.danger, borderColor: colors.danger }}>
+          <button
+            onClick={e => { e.stopPropagation(); revokeDelegation(r.id); }}
+            className={dangerActionClass}
+            style={dangerActionStyle}
+          >
             Revoke
           </button>
-        ) : <span style={{ fontSize: 12, color: colors.text3 }}>\u2014</span>,
+        ) : <span style={{ fontSize: 12, color: '#9CA3AF' }}>{'—'}</span>,
     },
   ];
 
@@ -315,65 +328,65 @@ function RBACContent() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
-          <h1 style={S.h1}>RBAC Management</h1>
-          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>Privilege elevations, impersonation sessions, and delegation tokens</p>
+          <h1 className="text-xl font-bold text-foreground">RBAC Management</h1>
+          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Privilege elevations, impersonation sessions, and delegation tokens</p>
         </div>
       </div>
 
       {/* Inline toast */}
       {message && (
-        <div style={{
-          ...S.card,
-          marginBottom: 16,
-          borderLeft: `3px solid ${message.type === 'success' ? colors.success : colors.danger}`,
-          padding: '10px 16px',
-          fontSize: 13,
-          color: message.type === 'success' ? colors.success : colors.danger,
-        }}>
+        <div
+          className="rounded-lg border border-surface-3 bg-surface-1"
+          style={{
+            marginBottom: 16,
+            borderLeft: `3px solid ${message.type === 'success' ? '#16A34A' : '#DC2626'}`,
+            padding: '10px 16px',
+            fontSize: 13,
+            color: message.type === 'success' ? '#16A34A' : '#DC2626',
+          }}
+        >
           {message.text}
         </div>
       )}
 
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
-        {tabs.map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            style={{
-              ...S.filterBtn,
-              ...(activeTab === tab.key ? S.filterActive : {}),
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {tabs.map(tab => {
+          const isActive = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={
+                isActive
+                  ? "rounded-md border border-foreground bg-foreground px-3.5 py-1.5 text-xs font-medium text-surface-1"
+                  : "rounded-md border border-surface-3 bg-surface-1 px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2"
+              }
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* ── Dashboard Tab ── */}
       {activeTab === 'dashboard' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
-          {/* Active Elevations */}
-          <div style={{ ...S.card, borderLeft: `4px solid ${colors.warning}` }}>
-            <div style={{ fontSize: 32, fontWeight: 700, color: colors.text1, marginBottom: 4 }}>
-              {loading ? '\u2014' : stats.activeElevations}
-            </div>
-            <div style={{ fontSize: 13, color: colors.text2, fontWeight: 500 }}>Active Elevations</div>
-          </div>
-          {/* Active Impersonation Sessions */}
-          <div style={{ ...S.card, borderLeft: `4px solid #7C3AED` }}>
-            <div style={{ fontSize: 32, fontWeight: 700, color: colors.text1, marginBottom: 4 }}>
-              {loading ? '\u2014' : stats.activeSessions}
-            </div>
-            <div style={{ fontSize: 13, color: colors.text2, fontWeight: 500 }}>Active Impersonation Sessions</div>
-          </div>
-          {/* Active Delegation Tokens */}
-          <div style={{ ...S.card, borderLeft: `4px solid ${colors.accent}` }}>
-            <div style={{ fontSize: 32, fontWeight: 700, color: colors.text1, marginBottom: 4 }}>
-              {loading ? '\u2014' : stats.activeTokens}
-            </div>
-            <div style={{ fontSize: 13, color: colors.text2, fontWeight: 500 }}>Active Delegation Tokens</div>
-          </div>
+          <StatCard
+            label="Active Elevations"
+            value={loading ? '—' : stats.activeElevations}
+            accentColor="#D97706"
+          />
+          <StatCard
+            label="Active Impersonation Sessions"
+            value={loading ? '—' : stats.activeSessions}
+            accentColor="#7C3AED"
+          />
+          <StatCard
+            label="Active Delegation Tokens"
+            value={loading ? '—' : stats.activeTokens}
+            accentColor="#2563EB"
+          />
         </div>
       )}
 
@@ -383,33 +396,65 @@ function RBACContent() {
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
             <button
               onClick={() => setShowElevationForm(!showElevationForm)}
-              style={S.primaryBtn}
+              className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
             >
               {showElevationForm ? 'Cancel' : '+ Grant Elevation'}
             </button>
           </div>
 
           {showElevationForm && (
-            <div style={{ ...S.card, marginBottom: 16, borderLeft: `3px solid ${colors.warning}` }}>
-              <h3 style={{ fontSize: 14, fontWeight: 700, color: colors.text1, marginBottom: 12 }}>Grant Elevation</h3>
+            <div
+              className="rounded-lg border border-surface-3 bg-surface-1 p-4"
+              style={{ marginBottom: 16, borderLeft: `3px solid #D97706` }}
+            >
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 12 }}>Grant Elevation</h3>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                 <div>
-                  <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4 }}>User ID</label>
-                  <input value={elevUserId} onChange={e => setElevUserId(e.target.value)} placeholder="UUID" style={S.searchInput} />
+                  <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>User ID</label>
+                  <input
+                    value={elevUserId}
+                    onChange={e => setElevUserId(e.target.value)}
+                    placeholder="UUID"
+                    className="w-56 rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4 }}>Role ID</label>
-                  <input value={elevRoleId} onChange={e => setElevRoleId(e.target.value)} placeholder="UUID" style={S.searchInput} />
+                  <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Role ID</label>
+                  <input
+                    value={elevRoleId}
+                    onChange={e => setElevRoleId(e.target.value)}
+                    placeholder="UUID"
+                    className="w-56 rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4 }}>Duration (hours)</label>
-                  <input type="number" value={elevDuration} onChange={e => setElevDuration(e.target.value)} min="1" max="720" style={{ ...S.searchInput, width: 100 }} />
+                  <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Duration (hours)</label>
+                  <input
+                    type="number"
+                    value={elevDuration}
+                    onChange={e => setElevDuration(e.target.value)}
+                    min="1"
+                    max="720"
+                    className="rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    style={{ width: 100 }}
+                  />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4 }}>Reason</label>
-                  <input value={elevReason} onChange={e => setElevReason(e.target.value)} placeholder="Justification" style={{ ...S.searchInput, width: 260 }} />
+                  <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Reason</label>
+                  <input
+                    value={elevReason}
+                    onChange={e => setElevReason(e.target.value)}
+                    placeholder="Justification"
+                    className="rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    style={{ width: 260 }}
+                  />
                 </div>
-                <button onClick={grantElevation} style={S.primaryBtn}>Grant</button>
+                <button
+                  onClick={grantElevation}
+                  className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
+                >
+                  Grant
+                </button>
               </div>
             </div>
           )}
@@ -430,29 +475,56 @@ function RBACContent() {
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
             <button
               onClick={() => setShowImpersonationForm(!showImpersonationForm)}
-              style={S.primaryBtn}
+              className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
             >
               {showImpersonationForm ? 'Cancel' : '+ Start Impersonation'}
             </button>
           </div>
 
           {showImpersonationForm && (
-            <div style={{ ...S.card, marginBottom: 16, borderLeft: `3px solid #7C3AED` }}>
-              <h3 style={{ fontSize: 14, fontWeight: 700, color: colors.text1, marginBottom: 12 }}>Start Impersonation</h3>
+            <div
+              className="rounded-lg border border-surface-3 bg-surface-1 p-4"
+              style={{ marginBottom: 16, borderLeft: `3px solid #7C3AED` }}
+            >
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 12 }}>Start Impersonation</h3>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                 <div>
-                  <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4 }}>Target User ID</label>
-                  <input value={impTargetId} onChange={e => setImpTargetId(e.target.value)} placeholder="UUID" style={S.searchInput} />
+                  <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Target User ID</label>
+                  <input
+                    value={impTargetId}
+                    onChange={e => setImpTargetId(e.target.value)}
+                    placeholder="UUID"
+                    className="w-56 rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4 }}>Reason</label>
-                  <input value={impReason} onChange={e => setImpReason(e.target.value)} placeholder="Justification" style={{ ...S.searchInput, width: 260 }} />
+                  <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Reason</label>
+                  <input
+                    value={impReason}
+                    onChange={e => setImpReason(e.target.value)}
+                    placeholder="Justification"
+                    className="rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    style={{ width: 260 }}
+                  />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4 }}>Max Minutes</label>
-                  <input type="number" value={impMaxMinutes} onChange={e => setImpMaxMinutes(e.target.value)} min="1" max="480" style={{ ...S.searchInput, width: 100 }} />
+                  <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Max Minutes</label>
+                  <input
+                    type="number"
+                    value={impMaxMinutes}
+                    onChange={e => setImpMaxMinutes(e.target.value)}
+                    min="1"
+                    max="480"
+                    className="rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    style={{ width: 100 }}
+                  />
                 </div>
-                <button onClick={startImpersonation} style={S.primaryBtn}>Start</button>
+                <button
+                  onClick={startImpersonation}
+                  className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
+                >
+                  Start
+                </button>
               </div>
             </div>
           )}
