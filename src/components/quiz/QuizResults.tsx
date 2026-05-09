@@ -16,6 +16,7 @@ import { getLevelFromScore } from '@/lib/score-config';
 import NextActionCard from '@/components/quiz/NextActionCard';
 import CelebrationOverlay from '@/components/quiz/CelebrationOverlay';
 import GoalScorecardSentence from '@/components/quiz/GoalScorecardSentence';
+import MisconceptionExplainer from '@/components/quiz/MisconceptionExplainer';
 import { isKnownGoalCode } from '@/lib/goals/goal-profile';
 import type { ErrorType } from '@/lib/cognitive-engine';
 
@@ -495,6 +496,58 @@ export default function QuizResults({
               </div>
             );
           }
+        })()}
+
+        {/* Pedagogy v2 — Wave 1A v2-quiz-path distractor explainer.
+            Surfaces curated wrong-answer remediations on the QuizResults
+            screen for the v2 path (legacy in-quiz path was wired in #635).
+            MisconceptionExplainer renders null when no remediation exists,
+            so this section silently produces only the entries with curated
+            content. Gated server-side by ff_distractor_micro_explainer_v1
+            via /api/learn/remediation. */}
+        {(() => {
+          const wrongMcq: { questionId: string; selectedOption: number; questionText: string }[] = [];
+          for (let i = 0; i < responses.length; i++) {
+            const r = responses[i];
+            const q = questions[i];
+            if (!q || !r) continue;
+            if (r.selected_option < 0) continue;          // skip written answers
+            if (r.is_correct) continue;                    // skip correct
+            wrongMcq.push({
+              questionId: r.question_id || q.id,
+              selectedOption: r.selected_option,
+              questionText: q.question_text,
+            });
+          }
+          if (wrongMcq.length === 0) return null;
+          return (
+            <Card className="!p-4" data-testid="quizresults-wrong-review">
+              <p className="text-xs font-semibold text-[var(--text-3)] mb-3 uppercase tracking-wider">
+                {isHi ? 'गलत जवाबों की समीक्षा' : 'Review wrong answers'}
+              </p>
+              <ul className="space-y-3">
+                {wrongMcq.map((w, idx) => (
+                  <li key={`${w.questionId}-${idx}`} className="space-y-2">
+                    <p className="text-xs text-[var(--text-2)] font-medium leading-snug">
+                      <span className="text-[10px] uppercase tracking-wider text-[var(--text-3)] mr-1">
+                        Q{idx + 1}
+                      </span>
+                      {w.questionText}
+                    </p>
+                    <p className="text-[10px] text-[var(--text-3)]">
+                      {isHi ? 'तुम्हारा जवाब' : 'You picked'}
+                      {' '}
+                      <span className="font-semibold">{OPTION_LETTERS[w.selectedOption] ?? String(w.selectedOption + 1)}</span>
+                    </p>
+                    <MisconceptionExplainer
+                      questionId={w.questionId}
+                      distractorIndex={w.selectedOption}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          );
         })()}
 
         {/* Separate MCQ/Written subscores — shown when quiz has both types */}
