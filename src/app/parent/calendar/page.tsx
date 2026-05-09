@@ -97,6 +97,15 @@ export default function ParentCalendarPage() {
   const [monthQuizCount, setMonthQuizCount] = useState(0);
   const [monthActiveDays, setMonthActiveDays] = useState(0);
 
+  // Upcoming school exams for the child's school + grade
+  const [upcomingExams, setUpcomingExams] = useState<Array<{
+    id: string;
+    title: string;
+    subject: string;
+    start_time: string;
+  }>>([]);
+  const [examsLoading, setExamsLoading] = useState(false);
+
   // Auth resolution
   useEffect(() => {
     if (auth.isLoading) return;
@@ -162,6 +171,63 @@ export default function ParentCalendarPage() {
   useEffect(() => {
     if (student) fetchActivity();
   }, [student, fetchActivity]);
+
+  // Fetch upcoming school exams for this student's school + grade
+  useEffect(() => {
+    if (!student) return;
+    let cancelled = false;
+    setExamsLoading(true);
+
+    (async () => {
+      try {
+        // Step 1: get this student's school_id
+        const { data: studentRow, error: studentErr } = await supabase
+          .from('students')
+          .select('school_id, grade')
+          .eq('id', student.id)
+          .single();
+
+        if (cancelled) return;
+
+        if (studentErr || !studentRow?.school_id) {
+          // Not in a B2B school — no school exams to show
+          setUpcomingExams([]);
+          setExamsLoading(false);
+          return;
+        }
+
+        // Step 2: fetch upcoming exams for that school + this student's grade
+        const { data: examRows, error: examErr } = await supabase
+          .from('school_exams')
+          .select('id, title, subject, grade, start_time, status')
+          .eq('school_id', studentRow.school_id)
+          .eq('grade', studentRow.grade ?? student.grade)
+          .in('status', ['scheduled', 'active'])
+          .gt('start_time', new Date().toISOString())
+          .order('start_time', { ascending: true })
+          .limit(20);
+
+        if (cancelled) return;
+
+        if (examErr || !examRows) {
+          setUpcomingExams([]);
+        } else {
+          setUpcomingExams(examRows.map(r => ({
+            id: r.id as string,
+            title: r.title as string,
+            subject: r.subject as string,
+            start_time: r.start_time as string,
+          })));
+        }
+      } catch {
+        if (!cancelled) setUpcomingExams([]);
+      } finally {
+        if (!cancelled) setExamsLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [student]);
 
   const grade = student?.grade || '';
   const boardExamDate = BOARD_EXAM_DATES[grade] || null;
@@ -441,7 +507,63 @@ export default function ParentCalendarPage() {
             />
           )}
 
-          {/* Placeholder upcoming events for exam prep */}
+          {/* Real school-scheduled exams */}
+          {examsLoading ? (
+            <div style={{ textAlign: 'center', padding: 16, color: '#94A3B8', fontSize: 12 }}>
+              <div style={{
+                width: 24, height: 24,
+                border: '2px solid #FDBA7444', borderTopColor: '#F97316',
+                borderRadius: '50%', margin: '0 auto 6px',
+                animation: 'spin 0.8s linear infinite',
+              }} />
+              {t(isHi, 'Loading exams...', 'परीक्षाएँ लोड हो रही हैं...')}
+            </div>
+          ) : upcomingExams.length > 0 ? (
+            upcomingExams.map(exam => {
+              const examDate = new Date(exam.start_time);
+              const daysLeft = Math.max(0, Math.ceil((examDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+              return (
+                <EventRow
+                  key={exam.id}
+                  dateLabel={examDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                  title={`${exam.title}${exam.subject ? ' — ' + exam.subject : ''}`}
+                  chipLabel={t(isHi, 'School', 'स्कूल')}
+                  chipColor={daysLeft <= 7 ? '#EF4444' : '#F97316'}
+                  daysLeft={daysLeft}
+                />
+              );
+            })
+          ) : (
+            !boardExamDate && (
+              <div style={{
+                borderRadius: 12,
+                border: '1px dashed #FDBA7488',
+                backgroundColor: '#FFF8F0',
+                padding: '18px 14px',
+                textAlign: 'center',
+              }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: '#9A3412', margin: '0 0 4px' }}>
+                  {t(isHi, 'No upcoming exams scheduled', 'कोई आगामी परीक्षा निर्धारित नहीं')}
+                </p>
+                <p style={{ fontSize: 11, color: '#B45309', margin: 0, lineHeight: 1.4 }}>
+                  {t(
+                    isHi,
+                    "Exams added by your child's school will appear here.",
+                    'आपके बच्चे के स्कूल द्वारा जोड़ी गई परीक्षाएँ यहाँ दिखाई देंगी।'
+                  )}
+                </p>
+              </div>
+            )
+          )}
+        </div>
+      </div>
+
+      {/* ── RECOMMENDED HABITS ── */}
+      <div style={cardStyle}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1E293B', margin: '0 0 14px' }}>
+          &#x2728; {t(isHi, 'Recommended Habits', 'अनुशंसित आदतें')}
+        </h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <EventRow
             dateLabel={t(isHi, 'Ongoing', 'जारी')}
             title={t(isHi, 'Daily Practice Goal — 1 quiz per day', 'दैनिक अभ्यास लक्ष्य — प्रति दिन 1 क्विज़')}
@@ -449,7 +571,6 @@ export default function ParentCalendarPage() {
             chipColor="#F97316"
             daysLeft={null}
           />
-
           <EventRow
             dateLabel={t(isHi, 'Ongoing', 'जारी')}
             title={t(isHi, 'Weekly revision — Sundays recommended', 'साप्ताहिक दोहराई — रविवार की सलाह')}
