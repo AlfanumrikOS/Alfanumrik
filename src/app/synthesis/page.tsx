@@ -143,7 +143,38 @@ export default function SynthesisPage() {
         summaryTextHi={phase.row.summaryTextHi}
         parentShareStatus={phase.row.parentShareStatus}
         parentShareSentAt={phase.row.parentShareSentAt}
-        // onSend deliberately unset — Task 6 wires the WhatsApp delivery.
+        onSend={async () => {
+          if (phase.kind !== 'ready') return;
+          const res = await fetch('/api/synthesis/parent-share', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ synthesisRunId: phase.row.id }),
+          });
+          if (res.ok) {
+            const data = await res.json() as { ok: true; sentAt?: string };
+            setPhase({
+              kind: 'ready',
+              row: {
+                ...phase.row,
+                parentShareStatus: 'sent',
+                parentShareSentAt: data.sentAt ?? new Date().toISOString(),
+              },
+            });
+            return;
+          }
+          if (res.status === 403) {
+            setPhase({
+              kind: 'ready',
+              row: { ...phase.row, parentShareStatus: 'opted_out' },
+            });
+            return;
+          }
+          setPhase({
+            kind: 'ready',
+            row: { ...phase.row, parentShareStatus: 'failed' },
+          });
+        }}
       />
 
       <Link href="/dashboard" className="inline-block text-sm text-purple-700 underline">

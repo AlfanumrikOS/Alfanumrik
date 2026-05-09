@@ -100,8 +100,14 @@ interface DiveStateLite {
   weeklyStreakCount: number;
 }
 
+interface SynthesisStateLite {
+  isoMonth: string;
+  daysSinceCreated: number;
+}
+
 function RhythmQueueBody({ isHi, srs, zpd, reflection, reflectionText }: RhythmQueueBodyProps) {
   const [diveState, setDiveState] = useState<DiveStateLite | null>(null);
+  const [synthesisState, setSynthesisState] = useState<SynthesisStateLite | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,6 +124,34 @@ function RhythmQueueBody({ isHi, srs, zpd, reflection, reflectionText }: RhythmQ
         if (!cancelled) setDiveState({ state: data.state, weeklyStreakCount: data.weeklyStreakCount });
       } catch {
         if (!cancelled) setDiveState(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Pedagogy v2 Wave 3 — recent-synthesis CTA. Shows the link when a
+  // monthly_synthesis_runs row was created within the past 7 days. Renders
+  // nothing on 404 (flag off) or no_synthesis_yet.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/synthesis/state', { credentials: 'same-origin' });
+        if (cancelled) return;
+        if (!res.ok) { setSynthesisState(null); return; }
+        const data = await res.json() as
+          | { state: 'no_synthesis_yet' }
+          | { state: 'ready'; row: { synthesisMonth: string; createdAt: string } };
+        if (data.state !== 'ready') { setSynthesisState(null); return; }
+        const created = new Date(data.row.createdAt);
+        const days = Math.floor((Date.now() - created.getTime()) / 86_400_000);
+        if (days >= 0 && days <= 7) {
+          setSynthesisState({ isoMonth: data.row.synthesisMonth, daysSinceCreated: days });
+        } else {
+          setSynthesisState(null);
+        }
+      } catch {
+        if (!cancelled) setSynthesisState(null);
       }
     })();
     return () => { cancelled = true; };
@@ -166,6 +200,22 @@ function RhythmQueueBody({ isHi, srs, zpd, reflection, reflectionText }: RhythmQ
               data-testid="rhythm-zpd-cta"
             >
               {isHi ? 'खोलो' : 'Open'}
+            </Link>
+          </li>
+        )}
+
+        {synthesisState && (
+          <li className="flex items-center justify-between" data-testid="rhythm-synthesis-cta">
+            <span className="text-purple-900">
+              {isHi ? 'मासिक सारांश तैयार' : 'Monthly synthesis ready'}
+              {' · '}
+              <span className="font-semibold">{synthesisState.isoMonth}</span>
+            </span>
+            <Link
+              href="/synthesis"
+              className="text-purple-700 underline font-medium"
+            >
+              {isHi ? 'देखो' : 'View'}
             </Link>
           </li>
         )}

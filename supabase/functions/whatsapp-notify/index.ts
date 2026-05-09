@@ -17,7 +17,7 @@ import { constantTimeEqual } from '../_shared/auth.ts'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-type TemplateType = 'daily_reminder' | 'score_notification' | 'streak_warning' | 'weekly_summary'
+type TemplateType = 'daily_reminder' | 'score_notification' | 'streak_warning' | 'weekly_summary' | 'monthly_synthesis'
 type Language = 'en' | 'hi'
 
 interface NotifyRequest {
@@ -51,6 +51,17 @@ const TEMPLATES: Record<TemplateType, Record<Language, WhatsAppTemplate>> = {
   weekly_summary: {
     en: { id: 'weekly_progress_summary', params: ['student_name', 'quizzes_completed', 'avg_score', 'xp_earned', 'streak_days'] },
     hi: { id: 'weekly_progress_summary_hi', params: ['student_name', 'quizzes_completed', 'avg_score', 'xp_earned', 'streak_days'] },
+  },
+  // Pedagogy v2 Wave 3 — monthly synthesis parent share. The template body
+  // says e.g. "{{student_name}}'s {{synthesis_month}} progress is ready:
+  // {{summary_preview}}" and links to the parent portal page where the
+  // full ~300-word summary is rendered. Meta-side template approval is
+  // async — until the production WhatsApp Cloud API recognises this
+  // template id, the call returns a 400 and /api/synthesis/parent-share
+  // marks parent_share_status = 'failed'.
+  monthly_synthesis: {
+    en: { id: 'monthly_synthesis_ready', params: ['student_name', 'synthesis_month', 'summary_preview'] },
+    hi: { id: 'monthly_synthesis_ready_hi', params: ['student_name', 'synthesis_month', 'summary_preview'] },
   },
 }
 
