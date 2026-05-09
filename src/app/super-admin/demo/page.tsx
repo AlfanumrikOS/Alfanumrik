@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import { colors, S } from '../_components/admin-styles';
+import { StatCard } from '@/components/admin-ui';
 
 interface DemoAccount {
   id: string;
@@ -205,10 +205,10 @@ function DemoContent() {
     textTransform: 'uppercase' as const,
     letterSpacing: 0.5,
     ...(role === 'student'
-      ? { background: colors.accentLight, color: colors.accent }
+      ? { background: '#EFF6FF', color: '#2563EB' }
       : role === 'teacher'
-        ? { background: colors.warningLight, color: colors.warning }
-        : { background: colors.successLight, color: colors.success }),
+        ? { background: '#FFFBEB', color: '#D97706' }
+        : { background: '#F0FDF4', color: '#16A34A' }),
   });
 
   const statusBadge = (status: string): React.CSSProperties => ({
@@ -218,82 +218,95 @@ function DemoContent() {
     fontWeight: 600,
     textTransform: 'uppercase' as const,
     letterSpacing: 0.5,
-    background: status === 'active' ? colors.successLight : colors.dangerLight,
-    color: status === 'active' ? colors.success : colors.danger,
+    background: status === 'active' ? '#F0FDF4' : '#FEF2F2',
+    color: status === 'active' ? '#16A34A' : '#DC2626',
   });
+
+  const tableThStyle: React.CSSProperties = {
+    textAlign: 'left',
+    padding: '10px 14px',
+    borderBottom: `2px solid #E5E7EB`,
+    color: '#6B7280',
+    fontSize: 11,
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    background: '#F9FAFB',
+    position: 'sticky',
+    top: 0,
+    zIndex: 1,
+  };
+
+  const tableTdStyle: React.CSSProperties = {
+    padding: '10px 14px',
+    borderBottom: `1px solid #F3F4F6`,
+    color: '#111827',
+    fontSize: 13,
+  };
 
   return (
     <div>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h1 style={S.h1}>Demo Accounts</h1>
-          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>
+          <h1 className="text-xl font-bold text-foreground">Demo Accounts</h1>
+          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>
             Manage demo accounts for sales presentations and testing
           </p>
         </div>
-        <div style={{ fontSize: 13, color: colors.text2 }}>
+        <div style={{ fontSize: 13, color: '#6B7280' }}>
           {accounts.length} accounts total
         </div>
       </div>
 
       {/* Overview Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
-        <div style={S.card}>
-          <div style={{ fontSize: 11, color: colors.text3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Students</div>
-          <div style={{ fontSize: 24, fontWeight: 700, color: colors.accent }}>{byRole('student').length}</div>
-        </div>
-        <div style={S.card}>
-          <div style={{ fontSize: 11, color: colors.text3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Teachers</div>
-          <div style={{ fontSize: 24, fontWeight: 700, color: colors.warning }}>{byRole('teacher').length}</div>
-        </div>
-        <div style={S.card}>
-          <div style={{ fontSize: 11, color: colors.text3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Parents</div>
-          <div style={{ fontSize: 24, fontWeight: 700, color: colors.success }}>{byRole('parent').length}</div>
-        </div>
-        <div style={S.card}>
-          <div style={{ fontSize: 11, color: colors.text3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Active</div>
-          <div style={{ fontSize: 24, fontWeight: 700, color: colors.success }}>{activeCount}</div>
-        </div>
-        <div style={S.card}>
-          <div style={{ fontSize: 11, color: colors.text3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Inactive</div>
-          <div style={{ fontSize: 24, fontWeight: 700, color: colors.danger }}>{inactiveCount}</div>
-        </div>
-        <div style={S.card}>
-          <div style={{ fontSize: 11, color: colors.text3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Last Reset</div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: colors.text1, marginTop: 4 }}>{formatDate(lastReset)}</div>
-        </div>
+        <StatCard label="Students" value={byRole('student').length} accentColor="#2563EB" />
+        <StatCard label="Teachers" value={byRole('teacher').length} accentColor="#D97706" />
+        <StatCard label="Parents" value={byRole('parent').length} accentColor="#16A34A" />
+        <StatCard label="Active" value={activeCount} accentColor="#16A34A" />
+        <StatCard label="Inactive" value={inactiveCount} accentColor="#DC2626" />
+        <StatCard label="Last Reset" value={formatDate(lastReset)} />
       </div>
 
       {/* Quick Actions */}
-      <h2 style={S.h2}>Quick Actions</h2>
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Quick Actions</h2>
       <div style={{ display: 'flex', gap: 10, marginBottom: 24 }}>
         <button
           onClick={handleResetAll}
           disabled={actionLoading === 'reset-all'}
-          style={{ ...S.dangerBtn, opacity: actionLoading === 'reset-all' ? 0.6 : 1 }}
+          className="rounded-md border border-danger bg-danger/10 px-4 py-2 text-sm font-semibold text-danger hover:bg-danger/20"
+          style={{ opacity: actionLoading === 'reset-all' ? 0.6 : 1 }}
         >
           {actionLoading === 'reset-all' ? 'Resetting...' : 'Reset All Demo Accounts'}
         </button>
         <button
           onClick={handleCreateSet}
           disabled={actionLoading === 'create-set'}
-          style={{ ...S.primaryBtn, opacity: actionLoading === 'create-set' ? 0.6 : 1 }}
+          className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
+          style={{ opacity: actionLoading === 'create-set' ? 0.6 : 1 }}
         >
           {actionLoading === 'create-set' ? 'Creating...' : 'Create Demo Set'}
         </button>
-        <span style={{ fontSize: 12, color: colors.text3, alignSelf: 'center' }}>
+        <span style={{ fontSize: 12, color: '#9CA3AF', alignSelf: 'center' }}>
           Creates one student + one teacher + one parent
         </span>
       </div>
 
       {/* Create Demo Account Form */}
-      <h2 style={S.h2}>Create Demo Account</h2>
-      <div style={{ ...S.cardSurface, marginBottom: 24 }}>
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Create Demo Account</h2>
+      <div
+        className="rounded-lg border border-surface-3 bg-surface-2 p-4"
+        style={{ marginBottom: 24 }}
+      >
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, alignItems: 'end' }}>
           <div>
-            <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4, fontWeight: 600 }}>Role</label>
-            <select value={formRole} onChange={e => setFormRole(e.target.value as 'student' | 'teacher' | 'parent')} style={{ ...S.select, width: '100%' }}>
+            <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Role</label>
+            <select
+              value={formRole}
+              onChange={e => setFormRole(e.target.value as 'student' | 'teacher' | 'parent')}
+              className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer"
+            >
               <option value="student">Student</option>
               <option value="teacher">Teacher</option>
               <option value="parent">Parent</option>
@@ -301,8 +314,12 @@ function DemoContent() {
           </div>
           {formRole === 'student' && (
             <div>
-              <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4, fontWeight: 600 }}>Persona</label>
-              <select value={formPersona} onChange={e => setFormPersona(e.target.value as 'average' | 'high_performer' | 'weak_student')} style={{ ...S.select, width: '100%' }}>
+              <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Persona</label>
+              <select
+                value={formPersona}
+                onChange={e => setFormPersona(e.target.value as 'average' | 'high_performer' | 'weak_student')}
+                className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer"
+              >
                 <option value="average">Average</option>
                 <option value="high_performer">High Performer</option>
                 <option value="weak_student">Weak Student</option>
@@ -310,28 +327,29 @@ function DemoContent() {
             </div>
           )}
           <div>
-            <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4, fontWeight: 600 }}>Name</label>
+            <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Name</label>
             <input
               value={formName}
               onChange={e => setFormName(e.target.value)}
               placeholder="Demo Student"
-              style={{ ...S.searchInput, width: '100%' }}
+              className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
           <div>
-            <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4, fontWeight: 600 }}>Email</label>
+            <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Email</label>
             <input
               value={formEmail}
               onChange={e => setFormEmail(e.target.value)}
               placeholder="demo-student@alfanumrik.com"
-              style={{ ...S.searchInput, width: '100%' }}
+              className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
           <div>
             <button
               onClick={handleCreate}
               disabled={creating || !formName.trim() || !formEmail.trim()}
-              style={{ ...S.primaryBtn, width: '100%', opacity: creating || !formName.trim() || !formEmail.trim() ? 0.6 : 1 }}
+              className="w-full rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
+              style={{ opacity: creating || !formName.trim() || !formEmail.trim() ? 0.6 : 1 }}
             >
               {creating ? 'Creating...' : 'Create Account'}
             </button>
@@ -345,41 +363,51 @@ function DemoContent() {
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex',
           alignItems: 'center', justifyContent: 'center', zIndex: 100,
         }}>
-          <div style={{ ...S.card, maxWidth: 480, width: '90%', padding: 24 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: colors.text1, marginBottom: 4, marginTop: 0 }}>
+          <div
+            className="rounded-lg border border-surface-3 bg-surface-1"
+            style={{ maxWidth: 480, width: '90%', padding: 24 }}
+          >
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#111827', marginBottom: 4, marginTop: 0 }}>
               Demo Account Credentials
             </h3>
-            <p style={{ fontSize: 12, color: colors.text3, marginBottom: 16, marginTop: 0 }}>
+            <p style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 16, marginTop: 0 }}>
               Save these credentials. The password cannot be retrieved later.
             </p>
             {credentials.map((cred, i) => (
-              <div key={i} style={{ ...S.cardSurface, marginBottom: 8, padding: 12 }}>
+              <div
+                key={i}
+                className="rounded-lg border border-surface-3 bg-surface-2"
+                style={{ marginBottom: 8, padding: 12 }}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <span style={{ fontWeight: 600, fontSize: 13, color: colors.text1 }}>{cred.name}</span>
+                  <span style={{ fontWeight: 600, fontSize: 13, color: '#111827' }}>{cred.name}</span>
                   <span style={roleBadge(cred.role)}>{cred.role}</span>
                 </div>
-                <div style={{ fontSize: 12, color: colors.text2, marginBottom: 2 }}>
-                  Email: <code style={{ color: colors.text1 }}>{cred.email}</code>
+                <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 2 }}>
+                  Email: <code style={{ color: '#111827' }}>{cred.email}</code>
                 </div>
-                <div style={{ fontSize: 12, color: colors.text2 }}>
-                  Password: <code style={{ color: colors.text1 }}>{cred.password}</code>
+                <div style={{ fontSize: 12, color: '#6B7280' }}>
+                  Password: <code style={{ color: '#111827' }}>{cred.password}</code>
                 </div>
                 {cred.student_invite_code && (
                   <>
-                    <div style={{ fontSize: 12, color: colors.accent, marginTop: 6, fontWeight: 600 }}>
+                    <div style={{ fontSize: 12, color: '#2563EB', marginTop: 6, fontWeight: 600 }}>
                       Parent Portal Login
                     </div>
-                    <div style={{ fontSize: 12, color: colors.text2, marginTop: 2 }}>
-                      Link Code: <code style={{ color: colors.text1, fontWeight: 700 }}>{cred.student_invite_code}</code>
+                    <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
+                      Link Code: <code style={{ color: '#111827', fontWeight: 700 }}>{cred.student_invite_code}</code>
                     </div>
-                    <div style={{ fontSize: 11, color: colors.text3, marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
                       {cred.login_instructions || 'Go to /parent and enter the link code (not email/password).'}
                     </div>
                   </>
                 )}
               </div>
             ))}
-            <button onClick={() => setCredentials(null)} style={{ ...S.primaryBtn, marginTop: 12, width: '100%' }}>
+            <button
+              onClick={() => setCredentials(null)}
+              className="mt-3 w-full rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
+            >
               Done
             </button>
           </div>
@@ -387,64 +415,63 @@ function DemoContent() {
       )}
 
       {/* Accounts Table */}
-      <h2 style={S.h2}>Demo Accounts</h2>
-      <div style={{ overflowX: 'auto', border: `1px solid ${colors.border}`, borderRadius: 8 }}>
-        <table style={S.table}>
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Demo Accounts</h2>
+      <div style={{ overflowX: 'auto', border: `1px solid #E5E7EB`, borderRadius: 8 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr>
-              <th style={S.th}>Name</th>
-              <th style={S.th}>Email</th>
-              <th style={S.th}>Role</th>
-              <th style={S.th}>Persona</th>
-              <th style={S.th}>Status</th>
-              <th style={S.th}>Last Reset</th>
-              <th style={{ ...S.th, textAlign: 'right' as const }}>Actions</th>
+              <th style={tableThStyle}>Name</th>
+              <th style={tableThStyle}>Email</th>
+              <th style={tableThStyle}>Role</th>
+              <th style={tableThStyle}>Persona</th>
+              <th style={tableThStyle}>Status</th>
+              <th style={tableThStyle}>Last Reset</th>
+              <th style={{ ...tableThStyle, textAlign: 'right' as const }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading && accounts.length === 0 && (
-              <tr><td colSpan={7} style={{ ...S.td, textAlign: 'center', color: colors.text3, padding: 32 }}>Loading...</td></tr>
+              <tr><td colSpan={7} style={{ ...tableTdStyle, textAlign: 'center', color: '#9CA3AF', padding: 32 }}>Loading...</td></tr>
             )}
             {!loading && accounts.length === 0 && (
-              <tr><td colSpan={7} style={{ ...S.td, textAlign: 'center', color: colors.text3, padding: 32 }}>No demo accounts yet. Create one above or use &quot;Create Demo Set&quot;.</td></tr>
+              <tr><td colSpan={7} style={{ ...tableTdStyle, textAlign: 'center', color: '#9CA3AF', padding: 32 }}>No demo accounts yet. Create one above or use &quot;Create Demo Set&quot;.</td></tr>
             )}
             {accounts.map(account => (
               <tr key={account.id}>
-                <td style={S.td}>
-                  <span style={{ fontWeight: 600, color: colors.text1 }}>{account.name}</span>
+                <td style={tableTdStyle}>
+                  <span style={{ fontWeight: 600, color: '#111827' }}>{account.name}</span>
                 </td>
-                <td style={S.td}>
-                  <code style={{ fontSize: 12, color: colors.text2 }}>{account.email}</code>
+                <td style={tableTdStyle}>
+                  <code style={{ fontSize: 12, color: '#6B7280' }}>{account.email}</code>
                 </td>
-                <td style={S.td}>
+                <td style={tableTdStyle}>
                   <span style={roleBadge(account.role)}>{account.role}</span>
                 </td>
-                <td style={S.td}>
-                  <span style={{ fontSize: 12, color: colors.text2 }}>{account.persona || '—'}</span>
+                <td style={tableTdStyle}>
+                  <span style={{ fontSize: 12, color: '#6B7280' }}>{account.persona || '—'}</span>
                 </td>
-                <td style={S.td}>
+                <td style={tableTdStyle}>
                   <span style={statusBadge(account.status)}>{account.status}</span>
                 </td>
-                <td style={S.td}>
-                  <span style={{ fontSize: 12, color: colors.text3 }}>{formatDate(account.last_reset)}</span>
+                <td style={tableTdStyle}>
+                  <span style={{ fontSize: 12, color: '#9CA3AF' }}>{formatDate(account.last_reset)}</span>
                 </td>
-                <td style={{ ...S.td, textAlign: 'right' as const }}>
+                <td style={{ ...tableTdStyle, textAlign: 'right' as const }}>
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                     <button
                       onClick={() => handleReset(account.id)}
                       disabled={actionLoading === account.id + '-reset'}
-                      style={{ ...S.actionBtn, fontSize: 11 }}
+                      className="rounded-md border border-surface-3 bg-transparent px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:bg-surface-2"
                     >
                       {actionLoading === account.id + '-reset' ? '...' : 'Reset'}
                     </button>
                     <button
                       onClick={() => handleToggle(account.id)}
                       disabled={actionLoading === account.id + '-toggle'}
+                      className="rounded-md border bg-transparent px-2.5 py-1 text-[11px] font-medium hover:bg-surface-2"
                       style={{
-                        ...S.actionBtn,
-                        fontSize: 11,
-                        color: account.status === 'active' ? colors.warning : colors.success,
-                        borderColor: account.status === 'active' ? colors.warning : colors.success,
+                        color: account.status === 'active' ? '#D97706' : '#16A34A',
+                        borderColor: account.status === 'active' ? '#D97706' : '#16A34A',
                       }}
                     >
                       {actionLoading === account.id + '-toggle'
@@ -454,7 +481,8 @@ function DemoContent() {
                     <button
                       onClick={() => handleDelete(account.id, account.name)}
                       disabled={actionLoading === account.id + '-delete'}
-                      style={{ ...S.actionBtn, fontSize: 11, color: colors.danger, borderColor: colors.danger }}
+                      className="rounded-md border bg-transparent px-2.5 py-1 text-[11px] font-medium hover:bg-surface-2"
+                      style={{ color: '#DC2626', borderColor: '#DC2626' }}
                     >
                       {actionLoading === account.id + '-delete' ? '...' : 'Delete'}
                     </button>
