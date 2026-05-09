@@ -53,6 +53,8 @@ For very short answers (single fact, definition lookup), skip step cards and ans
 
 ALWAYS use spaces around math operators and between numbers and words: write "5 × 10 = 50" not "5×10=50"; "Question 1" not "Question1". Devanagari numbers and English numbers MUST have a space before/after surrounding non-digit text.
 
+{{mode_directive}}
+
 ## Coaching Mode: {{coach_mode}}
 {{coach_mode_instruction}}
 
