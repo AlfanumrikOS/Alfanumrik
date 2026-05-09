@@ -299,9 +299,6 @@ export default function SchoolAdminStudentsPage() {
   const [classFilter, setClassFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
-  /* Toast state for "Coming soon" */
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
-
   /* ── Derived: unique class names from student data ── */
   const classOptions = useMemo(() => {
     const names = new Set<string>();
@@ -375,13 +372,6 @@ export default function SchoolAdminStudentsPage() {
       fetchStudents(schoolId);
     }
   }, [schoolId, fetchStudents]);
-
-  /* ── Auto-dismiss toast ── */
-  useEffect(() => {
-    if (!toastMsg) return;
-    const timer = setTimeout(() => setToastMsg(null), 3000);
-    return () => clearTimeout(timer);
-  }, [toastMsg]);
 
   /* ── Client-side filtering ── */
   const filteredStudents = useMemo(() => {
@@ -554,9 +544,7 @@ export default function SchoolAdminStudentsPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() =>
-                setToastMsg(t(isHi, 'Coming soon', 'जल्द आ रहा है'))
-              }
+              onClick={() => router.push('/school-admin/enroll')}
               style={{ minHeight: 48, whiteSpace: 'nowrap', flexShrink: 0 }}
               aria-label={t(isHi, 'Bulk Upload', 'बल्क अपलोड')}
             >
@@ -644,21 +632,6 @@ export default function SchoolAdminStudentsPage() {
           />
         )}
       </main>
-
-      {/* ── Toast ── */}
-      {toastMsg && (
-        <div
-          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl text-sm font-semibold text-white shadow-lg pointer-events-none animate-fade-in"
-          style={{
-            background: 'rgba(26,18,7,0.85)',
-            backdropFilter: 'blur(8px)',
-          }}
-          role="status"
-          aria-live="polite"
-        >
-          {toastMsg}
-        </div>
-      )}
 
       <BottomNav />
     </div>
