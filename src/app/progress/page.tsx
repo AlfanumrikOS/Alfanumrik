@@ -9,6 +9,7 @@ import { BLOOM_CONFIG, BLOOM_LEVELS, BLOOM_ORDER, getHighestMasteredBloom, predi
 import { getLevelFromScore } from '@/lib/score-config';
 import type { BloomLevel, KnowledgeGap, LearningVelocity, CognitiveSessionMetrics, StudentLearningProfile, Subject } from '@/lib/types';
 import { Card, Badge, ProgressBar, SectionHeader, StatCard, MasteryRing, LoadingFoxy, BottomNav, Button, EmptyState } from '@/components/ui';
+import { LineChart } from '@/components/admin-ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import ScoreHero from '@/components/score/ScoreHero';
 import ScoreCard from '@/components/score/ScoreCard';
@@ -59,7 +60,7 @@ function formatDate(d: Date | string | null): string {
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-/* ── Score Trend Sparkline — inline SVG, no chart library (P10) ── */
+/* ── Score Trend Sparkline — Recharts LineChart via admin-ui (Plan 4 Task 6) ── */
 function ScoreTrendSparkline({ datapoints, isHi }: { datapoints: ScoreHistoryRow[]; isHi: boolean }) {
   if (!datapoints || datapoints.length < 2) {
     return (
@@ -74,51 +75,33 @@ function ScoreTrendSparkline({ datapoints, isHi }: { datapoints: ScoreHistoryRow
   );
   // Take last 4 data points for a compact visualization
   const recent = sorted.slice(-4);
-  const width = 72;
-  const height = 28;
-  const padding = 4;
-  const drawWidth = width - padding * 2;
-  const drawHeight = height - padding * 2;
-  const maxScore = Math.max(...recent.map((d) => d.score), 1);
-  const minScore = Math.min(...recent.map((d) => d.score));
-  const range = Math.max(maxScore - minScore, 1);
-  const step = drawWidth / Math.max(recent.length - 1, 1);
-
-  // Determine trend direction
   const first = recent[0].score;
   const last = recent[recent.length - 1].score;
-  const isUp = last > first;
-  const isFlat = last === first;
-  const strokeColor = isUp ? '#10B981' : isFlat ? '#6B7280' : '#EF4444';
+  const delta = Math.round(last - first);
+  const isUp = delta > 0;
+  const isFlat = delta === 0;
+  const deltaColor = isUp ? '#10B981' : isFlat ? '#6B7280' : '#EF4444';
 
-  const points = recent.map((d, i) => {
-    const x = padding + i * step;
-    const y = padding + drawHeight - ((d.score - minScore) / range) * drawHeight;
-    return `${x},${y}`;
-  }).join(' ');
+  const seriesName = isHi ? 'अंक' : 'Score';
+  const series = [{
+    name: seriesName,
+    data: recent.map((d) => ({
+      x: new Date(d.recorded_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+      y: d.score,
+    })),
+  }];
 
   return (
-    <div className="flex items-center gap-1">
-      <svg width={width} height={height} className="inline-block" aria-hidden="true">
-        <polyline
-          points={points}
-          fill="none"
-          stroke={strokeColor}
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
+    <div className="flex items-center gap-2">
+      <div className="w-[120px]" style={{ minHeight: 80 }}>
+        <LineChart
+          series={series}
+          height={80}
+          emptyLabel={isHi ? 'अभी तक कोई क्विज़ नहीं' : 'No quizzes yet'}
         />
-        {/* Dots at each data point */}
-        {recent.map((d, i) => {
-          const x = padding + i * step;
-          const y = padding + drawHeight - ((d.score - minScore) / range) * drawHeight;
-          return (
-            <circle key={d.id} cx={x} cy={y} r={2.5} fill={strokeColor} />
-          );
-        })}
-      </svg>
-      <span className="text-[10px] font-semibold" style={{ color: strokeColor }}>
-        {isUp ? '+' : ''}{Math.round(last - first)}
+      </div>
+      <span className="text-[10px] font-semibold" style={{ color: deltaColor }}>
+        {isUp ? '+' : ''}{delta}
       </span>
     </div>
   );
