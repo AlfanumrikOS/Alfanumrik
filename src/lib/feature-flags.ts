@@ -270,15 +270,24 @@ export const GOAL_ADAPTIVE_FLAGS = {
  *    week's dive is not yet completed. Default: false. When off, /dive
  *    returns 404 and the CTA is suppressed.
  *
+ *  ff_pedagogy_v2_monthly_synthesis
+ *    /synthesis surface is reachable, /api/synthesis/* endpoints respond,
+ *    and the daily-cron triggers monthly-synthesis-builder for active
+ *    flagged students. Default: false. When off, /synthesis returns 404,
+ *    the WhatsApp parent-share path is suppressed, and the cron skips
+ *    flagged-out students.
+ *
  * Seeded by migrations:
  *   20260509120000_pedagogy_v2_wave_1_flags.sql
  *   20260510000000_pedagogy_v2_wave_2_phenomena_and_dive.sql
+ *   20260511000000_pedagogy_v2_wave_3_monthly_synthesis.sql
  */
 export const PEDAGOGY_V2_FLAGS = {
   PRODUCTIVE_FAILURE_V1:        'ff_productive_failure_v1',
   DISTRACTOR_MICRO_EXPLAINER_V1: 'ff_distractor_micro_explainer_v1',
   DAILY_RHYTHM:                 'ff_pedagogy_v2_daily_rhythm',
   WEEKLY_DIVE:                  'ff_pedagogy_v2_weekly_dive',
+  MONTHLY_SYNTHESIS:            'ff_pedagogy_v2_monthly_synthesis',
 } as const;
 
 /**
@@ -300,4 +309,5 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [PEDAGOGY_V2_FLAGS.DISTRACTOR_MICRO_EXPLAINER_V1]: false,
   [PEDAGOGY_V2_FLAGS.DAILY_RHYTHM]: false,
   [PEDAGOGY_V2_FLAGS.WEEKLY_DIVE]: false,
+  [PEDAGOGY_V2_FLAGS.MONTHLY_SYNTHESIS]: false,
 } as const;
