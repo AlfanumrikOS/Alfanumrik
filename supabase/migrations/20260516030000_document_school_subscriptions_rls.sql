@@ -1,0 +1,36 @@
+-- Document school_subscriptions RLS-enabled-no-policy as intentional.
+--
+-- Audit: 2026-05-09. Every read/write code path uses supabaseAdmin
+-- (service-role), which bypasses RLS. The empty policy set means
+-- anon/authenticated callers see zero rows -- the desired posture for
+-- billing data.
+--
+-- Code paths audited (all service-role):
+--   * src/app/api/school-admin/subscription/route.ts (GET/POST/PATCH/DELETE)
+--       -- getSupabaseAdmin(); permission gate via authorizeSchoolAdmin
+--   * src/app/api/school-admin/students/route.ts (seat-cap read)
+--       -- getSupabaseAdmin()
+--   * src/app/api/school-admin/analytics/route.ts (plan/seats read)
+--       -- getSupabaseAdmin()
+--   * src/app/api/schools/{join,trial,enroll}/route.ts
+--       -- supabaseAdmin / getSupabaseAdmin()
+--   * src/app/api/super-admin/institutions/{provision,billing,health}/route.ts
+--       -- supabaseAdminUrl + supabaseAdminHeaders (service-role REST)
+--   * src/app/api/super-admin/analytics-v2/b2b/route.ts
+--       -- supabaseAdminUrl + supabaseAdminHeaders
+--   * src/app/api/super-admin/bulk-upload/route.ts
+--       -- supabaseAdmin
+--   * src/app/api/payments/webhook/route.ts
+--       -- createClient(..., SUPABASE_SERVICE_ROLE_KEY)
+--   * src/app/api/cron/{school-operations,evaluate-alerts}/route.ts
+--       -- getSupabaseAdmin()
+--
+-- The Supabase advisor lint `0008_rls_enabled_no_policy` will continue to
+-- flag this table because the linter cannot infer intent. After this
+-- migration applies, override the advisor manually in the dashboard or
+-- accept the warning as documented.
+--
+-- Reference: https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy
+
+COMMENT ON TABLE public.school_subscriptions
+  IS 'Service-role only. RLS enabled with no policies is intentional -- all reads/writes via supabaseAdmin client (service-role bypasses RLS). Anon/authenticated callers correctly see zero rows. Audited 2026-05-09 on branch fix/school-subscriptions-rls. See migration 20260516030000_document_school_subscriptions_rls.sql for the full audit list.';
