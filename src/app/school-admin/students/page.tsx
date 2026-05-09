@@ -629,6 +629,15 @@ export default function SchoolAdminStudentsPage() {
               'Share an invite code so students can join your school.',
               'छात्रों को जोड़ने के लिए आमंत्रण कोड शेयर करें।'
             )}
+            action={
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => router.push('/school-admin/invite-codes')}
+              >
+                {t(isHi, 'Generate invite code', 'आमंत्रण कोड बनाएं')}
+              </Button>
+            }
           />
         )}
       </main>
