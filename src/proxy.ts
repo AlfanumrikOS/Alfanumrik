@@ -948,6 +948,33 @@ export async function proxy(request: NextRequest) {
     return addSecurityHeaders(response, request);
   }
 
+  // Exempt provider webhook receivers from the general rate limiter.
+  //
+  // Why: Razorpay (and any payment provider) delivers webhooks from a small
+  // pool of static egress IPs that are shared across many merchants. Even
+  // moderate per-customer activity against the same Razorpay account can
+  // exceed the 200 req/min general bucket on a single IP. When that happens
+  // we return HTTP 429 — which Razorpay treats as a TERMINAL failure (it
+  // retries 5xx but NOT 4xx), so the webhook is silently dropped and the
+  // student stays on a stale plan despite a captured payment. Observed
+  // 2026-05-09 (hridaankaushik307@gmail.com): verify 401'd, the webhook
+  // would have been the safety net but never landed. payment_webhook_events
+  // table has been empty since it was created on 2026-04-25.
+  //
+  // Security: this does NOT remove auth on the webhook. The route handler
+  // verifies the Razorpay HMAC signature on every request before any DB
+  // write (see src/app/api/payments/webhook/route.ts and
+  // src/lib/payment-verification.ts). A flood of bogus requests is rejected
+  // with 400 by the signature check; a flood with valid signatures implies
+  // the webhook secret has leaked, which is a much larger incident.
+  //
+  // Scope: only /api/payments/webhook. Cron endpoints (/api/cron/*) keep
+  // the limit because they're called by Vercel's cron with CRON_SECRET and
+  // never need to be open to external IPs.
+  if (pathname === '/api/payments/webhook') {
+    return addSecurityHeaders(response, request);
+  }
+
   // General rate limit for all routes
   const { allowed, remaining: generalRemaining } = await checkRateLimit(`general:${ip}`, RATE_LIMIT_MAX, 'general');
   if (!allowed) {
