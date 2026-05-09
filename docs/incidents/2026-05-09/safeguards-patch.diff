@@ -1,0 +1,165 @@
+diff --git a/.claude/CLAUDE.md b/.claude/CLAUDE.md
+index 35519152..bf09d824 100644
+--- a/.claude/CLAUDE.md
++++ b/.claude/CLAUDE.md
+@@ -16,7 +16,7 @@ Indian K-12 EdTech platform (CBSE grades 6-12). Next.js 16 + Supabase + Razorpay
+ | AI | Claude API (Haiku) via Edge Functions: foxy-tutor, ncert-solver, quiz-generator, cme-engine. **`quiz-generator/` is the only generator** — the historical `quiz-generator-v2/` directory was never created on disk; the constitution previously referenced a planned-but-not-shipped fork. Removed 2026-05-04 (Marking-Authenticity Wave 4). |
+ | Payments | Razorpay (INR, monthly recurring + yearly one-time) |
+ | Deployment | Vercel (bom1/Mumbai), GitHub Actions CI/CD (3 workflows) |
+-| Testing | Vitest (2,511 tests, 84 files), Playwright E2E (16 specs). **Regression catalog: 35 entries catalogued (target: 35 — TARGET REACHED). REG-56..REG-64 added 2026-05-04 (Marking-Authenticity Wave 5 — see `.claude/regression-catalog.md`).** Many P-invariants have direct unit/E2E tests that aren't yet promoted into the catalog — see "Regression catalog status by invariant" below. |
++| Testing | Vitest (2,513 tests, 86 files), Playwright E2E (16 specs). **Regression catalog: 37 entries catalogued (target: 35 — exceeded). REG-65/REG-66 added 2026-05-09 (Razorpay webhook reliability — incident-driven, see `.claude/regression-catalog.md` and P16/P17).** Many P-invariants have direct unit/E2E tests that aren't yet promoted into the catalog — see "Regression catalog status by invariant" below. |
+ | Monitoring | Sentry (client/server/edge), Vercel Analytics, structured logging |
+ | Mobile | Flutter + Riverpod (/mobile) |
+ | Offline | Service worker, localStorage cache, background sync |
+@@ -140,6 +140,33 @@ The signup→verification→profile→dashboard funnel MUST never break. This is
+ 6. Email verification links MUST use `SITE_URL` from Edge Function secrets, never hardcoded.
+ Critical files: `AuthScreen.tsx`, `auth/callback/route.ts`, `auth/confirm/route.ts`, `api/auth/bootstrap/route.ts`, `AuthContext.tsx`, `onboarding/page.tsx`, `send-auth-email/index.ts`, `lib/identity/`.
+ 
++### P16: Razorpay Webhook Reliability (added 2026-05-09 — incident-driven)
++The Razorpay webhook receiver `/api/payments/webhook` is the canonical activation path. When verify (the fast path) fails, the webhook is the safety net. Both must be defended:
++
++1. **No 4xx may EVER be returned to a Razorpay webhook from middleware.** Razorpay retries 5xx with backoff but treats 4xx as **terminal** — a single 429/401/403/404 from middleware silently drops the event forever. The route handler may return 4xx (e.g. 400 for bad signature) because that's a real protocol error; middleware-level rejections are a regression.
++2. **`/api/payments/webhook` MUST be exempt from the general rate limiter.** Razorpay's webhook IPs are shared across merchants and easily exhaust 200 req/min. The exempt block in `src/proxy.ts` must remain BEFORE the general `checkRateLimit('general:...')` call, alongside `/api/v1/health`. The Razorpay HMAC signature check inside the route handler is the actual auth boundary.
++3. **`payment_webhook_events` is the canary.** If the table receives zero rows for >2 hours while `payment_history` has activity, webhooks are being silently dropped. The `/api/cron/payments-health` cron (10-min cadence) catches this shape and writes a `severity='critical'` ops_event.
++4. **Idempotency lives in the RPC.** Webhook handlers route through `activate_subscription_locked`, `atomic_subscription_activation_locked`, `atomic_cancel_subscription`, `atomic_downgrade_subscription`, or `record_webhook_event` — never raw two-statement UPDATEs. Re-delivery must be a no-op (or an explicit dedupe return).
++
++Incident reference: 2026-05-09 — `payment_webhook_events` empty for ~2 weeks before discovery; captured ₹699 payment for hridaankaushik307@gmail.com never activated. Root causes: (a) middleware 429 on webhook, (b) verify 401 from stale Supabase JWT after Razorpay popup interaction. Both fixed in commit `d5880ae1`.
++
++Critical files: `src/proxy.ts` (rate-limit exempt block), `src/app/api/payments/webhook/route.ts`, `src/app/api/payments/verify/route.ts`, `src/hooks/useCheckout.ts` (token re-grab before verify), `src/lib/payment-verification.ts`, `src/app/api/cron/payments-health/route.ts`, `src/app/api/cron/reconcile-payments/route.ts`.
++
++Regression coverage: `src/__tests__/payment-webhook-rate-limit-exempt.test.ts`, `src/__tests__/checkout-token-refresh.test.ts`. Hook enforcement: `post-edit-check.sh` flags any edit to `proxy.ts` that drops the webhook reference.
++
++### P17: Pending-Subscription Lifecycle Hygiene (added 2026-05-09 — incident-driven)
++Every RPC that writes a `student_subscriptions` row in `status='pending'` MUST clear lifecycle fields on the `ON CONFLICT (student_id) DO UPDATE` branch. A "pending" row is by definition a fresh subscribe attempt — it must never inherit state from a prior subscription generation.
++
++Fields that MUST be reset (NULL or 0) when transitioning back to pending:
++- `cancelled_at`, `cancel_reason` — otherwise the billing UI shows "Cancellation Scheduled" on a brand-new pending sub.
++- `current_period_start`, `current_period_end`, `next_billing_at` — otherwise the UI shows expired dates.
++- `amount_paid`, `renewal_attempts`, `grace_period_end`, `ended_at` — otherwise stale telemetry pollutes ops dashboards.
++- `razorpay_payment_id` — that field belongs to a completed prior charge.
++
++The `activate_subscription` RPC already does this on the activation path; `create_pending_subscription` was missing it before 2026-05-09. Hook enforcement: `post-edit-check.sh` flags any redefinition of `create_pending_subscription` that drops `cancelled_at = NULL` from the conflict branch.
++
++Critical RPCs: `create_pending_subscription`, `activate_subscription`, `activate_subscription_locked`, `atomic_subscription_activation_locked`. Migration reference: `20260509130000_create_pending_subscription_clear_stale_lifecycle.sql`.
++
+ ### P14: Review Chain Completeness
+ When a critical file is modified, mandatory downstream reviewers must be invoked before the task can be marked complete. The PostToolUse hook (`review-chain.sh`) injects reminders automatically. Orchestrator validates at Gate 5. Quality rejects if chains are incomplete. The full matrix is defined in `.claude/skills/review-chains/SKILL.md`.
+ 
+diff --git a/.claude/hooks/post-edit-check.sh b/.claude/hooks/post-edit-check.sh
+index ec75774c..f0fd38c6 100755
+--- a/.claude/hooks/post-edit-check.sh
++++ b/.claude/hooks/post-edit-check.sh
+@@ -83,6 +83,31 @@ if echo "$FILE_PATH" | grep -qE "supabase/migrations/.*\.sql$"; then
+   fi
+ fi
+ 
++# ── Check: P16 — webhook receivers must bypass middleware rate limiter ──
++# Razorpay treats 4xx as terminal (no retry). If proxy.ts ever returns
++# 429 to /api/payments/webhook the event is gone forever. The exempt
++# block must remain BEFORE the general checkRateLimit('general:...') call.
++# Incident: 2026-05-09 — webhook silently dropped for ~2 weeks before
++# anyone noticed. See P16 in .claude/CLAUDE.md.
++if echo "$FILE_PATH" | grep -qE "src/proxy\.ts$|src/middleware\.ts$"; then
++  if ! grep -qE "/api/payments/webhook" "$FILE_PATH" 2>/dev/null; then
++    WARNINGS="${WARNINGS}P16 VIOLATION: $FILE_PATH no longer references /api/payments/webhook — the rate-limit exemption is missing. Razorpay treats 4xx as terminal so any 429 from middleware silently drops webhooks forever. Restore the exempt block before the general rate limiter. "
++  fi
++fi
++
++# ── Check: P17 — pending-subscription RPC must clear lifecycle on conflict ──
++# create_pending_subscription's ON CONFLICT path must reset cancelled_at,
++# current_period_*, next_billing_at, amount_paid, renewal_attempts, etc.
++# Otherwise a resubscribe inherits stale fields from a prior cancelled
++# subscription and the billing UI lies. Incident: 2026-05-09.
++if echo "$FILE_PATH" | grep -qE "create_pending_subscription"; then
++  if grep -qiE "create or replace function .*create_pending_subscription" "$FILE_PATH" 2>/dev/null; then
++    if ! grep -qE "cancelled_at[[:space:]]*=[[:space:]]*NULL" "$FILE_PATH" 2>/dev/null; then
++      WARNINGS="${WARNINGS}P17 VIOLATION: $FILE_PATH redefines create_pending_subscription without clearing cancelled_at on the ON CONFLICT branch. Stale lifecycle fields will leak from a prior cancelled subscription, producing the contradictory billing UI fixed on 2026-05-09. "
++    fi
++  fi
++fi
++
+ # ── Emit warnings ────────────────────────────────────────────
+ if [ -n "$WARNINGS" ]; then
+   jq -n --arg ctx "$WARNINGS" \
+diff --git a/.claude/regression-catalog.md b/.claude/regression-catalog.md
+index 572935f3..98702784 100644
+--- a/.claude/regression-catalog.md
++++ b/.claude/regression-catalog.md
+@@ -570,4 +570,27 @@ client-side fallback in `src/lib/supabase.ts`. The dual-mode pin is
+ what enables the catalog target to be reached today while keeping the
+ contract auditable in TS.
+ 
++## Razorpay Webhook Reliability (P16/P17 — 2026-05-09)
++
++Source: 2026-05-09 production incident (hridaankaushik307@gmail.com — captured ₹699 never activated). Two independent middleware/UX bugs combined: (a) `proxy.ts` general rate limiter returned 429 to Razorpay's webhook IPs, (b) Supabase JWT rotated during the Razorpay popup leaving useCheckout's captured token stale → /verify 401. Razorpay treats 4xx as terminal so the webhook safety net was also lost. `payment_webhook_events` table empty for ~2 weeks before discovery.
++
++| # | Test name | Asserts | Location | Status |
++|---|---|---|---|---|
++| REG-65 | `webhook_rate_limit_exempt_in_proxy` | `src/proxy.ts` contains the exempt block `pathname === '/api/payments/webhook'` AND that block sits BEFORE the general `checkRateLimit('general:${ip}', ...)` call. Removing the exemption (or moving it after the limiter where it would be dead code) fails the test. Also asserts `/api/v1/health` exemption is preserved and that cron endpoints are NOT exempt. Pins P16. | `src/__tests__/payment-webhook-rate-limit-exempt.test.ts` | E |
++| REG-66 | `useCheckout_refreshes_session_before_verify` | `src/hooks/useCheckout.ts` re-grabs `supabase.auth.getSession()` within ~800 chars BEFORE every `fetch('/api/payments/verify', ...)` call site, AND every such call uses `credentials: 'include'`. Closes the stale-JWT 401 vector observed when the Razorpay popup stays open >60s and Supabase rotates the access_token. Both subscription and order checkout paths are pinned. Pins P16 (verify path resilience). | `src/__tests__/checkout-token-refresh.test.ts` | E |
++
++### Operational backstop
++
++- `/api/cron/payments-health` (10-minute cadence, `vercel.json`) writes a `severity='critical'` `ops_events` row when `payment_webhook_events` receives zero rows for ≥2h while `payment_history` has activity in the same window — exactly the silent-drop shape from this incident.
++- `post-edit-check.sh` warns if `proxy.ts` loses the `/api/payments/webhook` reference, or if `create_pending_subscription` is redefined without `cancelled_at = NULL` on the conflict branch.
++- Migration `20260509130000_create_pending_subscription_clear_stale_lifecycle.sql` codifies P17 at the DB layer.
++
++### Invariants covered by this section
++
++- P11 (payment integrity — verified payment must produce verified entitlement)
++- P16 (Razorpay webhook reliability — never return 4xx from middleware)
++- P17 (pending-subscription lifecycle hygiene — fresh pending must not inherit stale fields)
++
++**Total: 37 entries — TARGET 35 EXCEEDED (incident-driven adds REG-65/REG-66).**
++
+   to Sentry)
+\ No newline at end of file
+diff --git a/.github/workflows/deploy-production.yml b/.github/workflows/deploy-production.yml
+index bd01fdbe..17d60730 100644
+--- a/.github/workflows/deploy-production.yml
++++ b/.github/workflows/deploy-production.yml
+@@ -462,6 +462,29 @@ jobs:
+             FAIL=1
+           fi
+ 
++          # P16 — Razorpay webhook reachability.
++          #
++          # Razorpay treats 4xx as TERMINAL (no retry), so any 401/403/404/429
++          # from middleware silently drops every webhook event. The 2026-05-09
++          # incident: middleware rate limiter returned 429, payment_webhook_events
++          # was empty for ~2 weeks. We probe the webhook with a deliberately bad
++          # signature and require HTTP 400 — i.e. the request reached the route
++          # handler and the signature check rejected it. ANY OTHER 4xx fails
++          # this gate (middleware shouldn't gate webhooks at all). 5xx also fails
++          # because it indicates a real outage. 200 is also a fail — the handler
++          # would never accept a bad signature.
++          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
++            -X POST "${TARGET_URL}/api/payments/webhook" \
++            -H "Content-Type: application/json" \
++            -H "x-razorpay-signature: 0000000000000000000000000000000000000000000000000000000000000000" \
++            --data '{}' 2>/dev/null)
++          if [ "$STATUS" = "400" ]; then
++            echo "| /api/payments/webhook (P16 reachability) | $STATUS — handler reached, sig rejected |" >> $GITHUB_STEP_SUMMARY
++          else
++            echo "| /api/payments/webhook (P16 reachability) | FAIL ($STATUS) — middleware is gating webhooks; Razorpay 4xx-terminal will silently drop events |" >> $GITHUB_STEP_SUMMARY
++            FAIL=1
++          fi
++
+           if [ "$FAIL" = "1" ]; then
+             echo ""
+             echo "Post-deploy verification found issues. Review the summary."
+diff --git a/vercel.json b/vercel.json
+index d7d32b6a..e48adf9c 100644
+--- a/vercel.json
++++ b/vercel.json
+@@ -40,6 +40,10 @@
+       "path": "/api/cron/reconcile-payments",
+       "schedule": "*/30 * * * *"
+     },
++    {
++      "path": "/api/cron/payments-health",
++      "schedule": "*/10 * * * *"
++    },
+     {
+       "path": "/api/cron/expired-subscriptions",
+       "schedule": "15 */6 * * *"
