@@ -84,6 +84,45 @@ export default function DailyRhythmQueue() {
     ? (isHi ? (reflection.promptTextHi || reflection.promptText) : reflection.promptText)
     : null;
 
+  return <RhythmQueueBody isHi={isHi} srs={srs} zpd={zpd} reflection={reflection} reflectionText={reflectionText} />;
+}
+
+interface RhythmQueueBodyProps {
+  isHi: boolean;
+  srs: RhythmItem[];
+  zpd: RhythmItem | undefined;
+  reflection: RhythmItem | undefined;
+  reflectionText: string | null | undefined;
+}
+
+interface DiveStateLite {
+  state: 'open' | 'completed';
+  weeklyStreakCount: number;
+}
+
+function RhythmQueueBody({ isHi, srs, zpd, reflection, reflectionText }: RhythmQueueBodyProps) {
+  const [diveState, setDiveState] = useState<DiveStateLite | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/dive/state', { credentials: 'same-origin' });
+        if (cancelled) return;
+        if (!res.ok) {
+          // 404 (flag off) or any other error: render no dive CTA. Silent.
+          setDiveState(null);
+          return;
+        }
+        const data = await res.json() as { state: 'open' | 'completed'; weeklyStreakCount: number };
+        if (!cancelled) setDiveState({ state: data.state, weeklyStreakCount: data.weeklyStreakCount });
+      } catch {
+        if (!cancelled) setDiveState(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <section
       className="rounded-3xl border border-purple-200 bg-gradient-to-br from-purple-50 to-orange-50 p-5 mb-4"
@@ -127,6 +166,30 @@ export default function DailyRhythmQueue() {
               data-testid="rhythm-zpd-cta"
             >
               {isHi ? 'खोलो' : 'Open'}
+            </Link>
+          </li>
+        )}
+
+        {diveState && (
+          <li className="flex items-center justify-between" data-testid="rhythm-dive-cta">
+            <span className="text-purple-900">
+              {isHi ? 'इस सप्ताह की डाइव' : "This week's dive"}
+              {diveState.state === 'completed' && (
+                <>
+                  {' · '}
+                  <span className="font-semibold">
+                    {isHi ? `✓ हो गई · ${diveState.weeklyStreakCount}-सप्ताह की लय` : `✓ done · ${diveState.weeklyStreakCount}-week rhythm`}
+                  </span>
+                </>
+              )}
+            </span>
+            <Link
+              href="/dive"
+              className="text-purple-700 underline font-medium"
+            >
+              {diveState.state === 'completed'
+                ? (isHi ? 'देखो' : 'View')
+                : (isHi ? 'शुरू करो' : 'Start')}
             </Link>
           </li>
         )}
