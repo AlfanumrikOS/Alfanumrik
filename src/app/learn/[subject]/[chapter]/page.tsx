@@ -11,6 +11,7 @@ import {
   recordLearningEvent,
   updateChapterProgress,
   getFeatureFlags,
+  supabase,
 } from '@/lib/supabase';
 import { Card, Button, ProgressBar, BottomNav, LoadingFoxy } from '@/components/ui';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
@@ -94,14 +95,14 @@ export default function ChapterConceptPage() {
   // When ff_productive_failure_v1 is on AND the resolved pedagogy rule says
   // productiveFailure (true for every persona except improve_basics), the
   // concept description + learning objectives are hidden until the student
-  // attempts the Quick Check. Wave 1 reads no goal_code (student profile
-  // fetch is in a follow-on plan), so the resolver falls back to
-  // pass_comfortably → productiveFailure=true. The improve_basics exception
-  // ships once persona is available.
+  // attempts the Quick Check. Wave 1C: persona is now read from
+  // students.academic_goal so improve_basics gets the worked-example-first
+  // exception (resolver flips productiveFailure=false, workedExampleFirst=true).
   const [productiveFailureFlagOn, setProductiveFailureFlagOn] = useState(false);
+  const [academicGoal, setAcademicGoal] = useState<string | null>(null);
   const productiveFailureRule = useMemo(
-    () => resolvePedagogyRule(null, 'daily', 'zpd_problem'),
-    [],
+    () => resolvePedagogyRule(academicGoal, 'daily', 'zpd_problem'),
+    [academicGoal],
   );
   const productiveFailureActive =
     productiveFailureFlagOn &&
@@ -197,6 +198,30 @@ export default function ChapterConceptPage() {
           setReadModeFlagOn(false);
           setProductiveFailureFlagOn(false);
         }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [student?.id]);
+
+  // Wave 1C: read students.academic_goal once per session so the
+  // productive-failure resolver knows the persona. Without this, the
+  // resolver fell back to pass_comfortably for everyone — meaning
+  // improve_basics (confidence-fragile) students saw productive-failure
+  // when they should have seen worked-example-first.
+  useEffect(() => {
+    if (!student?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('students')
+          .select('academic_goal')
+          .eq('id', student.id)
+          .maybeSingle();
+        const goal = (data as { academic_goal?: string | null } | null)?.academic_goal ?? null;
+        if (!cancelled) setAcademicGoal(goal);
+      } catch {
+        if (!cancelled) setAcademicGoal(null);
       }
     })();
     return () => { cancelled = true; };
