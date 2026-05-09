@@ -1215,6 +1215,48 @@ const COACH_MODE_INSTRUCTIONS: Record<CoachMode, string> = {
     "Treat this as a quick recall check. Ask the student to state the key idea in their own words first; only confirm or correct after they answer.",
 };
 
+// Per-request-mode directive injected into foxy_tutor_v1 via `{{mode_directive}}`.
+// Why: the base template hard-codes a STEP CARDS turn shape (2-4 numbered cards,
+// <=120 words total). That works for mode=learn but is wrong for mode=practice
+// — Claude writes a 1-paragraph "Here are 5 problems" intro and stops, since
+// the prompt never instructs it to actually emit MCQ blocks. This directive
+// overrides the STEP CARDS rule for practice. Empty string = no override.
+const MODE_DIRECTIVES: Record<string, string> = {
+  practice: [
+    '## Mode Directive (PRACTICE — overrides STEP CARDS above)',
+    'The student is in PRACTICE MODE. Generate practice problems, NOT teaching content.',
+    'Respond with EXACTLY 5 "mcq" blocks. Do NOT emit paragraph, step, definition,',
+    'example, exam_tip, answer, or question blocks. Do NOT write any intro prose —',
+    'open the response directly with the first mcq block. Use the "title" field for',
+    'context (e.g., "Practice: Reversible Changes").',
+    '',
+    'Each mcq block MUST have:',
+    '  - stem: a clear question, 15-50 words, testing one specific concept',
+    '  - options: EXACTLY 4 distinct non-empty answers; only one correct',
+    '  - correct_answer_index: integer 0..3',
+    '  - explanation: 1-2 sentences (10-200 chars) explaining why the correct answer is right',
+    '  - difficulty: "easy" | "medium" | "hard" — mix across the 5 (e.g., 2 easy, 2 medium, 1 hard)',
+    '  - bloom_level: "Remember" | "Understand" | "Apply" | "Analyze"',
+    '',
+    'Stay strictly inside the student\'s grade and chapter scope. Do NOT pull problems',
+    'from outside the Reference Material below.',
+  ].join('\n'),
+  learn: '',
+  explain: '',
+  revise: '',
+};
+
+// Practice mode emits 5 mcq blocks (stem + 4 options + correct_index + explanation
+// + bloom + difficulty per block). The default 1024 cap truncates after block 1-2,
+// leaving the picker rescue to surface only the intro. 2500 fits 5 mcqs comfortably
+// once the grounded-answer pipeline applies its 1.6x foxy boost (→ ~4000 effective).
+const MODE_MAX_TOKENS: Record<string, number> = {
+  practice: 2500,
+  learn: 1024,
+  explain: 1024,
+  revise: 1024,
+};
+
 // ─── System-prompt safety rails (P12 AI Safety, P7 Bilingual) ────────────────
 //
 // These rails mirror the server-authoritative `foxy_tutor_v1` template stored
@@ -2045,7 +2087,7 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     mode: 'soft',
     generation: {
       model_preference: 'auto',
-      max_tokens: 1024,
+      max_tokens: MODE_MAX_TOKENS[mode] ?? 1024,
       temperature: 0.3,
       system_prompt_template: 'foxy_tutor_v1',
       template_variables: {
@@ -2053,6 +2095,10 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         subject,
         chapter: chapter ?? '',
         mode,
+        // Per-request-mode directive. Overrides STEP CARDS for practice mode
+        // (5 mcq blocks instead of 2-4 step cards). Empty string for other
+        // modes preserves byte-identical legacy behavior.
+        mode_directive: MODE_DIRECTIVES[mode] ?? '',
         // Phase 2.2: coaching mode and its instruction line, consumed by
         // the rewritten foxy_tutor_v1 template.
         coach_mode: coachMode.toUpperCase(),
