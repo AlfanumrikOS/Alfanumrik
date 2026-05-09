@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getLeaderboard, getCompetitions, joinCompetition, getCompetitionLeaderboard, getHallOfFame, supabase } from '@/lib/supabase';
 import { Card, Button, SectionHeader, LoadingFoxy, BottomNav, Avatar, EmptyState } from '@/components/ui';
+import { BarChart } from '@/components/admin-ui';
 import { getLevelFromScore } from '@/lib/score-config';
 import type { LeaderboardEntry } from '@/lib/types';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
@@ -437,6 +438,27 @@ export default function LeaderboardPage() {
                   );
                 })}
               </div>
+            )}
+
+            {/* Top 10 XP Chart — visualizes distribution before the ranked list */}
+            {!loading && entries.length > 0 && (
+              <section className="mb-2">
+                <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--text-3)]">
+                  {isHi ? 'XP के अनुसार शीर्ष 10' : 'Top 10 by XP'}
+                </h2>
+                <BarChart
+                  series={[
+                    {
+                      name: 'XP',
+                      data: entries.slice(0, 10).map((e) => ({
+                        x: e.name ?? '?',
+                        y: e.total_xp ?? 0,
+                      })),
+                    },
+                  ]}
+                  height={200}
+                />
+              </section>
             )}
 
             {/* Full List */}
