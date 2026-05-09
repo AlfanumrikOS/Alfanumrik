@@ -82,6 +82,14 @@ const QuickActionsSection = dynamic(
   { ssr: false, loading: () => <SectionFallback /> },
 );
 
+// Pedagogy v2 — Wave 1B. Component renders nothing when /api/rhythm/today
+// returns 404 (flag off / no profile), so dashboard is unchanged for
+// non-flagged users. ssr:false keeps the bundle out of first paint.
+const DailyRhythmQueue = dynamic(
+  () => import('@/components/dashboard/sections/DailyRhythmQueue'),
+  { ssr: false, loading: () => <SectionFallback /> },
+);
+
 // ─── Stream picker config (grades 11-12) ─────────────────────────────────
 const STREAM_OPTIONS = [
   { key: 'science' as const, icon: '⚗️', label: 'Science', labelHi: 'विज्ञान', desc: 'Physics · Chemistry · Biology · Math', color: '#2563EB' },
@@ -657,6 +665,14 @@ export default function Dashboard() {
 
       <main className="app-container py-4 space-y-4">
         <SectionErrorBoundary section="Dashboard">
+          {/* Pedagogy v2 — Wave 1B daily rhythm.
+              Renders nothing when ff_pedagogy_v2_daily_rhythm is off,
+              so the legacy AboveFoldHero remains the visual top of feed
+              for non-flagged users. */}
+          <SectionErrorBoundary section="Dashboard:DailyRhythm">
+            <DailyRhythmQueue />
+          </SectionErrorBoundary>
+
           {/* ════════════════════════════════════════════════════════════
               ABOVE THE FOLD — exactly 5 widgets (header counts as #1):
                 1. Header (name + plan + lang/notif/avatar) — above
