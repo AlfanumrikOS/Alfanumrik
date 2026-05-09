@@ -19,6 +19,7 @@ import type { CurriculumTopic } from '@/lib/types';
 import { track } from '@/lib/posthog/client';
 import { loadChapterContent } from './actions';
 import type { ChapterContent } from '@/lib/learn/fetchChapterContent';
+import { resolvePedagogyRule } from '@/lib/learn/pedagogy-content-rules';
 
 // Lazy-loaded so the markdown + KaTeX bundle stays out of first paint.
 // Only pulled when the student opens Read mode.
@@ -89,6 +90,23 @@ export default function ChapterConceptPage() {
   // is opened with `?mode=read`, we auto-switch on first paint (deep-link
   // pattern) but only if the flag is on.
   const [readModeFlagOn, setReadModeFlagOn] = useState(false);
+  // ── Pedagogy v2 / Wave 1: Productive Failure flip ──
+  // When ff_productive_failure_v1 is on AND the resolved pedagogy rule says
+  // productiveFailure (true for every persona except improve_basics), the
+  // concept description + learning objectives are hidden until the student
+  // attempts the Quick Check. Wave 1 reads no goal_code (student profile
+  // fetch is in a follow-on plan), so the resolver falls back to
+  // pass_comfortably → productiveFailure=true. The improve_basics exception
+  // ships once persona is available.
+  const [productiveFailureFlagOn, setProductiveFailureFlagOn] = useState(false);
+  const productiveFailureRule = useMemo(
+    () => resolvePedagogyRule(null, 'daily', 'zpd_problem'),
+    [],
+  );
+  const productiveFailureActive =
+    productiveFailureFlagOn &&
+    productiveFailureRule.productiveFailure &&
+    !productiveFailureRule.workedExampleFirst;
   const [mode, setMode] = useState<'practice' | 'read'>('practice');
   const [readContent, setReadContent] = useState<ChapterContent | null>(null);
   const [readLoading, setReadLoading] = useState(false);
@@ -161,16 +179,24 @@ export default function ChapterConceptPage() {
 
   // Read flag (ff_learn_read_mode_v1) once per session — single round-trip
   // shared with the rest of the dashboard's flag fetch (cached in lib/swr).
+  // Productive-failure flag (ff_productive_failure_v1) piggybacks the same
+  // fetch so we don't double-roundtrip on chapter open.
   useEffect(() => {
     if (!student) return;
     let cancelled = false;
     (async () => {
       try {
         const flags = await getFeatureFlags({ role: 'student' });
-        if (!cancelled) setReadModeFlagOn(Boolean(flags?.ff_learn_read_mode_v1));
+        if (!cancelled) {
+          setReadModeFlagOn(Boolean(flags?.ff_learn_read_mode_v1));
+          setProductiveFailureFlagOn(Boolean(flags?.ff_productive_failure_v1));
+        }
       } catch {
-        // Flags fail closed — practice mode only.
-        if (!cancelled) setReadModeFlagOn(false);
+        // Flags fail closed — practice mode only, tutorial-first preserved.
+        if (!cancelled) {
+          setReadModeFlagOn(false);
+          setProductiveFailureFlagOn(false);
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -656,15 +682,36 @@ export default function ChapterConceptPage() {
 
         {/* Concept card */}
         <Card className="!p-5">
-          {/* Title */}
+          {/* Title — always visible so the student knows what they're attempting */}
           <h2 className="text-lg font-bold mb-3 leading-tight" style={{ fontFamily: 'var(--font-display)' }}>
             {isHi && (topic as { title_hi?: string | null }).title_hi
               ? (topic as { title_hi?: string | null }).title_hi
               : topic.title}
           </h2>
 
-          {/* Diagram */}
-          {diagram && diagram.image_url && (
+          {/* Productive-failure banner: shown when flag is on and the Quick Check
+              has not yet been attempted. Tutorial content (description, diagram,
+              learning objectives) is hidden until attempt — Manu Kapur's productive
+              failure: struggle first, then teach. Auto-clears after submit. */}
+          {productiveFailureActive && question && !isAnswered && (
+            <div
+              className="rounded-xl p-3 mb-3"
+              style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)' }}
+              data-testid="productive-failure-banner"
+            >
+              <p className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: '#F97316' }}>
+                {isHi ? 'पहले इसे आज़माओ' : 'Try this first'}
+              </p>
+              <p className="text-xs text-[var(--text-2)] leading-snug">
+                {isHi
+                  ? 'पाठ देखने से पहले नीचे का सवाल हल करो — सीखने का यह सबसे असरदार तरीका है।'
+                  : 'Attempt the Quick Check below before reading the explanation — research shows this is the most effective way to learn.'}
+              </p>
+            </div>
+          )}
+
+          {/* Diagram — hidden until attempt when productive-failure is active */}
+          {(!productiveFailureActive || isAnswered) && diagram && diagram.image_url && (
             <div className="mb-4 rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -682,15 +729,15 @@ export default function ChapterConceptPage() {
             </div>
           )}
 
-          {/* Description */}
-          {topic.description && (
+          {/* Description — hidden until attempt when productive-failure is active */}
+          {(!productiveFailureActive || isAnswered) && topic.description && (
             <p className="text-sm leading-relaxed text-[var(--text-2)] mb-3" style={{ whiteSpace: 'pre-wrap' }}>
               {topic.description}
             </p>
           )}
 
-          {/* Learning Objectives */}
-          {topic.learning_objectives && topic.learning_objectives.length > 0 && (
+          {/* Learning Objectives — hidden until attempt when productive-failure is active */}
+          {(!productiveFailureActive || isAnswered) && topic.learning_objectives && topic.learning_objectives.length > 0 && (
             <div className="rounded-xl p-3 mb-1" style={{ background: `${subMeta?.color || 'var(--orange)'}08`, border: `1px solid ${subMeta?.color || 'var(--orange)'}20` }}>
               <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: subMeta?.color }}>
                 {isHi ? 'इस अवधारणा में सीखोगे' : 'You will learn'}
