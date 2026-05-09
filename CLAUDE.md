@@ -61,7 +61,7 @@ supabase migration new <name>                            # Create new migration
 **Path alias**: `@/*` maps to `./src/*` (tsconfig paths).
 
 **Multi-portal app** with dedicated routes and APIs:
-- Student: `/dashboard`, `/foxy` (AI tutor), `/learn`, `/progress`, `/leaderboard`, `/exams`, `/simulations`
+- Student: `/dashboard`, `/foxy` (AI tutor), `/learn`, `/progress`, `/leaderboard`, `/exams`, `/simulations`, `/dive` + `/dive/history` (Pedagogy v2 Wave 2 weekly Curiosity Dive), `/synthesis` (Pedagogy v2 Wave 3 monthly Synthesis)
 - Parent: `/parent/*`
 - Teacher: `/teacher/*`
 - Super Admin: `/super-admin/*` (pages), `/api/super-admin/*` (API routes)
@@ -163,12 +163,20 @@ See `.claude/CLAUDE.md` for the full product constitution:
 | Scoring & XP | `src/lib/xp-rules.ts` |
 | Exam engine | `src/lib/exam-engine.ts` |
 | Cognitive engine | `src/lib/cognitive-engine.ts` |
+| Pedagogy v2 — content-rules resolver (persona × layer × slot) | `src/lib/learn/pedagogy-content-rules.ts` |
+| Pedagogy v2 — daily-rhythm orchestrator (5 SRS + 1 ZPD + reflection) | `src/lib/learn/daily-rhythm-orchestrator.ts` |
+| Pedagogy v2 — weekly-dive orchestrator + streak | `src/lib/learn/weekly-dive-orchestrator.ts`, `src/lib/learn/weekly-streak.ts` |
+| Pedagogy v2 — monthly-synthesis orchestrator + Claude prompt | `src/lib/learn/monthly-synthesis-orchestrator.ts`, `src/lib/ai/workflows/synthesis-summary.ts` |
+| Pedagogy v2 — wrong-answer remediation (Eedi pattern) | `src/lib/learn/wrong-answer-remediation.ts`, `src/components/quiz/MisconceptionExplainer.tsx` |
+| Pedagogy v2 — student-visible surfaces | `src/app/dive/`, `src/app/synthesis/`, `src/components/dive/`, `src/components/synthesis/`, `src/components/dashboard/sections/DailyRhythmQueue.tsx` |
+| Pedagogy v2 — API routes | `src/app/api/rhythm/today/`, `src/app/api/dive/{state,start,artifact,history}/`, `src/app/api/synthesis/{state,parent-share}/`, `src/app/api/learn/remediation/` |
+| Pedagogy v2 — Edge Function (monthly synthesis builder, daily-cron trigger) | `supabase/functions/monthly-synthesis-builder/`, `supabase/functions/daily-cron/` (`triggerMonthlySynthesis` step) |
 | Auth context | `src/lib/AuthContext.tsx` |
 | RBAC | `src/lib/rbac.ts`, `src/lib/usePermissions.ts` |
 | Supabase clients | `src/lib/supabase.ts`, `supabase-server.ts`, `supabase-admin.ts` |
 | Middleware | `src/middleware.ts` |
 | Payments | `src/lib/razorpay.ts`, `src/app/api/payments/` |
-| AI Edge Functions | `supabase/functions/foxy-tutor/`, `ncert-solver/`, `quiz-generator/`, `cme-engine/` (no `quiz-generator-v2/` — archived) |
+| AI Edge Functions | `supabase/functions/foxy-tutor/`, `ncert-solver/`, `quiz-generator/`, `cme-engine/` (no `quiz-generator-v2/` — archived). Foxy modes: `learn`, `explain`, `practice`, `revise`, `doubt`, `homework`, `explorer` (Pedagogy v2 Wave 2). |
 | Marking-authenticity forensic view | `supabase/migrations/20260504100400_marking_audit_view.sql` → `public.marking_audit_last_30d`. Service-role-only forensic read model for the super-admin Marking Integrity dashboard. Runbook: `docs/runbooks/forensic-quiz-investigation.md` |
 | Non-AI Edge Functions | `supabase/functions/daily-cron/`, `queue-consumer/`, `send-auth-email/`, `send-welcome-email/`, `session-guard/`, `scan-ocr/`, `export-report/`, `identity/`, `bulk-question-gen/`, `embed-diagrams/`, `embed-ncert-qa/`, `embed-questions/`, `extract-diagrams/`, `extract-ncert-questions/`, `generate-answers/`, `generate-concepts/`, `generate-embeddings/`, `nep-compliance/`, `parent-portal/`, `parent-report-generator/`, `teacher-dashboard/`, `whatsapp-notify/`, `alert-deliverer/` |
 | Feature flags | `src/lib/feature-flags.ts` |
@@ -176,3 +184,4 @@ See `.claude/CLAUDE.md` for the full product constitution:
 | Migrations | `supabase/migrations/` |
 | CI/CD | `.github/workflows/ci.yml`, `deploy-production.yml`, `deploy-staging.yml` |
 | Operational docs | `docs/` (RBAC matrix, backup/restore, admin ops, architecture docs) |
+| Pedagogy v2 specs / plans / runbooks | `docs/superpowers/specs/2026-05-08-pedagogy-v2-three-speed-rhythm-design.md` (strategic), `docs/superpowers/plans/2026-05-08-*` + `2026-05-09-*` (Wave 1-3), `docs/superpowers/runbooks/2026-05-09-pedagogy-v2-wave-1-rollout.md` |
