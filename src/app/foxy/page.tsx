@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { BottomNav } from '@/components/ui';
 import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@/lib/cognitive-engine';
@@ -14,84 +13,51 @@ import { speak, isVoiceSupported } from '@/lib/voice';
 import { ConversationStarters } from '@/components/foxy/ConversationStarters';
 import type { StarterIntent } from '@/lib/foxy/starter-intents';
 import { findSimulation, InlineSimulation } from '@/components/InlineSimulation';
-import { ChatBubble, type GroundingStatus, type AbstainReason, type SuggestedAlternative } from '@/components/foxy/ChatBubble';
+import { ChatBubble } from '@/components/foxy/ChatBubble';
 import { LoadingState } from '@/components/foxy/LoadingState';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import type { FoxyResponse } from '@/lib/foxy/schema';
-import { ChatInput } from '@/components/foxy/ChatInput';
-import { ConversationManager, generateTitle, SIMPLIFIED_MODES, MODE_MAP, type ConversationSummary } from '@/components/foxy/ConversationManager';
+import { ConversationManager, generateTitle, MODE_MAP, type ConversationSummary } from '@/components/foxy/ConversationManager';
 import { ConversationHeader } from '@/components/foxy/ConversationHeader';
 import { useSELCheckIn, type MoodState } from '@/components/SELCheckIn';
 import { track } from '@/lib/analytics';
+import {
+  MODES,
+  FOXY_FACES,
+  MASTERY_COLORS,
+  FALLBACK_SCIENCE,
+} from './_lib/foxy-constants';
+import type { SubjectConfig, ChatMessage } from './_lib/foxy-types';
+import { useFoxyChat } from './_hooks/useFoxyChat';
 
 // P10 bundle hardening: lazy-load components rendered behind a flag/modal/conditional.
-// Cuts /foxy First Load JS by ~70 kB on cold paint. Type/hook imports remain static
-// (Next/dynamic only defers the runtime component, not type erasure).
-const RichContent = dynamic(
-  () => import('@/components/foxy/RichContent').then((m) => ({ default: m.RichContent })),
-  { ssr: false, loading: () => null },
-);
-// Phase 2 (structured rendering): the structured renderer pulls in KaTeX +
-// CSS, which is heavy. Keep it dynamic so the synchronous /foxy bundle stays
-// inside the P10 page budget. `loading: () => null` is intentional — until
-// the renderer hydrates we paint nothing for that bubble; React mounts it on
-// the first frame after the chunk arrives. Same pattern as RichContent above.
+// Cuts /foxy First Load JS by ~70 kB on cold paint.
 //
-// `isFoxyResponse` is imported synchronously from `@/lib/foxy/is-foxy-response`
-// (NOT from FoxyStructuredRenderer) — that helper has zero deps so the
-// discriminator can run on every render without dragging KaTeX into the
-// synchronous bundle.
-import { isFoxyResponse } from '@/lib/foxy/is-foxy-response';
-import { recoverFoxyResponseFromText } from '@/lib/foxy/recover-from-text';
-import { denormalizeFoxyResponse } from '@/lib/foxy/denormalize';
-const FoxyStructuredRenderer = dynamic(
-  () => import('@/components/foxy/FoxyStructuredRenderer').then((m) => ({ default: m.FoxyStructuredRenderer })),
-  { ssr: false, loading: () => null },
-);
-// Synchronous import for the boundary class — it's tiny (no deps) and must
-// be present on every assistant bubble render so it can catch a downstream
-// throw from the lazy structured renderer.
-import { StructuredRenderBoundary } from '@/components/foxy/StructuredRenderBoundary';
+// MOVED to ./_components/MessageList.tsx during the Plan 4 decomposition:
+//   - dynamic(RichContent)            — markdown / legacy renderer
+//   - dynamic(FoxyStructuredRenderer) — KaTeX-heavy structured renderer
+//   - synchronous StructuredRenderBoundary
+//   - isFoxyResponse / recoverFoxyResponseFromText / denormalizeFoxyResponse
+// MessageList encapsulates the choice between the two renderers per-message.
 const UpgradeModal = dynamic(
   () => import('@/components/UpgradeModal').then((m) => ({ default: m.UpgradeModal })),
   { ssr: false },
 );
 const SELCheckIn = dynamic(() => import('@/components/SELCheckIn'), { ssr: false });
+import { MessageList } from './_components/MessageList';
+import { MessageInput } from './_components/MessageInput';
+import { ReportDialog } from './_components/ReportDialog';
+import { LanguagePicker, ModePicker } from './_components/FoxySettings';
 
 /* ══════════════════════════════════════════════════════════════
    SUBJECT CONFIGURATION
+
+   Constants (`LANGS`, `MODES`, `FOXY_FACES`, `MASTERY_COLORS`,
+   `FALLBACK_SCIENCE`, `REPORT_REASONS`) and types (`SubjectConfig`,
+   `StreamingCallbacks`, `ChatMessage`) live in `./_lib/foxy-constants`
+   and `./_lib/foxy-types` respectively — see imports at the top of
+   this file.
    ══════════════════════════════════════════════════════════════ */
-
-interface SubjectConfig {
-  name: string;
-  icon: string;
-  color: string;
-}
-
-// Fallback used only when the subjects service hook hasn't returned yet (first paint)
-const FALLBACK_SCIENCE: SubjectConfig = { name: 'Science', icon: '⚛', color: '#10B981' };
-
-const LANGS = [
-  { code: 'en', label: 'EN' },
-  { code: 'hi', label: 'HI' },
-  { code: 'hinglish', label: 'Hing' },
-];
-
-const MODES = [
-  { id: 'learn', emoji: '📖', label: 'Learn', labelHi: 'सीखो', autoPrompt: (topic: string) => topic ? `Teach me about: ${topic}` : 'Teach me the next concept step by step', autoPromptHi: (topic: string) => topic ? `मुझे सिखाओ: ${topic}` : 'मुझे अगला कॉन्सेप्ट सिखाओ' },
-  { id: 'practice', emoji: '✏️', label: 'Practice', labelHi: 'अभ्यास', autoPrompt: (topic: string) => topic ? `Give me 3 practice problems on: ${topic}` : 'Give me practice problems to solve', autoPromptHi: (topic: string) => topic ? `मुझे 3 अभ्यास प्रश्न दो: ${topic}` : 'मुझे अभ्यास प्रश्न दो' },
-  { id: 'quiz', emoji: '⚡', label: 'Quiz', labelHi: 'क्विज़', autoPrompt: (topic: string) => topic ? `Quiz me on: ${topic} (5 MCQ questions, board exam pattern)` : 'Quiz me with 5 MCQ questions on this chapter', autoPromptHi: (topic: string) => topic ? `मुझसे क्विज़ लो: ${topic} (5 MCQ प्रश्न, बोर्ड परीक्षा पैटर्न)` : 'मुझसे 5 MCQ प्रश्न पूछो' },
-  { id: 'doubt', emoji: '❓', label: 'Doubt', labelHi: 'डाउट', autoPrompt: () => '', autoPromptHi: () => '' },
-  { id: 'revision', emoji: '🔄', label: 'Revise', labelHi: 'रिवीज़', autoPrompt: (topic: string) => topic ? `Give me a quick revision summary of: ${topic}` : 'Summarize the key points for revision', autoPromptHi: (topic: string) => topic ? `${topic} का त्वरित पुनरावृत्ति सारांश दो` : 'रिवीज़न के लिए मुख्य बिंदु बताओ' },
-  { id: 'notes', emoji: '📝', label: 'Notes', labelHi: 'नोट्स', autoPrompt: (topic: string) => topic ? `Create concise exam notes for: ${topic}` : 'Create exam-ready notes for this chapter', autoPromptHi: (topic: string) => topic ? `${topic} के लिए परीक्षा नोट्स बनाओ` : 'इस अध्याय के परीक्षा नोट्स बनाओ' },
-  { id: 'lesson', emoji: '🎓', label: 'Lesson', labelHi: 'पाठ', autoPrompt: () => '', autoPromptHi: () => '' },
-];
-
-const FOXY_FACES: Record<string, string> = { idle: '🦊', thinking: '🤔', happy: '😄' };
-
-const MASTERY_COLORS: Record<string, string> = {
-  not_started: '#9ca3af', beginner: '#F59E0B', developing: '#3B82F6', proficient: '#8B5CF6', mastered: '#10B981',
-};
 
 /* ══════════════════════════════════════════════════════════════
    API HELPERS — uses shared Supabase client, no hardcoded creds
@@ -226,417 +192,13 @@ async function fetchConversationById(sessionId: string) {
   };
 }
 
-// Calls the NEW Next.js API route (src/app/api/foxy/route.ts), which uses
-// the src/lib/ai/ orchestration layer. The legacy foxy-tutor Edge Function
-// (supabase/functions/foxy-tutor/) is deprecated — do not revert to it.
-async function callFoxyTutor(params: Record<string, any> & { language?: string }) {
-  // P7: Hindi-medium students must see Hindi error/paywall copy on critical surfaces.
-  const isHi = params.language === 'hi';
-  try {
-    // Get the current access token — this is the primary auth mechanism.
-    // cookies() alone can fail for chunked Supabase JWTs; the Bearer token
-    // from the client session is always fresh (auto-refreshed by @supabase/auth).
-    let accessToken: string | null = null;
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      accessToken = session?.access_token ?? null;
-    } catch { /* proceed without token — cookie fallback in authorizeRequest */ }
-
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
-
-    const res = await fetch('/api/foxy', {
-      method: 'POST',
-      headers,
-      credentials: 'include', // also send cookies as secondary fallback
-      body: JSON.stringify({
-        message:   params.message,
-        subject:   params.subject,
-        grade:     params.grade,
-        chapter:   params.chapter   ?? null,
-        board:     params.board     ?? null,
-        sessionId: params.session_id ?? null, // map old param name to new
-        mode:      params.mode      ?? 'learn',
-        // P0 chip-action fix: forward starter-chip intent (weak_areas,
-        // study_today, etc.) so the route can enrich the prompt with
-        // mastery rows. Optional — undefined when not a chip-driven turn.
-        ...(typeof params.intent === 'string' ? { intent: params.intent } : {}),
-        // Claude Vision: send image directly for handwriting recognition
-        ...(params.image_base64 ? {
-          image_base64: params.image_base64,
-          image_media_type: params.image_media_type ?? 'image/jpeg',
-        } : {}),
-      }),
-    });
-
-    if (!res.ok) {
-      let errBody: Record<string, unknown> | null = null;
-      try { errBody = await res.json(); } catch { /* not JSON */ }
-
-      // Log diagnostic info for debugging (never shown to user)
-      if (errBody) {
-        console.error('[Foxy] API error', {
-          status: res.status,
-          error: errBody.error,
-          diag: errBody._diag,
-        });
-      }
-
-      if (res.status === 401) {
-        return {
-          reply: isHi
-            ? 'सेशन समाप्त हो गया। कृपया फिर से साइन इन करें।'
-            : 'Session expired. Please sign in again.',
-          xp_earned: 0,
-          session_id: null,
-        };
-      }
-      if (res.status === 403) {
-        const errCode = (errBody?.code as string) ?? '';
-        if (errCode === 'PERMISSION_DENIED' || errCode === 'NO_ROLES') {
-          return {
-            reply: isHi
-              ? 'फॉक्सी पेड प्लान पर उपलब्ध है। अपग्रेड करें और AI ट्यूटर से चैट करें!'
-              : 'Foxy is available on paid plans. Upgrade to chat with your AI tutor!',
-            xp_earned: 0,
-            session_id: null,
-          };
-        }
-        return {
-          reply: isHi
-            ? 'पहुँच अस्वीकृत। कृपया सहायता से संपर्क करें।'
-            : 'Access denied. Please contact support.',
-          xp_earned: 0,
-          session_id: null,
-        };
-      }
-      if (res.status === 429) {
-        return {
-          reply: (errBody?.error as string) || (isHi
-            ? 'आज के सारे संदेश इस्तेमाल हो गए। जारी रखने के लिए अपग्रेड करें!'
-            : "You've used all your messages for today. Upgrade to continue!"),
-          xp_earned: 0,
-          session_id: null,
-          limitReached: true,
-        };
-      }
-      if (res.status === 503) {
-        return {
-          reply: isHi
-            ? 'फॉक्सी अभी अस्थायी रूप से उपलब्ध नहीं है। एक मिनट बाद कोशिश करें।'
-            : 'Foxy is temporarily unavailable. Please try again in a minute.',
-          xp_earned: 0,
-          session_id: null,
-        };
-      }
-      return {
-        reply: isHi
-          ? 'कुछ गड़बड़ हो गई। कृपया फिर कोशिश करें।'
-          : 'Something went wrong. Please try again.',
-        xp_earned: 0,
-        session_id: null,
-      };
-    }
-
-    const data = await res.json();
-    return {
-      reply:      data.response || (isHi ? 'मुझे इसके बारे में सोचने दो...' : 'Let me think about that...'),
-      xp_earned:  0, // new route does not award per-message XP (XP via quiz/study plan)
-      session_id: data.sessionId || null,
-      quota:      data.quotaRemaining,
-      upgradePrompt: data.upgradePrompt || null,
-      // Phase 3: grounded-answer response metadata. Undefined when the server
-      // is running the legacy pre-3.2 flow; any tutor bubble without this
-      // metadata renders as a plain answer (no banner, no card).
-      groundingStatus:        data.groundingStatus as GroundingStatus | undefined,
-      traceId:                data.traceId as string | undefined,
-      abstainReason:          data.abstainReason as AbstainReason | undefined,
-      suggestedAlternatives:  data.suggestedAlternatives as SuggestedAlternative[] | undefined,
-      // Phase 0 Fix 0.5: analytics-only signals. Distinct from groundingStatus,
-      // which is the API-shape branch discriminator. groundedFromChunks is
-      // the honest "did the answer actually use the retrieved NCERT chunks"
-      // signal; citationsCount is the count of NCERT citations on the
-      // grounded-answer service response (0 on abstain or legacy w/out chunks).
-      // Default to safe values when the server didn't emit them.
-      groundedFromChunks:     typeof data.groundedFromChunks === 'boolean' ? data.groundedFromChunks : false,
-      citationsCount:         typeof data.citationsCount === 'number' ? data.citationsCount : 0,
-      // Phase 2 (structured rendering): the validated FoxyResponse payload, if
-      // upstream produced one. Absent on legacy / abstain / kill-switch paths;
-      // the chat page falls back to RichContent on `data.response` in that case.
-      structured:             (data.structured as FoxyResponse | undefined) ?? undefined,
-      // B'-5 Phase 2: persisted assistant-row UUID so handleFeedback can call
-      // /api/foxy/feedback with it. Null/absent on persistence-write failure;
-      // the client falls back to legacy track_ai_quality in that case.
-      messageId:              typeof data.messageId === 'string' ? data.messageId : null,
-    };
-  } catch (err) {
-    console.error('[Foxy] Network error:', err);
-    return {
-      reply: isHi
-        ? 'कनेक्शन की समस्या। अपना नेटवर्क जाँचें और फिर कोशिश करें!'
-        : 'Connection issue. Check your network and try again!',
-      xp_earned: 0,
-      session_id: null,
-    };
-  }
-}
-
-/* ══════════════════════════════════════════════════════════════
-   STREAMING — Phase 1.1
-   ══════════════════════════════════════════════════════════════ */
-
-// Per-user opt-out: localStorage.alfanumrik_foxy_stream = '0'.
-// Default: streaming on (when ff_foxy_streaming is also enabled server-side).
-function shouldUseStreaming(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    const v = window.localStorage.getItem('alfanumrik_foxy_stream');
-    return v !== '0';
-  } catch {
-    return true;
-  }
-}
-
-interface StreamingCallbacks {
-  onSession?: (sessionId: string) => void;
-  onMetadata?: (meta: { groundingStatus: GroundingStatus; traceId?: string; confidence?: number; citationsCount?: number }) => void;
-  onText: (delta: string) => void;
-  // B'-5 Phase 2: synthesized at server side AFTER the upstream `done` once
-  // the assistant row has been persisted. Carries the DB UUID so the client
-  // can wire 👍/👎 to /api/foxy/feedback for THIS bubble. Absent when
-  // persistence fails — handleFeedback then falls back to the legacy
-  // aggregate counter.
-  onPersisted?: (info: { messageId: string }) => void;
-  onDone: (info: {
-    tokensUsed: number;
-    latencyMs: number;
-    groundedFromChunks: boolean;
-    citationsCount: number;
-    claudeModel: string;
-    /**
-     * Validated structured FoxyResponse — emitted ONCE on the `done` event by
-     * the streaming pipeline (pipeline-stream.ts). Absent when the upstream
-     * could not produce a schema-valid payload (kill-switch, parse failure,
-     * non-Foxy flow). Until `done` arrives the bubble shows partial text deltas
-     * via the markdown renderer; on `done` the bubble swaps to the structured
-     * renderer when this field is present.
-     */
-    structured?: FoxyResponse;
-  }) => void;
-  onAbstain?: (info: { abstainReason: AbstainReason; suggestedAlternatives: SuggestedAlternative[]; traceId?: string }) => void;
-  onError?: (info: { reason: string; traceId?: string }) => void;
-}
-
-/**
- * Stream a Foxy response. POSTs to /api/foxy with stream:true and consumes
- * the SSE response body. Invokes callbacks as events arrive. Returns a
- * promise that resolves when the stream closes (cleanly OR with error).
- *
- * Compatibility:
- *   - If the server doesn't honor `stream:true` (flag off, or service not
- *     deployed yet), the response will be JSON. In that case we fall back to
- *     the non-streaming path internally — caller's onDone is still invoked
- *     once with the full response.
- */
-async function callFoxyTutorStream(
-  payload: Record<string, any>,
-  callbacks: StreamingCallbacks,
-): Promise<void> {
-  let accessToken: string | null = null;
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    accessToken = session?.access_token ?? null;
-  } catch { /* fall back to cookie */ }
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Accept': 'text/event-stream',
-  };
-  if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
-
-  const res = await fetch('/api/foxy', {
-    method: 'POST',
-    headers,
-    credentials: 'include',
-    body: JSON.stringify({ ...payload, stream: true }),
-  });
-
-  if (!res.ok) {
-    callbacks.onError?.({ reason: `http-${res.status}` });
-    return;
-  }
-
-  const contentType = res.headers.get('content-type') || '';
-  if (!contentType.includes('text/event-stream')) {
-    // Server didn't honor streaming — parse as regular JSON and fire onDone once.
-    try {
-      const data = await res.json();
-      if (data?.sessionId) callbacks.onSession?.(data.sessionId);
-      // P0 fix: when the server returns a hard-abstain in the JSON-fallback
-      // path (because ff_foxy_streaming is OFF), we MUST route through
-      // onAbstain — not onDone — otherwise the tutor bubble stays empty
-      // and the HardAbstainCard never renders.
-      if (data?.groundingStatus === 'hard-abstain') {
-        callbacks.onAbstain?.({
-          abstainReason: (data?.abstainReason || 'upstream_error') as AbstainReason,
-          suggestedAlternatives: Array.isArray(data?.suggestedAlternatives) ? data.suggestedAlternatives : [],
-          traceId: data?.traceId,
-        });
-        return;
-      }
-      if (typeof data?.response === 'string' && data.response.length > 0) {
-        callbacks.onText(data.response);
-      }
-      callbacks.onDone({
-        tokensUsed: data?.tokensUsed ?? 0,
-        latencyMs: 0,
-        groundedFromChunks: data?.groundedFromChunks === true,
-        citationsCount: typeof data?.citationsCount === 'number' ? data.citationsCount : 0,
-        claudeModel: data?.meta?.claude_model || data?.claudeModel || '',
-        // Phase 2: forward the validated structured payload through the
-        // JSON-fallback path so the renderer-swap logic is identical to SSE.
-        structured: (data?.structured as FoxyResponse | undefined) ?? undefined,
-      });
-      // B'-5 Phase 2: parity with the SSE branch. The blocking JSON response
-      // also carries `messageId`, so fire onPersisted here too.
-      if (typeof data?.messageId === 'string' && data.messageId.length > 0) {
-        callbacks.onPersisted?.({ messageId: data.messageId });
-      }
-    } catch {
-      callbacks.onError?.({ reason: 'non-stream-parse-failed' });
-    }
-    return;
-  }
-
-  if (!res.body) {
-    callbacks.onError?.({ reason: 'empty-body' });
-    return;
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let citationsCount = 0;
-  let metadataTraceId: string | undefined;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    let sepIdx: number;
-    while ((sepIdx = buffer.indexOf('\n\n')) !== -1) {
-      const rawEvent = buffer.slice(0, sepIdx);
-      buffer = buffer.slice(sepIdx + 2);
-      const eventLine = rawEvent.split('\n').find((l) => l.startsWith('event: '));
-      const dataLine = rawEvent.split('\n').find((l) => l.startsWith('data: '));
-      if (!eventLine || !dataLine) continue;
-      const eventName = eventLine.slice(7).trim();
-      let parsed: any = null;
-      try { parsed = JSON.parse(dataLine.slice(6)); } catch { continue; }
-
-      if (eventName === 'session') {
-        if (parsed?.sessionId) callbacks.onSession?.(parsed.sessionId);
-      } else if (eventName === 'metadata') {
-        metadataTraceId = parsed?.traceId;
-        if (Array.isArray(parsed?.citations)) citationsCount = parsed.citations.length;
-        callbacks.onMetadata?.({
-          groundingStatus: (parsed?.groundingStatus || 'grounded') as GroundingStatus,
-          traceId: parsed?.traceId,
-          confidence: parsed?.confidence,
-          citationsCount,
-        });
-      } else if (eventName === 'text') {
-        if (typeof parsed?.delta === 'string') callbacks.onText(parsed.delta);
-      } else if (eventName === 'done') {
-        callbacks.onDone({
-          tokensUsed: typeof parsed?.tokensUsed === 'number' ? parsed.tokensUsed : 0,
-          latencyMs: typeof parsed?.latencyMs === 'number' ? parsed.latencyMs : 0,
-          groundedFromChunks: parsed?.groundedFromChunks === true,
-          citationsCount,
-          claudeModel: typeof parsed?.claudeModel === 'string' ? parsed.claudeModel : '',
-          // Phase 2: pipeline-stream.ts attaches a validated FoxyResponse on
-          // the terminal `done` payload (or omits it when upstream couldn't
-          // produce one). Hand it through unchanged — the renderer applies
-          // `isFoxyResponse` before trusting it.
-          structured: (parsed?.structured as FoxyResponse | undefined) ?? undefined,
-        });
-      } else if (eventName === 'persisted') {
-        // B'-5 Phase 2: server-synthesized after the upstream done frame, once
-        // the assistant row has been written. Carries the DB UUID for the
-        // tutor bubble — client uses it to call /api/foxy/feedback.
-        if (typeof parsed?.messageId === 'string' && parsed.messageId.length > 0) {
-          callbacks.onPersisted?.({ messageId: parsed.messageId });
-        }
-      } else if (eventName === 'abstain') {
-        callbacks.onAbstain?.({
-          abstainReason: (parsed?.abstainReason || 'upstream_error') as AbstainReason,
-          suggestedAlternatives: Array.isArray(parsed?.suggestedAlternatives) ? parsed.suggestedAlternatives : [],
-          traceId: parsed?.traceId || metadataTraceId,
-        });
-      } else if (eventName === 'error') {
-        callbacks.onError?.({
-          reason: typeof parsed?.reason === 'string' ? parsed.reason : 'unknown',
-          traceId: parsed?.traceId || metadataTraceId,
-        });
-      }
-    }
-  }
-}
+// MOVED to ./_hooks/useFoxyChat.ts: callFoxyTutor (JSON branch),
+// callFoxyTutorStream (SSE branch with JSON-fallback), and shouldUseStreaming
+// (per-user opt-out). The hook now exposes the protocol via sendMessage().
 
 /* ══════════════════════════════════════════════════════════════
    MAIN FOXY PAGE
    ══════════════════════════════════════════════════════════════ */
-
-interface ChatMessage {
-  id: number;
-  role: 'student' | 'tutor';
-  content: string;
-  timestamp: string;
-  xp?: number;
-  feedback?: 'up' | 'down' | null;
-  reported?: boolean;
-  imageUrl?: string;
-  /** Grounding verdict — set only on tutor messages served from the grounded-answer service. */
-  groundingStatus?: GroundingStatus;
-  /** Server-side trace id — useful for debugging/reporting. */
-  traceId?: string;
-  /** Abstain reason (only present when groundingStatus === 'hard-abstain'). */
-  abstainReason?: AbstainReason;
-  /** Suggested alternative chapters (only present when groundingStatus === 'hard-abstain'). */
-  suggestedAlternatives?: SuggestedAlternative[];
-  /**
-   * Validated structured-block payload from the Foxy API (post-migration).
-   * - POST /api/foxy returns this on `data.structured` when upstream emitted a
-   *   schema-valid FoxyResponse.
-   * - GET /api/foxy?sessionId=... returns it per persisted assistant row when
-   *   the row was saved after the structured-output migration.
-   * - Streaming: arrives only on the `done` event; until then the bubble shows
-   *   the in-progress `content` via the legacy markdown renderer.
-   * Absent on legacy assistant rows, abstain responses, and user messages.
-   */
-  structured?: FoxyResponse;
-  /**
-   * B'-5 Phase 2: the persisted DB UUID for this assistant turn. Used by
-   * handleFeedback to call /api/foxy/feedback. Set from:
-   *   - SSE `persisted` event for fresh streaming turns
-   *   - JSON `messageId` for fresh blocking turns
-   *   - GET `messages[i].id` for historical turns on session resume
-   * Absent on user messages and on assistant rows where persistence failed —
-   * handleFeedback then falls back to the legacy aggregate counter.
-   */
-  persistedMessageId?: string;
-}
-
-const REPORT_REASONS = [
-  { value: 'wrong_answer', label: '❌ Wrong answer', labelHi: '❌ गलत उत्तर' },
-  { value: 'wrong_formula', label: '📐 Wrong formula', labelHi: '📐 गलत फॉर्मूला' },
-  { value: 'wrong_explanation', label: '📝 Wrong explanation', labelHi: '📝 गलत व्याख्या' },
-  { value: 'incomplete', label: '⚠️ Incomplete', labelHi: '⚠️ अधूरा' },
-  { value: 'irrelevant', label: '🔀 Off-topic', labelHi: '🔀 विषय से हटकर' },
-  { value: 'confusing', label: '😕 Confusing', labelHi: '😕 भ्रमित करने वाला' },
-  { value: 'other', label: '💬 Other', labelHi: '💬 अन्य' },
-];
 
 export default function FoxyPage() {
   const { student: authStudent, isLoggedIn, isLoading: authLoading } = useAuth();
@@ -655,29 +217,34 @@ export default function FoxyPage() {
   const [studentGrade, setStudentGrade] = useState('9');
   const [topics, setTopics] = useState<any[]>([]);
   const [masteryData, setMasteryData] = useState<any[]>([]);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  // Monotonic message-id counter. Used in place of `Date.now()` for setMessages
-  // pushes so two sequential pushes (e.g. user message + optimistic empty tutor
-  // bubble) can never share an id even if the JS clock returns the same ms.
-  // P0 (2026-04-28): ID collisions caused setMessages updates targeting the
-  // tutor bubble to also flow into the user message, producing the
-  // "duplicate render with raw markdown above the Foxy header" symptom.
-  const messageIdCounterRef = useRef(0);
-  const nextMessageId = useCallback(() => {
-    messageIdCounterRef.current += 1;
-    // Tag the counter into the lower bits and Date.now() into the upper bits,
-    // so ids are still roughly chronological but guaranteed unique within a
-    // single page session.
-    return Date.now() * 1000 + messageIdCounterRef.current;
-  }, []);
+
+  // Chat state — `messages`, `chatSessionId`, `loading`, `xpGained`, the
+  // monotonic `nextMessageId` counter, and the streaming-aware `sendMessage`
+  // all live inside `useFoxyChat`. Cross-cutting reactions (foxy face,
+  // voice TTS, daily-usage modal, conversation list refresh) are dispatched
+  // via the optional `SendMessageHooks` callbacks passed at each call site.
+  const {
+    messages,
+    setMessages,
+    loading,
+    setLoading,
+    chatSessionId,
+    setChatSessionId,
+    xpGained,
+    setXpGained,
+    nextMessageId,
+    sendMessage: sendMessageCore,
+  } = useFoxyChat();
+
   const [collapsedAbove, setCollapsedAbove] = useState<number | null>(null); // index above which messages are collapsed
-  const [loading, setLoading] = useState(false);
   const [sessionMode, setSessionMode] = useState('learn');
   const [language, setLanguage] = useState('en');
+  // Bilingual helper — kept as a derived const so the existing `language === 'hi'`
+  // ternaries continue to work, while new copy can use `isHi` for clarity.
+  // Task 8 (P7 fix) — Plan 4.
+  const isHi = language === 'hi';
   const [activeTopic, setActiveTopic] = useState<any>(null);
   const [foxyState, setFoxyState] = useState<'idle' | 'thinking' | 'happy'>('idle');
-  const [chatSessionId, setChatSessionId] = useState<string | null>(null);
-  const [xpGained, setXpGained] = useState(0);
   const [totalXP, setTotalXP] = useState(0);
   const [streakDays, setStreakDays] = useState(0);
 
@@ -988,35 +555,28 @@ export default function FoxyPage() {
     });
   }, [messages, loading]);
 
-  // Send message with usage enforcement.
+  // Send message — thin wrapper over the streaming-aware sendMessage from
+  // useFoxyChat. Owns the page-side cross-cutting concerns (foxy face,
+  // usage modal, conversation refresh, voice TTS, image OCR base64) that
+  // the hook deliberately does not know about.
   //
-  // P0 chip-action fix (2026-05-04): `extraParams.intent` is a server-side
-  // routing hint sent by handleStarterClick when the student taps a Foxy
-  // starter chip (e.g. 'weak_areas', 'study_today'). The /api/foxy route
-  // reads it to enrich the prompt with student mastery rows. Optional —
-  // omitting it is byte-identical to the legacy call signature so the
-  // existing call sites at lines 1396, 1403, 1426, 1706, 1756, 1857, etc.
-  // remain backward compatible.
+  // Behavior preserved verbatim from the pre-decomposition page.tsx:
+  //   - Daily-usage check before send (chat plan limit -> UpgradeModal)
+  //   - Optimistic local usage decrement (server increments authoritatively)
+  //   - Image -> base64 conversion (Claude Vision handwriting path)
+  //   - Foxy face thinking->happy->idle animation
+  //   - foxy_session_started + foxy_turn_completed analytics
+  //   - Auto-speak on tutor reply when voice mode is ON
+  //   - Conversation list refresh after a successful send
+  //   - showTopicSheet auto-close on send
   const sendMessage = useCallback(async (
     text: string,
     image?: File | null,
     extraParams?: { intent?: string },
   ) => {
     if (!text.trim() && !image) return;
-    // Client-side length limit matching server-side MAX_MESSAGE_LENGTH
-    if (text.length > 5000) {
-      setMessages((p: ChatMessage[]) => [...p, {
-        id: nextMessageId(),
-        role: 'tutor',
-        content: language === 'hi'
-          ? 'संदेश बहुत लंबा है! कृपया 5000 अक्षरों से कम रखें।'
-          : 'Message too long! Please keep it under 5000 characters.',
-        timestamp: new Date().toISOString(),
-      }]);
-      return;
-    }
 
-    // Check chat usage limit
+    // Check chat usage limit before bothering the streaming API.
     if (student?.id) {
       const usage = await checkDailyUsage(student.id, 'foxy_chat', student.subscription_plan || 'free');
       setChatUsage(usage);
@@ -1025,44 +585,26 @@ export default function FoxyPage() {
         setShowLimitModal(true);
         return;
       }
-      // NOTE: Do NOT call recordUsage here — the server-side edge function
-      // increments usage atomically BEFORE processing. Client-side increment
-      // caused double-counting (every chat counted twice).
+      // NOTE: do NOT call recordUsage here — server increments atomically.
       setChatUsage((prev: UsageResult | null) => prev ? { ...prev, count: prev.count + 1, remaining: Math.max(0, prev.remaining - 1), allowed: prev.count + 1 < prev.limit } : prev);
     }
 
     // ── Image OCR processing ──
-    // When the student attaches a photo of handwritten work, convert to base64
-    // and send directly to the Foxy API which passes it to Claude Vision.
-    // Claude reads handwriting natively — far better than any OCR service.
+    // When the student attaches a photo of handwritten work, convert to
+    // base64 and send directly to the Foxy API which passes it to Claude
+    // Vision. Claude reads handwriting natively.
     let augmentedMessage = text;
-    let imagePreviewUrl: string | undefined;
     let imageBase64: string | undefined;
-
+    let imageMediaType: string | undefined;
     if (image) {
-      // Create a preview URL to display in the chat bubble
-      imagePreviewUrl = URL.createObjectURL(image);
-
-      // Show the student message immediately with the image
-      setMessages((p: ChatMessage[]) => [...p, {
-        id: nextMessageId(),
-        role: 'student',
-        content: text || (language === 'hi' ? 'फ़ोटो अपलोड की' : 'Uploaded photo'),
-        timestamp: new Date().toISOString(),
-        imageUrl: imagePreviewUrl,
-      }]);
-      setLoading(true); setFoxyState('thinking'); setShowTopicSheet(false);
       setIsProcessingImage(true);
-
       try {
-        // Convert image to base64 for Claude Vision
         const buffer = await image.arrayBuffer();
         const bytes = new Uint8Array(buffer);
         let binary = '';
-        for (let i = 0; i < bytes.length; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
         imageBase64 = btoa(binary);
+        imageMediaType = image.type || 'image/jpeg';
         augmentedMessage = text || (language === 'hi'
           ? 'मेरा लिखा हुआ उत्तर देखो और जाँचो।'
           : 'Please look at my handwritten answer and check it.');
@@ -1074,293 +616,81 @@ export default function FoxyPage() {
       } finally {
         setIsProcessingImage(false);
       }
-    } else {
-      // Text-only message — show immediately
-      setMessages((p: ChatMessage[]) => [...p, { id: nextMessageId(), role: 'student', content: text, timestamp: new Date().toISOString() }]);
-      setLoading(true); setFoxyState('thinking'); setShowTopicSheet(false);
     }
 
-    try {
-      const selectedChapterTopics = selectedChapters.length > 0 ? topics.filter((t: any) => selectedChapters.includes(t.id)) : [];
-      const chapCtx = selectedChapterTopics.length > 0 ? selectedChapterTopics.map((t: any) => `Ch ${t.chapter_number}: ${t.title}`).join(', ') : null;
-      const chapterForSession = activeTopic?.title || (selectedChapterTopics.length === 1 ? selectedChapterTopics[0].title : null);
-      const foxyParams: Record<string, any> = { message: augmentedMessage, student_id: student?.id || '', student_name: student?.name || 'Student', grade: studentGrade, subject: activeSubject, language, mode: sessionMode, topic_id: activeTopic?.id || null, topic_title: activeTopic?.title || null, chapter: chapterForSession, session_id: chatSessionId, selected_chapters: chapCtx };
-      // P0 chip-action fix: forward the starter-chip intent so the API can
-      // inject mastery context (weak_areas, study_today). Only set when
-      // present — keeps the body shape stable for existing callers.
-      if (extraParams?.intent) {
-        foxyParams.intent = extraParams.intent;
-      }
-      // Pass image to Claude Vision when student uploads a photo
-      if (imageBase64) {
-        foxyParams.image_base64 = imageBase64;
-        foxyParams.image_media_type = image?.type || 'image/jpeg';
-      }
-      // Analytics: F16 — see audit 2026-04-27.
-      // Fires once per fresh thread (when no chatSessionId exists yet at send time).
-      // Subsequent turns reuse the existing session, so this won't double-fire.
-      const isFreshSession = !chatSessionId;
-      if (isFreshSession) {
-        try {
-          track('foxy_session_started', {
-            subject: activeSubject,
-            grade: studentGrade,
-            mode: sessionMode,
-          });
-        } catch { /* analytics is non-critical */ }
-      }
-      const turnStartedAt = Date.now();
+    setShowTopicSheet(false);
+    setFoxyState('thinking');
 
-      // ── Phase 1.1: streaming branch ─────────────────────────────────────
-      // Streaming is gated by:
-      //   (1) shouldUseStreaming() — per-user opt-out via localStorage
-      //   (2) ff_foxy_streaming server-side flag (checked in /api/foxy)
-      // If either is off, the request still goes through /api/foxy and the
-      // route falls back to JSON. callFoxyTutorStream auto-detects content-type
-      // and adapts — so the client code below works for both paths.
-      if (shouldUseStreaming() && !imageBase64) {
-        const tutorBubbleId = nextMessageId();
-        // Optimistically add an empty tutor bubble that we'll fill in.
-        setMessages((p: ChatMessage[]) => [...p, {
-          id: tutorBubbleId,
-          role: 'tutor',
-          content: '',
-          timestamp: new Date().toISOString(),
-        }]);
+    const selectedChapterTopics = selectedChapters.length > 0 ? topics.filter((t: any) => selectedChapters.includes(t.id)) : [];
+    const chapCtx = selectedChapterTopics.length > 0 ? selectedChapterTopics.map((t: any) => `Ch ${t.chapter_number}: ${t.title}`).join(', ') : null;
+    const chapterForSession = activeTopic?.title || (selectedChapterTopics.length === 1 ? selectedChapterTopics[0].title : null);
 
-        // Throttle React state updates: collect deltas and flush every ~50ms
-        // so we don't trigger 60+ re-renders/sec on a fast token stream.
-        let pendingDelta = '';
-        let flushScheduled = false;
-        const flushDelta = () => {
-          if (!pendingDelta) { flushScheduled = false; return; }
-          const toAppend = pendingDelta;
-          pendingDelta = '';
-          flushScheduled = false;
-          setMessages((p: ChatMessage[]) => p.map((m) =>
-            m.id === tutorBubbleId ? { ...m, content: m.content + toAppend } : m,
-          ));
-        };
-        const scheduleFlush = () => {
-          if (flushScheduled) return;
-          flushScheduled = true;
-          setTimeout(flushDelta, 50);
-        };
-
-        let streamGroundingStatus: GroundingStatus | undefined;
-        let streamTraceId: string | undefined;
-        let streamGotDone = false;
-
-        try {
-          await callFoxyTutorStream(foxyParams, {
-            onSession: (sid) => {
-              if (sid) setChatSessionId(sid);
-            },
-            onMetadata: (meta) => {
-              streamGroundingStatus = meta.groundingStatus;
-              streamTraceId = meta.traceId;
-              setMessages((p: ChatMessage[]) => p.map((m) =>
-                m.id === tutorBubbleId
-                  ? { ...m, groundingStatus: meta.groundingStatus, traceId: meta.traceId }
-                  : m,
-              ));
-            },
-            onText: (delta) => {
-              pendingDelta += delta;
-              scheduleFlush();
-            },
-            onPersisted: (info) => {
-              // B'-5 Phase 2: stamp the DB UUID onto the active tutor bubble
-              // so handleFeedback can call /api/foxy/feedback against it.
-              setMessages((p: ChatMessage[]) => p.map((m) =>
-                m.id === tutorBubbleId
-                  ? { ...m, persistedMessageId: info.messageId }
-                  : m,
-              ));
-            },
-            onDone: (info) => {
-              streamGotDone = true;
-              flushDelta(); // ensure last batch is rendered
-              try {
-                track('foxy_turn_completed', {
-                  subject: activeSubject,
-                  grade: studentGrade,
-                  was_grounded: info.groundedFromChunks === true,
-                  citations_count: info.citationsCount,
-                  latency_ms: Date.now() - turnStartedAt,
-                  streamed: true,
-                });
-              } catch { /* analytics non-critical */ }
-              // P0 defensive guard: if the stream completed with no delta and
-              // the bubble is still empty AND we had no abstain signal AND we
-              // didn't get a groundedFromChunks=true terminal, fill with a
-              // friendly fallback so the user never sees a silent empty bubble.
-              //
-              // Phase 2 (structured rendering): on `done` we also stamp the
-              // validated `structured` payload onto the bubble. Until this
-              // moment the bubble was rendering streamed text deltas via the
-              // markdown renderer; once `structured` lands, ChatBubble swaps
-              // to FoxyStructuredRenderer for the final paint.
-              setMessages((p: ChatMessage[]) => p.map((m) => {
-                if (m.id !== tutorBubbleId) return m;
-                let next: ChatMessage = m;
-                if (info.structured) {
-                  next = { ...next, structured: info.structured };
-                }
-                if (next.content && next.content.length > 0) return next;
-                if (next.groundingStatus === 'hard-abstain') return next; // abstain UI handles its own display
-                if (info.groundedFromChunks === true) return next;        // server signaled real grounded answer
-                return {
-                  ...next,
-                  content: language === 'hi'
-                    ? 'मैं अभी जवाब नहीं दे सका। फिर से कोशिश करें या दूसरा chapter चुनें।'
-                    : "I couldn't generate a response right now. Try rephrasing or pick a different chapter.",
-                };
-              }));
-              setFoxyState('happy'); setTimeout(() => setFoxyState('idle'), 2000);
-            },
-            onAbstain: (info) => {
-              flushDelta();
-              setMessages((p: ChatMessage[]) => p.map((m) =>
-                m.id === tutorBubbleId
-                  ? {
-                      ...m,
-                      content: '',
-                      groundingStatus: 'hard-abstain' as GroundingStatus,
-                      abstainReason: info.abstainReason,
-                      suggestedAlternatives: info.suggestedAlternatives,
-                      traceId: info.traceId,
-                    }
-                  : m,
-              ));
-              setFoxyState('idle');
-            },
-            onError: (info) => {
-              void info;
-              flushDelta();
-              setMessages((p: ChatMessage[]) => p.map((m) =>
-                m.id === tutorBubbleId
-                  ? {
-                      ...m,
-                      content: m.content || (language === 'hi'
-                        ? 'ओह! कृपया फिर कोशिश करें।'
-                        : 'Oops! Please try again.'),
-                    }
-                  : m,
-              ));
-              setFoxyState('idle');
-            },
-          });
-        } catch (streamErr) {
-          flushDelta();
-          console.warn('[foxy] stream error:', streamErr);
-          setMessages((p: ChatMessage[]) => p.map((m) =>
-            m.id === tutorBubbleId && !m.content
-              ? {
-                  ...m,
-                  content: language === 'hi'
-                    ? 'ओह! कृपया फिर कोशिश करें।'
-                    : 'Oops! Please try again.',
-                }
-              : m,
-          ));
-          setFoxyState('idle');
-        }
-
-        void streamGroundingStatus; void streamTraceId; void streamGotDone;
-
-        // Refresh conversation list so new/updated sessions appear
-        setTimeout(refreshConversations, 1000);
-        setLoading(false);
-        return;
-      }
-      // ── End streaming branch ────────────────────────────────────────────
-
-      const resp = await callFoxyTutor(foxyParams);
-      // Server confirmed daily limit reached — show UpgradeModal
-      if (resp.limitReached) {
-        setMessages((p: ChatMessage[]) => [...p, { id: nextMessageId(), role: 'tutor', content: resp.reply, timestamp: new Date().toISOString() }]);
-        setShowLimitModal(true);
-        setFoxyState('idle');
-        setLoading(false);
-        return;
-      }
-      setMessages((p: ChatMessage[]) => [...p, {
-        id: nextMessageId(),
-        role: 'tutor',
-        content: resp.reply,
-        timestamp: new Date().toISOString(),
-        xp: resp.xp_earned,
-        groundingStatus: resp.groundingStatus,
-        traceId: resp.traceId,
-        abstainReason: resp.abstainReason,
-        suggestedAlternatives: resp.suggestedAlternatives,
-        // Phase 2 (structured rendering): attach the validated FoxyResponse
-        // when the JSON path produced one. ChatBubble routes structured-bearing
-        // tutor messages to FoxyStructuredRenderer; legacy/abstain messages
-        // continue through RichContent.
-        structured: resp.structured,
-        // B'-5 Phase 2: persisted DB UUID for the 👍/👎 wiring. Null/absent
-        // when persistence failed — handleFeedback falls back gracefully.
-        persistedMessageId: resp.messageId ?? undefined,
-      }]);
-      // Soft upgrade prompt when quota is near exhaustion (user's choice, not forced)
-      if (resp.upgradePrompt) {
-        const up = resp.upgradePrompt;
-        const promptMsg = language === 'hi' ? up.messageHi : up.message;
-        setMessages((p: ChatMessage[]) => [...p, {
-          id: nextMessageId(),
-          role: 'tutor',
-          content: `💡 ${promptMsg}`,
-          timestamp: new Date().toISOString(),
-        }]);
-      }
-      if (resp.xp_earned > 0) setXpGained((p: number) => p + resp.xp_earned);
-      if (resp.session_id) setChatSessionId(resp.session_id);
-      // Analytics: F16 — see audit 2026-04-27.
-      // Phase 0 Fix 0.5: was_grounded is derived from resp.groundedFromChunks
-      // (the server's honest "answer was actually produced from retrieved
-      // NCERT chunks" signal), NOT from the groundingStatus discriminator.
-      // Soft-mode answers that fell back to "general CBSE knowledge" return
-      // groundingStatus='grounded' but groundedFromChunks=false — previously
-      // these inflated the was_grounded metric to ~100% even when Foxy was
-      // answering from general knowledge. citations_count uses the actual
-      // NCERT citation count from the grounded-answer service (not
-      // suggestedAlternatives, which is the abstain-branch redirect list
-      // and is always 0 on grounded responses).
+    // Analytics: F16 — fires once per fresh thread.
+    const isFreshSession = !chatSessionId;
+    if (isFreshSession) {
       try {
-        track('foxy_turn_completed', {
-          subject: activeSubject,
-          grade: studentGrade,
-          was_grounded: resp.groundedFromChunks === true,
-          citations_count: typeof resp.citationsCount === 'number' ? resp.citationsCount : 0,
-          latency_ms: Date.now() - turnStartedAt,
-        });
-      } catch { /* analytics is non-critical */ }
-      setFoxyState('happy'); setTimeout(() => setFoxyState('idle'), 2000);
-      // Auto-speak when voice mode is ON
-      if (voiceModeRef.current) {
-        speakCancelRef.current?.cancel();
-        setIsSpeaking(true);
-        speakCancelRef.current = speak(resp.reply, {
-          language: voiceLangRef.current,
-          rate: 0.9,
-          onEnd: () => setIsSpeaking(false),
-        });
-      }
-      // Refresh conversation list so new/updated sessions appear
-      setTimeout(refreshConversations, 1000);
-    } catch {
-      setMessages((p: ChatMessage[]) => [...p, {
-        id: nextMessageId(),
-        role: 'tutor',
-        content: language === 'hi' ? 'ओह! कृपया फिर कोशिश करें।' : 'Oops! Please try again.',
-        timestamp: new Date().toISOString(),
-      }]);
-      setFoxyState('idle');
+        track('foxy_session_started', { subject: activeSubject, grade: studentGrade, mode: sessionMode });
+      } catch { /* analytics non-critical */ }
     }
-    setLoading(false);
-  }, [student, studentGrade, activeSubject, language, sessionMode, activeTopic, chatSessionId, selectedChapters, topics, refreshConversations, nextMessageId]);
+    const turnStartedAt = Date.now();
+
+    await sendMessageCore(
+      {
+        message: text,
+        augmentedMessage,
+        imageFile: image ?? null,
+        imageBase64,
+        imageMediaType,
+        studentId: student?.id || '',
+        studentName: student?.name || 'Student',
+        grade: studentGrade,
+        subject: activeSubject,
+        language,
+        mode: sessionMode,
+        topicId: activeTopic?.id || null,
+        topicTitle: activeTopic?.title || null,
+        chapter: chapterForSession,
+        selectedChapters: chapCtx,
+        intent: extraParams?.intent,
+      },
+      {
+        onLimitReached: () => {
+          setShowLimitModal(true);
+          setFoxyState('idle');
+        },
+        onComplete: ({ usedStreaming, groundedFromChunks, citationsCount }) => {
+          // Always finalize the foxy face animation when the turn ends.
+          setFoxyState('happy');
+          setTimeout(() => setFoxyState('idle'), 2000);
+          try {
+            track('foxy_turn_completed', {
+              subject: activeSubject,
+              grade: studentGrade,
+              was_grounded: groundedFromChunks === true,
+              citations_count: typeof citationsCount === 'number' ? citationsCount : 0,
+              latency_ms: Date.now() - turnStartedAt,
+              streamed: usedStreaming,
+            });
+          } catch { /* analytics non-critical */ }
+          setTimeout(refreshConversations, 1000);
+        },
+        onTutorReplyAdded: ({ reply }) => {
+          // Auto-speak when voice mode is ON (JSON branch only — streaming
+          // branch does not auto-speak partial deltas).
+          if (voiceModeRef.current) {
+            speakCancelRef.current?.cancel();
+            setIsSpeaking(true);
+            speakCancelRef.current = speak(reply, {
+              language: voiceLangRef.current,
+              rate: 0.9,
+              onEnd: () => setIsSpeaking(false),
+            });
+          }
+        },
+      },
+    );
+  }, [student, studentGrade, activeSubject, language, sessionMode, activeTopic, chatSessionId, selectedChapters, topics, refreshConversations, sendMessageCore]);
+
 
   /**
    * P0 chip-action fix (2026-05-04). Dispatches Foxy starter-chip clicks
@@ -1618,7 +948,7 @@ export default function FoxyPage() {
         ? `नमस्ते! कक्षा ${dashboardEntryGrade} ${cfg.name} पढ़ने के लिए तैयार?`
         : `Hi! Ready to study Class ${dashboardEntryGrade} ${cfg.name}?`;
     }
-    return 'Hi! I am Foxy';
+    return language === 'hi' ? 'नमस्ते! मैं फॉक्सी हूँ' : 'Hi! I am Foxy';
   };
 
   const getEmptyStateSubtitle = (): string => {
@@ -1632,12 +962,14 @@ export default function FoxyPage() {
         ? 'नीचे से अध्याय चुनो या सीधे टाइप करो!'
         : 'Select a chapter below or just start typing!';
     }
-    return `${cfg.name} — Ch ${activeTopic.chapter_number}: ${activeTopic.title}`;
+    return language === 'hi'
+      ? `${cfg.name} — अध्याय ${activeTopic.chapter_number}: ${activeTopic.title}`
+      : `${cfg.name} — Ch ${activeTopic.chapter_number}: ${activeTopic.title}`;
   };
 
   if (authLoading || !student) return (
     <div className="mesh-bg min-h-dvh flex items-center justify-center">
-      <div className="text-center"><div className="text-5xl animate-float mb-3">{FOXY_FACES.idle}</div><p className="text-sm text-[var(--text-3)]">{language === 'hi' ? 'फॉक्सी लोड हो रहा है...' : 'Loading Foxy...'}</p></div>
+      <div className="text-center"><div className="text-5xl animate-float mb-3">{FOXY_FACES.idle}</div><p className="text-sm text-[var(--text-3)]">{isHi ? 'फॉक्सी लोड हो रहा है...' : 'Loading Foxy...'}</p></div>
     </div>
   );
 
@@ -1652,7 +984,7 @@ export default function FoxyPage() {
           onClick={() => setConversationSidebarOpen(true)}
           className="lg:hidden w-8 h-8 rounded-lg flex items-center justify-center transition-all active:scale-95"
           style={{ background: 'rgba(255,255,255,0.1)' }}
-          aria-label={language === 'hi' ? '\u091A\u0948\u091F \u0939\u093F\u0938\u094D\u091F\u094D\u0930\u0940' : 'Chat history'}
+          aria-label={isHi ? '\u091A\u0948\u091F \u0939\u093F\u0938\u094D\u091F\u094D\u0930\u0940' : 'Chat history'}
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -1662,12 +994,12 @@ export default function FoxyPage() {
           {FOXY_FACES[foxyState]}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-bold truncate">Foxy <span className="text-[10px] font-semibold opacity-60">{language === 'hi' ? 'AI ट्यूटर' : 'AI Tutor'}</span></div>
-          <div className="text-[10px] opacity-50 flex gap-2"><span className="hidden sm:inline">{totalXP + xpGained} XP</span><span className="hidden sm:inline">{streakDays}d streak</span><span>Gr {studentGrade}</span></div>
+          <div className="text-sm font-bold truncate">Foxy <span className="text-[10px] font-semibold opacity-60">{isHi ? 'AI ट्यूटर' : 'AI Tutor'}</span></div>
+          <div className="text-[10px] opacity-50 flex gap-2"><span className="hidden sm:inline">{totalXP + xpGained} XP</span><span className="hidden sm:inline">{isHi ? `${streakDays} दिन` : `${streakDays}d streak`}</span><span>{isHi ? `कक्षा ${studentGrade}` : `Gr ${studentGrade}`}</span></div>
         </div>
         <div className="flex items-center gap-1.5">
-          {LANGS.map(l => <button key={l.code} onClick={() => { if (!isLangLocked) setLanguage(l.code); }} className={`text-[10px] font-bold px-2 py-1 rounded-lg transition-all ${language !== l.code ? 'hidden sm:inline-block' : ''}`} style={{ background: language === l.code ? 'rgba(255,255,255,0.2)' : 'transparent', color: language === l.code ? '#fff' : 'rgba(255,255,255,0.4)', opacity: isLangLocked && language !== l.code ? 0.2 : 1, cursor: isLangLocked ? 'default' : 'pointer' }}>{l.label}</button>)}
-          {isLangLocked && <span className="text-[8px] text-white/30">🔒</span>}
+          {/* Language pills — extracted to ./_components/FoxySettings.tsx */}
+          <LanguagePicker language={language} isLocked={isLangLocked} onLanguageChange={setLanguage} />
           {chatUsage && <span className="hidden sm:inline text-[8px] opacity-40 ml-1" title={language === 'hi' ? 'बचे हुए संदेश' : 'Chat messages remaining'}>💬{chatUsage.remaining}/{chatUsage.limit}</span>}
           {/* Voice mode toggle — hidden on browsers without TTS */}
           {ttsSupported && (
@@ -1735,7 +1067,7 @@ export default function FoxyPage() {
             <span className="text-sm">{cfg.icon}</span>
             <span>
               {activeTopic
-                ? `Ch ${activeTopic.chapter_number}: ${activeTopic.title?.length > 15 ? activeTopic.title.substring(0, 14) + '...' : activeTopic.title}`
+                ? `${language === 'hi' ? '\u0905\u0927\u094D\u092F\u093E\u092F' : 'Ch'} ${activeTopic.chapter_number}: ${activeTopic.title?.length > 15 ? activeTopic.title.substring(0, 14) + '...' : activeTopic.title}`
                 : selectedChapters.length > 0
                   ? `${selectedChapters.length} ${language === 'hi' ? '\u0905\u0927\u094D\u092F\u093E\u092F' : 'Ch'}`
                   : (language === 'hi' ? '\u0905\u0927\u094D\u092F\u093E\u092F \u091A\u0941\u0928\u094B' : 'Select Chapter')}
@@ -1771,7 +1103,7 @@ export default function FoxyPage() {
                       style={{ background: sel ? `${cfg.color}06` : 'transparent', borderBottom: '1px solid var(--border)' }}
                     >
                       <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 text-[10px]" style={{ background: sel ? cfg.color : 'var(--surface-2)', color: sel ? '#fff' : 'var(--text-3)', border: sel ? 'none' : '1.5px solid var(--border)' }}>{sel ? '\u2713' : ''}</div>
-                      <div className="flex-1 min-w-0"><div className="text-xs font-semibold truncate" style={{ color: 'var(--text-1)' }}>Ch {topic.chapter_number}: {topic.title}</div></div>
+                      <div className="flex-1 min-w-0"><div className="text-xs font-semibold truncate" style={{ color: 'var(--text-1)' }}>{language === 'hi' ? 'अध्याय' : 'Ch'} {topic.chapter_number}: {topic.title}</div></div>
                       <span className="text-[9px] font-bold capitalize px-1.5 py-0.5 rounded" style={{ background: `${lc}15`, color: lc }}>{lvl.replace('_', ' ')}</span>
                     </button>
                   );
@@ -1781,24 +1113,8 @@ export default function FoxyPage() {
           )}
         </div>
 
-        {/* Simplified mode pills */}
-        <div className="foxy-mode-bar ml-auto">
-          {SIMPLIFIED_MODES.map(m => {
-            const backendMode = MODE_MAP[m.id] || m.id;
-            const isActive = sessionMode === backendMode || (m.id === 'ask' && (sessionMode === 'learn' || sessionMode === 'doubt'));
-            return (
-              <button key={m.id} onClick={() => switchMode(m.id)} className="shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1" style={{ background: isActive ? `${cfg.color}15` : 'transparent', color: isActive ? cfg.color : 'var(--text-3)', border: isActive ? `1px solid ${cfg.color}30` : '1px solid transparent' }}>
-                <span>{m.icon}</span>
-                <span>{language === 'hi' ? m.labelHi : m.label}</span>
-              </button>
-            );
-          })}
-          {/* Lesson mode — advanced, shown as small pill */}
-          <button onClick={() => switchMode('lesson')} className="shrink-0 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1" style={{ background: sessionMode === 'lesson' ? `${cfg.color}15` : 'transparent', color: sessionMode === 'lesson' ? cfg.color : 'var(--text-3)', border: sessionMode === 'lesson' ? `1px solid ${cfg.color}30` : '1px solid transparent' }}>
-            <span>{'\uD83C\uDF93'}</span>
-            <span className="hidden sm:inline">{language === 'hi' ? '\u092A\u093E\u0920' : 'Lesson'}</span>
-          </button>
-        </div>
+        {/* Simplified mode pills — extracted to ./_components/FoxySettings.tsx */}
+        <ModePicker sessionMode={sessionMode} color={cfg.color} isHi={isHi} onSwitchMode={switchMode} />
       </div>
 
       {/* Close dropdowns */}
@@ -1811,7 +1127,7 @@ export default function FoxyPage() {
           subject={activeSubject}
           mode={sessionMode}
           messageCount={messages.length}
-          isHi={language === 'hi'}
+          isHi={isHi}
           onNewChat={handleNewConversation}
           onOpenSidebar={() => setConversationSidebarOpen(true)}
           topicTitle={activeTopic?.title}
@@ -1826,10 +1142,15 @@ export default function FoxyPage() {
             {LESSON_STEPS.map((step, idx) => {
               const isCompleted = lessonStepsCompleted.includes(step);
               const isCurrent = step === lessonStep;
-              const stepLabels: Record<string, string> = {
-                hook: '🪝 Hook', visualization: '👁 Visual', guided_examples: '📝 Examples',
-                active_recall: '🧠 Recall', application: '🔧 Apply', spaced_revision: '🔄 Revise',
-              };
+              const stepLabels: Record<string, string> = language === 'hi'
+                ? {
+                    hook: '🪝 शुरुआत', visualization: '👁 दृश्य', guided_examples: '📝 उदाहरण',
+                    active_recall: '🧠 याद', application: '🔧 प्रयोग', spaced_revision: '🔄 रिवीज़न',
+                  }
+                : {
+                    hook: '🪝 Hook', visualization: '👁 Visual', guided_examples: '📝 Examples',
+                    active_recall: '🧠 Recall', application: '🔧 Apply', spaced_revision: '🔄 Revise',
+                  };
               return (
                 <div key={step} className="flex-1 flex flex-col items-center gap-0.5">
                   <div className="w-full h-1.5 rounded-full" style={{
@@ -1906,7 +1227,7 @@ export default function FoxyPage() {
         <ConversationManager
           conversations={conversations.map((c: ConversationSummary) => ({ ...c, isActive: c.id === chatSessionId }))}
           activeConversationId={chatSessionId}
-          isHi={language === 'hi'}
+          isHi={isHi}
           isOpen={conversationSidebarOpen}
           onSelect={selectConversation}
           onNewChat={handleNewConversation}
@@ -1919,7 +1240,7 @@ export default function FoxyPage() {
           <div className="flex flex-col overflow-hidden border-r" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', width: 240, position: 'absolute', top: 0, bottom: 0, left: 0, transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform 0.3s ease' }}>
             <div className="p-3 text-xs font-bold flex items-center justify-between" style={{ color: cfg.color, borderBottom: '1px solid var(--border)' }}>
               <span>{cfg.icon} {language === 'hi' ? 'अध्याय' : 'Chapters'} ({topics.length})</span>
-              <button onClick={() => setSidebarOpen(false)} className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] transition-all hover:opacity-70" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }} title="Collapse">×</button>
+              <button onClick={() => setSidebarOpen(false)} className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] transition-all hover:opacity-70" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }} title={language === 'hi' ? 'बंद करो' : 'Collapse'}>×</button>
             </div>
             <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
               {topics.map((topic: any) => {
@@ -1928,8 +1249,8 @@ export default function FoxyPage() {
                 const lvl = mastery?.mastery_level || 'not_started';
                 const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
                 return (
-                  <button key={topic.id} onClick={() => { setActiveTopic(topic); setMessages([]); setChatSessionId(null); setCollapsedAbove(null); setTimeout(() => sendMessage(`Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`), 50); }} className="w-full text-left p-2.5 rounded-xl transition-all active:scale-[0.98]" style={{ border: `1px solid ${lc}25`, background: activeTopic?.id === topic.id ? `${lc}10` : 'var(--surface-1)' }}>
-                    <div className="text-[11px] font-bold truncate" style={{ color: 'var(--text-1)' }}>Ch {topic.chapter_number}: {topic.title}</div>
+                  <button key={topic.id} onClick={() => { setActiveTopic(topic); setMessages([]); setChatSessionId(null); setCollapsedAbove(null); setTimeout(() => sendMessage(language === 'hi' ? `मुझे सिखाओ: ${topic.title} (अध्याय ${topic.chapter_number})` : `Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`), 50); }} className="w-full text-left p-2.5 rounded-xl transition-all active:scale-[0.98]" style={{ border: `1px solid ${lc}25`, background: activeTopic?.id === topic.id ? `${lc}10` : 'var(--surface-1)' }}>
+                    <div className="text-[11px] font-bold truncate" style={{ color: 'var(--text-1)' }}>{language === 'hi' ? 'अध्याय' : 'Ch'} {topic.chapter_number}: {topic.title}</div>
                     <div className="flex items-center gap-2 mt-1">
                       <div className="w-14 h-1.5 rounded-full" style={{ background: 'var(--surface-2)' }}><div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: lc }} /></div>
                       <span className="text-[9px] font-bold capitalize" style={{ color: lc }}>{lvl.replace('_', ' ')}</span>
@@ -1949,7 +1270,7 @@ export default function FoxyPage() {
             {showSELCheckIn && student && (
               <div className="mb-4 animate-slide-up">
                 <SELCheckIn
-                  isHi={language === 'hi'}
+                  isHi={isHi}
                   studentId={student.id}
                   onMoodSelected={handleMoodSelected}
                   onSkip={handleSELSkip}
@@ -2008,7 +1329,7 @@ export default function FoxyPage() {
                       <div>
                         <div className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>
                           {cfg.name}
-                          {urlContext.topic && <span className="font-normal text-[var(--text-3)]"> · Ch {urlContext.topic}</span>}
+                          {urlContext.topic && <span className="font-normal text-[var(--text-3)]"> · {language === 'hi' ? 'अध्याय' : 'Ch'} {urlContext.topic}</span>}
                         </div>
                         {urlContext.mode && (
                           <div className="text-[11px]" style={{ color: cfg.color }}>
@@ -2065,211 +1386,38 @@ export default function FoxyPage() {
               </div>
             )}
 
-            {/* Messages — with collapsing for long threads */}
-            {messages.length > 10 && collapsedAbove === null && (
-              <button
-                onClick={() => setCollapsedAbove(messages.length - 6)}
-                className="w-full text-center py-2 mb-3 rounded-xl text-[11px] font-semibold transition-all active:scale-[0.98]"
-                style={{ background: 'var(--surface-1)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
-              >
-                ↑ Show only recent messages ({messages.length} total)
-              </button>
-            )}
+            {/* Messages — with collapsing, dedup, structured-vs-legacy renderer choice,
+                Save-to-flashcard button. All extracted to ./_components/MessageList.tsx. */}
+            <MessageList
+              messages={messages}
+              collapsedAbove={collapsedAbove}
+              onSetCollapsedAbove={setCollapsedAbove}
+              activeSubject={activeSubject}
+              cfgColor={cfg.color}
+              studentName={student?.name}
+              isHi={isHi}
+              ttsSupported={ttsSupported}
+              savedMessageIds={savedMessageIds}
+              onFeedback={handleFeedback}
+              onReport={openReport}
+              onSaveFlashcard={saveToFlashcard}
+              onSpeak={ttsSupported ? speakMessage : undefined}
+            />
 
-            {collapsedAbove !== null && (
-              <button
-                onClick={() => setCollapsedAbove(null)}
-                className="w-full text-center py-2 mb-3 rounded-xl text-[11px] font-semibold transition-all active:scale-[0.98]"
-                style={{ background: `${cfg.color}08`, color: cfg.color, border: `1px solid ${cfg.color}20` }}
-              >
-                ↓ Show all {messages.length} messages
-              </button>
-            )}
-
-            {/* P0 (2026-04-28) defensive dedup: filter out any messages that
-                share an id with an earlier entry. Guards against the
-                duplicate-render symptom where the same ChatMessage somehow
-                appears twice in the array (or where a stale streaming-bubble
-                push lands alongside a fresh one). The structural fix is
-                nextMessageId() above, which makes ids monotonically unique;
-                this keeps that guarantee even if a future regression breaks
-                it. */}
-            {(() => {
-              const seenIds = new Set<number>();
-              return messages.filter((m) => {
-                if (seenIds.has(m.id)) return false;
-                seenIds.add(m.id);
-                return true;
-              });
-            })().map((msg: ChatMessage, idx: number) => {
-              // Skip collapsed messages
-              if (collapsedAbove !== null && idx < collapsedAbove) return null;
-
-              // ── Phase 2 renderer choice (structured vs legacy markdown) ──
-              // For tutor messages we prefer FoxyStructuredRenderer when the
-              // server attached a schema-valid `structured` payload AND the
-              // cheap shape discriminator passes. Otherwise we fall back to
-              // the legacy `RichContent` markdown renderer (legacy persisted
-              // rows, abstain bubbles, in-progress streaming text before the
-              // `done` event lands). The structured render is wrapped in a
-              // small error boundary whose fallback is the same legacy
-              // RichContent rendering — so the user always sees the answer
-              // text even if the structured tree blows up at runtime.
-              //
-              // Recovery branch: historical messages saved before the
-              // server-side recover-from-text fix landed have the raw
-              // ```json {...}``` in `content` and NULL `structured`. The
-              // markdown renderer would show the raw fence to the student
-              // — which is the regression captured in the screenshot.
-              // recoverFoxyResponseFromText extracts and validates the
-              // inline payload at render time so the student sees real
-              // blocks. Returns null on any parse/validation failure, so
-              // legitimate markdown messages are unaffected.
-              const recoveredStructured =
-                msg.role === 'tutor' && !msg.structured
-                  ? recoverFoxyResponseFromText(msg.content)
-                  : null;
-              const effectiveStructured = msg.structured ?? recoveredStructured ?? undefined;
-              const useStructured =
-                msg.role === 'tutor' && effectiveStructured && isFoxyResponse(effectiveStructured);
-              // When recovery fired, the underlying msg.content still holds
-              // the raw fenced JSON. Use the denormalized form for any path
-              // that consumes the assistant text directly (TTS, flashcard
-              // save, ChatBubble's rawContent math sniffer) so the student
-              // never sees / hears `{"title":...}` for these features.
-              const effectiveContent = recoveredStructured
-                ? denormalizeFoxyResponse(recoveredStructured)
-                : msg.content;
-              const legacyTutorContent = (
-                <RichContent content={effectiveContent} subjectKey={activeSubject} />
-              );
-              const tutorContent = useStructured ? (
-                <StructuredRenderBoundary fallback={legacyTutorContent}>
-                  <FoxyStructuredRenderer
-                    response={effectiveStructured!}
-                    subjectKey={activeSubject}
-                  />
-                </StructuredRenderBoundary>
-              ) : (
-                legacyTutorContent
-              );
-
-              return (
-                <div key={msg.id}>
-                  <ChatBubble
-                    role={msg.role}
-                    content={msg.role === 'tutor' ? tutorContent : (
-                      <div>
-                        {msg.imageUrl && (
-                          <div className="mb-2 rounded-xl overflow-hidden max-w-[220px]">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={msg.imageUrl} alt={language === 'hi' ? 'अपलोड की गई फ़ोटो' : 'Uploaded photo'} className="w-full h-auto rounded-xl" />
-                          </div>
-                        )}
-                        <div className="whitespace-pre-wrap">{msg.content}</div>
-                      </div>
-                    )}
-                    rawContent={effectiveContent}
-                    timestamp={msg.timestamp}
-                    studentName={student?.name}
-                    xp={msg.xp}
-                    feedback={msg.feedback}
-                    reported={msg.reported}
-                    color={cfg.color}
-                    activeSubject={activeSubject}
-                    onFeedback={(isUp) => handleFeedback(msg.id, isUp)}
-                    onReport={() => openReport(msg.id)}
-                    onSpeak={ttsSupported && msg.role === 'tutor' ? () => speakMessage(effectiveContent) : undefined}
-                    groundingStatus={msg.groundingStatus}
-                    traceId={msg.traceId}
-                    abstainReason={msg.abstainReason}
-                    suggestedAlternatives={msg.suggestedAlternatives}
-                  />
-                  {msg.role === 'tutor' && !msg.reported && (
-                    <div className="flex justify-start pl-11 -mt-2 mb-3">
-                      <button
-                        onClick={() => saveToFlashcard(msg.id, effectiveContent)}
-                        disabled={savedMessageIds.has(msg.id)}
-                        className="text-[10px] font-bold px-2.5 py-1 rounded-lg transition-all active:scale-95 disabled:cursor-default"
-                        style={{
-                          background: savedMessageIds.has(msg.id) ? '#16A34A10' : 'var(--surface-1)',
-                          color: savedMessageIds.has(msg.id) ? '#16A34A' : 'var(--text-3)',
-                          border: `1px solid ${savedMessageIds.has(msg.id) ? '#16A34A30' : 'var(--border)'}`,
-                        }}
-                      >
-                        {savedMessageIds.has(msg.id)
-                          ? (language === 'hi' ? '✓ सेव हो गया' : '✓ Saved')
-                          : (language === 'hi' ? '📌 सेव करो' : '📌 Save')}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* ── Report Error Modal ── */}
-            {reportModal && (
-              <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={(e: React.MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) { setReportModal(null); } }}>
-                <div className="w-full max-w-md rounded-t-2xl sm:rounded-2xl p-5 max-h-[80vh] overflow-y-auto animate-slide-up" style={{ background: 'var(--surface-1)' }}>
-                  {!reportSuccess ? (<>
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>⚠️ Report Incorrect Answer</h3>
-                      <button onClick={() => setReportModal(null)} className="text-lg" style={{ color: 'var(--text-3)' }}>✕</button>
-                    </div>
-
-                    {/* What Foxy said */}
-                    <div className="mb-4 p-3 rounded-xl text-xs" style={{ background: '#EF444408', border: '1px solid #EF444420' }}>
-                      <div className="font-bold text-[10px] uppercase tracking-wider mb-1" style={{ color: '#EF4444' }}>Foxy&apos;s response:</div>
-                      <div className="leading-relaxed" style={{ color: 'var(--text-2)', maxHeight: 100, overflow: 'hidden' }}>{reportModal.foxyMsg.substring(0, 300)}{reportModal.foxyMsg.length > 300 ? '...' : ''}</div>
-                    </div>
-
-                    {/* Reason */}
-                    <div className="mb-3">
-                      <label className="text-xs font-semibold mb-2 block" style={{ color: 'var(--text-3)' }}>What&apos;s wrong?</label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {REPORT_REASONS.map(r => (
-                          <button key={r.value} onClick={() => setReportReason(r.value)} className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all" style={{ background: reportReason === r.value ? '#EF444415' : 'var(--surface-2)', color: reportReason === r.value ? '#EF4444' : 'var(--text-3)', border: `1.5px solid ${reportReason === r.value ? '#EF444440' : 'var(--border)'}` }}>
-                            {language === 'hi' ? r.labelHi : r.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Student's correction */}
-                    <div className="mb-4">
-                      <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-3)' }}>{language === 'hi' ? 'सही उत्तर क्या होना चाहिए? (वैकल्पिक)' : 'What should the correct answer be? (optional)'}</label>
-                      <textarea
-                        value={reportCorrection}
-                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReportCorrection(e.target.value)}
-                        placeholder={language === 'hi' ? 'सही उत्तर लिखें...' : 'Type the correct answer here...'}
-                        rows={3}
-                        className="w-full text-sm rounded-xl px-3 py-2 resize-none outline-none"
-                        style={{ background: 'var(--surface-2)', border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)' }}
-                      />
-                    </div>
-
-                    {/* Submit */}
-                    <div className="flex gap-2">
-                      <button onClick={() => setReportModal(null)} className="flex-1 py-2.5 rounded-xl text-xs font-bold" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}>{language === 'hi' ? 'रद्द करें' : 'Cancel'}</button>
-                      <button onClick={submitReport} disabled={reportSubmitting} className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white transition-all active:scale-95 disabled:opacity-50" style={{ background: '#EF4444' }}>
-                        {reportSubmitting
-                          ? (language === 'hi' ? 'भेजा जा रहा है...' : 'Submitting...')
-                          : (language === 'hi' ? '⚠️ रिपोर्ट भेजें' : '⚠️ Submit Report')}
-                      </button>
-                    </div>
-                  </>) : (
-                    <div className="text-center py-6">
-                      <div className="text-4xl mb-3">✅</div>
-                      <h3 className="text-base font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>{language === 'hi' ? 'धन्यवाद!' : 'Thank you!'}</h3>
-                      <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>
-                        {language === 'hi' ? 'आपकी रिपोर्ट दर्ज हो गई है। हम इसकी जाँच करेंगे और सुधार करेंगे।' : 'Your report has been recorded. Our team will review and fix this.'}
-                      </p>
-                      <button onClick={() => setReportModal(null)} className="px-6 py-2 rounded-xl text-xs font-bold text-white" style={{ background: 'var(--orange)' }}>OK</button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            {/* Report-error modal — extracted to ./_components/ReportDialog.tsx */}
+            <ReportDialog
+              open={!!reportModal}
+              foxyMsg={reportModal?.foxyMsg ?? ''}
+              reason={reportReason}
+              correction={reportCorrection}
+              submitting={reportSubmitting}
+              success={reportSuccess}
+              isHi={isHi}
+              onReasonChange={setReportReason}
+              onCorrectionChange={setReportCorrection}
+              onSubmit={submitReport}
+              onClose={() => setReportModal(null)}
+            />
 
             {/* Thinking — honest elapsed timer, no fake stages */}
             {loading && (
@@ -2284,32 +1432,16 @@ export default function FoxyPage() {
             <div ref={endRef} />
           </div>
 
-          {/* Conversation length nudge — after 15+ user messages */}
-          {messages.filter((m: ChatMessage) => m.role === 'student').length >= 15 && (
-            <div
-              className="mx-3 mb-2 p-2.5 rounded-xl text-xs flex items-center justify-between gap-2"
-              style={{ background: '#F97316' + '0D', border: '1px solid #F97316' + '25' }}
-            >
-              <span style={{ color: '#C2410C' }}>
-                {language === 'hi'
-                  ? '\uD83E\uDD8A \u0928\u0908 \u091A\u0948\u091F \u0936\u0941\u0930\u0942 \u0915\u0930\u094B \u0924\u093E\u0915\u093F Foxy \u092C\u0947\u0939\u0924\u0930 \u091C\u0935\u093E\u092C \u0926\u0947 \u0938\u0915\u0947!'
-                  : '\uD83E\uDD8A Start a new chat so Foxy can give better answers!'}
-              </span>
-              <button
-                onClick={handleNewConversation}
-                className="shrink-0 px-3 py-1.5 rounded-full text-[10px] font-bold text-white transition-all active:scale-95"
-                style={{ background: '#F97316' }}
-              >
-                {language === 'hi' ? '\u0928\u0908 \u091A\u0948\u091F' : 'New Chat'}
-              </button>
-            </div>
-          )}
-          <ChatInput
-            onSubmit={sendMessage}
-            subjectKey={activeSubject}
-            disabled={loading}
+          {/* Composer + long-conversation nudge — extracted to ./_components/MessageInput.tsx */}
+          <MessageInput
+            messages={messages}
             language={language}
-            onVoiceSend={voiceMode ? sendMessage : undefined}
+            isHi={isHi}
+            loading={loading}
+            voiceMode={voiceMode}
+            activeSubject={activeSubject}
+            onSend={sendMessage}
+            onNewConversation={handleNewConversation}
           />
         </div>
       </div>
@@ -2321,8 +1453,8 @@ export default function FoxyPage() {
           <div className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl max-h-[75vh] flex flex-col lg:hidden" style={{ background: 'var(--surface-1)', boxShadow: '0 -8px 40px rgba(0,0,0,0.1)' }}>
             <div className="flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full" style={{ background: 'var(--border)' }} /></div>
             <div className="px-4 pb-2 flex items-center justify-between">
-              <span className="text-sm font-bold" style={{ color: cfg.color }}>{cfg.icon} {cfg.name} · Gr {studentGrade}</span>
-              <button onClick={() => setShowTopicSheet(false)} className="text-xs text-[var(--text-3)] font-semibold">Close</button>
+              <span className="text-sm font-bold" style={{ color: cfg.color }}>{cfg.icon} {cfg.name} · {language === 'hi' ? `कक्षा ${studentGrade}` : `Gr ${studentGrade}`}</span>
+              <button onClick={() => setShowTopicSheet(false)} className="text-xs text-[var(--text-3)] font-semibold">{language === 'hi' ? 'बंद करो' : 'Close'}</button>
             </div>
             <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
               {topics.map((topic: any) => {
@@ -2331,10 +1463,10 @@ export default function FoxyPage() {
                 const lvl = mastery?.mastery_level || 'not_started';
                 const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
                 return (
-                  <button key={topic.id} onClick={() => { setActiveTopic(topic); setShowTopicSheet(false); sendMessage(`Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`); }} className="w-full text-left p-3.5 rounded-xl flex items-center gap-3 active:scale-[0.98] transition-all" style={{ background: 'var(--surface-2)', border: `1px solid ${lc}20` }}>
+                  <button key={topic.id} onClick={() => { setActiveTopic(topic); setShowTopicSheet(false); sendMessage(language === 'hi' ? `मुझे सिखाओ: ${topic.title} (अध्याय ${topic.chapter_number})` : `Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`); }} className="w-full text-left p-3.5 rounded-xl flex items-center gap-3 active:scale-[0.98] transition-all" style={{ background: 'var(--surface-2)', border: `1px solid ${lc}20` }}>
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{ background: `${lc}15` }}>{cfg.icon}</div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>Ch {topic.chapter_number}: {topic.title}</div>
+                      <div className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>{language === 'hi' ? 'अध्याय' : 'Ch'} {topic.chapter_number}: {topic.title}</div>
                       <div className="flex items-center gap-2 mt-1">
                         <div className="flex-1 h-1.5 rounded-full" style={{ background: 'var(--border)' }}><div className="h-full rounded-full" style={{ width: `${pct}%`, background: lc }} /></div>
                         <span className="text-[10px] font-bold capitalize shrink-0" style={{ color: lc }}>{pct}%</span>
