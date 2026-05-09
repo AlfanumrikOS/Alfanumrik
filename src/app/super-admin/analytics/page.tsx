@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import StatCard from '../_components/StatCard';
+import { StatCard } from '@/components/admin-ui';
+import { BarChart, type ChartSeries } from '@/components/admin-ui/charts';
 import { colors, S } from '../_components/admin-styles';
 
 interface StatsData {
@@ -124,32 +125,16 @@ function AnalyticsContent() {
           <h2 style={S.h2}>Student Engagement by Grade (Last 7 Days)</h2>
           <div style={S.card}>
             {(() => {
-              const maxCount = Math.max(...v2.grade_distribution.map(d => d.count), 1);
-              return v2.grade_distribution.map(d => (
-                <div
-                  key={d.grade}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}
-                >
-                  <span style={{ fontSize: 13, color: colors.text2, width: 60, flexShrink: 0, fontWeight: 600 }}>
-                    Grade {d.grade}
-                  </span>
-                  <div style={{ flex: 1, height: 20, background: colors.surface, borderRadius: 4, overflow: 'hidden' }}>
-                    <div
-                      style={{
-                        width: `${(d.count / maxCount) * 100}%`,
-                        height: '100%',
-                        background: colors.accent,
-                        borderRadius: 4,
-                        opacity: 0.7,
-                        transition: 'width 0.3s',
-                      }}
-                    />
-                  </div>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: colors.text1, width: 40, textAlign: 'right' }}>
-                    {d.count}
-                  </span>
-                </div>
-              ));
+              const series: ChartSeries[] = [
+                {
+                  name: 'Active students',
+                  data: v2.grade_distribution.map(d => ({
+                    x: `Grade ${d.grade}`,
+                    y: d.count,
+                  })),
+                },
+              ];
+              return <BarChart series={series} yLabel="Students" height={240} />;
             })()}
           </div>
         </div>
