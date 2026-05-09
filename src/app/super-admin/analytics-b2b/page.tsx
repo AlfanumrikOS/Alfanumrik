@@ -2,10 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import DataTable, { Column } from '../_components/DataTable';
-import StatCard from '../_components/StatCard';
-import StatusBadge from '../_components/StatusBadge';
-import { colors, S } from '../_components/admin-styles';
+import { DataTable, StatCard, StatusBadge, type Column } from '@/components/admin-ui';
 
 // ── Types ──
 
@@ -122,14 +119,19 @@ function B2BAnalyticsContent() {
   }, [data?.schools, sortField]);
 
   if (loading && !data) {
-    return <div style={{ color: colors.text3, padding: 40, textAlign: 'center' }}>Loading B2B analytics...</div>;
+    return <div className="p-10 text-center text-muted-foreground">Loading B2B analytics...</div>;
   }
 
   if (error) {
     return (
-      <div style={{ padding: 40, textAlign: 'center' }}>
-        <div style={{ color: colors.danger, fontSize: 14, marginBottom: 12 }}>{error}</div>
-        <button onClick={fetchData} style={S.secondaryBtn}>Retry</button>
+      <div className="p-10 text-center">
+        <div className="mb-3 text-sm text-danger">{error}</div>
+        <button
+          onClick={fetchData}
+          className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -141,17 +143,17 @@ function B2BAnalyticsContent() {
       key: 'name', label: 'School',
       render: r => (
         <div>
-          <strong style={{ color: colors.text1 }}>{r.name}</strong>
-          <div style={{ fontSize: 11, color: colors.text3 }}>{r.city}{r.state ? `, ${r.state}` : ''}</div>
+          <strong className="text-foreground">{r.name}</strong>
+          <div className="text-[11px] text-muted-foreground">{r.city}{r.state ? `, ${r.state}` : ''}</div>
         </div>
       ),
     },
-    { key: 'enrolled_students', label: 'Students', render: r => <span style={{ fontWeight: 600 }}>{r.enrolled_students}/{r.max_students || '?'}</span> },
+    { key: 'enrolled_students', label: 'Students', render: r => <span className="font-semibold">{r.enrolled_students}/{r.max_students || '?'}</span> },
     {
       key: 'engagement_rate', label: 'Engagement',
       render: r => <StatusBadge label={`${r.engagement_rate}%`} variant={r.engagement_rate >= 60 ? 'success' : r.engagement_rate >= 30 ? 'warning' : 'danger'} />,
     },
-    { key: 'avg_score', label: 'Avg Score', render: r => <span style={{ fontWeight: 600 }}>{r.avg_score}%</span> },
+    { key: 'avg_score', label: 'Avg Score', render: r => <span className="font-semibold">{r.avg_score}%</span> },
     { key: 'quiz_completion', label: 'Quizzes', render: r => <span>{r.quiz_completion.toLocaleString()}</span> },
     {
       key: 'seat_utilization', label: 'Seat Util.',
@@ -159,7 +161,11 @@ function B2BAnalyticsContent() {
     },
     {
       key: 'monthly_revenue', label: 'MRR',
-      render: r => <span style={{ fontWeight: 600, color: r.monthly_revenue > 0 ? colors.success : colors.text3 }}>{r.monthly_revenue > 0 ? `INR ${formatINR(r.monthly_revenue)}` : '--'}</span>,
+      render: r => (
+        <span className={['font-semibold', r.monthly_revenue > 0 ? 'text-success' : 'text-muted-foreground'].join(' ')}>
+          {r.monthly_revenue > 0 ? `INR ${formatINR(r.monthly_revenue)}` : '--'}
+        </span>
+      ),
     },
     {
       key: 'health_score', label: 'Health',
@@ -181,103 +187,106 @@ function B2BAnalyticsContent() {
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 style={S.h1}>B2B Analytics</h1>
-          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>
+          <h1 className="text-xl font-bold tracking-tight text-foreground">B2B Analytics</h1>
+          <p className="m-0 text-[13px] text-muted-foreground">
             School performance, revenue, growth, and churn signals
           </p>
         </div>
-        <button onClick={fetchData} style={S.secondaryBtn}>&#8635; Refresh</button>
+        <button
+          onClick={fetchData}
+          className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+        >
+          &#8635; Refresh
+        </button>
       </div>
 
       {/* Revenue Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
+      <div className="mb-6 grid grid-cols-4 gap-3">
         <StatCard
           label="MRR"
           value={`INR ${formatINR(data.revenue.mrr)}`}
           icon="$"
-          accentColor={colors.success}
+          accentColor="#16A34A"
           subtitle="Monthly Recurring Revenue"
         />
         <StatCard
           label="ARR"
           value={`INR ${formatINR(data.revenue.arr)}`}
           icon="$"
-          accentColor={colors.accent}
+          accentColor="#2563EB"
           subtitle="Annual Run Rate"
         />
         <StatCard
           label="Avg Rev / Student"
           value={`INR ${data.revenue.avg_revenue_per_student}`}
           icon="@"
-          accentColor={colors.warning}
+          accentColor="#D97706"
         />
         <StatCard
           label="Total Seats"
           value={data.revenue.total_seats}
           icon="#"
-          accentColor={colors.text2}
+          accentColor="#6B7280"
           subtitle={`${data.revenue.total_enrolled} enrolled`}
         />
       </div>
 
       {/* Growth Cards */}
-      <h2 style={S.h2}>Growth</h2>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Growth</h2>
+      <div className="mb-6 grid grid-cols-4 gap-3">
         <StatCard
           label="Schools This Month"
           value={data.growth.schools_this_month}
-          accentColor={colors.accent}
+          accentColor="#2563EB"
           trend={{ value: data.growth.school_growth_rate, label: '% vs last month' }}
         />
         <StatCard
           label="Schools Last Month"
           value={data.growth.schools_last_month}
-          accentColor={colors.text3}
+          accentColor="#9CA3AF"
         />
         <StatCard
           label="Students This Month"
           value={data.growth.students_this_month}
-          accentColor={colors.success}
+          accentColor="#16A34A"
           trend={{ value: data.growth.student_growth_rate, label: '% vs last month' }}
         />
         <StatCard
           label="Students Last Month"
           value={data.growth.students_last_month}
-          accentColor={colors.text3}
+          accentColor="#9CA3AF"
         />
       </div>
 
       {/* Cohort Table */}
       {data.cohorts.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <h2 style={S.h2}>School Cohorts by Month</h2>
-          <div style={S.card}>
+        <div className="mb-6">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">School Cohorts by Month</h2>
+          <div className="rounded-lg border border-surface-3 bg-surface-1 p-4">
             {(() => {
               const maxCount = Math.max(...data.cohorts.map(d => d.count), 1);
               return data.cohorts.map(d => (
                 <div
                   key={d.month}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}
+                  className="mb-2 flex items-center gap-3"
                 >
-                  <span style={{ fontSize: 12, color: colors.text2, width: 80, flexShrink: 0, fontWeight: 600 }}>
+                  <span className="w-20 flex-shrink-0 text-xs font-semibold text-muted-foreground">
                     {d.month}
                   </span>
-                  <div style={{ flex: 1, height: 18, background: colors.surface, borderRadius: 4, overflow: 'hidden' }}>
+                  <div className="h-[18px] flex-1 overflow-hidden rounded bg-surface-2">
                     <div
+                      className="h-full rounded transition-[width] duration-300"
                       style={{
                         width: `${(d.count / maxCount) * 100}%`,
-                        height: '100%',
-                        background: colors.accent,
-                        borderRadius: 4,
+                        background: '#2563EB',
                         opacity: 0.7,
-                        transition: 'width 0.3s',
                         minWidth: d.count > 0 ? 4 : 0,
                       }}
                     />
                   </div>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: colors.text1, width: 30, textAlign: 'right' }}>
+                  <span className="w-[30px] text-right text-xs font-bold text-foreground">
                     {d.count}
                   </span>
                 </div>
@@ -288,18 +297,20 @@ function B2BAnalyticsContent() {
       )}
 
       {/* School Comparison Table */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h2 style={{ ...S.h2, marginBottom: 0 }}>School Comparison</h2>
-          <div style={{ display: 'flex', gap: 6 }}>
+      <div className="mb-6">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="m-0 text-xs font-semibold uppercase tracking-wider text-muted-foreground">School Comparison</h2>
+          <div className="flex gap-1.5">
             {(['health_score', 'engagement_rate', 'monthly_revenue'] as const).map(field => (
               <button
                 key={field}
                 onClick={() => setSortField(field)}
-                style={{
-                  ...S.filterBtn,
-                  ...(sortField === field ? S.filterActive : {}),
-                }}
+                className={[
+                  'rounded-md border px-3.5 py-1.5 text-xs font-medium',
+                  sortField === field
+                    ? 'border-foreground bg-foreground text-surface-1'
+                    : 'border-surface-3 bg-surface-1 text-muted-foreground hover:bg-surface-2',
+                ].join(' ')}
               >
                 {field === 'health_score' ? 'Health' : field === 'engagement_rate' ? 'Engagement' : 'Revenue'}
               </button>
@@ -316,8 +327,8 @@ function B2BAnalyticsContent() {
 
       {/* Churn Risks */}
       {data.churn_risks.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <h2 style={S.h2}>Churn Risk (3+ Weeks Declining)</h2>
+        <div className="mb-6">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Churn Risk (3+ Weeks Declining)</h2>
           <DataTable
             columns={churnColumns}
             data={data.churn_risks}
@@ -328,9 +339,9 @@ function B2BAnalyticsContent() {
       )}
 
       {data.churn_risks.length === 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <h2 style={S.h2}>Churn Risk</h2>
-          <div style={{ ...S.card, textAlign: 'center', padding: 24, color: colors.success }}>
+        <div className="mb-6">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Churn Risk</h2>
+          <div className="rounded-lg border border-surface-3 bg-surface-1 p-6 text-center text-success">
             No schools with 3 consecutive weeks of declining engagement
           </div>
         </div>

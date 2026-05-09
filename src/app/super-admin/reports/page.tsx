@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import { colors, S } from '../_components/admin-styles';
 
 function ReportsContent() {
   const { apiFetch } = useAdmin();
@@ -36,40 +35,47 @@ function ReportsContent() {
     { type: 'audit', label: 'Audit Logs', desc: 'All admin actions and system events' },
   ];
 
+  const isError = status.includes('failed') || status.includes('Failed');
+
   return (
     <div>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={S.h1}>Reports & Exports</h1>
-        <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>Export data as CSV or JSON files. Reports include up to 5,000 rows.</p>
+      <div className="mb-6">
+        <h1 className="text-xl font-bold tracking-tight text-foreground">Reports & Exports</h1>
+        <p className="text-[13px] text-muted-foreground m-0">Export data as CSV or JSON files. Reports include up to 5,000 rows.</p>
       </div>
 
       {status && (
-        <div style={{
-          padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13,
-          background: status.includes('failed') || status.includes('Failed') ? colors.dangerLight : colors.successLight,
-          color: status.includes('failed') || status.includes('Failed') ? colors.danger : colors.success,
-          border: `1px solid ${status.includes('failed') || status.includes('Failed') ? '#FECACA' : '#BBF7D0'}`,
-        }}>
+        <div
+          className={[
+            'mb-4 rounded-lg border px-3.5 py-2.5 text-[13px]',
+            isError
+              ? 'border-[#FECACA] bg-[#FEF2F2] text-[#DC2626]'
+              : 'border-[#BBF7D0] bg-[#F0FDF4] text-[#16A34A]',
+          ].join(' ')}
+        >
           {status}
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
+      <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
         {reports.map(r => (
-          <div key={r.type} style={S.card}>
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: colors.text1, marginBottom: 2 }}>{r.label}</div>
-              <div style={{ fontSize: 12, color: colors.text3 }}>{r.desc}</div>
+          <div key={r.type} className="rounded-lg border border-surface-3 bg-surface-1 p-4">
+            <div className="mb-3">
+              <div className="mb-0.5 text-[15px] font-bold text-foreground">{r.label}</div>
+              <div className="text-xs text-muted-foreground">{r.desc}</div>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="flex gap-2">
               <button
                 onClick={() => downloadReport(r.type, 'csv')}
                 disabled={downloading !== null}
-                style={{ ...S.dlBtn, flex: 1, opacity: downloading !== null ? 0.6 : 1, cursor: downloading !== null ? 'not-allowed' : 'pointer' }}
+                className={[
+                  'flex-1 rounded-md border border-surface-3 bg-surface-2 px-3.5 py-2 text-xs font-semibold text-foreground hover:bg-surface-3',
+                  downloading !== null ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+                ].join(' ')}
               >
                 {downloading === `${r.type}-csv` ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <span className="inline-flex items-center gap-1.5">
                     <span style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
                     Downloading...
                   </span>
@@ -78,10 +84,13 @@ function ReportsContent() {
               <button
                 onClick={() => downloadReport(r.type, 'json')}
                 disabled={downloading !== null}
-                style={{ ...S.secondaryBtn, flex: 1, fontSize: 12, opacity: downloading !== null ? 0.6 : 1, cursor: downloading !== null ? 'not-allowed' : 'pointer' }}
+                className={[
+                  'flex-1 rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-xs font-medium text-foreground hover:bg-surface-2',
+                  downloading !== null ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+                ].join(' ')}
               >
                 {downloading === `${r.type}-json` ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <span className="inline-flex items-center gap-1.5">
                     <span style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
                     Downloading...
                   </span>
