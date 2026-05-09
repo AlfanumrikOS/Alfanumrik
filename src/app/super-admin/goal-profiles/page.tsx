@@ -42,6 +42,7 @@ const MODES: FoxyMode[] = [
   'revise',
   'doubt',
   'homework',
+  'explorer',
 ];
 
 const MODE_LABELS: Record<FoxyMode, { en: string; hi: string }> = {
@@ -51,6 +52,7 @@ const MODE_LABELS: Record<FoxyMode, { en: string; hi: string }> = {
   revise:   { en: 'Revise',   hi: 'दोहराओ' },
   doubt:    { en: 'Doubt',    hi: 'संदेह' },
   homework: { en: 'Homework', hi: 'गृहकार्य' },
+  explorer: { en: 'Explorer', hi: 'खोज' },
 };
 
 function formatPercent(n: number): string {

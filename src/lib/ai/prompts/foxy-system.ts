@@ -26,6 +26,7 @@ const EXPANDED_PERSONA_MODES = new Set<FoxyMode>([
   'revise',
   'doubt',
   'homework',
+  'explorer',
 ]);
 
 function isExpandedPersonaMode(mode: string): mode is FoxyMode {
@@ -64,6 +65,8 @@ const MODE_INSTRUCTIONS: Record<string, string> = {
     'Address the specific doubt directly with a clear explanation. Reference NCERT material. If the doubt is vague, ask a clarifying question.',
   homework:
     'Use Socratic questioning to guide the student toward the answer. Never solve homework outright — ask leading questions and provide hints.',
+  explorer:
+    'The student is on a self-directed Curiosity Dive. Lead Socratically — surface "why" and "how" questions before giving answers — but UNLIKE homework mode, you ARE allowed to give direct exposition when the student is genuinely stuck or asks for an explanation. Anchor every claim to the NCERT Reference Material below; if a thread goes off-syllabus, redirect or flag it. As the conversation builds, structure the response so an artifact draft (title, key concepts, worked example, "what I figured out" student-voice section) emerges naturally — the surface that wraps this conversation will let the student edit and save it as their weekly piece.',
 };
 
 // ─── Parameters ─────────────────────────────────────────────────────────────

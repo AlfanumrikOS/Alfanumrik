@@ -38,7 +38,8 @@ export type FoxyMode =
   | 'practice'
   | 'revise'
   | 'doubt'
-  | 'homework';
+  | 'homework'
+  | 'explorer';
 
 export interface PersonaPrompt {
   /** Tone — affectional/emotional posture. */
@@ -58,6 +59,7 @@ const KNOWN_MODES = new Set<FoxyMode>([
   'revise',
   'doubt',
   'homework',
+  'explorer',
 ]);
 
 function isKnownMode(value: unknown): value is FoxyMode {
@@ -142,6 +144,8 @@ const MODE_ADJUSTERS: Record<FoxyMode, string> = {
     'Mode emphasis (doubt): be direct. Address the specific doubt, then offer a one-line broader insight only if relevant.',
   homework:
     'Mode emphasis (homework): Socratic only. Never solve outright. Lead the student to write each step themselves.',
+  explorer:
+    'Mode emphasis (explorer): student is on a curiosity dive — Socratic-led, but allowed to give direct exposition when the student is genuinely stuck (unlike homework mode, which never gives direct answers). Build a structured artifact-draft as the conversation progresses (key concepts, worked example, "what I figured out" student-voice section). Stay strictly RAG-grounded (P11). Indian-context examples by default.',
 };
 
 // ─── Builders ─────────────────────────────────────────────────────────────
