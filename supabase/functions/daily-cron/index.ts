@@ -873,6 +873,71 @@ async function logDailyLabDistribution(supabase: ReturnType<typeof createClient>
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Pedagogy v2 Wave 3 — Monthly Synthesis trigger.
+// On the 1st of each UTC month, enumerate active students with
+// ff_pedagogy_v2_monthly_synthesis enabled and POST to monthly-synthesis-builder
+// per student with synthesis_month = previous calendar month.
+// No-op on every other day. The builder is idempotent on (student_id,
+// synthesis_month), so retries / duplicate triggers are safe.
+// ──────────────────────────────────────────────────────────────────────────
+async function triggerMonthlySynthesis(supabase: ReturnType<typeof createClient>): Promise<number> {
+  const now = new Date()
+  if (now.getUTCDate() !== 1) return 0
+
+  // Previous calendar month label, e.g. now=2026-05-01 -> '2026-04'.
+  const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
+  const synthesisMonth = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}`
+
+  // Verify the flag is globally enabled before doing per-student work.
+  const { data: flagRow } = await supabase
+    .from('feature_flags')
+    .select('is_enabled, rollout_percentage, target_roles')
+    .eq('flag_name', 'ff_pedagogy_v2_monthly_synthesis')
+    .maybeSingle()
+  if (!flagRow || !flagRow.is_enabled) return 0
+  // Rollout-percent gating happens per-student inside the loop via the
+  // hashForRollout function in the Next.js side; for v1 the cron takes a
+  // permissive view (flag globally on -> trigger for all flagged students)
+  // and the builder remains idempotent. A future enhancement adds per-user
+  // hash gating here.
+
+  const { data: students, error: studentsErr } = await supabase
+    .from('students')
+    .select('id')
+    .eq('is_active', true)
+    .is('deleted_at', null)
+  if (studentsErr) {
+    console.error('triggerMonthlySynthesis: students fetch failed:', studentsErr.message)
+    return 0
+  }
+  const ids = ((students ?? []) as { id: string }[]).map((s) => s.id)
+
+  const builderUrl = `${Deno.env.get('SUPABASE_URL') ?? ''}/functions/v1/monthly-synthesis-builder`
+  const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
+  let triggered = 0
+  // Sequential so we don't blow connection pool on a 10K-student fanout.
+  // Each builder call is fast (no LLM) so wall-clock impact is acceptable.
+  for (const studentId of ids) {
+    try {
+      const res = await fetch(builderUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-cron-secret': cronSecret },
+        body: JSON.stringify({ student_id: studentId, synthesis_month: synthesisMonth }),
+      })
+      if (res.ok) triggered++
+      else {
+        const t = await res.text().catch(() => '')
+        console.warn(`triggerMonthlySynthesis: ${studentId} non-OK ${res.status}: ${t.slice(0, 120)}`)
+      }
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e)
+      console.warn(`triggerMonthlySynthesis: ${studentId} network error: ${m}`)
+    }
+  }
+  return triggered
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Phase 3-C — Contract lifecycle automation
 // All three steps are no-ops when ff_school_contracts_v1 is OFF.
 // Failures isolated by Promise.allSettled in the main handler.
@@ -1101,6 +1166,7 @@ Deno.serve(async (req) => {
       ['contract_reminders_sent',()=>processContractReminders(sb)],
       ['contracts_expired',()=>expireContracts(sb)],
       ['contract_grace_audited',()=>auditContractGracePeriods(sb)],
+      ['monthly_synthesis_triggered',()=>triggerMonthlySynthesis(sb)],
     ]
     const settled=await Promise.allSettled(steps.map(([,fn])=>fn()))
     const results:Record<string,number>={};const errors:Record<string,string>={}
