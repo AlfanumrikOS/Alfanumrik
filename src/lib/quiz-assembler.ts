@@ -58,7 +58,7 @@ export interface AssembleQuizResult {
 export function validateQuestion(q: any): { valid: boolean; reason?: string } {
   if (!q) return { valid: false, reason: 'null_question' };
 
-  // Question text checks
+  // Question text checks (apply to ALL types)
   if (!q.question_text || typeof q.question_text !== 'string')
     return { valid: false, reason: 'empty_text' };
   if (q.question_text.length < 15)
@@ -80,28 +80,44 @@ export function validateQuestion(q: any): { valid: boolean; reason?: string } {
   if (text.startsWith('what is the primary purpose of studying'))
     return { valid: false, reason: 'garbage_text' };
 
-  // MCQ option validation
-  const opts = Array.isArray(q.options) ? q.options : [];
-  if (opts.length !== 4)
-    return { valid: false, reason: `${opts.length}_options` };
-  if (opts.some((o: any) => !o || String(o).trim() === ''))
-    return { valid: false, reason: 'empty_option' };
-  if (q.correct_answer_index < 0 || q.correct_answer_index > 3)
-    return { valid: false, reason: 'bad_answer_index' };
+  // Type-specific shape validation. Short/long-answer questions don't have
+  // four options + correct_answer_index; gating these checks behind
+  // qType==='mcq' lets non-MCQ types flow through once the DB has them.
+  // Reported 2026-05-09: previously this validator rejected every non-MCQ
+  // question because the MCQ-shape checks were unconditional.
+  const qType = (q.question_type_v2 ?? q.question_type ?? 'mcq').toLowerCase();
+  if (qType === 'mcq') {
+    const opts = Array.isArray(q.options) ? q.options : [];
+    if (opts.length !== 4)
+      return { valid: false, reason: `${opts.length}_options` };
+    if (opts.some((o: any) => !o || String(o).trim() === ''))
+      return { valid: false, reason: 'empty_option' };
+    if (q.correct_answer_index < 0 || q.correct_answer_index > 3)
+      return { valid: false, reason: 'bad_answer_index' };
 
-  // Garbage option patterns
-  const optTexts = opts.map((o: string) => (o || '').toLowerCase().trim());
-  if (optTexts.some((o: string) =>
-    o.includes('unrelated topic') || o.includes('physical education') ||
-    o.includes('art and craft') || o.includes('music theory') ||
-    o.includes('it is not important') || o.includes('no board exam')
-  )) return { valid: false, reason: 'garbage_option' };
+    // Garbage option patterns
+    const optTexts = opts.map((o: string) => (o || '').toLowerCase().trim());
+    if (optTexts.some((o: string) =>
+      o.includes('unrelated topic') || o.includes('physical education') ||
+      o.includes('art and craft') || o.includes('music theory') ||
+      o.includes('it is not important') || o.includes('no board exam')
+    )) return { valid: false, reason: 'garbage_option' };
 
-  // At least 3 distinct options
-  if (new Set(optTexts).size < 3)
-    return { valid: false, reason: 'duplicate_options' };
+    // At least 3 distinct options
+    if (new Set(optTexts).size < 3)
+      return { valid: false, reason: 'duplicate_options' };
+  } else {
+    // short_answer / long_answer / ncert — require an expected_answer or
+    // marking guidance that the grader can reference. Fall back to
+    // explanation when expected_answer is not yet populated by the DB.
+    const expected = (q.expected_answer ?? '').toString().trim();
+    const explanation = (q.explanation ?? '').toString().trim();
+    if (expected.length < 5 && explanation.length < 20) {
+      return { valid: false, reason: 'missing_expected_answer' };
+    }
+  }
 
-  // Explanation quality
+  // Explanation quality (required for all types)
   if (!q.explanation || q.explanation.length < 20)
     return { valid: false, reason: 'weak_explanation' };
 
