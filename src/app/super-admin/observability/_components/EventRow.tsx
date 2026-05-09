@@ -1,6 +1,16 @@
 'use client';
 
-import { colors } from '../../_components/admin-styles';
+const colors = {
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  surface: '#F9FAFB',
+  surfaceHover: '#F3F4F6',
+  borderLight: '#F3F4F6',
+  accentLight: '#EFF6FF',
+  warning: '#D97706',
+  danger: '#DC2626',
+} as const;
 
 export interface TimelineEvent {
   id: string;

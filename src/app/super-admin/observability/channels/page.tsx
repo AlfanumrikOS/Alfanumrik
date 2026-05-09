@@ -3,7 +3,64 @@
 import { useState, useCallback } from 'react';
 import useSWR from 'swr';
 import AdminShell, { useAdmin } from '../../_components/AdminShell';
-import { colors, S } from '../../_components/admin-styles';
+
+const colors = {
+  bg: '#FFFFFF',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  surface: '#F9FAFB',
+  accent: '#2563EB',
+  accentLight: '#EFF6FF',
+  success: '#16A34A',
+  successLight: '#F0FDF4',
+  warning: '#D97706',
+  warningLight: '#FFFBEB',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
+} as const;
+
+const S = {
+  searchInput: {
+    padding: '8px 12px',
+    borderRadius: 6,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+    color: colors.text1,
+    fontSize: 13,
+    outline: 'none',
+    fontFamily: 'inherit',
+    width: 220,
+    boxSizing: 'border-box',
+  } as React.CSSProperties,
+  select: {
+    padding: '8px 12px',
+    borderRadius: 6,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+    color: colors.text1,
+    fontSize: 13,
+    outline: 'none',
+    cursor: 'pointer',
+  } as React.CSSProperties,
+  card: {
+    padding: 16,
+    borderRadius: 8,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+  } as React.CSSProperties,
+  actionBtn: {
+    background: 'none',
+    border: `1px solid ${colors.border}`,
+    borderRadius: 5,
+    padding: '4px 10px',
+    fontSize: 12,
+    cursor: 'pointer',
+    fontWeight: 500,
+    color: colors.text2,
+  } as React.CSSProperties,
+};
 
 /* ── Types ─────────────────────────────────────────────── */
 
@@ -199,19 +256,28 @@ function ChannelsContent() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
-          <h1 style={S.h1}>Notification Channels</h1>
+          <h1 className="text-xl font-bold tracking-tight text-foreground mb-1">Notification Channels</h1>
           <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>
             Configure delivery targets for alert rules
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <a href="/super-admin/observability/rules" style={{ ...S.secondaryBtn, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+          <a
+            href="/super-admin/observability/rules"
+            className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2 inline-flex items-center no-underline"
+          >
             Rules
           </a>
-          <a href="/super-admin/observability" style={{ ...S.secondaryBtn, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+          <a
+            href="/super-admin/observability"
+            className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2 inline-flex items-center no-underline"
+          >
             Timeline
           </a>
-          <button onClick={() => { setForm(EMPTY_FORM); setFormError(null); setShowForm(true); }} style={S.primaryBtn}>
+          <button
+            onClick={() => { setForm(EMPTY_FORM); setFormError(null); setShowForm(true); }}
+            className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
+          >
             + New Channel
           </button>
         </div>
@@ -355,7 +421,7 @@ function ChannelsContent() {
           onClick={(e) => { if (e.target === e.currentTarget) setShowForm(false); }}
         >
           <div style={{ background: colors.bg, borderRadius: 12, padding: 24, width: 480, maxHeight: '90vh', overflow: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
-            <h2 style={{ ...S.h1, marginBottom: 16 }}>New Notification Channel</h2>
+            <h2 className="text-xl font-bold tracking-tight text-foreground" style={{ marginBottom: 16 }}>New Notification Channel</h2>
 
             {formError && (
               <div style={{ padding: '8px 12px', background: colors.dangerLight, color: colors.danger, fontSize: 13, borderRadius: 6, marginBottom: 12 }}>
@@ -428,8 +494,17 @@ function ChannelsContent() {
 
             {/* Actions */}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button onClick={() => setShowForm(false)} style={S.secondaryBtn}>Cancel</button>
-              <button onClick={handleSubmit} disabled={formSaving} style={S.primaryBtn}>
+              <button
+                onClick={() => setShowForm(false)}
+                className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={formSaving}
+                className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90 disabled:opacity-50"
+              >
                 {formSaving ? 'Creating...' : 'Create'}
               </button>
             </div>

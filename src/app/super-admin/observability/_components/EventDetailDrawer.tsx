@@ -2,8 +2,33 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { colors, S } from '../../_components/admin-styles';
 import { useAdmin } from '../../_components/AdminShell';
+
+const colors = {
+  bg: '#FFFFFF',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  borderLight: '#F3F4F6',
+  surface: '#F9FAFB',
+  warning: '#D97706',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
+} as const;
+
+const S = {
+  actionBtn: {
+    background: 'none',
+    border: `1px solid ${colors.border}`,
+    borderRadius: 5,
+    padding: '4px 10px',
+    fontSize: 12,
+    cursor: 'pointer',
+    fontWeight: 500,
+    color: colors.text2,
+  } as React.CSSProperties,
+};
 import type { TimelineEvent } from './EventRow';
 
 interface EventDetailDrawerProps {

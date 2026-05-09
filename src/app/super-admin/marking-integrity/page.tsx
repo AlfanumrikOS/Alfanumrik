@@ -17,9 +17,83 @@ import { useMemo, useState, useCallback } from 'react';
 import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import StatCard from '../_components/StatCard';
-import StatusBadge from '../_components/StatusBadge';
-import { colors, S } from '../_components/admin-styles';
+import { StatCard, StatusBadge } from '@/components/admin-ui';
+
+const colors = {
+  bg: '#FFFFFF',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  borderStrong: '#D1D5DB',
+  borderLight: '#F3F4F6',
+  surface: '#F9FAFB',
+  surfaceHover: '#F3F4F6',
+  accent: '#2563EB',
+  accentLight: '#EFF6FF',
+  success: '#16A34A',
+  successLight: '#F0FDF4',
+  warning: '#D97706',
+  warningLight: '#FFFBEB',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
+} as const;
+
+const S = {
+  h1: {
+    fontSize: 20,
+    fontWeight: 700,
+    color: colors.text1,
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  } as React.CSSProperties,
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: 13 } as React.CSSProperties,
+  th: {
+    textAlign: 'left',
+    padding: '10px 14px',
+    borderBottom: `2px solid ${colors.border}`,
+    color: colors.text2,
+    fontSize: 11,
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    background: colors.surface,
+    position: 'sticky',
+    top: 0,
+    zIndex: 1,
+  } as React.CSSProperties,
+  td: {
+    padding: '10px 14px',
+    borderBottom: `1px solid ${colors.borderLight}`,
+    color: colors.text1,
+    fontSize: 13,
+  } as React.CSSProperties,
+  filterBtn: {
+    padding: '7px 14px',
+    borderRadius: 6,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+    color: colors.text2,
+    fontSize: 12,
+    fontWeight: 500,
+    cursor: 'pointer',
+  } as React.CSSProperties,
+  filterActive: {
+    background: colors.text1,
+    color: colors.bg,
+    borderColor: colors.text1,
+  } as React.CSSProperties,
+  actionBtn: {
+    background: 'none',
+    border: `1px solid ${colors.border}`,
+    borderRadius: 5,
+    padding: '4px 10px',
+    fontSize: 12,
+    cursor: 'pointer',
+    fontWeight: 500,
+    color: colors.text2,
+  } as React.CSSProperties,
+};
 
 /* ── Types ─────────────────────────────────────────────── */
 
@@ -159,11 +233,14 @@ function ForensicModal({
                 () => { /* ignore */ },
               );
             }}
-            style={S.secondaryBtn}
+            className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
           >
             {copied ? (isHi ? 'कॉपी हो गया' : 'Copied') : (isHi ? 'कमांड कॉपी करें' : 'Copy command')}
           </button>
-          <button onClick={onClose} style={S.primaryBtn}>
+          <button
+            onClick={onClose}
+            className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
+          >
             {isHi ? 'बंद करें' : 'Close'}
           </button>
         </div>
@@ -210,7 +287,7 @@ function MarkingIntegrityContent() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div>
-          <h1 style={S.h1}>
+          <h1 className="text-xl font-bold tracking-tight text-foreground mb-1">
             {isHi ? 'Marking Integrity (पिछले 30 दिन)' : 'Marking Integrity (last 30d)'}
           </h1>
           <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>
@@ -219,7 +296,11 @@ function MarkingIntegrityContent() {
               : 'Quiz scoring drift and missing-snapshot rows. UUIDs only — no PII.'}
           </p>
         </div>
-        <button onClick={() => mutate()} style={S.secondaryBtn} disabled={isLoading}>
+        <button
+          onClick={() => mutate()}
+          disabled={isLoading}
+          className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2 disabled:opacity-50"
+        >
           {isLoading ? (isHi ? 'लोड हो रहा है...' : 'Loading...') : (isHi ? 'Refresh' : 'Refresh')}
         </button>
       </div>
@@ -252,7 +333,10 @@ function MarkingIntegrityContent() {
                 : 'Please retry shortly, or check the console for details.'}
             </div>
           </div>
-          <button onClick={() => mutate()} style={S.secondaryBtn}>
+          <button
+            onClick={() => mutate()}
+            className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+          >
             {isHi ? 'दोबारा कोशिश करें' : 'Retry'}
           </button>
         </div>

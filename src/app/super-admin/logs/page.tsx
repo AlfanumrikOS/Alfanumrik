@@ -2,7 +2,37 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import { colors, S } from '../_components/admin-styles';
+
+const colors = {
+  bg: '#FFFFFF',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  borderLight: '#F3F4F6',
+  surface: '#F9FAFB',
+} as const;
+
+const tdStyle: React.CSSProperties = {
+  padding: '10px 14px',
+  borderBottom: `1px solid ${colors.borderLight}`,
+  color: colors.text1,
+  fontSize: 13,
+};
+const thStyle: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '10px 14px',
+  borderBottom: `2px solid ${colors.border}`,
+  color: colors.text2,
+  fontSize: 11,
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  letterSpacing: 1,
+  background: colors.surface,
+  position: 'sticky',
+  top: 0,
+  zIndex: 1,
+};
 
 interface AuditEntry {
   id: string; admin_id: string; action: string; entity_type: string; entity_id: string | null;
@@ -48,17 +78,30 @@ function LogsContent() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h1 style={S.h1}>Audit Logs</h1>
+          <h1 className="text-xl font-bold tracking-tight text-foreground mb-1">Audit Logs</h1>
           <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>Complete trail of all admin actions and system events</p>
         </div>
-        <button onClick={exportCSV} style={S.secondaryBtn}>Export CSV</button>
+        <button
+          onClick={exportCSV}
+          className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+        >
+          Export CSV
+        </button>
       </div>
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        <input value={actionFilter} onChange={e => { setActionFilter(e.target.value); setPage(1); }} placeholder="Filter by action..."
-          style={S.searchInput} />
-        <select value={entityFilter} onChange={e => { setEntityFilter(e.target.value); setPage(1); }} style={S.select}>
+        <input
+          value={actionFilter}
+          onChange={e => { setActionFilter(e.target.value); setPage(1); }}
+          placeholder="Filter by action..."
+          className="w-56 rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+        />
+        <select
+          value={entityFilter}
+          onChange={e => { setEntityFilter(e.target.value); setPage(1); }}
+          className="rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer"
+        >
           <option value="">All entities</option>
           <option value="feature_flag">Feature Flag</option>
           <option value="school">School</option>
@@ -67,11 +110,27 @@ function LogsContent() {
           <option value="question_bank">Question</option>
           <option value="user_roles">Role Assignment</option>
         </select>
-        <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }} style={{ ...S.searchInput, width: 150 }} />
-        <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }} style={{ ...S.searchInput, width: 150 }} />
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={e => { setDateFrom(e.target.value); setPage(1); }}
+          className="rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          style={{ width: 150 }}
+        />
+        <input
+          type="date"
+          value={dateTo}
+          onChange={e => { setDateTo(e.target.value); setPage(1); }}
+          className="rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          style={{ width: 150 }}
+        />
         {(actionFilter || entityFilter || dateFrom || dateTo) && (
-          <button onClick={() => { setActionFilter(''); setEntityFilter(''); setDateFrom(''); setDateTo(''); setPage(1); }}
-            style={{ ...S.actionBtn, fontSize: 12 }}>Clear filters</button>
+          <button
+            onClick={() => { setActionFilter(''); setEntityFilter(''); setDateFrom(''); setDateTo(''); setPage(1); }}
+            className="rounded-md border border-surface-3 bg-transparent px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-surface-2"
+          >
+            Clear filters
+          </button>
         )}
       </div>
 
@@ -81,35 +140,35 @@ function LogsContent() {
 
       {/* Table */}
       <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
-        <table style={S.table}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr>
-              <th style={S.th}>Timestamp</th>
-              <th style={S.th}>Action</th>
-              <th style={S.th}>Resource</th>
-              <th style={S.th}>IP</th>
-              <th style={S.th}>Admin ID</th>
-              <th style={S.th}>Details</th>
+              <th style={thStyle}>Timestamp</th>
+              <th style={thStyle}>Action</th>
+              <th style={thStyle}>Resource</th>
+              <th style={thStyle}>IP</th>
+              <th style={thStyle}>Admin ID</th>
+              <th style={thStyle}>Details</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={6} style={{ ...S.td, textAlign: 'center', color: colors.text3, padding: 24 }}>Loading...</td></tr>}
+            {loading && <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: colors.text3, padding: 24 }}>Loading...</td></tr>}
             {!loading && logs.length === 0 && (
-              <tr><td colSpan={6} style={{ ...S.td, textAlign: 'center', color: colors.text3, padding: 24 }}>No audit logs</td></tr>
+              <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: colors.text3, padding: 24 }}>No audit logs</td></tr>
             )}
             {!loading && logs.map(l => (
               <tr key={l.id}>
-                <td style={{ ...S.td, fontSize: 12, whiteSpace: 'nowrap', color: colors.text2 }}>{new Date(l.created_at).toLocaleString()}</td>
-                <td style={S.td}>
+                <td style={{ ...tdStyle, fontSize: 12, whiteSpace: 'nowrap', color: colors.text2 }}>{new Date(l.created_at).toLocaleString()}</td>
+                <td style={tdStyle}>
                   <code style={{ fontSize: 12, color: colors.text1, background: colors.surface, padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>{l.action}</code>
                 </td>
-                <td style={S.td}>
+                <td style={tdStyle}>
                   <span style={{ color: colors.text2 }}>{l.entity_type}</span>
                   {l.entity_id && <code style={{ color: colors.text3, marginLeft: 4, fontSize: 10 }}>:{l.entity_id.slice(0, 8)}</code>}
                 </td>
-                <td style={{ ...S.td, fontSize: 11, color: colors.text3 }}>{l.ip_address || '—'}</td>
-                <td style={{ ...S.td, fontSize: 11 }}><code style={{ color: colors.text3 }}>{l.admin_id?.slice(0, 12) || '—'}</code></td>
-                <td style={{ ...S.td, fontSize: 11, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', color: colors.text3 }}>
+                <td style={{ ...tdStyle, fontSize: 11, color: colors.text3 }}>{l.ip_address || '—'}</td>
+                <td style={{ ...tdStyle, fontSize: 11 }}><code style={{ color: colors.text3 }}>{l.admin_id?.slice(0, 12) || '—'}</code></td>
+                <td style={{ ...tdStyle, fontSize: 11, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', color: colors.text3 }}>
                   {l.details ? JSON.stringify(l.details).slice(0, 60) : '—'}
                 </td>
               </tr>
@@ -120,9 +179,21 @@ function LogsContent() {
 
       {/* Pagination */}
       <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center', alignItems: 'center' }}>
-        <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={S.pageBtn}>Prev</button>
+        <button
+          disabled={page <= 1}
+          onClick={() => setPage(p => p - 1)}
+          className="rounded-md border border-surface-3 bg-surface-1 px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Prev
+        </button>
         <span style={{ fontSize: 12, color: colors.text3, padding: '6px 12px' }}>Page {page} of {Math.max(1, Math.ceil(total / 25))}</span>
-        <button disabled={logs.length < 25} onClick={() => setPage(p => p + 1)} style={S.pageBtn}>Next</button>
+        <button
+          disabled={logs.length < 25}
+          onClick={() => setPage(p => p + 1)}
+          className="rounded-md border border-surface-3 bg-surface-1 px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Next
+        </button>
       </div>
     </div>
   );
