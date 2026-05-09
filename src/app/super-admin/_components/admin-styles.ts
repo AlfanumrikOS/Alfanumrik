@@ -1,3 +1,13 @@
+/**
+ * @deprecated Use `@/components/admin-ui` Tailwind primitives instead.
+ *
+ * This inline-style system predates the CSS-variable tokens in
+ * tailwind.config.js. New code should not import from here.
+ * Existing super-admin pages that still use S/colors will be migrated
+ * incrementally (Plan 6 in docs/superpowers/plans/); remove this file
+ * once all imports are gone.
+ */
+
 /** Super Admin White Theme – shared style constants */
 
 export const colors = {

@@ -36,6 +36,9 @@ module.exports = {
           2: 'var(--surface-2)',
           3: 'var(--surface-3)',
         },
+        // Foreground tokens — used by admin-ui shared kit (Plan 0)
+        foreground: 'var(--text-1)',
+        'muted-foreground': 'var(--text-3)',
         // Gamification
         xp: 'var(--xp-color)',
         streak: 'var(--streak-color)',

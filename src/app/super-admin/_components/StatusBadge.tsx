@@ -1,36 +1,15 @@
 'use client';
 
-import { colors } from './admin-styles';
+/**
+ * Re-export shim — Plan 0 Task 3.
+ *
+ * The canonical StatusBadge now lives at src/components/admin-ui/StatusBadge.tsx
+ * so it can be shared by /super-admin, /school-admin, /teacher and /parent
+ * shells. This file is kept temporarily so existing super-admin call sites keep
+ * working without an import-site sweep.
+ *
+ * New code should import from '@/components/admin-ui/StatusBadge' directly.
+ */
 
-type Variant = 'success' | 'danger' | 'warning' | 'neutral' | 'info';
-
-const variants: Record<Variant, { bg: string; fg: string }> = {
-  success: { bg: colors.successLight, fg: colors.success },
-  danger: { bg: colors.dangerLight, fg: colors.danger },
-  warning: { bg: colors.warningLight, fg: colors.warning },
-  neutral: { bg: colors.surface, fg: colors.text3 },
-  info: { bg: colors.accentLight, fg: colors.accent },
-};
-
-interface StatusBadgeProps {
-  label: string;
-  variant?: Variant;
-}
-
-export default function StatusBadge({ label, variant = 'neutral' }: StatusBadgeProps) {
-  const v = variants[variant];
-  return (
-    <span style={{
-      fontSize: 11,
-      fontWeight: 600,
-      padding: '3px 10px',
-      borderRadius: 12,
-      background: v.bg,
-      color: v.fg,
-      whiteSpace: 'nowrap',
-      letterSpacing: 0.2,
-    }}>
-      {label}
-    </span>
-  );
-}
+export { StatusBadge, type StatusBadgeProps, type StatusBadgeVariant } from '@/components/admin-ui/StatusBadge';
+export { default } from '@/components/admin-ui/StatusBadge';
