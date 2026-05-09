@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import AdminShell from '../_components/AdminShell';
-import { colors, S } from '../_components/admin-styles';
 import StudentSelector from './_components/StudentSelector';
 import PlanChangeAction from './_components/PlanChangeAction';
 import NotifyAction from './_components/NotifyAction';
@@ -26,14 +25,14 @@ function BulkActionsContent() {
     <div>
       {/* Header */}
       <div style={{ marginBottom: 20 }}>
-        <h1 style={S.h1}>Bulk Actions</h1>
-        <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>
+        <h1 className="text-xl font-bold text-foreground">Bulk Actions</h1>
+        <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>
           Select students and perform batch operations
         </p>
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: `1px solid ${colors.border}`, paddingBottom: 0 }}>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid #E5E7EB', paddingBottom: 0 }}>
         {TABS.map(tab => (
           <button
             key={tab.key}
@@ -43,10 +42,10 @@ function BulkActionsContent() {
               padding: '10px 18px',
               fontSize: 13,
               fontWeight: activeTab === tab.key ? 600 : 400,
-              color: activeTab === tab.key ? colors.text1 : colors.text2,
+              color: activeTab === tab.key ? '#111827' : '#6B7280',
               background: 'none',
               border: 'none',
-              borderBottom: activeTab === tab.key ? `2px solid ${colors.text1}` : '2px solid transparent',
+              borderBottom: activeTab === tab.key ? '2px solid #111827' : '2px solid transparent',
               cursor: 'pointer',
               marginBottom: -1,
               transition: 'color 0.1s',

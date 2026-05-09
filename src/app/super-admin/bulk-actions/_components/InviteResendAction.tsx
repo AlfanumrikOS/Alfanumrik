@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useAdmin } from '../../_components/AdminShell';
 import StatusBadge from '../../_components/StatusBadge';
-import { colors, S } from '../../_components/admin-styles';
 
 interface InviteResult {
   sent: number;
@@ -46,20 +45,23 @@ export default function InviteResendAction({ selectedIds }: InviteResendActionPr
   };
 
   return (
-    <div style={{ ...S.card, marginTop: 16, borderLeft: `3px solid ${colors.success}` }}>
-      <h3 style={{ fontSize: 14, fontWeight: 700, color: colors.text1, marginBottom: 12 }}>
+    <div
+      className="rounded-lg border border-surface-3 bg-surface-1 p-4"
+      style={{ marginTop: 16, borderLeft: '3px solid #16A34A' }}
+    >
+      <h3 style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 12 }}>
         Resend Invites
       </h3>
 
       {selectedIds.size === 0 ? (
-        <p style={{ fontSize: 13, color: colors.text3 }}>Select students from the table above to resend their invite emails.</p>
+        <p style={{ fontSize: 13, color: '#9CA3AF' }}>Select students from the table above to resend their invite emails.</p>
       ) : (
         <>
-          <div style={{ fontSize: 13, color: colors.text2, marginBottom: 12 }}>
+          <div style={{ fontSize: 13, color: '#6B7280', marginBottom: 12 }}>
             <strong>{selectedIds.size}</strong> student{selectedIds.size !== 1 ? 's' : ''} selected
           </div>
 
-          <p style={{ fontSize: 12, color: colors.text3, marginBottom: 12 }}>
+          <p style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 12 }}>
             This will resend magic-link invite emails to the selected students.
             Emails are sent in batches of 10 with rate limiting.
           </p>
@@ -67,7 +69,8 @@ export default function InviteResendAction({ selectedIds }: InviteResendActionPr
           <button
             onClick={execute}
             disabled={executing}
-            style={{ ...S.primaryBtn, opacity: executing ? 0.6 : 1 }}
+            className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
+            style={{ opacity: executing ? 0.6 : 1 }}
             data-testid="execute-resend-invites"
           >
             {executing ? 'Sending...' : `Resend ${selectedIds.size} Invite${selectedIds.size !== 1 ? 's' : ''}`}
@@ -77,16 +80,19 @@ export default function InviteResendAction({ selectedIds }: InviteResendActionPr
 
       {/* Result display */}
       {result && (
-        <div style={{ ...S.cardSurface, marginTop: 12 }}>
+        <div
+          className="rounded-lg border border-surface-3 p-4"
+          style={{ marginTop: 12, background: '#F9FAFB' }}
+        >
           <div style={{ display: 'flex', gap: 12, marginBottom: 8 }}>
             <StatusBadge label={`${result.sent} sent`} variant="success" />
             {result.failed > 0 && <StatusBadge label={`${result.failed} failed`} variant="danger" />}
           </div>
           {result.errors.length > 0 && (
             <div style={{ marginTop: 8 }}>
-              <div style={{ fontSize: 11, color: colors.danger, fontWeight: 600, marginBottom: 4 }}>Errors:</div>
+              <div style={{ fontSize: 11, color: '#DC2626', fontWeight: 600, marginBottom: 4 }}>Errors:</div>
               {result.errors.map((e, i) => (
-                <div key={i} style={{ fontSize: 12, color: colors.danger, padding: '2px 0' }}>{e}</div>
+                <div key={i} style={{ fontSize: 12, color: '#DC2626', padding: '2px 0' }}>{e}</div>
               ))}
             </div>
           )}
@@ -94,7 +100,7 @@ export default function InviteResendAction({ selectedIds }: InviteResendActionPr
       )}
 
       {error && (
-        <div style={{ marginTop: 8, fontSize: 13, color: colors.danger }}>{error}</div>
+        <div style={{ marginTop: 8, fontSize: 13, color: '#DC2626' }}>{error}</div>
       )}
     </div>
   );
