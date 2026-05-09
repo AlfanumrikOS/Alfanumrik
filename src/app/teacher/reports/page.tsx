@@ -487,10 +487,7 @@ function TrendsTab({ data, isHi }: { data: TrendsData | null; isHi: boolean }) {
     ? ['सप्ताह 1', 'सप्ताह 2', 'सप्ताह 3', 'सप्ताह 4']
     : ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
 
-  // Build a 7x4 grid: if API doesn't supply it, generate placeholder
-  const heatmapGrid: number[][] = activityHeatmap.length > 0
-    ? activityHeatmap
-    : Array.from({ length: 4 }, () => Array.from({ length: 7 }, () => 0));
+  const heatmapGrid: number[][] = activityHeatmap;
 
   return (
     <div>
@@ -522,53 +519,69 @@ function TrendsTab({ data, isHi }: { data: TrendsData | null; isHi: boolean }) {
       {/* Activity Heatmap */}
       <div style={cardStyle}>
         <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: '0 0 14px' }}>{tt(isHi, 'Activity Heatmap', 'गतिविधि हीटमैप')}</h3>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ borderCollapse: 'separate', borderSpacing: 4 }}>
-            <thead>
-              <tr>
-                <th style={{ width: 60 }} />
-                {dayLabels.map((d) => (
-                  <th key={d} style={{ color: '#64748B', fontSize: 11, fontWeight: 500, textAlign: 'center', padding: '0 2px' }}>{d}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {heatmapGrid.map((row, wi) => (
-                <tr key={wi}>
-                  <td style={{ color: '#64748B', fontSize: 11, fontWeight: 500, paddingRight: 8 }}>{weekLabels[wi] || (isHi ? `स. ${wi + 1}` : `Wk ${wi + 1}`)}</td>
-                  {row.map((val: number, di: number) => (
-                    <td key={di}>
-                      <div
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 6,
-                          backgroundColor: heatCellColor(val),
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: 10,
-                          fontWeight: 600,
-                          color: val > 0 ? '#fff' : '#334155',
-                        }}
-                        title={`${dayLabels[di]}, ${weekLabels[wi]}: ${val} ${tt(isHi, 'activities', 'गतिविधियां')}`}
-                      >
-                        {val > 0 ? val : ''}
-                      </div>
-                    </td>
+        {heatmapGrid.length > 0 ? (
+          <>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ borderCollapse: 'separate', borderSpacing: 4 }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: 60 }} />
+                    {dayLabels.map((d) => (
+                      <th key={d} style={{ color: '#64748B', fontSize: 11, fontWeight: 500, textAlign: 'center', padding: '0 2px' }}>{d}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {heatmapGrid.map((row, wi) => (
+                    <tr key={wi}>
+                      <td style={{ color: '#64748B', fontSize: 11, fontWeight: 500, paddingRight: 8 }}>{weekLabels[wi] || (isHi ? `स. ${wi + 1}` : `Wk ${wi + 1}`)}</td>
+                      {row.map((val: number, di: number) => (
+                        <td key={di}>
+                          <div
+                            style={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: 6,
+                              backgroundColor: heatCellColor(val),
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: 10,
+                              fontWeight: 600,
+                              color: val > 0 ? '#fff' : '#334155',
+                            }}
+                            title={`${dayLabels[di]}, ${weekLabels[wi]}: ${val} ${tt(isHi, 'activities', 'गतिविधियां')}`}
+                          >
+                            {val > 0 ? val : ''}
+                          </div>
+                        </td>
+                      ))}
+                    </tr>
                   ))}
-                </tr>
+                </tbody>
+              </table>
+            </div>
+            <div style={{ display: 'flex', gap: 12, marginTop: 10, fontSize: 11, color: '#64748B', alignItems: 'center' }}>
+              <span>{tt(isHi, 'Less', 'कम')}</span>
+              {[0, 1, 3, 5, 8].map((v) => (
+                <div key={v} style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: heatCellColor(v) }} />
               ))}
-            </tbody>
-          </table>
-        </div>
-        <div style={{ display: 'flex', gap: 12, marginTop: 10, fontSize: 11, color: '#64748B', alignItems: 'center' }}>
-          <span>{tt(isHi, 'Less', 'कम')}</span>
-          {[0, 1, 3, 5, 8].map((v) => (
-            <div key={v} style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: heatCellColor(v) }} />
-          ))}
-          <span>{tt(isHi, 'More', 'अधिक')}</span>
-        </div>
+              <span>{tt(isHi, 'More', 'अधिक')}</span>
+            </div>
+          </>
+        ) : (
+          <div style={{ borderRadius: 8, border: '1px dashed #334155', backgroundColor: 'rgba(15, 23, 42, 0.5)', padding: 32, textAlign: 'center' }}>
+            <div style={{ fontSize: 28, marginBottom: 8 }}>📊</div>
+            <p style={{ fontSize: 13, fontWeight: 500, color: '#CBD5E1', margin: 0 }}>
+              {tt(isHi, 'No activity data yet', 'अभी तक कोई गतिविधि डेटा नहीं')}
+            </p>
+            <p style={{ fontSize: 12, color: '#64748B', marginTop: 4, marginBottom: 0 }}>
+              {tt(isHi,
+                'The heatmap will appear here after students complete quizzes.',
+                'छात्रों के क्विज़ पूरा करने के बाद हीटमैप यहाँ दिखाई देगा।')}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Most Improved */}

@@ -7,6 +7,7 @@ import { useTeacherAllowedSubjects } from '@/lib/useTeacherAllowedSubjects';
 import { BottomNav } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
 import { VALID_GRADES } from '@/lib/identity';
+import { posthogCapture } from '@/lib/posthog-client';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -130,6 +131,11 @@ export default function TeacherWorksheetsPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [savedList, setSavedList] = useState<SavedWorksheet[]>([]);
   const [isPrintView, setIsPrintView] = useState(false);
+  // Surfaces the DB-pool-exhausted condition: when the question_bank returned
+  // some rows but not enough to fill every requested non-MCQ slot, we used to
+  // silently push placeholders. Now we flag it so the UI can show a retry banner
+  // and we can fire a PostHog event for visibility.
+  const [poolExhausted, setPoolExhausted] = useState(false);
 
   useEffect(() => {
     if (!authLoading && (!isLoggedIn || (activeRole !== 'teacher' && !teacher))) router.replace('/login');
@@ -149,6 +155,8 @@ export default function TeacherWorksheetsPage() {
   const generateWorksheet = async () => {
     if (selectedTypes.length === 0) return;
     setIsGenerating(true);
+    setPoolExhausted(false);
+    let placeholdersUsed = 0;
 
     // Fetch questions from the question_bank table
     const dbQuestions = await fetchQuestionsFromBank(
@@ -193,7 +201,9 @@ export default function TeacherWorksheetsPage() {
               otherQuestions.push({ ...otherPool[poolIdx], type });
               poolIdx++;
             } else {
-              // Exhausted DB pool — use fallback placeholder
+              // Exhausted DB pool — use fallback placeholder, but flag it so the
+              // teacher sees a retry banner instead of silently shipping samples.
+              placeholdersUsed += 1;
               otherQuestions.push(DEFAULT_BANK[type]?.[0] || { type, question: `${type} question — refer to your textbook.`, answer: '(Refer textbook)' });
             }
           }
@@ -219,6 +229,21 @@ export default function TeacherWorksheetsPage() {
     setGenerated(questions);
     setQuestionSource(source);
     setIsGenerating(false);
+
+    // If the DB pool ran short during a partially-DB-backed generation, surface
+    // it: emit a PostHog event and flip the banner flag so the teacher knows
+    // some questions are placeholders rather than CBSE-bank items.
+    if (placeholdersUsed > 0 && source === 'db') {
+      setPoolExhausted(true);
+      posthogCapture('teacher_worksheets_load_failed', {
+        teacher_id_present: Boolean(teacher?.id),
+        subject,
+        grade,
+        requested_count: questionCount,
+        placeholders_used: placeholdersUsed,
+        reason: 'db_pool_exhausted',
+      });
+    }
 
     const entry: SavedWorksheet = {
       id: Date.now().toString(),
@@ -427,6 +452,50 @@ export default function TeacherWorksheetsPage() {
                   {questionSource === 'db' ? tt(isHi, 'Questions from CBSE bank', 'CBSE बैंक से प्रश्न') : tt(isHi, 'Sample questions', 'नमूना प्रश्न')}
                 </span>
               )}
+            </div>
+          )}
+
+          {/* DB-pool-exhausted banner — surfaces what used to be a silent fallback */}
+          {!isPrintView && poolExhausted && (
+            <div
+              role="alert"
+              style={{
+                background: '#FFFBEB',
+                border: '1px solid #FCD34D',
+                borderRadius: 12,
+                padding: '12px 14px',
+                marginBottom: 16,
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#92400E', marginBottom: 4 }}>
+                {tt(isHi, 'Could not load all questions', 'सभी प्रश्न लोड नहीं हो सके')}
+              </div>
+              <div style={{ fontSize: 12, color: '#92400E', lineHeight: 1.5 }}>
+                {tt(
+                  isHi,
+                  'The question bank is temporarily busy, so a few questions are samples. Please try again to get a full CBSE-bank worksheet.',
+                  'प्रश्न बैंक अस्थायी रूप से व्यस्त है, इसलिए कुछ प्रश्न नमूना हैं। पूर्ण CBSE-बैंक वर्कशीट के लिए कृपया पुनः प्रयास करें।',
+                )}
+              </div>
+              <button
+                onClick={() => { setPoolExhausted(false); generateWorksheet(); }}
+                disabled={isGenerating}
+                style={{
+                  marginTop: 10,
+                  padding: '6px 14px',
+                  borderRadius: 8,
+                  border: '1px solid #FCD34D',
+                  background: '#FEF3C7',
+                  color: '#92400E',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: isGenerating ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {isGenerating
+                  ? tt(isHi, 'Retrying...', 'पुनः प्रयास हो रहा है...')
+                  : tt(isHi, 'Retry', 'पुनः प्रयास')}
+              </button>
             </div>
           )}
 
