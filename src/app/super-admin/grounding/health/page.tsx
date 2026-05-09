@@ -2,8 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import AdminShell, { useAdmin } from '../../_components/AdminShell';
-import { colors, S } from '../../_components/admin-styles';
-import StatCard from '../../_components/StatCard';
+import { StatCard } from '@/components/admin-ui';
 
 /**
  * Grounding Health — super-admin page (Task 3.16)
@@ -86,28 +85,39 @@ interface OracleHealthData {
 
 const POLL_MS = 30_000;
 
+const TH = 'sticky top-0 z-10 border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground';
+const TD = 'border-b border-surface-3 px-3.5 py-2.5 text-[13px] text-foreground';
+const H2 = 'mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground';
+const H3 = 'mb-2 mt-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground';
+const CARD = 'rounded-lg border border-surface-3 bg-surface-1 p-4';
+
 function pct(x: number): string {
   if (!Number.isFinite(x) || x <= 0) return '0%';
   return `${Math.round(x * 100)}%`;
 }
 
-function circuitColor(state?: string): { bg: string; fg: string; label: string } {
+function circuitStyle(state?: string): {
+  bgClass: string;
+  fgClass: string;
+  border: string;
+  label: string;
+} {
   switch (state) {
     case 'closed':
-      return { bg: colors.successLight, fg: colors.success, label: 'Closed' };
+      return { bgClass: 'bg-success/10', fgClass: 'text-success', border: '#16A34A', label: 'Closed' };
     case 'degraded':
-      return { bg: colors.warningLight, fg: colors.warning, label: 'Degraded' };
+      return { bgClass: 'bg-warning/10', fgClass: 'text-warning', border: '#D97706', label: 'Degraded' };
     case 'open':
-      return { bg: colors.dangerLight, fg: colors.danger, label: 'Open' };
+      return { bgClass: 'bg-danger/10', fgClass: 'text-danger', border: '#DC2626', label: 'Open' };
     default:
-      return { bg: colors.surface, fg: colors.text3, label: 'Unknown' };
+      return { bgClass: 'bg-surface-2', fgClass: 'text-muted-foreground', border: '#9CA3AF', label: 'Unknown' };
   }
 }
 
-function gaugeColor(rate: number): string {
-  if (rate >= 0.05) return colors.danger;
-  if (rate >= 0.01) return colors.warning;
-  return colors.success;
+function gaugeAccent(rate: number): string {
+  if (rate >= 0.05) return '#DC2626';
+  if (rate >= 0.01) return '#D97706';
+  return '#16A34A';
 }
 
 function GroundingHealthContent() {
@@ -188,34 +198,39 @@ function GroundingHealthContent() {
   return (
     <div data-testid="grounding-health-page">
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 style={S.h1}>Grounding Health</h1>
-          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>
+          <h1 className="text-xl font-bold text-foreground">Grounding Health</h1>
+          <p className="m-0 text-[13px] text-muted-foreground">
             Live state of the grounded-answer service — polls every 30s
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div className="flex items-center gap-2">
           {lastFetched && (
-            <span style={{ fontSize: 11, color: colors.text3 }}>
+            <span className="text-[11px] text-muted-foreground">
               Last updated: {lastFetched.toLocaleTimeString()}
             </span>
           )}
-          <button onClick={fetchHealth} style={S.secondaryBtn}>Refresh</button>
+          <button
+            onClick={fetchHealth}
+            className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+          >
+            Refresh
+          </button>
         </div>
       </div>
 
       {error && (
         <div
           data-testid="grounding-health-error"
-          style={{ padding: 12, marginBottom: 16, borderRadius: 6, background: colors.dangerLight, color: colors.danger, fontSize: 13 }}
+          className="mb-4 rounded-md bg-danger/10 p-3 text-[13px] text-danger"
         >
           Error loading health: {error}
         </div>
       )}
 
       {loading && !data && (
-        <div style={{ padding: 32, textAlign: 'center', color: colors.text3, fontSize: 13 }}>
+        <div className="p-8 text-center text-[13px] text-muted-foreground">
           Loading grounding health...
         </div>
       )}
@@ -223,30 +238,24 @@ function GroundingHealthContent() {
       {data && (
         <>
           {/* Calls per minute — one tile per caller */}
-          <h2 style={S.h2}>Calls per minute (last 1 min)</h2>
-          <div
-            data-testid="calls-per-min-section"
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 24 }}
-          >
+          <h2 className={H2}>Calls per minute (last 1 min)</h2>
+          <div data-testid="calls-per-min-section" className="mb-6 grid grid-cols-5 gap-3">
             {CALLERS.map((caller) => (
               <StatCard
                 key={caller}
                 label={caller}
                 value={data.callsPerMin[caller] ?? 0}
-                accentColor={colors.accent}
+                accentColor="#2563EB"
               />
             ))}
           </div>
 
           {/* Grounded rate per caller */}
-          <h2 style={S.h2}>Grounded rate (last hour)</h2>
-          <div
-            data-testid="grounded-rate-section"
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 24 }}
-          >
+          <h2 className={H2}>Grounded rate (last hour)</h2>
+          <div data-testid="grounded-rate-section" className="mb-6 grid grid-cols-5 gap-3">
             {CALLERS.map((caller) => {
               const rate = data.groundedRate[caller] ?? 0;
-              const accent = rate >= 0.9 ? colors.success : rate >= 0.7 ? colors.warning : colors.danger;
+              const accent = rate >= 0.9 ? '#16A34A' : rate >= 0.7 ? '#D97706' : '#DC2626';
               return (
                 <StatCard
                   key={caller}
@@ -259,27 +268,15 @@ function GroundingHealthContent() {
           </div>
 
           {/* Abstain reasons stacked bar */}
-          <h2 style={S.h2}>Abstain reasons (last hour)</h2>
-          <div
-            data-testid="abstain-breakdown"
-            style={{ ...S.card, marginBottom: 24 }}
-          >
+          <h2 className={H2}>Abstain reasons (last hour)</h2>
+          <div data-testid="abstain-breakdown" className={`${CARD} mb-6`}>
             {abstainTotal === 0 ? (
-              <div style={{ fontSize: 12, color: colors.text3 }}>
+              <div className="text-xs text-muted-foreground">
                 No abstains in the last hour.
               </div>
             ) : (
               <>
-                <div
-                  style={{
-                    display: 'flex',
-                    height: 24,
-                    borderRadius: 4,
-                    overflow: 'hidden',
-                    border: `1px solid ${colors.border}`,
-                    background: colors.surface,
-                  }}
-                >
+                <div className="flex h-6 overflow-hidden rounded border border-surface-3 bg-surface-2">
                   {ABSTAIN_REASONS.map((r) => {
                     const count = data.abstainBreakdown[r] ?? 0;
                     const width = abstainTotal === 0 ? 0 : (count / abstainTotal) * 100;
@@ -291,26 +288,21 @@ function GroundingHealthContent() {
                         data-testid={`abstain-bar-${r}`}
                         style={{
                           width: `${width}%`,
-                          background: ABSTAIN_COLORS[r] ?? colors.text3,
+                          background: ABSTAIN_COLORS[r] ?? '#9CA3AF',
                         }}
                       />
                     );
                   })}
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 10 }}>
+                <div className="mt-2.5 flex flex-wrap gap-3">
                   {ABSTAIN_REASONS.map((r) => (
-                    <div key={r} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                    <div key={r} className="flex items-center gap-1.5 text-[11px]">
                       <span
-                        style={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: 2,
-                          background: ABSTAIN_COLORS[r] ?? colors.text3,
-                          display: 'inline-block',
-                        }}
+                        className="inline-block h-2.5 w-2.5 rounded-sm"
+                        style={{ background: ABSTAIN_COLORS[r] ?? '#9CA3AF' }}
                       />
-                      <span style={{ color: colors.text2 }}>
-                        {r}: <b style={{ color: colors.text1 }}>{data.abstainBreakdown[r] ?? 0}</b>
+                      <span className="text-muted-foreground">
+                        {r}: <b className="text-foreground">{data.abstainBreakdown[r] ?? 0}</b>
                       </span>
                     </div>
                   ))}
@@ -320,42 +312,31 @@ function GroundingHealthContent() {
           </div>
 
           {/* Latency */}
-          <h2 style={S.h2}>Latency (ms, last hour)</h2>
-          <div
-            data-testid="latency-section"
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}
-          >
-            <StatCard label="p50" value={`${data.latency.p50} ms`} accentColor={colors.success} />
-            <StatCard label="p95" value={`${data.latency.p95} ms`} accentColor={colors.warning} />
-            <StatCard label="p99" value={`${data.latency.p99} ms`} accentColor={colors.danger} />
+          <h2 className={H2}>Latency (ms, last hour)</h2>
+          <div data-testid="latency-section" className="mb-6 grid grid-cols-3 gap-3">
+            <StatCard label="p50" value={`${data.latency.p50} ms`} accentColor="#16A34A" />
+            <StatCard label="p95" value={`${data.latency.p95} ms`} accentColor="#D97706" />
+            <StatCard label="p99" value={`${data.latency.p99} ms`} accentColor="#DC2626" />
           </div>
 
           {/* Circuit states */}
-          <h2 style={S.h2}>Circuit breakers</h2>
-          <div
-            data-testid="circuit-states-section"
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}
-          >
+          <h2 className={H2}>Circuit breakers</h2>
+          <div data-testid="circuit-states-section" className="mb-6 grid grid-cols-3 gap-3">
             {(['voyage', 'claude', 'retrieval'] as const).map((name) => {
               const state = data.circuitStates[name];
-              const color = circuitColor(state);
+              const style = circuitStyle(state);
               return (
                 <div
                   key={name}
                   data-testid={`circuit-tile-${name}`}
-                  style={{
-                    padding: 16,
-                    borderRadius: 8,
-                    border: `1px solid ${colors.border}`,
-                    borderLeft: `3px solid ${color.fg}`,
-                    background: color.bg,
-                  }}
+                  className={`rounded-lg border border-surface-3 p-4 ${style.bgClass}`}
+                  style={{ borderLeft: `3px solid ${style.border}` }}
                 >
-                  <div style={{ fontSize: 11, color: colors.text3, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     {name}
                   </div>
-                  <div style={{ fontSize: 20, color: color.fg, fontWeight: 700, marginTop: 4 }}>
-                    {color.label}
+                  <div className={`mt-1 text-xl font-bold ${style.fgClass}`}>
+                    {style.label}
                   </div>
                 </div>
               );
@@ -363,28 +344,23 @@ function GroundingHealthContent() {
           </div>
 
           {/* Error rates */}
-          <h2 style={S.h2}>Upstream error rates (last 5 min)</h2>
-          <div
-            data-testid="error-rates-section"
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 24 }}
-          >
+          <h2 className={H2}>Upstream error rates (last 5 min)</h2>
+          <div data-testid="error-rates-section" className="mb-6 grid grid-cols-2 gap-3">
             <StatCard
               label="Voyage error rate"
               value={pct(data.voyageErrorRate)}
-              accentColor={gaugeColor(data.voyageErrorRate)}
+              accentColor={gaugeAccent(data.voyageErrorRate)}
             />
             <StatCard
               label="Claude error rate"
               value={pct(data.claudeErrorRate)}
-              accentColor={gaugeColor(data.claudeErrorRate)}
+              accentColor={gaugeAccent(data.claudeErrorRate)}
             />
           </div>
 
           {/* Study-path fallback telemetry (ddc41f8 hotfix) */}
-          <h2 style={S.h2}>
-            Study-path fallback (last hour)
-          </h2>
-          <p style={{ ...S.small, marginBottom: 12 }}>
+          <h2 className={H2}>Study-path fallback (last hour)</h2>
+          <p className="mb-3 text-xs text-muted-foreground">
             Number of times <code>/api/student/subjects</code> or{' '}
             <code>/api/student/chapters</code> fell back to GRADE_SUBJECTS /
             chapters-catalog because the v2 RPC returned empty or errored.
@@ -392,30 +368,27 @@ function GroundingHealthContent() {
             zero. Stable non-zero indicates an ingestion problem — see{' '}
             <code>docs/runbooks/grounding/scoring-integrity-epoch.md</code>.
           </p>
-          <div
-            data-testid="study-path-fallback-section"
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}
-          >
+          <div data-testid="study-path-fallback-section" className="mb-6 grid grid-cols-3 gap-3">
             <StatCard
               label="Total fallback events"
               value={String(data.studyPathFallback?.totalLastHour ?? 0)}
               accentColor={
                 (data.studyPathFallback?.totalLastHour ?? 0) === 0
-                  ? colors.success
+                  ? '#16A34A'
                   : (data.studyPathFallback?.totalLastHour ?? 0) > 100
-                    ? colors.danger
-                    : colors.warning
+                    ? '#DC2626'
+                    : '#D97706'
               }
             />
             <StatCard
               label="Subjects route"
               value={String(data.studyPathFallback?.subjectsLastHour ?? 0)}
-              accentColor={colors.text3}
+              accentColor="#9CA3AF"
             />
             <StatCard
               label="Chapters route"
               value={String(data.studyPathFallback?.chaptersLastHour ?? 0)}
-              accentColor={colors.text3}
+              accentColor="#9CA3AF"
             />
           </div>
         </>
@@ -473,15 +446,15 @@ function formatRejectionRate(
   if (rate === null) {
     return {
       text: acceptedEventMissing ? '—' : 'N/A',
-      accent: colors.text3,
+      accent: '#9CA3AF',
     };
   }
   // Health bands per spec: <2% too lax, 2-5% borderline, 5-15% healthy,
   // 15-25% noisy, >25% generator/oracle broken.
-  if (rate < 0.02) return { text: pct(rate), accent: colors.warning };
-  if (rate <= 0.15) return { text: pct(rate), accent: colors.success };
-  if (rate <= 0.25) return { text: pct(rate), accent: colors.warning };
-  return { text: pct(rate), accent: colors.danger };
+  if (rate < 0.02) return { text: pct(rate), accent: '#D97706' };
+  if (rate <= 0.15) return { text: pct(rate), accent: '#16A34A' };
+  if (rate <= 0.25) return { text: pct(rate), accent: '#D97706' };
+  return { text: pct(rate), accent: '#DC2626' };
 }
 
 function OracleHealthSection({
@@ -492,9 +465,9 @@ function OracleHealthSection({
   error: string | null;
 }) {
   return (
-    <div data-testid="oracle-health-section" style={{ marginTop: 32 }}>
-      <h2 style={S.h2}>Oracle health (last 24h)</h2>
-      <p style={{ fontSize: 12, color: colors.text3, marginBottom: 12 }}>
+    <div data-testid="oracle-health-section" className="mt-8">
+      <h2 className={H2}>Oracle health (last 24h)</h2>
+      <p className="mb-3 text-xs text-muted-foreground">
         AI quiz-generator validation oracle (REG-54). Rejected candidates
         never reach <code>question_bank</code>. Healthy rejection rate:
         5-15%. Below 2% means the oracle is too lax; above 25% means the
@@ -506,28 +479,14 @@ function OracleHealthSection({
       {error && (
         <div
           data-testid="oracle-health-error"
-          style={{
-            padding: 12,
-            marginBottom: 16,
-            borderRadius: 6,
-            background: colors.dangerLight,
-            color: colors.danger,
-            fontSize: 13,
-          }}
+          className="mb-4 rounded-md bg-danger/10 p-3 text-[13px] text-danger"
         >
           Error loading oracle health: {error}
         </div>
       )}
 
       {!oracle && !error && (
-        <div
-          style={{
-            padding: 16,
-            textAlign: 'center',
-            color: colors.text3,
-            fontSize: 13,
-          }}
-        >
+        <div className="p-4 text-center text-[13px] text-muted-foreground">
           Loading oracle telemetry...
         </div>
       )}
@@ -535,103 +494,45 @@ function OracleHealthSection({
       {oracle && (
         <>
           {/* Top tiles */}
-          <div
-            data-testid="oracle-summary-tiles"
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: 12,
-              marginBottom: 16,
-            }}
-          >
+          <div data-testid="oracle-summary-tiles" className="mb-4 grid grid-cols-3 gap-3">
             <StatCard
               label="Total rejected (24h)"
               value={oracle.totalRejected}
-              accentColor={
-                oracle.totalRejected === 0 ? colors.success : colors.warning
-              }
+              accentColor={oracle.totalRejected === 0 ? '#16A34A' : '#D97706'}
             />
             <StatCard
               label="Total candidates (24h)"
-              value={
-                oracle.totalEvaluated === null
-                  ? '—'
-                  : oracle.totalEvaluated
-              }
+              value={oracle.totalEvaluated === null ? '—' : oracle.totalEvaluated}
               subtitle={
-                oracle.notes.acceptedEventMissing
-                  ? 'Accepted-event not yet emitted'
-                  : undefined
+                oracle.notes.acceptedEventMissing ? 'Accepted-event not yet emitted' : undefined
               }
-              accentColor={colors.text3}
+              accentColor="#9CA3AF"
             />
             <StatCard
               label="Rejection rate"
               value={
-                formatRejectionRate(
-                  oracle.rejectionRate,
-                  oracle.notes.acceptedEventMissing,
-                ).text
+                formatRejectionRate(oracle.rejectionRate, oracle.notes.acceptedEventMissing).text
               }
               accentColor={
-                formatRejectionRate(
-                  oracle.rejectionRate,
-                  oracle.notes.acceptedEventMissing,
-                ).accent
+                formatRejectionRate(oracle.rejectionRate, oracle.notes.acceptedEventMissing).accent
               }
               subtitle="Target: 5-15%"
             />
           </div>
 
           {/* By-reason breakdown */}
-          <h3
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-              color: colors.text2,
-              textTransform: 'uppercase',
-              letterSpacing: 1.2,
-              marginBottom: 8,
-              marginTop: 8,
-            }}
-          >
-            Rejections by reason
-          </h3>
+          <h3 className={H3}>Rejections by reason</h3>
           <OracleReasonBreakdown
             byReason={oracle.rejectionsByReason}
             total={oracle.totalRejected}
           />
 
           {/* Hourly time series */}
-          <h3
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-              color: colors.text2,
-              textTransform: 'uppercase',
-              letterSpacing: 1.2,
-              marginBottom: 8,
-              marginTop: 16,
-            }}
-          >
-            Hourly rejections
-          </h3>
+          <h3 className={`${H3} mt-4`}>Hourly rejections</h3>
           <OracleSparkline series={oracle.hourlyRejections} />
 
           {/* Latest 10 */}
-          <h3
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-              color: colors.text2,
-              textTransform: 'uppercase',
-              letterSpacing: 1.2,
-              marginBottom: 8,
-              marginTop: 16,
-            }}
-          >
-            Latest 10 rejections
-          </h3>
+          <h3 className={`${H3} mt-4`}>Latest 10 rejections</h3>
           <OracleLatestTable rows={oracle.latestRejections} />
         </>
       )}
@@ -659,28 +560,16 @@ function OracleReasonBreakdown({
 
   if (total === 0 || ordered.length === 0) {
     return (
-      <div
-        data-testid="oracle-reason-empty"
-        style={{ ...S.card, fontSize: 12, color: colors.text3 }}
-      >
+      <div data-testid="oracle-reason-empty" className={`${CARD} text-xs text-muted-foreground`}>
         No rejections in the last 24 hours.
       </div>
     );
   }
 
   return (
-    <div data-testid="oracle-reason-breakdown" style={S.card}>
+    <div data-testid="oracle-reason-breakdown" className={CARD}>
       {/* Stacked bar */}
-      <div
-        style={{
-          display: 'flex',
-          height: 22,
-          borderRadius: 4,
-          overflow: 'hidden',
-          border: `1px solid ${colors.border}`,
-          background: colors.surface,
-        }}
-      >
+      <div className="flex h-[22px] overflow-hidden rounded border border-surface-3 bg-surface-2">
         {ordered.map((r) => {
           const width = total === 0 ? 0 : (r.count / total) * 100;
           return (
@@ -690,42 +579,33 @@ function OracleReasonBreakdown({
               title={`${r.reason}: ${r.count}`}
               style={{
                 width: `${width}%`,
-                background: ORACLE_REASON_COLORS[r.reason] ?? colors.text3,
+                background: ORACLE_REASON_COLORS[r.reason] ?? '#9CA3AF',
               }}
             />
           );
         })}
       </div>
       {/* Table — explicit counts so admins can copy values */}
-      <table style={{ ...S.table, marginTop: 12 }}>
+      <table className="mt-3 w-full border-collapse text-[13px]">
         <thead>
           <tr>
-            <th style={S.th}>Reason</th>
-            <th style={{ ...S.th, textAlign: 'right' }}>Count</th>
-            <th style={{ ...S.th, textAlign: 'right' }}>% of rejections</th>
+            <th className={TH}>Reason</th>
+            <th className={`${TH} text-right`}>Count</th>
+            <th className={`${TH} text-right`}>% of rejections</th>
           </tr>
         </thead>
         <tbody>
           {ordered.map((r) => (
             <tr key={r.reason} data-testid={`oracle-reason-row-${r.reason}`}>
-              <td style={S.td}>
+              <td className={TD}>
                 <span
-                  style={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: 2,
-                    background: ORACLE_REASON_COLORS[r.reason] ?? colors.text3,
-                    display: 'inline-block',
-                    marginRight: 8,
-                    verticalAlign: 'middle',
-                  }}
+                  className="mr-2 inline-block h-2.5 w-2.5 rounded-sm align-middle"
+                  style={{ background: ORACLE_REASON_COLORS[r.reason] ?? '#9CA3AF' }}
                 />
-                <code style={{ fontSize: 12 }}>{r.reason}</code>
+                <code className="text-xs">{r.reason}</code>
               </td>
-              <td style={{ ...S.td, textAlign: 'right', fontWeight: 600 }}>
-                {r.count}
-              </td>
-              <td style={{ ...S.td, textAlign: 'right', color: colors.text2 }}>
+              <td className={`${TD} text-right font-semibold`}>{r.count}</td>
+              <td className={`${TD} text-right text-muted-foreground`}>
                 {pct(r.count / total)}
               </td>
             </tr>
@@ -758,7 +638,7 @@ function OracleSparkline({
   const total = series.reduce((sum, s) => sum + s.count, 0);
 
   return (
-    <div data-testid="oracle-sparkline" style={S.card}>
+    <div data-testid="oracle-sparkline" className={CARD}>
       <svg
         viewBox={`0 0 ${W} ${H}`}
         width="100%"
@@ -773,27 +653,19 @@ function OracleSparkline({
           y1={H - PAD}
           x2={W - PAD}
           y2={H - PAD}
-          stroke={colors.border}
+          stroke="#E5E7EB"
           strokeWidth={1}
         />
         {total > 0 && (
           <polyline
             points={points}
             fill="none"
-            stroke={colors.accent}
+            stroke="#2563EB"
             strokeWidth={1.5}
           />
         )}
       </svg>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          fontSize: 11,
-          color: colors.text3,
-          marginTop: 4,
-        }}
-      >
+      <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
         <span>24h ago</span>
         <span>peak: {max}</span>
         <span>now</span>
@@ -809,49 +681,40 @@ function OracleLatestTable({
 }) {
   if (rows.length === 0) {
     return (
-      <div
-        data-testid="oracle-latest-empty"
-        style={{ ...S.card, fontSize: 12, color: colors.text3 }}
-      >
+      <div data-testid="oracle-latest-empty" className={`${CARD} text-xs text-muted-foreground`}>
         No rejections to show.
       </div>
     );
   }
   return (
-    <div data-testid="oracle-latest-table" style={{ ...S.card, padding: 0 }}>
-      <table style={S.table}>
+    <div data-testid="oracle-latest-table" className="overflow-hidden rounded-lg border border-surface-3 bg-surface-1">
+      <table className="w-full border-collapse text-[13px]">
         <thead>
           <tr>
-            <th style={S.th}>Time</th>
-            <th style={S.th}>Reason</th>
-            <th style={S.th}>Question (first 80 chars)</th>
-            <th style={{ ...S.th, textAlign: 'right' }}>Suggested idx</th>
+            <th className={TH}>Time</th>
+            <th className={TH}>Reason</th>
+            <th className={TH}>Question (first 80 chars)</th>
+            <th className={`${TH} text-right`}>Suggested idx</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={`${r.occurred_at}-${r.category}`}>
-              <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
+              <td className={`${TD} whitespace-nowrap`}>
                 {new Date(r.occurred_at).toLocaleString()}
               </td>
-              <td style={S.td}>
-                <code style={{ fontSize: 12 }}>{r.category}</code>
+              <td className={TD}>
+                <code className="text-xs">{r.category}</code>
               </td>
-              <td
-                style={{
-                  ...S.td,
-                  color: colors.text2,
-                  maxWidth: 420,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {r.question_preview ?? <span style={{ color: colors.text3 }}>—</span>}
+              <td className={`${TD} max-w-[420px] overflow-hidden text-ellipsis text-muted-foreground`}>
+                {r.question_preview ?? <span className="text-muted-foreground">—</span>}
               </td>
-              <td style={{ ...S.td, textAlign: 'right' }}>
-                {r.suggested_correct_index === null
-                  ? <span style={{ color: colors.text3 }}>—</span>
-                  : r.suggested_correct_index}
+              <td className={`${TD} text-right`}>
+                {r.suggested_correct_index === null ? (
+                  <span className="text-muted-foreground">—</span>
+                ) : (
+                  r.suggested_correct_index
+                )}
               </td>
             </tr>
           ))}

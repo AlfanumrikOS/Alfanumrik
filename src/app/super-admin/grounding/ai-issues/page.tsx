@@ -1,8 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import AdminShell, { useAdmin } from '../../_components/AdminShell';
-import { colors, S } from '../../_components/admin-styles';
 
 /**
  * Grounding AI Issues — super-admin page (Task 3.17d)
@@ -68,6 +67,12 @@ interface IssuesResponse {
 }
 
 const RESOLUTION_OPTIONS = ['pending', 'content_fix', 'prompt_fix', 'false_positive', 'duplicate', 'wontfix'];
+
+const TH = 'sticky top-0 z-10 border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground';
+const TD = 'border-b border-surface-3 px-3.5 py-2.5 text-[13px] text-foreground';
+const FILTER_BTN = 'rounded-md border border-surface-3 bg-surface-1 px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2';
+const FILTER_BTN_ACTIVE = 'rounded-md border border-foreground bg-foreground px-3.5 py-1.5 text-xs font-medium text-surface-1';
+const LABEL = 'text-[11px] font-semibold uppercase tracking-wider text-muted-foreground';
 
 function AiIssuesContent() {
   const { apiFetch } = useAdmin();
@@ -148,27 +153,29 @@ function AiIssuesContent() {
 
   return (
     <div data-testid="grounding-ai-issues-page">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 style={S.h1}>AI Issue Reports</h1>
-          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>
+          <h1 className="text-xl font-bold text-foreground">AI Issue Reports</h1>
+          <p className="m-0 text-[13px] text-muted-foreground">
             Student-reported problems with Foxy answers. Click a row to inspect and resolve.
           </p>
         </div>
-        <button onClick={fetchIssues} style={S.secondaryBtn}>Refresh</button>
+        <button
+          onClick={fetchIssues}
+          className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+        >
+          Refresh
+        </button>
       </div>
 
       {/* Status filter */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+      <div className="mb-4 flex gap-2">
         {(['pending', 'resolved', 'all'] as const).map((s) => (
           <button
             key={s}
             type="button"
             onClick={() => setStatusFilter(s)}
-            style={{
-              ...S.filterBtn,
-              ...(statusFilter === s ? S.filterActive : {}),
-            }}
+            className={statusFilter === s ? FILTER_BTN_ACTIVE : FILTER_BTN}
           >
             {s}
           </button>
@@ -178,41 +185,39 @@ function AiIssuesContent() {
       {error && (
         <div
           data-testid="grounding-ai-issues-error"
-          style={{ padding: 12, marginBottom: 16, borderRadius: 6, background: colors.dangerLight, color: colors.danger, fontSize: 13 }}
+          className="mb-4 rounded-md bg-danger/10 p-3 text-[13px] text-danger"
         >
           Error: {error}
         </div>
       )}
 
       {saveMsg && (
-        <div style={{ padding: 12, marginBottom: 16, borderRadius: 6, background: colors.accentLight, color: colors.accent, fontSize: 13 }}>
-          {saveMsg}
-        </div>
+        <div className="mb-4 rounded-md bg-info/10 p-3 text-[13px] text-info">{saveMsg}</div>
       )}
 
-      <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
-        <table style={S.table} data-testid="ai-issues-table">
+      <div className="overflow-hidden rounded-lg border border-surface-3">
+        <table className="w-full border-collapse text-[13px]" data-testid="ai-issues-table">
           <thead>
             <tr>
-              <th style={S.th}>Timestamp</th>
-              <th style={S.th}>Student</th>
-              <th style={S.th}>Reason</th>
-              <th style={S.th}>Comment preview</th>
-              <th style={S.th}>Trace</th>
-              <th style={S.th}>Resolution</th>
+              <th className={TH}>Timestamp</th>
+              <th className={TH}>Student</th>
+              <th className={TH}>Reason</th>
+              <th className={TH}>Comment preview</th>
+              <th className={TH}>Trace</th>
+              <th className={TH}>Resolution</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={6} style={{ ...S.td, textAlign: 'center', color: colors.text3 }}>
+                <td colSpan={6} className={`${TD} text-center text-muted-foreground`}>
                   Loading...
                 </td>
               </tr>
             )}
             {!loading && issues.length === 0 && !error && (
               <tr>
-                <td colSpan={6} style={{ ...S.td, textAlign: 'center', color: colors.text3 }}>
+                <td colSpan={6} className={`${TD} text-center text-muted-foreground`}>
                   No issues in this queue.
                 </td>
               </tr>
@@ -221,86 +226,85 @@ function AiIssuesContent() {
               const isExpanded = expandedId === issue.id;
               const commentPreview = (issue.student_comment ?? '').slice(0, 80);
               return (
-                <>
+                <Fragment key={issue.id}>
                   <tr
-                    key={issue.id}
                     onClick={() => expand(issue)}
-                    style={{ cursor: 'pointer', background: isExpanded ? colors.surface : undefined }}
+                    className={`cursor-pointer ${isExpanded ? 'bg-surface-2' : ''}`}
                   >
-                    <td style={S.td}>{new Date(issue.created_at).toLocaleString()}</td>
-                    <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 11 }}>
+                    <td className={TD}>{new Date(issue.created_at).toLocaleString()}</td>
+                    <td className={`${TD} font-mono text-[11px]`}>
                       {issue.student_id.slice(0, 8)}…
                     </td>
-                    <td style={S.td}>
-                      <code style={{ fontSize: 11, color: colors.text2 }}>{issue.reason_category}</code>
+                    <td className={TD}>
+                      <code className="text-[11px] text-muted-foreground">{issue.reason_category}</code>
                     </td>
-                    <td style={{ ...S.td, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {commentPreview || <span style={{ color: colors.text3 }}>(no comment)</span>}
+                    <td className={`${TD} max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap`}>
+                      {commentPreview || <span className="text-muted-foreground">(no comment)</span>}
                     </td>
-                    <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 11 }}>
+                    <td className={`${TD} font-mono text-[11px]`}>
                       {issue.trace_id ? `${issue.trace_id.slice(0, 8)}…` : '—'}
                     </td>
-                    <td style={S.td}>
-                      <code style={{ fontSize: 11, color: issue.admin_resolution && issue.admin_resolution !== 'pending' ? colors.success : colors.warning }}>
+                    <td className={TD}>
+                      <code
+                        className={`text-[11px] ${
+                          issue.admin_resolution && issue.admin_resolution !== 'pending'
+                            ? 'text-success'
+                            : 'text-warning'
+                        }`}
+                      >
                         {issue.admin_resolution ?? 'pending'}
                       </code>
                     </td>
                   </tr>
                   {isExpanded && (
-                    <tr key={`${issue.id}-detail`} data-testid={`issue-detail-${issue.id}`}>
-                      <td colSpan={6} style={{ ...S.td, background: colors.surface }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 12 }}>
+                    <tr data-testid={`issue-detail-${issue.id}`}>
+                      <td colSpan={6} className={`${TD} bg-surface-2`}>
+                        <div className="mb-3 grid grid-cols-2 gap-4">
                           <div>
-                            <div style={{ fontSize: 11, color: colors.text3, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>
-                              Student message
-                            </div>
+                            <div className={`${LABEL} mb-1`}>Student message</div>
                             {issue.foxy_message ? (
-                              <div style={{ fontSize: 12, color: colors.text1, whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto', padding: 8, background: colors.bg, border: `1px solid ${colors.border}`, borderRadius: 4 }}>
+                              <div className="max-h-[200px] overflow-auto whitespace-pre-wrap rounded-md border border-surface-3 bg-surface-1 p-2 text-xs text-foreground">
                                 [{issue.foxy_message.role}] {issue.foxy_message.content}
                               </div>
                             ) : (
-                              <div style={{ fontSize: 12, color: colors.text3 }}>(no linked message)</div>
+                              <div className="text-xs text-muted-foreground">(no linked message)</div>
                             )}
-                            <div style={{ fontSize: 11, color: colors.text3, textTransform: 'uppercase', letterSpacing: 1, margin: '12px 0 4px' }}>
-                              Student comment
-                            </div>
-                            <div style={{ fontSize: 12, color: colors.text1, whiteSpace: 'pre-wrap' }}>
-                              {issue.student_comment || <span style={{ color: colors.text3 }}>(none)</span>}
+                            <div className={`${LABEL} mb-1 mt-3`}>Student comment</div>
+                            <div className="whitespace-pre-wrap text-xs text-foreground">
+                              {issue.student_comment || (
+                                <span className="text-muted-foreground">(none)</span>
+                              )}
                             </div>
                           </div>
                           <div>
-                            <div style={{ fontSize: 11, color: colors.text3, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>
-                              Trace
-                            </div>
+                            <div className={`${LABEL} mb-1`}>Trace</div>
                             {issue.trace ? (
-                              <div style={{ fontSize: 12, color: colors.text1, lineHeight: 1.6 }}>
+                              <div className="text-xs leading-6 text-foreground">
                                 <div><b>Caller:</b> {issue.trace.caller}</div>
                                 <div><b>Subject / Grade:</b> {issue.trace.subject_code} / {issue.trace.grade}</div>
                                 <div><b>Chapter:</b> {issue.trace.chapter_number ?? '—'}</div>
                                 <div><b>Grounded:</b> {issue.trace.grounded ? 'yes' : 'no'}</div>
-                                <div><b>Abstain:</b> <code style={{ fontSize: 11 }}>{issue.trace.abstain_reason ?? '—'}</code></div>
+                                <div><b>Abstain:</b> <code className="text-[11px]">{issue.trace.abstain_reason ?? '—'}</code></div>
                                 <div><b>Confidence:</b> {issue.trace.confidence !== null ? issue.trace.confidence.toFixed(2) : '—'}</div>
-                                <div><b>Model:</b> <code style={{ fontSize: 11 }}>{issue.trace.claude_model ?? '—'}</code></div>
-                                <div><b>Template:</b> <code style={{ fontSize: 11 }}>{issue.trace.prompt_template_id ?? '—'}</code></div>
+                                <div><b>Model:</b> <code className="text-[11px]">{issue.trace.claude_model ?? '—'}</code></div>
+                                <div><b>Template:</b> <code className="text-[11px]">{issue.trace.prompt_template_id ?? '—'}</code></div>
                                 <div><b>Latency:</b> {issue.trace.latency_ms ?? '—'} ms</div>
                               </div>
                             ) : (
-                              <div style={{ fontSize: 12, color: colors.text3 }}>(no linked trace)</div>
+                              <div className="text-xs text-muted-foreground">(no linked trace)</div>
                             )}
                           </div>
                         </div>
 
                         {/* Admin actions */}
-                        <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12 }}>
-                          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                            <div style={{ flex: '0 0 200px' }}>
-                              <label style={{ fontSize: 11, color: colors.text3, textTransform: 'uppercase', letterSpacing: 1 }}>
-                                Resolution
-                              </label>
+                        <div className="border-t border-surface-3 pt-3">
+                          <div className="flex items-start gap-3">
+                            <div className="flex-[0_0_200px]">
+                              <label className={LABEL}>Resolution</label>
                               <select
                                 value={draftResolution}
                                 onChange={(e) => setDraftResolution(e.target.value)}
-                                style={{ ...S.select, width: '100%', marginTop: 4 }}
+                                className="mt-1 w-full cursor-pointer rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm"
                                 aria-label="Resolution"
                               >
                                 {RESOLUTION_OPTIONS.map((o) => (
@@ -310,32 +314,20 @@ function AiIssuesContent() {
                                 ))}
                               </select>
                             </div>
-                            <div style={{ flex: 1 }}>
-                              <label style={{ fontSize: 11, color: colors.text3, textTransform: 'uppercase', letterSpacing: 1 }}>
-                                Admin notes
-                              </label>
+                            <div className="flex-1">
+                              <label className={LABEL}>Admin notes</label>
                               <textarea
                                 value={draftNotes}
                                 onChange={(e) => setDraftNotes(e.target.value)}
                                 rows={3}
-                                style={{
-                                  width: '100%',
-                                  marginTop: 4,
-                                  padding: '8px 12px',
-                                  borderRadius: 6,
-                                  border: `1px solid ${colors.border}`,
-                                  fontSize: 13,
-                                  fontFamily: 'inherit',
-                                  resize: 'vertical',
-                                  boxSizing: 'border-box',
-                                }}
+                                className="mt-1 w-full resize-y rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-primary"
                                 aria-label="Admin notes"
                               />
                             </div>
                             <button
                               type="button"
                               onClick={() => saveResolution(issue)}
-                              style={{ ...S.primaryBtn, marginTop: 18 }}
+                              className="mt-[18px] rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
                             >
                               Save
                             </button>
@@ -344,7 +336,7 @@ function AiIssuesContent() {
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               );
             })}
           </tbody>
