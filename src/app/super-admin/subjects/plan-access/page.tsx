@@ -2,7 +2,70 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AdminShell, { useAdmin } from '../../_components/AdminShell';
-import { colors, S } from '../../_components/admin-styles';
+
+const inputCls = 'rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-surface-2 disabled:text-muted-foreground';
+const primaryBtnCls = 'rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90 disabled:opacity-50';
+const secondaryBtnCls = 'rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2 disabled:opacity-50';
+const dangerBtnCls = 'rounded-md border px-4 py-2 text-sm font-semibold disabled:opacity-50';
+const cardCls = 'rounded-lg border border-surface-3 bg-surface-1';
+const cardSurfaceCls = 'rounded-lg border border-surface-3 bg-surface-2';
+const tableCls: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
+const thCls: React.CSSProperties = {
+  textAlign: 'left', padding: '10px 14px', borderBottom: '2px solid #E5E7EB',
+  color: '#6B7280', fontSize: 11, fontWeight: 600, textTransform: 'uppercase',
+  letterSpacing: 1, background: '#F9FAFB', position: 'sticky', top: 0, zIndex: 1,
+};
+const tdCls: React.CSSProperties = {
+  padding: '10px 14px', borderBottom: '1px solid #F3F4F6', color: '#111827', fontSize: 13,
+};
+
+// File-local color + S const replacements (formerly imported from admin-styles).
+// Kept as inline-style spreads to preserve exact visual parity for the legacy
+// hand-rolled table + dialog markup. Tailwind className-based call sites use
+// the *Cls consts above instead.
+const colors = {
+  bg: '#FFFFFF',
+  surface: '#F9FAFB',
+  border: '#E5E7EB',
+  borderLight: '#F3F4F6',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
+} as const;
+
+const S = {
+  h1: { fontSize: 20, fontWeight: 700, color: colors.text1, marginBottom: 4, letterSpacing: -0.3 } as React.CSSProperties,
+  h2: { fontSize: 12, fontWeight: 600, color: colors.text2, textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 12 },
+  subtitle: { fontSize: 13, color: colors.text3, marginBottom: 20 },
+  card: { padding: 16, borderRadius: 8, border: `1px solid ${colors.border}`, background: colors.bg } as React.CSSProperties,
+  cardSurface: { padding: 16, borderRadius: 8, border: `1px solid ${colors.border}`, background: colors.surface } as React.CSSProperties,
+  table: tableCls,
+  th: thCls,
+  td: tdCls,
+  searchInput: {
+    padding: '8px 12px', borderRadius: 6, border: `1px solid ${colors.border}`,
+    background: colors.bg, color: colors.text1, fontSize: 13, outline: 'none',
+    fontFamily: 'inherit', width: 220, boxSizing: 'border-box' as const,
+  },
+  primaryBtn: {
+    padding: '8px 16px', borderRadius: 6, border: 'none', background: colors.text1,
+    color: colors.bg, fontSize: 13, fontWeight: 600, cursor: 'pointer', letterSpacing: 0.2,
+  } as React.CSSProperties,
+  secondaryBtn: {
+    padding: '8px 16px', borderRadius: 6, border: `1px solid ${colors.border}`,
+    background: colors.bg, color: colors.text1, fontSize: 13, fontWeight: 500, cursor: 'pointer',
+  } as React.CSSProperties,
+  actionBtn: {
+    background: 'none', border: `1px solid ${colors.border}`, borderRadius: 5,
+    padding: '4px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 500, color: colors.text2,
+  } as React.CSSProperties,
+  dangerBtn: {
+    padding: '8px 16px', borderRadius: 6, border: `1px solid ${colors.danger}`,
+    background: colors.dangerLight, color: colors.danger, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+  } as React.CSSProperties,
+};
 
 // ── Types ─────────────────────────────────────────────────────
 type PlanCode = 'free' | 'starter' | 'pro' | 'unlimited';
@@ -349,17 +412,17 @@ function ConfirmModal({
         aria-labelledby="confirm-title"
         style={{
           position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-          background: colors.bg, borderRadius: 10, padding: 24, width: 460,
+          background: '#FFFFFF', borderRadius: 10, padding: 24, width: 460,
           boxShadow: '0 12px 48px rgba(0,0,0,0.18)', zIndex: 1000,
         }}
       >
-        <h3 id="confirm-title" style={{ margin: 0, fontSize: 16, color: colors.text1, fontWeight: 700 }}>{title}</h3>
-        <div style={{ fontSize: 13, color: colors.text2, marginTop: 12, lineHeight: 1.5 }}>
+        <h3 id="confirm-title" style={{ margin: 0, fontSize: 16, color: '#111827', fontWeight: 700 }}>{title}</h3>
+        <div style={{ fontSize: 13, color: '#6B7280', marginTop: 12, lineHeight: 1.5 }}>
           {loading ? 'Checking affected students…' : warning}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
-          <button style={S.secondaryBtn} onClick={onCancel} autoFocus>Cancel</button>
-          <button style={S.dangerBtn} onClick={onConfirm} disabled={loading}>Disable anyway</button>
+          <button className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2" onClick={onCancel} autoFocus>Cancel</button>
+          <button className="rounded-md border border-danger bg-danger/10 px-4 py-2 text-sm font-semibold text-danger hover:bg-danger/20 disabled:opacity-50" onClick={onConfirm} disabled={loading}>Disable anyway</button>
         </div>
       </div>
     </>
