@@ -15,6 +15,8 @@ export { default as DetailDrawer } from './DetailDrawer';
 export type { DetailDrawerProps } from './DetailDrawer';
 export { default as DataTable } from './DataTable';
 export type { Column, DataTableProps } from './DataTable';
+export { default as DashboardSidebar } from './DashboardSidebar';
+export type { DashboardSidebarProps, SidebarNavItem } from './DashboardSidebar';
 
 // Chart wrappers (Recharts)
 export * from './charts';
