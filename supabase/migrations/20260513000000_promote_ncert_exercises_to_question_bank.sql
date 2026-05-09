@@ -97,7 +97,7 @@ INSERT INTO public.question_bank (
   answer_text, answer_text_hi,
   answer_rubric,
   max_marks, marks_expected, marks,
-  word_limit, time_estimate_seconds,
+  time_estimate_seconds,
   -- explanation + hints
   explanation,
   -- pedagogy metadata
@@ -165,7 +165,6 @@ SELECT
   ne.marks AS max_marks,
   ne.marks AS marks_expected,
   ne.marks AS marks,
-  ne.word_limit AS word_limit,
   ne.time_estimate_seconds AS time_estimate_seconds,
 
   -- Explanation: prefer foxy_answer (curated bilingual-aware), fall back to
