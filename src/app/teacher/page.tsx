@@ -455,25 +455,26 @@ export default function TeacherPage() {
       <header className="flex justify-between items-start mb-5 pb-4 border-b border-slate-800">
         <div>
           <h1 className="text-2xl font-bold text-slate-50 m-0">{dash?.teacher?.name || tt(isHi, 'Teacher Dashboard', 'शिक्षक डैशबोर्ड')}</h1>
-          <p className="text-sm text-slate-500 mt-1">{cls?.name || 'Class 9-A'} ({cls?.student_count || 0} {tt(isHi, 'students', 'छात्र')}){cls?.avg_mastery != null && <span className="text-indigo-500 ml-2">{tt(isHi, 'Avg mastery', 'औसत मास्टरी')}: {cls.avg_mastery}%</span>}</p>
+          {cls?.name ? (
+            <p className="text-sm text-slate-500 mt-1">
+              {cls.name} ({cls.student_count} {tt(isHi, 'students', 'छात्र')})
+              {cls.avg_mastery != null && (
+                <span className="text-indigo-500 ml-2">
+                  {tt(isHi, 'Avg mastery', 'औसत मास्टरी')}: {cls.avg_mastery}%
+                </span>
+              )}
+            </p>
+          ) : (
+            <p className="text-sm text-slate-500 mt-1">
+              {tt(isHi, 'No classes assigned yet.', 'अभी तक कोई कक्षा नहीं सौंपी गई है।')}{' '}
+              <a href="/teacher/classes" className="text-indigo-400 underline hover:text-indigo-300">
+                {tt(isHi, 'Create your first class →', 'अपनी पहली कक्षा बनाएं →')}
+              </a>
+            </p>
+          )}
         </div>
         <button onClick={load} className="py-2 px-4 bg-transparent text-indigo-500 border border-indigo-500 rounded-lg text-[13px] font-medium cursor-pointer">{tt(isHi, 'Refresh', 'रिफ्रेश')}</button>
       </header>
-
-      {/* Quick nav links */}
-      <div className="flex gap-2 flex-wrap mb-4">
-        {[
-          { label: tt(isHi, '🏫 Classes', '🏫 कक्षाएं'), path: '/teacher/classes' },
-          { label: tt(isHi, '📋 Assignments', '📋 असाइनमेंट'), path: '/teacher/assignments' },
-          { label: tt(isHi, '👨‍🎓 Students', '👨‍🎓 छात्र'), path: '/teacher/students' },
-          { label: tt(isHi, '📊 Reports', '📊 रिपोर्ट'), path: '/teacher/reports' },
-          { label: tt(isHi, '🔬 Lab Activity', '🔬 लैब गतिविधि'), path: '/teacher/lab-leaderboard' },
-        ].map(({ label, path }) => (
-          <button key={path} onClick={() => router.push(path)} className="py-2 px-4 bg-slate-900 border border-slate-800 rounded-lg text-[13px] text-slate-400 font-medium cursor-pointer hover:border-indigo-500 hover:text-indigo-400 transition-colors">
-            {label}
-          </button>
-        ))}
-      </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-[repeat(auto-fit,minmax(100px,1fr))] gap-3 mb-4">

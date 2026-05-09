@@ -238,6 +238,16 @@ const EXPLICIT_WAIVERS: ReadonlyArray<RouteWaiver> = [
   // Add per-route waivers here as the team triages the REVIEW queue.
   // Format:
   //   { routePath: '/api/foo/bar', reason: 'Scoping happens in <helper>; verified by <name> on <date>.' },
+  //
+  // NOTE: Supabase Edge Functions (under `supabase/functions/`) are NOT scanned
+  // by this script (which only walks `src/app/api/**/route.ts`). The waivers
+  // below are documentation-only entries so reviewers can see at a glance which
+  // edge functions have been human-verified for tenant isolation.
+  {
+    routePath: 'supabase/functions/teacher-dashboard/index.ts',
+    reason:
+      'Edge function uses Supabase auth.getUser() + RLS for tenant isolation. Migration to Next.js API route tracked in Phase 6 of multi-role launch plan.',
+  },
 ];
 
 // ─── Bucket types ───────────────────────────────────────────────────────
