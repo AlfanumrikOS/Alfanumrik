@@ -267,6 +267,7 @@ interface ExamCardProps {
 }
 
 function UpcomingExamCard({ exam, isHi, onEdit, onStatusChange }: ExamCardProps) {
+  const router = useRouter();
   return (
     <Card className="p-4">
       <div className="flex items-start justify-between gap-2">
@@ -397,7 +398,7 @@ function UpcomingExamCard({ exam, isHi, onEdit, onStatusChange }: ExamCardProps)
         )}
         {exam.status === 'completed' && (
           <button
-            onClick={() => {/* View results - placeholder */}}
+            onClick={() => router.push(`/school-admin/reports?type=exam&examId=${exam.id}`)}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
             style={{
               background: 'var(--surface-2)',
@@ -1309,7 +1310,7 @@ export default function SchoolAdminExamsPage() {
                               )}
                               {exam.status === 'completed' && (
                                 <button
-                                  onClick={() => {/* View results placeholder */}}
+                                  onClick={() => router.push(`/school-admin/reports?type=exam&examId=${exam.id}`)}
                                   className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
                                   style={{
                                     background: 'var(--surface-2)',
