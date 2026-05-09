@@ -1,42 +1,40 @@
--- ─── Phase 1.5: Wire 'ncert' picker into select_quiz_questions_{rag,v2} ────
+-- ─── Emergency fix (applied to production via MCP on 2026-05-09 16:16 UTC) ─
 --
--- Spec: docs/superpowers/plans/2026-05-09-non-mcq-question-seeding.md
+-- This file mirrors a P0 fix applied directly to production via Supabase MCP
+-- after the Phase 1.5 migration (20260514000000_quiz_rpcs_recognize_ncert_type.sql)
+-- bricked the entire quiz path:
 --
--- Background:
+--   The Phase 1.5 migration referenced `qb.chapter_title` in both
+--   select_quiz_questions_rag and select_quiz_questions_v2. That column does
+--   NOT exist on `question_bank` (only `chapter_id` and `chapter_number` do).
+--   PostgreSQL fails the entire RPC call with:
+--     ERROR: column qb.chapter_title does not exist
 --
--- QuizSetup has five question-type pickers: MCQ Only / Short Answer / Long
--- Answer / Mixed / NCERT Exercise. The first four send their selection
--- directly to the RPC's `p_question_types` array — those values match the
--- `chk_question_type_v2` enum (mcq | short_answer | long_answer |
--- assertion_reason | case_based) so the existing
+--   Effect: every quiz fetch returned 0 rows. Students saw "No questions
+--   available yet" for every (subject, type) combo. quiz-generator Edge
+--   Function (which calls these RPCs) returned 500 on every request.
 --
---   qb.question_type_v2 = ANY(p_question_types)
+-- Fix: drop qb.chapter_title from the COALESCE; rely solely on ch.title from
+-- the LEFT JOIN to chapters. The Phase 1.5 'ncert' picker widening (the
+-- intended feature) is preserved. Note: the broken reference has now been
+-- removed from 20260514000000 in main as well, so fresh-environment deploys
+-- never see the bug.
 --
--- filter works fine.
+-- Why this file exists:
 --
--- The NCERT Exercise picker sends `['ncert']` though — and 'ncert' is NOT a
--- valid question_type_v2 value. The filter never matches and the picker
--- always returns 0 rows. This was harmless when no non-MCQ content existed;
--- now that Phase 1 has promoted 494 NCERT-source rows (with
--- is_ncert=true, source_type='ncert_exercise', and question_type_v2 set
--- to short_answer / long_answer), the picker should fetch them.
+-- The MCP apply recorded version 20260509161642 in supabase_migrations.
+-- Without a corresponding file in the local migrations directory,
+-- `supabase db push` aborts with "Remote migration versions not found in
+-- local migrations directory." This file resolves that mismatch.
 --
--- Fix: widen the question-type filter to ALSO match `is_ncert = true` when
--- 'ncert' appears in p_question_types. Concretely:
+-- On production: version is already in schema_migrations, CLI skips it.
+-- On fresh environments: this version runs FIRST (before 20260514000000
+-- in lex order), so the corrected RPC bodies install first, then
+-- 20260514000000's CREATE OR REPLACE overwrites with the same correct
+-- bodies (no functional change, idempotent).
 --
---   (qb.question_type_v2 = ANY(p_question_types)
---    OR ('ncert' = ANY(p_question_types) AND qb.is_ncert = TRUE))
---
--- This is backward compatible. Pickers that don't include 'ncert' behave
--- exactly as before. The 'ncert' picker now matches any NCERT-source row
--- regardless of its underlying question_type_v2 (SA, LA, or future MCQ).
---
--- Both RPCs use the same filter pattern in 4 places each (pool count,
--- seen count, history-reset, candidate pool). All four are updated.
-
-BEGIN;
-
--- ─── 1. select_quiz_questions_rag ──────────────────────────────────────────
+-- Reported by Pradeep 2026-05-09. Spec:
+-- docs/superpowers/plans/2026-05-09-non-mcq-question-seeding.md.
 
 CREATE OR REPLACE FUNCTION public.select_quiz_questions_rag(
   p_student_id uuid,
@@ -75,9 +73,7 @@ BEGIN
       OR ('ncert' = ANY(p_question_types) AND qb.is_ncert = TRUE)
     );
 
-  IF v_total_pool = 0 THEN
-    RETURN '[]'::jsonb;
-  END IF;
+  IF v_total_pool = 0 THEN RETURN '[]'::jsonb; END IF;
 
   SELECT COUNT(*) INTO v_seen_count
   FROM user_question_history h
@@ -95,7 +91,6 @@ BEGIN
         )
     );
 
-  -- 80% pool reset
   IF v_total_pool > 0 AND v_seen_count::REAL / v_total_pool >= 0.80 THEN
     DELETE FROM user_question_history h
     WHERE h.student_id = p_student_id AND h.subject = p_subject AND h.grade = p_grade
@@ -188,13 +183,6 @@ BEGIN
   RETURN COALESCE(v_result, '[]'::jsonb);
 END;
 $function$;
-
-COMMENT ON FUNCTION public.select_quiz_questions_rag IS
-  'Phase 1.5 (2026-05-09): question-type filter widened so '
-  '''ncert'' in p_question_types matches qb.is_ncert=TRUE rows of any '
-  'question_type_v2. Other types behave as before.';
-
--- ─── 2. select_quiz_questions_v2 ────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION public.select_quiz_questions_v2(
   p_student_id uuid,
@@ -334,28 +322,3 @@ BEGIN
   RETURN COALESCE(v_result, '[]'::jsonb);
 END;
 $function$;
-
-COMMENT ON FUNCTION public.select_quiz_questions_v2 IS
-  'Phase 1.5 (2026-05-09): question-type filter widened so '
-  '''ncert'' in p_question_types matches qb.is_ncert=TRUE rows of any '
-  'question_type_v2. Other types behave as before.';
-
--- ─── 3. Audit ───────────────────────────────────────────────────────────────
-
-INSERT INTO public.admin_audit_log (admin_id, action, entity_type, entity_id, details, created_at)
-VALUES (
-  NULL,
-  'quiz_serve.ncert_picker_wired',
-  'system',
-  NULL,
-  jsonb_build_object(
-    'migrated_at', now(),
-    'phase', 'phase_1.5_ncert_picker_wire_up',
-    'rpcs', jsonb_build_array('select_quiz_questions_rag','select_quiz_questions_v2'),
-    'change', '''ncert'' in p_question_types now matches is_ncert=TRUE rows',
-    'spec', 'docs/superpowers/plans/2026-05-09-non-mcq-question-seeding.md'
-  ),
-  now()
-);
-
-COMMIT;

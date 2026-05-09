@@ -165,7 +165,15 @@ interface InsertedQuestion extends GeneratedQuestion {
   question_type_v2: QuestionType
 }
 
-// ─── Auth (admin-only) ───────────────────────────────────────────────────────
+// ─── Auth (admin-only or service-role) ──────────────────────────────────────
+// Accepts two auth modes:
+//   1. Service-role key — used by the bulk driver script (scripts/
+//      bulk-non-mcq-driver.ts). Bypasses the admin_users lookup; the
+//      service-role itself is the strongest credential and only ships to
+//      trusted backend callers.
+//   2. User JWT with admin_users.admin_level IN ('admin','super_admin') —
+//      used by the (forthcoming Phase 5) admin verification UI when an
+//      admin manually generates more questions for a chapter.
 
 async function verifyAdminAuth(req: Request): Promise<
   | { authorized: true }
@@ -176,6 +184,11 @@ async function verifyAdminAuth(req: Request): Promise<
     return { authorized: false, error: 'Missing or invalid Authorization header', status: 401 }
   }
   const token = authHeader.replace('Bearer ', '')
+
+  // Service-role bypass: trusted backend callers (driver scripts, crons)
+  if (token === SUPABASE_SERVICE_KEY) {
+    return { authorized: true }
+  }
 
   const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     global: { headers: { Authorization: `Bearer ${token}` } },
