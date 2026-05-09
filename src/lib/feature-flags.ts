@@ -246,7 +246,7 @@ export const GOAL_ADAPTIVE_FLAGS = {
 } as const;
 
 /**
- * Pedagogy v2 — Wave 1 (Daily Rhythm) flags.
+ * Pedagogy v2 — Wave 1 (Daily Rhythm) + Wave 2 (Weekly Curiosity Dive) flags.
  *
  *  ff_productive_failure_v1
  *    /learn/[subject]/[chapter] presents the ZPD problem BEFORE the tutorial.
@@ -264,12 +264,21 @@ export const GOAL_ADAPTIVE_FLAGS = {
  *    Dashboard renders <DailyRhythmQueue/> above the hero; /api/rhythm/today
  *    is callable. Default: false. When off, dashboard is unchanged.
  *
- * Seeded by migration 20260509120000_pedagogy_v2_wave_1_flags.sql.
+ *  ff_pedagogy_v2_weekly_dive
+ *    /dive surface is reachable, /api/dive/* endpoints respond, and the
+ *    dashboard's DailyRhythmQueue shows a "This week's dive" CTA when the
+ *    week's dive is not yet completed. Default: false. When off, /dive
+ *    returns 404 and the CTA is suppressed.
+ *
+ * Seeded by migrations:
+ *   20260509120000_pedagogy_v2_wave_1_flags.sql
+ *   20260510000000_pedagogy_v2_wave_2_phenomena_and_dive.sql
  */
 export const PEDAGOGY_V2_FLAGS = {
   PRODUCTIVE_FAILURE_V1:        'ff_productive_failure_v1',
   DISTRACTOR_MICRO_EXPLAINER_V1: 'ff_distractor_micro_explainer_v1',
   DAILY_RHYTHM:                 'ff_pedagogy_v2_daily_rhythm',
+  WEEKLY_DIVE:                  'ff_pedagogy_v2_weekly_dive',
 } as const;
 
 /**
@@ -290,4 +299,5 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [PEDAGOGY_V2_FLAGS.PRODUCTIVE_FAILURE_V1]: false,
   [PEDAGOGY_V2_FLAGS.DISTRACTOR_MICRO_EXPLAINER_V1]: false,
   [PEDAGOGY_V2_FLAGS.DAILY_RHYTHM]: false,
+  [PEDAGOGY_V2_FLAGS.WEEKLY_DIVE]: false,
 } as const;
