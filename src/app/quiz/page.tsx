@@ -415,29 +415,54 @@ export default function QuizPage() {
       const diffMode = diff != null ? (diffModeMap[String(diff)] || 'mixed') : (opts?.quizMode === 'cognitive' ? 'progressive' : 'mixed');
 
       // Guaranteed Count Assembler — ensures exact requested count or explicit failure.
+      // Honor the user's question-type selection from QuizSetup (MCQ Only / Short Answer
+      // / Long Answer / Mixed / NCERT Exercise). Hardcoding ['mcq'] silently dropped
+      // the picker selection — reported 2026-05-09.
       const result = await assembleQuiz({
         subject: subj,
         grade: student.grade,
         requestedCount: qCount,
         difficulty: diffMode,
         chapter: chapter ?? null,
-        questionTypes: ['mcq'],
+        questionTypes: qTypes && qTypes.length > 0 ? qTypes : ['mcq'],
         mode: opts?.quizMode ?? quizMode,
       });
 
       if (!result.success) {
-        // Explicit failure — show message instead of silent partial quiz
+        // Explicit failure — show message instead of silent partial quiz.
+        // Make the message question-type aware: a Short Answer / Long Answer /
+        // NCERT Exercise pick that returns 0 should not look like "this whole
+        // subject is empty" — the user needs to know *which* type is unavailable
+        // so they can switch to MCQ Only.
+        const onlyMcq = qTypes.length === 1 && qTypes[0] === 'mcq';
+        const typeLabel = onlyMcq
+          ? ''
+          : qTypes.includes('mcq') && qTypes.length > 1
+            ? (isHi ? ' मिश्रित ' : ' Mixed ')
+            : qTypes[0] === 'short_answer'
+              ? (isHi ? ' लघु उत्तर ' : ' Short Answer ')
+              : qTypes[0] === 'long_answer'
+                ? (isHi ? ' दीर्घ उत्तर ' : ' Long Answer ')
+                : qTypes[0] === 'ncert'
+                  ? (isHi ? ' NCERT ' : ' NCERT ')
+                  : '';
         if (result.returnedCount === 0) {
           setNoQuestionsError(true);
           setNoQuestionsMessage(
-            isHi ? 'इस विषय में अभी प्रश्न नहीं हैं।' : 'No questions available for this subject yet.'
+            !onlyMcq
+              ? (isHi
+                  ? `अभी${typeLabel}प्रश्न उपलब्ध नहीं हैं। कृपया "केवल MCQ" चुनें।`
+                  : `No${typeLabel}questions available yet for this chapter. Please pick "MCQ Only" for now.`)
+              : (isHi
+                  ? 'इस अध्याय में अभी प्रश्न नहीं हैं।'
+                  : 'No questions available for this chapter yet.')
           );
         } else {
           setNoQuestionsError(true);
           setNoQuestionsMessage(
             isHi
-              ? `केवल ${result.returnedCount} प्रश्न उपलब्ध हैं (${qCount} चाहिए)। कृपया अन्य अध्याय या विषय आज़माएँ।`
-              : `Only ${result.returnedCount} questions available (${qCount} needed). Try another chapter or subject.`
+              ? `केवल ${result.returnedCount}${typeLabel}प्रश्न उपलब्ध हैं (${qCount} चाहिए)। कृपया अन्य अध्याय या प्रश्न प्रकार आज़माएँ।`
+              : `Only ${result.returnedCount}${typeLabel}questions available (${qCount} needed). Try another chapter or question type.`
           );
         }
         setLoading(false);
