@@ -246,6 +246,33 @@ export const GOAL_ADAPTIVE_FLAGS = {
 } as const;
 
 /**
+ * Pedagogy v2 — Wave 1 (Daily Rhythm) flags.
+ *
+ *  ff_productive_failure_v1
+ *    /learn/[subject]/[chapter] presents the ZPD problem BEFORE the tutorial.
+ *    Default: false. When off, the legacy tutorial-first path is rendered.
+ *    Persona-aware: even when the flag is on, `improve_basics` persona keeps
+ *    worked-example-first via pedagogyContentRules — see
+ *    src/lib/learn/pedagogy-content-rules.ts.
+ *
+ *  ff_distractor_micro_explainer_v1
+ *    After a wrong MCQ pick, surface the curated remediation from
+ *    wrong_answer_remediations and offer a one-click "Ask Foxy" CTA.
+ *    Default: false.
+ *
+ *  ff_pedagogy_v2_daily_rhythm
+ *    Dashboard renders <DailyRhythmQueue/> above the hero; /api/rhythm/today
+ *    is callable. Default: false. When off, dashboard is unchanged.
+ *
+ * Seeded by migration 20260509120000_pedagogy_v2_wave_1_flags.sql.
+ */
+export const PEDAGOGY_V2_FLAGS = {
+  PRODUCTIVE_FAILURE_V1:        'ff_productive_failure_v1',
+  DISTRACTOR_MICRO_EXPLAINER_V1: 'ff_distractor_micro_explainer_v1',
+  DAILY_RHYTHM:                 'ff_pedagogy_v2_daily_rhythm',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -260,4 +287,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [GOAL_ADAPTIVE_FLAGS.GOAL_DAILY_PLAN]: false,
   [GOAL_ADAPTIVE_FLAGS.GOAL_AWARE_RAG]: false,
   [GOAL_ADAPTIVE_FLAGS.GOAL_DAILY_PLAN_REMINDER]: false,
+  [PEDAGOGY_V2_FLAGS.PRODUCTIVE_FAILURE_V1]: false,
+  [PEDAGOGY_V2_FLAGS.DISTRACTOR_MICRO_EXPLAINER_V1]: false,
+  [PEDAGOGY_V2_FLAGS.DAILY_RHYTHM]: false,
 } as const;
