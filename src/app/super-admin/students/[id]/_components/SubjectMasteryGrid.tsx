@@ -1,6 +1,11 @@
 'use client';
 
-import { colors } from '../../../_components/admin-styles';
+const colors = {
+  surface: '#F9FAFB',
+  borderLight: '#F3F4F6',
+  text1: '#111827',
+  text3: '#9CA3AF',
+} as const;
 
 interface SubjectMasteryGridProps {
   mastery: Record<string, { topics: number; avgMastery: number }>;

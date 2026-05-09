@@ -1,7 +1,33 @@
 'use client';
 
 import { useState, useEffect, useCallback, use } from 'react';
-import { colors, S } from '../../../_components/admin-styles';
+
+const colors = {
+  bg: '#FFFFFF',
+  surface: '#F9FAFB',
+  border: '#E5E7EB',
+  borderLight: '#F3F4F6',
+  text1: '#111827',
+  text3: '#9CA3AF',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
+} as const;
+
+const S = {
+  h1: {
+    fontSize: 20,
+    fontWeight: 700,
+    color: colors.text1,
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  } as React.CSSProperties,
+  card: {
+    padding: 16,
+    borderRadius: 8,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+  } as React.CSSProperties,
+};
 
 interface StudentData {
   id: string;

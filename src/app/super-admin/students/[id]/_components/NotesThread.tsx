@@ -2,7 +2,58 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '../../../_components/AdminShell';
-import { colors, S } from '../../../_components/admin-styles';
+
+const colors = {
+  bg: '#FFFFFF',
+  surface: '#F9FAFB',
+  border: '#E5E7EB',
+  borderLight: '#F3F4F6',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  accent: '#2563EB',
+  accentLight: '#EFF6FF',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
+  warning: '#D97706',
+  warningLight: '#FFFBEB',
+} as const;
+
+const S = {
+  searchInput: {
+    padding: '8px 12px',
+    borderRadius: 6,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+    color: colors.text1,
+    fontSize: 13,
+    outline: 'none',
+    fontFamily: 'inherit',
+    width: 220,
+    boxSizing: 'border-box' as const,
+  } as React.CSSProperties,
+  select: {
+    padding: '8px 12px',
+    borderRadius: 6,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+    color: colors.text1,
+    fontSize: 13,
+    outline: 'none',
+    cursor: 'pointer',
+  } as React.CSSProperties,
+  primaryBtn: {
+    padding: '8px 16px',
+    borderRadius: 6,
+    border: 'none',
+    background: colors.text1,
+    color: colors.bg,
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+    letterSpacing: 0.2,
+  } as React.CSSProperties,
+};
 
 interface Note {
   id: string;
