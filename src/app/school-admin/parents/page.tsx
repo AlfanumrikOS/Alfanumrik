@@ -966,27 +966,6 @@ export default function SchoolAdminParentsPage() {
                   />
                   <span className="text-sm text-[var(--text-1)]">WhatsApp</span>
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer select-none opacity-50">
-                  <input
-                    type="radio"
-                    name="channel"
-                    disabled
-                    style={{ width: 16, height: 16 }}
-                  />
-                  <span className="text-sm text-[var(--text-3)]">
-                    {t(isHi, 'Email', 'ईमेल')}{' '}
-                    <span
-                      className="text-xs px-2 py-0.5 rounded-full font-medium ml-1"
-                      style={{
-                        background: 'var(--surface-2)',
-                        border: '1px solid var(--border)',
-                        color: 'var(--text-3)',
-                      }}
-                    >
-                      {t(isHi, 'Coming soon', 'जल्द आ रहा है')}
-                    </span>
-                  </span>
-                </label>
               </div>
             </div>
 
