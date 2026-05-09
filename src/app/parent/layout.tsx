@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import ParentShell from './_components/ParentShell';
 
 export const metadata: Metadata = {
   title: 'Parent Portal',
@@ -6,5 +7,9 @@ export const metadata: Metadata = {
 };
 
 export default function ParentLayout({ children }: { children: React.ReactNode }) {
-  return <div className="parent-portal">{children}</div>;
+  return (
+    <div className="parent-portal">
+      <ParentShell>{children}</ParentShell>
+    </div>
+  );
 }

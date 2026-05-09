@@ -248,6 +248,16 @@ const EXPLICIT_WAIVERS: ReadonlyArray<RouteWaiver> = [
     reason:
       'Edge function uses Supabase auth.getUser() + RLS for tenant isolation. Migration to Next.js API route tracked in Phase 6 of multi-role launch plan.',
   },
+  {
+    routePath: 'supabase/functions/parent-portal/index.ts',
+    reason:
+      'Edge fn enforces guardian-student link via guardian_student_links + RLS. Migration to Next.js API route tracked in Phase 6 of multi-role launch plan.',
+  },
+  {
+    routePath: 'supabase/functions/parent-report-generator/index.ts',
+    reason:
+      'Edge fn validates student_id against guardian linkage before rendering report. RLS enforced on underlying queries.',
+  },
 ];
 
 // ─── Bucket types ───────────────────────────────────────────────────────
