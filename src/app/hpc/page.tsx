@@ -53,6 +53,10 @@ export default function HPCPage() {
   const router = useRouter();
   const [hpc, setHpc] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
+  // Pedagogy v2 Wave 3 — recent monthly synthesis chip. null when flag off,
+  // no synthesis yet, or fetch failed. Otherwise carries the month label
+  // for display.
+  const [synthesisChip, setSynthesisChip] = useState<{ month: string } | null>(null);
 
   // Get student_id from auth session (no more hardcoded IDs)
   const studentId = student?.id || '';
@@ -74,6 +78,28 @@ export default function HPCPage() {
     })();
   }, [studentId]);
 
+  // Pedagogy v2 Wave 3 chip: surface the latest monthly synthesis when
+  // it exists. Renders nothing on 404 (flag off) or no_synthesis_yet.
+  useEffect(() => {
+    if (!studentId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/synthesis/state', { credentials: 'same-origin' });
+        if (cancelled) return;
+        if (!res.ok) { setSynthesisChip(null); return; }
+        const body = await res.json() as
+          | { state: 'no_synthesis_yet' }
+          | { state: 'ready'; row: { synthesisMonth: string } };
+        if (body.state === 'ready') setSynthesisChip({ month: body.row.synthesisMonth });
+        else setSynthesisChip(null);
+      } catch {
+        if (!cancelled) setSynthesisChip(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [studentId]);
+
   if (loading) return (<div style={pageStyle}><div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}><div style={{ width: 40, height: 40, border: '3px solid #1E293B', borderTopColor: '#6366F1', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />Generating Holistic Progress Card...</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>);
   if (!hpc || hpc.error) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 60, color: '#EF4444' }}>{(hpc?.error as string) || 'Failed to load HPC'}</div></div>;
 
@@ -93,6 +119,24 @@ export default function HPCPage() {
       <button onClick={() => router.push('/dashboard')} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: '#6366F1', fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: '0 0 12px', marginBottom: 4 }}>
         ← Back to Dashboard
       </button>
+
+      {/* Pedagogy v2 Wave 3 — monthly synthesis chip. */}
+      {synthesisChip && (
+        <button
+          onClick={() => router.push('/synthesis')}
+          data-testid="hpc-synthesis-chip"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            background: 'rgba(124,58,237,0.12)', color: '#A78BFA',
+            border: '1px solid rgba(124,58,237,0.3)', borderRadius: 99,
+            padding: '6px 12px', fontSize: 12, fontWeight: 600,
+            cursor: 'pointer', marginBottom: 12,
+          }}
+        >
+          <span>Monthly synthesis ready · {synthesisChip.month}</span>
+          <span aria-hidden>→</span>
+        </button>
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #1E293B' }}>
         <div>
