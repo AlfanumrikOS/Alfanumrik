@@ -100,7 +100,20 @@ export async function GET(request: NextRequest) {
       sub.grace_period_end != null &&
       new Date() < new Date(sub.grace_period_end);
 
-    const isCancelScheduled = sub.cancelled_at != null && sub.status !== 'cancelled';
+    // A "cancel-scheduled" sub is one whose user has turned auto-renew off but
+    // is still inside the paid period. That state only exists when status is
+    // 'active' AND cancelled_at is set. For status='pending' (a fresh subscribe
+    // awaiting Razorpay's first-charge webhook) cancelled_at — if non-null —
+    // is stale data left over from a previous subscription generation and
+    // must NOT be treated as a current cancel.
+    const isCancelScheduled = sub.status === 'active' && sub.cancelled_at != null;
+
+    // Suppress lifecycle dates and stale cancellation markers while pending.
+    // Until the webhook activates, the period dates either don't exist or
+    // belong to a previous subscription — surfacing them produces the
+    // contradictory "Access Until <past date>" + "Cancellation Scheduled"
+    // banner that triggered this fix.
+    const isPending = sub.status === 'pending';
 
     return NextResponse.json({
       plan_code: sub.plan_code,
@@ -110,13 +123,13 @@ export async function GET(request: NextRequest) {
       auto_renew: sub.auto_renew,
       is_recurring: !!sub.razorpay_subscription_id,
       price_inr: sub.billing_cycle === 'yearly' ? plan?.price_yearly : plan?.price_monthly,
-      current_period_start: sub.current_period_start,
-      current_period_end: sub.current_period_end,
-      next_billing_at: sub.next_billing_at,
+      current_period_start: isPending ? null : sub.current_period_start,
+      current_period_end: isPending ? null : sub.current_period_end,
+      next_billing_at: isPending ? null : sub.next_billing_at,
       is_in_grace: isInGrace,
       grace_period_end: isInGrace ? sub.grace_period_end : null,
       is_cancel_scheduled: isCancelScheduled,
-      cancelled_at: sub.cancelled_at,
+      cancelled_at: isCancelScheduled ? sub.cancelled_at : null,
       renewal_attempts: sub.renewal_attempts,
     });
   } catch (err) {

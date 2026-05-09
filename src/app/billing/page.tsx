@@ -172,9 +172,11 @@ export default function BillingPage() {
   }
 
   const isFree = !sub || sub.plan_code === 'free';
-  const isActive = sub?.status === 'active';
+  const isActive = sub?.status === 'active' && !sub?.is_cancel_scheduled;
   const isPastDue = sub?.status === 'past_due';
-  const isCancelled = sub?.status === 'cancelled' || sub?.is_cancel_scheduled;
+  const isPending = sub?.status === 'pending';
+  const isCancelScheduled = !!sub?.is_cancel_scheduled;
+  const isCancelled = sub?.status === 'cancelled' || sub?.status === 'expired';
 
   return (
     <div style={page}>
@@ -200,16 +202,32 @@ export default function BillingPage() {
             </div>
             <span style={{
               fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 8,
-              background: isActive ? '#16a34a15' : isPastDue ? '#f59e0b15' : '#ef444415',
-              color: isActive ? '#16a34a' : isPastDue ? '#f59e0b' : '#ef4444',
+              background: isActive
+                ? '#16a34a15'
+                : isPending
+                  ? '#3b82f615'
+                  : isPastDue || isCancelScheduled
+                    ? '#f59e0b15'
+                    : '#ef444415',
+              color: isActive
+                ? '#16a34a'
+                : isPending
+                  ? '#3b82f6'
+                  : isPastDue || isCancelScheduled
+                    ? '#f59e0b'
+                    : '#ef4444',
             }}>
               {isActive
                 ? (isHi ? 'सक्रिय' : 'Active')
-                : isPastDue
-                  ? (isHi ? 'भुगतान लंबित' : 'Past Due')
-                  : isCancelled
-                    ? (isHi ? 'रद्द' : 'Cancelled')
-                    : sub?.status || (isHi ? 'मुफ्त' : 'Free')}
+                : isPending
+                  ? (isHi ? 'सक्रिय हो रहा' : 'Activating')
+                  : isPastDue
+                    ? (isHi ? 'भुगतान लंबित' : 'Past Due')
+                    : isCancelScheduled
+                      ? (isHi ? 'रद्द निर्धारित' : 'Cancel Scheduled')
+                      : isCancelled
+                        ? (isHi ? 'रद्द' : 'Cancelled')
+                        : (isHi ? 'मुफ्त' : 'Free')}
             </span>
           </div>
 
@@ -221,15 +239,32 @@ export default function BillingPage() {
               />
               <InfoRow
                 label={isHi ? 'बिलिंग' : 'Billing'}
-                value={sub!.is_recurring ? (isHi ? 'ऑटो-रिन्यू' : 'Auto-renew') : (isHi ? 'एक बार' : 'One-time')}
+                value={
+                  // Auto-renew label is only truthful when the sub is recurring,
+                  // auto_renew is on, AND a cancellation is not scheduled.
+                  // razorpay_subscription_id alone is not sufficient — the field
+                  // persists after cancellation until the webhook clears it.
+                  sub!.is_recurring && sub!.auto_renew && !isCancelScheduled
+                    ? (isHi ? 'ऑटो-रिन्यू' : 'Auto-renew')
+                    : sub!.billing_cycle === 'yearly'
+                      ? (isHi ? 'एक बार (वार्षिक)' : 'One-time (Yearly)')
+                      : (isHi ? 'ऑटो-रिन्यू बंद' : 'Auto-renew Off')
+                }
               />
-              {sub!.current_period_end && (
+              {/* Hide period dates while pending — they're either absent or stale
+                  from a previous subscription, and surfacing them produces the
+                  contradictory "Access Until <past date>" UI. */}
+              {!isPending && sub!.current_period_end && (
                 <InfoRow
-                  label={isCancelled ? (isHi ? 'एक्सेस तक' : 'Access Until') : (isHi ? 'रिन्यू होगा' : 'Renews On')}
+                  label={
+                    isCancelScheduled || isCancelled
+                      ? (isHi ? 'एक्सेस तक' : 'Access Until')
+                      : (isHi ? 'रिन्यू होगा' : 'Renews On')
+                  }
                   value={formatDate(sub!.current_period_end)}
                 />
               )}
-              {sub!.is_recurring && sub!.next_billing_at && !isCancelled && (
+              {!isPending && sub!.is_recurring && sub!.auto_renew && !isCancelScheduled && !isCancelled && sub!.next_billing_at && (
                 <InfoRow
                   label={isHi ? 'अगला चार्ज' : 'Next Charge'}
                   value={formatDate(sub!.next_billing_at)}
@@ -249,6 +284,23 @@ export default function BillingPage() {
             </div>
           )}
 
+          {/* Pending Activation — payment received by Razorpay but our backend
+              has not yet been told (webhook in flight, or user closed the
+              checkout popup before completing). Show clear messaging instead
+              of period dates so the user knows to retry or wait. */}
+          {isPending && (
+            <div style={{ marginTop: 16, padding: 12, borderRadius: 10, background: '#3b82f610', border: '1px solid #3b82f630' }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: '#3b82f6' }}>
+                {isHi ? 'सक्रिय हो रहा है' : 'Activating'}
+              </p>
+              <p style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+                {isHi
+                  ? 'आपकी भुगतान की पुष्टि हो रही है। यदि एक मिनट में सक्रिय न हो, तो "प्लान बदलें" से दोबारा प्रयास करें।'
+                  : 'We\'re confirming your payment. If your plan is not active within a minute, please retry from "Change Plan".'}
+              </p>
+            </div>
+          )}
+
           {/* Grace Period Warning */}
           {isPastDue && sub?.is_in_grace && (
             <div style={{ marginTop: 16, padding: 12, borderRadius: 10, background: '#f59e0b10', border: '1px solid #f59e0b30' }}>
@@ -263,16 +315,18 @@ export default function BillingPage() {
             </div>
           )}
 
-          {/* Cancel Scheduled */}
-          {sub?.is_cancel_scheduled && sub.status !== 'cancelled' && (
-            <div style={{ marginTop: 16, padding: 12, borderRadius: 10, background: '#ef444410', border: '1px solid #ef444430' }}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: '#ef4444' }}>
+          {/* Cancel Scheduled — only for active subs whose user turned off
+              auto-renew. status API now guarantees is_cancel_scheduled is
+              false for pending/cancelled/expired/past_due. */}
+          {isCancelScheduled && (
+            <div style={{ marginTop: 16, padding: 12, borderRadius: 10, background: '#f59e0b10', border: '1px solid #f59e0b30' }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: '#f59e0b' }}>
                 {isHi ? 'रद्दीकरण निर्धारित' : 'Cancellation Scheduled'}
               </p>
               <p style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
                 {isHi
-                  ? `ऑटो-रिन्यू बंद है। ${sub.current_period_end ? formatDate(sub.current_period_end) : 'बिलिंग अवधि'} तक एक्सेस बनी रहेगी।`
-                  : `Auto-renew is off. You'll keep access until ${sub.current_period_end ? formatDate(sub.current_period_end) : 'the end of your billing period'}.`}
+                  ? `ऑटो-रिन्यू बंद है। ${sub!.current_period_end ? formatDate(sub!.current_period_end) : 'बिलिंग अवधि'} तक एक्सेस बनी रहेगी।`
+                  : `Auto-renew is off. You'll keep access until ${sub!.current_period_end ? formatDate(sub!.current_period_end) : 'the end of your billing period'}.`}
               </p>
             </div>
           )}
@@ -297,7 +351,10 @@ export default function BillingPage() {
                 {isHi ? 'प्लान बदलें' : 'Change Plan'}
               </Link>
 
-              {!isCancelled && sub?.is_recurring && (
+              {/* Cancel Auto-Renew is only meaningful for an actively-billing
+                  recurring sub. Hide for pending (nothing to cancel yet),
+                  cancel-scheduled (already cancelled), and terminal states. */}
+              {isActive && sub?.is_recurring && sub?.auto_renew && (
                 cancelConfirm ? (
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <button onClick={handleCancel} disabled={cancelLoading} style={dangerBtn}>

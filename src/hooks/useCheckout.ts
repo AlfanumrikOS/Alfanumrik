@@ -163,9 +163,20 @@ export function useCheckout() {
       handler: async (response: { razorpay_payment_id: string; razorpay_subscription_id: string; razorpay_signature: string }) => {
         setStatus('verifying');
         try {
+          // Re-grab the Supabase session right before calling verify. The
+          // Razorpay popup can stay open for 60-120s while the user enters
+          // UPI/OTP — long enough that Supabase rotates the access_token in
+          // the background. The token captured before openCheckout is then
+          // stale and verify returns 401 (observed for hridaankaushik307 on
+          // 2026-05-09: subscribe at 12:24:44 with token X, verify at
+          // 12:26:09 with same token X → 401). Always read the latest token.
+          const fresh = (await supabase.auth.getSession()).data.session?.access_token ?? params.accessToken;
+          const verifyHeaders = { ...params.headers, Authorization: `Bearer ${fresh}` };
+
           const verifyRes = await fetch('/api/payments/verify', {
             method: 'POST',
-            headers: params.headers,
+            headers: verifyHeaders,
+            credentials: 'include',
             body: JSON.stringify({
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_subscription_id: response.razorpay_subscription_id,
@@ -264,9 +275,15 @@ export function useCheckout() {
       handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
         setStatus('verifying');
         try {
+          // See useCheckout subscription handler — same stale-token bug
+          // applies to yearly orders. Re-grab the session before verify.
+          const fresh = (await supabase.auth.getSession()).data.session?.access_token ?? params.accessToken;
+          const verifyHeaders = { ...params.headers, Authorization: `Bearer ${fresh}` };
+
           const verifyRes = await fetch('/api/payments/verify', {
             method: 'POST',
-            headers: params.headers,
+            headers: verifyHeaders,
+            credentials: 'include',
             body: JSON.stringify({
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
