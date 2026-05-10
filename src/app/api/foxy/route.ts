@@ -2231,15 +2231,28 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   }
 
   // ─── Grounded response — normalize + persist ─────────────────────────────
-  // Any answer reaching here came through the grounded-answer pipeline with
-  // NCERT chunks retrieved via Voyage RAG and (in strict mode) verified by
-  // the grounding-check stage. Low-confidence cases already abstain inside
-  // the pipeline (returning hard-abstain). So if grounded.grounded === true
-  // here, the answer IS curriculum-grounded by definition — never surface
-  // the "unverified curriculum" banner because it confuses students about
-  // the source of their answer when the source is in fact NCERT.
-  const isUnverified = false;
-  void SOFT_CONFIDENCE_BANNER_THRESHOLD; // intentionally unused — see note
+  // The grounded-answer pipeline returns grounded:true for any successful
+  // Claude call, but soft-mode answers can still fall back to "general CBSE
+  // knowledge" when no chunks were retrieved or when Claude prefixes the
+  // answer with the documented escape phrase. groundedFromChunks is the
+  // honest signal: true when the answer was actually produced from NCERT
+  // chunks. We surface the unverified banner exactly when this is false,
+  // so students see a caution strip on general-knowledge responses instead
+  // of being misled into treating them as curriculum-canon. Audit 2026-05-10.
+  //
+  // Pre-audit, this was hardcoded false on the assumption that a successful
+  // grounded-answer call always meant chunks were used — that was wrong:
+  // 287/309 foxy traces in the 30 days before the fix had grounded=true
+  // with chunk_count=0, every one of which got a "grounded" UI badge.
+  //
+  // SOFT_CONFIDENCE_BANNER_THRESHOLD remains the honest mid-tier threshold
+  // for partially-grounded answers (chunks present but low confidence).
+  // Combined: any answer that is either not grounded-from-chunks OR has
+  // confidence below the soft banner threshold gets flagged.
+  const groundedFromChunksRaw = grounded.groundedFromChunks === true;
+  const lowConfidence = typeof grounded.confidence === 'number'
+    && grounded.confidence < SOFT_CONFIDENCE_BANNER_THRESHOLD;
+  const isUnverified = !groundedFromChunksRaw || lowConfidence;
 
   // Convert Citation[] → RagSource[] for backward-compat with existing clients.
   const sources: RagSource[] = grounded.citations.map((c: Citation) => ({
@@ -2410,11 +2423,9 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
 
   // Phase 0 Fix 0.5: surface groundedFromChunks + citationsCount so the
   // client analytics layer can emit honest `was_grounded` telemetry.
-  // Default to `false` if the service didn't include the field (e.g. an old
-  // cached response from before Fix 0.5 shipped) — conservative: don't claim
-  // grounding we can't prove.
-  const groundedFromChunks =
-    grounded.groundedFromChunks === true ? true : false;
+  // Same value as `groundedFromChunksRaw` above; aliased here so the wire
+  // shape stays identical to its pre-audit form.
+  const groundedFromChunks = groundedFromChunksRaw;
   const citationsCount = grounded.citations.length;
 
   return NextResponse.json({

@@ -201,6 +201,15 @@ function baseTraceRow(ctx: StreamCtx): TraceRow {
     prompt_template_id: request.generation.system_prompt_template,
     prompt_hash: ctx.promptHash ?? null,
     grounded: false,
+    // Streaming traces are written pre-stream (line ~443) so we can include
+    // trace_id in the metadata frame. We can derive grounded_from_chunks
+    // upfront for two of the three cases — chunkCount=0 (always false) and
+    // strict-mode-with-chunks (always true). For soft-mode-with-chunks the
+    // value depends on whether Claude emits the general-knowledge escape
+    // prefix, which we can't know until streaming completes. Until the
+    // writeTrace helper grows an UPDATE-on-done path, those rows persist
+    // as null and analytics treat null as "indeterminate". Audit 2026-05-10.
+    grounded_from_chunks: null,
     abstain_reason: null,
     confidence: ctx.confidence ?? null,
     answer_length: ctx.answerLength ?? null,
@@ -223,6 +232,14 @@ async function writeAbstainTrace(sb: any, ctx: StreamCtx, reason: AbstainReason)
 async function writeGroundedTrace(sb: any, ctx: StreamCtx): Promise<string> {
   const row = baseTraceRow(ctx);
   row.grounded = true;
+  // Set the upfront-derivable cases. Soft-mode-with-chunks stays null
+  // because we don't have the answer text yet — see baseTraceRow comment.
+  const chunkCount = ctx.chunks ? ctx.chunks.length : 0;
+  if (chunkCount === 0) {
+    row.grounded_from_chunks = false;
+  } else if (ctx.request.mode === 'strict') {
+    row.grounded_from_chunks = true;
+  }
   return await writeTrace(sb, row);
 }
 
