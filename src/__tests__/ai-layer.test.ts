@@ -123,6 +123,52 @@ describe('a) Intent Classification (classifyIntent)', () => {
     expect(mockCallClaude).not.toHaveBeenCalled();
   });
 
+  // Broader phrasings — REGRESSION GUARD for the bug where students typing
+  // "Provide me 5 questions from this chapter to practice" got routed to
+  // explain instead of quiz, leading Foxy to produce an empty intro with
+  // zero questions. See incident 2026-05-10.
+  it.each([
+    ['Provide me 5 questions from this chapter to practice.'],
+    ['provide me 5 questions to practice'],
+    ['Share some questions on Newton\'s laws'],
+    ['Generate 10 questions for me'],
+    ['Create 5 mcqs on this chapter'],
+    ['I want to solve some hard problems'],
+    ['I need a few practice questions'],
+    ['I would like some MCQs'],
+    ['Ask me a few MCQs'],
+    ['Send me some practice questions'],
+    ['Show me 10 mcqs from chapter 3'],
+    ['Set me a test on this chapter'],
+    ['Give some tricky questions to solve'],
+    ['5 questions from this chapter'],
+    ['questions from this chapter'],
+    ['some practice questions please'],
+    ['practice problems for exam'],
+    ['hard questions to attempt'],
+    ['sample questions on photosynthesis'],
+  ])('classifies %p as quiz (broadened patterns)', async (message) => {
+    const result = await classifyIntent(message, 'science', '9', 'learn');
+    expect(result.intent).toBe('quiz');
+    expect(result.confidence).toBeGreaterThanOrEqual(0.8);
+    expect(mockCallClaude).not.toHaveBeenCalled();
+  });
+
+  // NEGATIVE cases — these should NOT trigger quiz intent (avoid false positives).
+  // Note: we only assert NOT-quiz here. The exact intent for messages with
+  // confidence < 0.8 depends on the LLM classifier which is mocked out — the
+  // important guarantee is that none of these accidentally fire as quiz.
+  it.each([
+    ['Can you explain photosynthesis?'],
+    ['What is the difference between mitosis and meiosis?'],
+    ['Summarize chapter 3 for me'],
+    ['Tell me about Newton\'s laws'],
+    ['I am confused about chemistry'],
+  ])('does NOT misclassify %p as quiz', async (message) => {
+    const result = await classifyIntent(message, 'science', '9', 'learn');
+    expect(result.intent).not.toBe('quiz');
+  });
+
   // Revision — keyword confidence 0.85 → no LLM call
   it('classifies "summarize chapter 3" as revision', async () => {
     const result = await classifyIntent('summarize chapter 3 for me', 'science', '9', 'learn');
