@@ -1,0 +1,22 @@
+-- Placeholder for an MCP-applied migration that exists in remote schema_migrations
+-- but had no corresponding file in this repo, blocking `supabase db push --include-all`
+-- with: "Remote migration versions not found in local migrations directory."
+--
+-- Background: PR #686 ("QB fix-failed-questions agent") committed the actual
+-- qb_fixer migration as 20260510064952_qb_fixer.sql. Before the PR landed,
+-- the same SQL was applied to production via the Supabase MCP server to
+-- validate the schema end-to-end. The MCP applied it with its own
+-- auto-generated timestamp (20260510065248), which is what shows up in
+-- supabase_migrations.schema_migrations on prod.
+--
+-- This placeholder is INTENTIONALLY a no-op:
+--   • Its presence satisfies the supabase CLI's drift check.
+--   • Re-applying it via `db push` is safe because it does nothing.
+--   • The actual schema (state values, claim_fix_batch RPC,
+--     question_bank_fix_history table) was created by the MCP application
+--     and is also expressed by 20260510064952_qb_fixer.sql for fresh-env bootstrap.
+--
+-- Same pattern as 20260509130000_mcp_applied_placeholder.sql.
+
+-- No-op
+SELECT 1 WHERE FALSE;
