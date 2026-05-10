@@ -16,7 +16,7 @@ vi.mock('@/lib/supabase-admin', () => ({
   supabaseAdmin: { from: (t: string) => fromMock(t) },
 }));
 
-import { POST } from '@/app/api/internal/cron/fix-failed-questions/route';
+import { GET, POST } from '@/app/api/internal/cron/fix-failed-questions/route';
 
 beforeEach(() => {
   claimFailedBatchMock.mockReset();
@@ -33,48 +33,70 @@ beforeEach(() => {
   process.env.CRON_SECRET = 'test-secret';
 });
 
-function makeRequest(secret: string | null) {
+type AuthMode = 'x-cron-secret' | 'authorization-bearer' | 'none' | 'wrong';
+function makeRequest(method: 'GET' | 'POST', authMode: AuthMode, secret = 'test-secret') {
+  const headers: Record<string, string> = {};
+  if (authMode === 'x-cron-secret') headers['x-cron-secret'] = secret;
+  else if (authMode === 'authorization-bearer') headers['authorization'] = `Bearer ${secret}`;
+  else if (authMode === 'wrong') headers['x-cron-secret'] = 'wrong';
   return new Request('http://localhost/api/internal/cron/fix-failed-questions', {
-    method: 'POST',
-    headers: secret ? { 'x-cron-secret': secret } : {},
+    method,
+    headers,
   });
 }
 
-describe('POST /api/internal/cron/fix-failed-questions', () => {
-  it('rejects missing secret with 401', async () => {
-    const res = await POST(makeRequest(null) as never);
-    expect(res.status).toBe(401);
+describe('Cron route /api/internal/cron/fix-failed-questions', () => {
+  describe('auth', () => {
+    it('rejects missing secret with 401 (POST)', async () => {
+      const res = await POST(makeRequest('POST', 'none') as never);
+      expect(res.status).toBe(401);
+    });
+    it('rejects missing secret with 401 (GET)', async () => {
+      const res = await GET(makeRequest('GET', 'none') as never);
+      expect(res.status).toBe(401);
+    });
+    it('rejects wrong secret with 401', async () => {
+      const res = await POST(makeRequest('POST', 'wrong') as never);
+      expect(res.status).toBe(401);
+    });
+    it('accepts Authorization: Bearer header (Vercel cron pattern)', async () => {
+      claimFailedBatchMock.mockResolvedValueOnce([]);
+      const res = await GET(makeRequest('GET', 'authorization-bearer') as never);
+      expect(res.status).toBe(200);
+    });
+    it('accepts x-cron-secret header (manual curl pattern)', async () => {
+      claimFailedBatchMock.mockResolvedValueOnce([]);
+      const res = await POST(makeRequest('POST', 'x-cron-secret') as never);
+      expect(res.status).toBe(200);
+    });
   });
 
-  it('rejects wrong secret with 401', async () => {
-    const res = await POST(makeRequest('wrong') as never);
-    expect(res.status).toBe(401);
-  });
+  describe('sweep behavior', () => {
+    it('returns 200 with claimed=0 when backlog empty (GET via Vercel cron)', async () => {
+      claimFailedBatchMock.mockResolvedValueOnce([]);
+      const res = await GET(makeRequest('GET', 'authorization-bearer') as never);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toMatchObject({ claimed: 0, verified: 0 });
+    });
 
-  it('returns 200 with claimed=0 when backlog empty', async () => {
-    claimFailedBatchMock.mockResolvedValueOnce([]);
-    const res = await POST(makeRequest('test-secret') as never);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toMatchObject({ claimed: 0, verified: 0 });
-  });
+    it('runs the agent once per claimed row and aggregates outcomes', async () => {
+      claimFailedBatchMock.mockResolvedValueOnce([
+        { id: 'q1' }, { id: 'q2' }, { id: 'q3' },
+      ]);
+      runFixFailedMock
+        .mockResolvedValueOnce({ status: 'success', finalText: 'verified', runId: 'r1', stepCount: 4, tokensInput: 100, tokensOutput: 50 })
+        .mockResolvedValueOnce({ status: 'success', finalText: 'marked unfixable', runId: 'r2', stepCount: 2, tokensInput: 50, tokensOutput: 30 })
+        .mockRejectedValueOnce(new Error('agent crashed'));
 
-  it('runs the agent once per claimed row and aggregates outcomes', async () => {
-    claimFailedBatchMock.mockResolvedValueOnce([
-      { id: 'q1' }, { id: 'q2' }, { id: 'q3' },
-    ]);
-    runFixFailedMock
-      .mockResolvedValueOnce({ status: 'success', finalText: 'verified', runId: 'r1', stepCount: 4, tokensInput: 100, tokensOutput: 50 })
-      .mockResolvedValueOnce({ status: 'success', finalText: 'marked unfixable', runId: 'r2', stepCount: 2, tokensInput: 50, tokensOutput: 30 })
-      .mockRejectedValueOnce(new Error('agent crashed'));
-
-    const res = await POST(makeRequest('test-secret') as never);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.claimed).toBe(3);
-    expect(body.errors).toBe(1);
-    expect(logOpsEventMock).toHaveBeenCalledWith(
-      expect.objectContaining({ category: 'qb_fixer', message: 'sweep_complete' }),
-    );
+      const res = await POST(makeRequest('POST', 'x-cron-secret') as never);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.claimed).toBe(3);
+      expect(body.errors).toBe(1);
+      expect(logOpsEventMock).toHaveBeenCalledWith(
+        expect.objectContaining({ category: 'qb_fixer', message: 'sweep_complete' }),
+      );
+    });
   });
 });

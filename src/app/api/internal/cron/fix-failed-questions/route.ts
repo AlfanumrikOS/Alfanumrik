@@ -1,7 +1,11 @@
 /**
  * Cron entry for the QB fix-failed-questions agent.
  *
- * Auth: x-cron-secret header against CRON_SECRET env var (matches daily-cron).
+ * Auth: x-cron-secret header OR Authorization: Bearer <CRON_SECRET>
+ * (matches the daily-cron pattern; Vercel Cron sends Bearer auth via GET).
+ *
+ * Method: BOTH GET and POST are accepted. Vercel Cron triggers GET; manual
+ * curl invocations from ops scripts use POST. Both delegate to handleSweep().
  *
  * Spec: docs/superpowers/specs/2026-05-10-qb-qa-fix-failed-questions-design.md §4.3
  */
@@ -26,6 +30,15 @@ function constantTimeEqual(a: string, b: string): boolean {
   return r === 0;
 }
 
+function verifyCronSecret(request: NextRequest): boolean {
+  const cronSecret =
+    request.headers.get('x-cron-secret') ||
+    request.headers.get('authorization')?.replace('Bearer ', '');
+  const expected = process.env.CRON_SECRET;
+  if (!expected || !cronSecret) return false;
+  return constantTimeEqual(cronSecret, expected);
+}
+
 async function lastMinuteRunCount(): Promise<number> {
   const since = new Date(Date.now() - 60_000).toISOString();
   const { data, error, count } = await supabaseAdmin
@@ -40,13 +53,12 @@ async function lastMinuteRunCount(): Promise<number> {
   return count ?? data?.length ?? 0;
 }
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
-  const provided = request.headers.get('x-cron-secret') ?? '';
-  const expected = process.env.CRON_SECRET ?? '';
+async function handleSweep(request: NextRequest): Promise<NextResponse> {
+  const expected = process.env.CRON_SECRET;
   if (!expected) {
     return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 503 });
   }
-  if (!constantTimeEqual(provided, expected)) {
+  if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -95,4 +107,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   await logSweepComplete(result, sweepId);
 
   return NextResponse.json({ sweep_id: sweepId, ...result });
+}
+
+// Vercel Cron triggers GET requests with `Authorization: Bearer <CRON_SECRET>`.
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  return handleSweep(request);
+}
+
+// Manual ops invocations may POST with `x-cron-secret: <CRON_SECRET>` header.
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  return handleSweep(request);
 }
