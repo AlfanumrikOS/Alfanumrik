@@ -32,7 +32,12 @@ const OFF_TOPIC_PATTERNS = /\b(porn|sex|nude|naked|drug|alcohol|gambling|kill\s+
 //   "Questions from this chapter"
 // Designed to be permissive on the request verb + noun while still requiring
 // at least one of: "questions", "problems", "MCQs", "quiz", "test".
-const QUIZ_PATTERNS = /\b(?:quiz|mcqs?|mock\s+test|test\s+me\b|(?:give|provide|share|send|show|generate|create|make|prepare|set|ask)\s+(?:me\s+)?(?:some\s+|a\s+few\s+|a\s+|\d+\s+)?(?:practice\s+|tricky\s+|hard\s+|difficult\s+|easy\s+|sample\s+|board[- ]?level\s+)?(?:questions?|problems?|mcqs?|tests?|quizz?es?)|(?:i\s+(?:want|need|would\s+like|wanna))\s+(?:to\s+)?(?:solve\s+|attempt\s+|practice\s+)?(?:some\s+|a\s+few\s+|\d+\s+)?(?:practice\s+|tricky\s+|hard\s+|tough\s+|difficult\s+|easy\s+)?(?:questions?|problems?|mcqs?)|practice\s+(?:questions?|problems?|mcqs?)|(?:\d+\s+|some\s+|few\s+|a\s+few\s+)?(?:practice\s+|tricky\s+|hard\s+|difficult\s+|easy\s+|sample\s+)?(?:questions?|problems?|mcqs?)\s+(?:from|on|about|for|to\s+practice|to\s+solve|to\s+attempt|for\s+practice|for\s+exam|for\s+test))\b/i;
+// Exported because /api/foxy/route.ts also uses it to auto-swap the request
+// mode to 'practice' when the student's message matches quiz intent — without
+// that swap, the foxy_tutor_v1 template emits the STEP CARDS shape (intro
+// paragraph then stops) for non-practice modes, leaving the student with no
+// actual MCQs.
+export const QUIZ_PATTERNS = /\b(?:quiz|mcqs?|mock\s+test|test\s+me\b|(?:give|provide|share|send|show|generate|create|make|prepare|set|ask)\s+(?:me\s+)?(?:some\s+|a\s+few\s+|a\s+|\d+\s+)?(?:practice\s+|tricky\s+|hard\s+|difficult\s+|easy\s+|sample\s+|board[- ]?level\s+)?(?:questions?|problems?|mcqs?|tests?|quizz?es?)|(?:i\s+(?:want|need|would\s+like|wanna))\s+(?:to\s+)?(?:solve\s+|attempt\s+|practice\s+)?(?:some\s+|a\s+few\s+|\d+\s+)?(?:practice\s+|tricky\s+|hard\s+|tough\s+|difficult\s+|easy\s+)?(?:questions?|problems?|mcqs?)|practice\s+(?:questions?|problems?|mcqs?)|(?:\d+\s+|some\s+|few\s+|a\s+few\s+)?(?:practice\s+|tricky\s+|hard\s+|difficult\s+|easy\s+|sample\s+)?(?:questions?|problems?|mcqs?)\s+(?:from|on|about|for|to\s+practice|to\s+solve|to\s+attempt|for\s+practice|for\s+exam|for\s+test))\b/i;
 
 const REVISION_PATTERNS = /\b(revis(e|ion)|summary|summarize|summarise|recap|key\s+points|quick\s+review|notes)\b/i;
 

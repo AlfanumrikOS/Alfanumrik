@@ -66,6 +66,7 @@ import { validateSubjectWrite } from '@/lib/subjects';
 import { callGroundedAnswer, callGroundedAnswerStream, type GroundedRequest, type Citation, type SuggestedAlternative, type AbstainReason } from '@/lib/ai/grounded-client';
 import { PER_PLAN_TIMEOUT_MS, SOFT_CONFIDENCE_BANNER_THRESHOLD } from '@/lib/grounding-config';
 import { classifyIntent, routeIntent } from '@/lib/ai';
+import { QUIZ_PATTERNS } from '@/lib/ai/workflows/foxy-router';
 import { getAllTenantConfig } from '@/lib/tenant-config';
 import { coerceTenantType } from '@/lib/tenant-domain';
 import { buildTenantOverrideSection } from '@/lib/ai/prompts/tenant-overrides';
@@ -1623,7 +1624,15 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   const chapter = typeof body.chapter === 'string' ? body.chapter.trim() || null : null;
   const board = typeof body.board === 'string' ? body.board.trim() || 'CBSE' : 'CBSE';
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() || null : null;
-  const mode = typeof body.mode === 'string' && VALID_MODES.includes(body.mode) ? body.mode : 'learn';
+  const requestedMode = typeof body.mode === 'string' && VALID_MODES.includes(body.mode) ? body.mode : 'learn';
+  // The student's UI-selected mode is preserved for analytics/quota/persistence.
+  // But for the LLM call we auto-promote to 'practice' when the message matches
+  // quiz intent — without this, the foxy_tutor_v1 template emits the STEP CARDS
+  // shape (intro paragraph then stops) for non-practice modes, leaving the
+  // student with no actual MCQs. The MODE_DIRECTIVES.practice block is what
+  // tells Claude to emit 5 mcq blocks instead of 2-4 step cards.
+  const isQuizIntent = QUIZ_PATTERNS.test(message);
+  const mode = isQuizIntent && requestedMode !== 'practice' ? 'practice' : requestedMode;
   // Phase 2.2: optional coaching mode. If the client passes one, we honor
   // it. Otherwise we pick a default later, after mastery is known
   // (mastery < 0.6 → 'socratic', else → 'answer').
