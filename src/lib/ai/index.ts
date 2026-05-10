@@ -54,6 +54,19 @@ export { runDoubtWorkflow } from './workflows/doubt-solve';
 export { runQuizGenerateWorkflow } from './workflows/quiz-generate';
 export { runRevisionWorkflow } from './workflows/revision';
 
+// ─── Agent loop (LLM-as-planner) ────────────────────────────────────────────
+export { runAgent } from './agents/runAgent';
+export { createRegistry } from './agents/registry';
+export { BudgetTracker } from './agents/budget';
+export { DEFAULT_BUDGET, BudgetExceeded } from './agents/types';
+export type {
+  ToolDefinition,
+  AgentBudget,
+  AgentContext,
+  AgentResult,
+  AgentRunStatus,
+} from './agents/types';
+
 // ─── Types (re-export for convenience) ──────────────────────────────────────
 export type {
   FoxyIntent,
