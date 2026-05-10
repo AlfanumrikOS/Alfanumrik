@@ -19,7 +19,7 @@ const candidate = {
 function mockBankRow() {
   return {
     select: () => ({
-      eq: () => ({ single: async () => ({ data: { grade: '6', subject: 'math', chapter_title: 'Numbers' }, error: null }) }),
+      eq: () => ({ single: async () => ({ data: { grade: '6', subject: 'math', chapter_number: 1, chapter_title: 'Numbers' }, error: null }) }),
     }),
   };
 }
@@ -33,20 +33,28 @@ beforeEach(() => {
 describe('reVerifyTool.handler', () => {
   it('on verified=true with matching index, stamps ctx.meta with verified hash', async () => {
     callGroundedAnswerMock.mockResolvedValueOnce({
+      grounded: true,
       answer: JSON.stringify({ verified: true, correct_option_index: 1, supporting_chunk_ids: ['c1'], reason: 'OK' }),
-      abstain_reason: null,
+      citations: [], confidence: 0.95, trace_id: 't1',
+      meta: { claude_model: 'haiku', tokens_used: 100, latency_ms: 200 },
     });
     const ctx = { userId: null, meta: {} as Record<string, unknown> };
     const out = await reVerifyTool.handler({ question_id: 'q1', candidate }, ctx);
     expect(out.verified).toBe(true);
     const expectedKey = `verified_q1_${hashCandidate(candidate)}`;
     expect(ctx.meta[expectedKey]).toBe(true);
+
+    const req = callGroundedAnswerMock.mock.calls[0][0];
+    expect(req.generation.system_prompt_template).toBe('quiz_answer_verifier_v1');
+    expect(req.generation.template_variables.question_json).toContain('"claimed_correct_index":1');
   });
 
   it('on verified=false does NOT stamp ctx.meta', async () => {
     callGroundedAnswerMock.mockResolvedValueOnce({
+      grounded: true,
       answer: JSON.stringify({ verified: false, correct_option_index: 2, supporting_chunk_ids: [], reason: 'wrong' }),
-      abstain_reason: null,
+      citations: [], confidence: 0.6, trace_id: 't1',
+      meta: { claude_model: 'haiku', tokens_used: 100, latency_ms: 200 },
     });
     const ctx = { userId: null, meta: {} as Record<string, unknown> };
     const out = await reVerifyTool.handler({ question_id: 'q1', candidate }, ctx);
@@ -54,19 +62,24 @@ describe('reVerifyTool.handler', () => {
     expect(Object.keys(ctx.meta)).toHaveLength(0);
   });
 
-  it('on verified=true but mismatched index, does NOT stamp (verified must agree on index)', async () => {
+  it('on verified=true but mismatched index, does NOT stamp', async () => {
     callGroundedAnswerMock.mockResolvedValueOnce({
+      grounded: true,
       answer: JSON.stringify({ verified: true, correct_option_index: 3, supporting_chunk_ids: [], reason: 'index off' }),
-      abstain_reason: null,
+      citations: [], confidence: 0.6, trace_id: 't1',
+      meta: { claude_model: 'haiku', tokens_used: 100, latency_ms: 200 },
     });
     const ctx = { userId: null, meta: {} as Record<string, unknown> };
     const out = await reVerifyTool.handler({ question_id: 'q1', candidate }, ctx);
-    expect(out.verified).toBe(false); // tool downgrades to false on index mismatch
+    expect(out.verified).toBe(false);
     expect(Object.keys(ctx.meta)).toHaveLength(0);
   });
 
-  it('throws on abstain', async () => {
-    callGroundedAnswerMock.mockResolvedValueOnce({ answer: '', abstain_reason: 'circuit_open' });
+  it('throws on abstain (grounded=false)', async () => {
+    callGroundedAnswerMock.mockResolvedValueOnce({
+      grounded: false, abstain_reason: 'circuit_open',
+      suggested_alternatives: [], trace_id: 't1', meta: { latency_ms: 50 },
+    });
     const ctx = { userId: null, meta: {} as Record<string, unknown> };
     await expect(reVerifyTool.handler({ question_id: 'q1', candidate }, ctx))
       .rejects.toThrow(/abstain|circuit_open/i);

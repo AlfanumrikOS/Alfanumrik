@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { callGroundedAnswer } from '@/lib/ai/grounded-client';
+import { callGroundedAnswer, type GroundedRequest } from '@/lib/ai/grounded-client';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import type { ToolDefinition } from '@/lib/ai/agents/types';
 import type { RegenCandidate } from '@/lib/qb-fixer/types';
@@ -21,6 +21,8 @@ interface VerifierAnswer {
   supporting_chunk_ids?: string[];
   reason?: string;
 }
+
+const TIMEOUT_MS = 25_000;
 
 export function hashCandidate(c: RegenCandidate): string {
   return createHash('sha256')
@@ -53,34 +55,48 @@ export const reVerifyTool: ToolDefinition<ReVerifyInput, ReVerifyOutput> = {
   handler: async (input, ctx) => {
     const { data: row, error } = await supabaseAdmin
       .from('question_bank')
-      .select('grade, subject, chapter_title')
+      .select('grade, subject, chapter_number, chapter_title')
       .eq('id', input.question_id)
       .single();
     if (error || !row) {
       throw new Error(`re_verify: row ${input.question_id} not found`);
     }
-    type Row = { grade: string; subject: string; chapter_title: string | null };
+    type Row = { grade: string; subject: string; chapter_number: number | null; chapter_title: string | null };
     const r = row as Row;
 
-    const result = await callGroundedAnswer({
-      caller: 'quiz-generator',
-      student_id: null,
-      session_id: null,
-      grade: r.grade,
-      subject: r.subject,
-      chapter: r.chapter_title ?? null,
-      template: 'quiz_answer_verifier_v1',
-      mode: 'strict',
-      generation: { temperature: 0 },
-      query: JSON.stringify({
-        question: input.candidate.question,
-        options: input.candidate.options,
-        claimed_correct_index: input.candidate.correct_answer_index,
-        explanation: input.candidate.explanation,
-      }),
+    const questionJson = JSON.stringify({
+      question: input.candidate.question,
+      options: input.candidate.options,
+      claimed_correct_index: input.candidate.correct_answer_index,
+      explanation: input.candidate.explanation,
     });
 
-    if (result.abstain_reason) {
+    const request: GroundedRequest = {
+      caller: 'quiz-generator',
+      student_id: null,
+      query: input.candidate.question,
+      scope: {
+        board: 'CBSE',
+        grade: r.grade,
+        subject_code: r.subject,
+        chapter_number: r.chapter_number,
+        chapter_title: r.chapter_title,
+      },
+      mode: 'strict',
+      generation: {
+        model_preference: 'haiku',
+        max_tokens: 1024,
+        temperature: 0,
+        system_prompt_template: 'quiz_answer_verifier_v1',
+        template_variables: { question_json: questionJson },
+      },
+      retrieval: { match_count: 8 },
+      timeout_ms: TIMEOUT_MS,
+    };
+
+    const result = await callGroundedAnswer(request, { hopTimeoutMs: TIMEOUT_MS + 2000 });
+
+    if (!result.grounded) {
       throw new Error(`re_verify abstained: ${result.abstain_reason}`);
     }
 
