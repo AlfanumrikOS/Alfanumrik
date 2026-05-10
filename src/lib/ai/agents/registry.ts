@@ -10,10 +10,12 @@ const CIRCUIT_FAILURE_THRESHOLD = 3;
 export interface Registry {
   schemas(): ToolSchema[];
   dispatch(name: string, input: unknown, ctx: AgentContext): Promise<DispatchResult>;
-  getRedactor(name: string): ToolDefinition['redactInTrace'];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getRedactor(name: string): ToolDefinition<any, any>['redactInTrace'];
 }
 
-export function createRegistry(tools: ToolDefinition[]): Registry {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function createRegistry(tools: ReadonlyArray<ToolDefinition<any, any>>): Registry {
   const seen = new Set<string>();
   for (const t of tools) {
     if (seen.has(t.name)) {
@@ -22,7 +24,8 @@ export function createRegistry(tools: ToolDefinition[]): Registry {
     seen.add(t.name);
   }
 
-  const byName = new Map<string, ToolDefinition>(tools.map((t) => [t.name, t]));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const byName = new Map<string, ToolDefinition<any, any>>(tools.map((t) => [t.name, t]));
   const failureCount = new Map<string, number>();
 
   return {
