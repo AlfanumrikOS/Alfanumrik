@@ -38,8 +38,8 @@ d('chapter-explorer (live)', () => {
       );
       expect(toolCalls.length).toBeGreaterThanOrEqual(2);
       const toolNames = new Set(toolCalls.map((s) => s.tool_name));
-      expect(toolNames.has('list_chapter_pages')).toBe(true);
-      expect(toolNames.has('lookup_chapter_chunks')).toBe(true);
+      expect(toolNames.has('list_chapters_for_subject')).toBe(true);
+      expect(toolNames.has('get_chapter_chunks')).toBe(true);
     },
     60_000,
   );
