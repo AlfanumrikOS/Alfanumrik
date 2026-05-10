@@ -310,9 +310,36 @@ Defined in a migration but no callers (no RPC, no internal SQL call, no trigger 
 | `upsert_content_gap` | `p_subject text, p_grade text, p_query text, p_topic_title text` | `supabase/migrations/00000000000000_baseline_from_prod.sql`, `supabase/migrations/_legacy/timestamped/20260403000002_add_content_gap_tracking.sql` |
 | `write_foxy_cache` | `p_q text, p_resp text, p_grade text, p_subject text, p_ch integer, p_topic text, p_mode...` | `supabase/migrations/00000000000000_baseline_from_prod.sql` |
 
-## Bucket 5 — Needs manual review (DEFER, status quo for now)
+## Bucket 5 — Needs manual review (RESOLVED 2026-05-10)
 
-These are deliberate Bucket-5 entries: the cost of a wrong revoke (broken RLS, broken trigger) outweighs the cost of carrying the WARN until a human looks at them.
+> **2026-05-10 Resolution** — All 16 functions reclassified via prod queries (`pg_trigger.tgfoid` lookup + `pg_policies` text scan). See "Bucket 5 resolution table" below for the per-function verdict. Net: 10 functions move to Buckets 3/4 (revokeable), 6 confirm as Bucket 1 RLS helpers (KEEP).
+>
+> **Bucket 5 resolution table (verified on prod 2026-05-10):**
+>
+> | Function | Verdict | Reason |
+> |---|---|---|
+> | `fn_onboarding_state_on_profile_created()` | → Bucket 3 (revokeable) | 3 triggers on students/guardians/teachers |
+> | `fn_populate_subscription_plan_id()` | → Bucket 3 (revokeable) | trigger on student_subscriptions |
+> | `fn_quiz_response_bkt_update()` | → Bucket 3 (revokeable) | trigger on quiz_responses |
+> | `fn_quiz_session_bkt_update()` | → Bucket 3 (revokeable) | trigger on quiz_sessions |
+> | `fn_quiz_session_sync_profile()` | → Bucket 3 (revokeable) | trigger on quiz_sessions |
+> | `fn_sync_subscription_amount_on_charge()` | → Bucket 3 (revokeable) | trigger on subscription_events |
+> | `sync_school_admin_role()` | → Bucket 3 (revokeable) | trigger on school_admins |
+> | `sync_user_roles_on_insert()` | → Bucket 3 (revokeable) | 3 triggers on guardians/teachers/students |
+> | `is_school_admin_of(uuid)` | → Bucket 4 (revokeable) | no trigger, no RLS reference — orphaned |
+> | `rls_auto_enable()` | → Bucket 4 (revokeable) | no trigger, no RLS reference — orphaned |
+> | `get_my_guardian_id()` | KEEP (Bucket 1 RLS helper) | referenced inside RLS policy USING/WITH CHECK |
+> | `get_my_student_id()` | KEEP (Bucket 1 RLS helper) | referenced inside RLS policy USING/WITH CHECK |
+> | `get_my_teacher_id()` | KEEP (Bucket 1 RLS helper) | referenced inside RLS policy USING/WITH CHECK |
+> | `get_student_id_for_auth()` | KEEP (Bucket 1 RLS helper) | referenced inside RLS policy USING/WITH CHECK |
+> | `is_guardian_of(uuid)` | KEEP (Bucket 1 RLS helper) | referenced inside RLS policy USING/WITH CHECK |
+> | `is_teacher_of(uuid)` | KEEP (Bucket 1 RLS helper) | referenced inside RLS policy USING/WITH CHECK |
+>
+> **Action**: when the corrective `REVOKE FROM PUBLIC` migration is authored (see `2026-05-10-revoke-from-public-corrective.md`), add the 10 revokeable Bucket 5 entries to it. Net advisor reduction including these: ~386 WARNs (193 fns × 2 roles).
+
+These were deliberate Bucket-5 entries: the cost of a wrong revoke (broken RLS, broken trigger) outweighed the cost of carrying the WARN until a human looked at them. Resolution above used:
+- `SELECT tgname, tgrelid::regclass FROM pg_trigger WHERE tgfoid = 'public.<name>'::regproc AND NOT tgisinternal` for trigger detection
+- Text scan of `pg_policies.qual` and `pg_policies.with_check` against `<fn_name>(` for RLS reference detection
 
 | Function | Args | Why uncertain |
 |---|---|---|
