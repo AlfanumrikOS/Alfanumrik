@@ -270,6 +270,28 @@ function isValidQuestion(q: unknown): q is GeneratedQuestion {
   if (typeof item.bloom_level !== 'string') return false
   if (!VALID_BLOOM_LEVELS.includes(item.bloom_level.toLowerCase())) return false
 
+  // P11 quality: arithmetic-consistency check.
+  // When the explanation ends with a literal number AND that number appears
+  // exactly in another option, but NOT in the option at correct_answer_index,
+  // the model has hallucinated the wrong correct option. Reject the row so
+  // the verifier loop doesn't have to clean up after generation.
+  // Real prod incident: a Math MCQ shipped with correct_answer_index=1 ("15")
+  // while the explanation correctly derived "12" — option 0 ("12") was the
+  // real answer. Caught only after a student flagged it.
+  const explanationFinalNumberMatch = item.explanation.match(/(-?\d+(?:\.\d+)?)(?!.*\d)/)
+  if (explanationFinalNumberMatch) {
+    const finalNumber = explanationFinalNumberMatch[1]
+    const optionsStr = (item.options as string[]).map((o) => o.trim())
+    const matchingOptionIdx = optionsStr.findIndex((o) => o === finalNumber)
+    // Only reject when the explanation's final number IS one of the four
+    // options (otherwise the number is likely an intermediate step, not the
+    // final answer — leave those alone). If it's an option but at a different
+    // index than correct_answer_index, the answer key is wrong.
+    if (matchingOptionIdx >= 0 && matchingOptionIdx !== idx) {
+      return false
+    }
+  }
+
   return true
 }
 
