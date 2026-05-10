@@ -17,18 +17,18 @@ describe('isPeakHourIST', () => {
 });
 
 describe('decideFixBatchSize', () => {
-  it('off-peak unthrottled returns 50', () => {
+  it('off-peak unthrottled returns 8', () => {
     expect(decideFixBatchSize({ peak: false, throttled: false })).toBe(FIX_BATCH_OFF_PEAK);
-    expect(decideFixBatchSize({ peak: false, throttled: false })).toBe(50);
+    expect(decideFixBatchSize({ peak: false, throttled: false })).toBe(8);
   });
-  it('peak unthrottled returns 20', () => {
+  it('peak unthrottled returns 4', () => {
     expect(decideFixBatchSize({ peak: true, throttled: false })).toBe(FIX_BATCH_PEAK);
-    expect(decideFixBatchSize({ peak: true, throttled: false })).toBe(20);
+    expect(decideFixBatchSize({ peak: true, throttled: false })).toBe(4);
   });
-  it('off-peak throttled halves to 25', () => {
-    expect(decideFixBatchSize({ peak: false, throttled: true })).toBe(25);
+  it('off-peak throttled halves to 4', () => {
+    expect(decideFixBatchSize({ peak: false, throttled: true })).toBe(4);
   });
-  it('peak throttled halves to 10', () => {
-    expect(decideFixBatchSize({ peak: true, throttled: true })).toBe(10);
+  it('peak throttled halves to 2', () => {
+    expect(decideFixBatchSize({ peak: true, throttled: true })).toBe(2);
   });
 });
