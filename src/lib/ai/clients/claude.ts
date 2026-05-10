@@ -86,6 +86,8 @@ async function callModel(
   maxTokens: number,
   temperature: number,
   timeoutMs: number,
+  tools: ClaudeRequestOptions['tools'],
+  toolChoice: ClaudeRequestOptions['toolChoice'],
 ): Promise<{ response: ClaudeAPIResponse; latencyMs: number } | { error: string; status: number }> {
   const config = getAIConfig();
 
@@ -112,6 +114,8 @@ async function callModel(
         temperature,
         system: systemPrompt,
         messages,
+        ...(tools && tools.length > 0 ? { tools } : {}),
+        ...(toolChoice ? { tool_choice: toolChoice } : {}),
       }),
     });
 
@@ -196,6 +200,8 @@ export async function callClaude(options: ClaudeRequestOptions): Promise<ClaudeR
       resolvedMaxTokens,
       resolvedTemp,
       resolvedTimeout,
+      options.tools,
+      options.toolChoice,
     );
 
     if ('error' in result) {
