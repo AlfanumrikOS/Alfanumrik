@@ -1,6 +1,68 @@
 'use client';
 
-import { colors, S } from '../../_components/admin-styles';
+const colors = {
+  bg: '#FFFFFF',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+} as const;
+
+const S = {
+  card: {
+    padding: 16,
+    borderRadius: 8,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+  } as React.CSSProperties,
+  searchInput: {
+    padding: '8px 12px',
+    borderRadius: 6,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+    color: colors.text1,
+    fontSize: 13,
+    outline: 'none',
+    fontFamily: 'inherit',
+    width: 220,
+    boxSizing: 'border-box',
+  } as React.CSSProperties,
+  select: {
+    padding: '8px 12px',
+    borderRadius: 6,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+    color: colors.text1,
+    fontSize: 13,
+    outline: 'none',
+    cursor: 'pointer',
+  } as React.CSSProperties,
+  filterBtn: {
+    padding: '7px 14px',
+    borderRadius: 6,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+    color: colors.text2,
+    fontSize: 12,
+    fontWeight: 500,
+    cursor: 'pointer',
+  } as React.CSSProperties,
+  filterActive: {
+    background: colors.text1,
+    color: colors.bg,
+    borderColor: colors.text1,
+  } as React.CSSProperties,
+  actionBtn: {
+    background: 'none',
+    border: `1px solid ${colors.border}`,
+    borderRadius: 5,
+    padding: '4px 10px',
+    fontSize: 12,
+    cursor: 'pointer',
+    fontWeight: 500,
+    color: colors.text2,
+  } as React.CSSProperties,
+};
 
 export interface Filters {
   range: string;

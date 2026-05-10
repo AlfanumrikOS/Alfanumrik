@@ -2,7 +2,22 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AdminShell, { useAdmin } from '../../_components/AdminShell';
-import { colors, S } from '../../_components/admin-styles';
+
+const inputCls = 'rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-surface-2 disabled:text-muted-foreground';
+const secondaryBtnCls = 'rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2 disabled:opacity-50';
+const dangerBtnCls = 'rounded-md border px-4 py-2 text-sm font-semibold disabled:opacity-50';
+const filterBtnCls = 'rounded-md border border-surface-3 bg-surface-1 px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2';
+const filterActiveCls = 'rounded-md border border-foreground bg-foreground px-3.5 py-1.5 text-xs font-medium text-surface-1';
+const cardCls = 'rounded-lg border border-surface-3 bg-surface-1';
+const tableCls: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
+const thCls: React.CSSProperties = {
+  textAlign: 'left', padding: '10px 14px', borderBottom: '2px solid #E5E7EB',
+  color: '#6B7280', fontSize: 11, fontWeight: 600, textTransform: 'uppercase',
+  letterSpacing: 1, background: '#F9FAFB', position: 'sticky', top: 0, zIndex: 1,
+};
+const tdCls: React.CSSProperties = {
+  padding: '10px 14px', borderBottom: '1px solid #F3F4F6', color: '#111827', fontSize: 13,
+};
 
 // ── Types ─────────────────────────────────────────────────────
 type Stream = 'science' | 'commerce' | 'humanities' | null;
@@ -174,24 +189,30 @@ function GradeMapContent() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
         <div>
-          <h1 style={S.h1}>Grade × Subject Map</h1>
-          <div style={S.subtitle}>
+          <h1 className="text-xl font-bold text-foreground" style={{ marginBottom: 4 }}>Grade × Subject Map</h1>
+          <div style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 20 }}>
             Toggle subject availability per grade and stream. Disabling a row only blocks new enrollment;
             existing students remain affected — review the Violations report.
           </div>
         </div>
-        <button style={S.secondaryBtn} onClick={load} disabled={loading}>Refresh</button>
+        <button className={secondaryBtnCls} onClick={load} disabled={loading}>Refresh</button>
       </div>
 
       {error && (
         <div role="alert" style={{
           padding: 12, marginBottom: 16, borderRadius: 8,
-          border: `1px solid ${colors.danger}`, background: colors.dangerLight,
-          color: colors.danger, fontSize: 13,
+          border: '1px solid #DC2626', background: '#FEF2F2',
+          color: '#DC2626', fontSize: 13,
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         }}>
           <span>{error}</span>
-          <button style={{ ...S.actionBtn, color: colors.danger, borderColor: colors.danger }} onClick={load}>Retry</button>
+          <button
+            className="rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium hover:bg-surface-2"
+            style={{ color: '#DC2626', borderColor: '#DC2626' }}
+            onClick={load}
+          >
+            Retry
+          </button>
         </div>
       )}
 
@@ -205,10 +226,7 @@ function GradeMapContent() {
               key={k}
               role="tab"
               aria-selected={isActive}
-              style={{
-                ...S.filterBtn,
-                ...(isActive ? S.filterActive : {}),
-              }}
+              className={isActive ? filterActiveCls : filterBtnCls}
               onClick={() => setActiveBand(k)}
             >
               {b.label}
@@ -218,24 +236,24 @@ function GradeMapContent() {
       </div>
 
       {/* Grid for the active band */}
-      <div style={{ ...S.card, padding: 0, overflowX: 'auto' }}>
+      <div className={cardCls} style={{ overflowX: 'auto' }}>
         {loading && enabledSubjectsForBand.length === 0 ? (
-          <div style={{ padding: 32, textAlign: 'center', color: colors.text3, fontSize: 13 }}>
+          <div style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>
             Loading subjects…
           </div>
         ) : enabledSubjectsForBand.length === 0 ? (
-          <div style={{ padding: 32, textAlign: 'center', color: colors.text3, fontSize: 13 }}>
+          <div style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>
             No active subjects yet. Seed the master catalog first.
           </div>
         ) : (
-          <table style={S.table}>
+          <table style={tableCls}>
             <thead>
               <tr>
-                <th style={S.th}>Subject</th>
-                <th style={{ ...S.th, width: 110, textAlign: 'center' }}>Enabled</th>
-                <th style={{ ...S.th, width: 110, textAlign: 'center' }}>Is core</th>
-                <th style={{ ...S.th, width: 160 }}>Min questions</th>
-                <th style={{ ...S.th, width: 110 }}>Status</th>
+                <th style={thCls}>Subject</th>
+                <th style={{ ...thCls, width: 110, textAlign: 'center' }}>Enabled</th>
+                <th style={{ ...thCls, width: 110, textAlign: 'center' }}>Is core</th>
+                <th style={{ ...thCls, width: 160 }}>Min questions</th>
+                <th style={{ ...thCls, width: 110 }}>Status</th>
               </tr>
             </thead>
             <tbody>
@@ -246,11 +264,11 @@ function GradeMapContent() {
                 const isSaving = savingKey === k;
                 return (
                   <tr key={s.code}>
-                    <td style={S.td}>
+                    <td style={tdCls}>
                       <div style={{ fontWeight: 600 }}>{s.name}</div>
-                      <code style={{ fontSize: 11, color: colors.text3 }}>{s.code}</code>
+                      <code style={{ fontSize: 11, color: '#9CA3AF' }}>{s.code}</code>
                     </td>
-                    <td style={{ ...S.td, textAlign: 'center' }}>
+                    <td style={{ ...tdCls, textAlign: 'center' }}>
                       <label style={{ display: 'inline-flex', cursor: 'pointer' }}>
                         <input
                           type="checkbox"
@@ -273,7 +291,7 @@ function GradeMapContent() {
                         />
                       </label>
                     </td>
-                    <td style={{ ...S.td, textAlign: 'center' }}>
+                    <td style={{ ...tdCls, textAlign: 'center' }}>
                       <input
                         type="checkbox"
                         aria-label={`Mark ${s.name} as core`}
@@ -284,12 +302,13 @@ function GradeMapContent() {
                         }
                       />
                     </td>
-                    <td style={S.td}>
+                    <td style={tdCls}>
                       <input
                         type="number"
                         min={0}
                         aria-label={`Minimum questions seeded for ${s.name}`}
-                        style={{ ...S.searchInput, width: 100 }}
+                        className={inputCls}
+                        style={{ width: 100 }}
                         value={existing?.min_questions_seeded ?? 10}
                         disabled={!enabled || isSaving}
                         onChange={(e) =>
@@ -298,10 +317,10 @@ function GradeMapContent() {
                         }
                       />
                     </td>
-                    <td style={S.td}>
-                      {isSaving ? <span style={{ color: colors.text3, fontSize: 12 }}>Saving…</span>
-                        : enabled ? <span style={{ color: colors.success, fontSize: 12 }}>● Enabled</span>
-                        : <span style={{ color: colors.text3, fontSize: 12 }}>Disabled</span>}
+                    <td style={tdCls}>
+                      {isSaving ? <span style={{ color: '#9CA3AF', fontSize: 12 }}>Saving…</span>
+                        : enabled ? <span style={{ color: '#16A34A', fontSize: 12 }}>● Enabled</span>
+                        : <span style={{ color: '#9CA3AF', fontSize: 12 }}>Disabled</span>}
                     </td>
                   </tr>
                 );
@@ -311,7 +330,7 @@ function GradeMapContent() {
         )}
       </div>
 
-      <div style={{ marginTop: 16, fontSize: 12, color: colors.text3 }}>
+      <div style={{ marginTop: 16, fontSize: 12, color: '#9CA3AF' }}>
         All changes are logged to <code>admin_audit_log</code> as
         <code> grade_subject_map.upserted</code> / <code>grade_subject_map.deleted</code>.
       </div>
@@ -359,19 +378,19 @@ function ConfirmDisableModal({
         aria-labelledby="confirm-disable-title"
         style={{
           position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-          background: colors.bg, borderRadius: 10, padding: 24, width: 460,
+          background: '#FFFFFF', borderRadius: 10, padding: 24, width: 460,
           boxShadow: '0 12px 48px rgba(0,0,0,0.18)', zIndex: 1000,
         }}
       >
-        <h3 id="confirm-disable-title" style={{ margin: 0, fontSize: 16, color: colors.text1, fontWeight: 700 }}>
+        <h3 id="confirm-disable-title" style={{ margin: 0, fontSize: 16, color: '#111827', fontWeight: 700 }}>
           Disable {subjectName} for {bandLabel}?
         </h3>
-        <div style={{ fontSize: 13, color: colors.text2, marginTop: 12, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 13, color: '#6B7280', marginTop: 12, lineHeight: 1.5 }}>
           {cell.loading ? (
             <span>Checking enrolled students…</span>
           ) : cell.enrolledCount && cell.enrolledCount > 0 ? (
             <span>
-              <strong style={{ color: colors.warning }}>{cell.enrolledCount}</strong> student{cell.enrolledCount === 1 ? '' : 's'}
+              <strong style={{ color: '#D97706' }}>{cell.enrolledCount}</strong> student{cell.enrolledCount === 1 ? '' : 's'}
               {' '}currently {cell.enrolledCount === 1 ? 'is' : 'are'} enrolled in this subject within this band.
               They will appear in the Violations report and need re-selection.
             </span>
@@ -380,8 +399,13 @@ function ConfirmDisableModal({
           )}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
-          <button style={S.secondaryBtn} onClick={onCancel} autoFocus>Cancel</button>
-          <button style={S.dangerBtn} onClick={onConfirm} disabled={cell.loading}>
+          <button className={secondaryBtnCls} onClick={onCancel} autoFocus>Cancel</button>
+          <button
+            className={dangerBtnCls}
+            style={{ borderColor: '#DC2626', background: '#FEF2F2', color: '#DC2626' }}
+            onClick={onConfirm}
+            disabled={cell.loading}
+          >
             Disable anyway
           </button>
         </div>

@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useAdmin } from '../../_components/AdminShell';
 import StatusBadge from '../../_components/StatusBadge';
-import { colors, S } from '../../_components/admin-styles';
 
 interface BulkResult {
   processed: number;
@@ -15,6 +14,50 @@ interface BulkResult {
 interface SuspendRestoreActionProps {
   selectedIds: Set<string>;
 }
+
+const S: Record<string, React.CSSProperties> = {
+  filterBtn: {
+    padding: '7px 14px',
+    borderRadius: 6,
+    border: '1px solid #E5E7EB',
+    background: '#FFFFFF',
+    color: '#6B7280',
+    fontSize: 12,
+    fontWeight: 500,
+    cursor: 'pointer',
+  },
+  primaryBtn: {
+    padding: '8px 16px',
+    borderRadius: 6,
+    border: 'none',
+    background: '#111827',
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+    letterSpacing: 0.2,
+  },
+  secondaryBtn: {
+    padding: '8px 16px',
+    borderRadius: 6,
+    border: '1px solid #E5E7EB',
+    background: '#FFFFFF',
+    color: '#111827',
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: 'pointer',
+  },
+  dangerBtn: {
+    padding: '8px 16px',
+    borderRadius: 6,
+    border: '1px solid #DC2626',
+    background: '#FEF2F2',
+    color: '#DC2626',
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+};
 
 export default function SuspendRestoreAction({ selectedIds }: SuspendRestoreActionProps) {
   const { apiFetch } = useAdmin();
@@ -59,28 +102,31 @@ export default function SuspendRestoreAction({ selectedIds }: SuspendRestoreActi
   };
 
   return (
-    <div style={{ ...S.card, marginTop: 16, borderLeft: `3px solid ${action === 'suspend' ? colors.danger : colors.success}` }}>
-      <h3 style={{ fontSize: 14, fontWeight: 700, color: colors.text1, marginBottom: 12 }}>
+    <div
+      className="rounded-lg border border-surface-3 bg-surface-1 p-4"
+      style={{ marginTop: 16, borderLeft: `3px solid ${action === 'suspend' ? '#DC2626' : '#16A34A'}` }}
+    >
+      <h3 style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 12 }}>
         Suspend / Restore
       </h3>
 
       {selectedIds.size === 0 ? (
-        <p style={{ fontSize: 13, color: colors.text3 }}>Select students from the table above to suspend or restore their accounts.</p>
+        <p style={{ fontSize: 13, color: '#9CA3AF' }}>Select students from the table above to suspend or restore their accounts.</p>
       ) : (
         <>
-          <div style={{ fontSize: 13, color: colors.text2, marginBottom: 12 }}>
+          <div style={{ fontSize: 13, color: '#6B7280', marginBottom: 12 }}>
             <strong>{selectedIds.size}</strong> student{selectedIds.size !== 1 ? 's' : ''} selected
           </div>
 
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16, alignItems: 'flex-end' }}>
             <div>
-              <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4 }}>Action</label>
+              <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Action</label>
               <div style={{ display: 'flex', gap: 4 }}>
                 <button
                   onClick={() => setAction('suspend')}
                   style={{
                     ...S.filterBtn,
-                    ...(action === 'suspend' ? { background: colors.danger, color: '#fff', borderColor: colors.danger } : {}),
+                    ...(action === 'suspend' ? { background: '#DC2626', color: '#fff', borderColor: '#DC2626' } : {}),
                   }}
                   data-testid="action-suspend"
                 >
@@ -90,7 +136,7 @@ export default function SuspendRestoreAction({ selectedIds }: SuspendRestoreActi
                   onClick={() => setAction('restore')}
                   style={{
                     ...S.filterBtn,
-                    ...(action === 'restore' ? { background: colors.success, color: '#fff', borderColor: colors.success } : {}),
+                    ...(action === 'restore' ? { background: '#16A34A', color: '#fff', borderColor: '#16A34A' } : {}),
                   }}
                   data-testid="action-restore"
                 >
@@ -125,15 +171,15 @@ export default function SuspendRestoreAction({ selectedIds }: SuspendRestoreActi
           />
           <div style={{
             position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            background: colors.bg, borderRadius: 12, padding: 24,
+            background: '#FFFFFF', borderRadius: 12, padding: 24,
             boxShadow: '0 8px 32px rgba(0,0,0,0.12)', zIndex: 9999,
             maxWidth: 420, width: '90%',
-            border: `1px solid ${colors.border}`,
+            border: '1px solid #E5E7EB',
           }}>
-            <h4 style={{ fontSize: 16, fontWeight: 700, color: colors.text1, marginBottom: 8 }}>
+            <h4 style={{ fontSize: 16, fontWeight: 700, color: '#111827', marginBottom: 8 }}>
               Confirm Suspension
             </h4>
-            <p style={{ fontSize: 13, color: colors.text2, marginBottom: 20 }}>
+            <p style={{ fontSize: 13, color: '#6B7280', marginBottom: 20 }}>
               Are you sure you want to suspend <strong>{selectedIds.size}</strong> student{selectedIds.size !== 1 ? 's' : ''}?
               Suspended students will not be able to log in.
             </p>
@@ -149,19 +195,22 @@ export default function SuspendRestoreAction({ selectedIds }: SuspendRestoreActi
 
       {/* Result display */}
       {result && (
-        <div style={{ ...S.cardSurface, marginTop: 12 }}>
+        <div
+          className="rounded-lg border border-surface-3 p-4"
+          style={{ marginTop: 12, background: '#F9FAFB' }}
+        >
           <div style={{ display: 'flex', gap: 12, marginBottom: 8 }}>
             <StatusBadge label={`${result.succeeded} succeeded`} variant="success" />
             {result.failed > 0 && <StatusBadge label={`${result.failed} failed`} variant="danger" />}
           </div>
-          <div style={{ fontSize: 12, color: colors.text3 }}>
+          <div style={{ fontSize: 12, color: '#9CA3AF' }}>
             Processed: {result.processed}
           </div>
           {result.errors.length > 0 && (
             <div style={{ marginTop: 8 }}>
-              <div style={{ fontSize: 11, color: colors.danger, fontWeight: 600, marginBottom: 4 }}>Errors:</div>
+              <div style={{ fontSize: 11, color: '#DC2626', fontWeight: 600, marginBottom: 4 }}>Errors:</div>
               {result.errors.map((e, i) => (
-                <div key={i} style={{ fontSize: 12, color: colors.danger, padding: '2px 0' }}>{e}</div>
+                <div key={i} style={{ fontSize: 12, color: '#DC2626', padding: '2px 0' }}>{e}</div>
               ))}
             </div>
           )}
@@ -169,7 +218,7 @@ export default function SuspendRestoreAction({ selectedIds }: SuspendRestoreActi
       )}
 
       {error && (
-        <div style={{ marginTop: 8, fontSize: 13, color: colors.danger }}>{error}</div>
+        <div style={{ marginTop: 8, fontSize: 13, color: '#DC2626' }}>{error}</div>
       )}
     </div>
   );

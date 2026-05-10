@@ -3,9 +3,64 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '../../../_components/AdminShell';
 import StatusBadge from '../../../_components/StatusBadge';
-import { colors, S } from '../../../_components/admin-styles';
 import SubjectMasteryGrid from './SubjectMasteryGrid';
 import NotesThread from './NotesThread';
+
+const colors = {
+  bg: '#FFFFFF',
+  surface: '#F9FAFB',
+  border: '#E5E7EB',
+  borderLight: '#F3F4F6',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  success: '#16A34A',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
+  warning: '#D97706',
+} as const;
+
+const S = {
+  h2: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: colors.text2,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 1.5,
+    marginBottom: 12,
+  } as React.CSSProperties,
+  card: {
+    padding: 16,
+    borderRadius: 8,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+  } as React.CSSProperties,
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse' as const,
+    fontSize: 13,
+  } as React.CSSProperties,
+  th: {
+    textAlign: 'left' as const,
+    padding: '10px 14px',
+    borderBottom: `2px solid ${colors.border}`,
+    color: colors.text2,
+    fontSize: 11,
+    fontWeight: 600,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 1,
+    background: colors.surface,
+    position: 'sticky' as const,
+    top: 0,
+    zIndex: 1,
+  } as React.CSSProperties,
+  td: {
+    padding: '10px 14px',
+    borderBottom: `1px solid ${colors.borderLight}`,
+    color: colors.text1,
+    fontSize: 13,
+  } as React.CSSProperties,
+};
 
 /* ---------- response shape from /api/super-admin/students/[id]/profile ---------- */
 interface StudentRecord {

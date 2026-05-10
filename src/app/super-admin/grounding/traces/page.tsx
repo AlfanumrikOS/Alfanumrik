@@ -1,8 +1,7 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { Fragment, useCallback, useState } from 'react';
 import AdminShell, { useAdmin } from '../../_components/AdminShell';
-import { colors, S } from '../../_components/admin-styles';
 
 /**
  * Grounding Traces — super-admin page (Task 3.17c)
@@ -65,6 +64,13 @@ const ABSTAIN_REASONS = [
   'upstream_error',
   'circuit_open',
 ];
+
+const TH = 'sticky top-0 z-10 border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground';
+const TD = 'border-b border-surface-3 px-3.5 py-2.5 text-[13px] text-foreground';
+const SEARCH_INPUT_BASE = 'rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary';
+const FILTER_BTN = 'rounded-md border border-surface-3 bg-surface-1 px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2';
+const FILTER_BTN_ACTIVE = 'rounded-md border border-foreground bg-foreground px-3.5 py-1.5 text-xs font-medium text-surface-1';
+const LABEL = 'mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground';
 
 function TracesContent() {
   const { apiFetch } = useAdmin();
@@ -141,10 +147,10 @@ function TracesContent() {
 
   return (
     <div data-testid="grounding-traces-page">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 style={S.h1}>Grounding Traces</h1>
-          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>
+          <h1 className="text-xl font-bold text-foreground">Grounding Traces</h1>
+          <p className="m-0 text-[13px] text-muted-foreground">
             Search grounded_ai_traces for incident triage. P13: prompt bodies are never shown — only the template hash.
           </p>
         </div>
@@ -154,19 +160,16 @@ function TracesContent() {
       <form
         onSubmit={runSearch}
         data-testid="traces-search-form"
-        style={{ ...S.card, marginBottom: 16 }}
+        className="mb-4 rounded-lg border border-surface-3 bg-surface-1 p-4"
       >
         {/* Mode selector */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <div className="mb-3 flex gap-2">
           {(['traceId', 'studentId', 'abstainReason'] as SearchMode[]).map((m) => (
             <button
               key={m}
               type="button"
               onClick={() => setMode(m)}
-              style={{
-                ...S.filterBtn,
-                ...(mode === m ? S.filterActive : {}),
-              }}
+              className={mode === m ? FILTER_BTN_ACTIVE : FILTER_BTN}
             >
               {m === 'traceId' ? 'By Trace ID' : m === 'studentId' ? 'By Student' : 'By Abstain Reason'}
             </button>
@@ -174,14 +177,14 @@ function TracesContent() {
         </div>
 
         {/* Mode-specific inputs */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div className="mb-3 flex flex-wrap gap-2">
           {mode === 'traceId' && (
             <input
               type="text"
               placeholder="Trace UUID"
               value={traceIdInput}
               onChange={(e) => setTraceIdInput(e.target.value)}
-              style={{ ...S.searchInput, width: 340 }}
+              className={`${SEARCH_INPUT_BASE} w-[340px]`}
               aria-label="Trace ID"
             />
           )}
@@ -192,21 +195,21 @@ function TracesContent() {
                 placeholder="Student UUID"
                 value={studentIdInput}
                 onChange={(e) => setStudentIdInput(e.target.value)}
-                style={{ ...S.searchInput, width: 340 }}
+                className={`${SEARCH_INPUT_BASE} w-[340px]`}
                 aria-label="Student ID"
               />
               <input
                 type="datetime-local"
                 value={fromInput}
                 onChange={(e) => setFromInput(e.target.value)}
-                style={{ ...S.searchInput, width: 200 }}
+                className={`${SEARCH_INPUT_BASE} w-[200px]`}
                 aria-label="From"
               />
               <input
                 type="datetime-local"
                 value={toInput}
                 onChange={(e) => setToInput(e.target.value)}
-                style={{ ...S.searchInput, width: 200 }}
+                className={`${SEARCH_INPUT_BASE} w-[200px]`}
                 aria-label="To"
               />
             </>
@@ -216,7 +219,7 @@ function TracesContent() {
               <select
                 value={abstainReasonInput}
                 onChange={(e) => setAbstainReasonInput(e.target.value)}
-                style={S.select}
+                className="cursor-pointer rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm"
                 aria-label="Abstain reason"
               >
                 {ABSTAIN_REASONS.map((r) => (
@@ -229,14 +232,14 @@ function TracesContent() {
                 type="datetime-local"
                 value={fromInput}
                 onChange={(e) => setFromInput(e.target.value)}
-                style={{ ...S.searchInput, width: 200 }}
+                className={`${SEARCH_INPUT_BASE} w-[200px]`}
                 aria-label="From"
               />
               <input
                 type="datetime-local"
                 value={toInput}
                 onChange={(e) => setToInput(e.target.value)}
-                style={{ ...S.searchInput, width: 200 }}
+                className={`${SEARCH_INPUT_BASE} w-[200px]`}
                 aria-label="To"
               />
             </>
@@ -244,13 +247,13 @@ function TracesContent() {
         </div>
 
         {/* Optional filters */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div className="mb-3 flex flex-wrap gap-2">
           <input
             type="text"
             placeholder="Caller (foxy, ncert-solver, ...)"
             value={callerFilter}
             onChange={(e) => setCallerFilter(e.target.value)}
-            style={{ ...S.searchInput, width: 240 }}
+            className={`${SEARCH_INPUT_BASE} w-[240px]`}
             aria-label="Caller filter"
           />
           <input
@@ -258,7 +261,7 @@ function TracesContent() {
             placeholder="Grade"
             value={gradeFilter}
             onChange={(e) => setGradeFilter(e.target.value)}
-            style={{ ...S.searchInput, width: 120 }}
+            className={`${SEARCH_INPUT_BASE} w-[120px]`}
             aria-label="Grade filter"
           />
           <input
@@ -266,12 +269,16 @@ function TracesContent() {
             placeholder="Subject"
             value={subjectFilter}
             onChange={(e) => setSubjectFilter(e.target.value)}
-            style={{ ...S.searchInput, width: 160 }}
+            className={`${SEARCH_INPUT_BASE} w-[160px]`}
             aria-label="Subject filter"
           />
         </div>
 
-        <button type="submit" style={S.primaryBtn} disabled={loading}>
+        <button
+          type="submit"
+          className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90 disabled:opacity-60"
+          disabled={loading}
+        >
           {loading ? 'Searching...' : 'Search'}
         </button>
       </form>
@@ -279,38 +286,38 @@ function TracesContent() {
       {error && (
         <div
           data-testid="grounding-traces-error"
-          style={{ padding: 12, marginBottom: 16, borderRadius: 6, background: colors.dangerLight, color: colors.danger, fontSize: 13 }}
+          className="mb-4 rounded-md bg-danger/10 p-3 text-[13px] text-danger"
         >
           Error: {error}
         </div>
       )}
 
       {truncated && (
-        <div style={{ fontSize: 11, color: colors.text3, marginBottom: 8 }}>
+        <div className="mb-2 text-[11px] text-muted-foreground">
           Results truncated — narrow filters to see more.
         </div>
       )}
 
       {/* Results */}
-      <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
-        <table style={S.table} data-testid="traces-results-table">
+      <div className="overflow-hidden rounded-lg border border-surface-3">
+        <table className="w-full border-collapse text-[13px]" data-testid="traces-results-table">
           <thead>
             <tr>
-              <th style={S.th}>Timestamp</th>
-              <th style={S.th}>Caller</th>
-              <th style={S.th}>Subject</th>
-              <th style={S.th}>Grade</th>
-              <th style={S.th}>Chapter</th>
-              <th style={S.th}>Grounded</th>
-              <th style={S.th}>Abstain</th>
-              <th style={S.th}>Confidence</th>
-              <th style={S.th}>Latency</th>
+              <th className={TH}>Timestamp</th>
+              <th className={TH}>Caller</th>
+              <th className={TH}>Subject</th>
+              <th className={TH}>Grade</th>
+              <th className={TH}>Chapter</th>
+              <th className={TH}>Grounded</th>
+              <th className={TH}>Abstain</th>
+              <th className={TH}>Confidence</th>
+              <th className={TH}>Latency</th>
             </tr>
           </thead>
           <tbody>
             {!loading && traces.length === 0 && !error && (
               <tr>
-                <td colSpan={9} style={{ ...S.td, textAlign: 'center', color: colors.text3 }}>
+                <td colSpan={9} className={`${TD} text-center text-muted-foreground`}>
                   No traces — run a search above.
                 </td>
               </tr>
@@ -318,84 +325,79 @@ function TracesContent() {
             {traces.map((t) => {
               const isExpanded = expandedId === t.id;
               return (
-                <>
+                <Fragment key={t.id}>
                   <tr
-                    key={t.id}
                     onClick={() => setExpandedId(isExpanded ? null : t.id)}
-                    style={{ cursor: 'pointer', background: isExpanded ? colors.surface : undefined }}
+                    className={`cursor-pointer ${isExpanded ? 'bg-surface-2' : ''}`}
                   >
-                    <td style={S.td}>{new Date(t.created_at).toLocaleString()}</td>
-                    <td style={S.td}>{t.caller}</td>
-                    <td style={S.td}>{t.subject_code}</td>
-                    <td style={S.td}>{t.grade}</td>
-                    <td style={S.td}>{t.chapter_number ?? '—'}</td>
-                    <td style={S.td}>
-                      <span style={{ color: t.grounded ? colors.success : colors.danger, fontWeight: 600 }}>
+                    <td className={TD}>{new Date(t.created_at).toLocaleString()}</td>
+                    <td className={TD}>{t.caller}</td>
+                    <td className={TD}>{t.subject_code}</td>
+                    <td className={TD}>{t.grade}</td>
+                    <td className={TD}>{t.chapter_number ?? '—'}</td>
+                    <td className={TD}>
+                      <span className={`font-semibold ${t.grounded ? 'text-success' : 'text-danger'}`}>
                         {t.grounded ? 'yes' : 'no'}
                       </span>
                     </td>
-                    <td style={S.td}>
-                      <code style={{ fontSize: 11, color: colors.text2 }}>{t.abstain_reason || '—'}</code>
+                    <td className={TD}>
+                      <code className="text-[11px] text-muted-foreground">{t.abstain_reason || '—'}</code>
                     </td>
-                    <td style={S.td}>{t.confidence !== null ? t.confidence.toFixed(2) : '—'}</td>
-                    <td style={S.td}>{t.latency_ms ?? '—'} ms</td>
+                    <td className={TD}>{t.confidence !== null ? t.confidence.toFixed(2) : '—'}</td>
+                    <td className={TD}>{t.latency_ms ?? '—'} ms</td>
                   </tr>
                   {isExpanded && (
-                    <tr key={`${t.id}-detail`} data-testid={`trace-detail-${t.id}`}>
-                      <td colSpan={9} style={{ ...S.td, background: colors.surface }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+                    <tr data-testid={`trace-detail-${t.id}`}>
+                      <td colSpan={9} className={`${TD} bg-surface-2`}>
+                        <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <div style={{ fontSize: 11, color: colors.text3, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>
-                              Retrieval
-                            </div>
-                            <div style={{ fontSize: 12, color: colors.text1, marginBottom: 6 }}>
+                            <div className={LABEL}>Retrieval</div>
+                            <div className="mb-1.5 text-xs text-foreground">
                               <b>Chunks retrieved:</b> {t.chunk_count ?? 0}
                             </div>
-                            <div style={{ fontSize: 12, color: colors.text1, marginBottom: 6 }}>
+                            <div className="mb-1.5 text-xs text-foreground">
                               <b>Top similarity:</b> {t.top_similarity !== null ? t.top_similarity.toFixed(3) : '—'}
                             </div>
-                            <div style={{ fontSize: 12, color: colors.text1, marginBottom: 6 }}>
+                            <div className="mb-1.5 text-xs text-foreground">
                               <b>Embedding model:</b>{' '}
-                              <code style={{ fontSize: 11 }}>{t.embedding_model ?? '—'}</code>
+                              <code className="text-[11px]">{t.embedding_model ?? '—'}</code>
                             </div>
-                            <div style={{ fontSize: 12, color: colors.text1, marginBottom: 6 }}>
+                            <div className="mb-1.5 text-xs text-foreground">
                               <b>Chunk IDs:</b>
-                              <div style={{ fontSize: 11, color: colors.text2, marginTop: 4, wordBreak: 'break-all' }}>
+                              <div className="mt-1 break-all text-[11px] text-muted-foreground">
                                 {(t.retrieved_chunk_ids ?? []).slice(0, 6).join(', ') || '(none)'}
                                 {(t.retrieved_chunk_ids ?? []).length > 6 && ` +${(t.retrieved_chunk_ids ?? []).length - 6} more`}
                               </div>
                             </div>
                           </div>
                           <div>
-                            <div style={{ fontSize: 11, color: colors.text3, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>
-                              Generation (P13: hashes only, no body)
+                            <div className={LABEL}>Generation (P13: hashes only, no body)</div>
+                            <div className="mb-1.5 text-xs text-foreground">
+                              <b>Claude model:</b> <code className="text-[11px]">{t.claude_model ?? '—'}</code>
                             </div>
-                            <div style={{ fontSize: 12, color: colors.text1, marginBottom: 6 }}>
-                              <b>Claude model:</b> <code style={{ fontSize: 11 }}>{t.claude_model ?? '—'}</code>
+                            <div className="mb-1.5 text-xs text-foreground">
+                              <b>Prompt template:</b> <code className="text-[11px]">{t.prompt_template_id ?? '—'}</code>
                             </div>
-                            <div style={{ fontSize: 12, color: colors.text1, marginBottom: 6 }}>
-                              <b>Prompt template:</b> <code style={{ fontSize: 11 }}>{t.prompt_template_id ?? '—'}</code>
-                            </div>
-                            <div style={{ fontSize: 12, color: colors.text1, marginBottom: 6 }}>
+                            <div className="mb-1.5 text-xs text-foreground">
                               <b>Prompt hash:</b>{' '}
-                              <code style={{ fontSize: 11, color: colors.text2 }}>{t.prompt_hash ?? '—'}</code>
+                              <code className="text-[11px] text-muted-foreground">{t.prompt_hash ?? '—'}</code>
                             </div>
-                            <div style={{ fontSize: 12, color: colors.text1, marginBottom: 6 }}>
+                            <div className="mb-1.5 text-xs text-foreground">
                               <b>Answer length:</b> {t.answer_length ?? '—'} chars
                             </div>
-                            <div style={{ fontSize: 12, color: colors.text1, marginBottom: 6 }}>
+                            <div className="mb-1.5 text-xs text-foreground">
                               <b>Tokens:</b> in {t.input_tokens ?? '—'} / out {t.output_tokens ?? '—'}
                             </div>
-                            <div style={{ fontSize: 12, color: colors.text1 }}>
+                            <div className="text-xs text-foreground">
                               <b>Query preview:</b>{' '}
-                              <span style={{ color: colors.text2 }}>{t.query_preview ?? '—'}</span>
+                              <span className="text-muted-foreground">{t.query_preview ?? '—'}</span>
                             </div>
                           </div>
                         </div>
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               );
             })}
           </tbody>

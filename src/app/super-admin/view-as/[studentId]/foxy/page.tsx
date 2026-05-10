@@ -1,7 +1,28 @@
 'use client';
 
 import { useState, useEffect, useCallback, use } from 'react';
-import { colors, S } from '../../../_components/admin-styles';
+
+const colors = {
+  bg: '#FFFFFF',
+  surface: '#F9FAFB',
+  border: '#E5E7EB',
+  text1: '#111827',
+  text3: '#9CA3AF',
+  accent: '#2563EB',
+  accentLight: '#EFF6FF',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
+} as const;
+
+const S = {
+  h1: {
+    fontSize: 20,
+    fontWeight: 700,
+    color: colors.text1,
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  } as React.CSSProperties,
+};
 
 interface ChatSessionRecord {
   id: string;

@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
 import StatCard from '../_components/StatCard';
 import StatusBadge from '../_components/StatusBadge';
-import { colors, S } from '../_components/admin-styles';
 
 interface CoverageSummary {
   totalQuestions: number;
@@ -48,10 +47,36 @@ interface ContentCoverageData {
   gaps: GapRow[];
 }
 
+const tableStyle: React.CSSProperties = {
+  width: '100%',
+  borderCollapse: 'collapse',
+  fontSize: 13,
+};
+const thStyle: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '10px 14px',
+  borderBottom: '2px solid #E5E7EB',
+  color: '#6B7280',
+  fontSize: 11,
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  letterSpacing: 1,
+  background: '#F9FAFB',
+  position: 'sticky',
+  top: 0,
+  zIndex: 1,
+};
+const tdStyle: React.CSSProperties = {
+  padding: '10px 14px',
+  borderBottom: '1px solid #F3F4F6',
+  color: '#111827',
+  fontSize: 13,
+};
+
 function coverageColor(percent: number): string {
-  if (percent >= 80) return colors.success;
-  if (percent >= 50) return colors.warning;
-  return colors.danger;
+  if (percent >= 80) return '#16A34A';
+  if (percent >= 50) return '#D97706';
+  return '#DC2626';
 }
 
 function coverageVariant(percent: number): 'success' | 'warning' | 'danger' {
@@ -113,21 +138,21 @@ function ContentCoverageDashboard() {
     return (
       <div>
         <div style={{ marginBottom: 24 }}>
-          <div style={{ width: 200, height: 24, background: colors.surface, borderRadius: 4, marginBottom: 8 }} />
-          <div style={{ width: 320, height: 14, background: colors.surface, borderRadius: 4 }} />
+          <div style={{ width: 200, height: 24, background: '#F9FAFB', borderRadius: 4, marginBottom: 8 }} />
+          <div style={{ width: 320, height: 14, background: '#F9FAFB', borderRadius: 4 }} />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
           {[1, 2, 3, 4].map(i => (
-            <div key={i} style={{ padding: 16, borderRadius: 8, border: `1px solid ${colors.border}`, background: colors.bg }}>
-              <div style={{ width: 60, height: 28, background: colors.surface, borderRadius: 4, marginBottom: 8 }} />
-              <div style={{ width: 100, height: 12, background: colors.surface, borderRadius: 4 }} />
+            <div key={i} className="rounded-lg border border-surface-3 bg-surface-1 p-4">
+              <div style={{ width: 60, height: 28, background: '#F9FAFB', borderRadius: 4, marginBottom: 8 }} />
+              <div style={{ width: 100, height: 12, background: '#F9FAFB', borderRadius: 4 }} />
             </div>
           ))}
         </div>
         {[1, 2].map(i => (
           <div key={i} style={{ marginBottom: 24 }}>
-            <div style={{ width: 180, height: 14, background: colors.surface, borderRadius: 4, marginBottom: 12 }} />
-            <div style={{ height: 120, background: colors.surface, borderRadius: 8, border: `1px solid ${colors.border}` }} />
+            <div style={{ width: 180, height: 14, background: '#F9FAFB', borderRadius: 4, marginBottom: 12 }} />
+            <div style={{ height: 120, background: '#F9FAFB', borderRadius: 8, border: '1px solid #E5E7EB' }} />
           </div>
         ))}
       </div>
@@ -138,11 +163,11 @@ function ContentCoverageDashboard() {
   if (error) {
     return (
       <div>
-        <h1 style={S.h1}>Content Coverage</h1>
-        <div style={{ ...S.card, borderLeft: `3px solid ${colors.danger}`, marginTop: 24 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: colors.danger, marginBottom: 4 }}>Error</div>
-          <div style={{ fontSize: 13, color: colors.text2 }}>{error}</div>
-          <button onClick={fetchData} style={{ ...S.secondaryBtn, marginTop: 12 }}>Retry</button>
+        <h1 className="text-xl font-bold text-foreground" style={{ marginBottom: 4 }}>Content Coverage</h1>
+        <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid #DC2626', marginTop: 24 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#DC2626', marginBottom: 4 }}>Error</div>
+          <div style={{ fontSize: 13, color: '#6B7280' }}>{error}</div>
+          <button onClick={fetchData} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2" style={{ marginTop: 12 }}>Retry</button>
         </div>
       </div>
     );
@@ -158,10 +183,10 @@ function ContentCoverageDashboard() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h1 style={S.h1}>Content Coverage</h1>
-          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>Question bank coverage across grades, subjects, and chapters</p>
+          <h1 className="text-xl font-bold text-foreground" style={{ marginBottom: 4 }}>Content Coverage</h1>
+          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Question bank coverage across grades, subjects, and chapters</p>
         </div>
-        <button onClick={fetchData} style={S.secondaryBtn}>Refresh</button>
+        <button onClick={fetchData} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Refresh</button>
       </div>
 
       {/* Summary KPI Strip */}
@@ -169,7 +194,7 @@ function ContentCoverageDashboard() {
         <StatCard
           label="Total Questions"
           value={summary.totalQuestions}
-          accentColor={colors.accent}
+          accentColor="#2563EB"
           subtitle={`${summary.activeQuestions} active`}
         />
         <StatCard
@@ -181,22 +206,22 @@ function ContentCoverageDashboard() {
         <StatCard
           label="Thin Coverage"
           value={summary.thinCoverage}
-          accentColor={summary.thinCoverage > 0 ? colors.warning : colors.success}
+          accentColor={summary.thinCoverage > 0 ? '#D97706' : '#16A34A'}
           subtitle="Topics with < 5 questions"
         />
         <StatCard
           label="Uncovered Topics"
           value={summary.uncoveredTopics}
-          accentColor={summary.uncoveredTopics > 0 ? colors.danger : colors.success}
+          accentColor={summary.uncoveredTopics > 0 ? '#DC2626' : '#16A34A'}
           subtitle="Topics with 0 questions"
         />
       </div>
 
       {/* Coverage health indicator */}
-      <div style={{ ...S.card, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 16 }}>
+      <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 16 }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: colors.text2, marginBottom: 6 }}>Overall Coverage Health</div>
-          <div style={{ height: 8, background: colors.surface, borderRadius: 4, overflow: 'hidden' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', marginBottom: 6 }}>Overall Coverage Health</div>
+          <div style={{ height: 8, background: '#F9FAFB', borderRadius: 4, overflow: 'hidden' }}>
             <div style={{
               width: `${Math.min(covPct, 100)}%`,
               height: '100%',
@@ -214,17 +239,17 @@ function ContentCoverageDashboard() {
 
       {/* By Grade Table */}
       <div style={{ marginBottom: 24 }}>
-        <h2 style={S.h2}>Coverage by Grade</h2>
-        <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
-          <table style={S.table}>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ marginBottom: 12 }}>Coverage by Grade</h2>
+        <div style={{ border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' }}>
+          <table style={tableStyle}>
             <thead>
               <tr>
-                <th style={S.th}>Grade</th>
-                <th style={S.th}>Questions</th>
-                <th style={S.th}>Active</th>
-                <th style={S.th}>Topics</th>
-                <th style={S.th}>Covered</th>
-                <th style={S.th}>Coverage</th>
+                <th style={thStyle}>Grade</th>
+                <th style={thStyle}>Questions</th>
+                <th style={thStyle}>Active</th>
+                <th style={thStyle}>Topics</th>
+                <th style={thStyle}>Covered</th>
+                <th style={thStyle}>Coverage</th>
               </tr>
             </thead>
             <tbody>
@@ -232,14 +257,14 @@ function ContentCoverageDashboard() {
                 const pct = row.topics > 0 ? Math.round((row.covered / row.topics) * 100) : 0;
                 return (
                   <tr key={row.grade}>
-                    <td style={{ ...S.td, fontWeight: 700 }}>Grade {row.grade}</td>
-                    <td style={S.td}>{row.questions.toLocaleString()}</td>
-                    <td style={S.td}>{row.active.toLocaleString()}</td>
-                    <td style={S.td}>{row.topics}</td>
-                    <td style={S.td}>{row.covered}</td>
-                    <td style={S.td}>
+                    <td style={{ ...tdStyle, fontWeight: 700 }}>Grade {row.grade}</td>
+                    <td style={tdStyle}>{row.questions.toLocaleString()}</td>
+                    <td style={tdStyle}>{row.active.toLocaleString()}</td>
+                    <td style={tdStyle}>{row.topics}</td>
+                    <td style={tdStyle}>{row.covered}</td>
+                    <td style={tdStyle}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ width: 60, height: 6, background: colors.surface, borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ width: 60, height: 6, background: '#F9FAFB', borderRadius: 3, overflow: 'hidden' }}>
                           <div style={{ width: `${pct}%`, height: '100%', background: coverageColor(pct), borderRadius: 3 }} />
                         </div>
                         <span style={{ fontSize: 12, fontWeight: 600, color: coverageColor(pct) }}>{pct}%</span>
@@ -255,17 +280,17 @@ function ContentCoverageDashboard() {
 
       {/* By Subject Table */}
       <div style={{ marginBottom: 24 }}>
-        <h2 style={S.h2}>Coverage by Subject</h2>
-        <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
-          <table style={S.table}>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ marginBottom: 12 }}>Coverage by Subject</h2>
+        <div style={{ border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' }}>
+          <table style={tableStyle}>
             <thead>
               <tr>
-                <th style={S.th}>Subject</th>
-                <th style={S.th}>Questions</th>
-                <th style={S.th}>Active</th>
-                <th style={S.th}>Topics</th>
-                <th style={S.th}>Covered</th>
-                <th style={S.th}>Coverage</th>
+                <th style={thStyle}>Subject</th>
+                <th style={thStyle}>Questions</th>
+                <th style={thStyle}>Active</th>
+                <th style={thStyle}>Topics</th>
+                <th style={thStyle}>Covered</th>
+                <th style={thStyle}>Coverage</th>
               </tr>
             </thead>
             <tbody>
@@ -273,14 +298,14 @@ function ContentCoverageDashboard() {
                 const pct = row.topics > 0 ? Math.round((row.covered / row.topics) * 100) : 0;
                 return (
                   <tr key={row.subject}>
-                    <td style={{ ...S.td, fontWeight: 600, textTransform: 'capitalize' }}>{row.subject}</td>
-                    <td style={S.td}>{row.questions.toLocaleString()}</td>
-                    <td style={S.td}>{row.active.toLocaleString()}</td>
-                    <td style={S.td}>{row.topics}</td>
-                    <td style={S.td}>{row.covered}</td>
-                    <td style={S.td}>
+                    <td style={{ ...tdStyle, fontWeight: 600, textTransform: 'capitalize' }}>{row.subject}</td>
+                    <td style={tdStyle}>{row.questions.toLocaleString()}</td>
+                    <td style={tdStyle}>{row.active.toLocaleString()}</td>
+                    <td style={tdStyle}>{row.topics}</td>
+                    <td style={tdStyle}>{row.covered}</td>
+                    <td style={tdStyle}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ width: 60, height: 6, background: colors.surface, borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ width: 60, height: 6, background: '#F9FAFB', borderRadius: 3, overflow: 'hidden' }}>
                           <div style={{ width: `${pct}%`, height: '100%', background: coverageColor(pct), borderRadius: 3 }} />
                         </div>
                         <span style={{ fontSize: 12, fontWeight: 600, color: coverageColor(pct) }}>{pct}%</span>
@@ -298,7 +323,7 @@ function ContentCoverageDashboard() {
       <div style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <h2 style={{ ...S.h2, marginBottom: 0 }}>Content Gaps</h2>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ marginBottom: 0 }}>Content Gaps</h2>
             <StatusBadge
               label={`${filteredGaps.length} gap${filteredGaps.length !== 1 ? 's' : ''}`}
               variant={filteredGaps.length === 0 ? 'success' : filteredGaps.some(g => g.questionCount === 0) ? 'danger' : 'warning'}
@@ -308,7 +333,7 @@ function ContentCoverageDashboard() {
             <select
               value={gradeFilter}
               onChange={e => setGradeFilter(e.target.value)}
-              style={S.select}
+              className="rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer"
             >
               <option value="all">All Grades</option>
               {grades.map(g => (
@@ -318,7 +343,7 @@ function ContentCoverageDashboard() {
             <select
               value={subjectFilter}
               onChange={e => setSubjectFilter(e.target.value)}
-              style={S.select}
+              className="rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer"
             >
               <option value="all">All Subjects</option>
               {subjects.map(s => (
@@ -329,38 +354,38 @@ function ContentCoverageDashboard() {
         </div>
 
         {filteredGaps.length === 0 ? (
-          <div style={{ ...S.card, textAlign: 'center', padding: 32 }}>
-            <div style={{ fontSize: 14, color: colors.text3 }}>
+          <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ textAlign: 'center', padding: 32 }}>
+            <div style={{ fontSize: 14, color: '#9CA3AF' }}>
               {data.gaps.length === 0
                 ? 'No content gaps found. All topics have adequate coverage.'
                 : 'No gaps match the current filters.'}
             </div>
           </div>
         ) : (
-          <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
+          <div style={{ border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' }}>
             <div style={{ maxHeight: 480, overflowY: 'auto' }}>
-              <table style={S.table}>
+              <table style={tableStyle}>
                 <thead>
                   <tr>
-                    <th style={S.th}>Grade</th>
-                    <th style={S.th}>Subject</th>
-                    <th style={S.th}>Chapter</th>
-                    <th style={S.th}>Title</th>
-                    <th style={S.th}>Questions</th>
-                    <th style={S.th}>Severity</th>
+                    <th style={thStyle}>Grade</th>
+                    <th style={thStyle}>Subject</th>
+                    <th style={thStyle}>Chapter</th>
+                    <th style={thStyle}>Title</th>
+                    <th style={thStyle}>Questions</th>
+                    <th style={thStyle}>Severity</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredGaps.map((gap, idx) => (
                     <tr key={`${gap.grade}-${gap.subject}-${gap.chapterNumber}-${idx}`}>
-                      <td style={S.td}>{gap.grade}</td>
-                      <td style={{ ...S.td, textTransform: 'capitalize' }}>{gap.subject}</td>
-                      <td style={S.td}>Ch. {gap.chapterNumber}</td>
-                      <td style={{ ...S.td, maxWidth: 280 }}>{gap.title}</td>
-                      <td style={{ ...S.td, fontWeight: 700, color: gap.questionCount === 0 ? colors.danger : colors.warning }}>
+                      <td style={tdStyle}>{gap.grade}</td>
+                      <td style={{ ...tdStyle, textTransform: 'capitalize' }}>{gap.subject}</td>
+                      <td style={tdStyle}>Ch. {gap.chapterNumber}</td>
+                      <td style={{ ...tdStyle, maxWidth: 280 }}>{gap.title}</td>
+                      <td style={{ ...tdStyle, fontWeight: 700, color: gap.questionCount === 0 ? '#DC2626' : '#D97706' }}>
                         {gap.questionCount}
                       </td>
-                      <td style={S.td}>
+                      <td style={tdStyle}>
                         {gap.questionCount === 0 ? (
                           <StatusBadge label="No Content" variant="danger" />
                         ) : (

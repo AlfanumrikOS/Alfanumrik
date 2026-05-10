@@ -1,12 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import StatusBadge from '../StatusBadge';
-import { colors, S } from '../admin-styles';
+import { StatusBadge } from '@/components/admin-ui';
 
 interface QuickOperationsProps {
   apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
 }
+
+const inputCls = 'rounded-md border border-surface-3 bg-surface-1 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary';
+const primaryBtnCls = 'rounded-md bg-foreground px-3 py-1.5 text-xs font-semibold text-surface-1 hover:opacity-90';
+const secondaryBtnCls = 'rounded-md border border-surface-3 bg-surface-1 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface-2';
 
 export default function QuickOperations({ apiFetch }: QuickOperationsProps) {
   const [testName, setTestName] = useState('');
@@ -51,39 +54,45 @@ export default function QuickOperations({ apiFetch }: QuickOperationsProps) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: colors.text2, textTransform: 'uppercase', letterSpacing: 1.5 }}>Quick Operations</div>
+      <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Quick Operations</div>
 
       {/* Create Test Account */}
-      <div style={{ ...S.card, borderLeft: `3px solid ${colors.accent}` }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: colors.text1, marginBottom: 8 }}>Create Test Account</div>
+      <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid #2563EB' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#111827', marginBottom: 8 }}>Create Test Account</div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <select value={testRole} onChange={e => setTestRole(e.target.value)} style={{ ...S.select, fontSize: 12, padding: '6px 8px' }}>
+          <select value={testRole} onChange={e => setTestRole(e.target.value)} className={inputCls} style={{ cursor: 'pointer' }}>
             <option value="student">Student</option>
             <option value="teacher">Teacher</option>
             <option value="parent">Parent</option>
           </select>
-          <input value={testName} onChange={e => setTestName(e.target.value)} placeholder="Name" style={{ ...S.searchInput, width: 120, fontSize: 12, padding: '6px 8px' }} />
-          <input value={testEmail} onChange={e => setTestEmail(e.target.value)} placeholder="Email" style={{ ...S.searchInput, flex: 1, minWidth: 140, fontSize: 12, padding: '6px 8px' }} />
-          <button onClick={createTestAccount} style={{ ...S.primaryBtn, fontSize: 12, padding: '6px 12px' }}>Create</button>
+          <input value={testName} onChange={e => setTestName(e.target.value)} placeholder="Name" className={inputCls} style={{ width: 120 }} />
+          <input value={testEmail} onChange={e => setTestEmail(e.target.value)} placeholder="Email" className={inputCls} style={{ flex: 1, minWidth: 140 }} />
+          <button onClick={createTestAccount} className={primaryBtnCls}>Create</button>
         </div>
-        {testResult && <div style={{ marginTop: 6, fontSize: 11, color: testResult.startsWith('Done') ? colors.success : colors.danger, fontWeight: 600 }}>{testResult}</div>}
+        {testResult && <div style={{ marginTop: 6, fontSize: 11, color: testResult.startsWith('Done') ? '#16A34A' : '#DC2626', fontWeight: 600 }}>{testResult}</div>}
       </div>
 
       {/* User Lookup */}
-      <div style={{ ...S.card, borderLeft: `3px solid ${colors.warning}` }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: colors.text1, marginBottom: 8 }}>User Lookup</div>
+      <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid #D97706' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#111827', marginBottom: 8 }}>User Lookup</div>
         <div style={{ display: 'flex', gap: 6 }}>
-          <input value={lookupSearch} onChange={e => setLookupSearch(e.target.value)} placeholder="Search by name..."
-            style={{ ...S.searchInput, flex: 1, fontSize: 12, padding: '6px 8px' }} onKeyDown={e => e.key === 'Enter' && lookupUser()} />
-          <button onClick={lookupUser} style={{ ...S.secondaryBtn, fontSize: 12, padding: '6px 12px' }}>Find</button>
+          <input
+            value={lookupSearch}
+            onChange={e => setLookupSearch(e.target.value)}
+            placeholder="Search by name..."
+            className={inputCls}
+            style={{ flex: 1 }}
+            onKeyDown={e => e.key === 'Enter' && lookupUser()}
+          />
+          <button onClick={lookupUser} className={secondaryBtnCls}>Find</button>
         </div>
         {lookupResults.length > 0 && (
           <div style={{ marginTop: 8 }}>
             {lookupResults.map((u, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: `1px solid ${colors.borderLight}`, fontSize: 12 }}>
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #F3F4F6', fontSize: 12 }}>
                 <div>
-                  <strong style={{ color: colors.text1 }}>{String(u.name || '\u2014')}</strong>
-                  <span style={{ color: colors.text3, marginLeft: 6 }}>{String(u.email || '')}</span>
+                  <strong style={{ color: '#111827' }}>{String(u.name || '—')}</strong>
+                  <span style={{ color: '#9CA3AF', marginLeft: 6 }}>{String(u.email || '')}</span>
                 </div>
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                   <StatusBadge label={String(u.subscription_plan || 'free')} variant="neutral" />
@@ -96,19 +105,24 @@ export default function QuickOperations({ apiFetch }: QuickOperationsProps) {
       </div>
 
       {/* Password Reset */}
-      <div style={{ ...S.card, borderLeft: `3px solid ${colors.danger}` }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: colors.text1, marginBottom: 8 }}>Password Reset</div>
+      <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid #DC2626' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#111827', marginBottom: 8 }}>Password Reset</div>
         <div style={{ display: 'flex', gap: 6 }}>
-          <input value={supportEmail} onChange={e => setSupportEmail(e.target.value)} placeholder="User email"
-            style={{ ...S.searchInput, flex: 1, fontSize: 12, padding: '6px 8px' }} />
-          <button onClick={sendPasswordReset} style={{ ...S.actionBtn, color: colors.danger, borderColor: colors.danger, fontSize: 12, padding: '6px 12px' }}>Reset</button>
+          <input value={supportEmail} onChange={e => setSupportEmail(e.target.value)} placeholder="User email" className={inputCls} style={{ flex: 1 }} />
+          <button
+            onClick={sendPasswordReset}
+            className="rounded-md border bg-transparent px-3 py-1.5 text-xs font-medium hover:bg-surface-2"
+            style={{ color: '#DC2626', borderColor: '#DC2626' }}
+          >
+            Reset
+          </button>
         </div>
-        {supportStatus && <div style={{ marginTop: 4, fontSize: 11, color: supportStatus === 'Failed' ? colors.danger : colors.success }}>{supportStatus}</div>}
+        {supportStatus && <div style={{ marginTop: 4, fontSize: 11, color: supportStatus === 'Failed' ? '#DC2626' : '#16A34A' }}>{supportStatus}</div>}
       </div>
 
       {/* Navigation Commands */}
-      <div style={{ ...S.card }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: colors.text1, marginBottom: 8 }}>Go To</div>
+      <div className="rounded-lg border border-surface-3 bg-surface-1 p-4">
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#111827', marginBottom: 8 }}>Go To</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
           {[
             { href: '/super-admin/users', label: 'Users & Roles' },
@@ -122,14 +136,12 @@ export default function QuickOperations({ apiFetch }: QuickOperationsProps) {
             { href: '/super-admin/reports', label: 'Reports' },
             { href: '/super-admin/logs', label: 'Audit Logs' },
           ].map(item => (
-            <a key={item.href} href={item.href} style={{
-              padding: '8px 12px', borderRadius: 6, border: `1px solid ${colors.border}`,
-              background: colors.bg, color: colors.text1, fontSize: 12, fontWeight: 500,
-              textDecoration: 'none', display: 'block', textAlign: 'center',
-              transition: 'background 0.1s',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = colors.surface}
-            onMouseLeave={e => e.currentTarget.style.background = colors.bg}>
+            <a
+              key={item.href}
+              href={item.href}
+              className="rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-xs font-medium text-foreground hover:bg-surface-2"
+              style={{ textDecoration: 'none', display: 'block', textAlign: 'center', transition: 'background 0.1s' }}
+            >
               {item.label}
             </a>
           ))}

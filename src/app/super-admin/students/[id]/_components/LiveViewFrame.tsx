@@ -2,7 +2,31 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAdmin } from '../../../_components/AdminShell';
-import { colors, S } from '../../../_components/admin-styles';
+
+const colors = {
+  bg: '#FFFFFF',
+  surface: '#F9FAFB',
+  border: '#E5E7EB',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
+} as const;
+
+const S = {
+  primaryBtn: {
+    padding: '8px 16px',
+    borderRadius: 6,
+    border: 'none',
+    background: colors.text1,
+    color: colors.bg,
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+    letterSpacing: 0.2,
+  } as React.CSSProperties,
+};
 
 interface Session {
   id: string;

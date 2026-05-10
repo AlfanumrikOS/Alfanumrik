@@ -1,6 +1,17 @@
 'use client';
 
-import { colors } from '../../_components/admin-styles';
+const colors = {
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  surface: '#F9FAFB',
+  accent: '#2563EB',
+  accentLight: '#EFF6FF',
+  success: '#16A34A',
+  warning: '#D97706',
+  danger: '#DC2626',
+} as const;
 
 interface SnapshotData {
   breakerState: 'closed' | 'degraded' | 'open';

@@ -1,7 +1,15 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { colors } from '../../_components/admin-styles';
+
+const colors = {
+  bg: '#FFFFFF',
+  surface: '#F9FAFB',
+  border: '#E5E7EB',
+  text1: '#111827',
+  text2: '#6B7280',
+  danger: '#DC2626',
+} as const;
 
 const TABS = [
   { key: 'dashboard', label: 'Dashboard', href: 'dashboard' },

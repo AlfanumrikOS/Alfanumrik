@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import AdminShell, { useAdmin } from '../../_components/AdminShell';
-import { colors, S } from '../../_components/admin-styles';
-import StatCard from '../../_components/StatCard';
+import { StatCard } from '@/components/admin-ui';
 
 /**
  * Grounding Verification Queue — super-admin page (Task 3.17b)
@@ -61,6 +60,9 @@ interface QueueResponse {
 }
 
 const ENFORCEMENT_THRESHOLD = 0.9;
+const TH = 'sticky top-0 z-10 border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground';
+const TD = 'border-b border-surface-3 px-3.5 py-2.5 text-[13px] text-foreground';
+const H2 = 'mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground';
 
 function VerificationQueueContent() {
   const { apiFetch } = useAdmin();
@@ -121,42 +123,36 @@ function VerificationQueueContent() {
 
   return (
     <div data-testid="grounding-verification-queue-page">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 style={S.h1}>Verification Queue</h1>
-          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>
+          <h1 className="text-xl font-bold text-foreground">Verification Queue</h1>
+          <p className="m-0 text-[13px] text-muted-foreground">
             question_bank verification pipeline state + per-pair enforcement controls
           </p>
         </div>
-        <button onClick={fetchQueue} style={S.secondaryBtn}>Refresh</button>
+        <button
+          onClick={fetchQueue}
+          className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+        >
+          Refresh
+        </button>
       </div>
 
       {error && (
         <div
           data-testid="grounding-queue-error"
-          style={{ padding: 12, marginBottom: 16, borderRadius: 6, background: colors.dangerLight, color: colors.danger, fontSize: 13 }}
+          className="mb-4 rounded-md bg-danger/10 p-3 text-[13px] text-danger"
         >
           Error: {error}
         </div>
       )}
 
       {actionMsg && (
-        <div
-          style={{
-            padding: 12,
-            marginBottom: 16,
-            borderRadius: 6,
-            background: colors.accentLight,
-            color: colors.accent,
-            fontSize: 13,
-          }}
-        >
-          {actionMsg}
-        </div>
+        <div className="mb-4 rounded-md bg-info/10 p-3 text-[13px] text-info">{actionMsg}</div>
       )}
 
       {loading && !data && (
-        <div style={{ padding: 32, textAlign: 'center', color: colors.text3, fontSize: 13 }}>
+        <div className="p-8 text-center text-[13px] text-muted-foreground">
           Loading verification queue...
         </div>
       )}
@@ -164,54 +160,51 @@ function VerificationQueueContent() {
       {data && (
         <>
           {/* Counts */}
-          <h2 style={S.h2}>Counts by state</h2>
-          <div
-            data-testid="queue-counts-section"
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}
-          >
-            <StatCard label="Legacy unverified" value={data.counts.legacy_unverified} accentColor={colors.warning} />
-            <StatCard label="Pending" value={data.counts.pending} accentColor={colors.accent} />
-            <StatCard label="Verified" value={data.counts.verified} accentColor={colors.success} />
-            <StatCard label="Failed" value={data.counts.failed} accentColor={colors.danger} />
+          <h2 className={H2}>Counts by state</h2>
+          <div data-testid="queue-counts-section" className="mb-6 grid grid-cols-4 gap-3">
+            <StatCard label="Legacy unverified" value={data.counts.legacy_unverified} accentColor="#D97706" />
+            <StatCard label="Pending" value={data.counts.pending} accentColor="#2563EB" />
+            <StatCard label="Verified" value={data.counts.verified} accentColor="#16A34A" />
+            <StatCard label="Failed" value={data.counts.failed} accentColor="#DC2626" />
           </div>
 
           {/* Throughput */}
-          <h2 style={S.h2}>Throughput (last 24h)</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 24 }}>
+          <h2 className={H2}>Throughput (last 24h)</h2>
+          <div className="mb-6 grid grid-cols-2 gap-3">
             <StatCard
               label="Verified / hour"
               value={data.throughputLast24h.verified_per_hour}
               subtitle={`${data.throughputLast24h.verified_total} total in 24h`}
-              accentColor={colors.success}
+              accentColor="#16A34A"
             />
             <StatCard
               label="Failed / hour"
               value={data.throughputLast24h.failed_per_hour}
               subtitle={`${data.throughputLast24h.failed_total} total in 24h`}
-              accentColor={colors.danger}
+              accentColor="#DC2626"
             />
           </div>
 
           {/* By pair */}
-          <h2 style={S.h2}>Per grade-subject pair</h2>
-          <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden', marginBottom: 24 }}>
-            <table style={S.table} data-testid="queue-bypair-table">
+          <h2 className={H2}>Per grade-subject pair</h2>
+          <div className="mb-6 overflow-hidden rounded-lg border border-surface-3">
+            <table className="w-full border-collapse text-[13px]" data-testid="queue-bypair-table">
               <thead>
                 <tr>
-                  <th style={S.th}>Grade</th>
-                  <th style={S.th}>Subject</th>
-                  <th style={S.th}>Legacy</th>
-                  <th style={S.th}>Pending</th>
-                  <th style={S.th}>Verified</th>
-                  <th style={S.th}>Failed</th>
-                  <th style={S.th}>Ratio</th>
-                  <th style={S.th}>Enforcement</th>
+                  <th className={TH}>Grade</th>
+                  <th className={TH}>Subject</th>
+                  <th className={TH}>Legacy</th>
+                  <th className={TH}>Pending</th>
+                  <th className={TH}>Verified</th>
+                  <th className={TH}>Failed</th>
+                  <th className={TH}>Ratio</th>
+                  <th className={TH}>Enforcement</th>
                 </tr>
               </thead>
               <tbody>
                 {data.byPair.length === 0 && (
                   <tr>
-                    <td colSpan={8} style={{ ...S.td, textAlign: 'center', color: colors.text3 }}>
+                    <td colSpan={8} className={`${TD} text-center text-muted-foreground`}>
                       No pairs found.
                     </td>
                   </tr>
@@ -220,26 +213,24 @@ function VerificationQueueContent() {
                   const canEnforce = p.verified_ratio >= ENFORCEMENT_THRESHOLD;
                   return (
                     <tr key={`${p.grade}-${p.subject}`}>
-                      <td style={S.td}>{p.grade}</td>
-                      <td style={S.td}>{p.subject}</td>
-                      <td style={S.td}>{p.legacy_unverified}</td>
-                      <td style={S.td}>{p.pending}</td>
-                      <td style={S.td}>{p.verified}</td>
-                      <td style={S.td}>{p.failed}</td>
-                      <td style={S.td}>
-                        <b style={{ color: canEnforce ? colors.success : colors.warning }}>
+                      <td className={TD}>{p.grade}</td>
+                      <td className={TD}>{p.subject}</td>
+                      <td className={TD}>{p.legacy_unverified}</td>
+                      <td className={TD}>{p.pending}</td>
+                      <td className={TD}>{p.verified}</td>
+                      <td className={TD}>{p.failed}</td>
+                      <td className={TD}>
+                        <b className={canEnforce ? 'text-success' : 'text-warning'}>
                           {(p.verified_ratio * 100).toFixed(1)}%
                         </b>
                       </td>
-                      <td style={S.td}>
+                      <td className={TD}>
                         <button
                           disabled={!canEnforce}
                           onClick={() => runAction('enable_enforcement', { grade: p.grade, subject: p.subject })}
-                          style={{
-                            ...S.actionBtn,
-                            opacity: canEnforce ? 1 : 0.4,
-                            cursor: canEnforce ? 'pointer' : 'not-allowed',
-                          }}
+                          className={`rounded-md border border-surface-3 bg-transparent px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-surface-2 ${
+                            canEnforce ? 'cursor-pointer' : 'cursor-not-allowed opacity-40'
+                          }`}
                           title={canEnforce ? 'Flip ff_grounded_ai_enforced for this pair' : 'Needs >= 90% verified'}
                         >
                           Enable
@@ -253,53 +244,53 @@ function VerificationQueueContent() {
           </div>
 
           {/* Failed sample */}
-          <h2 style={S.h2}>Failed rows (most recent 20)</h2>
-          <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
-            <table style={S.table} data-testid="queue-failed-sample">
+          <h2 className={H2}>Failed rows (most recent 20)</h2>
+          <div className="overflow-hidden rounded-lg border border-surface-3">
+            <table className="w-full border-collapse text-[13px]" data-testid="queue-failed-sample">
               <thead>
                 <tr>
-                  <th style={S.th}>Grade</th>
-                  <th style={S.th}>Subject</th>
-                  <th style={S.th}>Chapter</th>
-                  <th style={S.th}>Question (preview)</th>
-                  <th style={S.th}>Reason</th>
-                  <th style={S.th}>Actions</th>
+                  <th className={TH}>Grade</th>
+                  <th className={TH}>Subject</th>
+                  <th className={TH}>Chapter</th>
+                  <th className={TH}>Question (preview)</th>
+                  <th className={TH}>Reason</th>
+                  <th className={TH}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {data.failedSample.length === 0 && (
                   <tr>
-                    <td colSpan={6} style={{ ...S.td, textAlign: 'center', color: colors.text3 }}>
+                    <td colSpan={6} className={`${TD} text-center text-muted-foreground`}>
                       No failed rows.
                     </td>
                   </tr>
                 )}
                 {data.failedSample.map((f) => (
                   <tr key={f.id}>
-                    <td style={S.td}>{f.grade}</td>
-                    <td style={S.td}>{f.subject}</td>
-                    <td style={S.td}>
-                      <span style={{ color: colors.text3, marginRight: 4 }}>Ch {f.chapter_number}</span>
+                    <td className={TD}>{f.grade}</td>
+                    <td className={TD}>{f.subject}</td>
+                    <td className={TD}>
+                      <span className="mr-1 text-muted-foreground">Ch {f.chapter_number}</span>
                       {f.chapter_title}
                     </td>
-                    <td style={{ ...S.td, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td className={`${TD} max-w-[300px] overflow-hidden text-ellipsis whitespace-nowrap`}>
                       {f.question_text}
                     </td>
-                    <td style={S.td}>
-                      <code style={{ fontSize: 11, color: colors.text2 }}>
+                    <td className={TD}>
+                      <code className="text-[11px] text-muted-foreground">
                         {f.verifier_failure_reason ?? 'unknown'}
                       </code>
                     </td>
-                    <td style={S.td}>
+                    <td className={TD}>
                       <button
                         onClick={() => runAction('reverify', { id: f.id })}
-                        style={{ ...S.actionBtn, marginRight: 6 }}
+                        className="mr-1.5 rounded-md border border-surface-3 bg-transparent px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-surface-2"
                       >
                         Re-verify
                       </button>
                       <button
                         onClick={() => runAction('soft_delete', { id: f.id })}
-                        style={{ ...S.actionBtn, color: colors.danger, borderColor: colors.danger }}
+                        className="rounded-md border border-danger bg-transparent px-2.5 py-1 text-xs font-medium text-danger hover:bg-danger/10"
                       >
                         Soft-delete
                       </button>

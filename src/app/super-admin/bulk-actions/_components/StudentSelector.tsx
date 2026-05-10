@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '../../_components/AdminShell';
 import DataTable, { Column } from '../../_components/DataTable';
 import StatusBadge from '../../_components/StatusBadge';
-import { colors, S } from '../../_components/admin-styles';
 
 interface StudentRecord {
   id: string;
@@ -28,6 +27,60 @@ interface StudentSelectorProps {
 const GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 const PLANS = ['free', 'starter', 'pro', 'unlimited', 'ultimate_monthly', 'ultimate_yearly'];
 const STATUSES = ['all', 'active', 'suspended'];
+
+const S: Record<string, React.CSSProperties> = {
+  searchInput: {
+    padding: '8px 12px',
+    borderRadius: 6,
+    border: '1px solid #E5E7EB',
+    background: '#FFFFFF',
+    color: '#111827',
+    fontSize: 13,
+    outline: 'none',
+    fontFamily: 'inherit',
+    width: 220,
+    boxSizing: 'border-box' as const,
+  },
+  select: {
+    padding: '8px 12px',
+    borderRadius: 6,
+    border: '1px solid #E5E7EB',
+    background: '#FFFFFF',
+    color: '#111827',
+    fontSize: 13,
+    outline: 'none',
+    cursor: 'pointer',
+  },
+  secondaryBtn: {
+    padding: '8px 16px',
+    borderRadius: 6,
+    border: '1px solid #E5E7EB',
+    background: '#FFFFFF',
+    color: '#111827',
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: 'pointer',
+  },
+  actionBtn: {
+    background: 'none',
+    border: '1px solid #E5E7EB',
+    borderRadius: 5,
+    padding: '4px 10px',
+    fontSize: 12,
+    cursor: 'pointer',
+    fontWeight: 500,
+    color: '#6B7280',
+  },
+  pageBtn: {
+    padding: '7px 16px',
+    borderRadius: 6,
+    border: '1px solid #E5E7EB',
+    background: '#FFFFFF',
+    color: '#6B7280',
+    fontSize: 12,
+    cursor: 'pointer',
+  },
+};
 
 export default function StudentSelector({ selectedIds, onSelectionChange }: StudentSelectorProps) {
   const { apiFetch } = useAdmin();
@@ -65,12 +118,12 @@ export default function StudentSelector({ selectedIds, onSelectionChange }: Stud
     {
       key: 'name',
       label: 'Name',
-      render: r => <strong style={{ color: colors.text1 }}>{r.name || '\u2014'}</strong>,
+      render: r => <strong style={{ color: '#111827' }}>{r.name || '—'}</strong>,
     },
     {
       key: 'email',
       label: 'Email',
-      render: r => <span style={{ fontSize: 12, color: colors.text2 }}>{r.email || '\u2014'}</span>,
+      render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{r.email || '—'}</span>,
     },
     { key: 'grade', label: 'Grade' },
     {
@@ -109,7 +162,7 @@ export default function StudentSelector({ selectedIds, onSelectionChange }: Stud
       {/* Filters */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div>
-          <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4 }}>Search</label>
+          <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Search</label>
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -120,7 +173,7 @@ export default function StudentSelector({ selectedIds, onSelectionChange }: Stud
           />
         </div>
         <div>
-          <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4 }}>Grade</label>
+          <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Grade</label>
           <select
             value={gradeFilter}
             onChange={e => { setGradeFilter(e.target.value); setPage(1); }}
@@ -132,7 +185,7 @@ export default function StudentSelector({ selectedIds, onSelectionChange }: Stud
           </select>
         </div>
         <div>
-          <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4 }}>Plan</label>
+          <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Plan</label>
           <select
             value={planFilter}
             onChange={e => { setPlanFilter(e.target.value); setPage(1); }}
@@ -144,7 +197,7 @@ export default function StudentSelector({ selectedIds, onSelectionChange }: Stud
           </select>
         </div>
         <div>
-          <label style={{ fontSize: 11, color: colors.text3, display: 'block', marginBottom: 4 }}>Status</label>
+          <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Status</label>
           <select
             value={statusFilter}
             onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
@@ -161,10 +214,10 @@ export default function StudentSelector({ selectedIds, onSelectionChange }: Stud
 
       {/* Selection info */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <span style={{ fontSize: 12, color: colors.text3 }}>{total} students found</span>
+        <span style={{ fontSize: 12, color: '#9CA3AF' }}>{total} students found</span>
         {selectedIds.size > 0 && (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: colors.accent }}>{selectedIds.size} selected</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#2563EB' }}>{selectedIds.size} selected</span>
             <button
               onClick={() => onSelectionChange(new Set())}
               style={{ ...S.actionBtn, fontSize: 11 }}
@@ -190,7 +243,7 @@ export default function StudentSelector({ selectedIds, onSelectionChange }: Stud
       {/* Pagination */}
       <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center', alignItems: 'center' }}>
         <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={S.pageBtn}>Prev</button>
-        <span style={{ fontSize: 12, color: colors.text3, padding: '6px 12px' }}>
+        <span style={{ fontSize: 12, color: '#9CA3AF', padding: '6px 12px' }}>
           Page {page} of {totalPages}
         </span>
         <button disabled={students.length < 25} onClick={() => setPage(p => p + 1)} style={S.pageBtn}>Next</button>

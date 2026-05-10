@@ -2,8 +2,81 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import { colors, S } from '../_components/admin-styles';
 import { VALID_GRADES } from '@/lib/identity';
+
+// Local style constants — replaces former `S` and `colors` from admin-styles
+const tableStyle: React.CSSProperties = {
+  width: '100%',
+  borderCollapse: 'collapse',
+  fontSize: 13,
+};
+const thStyle: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '10px 14px',
+  borderBottom: '2px solid #E5E7EB',
+  color: '#6B7280',
+  fontSize: 11,
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  letterSpacing: 1,
+  background: '#F9FAFB',
+  position: 'sticky',
+  top: 0,
+  zIndex: 1,
+};
+const tdStyle: React.CSSProperties = {
+  padding: '10px 14px',
+  borderBottom: '1px solid #F3F4F6',
+  color: '#111827',
+  fontSize: 13,
+};
+const cardStyle: React.CSSProperties = {
+  padding: 16,
+  borderRadius: 8,
+  border: '1px solid #E5E7EB',
+  background: '#FFFFFF',
+};
+const searchInputStyle: React.CSSProperties = {
+  padding: '8px 12px',
+  borderRadius: 6,
+  border: '1px solid #E5E7EB',
+  background: '#FFFFFF',
+  color: '#111827',
+  fontSize: 13,
+  outline: 'none',
+  fontFamily: 'inherit',
+  width: 220,
+  boxSizing: 'border-box',
+};
+const selectStyle: React.CSSProperties = {
+  padding: '8px 12px',
+  borderRadius: 6,
+  border: '1px solid #E5E7EB',
+  background: '#FFFFFF',
+  color: '#111827',
+  fontSize: 13,
+  outline: 'none',
+  cursor: 'pointer',
+};
+const actionBtnStyle: React.CSSProperties = {
+  background: 'none',
+  border: '1px solid #E5E7EB',
+  borderRadius: 5,
+  padding: '4px 10px',
+  fontSize: 12,
+  cursor: 'pointer',
+  fontWeight: 500,
+  color: '#6B7280',
+};
+const pageBtnStyle: React.CSSProperties = {
+  padding: '7px 16px',
+  borderRadius: 6,
+  border: '1px solid #E5E7EB',
+  background: '#FFFFFF',
+  color: '#6B7280',
+  fontSize: 12,
+  cursor: 'pointer',
+};
 
 type View = 'overview' | 'topics' | 'questions' | 'versions';
 
@@ -32,10 +105,10 @@ interface CmsStats { topics: number; questions: number; workflow: { published: n
 
 const GRADES = VALID_GRADES;
 const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
-  draft: { bg: colors.surface, fg: colors.text3 },
-  review: { bg: colors.warningLight, fg: colors.warning },
-  published: { bg: colors.successLight, fg: colors.success },
-  archived: { bg: colors.surface, fg: colors.text3 },
+  draft: { bg: '#F9FAFB', fg: '#9CA3AF' },
+  review: { bg: '#FFFBEB', fg: '#D97706' },
+  published: { bg: '#F0FDF4', fg: '#16A34A' },
+  archived: { bg: '#F9FAFB', fg: '#9CA3AF' },
 };
 
 function CmsContent() {
@@ -280,7 +353,7 @@ function CmsContent() {
       <div style={{ display: 'flex', gap: 4 }}>
         {available.map(s => (
           <button key={s} onClick={() => transitionStatus(entityType, entityId, s)}
-            style={{ ...S.actionBtn, color: STATUS_COLORS[s]?.fg || colors.text3, fontSize: 10, padding: '3px 8px' }}>
+            style={{ ...actionBtnStyle, color: STATUS_COLORS[s]?.fg || '#9CA3AF', fontSize: 10, padding: '3px 8px' }}>
             &rarr; {s}
           </button>
         ))}
@@ -293,13 +366,13 @@ function CmsContent() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
-          <h1 style={S.h1}>Content Management</h1>
-          <p style={{ fontSize: 12, color: colors.text3, margin: 0 }}>Topics, questions, versions, and assets</p>
+          <h1 className="text-xl font-bold text-foreground" style={{ marginBottom: 4 }}>Content Management</h1>
+          <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>Topics, questions, versions, and assets</p>
         </div>
       </div>
 
       {/* Nav Tabs */}
-      <nav style={{ display: 'flex', gap: 0, borderBottom: `2px solid ${colors.border}`, marginBottom: 20 }}>
+      <nav style={{ display: 'flex', gap: 0, borderBottom: `2px solid ${'#E5E7EB'}`, marginBottom: 20 }}>
         {[
           { key: 'overview' as View, label: 'Overview' },
           { key: 'topics' as View, label: 'Topics' },
@@ -308,8 +381,8 @@ function CmsContent() {
         ].map(tab => (
           <button key={tab.key} onClick={() => { setView(tab.key); setPage(1); }} style={{
             padding: '10px 18px', fontSize: 13, fontWeight: view === tab.key ? 700 : 400,
-            color: view === tab.key ? colors.text1 : colors.text3, background: 'transparent', border: 'none',
-            borderBottom: view === tab.key ? `2px solid ${colors.text1}` : '2px solid transparent', cursor: 'pointer',
+            color: view === tab.key ? '#111827' : '#9CA3AF', background: 'transparent', border: 'none',
+            borderBottom: view === tab.key ? `2px solid ${'#111827'}` : '2px solid transparent', cursor: 'pointer',
             marginBottom: -2,
           }}>
             {tab.label}
@@ -317,44 +390,44 @@ function CmsContent() {
         ))}
       </nav>
 
-      {loading && <div style={{ fontSize: 12, color: colors.text3, marginBottom: 12 }}>Loading...</div>}
-      {error && <div style={{ padding: '8px 14px', borderRadius: 8, background: colors.dangerLight, color: colors.danger, fontSize: 12, marginBottom: 12, border: '1px solid #FECACA' }}>{error} <button onClick={() => setError('')} style={{ color: colors.danger, background: 'none', border: 'none', cursor: 'pointer', marginLeft: 8 }}>Close</button></div>}
+      {loading && <div style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 12 }}>Loading...</div>}
+      {error && <div style={{ padding: '8px 14px', borderRadius: 8, background: '#FEF2F2', color: '#DC2626', fontSize: 12, marginBottom: 12, border: '1px solid #FECACA' }}>{error} <button onClick={() => setError('')} style={{ color: '#DC2626', background: 'none', border: 'none', cursor: 'pointer', marginLeft: 8 }}>Close</button></div>}
 
         {/* Overview */}
         {view === 'overview' && stats && (
           <div>
-            <h2 style={S.h2}>Content Overview</h2>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ marginBottom: 12 }}>Content Overview</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 28 }}>
-              <div style={{ ...S.card, borderLeft: `2px solid ${colors.accent}` }}>
-                <div style={{ fontSize: 28, fontWeight: 800, color: colors.text1 }}>{stats.topics}</div>
-                <div style={{ fontSize: 11, color: colors.text3, textTransform: 'uppercase', letterSpacing: 1 }}>Topics</div>
+              <div style={{ ...cardStyle, borderLeft: `2px solid ${'#2563EB'}` }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: '#111827' }}>{stats.topics}</div>
+                <div style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 }}>Topics</div>
               </div>
-              <div style={{ ...S.card, borderLeft: `2px solid ${colors.accent}` }}>
-                <div style={{ fontSize: 28, fontWeight: 800, color: colors.text2 }}>{stats.questions}</div>
-                <div style={{ fontSize: 11, color: colors.text3, textTransform: 'uppercase', letterSpacing: 1 }}>Questions</div>
+              <div style={{ ...cardStyle, borderLeft: `2px solid ${'#2563EB'}` }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: '#6B7280' }}>{stats.questions}</div>
+                <div style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 }}>Questions</div>
               </div>
             </div>
 
-            <h2 style={S.h2}>Workflow Status (Topics)</h2>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ marginBottom: 12 }}>Workflow Status (Topics)</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 28 }}>
               {Object.entries(stats.workflow).map(([status, count]) => (
-                <div key={status} style={{ ...S.card, borderLeft: `3px solid ${STATUS_COLORS[status]?.fg || colors.text3}`, cursor: 'pointer' }}
+                <div key={status} style={{ ...cardStyle, borderLeft: `3px solid ${STATUS_COLORS[status]?.fg || '#9CA3AF'}`, cursor: 'pointer' }}
                   onClick={() => { setFilterStatus(status); setView('topics'); }}>
-                  <div style={{ fontSize: 24, fontWeight: 800, color: STATUS_COLORS[status]?.fg || colors.text3 }}>{count}</div>
-                  <div style={{ fontSize: 11, color: colors.text3, textTransform: 'capitalize' }}>{status}</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: STATUS_COLORS[status]?.fg || '#9CA3AF' }}>{count}</div>
+                  <div style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'capitalize' }}>{status}</div>
                 </div>
               ))}
             </div>
 
-            <h2 style={S.h2}>Subjects ({subjects.length})</h2>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ marginBottom: 12 }}>Subjects ({subjects.length})</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
               {subjects.map(s => (
-                <div key={s.id} style={{ ...S.card, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}
+                <div key={s.id} style={{ ...cardStyle, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}
                   onClick={() => { setFilterSubject(s.id); setView('topics'); }}>
                   <span style={{ fontSize: 20 }}>{s.icon}</span>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{s.name}</div>
-                    <div style={{ fontSize: 10, color: colors.text3 }}>{s.code}</div>
+                    <div style={{ fontSize: 10, color: '#9CA3AF' }}>{s.code}</div>
                   </div>
                 </div>
               ))}
@@ -367,22 +440,22 @@ function CmsContent() {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <h2 style={{ ...S.h2, margin: 0 }}>Curriculum Topics</h2>
+                <h2 style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 12, margin: 0 }}>Curriculum Topics</h2>
                 <button onClick={() => { setShowCreateTopic(!showCreateTopic); setTopicForm({}); }}
-                  style={{ ...S.actionBtn, color: colors.text2, borderColor: colors.border, fontSize: 11 }}>
+                  style={{ ...actionBtnStyle, color: '#6B7280', borderColor: '#E5E7EB', fontSize: 11 }}>
                   {showCreateTopic ? '✕ Cancel' : '+ New Topic'}
                 </button>
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <select value={filterGrade} onChange={e => { setFilterGrade(e.target.value); setPage(1); }} style={S.select}>
+                <select value={filterGrade} onChange={e => { setFilterGrade(e.target.value); setPage(1); }} style={selectStyle}>
                   <option value="">All Grades</option>
                   {GRADES.map(g => <option key={g} value={g}>Grade {g}</option>)}
                 </select>
-                <select value={filterSubject} onChange={e => { setFilterSubject(e.target.value); setPage(1); }} style={S.select}>
+                <select value={filterSubject} onChange={e => { setFilterSubject(e.target.value); setPage(1); }} style={selectStyle}>
                   <option value="">All Subjects</option>
                   {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
-                <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }} style={S.select}>
+                <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }} style={selectStyle}>
                   <option value="">All Status</option>
                   <option value="draft">Draft</option>
                   <option value="review">In Review</option>
@@ -390,34 +463,34 @@ function CmsContent() {
                   <option value="archived">Archived</option>
                 </select>
                 <input value={filterSearch} onChange={e => setFilterSearch(e.target.value)} placeholder="Search title..."
-                  style={S.searchInput} onKeyDown={e => e.key === 'Enter' && loadTopics()} />
+                  style={searchInputStyle} onKeyDown={e => e.key === 'Enter' && loadTopics()} />
               </div>
             </div>
 
-            <div style={{ fontSize: 11, color: colors.text3, marginBottom: 8 }}>{topicTotal} topics found</div>
+            <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 8 }}>{topicTotal} topics found</div>
 
             {showCreateTopic && (
-              <div style={{ ...S.card, marginBottom: 16, borderLeft: `2px solid ${colors.accent}` }}>
-                <h3 style={{ fontSize: 13, fontWeight: 700, color: colors.text2, marginBottom: 12 }}>Create New Topic</h3>
+              <div style={{ ...cardStyle, marginBottom: 16, borderLeft: `2px solid ${'#2563EB'}` }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#6B7280', marginBottom: 12 }}>Create New Topic</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <input placeholder="Title *" value={topicForm.title || ''} onChange={e => setTopicForm(f => ({ ...f, title: e.target.value }))} style={S.searchInput} />
-                  <input placeholder="Title (Hindi)" value={topicForm.title_hi || ''} onChange={e => setTopicForm(f => ({ ...f, title_hi: e.target.value }))} style={S.searchInput} />
-                  <select value={topicForm.grade || ''} onChange={e => setTopicForm(f => ({ ...f, grade: e.target.value }))} style={S.select}>
+                  <input placeholder="Title *" value={topicForm.title || ''} onChange={e => setTopicForm(f => ({ ...f, title: e.target.value }))} style={searchInputStyle} />
+                  <input placeholder="Title (Hindi)" value={topicForm.title_hi || ''} onChange={e => setTopicForm(f => ({ ...f, title_hi: e.target.value }))} style={searchInputStyle} />
+                  <select value={topicForm.grade || ''} onChange={e => setTopicForm(f => ({ ...f, grade: e.target.value }))} style={selectStyle}>
                     <option value="">Grade *</option>
                     {GRADES.map(g => <option key={g} value={g}>Grade {g}</option>)}
                   </select>
-                  <select value={topicForm.subject_id || ''} onChange={e => setTopicForm(f => ({ ...f, subject_id: e.target.value }))} style={S.select}>
+                  <select value={topicForm.subject_id || ''} onChange={e => setTopicForm(f => ({ ...f, subject_id: e.target.value }))} style={selectStyle}>
                     <option value="">Subject *</option>
                     {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
-                  <input placeholder="Chapter number" type="number" value={topicForm.chapter_number || ''} onChange={e => setTopicForm(f => ({ ...f, chapter_number: e.target.value }))} style={S.searchInput} />
-                  <input placeholder="Display order" type="number" value={topicForm.display_order || ''} onChange={e => setTopicForm(f => ({ ...f, display_order: e.target.value }))} style={S.searchInput} />
-                  <select value={topicForm.topic_type || 'concept'} onChange={e => setTopicForm(f => ({ ...f, topic_type: e.target.value }))} style={S.select}>
+                  <input placeholder="Chapter number" type="number" value={topicForm.chapter_number || ''} onChange={e => setTopicForm(f => ({ ...f, chapter_number: e.target.value }))} style={searchInputStyle} />
+                  <input placeholder="Display order" type="number" value={topicForm.display_order || ''} onChange={e => setTopicForm(f => ({ ...f, display_order: e.target.value }))} style={searchInputStyle} />
+                  <select value={topicForm.topic_type || 'concept'} onChange={e => setTopicForm(f => ({ ...f, topic_type: e.target.value }))} style={selectStyle}>
                     <option value="concept">Concept</option>
                     <option value="chapter">Chapter</option>
                     <option value="subtopic">Subtopic</option>
                   </select>
-                  <select value={topicForm.bloom_focus || 'understand'} onChange={e => setTopicForm(f => ({ ...f, bloom_focus: e.target.value }))} style={S.select}>
+                  <select value={topicForm.bloom_focus || 'understand'} onChange={e => setTopicForm(f => ({ ...f, bloom_focus: e.target.value }))} style={selectStyle}>
                     <option value="remember">Remember</option>
                     <option value="understand">Understand</option>
                     <option value="apply">Apply</option>
@@ -427,45 +500,45 @@ function CmsContent() {
                   </select>
                 </div>
                 <textarea placeholder="Description" value={topicForm.description || ''} onChange={e => setTopicForm(f => ({ ...f, description: e.target.value }))}
-                  style={{ ...S.searchInput, width: '100%', minHeight: 80, marginTop: 10, resize: 'vertical' as const }} />
-                <button onClick={createTopic} style={{ ...S.actionBtn, marginTop: 10, color: colors.text2, borderColor: colors.border, padding: '8px 20px' }}>
+                  style={{ ...searchInputStyle, width: '100%', minHeight: 80, marginTop: 10, resize: 'vertical' as const }} />
+                <button onClick={createTopic} style={{ ...actionBtnStyle, marginTop: 10, color: '#6B7280', borderColor: '#E5E7EB', padding: '8px 20px' }}>
                   Create Topic (Draft)
                 </button>
               </div>
             )}
 
             <div style={{ overflowX: 'auto' }}>
-              <table style={S.table}>
+              <table style={tableStyle}>
                 <thead>
                   <tr>
-                    <th style={S.th}>Ch</th>
-                    <th style={S.th}>Title</th>
-                    <th style={S.th}>Grade</th>
-                    <th style={S.th}>Type</th>
-                    <th style={S.th}>Status</th>
-                    <th style={S.th}>Bloom</th>
-                    <th style={S.th}>Workflow</th>
-                    <th style={S.th}>Actions</th>
+                    <th style={thStyle}>Ch</th>
+                    <th style={thStyle}>Title</th>
+                    <th style={thStyle}>Grade</th>
+                    <th style={thStyle}>Type</th>
+                    <th style={thStyle}>Status</th>
+                    <th style={thStyle}>Bloom</th>
+                    <th style={thStyle}>Workflow</th>
+                    <th style={thStyle}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {topics.length === 0 && <tr><td colSpan={8} style={{ ...S.td, textAlign: 'center', color: colors.text3, padding: 24 }}>No topics found</td></tr>}
+                  {topics.length === 0 && <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: '#9CA3AF', padding: 24 }}>No topics found</td></tr>}
                   {topics.map(t => (
                     <tr key={t.id}>
-                      <td style={S.td}>{t.chapter_number ?? '—'}</td>
-                      <td style={S.td}>
+                      <td style={tdStyle}>{t.chapter_number ?? '—'}</td>
+                      <td style={tdStyle}>
                         <strong>{t.title}</strong>
-                        {t.title_hi && <div style={{ fontSize: 10, color: colors.text3 }}>{t.title_hi}</div>}
+                        {t.title_hi && <div style={{ fontSize: 10, color: '#9CA3AF' }}>{t.title_hi}</div>}
                       </td>
-                      <td style={S.td}>{t.grade}</td>
-                      <td style={S.td}><span style={{ fontSize: 10, color: colors.text2 }}>{t.topic_type}</span></td>
-                      <td style={S.td}><CmsStatusBadge status={t.content_status} /></td>
-                      <td style={S.td}><span style={{ fontSize: 10, color: colors.text2 }}>{t.bloom_focus}</span></td>
-                      <td style={S.td}><TransitionButtons entityType="topic" entityId={t.id} currentStatus={t.content_status} /></td>
-                      <td style={S.td}>
+                      <td style={tdStyle}>{t.grade}</td>
+                      <td style={tdStyle}><span style={{ fontSize: 10, color: '#6B7280' }}>{t.topic_type}</span></td>
+                      <td style={tdStyle}><CmsStatusBadge status={t.content_status} /></td>
+                      <td style={tdStyle}><span style={{ fontSize: 10, color: '#6B7280' }}>{t.bloom_focus}</span></td>
+                      <td style={tdStyle}><TransitionButtons entityType="topic" entityId={t.id} currentStatus={t.content_status} /></td>
+                      <td style={tdStyle}>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button onClick={() => { loadAssets('topic', t.id); }} style={{ ...S.actionBtn, fontSize: 10, color: colors.text2, borderColor: colors.border }}>Assets</button>
-                          <button onClick={() => openVersions('topic', t.id)} style={{ ...S.actionBtn, fontSize: 10 }}>History</button>
+                          <button onClick={() => { loadAssets('topic', t.id); }} style={{ ...actionBtnStyle, fontSize: 10, color: '#6B7280', borderColor: '#E5E7EB' }}>Assets</button>
+                          <button onClick={() => openVersions('topic', t.id)} style={{ ...actionBtnStyle, fontSize: 10 }}>History</button>
                         </div>
                       </td>
                     </tr>
@@ -475,9 +548,9 @@ function CmsContent() {
             </div>
 
             <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center' }}>
-              <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={S.pageBtn}>← Prev</button>
-              <span style={{ fontSize: 12, color: colors.text3, padding: '6px 12px' }}>Page {page} of {Math.max(1, Math.ceil(topicTotal / 25))}</span>
-              <button disabled={topics.length < 25} onClick={() => setPage(p => p + 1)} style={S.pageBtn}>Next →</button>
+              <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={pageBtnStyle}>← Prev</button>
+              <span style={{ fontSize: 12, color: '#9CA3AF', padding: '6px 12px' }}>Page {page} of {Math.max(1, Math.ceil(topicTotal / 25))}</span>
+              <button disabled={topics.length < 25} onClick={() => setPage(p => p + 1)} style={pageBtnStyle}>Next →</button>
             </div>
           </div>
         )}
@@ -487,18 +560,18 @@ function CmsContent() {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <h2 style={{ ...S.h2, margin: 0 }}>Question Bank</h2>
+                <h2 style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 12, margin: 0 }}>Question Bank</h2>
                 <button onClick={() => { setShowCreateQuestion(!showCreateQuestion); setQuestionForm({}); }}
-                  style={{ ...S.actionBtn, color: colors.text2, borderColor: colors.border, fontSize: 11 }}>
+                  style={{ ...actionBtnStyle, color: '#6B7280', borderColor: '#E5E7EB', fontSize: 11 }}>
                   {showCreateQuestion ? '✕ Cancel' : '+ New Question'}
                 </button>
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <select value={filterGrade} onChange={e => { setFilterGrade(e.target.value); setPage(1); }} style={S.select}>
+                <select value={filterGrade} onChange={e => { setFilterGrade(e.target.value); setPage(1); }} style={selectStyle}>
                   <option value="">All Grades</option>
                   {GRADES.map(g => <option key={g} value={g}>Grade {g}</option>)}
                 </select>
-                <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }} style={S.select}>
+                <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }} style={selectStyle}>
                   <option value="">All Status</option>
                   <option value="draft">Draft</option>
                   <option value="review">In Review</option>
@@ -506,91 +579,91 @@ function CmsContent() {
                   <option value="archived">Archived</option>
                 </select>
                 <input value={filterSearch} onChange={e => setFilterSearch(e.target.value)} placeholder="Search question..."
-                  style={{ ...S.searchInput, width: 250 }} onKeyDown={e => e.key === 'Enter' && loadQuestions()} />
+                  style={{ ...searchInputStyle, width: 250 }} onKeyDown={e => e.key === 'Enter' && loadQuestions()} />
               </div>
             </div>
 
-            <div style={{ fontSize: 11, color: colors.text3, marginBottom: 8 }}>{questionTotal} questions found</div>
+            <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 8 }}>{questionTotal} questions found</div>
 
             {showCreateQuestion && (
-              <div style={{ ...S.card, marginBottom: 16, borderLeft: `2px solid ${colors.accent}` }}>
-                <h3 style={{ fontSize: 13, fontWeight: 700, color: colors.text2, marginBottom: 12 }}>Create New Question</h3>
+              <div style={{ ...cardStyle, marginBottom: 16, borderLeft: `2px solid ${'#2563EB'}` }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#6B7280', marginBottom: 12 }}>Create New Question</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <select value={questionForm.grade || ''} onChange={e => setQuestionForm(f => ({ ...f, grade: e.target.value }))} style={S.select}>
+                  <select value={questionForm.grade || ''} onChange={e => setQuestionForm(f => ({ ...f, grade: e.target.value }))} style={selectStyle}>
                     <option value="">Grade *</option>
                     {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
                   </select>
-                  <input placeholder="Subject code (math, science...) *" value={questionForm.subject || ''} onChange={e => setQuestionForm(f => ({ ...f, subject: e.target.value }))} style={S.searchInput} />
-                  <select value={questionForm.question_type || 'mcq'} onChange={e => setQuestionForm(f => ({ ...f, question_type: e.target.value }))} style={S.select}>
+                  <input placeholder="Subject code (math, science...) *" value={questionForm.subject || ''} onChange={e => setQuestionForm(f => ({ ...f, subject: e.target.value }))} style={searchInputStyle} />
+                  <select value={questionForm.question_type || 'mcq'} onChange={e => setQuestionForm(f => ({ ...f, question_type: e.target.value }))} style={selectStyle}>
                     <option value="mcq">MCQ</option>
                     <option value="true_false">True/False</option>
                     <option value="short_answer">Short Answer</option>
                     <option value="fill_blank">Fill in the Blank</option>
                   </select>
-                  <select value={questionForm.difficulty || '1'} onChange={e => setQuestionForm(f => ({ ...f, difficulty: e.target.value }))} style={S.select}>
+                  <select value={questionForm.difficulty || '1'} onChange={e => setQuestionForm(f => ({ ...f, difficulty: e.target.value }))} style={selectStyle}>
                     <option value="1">Easy (1)</option>
                     <option value="2">Medium (2)</option>
                     <option value="3">Hard (3)</option>
                   </select>
                 </div>
                 <textarea placeholder="Question text *" value={questionForm.question_text || ''} onChange={e => setQuestionForm(f => ({ ...f, question_text: e.target.value }))}
-                  style={{ ...S.searchInput, width: '100%', minHeight: 60, marginTop: 10, resize: 'vertical' as const }} />
+                  style={{ ...searchInputStyle, width: '100%', minHeight: 60, marginTop: 10, resize: 'vertical' as const }} />
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
-                  <input placeholder="Option A *" value={questionForm.opt_a || ''} onChange={e => setQuestionForm(f => ({ ...f, opt_a: e.target.value }))} style={S.searchInput} />
-                  <input placeholder="Option B *" value={questionForm.opt_b || ''} onChange={e => setQuestionForm(f => ({ ...f, opt_b: e.target.value }))} style={S.searchInput} />
-                  <input placeholder="Option C" value={questionForm.opt_c || ''} onChange={e => setQuestionForm(f => ({ ...f, opt_c: e.target.value }))} style={S.searchInput} />
-                  <input placeholder="Option D" value={questionForm.opt_d || ''} onChange={e => setQuestionForm(f => ({ ...f, opt_d: e.target.value }))} style={S.searchInput} />
+                  <input placeholder="Option A *" value={questionForm.opt_a || ''} onChange={e => setQuestionForm(f => ({ ...f, opt_a: e.target.value }))} style={searchInputStyle} />
+                  <input placeholder="Option B *" value={questionForm.opt_b || ''} onChange={e => setQuestionForm(f => ({ ...f, opt_b: e.target.value }))} style={searchInputStyle} />
+                  <input placeholder="Option C" value={questionForm.opt_c || ''} onChange={e => setQuestionForm(f => ({ ...f, opt_c: e.target.value }))} style={searchInputStyle} />
+                  <input placeholder="Option D" value={questionForm.opt_d || ''} onChange={e => setQuestionForm(f => ({ ...f, opt_d: e.target.value }))} style={searchInputStyle} />
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
-                  <select value={questionForm.correct_answer_index || '0'} onChange={e => setQuestionForm(f => ({ ...f, correct_answer_index: e.target.value }))} style={S.select}>
+                  <select value={questionForm.correct_answer_index || '0'} onChange={e => setQuestionForm(f => ({ ...f, correct_answer_index: e.target.value }))} style={selectStyle}>
                     <option value="0">Correct: A</option>
                     <option value="1">Correct: B</option>
                     <option value="2">Correct: C</option>
                     <option value="3">Correct: D</option>
                   </select>
-                  <input placeholder="Marks" type="number" value={questionForm.marks || ''} onChange={e => setQuestionForm(f => ({ ...f, marks: e.target.value }))} style={S.searchInput} />
+                  <input placeholder="Marks" type="number" value={questionForm.marks || ''} onChange={e => setQuestionForm(f => ({ ...f, marks: e.target.value }))} style={searchInputStyle} />
                 </div>
                 <textarea placeholder="Explanation (shown after answering)" value={questionForm.explanation || ''} onChange={e => setQuestionForm(f => ({ ...f, explanation: e.target.value }))}
-                  style={{ ...S.searchInput, width: '100%', minHeight: 50, marginTop: 10, resize: 'vertical' as const }} />
+                  style={{ ...searchInputStyle, width: '100%', minHeight: 50, marginTop: 10, resize: 'vertical' as const }} />
                 <button onClick={() => {
                   const opts = [questionForm.opt_a || 'A', questionForm.opt_b || 'B', questionForm.opt_c || 'C', questionForm.opt_d || 'D'].filter(Boolean);
                   setQuestionForm(f => ({ ...f, options: JSON.stringify(opts) }));
                   setTimeout(createQuestion, 50);
-                }} style={{ ...S.actionBtn, marginTop: 10, color: colors.text2, borderColor: colors.border, padding: '8px 20px' }}>
+                }} style={{ ...actionBtnStyle, marginTop: 10, color: '#6B7280', borderColor: '#E5E7EB', padding: '8px 20px' }}>
                   Create Question (Draft)
                 </button>
               </div>
             )}
 
             <div style={{ overflowX: 'auto' }}>
-              <table style={S.table}>
+              <table style={tableStyle}>
                 <thead>
                   <tr>
-                    <th style={S.th}>Question</th>
-                    <th style={S.th}>Grade</th>
-                    <th style={S.th}>Subject</th>
-                    <th style={S.th}>Type</th>
-                    <th style={S.th}>Diff</th>
-                    <th style={S.th}>Status</th>
-                    <th style={S.th}>Workflow</th>
-                    <th style={S.th}>Actions</th>
+                    <th style={thStyle}>Question</th>
+                    <th style={thStyle}>Grade</th>
+                    <th style={thStyle}>Subject</th>
+                    <th style={thStyle}>Type</th>
+                    <th style={thStyle}>Diff</th>
+                    <th style={thStyle}>Status</th>
+                    <th style={thStyle}>Workflow</th>
+                    <th style={thStyle}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {questions.length === 0 && <tr><td colSpan={8} style={{ ...S.td, textAlign: 'center', color: colors.text3, padding: 24 }}>No questions found</td></tr>}
+                  {questions.length === 0 && <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: '#9CA3AF', padding: 24 }}>No questions found</td></tr>}
                   {questions.map(q => (
                     <tr key={q.id}>
-                      <td style={{ ...S.td, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>{q.question_text.slice(0, 80)}{q.question_text.length > 80 ? '...' : ''}</td>
-                      <td style={S.td}>{q.grade}</td>
-                      <td style={S.td}>{q.subject}</td>
-                      <td style={S.td}><span style={{ fontSize: 10 }}>{q.question_type || 'mcq'}</span></td>
-                      <td style={S.td}>{q.difficulty}</td>
-                      <td style={S.td}><CmsStatusBadge status={q.content_status} /></td>
-                      <td style={S.td}><TransitionButtons entityType="question" entityId={q.id} currentStatus={q.content_status} /></td>
-                      <td style={S.td}>
+                      <td style={{ ...tdStyle, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>{q.question_text.slice(0, 80)}{q.question_text.length > 80 ? '...' : ''}</td>
+                      <td style={tdStyle}>{q.grade}</td>
+                      <td style={tdStyle}>{q.subject}</td>
+                      <td style={tdStyle}><span style={{ fontSize: 10 }}>{q.question_type || 'mcq'}</span></td>
+                      <td style={tdStyle}>{q.difficulty}</td>
+                      <td style={tdStyle}><CmsStatusBadge status={q.content_status} /></td>
+                      <td style={tdStyle}><TransitionButtons entityType="question" entityId={q.id} currentStatus={q.content_status} /></td>
+                      <td style={tdStyle}>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button onClick={() => { loadAssets('question', q.id); }} style={{ ...S.actionBtn, fontSize: 10, color: colors.text2, borderColor: colors.border }}>Assets</button>
-                          <button onClick={() => openVersions('question', q.id)} style={{ ...S.actionBtn, fontSize: 10 }}>History</button>
+                          <button onClick={() => { loadAssets('question', q.id); }} style={{ ...actionBtnStyle, fontSize: 10, color: '#6B7280', borderColor: '#E5E7EB' }}>Assets</button>
+                          <button onClick={() => openVersions('question', q.id)} style={{ ...actionBtnStyle, fontSize: 10 }}>History</button>
                         </div>
                       </td>
                     </tr>
@@ -600,9 +673,9 @@ function CmsContent() {
             </div>
 
             <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center' }}>
-              <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={S.pageBtn}>← Prev</button>
-              <span style={{ fontSize: 12, color: colors.text3, padding: '6px 12px' }}>Page {page} of {Math.max(1, Math.ceil(questionTotal / 25))}</span>
-              <button disabled={questions.length < 25} onClick={() => setPage(p => p + 1)} style={S.pageBtn}>Next →</button>
+              <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={pageBtnStyle}>← Prev</button>
+              <span style={{ fontSize: 12, color: '#9CA3AF', padding: '6px 12px' }}>Page {page} of {Math.max(1, Math.ceil(questionTotal / 25))}</span>
+              <button disabled={questions.length < 25} onClick={() => setPage(p => p + 1)} style={pageBtnStyle}>Next →</button>
             </div>
           </div>
         )}
@@ -610,34 +683,34 @@ function CmsContent() {
         {/* Version History */}
         {view === 'versions' && (
           <div>
-            <h2 style={S.h2}>Version History — {versionEntityType} {versionEntityId.slice(0, 8)}</h2>
-            <button onClick={() => setView(versionEntityType === 'topic' ? 'topics' : 'questions')} style={{ ...S.navBtn, marginBottom: 16 }}>← Back to list</button>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ marginBottom: 12 }}>Version History — {versionEntityType} {versionEntityId.slice(0, 8)}</h2>
+            <button onClick={() => setView(versionEntityType === 'topic' ? 'topics' : 'questions')} style={{ ...actionBtnStyle, marginBottom: 16 }}>← Back to list</button>
 
-            {versions.length === 0 && <div style={{ ...S.card, textAlign: 'center', color: colors.text3, padding: 24 }}>No versions recorded yet.</div>}
+            {versions.length === 0 && <div style={{ ...cardStyle, textAlign: 'center', color: '#9CA3AF', padding: 24 }}>No versions recorded yet.</div>}
 
             <div style={{ display: 'grid', gap: 10 }}>
               {versions.map(v => (
-                <div key={v.id} style={{ ...S.card, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div key={v.id} style={{ ...cardStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: colors.text1 }}>v{v.version_number}</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>v{v.version_number}</span>
                       <CmsStatusBadge status={v.status} />
                     </div>
-                    <div style={{ fontSize: 11, color: colors.text3, marginTop: 4 }}>
+                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>
                       {v.change_summary || 'No description'}
                     </div>
-                    <div style={{ fontSize: 10, color: colors.text3, marginTop: 2 }}>
+                    <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>
                       {new Date(v.created_at).toLocaleString()}
                       {v.created_by && <span> · by {v.created_by.slice(0, 8)}</span>}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button onClick={() => viewVersionDiff(v.id, v.version_number)}
-                      style={{ ...S.actionBtn, color: colors.text2, borderColor: colors.border, fontSize: 10 }}>
+                      style={{ ...actionBtnStyle, color: '#6B7280', borderColor: '#E5E7EB', fontSize: 10 }}>
                       View
                     </button>
                     <button onClick={() => rollbackVersion(v.id)}
-                      style={{ ...S.actionBtn, color: colors.text2, borderColor: colors.border, fontSize: 10 }}>
+                      style={{ ...actionBtnStyle, color: '#6B7280', borderColor: '#E5E7EB', fontSize: 10 }}>
                       Rollback
                     </button>
                   </div>
@@ -648,13 +721,13 @@ function CmsContent() {
             {/* Version Diff Viewer */}
             {diffSnapshot && (
               <div style={{ marginTop: 20 }}>
-                <h2 style={S.h2}>Version {diffVersionNum} — Snapshot</h2>
-                <div style={{ ...S.card, overflowX: 'auto' }}>
-                  <table style={S.table}>
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ marginBottom: 12 }}>Version {diffVersionNum} — Snapshot</h2>
+                <div style={{ ...cardStyle, overflowX: 'auto' }}>
+                  <table style={tableStyle}>
                     <thead>
                       <tr>
-                        <th style={{ ...S.th, width: 180 }}>Field</th>
-                        <th style={S.th}>Value</th>
+                        <th style={{ ...thStyle, width: 180 }}>Field</th>
+                        <th style={thStyle}>Value</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -663,18 +736,18 @@ function CmsContent() {
                         .sort(([a], [b]) => a.localeCompare(b))
                         .map(([key, val]) => (
                         <tr key={key}>
-                          <td style={{ ...S.td, fontWeight: 600, color: colors.text2, fontSize: 11 }}>{key}</td>
-                          <td style={{ ...S.td, fontSize: 12, maxWidth: 600, wordBreak: 'break-word' as const }}>
-                            {val === null ? <span style={{ color: colors.text3 }}>null</span>
-                              : typeof val === 'object' ? <pre style={{ margin: 0, fontSize: 10, color: colors.text3, whiteSpace: 'pre-wrap' as const }}>{JSON.stringify(val, null, 2)}</pre>
-                              : typeof val === 'boolean' ? <span style={{ color: val ? colors.success : colors.text3 }}>{String(val)}</span>
+                          <td style={{ ...tdStyle, fontWeight: 600, color: '#6B7280', fontSize: 11 }}>{key}</td>
+                          <td style={{ ...tdStyle, fontSize: 12, maxWidth: 600, wordBreak: 'break-word' as const }}>
+                            {val === null ? <span style={{ color: '#9CA3AF' }}>null</span>
+                              : typeof val === 'object' ? <pre style={{ margin: 0, fontSize: 10, color: '#9CA3AF', whiteSpace: 'pre-wrap' as const }}>{JSON.stringify(val, null, 2)}</pre>
+                              : typeof val === 'boolean' ? <span style={{ color: val ? '#16A34A' : '#9CA3AF' }}>{String(val)}</span>
                               : String(val)}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                  <button onClick={() => setDiffSnapshot(null)} style={{ ...S.actionBtn, marginTop: 10, fontSize: 11 }}>Close</button>
+                  <button onClick={() => setDiffSnapshot(null)} style={{ ...actionBtnStyle, marginTop: 10, fontSize: 11 }}>Close</button>
                 </div>
               </div>
             )}
@@ -682,59 +755,59 @@ function CmsContent() {
         )}
         {/* Asset Panel */}
         {assetEntityId && (
-          <div style={{ marginTop: 20, padding: 16, background: colors.surface, borderRadius: 10, border: `1px solid ${colors.border}` }}>
+          <div style={{ marginTop: 20, padding: 16, background: '#F9FAFB', borderRadius: 10, border: `1px solid ${'#E5E7EB'}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h2 style={{ ...S.h2, margin: 0 }}>Assets — {assetEntityType} {assetEntityId.slice(0, 8)}</h2>
+              <h2 style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 12, margin: 0 }}>Assets — {assetEntityType} {assetEntityId.slice(0, 8)}</h2>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => setShowAssetForm(!showAssetForm)}
-                  style={{ ...S.actionBtn, color: colors.text2, borderColor: colors.border, fontSize: 10 }}>
+                  style={{ ...actionBtnStyle, color: '#6B7280', borderColor: '#E5E7EB', fontSize: 10 }}>
                   {showAssetForm ? 'Cancel' : '+ Attach Asset'}
                 </button>
                 <button onClick={() => { setAssetEntityId(''); setAssets([]); }}
-                  style={{ ...S.actionBtn, fontSize: 10 }}>Close</button>
+                  style={{ ...actionBtnStyle, fontSize: 10 }}>Close</button>
               </div>
             </div>
 
             {showAssetForm && (
-              <div style={{ marginBottom: 12, padding: 12, background: colors.bg, borderRadius: 8 }}>
+              <div style={{ marginBottom: 12, padding: 12, background: '#FFFFFF', borderRadius: 8 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <input placeholder="File name *" value={assetForm.file_name || ''} onChange={e => setAssetForm(f => ({ ...f, file_name: e.target.value }))} style={S.searchInput} />
-                  <input placeholder="Storage path * (e.g. cms-media/topics/abc.png)" value={assetForm.storage_path || ''} onChange={e => setAssetForm(f => ({ ...f, storage_path: e.target.value }))} style={S.searchInput} />
-                  <input placeholder="File type (image/png)" value={assetForm.file_type || ''} onChange={e => setAssetForm(f => ({ ...f, file_type: e.target.value }))} style={S.searchInput} />
-                  <input placeholder="File size (bytes)" type="number" value={assetForm.file_size || ''} onChange={e => setAssetForm(f => ({ ...f, file_size: e.target.value }))} style={S.searchInput} />
-                  <input placeholder="Alt text" value={assetForm.alt_text || ''} onChange={e => setAssetForm(f => ({ ...f, alt_text: e.target.value }))} style={S.searchInput} />
-                  <input placeholder="Caption" value={assetForm.caption || ''} onChange={e => setAssetForm(f => ({ ...f, caption: e.target.value }))} style={S.searchInput} />
+                  <input placeholder="File name *" value={assetForm.file_name || ''} onChange={e => setAssetForm(f => ({ ...f, file_name: e.target.value }))} style={searchInputStyle} />
+                  <input placeholder="Storage path * (e.g. cms-media/topics/abc.png)" value={assetForm.storage_path || ''} onChange={e => setAssetForm(f => ({ ...f, storage_path: e.target.value }))} style={searchInputStyle} />
+                  <input placeholder="File type (image/png)" value={assetForm.file_type || ''} onChange={e => setAssetForm(f => ({ ...f, file_type: e.target.value }))} style={searchInputStyle} />
+                  <input placeholder="File size (bytes)" type="number" value={assetForm.file_size || ''} onChange={e => setAssetForm(f => ({ ...f, file_size: e.target.value }))} style={searchInputStyle} />
+                  <input placeholder="Alt text" value={assetForm.alt_text || ''} onChange={e => setAssetForm(f => ({ ...f, alt_text: e.target.value }))} style={searchInputStyle} />
+                  <input placeholder="Caption" value={assetForm.caption || ''} onChange={e => setAssetForm(f => ({ ...f, caption: e.target.value }))} style={searchInputStyle} />
                 </div>
-                <button onClick={registerAsset} style={{ ...S.actionBtn, marginTop: 8, color: colors.text2, borderColor: colors.border, padding: '6px 16px' }}>Register Asset</button>
+                <button onClick={registerAsset} style={{ ...actionBtnStyle, marginTop: 8, color: '#6B7280', borderColor: '#E5E7EB', padding: '6px 16px' }}>Register Asset</button>
               </div>
             )}
 
             {assets.length === 0 ? (
-              <div style={{ fontSize: 12, color: colors.text3 }}>No assets attached. Click "+ Attach Asset" to add one.</div>
+              <div style={{ fontSize: 12, color: '#9CA3AF' }}>No assets attached. Click "+ Attach Asset" to add one.</div>
             ) : (
-              <table style={S.table}>
+              <table style={tableStyle}>
                 <thead>
                   <tr>
-                    <th style={S.th}>File</th>
-                    <th style={S.th}>Type</th>
-                    <th style={S.th}>Size</th>
-                    <th style={S.th}>Path</th>
-                    <th style={S.th}>Alt</th>
-                    <th style={S.th}>Added</th>
-                    <th style={S.th}>Actions</th>
+                    <th style={thStyle}>File</th>
+                    <th style={thStyle}>Type</th>
+                    <th style={thStyle}>Size</th>
+                    <th style={thStyle}>Path</th>
+                    <th style={thStyle}>Alt</th>
+                    <th style={thStyle}>Added</th>
+                    <th style={thStyle}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {assets.map(a => (
                     <tr key={a.id}>
-                      <td style={S.td}><strong>{a.file_name}</strong></td>
-                      <td style={{ ...S.td, fontSize: 10 }}>{a.file_type}</td>
-                      <td style={{ ...S.td, fontSize: 10 }}>{a.file_size ? `${(a.file_size / 1024).toFixed(1)} KB` : '—'}</td>
-                      <td style={{ ...S.td, fontSize: 10, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.storage_path}</td>
-                      <td style={{ ...S.td, fontSize: 10 }}>{a.alt_text || '—'}</td>
-                      <td style={{ ...S.td, fontSize: 10 }}>{new Date(a.created_at).toLocaleDateString()}</td>
-                      <td style={S.td}>
-                        <button onClick={() => deleteAsset(a.id)} style={{ ...S.actionBtn, color: colors.text3, borderColor: colors.border, fontSize: 10 }}>Remove</button>
+                      <td style={tdStyle}><strong>{a.file_name}</strong></td>
+                      <td style={{ ...tdStyle, fontSize: 10 }}>{a.file_type}</td>
+                      <td style={{ ...tdStyle, fontSize: 10 }}>{a.file_size ? `${(a.file_size / 1024).toFixed(1)} KB` : '—'}</td>
+                      <td style={{ ...tdStyle, fontSize: 10, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.storage_path}</td>
+                      <td style={{ ...tdStyle, fontSize: 10 }}>{a.alt_text || '—'}</td>
+                      <td style={{ ...tdStyle, fontSize: 10 }}>{new Date(a.created_at).toLocaleDateString()}</td>
+                      <td style={tdStyle}>
+                        <button onClick={() => deleteAsset(a.id)} style={{ ...actionBtnStyle, color: '#9CA3AF', borderColor: '#E5E7EB', fontSize: 10 }}>Remove</button>
                       </td>
                     </tr>
                   ))}

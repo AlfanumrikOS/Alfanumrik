@@ -16,7 +16,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import { colors, S } from '../_components/admin-styles';
 
 interface AvgScores {
   overall: number;
@@ -58,6 +57,11 @@ interface DashboardData {
   lowestRecent: LowestScore[];
 }
 
+const TH = 'sticky top-0 z-10 border-b-2 border-surface-3 bg-surface-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground';
+const TH_R = `${TH} text-right`;
+const TD = 'border-b border-surface-3 px-3.5 py-2.5 text-[13px] text-foreground';
+const TD_R = `${TD} text-right`;
+
 function FoxyQualityPageInner() {
   const { apiFetch } = useAdmin();
   const [data, setData] = useState<DashboardData | null>(null);
@@ -88,39 +92,42 @@ function FoxyQualityPageInner() {
   }, [fetchDashboard]);
 
   if (loading && !data) {
-    return <p style={{ color: colors.text3 }}>Loading quality scores…</p>;
+    return <p className="text-muted-foreground">Loading quality scores…</p>;
   }
   if (error || !data) {
-    return <p style={{ color: colors.danger }}>{error ?? 'No data'}</p>;
+    return <p className="text-danger">{error ?? 'No data'}</p>;
   }
 
-  const deltaColor =
+  const deltaClass =
     data.weeklyDelta === null
-      ? colors.text3
+      ? 'text-muted-foreground'
       : data.weeklyDelta >= 0
-        ? colors.success
+        ? 'text-success'
         : data.weeklyDelta <= -10
-          ? colors.danger
-          : colors.warning;
+          ? 'text-danger'
+          : 'text-warning';
   const deltaPrefix = data.weeklyDelta !== null && data.weeklyDelta > 0 ? '+' : '';
+
+  const overallClass = (v: number) =>
+    v < 50 ? 'text-danger' : v < 70 ? 'text-warning' : 'text-foreground';
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={S.h1}>Foxy Quality (LLM-as-judge)</h1>
-        <p style={{ ...S.subtitle, marginBottom: 6 }}>
+      <div className="mb-6">
+        <h1 className="text-xl font-bold text-foreground">Foxy Quality (LLM-as-judge)</h1>
+        <p className="mb-1.5 text-sm text-muted-foreground">
           Nightly Sonnet judge scores Foxy answers across 4 dimensions: accuracy
           (vs cited NCERT chunks), scaffold fidelity (per coach mode),
           age-appropriateness, and CBSE scope. Composite uses
           0.40 / 0.30 / 0.20 / 0.10 weights. Rubric: <strong>{data.rubricVersion}</strong>.
         </p>
-        <p style={{ fontSize: 12, color: colors.text3, margin: 0 }}>
+        <p className="m-0 text-xs text-muted-foreground">
           {data.totalScored} answers scored in the last 30 days.
         </p>
       </div>
 
       {/* KPI tiles */}
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 12, marginBottom: 20 }}>
+      <section className="mb-5 grid grid-cols-5 gap-3">
         {([
           { label: 'Overall', key: 'overall' },
           { label: 'Accuracy', key: 'accuracy' },
@@ -131,25 +138,25 @@ function FoxyQualityPageInner() {
           const cur = data.last7DayAvg?.[key];
           const prev = data.prev7DayAvg?.[key];
           const delta = cur !== undefined && prev !== undefined ? cur - prev : null;
+          const localDeltaClass =
+            delta === null
+              ? ''
+              : key === 'overall'
+                ? deltaClass
+                : delta >= 0
+                  ? 'text-success'
+                  : delta <= -10
+                    ? 'text-danger'
+                    : 'text-warning';
           return (
-            <div key={key} style={S.card}>
-              <div style={{ fontSize: 11, color: colors.text2, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>
+            <div key={key} className="rounded-lg border border-surface-3 bg-surface-1 p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {label}
               </div>
-              <div style={{ fontSize: 28, fontWeight: 700, color: colors.text1, marginTop: 4 }}>
-                {cur ?? '—'}
-              </div>
-              <div style={{ fontSize: 11, color: colors.text3 }}>last 7d avg</div>
+              <div className="mt-1 text-[28px] font-bold text-foreground">{cur ?? '—'}</div>
+              <div className="text-[11px] text-muted-foreground">last 7d avg</div>
               {delta !== null && (
-                <div
-                  style={{
-                    fontSize: 12,
-                    color:
-                      key === 'overall' ? deltaColor : delta >= 0 ? colors.success : delta <= -10 ? colors.danger : colors.warning,
-                    marginTop: 4,
-                    fontWeight: 500,
-                  }}
-                >
+                <div className={`mt-1 text-xs font-medium ${localDeltaClass}`}>
                   {delta > 0 ? '+' : ''}
                   {delta} vs prev 7d
                 </div>
@@ -161,52 +168,45 @@ function FoxyQualityPageInner() {
 
       {/* Drift banner */}
       {data.weeklyDelta !== null && data.weeklyDelta <= -10 && (
-        <div
-          style={{
-            ...S.card,
-            background: colors.dangerLight,
-            borderColor: colors.danger,
-            color: colors.danger,
-            marginBottom: 16,
-            fontSize: 13,
-          }}
-        >
+        <div className="mb-4 rounded-lg border border-danger bg-danger/10 p-4 text-[13px] text-danger">
           ⚠ Quality drift: overall is {deltaPrefix}
           {data.weeklyDelta} points vs the prior 7 days. Investigate before promoting any prompt change.
         </div>
       )}
 
       {/* Daily trend table */}
-      <section style={{ marginBottom: 24 }}>
-        <h2 style={S.h2}>Daily averages — last 14 days</h2>
+      <section className="mb-6">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Daily averages — last 14 days
+        </h2>
         {data.dailyAverages.length === 0 ? (
-          <div style={{ ...S.card, color: colors.text3, fontSize: 13 }}>
+          <div className="rounded-lg border border-surface-3 bg-surface-1 p-4 text-[13px] text-muted-foreground">
             No scores yet. The nightly cron at 03:40 UTC will populate this on the next run.
           </div>
         ) : (
-          <div style={{ ...S.card, padding: 0, overflow: 'hidden' }}>
-            <table style={S.table}>
+          <div className="overflow-hidden rounded-lg border border-surface-3 bg-surface-1">
+            <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
-                  <th style={S.th}>Day (UTC)</th>
-                  <th style={{ ...S.th, textAlign: 'right' }}>Count</th>
-                  <th style={{ ...S.th, textAlign: 'right' }}>Overall</th>
-                  <th style={{ ...S.th, textAlign: 'right' }}>Accuracy</th>
-                  <th style={{ ...S.th, textAlign: 'right' }}>Scaffold</th>
-                  <th style={{ ...S.th, textAlign: 'right' }}>Age</th>
-                  <th style={{ ...S.th, textAlign: 'right' }}>Scope</th>
+                  <th className={TH}>Day (UTC)</th>
+                  <th className={TH_R}>Count</th>
+                  <th className={TH_R}>Overall</th>
+                  <th className={TH_R}>Accuracy</th>
+                  <th className={TH_R}>Scaffold</th>
+                  <th className={TH_R}>Age</th>
+                  <th className={TH_R}>Scope</th>
                 </tr>
               </thead>
               <tbody>
                 {data.dailyAverages.map((d) => (
                   <tr key={d.day}>
-                    <td style={S.td}>{d.day}</td>
-                    <td style={{ ...S.td, textAlign: 'right' }}>{d.count}</td>
-                    <td style={{ ...S.td, textAlign: 'right', fontWeight: 600 }}>{d.overall}</td>
-                    <td style={{ ...S.td, textAlign: 'right' }}>{d.accuracy}</td>
-                    <td style={{ ...S.td, textAlign: 'right' }}>{d.scaffold}</td>
-                    <td style={{ ...S.td, textAlign: 'right' }}>{d.age}</td>
-                    <td style={{ ...S.td, textAlign: 'right' }}>{d.scope}</td>
+                    <td className={TD}>{d.day}</td>
+                    <td className={TD_R}>{d.count}</td>
+                    <td className={`${TD_R} font-semibold`}>{d.overall}</td>
+                    <td className={TD_R}>{d.accuracy}</td>
+                    <td className={TD_R}>{d.scaffold}</td>
+                    <td className={TD_R}>{d.age}</td>
+                    <td className={TD_R}>{d.scope}</td>
                   </tr>
                 ))}
               </tbody>
@@ -217,43 +217,43 @@ function FoxyQualityPageInner() {
 
       {/* Lowest 10 — triage queue */}
       <section>
-        <h2 style={S.h2}>Lowest overall — last 30 days</h2>
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Lowest overall — last 30 days
+        </h2>
         {data.lowestRecent.length === 0 ? (
-          <div style={{ ...S.card, color: colors.text3, fontSize: 13 }}>
+          <div className="rounded-lg border border-surface-3 bg-surface-1 p-4 text-[13px] text-muted-foreground">
             Nothing scored yet.
           </div>
         ) : (
-          <div style={{ ...S.card, padding: 0, overflow: 'hidden' }}>
-            <table style={S.table}>
+          <div className="overflow-hidden rounded-lg border border-surface-3 bg-surface-1">
+            <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
-                  <th style={S.th}>Scored at</th>
-                  <th style={{ ...S.th, textAlign: 'right' }}>Overall</th>
-                  <th style={{ ...S.th, textAlign: 'right' }}>Acc</th>
-                  <th style={{ ...S.th, textAlign: 'right' }}>Scaff</th>
-                  <th style={{ ...S.th, textAlign: 'right' }}>Age</th>
-                  <th style={{ ...S.th, textAlign: 'right' }}>Scope</th>
-                  <th style={S.th}>Judge note</th>
-                  <th style={S.th}>Message</th>
+                  <th className={TH}>Scored at</th>
+                  <th className={TH_R}>Overall</th>
+                  <th className={TH_R}>Acc</th>
+                  <th className={TH_R}>Scaff</th>
+                  <th className={TH_R}>Age</th>
+                  <th className={TH_R}>Scope</th>
+                  <th className={TH}>Judge note</th>
+                  <th className={TH}>Message</th>
                 </tr>
               </thead>
               <tbody>
                 {data.lowestRecent.map((r) => (
                   <tr key={r.messageId}>
-                    <td style={{ ...S.td, fontSize: 12, color: colors.text2 }}>
+                    <td className={`${TD} text-xs text-muted-foreground`}>
                       {new Date(r.scoredAt).toLocaleString()}
                     </td>
-                    <td style={{ ...S.td, textAlign: 'right', fontWeight: 700, color: r.overall < 50 ? colors.danger : r.overall < 70 ? colors.warning : colors.text1 }}>
-                      {r.overall}
+                    <td className={`${TD_R} font-bold ${overallClass(r.overall)}`}>{r.overall}</td>
+                    <td className={TD_R}>{r.accuracy}</td>
+                    <td className={TD_R}>{r.scaffold}</td>
+                    <td className={TD_R}>{r.age}</td>
+                    <td className={TD_R}>{r.scope}</td>
+                    <td className={`${TD} max-w-[320px] text-xs text-muted-foreground`}>
+                      {r.notes ?? <span className="text-muted-foreground">—</span>}
                     </td>
-                    <td style={{ ...S.td, textAlign: 'right' }}>{r.accuracy}</td>
-                    <td style={{ ...S.td, textAlign: 'right' }}>{r.scaffold}</td>
-                    <td style={{ ...S.td, textAlign: 'right' }}>{r.age}</td>
-                    <td style={{ ...S.td, textAlign: 'right' }}>{r.scope}</td>
-                    <td style={{ ...S.td, fontSize: 12, color: colors.text2, maxWidth: 320 }}>
-                      {r.notes ?? <span style={{ color: colors.text3 }}>—</span>}
-                    </td>
-                    <td style={{ ...S.td, fontSize: 11, fontFamily: 'monospace', color: colors.text3 }}>
+                    <td className={`${TD} font-mono text-[11px] text-muted-foreground`}>
                       {r.messageId.slice(0, 8)}…
                     </td>
                   </tr>

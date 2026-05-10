@@ -2,10 +2,61 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import DataTable, { Column } from '../_components/DataTable';
-import StatCard from '../_components/StatCard';
-import StatusBadge from '../_components/StatusBadge';
-import { colors, S } from '../_components/admin-styles';
+import { DataTable, StatCard, StatusBadge, type Column } from '@/components/admin-ui';
+
+const colors = {
+  bg: '#FFFFFF',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  surface: '#F9FAFB',
+  accent: '#2563EB',
+  success: '#16A34A',
+  warning: '#D97706',
+  danger: '#DC2626',
+} as const;
+
+const tdStyle: React.CSSProperties = {
+  padding: '10px 14px',
+  borderBottom: '1px solid #F3F4F6',
+  color: colors.text1,
+  fontSize: 13,
+};
+const thStyle: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '10px 14px',
+  borderBottom: `2px solid ${colors.border}`,
+  color: colors.text2,
+  fontSize: 11,
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  letterSpacing: 1,
+  background: colors.surface,
+  position: 'sticky',
+  top: 0,
+  zIndex: 1,
+};
+
+const S = {
+  card: {
+    padding: 16,
+    borderRadius: 8,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+  } as React.CSSProperties,
+  h2: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: colors.text2,
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+    marginBottom: 12,
+  } as React.CSSProperties,
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: 13 } as React.CSSProperties,
+  th: thStyle,
+  td: tdStyle,
+};
 
 // ── Types ──
 
@@ -110,7 +161,12 @@ function SLAContent() {
     return (
       <div style={{ padding: 40, textAlign: 'center' }}>
         <div style={{ color: colors.danger, fontSize: 14, marginBottom: 12 }}>{error}</div>
-        <button onClick={fetchData} style={S.secondaryBtn}>Retry</button>
+        <button
+          onClick={fetchData}
+          className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -180,7 +236,7 @@ function SLAContent() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h1 style={S.h1}>SLA Monitoring</h1>
+          <h1 className="text-xl font-bold tracking-tight text-foreground mb-1">SLA Monitoring</h1>
           <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>
             Platform uptime, API latency, and per-school SLA compliance
           </p>
@@ -190,7 +246,12 @@ function SLAContent() {
             label={`Overall: ${data.overall_status.toUpperCase()}`}
             variant={statusVariant(data.overall_status)}
           />
-          <button onClick={fetchData} style={S.secondaryBtn}>&#8635; Refresh</button>
+          <button
+            onClick={fetchData}
+            className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+          >
+            &#8635; Refresh
+          </button>
         </div>
       </div>
 

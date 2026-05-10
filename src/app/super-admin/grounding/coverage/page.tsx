@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import AdminShell, { useAdmin } from '../../_components/AdminShell';
-import { colors, S } from '../../_components/admin-styles';
-import StatCard from '../../_components/StatCard';
+import { StatCard, StatusBadge, DataTable, type Column } from '@/components/admin-ui';
 
 /**
  * Grounding Coverage — super-admin page (Task 3.17a)
@@ -41,12 +40,21 @@ interface CoverageResponse {
   error?: string;
 }
 
-const SEVERITY_COLORS: Record<string, string> = {
-  critical: colors.danger,
-  high: colors.warning,
+const SEVERITY_ACCENT: Record<string, string> = {
+  critical: '#DC2626',
+  high: '#D97706',
   medium: '#2563EB',
-  low: colors.text3,
+  low: '#9CA3AF',
 };
+
+const SEVERITY_VARIANT: Record<string, 'danger' | 'warning' | 'info' | 'neutral'> = {
+  critical: 'danger',
+  high: 'warning',
+  medium: 'info',
+  low: 'neutral',
+};
+
+type GapRow = Gap & { _key: string; [k: string]: unknown };
 
 function CoverageContent() {
   const { apiFetch } = useAdmin();
@@ -89,27 +97,69 @@ function CoverageContent() {
     fetchCoverage();
   }, [fetchCoverage]);
 
-  const filteredGaps = (data?.gaps ?? []).filter((g) => {
-    if (statusFilter && g.rag_status !== statusFilter) return false;
-    return true;
-  });
+  const filteredGaps: GapRow[] = (data?.gaps ?? [])
+    .filter((g) => (statusFilter ? g.rag_status === statusFilter : true))
+    .map((g, idx) => ({ ...g, _key: `${g.grade}-${g.subject_code}-${g.chapter_number}-${idx}` }));
+
+  const columns: Column<GapRow>[] = [
+    { key: 'grade', label: 'Grade', sortable: true },
+    {
+      key: 'subject',
+      label: 'Subject',
+      sortable: false,
+      render: (g) => g.subject_display || g.subject_code,
+    },
+    {
+      key: 'chapter',
+      label: 'Chapter',
+      sortable: false,
+      render: (g) => (
+        <>
+          <span className="mr-1.5 text-muted-foreground">Ch {g.chapter_number}</span>
+          {g.chapter_title}
+        </>
+      ),
+    },
+    {
+      key: 'rag_status',
+      label: 'Status',
+      sortable: true,
+      render: (g) => <code className="text-[11px] text-muted-foreground">{g.rag_status}</code>,
+    },
+    { key: 'chunk_count', label: 'Chunks', sortable: true },
+    { key: 'verified_question_count', label: 'Verified Q', sortable: true },
+    {
+      key: 'severity',
+      label: 'Severity',
+      sortable: true,
+      render: (g) => (
+        <StatusBadge label={g.severity} variant={SEVERITY_VARIANT[g.severity] || 'neutral'} />
+      ),
+    },
+    { key: 'request_count', label: 'Requests', sortable: true },
+  ];
 
   return (
     <div data-testid="grounding-coverage-page">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 style={S.h1}>Grounding Coverage</h1>
-          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>
+          <h1 className="text-xl font-bold text-foreground">Grounding Coverage</h1>
+          <p className="m-0 text-[13px] text-muted-foreground">
             CBSE syllabus chapters that are not yet fully ingested or verified
           </p>
         </div>
-        <button onClick={fetchCoverage} style={S.secondaryBtn}>Refresh</button>
+        <button
+          onClick={fetchCoverage}
+          className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+        >
+          Refresh
+        </button>
       </div>
 
       {error && (
         <div
           data-testid="grounding-coverage-error"
-          style={{ padding: 12, marginBottom: 16, borderRadius: 6, background: colors.dangerLight, color: colors.danger, fontSize: 13 }}
+          className="mb-4 rounded-md bg-danger/10 p-3 text-[13px] text-danger"
         >
           Error: {error}
         </div>
@@ -117,22 +167,22 @@ function CoverageContent() {
 
       {/* Summary */}
       {data && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
+        <div className="mb-4 grid grid-cols-4 gap-3">
           <StatCard label="Total gaps" value={data.summary.total_gaps} />
-          <StatCard label="Critical" value={data.summary.critical} accentColor={SEVERITY_COLORS.critical} />
-          <StatCard label="High" value={data.summary.high} accentColor={SEVERITY_COLORS.high} />
-          <StatCard label="Medium" value={data.summary.medium} accentColor={SEVERITY_COLORS.medium} />
+          <StatCard label="Critical" value={data.summary.critical} accentColor={SEVERITY_ACCENT.critical} />
+          <StatCard label="High" value={data.summary.high} accentColor={SEVERITY_ACCENT.high} />
+          <StatCard label="Medium" value={data.summary.medium} accentColor={SEVERITY_ACCENT.medium} />
         </div>
       )}
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'center' }}>
+      <div className="mb-3 flex items-center gap-3">
         <input
           type="text"
           placeholder="Grade (6-12)"
           value={gradeFilter}
           onChange={(e) => setGradeFilter(e.target.value)}
-          style={{ ...S.searchInput, width: 120 }}
+          className="w-[120px] rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
           aria-label="Filter by grade"
         />
         <input
@@ -140,13 +190,13 @@ function CoverageContent() {
           placeholder="Subject (e.g. science)"
           value={subjectFilter}
           onChange={(e) => setSubjectFilter(e.target.value)}
-          style={{ ...S.searchInput, width: 180 }}
+          className="w-[180px] rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
           aria-label="Filter by subject"
         />
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          style={S.select}
+          className="cursor-pointer rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm"
           aria-label="Filter by status"
         >
           <option value="">All statuses</option>
@@ -159,67 +209,14 @@ function CoverageContent() {
       </div>
 
       {/* Table */}
-      <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
-        <table style={S.table} data-testid="grounding-coverage-table">
-          <thead>
-            <tr>
-              <th style={S.th}>Grade</th>
-              <th style={S.th}>Subject</th>
-              <th style={S.th}>Chapter</th>
-              <th style={S.th}>Status</th>
-              <th style={S.th}>Chunks</th>
-              <th style={S.th}>Verified Q</th>
-              <th style={S.th}>Severity</th>
-              <th style={S.th}>Requests</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr>
-                <td colSpan={8} style={{ ...S.td, textAlign: 'center', color: colors.text3 }}>
-                  Loading...
-                </td>
-              </tr>
-            )}
-            {!loading && filteredGaps.length === 0 && !error && (
-              <tr>
-                <td colSpan={8} style={{ ...S.td, textAlign: 'center', color: colors.text3 }}>
-                  No gaps found.
-                </td>
-              </tr>
-            )}
-            {filteredGaps.map((g, idx) => (
-              <tr key={`${g.grade}-${g.subject_code}-${g.chapter_number}-${idx}`}>
-                <td style={S.td}>{g.grade}</td>
-                <td style={S.td}>{g.subject_display || g.subject_code}</td>
-                <td style={S.td}>
-                  <span style={{ color: colors.text3, marginRight: 6 }}>Ch {g.chapter_number}</span>
-                  {g.chapter_title}
-                </td>
-                <td style={S.td}>
-                  <code style={{ fontSize: 11, color: colors.text2 }}>{g.rag_status}</code>
-                </td>
-                <td style={S.td}>{g.chunk_count}</td>
-                <td style={S.td}>{g.verified_question_count}</td>
-                <td style={S.td}>
-                  <span
-                    style={{
-                      padding: '2px 8px',
-                      borderRadius: 10,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      background: (SEVERITY_COLORS[g.severity] || colors.text3) + '20',
-                      color: SEVERITY_COLORS[g.severity] || colors.text3,
-                    }}
-                  >
-                    {g.severity}
-                  </span>
-                </td>
-                <td style={S.td}>{g.request_count}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div data-testid="grounding-coverage-table">
+        <DataTable<GapRow>
+          columns={columns}
+          data={filteredGaps}
+          keyField="_key"
+          loading={loading}
+          emptyMessage={error ? '' : 'No gaps found.'}
+        />
       </div>
     </div>
   );

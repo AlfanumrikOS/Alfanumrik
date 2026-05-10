@@ -2,11 +2,18 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import { colors, S } from '../_components/admin-styles';
 import FiltersBar, { type Filters, DEFAULT_FILTERS } from './_components/FiltersBar';
 import SystemSnapshot from './_components/SystemSnapshot';
 import EventRow, { type TimelineEvent } from './_components/EventRow';
 import EventDetailDrawer from './_components/EventDetailDrawer';
+
+const colors = {
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  borderLight: '#F3F4F6',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
+} as const;
 
 /**
  * Observability Console — super-admin page
@@ -203,14 +210,24 @@ function ObservabilityContent() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
-          <h1 style={S.h1}>Observability Console</h1>
+          <h1 className="text-xl font-bold tracking-tight text-foreground mb-1">Observability Console</h1>
           <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>
             Unified event timeline across AI, payments, auth, deployments, and admin actions
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={handleExport} style={S.dlBtn}>Export CSV</button>
-          <button onClick={() => { fetchEvents(); fetchSnapshot(); }} style={S.secondaryBtn}>Refresh</button>
+          <button
+            onClick={handleExport}
+            className="rounded-md border border-surface-3 bg-surface-2 px-3.5 py-2 text-xs font-semibold text-foreground hover:bg-surface-3"
+          >
+            Export CSV
+          </button>
+          <button
+            onClick={() => { fetchEvents(); fetchSnapshot(); }}
+            className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+          >
+            Refresh
+          </button>
         </div>
       </div>
 
@@ -271,7 +288,7 @@ function ObservabilityContent() {
             <button
               onClick={() => fetchEvents(nextCursor)}
               disabled={loadingMore}
-              style={{ ...S.actionBtn, fontSize: 12, padding: '6px 16px' }}
+              className="rounded-md border border-surface-3 bg-transparent px-4 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loadingMore ? 'Loading...' : 'Load more'}
             </button>

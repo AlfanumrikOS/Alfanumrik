@@ -5,7 +5,6 @@ import AdminShell, { useAdmin } from '../_components/AdminShell';
 import DataTable, { Column } from '../_components/DataTable';
 import DetailDrawer from '../_components/DetailDrawer';
 import StatusBadge from '../_components/StatusBadge';
-import { colors, S } from '../_components/admin-styles';
 
 type Entity = 'students' | 'teachers' | 'guardians' | 'institutions' | 'chapters' | 'topics' | 'questions';
 
@@ -72,27 +71,27 @@ function WorkbenchContent() {
       case 'students':
         return [
           { key: 'name', label: 'Name', render: r => <strong>{String(r.name || '—')}</strong> },
-          { key: 'email', label: 'Email', render: r => <span style={{ fontSize: 12, color: colors.text2 }}>{String(r.email || '—')}</span> },
+          { key: 'email', label: 'Email', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{String(r.email || '—')}</span> },
           { key: 'grade', label: 'Grade' },
           { key: 'xp_total', label: 'XP', render: r => <span style={{ fontWeight: 600 }}>{String(r.xp_total ?? 0)}</span> },
           { key: 'subscription_plan', label: 'Plan', render: r => <StatusBadge label={String(r.subscription_plan || 'free')} variant="neutral" /> },
           { key: 'is_active', label: 'Status', render: r => <StatusBadge label={r.is_active !== false ? 'Active' : 'Inactive'} variant={r.is_active !== false ? 'success' : 'danger'} /> },
-          { key: 'created_at', label: 'Joined', render: r => <span style={{ fontSize: 12, color: colors.text2 }}>{r.created_at ? new Date(String(r.created_at)).toLocaleDateString() : '—'}</span> },
+          { key: 'created_at', label: 'Joined', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{r.created_at ? new Date(String(r.created_at)).toLocaleDateString() : '—'}</span> },
         ];
       case 'teachers':
         return [
           { key: 'name', label: 'Name', render: r => <strong>{String(r.name || '—')}</strong> },
-          { key: 'email', label: 'Email', render: r => <span style={{ fontSize: 12, color: colors.text2 }}>{String(r.email || '—')}</span> },
+          { key: 'email', label: 'Email', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{String(r.email || '—')}</span> },
           { key: 'school_name', label: 'School' },
           { key: 'is_active', label: 'Status', render: r => <StatusBadge label={r.is_active !== false ? 'Active' : 'Inactive'} variant={r.is_active !== false ? 'success' : 'danger'} /> },
-          { key: 'created_at', label: 'Joined', render: r => <span style={{ fontSize: 12, color: colors.text2 }}>{r.created_at ? new Date(String(r.created_at)).toLocaleDateString() : '—'}</span> },
+          { key: 'created_at', label: 'Joined', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{r.created_at ? new Date(String(r.created_at)).toLocaleDateString() : '—'}</span> },
         ];
       case 'guardians':
         return [
           { key: 'name', label: 'Name', render: r => <strong>{String(r.name || '—')}</strong> },
-          { key: 'email', label: 'Email', render: r => <span style={{ fontSize: 12, color: colors.text2 }}>{String(r.email || '—')}</span> },
+          { key: 'email', label: 'Email', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{String(r.email || '—')}</span> },
           { key: 'is_active', label: 'Status', render: r => <StatusBadge label={r.is_active !== false ? 'Active' : 'Inactive'} variant={r.is_active !== false ? 'success' : 'danger'} /> },
-          { key: 'created_at', label: 'Joined', render: r => <span style={{ fontSize: 12, color: colors.text2 }}>{r.created_at ? new Date(String(r.created_at)).toLocaleDateString() : '—'}</span> },
+          { key: 'created_at', label: 'Joined', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{r.created_at ? new Date(String(r.created_at)).toLocaleDateString() : '—'}</span> },
         ];
       case 'institutions':
         return [
@@ -135,20 +134,27 @@ function WorkbenchContent() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h1 style={S.h1}>Data Workbench</h1>
-          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>Browse, search, filter, and export any platform entity</p>
+          <h1 className="text-xl font-bold text-foreground" style={{ marginBottom: 4 }}>Data Workbench</h1>
+          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Browse, search, filter, and export any platform entity</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => exportData('csv')} style={S.secondaryBtn}>Export CSV</button>
-          <button onClick={() => exportData('json')} style={S.secondaryBtn}>Export JSON</button>
+          <button onClick={() => exportData('csv')} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Export CSV</button>
+          <button onClick={() => exportData('json')} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Export JSON</button>
         </div>
       </div>
 
       {/* Entity Selector */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
         {ENTITIES.map(e => (
-          <button key={e.key} onClick={() => { setEntity(e.key); setPage(1); setSearch(''); }}
-            style={{ ...S.filterBtn, ...(entity === e.key ? S.filterActive : {}) }}>
+          <button
+            key={e.key}
+            onClick={() => { setEntity(e.key); setPage(1); setSearch(''); }}
+            className={
+              entity === e.key
+                ? 'rounded-md border border-foreground bg-foreground px-3.5 py-1.5 text-xs font-medium text-surface-1'
+                : 'rounded-md border border-surface-3 bg-surface-1 px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2'
+            }
+          >
             {e.label}
           </button>
         ))}
@@ -157,13 +163,19 @@ function WorkbenchContent() {
       {/* Search */}
       {['students', 'teachers', 'guardians'].includes(entity) && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name..."
-            style={{ ...S.searchInput, width: 300 }} onKeyDown={e => e.key === 'Enter' && fetchData()} />
-          <button onClick={fetchData} style={S.secondaryBtn}>Search</button>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name..."
+            className="rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            style={{ width: 300 }}
+            onKeyDown={e => e.key === 'Enter' && fetchData()}
+          />
+          <button onClick={fetchData} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Search</button>
         </div>
       )}
 
-      <div style={{ fontSize: 12, color: colors.text3, marginBottom: 8 }}>{total} records found</div>
+      <div style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 8 }}>{total} records found</div>
 
       {/* Table */}
       <DataTable
@@ -182,21 +194,21 @@ function WorkbenchContent() {
       {selectedIds.size > 0 && (
         <div style={{
           position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
-          background: colors.text1, color: colors.bg, padding: '10px 20px',
+          background: '#111827', color: '#FFFFFF', padding: '10px 20px',
           borderRadius: 8, display: 'flex', gap: 12, alignItems: 'center',
           boxShadow: '0 4px 20px rgba(0,0,0,0.15)', zIndex: 50,
         }}>
           <span style={{ fontSize: 13, fontWeight: 600 }}>{selectedIds.size} selected</span>
-          <button onClick={() => setSelectedIds(new Set())} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: colors.bg, padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Clear</button>
-          <button onClick={() => exportData('csv')} style={{ background: colors.bg, color: colors.text1, border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Export Selected</button>
+          <button onClick={() => setSelectedIds(new Set())} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#FFFFFF', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Clear</button>
+          <button onClick={() => exportData('csv')} style={{ background: '#FFFFFF', color: '#111827', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Export Selected</button>
         </div>
       )}
 
       {/* Pagination */}
       <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center', alignItems: 'center' }}>
-        <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={S.pageBtn}>Prev</button>
-        <span style={{ fontSize: 12, color: colors.text3, padding: '6px 12px' }}>Page {page} of {Math.max(1, Math.ceil(total / 25))}</span>
-        <button disabled={data.length < 25} onClick={() => setPage(p => p + 1)} style={S.pageBtn}>Next</button>
+        <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="rounded-md border border-surface-3 bg-surface-1 px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2 disabled:opacity-50">Prev</button>
+        <span style={{ fontSize: 12, color: '#9CA3AF', padding: '6px 12px' }}>Page {page} of {Math.max(1, Math.ceil(total / 25))}</span>
+        <button disabled={data.length < 25} onClick={() => setPage(p => p + 1)} className="rounded-md border border-surface-3 bg-surface-1 px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2 disabled:opacity-50">Next</button>
       </div>
 
       {/* Detail Drawer */}
@@ -204,14 +216,14 @@ function WorkbenchContent() {
         {selectedRow && (
           <div>
             {Object.entries(selectedRow).filter(([k]) => k !== 'id' && k !== 'auth_user_id').map(([key, value]) => (
-              <div key={key} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${colors.borderLight}` }}>
-                <span style={{ fontSize: 12, color: colors.text3, textTransform: 'capitalize' }}>{key.replace(/_/g, ' ')}</span>
-                <span style={{ fontSize: 12, color: colors.text1, fontWeight: 500, maxWidth: 250, textAlign: 'right', wordBreak: 'break-word' }}>
+              <div key={key} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F3F4F6' }}>
+                <span style={{ fontSize: 12, color: '#9CA3AF', textTransform: 'capitalize' }}>{key.replace(/_/g, ' ')}</span>
+                <span style={{ fontSize: 12, color: '#111827', fontWeight: 500, maxWidth: 250, textAlign: 'right', wordBreak: 'break-word' }}>
                   {value === null || value === undefined ? '—' : typeof value === 'boolean' ? (value ? 'Yes' : 'No') : typeof value === 'object' ? JSON.stringify(value).slice(0, 100) : String(value)}
                 </span>
               </div>
             ))}
-            <div style={{ marginTop: 16, fontSize: 10, color: colors.text3 }}>
+            <div style={{ marginTop: 16, fontSize: 10, color: '#9CA3AF' }}>
               ID: <code>{String(selectedRow.id || '—')}</code>
               {selectedRow.auth_user_id ? <><br />Auth ID: <code>{String(selectedRow.auth_user_id)}</code></> : null}
             </div>

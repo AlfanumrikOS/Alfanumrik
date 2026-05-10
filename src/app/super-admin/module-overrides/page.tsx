@@ -22,7 +22,29 @@
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell from '../_components/AdminShell';
 import { adminHeaders, getAdminSecretFromSession } from '@/lib/admin-session';
-import { colors, S } from '../_components/admin-styles';
+
+const colors = {
+  bg: '#FFFFFF',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  success: '#16A34A',
+  danger: '#DC2626',
+} as const;
+
+const S: Record<string, React.CSSProperties> = {
+  card: {
+    padding: 16,
+    borderRadius: 8,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+  },
+  // S.button / S.input were not present in legacy admin-styles either;
+  // preserving undefined-spread behaviour with empty objects.
+  button: {},
+  input: {},
+};
 
 interface OverrideRow {
   key: string;
@@ -115,7 +137,7 @@ export default function ModuleOverridesPage() {
   return (
     <AdminShell>
       <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 18, fontWeight: 700, color: colors.text1, margin: 0 }}>
+        <h1 className="text-lg font-bold text-foreground m-0">
           Module Overrides
         </h1>
         <p style={{ fontSize: 12, color: colors.text2, margin: '4px 0 0' }}>

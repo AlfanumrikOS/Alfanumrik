@@ -19,8 +19,7 @@ import { useMemo, useCallback } from 'react';
 import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import StatusBadge from '../_components/StatusBadge';
-import { colors, S } from '../_components/admin-styles';
+import { StatusBadge } from '@/components/admin-ui';
 
 /* ── Types ─────────────────────────────────────────────── */
 
@@ -76,23 +75,26 @@ function DualLineChart({ buckets, isHi }: { buckets: HourlyBucket[]; isHi: boole
   const HEIGHT = 180;
 
   return (
-    <div style={{ ...S.card, padding: '20px 18px' }}>
-      <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 12, color: colors.text2 }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: colors.danger }} />
+    <div className="rounded-lg border border-surface-3 bg-surface-1 px-[18px] py-5">
+      <div className="mb-3 flex gap-4 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-danger" />
           {isHi ? 'Reject rate' : 'Reject rate'}
         </span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: colors.warning }} />
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-warning" />
           {isHi ? 'Ambiguous rate' : 'Ambiguous rate'}
         </span>
-        <span style={{ marginLeft: 'auto', fontSize: 11, color: colors.text3 }}>
+        <span className="ml-auto text-[11px] text-muted-foreground">
           {isHi ? 'Y-axis: 0–100%' : 'Y-axis: 0–100%'}
         </span>
       </div>
 
       {/* Bars: one column per bucket; two stacked mini-bars per column */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1, height: HEIGHT, borderBottom: `1px solid ${colors.border}`, paddingBottom: 2 }}>
+      <div
+        className="flex items-end gap-px border-b border-surface-3 pb-0.5"
+        style={{ height: HEIGHT }}
+      >
         {buckets.map((b, i) => {
           const rejectH = Math.max(b.reject_rate * HEIGHT, b.reject_rate > 0 ? 1 : 0);
           const ambigH = Math.max(b.ambiguous_rate * HEIGHT, b.ambiguous_rate > 0 ? 1 : 0);
@@ -100,18 +102,18 @@ function DualLineChart({ buckets, isHi }: { buckets: HourlyBucket[]; isHi: boole
           return (
             <div
               key={`${b.hour}-${i}`}
-              style={{ flex: 1, minWidth: 2, display: 'flex', flexDirection: 'column-reverse', gap: 1, position: 'relative' }}
+              className="relative flex min-w-[2px] flex-1 flex-col-reverse gap-px"
               title={tooltip}
             >
-              <div style={{ width: '100%', height: rejectH, background: colors.danger, opacity: 0.8 }} />
-              <div style={{ width: '100%', height: ambigH, background: colors.warning, opacity: 0.6 }} />
+              <div className="w-full bg-danger opacity-80" style={{ height: rejectH }} />
+              <div className="w-full bg-warning opacity-60" style={{ height: ambigH }} />
             </div>
           );
         })}
       </div>
 
       {/* X-axis labels (sparse) */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 10, color: colors.text3 }}>
+      <div className="mt-1.5 flex justify-between text-[10px] text-muted-foreground">
         {buckets.length > 0 && (
           <>
             <span>{formatHourLabel(buckets[0].hour)}</span>
@@ -134,22 +136,23 @@ function EventsSparkline({ buckets, isHi }: { buckets: HourlyBucket[]; isHi: boo
   const total = buckets.reduce((acc, b) => acc + b.total_events, 0);
 
   return (
-    <div style={{ ...S.card, padding: '14px 16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <span style={{ fontSize: 12, color: colors.text2, fontWeight: 600 }}>
+    <div className="rounded-lg border border-surface-3 bg-surface-1 px-4 py-3.5">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs font-semibold text-muted-foreground">
           {isHi ? 'कुल Oracle decision events' : 'Total Oracle decision events'}
         </span>
-        <span style={{ fontSize: 13, fontWeight: 700, color: colors.text1 }}>
+        <span className="text-[13px] font-bold text-foreground">
           {total.toLocaleString()}
         </span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1, height: HEIGHT }}>
+      <div className="flex items-end gap-px" style={{ height: HEIGHT }}>
         {buckets.map((b, i) => {
           const h = max > 0 ? Math.max((b.total_events / max) * HEIGHT, b.total_events > 0 ? 1 : 0) : 0;
           return (
             <div
               key={`evt-${b.hour}-${i}`}
-              style={{ flex: 1, minWidth: 2, height: h, background: colors.accent, opacity: 0.6 }}
+              className="min-w-[2px] flex-1 bg-info opacity-60"
+              style={{ height: h }}
               title={`${formatHourLabel(b.hour)}: ${b.total_events.toLocaleString()} events`}
             />
           );
@@ -185,18 +188,22 @@ function OracleHealthContent() {
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+      <div className="mb-4 flex items-start justify-between">
         <div>
-          <h1 style={S.h1}>
+          <h1 className="text-xl font-bold text-foreground">
             {isHi ? 'Oracle Health (पिछले 7 दिन)' : 'Oracle Health (last 7d)'}
           </h1>
-          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>
+          <p className="m-0 text-[13px] text-muted-foreground">
             {isHi
               ? 'Quiz-grading oracle की reject और ambiguous rate की hourly निगरानी।'
               : 'Hourly reject and ambiguous rates for the quiz-grading oracle.'}
           </p>
         </div>
-        <button onClick={() => mutate()} style={S.secondaryBtn} disabled={isLoading}>
+        <button
+          onClick={() => mutate()}
+          className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2 disabled:opacity-60"
+          disabled={isLoading}
+        >
           {isLoading ? (isHi ? 'लोड हो रहा है...' : 'Loading...') : 'Refresh'}
         </button>
       </div>
@@ -204,24 +211,13 @@ function OracleHealthContent() {
       {/* Alert banner */}
       {data?.alert && (
         <div
-          style={{
-            padding: '12px 16px',
-            borderRadius: 8,
-            background: colors.dangerLight,
-            border: `1px solid ${colors.danger}`,
-            color: colors.danger,
-            fontSize: 13,
-            marginBottom: 20,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-          }}
+          className="mb-5 flex items-center gap-3 rounded-lg border border-danger bg-danger/10 px-4 py-3 text-[13px] text-danger"
           role="alert"
         >
-          <span style={{ fontSize: 18, lineHeight: 1 }}>⚠</span>
-          <div style={{ flex: 1 }}>
+          <span className="text-lg leading-none">⚠</span>
+          <div className="flex-1">
             <strong>{isHi ? 'Oracle alert active' : 'Oracle alert active'}</strong>
-            <div style={{ marginTop: 4, fontSize: 12 }}>
+            <div className="mt-1 text-xs">
               {data.alert_reason || (isHi ? 'कारण उपलब्ध नहीं।' : 'No reason provided.')}
             </div>
           </div>
@@ -230,36 +226,26 @@ function OracleHealthContent() {
 
       {/* Loading skeleton */}
       {isLoading && !data && (
-        <div style={{ ...S.card, padding: 40, textAlign: 'center', color: colors.text3, fontSize: 13 }}>
+        <div className="rounded-lg border border-surface-3 bg-surface-1 p-10 text-center text-[13px] text-muted-foreground">
           {isHi ? 'Oracle metrics लोड हो रहे हैं...' : 'Loading Oracle metrics...'}
         </div>
       )}
 
       {/* Error state */}
       {error && !isLoading && (
-        <div
-          style={{
-            padding: 20,
-            borderRadius: 8,
-            background: colors.dangerLight,
-            border: `1px solid ${colors.danger}`,
-            color: colors.danger,
-            fontSize: 13,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 12,
-          }}
-        >
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-danger bg-danger/10 p-5 text-[13px] text-danger">
           <div>
             <strong>{isHi ? 'Oracle health load नहीं हुआ।' : 'Failed to load Oracle health data.'}</strong>
-            <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>
+            <div className="mt-1 text-xs opacity-85">
               {isHi
                 ? 'PostHog API रेट-लिमिट हो सकता है, या backend cache miss।'
                 : 'PostHog API may be rate-limited, or backend cache missed.'}
             </div>
           </div>
-          <button onClick={() => mutate()} style={S.secondaryBtn}>
+          <button
+            onClick={() => mutate()}
+            className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+          >
             {isHi ? 'दोबारा कोशिश' : 'Retry'}
           </button>
         </div>
@@ -267,16 +253,7 @@ function OracleHealthContent() {
 
       {/* Empty state */}
       {!isLoading && !error && buckets.length === 0 && (
-        <div
-          style={{
-            padding: 40,
-            textAlign: 'center',
-            border: `1px solid ${colors.border}`,
-            borderRadius: 8,
-            color: colors.text3,
-            fontSize: 13,
-          }}
-        >
+        <div className="rounded-lg border border-surface-3 p-10 text-center text-[13px] text-muted-foreground">
           {isHi
             ? 'Oracle के पास अभी तक कोई decision events नहीं हैं — data ingestion का इंतज़ार करें।'
             : 'Oracle has no decision events yet — wait for data ingestion.'}
@@ -285,7 +262,7 @@ function OracleHealthContent() {
 
       {/* Charts */}
       {!isLoading && !error && buckets.length > 0 && (
-        <div style={{ display: 'grid', gap: 16, marginBottom: 16 }}>
+        <div className="mb-4 grid gap-4">
           <DualLineChart buckets={buckets} isHi={isHi} />
           <EventsSparkline buckets={buckets} isHi={isHi} />
         </div>
@@ -293,20 +270,10 @@ function OracleHealthContent() {
 
       {/* Footer: cache info */}
       {data && (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginTop: 16,
-            padding: '10px 14px',
-            borderTop: `1px solid ${colors.borderLight}`,
-            fontSize: 11,
-            color: colors.text3,
-          }}
-        >
+        <div className="mt-4 flex items-center justify-between border-t border-surface-3 px-3.5 py-2.5 text-[11px] text-muted-foreground">
           <span>
-            {isHi ? 'अंतिम update:' : 'Last updated:'} <strong style={{ color: colors.text2 }}>{formatCachedAt(data.cached_at)}</strong>
+            {isHi ? 'अंतिम update:' : 'Last updated:'}{' '}
+            <strong className="text-muted-foreground">{formatCachedAt(data.cached_at)}</strong>
           </span>
           <StatusBadge
             label={data.cached ? (isHi ? 'Cached: yes' : 'Cached: yes') : (isHi ? 'Cached: no' : 'Cached: no')}

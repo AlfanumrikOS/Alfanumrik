@@ -4,7 +4,6 @@ import { useState, useCallback } from 'react';
 import { useAdmin } from '../../_components/AdminShell';
 import StatCard from '../../_components/StatCard';
 import StatusBadge from '../../_components/StatusBadge';
-import { colors, S } from '../../_components/admin-styles';
 import useSWR, { mutate as globalMutate } from 'swr';
 
 // ─── Types ────────────────────────────────────────────────
@@ -70,6 +69,71 @@ interface PaymentEvent {
   message: string;
 }
 
+// ─── File-local style constants ───
+
+const S: Record<string, React.CSSProperties> = {
+  card: {
+    padding: 16,
+    borderRadius: 8,
+    border: '1px solid #E5E7EB',
+    background: '#FFFFFF',
+  },
+  h2: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#6B7280',
+    textTransform: 'uppercase' as const,
+    letterSpacing: 1.5,
+    marginBottom: 12,
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse' as const,
+    fontSize: 13,
+  },
+  th: {
+    textAlign: 'left' as const,
+    padding: '10px 14px',
+    borderBottom: '2px solid #E5E7EB',
+    color: '#6B7280',
+    fontSize: 11,
+    fontWeight: 600,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 1,
+    background: '#F9FAFB',
+    position: 'sticky' as const,
+    top: 0,
+    zIndex: 1,
+  },
+  td: {
+    padding: '10px 14px',
+    borderBottom: '1px solid #F3F4F6',
+    color: '#111827',
+    fontSize: 13,
+  },
+  primaryBtn: {
+    padding: '8px 16px',
+    borderRadius: 6,
+    border: 'none',
+    background: '#111827',
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+    letterSpacing: 0.2,
+  },
+  actionBtn: {
+    background: 'none',
+    border: '1px solid #E5E7EB',
+    borderRadius: 5,
+    padding: '4px 10px',
+    fontSize: 12,
+    cursor: 'pointer',
+    fontWeight: 500,
+    color: '#6B7280',
+  },
+};
+
 // ─── Helpers ──────────────────────────────────────────────
 
 function relativeTime(iso: string): string {
@@ -94,10 +158,10 @@ function formatEventTime(iso: string): string {
 
 function severityDotColor(severity: string): string {
   switch (severity) {
-    case 'warning': return colors.warning;
-    case 'error': return colors.danger;
-    case 'critical': return colors.danger;
-    default: return colors.text3;
+    case 'warning': return '#D97706';
+    case 'error': return '#DC2626';
+    case 'critical': return '#DC2626';
+    default: return '#9CA3AF';
   }
 }
 
@@ -224,12 +288,12 @@ export default function PaymentOpsTab() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
         {statsLoading ? (
           <>
-            <div style={{ ...S.card, height: 80, background: colors.surface }} />
-            <div style={{ ...S.card, height: 80, background: colors.surface }} />
-            <div style={{ ...S.card, height: 80, background: colors.surface }} />
+            <div style={{ ...S.card, height: 80, background: '#F9FAFB' }} />
+            <div style={{ ...S.card, height: 80, background: '#F9FAFB' }} />
+            <div style={{ ...S.card, height: 80, background: '#F9FAFB' }} />
           </>
         ) : statsError ? (
-          <div style={{ ...S.card, gridColumn: '1 / -1', color: colors.danger, fontSize: 13 }}>
+          <div style={{ ...S.card, gridColumn: '1 / -1', color: '#DC2626', fontSize: 13 }}>
             Failed to load payment stats.
           </div>
         ) : stats ? (
@@ -237,19 +301,19 @@ export default function PaymentOpsTab() {
             <StatCard
               label="Stuck Payments"
               value={stats.stuckCount}
-              accentColor={stats.stuckCount > 0 ? colors.warning : colors.success}
+              accentColor={stats.stuckCount > 0 ? '#D97706' : '#16A34A'}
               subtitle={stats.stuckCount > 0 ? 'Needs attention' : 'All clear'}
             />
             <StatCard
               label="Failed Webhooks (24h)"
               value={stats.failureCount24h >= 0 ? stats.failureCount24h : '?'}
-              accentColor={stats.failureCount24h > 0 ? colors.danger : colors.success}
+              accentColor={stats.failureCount24h > 0 ? '#DC2626' : '#16A34A'}
               subtitle={stats.failureCount24h < 0 ? 'Query unavailable' : undefined}
             />
             <StatCard
               label="Avg Activation"
               value={stats.activationTiming.sampleSize > 0 ? formatSeconds(stats.activationTiming.median) : 'N/A'}
-              accentColor={colors.accent}
+              accentColor="#2563EB"
               subtitle={stats.activationTiming.sampleSize > 0
                 ? `P95: ${formatSeconds(stats.activationTiming.p95)} (n=${stats.activationTiming.sampleSize})`
                 : 'No recent payments'}
@@ -282,9 +346,9 @@ export default function PaymentOpsTab() {
           borderRadius: 6,
           fontSize: 13,
           fontWeight: 600,
-          background: batchResult.ok ? colors.successLight : colors.dangerLight,
-          color: batchResult.ok ? colors.success : colors.danger,
-          border: `1px solid ${batchResult.ok ? colors.success : colors.danger}30`,
+          background: batchResult.ok ? '#F0FDF4' : '#FEF2F2',
+          color: batchResult.ok ? '#16A34A' : '#DC2626',
+          border: `1px solid ${batchResult.ok ? '#16A34A' : '#DC2626'}30`,
         }}>
           {batchResult.text}
         </div>
@@ -294,15 +358,15 @@ export default function PaymentOpsTab() {
       <div style={{ marginBottom: 24 }}>
         <h2 style={S.h2}>Stuck Payments</h2>
         {stuckLoading ? (
-          <div style={{ ...S.card, padding: 24, textAlign: 'center', color: colors.text3, fontSize: 13 }}>Loading stuck payments...</div>
+          <div style={{ ...S.card, padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Loading stuck payments...</div>
         ) : stuckError ? (
-          <div style={{ ...S.card, padding: 24, color: colors.danger, fontSize: 13 }}>Failed to load stuck payments.</div>
+          <div style={{ ...S.card, padding: 24, color: '#DC2626', fontSize: 13 }}>Failed to load stuck payments.</div>
         ) : stuck.length === 0 ? (
-          <div style={{ ...S.card, padding: 24, textAlign: 'center', color: colors.success, fontSize: 13, fontWeight: 600 }}>
+          <div style={{ ...S.card, padding: 24, textAlign: 'center', color: '#16A34A', fontSize: 13, fontWeight: 600 }}>
             No stuck payments -- all clear!
           </div>
         ) : (
-          <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
+          <div style={{ border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' }}>
             <table style={S.table}>
               <thead>
                 <tr>
@@ -325,36 +389,36 @@ export default function PaymentOpsTab() {
                       <td style={S.td}>
                         <div>
                           <strong style={{ fontSize: 13 }}>{p.studentName || 'Unknown'}</strong>
-                          <div style={{ fontSize: 11, color: colors.text3 }}>{p.studentEmail || p.studentId}</div>
+                          <div style={{ fontSize: 11, color: '#9CA3AF' }}>{p.studentEmail || p.studentId}</div>
                         </div>
                       </td>
                       <td style={S.td}>
-                        <code style={{ fontSize: 11, color: colors.text2 }}>
+                        <code style={{ fontSize: 11, color: '#6B7280' }}>
                           {p.razorpayPaymentId || p.paymentId.slice(0, 12) + '...'}
                         </code>
                       </td>
                       <td style={S.td}>
                         <StatusBadge label={p.paidPlan?.replace(/_/g, ' ') || '?'} variant="info" />
                         {p.billingCycle && (
-                          <span style={{ fontSize: 10, color: colors.text3, marginLeft: 4 }}>({p.billingCycle})</span>
+                          <span style={{ fontSize: 10, color: '#9CA3AF', marginLeft: 4 }}>({p.billingCycle})</span>
                         )}
                       </td>
                       <td style={{ ...S.td, fontWeight: 600 }}>
                         {p.amount != null ? `₹${Number(p.amount).toLocaleString('en-IN')}` : '--'}
                       </td>
-                      <td style={{ ...S.td, fontSize: 12, color: colors.text2 }}>
+                      <td style={{ ...S.td, fontSize: 12, color: '#6B7280' }}>
                         {relativeTime(p.paymentDate)}
                       </td>
                       <td style={S.td}>
                         <span style={{ fontSize: 12 }}>
-                          <span style={{ color: colors.danger }}>Current: {p.currentPlan || 'free'}</span>
-                          <span style={{ color: colors.text3 }}>{' → '}</span>
-                          <span style={{ color: colors.success }}>Expected: {p.paidPlan}</span>
+                          <span style={{ color: '#DC2626' }}>Current: {p.currentPlan || 'free'}</span>
+                          <span style={{ color: '#9CA3AF' }}>{' → '}</span>
+                          <span style={{ color: '#16A34A' }}>Expected: {p.paidPlan}</span>
                         </span>
                       </td>
                       <td style={S.td}>
                         {result ? (
-                          <span style={{ fontSize: 12, fontWeight: 600, color: result.ok ? colors.success : colors.danger }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: result.ok ? '#16A34A' : '#DC2626' }}>
                             {result.text}
                           </span>
                         ) : (
@@ -363,8 +427,8 @@ export default function PaymentOpsTab() {
                             disabled={isReconciling}
                             style={{
                               ...S.actionBtn,
-                              color: colors.accent,
-                              borderColor: colors.accent,
+                              color: '#2563EB',
+                              borderColor: '#2563EB',
                               opacity: isReconciling ? 0.5 : 1,
                             }}
                           >
@@ -385,15 +449,15 @@ export default function PaymentOpsTab() {
       <div style={{ marginBottom: 24 }}>
         <h2 style={S.h2}>Recent Payment Failures (24h)</h2>
         {eventsLoading ? (
-          <div style={{ ...S.card, padding: 24, textAlign: 'center', color: colors.text3, fontSize: 13 }}>Loading events...</div>
+          <div style={{ ...S.card, padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Loading events...</div>
         ) : eventsError ? (
-          <div style={{ ...S.card, padding: 24, color: colors.danger, fontSize: 13 }}>Failed to load payment events.</div>
+          <div style={{ ...S.card, padding: 24, color: '#DC2626', fontSize: 13 }}>Failed to load payment events.</div>
         ) : events.length === 0 ? (
-          <div style={{ ...S.card, padding: 24, textAlign: 'center', color: colors.text3, fontSize: 13 }}>
+          <div style={{ ...S.card, padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>
             No payment errors in the last 24 hours.
           </div>
         ) : (
-          <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
+          <div style={{ border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' }}>
             {events.map(evt => (
               <div
                 key={evt.id}
@@ -402,12 +466,12 @@ export default function PaymentOpsTab() {
                   alignItems: 'center',
                   gap: 10,
                   padding: '8px 14px',
-                  borderBottom: `1px solid ${colors.borderLight}`,
+                  borderBottom: '1px solid #F3F4F6',
                   fontSize: 13,
                 }}
               >
                 {/* Time */}
-                <span style={{ fontSize: 11, color: colors.text3, whiteSpace: 'nowrap', minWidth: 70, fontFamily: 'monospace' }}>
+                <span style={{ fontSize: 11, color: '#9CA3AF', whiteSpace: 'nowrap', minWidth: 70, fontFamily: 'monospace' }}>
                   {formatEventTime(evt.occurred_at)}
                 </span>
 
@@ -419,13 +483,13 @@ export default function PaymentOpsTab() {
                   borderRadius: '50%',
                   background: severityDotColor(evt.severity),
                   flexShrink: 0,
-                  boxShadow: evt.severity === 'critical' ? `0 0 4px ${colors.danger}` : 'none',
+                  boxShadow: evt.severity === 'critical' ? '0 0 4px #DC2626' : 'none',
                 }} />
 
                 {/* Message */}
                 <span style={{
                   flex: 1,
-                  color: evt.severity === 'critical' ? colors.danger : colors.text1,
+                  color: evt.severity === 'critical' ? '#DC2626' : '#111827',
                   fontWeight: evt.severity === 'critical' ? 600 : 400,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -438,8 +502,8 @@ export default function PaymentOpsTab() {
                 {evt.subject_id && (
                   <code style={{
                     fontSize: 10,
-                    color: colors.text3,
-                    background: colors.surface,
+                    color: '#9CA3AF',
+                    background: '#F9FAFB',
                     padding: '1px 4px',
                     borderRadius: 2,
                     maxWidth: 80,
@@ -457,7 +521,7 @@ export default function PaymentOpsTab() {
             <div style={{ padding: '10px 14px', textAlign: 'right' }}>
               <a
                 href="/super-admin/observability?category=payment&severity=error,critical&range=24h"
-                style={{ fontSize: 12, color: colors.accent, textDecoration: 'none', fontWeight: 500 }}
+                style={{ fontSize: 12, color: '#2563EB', textDecoration: 'none', fontWeight: 500 }}
               >
                 View in Observability Console &rarr;
               </a>
@@ -470,11 +534,11 @@ export default function PaymentOpsTab() {
       <div style={{ marginBottom: 24 }}>
         <h2 style={S.h2}>Activation Timing</h2>
         {statsLoading ? (
-          <div style={{ ...S.card, padding: 24, textAlign: 'center', color: colors.text3, fontSize: 13 }}>Loading timing data...</div>
+          <div style={{ ...S.card, padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Loading timing data...</div>
         ) : statsError ? (
-          <div style={{ ...S.card, padding: 24, color: colors.danger, fontSize: 13 }}>Failed to load timing data.</div>
+          <div style={{ ...S.card, padding: 24, color: '#DC2626', fontSize: 13 }}>Failed to load timing data.</div>
         ) : stats && stats.activationTiming.sampleSize === 0 ? (
-          <div style={{ ...S.card, padding: 24, textAlign: 'center', color: colors.text3, fontSize: 13 }}>
+          <div style={{ ...S.card, padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>
             No recent payments to analyze.
           </div>
         ) : stats ? (
@@ -482,22 +546,22 @@ export default function PaymentOpsTab() {
             <StatCard
               label="Median"
               value={formatSeconds(stats.activationTiming.median)}
-              accentColor={colors.success}
+              accentColor="#16A34A"
             />
             <StatCard
               label="P95"
               value={formatSeconds(stats.activationTiming.p95)}
-              accentColor={stats.activationTiming.p95 > 60 ? colors.warning : colors.accent}
+              accentColor={stats.activationTiming.p95 > 60 ? '#D97706' : '#2563EB'}
             />
             <StatCard
               label="Max"
               value={formatSeconds(stats.activationTiming.max)}
-              accentColor={stats.activationTiming.max > 300 ? colors.danger : colors.warning}
+              accentColor={stats.activationTiming.max > 300 ? '#DC2626' : '#D97706'}
             />
             <StatCard
               label="Sample Size"
               value={stats.activationTiming.sampleSize}
-              accentColor={colors.text3}
+              accentColor="#9CA3AF"
               subtitle="Recent captured payments"
             />
           </div>

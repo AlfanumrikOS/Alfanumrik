@@ -4,7 +4,33 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AdminShell, { useAdmin } from '../../_components/AdminShell';
 import DataTable, { Column } from '../../_components/DataTable';
 import StatusBadge from '../../_components/StatusBadge';
-import { colors, S } from '../../_components/admin-styles';
+
+// File-local color + S const replacements (formerly imported from admin-styles).
+// Kept as inline-style spreads to preserve exact visual parity of the legacy
+// hand-rolled markup (filters, error banner, action buttons).
+const colors = {
+  bg: '#FFFFFF',
+  surface: '#F9FAFB',
+  border: '#E5E7EB',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  accent: '#2563EB',
+  success: '#16A34A',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
+} as const;
+
+const S = {
+  h1: { fontSize: 20, fontWeight: 700, color: colors.text1, marginBottom: 4, letterSpacing: -0.3 } as React.CSSProperties,
+  subtitle: { fontSize: 13, color: colors.text3, marginBottom: 20 },
+  primaryBtn: { padding: '8px 16px', borderRadius: 6, border: 'none', background: colors.text1, color: colors.bg, fontSize: 13, fontWeight: 600, cursor: 'pointer', letterSpacing: 0.2 } as React.CSSProperties,
+  select: { padding: '8px 12px', borderRadius: 6, border: `1px solid ${colors.border}`, background: colors.bg, color: colors.text1, fontSize: 13, outline: 'none', cursor: 'pointer' },
+  secondaryBtn: { padding: '8px 16px', borderRadius: 6, border: `1px solid ${colors.border}`, background: colors.bg, color: colors.text1, fontSize: 13, fontWeight: 500, cursor: 'pointer' } as React.CSSProperties,
+  actionBtn: { background: 'none', border: `1px solid ${colors.border}`, borderRadius: 5, padding: '4px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 500, color: colors.text2 } as React.CSSProperties,
+  dlBtn: { padding: '8px 14px', borderRadius: 6, border: `1px solid ${colors.border}`, background: colors.surface, color: colors.text1, fontSize: 12, fontWeight: 600, cursor: 'pointer' } as React.CSSProperties,
+  dangerBtn: { padding: '8px 16px', borderRadius: 6, border: `1px solid ${colors.danger}`, background: colors.dangerLight, color: colors.danger, fontSize: 13, fontWeight: 600, cursor: 'pointer' } as React.CSSProperties,
+};
 
 // ── Types ─────────────────────────────────────────────────────
 type PlanCode = 'free' | 'starter' | 'pro' | 'unlimited' | '';

@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import DataTable, { Column } from '../_components/DataTable';
-import DetailDrawer from '../_components/DetailDrawer';
-import StatusBadge from '../_components/StatusBadge';
-import { colors, S } from '../_components/admin-styles';
+import { DataTable, type Column, DetailDrawer, StatusBadge } from '@/components/admin-ui';
+
+const inputCls = 'rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-surface-2 disabled:text-muted-foreground';
+const primaryBtnCls = 'rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90 disabled:opacity-50';
+const secondaryBtnCls = 'rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2 disabled:opacity-50';
+const dangerBtnCls = 'rounded-md border px-4 py-2 text-sm font-semibold disabled:opacity-50';
 
 // ── Types ─────────────────────────────────────────────────────
 interface Subject {
@@ -179,9 +181,9 @@ function SubjectsContent() {
 
   // ── Columns ──
   const columns: Column<Subject>[] = [
-    { key: 'code', label: 'Code', width: 160, render: (r) => <code style={{ fontSize: 12, color: colors.text1 }}>{r.code}</code> },
+    { key: 'code', label: 'Code', width: 160, render: (r) => <code style={{ fontSize: 12, color: '#111827' }}>{r.code}</code> },
     { key: 'name', label: 'Name (EN)' },
-    { key: 'name_hi', label: 'Name (HI)', render: (r) => r.name_hi || <span style={{ color: colors.text3 }}>—</span> },
+    { key: 'name_hi', label: 'Name (HI)', render: (r) => r.name_hi || <span style={{ color: '#9CA3AF' }}>—</span> },
     {
       key: 'icon',
       label: 'Icon',
@@ -199,13 +201,13 @@ function SubjectsContent() {
               aria-hidden
               style={{
                 display: 'inline-block', width: 14, height: 14, borderRadius: 4,
-                background: r.color, border: `1px solid ${colors.border}`,
+                background: r.color, border: '1px solid #E5E7EB',
               }}
             />
-            <code style={{ fontSize: 11, color: colors.text2 }}>{r.color}</code>
+            <code style={{ fontSize: 11, color: '#6B7280' }}>{r.color}</code>
           </span>
         ) : (
-          <span style={{ color: colors.text3 }}>—</span>
+          <span style={{ color: '#9CA3AF' }}>—</span>
         ),
     },
     {
@@ -228,16 +230,16 @@ function SubjectsContent() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
         <div>
-          <h1 style={S.h1}>Subjects</h1>
-          <div style={S.subtitle}>
+          <h1 className="text-xl font-bold text-foreground" style={{ marginBottom: 4 }}>Subjects</h1>
+          <div style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 20 }}>
             Master catalog of all subjects. Changes are logged to <code style={{ fontSize: 12 }}>admin_audit_log</code>.
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button style={S.secondaryBtn} onClick={() => load()} disabled={loading}>
+          <button className={secondaryBtnCls} onClick={() => load()} disabled={loading}>
             Refresh
           </button>
-          <button style={S.primaryBtn} onClick={openCreate}>
+          <button className={primaryBtnCls} onClick={openCreate}>
             + New subject
           </button>
         </div>
@@ -249,13 +251,17 @@ function SubjectsContent() {
           role="alert"
           style={{
             padding: 12, marginBottom: 16, borderRadius: 8,
-            border: `1px solid ${colors.danger}`, background: colors.dangerLight,
-            color: colors.danger, fontSize: 13,
+            border: '1px solid #DC2626', background: '#FEF2F2',
+            color: '#DC2626', fontSize: 13,
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           }}
         >
           <span>Error loading subjects: {error}</span>
-          <button style={{ ...S.actionBtn, color: colors.danger, borderColor: colors.danger }} onClick={() => load()}>
+          <button
+            className="rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium hover:bg-surface-2"
+            style={{ color: '#DC2626', borderColor: '#DC2626' }}
+            onClick={() => load()}
+          >
             Retry
           </button>
         </div>
@@ -281,7 +287,7 @@ function SubjectsContent() {
         <div ref={drawerRef} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <Field label="Code" required hint={creating ? 'snake_case, immutable after creation' : 'Cannot change after creation'}>
             <input
-              style={S.searchInput}
+              className={inputCls} style={{ width: 220 }}
               value={form.code}
               disabled={!creating}
               onChange={(e) => setForm({ ...form, code: e.target.value })}
@@ -292,7 +298,7 @@ function SubjectsContent() {
 
           <Field label="Name (English)" required>
             <input
-              style={S.searchInput}
+              className={inputCls} style={{ width: 220 }}
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder="Mathematics"
@@ -302,7 +308,7 @@ function SubjectsContent() {
 
           <Field label="Name (Hindi)">
             <input
-              style={S.searchInput}
+              className={inputCls} style={{ width: 220 }}
               value={form.name_hi}
               onChange={(e) => setForm({ ...form, name_hi: e.target.value })}
               placeholder="गणित"
@@ -312,7 +318,7 @@ function SubjectsContent() {
 
           <Field label="Icon">
             <input
-              style={S.searchInput}
+              className={inputCls} style={{ width: 220 }}
               value={form.icon}
               onChange={(e) => setForm({ ...form, icon: e.target.value })}
               placeholder="🧮 (emoji or symbol)"
@@ -322,7 +328,7 @@ function SubjectsContent() {
 
           <Field label="Color">
             <input
-              style={S.searchInput}
+              className={inputCls} style={{ width: 220 }}
               value={form.color}
               onChange={(e) => setForm({ ...form, color: e.target.value })}
               placeholder="#F97316"
@@ -332,7 +338,8 @@ function SubjectsContent() {
 
           <Field label="Subject kind" required>
             <select
-              style={S.select}
+              className={inputCls}
+              style={{ width: 220, cursor: 'pointer' }}
               value={form.subject_kind}
               onChange={(e) => setForm({ ...form, subject_kind: e.target.value as Subject['subject_kind'] })}
               aria-label="Subject kind"
@@ -345,7 +352,7 @@ function SubjectsContent() {
 
           <Field label="Display order">
             <input
-              style={S.searchInput}
+              className={inputCls} style={{ width: 220 }}
               type="number"
               value={form.display_order}
               onChange={(e) => setForm({ ...form, display_order: e.target.value })}
@@ -353,7 +360,7 @@ function SubjectsContent() {
             />
           </Field>
 
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: colors.text1 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#111827' }}>
             <input
               type="checkbox"
               checked={form.is_active}
@@ -364,8 +371,8 @@ function SubjectsContent() {
 
           {saveError && (
             <div role="alert" style={{
-              padding: 10, borderRadius: 6, border: `1px solid ${colors.danger}`,
-              background: colors.dangerLight, color: colors.danger, fontSize: 12,
+              padding: 10, borderRadius: 6, border: '1px solid #DC2626',
+              background: '#FEF2F2', color: '#DC2626', fontSize: 12,
             }}>
               {saveError}
             </div>
@@ -373,16 +380,21 @@ function SubjectsContent() {
 
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
             {!creating && editing && (
-              <button style={S.dangerBtn} onClick={softDelete} disabled={saving}>
+              <button
+                className={dangerBtnCls}
+                style={{ borderColor: '#DC2626', background: '#FEF2F2', color: '#DC2626' }}
+                onClick={softDelete}
+                disabled={saving}
+              >
                 Soft-delete (mark inactive)
               </button>
             )}
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-              <button style={S.secondaryBtn} onClick={closeDrawer} disabled={saving}>
+              <button className={secondaryBtnCls} onClick={closeDrawer} disabled={saving}>
                 Cancel
               </button>
               <button
-                style={S.primaryBtn}
+                className={primaryBtnCls}
                 onClick={save}
                 disabled={saving || !form.code.trim() || !form.name.trim()}
               >
@@ -401,11 +413,11 @@ function Field({
 }: { label: string; required?: boolean; hint?: string; children: React.ReactNode }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: 12, fontWeight: 600, color: colors.text2 }}>
-        {label}{required && <span style={{ color: colors.danger }}> *</span>}
+      <span style={{ fontSize: 12, fontWeight: 600, color: '#6B7280' }}>
+        {label}{required && <span style={{ color: '#DC2626' }}> *</span>}
       </span>
       {children}
-      {hint && <span style={{ fontSize: 11, color: colors.text3 }}>{hint}</span>}
+      {hint && <span style={{ fontSize: 11, color: '#9CA3AF' }}>{hint}</span>}
     </label>
   );
 }

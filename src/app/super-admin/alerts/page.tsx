@@ -2,9 +2,69 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import DataTable, { Column } from '../_components/DataTable';
-import StatusBadge from '../_components/StatusBadge';
-import { colors, S } from '../_components/admin-styles';
+import { DataTable, StatusBadge, type Column } from '@/components/admin-ui';
+
+const colors = {
+  bg: '#FFFFFF',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  success: '#16A34A',
+  warning: '#D97706',
+  danger: '#DC2626',
+} as const;
+
+const S = {
+  searchInput: {
+    padding: '8px 12px',
+    borderRadius: 6,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+    color: colors.text1,
+    fontSize: 13,
+    outline: 'none',
+    fontFamily: 'inherit',
+    width: 220,
+    boxSizing: 'border-box',
+  } as React.CSSProperties,
+  select: {
+    padding: '8px 12px',
+    borderRadius: 6,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+    color: colors.text1,
+    fontSize: 13,
+    outline: 'none',
+    cursor: 'pointer',
+  } as React.CSSProperties,
+  card: {
+    padding: 16,
+    borderRadius: 8,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+  } as React.CSSProperties,
+  filterBtn: {
+    padding: '7px 14px',
+    borderRadius: 6,
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+    color: colors.text2,
+    fontSize: 12,
+    fontWeight: 500,
+    cursor: 'pointer',
+  } as React.CSSProperties,
+  actionBtn: {
+    background: 'none',
+    border: `1px solid ${colors.border}`,
+    borderRadius: 5,
+    padding: '4px 10px',
+    fontSize: 12,
+    cursor: 'pointer',
+    fontWeight: 500,
+    color: colors.text2,
+  } as React.CSSProperties,
+};
 
 // ── Types ──
 
@@ -217,7 +277,12 @@ function AlertsContent() {
     return (
       <div style={{ padding: 40, textAlign: 'center' }}>
         <div style={{ color: colors.danger, fontSize: 14, marginBottom: 12 }}>{error}</div>
-        <button onClick={fetchRules} style={S.secondaryBtn}>Retry</button>
+        <button
+          onClick={fetchRules}
+          className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -227,14 +292,24 @@ function AlertsContent() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h1 style={S.h1}>Alert Rules</h1>
+          <h1 className="text-xl font-bold tracking-tight text-foreground mb-1">Alert Rules</h1>
           <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>
             Configure monitoring alerts for error rates, engagement, payments, and resource usage
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={fetchRules} style={S.secondaryBtn}>&#8635; Refresh</button>
-          <button onClick={() => setShowModal(true)} style={S.primaryBtn}>+ Add Rule</button>
+          <button
+            onClick={fetchRules}
+            className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+          >
+            &#8635; Refresh
+          </button>
+          <button
+            onClick={() => setShowModal(true)}
+            className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
+          >
+            + Add Rule
+          </button>
         </div>
       </div>
 
@@ -349,11 +424,16 @@ function AlertsContent() {
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowModal(false)} style={S.secondaryBtn}>Cancel</button>
+              <button
+                onClick={() => setShowModal(false)}
+                className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+              >
+                Cancel
+              </button>
               <button
                 onClick={createRule}
                 disabled={formSubmitting}
-                style={{ ...S.primaryBtn, opacity: formSubmitting ? 0.6 : 1 }}
+                className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90 disabled:opacity-60"
               >
                 {formSubmitting ? 'Creating...' : 'Create Rule'}
               </button>

@@ -15,7 +15,36 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import { colors, S } from '../_components/admin-styles';
+
+const S: Record<string, React.CSSProperties> = {
+  card: {
+    padding: 16,
+    borderRadius: 8,
+    border: '1px solid #E5E7EB',
+    background: '#FFFFFF',
+  },
+  primaryBtn: {
+    padding: '8px 16px',
+    borderRadius: 6,
+    border: 'none',
+    background: '#111827',
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+    letterSpacing: 0.2,
+  },
+  secondaryBtn: {
+    padding: '8px 16px',
+    borderRadius: 6,
+    border: '1px solid #E5E7EB',
+    background: '#FFFFFF',
+    color: '#111827',
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: 'pointer',
+  },
+};
 
 interface RubricConfig {
   ready_mastered_ratio: number;
@@ -160,23 +189,23 @@ function ReadinessRubricContent() {
   };
 
   if (loading && !data) {
-    return <p style={{ color: colors.text3 }}>Loading rubric…</p>;
+    return <p style={{ color: '#9CA3AF' }}>Loading rubric…</p>;
   }
   if (!merged || !data) {
-    return <p style={{ color: colors.danger }}>{error ?? 'No data'}</p>;
+    return <p style={{ color: '#DC2626' }}>{error ?? 'No data'}</p>;
   }
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <div>
-          <h1 style={S.h1}>Exam-Ready Rubric</h1>
-          <p style={{ fontSize: 13, color: colors.text3, margin: 0 }}>
+          <h1 className="text-xl font-bold text-foreground">Exam-Ready Rubric</h1>
+          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>
             Tune the thresholds that decide when a student is &quot;ready&quot; vs &quot;almost&quot; vs &quot;building&quot; on a chapter.
             Changes apply immediately (next readiness query reads the new row).
           </p>
           {data.config.updated_at && (
-            <p style={{ fontSize: 11, color: colors.text3, marginTop: 6 }}>
+            <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 6 }}>
               Last updated {new Date(data.config.updated_at).toLocaleString()}
             </p>
           )}
@@ -203,7 +232,7 @@ function ReadinessRubricContent() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
             {fields.map((f) => (
               <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13 }}>
-                <span style={{ color: colors.text2, fontWeight: 600 }}>{f.label}</span>
+                <span style={{ color: '#6B7280', fontWeight: 600 }}>{f.label}</span>
                 <input
                   type="number"
                   min={f.min}
@@ -212,13 +241,13 @@ function ReadinessRubricContent() {
                   value={merged[f.key] as number}
                   onChange={(e) => handleChange(f.key, e.target.value)}
                   style={{
-                    border: `1px solid ${colors.border}`,
+                    border: '1px solid #E5E7EB',
                     borderRadius: 6,
                     padding: '6px 8px',
                     fontSize: 13,
                   }}
                 />
-                <span style={{ fontSize: 11, color: colors.text3 }}>{f.hint}</span>
+                <span style={{ fontSize: 11, color: '#9CA3AF' }}>{f.hint}</span>
               </label>
             ))}
           </div>
@@ -230,7 +259,7 @@ function ReadinessRubricContent() {
         <h2 style={{ fontSize: 14, fontWeight: 700, marginTop: 0, marginBottom: 4 }}>
           Composite score weights
         </h2>
-        <p style={{ fontSize: 12, color: colors.text3, margin: '0 0 12px' }}>
+        <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 12px' }}>
           The 0–100 score on the readiness card is{' '}
           <code>w_mastery × mastery_avg + w_quiz × recent_quiz_avg + w_spaced × min(100, spaced_reviews × 10)</code>.
           The three weights must sum to 1.0.
@@ -238,7 +267,7 @@ function ReadinessRubricContent() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
           {WEIGHT_FIELDS.map((f) => (
             <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13 }}>
-              <span style={{ color: colors.text2, fontWeight: 600 }}>{f.label}</span>
+              <span style={{ color: '#6B7280', fontWeight: 600 }}>{f.label}</span>
               <input
                 type="number"
                 min={f.min}
@@ -247,13 +276,13 @@ function ReadinessRubricContent() {
                 value={merged[f.key] as number}
                 onChange={(e) => handleChange(f.key, e.target.value)}
                 style={{
-                  border: `1px solid ${colors.border}`,
+                  border: '1px solid #E5E7EB',
                   borderRadius: 6,
                   padding: '6px 8px',
                   fontSize: 13,
                 }}
               />
-              <span style={{ fontSize: 11, color: colors.text3 }}>{f.hint}</span>
+              <span style={{ fontSize: 11, color: '#9CA3AF' }}>{f.hint}</span>
             </label>
           ))}
         </div>
