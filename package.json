@@ -23,7 +23,8 @@
     "eval:rag": "npx tsx scripts/rag-eval.mjs",
     "eval:rag:check": "RAG_EVAL_THRESHOLD=0.80 npx tsx scripts/rag-eval.mjs",
     "forensic:quiz": "npx tsx scripts/forensic-quiz-lookup.ts",
-    "retroactive-scan": "npx tsx scripts/retroactive-oracle-scan.ts"
+    "retroactive-scan": "npx tsx scripts/retroactive-oracle-scan.ts",
+    "smoke:agent": "npx tsx scripts/smoke-agent.ts"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
