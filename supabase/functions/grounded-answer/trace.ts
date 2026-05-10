@@ -30,7 +30,17 @@ export interface TraceRow {
   claude_model: string | null;
   prompt_template_id: string;
   prompt_hash: string | null;
+  /** API-shape discriminator (true = answer returned, false = abstain). */
   grounded: boolean;
+  /**
+   * Honest signal: true when the answer was produced from retrieved NCERT
+   * chunks (strict-mode passed grounding-check OR soft-mode answered with
+   * chunks present and no "general knowledge" escape prefix). False when
+   * soft-mode fell back to general CBSE knowledge or no chunks were
+   * retrieved. Null on abstain rows (no answer to evaluate). Audit
+   * 2026-05-10: backed by grounded_ai_traces.grounded_from_chunks column.
+   */
+  grounded_from_chunks: boolean | null;
   abstain_reason: AbstainReason | null;
   confidence: number | null;
   answer_length: number | null;

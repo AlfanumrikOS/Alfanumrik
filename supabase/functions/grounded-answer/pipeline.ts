@@ -272,6 +272,10 @@ function baseTraceRowFromCtx(ctx: PipelineCtx): TraceRow {
     prompt_template_id: request.generation.system_prompt_template,
     prompt_hash: ctx.promptHash ?? null,
     grounded: false,
+    // Set in finalizeGrounded for success paths; left null on abstain rows
+    // (no answer to evaluate). Backed by grounded_ai_traces.grounded_from_chunks
+    // (migration 20260516070000). Audit 2026-05-10.
+    grounded_from_chunks: null,
     abstain_reason: null,
     confidence: ctx.confidence ?? null,
     answer_length: ctx.answerLength ?? null,
@@ -381,17 +385,22 @@ async function finalizeGrounded(
   tokensUsed: number,
   structured?: FoxyResponse,
 ): Promise<GroundedResponse> {
-  const traceRow = baseTraceRowFromCtx(ctx);
-  traceRow.grounded = true;
-  traceRow.confidence = confidence;
-  traceRow.answer_length = answer.length;
-  const traceId = await writeTrace(sb, traceRow);
+  // Compute groundedFromChunks FIRST so we can persist it on the trace row.
+  // Audit 2026-05-10: pre-fix this was computed only for the wire response
+  // and the trace.grounded flag was set true regardless of true grounding,
+  // making analytics blind to soft-mode general-knowledge fallbacks.
   const groundedFromChunks = computeGroundedFromChunks({
     mode: ctx.request.mode,
     answer,
     chunkCount: ctx.chunks ? ctx.chunks.length : 0,
     retrieveOnly: ctx.request.retrieve_only === true,
   });
+  const traceRow = baseTraceRowFromCtx(ctx);
+  traceRow.grounded = true;
+  traceRow.grounded_from_chunks = groundedFromChunks;
+  traceRow.confidence = confidence;
+  traceRow.answer_length = answer.length;
+  const traceId = await writeTrace(sb, traceRow);
   const response: GroundedResponse = {
     grounded: true,
     answer,
