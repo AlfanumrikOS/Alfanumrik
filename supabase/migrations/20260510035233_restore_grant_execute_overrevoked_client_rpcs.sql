@@ -1,0 +1,22 @@
+-- Placeholder for an MCP-applied migration that exists in remote schema_migrations
+-- but had no corresponding file in this repo, blocking `supabase db push --include-all`
+-- with: "Remote migration versions not found in local migrations directory."
+--
+-- Background: PRs #678/#679/#681 in the REVOKE EXECUTE series included
+-- restore-grants follow-ups; one such follow-up was applied to production
+-- via the Supabase MCP server with auto-generated timestamp 20260510035233.
+-- The repo's local file uses a different timestamp
+-- (20260510033000_restore_grant_execute_overrevoked_client_rpcs.sql), so
+-- the CLI's drift check kept failing on every deploy attempt since then.
+--
+-- This placeholder is INTENTIONALLY a no-op:
+--   • Its presence satisfies the supabase CLI's drift check.
+--   • Re-applying it via `db push` is safe because it does nothing.
+--   • The actual GRANT EXECUTE statements were already executed in production
+--     by the MCP application and are also expressed by
+--     20260510033000_restore_grant_execute_overrevoked_client_rpcs.sql.
+--
+-- Same pattern as 20260509130000_mcp_applied_placeholder.sql.
+
+-- No-op
+SELECT 1 WHERE FALSE;

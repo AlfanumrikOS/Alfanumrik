@@ -1,0 +1,22 @@
+-- Placeholder for an MCP-applied migration that exists in remote schema_migrations
+-- but had no corresponding file in this repo, blocking `supabase db push --include-all`
+-- with: "Remote migration versions not found in local migrations directory."
+--
+-- Background: PR #683 ("LLM-as-planner loop substrate") committed the actual
+-- agent_traces migration as 20260510043216_agent_traces.sql. Before the PR
+-- landed, the same SQL was applied to production via the Supabase MCP server
+-- to validate the schema end-to-end against real data. The MCP applied it with
+-- its own auto-generated timestamp (20260510050527), which is what shows up
+-- in supabase_migrations.schema_migrations on prod.
+--
+-- This placeholder is INTENTIONALLY a no-op:
+--   • Its presence satisfies the supabase CLI's drift check.
+--   • Re-applying it via `db push` is safe because it does nothing.
+--   • The actual schema (agent_runs, agent_steps tables with RLS) was created
+--     by the MCP application and is also expressed by 20260510043216_agent_traces.sql
+--     for fresh-environment bootstrapping.
+--
+-- Same pattern as 20260509130000_mcp_applied_placeholder.sql.
+
+-- No-op
+SELECT 1 WHERE FALSE;
