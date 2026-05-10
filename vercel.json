@@ -10,6 +10,9 @@
     "src/app/api/cron/irt-calibrate/route.ts": {
       "maxDuration": 300
     },
+    "src/app/api/internal/cron/fix-failed-questions/route.ts": {
+      "maxDuration": 300
+    },
     "src/app/api/cron/**/*.ts": {
       "maxDuration": 60
     },
@@ -59,6 +62,10 @@
     {
       "path": "/api/cron/foxy-quality-sample",
       "schedule": "40 3 * * *"
+    },
+    {
+      "path": "/api/internal/cron/fix-failed-questions",
+      "schedule": "*/15 * * * *"
     }
   ],
   "cleanUrls": true,
