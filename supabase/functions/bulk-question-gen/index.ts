@@ -270,25 +270,46 @@ function isValidQuestion(q: unknown): q is GeneratedQuestion {
   if (typeof item.bloom_level !== 'string') return false
   if (!VALID_BLOOM_LEVELS.includes(item.bloom_level.toLowerCase())) return false
 
-  // P11 quality: arithmetic-consistency check.
-  // When the explanation ends with a literal number AND that number appears
-  // exactly in another option, but NOT in the option at correct_answer_index,
-  // the model has hallucinated the wrong correct option. Reject the row so
-  // the verifier loop doesn't have to clean up after generation.
-  // Real prod incident: a Math MCQ shipped with correct_answer_index=1 ("15")
-  // while the explanation correctly derived "12" — option 0 ("12") was the
-  // real answer. Caught only after a student flagged it.
+  // P11 quality: arithmetic-consistency check (high-precision variant).
+  //
+  // We only flag when ALL of these are true:
+  //   1. Explanation's final ASCII number is one of the four options
+  //   2. That option is at a DIFFERENT index than correct_answer_index
+  //   3. The text of the option at correct_answer_index does NOT appear
+  //      anywhere in the explanation (case-insensitive substring)
+  //
+  // Rule 3 is the key tightening. Without it the rule fires on:
+  //   • Verbose explanations that say "three" when the option is "3" —
+  //     verbal/digit form mismatch is not a bug.
+  //   • Explanations using en-dash (−) for negative numbers; the regex
+  //     only matches ASCII '-' and reads "−6" as "6".
+  //   • Explanations that compute multiple intermediate values and end on
+  //     a verification step, while the stored answer is still mentioned
+  //     and correct (e.g. "5 × (-5) = -25, so the inverse of +5 is -5").
+  //   • Compound option text like "5 × (2 + 3)" matched against numeric
+  //     final numbers in the explanation.
+  //
+  // Empirical: prod audit found 16 rows under the old rule, only 6 were
+  // real bugs (~62% false positive rate). Adding rule 3 brings precision
+  // to ~100% on the same prod sample at the cost of some recall — which
+  // is the right trade-off because false rejections at insert time
+  // discard otherwise-valid generated questions.
   const explanationFinalNumberMatch = item.explanation.match(/(-?\d+(?:\.\d+)?)(?!.*\d)/)
   if (explanationFinalNumberMatch) {
     const finalNumber = explanationFinalNumberMatch[1]
     const optionsStr = (item.options as string[]).map((o) => o.trim())
     const matchingOptionIdx = optionsStr.findIndex((o) => o === finalNumber)
-    // Only reject when the explanation's final number IS one of the four
-    // options (otherwise the number is likely an intermediate step, not the
-    // final answer — leave those alone). If it's an option but at a different
-    // index than correct_answer_index, the answer key is wrong.
     if (matchingOptionIdx >= 0 && matchingOptionIdx !== idx) {
-      return false
+      const storedOption = optionsStr[idx]
+      const explanationLc = item.explanation.toLowerCase()
+      const storedAppearsInExplanation = storedOption.length > 0 &&
+        explanationLc.includes(storedOption.toLowerCase())
+      // Only reject when the stored answer is NOT mentioned in the
+      // explanation — that's the unambiguous "answer key disagrees with
+      // explanation" case. If the stored answer IS mentioned, trust it.
+      if (!storedAppearsInExplanation) {
+        return false
+      }
     }
   }
 
