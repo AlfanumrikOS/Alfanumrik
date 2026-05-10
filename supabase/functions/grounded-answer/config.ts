@@ -22,6 +22,16 @@ export const RAG_MATCH_COUNT = 5;
 //                  are preferable to abstain.
 export const STRICT_MIN_SIMILARITY = 0.012;
 export const SOFT_MIN_SIMILARITY = 0.005;
+// Theoretical maximum of the RRF score returned by match_rag_chunks_ncert.
+// score = 1/(60+rank_vec) + 1/(60+rank_fts); when a chunk is rank #1 in both
+// vector and FTS lists the score peaks at 2/61 ≈ 0.0328. Used by
+// pipeline.ts to normalize RRF similarities into [0,1] before passing to
+// computeConfidence, whose formula expects normalized inputs. Without this
+// normalization the topSim/top3Avg terms contribute at most ~0.023 each,
+// capping confidence near 0.32 — which made STRICT_CONFIDENCE_ABSTAIN
+// (0.75) and SOFT_CONFIDENCE_BANNER (0.6) structurally unreachable, so
+// strict-mode callers always abstained on low_similarity. Audit 2026-05-10.
+export const RRF_THEORETICAL_MAX = 2 / 61;
 export const SOFT_CONFIDENCE_BANNER_THRESHOLD = 0.6;
 export const STRICT_CONFIDENCE_ABSTAIN_THRESHOLD = 0.75;
 
