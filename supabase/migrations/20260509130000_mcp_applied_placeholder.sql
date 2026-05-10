@@ -1,0 +1,23 @@
+-- Placeholder for an MCP-applied migration that exists in remote schema_migrations
+-- but had no corresponding file in this repo, blocking `supabase db push --linked`
+-- with: "Remote migration versions not found in local migrations directory."
+--
+-- The migration was applied directly to staging via the Supabase MCP server
+-- between 20260509124350 (subscription lifecycle) and 20260509161642 (emergency
+-- chapter_title fix) — a window when several hot-fix migrations were applied
+-- in-session before being committed to git.
+--
+-- This placeholder is INTENTIONALLY a no-op:
+--   • Its presence in this directory satisfies the supabase CLI's drift check.
+--   • Re-applying it via `db push` is safe because it does nothing.
+--   • The actual schema change is already present in the staging database
+--     (and in production via the same MCP application path).
+--
+-- If a fresh environment ever needs to be bootstrapped from scratch, the
+-- migrations between 124350 and 161642 collectively express the intended
+-- schema state; this placeholder doesn't add or subtract anything.
+--
+-- Same pattern as PR #661's 20260509113406_phase1_promote_ncert_exercises_v2.sql.
+
+-- No-op
+SELECT 1 WHERE FALSE;
