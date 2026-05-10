@@ -14,9 +14,18 @@
 // All inputs clamped at [0, 1]. Weights sum to 1.0 so output is naturally
 // bounded. We still clamp the final value defensively because floating
 // point drift could push a perfect score to 1.0000000002.
+//
+// IMPORTANT — caller contract (audit 2026-05-10): topSimilarity and
+// top3AverageSimilarity MUST be supplied normalized to [0,1]. The RAG
+// retriever returns RRF scores in [0, ~0.0328]; pipeline.ts is responsible
+// for dividing by RRF_THEORETICAL_MAX before calling. Passing raw RRF
+// caps confidence near 0.32 and silently disables every downstream
+// threshold (STRICT_CONFIDENCE_ABSTAIN, SOFT_CONFIDENCE_BANNER, etc).
 
 export interface ConfidenceInputs {
+  /** Top similarity in [0,1]. Caller normalizes RRF→[0,1] before passing. */
   topSimilarity: number;
+  /** Top-3 avg similarity in [0,1]. Caller normalizes RRF→[0,1] before passing. */
   top3AverageSimilarity: number;
   chunksReturned: number;
   matchCountTarget: number;

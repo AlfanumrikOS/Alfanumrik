@@ -69,6 +69,7 @@ import {
   STRICT_MIN_SIMILARITY,
   SOFT_MIN_SIMILARITY,
   STRICT_CONFIDENCE_ABSTAIN_THRESHOLD,
+  RRF_THEORETICAL_MAX,
 } from './config.ts';
 import { ensureSb, getSb } from './_sb.ts';
 import type {
@@ -741,6 +742,14 @@ export async function runPipeline(
       ? chunks.slice(0, 3).reduce((s, c) => s + c.similarity, 0) /
         Math.min(3, chunks.length)
       : 0;
+  // RRF-scale similarities (returned by match_rag_chunks_ncert) live in
+  // [0, ~0.0328]. Normalize to [0,1] before feeding into computeConfidence,
+  // which weights topSim+top3 at 0.7 of the final score and assumes [0,1]
+  // inputs. Rank-1-in-both-lists hits the theoretical max; vector-only
+  // matches cap at 1/61 ≈ 0.498 normalized. See config.ts:RRF_THEORETICAL_MAX.
+  // The raw RRF value is still stored in ctx.topSimilarity for trace fidelity.
+  const topSimNormalized = Math.min(topSim / RRF_THEORETICAL_MAX, 1);
+  const top3AvgNormalized = Math.min(top3Avg / RRF_THEORETICAL_MAX, 1);
   ctx.topSimilarity = chunks.length > 0 ? topSim : null;
 
   // Step 6b. scope_mismatch distinguishes "RPC silently returned wrong-scope
@@ -772,8 +781,8 @@ export async function runPipeline(
     // Retrieve-only: confidence uses grounding_pass_ratio=1 because no
     // check was run (we didn't generate an answer to check).
     const confidence = computeConfidence({
-      topSimilarity: topSim,
-      top3AverageSimilarity: top3Avg,
+      topSimilarity: topSimNormalized,
+      top3AverageSimilarity: top3AvgNormalized,
       chunksReturned: chunks.length,
       matchCountTarget: request.retrieval.match_count,
       groundingCheckPassRatio: 1,
@@ -903,10 +912,11 @@ export async function runPipeline(
     groundingPassRatio = 1;
   }
 
-  // Step 13. Confidence.
+  // Step 13. Confidence. topSim/top3Avg normalized to [0,1] from RRF scale
+  // before being fed in — see comment above the topSimNormalized declaration.
   const confidence = computeConfidence({
-    topSimilarity: topSim,
-    top3AverageSimilarity: top3Avg,
+    topSimilarity: topSimNormalized,
+    top3AverageSimilarity: top3AvgNormalized,
     chunksReturned: chunks.length,
     matchCountTarget: request.retrieval.match_count,
     groundingCheckPassRatio: groundingPassRatio,
