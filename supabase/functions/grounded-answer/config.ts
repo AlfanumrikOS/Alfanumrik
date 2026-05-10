@@ -4,8 +4,24 @@
 export const MIN_CHUNKS_FOR_READY = 50;
 export const MIN_QUESTIONS_FOR_READY = 40;
 export const RAG_MATCH_COUNT = 5;
-export const STRICT_MIN_SIMILARITY = 0.75;
-export const SOFT_MIN_SIMILARITY = 0.55;
+// Similarity-floor thresholds calibrated for the RRF (Reciprocal Rank Fusion)
+// score returned by `match_rag_chunks_ncert`. RRF score = 1/(60+rank_vec) +
+// 1/(60+rank_fts), capped at ~0.033 when a chunk ranks #1 in both lists.
+// Vector-only matches (typical for conceptual student queries that don't
+// share keywords with NCERT prose) cap at 1/61 ≈ 0.0164.
+//
+// Pre-2026-05-10 these were 0.75 / 0.55 — left over from when the legacy RPC
+// returned cosine similarity in [0, 1]. With the RRF backend that scale is
+// wrong: every retrieved chunk was filtered out, leaving Foxy ungrounded.
+// Audit 2026-05-10: 110/110 recent foxy traces had chunk_count=0 because of
+// this mismatch. New thresholds reflect the RRF scale:
+//   STRICT 0.012 — accepts vector-only matches up to rank ~23, OR strong
+//                  combined RRF (e.g. rank 5 in vec + present in fts).
+//   SOFT   0.005 — generous floor that accepts vector-only matches up to
+//                  rank ~140; suitable for soft mode where degraded answers
+//                  are preferable to abstain.
+export const STRICT_MIN_SIMILARITY = 0.012;
+export const SOFT_MIN_SIMILARITY = 0.005;
 export const SOFT_CONFIDENCE_BANNER_THRESHOLD = 0.6;
 export const STRICT_CONFIDENCE_ABSTAIN_THRESHOLD = 0.75;
 
