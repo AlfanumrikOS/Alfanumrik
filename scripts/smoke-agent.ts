@@ -6,13 +6,14 @@
  *
  * Usage:
  *   npm run smoke:agent -- --subject science --grade 9 --chapter "Force and Laws of Motion"
+ *
+ * Implementation note: imports of agent code are dynamic (inside main) so that
+ * `loadEnv` runs BEFORE any module that reads process.env at import time.
+ * Static imports are hoisted by ESM and would fire before the body runs.
  */
 
 import { config as loadEnv } from 'dotenv';
 loadEnv({ path: '.env.local' });
-
-import { runChapterExplorer } from '../src/lib/ai/agents/agents/chapter-explorer';
-import { supabaseAdmin } from '../src/lib/supabase-admin';
 
 interface Args {
   subject: string;
@@ -38,6 +39,10 @@ function parseArgs(argv: string[]): Args {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   console.log(`\n→ Running chapter-explorer for ${args.subject} grade ${args.grade}: "${args.chapter}"\n`);
+
+  // Dynamic imports — see file header for why.
+  const { runChapterExplorer } = await import('../src/lib/ai/agents/agents/chapter-explorer');
+  const { supabaseAdmin } = await import('../src/lib/supabase-admin');
 
   const t0 = Date.now();
   const result = await runChapterExplorer(args);
