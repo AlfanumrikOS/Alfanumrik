@@ -23,7 +23,16 @@ const GREETING_PATTERNS = /^(hi|hello|hey|namaste|howdy|good\s*(morning|afternoo
 
 const OFF_TOPIC_PATTERNS = /\b(porn|sex|nude|naked|drug|alcohol|gambling|kill\s+yourself|suicide|self[- ]?harm|weapon|bomb|gun)\b/i;
 
-const QUIZ_PATTERNS = /\b(quiz|test\s+me|give\s+me\s+questions?|mcq|practice\s+questions?|mock\s+test)\b/i;
+// Broader quiz-intent patterns. Catches natural phrasings like:
+//   "Provide me 5 questions from this chapter to practice"
+//   "I want to solve some hard problems"
+//   "Ask me a few MCQs"
+//   "Generate 10 practice questions"
+//   "Give some tricky questions to solve"
+//   "Questions from this chapter"
+// Designed to be permissive on the request verb + noun while still requiring
+// at least one of: "questions", "problems", "MCQs", "quiz", "test".
+const QUIZ_PATTERNS = /\b(?:quiz|mcqs?|mock\s+test|test\s+me\b|(?:give|provide|share|send|show|generate|create|make|prepare|set|ask)\s+(?:me\s+)?(?:some\s+|a\s+few\s+|a\s+|\d+\s+)?(?:practice\s+|tricky\s+|hard\s+|difficult\s+|easy\s+|sample\s+|board[- ]?level\s+)?(?:questions?|problems?|mcqs?|tests?|quizz?es?)|(?:i\s+(?:want|need|would\s+like|wanna))\s+(?:to\s+)?(?:solve\s+|attempt\s+|practice\s+)?(?:some\s+|a\s+few\s+|\d+\s+)?(?:practice\s+|tricky\s+|hard\s+|tough\s+|difficult\s+|easy\s+)?(?:questions?|problems?|mcqs?)|practice\s+(?:questions?|problems?|mcqs?)|(?:\d+\s+|some\s+|few\s+|a\s+few\s+)?(?:practice\s+|tricky\s+|hard\s+|difficult\s+|easy\s+|sample\s+)?(?:questions?|problems?|mcqs?)\s+(?:from|on|about|for|to\s+practice|to\s+solve|to\s+attempt|for\s+practice|for\s+exam|for\s+test))\b/i;
 
 const REVISION_PATTERNS = /\b(revis(e|ion)|summary|summarize|summarise|recap|key\s+points|quick\s+review|notes)\b/i;
 
@@ -118,13 +127,29 @@ Return ONLY valid JSON (no markdown):
 
 Rules:
 - explain: student wants to learn or understand a concept
-- doubt: student has a specific question or confusion
-- quiz: student wants practice questions or a test
-- revision: student wants a summary or review
+- doubt: student has a specific question or confusion ("what is X", "how does Y work")
+- quiz: student wants practice questions, problems, MCQs, a test, or anything to attempt/solve
+- revision: student wants a summary, recap, key points, or review
 - homework: student wants help with homework (not a direct answer)
 - greeting: casual greeting or smalltalk
 - off_topic: not related to academics or inappropriate
 - unknown: cannot determine
+
+CRITICAL: any message asking for questions/problems/MCQs to practice or solve is QUIZ, even if the student uses verbs like "provide", "share", "send", "ask me", "I want", "I need", or specifies a count like "5 questions". Word order doesn't matter — "5 questions to practice" and "practice questions" are both QUIZ.
+
+Examples:
+- "Provide me 5 questions from this chapter to practice." → quiz
+- "I want to solve some hard problems" → quiz
+- "Ask me a few MCQs on Newton's laws" → quiz
+- "Generate 10 questions for me" → quiz
+- "Give some tricky questions to solve" → quiz
+- "Questions from this chapter" → quiz
+- "Test me on chapter 3" → quiz
+- "Can you explain photosynthesis?" → explain
+- "What is the difference between mitosis and meiosis?" → doubt
+- "I don't understand why ice floats" → doubt
+- "Summarize chapter 3 for me" → revision
+- "Help me with my homework on fractions" → homework
 
 Current mode: ${mode}`;
 
