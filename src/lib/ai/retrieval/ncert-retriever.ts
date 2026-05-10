@@ -4,8 +4,20 @@
  * Unified retrieval layer for RAG-powered AI features.
  * Wraps the match_rag_chunks RPC with Voyage AI embedding generation.
  *
- * Used by: foxy-tutor workflow, ncert-solver workflow, quiz-generator.
+ * Used by: foxy-tutor LEGACY cold path (runLegacyFoxyFlow when
+ * `ff_grounded_ai_foxy=false`), ncert-solver workflow, quiz-generator.
  * Server-side only (uses supabaseAdmin).
+ *
+ * IMPORTANT — for Foxy this is the kill-switch fallback documented in
+ * docs/runbooks/ai-outage-response.md. The primary path lives in
+ * supabase/functions/grounded-answer/. Audit 2026-05-10 calibrated this
+ * retriever's similarity floor for the RRF scale (config.ts:ragMinQuality,
+ * default 0.005) so the kill switch produces real chunks when flipped —
+ * pre-audit it would have filtered every match using a cosine-scale 0.4
+ * floor. Circuit breaker / abstain / grounding-check parity with the
+ * grounded-answer service is intentionally NOT implemented here; if the
+ * legacy path becomes load-bearing again, lift those features in a
+ * dedicated hardening PR rather than copying piecemeal.
  */
 
 import { supabaseAdmin } from '@/lib/supabase-admin';

@@ -37,7 +37,16 @@ export function getAIConfig(): AIConfig {
     embeddingModel: 'voyage-3',
     embeddingDimension: 1024,
     ragMatchCount: 5,
-    ragMinQuality: 0.4,
+    // Calibrated for the RRF (Reciprocal Rank Fusion) score returned by
+    // match_rag_chunks_ncert. RRF score = 1/(60+rank_vec) + 1/(60+rank_fts),
+    // capped near 0.0328 when a chunk ranks #1 in both lists. The pre-2026-05-10
+    // value of 0.4 was for cosine similarity [0,1] and would filter EVERY
+    // chunk on the legacy retrieval path — the same root cause behind PR #692
+    // and PR #693 in the grounded-answer service. Using the SOFT floor here
+    // because this retriever is the cold-path fallback for Foxy when
+    // ff_grounded_ai_foxy is OFF (ai-outage-response runbook), and soft mode
+    // prefers degraded answers to outright abstain. Audit 2026-05-10 P1 fix.
+    ragMinQuality: 0.005,
     // Feature flags — these are local overrides. Production flags use
     // the DB-backed feature flag system (src/lib/feature-flags.ts).
     enableIntentRouter: process.env.AI_ENABLE_INTENT_ROUTER !== 'false', // ON by default
