@@ -25,14 +25,43 @@ export interface IntentClassification {
   extractedConcept?: string;
 }
 
+// ─── Content Blocks (Anthropic API) ─────────────────────────────────────────
+
+export type ContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'tool_use'; id: string; name: string; input: unknown };
+
+export interface ToolResultBlock {
+  type: 'tool_result';
+  tool_use_id: string;
+  content: string;
+  is_error?: boolean;
+}
+
 // ─── Chat Messages ──────────────────────────────────────────────────────────
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
-  content: string;
+  /**
+   * String for legacy single-shot calls. ContentBlock[] when echoing an
+   * assistant tool_use response back. ToolResultBlock[] when feeding tool
+   * outputs back to the model in an agent loop.
+   */
+  content: string | ContentBlock[] | ToolResultBlock[];
 }
 
 // ─── Claude API ─────────────────────────────────────────────────────────────
+
+export interface ClaudeToolSchema {
+  name: string;
+  description: string;
+  input_schema: { type: 'object'; properties: Record<string, unknown>; required?: string[] };
+}
+
+export type ClaudeToolChoice =
+  | { type: 'auto' }
+  | { type: 'any' }
+  | { type: 'tool'; name: string };
 
 export interface ClaudeRequestOptions {
   model?: string;
@@ -41,10 +70,17 @@ export interface ClaudeRequestOptions {
   maxTokens?: number;
   temperature?: number;
   timeoutMs?: number;
+  /** Optional tool schemas for agent loops. */
+  tools?: ClaudeToolSchema[];
+  /** Optional tool choice. Default: { type: 'auto' } when tools are present. */
+  toolChoice?: ClaudeToolChoice;
 }
 
 export interface ClaudeResponse {
+  /** Concatenated text from all `text` content blocks. Empty string if response had only tool_use blocks. */
   content: string;
+  /** Full content blocks from the API response, including `tool_use` blocks. */
+  contentBlocks: ContentBlock[];
   model: string;
   tokensUsed: number;
   inputTokens: number;

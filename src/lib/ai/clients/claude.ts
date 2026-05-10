@@ -10,7 +10,7 @@
  */
 
 import { getAIConfig } from '../config';
-import type { ClaudeRequestOptions, ClaudeResponse, ChatMessage } from '../types';
+import type { ClaudeRequestOptions, ClaudeResponse, ChatMessage, ContentBlock } from '../types';
 import { logger } from '@/lib/logger';
 import { logOpsEvent } from '@/lib/ops-events';
 
@@ -61,11 +61,14 @@ function recordFailure(): void {
 
 interface ClaudeAPIMessage {
   role: 'user' | 'assistant';
-  content: string;
+  content: ChatMessage['content'];
 }
 
 interface ClaudeAPIResponse {
-  content: Array<{ type: string; text: string }>;
+  content: Array<
+    | { type: 'text'; text: string }
+    | { type: 'tool_use'; id: string; name: string; input: unknown }
+  >;
   model: string;
   stop_reason: string | null;
   usage: {
@@ -230,9 +233,14 @@ export async function callClaude(options: ClaudeRequestOptions): Promise<ClaudeR
       });
     }
 
-    const content = result.response.content?.[0]?.text ?? '';
+    const blocks = result.response.content ?? [];
+    const textOnly = blocks
+      .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+      .map((b) => b.text)
+      .join('');
     return {
-      content,
+      content: textOnly,
+      contentBlocks: blocks as ContentBlock[],
       model: result.response.model ?? modelName,
       tokensUsed: (result.response.usage?.input_tokens ?? 0) + (result.response.usage?.output_tokens ?? 0),
       inputTokens: result.response.usage?.input_tokens ?? 0,
