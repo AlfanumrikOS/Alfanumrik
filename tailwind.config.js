@@ -10,7 +10,12 @@ module.exports = {
   //
   //   Note: this requires Tailwind 3.4.1+ for the 'selector' strategy with
   //   custom selector. Current package.json: tailwindcss ^3.4.4 (compatible).
-  darkMode: ['selector', '[data-theme="dark"]'],
+  // Dark mode reversed 2026-05-11 — see src/lib/AuthContext.tsx::resolveTheme.
+  // Point the dark-variant selector at an attribute value the app NEVER
+  // writes, so every `dark:bg-*` / `dark:text-*` Tailwind utility becomes
+  // dead CSS (still generated, never applied). A follow-up sweep can strip
+  // the `dark:` classes from component files; this is defense in depth.
+  darkMode: ['selector', '[data-theme="dark-disabled-pending-cleanup"]'],
   theme: {
     extend: {
       fontFamily: {

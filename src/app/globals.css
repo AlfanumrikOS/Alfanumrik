@@ -77,7 +77,12 @@
    '#FBF8F4') will NOT theme-switch — those are tracked as Phase 1.5
    component-sweep work. The synthetic monitor will surface high-
    value contrast misses (Row 10+ assert dark-theme cohesion). */
-[data-theme="dark"] {
+/* Dark-theme block REVERSED 2026-05-11 — see src/lib/AuthContext.tsx
+   ::resolveTheme. AuthContext now writes data-theme="light" universally.
+   This selector is retargeted to an attribute value the app NEVER writes,
+   so the variables below stay defined but never activate. Keeping them
+   in the file makes a future restore a one-line selector edit. */
+[data-theme="dark-disabled-pending-cleanup"] {
   --bg: #0F0D08;
   --bg-rgb: 15, 13, 8;
   --surface-1: #1A1610;
@@ -406,10 +411,12 @@ input[type="range"][style*="accentColor"]::-webkit-slider-thumb {
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border-mid);
 }
-[data-theme="dark"] .glass {
+/* Dark-theme glass overrides — disabled along with the dark theme above
+   (REVERSED 2026-05-11). Retargeted to an unreachable selector. */
+[data-theme="dark-disabled-pending-cleanup"] .glass {
   background: rgba(26, 22, 16, 0.75); /* surface-1 with 75% alpha */
 }
-[data-theme="dark"] .glass-mid {
+[data-theme="dark-disabled-pending-cleanup"] .glass-mid {
   background: rgba(26, 22, 16, 0.6);
 }
 
