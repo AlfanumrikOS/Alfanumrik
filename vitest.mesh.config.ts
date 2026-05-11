@@ -17,6 +17,7 @@ export default defineConfig({
     include: [
       'src/__tests__/agents/**/*.test.ts',
       'src/__tests__/eval/**/*.test.ts',
+      'src/__tests__/state/**/*.test.ts',
     ],
     globals: true,
     testTimeout: 15000,
