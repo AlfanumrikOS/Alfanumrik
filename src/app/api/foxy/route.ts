@@ -76,6 +76,7 @@ import { denormalizeFoxyResponse } from '@/lib/foxy/denormalize';
 import { buildExpandedGoalSection } from '@/lib/goals/goal-personas';
 import { fetchRecentLabContext, type LabContextEntry } from '@/lib/foxy/recent-lab-context';
 import { buildLabContextSection } from '@/lib/foxy/foxy-lab-prompt';
+import { maybeBuildFoxyContextBlock } from '@/lib/state/context/foxy-context-bridge';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -2082,6 +2083,40 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         error: intentErr instanceof Error ? intentErr.message : String(intentErr),
       });
     }
+  }
+
+  // ── Phase 3: unified-state AI context block (additive, flag-gated) ──────
+  // When `ff_foxy_context_rich_v1` is OFF (the default), this is a no-op
+  // and the system prompt is byte-identical to the legacy build. When ON,
+  // we append a ~1500-token markdown block describing the learner's
+  // identity, mastery, engagement, recent journey, and a suggested
+  // teaching opportunity — built from StudentState + journey projection.
+  // The bridge never throws; on any failure the block is empty and Foxy
+  // continues exactly as before.
+  try {
+    const contextResult = await maybeBuildFoxyContextBlock({
+      authUserId: auth.userId!,
+      subjectCode: subject,
+      chapterNumber: chapterNum,
+      mode: 'tutor',
+    });
+    if (contextResult.block) {
+      foxySystemPrompt = `${foxySystemPrompt}\n\n${contextResult.block}`;
+      logger.info('foxy.unified_context.injected', {
+        subject,
+        grade,
+        approxTokens: contextResult.approxTokens,
+        reason: contextResult.reason,
+      });
+    }
+  } catch (bridgeErr) {
+    // Defense-in-depth — the bridge already swallows its errors, but
+    // wrap the whole call too so a programming error here can never
+    // break Foxy.
+    logger.warn('foxy_unified_context_unavailable', {
+      subject,
+      error: bridgeErr instanceof Error ? bridgeErr.message : String(bridgeErr),
+    });
   }
 
   // Phase 2.2 + B'-5 Phase 2: resolve the coaching mode from explicit
