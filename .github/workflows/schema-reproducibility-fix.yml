@@ -584,7 +584,7 @@ jobs:
 
       - name: Upload artifacts (90-day retention)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: baseline-${{ github.run_id }}
           path: |
