@@ -49,6 +49,8 @@ import { PlanBadge } from '@/components/PlanBadge';
 import CoinBalance from '@/components/coins/CoinBalance';
 import AboveFoldHero from '@/components/dashboard/sections/AboveFoldHero';
 import type { PendingLink } from '@/components/dashboard/PendingLinkApproval';
+import { isAtlasEnabled } from '@/lib/feature-flags';
+import AtlasDashboard from './AtlasDashboard';
 
 // ─── Lazy-loaded below-fold sections ─────────────────────────────────────
 // Each section keeps its widgets out of the first-paint bundle. Loading
@@ -512,6 +514,14 @@ export default function Dashboard() {
     if (activeRole === 'teacher' || activeRole === 'guardian') return <DashboardSkeleton />;
     router.replace('/login');
     return <DashboardSkeleton />;
+  }
+
+  // ─── Editorial Atlas flag dispatcher ───────────────────────────────────
+  // When ff_editorial_atlas_v1 (or ff_editorial_atlas_student) is on, hand
+  // off to the redesigned surface. The legacy code path below is the
+  // fallback and is what every user sees today (both flags default off).
+  if (isAtlasEnabled('student', flags)) {
+    return <AtlasDashboard />;
   }
 
   // ─── Derived metrics ───────────────────────────────────────────────────
