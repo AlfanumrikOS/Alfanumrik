@@ -57,15 +57,21 @@ export default function QuickActionsSection({
             <button
               key={s.key}
               onClick={() => router.push(s.href)}
-              className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl transition-all active:scale-[0.97]"
+              /* min-h-[64px] + px-3 py-3.5: meets Apple HIG 44px touch target
+                 with comfortable margin. Audit 2026-05-11 §0 F4. */
+              className="flex flex-col items-center gap-2 px-3 py-3.5 rounded-xl transition-all active:scale-[0.97] min-h-[64px]"
               style={{
-                background: `${s.color}10`,
-                border: `1px solid ${s.color}25`,
+                /* Tile background was ${s.color}10 (6% alpha) — invisible on
+                   cream bg. Bumped to 1a (10%) for tile presence; border
+                   raised from 25 to 55 (33%) so the edge is clearly defined.
+                   Audit 2026-05-11 §0 F4. */
+                background: `${s.color}1a`,
+                border: `1px solid ${s.color}55`,
               }}
             >
-              <span className="text-xl" aria-hidden="true">{s.icon}</span>
+              <span className="text-2xl" aria-hidden="true">{s.icon}</span>
               <span
-                className="text-[11px] font-semibold text-center leading-tight"
+                className="text-[13px] font-semibold text-center leading-tight"
                 style={{ color: s.color }}
               >
                 {isHi ? s.labelHi : s.label}

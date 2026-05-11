@@ -30,7 +30,12 @@ import s from './welcome-v2.module.css';
  * as raw markup. The script tags itself by id so React can find the same
  * .root in hydration.
  */
-const THEME_BOOTSTRAP_SCRIPT = `(function(){try{var k='alfanumrik-theme';var s=localStorage.getItem(k);var t=(s==='dark'||s==='light')?s:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');var r=document.currentScript&&document.currentScript.parentElement;if(r&&r.setAttribute){r.setAttribute('data-theme',t);}document.body&&document.body.setAttribute('data-theme',t);}catch(e){}})();`;
+// Theme bootstrap: writes data-theme onto WelcomeV2's own root div (parent of
+// this script tag) before React hydrates, so first paint is already correctly
+// themed. Body-level data-theme is owned by NavV2 (which cleans up on unmount);
+// writing it here too leaks across SPA navigation because the inline script
+// fires before React lifecycle can clean up. Audit 2026-05-11 §0 F2.
+const THEME_BOOTSTRAP_SCRIPT = `(function(){try{var k='alfanumrik-theme';var s=localStorage.getItem(k);var t=(s==='dark'||s==='light')?s:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');var r=document.currentScript&&document.currentScript.parentElement;if(r&&r.setAttribute){r.setAttribute('data-theme',t);}}catch(e){}})();`;
 
 function ThemedShell() {
   const { theme, isHi } = useWelcomeV2();
@@ -64,13 +69,14 @@ function ThemedShell() {
     const root = rootRef.current;
     if (!root) return;
 
+    // NOTE (2026-05-11 §0 F2): we no longer mirror data-theme to document.body
+    // here. NavV2 owns body.dataset.theme and cleans it up on unmount; writing
+    // it from two places caused it to persist after SPA navigation away from
+    // welcome, leaving a phantom dark attribute on the body while the rest of
+    // the app (which has no dark CSS) rendered light. Root-only write keeps
+    // welcome's CSS module scoped correctly.
     if (theme === 'dark' || theme === 'light') {
       root.setAttribute('data-theme', theme);
-      // Mirror to body so the NavV2 useEffect (legacy) and any global
-      // selectors stay aligned.
-      if (typeof document !== 'undefined') {
-        document.body.setAttribute('data-theme', theme);
-      }
       return;
     }
 
@@ -80,9 +86,6 @@ function ThemedShell() {
     const apply = () => {
       const next = mq.matches ? 'dark' : 'light';
       root.setAttribute('data-theme', next);
-      if (typeof document !== 'undefined') {
-        document.body.setAttribute('data-theme', next);
-      }
     };
     apply();
     // Older Safari uses addListener; modern browsers use addEventListener.

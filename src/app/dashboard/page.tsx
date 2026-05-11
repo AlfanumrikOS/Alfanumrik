@@ -103,14 +103,19 @@ function Accordion({
   title,
   icon,
   children,
+  defaultOpen = false,
 }: {
   id: string;
   title: string;
   icon: string;
   children: React.ReactNode;
+  /** Render the accordion expanded on first paint. Use sparingly — collapsed
+   *  state is the perf-friendly default (sections inside use next/dynamic). */
+  defaultOpen?: boolean;
 }) {
   return (
     <details
+      open={defaultOpen}
       className="rounded-2xl group"
       style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
       data-testid={`dashboard-accordion-${id}`}
@@ -800,10 +805,14 @@ export default function Dashboard() {
           </SectionErrorBoundary>
 
           <SectionErrorBoundary section="Dashboard:QuickActions">
+            {/* Default-open: shortcuts are core navigation — keeping them
+                behind a collapsed accordion made them effectively invisible.
+                Audit 2026-05-11 §0 F4. */}
             <Accordion
               id="quick"
               icon="⚡"
               title={isHi ? 'त्वरित क्रियाएँ' : 'Quick Actions'}
+              defaultOpen
             >
               <QuickActionsSection isHi={isHi} router={router} />
             </Accordion>
