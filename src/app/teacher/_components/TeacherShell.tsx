@@ -129,7 +129,7 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
   if (atlasOn) return <>{children}</>;
 
   return (
-    <div className="flex min-h-screen bg-[#0B1120]">
+    <div className="flex min-h-screen" style={{ background: 'var(--bg)' }}>
       <DashboardSidebar
         brandTitle={tenant.schoolName || 'Alfanumrik'}
         brandSubtitle={isHi ? 'शिक्षक' : 'Teacher'}
@@ -146,7 +146,12 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
               await supabase.auth.signOut();
               router.replace('/login');
             }}
-            className="w-full rounded-md border border-slate-700 bg-slate-900 py-1.5 text-[11px] font-medium text-slate-400 hover:bg-slate-800"
+            className="w-full rounded-md py-1.5 text-[11px] font-medium"
+            style={{
+              background: 'var(--surface-1)',
+              border: '1px solid var(--border)',
+              color: 'var(--text-3)',
+            }}
           >
             {isHi ? 'लॉगआउट' : 'Logout'}
           </button>
