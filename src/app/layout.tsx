@@ -69,15 +69,16 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         {/*
-          color-scheme: until app-wide dark mode lands (see
-          docs/superpowers/specs/2026-05-11-improvement-audit-roadmap-design.md
-          §0 F1), tell the browser this is a light app. Without this, browsers
-          dark-ify native form controls / scrollbars / autofill on devices in
-          system dark mode, producing a broken light-content / dark-chrome
-          hybrid. Remove once `globals.css` has dark CSS-variable overrides
-          AND a theme toggle is wired up.
+          color-scheme: Phase 1 (2026-05-11) — globals.css now has a real
+          dark theme under [data-theme="dark"] and AuthContext writes the
+          attribute from user preference + OS resolution. Telling the browser
+          we support both lets native form controls, scrollbars, and autofill
+          theme alongside the app content instead of clashing with it.
+          Component-sweep work (inline-style hex colors → CSS vars) is the
+          Phase 1.5 follow-up; the synthetic monitor catches the worst
+          contrast misses.
         */}
-        <meta name="color-scheme" content="light" />
+        <meta name="color-scheme" content="light dark" />
         <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
         <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />

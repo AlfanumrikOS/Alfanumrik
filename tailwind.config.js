@@ -1,6 +1,16 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ['./src/**/*.{js,ts,jsx,tsx}'],
+  // Theme strategy (Phase 1 — 2026-05-11):
+  //   AuthContext writes data-theme="dark" to <html> when the user picks dark
+  //   (or when their system preference is dark while pref === 'system'). The
+  //   selector strategy below lets Tailwind's `dark:` variant follow that same
+  //   attribute, so `dark:bg-gray-900` etc. activate in lock-step with the
+  //   CSS-var dark theme in globals.css.
+  //
+  //   Note: this requires Tailwind 3.4.1+ for the 'selector' strategy with
+  //   custom selector. Current package.json: tailwindcss ^3.4.4 (compatible).
+  darkMode: ['selector', '[data-theme="dark"]'],
   theme: {
     extend: {
       fontFamily: {

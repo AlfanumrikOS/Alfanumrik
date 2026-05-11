@@ -114,6 +114,10 @@ export function usePermissions(): UsePermissionsResult {
         return;
       }
 
+      // Preserve the previous cache before any clearing, so we can fall back
+      // to last-known-good if the upcoming fetch fails. Audit §0 F5 (2026-05-11).
+      const previousCache = cachedPerms;
+
       if (bypassCache) {
         cachedPerms = null;
       }
@@ -122,9 +126,18 @@ export function usePermissions(): UsePermissionsResult {
       if (!mountedRef.current) return;
 
       if (!result) {
-        // Fallback: infer from activeRole (preserves existing behavior on RPC failure).
-        const fallbackRole = (activeRole || 'student') as RoleName;
-        setRoles([fallbackRole]);
+        // RPC failed (network blip, transient 5xx, etc.). Prefer stale-but-
+        // correct UI over silently downgrading a multi-role user to just
+        // [activeRole]. The previous behaviour would convert a teacher/admin
+        // into a student-only UI on any transient failure. Audit §0 F5.
+        if (previousCache && previousCache.userId === user.id) {
+          cachedPerms = previousCache; // restore — keep last-known-good
+          setRoles(previousCache.roles);
+          setPermissions(previousCache.permissions);
+        } else {
+          // Cold start with no cache; activeRole is the only signal we have.
+          setRoles([(activeRole || 'student') as RoleName]);
+        }
         if (!silent) setLoading(false);
         return;
       }
@@ -133,7 +146,13 @@ export function usePermissions(): UsePermissionsResult {
       setPermissions(result.permissions);
     } catch {
       if (!mountedRef.current) return;
-      setRoles([(activeRole || 'student') as RoleName]);
+      // Same policy as the !result branch above: prefer cached data.
+      if (cachedPerms) {
+        setRoles(cachedPerms.roles);
+        setPermissions(cachedPerms.permissions);
+      } else {
+        setRoles([(activeRole || 'student') as RoleName]);
+      }
     } finally {
       if (mountedRef.current && !silent) setLoading(false);
     }

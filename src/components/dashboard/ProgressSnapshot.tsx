@@ -29,7 +29,7 @@ export default function ProgressSnapshot({ totalXp, streak, mastered, isHi }: Pr
   const { student } = useAuth();
   const level = calculateLevel(totalXp);
   const prog = xpToNextLevel(totalXp);
-  const levelName = getLevelName(level);
+  const levelName = getLevelName(level, isHi);
 
   // Fetch overall Performance Score for this student (average across subjects)
   const [perfScore, setPerfScore] = useState<number | null>(null);
