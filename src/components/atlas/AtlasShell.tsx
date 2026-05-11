@@ -186,9 +186,16 @@ export function AtlasShell({
         )}
       </header>
 
-      {/* ─── Stage ─── */}
+      {/* ─── Stage ───
+          The `atlas-rise` entrance animation was removed on 2026-05-11.
+          It re-fired on every page mount (opacity 0→1 + translateY 10→0
+          over 420ms), which combined with the data-cascade re-renders
+          inside the dashboard made the screen look like it was
+          "flickering" on every navigation. The brand chrome above is
+          sticky and stable; the stage now paints in place. No animation
+          between mount and data arrival. */}
       <div
-        className="atlas-stage atlas-rise"
+        className="atlas-stage"
         style={{
           maxWidth: resolvedMaxWidth,
           margin: '0 auto',

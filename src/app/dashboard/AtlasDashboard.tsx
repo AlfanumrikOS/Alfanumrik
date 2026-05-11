@@ -426,10 +426,16 @@ export default function AtlasDashboard() {
           </div>
         </AtlasCard>
 
-        {/* ─── 4. This week's wins ─── */}
-        {recentWins.length > 0 && (
-          <AtlasCard>
-            <p className="atlas-eyebrow">{isHi ? 'इस हफ़्ते की जीतें' : "This week's wins"}</p>
+        {/* ─── 4. This week's wins ───
+            Always rendered (no `recentWins.length > 0 &&` gate). The old
+            conditional made the card pop in mid-load and push everything
+            below it, which read as the dashboard "fluctuating" on every
+            visit. Now the card holds its layout slot from first paint —
+            empty-state copy on cold-start, real wins once data lands.
+            One card swap, no layout shift. */}
+        <AtlasCard>
+          <p className="atlas-eyebrow">{isHi ? 'इस हफ़्ते की जीतें' : "This week's wins"}</p>
+          {recentWins.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {recentWins.map(w => (
                 <div
@@ -463,8 +469,26 @@ export default function AtlasDashboard() {
                 </div>
               ))}
             </div>
-          </AtlasCard>
-        )}
+          ) : (
+            <div
+              style={{
+                padding: '14px',
+                background: 'var(--cream)',
+                borderRadius: 'var(--radius-atlas)',
+                border: '1px dashed var(--line)',
+                fontFamily: 'var(--font-display)',
+                fontSize: 12,
+                color: 'var(--ink-3)',
+                textAlign: 'center',
+                lineHeight: 1.5,
+              }}
+            >
+              {isHi
+                ? 'अपनी पहली अवधारणा पूरी करो — जीतें यहाँ दिखेंगी।'
+                : 'Master your first concept — your wins will land here.'}
+            </div>
+          )}
+        </AtlasCard>
 
         {/* ─── 5. Quick actions ─── */}
         <AtlasCard>
@@ -555,24 +579,32 @@ function capitalize(s: string | null | undefined): string {
  * "current" node with neighbour chapters around it. Prevents the
  * "blank canvas — start a lesson" empty state which reads as broken.
  *
- * When real chapters data exists, returns it unchanged.
+ * Always returns up to 5 nodes (2 prior + current + 2 upcoming) so that
+ * when real `chapters` data arrives later, the SVG keeps the same layout
+ * footprint. Without the 5-node lock the seed would render e.g. 3 nodes,
+ * the real data 5, and the user saw the chapter map visibly grow on
+ * load — read as "flickering."
+ *
+ * When real chapters data exists, returns it (already capped to 6 in
+ * the loader). Otherwise we synthesise the seed.
  */
 function resolvedChapters(
   chapters: AtlasChapterNode[],
   todaysTopic: CurriculumTopic | undefined,
 ): AtlasChapterNode[] {
   if (chapters.length > 0) return chapters;
-  const num = todaysTopic?.chapter_number ?? 1;
+  const num = todaysTopic?.chapter_number ?? 3;
   const title = todaysTopic?.title ?? 'Today';
+  // Always 5 nodes to match the typical real-data window. If the current
+  // chapter is the first or second, we pad upward instead of going below 1.
+  const start = num <= 2 ? 1 : num - 2;
   const seed: AtlasChapterNode[] = [];
-  // Show two prior chapters (placeholder titles) leading to current.
-  for (let i = Math.max(1, num - 2); i < num; i++) {
-    seed.push({ number: i, title: `Chapter ${i}`, status: 'upcoming' });
-  }
-  seed.push({ number: num, title: title.slice(0, 24), status: 'current' });
-  // Two upcoming chapters after.
-  for (let i = num + 1; i <= num + 2; i++) {
-    seed.push({ number: i, title: `Chapter ${i}`, status: 'upcoming' });
+  for (let i = start; i < start + 5; i++) {
+    if (i === num) {
+      seed.push({ number: i, title: title.slice(0, 24), status: 'current' });
+    } else {
+      seed.push({ number: i, title: `Chapter ${i}`, status: 'upcoming' });
+    }
   }
   return seed;
 }
