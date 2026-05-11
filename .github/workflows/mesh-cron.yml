@@ -1,0 +1,100 @@
+name: Mesh Autonomous Cron
+
+# This workflow runs the agent mesh on a schedule. It points at the
+# STAGING Supabase, not production, and is gated by both a feature flag
+# (ff_agent_mesh_v1 must be ON on the target Supabase) and a repo file
+# (mesh-automation.enabled must exist in the repo root). Deleting either
+# is the kill switch.
+#
+# Required GitHub secrets (Settings → Secrets and variables → Actions):
+#   ANTHROPIC_API_KEY                 — your Anthropic API key
+#   STAGING_SUPABASE_URL              — https://gzpxqklxwzishrkiaatd.supabase.co
+#   STAGING_SUPABASE_SERVICE_ROLE_KEY — service_role secret from staging Supabase
+#
+# Cost ceiling: ~one cycle/day. At Sonnet+Opus rates a no-op cycle costs
+# roughly $0.20–$0.50. Real cycles that touch code cost more. The job
+# refuses to run if mesh-automation.enabled is missing — delete that
+# file to disable.
+
+on:
+  schedule:
+    # 02:00 UTC daily = 07:30 IST. Tweak in the cron expression below.
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      goal_override:
+        description: 'Optional --goal override (skips L1 inbox pick)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mesh-cron
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      MESH_GIT_AUTHOR: 'Alfanumrik Agent Mesh <mesh@alfanumrik.com>'
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # mesh needs full history for worktree baselines
+
+      - name: Kill-switch check
+        run: |
+          if [ ! -f mesh-automation.enabled ]; then
+            echo "::warning::mesh-automation.enabled is missing — automation is disabled. Exiting."
+            exit 0
+          fi
+          echo "mesh-automation.enabled present — proceeding"
+
+      - name: Required-env check
+        run: |
+          test -n "$ANTHROPIC_API_KEY"           || { echo "::error::ANTHROPIC_API_KEY secret missing"; exit 1; }
+          test -n "$SUPABASE_URL"                || { echo "::error::STAGING_SUPABASE_URL secret missing"; exit 1; }
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"   || { echo "::error::STAGING_SUPABASE_SERVICE_ROLE_KEY secret missing"; exit 1; }
+          echo "All required env present"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci --no-audit --no-fund
+
+      - name: Set up git author (mesh runtime needs to commit)
+        run: |
+          git config user.email "mesh@alfanumrik.com"
+          git config user.name "Alfanumrik Agent Mesh"
+
+      - name: Mesh tick (real L1+L2+L4+L6 against staging)
+        run: |
+          GOAL_FLAG=""
+          if [ -n "${{ inputs.goal_override }}" ]; then
+            GOAL_FLAG='--goal "${{ inputs.goal_override }}"'
+          fi
+          # shellcheck disable=SC2086
+          eval npm run mesh:tick -- --commit --real-l1 --real-l2 --real-l4 --real-l6 $GOAL_FLAG
+
+      - name: Upload run logs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mesh-cron-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .mesh-worktrees/
+            *.log
+          if-no-files-found: ignore
+          retention-days: 14

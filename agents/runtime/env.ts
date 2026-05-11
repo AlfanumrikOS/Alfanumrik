@@ -82,7 +82,12 @@ export function loadDotenv(repoRoot: string): LoadEnvResult {
     const { vars, errors } = parseDotenv(text);
     let varsSet = 0;
     for (const [k, v] of Object.entries(vars)) {
-      if (process.env[k] === undefined) {
+      // Treat empty strings as "unset" so .env.local can fill them. Some
+      // host environments (Claude Code's bash sandbox among them)
+      // explicitly set sensitive vars to '' to hide their own credentials
+      // from child processes; we want our .env.local value to win there.
+      const cur = process.env[k];
+      if (cur === undefined || cur === '') {
         process.env[k] = v;
         varsSet++;
       }
