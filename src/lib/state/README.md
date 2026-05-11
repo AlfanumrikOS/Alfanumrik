@@ -113,13 +113,18 @@ What ships in Phase 2:
 
 Rollout: flip `ff_rule_engine_v1` on Cusiosense house tenant only. Surfaces stay on their legacy fallback until each one is individually migrated to consume `useLearnerDecisions()`.
 
-### Phase 5 — Mesh agent reads journey + outcome_metrics
+### Phase 5 — Mesh L8 outcome attribution (this PR's sibling, #718)
 
-The mesh's L8 Evolution Agent (skeleton already in `agents/runtime/`) starts attributing outcomes:
+The final layer of the unified-state loop. Shipped cycles get
+attributed against `domain_events`-derived metrics.
 
-- A cycle ships `learner.* surface changes` → outcome_metrics row links cycle_id to a target_metric
-- Journey events over the next N days roll up to that metric
-- Mesh decides whether to keep the change, evolve the prompt, or escalate
+1. New flag `ff_mesh_l8_attribution_v1`, default OFF.
+2. [`agents/runtime/metrics/registry.ts`](../../../agents/runtime/metrics/registry.ts) — 4 starter metrics: `foxy_helpful_rate`, `quiz_completion_rate`, `mastery_velocity`, `streak_retention_7d`. Each computes from `domain_events` over a window.
+3. [`agents/runtime/layers/l8-evolution.ts`](../../../agents/runtime/layers/l8-evolution.ts) — `runL8Attribution({ sb, windowDays })` reads shipped cycles, computes before/after deltas, inserts `outcome_metrics` rows. Idempotent. Conservative significance threshold (|delta|≥0.05 + N≥30 for rates).
+4. [`scripts/run-l8-attribution.ts`](../../../scripts/run-l8-attribution.ts) — standalone CLI. `npx tsx scripts/run-l8-attribution.ts [--dry-run]`. Cron via GitHub Actions or Vercel cron once flag flips.
+5. Tests in `src/__tests__/state/phase-5-l8-attribution.test.ts` cover: flag off, no-cycles, unknown metric, already-attributed, happy path, window incomplete, significance thresholds, registry completeness.
+
+Rollout: keep flag OFF until Phase 2's event bus has ≥14d of data on the Cusiosense house tenant. Then flip globally; the attribution loop is read-mostly and writes one row per (cycle, metric).
 
 ## What Phase 2 does NOT do
 
