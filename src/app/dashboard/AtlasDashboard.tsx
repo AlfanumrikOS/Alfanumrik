@@ -260,7 +260,9 @@ export default function AtlasDashboard() {
         </>
       }
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div className="atlas-dashboard-grid">
+        {/* ─── LEFT COLUMN (7/12 on desktop) ─── */}
+        <div className="atlas-dashboard-main" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
         {/* ─── 1. Today's mission ─── */}
         <AtlasCard
@@ -349,7 +351,7 @@ export default function AtlasDashboard() {
             {isHi ? 'आप' : 'You are'}{' '}
             <em style={{ fontStyle: 'italic', color: 'var(--accent)' }}>{isHi ? 'यहाँ' : 'here'}</em>
           </h2>
-          <AtlasChapterMap chapters={chapters} />
+          <AtlasChapterMap chapters={resolvedChapters(chapters, todaysTopic)} />
           <div
             style={{
               display: 'flex',
@@ -366,6 +368,11 @@ export default function AtlasDashboard() {
             <Legend swatch="transparent" border="1.5px dashed var(--ink-4)" label={isHi ? 'आने वाला' : 'Upcoming'} />
           </div>
         </AtlasCard>
+
+        </div>
+
+        {/* ─── RIGHT COLUMN (5/12 on desktop) ─── */}
+        <aside className="atlas-dashboard-side" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
         {/* ─── 3. Rhythm (streak + last 7 days) ─── */}
         <AtlasCard>
@@ -462,7 +469,7 @@ export default function AtlasDashboard() {
         {/* ─── 5. Quick actions ─── */}
         <AtlasCard>
           <p className="atlas-eyebrow">{isHi ? 'जल्दी' : 'Quick'}</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
             <QuickTile icon="grid" label={isHi ? 'मुक़ाबला' : 'Compete'} onClick={() => router.push('/leaderboard')} />
             <QuickTile icon="scan" label={isHi ? 'स्कैन हल' : 'Scan'}    onClick={() => router.push('/scan')} />
             <QuickTile icon="clock" label={isHi ? 'दोहराओ' : 'Revise'}    onClick={() => router.push('/review')} />
@@ -470,19 +477,56 @@ export default function AtlasDashboard() {
           </div>
         </AtlasCard>
 
-        <p
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 11,
-            color: 'var(--ink-4)',
-            textAlign: 'center',
-            margin: '12px 0 0',
-            letterSpacing: '0.04em',
-          }}
-        >
-          {isHi ? 'Foxy हमेशा यहाँ है — नीचे चैट करो।' : 'Foxy is one tap away — anytime.'}
-        </p>
+        {/* ─── 6. Foxy whisper (engagement loop) ─── */}
+        <AtlasCard tone="teal" style={{ padding: '18px 20px' }}>
+          <p className="atlas-eyebrow" style={{ color: 'var(--teal-deep)', marginBottom: 6 }}>
+            <span aria-hidden="true" style={{ marginRight: 6 }}>🦊</span>
+            {isHi ? 'Foxy की फुसफुसाहट' : 'Foxy whispers'}
+          </p>
+          <p
+            style={{
+              fontFamily: 'var(--font-serif)',
+              fontWeight: 400,
+              fontStyle: 'italic',
+              fontSize: 16,
+              lineHeight: 1.35,
+              color: 'var(--teal-deep)',
+              margin: 0,
+            }}
+          >
+            {foxyWhisper(student.name, streak, recentWins.length, isHi)}
+          </p>
+        </AtlasCard>
+
+        </aside>
       </div>
+
+      <p
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontSize: 11,
+          color: 'var(--ink-4)',
+          textAlign: 'center',
+          margin: '24px 0 0',
+          letterSpacing: '0.04em',
+        }}
+      >
+        {isHi ? 'Foxy हमेशा यहाँ है — नीचे चैट करो।' : 'Foxy is one tap away — anytime.'}
+      </p>
+
+      {/* Responsive grid: 7/5 on desktop, single column below 980px. Plain
+          <style> tag (no styled-jsx — see AtlasShell for rationale). */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: [
+            '.atlas-dashboard-grid{display:grid;grid-template-columns:1fr;gap:20px;}',
+            '@media (min-width: 980px){',
+              '.atlas-dashboard-grid{grid-template-columns:7fr 5fr;gap:24px;align-items:start;}',
+              '.atlas-dashboard-side{position:sticky;top:88px;}',
+            '}',
+          ].join(''),
+        }}
+      />
 
       {/* Pinned Foxy chat affordance + BottomNav */}
       <button
@@ -503,6 +547,62 @@ export default function AtlasDashboard() {
 function capitalize(s: string | null | undefined): string {
   if (!s) return '—';
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Synthesize a useful chapter graph when concept_mastery has no rows yet
+ * (cold-start students). Anchors on today's topic and shows it as the
+ * "current" node with neighbour chapters around it. Prevents the
+ * "blank canvas — start a lesson" empty state which reads as broken.
+ *
+ * When real chapters data exists, returns it unchanged.
+ */
+function resolvedChapters(
+  chapters: AtlasChapterNode[],
+  todaysTopic: CurriculumTopic | undefined,
+): AtlasChapterNode[] {
+  if (chapters.length > 0) return chapters;
+  const num = todaysTopic?.chapter_number ?? 1;
+  const title = todaysTopic?.title ?? 'Today';
+  const seed: AtlasChapterNode[] = [];
+  // Show two prior chapters (placeholder titles) leading to current.
+  for (let i = Math.max(1, num - 2); i < num; i++) {
+    seed.push({ number: i, title: `Chapter ${i}`, status: 'upcoming' });
+  }
+  seed.push({ number: num, title: title.slice(0, 24), status: 'current' });
+  // Two upcoming chapters after.
+  for (let i = num + 1; i <= num + 2; i++) {
+    seed.push({ number: i, title: `Chapter ${i}`, status: 'upcoming' });
+  }
+  return seed;
+}
+
+/**
+ * Foxy whispers — short, deterministic, engagement nudges keyed off the
+ * student's current state. Pure function so re-renders don't flicker the
+ * copy. Picks a tone matched to where the student is in the loop:
+ *   - cold start (no streak, no wins): invitation
+ *   - building (1-4 day streak): reinforcement
+ *   - on a roll (5+ day streak or recent wins): celebration + tease
+ */
+function foxyWhisper(name: string, streak: number, winCount: number, isHi: boolean): string {
+  const first = name.split(' ')[0] ?? name;
+  if (isHi) {
+    if (streak === 0 && winCount === 0)
+      return `नमस्ते ${first}, चलो आज से लय शुरू करें — सिर्फ़ 10 मिनट काफी हैं।`;
+    if (streak >= 5)
+      return `${streak} दिन की लय, ${first}! इसी रफ़्तार से अगले अध्याय में महारत मिलेगी।`;
+    if (winCount > 0)
+      return `बहुत बढ़िया, ${first}। हाल की जीतें मेरे लिए ख़ुशी की बात हैं।`;
+    return `अच्छा, ${first}, आज की मिशन तुम्हारी अगली जीत की तरफ़ ले जाती है।`;
+  }
+  if (streak === 0 && winCount === 0)
+    return `Hi ${first}, let's set the rhythm today — even ten minutes counts.`;
+  if (streak >= 5)
+    return `${streak} days strong, ${first}. Keep this pace and the next chapter is yours.`;
+  if (winCount > 0)
+    return `Quietly proud of your recent wins, ${first}. The next one's close.`;
+  return `Today's mission lands you closer to mastery, ${first}. I'm right here if you stall.`;
 }
 
 function chromeBtn(): React.CSSProperties {
