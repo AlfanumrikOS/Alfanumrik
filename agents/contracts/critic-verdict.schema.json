@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alfanumrik.com/agents/contracts/critic-verdict.schema.json",
+  "title": "CriticVerdict",
+  "description": "Output of the L6 Critic. Drives the merge/escalate/reject decision for a CompletedTask. The Critic's reasoning is posted to the PR verbatim so the trail is auditable.",
+  "type": "object",
+  "required": ["task_id", "cycle_id", "decision", "reasoning", "rubric_version", "risk_tier_observed", "decided_at"],
+  "additionalProperties": false,
+  "properties": {
+    "task_id": { "type": "string", "format": "uuid" },
+    "cycle_id": { "type": "string", "format": "uuid" },
+    "decision": {
+      "type": "string",
+      "enum": ["approve", "request_changes", "reject", "escalate_to_human"],
+      "description": "approve = auto-merge eligible. request_changes = back to L4 with specific notes. reject = abort task; L2 must re-plan. escalate_to_human = wait for CEO/lead sign-off; never auto-merge."
+    },
+    "reasoning": {
+      "type": "string",
+      "minLength": 50,
+      "maxLength": 8000,
+      "description": "The case for the decision. Cite specific evaluators, rubric clauses, and lessons_learned ids. No vague approvals."
+    },
+    "rubric_version": {
+      "type": "string",
+      "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Semver of /governance/rubric.md the critic applied. Reproducibility: a future audit can replay the same decision with the same rubric."
+    },
+    "risk_tier_observed": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "Critic's independent assessment of risk. May differ from the cycle's declared risk_tier; if it does, the critic MUST escalate."
+    },
+    "rubric_clauses_invoked": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^R[0-9]+(\\.[0-9]+)*$" },
+      "description": "IDs of rubric clauses the critic relied on (e.g. R3.2, R7.1). Cross-checked against rubric.md."
+    },
+    "evaluator_summary": {
+      "type": "object",
+      "description": "Quick roll-up of evaluator verdicts for the audit trail.",
+      "properties": {
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "warned": { "type": "integer", "minimum": 0 },
+        "blocking_failures": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "human_reviewer_required": {
+      "type": ["string", "null"],
+      "description": "If escalate_to_human, who: 'ceo' | 'principal_engineer' | 'pedagogy_lead' | 'security_lead'."
+    },
+    "follow_up_lessons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim", "applies_when", "confidence"],
+        "properties": {
+          "claim": { "type": "string" },
+          "applies_when": { "type": "string" },
+          "confidence": { "type": "string", "enum": ["low", "medium", "high"] }
+        }
+      },
+      "description": "Draft lessons_learned entries the critic proposes. Not auto-inserted; require human approval."
+    },
+    "decided_at": { "type": "string", "format": "date-time" }
+  }
+}

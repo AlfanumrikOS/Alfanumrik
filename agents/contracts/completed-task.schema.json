@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alfanumrik.com/agents/contracts/completed-task.schema.json",
+  "title": "CompletedTask",
+  "description": "Output of an L4 execution agent, input to the L5 Evaluation Layer. Describes what was changed and exposes the artefacts evaluators need.",
+  "type": "object",
+  "required": ["task_id", "cycle_id", "agent_role", "result", "branch", "summary"],
+  "additionalProperties": false,
+  "properties": {
+    "task_id": { "type": "string", "format": "uuid" },
+    "cycle_id": { "type": "string", "format": "uuid" },
+    "agent_role": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+    "result": {
+      "type": "string",
+      "enum": ["succeeded", "failed", "needs_replan"],
+      "description": "succeeded = ready for evaluators. failed = agent could not produce a usable artefact. needs_replan = agent thinks L2 made the wrong cut — L2 must re-decompose."
+    },
+    "branch": { "type": "string", "minLength": 1 },
+    "pr_url": { "type": ["string", "null"], "format": "uri" },
+    "summary": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 4000,
+      "description": "Plain-prose summary of what changed and why. The Critic reads this verbatim — be precise."
+    },
+    "files_changed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "change"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string" },
+          "change": { "type": "string", "enum": ["added", "modified", "deleted", "renamed"] },
+          "lines_added": { "type": "integer", "minimum": 0 },
+          "lines_removed": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "constraints_respected": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Echo of the TaskAssignment.constraints/forbidden_paths the agent attests it respected."
+    },
+    "lessons_applied": {
+      "type": "array",
+      "items": { "type": "string", "format": "uuid" },
+      "description": "lessons_learned.id list the agent consulted while making decisions."
+    },
+    "open_questions": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 500 },
+      "description": "Things the agent is unsure about and wants the Critic to flag for human review."
+    },
+    "blocker_note": {
+      "type": ["string", "null"],
+      "maxLength": 2000,
+      "description": "If result=failed or needs_replan, the reason."
+    },
+    "tokens_spent": { "type": "integer", "minimum": 0 }
+  }
+}
