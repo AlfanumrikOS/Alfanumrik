@@ -664,14 +664,22 @@ export default function ChapterConceptPage() {
 
       <main className="flex-1 app-container py-4 max-w-2xl mx-auto w-full flex flex-col gap-4">
 
-        {/* ── Exam-Ready 360° Phase 2: per-chapter readiness card ── */}
-        {/* Hides itself while loading or when API returns no usable data, so
-            it never produces a blank skeleton on first paint. */}
-        <ChapterReadinessCard
-          subjectCode={subject}
-          chapterNumber={chapterNum}
-          subjectColor={subMeta?.color}
-        />
+        {/* ── Exam-Ready 360° Phase 2: per-chapter readiness card ──
+            Suppressed on the very first concept of the chapter when the
+            student hasn't attempted anything yet. Otherwise the card's
+            "Review Weak Concepts" CTA competes for attention with the
+            actual lesson below — students would land here, see a red
+            "Not Yet Ready / 23/100" banner, and not know whether to
+            click Review or start the concept. Once they've attempted
+            at least one concept (or moved past the first), the readiness
+            summary becomes useful context and is allowed to render. */}
+        {(currentIdx > 0 || Object.values(conceptStates).some(s => s.submitted)) && (
+          <ChapterReadinessCard
+            subjectCode={subject}
+            chapterNumber={chapterNum}
+            subjectColor={subMeta?.color}
+          />
+        )}
 
         {/* Concept label */}
         <div className="flex items-center gap-2">
@@ -790,6 +798,45 @@ export default function ChapterConceptPage() {
                 {isHi && question.question_hi ? question.question_hi : question.question_text}
               </p>
 
+              {/* Empty-state fallback for questions that lack MCQ options
+                  (free-response prompts authored without a/b/c/d, or
+                  malformed `options` JSON). Without this, the box rendered
+                  a question + a disabled "Check Answer" button with no way
+                  to answer — read as broken UX. We now route the student
+                  to Foxy explicitly so they can still engage with the
+                  concept. See screenshot from 2026-05-11 (Mathematics ·
+                  Chapter 1, "Round 7,348,926 to the nearest lakh"). */}
+              {opts.length === 0 && !isAnswered && (
+                <div
+                  className="rounded-xl p-4 flex items-start gap-3"
+                  style={{
+                    background: 'rgba(232, 88, 28, 0.06)',
+                    border: '1px solid rgba(232, 88, 28, 0.18)',
+                  }}
+                >
+                  <span className="text-xl shrink-0" aria-hidden="true">🦊</span>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-1)' }}>
+                      {isHi
+                        ? 'यह प्रश्न खुले उत्तर का है — Foxy के साथ हल करो।'
+                        : 'This one needs working out — solve it with Foxy.'}
+                    </p>
+                    <p className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                      {isHi
+                        ? 'Foxy तुम्हें step-by-step ले जाएगा। फिर अगली अवधारणा पर बढ़ो।'
+                        : 'Foxy will walk you through it step by step, then you can move to the next concept.'}
+                    </p>
+                    <Button
+                      color="#E8581C"
+                      className="mt-3"
+                      onClick={askFoxy}
+                    >
+                      🦊 {isHi ? 'Foxy से हल कराओ' : 'Solve with Foxy'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
                 {opts.map((opt, idx) => {
                   const letter = OPTION_LETTERS[idx] || String(idx + 1);
@@ -839,8 +886,10 @@ export default function ChapterConceptPage() {
                 })}
               </div>
 
-              {/* Check answer button */}
-              {!isAnswered && (
+              {/* Check Answer button — only when MCQ options exist. For
+                  the no-options fallback above, the Foxy CTA replaces it
+                  so we don't render a permanently-disabled button. */}
+              {!isAnswered && opts.length > 0 && (
                 <Button
                   fullWidth
                   className="mt-3"
@@ -934,11 +983,27 @@ export default function ChapterConceptPage() {
           </div>
           );
         })()
-        : (
+        : (() => {
+          // Strategic gate: when the current concept has a Quick Check and
+          // the student hasn't attempted it yet, the Next button is the
+          // secondary action — not the primary orange CTA. This nudges the
+          // student toward the productive-failure attempt loop instead of
+          // letting them skip straight through every concept.
+          const hasUnattemptedCheck = !!question && !isAnswered && opts.length > 0;
+          const primaryColor = hasUnattemptedCheck ? undefined : subMeta?.color;
+          return (
           <div className="flex flex-col gap-2 mt-auto pb-2">
+            {hasUnattemptedCheck && (
+              <p className="text-[11px] text-center text-[var(--text-3)] -mb-1">
+                {isHi
+                  ? 'पहले Quick Check try करो — फिर आगे बढ़ो।'
+                  : 'Attempt the Quick Check first, then move on.'}
+              </p>
+            )}
             <Button
               fullWidth
-              color={subMeta?.color}
+              variant={hasUnattemptedCheck ? 'ghost' : 'primary'}
+              color={primaryColor}
               onClick={goNext}
             >
               {isHi
@@ -954,7 +1019,8 @@ export default function ChapterConceptPage() {
               </Button>
             </div>
           </div>
-        )}
+          );
+        })()}
       </main>
 
       <BottomNav />
