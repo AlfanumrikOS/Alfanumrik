@@ -51,6 +51,7 @@ import { logger } from '@/lib/logger';
 import { logOpsEvent } from '@/lib/ops-events';
 import { capture as posthogCapture } from '@/lib/posthog/server';
 import { validateBody } from '@/lib/validation';
+import { maybeDispatchQuizCompletion } from '@/lib/state/quiz-orchestrator-bridge';
 
 // ─── Body schema ────────────────────────────────────────────────────────────
 
@@ -361,7 +362,55 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // ── 10. Return canonical shape ────────────────────────────────────────
+  // ── 10. Orchestrator bridge — additive, flag-gated, never throws ──────
+  // While ff_orchestrator_v1 is OFF (the steady state during Phase 2's
+  // first weeks), this is a no-op. When the flag flips on for a tenant
+  // we get learner.quiz_completed + learner.mastery_changed events on
+  // the bus. Subscribers run in parity-check / dry-run mode until we
+  // verify their projections match the legacy RPC's writes.
+  if (!rpcData.idempotent_replay) {
+    void maybeDispatchQuizCompletion({
+      authUserId: auth.userId,
+      legacySessionId: rpcData.session_id ?? body.sessionId,
+      input: {
+        quizSessionId: rpcData.session_id ?? body.sessionId,
+        subjectCode: (body.subject ?? 'unknown').toLowerCase(),
+        chapterNumber: body.chapter ?? 1,
+        questions: body.responses.map((r) => {
+          const graded = rpcData?.questions?.find(
+            (q): q is { question_id?: string; is_correct?: boolean } =>
+              !!q && typeof q === 'object' && (q as { question_id?: string }).question_id === r.question_id,
+          );
+          return {
+            correct: graded?.is_correct === true,
+            timeSpentSec: r.time_taken_seconds,
+          };
+        }),
+        startedAt: new Date(Date.now() - body.totalTimeSeconds * 1000).toISOString(),
+        endedAt: new Date().toISOString(),
+      },
+    }).then((bridgeResult) => {
+      if (bridgeResult.ranOrchestrator) {
+        void logOpsEvent({
+          category: 'state-architecture',
+          severity: 'info',
+          source: 'api/quiz/submit/route.ts',
+          message: 'orchestrator_bridge_dispatched',
+          context: {
+            session_id: rpcData?.session_id ?? body.sessionId,
+            published_event_count: bridgeResult.publishedEventCount,
+          },
+        });
+      } else if (bridgeResult.error) {
+        logger.warn('quiz.submit: orchestrator bridge errored (legacy path unaffected)', {
+          error: new Error(bridgeResult.error),
+          sessionId: rpcData?.session_id ?? body.sessionId,
+        });
+      }
+    }).catch(() => { /* never throw from bridge */ });
+  }
+
+  // ── 11. Return canonical shape ────────────────────────────────────────
   return NextResponse.json({
     success: true,
     data: shapeResponse(rpcData),
