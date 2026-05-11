@@ -115,17 +115,9 @@ test.describe('public surface — every 15 min', () => {
     await expect(password).toBeVisible({ timeout: 10_000 });
   });
 
-  test('Row 6 — color-scheme meta tag is present (F1)', async ({ page }) => {
-    // Audit §0 F1: until app-wide dark mode lands, we tell the browser this
-    // is a light app via <meta name="color-scheme" content="light">.
-    // Without it, browsers in system dark mode dark-ify native form controls
-    // and scrollbars on the light-only app, producing a broken hybrid.
-    await page.goto(`${TARGET}/welcome`, { waitUntil: 'domcontentloaded' });
-    const colorScheme = await page.evaluate(() =>
-      document.querySelector('meta[name="color-scheme"]')?.getAttribute('content'),
-    );
-    expect(colorScheme).toBe('light');
-  });
+  // Row 6 retired 2026-05-11 — Phase 1 superseded the `content="light"`
+  // contract with `content="light dark"`. The new contract is asserted by
+  // Row 13 in the "theme + language parity" describe block below.
 });
 
 // ─── Authenticated rows (require SYNTHETIC_AUTH_* env vars) ──────────────
@@ -173,6 +165,62 @@ test.describe('authenticated surface — requires test student creds', () => {
 });
 
 // ─── Mobile-device emulation row (visual + interaction parity) ───────────
+
+// ─── Phase 1 (2026-05-11) — dark mode + Hindi parity ────────────────────
+
+test.describe('theme + language parity', () => {
+  test('Row 10 — system dark preference resolves to data-theme="dark" on <html>', async ({
+    page,
+    context,
+  }) => {
+    // Phase 1 contract: when no explicit theme is stored and the OS reports
+    // prefers-color-scheme: dark, AuthContext's init effect applies
+    // data-theme="dark" to documentElement on first paint, and globals.css
+    // [data-theme="dark"] activates the dark surface tokens.
+    await context.clearCookies();
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.goto(`${TARGET}/welcome`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1500); // wait for AuthContext init + applyThemeToDOM
+    const dataTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+    expect(dataTheme).toBe('dark');
+  });
+
+  test('Row 11 — explicit light preference overrides system dark', async ({ page }) => {
+    // Even if the OS is dark, an explicit user preference must win.
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.addInitScript(() => {
+      window.localStorage.setItem('alfanumrik_theme', 'light');
+    });
+    await page.goto(`${TARGET}/welcome`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1500);
+    const dataTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+    expect(dataTheme).toBe('light');
+  });
+
+  test('Row 12 — Hindi preference flips <html lang> to "hi"', async ({ page }) => {
+    // P7 invariant: HtmlLangSync mirrors AuthContext.isHi (language === 'hi')
+    // to documentElement.lang. Audit §0 F3 fix verification.
+    await page.addInitScript(() => {
+      window.localStorage.setItem('alfanumrik_language', 'hi');
+    });
+    await page.goto(`${TARGET}/welcome`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1500);
+    const lang = await page.evaluate(() => document.documentElement.lang);
+    expect(lang).toBe('hi');
+  });
+
+  test('Row 13 — color-scheme meta supports both light and dark (Phase 1)', async ({
+    page,
+  }) => {
+    // The Phase 0 fix shipped `<meta name="color-scheme" content="light">`.
+    // Phase 1 upgraded it to "light dark" so native chrome themes alongside.
+    await page.goto(`${TARGET}/welcome`, { waitUntil: 'domcontentloaded' });
+    const colorScheme = await page.evaluate(() =>
+      document.querySelector('meta[name="color-scheme"]')?.getAttribute('content'),
+    );
+    expect(colorScheme).toBe('light dark');
+  });
+});
 
 test.describe('mobile parity', () => {
   test('Row 9 — /welcome on Pixel 5 viewport: no horizontal overflow + primary CTA above fold', async ({
