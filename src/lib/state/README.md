@@ -94,11 +94,13 @@ What ships in Phase 2:
 8. **Roll out tenant-by-tenant.** Pilot schools → all schools → B2C.
 9. **Retire legacy writes.** Once `learner_mastery` is the read source for surfaces (parent view, teacher dashboard), the legacy `adaptive_mastery` writes in the RPC can be removed in a separate PR.
 
-### Phase 3 — Migrate Foxy to context-rich
+### Phase 3 — Foxy reads context-rich state (this PR's sibling, #716)
 
-1. Foxy edge function reads `buildAiContext(state, journey, focus)` and splices into its system prompt
-2. Existing prompt scaffold stays — we're adding ~1500 tokens of learner context, not rewriting prompts
-3. Measure: does Foxy's `helpful: true` rate change? (PostHog cohort comparison)
+1. New flag `ff_foxy_context_rich_v1`, default OFF.
+2. [`context/foxy-context-bridge.ts`](./context/foxy-context-bridge.ts) builds the AI context block from StudentState + journey events. Never throws; wraps every fetch. Returns `{ block, approxTokens, reason }`.
+3. `src/app/api/foxy/route.ts` appends `result.block` to the system prompt after the lab/mastery sections. Empty block = byte-identical prompt to today.
+4. Tests in `src/__tests__/state/phase-3-foxy-context.test.ts` cover: flag off, happy path, builder error, empty events, unparseable rows, lookback window, lowercase coercion.
+5. Rollout: flip `ff_foxy_context_rich_v1` on Cusiosense house tenant only. Measure `helpful: true` rate vs control. Expand tenant-by-tenant.
 
 ### Phase 4 — Rules engine drives surfaces
 
