@@ -1,0 +1,8 @@
+# Mesh automation is ENABLED while this file exists in the repo root.
+#
+# The .github/workflows/mesh-cron.yml workflow checks for this file
+# before running. To disable the cron without editing the workflow,
+# delete this file and push. To re-enable, re-add it.
+#
+# This is a deliberate kill switch — a file is harder to leave on by
+# accident than a GitHub Actions variable.

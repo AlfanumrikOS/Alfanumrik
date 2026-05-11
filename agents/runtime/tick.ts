@@ -51,6 +51,8 @@ import { getMeshSupabase, assertMeshFlagEnabled } from './supabase';
 import { openWorktree, closeWorktree, commitAll, diffAgainstBaseline, type WorktreeHandle } from './worktree';
 import { runCodeAgent } from './layers/l4-code-agent';
 import { runCritic } from './layers/l6-critic';
+import { pickNextGoal, resolveInboxRow, type PickedGoal } from './layers/l1-meta';
+import { runOrchestrator, type L2TaskAssignment } from './layers/l2-orchestrator';
 
 // ─── Types (mirror the JSON Schema contracts) ──────────────────────────
 
@@ -123,6 +125,8 @@ interface CriticVerdict {
 
 interface TickOptions {
   commit: boolean;
+  realL1: boolean;
+  realL2: boolean;
   realL4: boolean;
   realL6: boolean;
   goal: string | null;
@@ -133,17 +137,19 @@ interface TickOptions {
 function parseArgs(): TickOptions {
   const argv = process.argv.slice(2);
   const commit = argv.includes('--commit');
+  const realL1 = argv.includes('--real-l1');
+  const realL2 = argv.includes('--real-l2');
   const realL4 = argv.includes('--real-l4');
   const realL6 = argv.includes('--real-l6');
   const goalIdx = argv.indexOf('--goal');
   const goal = goalIdx >= 0 ? argv[goalIdx + 1] ?? null : null;
-  if ((realL4 || realL6) && !commit) {
+  if ((realL2 || realL4 || realL6) && !commit) {
     process.stderr.write(
-      '[mesh:tick] --real-l4/--real-l6 require --commit (no point in spending Anthropic tokens for a dry-run).\n',
+      '[mesh:tick] --real-l2/--real-l4/--real-l6 require --commit (no point in spending Anthropic tokens for a dry-run).\n',
     );
     process.exit(2);
   }
-  return { commit, realL4, realL6, goal };
+  return { commit, realL1, realL2, realL4, realL6, goal };
 }
 
 const log = (label: string, msg: string) =>
@@ -375,17 +381,31 @@ async function l5_runEvaluators(
       continue;
     }
 
-    const evalScript = path.join(repoRoot, scriptRel);
-    const args = ['tsx', evalScript, '--json'];
-    if (commit) args.push('--task-id', taskId, '--cycle-id', cycleId);
-
-    log('L5', `→ (cwd=${path.relative(repoRoot, evalCwd) || '.'}) npx ${args.join(' ')}`);
-    const result = spawnSync('npx', args, {
+    // Pass the full command as a single quoted string with shell:true.
+    // shell:true uses cmd.exe on Windows; the absolute script path contains
+    // a space (repo at "C:\Users\Bharangpur Primary\..."), so wrap it in
+    // double-quotes to prevent word-splitting. Passing one string is
+    // cmd.exe's well-behaved mode; arg arrays are where the splitting lives.
+    const absScript = path.join(repoRoot, scriptRel);
+    const taskArgs = commit ? ` --task-id ${taskId} --cycle-id ${cycleId}` : '';
+    const cmdline = `npx tsx "${absScript}" --json${taskArgs}`;
+    log('L5', `→ (cwd=${path.relative(repoRoot, evalCwd) || '.'}) ${cmdline}`);
+    const result = spawnSync(cmdline, [], {
       cwd: evalCwd,
       encoding: 'utf8',
       env: process.env,
-      shell: process.platform === 'win32',
+      shell: true,
     });
+
+    if (result.error) {
+      out.push({
+        evaluator,
+        verdict: 'skipped',
+        blocking: true,
+        notes: `Spawn failed: ${result.error.message}`,
+      });
+      continue;
+    }
 
     if (result.status === 2) {
       out.push({
@@ -505,9 +525,39 @@ function l6_stub_decide(
 // ─── Orchestrator ─────────────────────────────────────────────────────
 
 async function tick(opts: TickOptions): Promise<void> {
-  // L0 → L1
-  const goal = l1_stub_pickGoal(opts.goal);
-  log('L1', `picked goal: "${goal.goal}"`);
+  // L0 → L1: pick a CycleGoal. Real mode pulls from cycle_goal_inbox;
+  // stub fabricates the skeleton no-op goal (preserved for testing).
+  let goal: CycleGoal;
+  let inboxId: string | null = null;
+
+  if (opts.realL1 && opts.commit) {
+    await assertMeshFlagEnabled();
+    const sbTemp = getMeshSupabase();
+    const pickRes = await pickNextGoal(sbTemp);
+    if (!pickRes.picked) {
+      log('L1', `no work to do: ${pickRes.reason ?? 'inbox empty'}`);
+      return; // saves Anthropic tokens on a no-op cycle
+    }
+    const picked: PickedGoal = pickRes.picked;
+    inboxId = picked.inbox_id;
+    goal = {
+      goal: picked.goal,
+      goal_rationale: picked.goal_rationale ?? 'Pulled from cycle_goal_inbox by real L1 worker.',
+      signal_source: picked.signal_source,
+      risk_tier: picked.risk_tier,
+      budget_tokens: picked.budget_tokens,
+      target_metric: picked.target_metric,
+      target_delta: picked.target_delta,
+      tenant_scope: picked.tenant_scope,
+      non_goals: picked.non_goals,
+      constraints: picked.constraints,
+      ...(picked.deadline ? { deadline: picked.deadline } : {}),
+    };
+    log('L1', `picked from inbox ${inboxId.slice(0, 8)}…: "${goal.goal.slice(0, 80)}"`);
+  } else {
+    goal = l1_stub_pickGoal(opts.goal);
+    log('L1', `picked goal (stub): "${goal.goal}"`);
+  }
 
   if (!opts.commit) {
     log('dry-run', 'would assert ff_agent_mesh_v1=true (skipped in dry-run)');
@@ -515,17 +565,21 @@ async function tick(opts: TickOptions): Promise<void> {
     // Mirror the stub L2's evaluator declaration so the dry-run preview
     // matches what --commit would actually dispatch.
     const previewTask = l2_stub_decompose('00000000-0000-0000-0000-000000000000', goal);
+    const l1Label = opts.realL1 ? 'L1 REAL (inbox)' : 'L1 stub';
+    const l2Label = opts.realL2 ? 'L2 REAL (sonnet)' : 'L2 stub';
     const l4Label = opts.realL4 ? 'L4 REAL (sonnet)' : 'L4 stub';
     const l6Label = opts.realL6 ? 'L6 REAL (opus)' : 'L6 stub';
     log(
       'dry-run',
-      `would dispatch L2 stub → 1 task (${previewTask.agent_role}) → ${l4Label} → L5 [${previewTask.evaluators_required.join(', ')}] → ${l6Label}`,
+      `would dispatch ${l1Label} → ${l2Label} → 1 task (${previewTask.agent_role}) → ${l4Label} → L5 [${previewTask.evaluators_required.join(', ')}] → ${l6Label}`,
     );
-    log('dry-run', 'use --commit to write to the substrate; add --real-l4 / --real-l6 to use the LLM workers');
+    log('dry-run', 'use --commit to write to the substrate; add --real-l1/--real-l2/--real-l4/--real-l6 to use the LLM workers');
     return;
   }
 
-  await assertMeshFlagEnabled();
+  if (!opts.realL1) {
+    await assertMeshFlagEnabled();
+  }
   log('flag', 'ff_agent_mesh_v1 is ON');
 
   const sb = getMeshSupabase();
@@ -550,8 +604,48 @@ async function tick(opts: TickOptions): Promise<void> {
   const cycleId = cycleRow.id as string;
   log('L1', `cycle ${cycleId} created (status=executing)`);
 
-  // L2 → insert task
-  const task = l2_stub_decompose(cycleId, goal);
+  // Link inbox row to the cycle now that we have its id.
+  if (inboxId) {
+    await sb.from('cycle_goal_inbox').update({ cycle_id: cycleId }).eq('id', inboxId);
+  }
+
+  // L2 → real or stub decomposition.
+  let task: TaskAssignment;
+  if (opts.realL2) {
+    log('L2', `→ real orchestrator (sonnet)`);
+    const repoRoot = path.resolve(__dirname, '..', '..');
+    const l2Out: L2TaskAssignment = await runOrchestrator({
+      repoRoot,
+      goal: {
+        goal: goal.goal,
+        goal_rationale: goal.goal_rationale,
+        signal_source: goal.signal_source,
+        risk_tier: goal.risk_tier,
+        budget_tokens: goal.budget_tokens,
+        tenant_scope: goal.tenant_scope,
+        non_goals: goal.non_goals,
+        constraints: goal.constraints,
+        lessons_to_respect: (goal as CycleGoal & { lessons_to_respect?: string[] }).lessons_to_respect ?? [],
+      },
+    });
+    task = {
+      task_id: '00000000-0000-0000-0000-000000000000',
+      cycle_id: cycleId,
+      agent_role: l2Out.agent_role,
+      title: l2Out.title,
+      objective: l2Out.objective,
+      definition_of_done: l2Out.definition_of_done,
+      allowed_paths: l2Out.allowed_paths,
+      forbidden_paths: l2Out.forbidden_paths,
+      context_scopes: l2Out.context_scopes,
+      model_hint: l2Out.model_hint,
+      max_tokens: l2Out.max_tokens,
+      evaluators_required: l2Out.evaluators_required,
+    };
+  } else {
+    task = l2_stub_decompose(cycleId, goal);
+  }
+
   const { data: taskRow, error: tErr } = await sb
     .from('tasks')
     .insert({
@@ -655,6 +749,16 @@ async function tick(opts: TickOptions): Promise<void> {
       })
       .eq('id', cycleId);
     log('L7', `cycle ${cycleId} → aborted (reason=${verdict.decision})`);
+  }
+
+  // Resolve the inbox row if one was picked. Mirrors the cycle status.
+  if (inboxId) {
+    try {
+      await resolveInboxRow(sb, inboxId, cycleId, verdict.decision);
+      log('L7', `inbox ${inboxId.slice(0, 8)}… → resolved (${verdict.decision})`);
+    } catch (err: unknown) {
+      log('L7', `WARNING: inbox resolve failed: ${(err as Error).message}`);
+    }
   }
 
   process.stdout.write('\n── Cycle summary ──────────────────────────────────────\n');

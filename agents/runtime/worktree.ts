@@ -79,11 +79,14 @@ export function countPorcelain(output: string): number {
 // ─── Git shell-out (impure) ──────────────────────────────────────────
 
 function git(repoRoot: string, args: string[]): SpawnSyncReturns<string> {
+  // Git is a native binary on every platform — no need to shell out.
+  // shell:false keeps args verbatim, so worktree paths containing spaces
+  // (e.g. "C:\Users\Bharangpur Primary\...") don't get word-split by cmd.exe.
   return spawnSync('git', args, {
     cwd: repoRoot,
     encoding: 'utf8',
     env: process.env,
-    shell: process.platform === 'win32',
+    shell: false,
   });
 }
 

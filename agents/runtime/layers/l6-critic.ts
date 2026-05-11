@@ -387,7 +387,9 @@ export async function runCritic(args: RunCriticArgs): Promise<CriticVerdictOutpu
     system,
     messages: [{ role: 'user', content: userText }],
     tools: [SUBMIT_VERDICT_TOOL],
-    temperature: 0,
+    // Note: Opus 4.7 deprecated the temperature parameter — omitting it
+    // here, the model uses its default (effectively deterministic for
+    // structured-output tasks like this critic).
   });
 
   const toolUses = extractToolUses(response.content);

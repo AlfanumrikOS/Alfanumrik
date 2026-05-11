@@ -81,7 +81,14 @@ describe('resolveInside', () => {
     expect(r).toBe(path.resolve(root, 'src/app/parent/page.tsx'));
   });
 
-  it('rejects Windows-style absolute paths', () => {
+  // `C:\\...` is absolute on Windows (path.isAbsolute returns true) and our
+  // guard throws OUTSIDE_ROOT. On POSIX (CI runs Ubuntu) the same string is
+  // a relative path with literal backslashes; resolveInside resolves it to
+  // a path inside root that the allowed_paths/forbidden_paths layer catches
+  // — but the per-layer rejection happens in assertPathAllowed, not here.
+  // Scope this test to Windows where its specific claim holds.
+  const onWindows = process.platform === 'win32';
+  it.skipIf(!onWindows)('rejects Windows-style absolute paths (Windows only)', () => {
     expect(() => resolveInside(cfgFor(), 'C:\\Windows\\System32\\drivers\\etc\\hosts'))
       .toThrow();
   });

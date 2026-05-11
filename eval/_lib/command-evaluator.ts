@@ -39,6 +39,14 @@
 
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { loadDotenv } from '../../agents/runtime/env';
+
+// Self-loading .env.local. When evaluators run inside a `mesh:tick` cycle
+// the parent process passes env via spawnSync, but on Windows with
+// `shell:true` that handoff doesn't always reach the child. Loading
+// .env.local here makes the evaluator robust whether invoked from the
+// tick, from CI, or from a developer's shell.
+loadDotenv(path.resolve(__dirname, '..', '..'));
 
 const NOTES_LINES = 50;
 const NOTES_MAX_CHARS = 3800; // a little under the contract's 4000 to leave room for trimming markers

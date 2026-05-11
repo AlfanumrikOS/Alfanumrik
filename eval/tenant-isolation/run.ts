@@ -52,6 +52,10 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { audit, type Bucket, type RouteFinding } from '../../scripts/audit-tenant-isolation';
+import { loadDotenv } from '../../agents/runtime/env';
+
+// Self-loading .env.local — see eval/_lib/command-evaluator.ts for why.
+loadDotenv(path.resolve(__dirname, '..', '..'));
 
 // ─── Types matching agents/contracts/evaluation.schema.json ────────────
 
