@@ -9,8 +9,8 @@ The substrate that makes Alfanumrik behave as **one interconnected unit** instea
 | 1 | **Student state model** | [`student-state.ts`](./student-state.ts) | The canonical shape of "what a learner IS at this moment". Identity, tenant, mastery, engagement, live session, access, consent. Source of truth every feature reads. |
 | 2 | **Orchestrator** | [`orchestrator.ts`](./orchestrator.ts) | The single entry point that mutates domain state. Dispatches services, publishes events, evaluates rules, caches state. Per-learner mutex for serialisation. |
 | 3 | **Service contract** | [`services/service.ts`](./services/service.ts) + [`services/quiz-completion-service.ts`](./services/quiz-completion-service.ts) | Every feature becomes a `Service<Input, Output>` that reads state and returns output + events. Pure-ish — no direct domain writes. |
-| 4 | **Event bus** | [`events/registry.ts`](./events/registry.ts) + [`events/publish.ts`](./events/publish.ts) + [migration](../../../supabase/migrations/20260516180000_domain_events_bus.sql) | Typed discriminated union of every cross-feature signal. `domain_events` table is append-only + service_role only. `publishEvent()` is the single writer. pg_notify drives subscribers. |
-| 5 | **Learning journey** | [`journey/journey.ts`](./journey/journey.ts) | Continuous timeline projection over `domain_events`. Parent / teacher / Foxy / mesh / super-admin all read the same projection. |
+| 4 | **Event bus** | [`events/registry.ts`](./events/registry.ts) + [`events/publish.ts`](./events/publish.ts) + [migration](../../../supabase/migrations/20260521100000_state_events_bus_rename.sql) | Typed discriminated union of every cross-feature signal. `state_events` table is append-only + service_role only. `publishEvent()` is the single writer. pg_notify drives subscribers. |
+| 5 | **Learning journey** | [`journey/journey.ts`](./journey/journey.ts) | Continuous timeline projection over `state_events`. Parent / teacher / Foxy / mesh / super-admin all read the same projection. |
 | 6 | **AI context builder** | [`context/builder.ts`](./context/builder.ts) | `buildAiContext(state, journey, focus) → markdown` — splices a learner-rich block into every Anthropic call. Bounded ~1500 tokens. |
 | 7 | **Rule engine** | [`rules/engine.ts`](./rules/engine.ts) + [`rules/stdlib.ts`](./rules/stdlib.ts) | Declarative `Rule<Reason>` returning typed `Decision`s. Stdlib has Foxy gating, module hides, next-quiz nudge, family-plan upsell, parent digest. Surfaces consume decisions; nobody re-implements policy. |
 
@@ -34,7 +34,7 @@ The substrate that makes Alfanumrik behave as **one interconnected unit** instea
                 │                            │                            │
         ┌───────▼─────────┐         ┌────────▼─────────┐         ┌────────▼─────────┐
         │ 1. Build state  │         │ 2. Call service  │         │ 3. Publish events│
-        │ (or read cache) │         │   PURE — returns │         │  → domain_events │
+        │ (or read cache) │         │   PURE — returns │         │  → state_events │
         │                 │         │   Output + Events│         │  → pg_notify     │
         └─────────────────┘         └──────────────────┘         └────────┬─────────┘
                                                                           │
@@ -55,7 +55,7 @@ The substrate that makes Alfanumrik behave as **one interconnected unit** instea
 
 | Flag | Effect when ON |
 |---|---|
-| `ff_event_bus_v1` | `publishEvent()` writes rows to `domain_events`. Subscribers can read; orchestrator can still be off. |
+| `ff_event_bus_v1` | `publishEvent()` writes rows to `state_events`. Subscribers can read; orchestrator can still be off. |
 | `ff_orchestrator_v1` | `Orchestrator.dispatch()` publishes events through the bus (otherwise: runs services but skips publish). |
 
 The bus and the orchestrator are gated separately so the bus can warm up (events flowing, projections built, subscribers verified) before any feature actually depends on the new state plane.
@@ -64,7 +64,7 @@ The bus and the orchestrator are gated separately so the bus can warm up (events
 
 ### Phase 1 — Wire the substrate (this PR)
 
-- Migration applied → `domain_events` table exists, RLS locked to `service_role`
+- Migration applied → `state_events` table exists, RLS locked to `service_role`
 - Both flags stay OFF in production
 - No feature behaviour changes yet
 
@@ -76,7 +76,7 @@ Pick the highest-traffic single-write path. Recommended: **quiz completion**.
 2. It calls `orchestrator.dispatch({ service: quizCompletionService, ... })`
 3. Wire one subscriber: `mastery_state` writer reacts to `learner.mastery_changed`
 4. Flip `ff_event_bus_v1` to `true` on the Cusiosense house tenant only
-5. Watch `domain_events` accumulate; verify the mastery writer keeps mastery_state in sync
+5. Watch `state_events` accumulate; verify the mastery writer keeps mastery_state in sync
 6. Roll out: enable on pilot tenants → all tenants
 7. Retire the legacy scattered writes in the quiz route once parity is confirmed
 
@@ -103,7 +103,7 @@ The mesh's L8 Evolution Agent (skeleton already in `agents/runtime/`) starts att
 - **Does not modify any existing feature.** Legacy code paths stay live and untouched.
 - **Does not flip any flag.** Both `ff_event_bus_v1` and `ff_orchestrator_v1` ship OFF.
 - **Does not implement `StudentStateBuilder`.** The type is exported; the actual DB-read function is a Phase 2 deliverable when we wire the first feature. Until then, callers can construct fixtures (see `src/__tests__/state/unified-state.test.ts::makeState`).
-- **Does not implement Supabase Realtime subscriber.** Phase 2 ships the worker that LISTENs on `domain_events` and feeds the orchestrator's `onEvent()`.
+- **Does not implement Supabase Realtime subscriber.** Phase 2 ships the worker that LISTENs on `state_events` and feeds the orchestrator's `onEvent()`.
 
 ## Tests
 
