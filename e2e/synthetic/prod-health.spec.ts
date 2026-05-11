@@ -237,8 +237,6 @@ test.describe('authenticated surface — requires test student creds', () => {
   });
 });
 
-// ─── Mobile-device emulation row (visual + interaction parity) ───────────
-
 // ─── Phase 1 (2026-05-11) — dark mode + Hindi parity ────────────────────
 
 test.describe('theme + language parity', () => {
@@ -294,6 +292,8 @@ test.describe('theme + language parity', () => {
     expect(colorScheme).toBe('light dark');
   });
 });
+
+// ─── Mobile-device emulation row (visual + interaction parity) ───────────
 
 test.describe('mobile parity', () => {
   test('Row 9 — /welcome on Pixel 5 viewport: no horizontal overflow + primary CTA above fold', async ({
