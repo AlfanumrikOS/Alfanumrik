@@ -38,6 +38,12 @@ concurrency:
 jobs:
   tick:
     runs-on: ubuntu-latest
+    # ANTHROPIC_API_KEY is stored as an environment-scoped secret in a
+    # GitHub Environment named "ANTHROPIC_API_KEY" (narrower scope than a
+    # plain repo secret). Declaring the environment here is what makes
+    # `${{ secrets.ANTHROPIC_API_KEY }}` resolve in the env block below.
+    # The Supabase repo-secrets are picked up automatically regardless.
+    environment: ANTHROPIC_API_KEY
     timeout-minutes: 30
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
