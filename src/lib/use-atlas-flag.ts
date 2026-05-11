@@ -46,7 +46,9 @@ import { isAtlasEnabled } from './feature-flags';
 
 export type AtlasRole = 'student' | 'parent' | 'teacher' | 'school';
 
-const CACHE_KEY = 'alfanumrik_atlas_flags_v1';
+// gitleaks:allow — the constant below is a localStorage key, not a secret.
+// gitleaks' generic-api-key rule flags it on entropy alone.
+const CACHE_KEY = 'alfanumrik_atlas_flags_v1'; // gitleaks:allow
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const DEFAULT_ON = true; // master flag is enabled globally; safest assumption
 
