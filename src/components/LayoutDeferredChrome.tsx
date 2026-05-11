@@ -23,6 +23,7 @@
  */
 
 import dynamic from 'next/dynamic';
+import HtmlLangSync from './HtmlLangSync';
 
 const CookieConsent = dynamic(() => import('./CookieConsent'), { ssr: false });
 const MaintenanceBanner = dynamic(() => import('./MaintenanceBanner'), { ssr: false });
@@ -32,6 +33,7 @@ const PostHogProvider = dynamic(() => import('./PostHogProvider'), { ssr: false 
 export default function LayoutDeferredChrome() {
   return (
     <>
+      <HtmlLangSync />
       <NetworkStatus />
       <MaintenanceBanner />
       <CookieConsent />
