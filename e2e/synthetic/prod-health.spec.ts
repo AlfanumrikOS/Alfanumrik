@@ -235,6 +235,51 @@ test.describe('authenticated surface — requires test student creds', () => {
       ).toBe(false);
     }
   });
+
+  test('Row 16 — /dashboard quick-action shortcut tiles render with non-trivial alpha in dark mode (Phase 1.5)', async ({
+    page,
+  }) => {
+    // Phase 1.5: the 3 utility shortcut tiles (Scan/Profile/Billing) use
+    // inline-style `${s.color}33` bg + `${s.color}77` border. The previous
+    // 10%/33% alphas were invisible on dark surface. Assert the computed
+    // background of at least one tile resolves to non-trivial alpha when
+    // the user is in dark mode.
+    await page.addInitScript(() => {
+      window.localStorage.setItem('alfanumrik_theme', 'dark');
+    });
+    await loginAsStudent(page);
+    await page.goto(`${TARGET}/dashboard`, { waitUntil: 'domcontentloaded' });
+
+    // Open the Quick Actions accordion (it default-opens since F4 fix, but
+    // be defensive in case a later refactor changes that).
+    const accordion = page.locator('[data-testid="dashboard-accordion-quick"]');
+    await expect(accordion).toBeVisible({ timeout: 10_000 });
+    await accordion.evaluate((el) => el.setAttribute('open', ''));
+
+    // The 3 utility shortcut tiles emit known emoji icons (📷, 👤, 💳).
+    // Locate any tile that contains one of those.
+    const shortcuts = page.locator(
+      'button:has(span[aria-hidden="true"]:has-text("📷")), ' +
+      'button:has(span[aria-hidden="true"]:has-text("👤")), ' +
+      'button:has(span[aria-hidden="true"]:has-text("💳"))',
+    );
+    const tiles = await shortcuts.all();
+    expect(
+      tiles.length,
+      'expected at least 1 utility shortcut tile (scan/profile/billing)',
+    ).toBeGreaterThanOrEqual(1);
+
+    for (const tile of tiles) {
+      const bg = await tile.evaluate((el) => getComputedStyle(el).backgroundColor);
+      // "rgba(r,g,b,a)" or "rgb(r,g,b)" (alpha defaults to 1).
+      const m = bg.match(/rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(?:,\s*([\d.]+))?\s*\)/);
+      const alpha = m ? Number(m[1] ?? 1) : 0;
+      expect(
+        alpha,
+        `shortcut tile bg "${bg}" — expected alpha ≥ 0.1 in dark mode`,
+      ).toBeGreaterThanOrEqual(0.1);
+    }
+  });
 });
 
 // ─── Phase 1 (2026-05-11) — dark mode + Hindi parity ────────────────────

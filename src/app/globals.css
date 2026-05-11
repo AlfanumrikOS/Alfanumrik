@@ -41,6 +41,16 @@
   --text-2: #4A3F2E;
   --text-3: #7D7264;
 
+  /* Shadows — subtle dark-ink depth on warm cream. tailwind.config.js already
+     references these names (shadow-sm/md/lg/glow); they were undefined until
+     Phase 1.5 (2026-05-11), so `className="shadow-sm"` was silently a no-op.
+     Components using inline-style boxShadow with hardcoded rgba(0,0,0,*) are
+     migrated to var(--shadow-*) so depth scales with theme. */
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 2px 12px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --shadow-glow: 0 0 24px rgba(232, 88, 28, 0.15);
+
   /* Layout */
   --sidebar-width: 240px;
   --header-height: 60px;
@@ -81,6 +91,14 @@
   --text-1: #F4ECDB;
   --text-2: #C9BCA6;
   --text-3: #968974;
+
+  /* Dark shadows: keep pure black but deepen so depth is perceptible against
+     the near-black surface tokens. rgba(0,0,0,0.03) (the old hardcoded light
+     value) was effectively invisible on a dark bg; these scale to ~0.3 alpha. */
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 2px 12px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 24px rgba(232, 88, 28, 0.25);
 }
 
 /* ─── Base ────────────────────────────────────────────────── */

@@ -36,7 +36,9 @@ export function Card({ children, className = '', accent, onClick, hoverable }: C
       style={{
         background: 'var(--surface-1)',
         border: '1px solid var(--border)',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.03)',
+        // Phase 1.5: use theme-aware shadow var. The hardcoded
+        // rgba(0,0,0,0.03) was invisible on dark surface.
+        boxShadow: 'var(--shadow-md)',
       }}
     >
       {accent && (
@@ -726,7 +728,9 @@ export function ActionTile({ icon, label, color, onClick }: ActionTileProps) {
       style={{
         background: 'var(--surface-1)',
         border: '1px solid var(--border)',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.02)',
+        // Phase 1.5: use theme-aware shadow var; old rgba(0,0,0,0.02) was
+        // invisible on dark surface (and barely on light too).
+        boxShadow: 'var(--shadow-sm)',
       }}
     >
       <span className="text-2xl">{icon}</span>
