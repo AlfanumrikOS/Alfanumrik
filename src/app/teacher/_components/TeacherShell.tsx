@@ -33,10 +33,10 @@ import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { useTenant } from '@/lib/tenant-context';
-import { supabase, getFeatureFlags } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
 import type { ModuleKey } from '@/lib/modules/registry';
-import { isAtlasEnabled } from '@/lib/feature-flags';
+import { useAtlasFlag } from '@/lib/use-atlas-flag';
 
 type TeacherNavItem = {
   href: string;
@@ -70,17 +70,9 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
   const [moduleEnablement, setModuleEnablement] = useState<Record<string, boolean> | null>(null);
 
   // Editorial Atlas pass-through (see ParentShell for the rationale).
-  // When Atlas is on, AtlasTeacher renders its own AtlasShell + actions
-  // rail; wrapping it in this legacy dark teacher shell would stack two
-  // sidebars AND keep the dark canvas the redesign explicitly removes.
-  const [atlasOn, setAtlasOn] = useState<boolean | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    getFeatureFlags()
-      .then((flags) => { if (!cancelled) setAtlasOn(isAtlasEnabled('teacher', flags)); })
-      .catch(() => { if (!cancelled) setAtlasOn(false); });
-    return () => { cancelled = true; };
-  }, []);
+  // useAtlasFlag initialises synchronously from cache → no first-render
+  // flash from legacy chrome to pass-through.
+  const atlasOn = useAtlasFlag('teacher');
 
   // Wrong-role redirect. We don't bounce unauthed users (`authUserId === null`)
   // because the page-level auth guard handles that with proper UX

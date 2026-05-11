@@ -1,12 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
 import { useParentAuth } from './useParentAuth';
-import { supabase, getFeatureFlags } from '@/lib/supabase';
-import { isAtlasEnabled } from '@/lib/feature-flags';
+import { supabase } from '@/lib/supabase';
+import { useAtlasFlag } from '@/lib/use-atlas-flag';
 
 const NAV_ITEMS: SidebarNavItem[] = [
   { href: '/parent', label: 'Dashboard', labelHi: 'डैशबोर्ड', icon: '▦' },
@@ -22,22 +21,14 @@ export default function ParentShell({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const { isHi } = useAuth();
   const { mode, parentName, loading } = useParentAuth();
+  // Call all hooks unconditionally at the top — rules-of-hooks.
+  const atlasOn = useAtlasFlag('parent');
 
   // ─── Editorial Atlas pass-through ────────────────────────────────────
-  // When the Atlas flag is on, AtlasParent renders its own AtlasShell with
-  // a self-contained rail nav + brand chrome. Wrapping it in this legacy
-  // ParentShell would stack two side rails on top of each other. So when
-  // the flag is on, this layout becomes a transparent pass-through.
-  const [atlasOn, setAtlasOn] = useState<boolean | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    getFeatureFlags().then((flags) => {
-      if (!cancelled) setAtlasOn(isAtlasEnabled('parent', flags));
-    }).catch(() => {
-      if (!cancelled) setAtlasOn(false);
-    });
-    return () => { cancelled = true; };
-  }, []);
+  // When Atlas is on, AtlasParent renders its own AtlasShell. Wrapping it
+  // in this legacy ParentShell would stack two side rails. The shared
+  // useAtlasFlag hook initializes synchronously from cache so this
+  // decision happens on the very first render — no spinner, no flash.
   if (atlasOn) return <>{children}</>;
 
   // While auth is resolving, render children naked. Pages that require auth
