@@ -102,9 +102,16 @@ What ships in Phase 2:
 4. Tests in `src/__tests__/state/phase-3-foxy-context.test.ts` cover: flag off, happy path, builder error, empty events, unparseable rows, lookback window, lowercase coercion.
 5. Rollout: flip `ff_foxy_context_rich_v1` on Cusiosense house tenant only. Measure `helpful: true` rate vs control. Expand tenant-by-tenant.
 
-### Phase 4 — Rules engine drives surfaces
+### Phase 4 — Rule engine drives surfaces (this PR's sibling, #717)
 
-For each surface that has policy in-line (sidebar nav, dashboard cards, gating decisions, upsells), replace the in-line if-blocks with `evaluate(STANDARD_RULES, state)` + `pickDecision(decisions, 'nav.module.hide')`.
+1. New flag `ff_rule_engine_v1`, default OFF.
+2. [`rules/service.ts`](./rules/service.ts) exports `getLearnerDecisions({ authUserId, decisionSlugs?, minPriority? })`. Builds state, evaluates `STANDARD_RULES`, returns `Decision[]`. 30s per-process cache. Never throws — failure returns `{ decisions: [], reason: 'error' }`.
+3. [`/api/state/decisions`](../../app/api/state/decisions/route.ts) — `GET` endpoint, JWT-auth, optional `?slug=` and `?minPriority=` filters. Returns `{ decisions: [], reason: 'flag_off' }` while flag is off.
+4. [`rules/client.ts`](./rules/client.ts) — `useLearnerDecisions(opts)` + `useLearnerDecision(slug)` SWR hooks. Surfaces also get `isFlagOff` to decide whether to fall back to legacy in-line checks.
+5. [`decisionsToModuleEnablement(decisions, allKeys)`](./rules/service.ts) — maps `nav.module.hide` decisions to the sidebar's `Record<moduleKey, boolean>` shape. Phase 4 doesn't yet wire it into DashboardSidebar — that cutover is a per-surface follow-up PR.
+6. Tests in `src/__tests__/state/phase-4-rule-engine-service.test.ts` cover: flag off / on, slug filter, minPriority, error path, module-enablement reducer.
+
+Rollout: flip `ff_rule_engine_v1` on Cusiosense house tenant only. Surfaces stay on their legacy fallback until each one is individually migrated to consume `useLearnerDecisions()`.
 
 ### Phase 5 — Mesh agent reads journey + outcome_metrics
 
