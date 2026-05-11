@@ -162,6 +162,79 @@ test.describe('authenticated surface — requires test student creds', () => {
     await page.waitForURL(/\/quiz/, { timeout: 10_000 });
     expect(page.url()).toContain('/quiz');
   });
+
+  test('Row 14 — /dashboard theme toggle cycles light → dark → system (Phase 1.1)', async ({
+    page,
+  }) => {
+    // Theme toggle button lives in the dashboard header (data-testid="dashboard-theme-toggle").
+    // Starting from explicit light, two clicks should land on system; html
+    // data-theme reflects the resolved value in each state.
+    await page.addInitScript(() => {
+      window.localStorage.setItem('alfanumrik_theme', 'light');
+    });
+    await loginAsStudent(page);
+    await page.goto(`${TARGET}/dashboard`, { waitUntil: 'domcontentloaded' });
+    const toggle = page.locator('[data-testid="dashboard-theme-toggle"]');
+    await expect(toggle).toBeVisible({ timeout: 10_000 });
+
+    // Initial state: light
+    expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('light');
+
+    // Click → dark
+    await toggle.click();
+    await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark', null, {
+      timeout: 2000,
+    });
+    expect(
+      await page.evaluate(() => window.localStorage.getItem('alfanumrik_theme')),
+    ).toBe('dark');
+
+    // Click → system (resolved value depends on emulateMedia; we don't assert
+    // the resolved value here, only that localStorage records 'system').
+    await toggle.click();
+    await page.waitForFunction(
+      () => window.localStorage.getItem('alfanumrik_theme') === 'system',
+      null,
+      { timeout: 2000 },
+    );
+  });
+
+  test('Row 15 — /dashboard level name renders in Hindi when isHi (F6)', async ({
+    page,
+  }) => {
+    // Audit §0 F6: LEVEL_NAMES_HI added; getLevelName(level, isHi=true) returns
+    // the Hindi twin. ProgressSnapshot et al pass isHi through, so a Hindi-mode
+    // user should see Devanagari level names (e.g. "जिज्ञासु शावक") not
+    // "Curious Cub". This is a smoke check — the exact label depends on the
+    // test student's totalXp, which we don't control here. Asserting no English
+    // level name appears is the contract.
+    await page.addInitScript(() => {
+      window.localStorage.setItem('alfanumrik_language', 'hi');
+    });
+    await loginAsStudent(page);
+    await page.goto(`${TARGET}/dashboard`, { waitUntil: 'domcontentloaded' });
+    // Wait for progress snapshot section to render
+    await page.waitForTimeout(2000);
+    const body = await page.locator('body').innerText();
+    const englishLevelNames = [
+      'Curious Cub',
+      'Quick Learner',
+      'Rising Star',
+      'Knowledge Seeker',
+      'Smart Fox',
+      'Quiz Champion',
+      'Study Master',
+      'Brain Ninja',
+      'Scholar Fox',
+      'Grand Master',
+    ];
+    for (const name of englishLevelNames) {
+      expect(
+        body.includes(name),
+        `English level name "${name}" leaked into Hindi-mode dashboard`,
+      ).toBe(false);
+    }
+  });
 });
 
 // ─── Mobile-device emulation row (visual + interaction parity) ───────────
