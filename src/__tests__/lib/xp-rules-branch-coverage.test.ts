@@ -28,7 +28,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { getLevelName, LEVEL_NAMES } from '@/lib/xp-config';
+import { getLevelName, LEVEL_NAMES, LEVEL_NAMES_HI } from '@/lib/xp-config';
 
 describe('xp-rules.ts branch closeout — getLevelName() fallback (line 120)', () => {
   it('returns the LHS of `||` when LEVEL_NAMES[level] is defined (covers line 120 LHS)', () => {
@@ -52,5 +52,27 @@ describe('xp-rules.ts branch closeout — getLevelName() fallback (line 120)', (
     // Defensive: the function signature accepts any number. Negative inputs
     // should not crash and should produce a deterministic fallback string.
     expect(getLevelName(-1)).toBe('Level -1');
+  });
+
+  // ── Hindi branch (added 2026-05-11, audit §0 F6) ─────────────────────
+  // getLevelName(level, isHi) introduced a new branch `isHi ? LEVEL_NAMES_HI
+  // : LEVEL_NAMES`. The existing tests above only exercise isHi=false (the
+  // default), leaving the isHi=true edge of the ternary uncovered. These
+  // tests pin the Hindi path.
+  it('returns LEVEL_NAMES_HI[level] when isHi=true (covers Hindi branch)', () => {
+    for (let level = 1; level <= 9; level++) {
+      expect(getLevelName(level, true)).toBe(LEVEL_NAMES_HI[level]);
+    }
+  });
+
+  it('caps at level 10 in Hindi mode just like English', () => {
+    expect(getLevelName(10, true)).toBe(LEVEL_NAMES_HI[10]);
+    expect(getLevelName(99, true)).toBe(LEVEL_NAMES_HI[10]);
+  });
+
+  it('falls back to "Level N" in Hindi mode for out-of-table levels', () => {
+    // Same fallback string in both modes — number-only formatting is universal.
+    expect(getLevelName(0, true)).toBe('Level 0');
+    expect(getLevelName(-1, true)).toBe('Level -1');
   });
 });
