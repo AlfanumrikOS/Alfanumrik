@@ -154,6 +154,8 @@ export default function Dashboard() {
     isHi,
     language,
     setLanguage,
+    theme,
+    toggleTheme,
     refreshSnapshot,
     activeRole,
   } = useAuth();
@@ -642,6 +644,32 @@ export default function Dashboard() {
               style={{ borderColor: 'var(--border-mid)', color: 'var(--text-3)' }}
             >
               {language === 'hi' ? '🌐 EN' : '🇮🇳 हिं'}
+            </button>
+            {/* Theme toggle (cycles light → dark → system).
+                AuthContext.toggleTheme handles persistence; Phase 1 §0.3. */}
+            <button
+              onClick={toggleTheme}
+              className="text-xs px-2.5 py-1.5 rounded-xl border transition-colors"
+              style={{ borderColor: 'var(--border-mid)', color: 'var(--text-3)' }}
+              aria-label={
+                theme === 'light'
+                  ? isHi ? 'डार्क थीम पर जाएँ' : 'Switch to dark theme'
+                  : theme === 'dark'
+                  ? isHi ? 'सिस्टम थीम पर जाएँ' : 'Switch to system theme'
+                  : isHi ? 'लाइट थीम पर जाएँ' : 'Switch to light theme'
+              }
+              title={
+                theme === 'light'
+                  ? (isHi ? 'लाइट' : 'Light')
+                  : theme === 'dark'
+                  ? (isHi ? 'डार्क' : 'Dark')
+                  : (isHi ? 'सिस्टम' : 'System')
+              }
+              data-testid="dashboard-theme-toggle"
+            >
+              <span aria-hidden="true">
+                {theme === 'light' ? '🌙' : theme === 'dark' ? '💻' : '☀️'}
+              </span>
             </button>
             <button
               onClick={() => router.push('/notifications')}
