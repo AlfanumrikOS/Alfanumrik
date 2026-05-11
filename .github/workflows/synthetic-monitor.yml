@@ -1,0 +1,88 @@
+name: synthetic monitor
+
+# Every 15 min: run the Playwright synthetic spec against prod and alert
+# on red. Phase 0 of the closed-loop product-reliability workstream (see
+# docs/superpowers/specs/2026-05-11-improvement-audit-roadmap-design.md §0).
+#
+# Required repo secrets (configured by the user, not by this workflow):
+#   SYNTHETIC_MONITOR_SLACK_WEBHOOK  Incoming-webhook URL for the alert channel.
+#                                    If unset, the alert step is a no-op and
+#                                    the workflow only fails the run (visible
+#                                    in the Actions tab + GitHub email).
+#   SYNTHETIC_AUTH_EMAIL             Optional. Email of a seeded test student
+#                                    on the target environment. When set,
+#                                    Rows 7 + 8 (authenticated dashboard
+#                                    checks) run; otherwise they skip.
+#   SYNTHETIC_AUTH_PASSWORD          Optional. Password for the above.
+#
+# Optional repo variable:
+#   SYNTHETIC_TARGET_URL  Defaults to https://alfanumrik.com. Override to
+#                         point at staging during canary periods.
+
+on:
+  schedule:
+    # Every 15 minutes. GitHub may delay scheduled runs under heavy load,
+    # so actual cadence is "at least every 15 min, often closer to 20".
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Override target URL (defaults to repo var or prod)'
+        required: false
+
+# Stop a stale run if a newer scheduled tick fires before this one finishes.
+concurrency:
+  group: synthetic-monitor
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write   # to open a triage issue on red
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: install deps (no scripts; speed)
+        run: npm ci --ignore-scripts
+
+      - name: install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: run synthetic spec
+        id: spec
+        env:
+          SYNTHETIC_TARGET_URL: ${{ github.event.inputs.target_url || vars.SYNTHETIC_TARGET_URL || 'https://alfanumrik.com' }}
+          SYNTHETIC_AUTH_EMAIL: ${{ secrets.SYNTHETIC_AUTH_EMAIL }}
+          SYNTHETIC_AUTH_PASSWORD: ${{ secrets.SYNTHETIC_AUTH_PASSWORD }}
+        run: npx playwright test e2e/synthetic/ --reporter=line --project=chromium 2>&1 | tee synthetic-output.log
+
+      - name: upload trace + screenshot artefacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-failure-${{ github.run_number }}
+          path: |
+            test-results/
+            synthetic-output.log
+          retention-days: 14
+
+      - name: slack alert on red
+        if: failure() && env.SLACK_WEBHOOK != ''
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SYNTHETIC_MONITOR_SLACK_WEBHOOK }}
+        run: |
+          # Minimal POST — no jq dependency. Failures land in the configured channel
+          # with a link back to this run. Triage flow is owned by the watchdog
+          # agent (Phase 2 of the audit's closed-loop plan).
+          curl -fsS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\":\":rotating_light: synthetic monitor red — run <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|#${{ github.run_number }}> against ${SYNTHETIC_TARGET_URL:-prod}\"}" \
+            "$SLACK_WEBHOOK" || true
