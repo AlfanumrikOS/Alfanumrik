@@ -26,31 +26,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       account_deletion_log: {
@@ -6806,6 +6781,7 @@ export type Database = {
           embedding_model: string | null
           grade: string | null
           grounded: boolean
+          grounded_from_chunks: boolean | null
           id: string
           input_tokens: number | null
           latency_ms: number | null
@@ -6832,6 +6808,7 @@ export type Database = {
           embedding_model?: string | null
           grade?: string | null
           grounded: boolean
+          grounded_from_chunks?: boolean | null
           id?: string
           input_tokens?: number | null
           latency_ms?: number | null
@@ -6858,6 +6835,7 @@ export type Database = {
           embedding_model?: string | null
           grade?: string | null
           grounded?: boolean
+          grounded_from_chunks?: boolean | null
           id?: string
           input_tokens?: number | null
           latency_ms?: number | null
@@ -11338,6 +11316,66 @@ export type Database = {
             columns: ["topic_id"]
             isOneToOne: false
             referencedRelation: "curriculum_topics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      question_bank_fix_history: {
+        Row: {
+          agent_run_id: string | null
+          attempts: number
+          created_at: string
+          fix_strategy: string
+          id: string
+          outcome: string
+          prior_correct_answer_index: number | null
+          prior_explanation: string | null
+          prior_options: Json | null
+          prior_question_text: string | null
+          prior_verifier_reason: string | null
+          question_id: string
+        }
+        Insert: {
+          agent_run_id?: string | null
+          attempts: number
+          created_at?: string
+          fix_strategy: string
+          id?: string
+          outcome: string
+          prior_correct_answer_index?: number | null
+          prior_explanation?: string | null
+          prior_options?: Json | null
+          prior_question_text?: string | null
+          prior_verifier_reason?: string | null
+          question_id: string
+        }
+        Update: {
+          agent_run_id?: string | null
+          attempts?: number
+          created_at?: string
+          fix_strategy?: string
+          id?: string
+          outcome?: string
+          prior_correct_answer_index?: number | null
+          prior_explanation?: string | null
+          prior_options?: Json | null
+          prior_question_text?: string | null
+          prior_verifier_reason?: string | null
+          question_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "question_bank_fix_history_agent_run_id_fkey"
+            columns: ["agent_run_id"]
+            isOneToOne: false
+            referencedRelation: "agent_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "question_bank_fix_history_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "question_bank"
             referencedColumns: ["id"]
           },
         ]
@@ -19126,6 +19164,24 @@ export type Database = {
             Args: { p_key: string; p_max?: number; p_window?: number }
             Returns: boolean
           }
+      claim_fix_batch: {
+        Args: {
+          p_batch_size: number
+          p_claimed_by: string
+          p_ttl_seconds?: number
+        }
+        Returns: {
+          chapter_number: number
+          chapter_title: string
+          correct_answer_index: number
+          explanation: string
+          grade: string
+          id: string
+          options: Json
+          question_text: string
+          subject: string
+        }[]
+      }
       claim_ncert_batch: {
         Args: { p_batch_size?: number; p_max_file_size?: number }
         Returns: {
@@ -21283,9 +21339,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       account_deletion_status: [

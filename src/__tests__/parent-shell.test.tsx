@@ -29,6 +29,11 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/lib/supabase', () => ({
   supabase: { auth: { signOut: vi.fn() } },
+  // Editorial Atlas flag pass-through (added 2026-05-11) — the shell reads
+  // feature flags on mount to decide between legacy and Atlas chrome. Mock
+  // returns an empty record so isAtlasEnabled() resolves false and the
+  // legacy shell renders, which is what these tests assert.
+  getFeatureFlags: vi.fn().mockResolvedValue({}),
 }));
 
 beforeEach(() => {

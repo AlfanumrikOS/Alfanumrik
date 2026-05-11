@@ -57,10 +57,24 @@ export interface AtlasShellProps {
   contentClassName?: string;
 }
 
+/**
+ * Responsive max-widths per variant. The "student" variant is mobile-first
+ * but we let it stretch to 1240 on wide desktops so the layout doesn't pool
+ * in a 720px column on a 1920px monitor. The 7/5 grid inside AtlasDashboard
+ * fills that space with mission + atlas on the left, rhythm + wins on the
+ * right.
+ *
+ * Rail (parent / school): 1280px is the editorial breakpoint where the
+ * three drilldown cards stop feeling crowded. Wider than that and the
+ * verdict line starts looking lost in negative space, so we cap there.
+ *
+ * Classroom (teacher): 1440px to give the heatmap room without forcing
+ * horizontal scroll on 1366px laptops.
+ */
 const VARIANT_MAX_WIDTH: Record<AtlasShellProps['variant'], number> = {
-  student:   720,
-  rail:      1240,
-  classroom: 1320,
+  student:   1240,
+  rail:      1280,
+  classroom: 1440,
 };
 
 export function AtlasShell({
