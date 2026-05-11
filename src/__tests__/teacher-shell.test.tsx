@@ -107,6 +107,8 @@ describe('TeacherShell', () => {
     }));
     vi.doMock('@/lib/supabase', () => ({
       supabase: { auth: { signOut: vi.fn() } },
+      // Editorial Atlas flag pass-through — empty record → legacy renders.
+      getFeatureFlags: vi.fn().mockResolvedValue({}),
     }));
     vi.doMock('next/navigation', () => ({
       useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
@@ -181,6 +183,8 @@ describe('TeacherShell role gate', () => {
     }));
     vi.doMock('@/lib/supabase', () => ({
       supabase: { auth: { signOut: vi.fn() } },
+      // Editorial Atlas flag pass-through — empty record → legacy renders.
+      getFeatureFlags: vi.fn().mockResolvedValue({}),
     }));
     vi.doMock('next/navigation', () => ({
       useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
