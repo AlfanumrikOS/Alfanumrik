@@ -28,7 +28,8 @@ on:
         default: ''
 
 permissions:
-  contents: read
+  contents: write       # push the auto/<cycle>/code_agent/<task> branch
+  pull-requests: write  # open the cycle's PR via gh
 
 concurrency:
   group: mesh-cron
@@ -79,14 +80,19 @@ jobs:
           git config user.email "mesh@alfanumrik.com"
           git config user.name "Alfanumrik Agent Mesh"
 
-      - name: Mesh tick (real L1+L2+L4+L6 against staging)
+      - name: Mesh tick (real L1+L2+L4+L6+L7 against staging)
+        env:
+          # gh CLI auto-picks GH_TOKEN for `gh pr create` etc.; the
+          # actions/checkout step already configured the local git remote
+          # with this token, so `git push` from the worktree also works.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           GOAL_FLAG=""
           if [ -n "${{ inputs.goal_override }}" ]; then
             GOAL_FLAG='--goal "${{ inputs.goal_override }}"'
           fi
           # shellcheck disable=SC2086
-          eval npm run mesh:tick -- --commit --real-l1 --real-l2 --real-l4 --real-l6 $GOAL_FLAG
+          eval npm run mesh:tick -- --commit --real-l1 --real-l2 --real-l4 --real-l6 --real-l7 $GOAL_FLAG
 
       - name: Upload run logs as artifact
         if: always()

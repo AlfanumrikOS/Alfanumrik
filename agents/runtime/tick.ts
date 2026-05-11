@@ -53,6 +53,7 @@ import { runCodeAgent } from './layers/l4-code-agent';
 import { runCritic } from './layers/l6-critic';
 import { pickNextGoal, resolveInboxRow, type PickedGoal } from './layers/l1-meta';
 import { runOrchestrator, type L2TaskAssignment } from './layers/l2-orchestrator';
+import { runDeploy } from './layers/l7-deploy';
 
 // ─── Types (mirror the JSON Schema contracts) ──────────────────────────
 
@@ -129,6 +130,7 @@ interface TickOptions {
   realL2: boolean;
   realL4: boolean;
   realL6: boolean;
+  realL7: boolean;
   goal: string | null;
 }
 
@@ -141,15 +143,16 @@ function parseArgs(): TickOptions {
   const realL2 = argv.includes('--real-l2');
   const realL4 = argv.includes('--real-l4');
   const realL6 = argv.includes('--real-l6');
+  const realL7 = argv.includes('--real-l7');
   const goalIdx = argv.indexOf('--goal');
   const goal = goalIdx >= 0 ? argv[goalIdx + 1] ?? null : null;
-  if ((realL2 || realL4 || realL6) && !commit) {
+  if ((realL2 || realL4 || realL6 || realL7) && !commit) {
     process.stderr.write(
-      '[mesh:tick] --real-l2/--real-l4/--real-l6 require --commit (no point in spending Anthropic tokens for a dry-run).\n',
+      '[mesh:tick] --real-l2/--real-l4/--real-l6/--real-l7 require --commit (no LLM spend / no GitHub side effects in dry-run).\n',
     );
     process.exit(2);
   }
-  return { commit, realL1, realL2, realL4, realL6, goal };
+  return { commit, realL1, realL2, realL4, realL6, realL7, goal };
 }
 
 const log = (label: string, msg: string) =>
@@ -569,9 +572,10 @@ async function tick(opts: TickOptions): Promise<void> {
     const l2Label = opts.realL2 ? 'L2 REAL (sonnet)' : 'L2 stub';
     const l4Label = opts.realL4 ? 'L4 REAL (sonnet)' : 'L4 stub';
     const l6Label = opts.realL6 ? 'L6 REAL (opus)' : 'L6 stub';
+    const l7Label = opts.realL7 ? ' → L7 push+PR (if approve)' : '';
     log(
       'dry-run',
-      `would dispatch ${l1Label} → ${l2Label} → 1 task (${previewTask.agent_role}) → ${l4Label} → L5 [${previewTask.evaluators_required.join(', ')}] → ${l6Label}`,
+      `would dispatch ${l1Label} → ${l2Label} → 1 task (${previewTask.agent_role}) → ${l4Label} → L5 [${previewTask.evaluators_required.join(', ')}] → ${l6Label}${l7Label}`,
     );
     log('dry-run', 'use --commit to write to the substrate; add --real-l1/--real-l2/--real-l4/--real-l6 to use the LLM workers');
     return;
@@ -761,6 +765,39 @@ async function tick(opts: TickOptions): Promise<void> {
     }
   }
 
+  // L7 deploy: push + open PR if approved AND non-empty diff. Requires
+  // worktree (set by --real-l4) and explicit --real-l7 opt-in. We do
+  // this BEFORE closeWorktree so the branch is still locally consistent
+  // — git push works against the worktree's view.
+  let l7PrUrl: string | null = null;
+  if (opts.realL7 && worktree) {
+    try {
+      const deployRes = await runDeploy({
+        worktree,
+        cycleId,
+        taskId: task.task_id,
+        goalText: goal.goal,
+        l4Summary: done.summary,
+        l4FilesChanged: done.files_changed,
+        l5Verdicts: evals.map(e => ({ evaluator: e.evaluator, verdict: e.verdict, blocking: e.blocking })),
+        l6Decision: verdict.decision,
+        l6Reasoning: verdict.reasoning,
+        rubricVersion: verdict.rubric_version,
+        tokensSpent: done.tokens_spent,
+      });
+      if (deployRes.skipped) {
+        log('L7', `deploy skipped: ${deployRes.skipReason}`);
+      } else {
+        log('L7', deployRes.notes);
+        l7PrUrl = deployRes.prUrl;
+      }
+    } catch (err: unknown) {
+      log('L7', `WARNING: deploy failed: ${(err as Error).message}`);
+    }
+  } else if (worktree && verdict.decision === 'approve' && done.files_changed.length > 0) {
+    log('L7', `deploy SKIPPED (--real-l7 not set; branch ${worktree.branch} preserved locally)`);
+  }
+
   process.stdout.write('\n── Cycle summary ──────────────────────────────────────\n');
   process.stdout.write(`  cycle_id   : ${cycleId}\n`);
   process.stdout.write(`  task_id    : ${task.task_id}\n`);
@@ -769,6 +806,9 @@ async function tick(opts: TickOptions): Promise<void> {
   process.stdout.write(`  reasoning  : ${verdict.reasoning.split('\n')[0]}\n`);
   if (worktree) {
     process.stdout.write(`  branch     : ${worktree.branch} (worktree removed; branch preserved on host)\n`);
+  }
+  if (l7PrUrl) {
+    process.stdout.write(`  pr         : ${l7PrUrl}\n`);
   }
   process.stdout.write('\n');
 

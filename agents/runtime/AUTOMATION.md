@@ -128,15 +128,29 @@ L6 (real, Opus) → reads diff + evals + rubric
  │
 L7 → marks cycle complete (approve) or aborted (anything else)
    → resolves inbox row (done | needs_human | abandoned)
+   → (with --real-l7) pushes branch to origin and opens PR via gh
 ```
+
+## L7 deploy automation (--real-l7)
+
+When a cycle is **approved** AND L4 produced a **non-empty diff**, L7 pushes the worktree's branch to origin and opens a pull request against `main` via `gh pr create`. **No auto-merge** — humans decide each PR.
+
+PR contents:
+- Title: `[mesh-cron] <goal text, truncated to 80 chars>`
+- Body: cycle id, task id, tokens spent, rubric version, L4 summary, all evaluator verdicts, full L6 critic reasoning
+- Footer tag: `[mesh-cron]` for reviewer filtering
+
+The L7 worker is **opt-in** via `--real-l7`. The cron always passes it; local runs need to pass it explicitly. Without `--real-l7`, the runtime logs `L7 deploy SKIPPED` and the branch stays local (Phase β behaviour, useful for testing).
+
+In the GitHub Actions context, `gh` auto-authenticates with the workflow's `GITHUB_TOKEN`. The workflow's `permissions` block declares `contents: write` (for `git push`) and `pull-requests: write` (for `gh pr create`).
 
 ## What is NOT done yet (Phase γ scope)
 
-- **L7 deploy automation**: cycles ending in `approve` mark `cycle.status='complete'` but don't actually push/merge/deploy. A human still ships the branch.
+- **Auto-merge**: PRs opened by L7 are reviewed by humans. No path to merge without a human click. Deliberate Phase γ safety stance.
 - **L3 Context Manager**: L4 reads files on demand; there's no curated context layer yet.
 - **L8 Evolution**: lessons_learned isn't written automatically. Outcome attribution lives in the contract but no worker computes it yet.
 - **Multi-task DAG decomposition**: L2 produces one task per cycle. Complex goals should be split into multiple inbox entries.
-- **Pre-existing repo health**: `unit_tests` / `type_check` / `lint` evaluators fail on `main` for reasons unrelated to the mesh (vitest config import, tsc errors, ESLint config). Until these are fixed, every cycle ends in `reject` and the mesh never actually ships code.
+- **Pre-existing repo health**: `unit_tests` / `type_check` / `lint` evaluators are now non-blocking (they still run, the critic still sees them, but a fail doesn't auto-reject). When the underlying issues (vitest config, tsconfig scope, ESLint config) are fixed, flip `blocking: false → true` in each evaluator script.
 
 ## Audit trail
 
