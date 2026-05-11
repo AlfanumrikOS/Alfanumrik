@@ -76,7 +76,7 @@ export interface Service<Input, Output> {
    *   - Reads from `state` (and may pass `state` to other services)
    *   - May call external APIs (Anthropic, Razorpay, NCERT data)
    *   - Returns Output + events to publish
-   *   - Does NOT write to domain_events, students, mastery_state, etc.
+   *   - Does NOT write to state_events, students, mastery_state, etc.
    *
    * The Orchestrator is the only thing that writes domain state.
    */

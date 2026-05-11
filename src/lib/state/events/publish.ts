@@ -2,7 +2,7 @@
  * src/lib/state/events/publish.ts — the only function that writes events.
  *
  * Every cross-feature signal in Alfanumrik becomes a row in the
- * `domain_events` table via this function. Subscribers (the
+ * `state_events` table via this function. Subscribers (the
  * Orchestrator, the AI context refresher, parent notifications, mesh
  * outcome attribution) read either by polling or by Supabase Realtime
  * channel.
@@ -66,10 +66,10 @@ export interface PublishResult {
 
 /**
  * Publish a domain event. Single entry point — every feature calls
- * this; nothing else writes domain_events directly.
+ * this; nothing else writes state_events directly.
  *
  * Returns synchronously when the INSERT completes (typical: <50ms).
- * Subscribers receive via pg_notify channel `domain_events` and
+ * Subscribers receive via pg_notify channel `state_events_new` and
  * Supabase Realtime; their handlers are out-of-band.
  *
  * @param sb Service-role Supabase client (the bus is RLS-locked to
@@ -98,7 +98,10 @@ export async function publishEvent(
 
   // 3. Insert. The UNIQUE constraint on idempotencyKey makes retries safe.
   const e = parsed.data;
-  const { error } = await sb.from('domain_events').insert({
+  // NOTE: writes to `state_events`, not `domain_events`. The legacy
+  // outbox table is named `domain_events`; renaming this destination
+  // (see migration 20260521100000) was the fix for that collision.
+  const { error } = await sb.from('state_events').insert({
     event_id: e.eventId,
     kind: e.kind,
     actor_auth_user_id: e.actorAuthUserId,

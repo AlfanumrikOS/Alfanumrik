@@ -22,7 +22,7 @@
  *
  * Architecture:
  *
- *   - The journey is a PROJECTION over domain_events, scoped to a
+ *   - The journey is a PROJECTION over state_events, scoped to a
  *     learner and (optionally) a time window. It is not a new table —
  *     it's a function `projectJourney(events) → JourneyEvent[]` plus
  *     short-term caching at the consumer.
@@ -31,7 +31,7 @@
  *     fields a UI needs to render without joining back to subject_codes
  *     or chapter titles. The projector handles the lookups once.
  *
- *   - Surfaces that need "live" updates subscribe to domain_events for
+ *   - Surfaces that need "live" updates subscribe to state_events for
  *     this learner's id and re-project incrementally — the projector
  *     is incremental-safe.
  *
