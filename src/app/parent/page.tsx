@@ -3,9 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
-import { supabase, getFeatureFlags } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { getLevelFromScore } from '@/lib/score-config';
-import { isAtlasEnabled } from '@/lib/feature-flags';
+import { useAtlasFlag } from '@/lib/use-atlas-flag';
 import AtlasParent from './AtlasParent';
 import {
   type ParentSession,
@@ -836,9 +836,10 @@ export default function ParentPage() {
 }
 
 /**
- * Reads the Editorial Atlas flag (cached client-side via getFeatureFlags)
- * and hands off to either the redesigned <AtlasParent> or the legacy
- * <Dashboard>. Default: legacy (both flags ship off).
+ * Reads the Editorial Atlas flag and hands off to either the redesigned
+ * <AtlasParent> or the legacy <Dashboard>. Uses the shared `useAtlasFlag`
+ * hook so the initial render is synchronous (no flash). See
+ * src/lib/use-atlas-flag.ts for the cache strategy.
  */
 function AtlasParentDispatcher(props: {
   guardian: ParentSession;
@@ -846,26 +847,7 @@ function AtlasParentDispatcher(props: {
   allChildren: StudentSession[];
   isHi: boolean;
 }) {
-  const [atlas, setAtlas] = useState<boolean | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    getFeatureFlags().then((flags) => {
-      if (!cancelled) setAtlas(isAtlasEnabled('parent', flags));
-    }).catch(() => {
-      if (!cancelled) setAtlas(false);
-    });
-    return () => { cancelled = true; };
-  }, []);
-  if (atlas === null) {
-    return (
-      <div className="atlas-canvas" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 60 }}>
-        <div
-          className="w-10 h-10 border-[3px] rounded-full animate-spin"
-          style={{ borderColor: 'var(--cream-3)', borderTopColor: 'var(--accent)' }}
-        />
-      </div>
-    );
-  }
+  const atlas = useAtlasFlag('parent');
   if (atlas) return <AtlasParent {...props} />;
   return <Dashboard guardian={props.guardian} initialStudent={props.student} allChildren={props.allChildren} isHi={props.isHi} />;
 }

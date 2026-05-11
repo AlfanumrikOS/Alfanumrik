@@ -49,7 +49,7 @@ import { PlanBadge } from '@/components/PlanBadge';
 import CoinBalance from '@/components/coins/CoinBalance';
 import AboveFoldHero from '@/components/dashboard/sections/AboveFoldHero';
 import type { PendingLink } from '@/components/dashboard/PendingLinkApproval';
-import { isAtlasEnabled } from '@/lib/feature-flags';
+import { useAtlasFlag } from '@/lib/use-atlas-flag';
 import AtlasDashboard from './AtlasDashboard';
 
 // ─── Lazy-loaded below-fold sections ─────────────────────────────────────
@@ -148,6 +148,19 @@ function Accordion({
 }
 
 export default function Dashboard() {
+  // ─── Editorial Atlas synchronous dispatcher ───────────────────────────
+  // Hoisted to the very top of the component so we short-circuit BEFORE
+  // any of the legacy hooks (useDashboardData, getFeatureFlags etc) fire.
+  // Without this hoist, the legacy data-loading effects would fire even
+  // when we end up rendering AtlasDashboard — causing visible flicker
+  // and wasted Supabase calls. See src/lib/use-atlas-flag.ts.
+  const atlas = useAtlasFlag('student');
+  if (atlas) return <AtlasDashboard />;
+
+  return <LegacyDashboard />;
+}
+
+function LegacyDashboard() {
   const {
     student,
     snapshot,
@@ -516,13 +529,9 @@ export default function Dashboard() {
     return <DashboardSkeleton />;
   }
 
-  // ─── Editorial Atlas flag dispatcher ───────────────────────────────────
-  // When ff_editorial_atlas_v1 (or ff_editorial_atlas_student) is on, hand
-  // off to the redesigned surface. The legacy code path below is the
-  // fallback and is what every user sees today (both flags default off).
-  if (isAtlasEnabled('student', flags)) {
-    return <AtlasDashboard />;
-  }
+  // Atlas dispatch was hoisted to the wrapper `Dashboard` function; by
+  // the time we reach here, the flag is known to be off (or legacy data
+  // is needed). Keep the legacy data-loading path intact below.
 
   // ─── Derived metrics ───────────────────────────────────────────────────
   const totalXp = snapshot?.total_xp ?? profiles.reduce((a, p) => a + (p.xp ?? 0), 0);

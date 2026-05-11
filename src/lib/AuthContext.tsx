@@ -16,6 +16,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { supabase, getStudentSnapshot } from './supabase';
 import { clearAllCache } from './swr';
+import { clearAtlasFlagCache } from './use-atlas-flag';
 import { track } from './analytics';
 import { identify as posthogIdentify, reset as posthogReset } from './posthog/client';
 import type { Student, StudentSnapshot } from './types';
@@ -472,6 +473,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     bootstrapAttemptedRef.current = false;
     // Clear SWR cache to prevent data leakage between accounts on shared devices
     clearAllCache();
+    // Clear Editorial Atlas flag cache so the next signin doesn't render
+    // with a previous user's flag state on first paint.
+    clearAtlasFlagCache();
     // Reset PostHog distinct_id so the next signin starts a fresh identified
     // session — without this, the next user inherits the previous user's
     // cohort attribution. See P13.
