@@ -195,7 +195,12 @@ describe('NavV2 — hamburger menu', () => {
   });
 });
 
-describe('NavV2 — theme toggle and persistence', () => {
+describe('NavV2 — theme toggle removed (landing locked to light, 2026-05-11)', () => {
+  // The landing surface no longer offers a theme toggle. The block of tests
+  // that previously asserted toggle persistence + body data-theme write +
+  // prefers-color-scheme handling was retired with the toggle itself. The
+  // new contract: no theme-toggle button exists on the landing nav.
+
   beforeEach(() => {
     localStorage.clear();
     delete document.body.dataset.theme;
@@ -203,24 +208,18 @@ describe('NavV2 — theme toggle and persistence', () => {
   });
   afterEach(() => cleanup());
 
-  it('theme toggle persists to localStorage under `alfanumrik-theme`', () => {
+  it('no theme-toggle button renders in the desktop or mobile nav', () => {
     renderNav();
-    const themeBtn = screen.getByLabelText(/Toggle dark mode|डार्क मोड टॉगल करें/);
-    fireEvent.click(themeBtn);
-    // System default is light, toggle → dark
-    expect(localStorage.getItem('alfanumrik-theme')).toBe('dark');
-    fireEvent.click(themeBtn);
-    expect(localStorage.getItem('alfanumrik-theme')).toBe('light');
+    const themeButtons = screen.queryAllByLabelText(
+      /Toggle dark mode|डार्क मोड टॉगल करें|Toggle theme|थीम बदलें/,
+    );
+    expect(
+      themeButtons.length,
+      'theme toggle button should be removed from the landing nav',
+    ).toBe(0);
   });
 
-  it('toggling theme to dark sets document.body.dataset.theme = "dark"', () => {
-    renderNav();
-    const themeBtn = screen.getByLabelText(/Toggle dark mode|डार्क मोड टॉगल करें/);
-    fireEvent.click(themeBtn);
-    expect(document.body.dataset.theme).toBe('dark');
-  });
-
-  it('language toggle persists language to localStorage', () => {
+  it('language toggle still works (regression guard — only theme toggle was removed)', () => {
     renderNav();
     const langBtn = screen.getByLabelText(
       /Switch to English|भाषा हिन्दी में बदलें/,
@@ -229,13 +228,10 @@ describe('NavV2 — theme toggle and persistence', () => {
     expect(localStorage.getItem('alf-welcome-lang')).toBe('hi');
   });
 
-  it('prefers-color-scheme: dark drives toggle direction (system-dark + click → light)', () => {
-    // When system is dark and no stored theme, clicking toggle should produce 'light'.
-    stubMatchMedia(true);
+  it('body.dataset.theme is locked to "light" on mount regardless of system preference', () => {
+    stubMatchMedia(true); // simulate system-dark
     renderNav();
-    const themeBtn = screen.getByLabelText(/Toggle dark mode|डार्क मोड टॉगल करें/);
-    fireEvent.click(themeBtn);
-    expect(localStorage.getItem('alfanumrik-theme')).toBe('light');
+    expect(document.body.dataset.theme).toBe('light');
   });
 });
 

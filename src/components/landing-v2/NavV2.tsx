@@ -27,7 +27,7 @@ const SOLUTIONS: SolutionItem[] = [
 ];
 
 export default function NavV2() {
-  const { isHi, toggleLang, theme, toggleTheme, role, setRole, t } = useWelcomeV2();
+  const { isHi, toggleLang, role, setRole, t } = useWelcomeV2();
   const [menuOpen, setMenuOpen] = useState(false);
   const [solutionsOpen, setSolutionsOpen] = useState(false);
   const tabsRef = useRef<HTMLDivElement | null>(null);
@@ -35,16 +35,17 @@ export default function NavV2() {
   const solutionsBtnRef = useRef<HTMLButtonElement | null>(null);
   const solutionsPanelRef = useRef<HTMLDivElement | null>(null);
 
-  // Apply theme attribute on document.body for any global third-party styles, plus the .root scope
+  // 2026-05-11: landing is locked to light. Set body.dataset.theme='light'
+  // on mount so any legacy global selectors that respond to body[data-theme]
+  // resolve to the light branch instead of inheriting whatever AuthContext
+  // wrote to documentElement (which may be 'dark' for system-dark visitors).
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    if (theme === 'dark') document.body.dataset.theme = 'dark';
-    else if (theme === 'light') document.body.dataset.theme = 'light';
-    else delete document.body.dataset.theme;
+    document.body.dataset.theme = 'light';
     return () => {
       if (typeof document !== 'undefined') delete document.body.dataset.theme;
     };
-  }, [theme]);
+  }, []);
 
   // Lock background scroll when full-screen menu open
   useEffect(() => {
@@ -157,8 +158,8 @@ export default function NavV2() {
     });
   };
 
-  const isDark = theme === 'dark';
-  const themeIcon = isDark ? '☼' : '◐';
+  // 2026-05-11: theme toggle removed from landing nav; isDark / themeIcon
+  // constants deleted along with the desktop + mobile toggle buttons below.
 
   return (
     <>
@@ -287,16 +288,7 @@ export default function NavV2() {
             >
               {isHi ? <><span lang="hi">हिं</span> · EN</> : <>EN · <span lang="hi">हिं</span></>}
             </button>
-            <button
-              type="button"
-              className={s.themeToggle}
-              onClick={toggleTheme}
-              aria-pressed={isDark}
-              aria-label={t('Toggle dark mode', 'डार्क मोड टॉगल करें')}
-              title={t('Toggle dark mode', 'डार्क मोड टॉगल करें')}
-            >
-              <span aria-hidden="true">{themeIcon}</span>
-            </button>
+            {/* Theme toggle removed 2026-05-11: landing is locked to light. */}
             <Link
               href="/login"
               className={`${s.btn} ${s.btnInk} ${s.btnArrow}`}
@@ -464,9 +456,7 @@ export default function NavV2() {
               <button type="button" onClick={toggleLang} aria-label={t('Toggle language', 'भाषा बदलें')}>
                 {isHi ? <><span lang="hi">हिं</span> · EN</> : <>EN · <span lang="hi">हिं</span></>}
               </button>
-              <button type="button" onClick={toggleTheme} aria-label={t('Toggle theme', 'थीम बदलें')}>
-                {isDark ? t('Dark · Light', 'डार्क · लाइट') : t('Light · Dark', 'लाइट · डार्क')}
-              </button>
+              {/* Mobile theme toggle removed 2026-05-11: landing locked to light. */}
             </div>
           </div>
 

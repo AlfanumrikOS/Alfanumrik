@@ -336,6 +336,27 @@ test.describe('theme + language parity', () => {
     );
     expect(colorScheme).toBe('light dark');
   });
+
+  test('Row 17 — /welcome forces data-theme="light" on its root regardless of system / explicit dark preference (2026-05-11)', async ({
+    page,
+  }) => {
+    // User direction 2026-05-11: dark mode removed from the landing page.
+    // Even if the OS prefers dark AND localStorage holds 'dark', WelcomeV2's
+    // own root must render light (its CSS module is scoped, so light wins
+    // for the landing surface only — the rest of the app respects user pref).
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.addInitScript(() => {
+      window.localStorage.setItem('alfanumrik-theme', 'dark');
+      window.localStorage.setItem('alfanumrik_theme', 'dark');
+    });
+    await page.goto(`${TARGET}/welcome`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1500); // let inline bootstrap + useEffect run
+
+    const welcomeRoot = page.locator('[data-testid="welcome-root"]');
+    await expect(welcomeRoot).toBeVisible({ timeout: 10_000 });
+    const rootTheme = await welcomeRoot.evaluate((el) => el.getAttribute('data-theme'));
+    expect(rootTheme, 'welcome root must be locked to light').toBe('light');
+  });
 });
 
 // ─── Mobile-device emulation row (visual + interaction parity) ───────────
