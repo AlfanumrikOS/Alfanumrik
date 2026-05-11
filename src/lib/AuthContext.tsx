@@ -109,15 +109,25 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
-/** Apply theme preference to document.documentElement via data-theme attribute */
+/** Resolve a ThemePreference into the concrete theme to apply.
+ *  `system` reads `prefers-color-scheme: dark` from the browser. */
+function resolveTheme(pref: ThemePreference): 'light' | 'dark' {
+  if (pref === 'light' || pref === 'dark') return pref;
+  if (typeof window === 'undefined' || !window.matchMedia) return 'light';
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+/** Apply theme preference to document.documentElement via data-theme attribute.
+ *
+ *  Phase 1 (2026-05-11): for pref === 'system' we now write the *resolved*
+ *  value (light or dark) rather than removing the attribute. Previously the
+ *  attribute was removed for system mode, which meant the CSS dark theme in
+ *  globals.css (selector: `[data-theme="dark"]`) never activated for system-
+ *  preference-dark users. The system-listener effect in AuthProvider keeps
+ *  the attribute in sync if the user changes OS theme while pref is 'system'. */
 function applyThemeToDOM(pref: ThemePreference) {
   if (typeof document === 'undefined') return;
-  const root = document.documentElement;
-  if (pref === 'system') {
-    root.removeAttribute('data-theme');
-  } else {
-    root.setAttribute('data-theme', pref);
-  }
+  document.documentElement.setAttribute('data-theme', resolveTheme(pref));
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -150,6 +160,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return next;
     });
   }, []);
+
+  // System-theme listener: when pref === 'system', re-apply on OS theme change
+  // so dark/light flips live without a refresh. Phase 1 (2026-05-11).
+  useEffect(() => {
+    if (theme !== 'system') return;
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => applyThemeToDOM('system');
+    // Apply once now in case the system preference changed before this effect
+    // mounted (e.g. user toggled OS theme on the welcome page before login).
+    applyThemeToDOM('system');
+    if (mq.addEventListener) {
+      mq.addEventListener('change', onChange);
+      return () => mq.removeEventListener('change', onChange);
+    }
+    // Older Safari fallback
+    mq.addListener(onChange);
+    return () => mq.removeListener(onChange);
+  }, [theme]);
 
   // Guard against recursive fetchUser calls after bootstrap.
   // Reset to false on each fresh fetchUser invocation; set to true after bootstrap attempt.
@@ -483,12 +512,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const saved = localStorage.getItem('alfanumrik_language');
         if (saved) setLanguageState(saved);
 
-        // Initialize theme from localStorage
+        // Initialize theme from localStorage. Phase 1 (2026-05-11): always
+        // call applyThemeToDOM so system-preference-dark users actually see
+        // the dark theme on first paint (the previous code only applied when
+        // a saved value was present, so system-dark users stayed light).
+        // Companion mitigation: <meta name="color-scheme" content="light dark">
+        // already shipped in layout.tsx so native chrome themes alongside.
         const savedTheme = localStorage.getItem('alfanumrik_theme') as ThemePreference | null;
-        if (savedTheme && ['light', 'dark', 'system'].includes(savedTheme)) {
-          setThemeState(savedTheme);
-          applyThemeToDOM(savedTheme);
-        }
+        const effective: ThemePreference =
+          savedTheme && ['light', 'dark', 'system'].includes(savedTheme)
+            ? savedTheme
+            : 'system';
+        if (effective !== 'system') setThemeState(effective);
+        applyThemeToDOM(effective);
       }
     };
 
