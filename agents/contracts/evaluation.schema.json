@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alfanumrik.com/agents/contracts/evaluation.schema.json",
+  "title": "EvaluationVerdict",
+  "description": "Output of a single L5 evaluator. One CompletedTask produces N EvaluationVerdicts (one per evaluator). The L6 Critic ingests the full set.",
+  "type": "object",
+  "required": ["task_id", "cycle_id", "evaluator", "verdict", "blocking", "evaluated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "task_id": { "type": "string", "format": "uuid" },
+    "cycle_id": { "type": "string", "format": "uuid" },
+    "evaluator": {
+      "type": "string",
+      "enum": [
+        "unit_tests",
+        "type_check",
+        "lint",
+        "learning_eval",
+        "pedagogy_eval",
+        "performance",
+        "accessibility",
+        "tenant_isolation",
+        "red_team",
+        "bundle_size",
+        "i18n_coverage"
+      ],
+      "description": "Canonical evaluator slug. New evaluators must be added here AND to /agents/README.md §5 in the same PR."
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["pass", "fail", "warn", "skipped"]
+    },
+    "blocking": {
+      "type": "boolean",
+      "description": "If true, a fail here MUST block the Critic from approving. tenant_isolation and red_team are always blocking regardless of risk_tier."
+    },
+    "evidence_url": {
+      "type": ["string", "null"],
+      "format": "uri",
+      "description": "Link to CI run / eval report / artefact."
+    },
+    "evidence": {
+      "type": "object",
+      "description": "Structured payload (e.g. failing test names, perf numbers, axe-core violations). Free-form per evaluator."
+    },
+    "notes": { "type": "string", "maxLength": 4000 },
+    "evaluated_at": { "type": "string", "format": "date-time" }
+  }
+}

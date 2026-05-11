@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alfanumrik.com/agents/contracts/cycle-goal.schema.json",
+  "title": "CycleGoal",
+  "description": "Output of L1 Meta-Orchestrator, input to L2 Task Orchestrator. Defines what a single build/evolve cycle is trying to accomplish, the budget it may spend, and the metric that decides whether it succeeded.",
+  "type": "object",
+  "required": ["goal", "signal_source", "risk_tier", "budget_tokens", "target_metric", "target_delta", "non_goals", "constraints"],
+  "additionalProperties": false,
+  "properties": {
+    "goal": {
+      "type": "string",
+      "minLength": 12,
+      "maxLength": 400,
+      "description": "One-sentence imperative statement of what to accomplish."
+    },
+    "goal_rationale": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "Why this is the right next goal — references the signal and prior cycles."
+    },
+    "signal_source": {
+      "type": "string",
+      "enum": ["ceo", "feedback", "evolution", "incident", "ad-hoc"],
+      "description": "Where the impetus for this cycle came from."
+    },
+    "risk_tier": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "1=copy/UI tweak, 2=non-schema code, 3=new feature, 4=tenant/billing, 5=schema/pedagogy/policy. Risk tier drives auto-merge eligibility and reviewer requirements."
+    },
+    "budget_tokens": {
+      "type": "integer",
+      "minimum": 50000,
+      "maximum": 20000000,
+      "description": "Hard ceiling on model tokens this cycle may consume across all agents."
+    },
+    "target_metric": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,127}$",
+      "description": "The single metric whose movement decides success. Must match a metric name registered in PostHog or the outcome_metrics catalog."
+    },
+    "target_delta": {
+      "type": "number",
+      "description": "Expected directional change in target_metric (e.g. 0.30 = +30%, -0.10 = -10%). Sign matters; negative for drop-off-style metrics."
+    },
+    "tenant_scope": {
+      "type": "string",
+      "enum": ["house", "pilot", "all"],
+      "default": "house",
+      "description": "Which tenants the cycle is allowed to touch. 'house' = Cusiosense house tenant only; 'pilot' = pilot schools; 'all' = every tenant."
+    },
+    "non_goals": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 200 },
+      "minItems": 1,
+      "description": "Explicit things this cycle will NOT do. Prevents scope creep by execution agents."
+    },
+    "constraints": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 300 },
+      "description": "Hard constraints (e.g. 'no schema changes', 'no learner-facing copy changes', 'pedagogy spec frozen')."
+    },
+    "deadline": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Optional hard deadline. Cycles past this without ship are aborted by L1."
+    },
+    "lessons_to_respect": {
+      "type": "array",
+      "items": { "type": "string", "format": "uuid" },
+      "description": "lessons_learned.id list the L2 + execution agents must surface in their plans/diffs."
+    }
+  }
+}

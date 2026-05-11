@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alfanumrik.com/agents/contracts/task-assignment.schema.json",
+  "title": "TaskAssignment",
+  "description": "Output of L2 Task Orchestrator, input to an L4 execution agent. One task = one branch = one PR. The execution agent must complete (or fail loudly) without re-decomposing.",
+  "type": "object",
+  "required": ["task_id", "cycle_id", "agent_role", "title", "objective", "definition_of_done", "allowed_paths", "forbidden_paths", "model_hint"],
+  "additionalProperties": false,
+  "properties": {
+    "task_id": { "type": "string", "format": "uuid" },
+    "cycle_id": { "type": "string", "format": "uuid" },
+    "parent_task_id": {
+      "type": ["string", "null"],
+      "format": "uuid",
+      "description": "Optional parent in the task DAG. NULL = top-level task."
+    },
+    "agent_role": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "description": "One of: code_agent, schema_agent, content_agent, pedagogy_agent, ux_agent, i18n_agent, devops_agent. Owned by /agents/README.md §4."
+    },
+    "title": { "type": "string", "minLength": 8, "maxLength": 120 },
+    "objective": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 2000,
+      "description": "What the agent is being asked to accomplish. Concrete enough that two engineers would build the same thing."
+    },
+    "definition_of_done": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 300 },
+      "minItems": 1,
+      "description": "Bullet checklist the agent must satisfy before opening a PR."
+    },
+    "allowed_paths": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Glob list the agent may edit. Outside this list is a hard fail."
+    },
+    "forbidden_paths": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Glob list the agent MUST NOT touch even if it appears 'related'. Examples: supabase/migrations/ for non-schema agents, /agents/prompts/ for everyone except evolution_agent."
+    },
+    "context_scopes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["code_index", "pedagogy_index", "tenant_index", "lessons_learned", "prior_cycle"]
+      },
+      "description": "Which Context Manager scopes the agent may pull from."
+    },
+    "model_hint": {
+      "type": "string",
+      "enum": ["opus", "sonnet", "haiku"],
+      "description": "Suggested model tier. Execution runtime may downgrade for cost; never upgrade without L2 re-approval."
+    },
+    "max_tokens": {
+      "type": "integer",
+      "minimum": 10000,
+      "maximum": 5000000,
+      "description": "Per-task token budget. Hard stop, not advisory."
+    },
+    "evaluators_required": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+      "description": "Names of evaluators that MUST run before L6 can review (e.g. unit_tests, tenant_isolation, learning_eval)."
+    },
+    "deadline": { "type": "string", "format": "date-time" }
+  }
+}

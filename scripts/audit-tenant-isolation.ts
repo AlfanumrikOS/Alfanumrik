@@ -262,9 +262,9 @@ const EXPLICIT_WAIVERS: ReadonlyArray<RouteWaiver> = [
 
 // ─── Bucket types ───────────────────────────────────────────────────────
 
-type Bucket = 'SAFE' | 'REVIEW' | 'NO_TENANT_SCOPING' | 'NO_AUTH';
+export type Bucket = 'SAFE' | 'REVIEW' | 'NO_TENANT_SCOPING' | 'NO_AUTH';
 
-interface RouteFinding {
+export interface RouteFinding {
   routePath: string;          // /api/foo/bar
   filePath: string;           // absolute path
   methods: string[];          // ['GET', 'POST', ...]
@@ -402,7 +402,7 @@ function categorize(
   };
 }
 
-async function audit(): Promise<RouteFinding[]> {
+export async function audit(): Promise<RouteFinding[]> {
   const files = await walkRoutes(API_ROOT);
   const findings: RouteFinding[] = [];
 
@@ -616,8 +616,14 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  // eslint-disable-next-line no-console
-  console.error('audit-tenant-isolation: fatal error', err);
-  process.exit(2);
-});
+// Only execute the CLI when invoked directly (e.g. `npx tsx scripts/...`).
+// When this module is imported (by eval/tenant-isolation/run.ts and tests),
+// the `audit()` function is the entry point — the CLI main() must not run
+// as an import side effect.
+if (require.main === module) {
+  main().catch(err => {
+    // eslint-disable-next-line no-console
+    console.error('audit-tenant-isolation: fatal error', err);
+    process.exit(2);
+  });
+}
