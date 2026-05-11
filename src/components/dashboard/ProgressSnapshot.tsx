@@ -61,7 +61,8 @@ export default function ProgressSnapshot({ totalXp, streak, mastered, isHi }: Pr
       style={{
         background: 'var(--surface-1)',
         border: '1px solid var(--border)',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.03)',
+        // Phase 1.5: theme-aware shadow.
+        boxShadow: 'var(--shadow-md)',
       }}
     >
       {/* Performance Score — new primary metric */}

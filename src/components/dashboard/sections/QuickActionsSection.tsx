@@ -61,12 +61,16 @@ export default function QuickActionsSection({
                  with comfortable margin. Audit 2026-05-11 §0 F4. */
               className="flex flex-col items-center gap-2 px-3 py-3.5 rounded-xl transition-all active:scale-[0.97] min-h-[64px]"
               style={{
-                /* Tile background was ${s.color}10 (6% alpha) — invisible on
-                   cream bg. Bumped to 1a (10%) for tile presence; border
-                   raised from 25 to 55 (33%) so the edge is clearly defined.
-                   Audit 2026-05-11 §0 F4. */
-                background: `${s.color}1a`,
-                border: `1px solid ${s.color}55`,
+                /* Tile background uses inline-style color-with-alpha (s.color is
+                   a per-tile semantic hex). Phase 0 bumped alpha to 1a (10%) for
+                   light-mode visibility, but 10% over dark surface is nearly
+                   imperceptible. Phase 1.5 (2026-05-11) raises to 33 (20%) /
+                   77 (47%) so the tile reads in both themes. The fully-saturated
+                   text color (rendered below) keeps semantic identity.
+                   Trade-off: brighter tint in light mode is acceptable — perf-
+                   score tiles already use comparable saturation. */
+                background: `${s.color}33`,
+                border: `1px solid ${s.color}77`,
               }}
             >
               <span className="text-2xl" aria-hidden="true">{s.icon}</span>
