@@ -291,6 +291,38 @@ export const PEDAGOGY_V2_FLAGS = {
 } as const;
 
 /**
+ * Editorial Atlas redesign flags (2026-05-11).
+ *
+ *  ff_editorial_atlas_v1
+ *    Master switch for the multi-role redesign documented in
+ *    docs/design/MULTI_ROLE_REDESIGN.md. When ON, the student dashboard,
+ *    parent portal, teacher classroom, and school-admin overview render
+ *    the new Atlas surfaces (Fraunces editorial headline, unified shell,
+ *    monoline iconography). When OFF, the legacy surfaces render
+ *    unchanged. Default: false.
+ *
+ *    Per-role canaries (off until master is on):
+ *      ff_editorial_atlas_student
+ *      ff_editorial_atlas_parent
+ *      ff_editorial_atlas_teacher
+ *      ff_editorial_atlas_school
+ *
+ *    These give us a per-role flip even after the master is on, which
+ *    we'll need for the 3-week phased rollout in the redesign plan.
+ *
+ * Seeded by 20260511180000_add_ff_editorial_atlas.sql. Tenant-scoped
+ * canary: enable the master flag globally with target_institutions =
+ * '{<tenant-uuid>}' to launch on one school first.
+ */
+export const EDITORIAL_ATLAS_FLAGS = {
+  MASTER:  'ff_editorial_atlas_v1',
+  STUDENT: 'ff_editorial_atlas_student',
+  PARENT:  'ff_editorial_atlas_parent',
+  TEACHER: 'ff_editorial_atlas_teacher',
+  SCHOOL:  'ff_editorial_atlas_school',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -310,4 +342,36 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [PEDAGOGY_V2_FLAGS.DAILY_RHYTHM]: false,
   [PEDAGOGY_V2_FLAGS.WEEKLY_DIVE]: false,
   [PEDAGOGY_V2_FLAGS.MONTHLY_SYNTHESIS]: false,
+  [EDITORIAL_ATLAS_FLAGS.MASTER]:  false,
+  [EDITORIAL_ATLAS_FLAGS.STUDENT]: false,
+  [EDITORIAL_ATLAS_FLAGS.PARENT]:  false,
+  [EDITORIAL_ATLAS_FLAGS.TEACHER]: false,
+  [EDITORIAL_ATLAS_FLAGS.SCHOOL]:  false,
 } as const;
+
+/**
+ * Atlas convenience reader: resolve whether the Editorial Atlas
+ * redesign should render for a given (role, flags) pair.
+ *
+ * Rule: master OR per-role flag enables the new surface. This lets us
+ * (a) flip one role at a time during the staged rollout, or (b) flip
+ * the master and have all four go together.
+ *
+ * Accepts the simple `Record<string, boolean>` shape that
+ * `getFeatureFlagsSimple()` and the legacy `getFeatureFlags()` Supabase
+ * RPC both return — no special context needed.
+ */
+export function isAtlasEnabled(
+  role: 'student' | 'parent' | 'teacher' | 'school',
+  flags: Record<string, boolean> | undefined | null,
+): boolean {
+  if (!flags) return false;
+  if (flags[EDITORIAL_ATLAS_FLAGS.MASTER]) return true;
+  const roleFlag: Record<typeof role, string> = {
+    student: EDITORIAL_ATLAS_FLAGS.STUDENT,
+    parent:  EDITORIAL_ATLAS_FLAGS.PARENT,
+    teacher: EDITORIAL_ATLAS_FLAGS.TEACHER,
+    school:  EDITORIAL_ATLAS_FLAGS.SCHOOL,
+  };
+  return Boolean(flags[roleFlag[role]]);
+}

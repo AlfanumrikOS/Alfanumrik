@@ -7,6 +7,41 @@
   --font-display: "Sora", sans-serif;
   --font-body: "Plus Jakarta Sans", sans-serif;
 
+  /* ─── Editorial Atlas tokens (2026-05-11) ─────────────────
+     Additive token set introduced with ff_editorial_atlas_v1.
+     Maps cleanly onto the existing palette (--orange, --bg, --text-*)
+     while giving the new redesigned surfaces a vocabulary that maps
+     1:1 to the prototype in docs/design/multi-role-redesign-prototype.html.
+     Existing tokens stay untouched so legacy surfaces keep rendering
+     identically. Atlas pages address tokens via these aliases. */
+  --font-serif:    "Fraunces", Georgia, serif;
+  --paper:         #FFFFFF;
+  --cream:         #FBF8F4;     /* alias of --bg */
+  --cream-2:       #F5F0EA;     /* alias of --surface-2 */
+  --cream-3:       #EDE6DC;     /* alias of --surface-3 */
+  --ink:           #1A1207;     /* alias of --text-1 */
+  --ink-2:         #4A3F2E;
+  --ink-3:         #7D7264;
+  --ink-4:         #A89B86;     /* new: editorial 4th tier for whispers */
+  --accent:        #E8581C;     /* alias of --orange */
+  --accent-soft:   #FBE6D9;
+  --accent-quiet:  #F0C9B0;
+  --teal-deep:     #0F2A2E;     /* new: editorial weight, distinct from --teal */
+  --teal-soft:     #E2EDEC;
+  --gold-soft:     #F8ECD2;
+  --green-soft:    #DDEFE3;
+  --red-soft:      #F6DCDC;
+  --line:          rgba(26, 18, 7, 0.08);
+  --line-mid:      rgba(26, 18, 7, 0.14);
+  --line-strong:   rgba(26, 18, 7, 0.22);
+  --shadow-edge:   inset 0 -1px 0 rgba(26, 18, 7, 0.04);
+  --shadow-atlas-1: 0 1px 3px rgba(26, 18, 7, 0.04), 0 0 0 1px rgba(26, 18, 7, 0.04);
+  --shadow-atlas-2: 0 4px 14px rgba(26, 18, 7, 0.06), 0 0 0 1px rgba(26, 18, 7, 0.05);
+  --radius-atlas:    14px;
+  --radius-atlas-lg: 22px;
+  --radius-pill:     999px;
+  --ease-atlas:      cubic-bezier(.22, 1, .36, 1);
+
   /* Brand */
   --orange: #E8581C;
   --orange-rgb: 232, 88, 28;        /* use as rgb(var(--orange-rgb) / <alpha>) for opacity stacks */
@@ -867,4 +902,173 @@ img, video, iframe, canvas, svg {
     padding: 7px 12px;
     font-size: 11px;
   }
+}
+
+/* ─── Editorial Atlas — utilities ──────────────────────────────────
+   Shipped under ff_editorial_atlas_v1. Classes prefixed `atlas-*`
+   so they cannot collide with legacy chrome. Designed to map 1:1
+   with the design tokens added at the top of this file.
+
+   The Atlas surfaces consume these via the components in
+   src/components/atlas/*. Every utility here is documented in the
+   prototype at docs/design/multi-role-redesign-prototype.html — keep
+   them in lock-step. */
+
+.atlas-canvas {
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-body);
+  min-height: 100dvh;
+  position: relative;
+}
+
+/* Soft paper-grain overlay — applied at the canvas level so the noise
+   never overlaps interactive elements (it's pointer-events: none).  */
+.atlas-canvas::before {
+  content: "";
+  position: fixed; inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+  z-index: 0;
+}
+
+.atlas-stage { position: relative; z-index: 1; }
+
+.atlas-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-atlas-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-atlas-1);
+}
+.atlas-card-tight { padding: 16px; border-radius: var(--radius-atlas); }
+.atlas-card-cream { background: var(--cream-2); }
+.atlas-card-teal  { background: var(--teal-soft); border-color: rgba(15, 42, 46, 0.08); }
+.atlas-card-accent{ background: var(--accent-soft); border-color: var(--accent-quiet); }
+
+.atlas-eyebrow {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0 0 12px;
+}
+.atlas-eyebrow-accent { color: var(--accent); }
+
+.atlas-editorial {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(28px, 3.4vw, 44px);
+  line-height: 1.18;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  margin: 0;
+}
+.atlas-editorial em {
+  font-style: italic;
+  color: var(--teal-deep);
+}
+.atlas-editorial-highlight {
+  background: linear-gradient(180deg, transparent 62%, var(--accent-soft) 62%);
+  padding: 0 2px;
+}
+
+.atlas-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  background: var(--cream-2);
+  border: 1px solid var(--line);
+}
+.atlas-pill-accent { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-quiet); }
+.atlas-pill-teal   { background: var(--teal-soft);   color: var(--teal-deep); border-color: rgba(15,42,46,0.10); }
+.atlas-pill-gold   { background: var(--gold-soft);   color: #C9831A;          border-color: rgba(201,131,26,0.18); }
+.atlas-pill-green  { background: var(--green-soft);  color: #1F7A4C;          border-color: rgba(31,122,76,0.18); }
+.atlas-pill-red    { background: var(--red-soft);    color: #C32E2E;          border-color: rgba(195,46,46,0.18); }
+
+.atlas-btn {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  padding: 12px 22px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 200ms var(--ease-atlas);
+  letter-spacing: 0.01em;
+  text-decoration: none;
+}
+.atlas-btn-primary {
+  background: var(--accent); color: white;
+  box-shadow: 0 6px 18px rgba(232, 88, 28, 0.28);
+}
+.atlas-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(232, 88, 28, 0.32); }
+.atlas-btn-primary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.atlas-btn-ghost {
+  background: transparent; color: var(--ink); border: 1px solid var(--line-mid);
+}
+.atlas-btn-ghost:hover { background: var(--cream-2); border-color: var(--line-strong); }
+.atlas-btn-ink   { background: var(--ink); color: var(--cream); }
+.atlas-btn-ink:hover { background: var(--teal-deep); }
+
+.atlas-tabnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+@keyframes atlas-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.atlas-rise { animation: atlas-rise 420ms var(--ease-atlas); }
+
+@keyframes atlas-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 88, 28, 0.4); }
+  50%      { box-shadow: 0 0 0 7px rgba(232, 88, 28, 0); }
+}
+.atlas-pulse { animation: atlas-pulse 1.8s var(--ease-atlas) infinite; }
+
+/* Foxy floating chat affordance — shared by student surface. Pinned
+   bottom-right, above the BottomNav. */
+.atlas-foxy-fab {
+  position: fixed;
+  right: 24px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 88px);
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px 12px 14px;
+  background: var(--ink);
+  color: var(--cream);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  box-shadow: 0 12px 32px rgba(26, 18, 7, 0.22);
+  cursor: pointer;
+  border: 0;
+}
+.atlas-foxy-fab:hover { transform: translateY(-1px); }
+.atlas-foxy-fab::before {
+  content: "";
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent);
+  animation: atlas-pulse 1.8s var(--ease-atlas) infinite;
+}
+
+@media (min-width: 1024px) {
+  .atlas-foxy-fab { bottom: 24px; }
 }

@@ -3,7 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { supabase, getFeatureFlags } from '@/lib/supabase';
+import { isAtlasEnabled } from '@/lib/feature-flags';
+import AtlasSchoolAdmin from './AtlasSchoolAdmin';
 import {
   Card,
   Button,
@@ -157,6 +159,26 @@ function ActionTile({ icon, label, color, onClick }: ActionTileProps) {
    MAIN PAGE
 ───────────────────────────────────────────────────────────── */
 export default function SchoolAdminPage() {
+  // ─── Editorial Atlas flag dispatcher ───────────────────────────────────
+  const [atlas, setAtlas] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getFeatureFlags().then(flags => { if (!cancelled) setAtlas(isAtlasEnabled('school', flags)); })
+      .catch(() => { if (!cancelled) setAtlas(false); });
+    return () => { cancelled = true; };
+  }, []);
+  if (atlas === null) {
+    return (
+      <div style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="w-10 h-10 border-[3px] rounded-full animate-spin" style={{ borderColor: 'var(--surface-3)', borderTopColor: 'var(--orange)' }} />
+      </div>
+    );
+  }
+  if (atlas) return <AtlasSchoolAdmin />;
+  return <LegacySchoolAdminPage />;
+}
+
+function LegacySchoolAdminPage() {
   const router = useRouter();
   const auth = useAuth();
   const { authUserId, isLoading: authLoading, isHi, signOut } = auth;

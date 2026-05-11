@@ -1,0 +1,1768 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Alfanumrik — Multi-Role Redesign · Editorial Atlas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    /* Canvas */
+    --paper:        #FFFFFF;
+    --cream:        #FBF8F4;
+    --cream-2:      #F5F0EA;
+    --cream-3:      #EDE6DC;
+
+    /* Ink */
+    --ink:          #1A1207;
+    --ink-2:        #4A3F2E;
+    --ink-3:        #7D7264;
+    --ink-4:        #A89B86;
+
+    /* Accent */
+    --accent:       #E8581C;       /* burnt orange — brand */
+    --accent-soft:  #FBE6D9;
+    --accent-quiet: #F0C9B0;
+
+    /* Editorial weight */
+    --teal-deep:    #0F2A2E;
+    --teal-soft:    #E2EDEC;
+
+    /* Status */
+    --gold:         #C9831A;
+    --gold-soft:    #F8ECD2;
+    --green:        #1F7A4C;
+    --green-soft:   #DDEFE3;
+    --red:          #C32E2E;
+    --red-soft:     #F6DCDC;
+
+    /* Lines */
+    --line:         rgba(26, 18, 7, 0.08);
+    --line-mid:     rgba(26, 18, 7, 0.14);
+    --line-strong:  rgba(26, 18, 7, 0.22);
+
+    /* Shadow */
+    --shadow-1:     0 1px 3px rgba(26, 18, 7, 0.04), 0 0 0 1px rgba(26, 18, 7, 0.04);
+    --shadow-2:     0 4px 14px rgba(26, 18, 7, 0.06), 0 0 0 1px rgba(26, 18, 7, 0.05);
+    --shadow-edge:  inset 0 -1px 0 rgba(26, 18, 7, 0.04);
+
+    /* Type */
+    --serif:        "Fraunces", Georgia, serif;
+    --display:      "Sora", system-ui, sans-serif;
+    --body:         "Plus Jakarta Sans", system-ui, sans-serif;
+
+    --radius:       14px;
+    --radius-lg:    22px;
+    --radius-pill:  999px;
+
+    --ease:         cubic-bezier(.22, 1, .36, 1);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--cream);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "ss01", "cv01";
+  }
+
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    mix-blend-mode: multiply;
+    opacity: 0.5;
+    z-index: 1;
+  }
+
+  /* ════════════════════════════════════════════════════════
+     CHROME — top bar, role switcher
+  ════════════════════════════════════════════════════════ */
+
+  .chrome {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(251, 248, 244, 0.86);
+    backdrop-filter: saturate(140%) blur(14px);
+    -webkit-backdrop-filter: saturate(140%) blur(14px);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .chrome-inner {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 14px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+
+  .wordmark {
+    display: flex; align-items: center; gap: 10px;
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .wordmark-dot {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-soft);
+    transform: translateY(-1px);
+  }
+  .wordmark small {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--ink-3);
+    margin-left: 6px;
+    padding-left: 12px;
+    border-left: 1px solid var(--line-mid);
+  }
+
+  .role-switcher {
+    display: inline-flex;
+    padding: 4px;
+    border-radius: var(--radius-pill);
+    background: var(--cream-2);
+    border: 1px solid var(--line);
+    gap: 2px;
+  }
+  .role-chip {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--ink-3);
+    padding: 8px 16px;
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+    transition: all 200ms var(--ease);
+    letter-spacing: 0.01em;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .role-chip:hover { color: var(--ink); }
+  .role-chip[aria-selected="true"] {
+    background: var(--ink);
+    color: var(--cream);
+    box-shadow: 0 1px 3px rgba(26, 18, 7, 0.15);
+  }
+  .role-chip svg { width: 14px; height: 14px; }
+
+  .chrome-right {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--display);
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+  .chrome-right .pin {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 0 4px var(--green-soft);
+  }
+
+  /* ════════════════════════════════════════════════════════
+     CANVAS — the role landing
+  ════════════════════════════════════════════════════════ */
+
+  main {
+    position: relative;
+    z-index: 2;
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 40px 32px 64px;
+  }
+
+  .scene { display: none; animation: rise 420ms var(--ease); }
+  .scene[data-active="true"] { display: block; }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Universal patterns shared across scenes */
+  .eyebrow {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 12px;
+  }
+  .eyebrow-accent { color: var(--accent); }
+
+  .editorial {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: clamp(28px, 3.4vw, 44px);
+    line-height: 1.18;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+    margin: 0;
+  }
+  .editorial em {
+    font-style: italic;
+    color: var(--teal-deep);
+  }
+  .editorial-accent {
+    background: linear-gradient(180deg, transparent 62%, var(--accent-soft) 62%);
+    padding: 0 2px;
+  }
+
+  .card {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    box-shadow: var(--shadow-1);
+  }
+  .card-tight { padding: 16px; border-radius: var(--radius); }
+  .card-tone-cream { background: var(--cream-2); }
+  .card-tone-teal { background: var(--teal-soft); border-color: rgba(15, 42, 46, 0.08); }
+  .card-tone-accent { background: var(--accent-soft); border-color: var(--accent-quiet); }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 11px;
+    border-radius: var(--radius-pill);
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--ink-2);
+    background: var(--cream-2);
+    border: 1px solid var(--line);
+  }
+  .pill-accent  { background: var(--accent-soft);  color: var(--accent);    border-color: var(--accent-quiet); }
+  .pill-teal    { background: var(--teal-soft);    color: var(--teal-deep); border-color: rgba(15,42,46,0.10); }
+  .pill-gold    { background: var(--gold-soft);    color: var(--gold);      border-color: rgba(201,131,26,0.18); }
+  .pill-green   { background: var(--green-soft);   color: var(--green);     border-color: rgba(31,122,76,0.18); }
+  .pill-red     { background: var(--red-soft);     color: var(--red);       border-color: rgba(195,46,46,0.18); }
+
+  .btn {
+    appearance: none;
+    border: 0;
+    cursor: pointer;
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 14px;
+    padding: 12px 22px;
+    border-radius: var(--radius-pill);
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    transition: all 200ms var(--ease);
+    letter-spacing: 0.01em;
+  }
+  .btn-primary { background: var(--accent); color: white; box-shadow: 0 6px 18px rgba(232, 88, 28, 0.28); }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(232, 88, 28, 0.32); }
+  .btn-ghost   { background: transparent; color: var(--ink); border: 1px solid var(--line-mid); }
+  .btn-ghost:hover { background: var(--cream-2); border-color: var(--line-strong); }
+  .btn-ink     { background: var(--ink); color: var(--cream); }
+  .btn-ink:hover { background: var(--teal-deep); }
+
+  .tabnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+  .icon { width: 18px; height: 18px; flex-shrink: 0; stroke-width: 1.6; }
+
+  /* ─────────────────────────────────────────────────────────
+     STUDENT scene
+  ───────────────────────────────────────────────────────── */
+
+  .student-grid {
+    display: grid;
+    grid-template-columns: 7fr 5fr;
+    gap: 28px;
+  }
+  @media (max-width: 980px) { .student-grid { grid-template-columns: 1fr; } }
+
+  .mission-card {
+    position: relative;
+    overflow: hidden;
+    padding: 36px 36px 32px;
+    background:
+      radial-gradient(ellipse at top right, rgba(232, 88, 28, 0.06), transparent 55%),
+      var(--paper);
+  }
+  .mission-card .eyebrow { display: flex; align-items: center; gap: 8px; }
+  .mission-card .mission-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1.8s var(--ease) infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(232, 88, 28, 0.4); }
+    50%      { box-shadow: 0 0 0 7px rgba(232, 88, 28, 0); }
+  }
+  .mission-headline {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: clamp(34px, 4vw, 52px);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin: 6px 0 14px;
+    max-width: 14ch;
+  }
+  .mission-sub {
+    color: var(--ink-2);
+    font-size: 15px;
+    margin: 0 0 26px;
+    max-width: 42ch;
+  }
+  .mission-meta {
+    display: flex; gap: 16px; flex-wrap: wrap;
+    margin-bottom: 28px;
+  }
+  .mission-meta-item {
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .mission-meta-label {
+    font-family: var(--display);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--ink-3);
+  }
+  .mission-meta-value {
+    font-family: var(--serif);
+    font-size: 19px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .mission-cta-row {
+    display: flex; gap: 12px; align-items: center;
+  }
+
+  .atlas-card { padding: 24px; }
+  .atlas-card .eyebrow { margin-bottom: 6px; }
+  .atlas-title {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 22px;
+    margin: 0 0 18px;
+    letter-spacing: -0.01em;
+  }
+  .atlas-svg-wrap {
+    background: var(--cream);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  .atlas-legend {
+    display: flex; gap: 16px; flex-wrap: wrap;
+    font-family: var(--display);
+    font-size: 11px;
+    color: var(--ink-3);
+  }
+  .atlas-legend span {
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .atlas-legend .swatch {
+    width: 10px; height: 10px; border-radius: 50%;
+  }
+
+  .student-side {
+    display: flex; flex-direction: column; gap: 20px;
+  }
+  .streak-row {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 18px;
+    align-items: center;
+  }
+  .streak-ring { width: 80px; height: 80px; }
+  .streak-stats { display: flex; flex-direction: column; gap: 2px; }
+  .streak-num {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 34px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+  .streak-label { font-family: var(--display); font-size: 12px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.12em; }
+  .streak-days { display: flex; gap: 4px; margin-top: 10px; }
+  .streak-days span {
+    width: 16px; height: 16px;
+    border-radius: 4px;
+    background: var(--cream-3);
+  }
+  .streak-days span.on { background: var(--accent); }
+
+  .wins-list { display: flex; flex-direction: column; gap: 12px; }
+  .win-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px;
+    background: var(--cream);
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+  }
+  .win-row .icon-circle {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: var(--green-soft);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--green);
+  }
+  .win-row strong {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .win-row span { font-size: 12px; color: var(--ink-3); }
+
+  .quick-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .quick-tile {
+    background: var(--cream-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 8px;
+    text-align: center;
+    transition: all 200ms var(--ease);
+    cursor: pointer;
+  }
+  .quick-tile:hover { background: var(--paper); transform: translateY(-1px); box-shadow: var(--shadow-1); }
+  .quick-tile .icon { width: 20px; height: 20px; color: var(--accent); margin: 0 auto 6px; display: block; }
+  .quick-tile small { font-family: var(--display); font-weight: 600; font-size: 11px; color: var(--ink-2); }
+
+  /* Foxy FAB */
+  .foxy-fab {
+    position: fixed;
+    right: 30px; bottom: 30px;
+    z-index: 60;
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 20px 12px 14px;
+    background: var(--ink);
+    color: var(--cream);
+    border-radius: var(--radius-pill);
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 13px;
+    box-shadow: 0 12px 32px rgba(26, 18, 7, 0.22);
+    cursor: pointer;
+  }
+  .foxy-fab .foxy-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 0 rgba(232, 88, 28, 0.55);
+    animation: pulse 1.8s var(--ease) infinite;
+  }
+
+  /* ─────────────────────────────────────────────────────────
+     PARENT scene
+  ───────────────────────────────────────────────────────── */
+
+  .parent-frame {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 36px;
+  }
+  @media (max-width: 880px) { .parent-frame { grid-template-columns: 1fr; } }
+
+  .parent-rail {
+    display: flex; flex-direction: column; gap: 4px;
+    padding-top: 6px;
+  }
+  .parent-rail .rail-section {
+    margin-top: 18px;
+    font-family: var(--display);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-4);
+    padding: 0 12px 6px;
+  }
+  .rail-link {
+    display: flex; align-items: center; gap: 12px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 13px;
+    color: var(--ink-2);
+    cursor: pointer;
+    transition: background 160ms var(--ease);
+  }
+  .rail-link:hover { background: var(--cream-2); color: var(--ink); }
+  .rail-link[aria-current="page"] {
+    background: var(--paper);
+    color: var(--ink);
+    box-shadow: var(--shadow-1);
+  }
+  .rail-link .icon { color: var(--ink-3); }
+
+  .parent-stage { display: flex; flex-direction: column; gap: 28px; }
+
+  .child-strip {
+    display: flex; align-items: center; gap: 14px;
+    margin-bottom: 4px;
+  }
+  .child-avatar {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #E8581C, #C9831A);
+    display: flex; align-items: center; justify-content: center;
+    color: white;
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 18px;
+    letter-spacing: 0.02em;
+    box-shadow: var(--shadow-1);
+  }
+  .child-info { display: flex; flex-direction: column; line-height: 1.2; }
+  .child-name {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--ink);
+  }
+  .child-grade { font-size: 12px; color: var(--ink-3); font-family: var(--display); }
+
+  .verdict-block { max-width: 32ch; }
+  .verdict-block .editorial { max-width: none; }
+
+  .trend-card { padding: 22px 26px; }
+  .trend-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 18px;
+  }
+  .trend-title {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 18px;
+    margin: 0;
+  }
+  .trend-legend { font-family: var(--display); font-size: 11px; color: var(--ink-3); }
+
+  .trend-svg { width: 100%; height: 120px; display: block; }
+
+  .drilldown-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  @media (max-width: 880px) { .drilldown-grid { grid-template-columns: 1fr; } }
+
+  .drill {
+    padding: 22px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    display: flex; flex-direction: column; gap: 12px;
+    transition: all 200ms var(--ease);
+    cursor: pointer;
+  }
+  .drill:hover { transform: translateY(-2px); box-shadow: var(--shadow-2); border-color: var(--line-mid); }
+  .drill .drill-eyebrow {
+    font-family: var(--display);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .drill h3 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 22px;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .drill p { font-size: 13px; color: var(--ink-2); margin: 0; }
+  .drill-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+    font-family: var(--display);
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+  .drill-row strong { color: var(--ink); font-weight: 600; }
+
+  .subject-bars { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+  .subject-bar {
+    display: grid;
+    grid-template-columns: 70px 1fr 36px;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--display);
+    font-size: 12px;
+  }
+  .subject-bar .label { color: var(--ink-2); }
+  .subject-bar .track {
+    height: 6px;
+    background: var(--cream-2);
+    border-radius: var(--radius-pill);
+    overflow: hidden;
+  }
+  .subject-bar .fill {
+    height: 100%;
+    border-radius: var(--radius-pill);
+    background: var(--teal-deep);
+  }
+  .subject-bar .fill.warn { background: var(--accent); }
+  .subject-bar .fill.good { background: var(--green); }
+  .subject-bar .pct { color: var(--ink); text-align: right; font-weight: 600; }
+
+  /* ─────────────────────────────────────────────────────────
+     TEACHER scene
+  ───────────────────────────────────────────────────────── */
+
+  .teacher-bar {
+    display: flex; align-items: center; gap: 18px;
+    padding: 16px 22px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    margin-bottom: 24px;
+    box-shadow: var(--shadow-1);
+  }
+  .class-picker {
+    display: flex; align-items: center; gap: 10px;
+    cursor: pointer;
+    padding-right: 18px;
+    border-right: 1px solid var(--line);
+  }
+  .class-picker .name {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 19px;
+    letter-spacing: -0.01em;
+  }
+  .class-picker .meta { font-size: 12px; color: var(--ink-3); font-family: var(--display); }
+
+  .subj-chips { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+  .subj-chip {
+    padding: 6px 12px;
+    border-radius: var(--radius-pill);
+    font-family: var(--display);
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink-3);
+    cursor: pointer;
+  }
+  .subj-chip[aria-selected="true"] {
+    background: var(--ink);
+    color: var(--cream);
+    border-color: var(--ink);
+  }
+
+  .teacher-grid {
+    display: grid;
+    grid-template-columns: 240px 1fr 260px;
+    gap: 20px;
+  }
+  @media (max-width: 1140px) { .teacher-grid { grid-template-columns: 1fr; } }
+
+  .panel { padding: 20px; }
+  .panel h3 {
+    margin: 0 0 14px;
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 17px;
+    letter-spacing: -0.01em;
+  }
+  .panel .panel-sub {
+    margin: -10px 0 14px;
+    font-family: var(--display);
+    font-size: 11px;
+    color: var(--ink-3);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .risk-list { display: flex; flex-direction: column; gap: 10px; }
+  .risk-row {
+    display: grid;
+    grid-template-columns: 32px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 10px;
+    background: var(--cream);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 180ms var(--ease);
+  }
+  .risk-row:hover { transform: translateX(2px); }
+  .risk-row[data-sev="high"] { border-left-color: var(--red); }
+  .risk-row[data-sev="med"] { border-left-color: var(--gold); }
+  .risk-row .avatar {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #E8581C, #C9831A);
+    color: white;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 13px;
+  }
+  .risk-row .avatar.teal  { background: linear-gradient(135deg, #0F2A2E, #1F7A4C); }
+  .risk-row .avatar.gold  { background: linear-gradient(135deg, #C9831A, #E8581C); }
+  .risk-row .name {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--ink);
+    line-height: 1.2;
+  }
+  .risk-row .reason {
+    font-size: 11px;
+    color: var(--ink-3);
+    line-height: 1.3;
+  }
+  .risk-row .sev {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .risk-row[data-sev="high"] .sev { color: var(--red); }
+  .risk-row[data-sev="med"]  .sev { color: var(--gold); }
+
+  .heatmap-card { padding: 24px; }
+  .heatmap-meta {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 18px;
+  }
+  .heatmap-meta h3 { margin: 0; font-family: var(--serif); font-weight: 500; font-size: 19px; }
+  .heatmap-key { display: flex; gap: 14px; font-family: var(--display); font-size: 11px; color: var(--ink-3); }
+  .heatmap-key span { display: inline-flex; align-items: center; gap: 6px; }
+  .heatmap-key .swatch { width: 12px; height: 12px; border-radius: 3px; }
+
+  .heatmap-table { width: 100%; border-collapse: separate; border-spacing: 4px 4px; font-family: var(--display); }
+  .heatmap-table th { text-align: center; font-size: 10px; font-weight: 600; color: var(--ink-3); letter-spacing: 0.06em; padding: 4px 2px 8px; text-transform: uppercase; }
+  .heatmap-table th.student-col { text-align: left; padding-left: 6px; }
+  .heatmap-table td.name-cell { font-size: 12px; font-weight: 600; color: var(--ink); padding: 4px 6px; white-space: nowrap; }
+  .heatmap-cell {
+    height: 28px;
+    border-radius: 6px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: white;
+    cursor: pointer;
+    transition: transform 160ms var(--ease);
+  }
+  .heatmap-cell:hover { transform: scale(1.08); }
+  .h-1 { background: #4A2317; }
+  .h-2 { background: #8C3617; color: white; }
+  .h-3 { background: #C9831A; }
+  .h-4 { background: #1F7A4C; }
+  .h-5 { background: #0F2A2E; }
+  .h-x { background: var(--cream-3); color: var(--ink-3); }
+
+  .actions-list { display: flex; flex-direction: column; gap: 10px; }
+  .action-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px;
+    background: var(--cream);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 180ms var(--ease);
+  }
+  .action-row:hover { background: var(--paper); border-color: var(--line-mid); }
+  .action-row.primary {
+    background: var(--ink);
+    color: var(--cream);
+    border-color: var(--ink);
+  }
+  .action-row.primary .action-icon { background: var(--accent); color: white; }
+  .action-row .action-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: var(--cream-2);
+    color: var(--ink-2);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .action-row .action-text {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 1.2;
+  }
+  .action-row .action-text small { display: block; font-weight: 500; font-size: 11px; opacity: 0.7; margin-top: 2px; }
+
+  .live-poll {
+    margin-top: 18px;
+    padding: 16px;
+    background: var(--teal-soft);
+    border: 1px solid rgba(15, 42, 46, 0.12);
+    border-radius: var(--radius);
+  }
+  .live-poll .live-row {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--teal-deep);
+    margin-bottom: 8px;
+  }
+  .live-poll .pulse {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 1.6s var(--ease) infinite;
+  }
+  .live-poll-q {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 15px;
+    line-height: 1.3;
+    margin: 0 0 12px;
+    color: var(--teal-deep);
+  }
+  .poll-meter {
+    display: flex; align-items: baseline; gap: 6px;
+    font-family: var(--display);
+  }
+  .poll-meter strong {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 32px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: var(--teal-deep);
+  }
+  .poll-meter small { font-size: 11px; color: var(--ink-3); }
+
+  /* ─────────────────────────────────────────────────────────
+     SCHOOL scene
+  ───────────────────────────────────────────────────────── */
+
+  .school-hello {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 24px;
+  }
+  .school-hello h1 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: clamp(28px, 3.2vw, 42px);
+    letter-spacing: -0.02em;
+    margin: 0;
+    line-height: 1.1;
+  }
+  .school-hello .school-meta {
+    text-align: right;
+    font-family: var(--display);
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+  .school-hello .school-meta strong { color: var(--ink); font-weight: 600; display: block; font-size: 14px; }
+
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+  @media (max-width: 880px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+
+  .kpi {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 22px 24px 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .kpi-label {
+    font-family: var(--display);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 6px;
+  }
+  .kpi-value {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 44px;
+    line-height: 1;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+  }
+  .kpi-delta {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--display);
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+  .kpi-delta strong { font-weight: 700; }
+  .kpi-delta.up strong { color: var(--green); }
+  .kpi-delta.down strong { color: var(--red); }
+  .kpi-spark {
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 38px;
+    pointer-events: none;
+  }
+
+  .school-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 24px;
+    margin-bottom: 28px;
+  }
+  @media (max-width: 1040px) { .school-grid { grid-template-columns: 1fr; } }
+
+  .mastery-block .editorial {
+    font-size: clamp(22px, 2.2vw, 28px);
+    margin-bottom: 12px;
+  }
+  .class-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 24px; }
+  .compare-col h4 {
+    font-family: var(--display);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 10px;
+  }
+  .compare-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    padding: 9px 12px;
+    background: var(--cream-2);
+    border-radius: 10px;
+    margin-bottom: 6px;
+    font-family: var(--display);
+    font-size: 13px;
+  }
+  .compare-row strong { font-family: var(--serif); font-weight: 500; font-size: 15px; }
+  .compare-row .delta { font-size: 11px; }
+  .compare-row .delta.up { color: var(--green); }
+  .compare-row .delta.down { color: var(--red); }
+
+  .alert-list { display: flex; flex-direction: column; gap: 12px; }
+  .alert {
+    padding: 14px 16px;
+    background: var(--cream);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius);
+    cursor: pointer;
+  }
+  .alert[data-tone="red"]  { border-left-color: var(--red);   }
+  .alert[data-tone="gold"] { border-left-color: var(--gold);  }
+  .alert[data-tone="green"]{ border-left-color: var(--green); }
+  .alert h4 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 13px;
+    margin: 0 0 4px;
+  }
+  .alert p { font-size: 12px; color: var(--ink-2); margin: 0; }
+
+  .activity-stream {
+    padding: 22px 26px;
+  }
+  .activity-stream h3 { margin: 0 0 18px; font-family: var(--serif); font-weight: 500; font-size: 19px; }
+  .activity-row {
+    display: grid;
+    grid-template-columns: 12px 1fr auto;
+    gap: 14px;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+    font-family: var(--display);
+    font-size: 13px;
+  }
+  .activity-row:last-child { border-bottom: 0; }
+  .activity-row .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-left: 2px;
+  }
+  .activity-row .dot.teal  { background: var(--teal-deep); }
+  .activity-row .dot.green { background: var(--green); }
+  .activity-row .dot.gold  { background: var(--gold); }
+  .activity-row time { color: var(--ink-3); font-size: 11px; }
+  .activity-row span.actor { font-weight: 600; }
+
+  /* ─────────────────────────────────────────────────────────
+     Footer note
+  ───────────────────────────────────────────────────────── */
+
+  .footnote {
+    margin-top: 60px;
+    padding-top: 30px;
+    border-top: 1px solid var(--line);
+    font-family: var(--display);
+    font-size: 11px;
+    color: var(--ink-3);
+    letter-spacing: 0.05em;
+    text-align: center;
+  }
+  .footnote strong { color: var(--ink-2); font-weight: 600; }
+</style>
+</head>
+
+<body>
+
+<!-- ════════════════════════════════════════════════════════════════
+     CHROME
+══════════════════════════════════════════════════════════════════ -->
+<header class="chrome">
+  <div class="chrome-inner">
+    <a class="wordmark" href="#" aria-label="Alfanumrik">
+      <span class="wordmark-dot" aria-hidden="true"></span>
+      Alfanumrik
+      <small>Adaptive&nbsp;Learning&nbsp;OS</small>
+    </a>
+
+    <nav class="role-switcher" role="tablist" aria-label="Choose role view">
+      <button class="role-chip" role="tab" aria-selected="true" data-role="student">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 9.5L12 4l9 5.5-9 5.5-9-5.5z"/><path d="M7 12v4c0 1.1 2.2 2 5 2s5-.9 5-2v-4"/></svg>
+        Student
+      </button>
+      <button class="role-chip" role="tab" aria-selected="false" data-role="parent">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 12a4 4 0 100-8 4 4 0 000 8z"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
+        Parent
+      </button>
+      <button class="role-chip" role="tab" aria-selected="false" data-role="teacher">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 5h18v12H3z"/><path d="M3 17l4 4M21 17l-4 4M8 9h8M8 13h5"/></svg>
+        Teacher
+      </button>
+      <button class="role-chip" role="tab" aria-selected="false" data-role="school">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 21h18M5 21V9l7-4 7 4v12M10 21v-5h4v5M9 12h.01M15 12h.01"/></svg>
+        School
+      </button>
+    </nav>
+
+    <div class="chrome-right">
+      <span class="pin" aria-hidden="true"></span>
+      <span>Editorial&nbsp;Atlas · v0.3</span>
+    </div>
+  </div>
+</header>
+
+<!-- ════════════════════════════════════════════════════════════════
+     MAIN STAGE
+══════════════════════════════════════════════════════════════════ -->
+<main>
+
+  <!-- ─────────────────────────────────────────────────────
+       SCENE 1 — STUDENT
+  ───────────────────────────────────────────────────── -->
+  <section class="scene" data-scene="student" data-active="true" aria-label="Student dashboard">
+    <div class="student-grid">
+
+      <!-- LEFT: mission + atlas -->
+      <div style="display:flex; flex-direction:column; gap:24px;">
+
+        <article class="card mission-card">
+          <p class="eyebrow eyebrow-accent">
+            <span class="mission-dot" aria-hidden="true"></span>
+            Today’s mission · 12 min
+          </p>
+          <h1 class="mission-headline">
+            Newton’s <em>Third</em> Law<br>
+            <span class="editorial-accent">in&nbsp;everyday&nbsp;life</span>
+          </h1>
+          <p class="mission-sub">
+            Three short experiments, a Foxy-led walkthrough, and one quiz to lock the concept in. Picks up where you left off yesterday.
+          </p>
+
+          <div class="mission-meta">
+            <div class="mission-meta-item">
+              <span class="mission-meta-label">Subject</span>
+              <span class="mission-meta-value">Physics</span>
+            </div>
+            <div class="mission-meta-item">
+              <span class="mission-meta-label">Chapter</span>
+              <span class="mission-meta-value tabnum">8 · Forces</span>
+            </div>
+            <div class="mission-meta-item">
+              <span class="mission-meta-label">Mastery</span>
+              <span class="mission-meta-value tabnum">62 → 80%</span>
+            </div>
+          </div>
+
+          <div class="mission-cta-row">
+            <button class="btn btn-primary">
+              Begin lesson
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+            </button>
+            <button class="btn btn-ghost">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+              Resume from yesterday
+            </button>
+          </div>
+        </article>
+
+        <article class="card atlas-card">
+          <p class="eyebrow">The Atlas · Class 9 Physics</p>
+          <h2 class="atlas-title">You are <em style="font-style:italic; color:var(--accent);">here</em></h2>
+
+          <div class="atlas-svg-wrap">
+            <svg viewBox="0 0 600 180" width="100%" height="170" role="img" aria-label="Chapter map">
+              <!-- contour-style background lines -->
+              <g fill="none" stroke="rgba(26,18,7,0.06)" stroke-width="1">
+                <path d="M0,40 C100,60 200,20 300,40 S500,60 600,30"/>
+                <path d="M0,90 C100,110 200,70 300,90 S500,110 600,80"/>
+                <path d="M0,140 C100,160 200,120 300,140 S500,160 600,130"/>
+              </g>
+              <!-- chapter nodes -->
+              <g font-family="Sora, sans-serif" font-size="11" font-weight="600">
+                <!-- Done chapters -->
+                <circle cx="60"  cy="100" r="14" fill="#1F7A4C"/>
+                <text x="60" y="104" text-anchor="middle" fill="white">1</text>
+                <text x="60" y="135" text-anchor="middle" fill="#7D7264" font-size="9">Motion</text>
+
+                <circle cx="150" cy="80" r="14" fill="#1F7A4C"/>
+                <text x="150" y="84" text-anchor="middle" fill="white">2</text>
+                <text x="150" y="115" text-anchor="middle" fill="#7D7264" font-size="9">Force</text>
+
+                <circle cx="240" cy="110" r="14" fill="#1F7A4C"/>
+                <text x="240" y="114" text-anchor="middle" fill="white">3</text>
+                <text x="240" y="145" text-anchor="middle" fill="#7D7264" font-size="9">Mass</text>
+
+                <!-- current chapter — radiant -->
+                <circle cx="340" cy="80" r="22" fill="#E8581C"/>
+                <circle cx="340" cy="80" r="34" fill="none" stroke="#E8581C" stroke-opacity="0.25" stroke-width="2">
+                  <animate attributeName="r" values="22;38;22" dur="2.6s" repeatCount="indefinite"/>
+                  <animate attributeName="stroke-opacity" values="0.4;0;0.4" dur="2.6s" repeatCount="indefinite"/>
+                </circle>
+                <text x="340" y="85" text-anchor="middle" fill="white" font-size="13">8</text>
+                <text x="340" y="118" text-anchor="middle" fill="#1A1207" font-weight="700">Newton’s 3rd</text>
+
+                <!-- upcoming -->
+                <circle cx="440" cy="100" r="14" fill="none" stroke="#A89B86" stroke-width="2" stroke-dasharray="3 3"/>
+                <text x="440" y="104" text-anchor="middle" fill="#A89B86">9</text>
+                <text x="440" y="135" text-anchor="middle" fill="#A89B86" font-size="9">Momentum</text>
+
+                <circle cx="530" cy="80" r="14" fill="none" stroke="#A89B86" stroke-width="2" stroke-dasharray="3 3"/>
+                <text x="530" y="84" text-anchor="middle" fill="#A89B86">10</text>
+                <text x="530" y="115" text-anchor="middle" fill="#A89B86" font-size="9">Energy</text>
+              </g>
+
+              <!-- path lines -->
+              <g stroke="#E8581C" stroke-width="2" fill="none" stroke-linecap="round">
+                <path d="M74,100 Q110,90 136,80"/>
+                <path d="M164,80 Q200,95 226,110"/>
+                <path d="M254,110 Q295,95 320,80"/>
+              </g>
+              <g stroke="#A89B86" stroke-width="2" fill="none" stroke-linecap="round" stroke-dasharray="4 4">
+                <path d="M362,80 Q400,90 426,100"/>
+                <path d="M454,100 Q490,90 516,80"/>
+              </g>
+            </svg>
+          </div>
+
+          <div class="atlas-legend">
+            <span><span class="swatch" style="background:#1F7A4C"></span>Mastered (3)</span>
+            <span><span class="swatch" style="background:#E8581C"></span>Today</span>
+            <span><span class="swatch" style="background:transparent; border:1.5px dashed #A89B86"></span>Upcoming (2)</span>
+          </div>
+        </article>
+      </div>
+
+      <!-- RIGHT: side stack -->
+      <aside class="student-side">
+
+        <article class="card streak-card">
+          <p class="eyebrow">Your rhythm</p>
+          <div class="streak-row">
+            <svg class="streak-ring" viewBox="0 0 80 80" role="img" aria-label="Daily streak 11 days">
+              <circle cx="40" cy="40" r="34" fill="none" stroke="var(--cream-3)" stroke-width="6"/>
+              <circle cx="40" cy="40" r="34" fill="none" stroke="var(--accent)" stroke-width="6"
+                stroke-dasharray="180 60" stroke-linecap="round" transform="rotate(-90 40 40)"/>
+              <text x="40" y="46" text-anchor="middle" font-family="Fraunces" font-size="22" font-weight="500" fill="var(--ink)">11</text>
+            </svg>
+            <div class="streak-stats">
+              <span class="streak-num tabnum">11&nbsp;day streak</span>
+              <span class="streak-label">your best so far</span>
+              <div class="streak-days" aria-label="Last 7 days">
+                <span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span></span><span class="on"></span>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <p class="eyebrow">This week’s wins</p>
+          <div class="wins-list">
+            <div class="win-row">
+              <div class="icon-circle">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 13l4 4L19 7"/></svg>
+              </div>
+              <div style="flex:1;">
+                <strong>Mass & Acceleration</strong><br>
+                <span>Mastered Wednesday · +18% in 3 days</span>
+              </div>
+            </div>
+            <div class="win-row">
+              <div class="icon-circle">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 13l4 4L19 7"/></svg>
+              </div>
+              <div style="flex:1;">
+                <strong>Force diagrams</strong><br>
+                <span>Quiz · 9 of 10 correct</span>
+              </div>
+            </div>
+            <div class="win-row">
+              <div class="icon-circle">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 13l4 4L19 7"/></svg>
+              </div>
+              <div style="flex:1;">
+                <strong>Lab notebook</strong><br>
+                <span>3 entries logged · keep going</span>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <p class="eyebrow">Quick</p>
+          <div class="quick-row">
+            <button class="quick-tile">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              <small>Compete</small>
+            </button>
+            <button class="quick-tile">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 7h18v10H3z"/><path d="M7 7V3h10v4"/></svg>
+              <small>Scan&nbsp;solve</small>
+            </button>
+            <button class="quick-tile">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              <small>Revise</small>
+            </button>
+            <button class="quick-tile">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h16v12H5l-1 4z"/></svg>
+              <small>Foxy</small>
+            </button>
+          </div>
+        </article>
+      </aside>
+    </div>
+  </section>
+
+
+  <!-- ─────────────────────────────────────────────────────
+       SCENE 2 — PARENT
+  ───────────────────────────────────────────────────── -->
+  <section class="scene" data-scene="parent" aria-label="Parent dashboard">
+    <div class="parent-frame">
+
+      <!-- RAIL -->
+      <aside class="parent-rail" aria-label="Parent navigation">
+        <div class="rail-section">Today</div>
+        <a class="rail-link" aria-current="page">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg>
+          Overview
+        </a>
+        <a class="rail-link">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M8 7V3M16 7V3M3 11h18M5 5h14v16H5z"/></svg>
+          Calendar
+        </a>
+
+        <div class="rail-section">Children</div>
+        <a class="rail-link"><span style="width:14px;height:14px;border-radius:50%;background:linear-gradient(135deg,#E8581C,#C9831A);"></span>Aanya · 7</a>
+        <a class="rail-link"><span style="width:14px;height:14px;border-radius:50%;background:linear-gradient(135deg,#0F2A2E,#1F7A4C);"></span>Vihaan · 4</a>
+
+        <div class="rail-section">Archive</div>
+        <a class="rail-link">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 3v6h6M14 3l6 6v12H4V3z"/></svg>
+          Reports
+        </a>
+        <a class="rail-link">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 12c-2 5-6 8-9 8s-7-3-9-8c2-5 6-8 9-8s7 3 9 8z"/><circle cx="12" cy="12" r="3"/></svg>
+          Foxy tips
+        </a>
+        <a class="rail-link">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/></svg>
+          School link
+        </a>
+      </aside>
+
+      <!-- STAGE -->
+      <div class="parent-stage">
+
+        <div class="child-strip">
+          <div class="child-avatar">A</div>
+          <div class="child-info">
+            <span class="child-name">Aanya Sharma</span>
+            <span class="child-grade tabnum">Class 7 · DAV Public School · Foxy plan</span>
+          </div>
+          <span class="pill pill-teal" style="margin-left:auto;">Week of May 5–11</span>
+        </div>
+
+        <div class="verdict-block">
+          <p class="eyebrow eyebrow-accent">The verdict</p>
+          <h1 class="editorial">
+            Aanya is having a <em>strong week in math</em>, but
+            <span class="editorial-accent">English needs your attention</span>.
+            She’s been active <span class="tabnum">5 of the last 7 days</span>.
+          </h1>
+        </div>
+
+        <article class="card trend-card">
+          <div class="trend-header">
+            <h2 class="trend-title">Eight weeks at a glance</h2>
+            <span class="trend-legend tabnum">Mastery · today 71%</span>
+          </div>
+          <svg class="trend-svg" viewBox="0 0 600 120" preserveAspectRatio="none" role="img" aria-label="8-week mastery trend">
+            <defs>
+              <linearGradient id="trendFill" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#E8581C" stop-opacity="0.18"/>
+                <stop offset="100%" stop-color="#E8581C" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <g stroke="rgba(26,18,7,0.05)" stroke-width="1">
+              <line x1="0" y1="30"  x2="600" y2="30"/>
+              <line x1="0" y1="60"  x2="600" y2="60"/>
+              <line x1="0" y1="90"  x2="600" y2="90"/>
+            </g>
+            <path d="M0,90 L75,82 L150,86 L225,70 L300,72 L375,60 L450,46 L525,42 L600,34"
+                  fill="none" stroke="#E8581C" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M0,90 L75,82 L150,86 L225,70 L300,72 L375,60 L450,46 L525,42 L600,34 L600,120 L0,120 Z"
+                  fill="url(#trendFill)"/>
+            <circle cx="600" cy="34" r="5" fill="#E8581C"/>
+            <circle cx="600" cy="34" r="9" fill="#E8581C" fill-opacity="0.2"/>
+            <g font-family="Sora" font-size="10" fill="#A89B86">
+              <text x="0"   y="116">Wk 1</text>
+              <text x="295" y="116" text-anchor="middle">Wk 4</text>
+              <text x="600" y="116" text-anchor="end">Now</text>
+            </g>
+          </svg>
+        </article>
+
+        <div class="drilldown-grid">
+
+          <article class="drill">
+            <span class="drill-eyebrow">Subjects</span>
+            <h3>Where she stands</h3>
+            <div class="subject-bars">
+              <div class="subject-bar"><span class="label">Math</span><div class="track"><div class="fill good" style="width:84%"></div></div><span class="pct tabnum">84%</span></div>
+              <div class="subject-bar"><span class="label">Science</span><div class="track"><div class="fill" style="width:72%"></div></div><span class="pct tabnum">72%</span></div>
+              <div class="subject-bar"><span class="label">English</span><div class="track"><div class="fill warn" style="width:42%"></div></div><span class="pct tabnum">42%</span></div>
+              <div class="subject-bar"><span class="label">Hindi</span><div class="track"><div class="fill" style="width:68%"></div></div><span class="pct tabnum">68%</span></div>
+              <div class="subject-bar"><span class="label">Social</span><div class="track"><div class="fill good" style="width:79%"></div></div><span class="pct tabnum">79%</span></div>
+            </div>
+            <div class="drill-row"><span>vs. last week</span><strong style="color:var(--green);">+4%</strong></div>
+          </article>
+
+          <article class="drill">
+            <span class="drill-eyebrow">Focus areas</span>
+            <h3>Where to lean in</h3>
+            <p><strong>English vocabulary</strong> — she stalls on synonyms and tense. A 15-minute Foxy walkthrough usually unblocks this.</p>
+            <p><strong>Geometry constructions</strong> — early signs of slipping. Two practice sets recommended.</p>
+            <div class="drill-row"><span>Foxy insights</span><strong>2 new</strong></div>
+          </article>
+
+          <article class="drill">
+            <span class="drill-eyebrow">Your move</span>
+            <h3>Suggested next step</h3>
+            <p>Encourage 10 minutes of English reading tonight. The “Word Roots” lesson took her 12 minutes last week and she rated it a 5.</p>
+            <button class="btn btn-ink" style="align-self:flex-start; margin-top:4px;">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+              Suggest to Aanya
+            </button>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ─────────────────────────────────────────────────────
+       SCENE 3 — TEACHER
+  ───────────────────────────────────────────────────── -->
+  <section class="scene" data-scene="teacher" aria-label="Teacher classroom">
+
+    <div class="teacher-bar">
+      <div class="class-picker">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 9l6 6 6-6"/></svg>
+        <div>
+          <div class="name">Class 8B · Physics</div>
+          <div class="meta tabnum">32 students · 5 chapters this term</div>
+        </div>
+      </div>
+      <div class="subj-chips" role="tablist" aria-label="Filter by subject">
+        <button class="subj-chip" aria-selected="true">All</button>
+        <button class="subj-chip">Forces</button>
+        <button class="subj-chip">Motion</button>
+        <button class="subj-chip">Light</button>
+        <button class="subj-chip">Heat</button>
+        <button class="subj-chip">Sound</button>
+      </div>
+      <span class="pill pill-teal tabnum">Week 9 · May 11</span>
+      <button class="btn btn-ghost" style="padding: 8px 14px; font-size: 13px;">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 12a9 9 0 109-9v6M3 12l3 3M3 12l3-3"/></svg>
+        Refresh
+      </button>
+    </div>
+
+    <div class="teacher-grid">
+
+      <aside class="card panel">
+        <h3>Needs you</h3>
+        <p class="panel-sub">3 of 32 students</p>
+        <div class="risk-list">
+          <div class="risk-row" data-sev="high">
+            <span class="avatar">A</span>
+            <div>
+              <div class="name">Arjun Mehta</div>
+              <div class="reason">No quizzes in 6 days · Forces mastery dropped 23%</div>
+            </div>
+            <span class="sev">High</span>
+          </div>
+          <div class="risk-row" data-sev="med">
+            <span class="avatar teal">P</span>
+            <div>
+              <div class="name">Priya Iyer</div>
+              <div class="reason">Slipping on Newton’s Laws · 4 wrong in a row</div>
+            </div>
+            <span class="sev">Med</span>
+          </div>
+          <div class="risk-row" data-sev="med">
+            <span class="avatar gold">R</span>
+            <div>
+              <div class="name">Rohan Kapoor</div>
+              <div class="reason">Active but accuracy fell from 78% → 55%</div>
+            </div>
+            <span class="sev">Med</span>
+          </div>
+        </div>
+
+        <h3 style="margin-top:24px;">Ahead of the class</h3>
+        <p class="panel-sub">Mentor opportunity · 2 students</p>
+        <div class="risk-list">
+          <div class="risk-row" data-sev="ahead" style="border-left-color: var(--green);">
+            <span class="avatar teal">S</span>
+            <div>
+              <div class="name">Saanvi Rao</div>
+              <div class="reason">Mastered Ch.10 already · could mentor Arjun</div>
+            </div>
+            <span class="sev" style="color: var(--green);">Ahead</span>
+          </div>
+        </div>
+      </aside>
+
+      <article class="card heatmap-card">
+        <div class="heatmap-meta">
+          <div>
+            <h3>Class mastery map</h3>
+            <p class="panel-sub" style="margin: 4px 0 0;">Bayesian estimate · updated 4 min ago</p>
+          </div>
+          <div class="heatmap-key">
+            <span><span class="swatch h-1"></span>0–20</span>
+            <span><span class="swatch h-2"></span>20–40</span>
+            <span><span class="swatch h-3"></span>40–60</span>
+            <span><span class="swatch h-4"></span>60–80</span>
+            <span><span class="swatch h-5"></span>80+</span>
+          </div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="heatmap-table">
+            <thead>
+              <tr>
+                <th class="student-col">Student</th>
+                <th>Ch 1<br>Motion</th>
+                <th>Ch 2<br>Force</th>
+                <th>Ch 3<br>Mass</th>
+                <th>Ch 4<br>Newton</th>
+                <th>Ch 5<br>Light</th>
+                <th>Ch 6<br>Sound</th>
+                <th>Ch 7<br>Heat</th>
+                <th>Avg</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="name-cell">Saanvi Rao</td>      <td class="heatmap-cell h-5">92</td><td class="heatmap-cell h-5">89</td><td class="heatmap-cell h-5">88</td><td class="heatmap-cell h-5">85</td><td class="heatmap-cell h-5">82</td><td class="heatmap-cell h-4">78</td><td class="heatmap-cell h-4">74</td><td class="heatmap-cell h-5">84</td></tr>
+              <tr><td class="name-cell">Vihaan Joshi</td>    <td class="heatmap-cell h-5">88</td><td class="heatmap-cell h-4">76</td><td class="heatmap-cell h-5">82</td><td class="heatmap-cell h-4">71</td><td class="heatmap-cell h-4">68</td><td class="heatmap-cell h-3">52</td><td class="heatmap-cell h-x">—</td>  <td class="heatmap-cell h-4">73</td></tr>
+              <tr><td class="name-cell">Aarav Singh</td>     <td class="heatmap-cell h-4">74</td><td class="heatmap-cell h-4">68</td><td class="heatmap-cell h-3">58</td><td class="heatmap-cell h-3">54</td><td class="heatmap-cell h-3">49</td><td class="heatmap-cell h-3">45</td><td class="heatmap-cell h-x">—</td>  <td class="heatmap-cell h-3">58</td></tr>
+              <tr><td class="name-cell">Priya Iyer</td>      <td class="heatmap-cell h-4">71</td><td class="heatmap-cell h-3">55</td><td class="heatmap-cell h-3">48</td><td class="heatmap-cell h-2">32</td><td class="heatmap-cell h-2">28</td><td class="heatmap-cell h-x">—</td>  <td class="heatmap-cell h-x">—</td>  <td class="heatmap-cell h-3">47</td></tr>
+              <tr><td class="name-cell">Rohan Kapoor</td>    <td class="heatmap-cell h-4">66</td><td class="heatmap-cell h-3">52</td><td class="heatmap-cell h-2">38</td><td class="heatmap-cell h-2">30</td><td class="heatmap-cell h-2">26</td><td class="heatmap-cell h-2">22</td><td class="heatmap-cell h-x">—</td>  <td class="heatmap-cell h-2">39</td></tr>
+              <tr><td class="name-cell">Arjun Mehta</td>     <td class="heatmap-cell h-3">52</td><td class="heatmap-cell h-2">36</td><td class="heatmap-cell h-2">28</td><td class="heatmap-cell h-1">18</td><td class="heatmap-cell h-1">15</td><td class="heatmap-cell h-x">—</td>  <td class="heatmap-cell h-x">—</td>  <td class="heatmap-cell h-2">30</td></tr>
+              <tr><td class="name-cell">Diya Patel</td>      <td class="heatmap-cell h-5">85</td><td class="heatmap-cell h-5">81</td><td class="heatmap-cell h-4">76</td><td class="heatmap-cell h-4">72</td><td class="heatmap-cell h-4">70</td><td class="heatmap-cell h-3">58</td><td class="heatmap-cell h-x">—</td>  <td class="heatmap-cell h-4">74</td></tr>
+              <tr><td class="name-cell">Kabir Verma</td>     <td class="heatmap-cell h-4">68</td><td class="heatmap-cell h-3">55</td><td class="heatmap-cell h-3">50</td><td class="heatmap-cell h-3">46</td><td class="heatmap-cell h-3">42</td><td class="heatmap-cell h-x">—</td>  <td class="heatmap-cell h-x">—</td>  <td class="heatmap-cell h-3">52</td></tr>
+              <tr><td class="name-cell">Ananya Shah</td>     <td class="heatmap-cell h-5">82</td><td class="heatmap-cell h-4">74</td><td class="heatmap-cell h-4">68</td><td class="heatmap-cell h-4">65</td><td class="heatmap-cell h-3">58</td><td class="heatmap-cell h-x">—</td>  <td class="heatmap-cell h-x">—</td>  <td class="heatmap-cell h-4">69</td></tr>
+              <tr><td class="name-cell">Class average</td>   <td class="heatmap-cell h-4">75</td><td class="heatmap-cell h-3">65</td><td class="heatmap-cell h-3">59</td><td class="heatmap-cell h-3">52</td><td class="heatmap-cell h-3">48</td><td class="heatmap-cell h-2">39</td><td class="heatmap-cell h-x">—</td>  <td class="heatmap-cell h-3">57</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <aside class="card panel">
+        <h3>Today’s actions</h3>
+        <p class="panel-sub">One tap each</p>
+        <div class="actions-list">
+          <div class="action-row primary">
+            <span class="action-icon">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 5h12l4 7-4 7H3z"/></svg>
+            </span>
+            <div class="action-text">Launch quick poll<small>Test the room in 60 seconds</small></div>
+          </div>
+          <div class="action-row">
+            <span class="action-icon">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 11h6M9 15h4M5 19l-2 2V5a2 2 0 012-2h14a2 2 0 012 2v12a2 2 0 01-2 2H5z"/></svg>
+            </span>
+            <div class="action-text">Assign revision quiz<small>Targeted at Newton’s Laws · 6 students</small></div>
+          </div>
+          <div class="action-row">
+            <span class="action-icon">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h16v12H5l-1 4z"/></svg>
+            </span>
+            <div class="action-text">Message Arjun’s parent<small>No activity in 6 days</small></div>
+          </div>
+          <div class="action-row">
+            <span class="action-icon">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3v18M3 12h18"/></svg>
+            </span>
+            <div class="action-text">Add class note<small>Visible to co-teachers</small></div>
+          </div>
+        </div>
+
+        <div class="live-poll" role="status" aria-live="polite">
+          <div class="live-row"><span class="pulse" aria-hidden="true"></span>Live · started 1 min ago</div>
+          <p class="live-poll-q">“If a ball is pushed with twice the force, its acceleration will…”</p>
+          <div class="poll-meter">
+            <strong class="tabnum">21</strong>
+            <small>of 32 responded · 14 correct</small>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+
+  <!-- ─────────────────────────────────────────────────────
+       SCENE 4 — SCHOOL
+  ───────────────────────────────────────────────────── -->
+  <section class="scene" data-scene="school" aria-label="School admin">
+
+    <div class="school-hello">
+      <div>
+        <p class="eyebrow eyebrow-accent">Tuesday · May 11, 2026</p>
+        <h1>Good morning, <em style="font-style: italic; color: var(--teal-deep);">Pradeep</em>.</h1>
+      </div>
+      <div class="school-meta">
+        <strong>DAV Public School — Sector 14</strong>
+        12 classes · 32 teachers · 847 students
+      </div>
+    </div>
+
+    <div class="kpi-row">
+      <div class="kpi">
+        <div class="kpi-label">Active today</div>
+        <div class="kpi-value tabnum">612</div>
+        <div class="kpi-delta up"><strong>↑ 8.2%</strong> vs. avg week</div>
+        <svg class="kpi-spark" viewBox="0 0 200 38" preserveAspectRatio="none">
+          <path d="M0,30 L25,28 L50,25 L75,22 L100,18 L125,20 L150,14 L175,10 L200,6" fill="none" stroke="#1F7A4C" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Avg mastery</div>
+        <div class="kpi-value tabnum">71<small style="font-size:18px; color:var(--ink-3);">%</small></div>
+        <div class="kpi-delta up"><strong>↑ 3.4 pts</strong> month-over-month</div>
+        <svg class="kpi-spark" viewBox="0 0 200 38" preserveAspectRatio="none">
+          <path d="M0,24 L25,26 L50,20 L75,18 L100,22 L125,16 L150,12 L175,14 L200,8" fill="none" stroke="#E8581C" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Quizzes today</div>
+        <div class="kpi-value tabnum">1,284</div>
+        <div class="kpi-delta up"><strong>↑ 12%</strong> on yesterday</div>
+        <svg class="kpi-spark" viewBox="0 0 200 38" preserveAspectRatio="none">
+          <path d="M0,28 L25,24 L50,26 L75,20 L100,16 L125,18 L150,10 L175,12 L200,4" fill="none" stroke="#0F2A2E" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Foxy interactions</div>
+        <div class="kpi-value tabnum">2,891</div>
+        <div class="kpi-delta down"><strong>↓ 2.1%</strong> · check Class 6</div>
+        <svg class="kpi-spark" viewBox="0 0 200 38" preserveAspectRatio="none">
+          <path d="M0,12 L25,14 L50,10 L75,16 L100,14 L125,18 L150,22 L175,20 L200,26" fill="none" stroke="#C9831A" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="school-grid">
+
+      <article class="card mastery-block">
+        <p class="eyebrow eyebrow-accent">School trend · 12 weeks</p>
+        <p class="editorial">
+          The school is on its <em>strongest learning trajectory of the year</em>,
+          driven by Math and Science across Classes 7–9.
+        </p>
+
+        <svg class="trend-svg" viewBox="0 0 700 140" preserveAspectRatio="none" style="height:140px; margin-top:18px;" role="img" aria-label="School mastery trend">
+          <defs>
+            <linearGradient id="schoolFill" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stop-color="#0F2A2E" stop-opacity="0.16"/>
+              <stop offset="100%" stop-color="#0F2A2E" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <g stroke="rgba(26,18,7,0.06)" stroke-width="1">
+            <line x1="0" y1="30"  x2="700" y2="30"/>
+            <line x1="0" y1="70"  x2="700" y2="70"/>
+            <line x1="0" y1="110" x2="700" y2="110"/>
+          </g>
+          <path d="M0,100 L60,95 L120,98 L180,88 L240,82 L300,74 L360,70 L420,60 L480,52 L540,46 L600,38 L660,32 L700,28"
+                fill="none" stroke="#0F2A2E" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M0,100 L60,95 L120,98 L180,88 L240,82 L300,74 L360,70 L420,60 L480,52 L540,46 L600,38 L660,32 L700,28 L700,140 L0,140 Z"
+                fill="url(#schoolFill)"/>
+          <circle cx="700" cy="28" r="5" fill="#0F2A2E"/>
+          <g font-family="Sora" font-size="10" fill="#A89B86">
+            <text x="0" y="135">Feb</text>
+            <text x="350" y="135" text-anchor="middle">Apr</text>
+            <text x="700" y="135" text-anchor="end">Now</text>
+          </g>
+        </svg>
+
+        <div class="class-compare">
+          <div class="compare-col">
+            <h4>Top performing classes</h4>
+            <div class="compare-row"><span><strong>8B</strong> · Physics · Ms. Kapoor</span><span class="delta up">+9% ↑</span></div>
+            <div class="compare-row"><span><strong>7A</strong> · Math · Mr. Pal</span><span class="delta up">+7%  ↑</span></div>
+            <div class="compare-row"><span><strong>9C</strong> · Chem · Ms. Singh</span><span class="delta up">+6% ↑</span></div>
+          </div>
+          <div class="compare-col">
+            <h4>Needs intervention</h4>
+            <div class="compare-row"><span><strong>6B</strong> · English · Ms. Rao</span><span class="delta down">–4% ↓</span></div>
+            <div class="compare-row"><span><strong>10A</strong> · History · Mr. Khan</span><span class="delta down">–3% ↓</span></div>
+            <div class="compare-row"><span><strong>5C</strong> · Hindi · Ms. Joshi</span><span class="delta down">–2% ↓</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <p class="eyebrow eyebrow-accent">Needs your attention</p>
+        <h3 style="margin: 0 0 16px; font-family: var(--serif); font-weight: 500; font-size: 22px;">Three signals</h3>
+        <div class="alert-list">
+          <div class="alert" data-tone="red">
+            <h4>Class 6B participation dipped 28% this week</h4>
+            <p>Ms. Rao’s English block — last quiz was 5 days ago. Foxy noticed.</p>
+          </div>
+          <div class="alert" data-tone="gold">
+            <h4>3 teachers haven’t logged in this week</h4>
+            <p>Mr. Pratap, Ms. Devi, Mr. Sharma — gentle nudge recommended.</p>
+          </div>
+          <div class="alert" data-tone="green">
+            <h4>Class 7A hit 90% engagement milestone</h4>
+            <p>Mr. Pal’s class — share the win in tomorrow’s assembly?</p>
+          </div>
+        </div>
+
+        <h3 style="margin: 24px 0 12px; font-family: var(--serif); font-weight: 500; font-size: 18px;">Teacher of the week</h3>
+        <div class="risk-row" data-sev="ahead" style="border-left-color: var(--teal-deep);">
+          <span class="avatar teal">K</span>
+          <div>
+            <div class="name">Ms. Kapoor (8B Physics)</div>
+            <div class="reason">+9% class mastery · 100% teacher engagement</div>
+          </div>
+          <span class="sev" style="color: var(--teal-deep);">+9%</span>
+        </div>
+      </article>
+    </div>
+
+    <article class="card activity-stream">
+      <h3>Today’s pulse</h3>
+      <div class="activity-row">
+        <span class="dot"></span>
+        <div><span class="actor">Class 8B</span> · 28 quizzes completed in the last hour · avg 78%</div>
+        <time class="tabnum">9 min ago</time>
+      </div>
+      <div class="activity-row">
+        <span class="dot teal"></span>
+        <div><span class="actor">Ms. Singh</span> · published new chemistry notes for Class 9C</div>
+        <time class="tabnum">23 min ago</time>
+      </div>
+      <div class="activity-row">
+        <span class="dot green"></span>
+        <div><span class="actor">12 new students</span> · onboarded from Sector 14 enrolment drive</div>
+        <time class="tabnum">1 h ago</time>
+      </div>
+      <div class="activity-row">
+        <span class="dot gold"></span>
+        <div><span class="actor">Foxy</span> · flagged 4 students at risk of falling behind in English</div>
+        <time class="tabnum">2 h ago</time>
+      </div>
+      <div class="activity-row">
+        <span class="dot"></span>
+        <div><span class="actor">Mr. Pal</span> · launched live poll in 7A Math, 100% participation</div>
+        <time class="tabnum">3 h ago</time>
+      </div>
+    </article>
+  </section>
+
+
+  <!-- ─────────────────────────────────────────────────────
+       FOOTER NOTE
+  ───────────────────────────────────────────────────── -->
+  <p class="footnote">
+    <strong>Editorial Atlas</strong> · A unified design system across student, parent, teacher, and school.
+    One canvas, one type system, four navigation models tuned to each persona’s cadence.
+    Read the full proposal in <strong>MULTI_ROLE_REDESIGN.md</strong>.
+  </p>
+</main>
+
+<!-- Foxy FAB rendered globally; only visible in student scene -->
+<div class="foxy-fab" id="foxyFab" role="button" aria-label="Open Foxy chat">
+  <span class="foxy-dot" aria-hidden="true"></span>
+  Ask Foxy
+</div>
+
+<script>
+  // Role switcher — minimal, no framework.
+  const chips  = document.querySelectorAll('.role-chip');
+  const scenes = document.querySelectorAll('.scene');
+  const foxy   = document.getElementById('foxyFab');
+
+  function showRole(role) {
+    chips.forEach(c => c.setAttribute('aria-selected', c.dataset.role === role ? 'true' : 'false'));
+    scenes.forEach(s => s.dataset.active = s.dataset.scene === role ? 'true' : 'false');
+    foxy.style.display = role === 'student' ? 'flex' : 'none';
+    history.replaceState(null, '', `#${role}`);
+  }
+
+  chips.forEach(c => c.addEventListener('click', () => showRole(c.dataset.role)));
+
+  // Initial role from URL hash, defaulting to student
+  const initial = (location.hash || '#student').replace('#', '');
+  if (['student','parent','teacher','school'].includes(initial)) showRole(initial);
+</script>
+
+</body>
+</html>
