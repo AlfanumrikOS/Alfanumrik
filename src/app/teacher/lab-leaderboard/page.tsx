@@ -201,7 +201,10 @@ export default function LabLeaderboardPage() {
 
   // ─── Render ──────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#0B1120] text-slate-200 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif]">
+    <div
+      className="min-h-screen font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif]"
+      style={{ background: 'var(--bg)', color: 'var(--text-1)' }}
+    >
       <div className="max-w-[1100px] mx-auto px-4 sm:px-5 lg:px-8 py-5 lg:py-8 pb-24">
         {/* Header */}
         <header className="mb-5 sm:mb-6 pb-4 border-b border-slate-800">
