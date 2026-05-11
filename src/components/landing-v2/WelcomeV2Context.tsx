@@ -60,8 +60,8 @@ export function WelcomeV2Provider({ children }: { children: ReactNode }) {
     try {
       const storedLang = localStorage.getItem(LANG_KEY);
       if (storedLang === 'hi' || storedLang === 'en') setLang(storedLang);
-      const storedTheme = localStorage.getItem(THEME_KEY);
-      if (storedTheme === 'light' || storedTheme === 'dark') setTheme(storedTheme);
+      // Theme hydration disabled 2026-05-11 — light-only across the product.
+      // Leftover localStorage value is harmless; we just stop reading it.
       const storedRole = localStorage.getItem(ROLE_KEY);
       if (
         storedRole === 'parent' ||
@@ -84,19 +84,11 @@ export function WelcomeV2Provider({ children }: { children: ReactNode }) {
     });
   };
 
-  const toggleTheme = () => {
-    setTheme((prev) => {
-      // Determine current effective theme
-      const sysDark =
-        typeof window !== 'undefined' &&
-        window.matchMedia &&
-        window.matchMedia('(prefers-color-scheme: dark)').matches;
-      const currentEffective = prev ?? (sysDark ? 'dark' : 'light');
-      const next: Theme = currentEffective === 'dark' ? 'light' : 'dark';
-      try { localStorage.setItem(THEME_KEY, next); } catch { /* noop */ }
-      return next;
-    });
-  };
+  // toggleTheme: no-op as of 2026-05-11. Welcome page is locked to light
+  // along with the rest of the product (see src/lib/AuthContext.tsx
+  // ::resolveTheme rationale). NavV2 already removed the toggle button
+  // in #707; this neutralises any stragglers calling the function.
+  const toggleTheme = () => { /* light-only across the product */ };
 
   const setRole = (r: Role) => {
     setRoleState(r);

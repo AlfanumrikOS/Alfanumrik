@@ -69,16 +69,15 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         {/*
-          color-scheme: Phase 1 (2026-05-11) — globals.css now has a real
-          dark theme under [data-theme="dark"] and AuthContext writes the
-          attribute from user preference + OS resolution. Telling the browser
-          we support both lets native form controls, scrollbars, and autofill
-          theme alongside the app content instead of clashing with it.
-          Component-sweep work (inline-style hex colors → CSS vars) is the
-          Phase 1.5 follow-up; the synthetic monitor catches the worst
-          contrast misses.
+          color-scheme: REVERSED 2026-05-11 — dark mode (#705/#706) caused
+          severe legibility regressions in admin surfaces, so the product
+          ships a single light theme until a proper accessibility pass is
+          done. Setting "light" tells the browser to render native chrome
+          (scrollbars, form controls, autofill) in light variants too,
+          avoiding the dark-system-pref mismatch the previous "light dark"
+          value tolerated. See src/lib/AuthContext.tsx::resolveTheme.
         */}
-        <meta name="color-scheme" content="light dark" />
+        <meta name="color-scheme" content="light" />
         <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
         <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />

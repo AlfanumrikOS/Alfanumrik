@@ -110,24 +110,28 @@ export function useAuth() {
 }
 
 /** Resolve a ThemePreference into the concrete theme to apply.
- *  `system` reads `prefers-color-scheme: dark` from the browser. */
-function resolveTheme(pref: ThemePreference): 'light' | 'dark' {
-  if (pref === 'light' || pref === 'dark') return pref;
-  if (typeof window === 'undefined' || !window.matchMedia) return 'light';
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+ *
+ *  REVERSED 2026-05-11: dark mode shipped (PRs #705, #706) caused severe
+ *  legibility regressions in admin surfaces (super-admin Control Room
+ *  was effectively unreadable). The CEO directive is to ship a single
+ *  light theme across the entire product — students, parents, teachers,
+ *  school admins, super admins. Until each `dark:` Tailwind variant and
+ *  legacy `[data-theme="dark"]` CSS block has been excised from the
+ *  codebase, this function returns 'light' unconditionally and the
+ *  toggle is hidden from the UI. The ThemePreference type and the
+ *  toggleTheme contract stay intact so consumers don't need refactor.
+ *  When the dead code cleanup happens, this function can be removed. */
+function resolveTheme(_pref: ThemePreference): 'light' | 'dark' {
+  return 'light';
 }
 
 /** Apply theme preference to document.documentElement via data-theme attribute.
- *
- *  Phase 1 (2026-05-11): for pref === 'system' we now write the *resolved*
- *  value (light or dark) rather than removing the attribute. Previously the
- *  attribute was removed for system mode, which meant the CSS dark theme in
- *  globals.css (selector: `[data-theme="dark"]`) never activated for system-
- *  preference-dark users. The system-listener effect in AuthProvider keeps
- *  the attribute in sync if the user changes OS theme while pref is 'system'. */
-function applyThemeToDOM(pref: ThemePreference) {
+ *  Always writes 'light' (see resolveTheme rationale above). Kept as a
+ *  function rather than inlined so future re-enablement of dark mode is
+ *  a single-file change. */
+function applyThemeToDOM(_pref: ThemePreference) {
   if (typeof document === 'undefined') return;
-  document.documentElement.setAttribute('data-theme', resolveTheme(pref));
+  document.documentElement.setAttribute('data-theme', 'light');
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -140,7 +144,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [activeRole, setActiveRoleState] = useState<UserRole>('none');
   const [isLoading, setIsLoading] = useState(true);
   const [language, setLanguageState] = useState('en');
-  const [theme, setThemeState] = useState<ThemePreference>('system');
+  // Theme is light-only across the product (see resolveTheme rationale).
+  // Initial state pinned to 'light'; the bootstrap effect below no longer
+  // consults localStorage.alfanumrik_theme.
+  const [theme, setThemeState] = useState<ThemePreference>('light');
 
   const setLanguage = (lang: string) => {
     setLanguageState(lang);
@@ -149,36 +156,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Theme: cycle through light -> dark -> system
+  // Theme toggle is a no-op until dark mode is restored. Kept for backwards
+  // compatibility with consumers that still call it; renders nothing visible.
   const toggleTheme = useCallback(() => {
-    setThemeState((prev) => {
-      const next: ThemePreference = prev === 'light' ? 'dark' : prev === 'dark' ? 'system' : 'light';
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('alfanumrik_theme', next);
-        applyThemeToDOM(next);
-      }
-      return next;
-    });
+    // Intentionally empty. Light-only across the product (see resolveTheme).
   }, []);
 
-  // System-theme listener: when pref === 'system', re-apply on OS theme change
-  // so dark/light flips live without a refresh. Phase 1 (2026-05-11).
+  // Apply light theme exactly once on mount. No system listener, no localStorage.
+  // Previously a system-theme listener flipped dark/light live based on OS pref;
+  // that behavior is suspended along with the rest of the dark-mode surface.
   useEffect(() => {
-    if (theme !== 'system') return;
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = () => applyThemeToDOM('system');
-    // Apply once now in case the system preference changed before this effect
-    // mounted (e.g. user toggled OS theme on the welcome page before login).
-    applyThemeToDOM('system');
-    if (mq.addEventListener) {
-      mq.addEventListener('change', onChange);
-      return () => mq.removeEventListener('change', onChange);
-    }
-    // Older Safari fallback
-    mq.addListener(onChange);
-    return () => mq.removeListener(onChange);
-  }, [theme]);
+    applyThemeToDOM('light');
+  }, []);
 
   // Guard against recursive fetchUser calls after bootstrap.
   // Reset to false on each fresh fetchUser invocation; set to true after bootstrap attempt.
@@ -512,19 +501,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const saved = localStorage.getItem('alfanumrik_language');
         if (saved) setLanguageState(saved);
 
-        // Initialize theme from localStorage. Phase 1 (2026-05-11): always
-        // call applyThemeToDOM so system-preference-dark users actually see
-        // the dark theme on first paint (the previous code only applied when
-        // a saved value was present, so system-dark users stayed light).
-        // Companion mitigation: <meta name="color-scheme" content="light dark">
-        // already shipped in layout.tsx so native chrome themes alongside.
-        const savedTheme = localStorage.getItem('alfanumrik_theme') as ThemePreference | null;
-        const effective: ThemePreference =
-          savedTheme && ['light', 'dark', 'system'].includes(savedTheme)
-            ? savedTheme
-            : 'system';
-        if (effective !== 'system') setThemeState(effective);
-        applyThemeToDOM(effective);
+        // Dark mode REVERSED 2026-05-11 — see resolveTheme rationale. Ignore
+        // any saved theme preference and force light on bootstrap. Leftover
+        // localStorage.alfanumrik_theme values are harmless; we just stop
+        // reading them. A future cleanup can localStorage.removeItem() it.
+        applyThemeToDOM('light');
       }
     };
 
