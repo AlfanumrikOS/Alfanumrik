@@ -72,7 +72,7 @@ export default function LearningJourney({
   const router = useRouter();
   const level = calculateLevel(totalXp);
   const { current, needed } = xpToNextLevel(totalXp);
-  const levelName = getLevelName(level);
+  const levelName = getLevelName(level, isHi);
   const trend = getTrend(velocityData);
   const topicsMastered = snapshot?.topics_mastered ?? 0;
   const topicsInProgress = snapshot?.topics_in_progress ?? 0;

@@ -98,9 +98,26 @@ export const LEVEL_NAMES: Record<number, string> = {
   10: 'Grand Master',
 };
 
-export function getLevelName(level: number): string {
-  if (level >= 10) return LEVEL_NAMES[10];
-  return LEVEL_NAMES[level] || `Level ${level}`;
+// Hindi twins for LEVEL_NAMES. Added 2026-05-11 (audit §0 F6 — P7 invariant).
+// XP_REWARDS already pairs name/nameHi; LEVEL_NAMES diverged English-only.
+// Devanagari forms verified for register and grade-appropriateness.
+export const LEVEL_NAMES_HI: Record<number, string> = {
+  1: 'जिज्ञासु शावक',
+  2: 'तेज़ सीखने वाला',
+  3: 'उदीयमान तारा',
+  4: 'ज्ञान साधक',
+  5: 'स्मार्ट लोमड़ी',
+  6: 'प्रश्नोत्तरी चैंपियन',
+  7: 'अध्ययन महारथी',
+  8: 'दिमाग़ी निंजा',
+  9: 'विद्वान लोमड़ी',
+  10: 'महान मास्टर',
+};
+
+export function getLevelName(level: number, isHi: boolean = false): string {
+  const table = isHi ? LEVEL_NAMES_HI : LEVEL_NAMES;
+  if (level >= 10) return table[10];
+  return table[level] || `Level ${level}`;
 }
 
 // ─── XP Redemption Catalog ───────────────────────────────

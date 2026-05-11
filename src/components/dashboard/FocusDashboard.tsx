@@ -239,7 +239,7 @@ export default function FocusDashboard({
 
   const lvl = calculateLevel(xp);
   const prog = xpToNextLevel(xp);
-  const levelName = getLevelName(lvl);
+  const levelName = getLevelName(lvl, isHi);
   const isNewUser = xp === 0 && !cmeData?.lastSubject;
   const loading = cmeLoading || dueLoading;
 

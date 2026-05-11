@@ -24,7 +24,7 @@ const SIZE_MAP = {
 export default function XPProgressRing({ totalXp, size = 'md', showLabel = true, isHi }: XPProgressRingProps) {
   const level = calculateLevel(totalXp);
   const { current, needed, progress } = xpToNextLevel(totalXp);
-  const levelName = getLevelName(level);
+  const levelName = getLevelName(level, isHi);
   const dim = SIZE_MAP[size];
 
   const radius = (dim.px - dim.stroke) / 2;
