@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { WelcomeV2Provider, useWelcomeV2 } from './WelcomeV2Context';
 import NavV2 from './NavV2';
 import HeroV2 from './HeroV2';
@@ -17,35 +17,21 @@ import s from './welcome-v2.module.css';
 
 /**
  * Inline blocking script that runs BEFORE first paint.
- * Resolves the effective theme from localStorage → matchMedia and writes it
- * onto the .root element synchronously, so trust quotes / footer / pricing
- * tag render against the correct dark/light colour from the very first frame.
  *
- * Without this, system-dark users with `theme === null` would see ~40
- * components stuck in light variants (their dark overrides live under
- * `[data-theme='dark']`, not under the @media block) — the production
- * regression we're hot-fixing.
+ * 2026-05-11: dark mode removed from the landing page per user direction.
+ * The landing surface always renders light regardless of localStorage /
+ * matchMedia. The dark CSS in welcome-v2.module.css is left in place for
+ * potential future re-enable; this script + the useEffect below short-
+ * circuit theme resolution to 'light' so those selectors never apply.
  *
  * Stringified inside a <script dangerouslySetInnerHTML> so React injects it
- * as raw markup. The script tags itself by id so React can find the same
- * .root in hydration.
+ * as raw markup.
  */
-// Theme bootstrap: writes data-theme onto WelcomeV2's own root div (parent of
-// this script tag) before React hydrates, so first paint is already correctly
-// themed. Body-level data-theme is owned by NavV2 (which cleans up on unmount);
-// writing it here too leaks across SPA navigation because the inline script
-// fires before React lifecycle can clean up. Audit 2026-05-11 §0 F2.
-const THEME_BOOTSTRAP_SCRIPT = `(function(){try{var k='alfanumrik-theme';var s=localStorage.getItem(k);var t=(s==='dark'||s==='light')?s:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');var r=document.currentScript&&document.currentScript.parentElement;if(r&&r.setAttribute){r.setAttribute('data-theme',t);}}catch(e){}})();`;
+const THEME_BOOTSTRAP_SCRIPT = `(function(){try{var r=document.currentScript&&document.currentScript.parentElement;if(r&&r.setAttribute){r.setAttribute('data-theme','light');}}catch(e){}})();`;
 
 function ThemedShell() {
-  const { theme, isHi } = useWelcomeV2();
+  const { isHi } = useWelcomeV2();
   const rootRef = useRef<HTMLDivElement | null>(null);
-
-  // Mounted flag so SSR can render WITHOUT a data-theme (the inline script
-  // sets it pre-paint), and after hydration we control it via React for
-  // user-driven toggles. Avoids hydration mismatch warnings.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
 
   // Mirror lang to <html> for accessibility / SR.
   useEffect(() => {
@@ -53,61 +39,24 @@ function ThemedShell() {
     document.documentElement.setAttribute('lang', isHi ? 'hi' : 'en');
   }, [isHi]);
 
-  /**
-   * After mount, when the user has NO explicit preference (theme === null),
-   * mirror the OS `prefers-color-scheme` to the data-theme attribute and
-   * keep it in sync with system changes. This is the PRIMARY fix for the
-   * ~40 invisible-element bugs: without an explicit data-theme, the
-   * `.root[data-theme='dark'] X` selectors don't apply and elements stay
-   * stuck in their light defaults on a dark background.
-   *
-   * When the user HAS an explicit preference, we set data-theme directly to
-   * that value below — this effect bails early.
-   */
+  // 2026-05-11: Landing always light. Earlier this effect resolved theme
+  // from the WelcomeV2Context (light/dark/null=system) and registered a
+  // matchMedia listener for system-preference changes. Both are gone — the
+  // landing surface is locked to light. Bootstrap script above already
+  // writes the attribute synchronously pre-paint; this effect re-asserts
+  // it post-hydration in case any intermediate code mutated the attribute.
   useEffect(() => {
-    if (!mounted) return;
     const root = rootRef.current;
-    if (!root) return;
-
-    // NOTE (2026-05-11 §0 F2): we no longer mirror data-theme to document.body
-    // here. NavV2 owns body.dataset.theme and cleans it up on unmount; writing
-    // it from two places caused it to persist after SPA navigation away from
-    // welcome, leaving a phantom dark attribute on the body while the rest of
-    // the app (which has no dark CSS) rendered light. Root-only write keeps
-    // welcome's CSS module scoped correctly.
-    if (theme === 'dark' || theme === 'light') {
-      root.setAttribute('data-theme', theme);
-      return;
-    }
-
-    // theme === null → follow system, with live updates.
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const apply = () => {
-      const next = mq.matches ? 'dark' : 'light';
-      root.setAttribute('data-theme', next);
-    };
-    apply();
-    // Older Safari uses addListener; modern browsers use addEventListener.
-    if (mq.addEventListener) {
-      mq.addEventListener('change', apply);
-      return () => mq.removeEventListener('change', apply);
-    }
-    mq.addListener(apply);
-    return () => {
-      mq.removeListener(apply);
-    };
-  }, [mounted, theme]);
+    if (root) root.setAttribute('data-theme', 'light');
+  }, []);
 
   return (
-    <div ref={rootRef} className={s.root} suppressHydrationWarning>
-      {/*
-        Inline script runs synchronously at parse time, BEFORE React hydrates.
-        It writes data-theme onto this very <div> (its parentElement) so the
-        first paint already uses the correct theme. After hydration, the
-        useEffect above takes over and keeps the attribute in sync with state
-        and system changes.
-      */}
+    <div
+      ref={rootRef}
+      className={s.root}
+      data-testid="welcome-root"
+      suppressHydrationWarning
+    >
       <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
       <NavV2 />
       <main>
