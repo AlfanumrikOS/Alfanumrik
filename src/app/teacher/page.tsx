@@ -3,11 +3,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
-import { supabase, supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON, getFeatureFlags } from '@/lib/supabase';
+import { supabase, supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON } from '@/lib/supabase';
 import type { HeatmapData, HeatmapCell, HeatmapRow, RiskAlert } from '@/lib/types';
 import { BottomNav } from '@/components/ui';
 import { SUBJECT_ROTATION } from '@/lib/challenge-config';
-import { isAtlasEnabled } from '@/lib/feature-flags';
+import { useAtlasFlag } from '@/lib/use-atlas-flag';
 import AtlasTeacher from './AtlasTeacher';
 
 // ============================================================
@@ -283,30 +283,10 @@ function PollTab({ classId, teacherId, isHi }: { classId: string; teacherId: str
 }
 
 export default function TeacherPage() {
-  // ─── Editorial Atlas flag dispatcher ───────────────────────────────────
-  // Reads the flag once on mount; renders the redesigned <AtlasTeacher>
-  // when on, otherwise falls back to the legacy implementation below.
-  const [atlas, setAtlas] = useState<boolean | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    getFeatureFlags().then(flags => { if (!cancelled) setAtlas(isAtlasEnabled('teacher', flags)); })
-      .catch(() => { if (!cancelled) setAtlas(false); });
-    return () => { cancelled = true; };
-  }, []);
-  if (atlas === null) return <TeacherFlagSpinner />;
+  // Synchronous Atlas dispatch — see src/lib/use-atlas-flag.ts.
+  const atlas = useAtlasFlag('teacher');
   if (atlas) return <AtlasTeacher />;
   return <LegacyTeacherPage />;
-}
-
-function TeacherFlagSpinner() {
-  return (
-    <div style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div
-        className="w-10 h-10 border-[3px] rounded-full animate-spin"
-        style={{ borderColor: 'var(--surface-3)', borderTopColor: 'var(--orange)' }}
-      />
-    </div>
-  );
 }
 
 function LegacyTeacherPage() {

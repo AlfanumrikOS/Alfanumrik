@@ -4,10 +4,10 @@ import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { useTenant } from '@/lib/tenant-context';
-import { supabase, getFeatureFlags } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
 import type { ModuleKey } from '@/lib/modules/registry';
-import { isAtlasEnabled } from '@/lib/feature-flags';
+import { useAtlasFlag } from '@/lib/use-atlas-flag';
 
 /* ─── P7: Bilingual labels ───────────────────────────────────────────
  *
@@ -75,17 +75,8 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
   // resolve to `false` are filtered out of the sidebar.
   const [moduleEnablement, setModuleEnablement] = useState<Record<string, boolean> | null>(null);
 
-  // Editorial Atlas pass-through: AtlasSchoolAdmin renders its own
-  // AtlasShell with a built-in rail. Wrapping it in this legacy purple
-  // sidebar would stack two side rails. Pass-through when the flag is on.
-  const [atlasOn, setAtlasOn] = useState<boolean | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    getFeatureFlags()
-      .then((flags) => { if (!cancelled) setAtlasOn(isAtlasEnabled('school', flags)); })
-      .catch(() => { if (!cancelled) setAtlasOn(false); });
-    return () => { cancelled = true; };
-  }, []);
+  // Editorial Atlas pass-through. Sync read from cache — no flash.
+  const atlasOn = useAtlasFlag('school');
 
   const primaryColor = tenant.branding.primaryColor || '#7C3AED';
 
