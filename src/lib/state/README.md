@@ -68,17 +68,31 @@ The bus and the orchestrator are gated separately so the bus can warm up (events
 - Both flags stay OFF in production
 - No feature behaviour changes yet
 
-### Phase 2 — Migrate one feature
+### Phase 2 — Wire one feature (this PR)
 
-Pick the highest-traffic single-write path. Recommended: **quiz completion**.
+Quiz completion is wired through the orchestrator **additively** — the legacy `submit_quiz_results_v2` RPC stays as the authoritative grader; the new path runs alongside, publishing events. Same code path can be flipped to fully replace the legacy writes once parity is verified.
 
-1. The quiz API route stops doing scattered writes (mastery + XP + parent + PostHog + …)
-2. It calls `orchestrator.dispatch({ service: quizCompletionService, ... })`
-3. Wire one subscriber: `mastery_state` writer reacts to `learner.mastery_changed`
-4. Flip `ff_event_bus_v1` to `true` on the Cusiosense house tenant only
-5. Watch `domain_events` accumulate; verify the mastery writer keeps mastery_state in sync
-6. Roll out: enable on pilot tenants → all tenants
-7. Retire the legacy scattered writes in the quiz route once parity is confirmed
+What ships in Phase 2:
+
+1. New migration `20260517100000_learner_state_projections.sql` — adds the `learner_mastery` projection table (the clean per-chapter rollup the StudentState model expects) and the `bus_cursor` table (the watermark store for the polling listener).
+2. [`student-state-builder.ts`](./student-state-builder.ts) — the DB → StudentState projector. Parallel reads of `students`, `learner_mastery`, recent quiz/foxy sessions, guardian links, tenant modules.
+3. [`services/registry.ts`](./services/registry.ts) — the typed service roster. Currently: `quizCompletionService`. Tests can subset via `pickServices([...])`.
+4. [`subscribers/dispatcher.ts`](./subscribers/dispatcher.ts) + [`subscribers/mastery-state-writer.ts`](./subscribers/mastery-state-writer.ts) — the first concrete subscriber, upserts into `learner_mastery` on `learner.mastery_changed`. Idempotent. Respects dryRun.
+5. [`quiz-orchestrator-bridge.ts`](./quiz-orchestrator-bridge.ts) — best-effort dispatch into the orchestrator after the legacy RPC succeeds. Wrapped in try/catch — NEVER breaks the route. Flag-gated on `ff_orchestrator_v1`.
+6. [`runtime/event-listener.ts`](./runtime/event-listener.ts) — polling daemon: reads `domain_events` since cursor, fans out via dispatcher, advances cursor only on all-subscribers-ok. Standalone runner: `npx tsx scripts/run-event-listener.ts [--dry-run]`.
+7. Tests in [`src/__tests__/state/phase-2-unit.test.ts`](../../__tests__/state/phase-2-unit.test.ts) — 18 unit tests covering builder, registry, writer, dispatcher, listener tick.
+
+**Rollout plan (each step independently reversible):**
+
+1. **Apply migration on staging.** Schema-only — no behaviour change.
+2. **Deploy code with both flags OFF.** Quiz route bridge is a no-op; orchestrator never instantiated; subscriber daemon may run but sees nothing.
+3. **Start the listener daemon (dryRun mode).** Subscribers log what they WOULD write. Confirms the listener can read the schema.
+4. **Flip `ff_event_bus_v1` to `true` on the Cusiosense house tenant only.** `publishEvent()` starts writing rows. Subscribers (still in dryRun) log activity but don't touch `learner_mastery`.
+5. **Flip `ff_orchestrator_v1` to `true` on the Cusiosense house tenant only.** The bridge starts firing on quiz submissions for that tenant. Events accumulate; dryRun logs show the projection writes that would happen.
+6. **Flip subscribers out of dryRun.** `learner_mastery` rows start appearing alongside the legacy `adaptive_mastery` writes.
+7. **Run the parity script.** Compare orchestrator-computed mastery deltas against `adaptive_mastery` for the past 24h on the house tenant. (Script: future PR.) Diff threshold: <5%.
+8. **Roll out tenant-by-tenant.** Pilot schools → all schools → B2C.
+9. **Retire legacy writes.** Once `learner_mastery` is the read source for surfaces (parent view, teacher dashboard), the legacy `adaptive_mastery` writes in the RPC can be removed in a separate PR.
 
 ### Phase 3 — Migrate Foxy to context-rich
 
@@ -98,12 +112,12 @@ The mesh's L8 Evolution Agent (skeleton already in `agents/runtime/`) starts att
 - Journey events over the next N days roll up to that metric
 - Mesh decides whether to keep the change, evolve the prompt, or escalate
 
-## What this PR does NOT do
+## What Phase 2 does NOT do
 
-- **Does not modify any existing feature.** Legacy code paths stay live and untouched.
-- **Does not flip any flag.** Both `ff_event_bus_v1` and `ff_orchestrator_v1` ship OFF.
-- **Does not implement `StudentStateBuilder`.** The type is exported; the actual DB-read function is a Phase 2 deliverable when we wire the first feature. Until then, callers can construct fixtures (see `src/__tests__/state/unified-state.test.ts::makeState`).
-- **Does not implement Supabase Realtime subscriber.** Phase 2 ships the worker that LISTENs on `domain_events` and feeds the orchestrator's `onEvent()`.
+- **Does not remove any legacy write.** `submit_quiz_results_v2` keeps writing `adaptive_mastery`, `quiz_sessions`, xp_ledger rows exactly as before. The orchestrator runs alongside; both flags ship OFF.
+- **Does not migrate Foxy, dashboards, or any non-quiz feature.** Those are Phase 3+.
+- **Does not flip any flag in production.** Staging-only canary on the Cusiosense house tenant after this lands.
+- **Does not depend on Supabase Realtime.** Phase 2 uses polling on the `domain_events.occurred_at` cursor. Realtime / pg_notify is a future swap behind the same Dispatcher interface.
 
 ## Tests
 
