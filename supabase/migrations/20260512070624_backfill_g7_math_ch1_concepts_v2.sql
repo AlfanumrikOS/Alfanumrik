@@ -1,8 +1,25 @@
--- Migration: 20260512065503_backfill_g7_math_ch1_concepts.sql
+-- Migration: 20260512070624_backfill_g7_math_ch1_concepts_v2.sql
 -- Purpose:    Backfill 6 publication-quality concepts for Grade 7 Math Chapter 1
 --             ("Large Numbers Around Us" / Ganita Prakash) into `chapter_concepts`.
 --             Companion to ff_chapter_reader_v2 — once the flag is on, the
 --             learn page renders these curated rows instead of RAG chunks.
+--
+-- Phantom-timestamp reconcile (2026-05-12, post PR #749):
+--   This file was originally committed as
+--   supabase/migrations/20260512065503_backfill_g7_math_ch1_concepts.sql in
+--   PR #749. The first MCP apply attempt hit a NOT NULL violation on the
+--   chapter_id FK; the second attempt (named "..._v2") succeeded and prod's
+--   schema_migrations now records version 20260512070624 + name
+--   "backfill_g7_math_ch1_concepts_v2". Renamed here so the CLI sees an
+--   exact local-vs-remote match.
+--
+-- Environment note: the UPDATE-by-id and INSERTs hardcode prod UUIDs
+-- (d7c541b8-… for the existing concept row, ff1ac0e2-… for the chapter FK).
+-- On staging/dev those ids don't exist so the INSERT will fail with an FK
+-- violation — that's why `Sync Migrations to Staging` shows red. Staging
+-- backfill is a separate ticket; do NOT rewrite this file to be
+-- environment-agnostic, as that would re-apply different SQL to prod
+-- where the data is already settled.
 --
 -- Pilot:      Grade 7 maths is the demo chapter the CEO screenshotted on
 --             2026-05-12 (was rendering as raw textbook dump).

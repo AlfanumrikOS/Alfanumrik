@@ -1,7 +1,16 @@
--- Migration: 20260512065502_ff_chapter_reader_v2.sql
+-- Migration: 20260512070302_ff_chapter_reader_v2.sql
 -- Purpose:    Seed feature flag for Chapter Reader v2 — swap chapter learn-page
 --             data source from RAG chunks (raw textbook excerpts) to the
 --             curated `chapter_concepts` table.
+--
+-- Phantom-timestamp reconcile (2026-05-12, post PR #749):
+--   This file was originally committed as
+--   supabase/migrations/20260512065502_ff_chapter_reader_v2.sql in PR #749.
+--   The Supabase MCP applied it to prod with its own generated timestamp
+--   (20260512070302), so the next `supabase db push --linked` saw a remote
+--   version with no matching local file and refused to push — same pattern
+--   as PR #748. Renamed here to the prod-resident timestamp so the CLI
+--   sees "already applied" on its next run. DO NOT delete this file.
 --
 -- When ON: src/app/learn/[subject]/[chapter]/page.tsx prefers
 --          getChapterTopicsFromConcepts() over getChapterTopics() if the
