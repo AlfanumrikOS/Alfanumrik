@@ -11,11 +11,24 @@ import type { LeaderboardEntry } from '@/lib/types';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import StreakBadge from '@/components/challenge/StreakBadge';
 import { STREAK_VISIBILITY_THRESHOLD } from '@/lib/challenge-config';
+import { useFeatureFlags } from '@/lib/swr';
+
+/** Row shape returned by /api/v1/leaderboard/mastery. Phase 5 follow-on. */
+interface MasteryLeaderEntry {
+  rank: number;
+  student_id: string;
+  name: string;
+  grade: string;
+  school: string | null;
+  avatar_url: string | null;
+  mean_mastery: number;
+  chapters_counted: number;
+}
 
 // These types come from dynamic RPC responses with many optional fields
 type RPCRecord = Record<string, any>; // eslint-disable-line
 
-type Tab = 'ranks' | 'compete' | 'fame' | 'titles' | 'streaks';
+type Tab = 'ranks' | 'compete' | 'fame' | 'titles' | 'streaks' | 'mastery';
 
 /** Entry for the streaks leaderboard tab */
 interface StreakLeaderEntry {
@@ -87,6 +100,12 @@ export default function LeaderboardPage() {
   const [selectedComp, setSelectedComp] = useState<RPCRecord | null>(null);
   const [compLeaderboard, setCompLeaderboard] = useState<RPCRecord[]>([]);
   const [streakEntries, setStreakEntries] = useState<StreakLeaderEntry[]>([]);
+  // Phase 5 follow-on — mastery-percentile tab. Renders only when
+  // ff_personalised_compete_v1 is on (server's /api/v1/leaderboard/mastery
+  // also 404s when off). Falls through to legacy tabs when flag is off.
+  const [masteryEntries, setMasteryEntries] = useState<MasteryLeaderEntry[]>([]);
+  const { data: lbFlags } = useFeatureFlags();
+  const masteryTabOn = lbFlags?.ff_personalised_compete_v1 === true;
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/login');
@@ -247,6 +266,28 @@ export default function LeaderboardPage() {
     setLoading(false);
   }, [student]);
 
+  // Phase 5 follow-on — mastery leaderboard fetcher. 404 = flag off
+  // or no profile; treat as empty (UI renders the empty state).
+  const loadMastery = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/v1/leaderboard/mastery?limit=50', {
+        credentials: 'same-origin',
+      });
+      if (res.status === 404) {
+        setMasteryEntries([]);
+      } else if (res.ok) {
+        const body = (await res.json()) as { items?: MasteryLeaderEntry[] };
+        setMasteryEntries(Array.isArray(body.items) ? body.items : []);
+      } else {
+        setMasteryEntries([]);
+      }
+    } catch {
+      setMasteryEntries([]);
+    }
+    setLoading(false);
+  }, []);
+
   useEffect(() => {
     if (!student) return;
     if (tab === 'ranks') loadRanks();
@@ -254,6 +295,7 @@ export default function LeaderboardPage() {
     else if (tab === 'fame') loadFame();
     else if (tab === 'titles') loadTitles();
     else if (tab === 'streaks') loadStreaks();
+    else if (tab === 'mastery') loadMastery();
   }, [tab, student, loadRanks, loadCompetitions, loadFame, loadTitles, loadStreaks]);
 
   useEffect(() => { if (student && tab === 'ranks') loadRanks(); }, [period, student, tab, loadRanks]);
@@ -288,6 +330,9 @@ export default function LeaderboardPage() {
 
   const TABS: { id: Tab; label: string; labelHi: string; icon: string }[] = [
     { id: 'ranks', label: 'Rankings', labelHi: 'रैंकिंग', icon: '🏆' },
+    ...(masteryTabOn
+      ? [{ id: 'mastery' as Tab, label: 'Mastery', labelHi: 'महारत', icon: '🎯' }]
+      : []),
     { id: 'compete', label: 'Compete', labelHi: 'प्रतियोगिता', icon: '⚔️' },
     { id: 'streaks', label: 'Streaks', labelHi: 'स्ट्रीक', icon: '🔥' },
     { id: 'fame', label: 'Hall of Fame', labelHi: 'गौरव गाथा', icon: '👑' },
@@ -906,6 +951,88 @@ export default function LeaderboardPage() {
                   })}
                 </div>
               </>
+            )}
+          </>
+        )}
+
+        {/* ═══ MASTERY TAB ═══ (Phase 5 follow-on) */}
+        {tab === 'mastery' && (
+          <>
+            <SectionHeader icon="🎯">
+              {isHi ? 'मास्ट्री रैंक' : 'Mastery Ranking'}
+            </SectionHeader>
+            <p className="text-xs text-[var(--text-3)] -mt-2 mb-2">
+              {isHi
+                ? 'XP नहीं — असली समझ के आधार पर'
+                : 'Ranked by what you actually know, not raw XP'}
+            </p>
+            {loading ? (
+              <LoadingFoxy />
+            ) : masteryEntries.length === 0 ? (
+              <EmptyState
+                icon="🎯"
+                title={isHi ? 'अभी कोई डेटा नहीं' : 'No mastery data yet'}
+                description={
+                  isHi
+                    ? 'जब छात्र क्विज़ शुरू करेंगे तो यहाँ रैंक दिखेगी'
+                    : 'Rankings appear once students complete quizzes'
+                }
+              />
+            ) : (
+              <div className="space-y-1.5" data-testid="mastery-leaderboard-list">
+                {masteryEntries.map(entry => {
+                  const isMe = entry.student_id === student.id;
+                  const pct = Math.round(entry.mean_mastery * 100);
+                  const medal = entry.rank <= 3 ? MEDALS[entry.rank - 1] : null;
+                  const rankColor =
+                    entry.rank <= 3 ? RANK_COLORS[entry.rank - 1] : 'var(--text-3)';
+                  return (
+                    <Card
+                      key={entry.student_id}
+                      className={`flex items-center gap-3 !p-3${isMe ? ' ring-2 ring-[var(--orange)]' : ''}`}
+                      accent={isMe ? 'var(--orange)' : undefined}
+                      data-testid="mastery-leaderboard-row"
+                    >
+                      <div
+                        className="w-10 text-center font-bold text-sm flex-shrink-0"
+                        style={{ color: rankColor }}
+                      >
+                        {medal ?? `#${entry.rank}`}
+                      </div>
+                      <Avatar name={entry.name} size={36} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate">
+                          {entry.name}{isMe && ' '}
+                          {isMe && (
+                            <span className="text-[10px] font-bold" style={{ color: 'var(--orange)' }}>
+                              {isHi ? '(तुम)' : '(you)'}
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-[10px] text-[var(--text-3)] truncate">
+                          {isHi ? `कक्षा ${entry.grade}` : `Grade ${entry.grade}`}
+                          {entry.school ? ` · ${entry.school}` : ''}
+                          {' · '}
+                          {isHi
+                            ? `${entry.chapters_counted} अध्याय`
+                            : `${entry.chapters_counted} ch`}
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <div
+                          className="text-base font-bold"
+                          style={{ color: getScoreColor(pct) }}
+                        >
+                          {pct}%
+                        </div>
+                        <div className="text-[10px] text-[var(--text-3)]">
+                          {isHi ? 'मास्ट्री' : 'mastery'}
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
             )}
           </>
         )}
