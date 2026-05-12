@@ -177,6 +177,38 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
         sourceKind: e.kind,
       };
     }
+    case 'learner.review_graded': {
+      const qualityLabel =
+        e.payload.quality === 0 ? 'forgot'
+        : e.payload.quality === 3 ? 'hard'
+        : e.payload.quality === 4 ? 'good'
+        : 'easy';
+      return {
+        id: e.eventId,
+        occurredAt: e.occurredAt,
+        category: 'practice',
+        title: `Reviewed ${e.payload.subjectCode} ch. ${e.payload.chapterNumber}`,
+        detail: `${qualityLabel} · interval ${e.payload.previousIntervalDays}d`,
+        emoji: e.payload.quality >= 4 ? '🔁' : '💪',
+        badge: e.payload.quality >= 4 ? 'success' : 'info',
+        sourceKind: e.kind,
+      };
+    }
+    case 'learner.scan_extracted':
+      return {
+        id: e.eventId,
+        occurredAt: e.occurredAt,
+        category: 'practice',
+        title: e.payload.subjectCode
+          ? `Scanned ${e.payload.imageType.replace('_', ' ')} — ${e.payload.subjectCode}`
+          : `Scanned ${e.payload.imageType.replace('_', ' ')}`,
+        detail: e.payload.questionCount > 0
+          ? `${e.payload.questionCount} question${e.payload.questionCount === 1 ? '' : 's'} extracted`
+          : null,
+        emoji: '📷',
+        badge: 'info',
+        sourceKind: e.kind,
+      };
     case 'ai.foxy_session_started':
       // Hide start; surface only completed sessions to keep the timeline tidy.
       return null;

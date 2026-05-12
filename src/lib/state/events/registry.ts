@@ -102,6 +102,33 @@ export const LearnerMasteryChangedSchema = EventBaseSchema.extend({
   }),
 });
 
+export const LearnerReviewGradedSchema = EventBaseSchema.extend({
+  kind: z.literal('learner.review_graded'),
+  payload: z.object({
+    cardId: uuidLike(),
+    subjectCode: z.string(),
+    chapterNumber: z.number().int().positive(),
+    // SM-2 quality button. 0 = forgot, 3 = hard, 4 = good, 5 = easy.
+    quality: z.union([z.literal(0), z.literal(3), z.literal(4), z.literal(5)]),
+    // Source of the card — same enum as /review's filter tabs.
+    source: z.enum(['quiz_wrong_answer', 'foxy_chat', 'study_plan']),
+    previousIntervalDays: z.number().int().nonnegative(),
+  }),
+});
+
+export const LearnerScanExtractedSchema = EventBaseSchema.extend({
+  kind: z.literal('learner.scan_extracted'),
+  payload: z.object({
+    uploadId: uuidLike(),
+    // Type of artefact the student scanned. Same enum as /scan's IMAGE_TYPES.
+    imageType: z.enum(['assignment', 'question_paper', 'notes', 'textbook']),
+    // OCR-detected subject + chapter — both nullable when OCR is unsure.
+    subjectCode: z.string().nullable(),
+    chapterNumber: z.number().int().positive().nullable(),
+    questionCount: z.number().int().nonnegative(),
+  }),
+});
+
 // ── AI / Foxy events ─────────────────────────────────────────────────
 
 export const FoxySessionStartedSchema = EventBaseSchema.extend({
@@ -197,6 +224,8 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   LearnerQuizCompletedSchema,
   LearnerLessonCompletedSchema,
   LearnerMasteryChangedSchema,
+  LearnerReviewGradedSchema,
+  LearnerScanExtractedSchema,
   FoxySessionStartedSchema,
   FoxySessionCompletedSchema,
   ParentLinkedSchema,
@@ -222,6 +251,8 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'learner.quiz_completed',
   'learner.lesson_completed',
   'learner.mastery_changed',
+  'learner.review_graded',
+  'learner.scan_extracted',
   'ai.foxy_session_started',
   'ai.foxy_session_completed',
   'parent.linked_to_learner',
