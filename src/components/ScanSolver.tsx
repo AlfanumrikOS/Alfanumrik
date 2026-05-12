@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Card, Button, Badge } from '@/components/ui';
+import QueueFromScanButton from '@/components/scan/QueueFromScanButton';
 
 /* ─── Types ─── */
 export interface ScanSolverProps {
@@ -462,6 +463,12 @@ export default function ScanSolver({ studentId, grade, subject, isHi, onSolveCom
                 </Badge>
               )}
             </div>
+          )}
+          {/* ADR-001 Phase 5 follow-on — "Add to my queue" CTA. Renders
+              only when ff_scan_to_queue_v1 is on AND the scan produced
+              extractable text. Idempotent on the server side. */}
+          {result.extracted_text && result.scan_id && (
+            <QueueFromScanButton scanId={result.scan_id} isHi={isHi} />
           )}
         </Card>
 
