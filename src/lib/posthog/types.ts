@@ -92,7 +92,11 @@ export type PostHogEventName =
   | 'contract_cancelled'
   | 'contract_reminder_sent'
   | 'contract_expired'
-  | 'contract_grace_suspended';
+  | 'contract_grace_suspended'
+  // Learner Loop (ADR-001 Phase 1). Server-side from /api/learner/next.
+  // PII-free — only branch identifier, reason key, and resolver inputs counts.
+  | 'learner_next_resolved'
+  | 'learner_next_404';
 
 // ─── Base properties auto-attached by `capture()` ──────────────────────────
 
@@ -564,6 +568,38 @@ export interface ContractGraceSuspendedPayload {
   grace_days:     number;
 }
 
+// ─── Learner Loop payloads (ADR-001 Phase 1) ────────────────────────
+//
+// Emitted server-side from /api/learner/next. PII-free by design — only
+// branch identifiers (closed enum), reason keys (closed enum), and
+// counts of resolver inputs. No subject names, no chapter titles, no
+// auth_user_id (distinct_id carries that out-of-band).
+
+export interface LearnerNextResolvedPayload {
+  /** Which branch fired. Closed set — see ALL_ACTION_KINDS. */
+  branch:
+    | 'cold_start_diagnostic'
+    | 'review_due_cards'
+    | 'revise_decayed_topic'
+    | 'start_quiz'
+    | 'continue_lesson'
+    | 'weekly_dive'
+    | 'monthly_synthesis';
+  /** Closed-set reason key the branch emitted. Stable for facet analysis. */
+  reason: string;
+  /** Resolver inputs at decision time — small ints, useful for funnel slicing. */
+  due_review_count: number;
+  attempted_quiz_today: boolean;
+  in_progress_lesson_count: number;
+  /** Number of subjects in the StudentState mastery array — coarse signal volume. */
+  mastery_subject_count: number;
+}
+
+export interface LearnerNext404Payload {
+  /** Why we 404'd. Closed set; expand carefully. */
+  reason: 'flag_off' | 'no_profile';
+}
+
 // Discriminated union of all event payloads, keyed by event name.
 export type EventPayloadByName = {
   quiz_started: QuizStartedPayload;
@@ -614,6 +650,8 @@ export type EventPayloadByName = {
   contract_reminder_sent: ContractReminderSentPayload;
   contract_expired: ContractExpiredPayload;
   contract_grace_suspended: ContractGraceSuspendedPayload;
+  learner_next_resolved: LearnerNextResolvedPayload;
+  learner_next_404: LearnerNext404Payload;
 };
 
 /** Generic helper: lookup payload type by event name. */
