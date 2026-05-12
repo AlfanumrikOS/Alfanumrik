@@ -2,7 +2,7 @@
  * projector-runner — Alfanumrik Edge Function
  *
  * Invoked every 1 minute by pg_cron via pg_net.http_post (see migration
- * 20260522000002_projector_runner_cron.sql). Calls `tickAll`, which:
+ * 20260524110002_projector_runner_cron.sql). Calls `tickAll`, which:
  *
  *   1. Checks `ff_projector_runner_v1` (kill-switch). When OFF — or when
  *      reading the flag throws — returns `{ skipped: true }` and does NOT
