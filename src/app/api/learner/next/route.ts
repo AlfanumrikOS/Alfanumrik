@@ -30,6 +30,7 @@
  */
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 import { isFeatureEnabled } from '@/lib/feature-flags';
 import { createStudentStateBuilder } from '@/lib/state/student-state-builder';
 import {
@@ -37,12 +38,17 @@ import {
   resolveNextLearnerAction,
 } from '@/lib/state/learner-loop/resolve-next-action';
 import type { ResolveNextResponse } from '@/lib/state/learner-loop/types';
+import {
+  dayBucketIst,
+  expiresAtForHorizon,
+} from '@/lib/state/learner-loop/scheduled-actions';
 import { logger } from '@/lib/logger';
 import { capture } from '@/lib/posthog/server';
 
 export const dynamic = 'force-dynamic';
 
 const FLAG_NAME = 'ff_learner_loop_v1';
+const SCHEDULED_FLAG_NAME = 'ff_scheduled_actions_v1';
 
 export async function GET(_request: Request) {
   const supabase = await createSupabaseServerClient();
@@ -115,6 +121,46 @@ export async function GET(_request: Request) {
     in_progress_lesson_count: augmentation.inProgressLessons.length,
     mastery_subject_count: state.mastery.length,
   });
+
+  // ADR-001 Phase 3c — write-through to scheduled_actions. Best-effort:
+  // never blocks the response. Gated by ff_scheduled_actions_v1 — when
+  // OFF, the upsert is skipped and the response is identical to Phase 1/2.
+  // Overwrite-within-day semantics (DO UPDATE on conflict). A future PR
+  // may switch to pin-once-per-day stability.
+  try {
+    const scheduledFlagOn = await isFeatureEnabled(SCHEDULED_FLAG_NAME, {
+      userId, role: 'student',
+      environment: process.env.VERCEL_ENV || process.env.NODE_ENV,
+    });
+    if (scheduledFlagOn) {
+      const dayBucket = dayBucketIst(now);
+      const expiresAt = expiresAtForHorizon('daily', now);
+      const { error: upsertErr } = await supabaseAdmin
+        .from('scheduled_actions')
+        .upsert({
+          student_id: state.studentId,
+          horizon: 'daily',
+          day_bucket: dayBucket,
+          rank: 0,
+          action_kind: action.kind,
+          action_payload: action,
+          source: 'scheduler',
+          generated_at: now.toISOString(),
+          expires_at: expiresAt,
+        }, {
+          onConflict: 'student_id,horizon,day_bucket,rank',
+        });
+      if (upsertErr) {
+        logger.warn('learner/next: scheduled_actions upsert failed', {
+          userId, studentId: state.studentId, error: upsertErr.message,
+        });
+      }
+    }
+  } catch (err) {
+    logger.warn('learner/next: scheduled_actions write-through threw', {
+      userId, error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   return NextResponse.json(payload, {
     headers: {
