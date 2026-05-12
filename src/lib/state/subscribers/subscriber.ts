@@ -45,6 +45,19 @@ export interface Subscriber<K extends DomainEventKind = DomainEventKind> {
   readonly name: string;
   /** The single event kind this subscriber listens to. */
   readonly kind: K;
+  /**
+   * Total attempts across ticks before dead-letter (default 3).
+   * The runner increments a persistent counter in subscriber_retry_state
+   * on each failure and dead-letters when count >= maxRetries.
+   */
+  readonly maxRetries?: number;
+  /**
+   * Optional. Maps the event payload to the studentId this event concerns.
+   * Required for replayForStudent — absence makes the subscriber not
+   * student-scoped (the admin replay endpoint refuses with
+   * `not_student_scoped`).
+   */
+  studentIdFromEvent?(event: Extract<DomainEvent, { kind: K }>): string | null;
   /** Handle one event. MUST be idempotent (see header). */
   handle(
     event: Extract<DomainEvent, { kind: K }>,
@@ -65,6 +78,8 @@ export interface Subscriber<K extends DomainEventKind = DomainEventKind> {
 export interface AnySubscriber {
   readonly name: string;
   readonly kind: DomainEventKind;
+  readonly maxRetries?: number;
+  studentIdFromEvent?(event: DomainEvent): string | null;
   handle(event: DomainEvent, ctx: SubscriberContext): Promise<void>;
 }
 
