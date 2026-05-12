@@ -103,7 +103,12 @@ export type PostHogEventName =
   | 'tutor_next_404'
   | 'tutor_answer_recorded'
   | 'tutor_concept_viewed'
-  | 'tutor_answer_submitted';
+  | 'tutor_answer_submitted'
+  // Adaptive Tutor (ADR-004 Phase 2 / ADR-005 Path C v2). Fired server-side
+  // from /api/tutor/answer whenever the atomic tutor_commit_attempt RPC
+  // fails and the route falls back to the legacy inline concept_mastery
+  // write. Zero in steady state — non-zero is operations-critical.
+  | 'tutor_answer_path_c_fallback';
 
 // ─── Base properties auto-attached by `capture()` ──────────────────────────
 
@@ -664,6 +669,7 @@ export type EventPayloadByName = {
   tutor_answer_recorded: TutorAnswerRecordedPayload;
   tutor_concept_viewed: TutorConceptViewedPayload;
   tutor_answer_submitted: TutorAnswerSubmittedPayload;
+  tutor_answer_path_c_fallback: TutorAnswerPathCFallbackPayload;
 };
 
 // ── Adaptive Tutor payloads (ADR-004) ──────────────────────────────────
@@ -684,6 +690,18 @@ export interface TutorAnswerRecordedPayload {
   correct: boolean;
   new_mastery_mean: number;
   difficulty: number | null;
+  /** ADR-004 Phase 2 (PR 2) — 'c' when the atomic RPC succeeded
+   *  (optimistic value), 'legacy' when the Phase 0 inline write ran.
+   *  Lets dashboards stack the two paths during rollout. */
+  path?: 'c' | 'legacy';
+}
+export interface TutorAnswerPathCFallbackPayload {
+  concept_id: string;
+  attempt_id: string;
+  /** Why the route fell back. Closed set; expand carefully. */
+  reason: 'rpc_error';
+  /** Short error message (truncate before emit if long). */
+  error: string;
 }
 export interface TutorConceptViewedPayload {
   concept_id: string | null;

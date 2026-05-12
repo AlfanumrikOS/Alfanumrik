@@ -49,7 +49,9 @@ Pure. No randomness, no I/O. Same input → same output. Phase 1+ extends this w
 - `wrong`   → `mastery_mean = min(current ?? 0.5, 0.5)`, `streak_current = 0`
 - Total attempts, total correct, last-practiced updated on every answer.
 
-This is intentionally crude. A real BKT projector replaces it in **Phase 2** as a subscriber of `learner.concept_check_answered` events. The picker's contract doesn't change when the projector swaps in — only the values flowing through `concept_mastery.mastery_mean` change.
+This is intentionally crude. **Phase 2 (PR 2 of ADR-005) replaces it with Bayesian Knowledge Tracing under ADR-005 Path C v2**: `/api/tutor/answer` calls the atomic Postgres RPC `tutor_commit_attempt`, which under `pg_advisory_xact_lock` per (student, concept) reads the chain head from `concept_attempts`, computes the BKT posterior via the SQL `bkt_update` function (parity-tested 1e-9 vs the TS `updateMasteryBKT`), and INSERTs both a `concept_attempts` row and a `learner.concept_check_answered` event in one transaction. The new `concept-mastery-projector` subscriber catches the event and rolls up canonical `concept_mastery.mastery_mean`. The picker's contract doesn't change — only the values flowing through `mastery_mean` change.
+
+- **Phase 2 status (2026-05-12):** Spec → [`docs/superpowers/specs/2026-05-12-adr-004-phase-2-bkt-projector-design.md`](../superpowers/specs/2026-05-12-adr-004-phase-2-bkt-projector-design.md). Plan → [`docs/superpowers/plans/2026-05-12-adr-004-phase-2-bkt-projector.md`](../superpowers/plans/2026-05-12-adr-004-phase-2-bkt-projector.md). Flag: `ff_tutor_bkt_v1` (default OFF). Requires `ff_event_bus_v1 AND ff_projector_runner_v1` ON simultaneously.
 
 ### What the student experiences (Phase 0)
 

@@ -164,6 +164,64 @@ describe('event registry', () => {
     // is checked by the compiler in journey/journey.ts's `never` exhaustive switch.
   });
 
+  it('includes learner.concept_check_answered (ADR-004 Phase 2 / PR 2)', () => {
+    expect(ALL_EVENT_KINDS).toContain('learner.concept_check_answered');
+  });
+
+  it('parses a valid learner.concept_check_answered event', () => {
+    const event = {
+      eventId: '11111111-1111-4111-8111-111111111111',
+      occurredAt: '2026-05-12T10:00:00.000Z',
+      actorAuthUserId: '22222222-2222-4222-8222-222222222222',
+      tenantId: null,
+      idempotencyKey: 'tutor.answer.aaaa',
+      kind: 'learner.concept_check_answered' as const,
+      payload: {
+        studentId: '33333333-3333-4333-8333-333333333333',
+        conceptId: '44444444-4444-4444-8444-444444444444',
+        attemptId: '55555555-5555-4555-8555-555555555555',
+        questionId: '44444444-4444-4444-8444-444444444444:practice:v1',
+        correct: true,
+        chosenIndex: 0,
+        responseTimeMs: 1234,
+        occurredAt: '2026-05-12T10:00:00.000Z',
+        attemptSequence: 1,
+        priorMasteryMean: 0.30,
+        eventVersion: 1 as const,
+        subjectCode: 'math',
+        chapterNumber: 1,
+      },
+    };
+    expect(() => DomainEventSchema.parse(event)).not.toThrow();
+  });
+
+  it('rejects learner.concept_check_answered with priorMasteryMean out of range', () => {
+    const bad = {
+      eventId: '11111111-1111-4111-8111-111111111111',
+      occurredAt: '2026-05-12T10:00:00.000Z',
+      actorAuthUserId: '22222222-2222-4222-8222-222222222222',
+      tenantId: null,
+      idempotencyKey: 'tutor.answer.bbbb',
+      kind: 'learner.concept_check_answered' as const,
+      payload: {
+        studentId: '33333333-3333-4333-8333-333333333333',
+        conceptId: '44444444-4444-4444-8444-444444444444',
+        attemptId: '55555555-5555-4555-8555-555555555555',
+        questionId: 'q',
+        correct: true,
+        chosenIndex: 0,
+        responseTimeMs: 0,
+        occurredAt: '2026-05-12T10:00:00.000Z',
+        attemptSequence: 1,
+        priorMasteryMean: 1.5,           // out of [0,1]
+        eventVersion: 1 as const,
+        subjectCode: 'math',
+        chapterNumber: 1,
+      },
+    };
+    expect(() => DomainEventSchema.parse(bad)).toThrow();
+  });
+
   it('rejects an event whose payload misses a required field', () => {
     const bad = {
       eventId: '55555555-5555-5555-5555-555555555555',

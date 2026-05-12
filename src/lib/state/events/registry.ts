@@ -129,6 +129,32 @@ export const LearnerScanExtractedSchema = EventBaseSchema.extend({
   }),
 });
 
+// ADR-004 Phase 2 / ADR-005 Path C v2 — one row per /api/tutor/answer call
+// committed under the (student, concept) advisory lock by the atomic
+// tutor_commit_attempt RPC. The concept-mastery-projector consumes these
+// and rolls them up into public.concept_mastery. The payload carries
+// priorMasteryMean so the route's optimistic compute and the projector's
+// catch-up compute are deterministically identical.
+export const LearnerConceptCheckAnsweredSchema = EventBaseSchema.extend({
+  kind: z.literal('learner.concept_check_answered'),
+  payload: z.object({
+    studentId:        uuidLike(),
+    conceptId:        uuidLike(),
+    attemptId:        uuidLike(),
+    // `${conceptId}:practice:v1` in Phase 0/2; reserved for variant questions later.
+    questionId:       z.string().min(1).max(200),
+    correct:          z.boolean(),
+    chosenIndex:      z.number().int().min(0).max(3),
+    responseTimeMs:   z.number().int().nonnegative().nullable(),
+    occurredAt:       isoDatetime(),
+    attemptSequence:  z.number().int().positive(),
+    priorMasteryMean: z.number().min(0).max(1),
+    eventVersion:     z.literal(1),
+    subjectCode:      z.string(),
+    chapterNumber:    z.number().int().min(1),
+  }),
+});
+
 // ── AI / Foxy events ─────────────────────────────────────────────────
 
 export const FoxySessionStartedSchema = EventBaseSchema.extend({
@@ -226,6 +252,7 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   LearnerMasteryChangedSchema,
   LearnerReviewGradedSchema,
   LearnerScanExtractedSchema,
+  LearnerConceptCheckAnsweredSchema,
   FoxySessionStartedSchema,
   FoxySessionCompletedSchema,
   ParentLinkedSchema,
@@ -253,6 +280,7 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'learner.mastery_changed',
   'learner.review_graded',
   'learner.scan_extracted',
+  'learner.concept_check_answered',
   'ai.foxy_session_started',
   'ai.foxy_session_completed',
   'parent.linked_to_learner',

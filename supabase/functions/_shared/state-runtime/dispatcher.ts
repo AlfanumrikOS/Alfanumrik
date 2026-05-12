@@ -20,6 +20,7 @@ import {
   type SubscriberLogLine,
 } from './subscriber.ts'
 import { masteryStateWriter } from './mastery-state-writer.ts'
+import { conceptMasteryProjector } from './concept-mastery-projector.ts'
 
 export interface DispatchOutcome {
   subscriber: string
@@ -139,6 +140,9 @@ function parseEventRow(row: unknown): DomainEvent | null {
 
 export const STANDARD_SUBSCRIBERS: ReadonlyArray<AnySubscriber> = [
   toAnySubscriber(masteryStateWriter),
+  // ADR-004 Phase 2 / ADR-005 Path C v2 — keep in sync with the Node copy
+  // in src/lib/state/subscribers/dispatcher.ts. Idempotent on attemptId.
+  toAnySubscriber(conceptMasteryProjector),
 ]
 
 export const standardDispatcher: Dispatcher = createDispatcher(
