@@ -154,65 +154,35 @@ export default function ReviewPage() {
     }
     reviewTimestamps.current.push(now);
 
-    // SECURITY: Validate quality is a valid value (not injected via DevTools)
-    if (![0, 1, 2, 3, 4, 5].includes(quality)) {
+    // SECURITY: Validate quality is one of the 4 UI buttons (defense in
+    // depth — the server also validates).
+    if (![0, 3, 4, 5].includes(quality)) {
       console.warn('[Security] Invalid quality value:', quality);
       return;
     }
 
-    // SM-2 algorithm
-    let newEase = card.ease_factor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
-    if (newEase < 1.3) newEase = 1.3;
-    // Cap ease factor to prevent runaway values from manipulation
-    if (newEase > 3.0) newEase = 3.0;
-
-    let newInterval = card.interval_days;
-    let newStreak = card.streak;
-
-    if (quality < 3) {
-      newInterval = 1;
-      newStreak = 0;
-    } else {
-      if (card.streak === 0) newInterval = 1;
-      else if (card.streak === 1) newInterval = 6;
-      else newInterval = Math.round(card.interval_days * newEase);
-      newStreak = card.streak + 1;
-    }
-
-    // Cap interval to prevent absurd values (max 365 days)
-    if (newInterval > 365) newInterval = 365;
-    // Cap streak to prevent overflow (max 100)
-    if (newStreak > 100) newStreak = 100;
-
-    // Mark as reviewed before DB call to prevent double-click
+    // Mark as reviewed before the network call to prevent double-click.
     reviewedCardIds.current.add(card.id);
 
-    // Update in DB (RLS ensures student can only update their own cards)
+    // ADR-001 Phase 2b — SM-2 + DB write + bus publish now happen
+    // server-side at POST /api/learner/review/grade. The server enforces
+    // the same caps the client used to (ease 1.3–3.0, interval ≤365,
+    // streak ≤100) and publishes learner.review_graded (gated by
+    // ff_event_bus_v1) for the Learner Loop resolver.
     try {
-      const { error } = await supabase
-        .from('spaced_repetition_cards')
-        .update({
-          ease_factor: newEase,
-          interval_days: newInterval,
-          streak: newStreak,
-          repetition_count: (card.repetition_count || 0) + 1,
-          next_review_date: new Date(
-            Date.now() + newInterval * 86400000
-          ).toISOString().split('T')[0],
-          last_review_date: new Date().toISOString().split('T')[0],
-          last_quality: quality,
-          total_reviews: (card.total_reviews || 0) + 1,
-          correct_reviews: (card.correct_reviews || 0) + (quality >= 3 ? 1 : 0),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', card.id);
-
-      if (error) {
-        console.error('Failed to update card:', error);
+      const res = await fetch('/api/learner/review/grade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ cardId: card.id, quality }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        console.error('Failed to grade card:', body);
         reviewedCardIds.current.delete(card.id); // Allow retry on error
       }
     } catch (e) {
-      console.error('Failed to update card:', e);
+      console.error('Failed to grade card:', e);
       reviewedCardIds.current.delete(card.id);
     }
 
