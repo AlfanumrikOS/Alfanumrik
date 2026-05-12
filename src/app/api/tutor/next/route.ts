@@ -29,6 +29,7 @@ import { capture } from '@/lib/posthog/server';
 export const dynamic = 'force-dynamic';
 
 const FLAG_NAME = 'ff_tutor_v1';
+const BKT_FLAG = 'ff_tutor_bkt_v1';
 
 export async function GET(_request: Request) {
   const supabase = await createSupabaseServerClient();
@@ -38,17 +39,24 @@ export async function GET(_request: Request) {
     return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
   }
   const userId = userResult.user.id;
+  const envHint = {
+    userId,
+    role: 'student' as const,
+    environment: process.env.VERCEL_ENV || process.env.NODE_ENV,
+  };
 
   // Flag gate — 404 when off so /learn keeps rendering for non-pilot users.
-  const flagOn = await isFeatureEnabled(FLAG_NAME, {
-    userId,
-    role: 'student',
-    environment: process.env.VERCEL_ENV || process.env.NODE_ENV,
-  });
+  const flagOn = await isFeatureEnabled(FLAG_NAME, envHint);
   if (!flagOn) {
     await capture('tutor_next_404', userId, { reason: 'flag_off' });
     return NextResponse.json({ error: 'not_found' }, { status: 404 });
   }
+
+  // ADR-004 Phase 2 — when ON, decorate the response with a fresh attemptId
+  // so /api/tutor/answer can pass it to the atomic tutor_commit_attempt RPC.
+  // Generated per request even on cache hits because each render is a new
+  // attempt; the RPC uses it as the idempotency anchor.
+  const bktFlagOn = await isFeatureEnabled(BKT_FLAG, envHint);
 
   // Pull the student's grade. The tutor scopes by grade — the student
   // never escapes their current grade except via explicit teacher action.
@@ -120,10 +128,19 @@ export async function GET(_request: Request) {
     total: decision.progress?.total ?? null,
   });
 
-  return NextResponse.json(decision, {
+  const responseBody: TutorNextResponse = bktFlagOn
+    ? { ...decision, attemptId: crypto.randomUUID() }
+    : decision;
+
+  return NextResponse.json(responseBody, {
     headers: {
       // 10s private cache — mastery shifts fast in the inner loop, so we
-      // want refetches after every answer to see the new pick.
+      // want refetches after every answer to see the new pick. Under
+      // ff_tutor_bkt_v1 the per-request attemptId means the cached body
+      // is only safe to reuse within the same browser tab; the route
+      // remains correct because the BKT path's idempotency lives on
+      // /answer (attempt_id → UNIQUE on concept_attempts.attempt_id),
+      // not on /next being uncached.
       'Cache-Control': 'private, max-age=10',
     },
   });

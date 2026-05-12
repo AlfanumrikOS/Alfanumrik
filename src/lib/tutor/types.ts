@@ -66,6 +66,13 @@ export interface TutorNextResponse {
   /** For the progress strip on /tutor: how many concepts the student has
    *  mastered in this grade, total active concepts in this grade. */
   progress?: { mastered: number; total: number };
+  /**
+   * Phase 2 (ff_tutor_bkt_v1): fresh UUID per /next call. The /tutor page
+   * threads this into the /answer POST body so the atomic
+   * tutor_commit_attempt RPC has an idempotency key + chain anchor.
+   * Omitted when the BKT flag is OFF (legacy /answer needs no attemptId).
+   */
+  attemptId?: string;
 }
 
 /** Pure-resolver inputs. The API layer marshals these from Supabase reads. */
