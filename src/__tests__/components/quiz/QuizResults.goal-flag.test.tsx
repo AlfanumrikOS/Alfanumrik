@@ -93,6 +93,14 @@ vi.mock('@/lib/supabase', () => {
     supabase: {
       from: vi.fn((table: string) => makeChain(table)),
     },
+    // QuizResults now imports useFeatureFlags from '@/lib/swr', which
+    // internally calls getFeatureFlags from '@/lib/supabase' (ADR-001
+    // Phase 4 — Re-read CTA flag-gates between /revise and legacy
+    // /learn). Return an empty map so useFeatureFlags resolves with
+    // every flag undefined; the Re-read CTA falls back to legacy URL
+    // and the goal-aware scorecard tests stay focused on their own
+    // behaviour.
+    getFeatureFlags: vi.fn(async () => ({})),
   };
 });
 
