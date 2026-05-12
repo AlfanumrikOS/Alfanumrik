@@ -1343,19 +1343,32 @@ export async function getQuizQuestionsV2(
   return v1Questions;
 }
 
-/* ── Update Chapter Progress (fire-and-forget after quiz) ── */
-export async function updateChapterProgress(subject: string, grade: string, chapterNumber: number) {
+/* ── Update Chapter Progress (fire-and-forget after quiz) ──
+   ADR-001 Phase 2c: routes through POST /api/learner/lesson/progress so
+   the server can detect the false→true is_completed transition and
+   publish learner.lesson_completed on the state_events bus. Behaviour
+   for the chapter_progress projection is byte-identical — the route
+   calls the same update_chapter_progress RPC server-side. Stays
+   fire-and-forget on the client side. */
+export async function updateChapterProgress(
+  subject: string,
+  grade: string,
+  chapterNumber: number,
+  startedAt?: string,
+) {
   try {
-    const studentId = await resolveStudentId();
-    const { error } = await supabase.rpc('update_chapter_progress', {
-      p_student_id: studentId,
-      p_subject: subject,
-      p_grade: grade,
-      p_chapter_number: chapterNumber,
+    const res = await fetch('/api/learner/lesson/progress', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ subject, grade, chapterNumber, startedAt }),
     });
-    if (error) console.warn('update_chapter_progress failed:', error.message);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      console.warn('update_chapter_progress route failed:', body);
+    }
   } catch (e) {
-    console.warn('update_chapter_progress RPC error:', e);
+    console.warn('update_chapter_progress route error:', e);
   }
 }
 
