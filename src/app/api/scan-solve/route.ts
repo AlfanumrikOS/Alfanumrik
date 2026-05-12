@@ -12,11 +12,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'node:crypto';
 import { authorizeRequest } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { validateSubjectWrite } from '@/lib/subjects';
 import { isFeatureEnabled } from '@/lib/feature-flags';
+import { publishEvent } from '@/lib/state/events/publish';
 
 // ─── Rate Limits by Plan ───────────────────────────────────────
 const SCAN_LIMITS: Record<string, number> = {
@@ -95,9 +97,11 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Get student info ──
+    // school_id is surfaced for tenant scoping on the learner.scan_extracted
+    // event we publish after OCR succeeds (ADR-001 Phase 2). Null for B2C.
     const { data: student } = await supabaseAdmin
       .from('students')
-      .select('id, grade, subscription_plan, preferred_subject')
+      .select('id, grade, subscription_plan, preferred_subject, school_id, auth_user_id')
       .eq('id', studentId)
       .single();
 
@@ -356,6 +360,39 @@ export async function POST(request: NextRequest) {
       textLength: extractedText.length,
       ocrConfidence: ocrResult.confidence,
     });
+
+    // ── Publish learner.scan_extracted (ADR-001 Phase 2) ──
+    // Gated by ff_event_bus_v1 inside publishEvent — no-op when OFF.
+    // Best-effort: never throws into the user response. Scan-solve owns
+    // one question per scan, so questionCount is 1 once OCR yielded text.
+    // imageType is fixed to 'question_paper' because scan-solve's contract
+    // is "solve a question from a paper"; the other image_types live on
+    // the /api/v1/upload-assignment surface and ship in a follow-on.
+    try {
+      const authUserId = (student as { auth_user_id?: string | null }).auth_user_id;
+      if (authUserId) {
+        await publishEvent(supabaseAdmin, {
+          kind: 'learner.scan_extracted',
+          eventId: randomUUID(),
+          occurredAt: new Date().toISOString(),
+          actorAuthUserId: authUserId,
+          tenantId: (student as { school_id?: string | null }).school_id ?? null,
+          idempotencyKey: `scan_extracted:${scanRecord.id}`,
+          payload: {
+            uploadId: scanRecord.id,
+            imageType: 'question_paper',
+            subjectCode: subject ? subject.toLowerCase() : null,
+            chapterNumber: null,
+            questionCount: 1,
+          },
+        });
+      }
+    } catch (err) {
+      logger.warn('scan-solve: publishEvent learner.scan_extracted failed', {
+        scanId: scanRecord.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
     // ── Return combined result ──
     return NextResponse.json({
