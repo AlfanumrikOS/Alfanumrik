@@ -8,6 +8,7 @@ import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy, BottomNav } from
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { BLOOM_CONFIG, type BloomLevel } from '@/lib/cognitive-engine';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
+import TodayLoopCard from '@/components/study-plan/TodayLoopCard';
 
 const TASK_BLOOM_MAP: Record<string, BloomLevel> = {
   learn: 'understand', quiz: 'apply', review: 'remember', revision: 'remember',
@@ -278,6 +279,12 @@ export default function StudyPlanPage() {
       {header}
 
       <main className="app-container py-5 space-y-4">
+        {/* ADR-001 Phase 3b — surfaces the Learner Loop's next-action
+            recommendation on every state of /study-plan (loading,
+            no-plan, plan-view). Renders nothing when the flag is off
+            or the resolver 404s. */}
+        <TodayLoopCard studentId={student.id} isHi={isHi} />
+
         <SectionErrorBoundary section="Study Plan">
         {loading ? (
           <div className="text-center py-16">
