@@ -21,7 +21,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/__tests__/setup.ts'],
     include: isIntegrationRun
-      ? INTEGRATION_TEST_PATTERNS.map((p) => `${p}/*.{test,spec}.{ts,tsx}`)
+      ? INTEGRATION_TEST_PATTERNS.map((p) => `${p}/**/*.{test,spec}.{ts,tsx}`)
       : ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: isIntegrationRun
       ? ['node_modules/**']

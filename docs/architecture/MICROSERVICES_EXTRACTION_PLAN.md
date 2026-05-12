@@ -1,6 +1,9 @@
 # Microservices extraction plan (v1)
 
 **As of:** 2026-04-24, branch `feat/stabilization-phase-0`.
+
+> **Status (reviewed 2026-05-12):** Phase 0 modularization is **substantially complete** — all 11 domain modules from Phases 0a–0j exist under [`src/lib/domains/`](../../src/lib/domains/); the ESLint guardrail on `@/lib/supabase-admin` is enforced in [`.eslintrc.json`](../../.eslintrc.json); the outbox skeleton graduated into the unified **state bus** (`state_events`, migration `20260516180000`, renamed from `domain_events` in PR #719), with rule engine (PR #721) and mesh L8 outcome attribution (PR #722) layered on top. **No Phase 1 extraction trigger (E1–E4) has fired.** [ADR-004 Adaptive Tutor](./ADR-004-adaptive-tutor.md), accepted 2026-05-12, rides the same substrate and reinforces the "stay monolithic" stance. Next review: when any of E1–E4 fires, or at the next architecture sync.
+
 **TL;DR:** **we do not extract any microservices in 2026 unless a
 concrete business driver appears.** The monolith + Edge Functions
 topology is appropriate for today's scale (5k concurrent students,

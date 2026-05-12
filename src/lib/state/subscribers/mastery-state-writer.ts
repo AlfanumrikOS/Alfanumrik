@@ -31,6 +31,9 @@ import type {
 export const masteryStateWriter: Subscriber<'learner.mastery_changed'> = {
   name: 'mastery-state-writer',
   kind: 'learner.mastery_changed',
+  studentIdFromEvent(event) {
+    return event.actorAuthUserId;
+  },
 
   async handle(event, ctx: SubscriberContext) {
     const payload = event.payload;

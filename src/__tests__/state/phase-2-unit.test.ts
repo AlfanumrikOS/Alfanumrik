@@ -13,6 +13,25 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
+
+// Hoisted mock for tick-all. The factory captures a reference to the real
+// `tickAll` via `importActual`, then `tickAllMock` defaults to delegating to
+// it. Tests that need to drive the adapter past the skip branch (i.e. the
+// per-subscriber-aggregation and bus_cursor-swallow tests) override the
+// behaviour via `tickAllMock.mockResolvedValueOnce(...)` and the existing
+// skipped-on-flag-off test still gets the real short-circuit.
+const { tickAllMock } = vi.hoisted(() => ({ tickAllMock: vi.fn() }));
+vi.mock('@/lib/state/runtime/tick-all', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/state/runtime/tick-all')>(
+    '@/lib/state/runtime/tick-all',
+  );
+  tickAllMock.mockImplementation(actual.tickAll);
+  return {
+    ...actual,
+    tickAll: (...args: Parameters<typeof actual.tickAll>) => tickAllMock(...args),
+  };
+});
+
 import { createStudentStateBuilder } from '@/lib/state/student-state-builder';
 import { StudentStateSchema } from '@/lib/state/student-state';
 import { STANDARD_SERVICES, pickServices } from '@/lib/state/services/registry';
@@ -432,26 +451,31 @@ describe('dispatcher', () => {
   });
 });
 
-// ── 5. Event listener tick ────────────────────────────────────────────
+// ── 5. Event listener tick (adapter over tickAll) ────────────────────
+//
+// The legacy `tick()` API surface is preserved for back-compat with the
+// standalone script (`scripts/run-event-listener.ts`), but as of the
+// state-runtime-hardening refactor it is now a thin adapter over
+// `tickAll`. The deep behavioural tests for the new substrate live in the
+// integration suite (src/__tests__/migrations/state-runtime/tick-all.test.ts
+// and tick-one.test.ts) where a real Supabase backend is available.
+//
+// These unit tests verify the adapter's translation layer only:
+//   - `tickAll` skipped → tick returns quiet result, no cursor write.
+//   - `tickAll` per-subscriber results → tick sums counters correctly and
+//     writes the MIN watermark to the legacy bus_cursor as a best effort.
+//   - A failing legacy `bus_cursor` write does NOT poison the returned
+//     TickResult.
 
-describe('event-listener tick', () => {
-  it('fetches rows since cursor, dispatches each, and advances cursor', async () => {
-    const event = makeMasteryEvent({ toMastery: 0.8, chapter: 1 });
-    const eventRow = {
-      event_id: event.eventId,
-      occurred_at: event.occurredAt,
-      actor_auth_user_id: event.actorAuthUserId,
-      tenant_id: null,
-      idempotency_key: event.idempotencyKey,
-      kind: event.kind,
-      payload: event.payload,
-    };
-    const sb = makeFakeSb({
-      state_events: { rows: [eventRow], upserts: [] },
-      learner_mastery: { rows: [], upserts: [] },
-    });
-    const cursorReads: string[] = [];
+describe('event-listener tick (adapter)', () => {
+  it('returns a quiet result when tickAll reports skipped (flag OFF)', async () => {
+    // The fake-Supabase has no `feature_flags` row, so
+    // `isProjectorRunnerEnabled` returns false and `tickAll` short-circuits
+    // with skipped=true. The adapter must NOT call cursor.write and must
+    // surface zeroed counters.
+    const sb = makeFakeSb({});
     const cursorWrites: string[] = [];
+    const cursorReads: string[] = [];
     const result = await tick({
       sb: sb as unknown as Parameters<typeof tick>[0]['sb'],
       cursor: {
@@ -466,52 +490,103 @@ describe('event-listener tick', () => {
       now: () => new Date(),
       log: () => {},
     });
-    expect(cursorReads).toEqual(['read']);
-    expect(cursorWrites).toEqual([event.occurredAt]);
-    expect(result.fetched).toBe(1);
-    expect(result.dispatched).toBe(1);
-    expect(result.outcomes[0].advanced).toBe(true);
+    expect(result.fetched).toBe(0);
+    expect(result.dispatched).toBe(0);
+    expect(result.outcomes).toEqual([]);
+    // cursor.read is no longer called by the adapter — the new substrate
+    // reads subscriber_offsets per subscriber instead.
+    expect(cursorReads).toEqual([]);
+    // cursor.write is only invoked via the best-effort backstop when a
+    // tick actually advances something; on a skipped tick we stay quiet.
+    expect(cursorWrites).toEqual([]);
   });
 
-  it('does NOT advance the cursor when a subscriber fails', async () => {
-    const event = makeMasteryEvent({ toMastery: 0.5, chapter: 1 });
-    const eventRow = {
-      event_id: event.eventId,
-      occurred_at: event.occurredAt,
-      actor_auth_user_id: event.actorAuthUserId,
-      tenant_id: null,
-      idempotency_key: event.idempotencyKey,
-      kind: event.kind,
-      payload: event.payload,
-    };
-    const sb = makeFakeSb({
-      state_events: { rows: [eventRow], upserts: [] },
+  it('aggregates per-subscriber sums and writes MIN watermark to bus_cursor', async () => {
+    // tickAll reports two subscribers advanced. The adapter must:
+    //   - dispatched = sum(processed)            = 3 + 2 = 5
+    //   - fetched    = sum(processed + dead)     = 3 + 2 + 1 = 6
+    //   - newCursor  = MIN(subscriber_offsets.last_processed_occurred_at)
+    //                = MIN(01:00Z, 02:00Z) = 01:00Z
+    //   - cursor.write invoked once with that MIN
+    tickAllMock.mockResolvedValueOnce({
+      skipped: false,
+      perSubscriber: [
+        { subscriberName: 'a', processed: 3, deadLettered: 0 },
+        { subscriberName: 'b', processed: 2, deadLettered: 1 },
+      ],
     });
-    const bad: Subscriber<'learner.mastery_changed'> = {
-      name: 'bad',
-      kind: 'learner.mastery_changed',
-      async handle() {
-        throw new Error('disk full');
+    const sb = makeFakeSb({
+      subscriber_offsets: {
+        rows: [
+          { subscriber_name: 'a', last_processed_occurred_at: '2026-05-12T02:00:00Z' },
+          { subscriber_name: 'b', last_processed_occurred_at: '2026-05-12T01:00:00Z' },
+        ],
+        upserts: [],
       },
-    };
-    const d = createDispatcher([toAnySubscriber(bad)]);
-    const cursorWrites: string[] = [];
+    });
+    const cursorWriteSpy = vi.fn(async () => undefined);
     const result = await tick({
       sb: sb as unknown as Parameters<typeof tick>[0]['sb'],
-      dispatcher: d,
       cursor: {
-        async read() {
-          return '1970-01-01T00:00:00Z';
-        },
-        async write(_sb, v) {
-          cursorWrites.push(v);
-        },
+        async read() { return '1970-01-01T00:00:00Z'; },
+        write: cursorWriteSpy,
       },
       now: () => new Date(),
       log: () => {},
     });
-    expect(cursorWrites).toEqual([]); // never advanced
-    expect(result.outcomes[0].advanced).toBe(false);
+    expect(result.dispatched).toBe(5);
+    expect(result.fetched).toBe(6);
+    expect(result.newCursor).toBe('2026-05-12T01:00:00Z');
+    expect(result.outcomes).toHaveLength(2);
+    expect(cursorWriteSpy).toHaveBeenCalledTimes(1);
+    expect(cursorWriteSpy).toHaveBeenCalledWith(sb, '2026-05-12T01:00:00Z');
+  });
+
+  it('swallows bus_cursor write failure without poisoning TickResult', async () => {
+    // Same setup as the MIN-watermark test, but cursor.write rejects. The
+    // adapter wraps the legacy bus_cursor write in try/catch — a write
+    // failure must NOT cause tick() to throw, and the returned TickResult
+    // must still be populated (counters from tickAll, newCursor from the
+    // pre-write MIN computation).
+    tickAllMock.mockResolvedValueOnce({
+      skipped: false,
+      perSubscriber: [
+        { subscriberName: 'a', processed: 3, deadLettered: 0 },
+        { subscriberName: 'b', processed: 2, deadLettered: 1 },
+      ],
+    });
+    const sb = makeFakeSb({
+      subscriber_offsets: {
+        rows: [
+          { subscriber_name: 'a', last_processed_occurred_at: '2026-05-12T02:00:00Z' },
+          { subscriber_name: 'b', last_processed_occurred_at: '2026-05-12T01:00:00Z' },
+        ],
+        upserts: [],
+      },
+    });
+    const cursorWriteSpy = vi.fn().mockRejectedValueOnce(new Error('boom'));
+    let result: Awaited<ReturnType<typeof tick>> | undefined;
+    await expect(
+      (async () => {
+        result = await tick({
+          sb: sb as unknown as Parameters<typeof tick>[0]['sb'],
+          cursor: {
+            async read() { return '1970-01-01T00:00:00Z'; },
+            write: cursorWriteSpy,
+          },
+          now: () => new Date(),
+          log: () => {},
+        });
+      })(),
+    ).resolves.toBeUndefined();
+    expect(result).toBeDefined();
+    expect(result!.dispatched).toBe(5);
+    expect(result!.fetched).toBe(6);
+    // newCursor was assigned to the MIN before cursor.write threw, so the
+    // returned value still reflects the computed watermark.
+    expect(result!.newCursor).toBe('2026-05-12T01:00:00Z');
+    expect(result!.outcomes).toHaveLength(2);
+    expect(cursorWriteSpy).toHaveBeenCalledTimes(1);
   });
 });
 
