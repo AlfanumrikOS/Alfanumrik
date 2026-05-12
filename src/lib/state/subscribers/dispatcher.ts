@@ -25,7 +25,7 @@
  *     scale independently.
  */
 
-import type { DomainEvent, DomainEventKind } from '../events/registry';
+import { DomainEventSchema, type DomainEvent, type DomainEventKind } from '../events/registry';
 import {
   defaultLog,
   toAnySubscriber,
@@ -42,6 +42,12 @@ export interface DispatchOutcome {
   message?: string;
 }
 
+export interface ReplayResult {
+  replayed?: number;
+  errors?: Array<{ eventId: string; message: string }>;
+  refused?: 'not_student_scoped';
+}
+
 export interface Dispatcher {
   handleEvent(event: DomainEvent, ctx: SubscriberContext): Promise<DispatchOutcome[]>;
   /** Subscribers currently registered for a given kind. */
@@ -50,6 +56,20 @@ export interface Dispatcher {
   ): ReadonlyArray<Subscriber<K>>;
   /** All registered subscribers — for tests and debugging. */
   list(): ReadonlyArray<AnySubscriber>;
+  /**
+   * Re-invoke ONE subscriber for events matching its kind AND a specific
+   * student. Does NOT mutate subscriber_offsets — replay is a read-only
+   * operation on the bus from the cursor's perspective. The subscriber's
+   * own idempotency is required.
+   *
+   * Refuses with `not_student_scoped` if the subscriber lacks
+   * studentIdFromEvent. Throws for unknown subscriber names.
+   */
+  replayForStudent(
+    subscriberName: string,
+    studentId: string,
+    ctx: SubscriberContext,
+  ): Promise<ReplayResult>;
 }
 
 export function createDispatcher(
@@ -94,7 +114,55 @@ export function createDispatcher(
     list() {
       return subscribers;
     },
+    async replayForStudent(subscriberName, studentId, ctx): Promise<ReplayResult> {
+      const sub = subscribers.find(s => s.name === subscriberName);
+      if (!sub) throw new Error(`unknown subscriber: ${subscriberName}`);
+      if (!sub.studentIdFromEvent) return { refused: 'not_student_scoped' };
+
+      const { data: rows } = await ctx.sb
+        .from('state_events')
+        .select('*')
+        .eq('kind', sub.kind)
+        .order('occurred_at', { ascending: true })
+        .order('event_id', { ascending: true });
+
+      let replayed = 0;
+      const errors: Array<{ eventId: string; message: string }> = [];
+      for (const row of rows ?? []) {
+        const event = parseEventRow(row);
+        if (!event) continue;
+        if (sub.studentIdFromEvent(event) !== studentId) continue;
+        try {
+          await sub.handle(event, ctx);
+          replayed += 1;
+        } catch (err) {
+          errors.push({
+            eventId: event.eventId,
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+      return { replayed, errors };
+    },
   };
+}
+
+// NOTE: duplicated from src/lib/state/runtime/tick-one.ts. Consider extracting
+// to a shared `_event-row.ts` util if a third caller appears.
+function parseEventRow(row: unknown): DomainEvent | null {
+  if (!row || typeof row !== 'object') return null;
+  const r = row as Record<string, unknown>;
+  const candidate = {
+    eventId: r.event_id,
+    occurredAt: r.occurred_at,
+    actorAuthUserId: r.actor_auth_user_id,
+    tenantId: r.tenant_id ?? null,
+    idempotencyKey: r.idempotency_key,
+    kind: r.kind,
+    payload: r.payload,
+  };
+  const parsed = DomainEventSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
 }
 
 /**
