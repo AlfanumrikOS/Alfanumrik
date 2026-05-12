@@ -35,6 +35,7 @@ import {
   type SubscriberLogLine,
 } from './subscriber';
 import { masteryStateWriter } from './mastery-state-writer';
+import { conceptMasteryProjector } from './concept-mastery-projector';
 
 export interface DispatchOutcome {
   subscriber: string;
@@ -171,6 +172,9 @@ function parseEventRow(row: unknown): DomainEvent | null {
  */
 export const STANDARD_SUBSCRIBERS: ReadonlyArray<AnySubscriber> = [
   toAnySubscriber(masteryStateWriter),
+  // ADR-004 Phase 2 / ADR-005 Path C v2 — canonical writer of concept_mastery
+  // for the BKT path. Idempotent on payload.attemptId.
+  toAnySubscriber(conceptMasteryProjector),
 ];
 
 /** The production dispatcher. Singleton per process. */
