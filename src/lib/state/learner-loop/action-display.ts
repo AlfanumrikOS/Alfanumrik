@@ -128,6 +128,58 @@ export function actionDisplay(action: LearnerAction): ActionDisplay {
   }
 }
 
+/**
+ * Short button-fit label for a primary CTA. Constraints:
+ *   - Verb-led ("Take", "Review", "Continue", …).
+ *   - Fits on one line in a 56px mobile button — keep under ~24 chars.
+ *   - Bilingual; the route uses `isHi` to pick.
+ *
+ * Returned as { en, hi } so callers can pick at render time without
+ * threading `isHi` through this module. Tests pin every action kind.
+ */
+export interface ActionPrimaryCta {
+  en: string;
+  hi: string;
+}
+
+export function actionPrimaryCta(action: LearnerAction): ActionPrimaryCta {
+  switch (action.kind) {
+    case 'cold_start_diagnostic':
+      return { en: 'Take the diagnostic', hi: 'डायग्नोस्टिक लो' };
+
+    case 'review_due_cards': {
+      const n = action.dueCount;
+      return {
+        en: `Review ${n} card${n === 1 ? '' : 's'}`,
+        hi: `${n} कार्ड दोहराओ`,
+      };
+    }
+
+    case 'revise_decayed_topic':
+      return {
+        en: `Revise Chapter ${action.chapterNumber}`,
+        hi: `अध्याय ${action.chapterNumber} दोहराओ`,
+      };
+
+    case 'start_quiz':
+      // Same string the legacy hardcoded button used — the Loop just picks
+      // a smarter chapter underneath.
+      return { en: "Start today's quiz", hi: 'आज का क्विज़ शुरू करो' };
+
+    case 'continue_lesson':
+      return {
+        en: `Continue Chapter ${action.chapterNumber}`,
+        hi: `अध्याय ${action.chapterNumber} जारी रखो`,
+      };
+
+    case 'weekly_dive':
+      return { en: 'Take a deep dive', hi: 'गहरी डाइव लो' };
+
+    case 'monthly_synthesis':
+      return { en: 'See monthly synthesis', hi: 'महीने का सारांश देखो' };
+  }
+}
+
 // ─── Internal helpers (pure) ─────────────────────────────────────────
 
 function capitalize(s: string): string {

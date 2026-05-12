@@ -21,7 +21,7 @@ import XPDailyStatus from '@/components/xp/XPDailyStatus';
 import type { CurriculumTopic, Student } from '@/lib/types';
 import type { Subject as AllowedSubject } from '@/lib/subjects.types';
 import { useFeatureFlags, useLearnerNext } from '@/lib/swr';
-import { actionDisplay } from '@/lib/state/learner-loop/action-display';
+import { actionDisplay, actionPrimaryCta } from '@/lib/state/learner-loop/action-display';
 import type { LearnerAction } from '@/lib/state/learner-loop/types';
 
 interface AboveFoldHeroProps {
@@ -61,20 +61,33 @@ export default function AboveFoldHero({
 
   return (
     <div className="space-y-3">
-      {/* 1. PRIMARY CTA — single, opinionated, biggest tap target */}
-      <button
-        onClick={() => router.push('/quiz')}
-        className="w-full py-4 rounded-2xl font-bold text-base text-white transition-all active:scale-[0.98] shadow-md flex items-center justify-center gap-2"
-        style={{
-          background: 'linear-gradient(135deg, var(--purple, #7C3AED), #6D28D9)',
-          fontFamily: 'var(--font-display)',
-          minHeight: 56, // mobile tap target
-        }}
-        data-testid="dashboard-primary-cta"
-      >
-        <span className="text-xl">⚡</span>
-        {isHi ? 'आज का क्विज़ शुरू करो' : "Start Today's Quiz"}
-      </button>
+      {/* 1. PRIMARY CTA — single, opinionated, biggest tap target.
+            Phase 3b: when the Loop action is available, the CTA's url +
+            label come from it (the action might be a review, a revise,
+            a dive, etc — not always a quiz). Falls back to the legacy
+            hardcoded /quiz button when no action. */}
+      {(() => {
+        const cta = loopAction ? actionPrimaryCta(loopAction) : null;
+        const url = loopAction?.url ?? '/quiz';
+        const icon = loopAction ? actionDisplay(loopAction).icon : '⚡';
+        const labelEn = cta?.en ?? "Start Today's Quiz";
+        const labelHi = cta?.hi ?? 'आज का क्विज़ शुरू करो';
+        return (
+          <button
+            onClick={() => router.push(url)}
+            className="w-full py-4 rounded-2xl font-bold text-base text-white transition-all active:scale-[0.98] shadow-md flex items-center justify-center gap-2"
+            style={{
+              background: 'linear-gradient(135deg, var(--purple, #7C3AED), #6D28D9)',
+              fontFamily: 'var(--font-display)',
+              minHeight: 56, // mobile tap target
+            }}
+            data-testid="dashboard-primary-cta"
+          >
+            <span className="text-xl">{icon}</span>
+            {isHi ? labelHi : labelEn}
+          </button>
+        );
+      })()}
 
       {/* 2. STREAK CHIP — flame + day count + bilingual unit */}
       <div
