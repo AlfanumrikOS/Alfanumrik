@@ -186,6 +186,108 @@ export function useLearnerNext(studentId: string | undefined) {
   );
 }
 
+/* ── Learner Loop action for today (Phase 3c follow-on) ──
+ *
+ * Prefers /api/learner/scheduled?horizon=daily (the per-day pinned
+ * projection from #739) and falls back to /api/learner/next when the
+ * scheduled endpoint 404s, returns empty slots, or errors. Net effect
+ * for the consumer:
+ *
+ *   - Same shape as useLearnerNext returns (a LearnerAction-shaped row),
+ *     plus a `source: 'scheduled' | 'next'` discriminator so the UI
+ *     can render a "pinned for today" pill when the projection had a
+ *     slot.
+ *   - When both flags are off, both endpoints 404 → hook returns null,
+ *     consumer renders nothing (identical to legacy).
+ *
+ * The cascade-within-the-fetcher means the consumer doesn't have to
+ * coordinate two hooks. SWR still dedupes the cache by studentId.
+ */
+export interface LearnerActionForTodayResponse {
+  action: LearnerNextResponse['action'];
+  source: 'scheduled' | 'next';
+}
+
+interface ScheduledItemShape {
+  rank: number;
+  actionKind: string;
+  action: LearnerNextResponse['action'];
+  source: 'scheduler' | 'manual_pin' | 'teacher_override';
+  generatedAt: string;
+  expiresAt: string;
+  completedAt: string | null;
+}
+interface ScheduledResponseShape {
+  schemaVersion: 1;
+  horizon: 'daily' | 'weekly' | 'monthly';
+  dayBucket: string;
+  slots: ScheduledItemShape[];
+}
+
+/**
+ * Pure: decide what to return from the cascade given each step's
+ * outcome. Exported for testing — pins the precedence rules without
+ * needing fetch mocks.
+ *
+ *   - scheduled returned a non-empty slot list → use slot[0].action,
+ *     source='scheduled'.
+ *   - scheduled returned a 404 / empty / errored → fall through to
+ *     /api/learner/next.
+ *   - /api/learner/next returned data → use action, source='next'.
+ *   - Both 404/errored → null (consumer renders nothing).
+ */
+export function pickActionForToday(
+  scheduled: ScheduledResponseShape | null,
+  next: LearnerNextResponse | null,
+): LearnerActionForTodayResponse | null {
+  if (scheduled && Array.isArray(scheduled.slots) && scheduled.slots.length > 0) {
+    return { action: scheduled.slots[0].action, source: 'scheduled' };
+  }
+  if (next && next.action) {
+    return { action: next.action, source: 'next' };
+  }
+  return null;
+}
+
+export function useLearnerActionForToday(studentId: string | undefined) {
+  return useSWR<LearnerActionForTodayResponse | null>(
+    studentId ? `learner-action-today/${studentId}` : null,
+    async () => {
+      // Step 1 — scheduled (per-day pinned projection).
+      let scheduled: ScheduledResponseShape | null = null;
+      try {
+        const res = await fetch(
+          '/api/learner/scheduled?horizon=daily',
+          { credentials: 'same-origin' },
+        );
+        if (res.ok) {
+          scheduled = (await res.json()) as ScheduledResponseShape;
+        }
+        // 404 / 500 → fall through silently to step 2.
+      } catch {
+        scheduled = null;
+      }
+
+      // Step 2 — /api/learner/next, only when scheduled didn't yield a slot.
+      let next: LearnerNextResponse | null = null;
+      if (!scheduled || scheduled.slots.length === 0) {
+        try {
+          const res = await fetch('/api/learner/next', { credentials: 'same-origin' });
+          if (res.ok) {
+            next = (await res.json()) as LearnerNextResponse;
+          }
+          // 404 → leave next null; pickActionForToday returns null.
+        } catch {
+          next = null;
+        }
+      }
+
+      return pickActionForToday(scheduled, next);
+    },
+    DEFAULT_CONFIG,
+  );
+}
+
 /* ── Dashboard (batched RPC) ── */
 export function useDashboardData(studentId: string | undefined) {
   return useSWR(

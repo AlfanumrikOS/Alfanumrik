@@ -2,27 +2,28 @@
 
 /**
  * TodayLoopCard — surfaces the Learner Loop's next-action recommendation
- * at the top of the /study-plan page. Phase 3b of ADR-001.
+ * at the top of the /study-plan page.
+ *
+ * Phase 3b (initial): consumed /api/learner/next directly.
+ * Phase 3c follow-on: now prefers /api/learner/scheduled?horizon=daily
+ * (the per-day pinned projection) and falls back to /api/learner/next
+ * when no slot is pinned yet. When the scheduled slot exists, a small
+ * "Pinned for today" pill appears so the student understands the
+ * recommendation is stable for the day.
  *
  * Rendered when ALL of:
- *   - ff_learner_loop_dashboard_v1 is ON (same flag the dashboard hero
- *     uses; one flag toggles all UI consumers together).
- *   - /api/learner/next returns a 200 (the server's ff_learner_loop_v1
- *     is ON AND the learner has a profile).
+ *   - ff_learner_loop_dashboard_v1 is ON (same flag as the dashboard hero
+ *     and the primary CTA; one flag toggles all consumers together).
+ *   - The cascade returns a non-null action (server's ff_learner_loop_v1
+ *     is ON AND the learner has a profile, OR ff_scheduled_actions_v1
+ *     is ON AND has written a slot today).
  *
- * Otherwise: renders nothing. The legacy /study-plan UI is unchanged
- * for the OFF path, exactly like the hero behaves in Phase 3a.
- *
- * Visual treatment is intentionally distinct from the dashboard hero
- * card so the two don't look like duplicates when a learner has both
- * pages open. This card is wider, has an "If you only have 15 minutes
- * today" framing, and links the action via a small chip-style button
- * instead of being the whole card-as-button.
+ * Otherwise: renders nothing.
  */
 
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui';
-import { useFeatureFlags, useLearnerNext } from '@/lib/swr';
+import { useFeatureFlags, useLearnerActionForToday } from '@/lib/swr';
 import { actionDisplay, actionPrimaryCta } from '@/lib/state/learner-loop/action-display';
 import type { LearnerAction } from '@/lib/state/learner-loop/types';
 
@@ -35,8 +36,11 @@ export default function TodayLoopCard({ studentId, isHi }: TodayLoopCardProps) {
   const router = useRouter();
   const { data: flags } = useFeatureFlags();
   const dashboardLoopOn = flags?.ff_learner_loop_dashboard_v1 === true;
-  const { data: nextResp } = useLearnerNext(dashboardLoopOn ? studentId : undefined);
-  const action = (nextResp?.action as LearnerAction | undefined) ?? null;
+  const { data: resp } = useLearnerActionForToday(
+    dashboardLoopOn ? studentId : undefined,
+  );
+  const action = (resp?.action as LearnerAction | undefined) ?? null;
+  const isPinnedToday = resp?.source === 'scheduled';
 
   if (!action) return null;
 
@@ -63,8 +67,12 @@ export default function TodayLoopCard({ studentId, isHi }: TodayLoopCardProps) {
             color: d.tint,
             border: `1px solid ${d.tint}30`,
           }}
+          data-testid="study-plan-today-source-pill"
+          data-source={isPinnedToday ? 'scheduled' : 'next'}
         >
-          {isHi ? 'Foxy की सलाह' : 'Foxy picks'}
+          {isPinnedToday
+            ? (isHi ? '📌 आज के लिए चुना' : '📌 Pinned for today')
+            : (isHi ? 'Foxy की सलाह' : 'Foxy picks')}
         </span>
       </div>
 
