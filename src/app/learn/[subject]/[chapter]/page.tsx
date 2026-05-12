@@ -13,6 +13,10 @@ import {
   getFeatureFlags,
   supabase,
 } from '@/lib/supabase';
+import {
+  getChapterTopicsFromConcepts,
+  isUsableChapterDeck,
+} from '@/lib/chapter-reader/get-concepts-from-table';
 import { Card, Button, ProgressBar, BottomNav, LoadingFoxy } from '@/components/ui';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { BLOOM_CONFIG, type BloomLevel } from '@/lib/cognitive-engine';
@@ -91,6 +95,14 @@ export default function ChapterConceptPage() {
   // is opened with `?mode=read`, we auto-switch on first paint (deep-link
   // pattern) but only if the flag is on.
   const [readModeFlagOn, setReadModeFlagOn] = useState(false);
+  // ── Chapter Reader v2 (gated by ff_chapter_reader_v2) ──
+  // When ON: load() prefers the curated `chapter_concepts` table over the
+  // RAG-chunk grouping path that produced textbook-dump output. Per-chapter
+  // quality gate (isUsableChapterDeck) falls back to legacy when concept
+  // rows are sparse or look like placeholder one-liners. Telemetry flag
+  // `learn_v2_source` records which path actually rendered.
+  const [chapterReaderV2FlagOn, setChapterReaderV2FlagOn] = useState(false);
+  const [v2SourceUsed, setV2SourceUsed] = useState<'curated' | 'rag_fallback' | null>(null);
   // ── Pedagogy v2 / Wave 1: Productive Failure flip ──
   // When ff_productive_failure_v1 is on AND the resolved pedagogy rule says
   // productiveFailure (true for every persona except improve_basics), the
@@ -148,16 +160,42 @@ export default function ChapterConceptPage() {
     if (!student) return;
     setLoading(true);
     const grade = student.grade;
-    const [topicsData, questionsData, diagramsData] = await Promise.all([
-      getChapterTopics(subject, grade, chapterNum),
+
+    // ── Chapter Reader v2 swap ─────────────────────────────────────────
+    // When the flag is on, try the curated `chapter_concepts` table first.
+    // Three failure modes fall through to the legacy RAG-chunk path:
+    //   1. flag off → never try v2
+    //   2. table query errors or returns no rows for this chapter
+    //   3. quality gate (isUsableChapterDeck) rejects the rows (too few,
+    //      tiny titles, or placeholder explanations)
+    // No try/catch on the v2 call — getChapterTopicsFromConcepts already
+    // returns [] on error and logs to console.
+    let v2Topics: CurriculumTopic[] | null = null;
+    if (chapterReaderV2FlagOn) {
+      const rows = await getChapterTopicsFromConcepts(subject, grade, chapterNum);
+      if (isUsableChapterDeck(rows)) {
+        v2Topics = rows;
+        setV2SourceUsed('curated');
+      } else {
+        setV2SourceUsed('rag_fallback');
+      }
+    }
+
+    // Always fetch questions + diagrams (they come from question_bank +
+    // diagrams tables and are independent of the topics source).
+    const [legacyTopicsData, questionsData, diagramsData] = await Promise.all([
+      v2Topics === null
+        ? getChapterTopics(subject, grade, chapterNum)
+        : Promise.resolve(v2Topics),
       getChapterQuestions(subject, grade, chapterNum, 30),
       getTopicDiagrams(subject, grade, chapterNum),
     ]);
-    setTopics(topicsData as CurriculumTopic[]);
+
+    setTopics(legacyTopicsData as CurriculumTopic[]);
     setQuestions(questionsData as Question[]);
     setDiagrams(diagramsData as Diagram[]);
     setLoading(false);
-  }, [student, subject, chapterNum]);
+  }, [student, subject, chapterNum, chapterReaderV2FlagOn]);
 
   useEffect(() => {
     if (student) load();
@@ -174,9 +212,14 @@ export default function ChapterConceptPage() {
       ...telemetryBase,
       topic_count: topics.length,
       question_count: questions.length,
+      // Chapter Reader v2: which data source rendered this chapter.
+      // 'curated' = chapter_concepts table, 'rag_fallback' = legacy RAG chunks
+      // path (either flag off, no rows, or quality gate rejected).
+      // null when the v2 flag was off (legacy unconditional path).
+      v2_source: v2SourceUsed ?? 'flag_off',
     });
     setChapterStartedFired(true);
-  }, [chapterStartedFired, student, loading, telemetryBase, topics.length, questions.length]);
+  }, [chapterStartedFired, student, loading, telemetryBase, topics.length, questions.length, v2SourceUsed]);
 
   // Read flag (ff_learn_read_mode_v1) once per session — single round-trip
   // shared with the rest of the dashboard's flag fetch (cached in lib/swr).
@@ -191,12 +234,14 @@ export default function ChapterConceptPage() {
         if (!cancelled) {
           setReadModeFlagOn(Boolean(flags?.ff_learn_read_mode_v1));
           setProductiveFailureFlagOn(Boolean(flags?.ff_productive_failure_v1));
+          setChapterReaderV2FlagOn(Boolean(flags?.ff_chapter_reader_v2));
         }
       } catch {
         // Flags fail closed — practice mode only, tutorial-first preserved.
         if (!cancelled) {
           setReadModeFlagOn(false);
           setProductiveFailureFlagOn(false);
+          setChapterReaderV2FlagOn(false);
         }
       }
     })();
