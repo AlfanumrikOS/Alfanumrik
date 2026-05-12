@@ -12,6 +12,7 @@ import {
 import { shareResult, quizShareMessage } from '@/lib/share';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { useFeatureFlags } from '@/lib/swr';
 import { getLevelFromScore } from '@/lib/score-config';
 import NextActionCard from '@/components/quiz/NextActionCard';
 import CelebrationOverlay from '@/components/quiz/CelebrationOverlay';
@@ -141,6 +142,8 @@ export default function QuizResults({
   );
   const router = useRouter();
   const { student } = useAuth();
+  // ADR-001 Phase 4 — picks Re-read CTA target (legacy /learn vs /revise).
+  const { data: reviseFlags } = useFeatureFlags();
   const [expandedCorrect, setExpandedCorrect] = useState<Set<number>>(new Set());
   const [showCelebration, setShowCelebration] = useState(true);
   const [flashcardCount, setFlashcardCount] = useState(0);
@@ -819,7 +822,16 @@ export default function QuizResults({
               if (wrongChapters.length === 0 || !selectedSubject) return null;
               const firstChapter = wrongChapters[0];
               const moreCount = wrongChapters.length - 1;
-              const href = `/learn/${encodeURIComponent(selectedSubject)}/${firstChapter}?mode=read&from=quiz`;
+              // ADR-001 Phase 4 — when ff_revise_route_v1 is ON, the CTA
+              // routes to /revise (the new first-class destination); the
+              // /revise page then surfaces "From your quiz" with a
+              // deep-link back into the chapter's Read mode. When OFF,
+              // we keep the legacy direct /learn/[s]/[c]?mode=read
+              // deep-link (Phase 3-D behaviour).
+              const reviseOn = reviseFlags?.ff_revise_route_v1 === true;
+              const href = reviseOn
+                ? `/revise?subject=${encodeURIComponent(selectedSubject)}&chapter=${firstChapter}&from=quiz`
+                : `/learn/${encodeURIComponent(selectedSubject)}/${firstChapter}?mode=read&from=quiz`;
               return (
                 <div className="mt-3">
                   <Button
