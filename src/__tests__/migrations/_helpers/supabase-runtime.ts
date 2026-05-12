@@ -25,6 +25,36 @@ export function makeServiceSupabase(): SupabaseClient {
 }
 
 /**
+ * Per-kind default payloads that satisfy the Zod schemas in
+ * `src/lib/state/events/registry.ts`. `insertEvent` falls back to these when
+ * the caller doesn't supply a payload, so the inserted row's payload column
+ * parses cleanly through the projector/handler `safeParse` step instead of
+ * silently slipping into the parse-fail branch and skewing test outcomes.
+ *
+ * Add a new entry whenever a test starts inserting a new kind. Unknown kinds
+ * fall through to `{}` (which still parse-fails — but at least the failure
+ * mode is explicit and the test author is forced to register a default).
+ */
+const DEFAULT_PAYLOADS: Record<string, unknown> = {
+  'learner.mastery_changed': {
+    subjectCode: 'math',
+    chapterNumber: 1,
+    fromMastery: null,
+    toMastery: 0.5,
+    trigger: 'quiz',
+  },
+  'learner.quiz_completed': {
+    quizSessionId: '00000000-0000-0000-0000-000000000001',
+    subjectCode: 'math',
+    chapterNumber: 1,
+    questionCount: 10,
+    correctCount: 7,
+    durationSec: 300,
+    xpEarned: 50,
+  },
+};
+
+/**
  * Map of state-runtime tables to a "delete everything" predicate. Postgres
  * requires a WHERE clause for DELETE via PostgREST, so each predicate picks
  * a column guaranteed to be non-null on every row in that table.
@@ -86,7 +116,7 @@ export async function insertEvent(
     tenant_id: partial.tenantId ?? null,
     idempotency_key: partial.idempotencyKey ?? `test-${eventId}`,
     occurred_at: occurredAt,
-    payload: partial.payload ?? {},
+    payload: partial.payload ?? DEFAULT_PAYLOADS[partial.kind] ?? {},
   });
   if (error) throw new Error(`insertEvent failed: ${error.message}`);
   return { eventId, occurredAt };
