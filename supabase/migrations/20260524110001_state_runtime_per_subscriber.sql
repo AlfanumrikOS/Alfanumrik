@@ -56,6 +56,19 @@ ALTER TABLE public.subscriber_offsets       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.subscriber_retry_state   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.subscriber_dead_letters  ENABLE ROW LEVEL SECURITY;
 
+-- Explicit service_role policies (matches A-08 audit pattern + state_events).
+DROP POLICY IF EXISTS subscriber_offsets_service_all      ON public.subscriber_offsets;
+CREATE POLICY        subscriber_offsets_service_all      ON public.subscriber_offsets
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS subscriber_retry_state_service_all  ON public.subscriber_retry_state;
+CREATE POLICY        subscriber_retry_state_service_all  ON public.subscriber_retry_state
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS subscriber_dead_letters_service_all ON public.subscriber_dead_letters;
+CREATE POLICY        subscriber_dead_letters_service_all ON public.subscriber_dead_letters
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+
 -- Per-subscriber lag view.
 CREATE OR REPLACE VIEW public.subscriber_lag AS
 SELECT
@@ -91,6 +104,6 @@ INSERT INTO public.feature_flags (
 VALUES (
   'ff_projector_runner_v1',
   'ADR-005 PR 1: kill-switch for the projector-runner Edge Function. When OFF, the runner returns {skipped:true}. See docs/superpowers/specs/2026-05-12-projector-substrate-design.md',
-  false, 0, ARRAY['production','staging']::text[]
+  false, 0, '{}'::text[]
 )
 ON CONFLICT (flag_name) DO NOTHING;
