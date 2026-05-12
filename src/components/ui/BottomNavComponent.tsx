@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth, type UserRole } from '@/lib/AuthContext';
 import { ROLE_CONFIG } from '@/lib/constants';
-import { useDashboardData } from '@/lib/swr';
+import { useDashboardData, useFeatureFlags } from '@/lib/swr';
 
 /* ═══ NAVIGATION ARCHITECTURE ═══
  * Research-backed: Duolingo 5-tab model (the gold standard for EdTech)
@@ -31,6 +31,23 @@ export function getItemLockForGrade(
   return { locked: false };
 }
 
+/** Pure helper: is a flag-gated nav item visible? Items without a
+ *  flagName are always visible. Items WITH a flagName are visible only
+ *  when the flag is enabled. Exported for unit testing the visibility
+ *  policy without rendering the full nav shell. */
+export interface NavFlagGatedItem {
+  flagName?: string;
+  [key: string]: unknown;
+}
+export function isItemVisibleForFlags(
+  item: NavFlagGatedItem | null | undefined,
+  flags: Record<string, boolean> | undefined | null,
+): boolean {
+  const name = item?.flagName;
+  if (!name) return true;
+  return flags?.[name] === true;
+}
+
 const CORE_TABS = [
   { href: '/dashboard', icon: '🏠', activeIcon: '🏠', label: 'Home', labelHi: 'होम' },
   { href: '/quiz', icon: '✏️', activeIcon: '✏️', label: 'Practice', labelHi: 'अभ्यास' },
@@ -38,6 +55,9 @@ const CORE_TABS = [
   { href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति' },
 ];
 
+// ADR-001 Phase 4 — /revise route ships behind ff_revise_route_v1.
+// The nav entry carries `flagName` so the renderer can hide it when the
+// flag is off. Keeps `flagName` optional so most entries don't need it.
 const MORE_ITEMS = [
   { href: '/simulations', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
   { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },
@@ -46,6 +66,7 @@ const MORE_ITEMS = [
   { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड' },
   { href: '/learn', icon: '📚', label: 'Subjects & Chapters', labelHi: 'विषय और अध्याय' },
   { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
+  { href: '/revise', icon: '🔁', label: 'Revise', labelHi: 'पुनरावलोकन', flagName: 'ff_revise_route_v1' },
   { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
   { href: '/notifications', icon: '🔔', label: 'Settings & Notifications', labelHi: 'सेटिंग्स और सूचनाएँ' },
   { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
@@ -76,6 +97,7 @@ const SIDEBAR_SECTIONS = [
       { href: '/learn', icon: '📚', label: 'Subjects & Chapters', labelHi: 'विषय और अध्याय' },
       { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'अध्ययन योजना' },
       { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
+      { href: '/revise', icon: '🔁', label: 'Revise', labelHi: 'पुनरावलोकन', flagName: 'ff_revise_route_v1' },
     ],
   },
   {
@@ -192,14 +214,28 @@ export default function BottomNavComponent() {
   // for free-plan students. Pro/starter/unlimited never see it.
   const subscriptionPlan = ((auth as any)?.student?.subscription_plan as string | null | undefined) ?? null;
   const showUpgradePill = activeRole === 'student' && (subscriptionPlan === null || subscriptionPlan === 'free');
+  // ADR-001 Phase 4 — feature-flag visibility for nav entries (e.g.
+  // `/revise` only appears when ff_revise_route_v1 is ON). Items
+  // without a flagName are always visible.
+  const { data: navFlags } = useFeatureFlags();
+
   // Sidebar SECTION-level gating (rare) still filters the section entirely —
   // a whole-section lockout is too heavy to render as locked items.
-  const sidebarSections = allSidebarSections.filter(s => {
-    const gMin = (s as any).gradeMin;
-    return gMin == null || studentGrade >= gMin;
-  });
-  // Items are never filtered here; locked state is applied at render time.
-  const moreItems = getMoreItems(activeRole);
+  // After filtering sections by gradeMin, we also filter each section's
+  // items by their optional flagName.
+  const sidebarSections = allSidebarSections
+    .filter(s => {
+      const gMin = (s as any).gradeMin;
+      return gMin == null || studentGrade >= gMin;
+    })
+    .map(section => ({
+      ...section,
+      items: section.items.filter(item => isItemVisibleForFlags(item as NavFlagGatedItem, navFlags)),
+    }));
+  // More-sheet items: drop flag-gated entries whose flag is off.
+  const moreItems = getMoreItems(activeRole).filter(item =>
+    isItemVisibleForFlags(item as NavFlagGatedItem, navFlags),
+  );
 
   // Due-review count for the Review tab badge (SWR-cached — no extra request if dashboard already loaded)
   const { data: dashData } = useDashboardData((auth as any)?.student?.id);
