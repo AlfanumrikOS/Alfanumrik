@@ -33,6 +33,10 @@ const DEFAULT_MAX_RETRIES = 3;
  *     state, advance the cursor past the bad event;
  *   - else: stop processing this batch (cursor unchanged) — next tick retries.
  *
+ * Parse failures (event row that fails DomainEventSchema) flow through the
+ * same retry/dead-letter path as handler exceptions, keyed on the row's
+ * raw event_id. This prevents a stuck cursor when a malformed row lands.
+ *
  * Pure on inputs; all I/O is via the provided SupabaseClient.
  */
 export async function tickOne(
@@ -73,7 +77,45 @@ export async function tickOne(
 
   for (const row of events) {
     const event = parseEventRow(row);
-    if (!event) continue;
+    const rowEventId = ((row as Record<string, unknown>).event_id ?? null) as string | null;
+    const rowOccurredAt = ((row as Record<string, unknown>).occurred_at ?? null) as string | null;
+
+    if (!event) {
+      // Schema-parse failure. Treat as a handler failure so the row flows
+      // through retry → dead-letter and the cursor eventually advances.
+      // Without this, a malformed row at the cursor head would stick the
+      // subscriber forever.
+      if (!rowEventId || !rowOccurredAt) {
+        // Row is so malformed we can't even key retry state. Skip + advance
+        // so the cursor doesn't stick. This should never happen because the
+        // table has NOT NULL constraints on event_id and occurred_at, but
+        // defensive.
+        ctx.log({
+          subscriber: sub.name,
+          eventKind: 'mesh.cycle_completed', // placeholder; the kind itself is unparseable
+          eventId: 'unknown',
+          outcome: 'error',
+          message: 'state_events row missing event_id or occurred_at; skipping',
+        });
+        continue;
+      }
+      const errMsg = 'event row failed schema parse';
+      const prior = await readRetryCount(sb, rowEventId, sub.name);
+      const newCount = prior + 1;
+      if (newCount >= maxRetries) {
+        await insertDeadLetter(sb, rowEventId, sub.name, newCount, errMsg);
+        await clearRetryState(sb, rowEventId, sub.name);
+        deadLettered += 1;
+        advanceTo = { lastEventId: rowEventId, lastOccurredAt: rowOccurredAt };
+      } else {
+        await upsertRetryState(sb, rowEventId, sub.name, newCount, errMsg);
+        // Stop processing the rest of this batch — cursor unchanged so the
+        // same bad row is the first one fetched on the next tick.
+        break;
+      }
+      continue;
+    }
+
     try {
       await sub.handle(event, ctx);
       await clearRetryState(sb, event.eventId, sub.name);

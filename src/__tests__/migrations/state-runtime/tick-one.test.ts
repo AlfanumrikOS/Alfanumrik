@@ -66,3 +66,115 @@ describe('tickOne happy path', () => {
     expect(calls.length).toBe(1);
   });
 });
+
+describe('tickOne retry path', () => {
+  it('persists attempt_count on failure and does not advance cursor', async () => {
+    const sub: AnySubscriber = {
+      name: 'happy', kind: 'learner.mastery_changed',
+      async handle() { throw new Error('boom'); },
+    };
+    const e = await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: '2026-05-12T01:00:00Z' });
+
+    const r1 = await tickOne(sub, { sb, ctx });
+    expect(r1.processed).toBe(0);
+    expect(r1.deadLettered).toBe(0);
+    const { data: retryRow } = await sb.from('subscriber_retry_state')
+      .select('attempt_count, last_error')
+      .eq('event_id', e.eventId).eq('subscriber_name', 'happy').single();
+    expect(retryRow?.attempt_count).toBe(1);
+    expect(retryRow?.last_error).toBe('boom');
+
+    // Cursor unchanged.
+    const { data: off } = await sb.from('subscriber_offsets')
+      .select('last_processed_occurred_at').eq('subscriber_name', 'happy').single();
+    expect(off?.last_processed_occurred_at?.startsWith('2026-05-12T00:00:00')).toBe(true);
+  });
+
+  it('dead-letters after maxRetries failed ticks and advances cursor', async () => {
+    const sub: AnySubscriber = {
+      name: 'happy', kind: 'learner.mastery_changed', maxRetries: 3,
+      async handle() { throw new Error('persistent'); },
+    };
+    const e = await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: '2026-05-12T01:00:00Z' });
+
+    await tickOne(sub, { sb, ctx });  // count=1
+    await tickOne(sub, { sb, ctx });  // count=2
+    // Cursor still unchanged.
+    let { data: off } = await sb.from('subscriber_offsets')
+      .select('last_processed_occurred_at, events_dead_lettered').eq('subscriber_name', 'happy').single();
+    expect(off?.last_processed_occurred_at?.startsWith('2026-05-12T00:00:00')).toBe(true);
+
+    const r3 = await tickOne(sub, { sb, ctx });  // count=3 → dead-letter
+    expect(r3.deadLettered).toBe(1);
+
+    const { data: dl } = await sb.from('subscriber_dead_letters')
+      .select('attempt_count, last_error')
+      .eq('event_id', e.eventId).eq('subscriber_name', 'happy').single();
+    expect(dl?.attempt_count).toBe(3);
+    expect(dl?.last_error).toBe('persistent');
+
+    // Retry state cleared.
+    const { count: retryCount } = await sb.from('subscriber_retry_state')
+      .select('*', { count: 'exact', head: true }).eq('event_id', e.eventId);
+    expect(retryCount).toBe(0);
+
+    // Cursor advanced past the bad event.
+    ({ data: off } = await sb.from('subscriber_offsets')
+      .select('last_processed_occurred_at, events_dead_lettered').eq('subscriber_name', 'happy').single());
+    expect(off?.last_processed_occurred_at?.startsWith('2026-05-12T01:00:00')).toBe(true);
+    expect(off?.events_dead_lettered).toBe(1);
+  });
+
+  it('clears retry state when handler eventually succeeds', async () => {
+    let attempts = 0;
+    const sub: AnySubscriber = {
+      name: 'happy', kind: 'learner.mastery_changed', maxRetries: 3,
+      async handle() { if (++attempts < 2) throw new Error('flake'); },
+    };
+    const e = await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: '2026-05-12T01:00:00Z' });
+    await tickOne(sub, { sb, ctx });  // count=1
+    const r2 = await tickOne(sub, { sb, ctx });  // success
+    expect(r2.processed).toBe(1);
+    const { count } = await sb.from('subscriber_retry_state')
+      .select('*', { count: 'exact', head: true }).eq('event_id', e.eventId);
+    expect(count).toBe(0);
+  });
+
+  it('dead-letters an unparseable row after maxRetries ticks', async () => {
+    const sub: AnySubscriber = {
+      name: 'happy', kind: 'learner.mastery_changed', maxRetries: 3,
+      async handle() { /* never called */ },
+    };
+    // Insert a row that satisfies the table's NOT NULL constraints but whose
+    // payload will fail DomainEventSchema.safeParse. LearnerMasteryChangedSchema
+    // requires payload to be `z.object({...})` — a string payload trips the
+    // discriminated-union parse before any field check, which is exactly the
+    // kind of malformation we want this test to cover.
+    const eventId = crypto.randomUUID();
+    await sb.from('state_events').insert({
+      event_id: eventId,
+      kind: 'learner.mastery_changed',
+      actor_auth_user_id: '00000000-0000-0000-0000-000000000000',
+      tenant_id: null,
+      idempotency_key: `bad-${eventId}`,
+      occurred_at: '2026-05-12T01:00:00Z',
+      payload: 'this-should-be-an-object-but-isnt',
+    });
+
+    await tickOne(sub, { sb, ctx });  // parse-fail count=1
+    await tickOne(sub, { sb, ctx });  // count=2
+    const r3 = await tickOne(sub, { sb, ctx });  // count=3 → dead-letter
+    expect(r3.deadLettered).toBe(1);
+
+    const { data: dl } = await sb.from('subscriber_dead_letters')
+      .select('attempt_count, last_error')
+      .eq('event_id', eventId).eq('subscriber_name', 'happy').single();
+    expect(dl?.attempt_count).toBe(3);
+    expect(dl?.last_error).toContain('schema parse');
+
+    // Cursor advanced past the bad row.
+    const { data: off } = await sb.from('subscriber_offsets')
+      .select('last_processed_occurred_at').eq('subscriber_name', 'happy').single();
+    expect(off?.last_processed_occurred_at?.startsWith('2026-05-12T01:00:00')).toBe(true);
+  });
+});
