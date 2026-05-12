@@ -44,6 +44,10 @@ export default function TutorPage() {
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ correct: boolean } | null>(null);
   const [answerStartedAt, setAnswerStartedAt] = useState<number>(Date.now());
+  // ADR-004 Phase 2: /api/tutor/next returns a fresh attemptId per call when
+  // ff_tutor_bkt_v1 is ON. We thread it into the /api/tutor/answer POST body
+  // so the atomic tutor_commit_attempt RPC has its idempotency anchor.
+  const [attemptId, setAttemptId] = useState<string | null>(null);
 
   // ── Auth gate ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -56,6 +60,7 @@ export default function TutorPage() {
     setChosenIdx(null);
     setFeedback(null);
     setError(null);
+    setAttemptId(null);
     try {
       const res = await fetch('/api/tutor/next', { cache: 'no-store' });
       if (res.status === 401) { setError('unauthenticated'); return; }
@@ -67,6 +72,7 @@ export default function TutorPage() {
       if (!res.ok) { setError('server'); return; }
       const json = (await res.json()) as TutorNextResponse;
       setData(json);
+      setAttemptId(json.attemptId ?? null);
       setAnswerStartedAt(Date.now());
       track('tutor_concept_viewed', {
         concept_id: json.concept?.id ?? null,
@@ -109,6 +115,9 @@ export default function TutorPage() {
           chosen_index: chosenIdx,
           correct,
           response_time_ms: Date.now() - answerStartedAt,
+          // Only include attempt_id when /next supplied one (ff_tutor_bkt_v1 ON).
+          // Server rejects with 400 if the BKT flag is ON and we omit it.
+          ...(attemptId ? { attempt_id: attemptId } : {}),
         }),
       });
     } catch {

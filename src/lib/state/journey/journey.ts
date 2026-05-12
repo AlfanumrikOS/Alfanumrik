@@ -263,6 +263,11 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
       };
     case 'mesh.cycle_completed':
       return null; // internal — never on learner journeys
+    case 'learner.concept_check_answered':
+      // ADR-004 Phase 2 — high-volume signal (one per /api/tutor/answer call).
+      // Surfaced separately on the tutor page from concept_mastery rather than
+      // as a journey card; keeping it out here avoids spamming the timeline.
+      return null;
     default: {
       // Exhaustiveness check — the compiler errors here if a new event
       // kind is added to the registry without a projector entry.
