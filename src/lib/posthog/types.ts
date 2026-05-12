@@ -96,7 +96,14 @@ export type PostHogEventName =
   // Learner Loop (ADR-001 Phase 1). Server-side from /api/learner/next.
   // PII-free — only branch identifier, reason key, and resolver inputs counts.
   | 'learner_next_resolved'
-  | 'learner_next_404';
+  | 'learner_next_404'
+  // Adaptive Tutor (ADR-004 Phase 0). Server-side from /api/tutor/* and
+  // client-side from /tutor page. PII-free — concept_id is a uuid, no name.
+  | 'tutor_next_resolved'
+  | 'tutor_next_404'
+  | 'tutor_answer_recorded'
+  | 'tutor_concept_viewed'
+  | 'tutor_answer_submitted';
 
 // ─── Base properties auto-attached by `capture()` ──────────────────────────
 
@@ -652,7 +659,44 @@ export type EventPayloadByName = {
   contract_grace_suspended: ContractGraceSuspendedPayload;
   learner_next_resolved: LearnerNextResolvedPayload;
   learner_next_404: LearnerNext404Payload;
+  tutor_next_resolved: TutorNextResolvedPayload;
+  tutor_next_404: TutorNext404Payload;
+  tutor_answer_recorded: TutorAnswerRecordedPayload;
+  tutor_concept_viewed: TutorConceptViewedPayload;
+  tutor_answer_submitted: TutorAnswerSubmittedPayload;
 };
+
+// ── Adaptive Tutor payloads (ADR-004) ──────────────────────────────────
+export interface TutorNextResolvedPayload {
+  status: 'next_concept' | 'grade_complete' | 'no_content';
+  reason: string | null;
+  concept_id: string | null;
+  subject: string | null;
+  chapter_number: number | null;
+  mastered: number | null;
+  total: number | null;
+}
+export interface TutorNext404Payload {
+  reason: 'flag_off' | 'no_student_profile';
+}
+export interface TutorAnswerRecordedPayload {
+  concept_id: string;
+  correct: boolean;
+  new_mastery_mean: number;
+  difficulty: number | null;
+}
+export interface TutorConceptViewedPayload {
+  concept_id: string | null;
+  subject: string | null;
+  chapter_number: number | null;
+  status: 'next_concept' | 'grade_complete' | 'no_content';
+}
+export interface TutorAnswerSubmittedPayload {
+  concept_id: string;
+  correct: boolean;
+  chosen_index: number;
+  response_time_ms: number;
+}
 
 /** Generic helper: lookup payload type by event name. */
 export type EventPayload<E extends PostHogEventName> = EventPayloadByName[E];
