@@ -52,6 +52,21 @@ const DEFAULT_PAYLOADS: Record<string, unknown> = {
     durationSec: 300,
     xpEarned: 50,
   },
+  'learner.concept_check_answered': {
+    studentId: '00000000-0000-0000-0000-000000000010',
+    conceptId: '00000000-0000-0000-0000-000000000020',
+    attemptId: '00000000-0000-0000-0000-000000000030',
+    questionId: '00000000-0000-0000-0000-000000000020:practice:v1',
+    correct: true,
+    chosenIndex: 0,
+    responseTimeMs: 1200,
+    occurredAt: '2026-05-12T10:00:00.000Z',
+    attemptSequence: 1,
+    priorMasteryMean: 0.30,
+    eventVersion: 1,
+    subjectCode: 'math',
+    chapterNumber: 1,
+  },
 };
 
 /**
