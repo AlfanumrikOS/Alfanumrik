@@ -139,6 +139,53 @@ export function useMasteryOverview(studentId: string | undefined, subject?: stri
   );
 }
 
+/* ── Learner Loop next action (ADR-001 Phase 3a) ──
+ * Returns the single LearnerAction the UI should dispatch right now.
+ * Cheap: server-side resolver, 30s private cache header. When the
+ * underlying endpoint flag (ff_learner_loop_v1) is OFF, the endpoint
+ * 404s → this hook returns { data: null, isLoading: false }. Components
+ * decide whether to render based on their own UI-side flag
+ * (ff_learner_loop_dashboard_v1 for the hero).
+ */
+export interface LearnerNextResponse {
+  schemaVersion: 1;
+  resolvedAt: string;
+  action: {
+    kind:
+      | 'cold_start_diagnostic'
+      | 'review_due_cards'
+      | 'revise_decayed_topic'
+      | 'start_quiz'
+      | 'continue_lesson'
+      | 'weekly_dive'
+      | 'monthly_synthesis';
+    url: string;
+    reason: string;
+    [key: string]: unknown;
+  };
+  meta: { branch: string; cached: boolean };
+}
+
+export function useLearnerNext(studentId: string | undefined) {
+  return useSWR<LearnerNextResponse | null>(
+    studentId ? `learner-next/${studentId}` : null,
+    async () => {
+      const res = await fetch('/api/learner/next', { credentials: 'same-origin' });
+      if (res.status === 404) {
+        // Endpoint flag is OFF, or no student profile. Render nothing.
+        return null;
+      }
+      if (!res.ok) {
+        const error = new Error('learner/next fetch failed') as Error & { status: number };
+        error.status = res.status;
+        throw error;
+      }
+      return (await res.json()) as LearnerNextResponse;
+    },
+    DEFAULT_CONFIG,
+  );
+}
+
 /* ── Dashboard (batched RPC) ── */
 export function useDashboardData(studentId: string | undefined) {
   return useSWR(

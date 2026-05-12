@@ -20,6 +20,9 @@ import { Card } from '@/components/ui';
 import XPDailyStatus from '@/components/xp/XPDailyStatus';
 import type { CurriculumTopic, Student } from '@/lib/types';
 import type { Subject as AllowedSubject } from '@/lib/subjects.types';
+import { useFeatureFlags, useLearnerNext } from '@/lib/swr';
+import { actionDisplay } from '@/lib/state/learner-loop/action-display';
+import type { LearnerAction } from '@/lib/state/learner-loop/types';
 
 interface AboveFoldHeroProps {
   student: Student;
@@ -44,6 +47,17 @@ export default function AboveFoldHero({
   const meta = allowedSubjects.find((s) => s.code === student.preferred_subject);
   const topTopic = nextTopics[0];
   const hasSubjects = selectedSubjects.length > 0 && allowedSubjects.length > 0;
+
+  // ADR-001 Phase 3a — Learner Loop next-action card.
+  // Renders only when ALL of:
+  //   1. ff_learner_loop_dashboard_v1 is ON (client gate)
+  //   2. /api/learner/next returns a 200 (server's ff_learner_loop_v1 is ON
+  //      AND the learner has a profile)
+  // Falls through to the legacy BKT-topic Continue card on any other state.
+  const { data: flags } = useFeatureFlags();
+  const dashboardLoopOn = flags?.ff_learner_loop_dashboard_v1 === true;
+  const { data: nextResp } = useLearnerNext(dashboardLoopOn ? student.id : undefined);
+  const loopAction = (nextResp?.action as LearnerAction | undefined) ?? null;
 
   return (
     <div className="space-y-3">
@@ -96,8 +110,40 @@ export default function AboveFoldHero({
       {/* 3. TODAY'S XP STRIP — quiz + chat caps from XPDailyStatus */}
       <XPDailyStatus studentId={student.id} streak={streak} isHi={isHi} />
 
-      {/* 4. CONTINUE LEARNING — resume last BKT topic OR zero-state hint */}
-      {topTopic ? (
+      {/* 4. NEXT ACTION — Learner Loop resolver when flag on, else legacy
+              BKT Continue card, else zero-state subject picker. */}
+      {loopAction ? (
+        (() => {
+          const d = actionDisplay(loopAction);
+          return (
+            <Card
+              hoverable
+              onClick={() => router.push(loopAction.url)}
+              className="flex items-center gap-3 !p-4"
+              data-testid="dashboard-loop-action-card"
+            >
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                style={{ background: `${d.tint}15`, color: d.tint }}
+              >
+                {d.icon}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
+                  {isHi ? d.eyebrowHi : d.eyebrowEn}
+                </p>
+                <p className="font-semibold text-sm md:text-base truncate mt-0.5">
+                  {isHi ? d.titleHi : d.titleEn}
+                </p>
+                <p className="text-xs text-[var(--text-3)] mt-0.5 truncate">
+                  {isHi ? d.subHi : d.subEn}
+                </p>
+              </div>
+              <span className="text-[var(--text-3)] text-lg" aria-hidden="true">→</span>
+            </Card>
+          );
+        })()
+      ) : topTopic ? (
         <Card
           hoverable
           onClick={() =>
