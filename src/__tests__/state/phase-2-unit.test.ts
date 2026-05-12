@@ -13,6 +13,25 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
+
+// Hoisted mock for tick-all. The factory captures a reference to the real
+// `tickAll` via `importActual`, then `tickAllMock` defaults to delegating to
+// it. Tests that need to drive the adapter past the skip branch (i.e. the
+// per-subscriber-aggregation and bus_cursor-swallow tests) override the
+// behaviour via `tickAllMock.mockResolvedValueOnce(...)` and the existing
+// skipped-on-flag-off test still gets the real short-circuit.
+const { tickAllMock } = vi.hoisted(() => ({ tickAllMock: vi.fn() }));
+vi.mock('@/lib/state/runtime/tick-all', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/state/runtime/tick-all')>(
+    '@/lib/state/runtime/tick-all',
+  );
+  tickAllMock.mockImplementation(actual.tickAll);
+  return {
+    ...actual,
+    tickAll: (...args: Parameters<typeof actual.tickAll>) => tickAllMock(...args),
+  };
+});
+
 import { createStudentStateBuilder } from '@/lib/state/student-state-builder';
 import { StudentStateSchema } from '@/lib/state/student-state';
 import { STANDARD_SERVICES, pickServices } from '@/lib/state/services/registry';
@@ -480,6 +499,94 @@ describe('event-listener tick (adapter)', () => {
     // cursor.write is only invoked via the best-effort backstop when a
     // tick actually advances something; on a skipped tick we stay quiet.
     expect(cursorWrites).toEqual([]);
+  });
+
+  it('aggregates per-subscriber sums and writes MIN watermark to bus_cursor', async () => {
+    // tickAll reports two subscribers advanced. The adapter must:
+    //   - dispatched = sum(processed)            = 3 + 2 = 5
+    //   - fetched    = sum(processed + dead)     = 3 + 2 + 1 = 6
+    //   - newCursor  = MIN(subscriber_offsets.last_processed_occurred_at)
+    //                = MIN(01:00Z, 02:00Z) = 01:00Z
+    //   - cursor.write invoked once with that MIN
+    tickAllMock.mockResolvedValueOnce({
+      skipped: false,
+      perSubscriber: [
+        { subscriberName: 'a', processed: 3, deadLettered: 0 },
+        { subscriberName: 'b', processed: 2, deadLettered: 1 },
+      ],
+    });
+    const sb = makeFakeSb({
+      subscriber_offsets: {
+        rows: [
+          { subscriber_name: 'a', last_processed_occurred_at: '2026-05-12T02:00:00Z' },
+          { subscriber_name: 'b', last_processed_occurred_at: '2026-05-12T01:00:00Z' },
+        ],
+        upserts: [],
+      },
+    });
+    const cursorWriteSpy = vi.fn(async () => undefined);
+    const result = await tick({
+      sb: sb as unknown as Parameters<typeof tick>[0]['sb'],
+      cursor: {
+        async read() { return '1970-01-01T00:00:00Z'; },
+        write: cursorWriteSpy,
+      },
+      now: () => new Date(),
+      log: () => {},
+    });
+    expect(result.dispatched).toBe(5);
+    expect(result.fetched).toBe(6);
+    expect(result.newCursor).toBe('2026-05-12T01:00:00Z');
+    expect(result.outcomes).toHaveLength(2);
+    expect(cursorWriteSpy).toHaveBeenCalledTimes(1);
+    expect(cursorWriteSpy).toHaveBeenCalledWith(sb, '2026-05-12T01:00:00Z');
+  });
+
+  it('swallows bus_cursor write failure without poisoning TickResult', async () => {
+    // Same setup as the MIN-watermark test, but cursor.write rejects. The
+    // adapter wraps the legacy bus_cursor write in try/catch — a write
+    // failure must NOT cause tick() to throw, and the returned TickResult
+    // must still be populated (counters from tickAll, newCursor from the
+    // pre-write MIN computation).
+    tickAllMock.mockResolvedValueOnce({
+      skipped: false,
+      perSubscriber: [
+        { subscriberName: 'a', processed: 3, deadLettered: 0 },
+        { subscriberName: 'b', processed: 2, deadLettered: 1 },
+      ],
+    });
+    const sb = makeFakeSb({
+      subscriber_offsets: {
+        rows: [
+          { subscriber_name: 'a', last_processed_occurred_at: '2026-05-12T02:00:00Z' },
+          { subscriber_name: 'b', last_processed_occurred_at: '2026-05-12T01:00:00Z' },
+        ],
+        upserts: [],
+      },
+    });
+    const cursorWriteSpy = vi.fn().mockRejectedValueOnce(new Error('boom'));
+    let result: Awaited<ReturnType<typeof tick>> | undefined;
+    await expect(
+      (async () => {
+        result = await tick({
+          sb: sb as unknown as Parameters<typeof tick>[0]['sb'],
+          cursor: {
+            async read() { return '1970-01-01T00:00:00Z'; },
+            write: cursorWriteSpy,
+          },
+          now: () => new Date(),
+          log: () => {},
+        });
+      })(),
+    ).resolves.toBeUndefined();
+    expect(result).toBeDefined();
+    expect(result!.dispatched).toBe(5);
+    expect(result!.fetched).toBe(6);
+    // newCursor was assigned to the MIN before cursor.write threw, so the
+    // returned value still reflects the computed watermark.
+    expect(result!.newCursor).toBe('2026-05-12T01:00:00Z');
+    expect(result!.outcomes).toHaveLength(2);
+    expect(cursorWriteSpy).toHaveBeenCalledTimes(1);
   });
 });
 
