@@ -77,6 +77,8 @@ import { buildExpandedGoalSection } from '@/lib/goals/goal-personas';
 import { fetchRecentLabContext, type LabContextEntry } from '@/lib/foxy/recent-lab-context';
 import { buildLabContextSection } from '@/lib/foxy/foxy-lab-prompt';
 import { maybeBuildFoxyContextBlock } from '@/lib/state/context/foxy-context-bridge';
+import { randomUUID } from 'node:crypto';
+import { publishEvent } from '@/lib/state/events/publish';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -307,6 +309,39 @@ function errorJson(
 
 // ─── Helper: get or create session ───────────────────────────────────────────
 
+/**
+ * Map the route's foxy mode (the UI-facing vocabulary) to the
+ * ai.foxy_session_started event's mode enum. Pure — exported for tests.
+ *
+ *   'learn' | 'explain' | 'practice' → 'tutor' (all are tutoring shapes)
+ *   'revise'                          → 'revision'
+ *   anything else                     → 'tutor' (safe default)
+ *
+ * The event registry's 'doubt_solve' mode is not produced from the
+ * route's `mode` parameter alone — the route has a separate intent
+ * classifier (classifyIntent). A future PR may pass that through here.
+ */
+export function mapFoxyModeToEventMode(
+  routeMode: string,
+): 'tutor' | 'doubt_solve' | 'revision' {
+  if (routeMode === 'revise') return 'revision';
+  return 'tutor';
+}
+
+/**
+ * Parse a chapter number from the route's `chapter` field, which the UI
+ * sends as either a number-as-string, a "Chapter N" prefix, or a free-
+ * form title. Returns null when no positive int can be extracted.
+ * Pure — exported for tests.
+ */
+export function parseFoxyChapterNumber(chapter: string | null): number | null {
+  if (!chapter) return null;
+  const m = chapter.match(/(?:chapter\s+)?(\d{1,3})\b/i);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 async function resolveSession(
   studentId: string,
   subject: string,
@@ -314,6 +349,18 @@ async function resolveSession(
   chapter: string | null,
   mode: string,
   providedSessionId: string | null,
+  /**
+   * ADR-001 Phase 2d — when a NEW session row is INSERTed, the function
+   * publishes ai.foxy_session_started on the state_events bus. These
+   * two extra inputs are the event envelope's actorAuthUserId + tenantId.
+   * Best-effort, gated by ff_event_bus_v1 inside publishEvent — never
+   * blocks session creation. The session_completed event is intentionally
+   * NOT published from this code path (no clean session-end trigger in
+   * the current product surface). A follow-on will add a session-end
+   * sweeper or explicit close endpoint.
+   */
+  authUserId: string,
+  schoolId: string | null,
 ): Promise<string> {
   if (providedSessionId) {
     const cutoff = new Date(Date.now() - SESSION_IDLE_MINUTES * 60 * 1000).toISOString();
@@ -350,6 +397,31 @@ async function resolveSession(
   if (error || !newSession) {
     throw new Error(`Failed to create Foxy session: ${error?.message}`);
   }
+
+  // ADR-001 Phase 2d — publish ai.foxy_session_started for the brand-new
+  // session row. Best-effort; failures log and continue.
+  try {
+    await publishEvent(supabaseAdmin, {
+      kind: 'ai.foxy_session_started',
+      eventId: randomUUID(),
+      occurredAt: new Date().toISOString(),
+      actorAuthUserId: authUserId,
+      tenantId: schoolId,
+      idempotencyKey: `foxy_session_started:${newSession.id}`,
+      payload: {
+        foxySessionId: newSession.id,
+        subjectCode: subject ? subject.toLowerCase() : null,
+        chapterNumber: parseFoxyChapterNumber(chapter),
+        mode: mapFoxyModeToEventMode(mode),
+      },
+    });
+  } catch (err) {
+    logger.warn('foxy.resolveSession: publishEvent ai.foxy_session_started failed', {
+      foxySessionId: newSession.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   return newSession.id;
 }
 
@@ -1764,7 +1836,16 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // 6. Resolve or create session
   let resolvedSessionId: string;
   try {
-    resolvedSessionId = await resolveSession(studentId, subject, grade, chapter, mode, sessionId);
+    resolvedSessionId = await resolveSession(
+      studentId,
+      subject,
+      grade,
+      chapter,
+      mode,
+      sessionId,
+      auth.userId!,
+      auth.schoolId ?? null,
+    );
   } catch (err) {
     logger.error('foxy_session_create_failed', {
       error: err instanceof Error ? err : new Error(String(err)),
