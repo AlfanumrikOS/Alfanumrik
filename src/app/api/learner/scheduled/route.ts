@@ -1,0 +1,183 @@
+/**
+ * GET /api/learner/scheduled — read from the scheduled_actions projection.
+ *
+ * Phase 3c of ADR-001. Returns the rank=0 slot (and future rank>0 slots
+ * when those land) for a horizon — daily | weekly | monthly — anchored
+ * to the IST bucket containing `now`.
+ *
+ * This endpoint is the READ counterpart to the write-through in
+ * /api/learner/next. Both share scheduled-actions.ts bucket helpers so
+ * the date math is identical on both sides.
+ *
+ * Gating: ff_scheduled_actions_v1 (same flag as the write-through).
+ * When OFF, returns 404. When ON but no row exists yet for today's
+ * bucket, also returns 404 — the consumer falls back to whatever
+ * legacy path it had. Phase 3c is substrate-only; the UI does NOT
+ * read from this endpoint yet (TodayLoopCard still consumes
+ * /api/learner/next directly). A future PR can switch the consumer.
+ *
+ * Query params:
+ *   horizon: 'daily' | 'weekly' | 'monthly'   (default: 'daily')
+ *
+ * Response (200):
+ *   { schemaVersion: 1,
+ *     horizon: 'daily',
+ *     dayBucket: 'YYYY-MM-DD',
+ *     slots: Array<{
+ *       rank: number,
+ *       actionKind: string,
+ *       action: LearnerAction,        // full payload restored from jsonb
+ *       source: 'scheduler' | 'manual_pin' | 'teacher_override',
+ *       generatedAt: ISO,
+ *       expiresAt: ISO,
+ *       completedAt: ISO | null,
+ *     }>
+ *   }
+ *
+ * Errors:
+ *   401 unauthenticated
+ *   404 flag off / no profile / no slots for this bucket
+ *   500 unexpected DB failure
+ */
+
+import { NextResponse } from 'next/server';
+import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { isFeatureEnabled } from '@/lib/feature-flags';
+import {
+  bucketForHorizon,
+  type Horizon,
+} from '@/lib/state/learner-loop/scheduled-actions';
+import type { LearnerAction } from '@/lib/state/learner-loop/types';
+import { logger } from '@/lib/logger';
+
+export const dynamic = 'force-dynamic';
+
+const FLAG_NAME = 'ff_scheduled_actions_v1';
+const VALID_HORIZONS: Horizon[] = ['daily', 'weekly', 'monthly'];
+
+interface ScheduledRow {
+  rank: number;
+  action_kind: string;
+  action_payload: unknown;
+  source: 'scheduler' | 'manual_pin' | 'teacher_override';
+  generated_at: string;
+  expires_at: string;
+  completed_at: string | null;
+}
+
+export interface ScheduledSlotEnvelope {
+  rank: number;
+  actionKind: string;
+  action: LearnerAction;
+  source: ScheduledRow['source'];
+  generatedAt: string;
+  expiresAt: string;
+  completedAt: string | null;
+}
+
+export interface ScheduledResponse {
+  schemaVersion: 1;
+  horizon: Horizon;
+  dayBucket: string;
+  slots: ScheduledSlotEnvelope[];
+}
+
+export async function GET(request: Request) {
+  const supabase = await createSupabaseServerClient();
+
+  const { data: userResult, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userResult?.user) {
+    return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
+  }
+  const userId = userResult.user.id;
+
+  // Flag gate. Mirrors the rhythm/today + learner/next pattern — 404
+  // when off so consumers fall through to legacy behaviour without
+  // branching on the flag themselves.
+  const flagOn = await isFeatureEnabled(FLAG_NAME, {
+    userId, role: 'student',
+    environment: process.env.VERCEL_ENV || process.env.NODE_ENV,
+  });
+  if (!flagOn) {
+    return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  }
+
+  // Parse + validate horizon param.
+  const url = new URL(request.url);
+  const rawHorizon = (url.searchParams.get('horizon') ?? 'daily').toLowerCase();
+  if (!VALID_HORIZONS.includes(rawHorizon as Horizon)) {
+    return NextResponse.json(
+      { error: 'invalid_horizon', detail: `must be one of: ${VALID_HORIZONS.join(', ')}` },
+      { status: 400 },
+    );
+  }
+  const horizon = rawHorizon as Horizon;
+
+  // Resolve student_id from the caller's auth.
+  const { data: studentRow, error: studentErr } = await supabase
+    .from('students')
+    .select('id')
+    .eq('auth_user_id', userId)
+    .maybeSingle();
+  if (studentErr) {
+    logger.warn('learner/scheduled: students lookup failed', {
+      userId, error: studentErr.message,
+    });
+    return NextResponse.json({ error: 'student_lookup_failed' }, { status: 500 });
+  }
+  const studentId = (studentRow as { id: string } | null)?.id;
+  if (!studentId) {
+    return NextResponse.json({ error: 'no_student_profile' }, { status: 404 });
+  }
+
+  const now = new Date();
+  const dayBucket = bucketForHorizon(horizon, now);
+
+  // Read slots ordered by rank ASC. Overrides surface ahead of scheduler
+  // rows when multiple sources exist at the same rank — though the
+  // UNIQUE constraint prevents that today. Order here is a future-proof.
+  const { data: rowsRaw, error: readErr } = await supabase
+    .from('scheduled_actions')
+    .select('rank, action_kind, action_payload, source, generated_at, expires_at, completed_at')
+    .eq('student_id', studentId)
+    .eq('horizon', horizon)
+    .eq('day_bucket', dayBucket)
+    .order('rank', { ascending: true });
+  if (readErr) {
+    logger.warn('learner/scheduled: scheduled_actions read failed', {
+      userId, studentId, error: readErr.message,
+    });
+    return NextResponse.json({ error: 'read_failed' }, { status: 500 });
+  }
+  const rows = (rowsRaw ?? []) as ScheduledRow[];
+  if (rows.length === 0) {
+    // No slot written yet for this bucket — consumer falls back to
+    // /api/learner/next (which writes the first slot when flag is on).
+    return NextResponse.json({ error: 'no_slots' }, { status: 404 });
+  }
+
+  const slots: ScheduledSlotEnvelope[] = rows.map(r => ({
+    rank: r.rank,
+    actionKind: r.action_kind,
+    action: r.action_payload as LearnerAction,
+    source: r.source,
+    generatedAt: r.generated_at,
+    expiresAt: r.expires_at,
+    completedAt: r.completed_at,
+  }));
+
+  const response: ScheduledResponse = {
+    schemaVersion: 1,
+    horizon,
+    dayBucket,
+    slots,
+  };
+
+  return NextResponse.json(response, {
+    headers: {
+      // Same short cache as /api/learner/next. The slot is durable but
+      // can be updated by the resolver throughout the day.
+      'Cache-Control': 'private, max-age=30, must-revalidate',
+    },
+  });
+}
