@@ -14,6 +14,12 @@ import ClassChallengeBoard from '@/components/challenge/ClassChallengeBoard';
 import { selectCardsForStudent, type ChallengeData, type StudentChallenge } from '@/lib/challenge-engine';
 import { getDifficultyForZPD, GRACE_PERIOD_DAYS, CHALLENGE_COINS } from '@/lib/challenge-config';
 import { processStreakDay, detectMilestones, type StreakState } from '@/lib/challenge-streak';
+import { useFeatureFlags } from '@/lib/swr';
+import {
+  rankChallengesByWeakTopics,
+  type RankableChallenge,
+} from '@/lib/challenge/rank-by-weak-topics';
+import type { WeakTopic } from '@/lib/state/learner-loop/weak-topics';
 
 // Lazy-load the game component to reduce initial page weight
 const ConceptChain = dynamic(() => import('@/components/challenge/ConceptChain'), {
@@ -43,6 +49,8 @@ function getTodayIST(): string {
 export default function ChallengePage() {
   const { student, isLoggedIn, isLoading, isHi, activeRole } = useAuth();
   const router = useRouter();
+  // ADR-001 Phase 5 follow-on — picks personalised challenge when on.
+  const { data: ccFlags } = useFeatureFlags();
 
   const [pageState, setPageState] = useState<PageState>('loading');
   const [challenge, setChallenge] = useState<any>(null);
@@ -51,6 +59,9 @@ export default function ChallengePage() {
   const [attempt, setAttempt] = useState<any>(null);
   const [milestones, setMilestones] = useState<Array<{ badgeLabel: string; badgeLabelHi: string; badgeIcon: string; coins: number }>>([]);
   const [showMilestone, setShowMilestone] = useState(false);
+  // True when the picked challenge matched the student's weak-topic set.
+  // Drives the "🎯 Personalised" badge on the play card.
+  const [isPersonalised, setIsPersonalised] = useState(false);
   const startTimeRef = useRef<number>(Date.now());
   const todayStr = useRef(getTodayIST());
 
@@ -69,17 +80,23 @@ export default function ChallengePage() {
     try {
       const today = todayStr.current;
 
+      // ADR-001 Phase 5 follow-on — when ff_personalised_compete_v1 is
+      // on, fetch up to 12 candidate challenges (not just the first)
+      // plus the student's weak-topic stack so we can pick the best
+      // match. When off, behaves identically to the legacy single-pick.
+      const personaliseOn = ccFlags?.ff_personalised_compete_v1 === true;
+      const challengeLimit = personaliseOn ? 12 : 1;
+
       // Parallel fetches
-      const [challengeRes, streakRes, attemptRes] = await Promise.all([
-        // 1. Fetch today's challenge for student's grade
+      const [challengeRes, streakRes, attemptRes, weakTopicsRes] = await Promise.all([
+        // 1. Fetch today's challenge(s) for student's grade
         supabase
           .from('daily_challenges')
           .select('*')
           .eq('grade', student.grade)
           .eq('challenge_date', today)
           .in('status', ['approved', 'live', 'auto_generated'])
-          .limit(1)
-          .single(),
+          .limit(challengeLimit),
 
         // 2. Fetch streak
         supabase
@@ -97,6 +114,14 @@ export default function ChallengePage() {
           .eq('challenge_date', today)
           .limit(1)
           .maybeSingle(),
+
+        // 4. Personalisation input. 404 (flag off / no profile / no weak
+        //    topics) is the expected "fall back to first" path.
+        personaliseOn
+          ? fetch('/api/learner/weak-topics', { credentials: 'same-origin' })
+              .then(r => (r.ok ? r.json() : null))
+              .catch(() => null)
+          : Promise.resolve(null),
       ]);
 
       // Parse streak (may not exist)
@@ -119,14 +144,34 @@ export default function ChallengePage() {
           };
       setStreakState(streak);
 
-      // No challenge for today
-      if (!challengeRes.data) {
+      // No challenge for today (array now since we removed .single())
+      const candidateChallenges = Array.isArray(challengeRes.data)
+        ? challengeRes.data
+        : [];
+      if (candidateChallenges.length === 0) {
         setPageState('no-challenge');
         return;
       }
 
-      const todayChallenge = challengeRes.data;
+      // Pick the best challenge. When the flag is off or weak-topics
+      // are unavailable, rankChallengesByWeakTopics returns the first
+      // input (matches legacy behaviour).
+      const weakTopics: WeakTopic[] = (() => {
+        const r = weakTopicsRes as { items?: unknown } | null;
+        if (!r || !Array.isArray(r.items)) return [];
+        return r.items as WeakTopic[];
+      })();
+      const rank = rankChallengesByWeakTopics(
+        candidateChallenges as RankableChallenge[],
+        weakTopics,
+      );
+      // The picked row is a daily_challenges row (not a ChallengeData
+      // payload); ChallengeData lives at .challenge_data on the row.
+      // Keep as `any` here to match the legacy single() shape — the
+      // downstream code reads .subject / .topic / .challenge_data.
+      const todayChallenge = (rank.picked ?? candidateChallenges[0]) as any;
       setChallenge(todayChallenge);
+      setIsPersonalised(rank.score > 0);
 
       // Already solved?
       if (attemptRes.data && attemptRes.data.solved) {
@@ -206,7 +251,7 @@ export default function ChallengePage() {
       console.warn('[challenge] Failed to load data:', err);
       setPageState('no-challenge');
     }
-  }, [student]);
+  }, [student, ccFlags?.ff_personalised_compete_v1]);
 
   useEffect(() => {
     if (student) loadData();
@@ -429,6 +474,23 @@ export default function ChallengePage() {
                     </p>
                   )}
                 </div>
+                {/* ADR-001 Phase 5 follow-on — "Personalised" pill when
+                    today's challenge matches a weak-topic in the
+                    student's state. Hidden when the flag is off or no
+                    match. */}
+                {isPersonalised && (
+                  <span
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+                    style={{
+                      background: 'rgba(124, 58, 237, 0.10)',
+                      color: 'var(--purple, #7C3AED)',
+                      border: '1px solid rgba(124, 58, 237, 0.25)',
+                    }}
+                    data-testid="challenge-personalised-pill"
+                  >
+                    🎯 {isHi ? 'तुम्हारे लिए' : 'Personalised'}
+                  </span>
+                )}
               </div>
 
               {/* Game component */}
