@@ -59,6 +59,11 @@ export async function readSubscriberOffset(
  * Counter accumulation is intentional: each tick reports a delta, and the
  * row tracks running totals since the subscriber was registered.
  */
+// Precondition: subscriber_offsets row is seeded at subscriber registration
+// (via migration). First write to an unseeded row would set kind_filter='',
+// which would break subscriber_lag.events_behind (kind='' never matches).
+// Single writer per subscriber per tick; read-modify-write is safe under
+// that invariant.
 export async function writeSubscriberOffset(
   sb: SupabaseClient,
   subscriberName: string,
