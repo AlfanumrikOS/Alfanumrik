@@ -43,12 +43,10 @@ import {
   EditorialHighlight,
 } from '@/components/atlas';
 import type { CurriculumTopic, StudentLearningProfile } from '@/lib/types';
-
-interface AtlasChapterNode {
-  number: number;
-  title: string;
-  status: 'mastered' | 'current' | 'upcoming';
-}
+import {
+  chaptersFromCurriculum,
+  type AtlasChapterNode,
+} from '@/lib/dashboard/atlas-chapters';
 
 export default function AtlasDashboard() {
   const router = useRouter();
@@ -130,6 +128,37 @@ export default function AtlasDashboard() {
                     : 'upcoming',
             })),
           );
+        } else {
+          // Zero-state path: no `concept_mastery` rows yet (cold-start
+          // student). Synthesize the Atlas from the real syllabus for
+          // their (grade, preferred_subject) instead of falling back to
+          // the generic "Chapter 2/3/4/5" placeholders inside
+          // `resolvedChapters`. Students at the same grade with no
+          // mastery used to see identical placeholder graphs; now they
+          // see grade-aware titles like "Number Systems", "Polynomials",
+          // "Coordinate Geometry" — different per grade, recognisable
+          // as their own course.
+          //
+          // Join filter on `subjects.code` mirrors what `getNextTopics`
+          // does. If the subject doesn't resolve (e.g. legacy bad data),
+          // the inner join returns no rows and `chapters` stays empty;
+          // `resolvedChapters` then takes over with its synthesised
+          // 5-node window. So worst case is no regression vs the prior
+          // behaviour.
+          try {
+            const { data: ctRows } = await supabase
+              .from('curriculum_topics')
+              .select('chapter_number, title, display_order, subjects!inner(code)')
+              .eq('grade', student.grade)
+              .eq('is_active', true)
+              .eq('subjects.code', student.preferred_subject ?? 'math')
+              .order('display_order');
+            if (cancelled) return;
+            const seeded = chaptersFromCurriculum(
+              (ctRows as Array<{ chapter_number: number | null; title: string | null }> | null) ?? [],
+            );
+            if (seeded.length > 0) setChapters(seeded);
+          } catch { /* non-fatal — leave chapters empty, resolvedChapters handles it */ }
         }
       } catch { /* non-fatal */ }
 
