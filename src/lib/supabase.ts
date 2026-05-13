@@ -116,7 +116,28 @@ export async function getNextTopics(studentId: string, subject: string | null | 
   let query = supabase.from('curriculum_topics').select('*').eq('is_active', true).eq('grade', grade).order('display_order').limit(10);
   if (subject) {
     const { data: subjectRow } = await supabase.from('subjects').select('id').eq('code', subject).single();
-    if (subjectRow) query = query.eq('subject_id', subjectRow.id);
+    if (subjectRow) {
+      query = query.eq('subject_id', subjectRow.id);
+    } else {
+      // The student's `preferred_subject` does not match any
+      // `subjects.code` value — query silently falls back to "no subject
+      // filter," returning whatever subject has display_order=1 for the
+      // grade. That used to manifest as a Today's-Mission card that
+      // looked broken/random across users with the same wrong value
+      // (e.g. `Mathematics` instead of canonical `math`).
+      //
+      // Loud-log it so the same kind of drift surfaces in Sentry/server
+      // logs immediately next time, instead of taking a dashboard
+      // walkthrough to spot. See companion migration
+      // `supabase/migrations/20260525120000_coerce_students_preferred_subject.sql`
+      // for the one-shot data fix; FK to `subjects(code)` is a separate
+      // follow-up (would prevent recurrence at the column level).
+      console.warn(
+        '[getNextTopics] preferred_subject did not resolve to a subjects.code row; ' +
+          'falling back to "any subject" for grade.',
+        { studentId, subject, grade },
+      );
+    }
   }
   const { data, error } = await query;
   if (error) console.error('getNextTopics:', error.message);
