@@ -1,26 +1,38 @@
 /**
- * Pure helpers for the Atlas chapter graph on the student dashboard.
+ * Pure helper for the Atlas chapter graph on the student dashboard.
  *
- * The graph renders three statuses (mastered / current / upcoming) on
- * 5–6 nodes representing the student's chapter trajectory. Two paths
- * feed it:
- *   1. Mastery path — student has `concept_mastery` rows, statuses
- *      come from the aggregate `mastery_probability` per chapter.
- *      Lives inline in `AtlasDashboard.tsx::useEffect`.
- *   2. Zero-state path — student has NO mastery rows yet. Before this
- *      module existed, the dashboard synthesised "Chapter 2/3/4/5"
- *      placeholder titles (see `AtlasDashboard.tsx::resolvedChapters`).
- *      That looked broken across users at the same grade because every
- *      cold-start student saw the same generic placeholders.
+ * Builds the 5-6 chapter nodes the SVG renders from two inputs:
+ *   1. `curriculumRows` — the syllabus for the student's
+ *      `(grade, preferred_subject)`. Source of titles and the full
+ *      chapter list, irrespective of progress. One row per concept
+ *      (multiple per chapter is fine — deduped by `chapter_number`).
+ *   2. `masteryRows` — per-concept mastery rows for the student.
+ *      Optional. Empty array = cold-start student.
  *
- * This module's `chaptersFromCurriculum` covers path 2 by mapping real
- * `curriculum_topics` rows (the actual syllabus for the student's
- * grade + subject) into the same `AtlasChapterNode` shape. Result:
- * a fresh grade-9 maths student sees "Polynomials" / "Coordinate
- * Geometry" instead of "Chapter 2" / "Chapter 3".
+ * The same code path covers every state of the student's journey:
  *
- * Kept as a pure function so it can be unit-tested in isolation; the
- * dashboard component just provides the rows.
+ *   - Cold start (0 mastery rows). First chapter → `current`, all
+ *     others → `upcoming`. Window = first N chapters of the syllabus.
+ *   - Partial progress (some chapters mastered). Mastered chapters →
+ *     `mastered`, first non-mastered → `current`, the rest → `upcoming`.
+ *     Window = ±half centred on the current chapter so the student
+ *     can see what they've done and what's next.
+ *   - Fully mastered. All chapters → `mastered` except the last one,
+ *     which falls back to `current` so the graph still has an anchor.
+ *
+ * Mastery is averaged across all concepts in a chapter (matches the
+ * legacy aggregate the dashboard used) and compared against
+ * `masteryThreshold` (default 0.7 — same as the legacy code).
+ *
+ * Window size defaults to 6, matching `layoutChapters` in
+ * `AtlasDashboard.tsx` which slices to 6 anyway. Pass a different
+ * value via `options.window` for tests or future graph variants.
+ *
+ * Replaces the prior split logic — an inline mastery-driven
+ * aggregation in `AtlasDashboard.tsx::useEffect` and a separate
+ * `chaptersFromCurriculum` zero-state helper that only kicked in when
+ * mastery was empty. The unified function progresses naturally as the
+ * student moves through chapters without changing code paths.
  */
 
 export interface AtlasChapterNode {
@@ -29,47 +41,83 @@ export interface AtlasChapterNode {
   status: 'mastered' | 'current' | 'upcoming';
 }
 
-/**
- * Build a zero-state chapter graph from `curriculum_topics` rows.
- *
- * Behaviour:
- *   - Aggregate by `chapter_number` (first title wins on duplicates,
- *     so callers can pass rows pre-ordered by `display_order` and
- *     expect deterministic output).
- *   - Sort ascending by chapter_number, regardless of input order.
- *   - First chapter → status `current` (the "you start here" anchor).
- *   - Every subsequent chapter → status `upcoming` (dashed in the SVG).
- *   - Cap at the first 6 chapters to match the SVG layout footprint
- *     (`layoutChapters` slices to 6 anyway).
- *   - Empty input → empty output. Caller decides whether to fall back
- *     to a synthesised placeholder set.
- *
- * Intentionally never emits `mastered` — this is the cold-start path.
- * Once the student has any `concept_mastery` row, the mastery-driven
- * code path in `AtlasDashboard.tsx` takes over and this helper isn't
- * consulted.
- */
-export function chaptersFromCurriculum(
-  rows: ReadonlyArray<{ chapter_number?: number | null; title?: string | null }>,
+export interface BuildAtlasChaptersOptions {
+  /** Chapter is "mastered" when the per-chapter average mastery
+   *  probability is at or above this value. Default 0.7. */
+  masteryThreshold?: number;
+  /** Maximum nodes the graph renders. Default 6 (matches the SVG
+   *  layout). */
+  window?: number;
+}
+
+export function buildAtlasChapters(
+  curriculumRows: ReadonlyArray<{ chapter_number?: number | null; title?: string | null }>,
+  masteryRows: ReadonlyArray<{ chapter_number?: number | null; mastery_probability?: number | null }>,
+  options: BuildAtlasChaptersOptions = {},
 ): AtlasChapterNode[] {
-  // De-dupe by chapter_number — curriculum_topics may have multiple
-  // concept-level rows per chapter and we only need one node per
-  // chapter on the graph.
-  const seen = new Map<number, string>();
-  for (const row of rows) {
+  const threshold = options.masteryThreshold ?? 0.7;
+  const windowSize = options.window ?? 6;
+
+  // ── 1. Build per-chapter title map (deduped, first-wins). ─────────
+  const titleByNumber = new Map<number, string>();
+  for (const row of curriculumRows) {
     if (typeof row.chapter_number !== 'number') continue;
     if (!row.title) continue;
-    if (!seen.has(row.chapter_number)) {
-      seen.set(row.chapter_number, row.title);
+    if (!titleByNumber.has(row.chapter_number)) {
+      titleByNumber.set(row.chapter_number, row.title);
     }
   }
 
-  const sortedChapterNumbers = [...seen.keys()].sort((a, b) => a - b);
-  const window = sortedChapterNumbers.slice(0, 6);
+  const sortedNumbers = [...titleByNumber.keys()].sort((a, b) => a - b);
+  if (sortedNumbers.length === 0) return [];
 
-  return window.map((num, idx) => ({
+  // ── 2. Average mastery per chapter from concept-level rows. ───────
+  const masterySumByNumber = new Map<number, { sum: number; count: number }>();
+  for (const row of masteryRows) {
+    if (typeof row.chapter_number !== 'number') continue;
+    if (typeof row.mastery_probability !== 'number') continue;
+    const slot = masterySumByNumber.get(row.chapter_number) ?? { sum: 0, count: 0 };
+    slot.sum += row.mastery_probability;
+    slot.count += 1;
+    masterySumByNumber.set(row.chapter_number, slot);
+  }
+  const avgMastery = (num: number): number => {
+    const slot = masterySumByNumber.get(num);
+    return slot && slot.count > 0 ? slot.sum / slot.count : 0;
+  };
+
+  // ── 3. Locate the "current" chapter: first below threshold; or
+  //       last chapter if everything is mastered (the graph always
+  //       needs an anchor). ─────────────────────────────────────────
+  const currentNumber =
+    sortedNumbers.find((n) => avgMastery(n) < threshold) ??
+    sortedNumbers[sortedNumbers.length - 1];
+
+  // ── 4. Choose the window. ────────────────────────────────────────
+  //       - Has any mastery → centre ±half on the current chapter so
+  //         the student sees progress + next steps.
+  //       - Zero mastery (cold start) → first `windowSize` chapters
+  //         from the syllabus.
+  const hasAnyMastery = masterySumByNumber.size > 0;
+  let windowNumbers: number[];
+  if (hasAnyMastery) {
+    const half = Math.floor(windowSize / 2);
+    windowNumbers = sortedNumbers
+      .filter((n) => Math.abs(n - currentNumber) <= half)
+      .slice(0, windowSize);
+  } else {
+    windowNumbers = sortedNumbers.slice(0, windowSize);
+  }
+
+  // ── 5. Assign per-chapter status. ────────────────────────────────
+  return windowNumbers.map((num) => ({
     number: num,
-    title: seen.get(num)!,
-    status: idx === 0 ? 'current' : 'upcoming',
+    title: titleByNumber.get(num)!,
+    status:
+      avgMastery(num) >= threshold
+        ? 'mastered'
+        : num === currentNumber
+          ? 'current'
+          : 'upcoming',
   }));
 }

@@ -44,7 +44,7 @@ import {
 } from '@/components/atlas';
 import type { CurriculumTopic, StudentLearningProfile } from '@/lib/types';
 import {
-  chaptersFromCurriculum,
+  buildAtlasChapters,
   type AtlasChapterNode,
 } from '@/lib/dashboard/atlas-chapters';
 
@@ -94,73 +94,51 @@ export default function AtlasDashboard() {
       const next = await getNextTopics(student.id, student.preferred_subject, student.grade);
       if (!cancelled) setNextTopics(next.slice(0, 3));
 
-      // Chapter mastery summary — used by the Atlas graph. Aggregate by
-      // chapter number so the SVG shows mastered / current / upcoming.
+      // Atlas chapter graph — single unified path that always renders
+      // the full syllabus for the student's (grade, preferred_subject)
+      // and overlays per-chapter mastery on top. Chapters automatically
+      // move from `upcoming` to `current` to `mastered` as the student
+      // accrues `concept_mastery` rows — no separate cold-start branch
+      // and no windowing-to-only-mastered-chapters that used to hide
+      // upcoming work from the graph.
+      //
+      // Two parallel fetches:
+      //   - curriculum_topics filtered by grade + subjects.code (join
+      //     filter mirrors `getNextTopics`).
+      //   - concept_mastery for the student (any rows; can be empty).
+      // Then a pure helper (`buildAtlasChapters`) does the windowing,
+      // de-duping, status assignment so it can be unit-tested in
+      // isolation — see src/lib/dashboard/atlas-chapters.test.ts.
       try {
-        const { data: cmData } = await supabase
-          .from('concept_mastery')
-          .select('mastery_probability, curriculum_topics!inner(chapter_number, title)')
-          .eq('student_id', student.id);
+        const subjectCode = student.preferred_subject ?? 'math';
+        const [ctResult, cmResult] = await Promise.all([
+          supabase
+            .from('curriculum_topics')
+            .select('chapter_number, title, display_order, subjects!inner(code)')
+            .eq('grade', student.grade)
+            .eq('is_active', true)
+            .eq('subjects.code', subjectCode)
+            .order('display_order'),
+          supabase
+            .from('concept_mastery')
+            .select('mastery_probability, curriculum_topics!inner(chapter_number)')
+            .eq('student_id', student.id),
+        ]);
         if (cancelled) return;
-        if (cmData && cmData.length > 0) {
-          const byChapter: Record<number, { masteryTotal: number; n: number; title: string }> = {};
-          for (const row of cmData as Array<{ mastery_probability: number; curriculum_topics?: { chapter_number?: number; title?: string } }>) {
-            const num = row.curriculum_topics?.chapter_number;
-            const title = row.curriculum_topics?.title;
-            if (typeof num !== 'number' || !title) continue;
-            const slot = byChapter[num] ?? (byChapter[num] = { masteryTotal: 0, n: 0, title });
-            slot.masteryTotal += row.mastery_probability ?? 0;
-            slot.n += 1;
-          }
-          const nums = Object.keys(byChapter).map(Number).sort((a, b) => a - b);
-          // Determine the current chapter — the first below mastery threshold.
-          const currentNum = nums.find(n => byChapter[n].masteryTotal / byChapter[n].n < 0.7) ?? nums[nums.length - 1];
-          const window = nums.filter(n => Math.abs(n - currentNum) <= 2).slice(0, 6);
-          setChapters(
-            window.map(n => ({
-              number: n,
-              title: byChapter[n].title,
-              status:
-                byChapter[n].masteryTotal / byChapter[n].n >= 0.7
-                  ? 'mastered'
-                  : n === currentNum
-                    ? 'current'
-                    : 'upcoming',
-            })),
-          );
-        } else {
-          // Zero-state path: no `concept_mastery` rows yet (cold-start
-          // student). Synthesize the Atlas from the real syllabus for
-          // their (grade, preferred_subject) instead of falling back to
-          // the generic "Chapter 2/3/4/5" placeholders inside
-          // `resolvedChapters`. Students at the same grade with no
-          // mastery used to see identical placeholder graphs; now they
-          // see grade-aware titles like "Number Systems", "Polynomials",
-          // "Coordinate Geometry" — different per grade, recognisable
-          // as their own course.
-          //
-          // Join filter on `subjects.code` mirrors what `getNextTopics`
-          // does. If the subject doesn't resolve (e.g. legacy bad data),
-          // the inner join returns no rows and `chapters` stays empty;
-          // `resolvedChapters` then takes over with its synthesised
-          // 5-node window. So worst case is no regression vs the prior
-          // behaviour.
-          try {
-            const { data: ctRows } = await supabase
-              .from('curriculum_topics')
-              .select('chapter_number, title, display_order, subjects!inner(code)')
-              .eq('grade', student.grade)
-              .eq('is_active', true)
-              .eq('subjects.code', student.preferred_subject ?? 'math')
-              .order('display_order');
-            if (cancelled) return;
-            const seeded = chaptersFromCurriculum(
-              (ctRows as Array<{ chapter_number: number | null; title: string | null }> | null) ?? [],
-            );
-            if (seeded.length > 0) setChapters(seeded);
-          } catch { /* non-fatal — leave chapters empty, resolvedChapters handles it */ }
-        }
-      } catch { /* non-fatal */ }
+        const curriculumRows = (ctResult.data as Array<{ chapter_number: number | null; title: string | null }> | null) ?? [];
+        const masteryRows = (
+          (cmResult.data as Array<{ mastery_probability: number | null; curriculum_topics?: { chapter_number?: number | null } | null }> | null) ?? []
+        ).map((r) => ({
+          chapter_number: r.curriculum_topics?.chapter_number ?? null,
+          mastery_probability: r.mastery_probability,
+        }));
+        const built = buildAtlasChapters(curriculumRows, masteryRows);
+        if (built.length > 0) setChapters(built);
+        // If `built` is empty (curriculum query returned nothing — e.g.
+        // a grade we haven't seeded yet), `resolvedChapters` takes over
+        // at render time with its synthesised 5-node placeholder window.
+        // Same fallback behaviour as the original code path.
+      } catch { /* non-fatal — leave chapters empty, resolvedChapters handles it */ }
 
       // Recent wins — last 3 mastery_changed events. Reads the Phase 2
       // unified-state projection when the student has an auth_user_id; the
