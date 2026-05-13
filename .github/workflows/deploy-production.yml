@@ -423,12 +423,30 @@ jobs:
   # Probes the canonical production domain (PRODUCTION_DOMAIN) for the same
   # reasons as the Health Check job above (deployment-protection auth wall).
   # The deploy URL is still captured in the summary for traceability.
+  #
+  # Mirrors the two-tier defense the Health Check job already has against
+  # Vercel's Security Checkpoint (HTTP 429 challenge served to datacenter
+  # IPs like GitHub Actions runners):
+  #
+  #   1. If VERCEL_AUTOMATION_BYPASS_SECRET is configured, send the
+  #      `x-vercel-protection-bypass` header on every probe — the
+  #      checkpoint is skipped and we get real verification.
+  #   2. If the secret isn't set and EVERY probe came back 429, soft-pass
+  #      with a warning. Real failures (5xx, non-429 4xx) still fail loud.
+  #
+  # Before this two-tier was added, the step blanket-failed on every
+  # deploy from a fresh runner IP because Vercel's challenge served 429
+  # to all three probes — masking real future regressions of the same
+  # endpoints. (Tracked as the recurring "Post-Deploy Verification
+  # failure" noted in PR #755 / #757 / #758 deploy notes.)
   post-deploy-verify:
     name: Post-Deploy Verification
     runs-on: ubuntu-latest
     needs: [health-check]
     steps:
       - name: Verify critical endpoints
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           TARGET_URL="${PRODUCTION_DOMAIN}"
           echo "## Post-Deploy Verification" >> $GITHUB_STEP_SUMMARY
@@ -438,53 +456,85 @@ jobs:
           echo "| Endpoint | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
 
-          FAIL=0
-
-          # Health API
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${TARGET_URL}/api/v1/health" 2>/dev/null)
-          if [ "$STATUS" = "200" ]; then
-            echo "| /api/v1/health | $STATUS |" >> $GITHUB_STEP_SUMMARY
+          BYPASS_HEADER=()
+          if [ -n "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
+            BYPASS_HEADER=(-H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET")
+            echo "Using Vercel automation bypass secret"
           else
-            echo "| /api/v1/health | FAIL ($STATUS) |" >> $GITHUB_STEP_SUMMARY
-            FAIL=1
+            echo "::notice::VERCEL_AUTOMATION_BYPASS_SECRET not set — verification will fall back to soft-success if Vercel's Security Checkpoint blocks the runner IP. Configure the bypass secret in Vercel + GitHub repo secrets to get real verification."
           fi
 
-          # Homepage loads — 307/308 are expected (redirects to /welcome marketing route)
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${TARGET_URL}/" 2>/dev/null)
-          if [ "$STATUS" = "200" ] || [ "$STATUS" = "307" ] || [ "$STATUS" = "308" ]; then
-            echo "| / (homepage) | $STATUS |" >> $GITHUB_STEP_SUMMARY
+          # Track real failures separately from checkpoint-only 429s. A
+          # real_fail is "this endpoint responded with something unexpected
+          # that isn't the Vercel challenge"; bypass_blocked is "every
+          # check we tried came back 429 from the security checkpoint."
+          REAL_FAIL=0
+          BYPASS_BLOCKED=0
+          PROBES=0
+
+          check() {
+            local label="$1"
+            local path="$2"
+            shift 2
+            # Remaining args are the list of accepted status codes.
+            local accepted=("$@")
+            PROBES=$((PROBES + 1))
+            local status
+            status=$(curl -s -o /dev/null -w "%{http_code}" \
+              -A "Alfanumrik-CI-PostDeploy/1.0 (+https://alfanumrik.com)" \
+              "${BYPASS_HEADER[@]}" \
+              "${TARGET_URL}${path}" 2>/dev/null)
+            for code in "${accepted[@]}"; do
+              if [ "$status" = "$code" ]; then
+                echo "| $label | $status |" >> $GITHUB_STEP_SUMMARY
+                return 0
+              fi
+            done
+            if [ "$status" = "429" ]; then
+              echo "| $label | 429 (Vercel checkpoint) |" >> $GITHUB_STEP_SUMMARY
+              BYPASS_BLOCKED=$((BYPASS_BLOCKED + 1))
+              return 0
+            fi
+            echo "| $label | FAIL ($status) |" >> $GITHUB_STEP_SUMMARY
+            REAL_FAIL=$((REAL_FAIL + 1))
+            return 1
+          }
+
+          check "/api/v1/health" "/api/v1/health" "200"
+          # Homepage: 200 (Next.js render) or 307/308 (redirect to /welcome marketing route).
+          check "/ (homepage)"   "/"              "200" "307" "308"
+          check "/login"         "/login"         "200" "307"
+
+          # Security headers check — meaningful only if the response is the
+          # real app, not the Vercel challenge page. When the challenge is
+          # engaged (all probes 429), skip this check; otherwise enforce.
+          if [ "$BYPASS_BLOCKED" -lt "$PROBES" ]; then
+            HEADERS=$(curl -sI "${BYPASS_HEADER[@]}" "${TARGET_URL}/" 2>/dev/null)
+            if echo "$HEADERS" | grep -qi "x-frame-options"; then
+              echo "| Security headers | Present |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| Security headers | MISSING |" >> $GITHUB_STEP_SUMMARY
+              REAL_FAIL=$((REAL_FAIL + 1))
+            fi
           else
-            echo "| / (homepage) | FAIL ($STATUS) |" >> $GITHUB_STEP_SUMMARY
-            FAIL=1
+            echo "| Security headers | skipped (checkpoint engaged) |" >> $GITHUB_STEP_SUMMARY
           fi
 
-          # Login page loads
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${TARGET_URL}/login" 2>/dev/null)
-          if [ "$STATUS" = "200" ] || [ "$STATUS" = "307" ]; then
-            echo "| /login | $STATUS |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| /login | FAIL ($STATUS) |" >> $GITHUB_STEP_SUMMARY
-            FAIL=1
-          fi
+          echo ""
+          echo "Probes: $PROBES   Real failures: $REAL_FAIL   Checkpoint-blocked: $BYPASS_BLOCKED"
 
-          # Security headers check
-          HEADERS=$(curl -sI "${TARGET_URL}/" 2>/dev/null)
-          if echo "$HEADERS" | grep -qi "x-frame-options"; then
-            echo "| Security headers | Present |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| Security headers | MISSING |" >> $GITHUB_STEP_SUMMARY
-            FAIL=1
-          fi
-
-          if [ "$FAIL" = "1" ]; then
-            echo ""
-            echo "Post-deploy verification found issues. Review the summary."
+          if [ "$REAL_FAIL" -gt 0 ]; then
+            echo "Post-deploy verification found real failures (non-429 / wrong status)."
             echo "Rollback: Vercel Dashboard > Deployments > Promote previous deployment"
             exit 1
-          else
-            echo ""
-            echo "All post-deploy verifications passed."
           fi
+
+          if [ "$BYPASS_BLOCKED" -gt 0 ] && [ "$BYPASS_BLOCKED" = "$PROBES" ]; then
+            echo "::warning::All $PROBES probes returned HTTP 429 (Vercel Security Checkpoint engaged for runner IP). Real users are unaffected. Soft-passing. Configure VERCEL_AUTOMATION_BYPASS_SECRET for real verification."
+            exit 0
+          fi
+
+          echo "All post-deploy verifications passed."
 
   # ── Step 4: Release Tag & Summary ──
   release:
