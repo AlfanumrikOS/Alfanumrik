@@ -1,0 +1,27 @@
+-- 20260512065503_reconcile_phantom.sql
+--
+-- STAGING PHANTOM RECONCILE — no-op body. Companion to
+-- `20260512065502_reconcile_phantom.sql`.
+--
+-- Background: PR #749 committed `20260512065503_backfill_g7_math_ch1_concepts.sql`
+-- (the v1 attempt) which was applied to staging at that timestamp. The
+-- first MCP apply on prod hit a NOT NULL violation; the second attempt
+-- — named `..._v2` — succeeded on prod with timestamp `20260512070624`.
+-- PR #750 renamed the local file to
+-- `20260512070624_backfill_g7_math_ch1_concepts_v2.sql` to match prod's
+-- schema_migrations row, but staging's `20260512065503` row was never
+-- reconciled.
+--
+-- Symptom: same as `20260512065502_reconcile_phantom.sql`. The Supabase
+-- CLI refuses to push when ANY remote version has no local match. The
+-- error usually only names the first phantom (`20260512065502`) but
+-- this companion version is the same class of mismatch and would
+-- block the push as soon as the first is reconciled.
+--
+-- Fix (PR #748 pattern): no-op marker at the phantom timestamp. Local
+-- file appears, CLI treats the version as already applied on staging.
+-- On prod, applies as no-op and records the version.
+--
+-- DO NOT delete this file.
+
+SELECT 1 WHERE false;

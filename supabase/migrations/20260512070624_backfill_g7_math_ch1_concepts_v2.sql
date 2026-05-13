@@ -21,6 +21,16 @@
 -- environment-agnostic, as that would re-apply different SQL to prod
 -- where the data is already settled.
 --
+-- Staging unfreeze (2026-05-13): the INSERT block below is now wrapped
+-- in `DO $do$ ... IF EXISTS (... id = 'd7c541b8-…') THEN ... END IF; ...
+-- $do$;` so it no-ops on staging without rewriting the actual SQL. Prod's
+-- behaviour is preserved exactly — the anchor row exists, the IF passes,
+-- and the original INSERT runs verbatim. On staging the anchor row is
+-- absent, the IF fails, RAISE NOTICE logs the skip, the migration
+-- completes cleanly so the rest of the staging pipeline can proceed.
+-- The UPDATE statements above already no-op naturally on staging
+-- (UPDATE with no matching rows = 0 rows affected, not an error).
+--
 -- Pilot:      Grade 7 maths is the demo chapter the CEO screenshotted on
 --             2026-05-12 (was rendering as raw textbook dump).
 --
@@ -78,6 +88,18 @@ SET
 WHERE id = 'd7c541b8-6746-4de7-bab5-626abae89a4b';
 
 -- ── 2. Insert concepts 2..6 ──────────────────────────────────────────────
+-- Wrapped in a DO block with an IF EXISTS guard anchored on the
+-- prod-pinned UUID. On prod the row exists (was rewritten by the
+-- UPDATE in section 1), so the INSERT runs unchanged. On staging the
+-- row is absent, the IF skips, and the migration completes without
+-- inserting anything — preserving the "staging backfill is a separate
+-- ticket" invariant from the env note above.
+DO $migration_body$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM public.chapter_concepts
+     WHERE id = 'd7c541b8-6746-4de7-bab5-626abae89a4b'
+  ) THEN
 INSERT INTO public.chapter_concepts (
   grade, subject, chapter_number, chapter_title, concept_number,
   title, title_hi, slug,
@@ -183,3 +205,12 @@ INSERT INTO public.chapter_concepts (
  'Round each to the nearest lakh: 6,12,000 ≈ 6,00,000 (closer to 6 lakh than 7 lakh) and 3,89,500 ≈ 4,00,000 (closer to 4 lakh than 3 lakh). Estimate: 6,00,000 + 4,00,000 = 10,00,000 (ten lakh). The exact answer 10,01,500 confirms.',
  2, 'evaluate', 6,
  true, 'manual_backfill', now(), now());
+  ELSE
+    RAISE NOTICE
+      'Skipping prod-pinned grade-7 maths chapter 1 backfill: anchor '
+      'chapter_concepts row d7c541b8-6746-4de7-bab5-626abae89a4b not '
+      'found (staging/dev environment). The 5-concept INSERT above is '
+      'a no-op here. Staging backfill is a separate ticket per the env '
+      'note at the top of this file.';
+  END IF;
+END $migration_body$;

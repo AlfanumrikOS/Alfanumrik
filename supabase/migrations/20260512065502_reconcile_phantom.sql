@@ -1,0 +1,38 @@
+-- 20260512065502_reconcile_phantom.sql
+--
+-- STAGING PHANTOM RECONCILE — no-op body.
+--
+-- Background: PR #749 committed `20260512065502_ff_chapter_reader_v2.sql`,
+-- which was then applied directly to staging at that timestamp. After
+-- merge, the same migration was re-applied to prod via Supabase MCP
+-- which generated a different timestamp (20260512070302). PR #750
+-- renamed the local file to `20260512070302_ff_chapter_reader_v2.sql`
+-- to match prod's schema_migrations row — but never did the equivalent
+-- reconcile for staging, where the old `20260512065502` row remains.
+--
+-- Symptom: every PR's `Sync Migrations to Staging` workflow fails with
+--   Remote migration versions not found in local migrations directory.
+--   supabase migration repair --status reverted 20260512065502
+-- because the staging schema_migrations has a row for a version with
+-- no matching local file. Tracked as issue #756.
+--
+-- Fix (same pattern as PR #748 — phantom-timestamp reconcile): add a
+-- local file at the exact phantom timestamp with an idempotent no-op
+-- body. `supabase db push --linked --include-all` then sees local ==
+-- remote and treats the version as already applied on staging. On
+-- prod (which does not have this version recorded), the file applies
+-- as a true no-op (SELECT 1) and adds the version to prod's
+-- schema_migrations. Both environments converge to identical
+-- schema_migrations state.
+--
+-- DO NOT delete this file. It is the staging-side companion to
+-- `20260512070302_ff_chapter_reader_v2.sql` — that file holds the
+-- canonical SQL body the prod migration ran. This file only exists
+-- to satisfy the CLI's local-vs-remote matching.
+--
+-- Companion reconcile: see `20260512065503_reconcile_phantom.sql` for
+-- the backfill counterpart.
+
+SELECT 1 WHERE false;
+-- Intentionally no rows returned. PostgreSQL is happy; supabase_migrations
+-- records the version; no schema or data changes occur on either env.
