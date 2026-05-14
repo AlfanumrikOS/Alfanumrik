@@ -6,7 +6,7 @@ import { logger } from './logger';
  * TTL is intentionally short (30s) to balance freshness with DB load.
  */
 let cached: { value: Record<string, boolean>; expiresAt: number } | null = null;
-const TTL_MS = 30_000;
+const TTL_MS = Number(process.env.FEATURE_FLAGS_CACHE_TTL_MS ? Number(process.env.FEATURE_FLAGS_CACHE_TTL_MS) : 30000);
 
 export async function getFeatureFlagsCached(context?: { role?: string; institutionId?: string }) {
   const now = Date.now();
