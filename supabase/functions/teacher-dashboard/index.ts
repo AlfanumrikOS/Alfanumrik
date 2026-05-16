@@ -31,10 +31,20 @@ import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
+// Phase D.6 cold-start mitigation: construct the service-role client once at
+// module scope and reuse across every invocation while the Edge Function
+// instance is warm. The Supabase client is pure config + an internal fetch
+// wrapper; there are no per-request stateful resources to spread between
+// requests. Earlier code newed up a client inside each handler (23 call
+// sites across this file), paying the constructor cost on every request.
+// This saves ~50-150 ms of cold-start latency and trims allocator pressure
+// on warm requests.
+const SERVICE_CLIENT = createClient(supabaseUrl, serviceRoleKey, {
+  auth: { autoRefreshToken: false, persistSession: false },
+})
+
 function getServiceClient() {
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  })
+  return SERVICE_CLIENT
 }
 
 // ─── Per-resource ownership helpers (P13 follow-up to JWT binding) ──────

@@ -195,6 +195,68 @@ export const ParentReportViewedSchema = EventBaseSchema.extend({
   }),
 });
 
+// Phase D.1 — DPDP parental-consent capture. Emitted when a guardian
+// records explicit consent for a linked child via the consent capture
+// screen. Payload carries the consent_version + the boolean scope grants
+// so downstream subscribers (audit pipeline, parent notifications, DPDP
+// regulator report) can fan out without re-reading parental_consent.
+// IP and user-agent stay in the canonical row — payload is bounded to
+// what subscribers actually need.
+export const ParentConsentGrantedSchema = EventBaseSchema.extend({
+  kind: z.literal('parent.consent_granted'),
+  payload: z.object({
+    consentId:     uuidLike(),
+    guardianId:    uuidLike(),
+    studentId:     uuidLike(),
+    consentVersion: z.string().min(1).max(64),
+    // Per-scope boolean grants. Keys mirror CONSENT_SCOPES in
+    // src/lib/dpdp/consent.ts. Subscribers MUST treat missing keys as
+    // "not granted" — a forward-compatible default.
+    scopes: z.object({
+      curriculum_access:                       z.boolean().optional(),
+      performance_data_sharing_with_teacher:   z.boolean().optional(),
+      marketing_emails:                        z.boolean().optional(),
+    }),
+    locale: z.enum(['en', 'hi']),
+  }),
+});
+
+// Phase D.1 — DPDP parental-consent revocation. Emitted when a guardian
+// withdraws consent for a linked child. Subscribers should treat this as
+// a "stop processing this child's data" signal — pause notifications,
+// flag the account for human review, etc.
+export const ParentConsentRevokedSchema = EventBaseSchema.extend({
+  kind: z.literal('parent.consent_revoked'),
+  payload: z.object({
+    consentId:  uuidLike(),
+    guardianId: uuidLike(),
+    studentId:  uuidLike(),
+    // The version of consent that was revoked — lets the regulator audit
+    // which policy iteration the parent had agreed to.
+    consentVersion: z.string().min(1).max(64),
+  }),
+});
+
+// Phase D.2 — DPDP §13. Emitted when a verified guardian downloads the
+// full export of their child's data via /api/parent/children/[id]/export.
+// `tableCounts` lets analytics + audit subscribers see the per-table row
+// volumes returned without re-reading the audit_logs row. `payloadBytes`
+// is the JSON byte size of the file the guardian downloaded — useful for
+// triggering ops handoff alerts when guardians repeatedly hit the
+// 10MB guardrail (an indicator the in-app endpoint isn't sufficient for
+// that child's history).
+export const ParentChildDataExportedSchema = EventBaseSchema.extend({
+  kind: z.literal('parent.child_data_exported'),
+  payload: z.object({
+    guardianId: uuidLike(),
+    studentId:  uuidLike(),
+    schemaVersion: z.string().min(1).max(32),
+    payloadBytes:  z.number().int().nonnegative(),
+    tableCount:    z.number().int().nonnegative(),
+    rowCountTotal: z.number().int().nonnegative(),
+  }),
+});
+
 // ── Phase D.3 — DPDP §15 right-to-erasure events ─────────────────────
 //
 // Three events span the lifecycle of a parent-initiated child-data
@@ -454,6 +516,9 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   FoxySessionCompletedSchema,
   ParentLinkedSchema,
   ParentReportViewedSchema,
+  ParentConsentGrantedSchema,
+  ParentConsentRevokedSchema,
+  ParentChildDataExportedSchema,
   ParentChildErasureRequestedSchema,
   ParentChildErasureCancelledSchema,
   ParentChildErasureCompletedSchema,
@@ -494,6 +559,9 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'ai.foxy_session_completed',
   'parent.linked_to_learner',
   'parent.report_viewed',
+  'parent.consent_granted',
+  'parent.consent_revoked',
+  'parent.child_data_exported',
   'parent.child_erasure_requested',
   'parent.child_erasure_cancelled',
   'parent.child_erasure_completed',

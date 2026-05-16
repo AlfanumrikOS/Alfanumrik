@@ -36,8 +36,19 @@ import { capture as posthogCapture } from '../_shared/posthog.ts'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
+// Phase D.6 cold-start mitigation: hoist the supabase-js client construction
+// to module scope so a warm Edge Function instance reuses the same client
+// across every cron tick. Construction is non-trivial (URL parsing, fetch
+// wrapper, internal auth state) and the runner fires every minute — paying
+// that cost per tick is wasteful. We still tolerate the env-unset path by
+// gating construction on both vars being non-empty; the handler re-checks
+// and returns 500 with a clear error if so.
+const SB = SUPABASE_URL && SERVICE_ROLE
+  ? createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } })
+  : null
+
 Deno.serve(async (_req) => {
-  if (!SUPABASE_URL || !SERVICE_ROLE) {
+  if (!SUPABASE_URL || !SERVICE_ROLE || !SB) {
     return new Response(
       JSON.stringify({
         error: 'projector-runner: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is unset',
@@ -46,9 +57,7 @@ Deno.serve(async (_req) => {
     )
   }
 
-  const sb = createClient(SUPABASE_URL, SERVICE_ROLE, {
-    auth: { persistSession: false },
-  })
+  const sb = SB
   const start = performance.now()
 
   try {
