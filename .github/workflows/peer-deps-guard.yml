@@ -1,0 +1,65 @@
+name: peer-deps-guard
+
+# Phase E.7 — guards against the failure mode that caused PR #779 / #784.
+#
+# PR #779 pruned four @opentelemetry/* direct dependencies that turned out
+# to be optional peer-dependencies of @sentry/node-core. npm v7+ does NOT
+# auto-install peer-deps unless they're listed in `dependencies`, so every
+# Vercel cold deploy across six follow-up PRs (#779-#783) failed at boot
+# until the hotfix landed in #784. Local `next dev` was warm-cached and
+# didn't surface the missing peers.
+#
+# This workflow's three load-bearing properties:
+#   1. `rm -rf node_modules` — no warm cache. Mirrors a cold Vercel build.
+#   2. `npm ci` — strict lockfile reproduction. No silent dep resolution
+#      that might paper over a missing direct dep with a transitive.
+#   3. `node -e "require('./next.config.js')"` — the exact path Vercel
+#      takes at boot. Surfaces missing transitive peer-deps as a require
+#      throw, which is how the #779 regression actually manifested in prod.
+#
+# See docs/runbooks/peer-deps.md for the incident write-up.
+
+on:
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'next.config.js'
+      - 'scripts/check-peer-deps.js'
+      - '.github/workflows/peer-deps-guard.yml'
+  push:
+    branches: [main]
+
+concurrency:
+  group: peer-deps-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: peer-deps + cold-boot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # Defeat any warm-cache effects from the setup-node restore. The whole
+      # point of this guard is to mirror a cold Vercel deploy, which starts
+      # from zero node_modules every time.
+      - name: Remove any cached node_modules
+        run: rm -rf node_modules
+
+      - name: Install with strict lockfile (npm ci)
+        run: npm ci --no-audit
+
+      - name: Verify peer-deps resolve
+        run: node scripts/check-peer-deps.js
+
+      # Second-line defence: even if check-peer-deps.js were silently
+      # skipped or its peer list went stale, the cold require() below
+      # would still fail the way Vercel does.
+      - name: Verify next.config.js boots cold
+        run: node -e "require('./next.config.js')"
