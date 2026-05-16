@@ -98,7 +98,10 @@ export async function POST(request: NextRequest) {
 
     if (requestedStudentId) {
       const childrenRes = await listChildrenForGuardian(user.id);
-      if (childrenRes.ok && childrenRes.data.some(c => c.id === requestedStudentId)) {
+      if (
+        childrenRes.ok &&
+        childrenRes.data.some((c: { id: string }) => c.id === requestedStudentId)
+      ) {
         studentId = requestedStudentId;
       }
     } else {
