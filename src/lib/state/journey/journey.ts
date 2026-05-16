@@ -255,6 +255,7 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
     case 'teacher.profile_updated':
     case 'teacher.submission_reviewed':
     case 'teacher.grade_entry_set':
+    case 'teacher.parent_message_sent':
       // Teacher-side admin events — not surfaced on learner-facing journey
       // (they describe teacher actions on classroom/student, not learner state
       // changes). Audit/notification subscribers consume these instead.
@@ -264,7 +265,25 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
       // Phase C.2: teacher.grade_entry_set is a teacher-driven roll-up cell
       // edit — the learner journey shouldn't reflect a teacher's grade book
       // until we wire a parent-facing report-card surface that consumes it.
+      // Phase C.3: teacher.parent_message_sent is sender-side admin — the
+      // learner journey only shows what the LEARNER did. The parent's
+      // counterpart (parent.teacher_message_sent) is rendered on the
+      // parent-facing journey below; this case stays null.
       return null;
+    case 'parent.teacher_message_sent':
+      // Phase C.3. Parent-side messaging surfaces as a 'parent' category card
+      // on parent-facing journeys; the learner timeline ignores it (the
+      // category filter excludes 'parent' in the learner UI).
+      return {
+        id: e.eventId,
+        occurredAt: e.occurredAt,
+        category: 'parent',
+        title: 'A parent messaged your teacher',
+        detail: e.payload.isNewThread ? 'new conversation' : null,
+        emoji: '💬',
+        badge: 'info',
+        sourceKind: e.kind,
+      };
     case 'school.module_toggled':
       return null; // admin-only signal
     case 'billing.invoice_paid':
