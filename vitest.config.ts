@@ -102,12 +102,14 @@ export default defineConfig({
         // 55.66 / 50.73 / 59.31 / 56.68 → floors set ~1 point below to
         // leave safety margin for refactors. We are now within striking
         // distance of the 60% aspirational target.
-        // TODO(testing): installment 4 should target the next layer —
-        // oauth-manager.ts (71% → push to 90%), feature-flags.ts (85% →
-        // close gaps at lines 86/119/160-165), plan-gate.ts (81% → cover
-        // lines 89/230/291-296), and start chipping at supabase.ts (10%)
-        // by extracting pure helpers and testing them with mocked client.
-        // After installment 4 the 60% milestone should clear.
+        // TODO(testing): installment 4 should target the next layer --
+        // oauth-manager.ts (71% -> push to 90%) [done 2026-05-16, Phase 6
+        // Iter 2, test/oauth-manager-coverage]; feature-flags.ts (85% ->
+        // close gaps at lines 86/119/160-165) [done 2026-05-16, Phase 6
+        // Iter 1, PR #767]; plan-gate.ts (81% -> cover lines 89/230/
+        // 291-296); and start chipping at supabase.ts (10%) by extracting
+        // pure helpers and testing them with mocked client. After
+        // installment 4 the 60% milestone should clear.
         statements: 54,
         branches: 49,
         functions: 58,
@@ -178,6 +180,27 @@ export default defineConfig({
         'src/lib/feature-flags.ts': {
           statements: 95,
           branches: 85,
+          functions: 95,
+          lines: 95,
+        },
+        // Phase 6 Installment 2 (2026-05-16, test file
+        // src/__tests__/lib/oauth-manager-coverage.test.ts): closed the
+        // 71% → 90% gap named in this config's Installment-4 TODO. Added
+        // 23 tests covering registerApp validation/DB-error/exception
+        // branches, tripleIntersection edge cases (unknown scope, empty
+        // sets, dedupe), validateAccessToken null-data/exception/expired-
+        // boundary paths, and the previously 0%-covered revokeAppTokens
+        // function (with-school, without-school, swallow-exception, and
+        // non-Error throw branches). Actual coverage with the existing
+        // src/__tests__/oauth-manager.test.ts suite combined:
+        // 100/100/100/100. Floor pinned at 95/92/95/95 to leave 5-8 pp
+        // headroom for refactors, mirroring the feature-flags.ts
+        // convention above. oauth-manager.ts is the gate for the entire
+        // B2B developer platform (app registration, token validation,
+        // scope intersection) so the floor is high.
+        'src/lib/oauth-manager.ts': {
+          statements: 95,
+          branches: 92,
           functions: 95,
           lines: 95,
         },
