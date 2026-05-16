@@ -29,6 +29,12 @@ export interface SidebarNavItem {
   icon: React.ReactNode;
   /** When set, hide if moduleEnablement[moduleKey] === false. */
   moduleKey?: string;
+  /**
+   * Optional numeric badge rendered to the right of the label. 0 hides
+   * the badge; >99 clamps to "99+". Used by /parent for unread
+   * notification count.
+   */
+  badge?: number;
 }
 
 export interface DashboardSidebarProps {
@@ -134,7 +140,7 @@ export default function DashboardSidebar({
             onClick={onItemClick}
             title={collapsed ? label : undefined}
             className={twMerge(
-              'flex items-center gap-2.5 border-l-[3px] px-3 py-2.5 text-[13px] no-underline transition-colors',
+              'relative flex items-center gap-2.5 border-l-[3px] px-3 py-2.5 text-[13px] no-underline transition-colors',
               collapsed ? 'justify-center px-3' : 'justify-start',
               active
                 ? 'font-semibold'
@@ -143,7 +149,23 @@ export default function DashboardSidebar({
             style={activeStyle}
           >
             <span className="flex-shrink-0 text-[15px] leading-none">{item.icon}</span>
-            {!collapsed && <span className="truncate">{label}</span>}
+            {!collapsed && <span className="truncate flex-1">{label}</span>}
+            {!collapsed && typeof item.badge === 'number' && item.badge > 0 && (
+              <span
+                data-testid={`sidebar-badge-${item.href.replace(/^\//, '').replace(/\//g, '-')}`}
+                className="ml-auto flex h-[18px] min-w-[18px] flex-shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-bold text-white"
+                style={{ background: primaryColor }}
+              >
+                {item.badge > 99 ? '99+' : item.badge}
+              </span>
+            )}
+            {collapsed && typeof item.badge === 'number' && item.badge > 0 && (
+              <span
+                aria-hidden="true"
+                className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full"
+                style={{ background: primaryColor }}
+              />
+            )}
           </a>
         );
       })}
