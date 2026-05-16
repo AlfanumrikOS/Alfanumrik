@@ -18,7 +18,7 @@ existing product invariants.
 | 2 | [`DOMAIN_BOUNDARIES.md`](./DOMAIN_BOUNDARIES.md) | architect | v1 |
 | 3 | [`DATA_OWNERSHIP_MATRIX.md`](./DATA_OWNERSHIP_MATRIX.md) | architect | v1 |
 | 4 | [`API_CONTRACTS_MATRIX.md`](./API_CONTRACTS_MATRIX.md) | backend | v1 |
-| 5 | [`EVENT_CATALOG.md`](./EVENT_CATALOG.md) | architect | v1 |
+| 5 | [`EVENT_CATALOG.md`](./EVENT_CATALOG.md) | architect | v2 (2026-05-16) — bus is live; see file change log |
 | 6 | [`RISK_REGISTER.md`](./RISK_REGISTER.md) | orchestrator | v1 |
 | 7 | [`MICROSERVICES_EXTRACTION_PLAN.md`](./MICROSERVICES_EXTRACTION_PLAN.md) | orchestrator | v1 |
 | 8 | [`MIGRATION_AND_ROLLBACK_PLAN.md`](./MIGRATION_AND_ROLLBACK_PLAN.md) | architect | v1 |

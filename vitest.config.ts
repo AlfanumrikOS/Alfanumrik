@@ -164,6 +164,23 @@ export default defineConfig({
           functions: 80,
           lines: 80,
         },
+        // Phase 6 Installment 1 (2026-05-16, test file
+        // src/__tests__/lib/feature-flags-coverage.test.ts): closed the
+        // gaps named in this config's earlier TODO comment (lines
+        // 86/119/160-165 of feature-flags.ts) plus the adjacent
+        // isAtlasEnabled() helper. Actual coverage: 100/93.54/100/100.
+        // Floor pinned at 95/85/95/95 to leave 5-8 pp headroom for
+        // refactors. The two remaining uncovered branches are extreme
+        // defenses (line 84 `await res.json()` returning null; line 108
+        // four-way env fallback final clause) — not worth chasing.
+        // feature-flags.ts is the single gate every projector, BFF
+        // route, and Edge Function reads, so the floor is high.
+        'src/lib/feature-flags.ts': {
+          statements: 95,
+          branches: 85,
+          functions: 95,
+          lines: 95,
+        },
       },
     },
   },
