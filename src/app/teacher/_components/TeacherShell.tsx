@@ -53,6 +53,7 @@ const NAV_ITEMS: ReadonlyArray<TeacherNavItem> = [
   { href: '/teacher/students', label: 'Students', labelHi: 'छात्र', icon: '⊕' },
   { href: '/teacher/assignments', label: 'Assignments', labelHi: 'असाइनमेंट', icon: '⊠', moduleKey: 'assignments' },
   { href: '/teacher/submissions', label: 'Submissions', labelHi: 'सबमिशन', icon: '⊞', moduleKey: 'assignments' },
+  { href: '/teacher/grade-book', label: 'Grade Book', labelHi: 'ग्रेड बुक', icon: '⊟', moduleKey: 'assignments' },
   { href: '/teacher/worksheets', label: 'Worksheets', labelHi: 'वर्कशीट', icon: '⊡', moduleKey: 'lms' },
   { href: '/teacher/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘', moduleKey: 'analytics' },
   { href: '/teacher/lab-leaderboard', label: 'Lab Leaderboard', labelHi: 'लैब लीडरबोर्ड', icon: '⊙' },
