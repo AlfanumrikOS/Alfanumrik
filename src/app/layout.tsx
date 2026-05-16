@@ -8,6 +8,7 @@ import RegisterSW from '@/lib/RegisterSW';
 import JsonLd from '@/components/JsonLd';
 import LayoutDeferredChrome from '@/components/LayoutDeferredChrome';
 import DemoModeWrapper from '@/components/DemoModeWrapper';
+import { Toaster } from '@/components/ui/toast';
 
 export const metadata: Metadata = {
   title: {
@@ -110,6 +111,9 @@ export default function RootLayout({
               </ErrorBoundary>
               <DemoModeWrapper />
               <RegisterSW />
+              {/* In-app toast mount (Phase A.4). Replaces native alert() for
+                  error UI so cheap school tablets don't see blocking dialogs. */}
+              <Toaster />
               {/* Non-critical client-only chrome (consent banner, maintenance
                   banner, offline indicator, PostHog SDK init). Lazy-loaded
                   to keep shared JS under the P10 budget. */}

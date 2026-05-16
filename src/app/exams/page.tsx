@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy, BottomNav, Badge } from '@/components/ui';
+import { toast } from '@/components/ui/toast';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
@@ -184,7 +185,7 @@ export default function ExamsPage() {
         .single();
 
       if (examErr || !exam) {
-        alert(isHi ? 'परीक्षा सेव करने में त्रुटि' : 'Error saving exam');
+        toast.error(isHi ? 'परीक्षा सेव करने में त्रुटि' : 'Error saving exam');
         setSaving(false);
         return;
       }
@@ -221,7 +222,7 @@ export default function ExamsPage() {
       await loadExams();
     } catch (e) {
       console.error('Save exam error:', e);
-      alert(isHi ? 'परीक्षा सेव करने में त्रुटि' : 'Error saving exam');
+      toast.error(isHi ? 'परीक्षा सेव करने में त्रुटि' : 'Error saving exam');
     }
     setSaving(false);
   };

@@ -9,6 +9,7 @@ import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { BLOOM_CONFIG, type BloomLevel } from '@/lib/cognitive-engine';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import TodayLoopCard from '@/components/study-plan/TodayLoopCard';
+import { toast } from '@/components/ui/toast';
 
 const TASK_BLOOM_MAP: Record<string, BloomLevel> = {
   learn: 'understand', quiz: 'apply', review: 'remember', revision: 'remember',
@@ -171,11 +172,11 @@ export default function StudyPlanPage() {
         await load();
         refreshSnapshot();
       } else {
-        alert(isHi ? 'प्लान बनाने में त्रुटि' : 'Error generating plan');
+        toast.error(isHi ? 'प्लान बनाने में त्रुटि' : 'Error generating plan');
       }
     } catch (e) {
       console.error('Generate error:', e);
-      alert(isHi ? 'प्लान बनाने में त्रुटि' : 'Error generating plan');
+      toast.error(isHi ? 'प्लान बनाने में त्रुटि' : 'Error generating plan');
     }
     setGenerating(false);
   };

@@ -12,6 +12,7 @@ import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import StreakBadge from '@/components/challenge/StreakBadge';
 import { STREAK_VISIBILITY_THRESHOLD } from '@/lib/challenge-config';
 import { useFeatureFlags } from '@/lib/swr';
+import { toast } from '@/components/ui/toast';
 
 /** Row shape returned by /api/v1/leaderboard/mastery. Phase 5 follow-on. */
 interface MasteryLeaderEntry {
@@ -308,7 +309,7 @@ export default function LeaderboardPage() {
       if (result?.success) {
         await loadCompetitions();
       } else {
-        alert(result?.error || 'Could not join');
+        toast.error(result?.error || 'Could not join');
       }
     } catch (e) {
       console.error('Join error:', e);

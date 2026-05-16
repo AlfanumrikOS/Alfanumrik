@@ -3,6 +3,7 @@
 import { useState, useRef, memo, useEffect } from 'react';
 import { useSubjectLookup } from '@/lib/useSubjectLookup';
 import { startListening, isVoiceSupported } from '@/lib/voice';
+import { toast } from '@/components/ui/toast';
 
 /* ══════════════════════════════════════════════════════════════
    CHAT INPUT COMPONENT
@@ -94,7 +95,7 @@ export const ChatInput = memo(function ChatInput({
   const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { alert('Image must be under 5MB'); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error('Image must be under 5MB'); return; }
     setImage(file);
     const reader = new FileReader();
     reader.onload = () => setImagePreview(reader.result as string);

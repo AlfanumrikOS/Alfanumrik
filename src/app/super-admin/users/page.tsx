@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
 import { DataTable, type Column, DetailDrawer, StatusBadge } from '@/components/admin-ui';
+import { toast } from '@/components/ui/toast';
 
 interface UserRecord {
   id: string; auth_user_id: string; name: string; email: string; role: string;
@@ -76,10 +77,10 @@ function UsersContent() {
   };
 
   const assignRole = async () => {
-    if (!assignUserId || !assignRoleName) { alert('User ID and role name required'); return; }
+    if (!assignUserId || !assignRoleName) { toast.error('User ID and role name required'); return; }
     const res = await apiFetch('/api/super-admin/roles', { method: 'POST', body: JSON.stringify({ auth_user_id: assignUserId, role_name: assignRoleName }) });
     const d = await res.json();
-    if (!res.ok) { alert(d.error || 'Assign failed'); return; }
+    if (!res.ok) { toast.error(d.error || 'Assign failed'); return; }
     setAssignUserId(''); setAssignRoleName(''); fetchRoles();
   };
 
@@ -90,7 +91,7 @@ function UsersContent() {
   };
 
   const createTestAccount = async () => {
-    if (!testName || !testEmail) { alert('Name and email required'); return; }
+    if (!testName || !testEmail) { toast.error('Name and email required'); return; }
     setTestResult('Creating...');
     try {
       const res = await apiFetch('/api/super-admin/test-accounts', {

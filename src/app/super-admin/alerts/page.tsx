@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
 import { DataTable, StatusBadge, type Column } from '@/components/admin-ui';
+import { toast } from '@/components/ui/toast';
 
 const colors = {
   bg: '#FFFFFF',
@@ -198,10 +199,10 @@ function AlertsContent() {
         fetchRules();
       } else {
         const body = await res.json().catch(() => ({ error: 'Create failed' }));
-        alert(body.error || 'Failed to create rule');
+        toast.error(body.error || 'Failed to create rule');
       }
     } catch {
-      alert('Failed to create rule');
+      toast.error('Failed to create rule');
     } finally {
       setFormSubmitting(false);
     }

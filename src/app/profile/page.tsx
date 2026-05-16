@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getStudentProfiles, getSubjects, studentJoinClass } from '@/lib/supabase';
 import { Card, Button, Input, Select, Avatar, SectionHeader, ProgressBar, StatCard, LoadingFoxy, BottomNav } from '@/components/ui';
+import { toast } from '@/components/ui/toast';
 import TrustFooter from '@/components/TrustFooter';
 import { GRADES, BOARDS, LANGUAGES } from '@/lib/constants';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
@@ -336,7 +337,7 @@ export default function ProfilePage() {
 
     // VALIDATE: Name change limit
     if (editName.trim() !== student.name && nameChangeCount >= 1) {
-      alert(isHi
+      toast.error(isHi
         ? 'नाम पहले ही बदला जा चुका है। सहायता से संपर्क करें।'
         : 'Name has already been changed once. Contact support to change again.');
       return;
@@ -344,7 +345,7 @@ export default function ProfilePage() {
 
     // VALIDATE: Board lock after quiz history
     if (editBoard !== student.board && hasQuizHistory) {
-      alert(isHi
+      toast.error(isHi
         ? 'क्विज़ इतिहास होने पर बोर्ड नहीं बदला जा सकता। सहायता से संपर्क करें।'
         : 'Board cannot be changed after taking quizzes. Contact support.');
       return;
@@ -355,13 +356,13 @@ export default function ProfilePage() {
     const newGradeNum = parseInt(editGrade);
     if (!isNaN(currentGradeNum) && !isNaN(newGradeNum)) {
       if (newGradeNum < currentGradeNum) {
-        alert(isHi
+        toast.error(isHi
           ? 'कक्षा कम नहीं की जा सकती। सहायता से संपर्क करें।'
           : 'Grade cannot be decreased. Contact support if this is an error.');
         return;
       }
       if (newGradeNum > currentGradeNum + 1) {
-        alert(isHi
+        toast.error(isHi
           ? 'कक्षा एक बार में सिर्फ 1 बढ़ा सकते हैं।'
           : 'Grade can only increase by 1 at a time (annual promotion).');
         return;
@@ -412,7 +413,7 @@ export default function ProfilePage() {
       setTimeout(() => { setSaved(false); setTab('overview'); }, 1500);
     } catch (e) {
       console.error('Save error:', e);
-      alert(isHi ? 'सेव करने में त्रुटि हुई' : 'Error saving profile');
+      toast.error(isHi ? 'सेव करने में त्रुटि हुई' : 'Error saving profile');
     }
     setSaving(false);
   };
@@ -462,7 +463,7 @@ export default function ProfilePage() {
       URL.revokeObjectURL(url);
     } catch (e) {
       console.error('Export error:', e);
-      alert(isHi ? 'डेटा एक्सपोर्ट में त्रुटि' : 'Error exporting data');
+      toast.error(isHi ? 'डेटा एक्सपोर्ट में त्रुटि' : 'Error exporting data');
     }
     setExporting(false);
   };
@@ -481,7 +482,7 @@ export default function ProfilePage() {
       router.replace('/login');
     } catch (e) {
       console.error('Delete error:', e);
-      alert(isHi ? 'खाता हटाने में त्रुटि। सपोर्ट से संपर्क करें।' : 'Error deleting account. Please contact support.');
+      toast.error(isHi ? 'खाता हटाने में त्रुटि। सपोर्ट से संपर्क करें।' : 'Error deleting account. Please contact support.');
       setDeleting(false);
     }
   };
