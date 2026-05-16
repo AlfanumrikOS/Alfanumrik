@@ -1,0 +1,20 @@
+-- 20260525130002_api_query_path_indexes_batch2.sql
+--
+-- RECONCILIATION FILE. No-op by design.
+--
+-- This version was applied directly to production outside of git, with an
+-- empty `statements` array recorded in `supabase_migrations.schema_migrations`
+-- (verified via Supabase MCP execute_sql on 2026-05-16 against project
+-- shktyoxqhundlvkiwguu). The Deploy Production workflow's
+-- `supabase db push --linked --include-all` step refused to proceed because
+-- this remote version had no corresponding local file.
+--
+-- Same operational pattern as PR #554. See the sibling reconciliation
+-- file 20260525130001_security_and_performance_advisor_batch1.sql for the
+-- full rationale.
+--
+-- The name suggests API query-path indexes were added in a second advisor
+-- batch. Those indexes live in production today; capture via `pg_dump`
+-- and replace this file when reconciling staging/fresh environments.
+
+SELECT 1;  -- intentional no-op

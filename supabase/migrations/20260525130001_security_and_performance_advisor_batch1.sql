@@ -1,0 +1,31 @@
+-- 20260525130001_security_and_performance_advisor_batch1.sql
+--
+-- RECONCILIATION FILE. No-op by design.
+--
+-- This version was applied directly to production outside of git, with an
+-- empty `statements` array recorded in `supabase_migrations.schema_migrations`
+-- (verified via Supabase MCP execute_sql on 2026-05-16 against project
+-- shktyoxqhundlvkiwguu). The Deploy Production workflow's
+-- `supabase db push --linked --include-all` step refused to proceed because
+-- this remote version had no corresponding local file:
+--
+--   "Remote migration versions not found in local migrations directory."
+--
+-- Same operational pattern that PR #554 fixed for the May 5 phantom set
+-- (commits d0c1f597 / 9d864bac). The fix is to commit a placeholder file
+-- at the exact version so the CLI sees a local↔remote match. Because the
+-- version is already recorded as applied on prod, the CLI will skip this
+-- file on subsequent `db push` runs — the SQL body is never executed
+-- against any environment.
+--
+-- Whatever changes were applied under this version (the name suggests
+-- security + performance advisor recommendations) live in the production
+-- DB schema today, unreproducible from this repo. A future audit should
+-- capture the actual DDL via `pg_dump` and replace this file with the
+-- recovered SQL so staging / fresh environments can rebuild parity.
+--
+-- See:
+--   docs/runbooks/2026-04-27-schema-reconciliation.md (reconciliation runbook)
+--   docs/runbooks/schema-reproducibility-fix.md (baseline procedure)
+
+SELECT 1;  -- intentional no-op
