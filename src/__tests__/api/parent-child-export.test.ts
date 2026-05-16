@@ -346,7 +346,7 @@ describe('GET /api/parent/children/[id]/export — happy path', () => {
     expect(Array.isArray(body.submissions)).toBe(true);
     expect(Array.isArray(body.notifications)).toBe(true);
     expect(Array.isArray(body.consents)).toBe(true);
-    expect(Array.isArray(body.audit_logs_for_actor)).toBe(true);
+    expect(Array.isArray(body.audit_logs)).toBe(true);
   });
 
   it('sets attachment Content-Disposition and JSON Content-Type', async () => {

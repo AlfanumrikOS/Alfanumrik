@@ -303,14 +303,17 @@ export async function GET(
           error: auditErr.message,
         });
       }
-      exportBody['audit_logs_for_actor'] = auditRows ?? [];
+      // Key is `audit_logs` (matches the Phase D.2 brief's response
+      // shape). The table-counts map keeps the same key so the audit
+      // row metadata stays addressable by table name.
+      exportBody['audit_logs'] = auditRows ?? [];
       tableCounts['audit_logs'] = (auditRows ?? []).length;
     } catch (e) {
       logger.warn('parent_child_export_audit_exception', {
         route: 'parent/children/export',
         error: e instanceof Error ? e.message : String(e),
       });
-      exportBody['audit_logs_for_actor'] = [];
+      exportBody['audit_logs'] = [];
       tableCounts['audit_logs'] = 0;
     }
 
