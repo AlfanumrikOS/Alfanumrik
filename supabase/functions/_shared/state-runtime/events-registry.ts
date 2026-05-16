@@ -175,6 +175,38 @@ export const ParentReportViewedSchema = EventBaseSchema.extend({
   }),
 })
 
+// Phase D.3 — DPDP §15 right-to-erasure events. Mirror of src/lib/state/events/registry.ts.
+export const ParentChildErasureRequestedSchema = EventBaseSchema.extend({
+  kind: z.literal('parent.child_erasure_requested'),
+  payload: z.object({
+    requestId: uuidLike(),
+    guardianId: uuidLike(),
+    studentId: uuidLike(),
+    purgeAt: isoDatetime(),
+    hasReason: z.boolean(),
+  }),
+})
+
+export const ParentChildErasureCancelledSchema = EventBaseSchema.extend({
+  kind: z.literal('parent.child_erasure_cancelled'),
+  payload: z.object({
+    requestId: uuidLike(),
+    guardianId: uuidLike(),
+    studentId: uuidLike(),
+    elapsedSec: z.number().int().nonnegative().nullable(),
+  }),
+})
+
+export const ParentChildErasureCompletedSchema = EventBaseSchema.extend({
+  kind: z.literal('parent.child_erasure_completed'),
+  payload: z.object({
+    requestId: uuidLike(),
+    guardianId: uuidLike(),
+    studentId: uuidLike(),
+    rowsDeleted: z.record(z.string(), z.number().int().nonnegative()),
+  }),
+})
+
 // ── Teacher events ───────────────────────────────────────────────────
 
 export const TeacherAssignmentCreatedSchema = EventBaseSchema.extend({
@@ -242,6 +274,9 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   FoxySessionCompletedSchema,
   ParentLinkedSchema,
   ParentReportViewedSchema,
+  ParentChildErasureRequestedSchema,
+  ParentChildErasureCancelledSchema,
+  ParentChildErasureCompletedSchema,
   TeacherAssignmentCreatedSchema,
   SchoolModuleToggledSchema,
   BillingInvoicePaidSchema,
@@ -264,6 +299,9 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'ai.foxy_session_completed',
   'parent.linked_to_learner',
   'parent.report_viewed',
+  'parent.child_erasure_requested',
+  'parent.child_erasure_cancelled',
+  'parent.child_erasure_completed',
   'teacher.assignment_created',
   'school.module_toggled',
   'billing.invoice_paid',

@@ -195,6 +195,57 @@ export const ParentReportViewedSchema = EventBaseSchema.extend({
   }),
 });
 
+// ── Phase D.3 — DPDP §15 right-to-erasure events ─────────────────────
+//
+// Three events span the lifecycle of a parent-initiated child-data
+// deletion request. All three actor is the guardian (the parent who
+// clicked the CTA); studentId carries who the data belongs to. The
+// `requestId` corresponds to public.data_erasure_requests.id and is
+// the idempotency anchor for downstream subscribers.
+//
+// The cron purger is the producer of `.completed` — the route layer
+// produces `.requested` and `.cancelled`. journey.ts intentionally
+// returns null for all three: child-data erasure is an admin / DPDP
+// concern, not a learner-facing milestone.
+
+export const ParentChildErasureRequestedSchema = EventBaseSchema.extend({
+  kind: z.literal('parent.child_erasure_requested'),
+  payload: z.object({
+    requestId:  uuidLike(),
+    guardianId: uuidLike(),
+    studentId:  uuidLike(),
+    purgeAt:    isoDatetime(),
+    // Free-form reason the parent typed in the confirmation dialog.
+    // Bounded to keep payloads small. null when the parent skipped it.
+    hasReason:  z.boolean(),
+  }),
+});
+
+export const ParentChildErasureCancelledSchema = EventBaseSchema.extend({
+  kind: z.literal('parent.child_erasure_cancelled'),
+  payload: z.object({
+    requestId:   uuidLike(),
+    guardianId:  uuidLike(),
+    studentId:   uuidLike(),
+    // For analytics: how long after `requested` did the parent change their
+    // mind? null when occurredAt parsing fails on the route side.
+    elapsedSec:  z.number().int().nonnegative().nullable(),
+  }),
+});
+
+export const ParentChildErasureCompletedSchema = EventBaseSchema.extend({
+  kind: z.literal('parent.child_erasure_completed'),
+  payload: z.object({
+    requestId:        uuidLike(),
+    guardianId:       uuidLike(),
+    studentId:        uuidLike(),
+    // Map of table → row count actually deleted, for ops dashboards. Keys
+    // are stable strings (table names) so subscribers can roll up by table
+    // without re-parsing. Bounded to ≤32 entries by the producer.
+    rowsDeleted:      z.record(z.string(), z.number().int().nonnegative()),
+  }),
+});
+
 // ── Teacher events ───────────────────────────────────────────────────
 
 export const TeacherAssignmentCreatedSchema = EventBaseSchema.extend({
@@ -403,6 +454,9 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   FoxySessionCompletedSchema,
   ParentLinkedSchema,
   ParentReportViewedSchema,
+  ParentChildErasureRequestedSchema,
+  ParentChildErasureCancelledSchema,
+  ParentChildErasureCompletedSchema,
   TeacherAssignmentCreatedSchema,
   TeacherClassroomCreatedSchema,
   TeacherClassroomUpdatedSchema,
@@ -440,6 +494,9 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'ai.foxy_session_completed',
   'parent.linked_to_learner',
   'parent.report_viewed',
+  'parent.child_erasure_requested',
+  'parent.child_erasure_cancelled',
+  'parent.child_erasure_completed',
   'teacher.assignment_created',
   'teacher.classroom_created',
   'teacher.classroom_updated',

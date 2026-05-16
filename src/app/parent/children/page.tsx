@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { BottomNav } from '@/components/ui';
 import { track } from '@/lib/analytics';
+import ChildDataErasureSection from '@/components/parent/ChildDataErasureSection';
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -374,6 +375,14 @@ function ChildCard({
             >
               &#x1F517; {t(false, 'Remove Link', 'लिंक हटाएं')}
             </button>
+          </div>
+
+          {/* Phase D.3 — DPDP §15 right-to-erasure (parent-initiated). */}
+          <div onClick={(e) => e.stopPropagation()}>
+            <ChildDataErasureSection
+              studentId={child.id}
+              studentName={child.name}
+            />
           </div>
         </div>
       </div>

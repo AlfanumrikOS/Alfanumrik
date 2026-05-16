@@ -284,6 +284,15 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
         badge: 'info',
         sourceKind: e.kind,
       };
+    case 'parent.child_erasure_requested':
+    case 'parent.child_erasure_cancelled':
+    case 'parent.child_erasure_completed':
+      // Phase D.3 (DPDP §15). Right-to-erasure lifecycle. These events
+      // never surface on a learner/parent/teacher journey — the
+      // `data_erasure_requests` table and audit_logs are the only
+      // recipient-facing surfaces. Returning null keeps DPDP-flow noise
+      // out of every JourneyEvent timeline.
+      return null;
     case 'school.module_toggled':
       return null; // admin-only signal
     case 'billing.invoice_paid':

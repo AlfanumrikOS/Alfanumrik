@@ -135,6 +135,25 @@ const VALID_PAYLOADS: Record<DomainEventKind, Record<string, unknown>> = {
     learnerAuthUserId: FIXTURE_UUID_C,
     reportKind: 'weekly',
   },
+  'parent.child_erasure_requested': {
+    requestId:  FIXTURE_UUID_A,
+    guardianId: FIXTURE_UUID_B,
+    studentId:  FIXTURE_UUID_C,
+    purgeAt:    FIXTURE_ISO,
+    hasReason:  true,
+  },
+  'parent.child_erasure_cancelled': {
+    requestId:  FIXTURE_UUID_A,
+    guardianId: FIXTURE_UUID_B,
+    studentId:  FIXTURE_UUID_C,
+    elapsedSec: 3600,
+  },
+  'parent.child_erasure_completed': {
+    requestId:  FIXTURE_UUID_A,
+    guardianId: FIXTURE_UUID_B,
+    studentId:  FIXTURE_UUID_C,
+    rowsDeleted: { students: 1, quiz_attempts: 12 },
+  },
   'teacher.assignment_created': {
     assignmentId: FIXTURE_UUID_C,
     classId: FIXTURE_UUID_A,
