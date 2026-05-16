@@ -84,6 +84,7 @@ Verified by grep over `src/**` (2026-05-16) for `kind:` literals and `publishEve
 |---|---|---|
 | `parent.linked_to_learner` | 🟡 Schema-only | `/api/parent/approve-link` writes `guardian_student_links` directly; not yet publishing. Migration to publish target — closes the "implicit triggers blur ownership" gap (R8). |
 | `parent.report_viewed` | 🟡 Schema-only | Parent portal does not yet emit a view event. Low priority. |
+| `parent.teacher_message_sent` | ✅ Live | [`src/app/api/parent/messages/route.ts`](../../src/app/api/parent/messages/route.ts). Emitted when a guardian posts a message to a teacher on the parent↔teacher messaging surface. Payload omits the message body (subscribers fetch from `teacher_parent_messages`); carries `isNewThread`. Phase C.3. Surfaces on parent-facing journeys (`projectJourney` returns a 'parent' category card). |
 
 ### Teacher events
 
@@ -97,6 +98,7 @@ Verified by grep over `src/**` (2026-05-16) for `kind:` literals and `publishEve
 | `teacher.profile_updated` | ✅ Live | [`src/app/api/teacher/profile/route.ts`](../../src/app/api/teacher/profile/route.ts) PATCH. Phase B.5. |
 | `teacher.submission_reviewed` | ✅ Live | [`src/app/api/teacher/submissions/[id]/review/route.ts`](../../src/app/api/teacher/submissions/[id]/review/route.ts) POST. Emitted when a teacher records feedback and (optionally) overrides the auto-score on a student's assignment submission. Payload omits the feedback body — subscribers fetch the full `teacher_feedback` from the canonical `assignment_submissions` row. Phase C.1. TODO: canonical write to `assignment_submissions.{graded_at, graded_by, teacher_feedback, score}` still in-route; extract to a `submission-review-projector` subscriber. |
 | `teacher.grade_entry_set` | ✅ Live | [`supabase/functions/teacher-dashboard/index.ts`](../../supabase/functions/teacher-dashboard/index.ts) `set_grade_book_cell` action. Emitted when a teacher records a score on a (student, column_key) cell in the grade book matrix for the current term. Payload omits the notes body — subscribers fetch the full notes from the canonical `score_history` row when needed. Phase C.2. TODO: canonical write to `score_history` still in-handler; extract to a `grade-book-projector` subscriber. Today `score_history` is keyed `(student_id, subject, recorded_at)` — no `max_score`/`term`/`column_kind` columns; unit/attendance column kinds carry their metadata on the event but are not persisted yet (schema gap flagged in Phase C.2 PR). |
+| `teacher.parent_message_sent` | ✅ Live | [`src/app/api/teacher/messages/route.ts`](../../src/app/api/teacher/messages/route.ts). Emitted when a teacher posts a message to a parent on the teacher↔parent messaging surface. Payload omits the message body (subscribers fetch from `teacher_parent_messages`); carries `isNewThread` so notification subscribers can pick a richer template for first-touch vs follow-up. Phase C.3. |
 
 ### School / tenant events
 

@@ -21,6 +21,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import {
@@ -128,10 +129,32 @@ export default function AtlasParent({ guardian, student, allChildren, isHi }: At
   const childName = dash?.student?.name || child.name;
   const verdict = buildVerdict(childName, stats, dash?.weekSummary, isHi);
 
+  // ─── Messages unread badge (Phase C.3) ────────────────────────────────
+  // Atlas chrome polls the parent threads endpoint every 60s so the rail
+  // badge ticks without each surface re-implementing it. Guardian mode
+  // is implicit here (AtlasParent only renders when there's an
+  // authenticated guardian session).
+  const { data: messagesBadge } = useSWR<{ success: boolean; unreadTotal: number }>(
+    guardian?.id ? '/api/parent/messages/threads?limit=1' : null,
+    async (url: string) => {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+      } catch { /* anonymous */ }
+      const r = await fetch(url, { headers });
+      if (!r.ok) throw new Error(`parent-messages.badge_fetch_failed:${r.status}`);
+      return r.json();
+    },
+    { refreshInterval: 60_000, revalidateOnFocus: true, shouldRetryOnError: false },
+  );
+  const messagesUnread = messagesBadge?.unreadTotal ?? 0;
+
   // ─── Nav rail ─────────────────────────────────────────────────────────
   const nav: AtlasShellNavItem[] = [
     { href: '/parent',          group: t('Today', 'आज'),     label: t('Overview', 'मुख्य'),       labelHi: 'मुख्य',          icon: 'home' },
     { href: '/parent/calendar', label: t('Calendar', 'कैलेंडर'),                                  labelHi: 'कैलेंडर',       icon: 'calendar' },
+    { href: '/parent/messages', label: t('Messages', 'संदेश'),                                    labelHi: 'संदेश',          icon: 'message', badge: messagesUnread },
     ...(children.length > 1 ? [{ href: '/parent/children', group: t('Children', 'बच्चे'), label: t('All children', 'सभी बच्चे'), labelHi: 'सभी बच्चे', icon: 'users' as const }] : []),
     { href: '/parent/reports',  group: t('Archive', 'अभिलेख'), label: t('Reports', 'रिपोर्ट'), labelHi: 'रिपोर्ट',           icon: 'document' },
     { href: '/parent/billing',  group: t('Archive', 'अभिलेख'), label: t('Billing', 'बिलिंग'),  labelHi: 'बिलिंग',          icon: 'document' },

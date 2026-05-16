@@ -297,6 +297,38 @@ export const TeacherSubmissionReviewedSchema = EventBaseSchema.extend({
   }),
 });
 
+// Phase C.3 (ADR-005). Messaging events for the teacher↔parent surface.
+// One event per send — payload deliberately omits the body to keep
+// payloads bounded; subscribers fetch the body from teacher_parent_messages
+// if they need it. `hasThreadOpened` lets the notification subscriber tell
+// "first message in this thread" from "follow-up reply" without an extra
+// DB read.
+export const TeacherParentMessageSentSchema = EventBaseSchema.extend({
+  kind: z.literal('teacher.parent_message_sent'),
+  payload: z.object({
+    threadId:        uuidLike(),
+    messageId:       uuidLike(),
+    teacherId:       uuidLike(),
+    guardianId:      uuidLike(),
+    studentId:       uuidLike(),
+    bodyLength:      z.number().int().nonnegative().max(10000),
+    isNewThread:     z.boolean(),
+  }),
+});
+
+export const ParentTeacherMessageSentSchema = EventBaseSchema.extend({
+  kind: z.literal('parent.teacher_message_sent'),
+  payload: z.object({
+    threadId:        uuidLike(),
+    messageId:       uuidLike(),
+    teacherId:       uuidLike(),
+    guardianId:      uuidLike(),
+    studentId:       uuidLike(),
+    bodyLength:      z.number().int().nonnegative().max(10000),
+    isNewThread:     z.boolean(),
+  }),
+});
+
 // Phase C.2 (ADR-005). Teacher entering a single cell in the grade book —
 // recorded score on (student, column_key) for the current term. column_key
 // is the bare subject code today (subject-level grade book); kind is one of
@@ -379,6 +411,8 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   TeacherProfileUpdatedSchema,
   TeacherSubmissionReviewedSchema,
   TeacherGradeEntrySetSchema,
+  TeacherParentMessageSentSchema,
+  ParentTeacherMessageSentSchema,
   SchoolModuleToggledSchema,
   BillingInvoicePaidSchema,
   MeshCycleCompletedSchema,
@@ -414,6 +448,8 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'teacher.profile_updated',
   'teacher.submission_reviewed',
   'teacher.grade_entry_set',
+  'teacher.parent_message_sent',
+  'parent.teacher_message_sent',
   'school.module_toggled',
   'billing.invoice_paid',
   'mesh.cycle_completed',

@@ -12,6 +12,7 @@ const NAV_ITEMS: SidebarNavItem[] = [
   { href: '/parent', label: 'Dashboard', labelHi: 'डैशबोर्ड', icon: '▦' },
   { href: '/parent/children', label: 'Children', labelHi: 'बच्चे', icon: '⊕' },
   { href: '/parent/calendar', label: 'Calendar', labelHi: 'कैलेंडर', icon: '◐' },
+  { href: '/parent/messages', label: 'Messages', labelHi: 'संदेश', icon: '✉' },
   { href: '/parent/notifications', label: 'Notifications', labelHi: 'सूचनाएँ', icon: '◉' },
   { href: '/parent/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘' },
   { href: '/parent/billing', label: 'Billing', labelHi: 'बिलिंग', icon: '◈' },
@@ -29,9 +30,12 @@ interface UnreadResponse {
   unreadCount: number;
 }
 
-async function badgeFetcher(url: string): Promise<UnreadResponse> {
-  // Use the parent-notifications GET but force limit=1 to keep payloads
-  // tiny. The route still computes the unreadCount.
+interface MessagesUnreadResponse {
+  success: boolean;
+  unreadTotal: number;
+}
+
+async function authedFetch(url: string): Promise<Response> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   try {
     const { data: { session } } = await supabase.auth.getSession();
@@ -39,9 +43,21 @@ async function badgeFetcher(url: string): Promise<UnreadResponse> {
   } catch {
     /* anonymous — fall through, server returns 401 */
   }
-  const res = await fetch(url, { headers });
+  return fetch(url, { headers });
+}
+
+async function badgeFetcher(url: string): Promise<UnreadResponse> {
+  // Use the parent-notifications GET but force limit=1 to keep payloads
+  // tiny. The route still computes the unreadCount.
+  const res = await authedFetch(url);
   if (!res.ok) throw new Error(`parent-notifications.badge_fetch_failed:${res.status}`);
   return res.json() as Promise<UnreadResponse>;
+}
+
+async function messagesBadgeFetcher(url: string): Promise<MessagesUnreadResponse> {
+  const res = await authedFetch(url);
+  if (!res.ok) throw new Error(`parent-messages.badge_fetch_failed:${res.status}`);
+  return res.json() as Promise<MessagesUnreadResponse>;
 }
 
 function useParentUnreadBadge(enabled: boolean): number {
@@ -57,6 +73,19 @@ function useParentUnreadBadge(enabled: boolean): number {
   return data?.unreadCount ?? 0;
 }
 
+function useParentMessagesBadge(enabled: boolean): number {
+  const { data } = useSWR<MessagesUnreadResponse>(
+    enabled ? '/api/parent/messages/threads?limit=1' : null,
+    messagesBadgeFetcher,
+    {
+      refreshInterval: BADGE_POLL_MS,
+      revalidateOnFocus: true,
+      shouldRetryOnError: false,
+    },
+  );
+  return data?.unreadTotal ?? 0;
+}
+
 export default function ParentShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -68,6 +97,9 @@ export default function ParentShell({ children }: { children: React.ReactNode })
   // can't authenticate against /api/parent/notifications. Guard the
   // SWR fetch so we don't generate spurious 401s.
   const unreadCount = useParentUnreadBadge(mode === 'guardian');
+  // Messaging surface also requires guardian mode (Supabase JWT). Link-code
+  // parents see no Messages tab — see the visibility filter below.
+  const messagesUnread = useParentMessagesBadge(mode === 'guardian');
 
   // ─── Editorial Atlas pass-through ────────────────────────────────────
   // When Atlas is on, AtlasParent renders its own AtlasShell. Wrapping it
@@ -102,11 +134,15 @@ export default function ParentShell({ children }: { children: React.ReactNode })
       // Notifications is API-gated by Supabase auth too — link-code
       // parents can't authenticate against /api/parent/notifications.
       if (item.href === '/parent/notifications') return false;
+      // Messaging also needs Supabase auth — guardian mode only.
+      if (item.href === '/parent/messages') return false;
     }
     return true;
-  }).map(item =>
-    item.href === '/parent/notifications' ? { ...item, badge: unreadCount } : item,
-  );
+  }).map(item => {
+    if (item.href === '/parent/notifications') return { ...item, badge: unreadCount };
+    if (item.href === '/parent/messages') return { ...item, badge: messagesUnread };
+    return item;
+  });
 
   const handleLogout = async () => {
     if (mode === 'guardian') {

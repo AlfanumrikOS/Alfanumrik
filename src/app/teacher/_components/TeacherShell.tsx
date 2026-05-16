@@ -31,6 +31,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
 import { useTenant } from '@/lib/tenant-context';
 import { supabase } from '@/lib/supabase';
@@ -47,6 +48,29 @@ type TeacherNavItem = {
   moduleKey?: ModuleKey;
 };
 
+// Polling cadence for the Messages tab unread badge. Conservative (60s) —
+// the /teacher/messages page itself polls thread list at 30s, so the badge
+// doesn't need to be tighter.
+const MESSAGES_BADGE_POLL_MS = 60_000;
+
+interface TeacherThreadsResponse {
+  success: boolean;
+  unreadTotal: number;
+}
+
+async function messagesBadgeFetcher(url: string): Promise<TeacherThreadsResponse> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+  } catch {
+    /* anonymous — server returns 401, badge stays 0 */
+  }
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw new Error(`teacher-messages.badge_fetch_failed:${res.status}`);
+  return res.json() as Promise<TeacherThreadsResponse>;
+}
+
 const NAV_ITEMS: ReadonlyArray<TeacherNavItem> = [
   { href: '/teacher', label: 'Dashboard', labelHi: 'डैशबोर्ड', icon: '▦' },
   { href: '/teacher/classes', label: 'Classes', labelHi: 'कक्षाएं', icon: '⊞' },
@@ -54,6 +78,7 @@ const NAV_ITEMS: ReadonlyArray<TeacherNavItem> = [
   { href: '/teacher/assignments', label: 'Assignments', labelHi: 'असाइनमेंट', icon: '⊠', moduleKey: 'assignments' },
   { href: '/teacher/submissions', label: 'Submissions', labelHi: 'सबमिशन', icon: '⊞', moduleKey: 'assignments' },
   { href: '/teacher/grade-book', label: 'Grade Book', labelHi: 'ग्रेड बुक', icon: '⊟', moduleKey: 'assignments' },
+  { href: '/teacher/messages', label: 'Messages', labelHi: 'संदेश', icon: '✉' },
   { href: '/teacher/worksheets', label: 'Worksheets', labelHi: 'वर्कशीट', icon: '⊡', moduleKey: 'lms' },
   { href: '/teacher/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘', moduleKey: 'analytics' },
   { href: '/teacher/lab-leaderboard', label: 'Lab Leaderboard', labelHi: 'लैब लीडरबोर्ड', icon: '⊙' },
@@ -75,6 +100,18 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
   // useAtlasFlag initialises synchronously from cache → no first-render
   // flash from legacy chrome to pass-through.
   const atlasOn = useAtlasFlag('teacher');
+
+  // Messages tab unread badge — only fetch when authed as a teacher.
+  const { data: messagesBadge } = useSWR<TeacherThreadsResponse>(
+    authUserId && activeRole === 'teacher' ? '/api/teacher/messages/threads?limit=1' : null,
+    messagesBadgeFetcher,
+    {
+      refreshInterval: MESSAGES_BADGE_POLL_MS,
+      revalidateOnFocus: true,
+      shouldRetryOnError: false,
+    },
+  );
+  const messagesUnread = messagesBadge?.unreadTotal ?? 0;
 
   // Wrong-role redirect. We don't bounce unauthed users (`authUserId === null`)
   // because the page-level auth guard handles that with proper UX
@@ -137,7 +174,13 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
         brandSubtitle={isHi ? 'शिक्षक' : 'Teacher'}
         logoUrl={tenant.branding.logoUrl}
         primaryColor={tenant.branding.primaryColor || '#6366F1'}
-        items={NAV_ITEMS as unknown as SidebarNavItem[]}
+        items={
+          (NAV_ITEMS as ReadonlyArray<TeacherNavItem>).map((item) =>
+            item.href === '/teacher/messages'
+              ? ({ ...item, badge: messagesUnread } as unknown as SidebarNavItem)
+              : (item as unknown as SidebarNavItem),
+          )
+        }
         currentPath={pathname || ''}
         isHi={isHi}
         moduleEnablement={moduleEnablement}
