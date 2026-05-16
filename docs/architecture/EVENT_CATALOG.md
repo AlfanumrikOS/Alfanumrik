@@ -89,7 +89,12 @@ Verified by grep over `src/**` (2026-05-16) for `kind:` literals and `publishEve
 
 | Kind | Producer status | Producer / Notes |
 |---|---|---|
-| `teacher.assignment_created` | 🟡 Schema-only | Teacher dashboard currently lives in `supabase/functions/teacher-dashboard/` (Deno); assignment-create flow is pre-multi-role-launch. Will publish from the post-migration Next.js route per the multi-role launch plan. |
+| `teacher.assignment_created` | ✅ Live | [`src/app/api/teacher/assignments/route.ts`](../../src/app/api/teacher/assignments/route.ts). Producer wired in Phase B.5 (ADR-005 canonical-writer rollout); ships behind `ff_event_bus_v1` like every other publisher. |
+| `teacher.classroom_created` | ✅ Live | [`src/app/api/teacher/classes/route.ts`](../../src/app/api/teacher/classes/route.ts). Replaces the direct `teacher_create_class` RPC call from the page. Phase B.5. |
+| `teacher.classroom_updated` | ✅ Live | [`src/app/api/teacher/classes/[id]/route.ts`](../../src/app/api/teacher/classes/[id]/route.ts) PATCH. Phase B.5. |
+| `teacher.classroom_archived` | ✅ Live | [`src/app/api/teacher/classes/[id]/archive/route.ts`](../../src/app/api/teacher/classes/[id]/archive/route.ts). Phase B.5. |
+| `teacher.student_note_set` | ✅ Live | [`src/app/api/teacher/students/[id]/notes/route.ts`](../../src/app/api/teacher/students/[id]/notes/route.ts) PUT. Payload only carries `hasNote/hasGoal` booleans; subscribers must fetch the full body from `teacher_student_notes`. Phase B.5. |
+| `teacher.profile_updated` | ✅ Live | [`src/app/api/teacher/profile/route.ts`](../../src/app/api/teacher/profile/route.ts) PATCH. Phase B.5. |
 
 ### School / tenant events
 

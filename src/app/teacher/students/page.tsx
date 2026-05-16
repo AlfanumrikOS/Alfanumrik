@@ -101,20 +101,21 @@ function StudentCard({
   const saveNote = async () => {
     setSaving(true);
     try {
-      await supabase.from('teacher_student_notes').upsert(
-        {
-          teacher_id: teacherId,
-          student_id: student.id,
-          note,
-          custom_goal: goal,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'teacher_id,student_id' }
-      );
+      const res = await fetch(`/api/teacher/students/${student.id}/notes`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note, customGoal: goal }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `HTTP ${res.status}`);
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch {
-      // Table may not exist yet
+      // Backend errors surface via UI elsewhere; note state already
+      // reflects the latest edit, so we don't roll back the textarea.
     }
     setSaving(false);
   };

@@ -40,10 +40,16 @@ export default function TeacherProfilePage() {
     }
     setSaving(true);
     try {
-      await supabase.from('teachers').update({
-        name: trimmedName,
-        school_name: trimmedSchool,
-      }).eq('id', teacher.id);
+      const res = await fetch('/api/teacher/profile', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmedName, school_name: trimmedSchool }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `HTTP ${res.status}`);
+      }
       setToast(tt(isHi, 'Profile updated!', 'प्रोफ़ाइल अपडेट हो गई!'));
       setEditing(false);
       setTimeout(() => setToast(''), 3000);
