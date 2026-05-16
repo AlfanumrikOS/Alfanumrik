@@ -32,8 +32,41 @@
 │ • Leaderboard  │ │ • Perf.   │ │ • send-auth-email│
 └────────────────┘ └──────────┘ └──────────────────┘
           │              │              │
-          └──────────────┼──────────────┘
-                         ▼
+          │              │ publish      │ publish
+          │              ▼              ▼
+          │   ┌──────────────────────────────────────────┐
+          │   │       SPINE (ADR-005) — event substrate   │
+          │   │                                            │
+          │   │  ┌──────────────────────────────────────┐ │
+          │   │  │  public.state_events (outbox)         │ │
+          │   │  │  • 16 typed event kinds (v2)          │ │
+          │   │  │  • envelope: eventId, idempotencyKey  │ │
+          │   │  │  • flag-gated via ff_event_bus_v1     │ │
+          │   │  └──────────────────────────────────────┘ │
+          │   │              │ poll (cron, 1 min)         │
+          │   │              ▼                            │
+          │   │  ┌──────────────────────────────────────┐ │
+          │   │  │  projector-runner (Edge Function)     │ │
+          │   │  │  → fan-out via dispatcher             │ │
+          │   │  │  → per-subscriber cursors             │ │
+          │   │  │  → subscriber_dead_letters on failure │ │
+          │   │  └──────────────────────────────────────┘ │
+          │   │              │ canonical writes           │
+          │   │              ▼                            │
+          │   │  ┌──────────────────────────────────────┐ │
+          │   │  │  Projectors (canonical writers)       │ │
+          │   │  │  • concept-mastery-projector          │ │
+          │   │  │  • mastery-state-writer (legacy)      │ │
+          │   │  │  • (future: schedule, entitlements,   │ │
+          │   │  │    notifications, analytics)          │ │
+          │   │  └──────────────────────────────────────┘ │
+          │   │                                            │
+          │   │  Health: subscriber_lag view              │
+          │   │       + projector-health-check (2 min)    │
+          │   └──────────────────────────────────────────┘
+          │                  │
+          └──────────────────┼──────────────┐
+                             ▼              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    DATA LAYER                                    │
 │                                                                  │
@@ -68,6 +101,7 @@
 | **State** | SWR + React Context | Stale-while-revalidate for flaky networks |
 | **Auth** | Supabase Auth (PKCE) | Email/password + OAuth, RLS integration |
 | **Database** | PostgreSQL (Supabase) | RLS, pgvector, JSONB, BRIN indexes |
+| **Event bus** | `public.state_events` (Supabase Postgres outbox + projector subscribers; pg_cron-driven runner) | Canonical learner-state writes via projectors per ADR-005; no Kafka/SQS/Redis (Blueprint Hard Rule #11) |
 | **Edge Functions** | Deno (Supabase) | AI tutor, quiz gen, email hooks |
 | **AI** | Claude Haiku | Low-latency, cost-effective tutoring |
 | **Payments** | Razorpay | INR payments with order+verify+webhook |
@@ -236,6 +270,15 @@ ISR (Incremental Static Regeneration):
 │  ├── Edge function error handling           │
 │  └── Service health checks                  │
 │                                              │
+│  Spine Health (ADR-005):                     │
+│  ├── public.subscriber_lag view              │
+│  │   (events_behind, age_behind per sub)    │
+│  ├── projector-health-check Edge Function   │
+│  │   (pg_cron tick every 2 min)             │
+│  ├── projector_health_degraded PostHog      │
+│  │   event when SLO thresholds breached     │
+│  └── subscriber_dead_letters per subscriber │
+│                                              │
 │  Alerting:                                   │
 │  ├── Vercel deployment notifications        │
 │  ├── Supabase usage alerts                  │
@@ -243,6 +286,10 @@ ISR (Incremental Static Regeneration):
 │  └── Error rate threshold alerts            │
 └─────────────────────────────────────────────┘
 ```
+
+Alert thresholds (latency, availability, projector lag, fallback rates) are
+the source of truth in [`docs/architecture/SLO.md`](docs/architecture/SLO.md);
+every threshold listed there has a paired SLI and an owning module.
 
 ## 6. Cost Estimation (5,000 Students)
 
@@ -323,3 +370,35 @@ Developer Push → GitHub Actions CI
 - [x] Structured logging
 - [x] Load testing scripts
 - [x] Production deployment docs
+- [x] `public.state_events` bus live (ADR-005 substrate, PR #752)
+- [x] Projector substrate (per-subscriber cursors + `subscriber_dead_letters` + `projector-runner` pg_cron tick)
+- [x] `projector-health-check` Edge Function (2-min tick, emits `projector_health_degraded` PostHog event on lag breach)
+
+## 11. The Spine (ADR-005)
+
+Alfanumrik's canonical learner state is event-sourced, projector-owned, and
+resolver-served. The enforceable invariant —
+
+> **No API route is a canonical writer of learner state.**
+
+Routes may compute and return optimistic responses, but the canonical write
+to `concept_mastery`, `daily_schedule`, `scheduled_actions`, `entitlements`,
+and `notification_sends` happens in a projector subscribing to a durable
+`state_events` row. Operational/log tables (per-attempt logs, idempotency
+reservations like `concept_attempts`) remain route-owned by design — they
+record what happened, not what was learned.
+
+The substrate, all live on production:
+
+- `public.state_events` — append-only outbox with a `(event_id, idempotency_key)` unique constraint; 16 typed event kinds registered in `src/lib/state/events/registry.ts`. Producers flag-gated on `ff_event_bus_v1`.
+- **Projectors** — idempotent subscribers under `src/lib/state/subscribers/` (e.g. `concept-mastery-projector`, the legacy chapter-level `mastery-state-writer`); UPSERT on a stable natural key so replay is safe.
+- **`projector-runner` Edge Function** — pg_cron ticks every 1 minute; per-subscriber cursors advance atomically with the projection write; terminal failures land in `subscriber_dead_letters`.
+- **`projector-health-check` Edge Function** — pg_cron ticks every 2 minutes; queries `public.subscriber_lag` and emits `projector_health_degraded` PostHog events on SLO breach.
+
+Operator references:
+
+- [`ADR-005-concept-first-adaptive-learning-spine.md`](docs/architecture/ADR-005-concept-first-adaptive-learning-spine.md) — the contract
+- [`projector-failure.md`](docs/runbooks/projector-failure.md) — lag spike / subscriber wedged
+- [`dead-letter-inspection.md`](docs/runbooks/dead-letter-inspection.md) — triage a poisoned event
+- [`replay-by-student.md`](docs/runbooks/replay-by-student.md) — per-student rebuild
+- [`vault-secret-rotation.md`](docs/runbooks/vault-secret-rotation.md) — service-role key rotation that the runner depends on
