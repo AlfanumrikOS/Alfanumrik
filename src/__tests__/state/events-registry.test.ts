@@ -179,6 +179,16 @@ const VALID_PAYLOADS: Record<DomainEventKind, Record<string, unknown>> = {
     scorePercent: 78,
     scoreOverridden: false,
   },
+  'teacher.grade_entry_set': {
+    teacherId: FIXTURE_UUID_A,
+    classId: FIXTURE_UUID_B,
+    studentId: FIXTURE_UUID_C,
+    columnKey: 'math',
+    columnKind: 'subject',
+    score: 85,
+    maxScore: 100,
+    hasNotes: false,
+  },
   'school.module_toggled': {
     moduleKey: 'ai_tutor',
     isEnabled: true,

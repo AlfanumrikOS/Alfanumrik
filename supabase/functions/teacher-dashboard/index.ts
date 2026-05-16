@@ -17,6 +17,9 @@
  *   - get_assignment_submissions: Phase C.1 / submission list per assignment
  *   - get_submission_detail:      Phase C.1 / per-question breakdown
  *   - mark_submission_reviewed:   Phase C.1 / record feedback + score override
+ *   - get_grade_book:             Phase C.2 / matrix of students × columns
+ *   - set_grade_book_cell:        Phase C.2 / set one (student, column) cell
+ *   - export_grade_book_csv:      Phase C.2 / export grade book matrix as CSV
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -1455,6 +1458,528 @@ async function handleMarkSubmissionReviewed(
   }, 200, {}, origin)
 }
 
+// ─── Phase C.2 — Grade book actions ─────────────────────────
+//
+// The teacher dashboard previously had no roll-up view of student grades —
+// only per-assignment submission review (Phase C.1). The grade book is the
+// matrix of students × columns (subjects / units / attendance) a teacher
+// exports for term reports.
+//
+// Schema note (flagged in PR description): `score_history` is uniquely keyed
+// `(student_id, subject, recorded_at)`. It has no `max_score`, `term`, or
+// `column_kind` column. For this PR we project the canonical row onto the
+// grade-book column model: `subject` IS the column_key for kind 'subject',
+// and 'unit' / 'attendance' columns are computed but not yet persisted in a
+// dedicated table. A follow-up migration in Phase C.3+ adds the columns.
+
+interface GradeBookCell {
+  score: number | null
+  max_score: number
+  status: 'graded' | 'pending' | 'absent'
+}
+
+/** Term bucket for grade-book filtering — coarse 6-month rolling windows. */
+function termBoundsFor(term: 'current' | 'previous'): { start: string; end: string } {
+  const now = new Date()
+  const y = now.getUTCFullYear()
+  const m = now.getUTCMonth() // 0-based
+  // Term 1 (current first half of year): Jan-Jun. Term 2: Jul-Dec.
+  // For "current" we use the half of the year `now` lives in; "previous"
+  // is the half before that. This intentionally ignores academic-calendar
+  // edge cases — the grade book is a snapshot, not a transcript.
+  let startDate: Date
+  let endDate: Date
+  if (term === 'current') {
+    if (m < 6) {
+      startDate = new Date(Date.UTC(y, 0, 1))
+      endDate = new Date(Date.UTC(y, 6, 1)) // exclusive
+    } else {
+      startDate = new Date(Date.UTC(y, 6, 1))
+      endDate = new Date(Date.UTC(y + 1, 0, 1))
+    }
+  } else {
+    if (m < 6) {
+      startDate = new Date(Date.UTC(y - 1, 6, 1))
+      endDate = new Date(Date.UTC(y, 0, 1))
+    } else {
+      startDate = new Date(Date.UTC(y, 0, 1))
+      endDate = new Date(Date.UTC(y, 6, 1))
+    }
+  }
+  return { start: startDate.toISOString().slice(0, 10), end: endDate.toISOString().slice(0, 10) }
+}
+
+/** Default columns for a class — driven by subjects on student rows. */
+function buildGradeBookColumns(
+  subjects: string[],
+): Array<{ key: string; label: string; kind: 'subject' | 'unit' | 'attendance' }> {
+  const cols: Array<{ key: string; label: string; kind: 'subject' | 'unit' | 'attendance' }> = []
+  for (const subject of subjects) {
+    if (!subject) continue
+    cols.push({ key: subject, label: subject.charAt(0).toUpperCase() + subject.slice(1), kind: 'subject' })
+  }
+  cols.push({ key: 'attendance', label: 'Attendance', kind: 'attendance' })
+  return cols
+}
+
+/** Resolve students for a class — same dual-path pattern as the submissions handler. */
+async function resolveStudentsForClass(
+  supabase: ReturnType<typeof getServiceClient>,
+  classId: string,
+): Promise<Array<{ id: string; name: string; grade: string }>> {
+  const seen = new Set<string>()
+  const out: Array<{ id: string; name: string; grade: string }> = []
+
+  // For synthetic grade-<n> pseudo-classes, fall back to the grade lookup.
+  if (classId.startsWith('grade-')) {
+    const grade = classId.replace('grade-', '')
+    try {
+      const { data } = await supabase
+        .from('students')
+        .select('id, name, grade')
+        .eq('grade', grade)
+        .is('deleted_at', null)
+        .limit(1000)
+      for (const s of data || []) {
+        if (s?.id && !seen.has(s.id)) {
+          seen.add(s.id)
+          out.push({ id: s.id, name: s.name || 'Student', grade: String(s.grade || '') })
+        }
+      }
+    } catch { /* table absent */ }
+    return out
+  }
+
+  // Path A: class_students.
+  try {
+    const { data: cs } = await supabase
+      .from('class_students')
+      .select('student_id, students(id, name, grade, deleted_at)')
+      .eq('class_id', classId)
+    for (const row of cs || []) {
+      const s = (row as any).students
+      if (s && s.id && !s.deleted_at && !seen.has(s.id)) {
+        seen.add(s.id)
+        out.push({ id: s.id, name: s.name || 'Student', grade: String(s.grade || '') })
+      }
+    }
+  } catch { /* table absent */ }
+
+  // Path B: students.class_id.
+  if (out.length === 0) {
+    try {
+      const { data } = await supabase
+        .from('students')
+        .select('id, name, grade')
+        .eq('class_id', classId)
+        .is('deleted_at', null)
+        .limit(1000)
+      for (const s of data || []) {
+        if (s?.id && !seen.has(s.id)) {
+          seen.add(s.id)
+          out.push({ id: s.id, name: s.name || 'Student', grade: String(s.grade || '') })
+        }
+      }
+    } catch { /* table absent */ }
+  }
+
+  return out
+}
+
+// ─── get_grade_book ─────────────────────────────────────────
+async function handleGetGradeBook(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const teacherId = String(body.teacher_id || '')
+  const classId = String(body.class_id || '')
+  const termRaw = String(body.term || 'current')
+  const term = termRaw === 'previous' ? 'previous' : 'current'
+  if (!classId) return errorResponse('class_id required', 400, origin)
+
+  const supabase = getServiceClient()
+  if (!(await assertTeacherOwnsClass(supabase, teacherId, classId))) {
+    return errorResponse('Class not owned by caller', 403, origin)
+  }
+
+  // Class metadata — only available for real class rows; synthetic
+  // grade-<n> ids carry their grade in the id itself.
+  let className = ''
+  if (classId.startsWith('grade-')) {
+    className = `Grade ${classId.replace('grade-', '')}`
+  } else {
+    try {
+      const { data: cls } = await supabase
+        .from('classes')
+        .select('id, name, grade, section')
+        .eq('id', classId)
+        .maybeSingle()
+      className = cls?.name || (cls ? `${cls.grade || ''}-${cls.section || ''}` : 'Class')
+    } catch { /* table absent — graceful empty */ }
+  }
+
+  const students = await resolveStudentsForClass(supabase, classId)
+  if (students.length === 0) {
+    return jsonResponse({
+      class: { id: classId, name: className || 'Class' },
+      term,
+      students: [],
+      columns: buildGradeBookColumns([]),
+      cells: {},
+    }, 200, {}, origin)
+  }
+
+  // Resolve subjects the class covers — start from the teacher's
+  // `subjects_taught` and union with any subjects observed in score_history
+  // for these students.
+  const subjects = new Set<string>()
+  try {
+    const { data: t } = await supabase
+      .from('teachers')
+      .select('subjects_taught')
+      .eq('id', teacherId)
+      .maybeSingle()
+    const subs = Array.isArray((t as any)?.subjects_taught)
+      ? (t as any).subjects_taught
+      : (t as any)?.subjects_taught
+        ? [(t as any).subjects_taught]
+        : []
+    for (const s of subs) if (s) subjects.add(String(s).toLowerCase())
+  } catch { /* table absent */ }
+
+  const bounds = termBoundsFor(term)
+  const studentIds = students.map(s => s.id)
+
+  // Score history for the term — degrade gracefully if table absent.
+  type ScoreRow = { student_id: string; subject: string; score: number | null; recorded_at: string }
+  let scoreRows: ScoreRow[] = []
+  try {
+    const { data } = await supabase
+      .from('score_history')
+      .select('student_id, subject, score, recorded_at')
+      .in('student_id', studentIds)
+      .gte('recorded_at', bounds.start)
+      .lt('recorded_at', bounds.end)
+      .limit(5000)
+    scoreRows = (data || []) as ScoreRow[]
+    for (const r of scoreRows) if (r.subject) subjects.add(String(r.subject).toLowerCase())
+  } catch { /* table absent — empty cells below */ }
+
+  const columns = buildGradeBookColumns([...subjects].sort())
+
+  // Build cells map. For each (student, column), keep the most-recent score
+  // in the term — `score_history.unique(student_id, subject, recorded_at)`
+  // can have multiple rows in the window so we collapse to latest.
+  const cells: Record<string, Record<string, GradeBookCell>> = {}
+  for (const stu of students) cells[stu.id] = {}
+
+  // Subject columns from score_history.
+  const latestByCell = new Map<string, ScoreRow>()
+  for (const r of scoreRows) {
+    if (!r.subject) continue
+    const k = `${r.student_id}::${r.subject.toLowerCase()}`
+    const existing = latestByCell.get(k)
+    if (!existing || r.recorded_at > existing.recorded_at) latestByCell.set(k, r)
+  }
+  for (const [k, r] of latestByCell) {
+    const [sid, subj] = k.split('::')
+    if (!cells[sid]) continue
+    cells[sid][subj] = {
+      score: r.score != null ? Number(r.score) : null,
+      max_score: 100,
+      status: r.score != null ? 'graded' : 'pending',
+    }
+  }
+
+  // Attendance column (best-effort). The baseline schema lacks a clean
+  // attendance table the teacher portal can join to, so we surface a
+  // pending placeholder rather than fabricating a number.
+  for (const stu of students) {
+    if (!cells[stu.id]['attendance']) {
+      cells[stu.id]['attendance'] = { score: null, max_score: 100, status: 'pending' }
+    }
+    // Fill missing subject columns as pending so the matrix is rectangular.
+    for (const col of columns) {
+      if (col.kind === 'subject' && !cells[stu.id][col.key]) {
+        cells[stu.id][col.key] = { score: null, max_score: 100, status: 'pending' }
+      }
+    }
+  }
+
+  return jsonResponse({
+    class: { id: classId, name: className || 'Class' },
+    term,
+    students: students.map(s => ({ id: s.id, name: s.name })),
+    columns,
+    cells,
+  }, 200, {}, origin)
+}
+
+// ─── set_grade_book_cell ────────────────────────────────────
+// ADR-005: canonical writer. Event MUST emit before the canonical write so
+// subscribers see the signal even if the DB write fails. Idempotency key
+// `grade_entry_set:<student>:<column>:<ts>` — re-saving emits a fresh event.
+async function handleSetGradeBookCell(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const teacherId = String(body.teacher_id || '')
+  const classId = String(body.class_id || '')
+  const studentId = String(body.student_id || '')
+  const columnKeyRaw = String(body.column_key || '').toLowerCase().trim()
+  const scoreRaw = body.score
+  const maxScoreRaw = body.max_score
+  const notesRaw = body.notes
+
+  if (!classId) return errorResponse('class_id required', 400, origin)
+  if (!studentId) return errorResponse('student_id required', 400, origin)
+  if (!columnKeyRaw) return errorResponse('column_key required', 400, origin)
+
+  // Score validation — accept finite numbers; bound 0 ≤ score ≤ max_score;
+  // max_score must be a positive number.
+  if (typeof scoreRaw !== 'number' || !Number.isFinite(scoreRaw)) {
+    return errorResponse('score must be a finite number', 400, origin)
+  }
+  if (typeof maxScoreRaw !== 'number' || !Number.isFinite(maxScoreRaw) || maxScoreRaw <= 0) {
+    return errorResponse('max_score must be a positive number', 400, origin)
+  }
+  if (scoreRaw < 0 || scoreRaw > maxScoreRaw) {
+    return errorResponse('score must satisfy 0 ≤ score ≤ max_score', 400, origin)
+  }
+  const score = Math.round(scoreRaw * 100) / 100
+  const maxScore = Math.round(maxScoreRaw * 100) / 100
+  const notes = typeof notesRaw === 'string' && notesRaw.trim().length > 0
+    ? notesRaw.trim().slice(0, 500)
+    : null
+
+  const supabase = getServiceClient()
+
+  // P13: ownership — class AND student-in-class.
+  if (!(await assertTeacherOwnsClass(supabase, teacherId, classId))) {
+    return errorResponse('Class not owned by caller', 403, origin)
+  }
+
+  // Student must belong to the class. For synthetic grade-<n> classes
+  // we check the student's grade matches; otherwise we hit class_students.
+  let studentInClass = false
+  if (classId.startsWith('grade-')) {
+    const grade = classId.replace('grade-', '')
+    try {
+      const { data: s } = await supabase
+        .from('students')
+        .select('grade')
+        .eq('id', studentId)
+        .maybeSingle()
+      studentInClass = !!s && String((s as { grade?: string }).grade) === grade
+    } catch { studentInClass = false }
+  } else {
+    try {
+      const { data: link } = await supabase
+        .from('class_students')
+        .select('student_id')
+        .eq('class_id', classId)
+        .eq('student_id', studentId)
+        .limit(1)
+        .maybeSingle()
+      if (link) studentInClass = true
+    } catch { /* fall through */ }
+    if (!studentInClass) {
+      // Fall back to students.class_id direct check.
+      try {
+        const { data: s } = await supabase
+          .from('students')
+          .select('class_id')
+          .eq('id', studentId)
+          .maybeSingle()
+        if (s && (s as { class_id?: string }).class_id === classId) studentInClass = true
+      } catch { /* fall through */ }
+    }
+  }
+  if (!studentInClass) {
+    return errorResponse('Student not in this class', 403, origin)
+  }
+
+  // Resolve column kind. Today: 'attendance' is a literal, anything else is
+  // treated as a subject column. The 'unit' kind is reserved for when the
+  // class registers per-unit columns (Phase C.3+ schema migration).
+  const columnKind: 'subject' | 'unit' | 'attendance' =
+    columnKeyRaw === 'attendance' ? 'attendance' : 'subject'
+
+  // Resolve teacher for actor + tenant fields on the event envelope.
+  const { data: teacher } = await supabase
+    .from('teachers')
+    .select('id, auth_user_id, school_id')
+    .eq('id', teacherId)
+    .maybeSingle()
+  if (!teacher) return errorResponse('Teacher account not found', 403, origin)
+
+  const now = new Date().toISOString()
+  const recordedAtDate = now.slice(0, 10)
+  const idempotencyKey = `grade_entry_set:${studentId}:${columnKeyRaw}:${now}`
+  const eventId = crypto.randomUUID()
+
+  // STEP 1 (mandatory): publish to bus BEFORE canonical write.
+  let busFlagOn = false
+  try {
+    const { data: flag } = await supabase
+      .from('feature_flags')
+      .select('is_enabled')
+      .eq('flag_name', 'ff_event_bus_v1')
+      .maybeSingle()
+    busFlagOn = flag?.is_enabled === true
+  } catch { /* flag absent — bus off, same default as publishEvent() */ }
+
+  if (busFlagOn) {
+    try {
+      await supabase.from('state_events').insert({
+        event_id: eventId,
+        kind: 'teacher.grade_entry_set',
+        actor_auth_user_id: (teacher as { auth_user_id?: string }).auth_user_id ?? null,
+        tenant_id: (teacher as { school_id?: string | null }).school_id ?? null,
+        idempotency_key: idempotencyKey,
+        occurred_at: now,
+        payload: {
+          teacherId,
+          classId,
+          studentId,
+          columnKey: columnKeyRaw,
+          columnKind,
+          score,
+          maxScore,
+          hasNotes: notes !== null,
+        },
+      })
+    } catch (e) {
+      // Don't fail the user-visible request on bus outage. The canonical
+      // write still happens so the teacher's grade is preserved.
+      console.warn('teacher.grade_entry_set publish failed:', e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  // STEP 2: canonical write. TODO: extract to grade-book-projector subscriber.
+  // For subject columns, write to `score_history`. For attendance and unit
+  // columns the schema is not yet present — we surface the event but don't
+  // persist (flagged in PR description, follow-up migration).
+  let canonicalWritten = false
+  if (columnKind === 'subject') {
+    try {
+      // Normalise score to 0-100 because score_history.score has a 0-100 check.
+      const normalisedScore = Math.round((score / maxScore) * 100 * 100) / 100
+      const row = {
+        student_id: studentId,
+        subject: columnKeyRaw,
+        score: normalisedScore,
+        recorded_at: recordedAtDate,
+      }
+      // Use upsert on the unique (student_id, subject, recorded_at) key so
+      // re-grading the same cell on the same day overwrites rather than
+      // failing with a constraint violation.
+      const { error: upsertErr } = await supabase
+        .from('score_history')
+        .upsert(row, { onConflict: 'student_id,subject,recorded_at' })
+      if (upsertErr) {
+        return errorResponse(`Failed to record grade: ${upsertErr.message}`, 500, origin)
+      }
+      canonicalWritten = true
+    } catch (e) {
+      return errorResponse(
+        `Failed to record grade: ${e instanceof Error ? e.message : String(e)}`,
+        500,
+        origin,
+      )
+    }
+  }
+
+  return jsonResponse({
+    success: true,
+    student_id: studentId,
+    column_key: columnKeyRaw,
+    column_kind: columnKind,
+    score,
+    max_score: maxScore,
+    recorded_at: now,
+    event_published: busFlagOn,
+    canonical_written: canonicalWritten,
+  }, 200, {}, origin)
+}
+
+// ─── export_grade_book_csv ──────────────────────────────────
+// Read-only — composes the same matrix as get_grade_book and serialises
+// to CSV in-memory. We return the CSV as a string body; the caller turns
+// it into a <a download> blob. Streaming a file response from Edge would
+// hit Supabase's response-size limits on large classes.
+function csvEscape(value: string | number | null): string {
+  if (value == null) return ''
+  const s = String(value)
+  if (s.includes('"') || s.includes(',') || s.includes('\n')) {
+    return '"' + s.replaceAll('"', '""') + '"'
+  }
+  return s
+}
+
+async function handleExportGradeBookCsv(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const teacherId = String(body.teacher_id || '')
+  const classId = String(body.class_id || '')
+  const termRaw = String(body.term || 'current')
+  const term: 'current' | 'previous' = termRaw === 'previous' ? 'previous' : 'current'
+  if (!classId) return errorResponse('class_id required', 400, origin)
+
+  const supabase = getServiceClient()
+  if (!(await assertTeacherOwnsClass(supabase, teacherId, classId))) {
+    return errorResponse('Class not owned by caller', 403, origin)
+  }
+
+  // Re-use the get_grade_book pipeline to build the matrix, then serialise.
+  // Calling the handler directly keeps the column-resolution logic in one
+  // place; we strip the Response wrapper and re-encode as CSV.
+  const inner = await handleGetGradeBook({ ...body, term }, origin)
+  if (!inner.ok) return inner
+  const data = (await inner.json()) as {
+    class: { id: string; name: string }
+    term: string
+    students: Array<{ id: string; name: string }>
+    columns: Array<{ key: string; label: string; kind: string }>
+    cells: Record<string, Record<string, GradeBookCell>>
+  }
+
+  const headers = ['Student', ...data.columns.map(c => `${c.label} (/${data.columns[0]?.kind === 'attendance' ? '%' : 'max'})`)]
+  // Use a simpler header — `Label (Kind)` — that survives Excel import.
+  const headerLine = ['Student', ...data.columns.map(c => `${c.label} (${c.kind})`)]
+    .map(csvEscape).join(',')
+
+  const lines: string[] = [headerLine]
+  for (const stu of data.students) {
+    const row = [stu.name]
+    for (const col of data.columns) {
+      const cell = data.cells[stu.id]?.[col.key]
+      if (!cell || cell.score == null) {
+        row.push('')
+      } else {
+        row.push(`${cell.score}/${cell.max_score}`)
+      }
+    }
+    lines.push(row.map(csvEscape).join(','))
+  }
+
+  // Filename: gradebook_<class>_<term>_<yyyy-mm-dd>.csv. Sanitise the class
+  // name to avoid header-injection through the Content-Disposition path
+  // (we don't set the header here — the caller does — but we still scrub
+  // in case the filename is used as-is).
+  const datePart = new Date().toISOString().slice(0, 10)
+  const safeClass = (data.class.name || 'class').replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 40)
+  const filename = `gradebook_${safeClass}_${term}_${datePart}.csv`
+
+  return jsonResponse({
+    filename,
+    csv_content: lines.join('\n'),
+    row_count: data.students.length,
+    column_count: data.columns.length,
+  }, 200, {}, origin)
+}
+
 // ─── JWT Binding (P13 enforcement) ──────────────────────────
 // Resolve the authenticated caller's teacher_id from the Authorization
 // header. Body.teacher_id is IGNORED for trust purposes — handlers see
@@ -1546,6 +2071,12 @@ Deno.serve(async (req: Request) => {
         return await handleGetSubmissionDetail(body, origin)
       case 'mark_submission_reviewed':
         return await handleMarkSubmissionReviewed(body, origin)
+      case 'get_grade_book':
+        return await handleGetGradeBook(body, origin)
+      case 'set_grade_book_cell':
+        return await handleSetGradeBookCell(body, origin)
+      case 'export_grade_book_csv':
+        return await handleExportGradeBookCsv(body, origin)
       default:
         return errorResponse(`Unknown action: ${action}`, 400, origin)
     }

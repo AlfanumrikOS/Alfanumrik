@@ -297,6 +297,31 @@ export const TeacherSubmissionReviewedSchema = EventBaseSchema.extend({
   }),
 });
 
+// Phase C.2 (ADR-005). Teacher entering a single cell in the grade book —
+// recorded score on (student, column_key) for the current term. column_key
+// is the bare subject code today (subject-level grade book); kind is one of
+// 'subject' | 'unit' | 'attendance' so subscribers can branch on the
+// canonical-row shape without re-reading the column registry. Score is
+// retained on the payload (un-normalised to 0-1) so downstream consumers
+// can pre-compute report-card aggregates without joining back to
+// `score_history`. Notes are NOT on the payload — keep bounded; subscribers
+// fetch the body from the canonical row if needed.
+export const TeacherGradeEntrySetSchema = EventBaseSchema.extend({
+  kind: z.literal('teacher.grade_entry_set'),
+  payload: z.object({
+    teacherId: uuidLike(),
+    classId:   uuidLike(),
+    studentId: uuidLike(),
+    // Free-form column id ("math", "unit-3", "attendance"). Bounded.
+    columnKey: z.string().min(1).max(64),
+    columnKind: z.enum(['subject', 'unit', 'attendance']),
+    // Score the teacher recorded — must satisfy 0 ≤ score ≤ maxScore.
+    score:    z.number().min(0).max(1000),
+    maxScore: z.number().positive().max(1000),
+    hasNotes: z.boolean(),
+  }),
+});
+
 // ── School / tenant events ───────────────────────────────────────────
 
 export const SchoolModuleToggledSchema = EventBaseSchema.extend({
@@ -353,6 +378,7 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   TeacherStudentNoteSetSchema,
   TeacherProfileUpdatedSchema,
   TeacherSubmissionReviewedSchema,
+  TeacherGradeEntrySetSchema,
   SchoolModuleToggledSchema,
   BillingInvoicePaidSchema,
   MeshCycleCompletedSchema,
@@ -387,6 +413,7 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'teacher.student_note_set',
   'teacher.profile_updated',
   'teacher.submission_reviewed',
+  'teacher.grade_entry_set',
   'school.module_toggled',
   'billing.invoice_paid',
   'mesh.cycle_completed',
