@@ -1,0 +1,253 @@
+name: Branch stale sweep
+
+# Phase E.1 — weekly audit of remote branches.
+#
+# Classifies non-protected branches into two buckets:
+#   - deletable             : >30 days since last commit AND merged into main
+#   - stale-unmerged-review : >60 days since last commit AND NOT merged
+#
+# Default mode is REPORT-ONLY (writes both lists to the workflow summary).
+# To actually delete the `deletable` bucket, run via the workflow_dispatch
+# UI with input `execute=true`. The `stale-unmerged-review` bucket is
+# never auto-deleted — that always requires a human eyeball.
+
+on:
+  schedule:
+    # Mondays 06:00 UTC. Quiet hour, before EU working day.
+    - cron: '0 6 * * MON'
+  workflow_dispatch:
+    inputs:
+      execute:
+        description: 'Actually delete the deletable bucket (true) or report only (false)?'
+        type: choice
+        required: true
+        default: 'false'
+        options:
+          - 'false'
+          - 'true'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: branch-stale-sweep
+  cancel-in-progress: false
+
+env:
+  # Inlined protected list — keep in sync with branch-cleanup-on-merge.yml.
+  PROTECTED_BRANCHES: 'main'
+  STALE_MERGED_DAYS: '30'
+  STALE_UNMERGED_DAYS: '60'
+
+jobs:
+  sweep:
+    name: Audit + (optional) delete
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for branch metadata)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve execute flag
+        id: mode
+        run: |
+          # workflow_dispatch supplies the input; the scheduled run has
+          # no inputs and must always be report-only.
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.execute }}" == "true" ]]; then
+            echo "execute=true" >> "$GITHUB_OUTPUT"
+            echo "Execute mode: DELETIONS WILL OCCUR for the deletable bucket."
+          else
+            echo "execute=false" >> "$GITHUB_OUTPUT"
+            echo "Execute mode: REPORT ONLY. No branches will be deleted."
+          fi
+
+      - name: Classify branches
+        id: classify
+        env:
+          STALE_MERGED_DAYS: ${{ env.STALE_MERGED_DAYS }}
+          STALE_UNMERGED_DAYS: ${{ env.STALE_UNMERGED_DAYS }}
+          PROTECTED_BRANCHES: ${{ env.PROTECTED_BRANCHES }}
+        run: |
+          set -euo pipefail
+
+          # Make sure we have main locally for the merged-check.
+          git fetch origin main --quiet
+
+          now_epoch=$(date -u +%s)
+          merged_threshold=$(( STALE_MERGED_DAYS * 86400 ))
+          unmerged_threshold=$(( STALE_UNMERGED_DAYS * 86400 ))
+
+          # Build a set of branches already merged into origin/main.
+          # `git branch --merged origin/main -r` returns lines like
+          # "  origin/foo" — strip the "origin/" prefix.
+          merged_set_file=$(mktemp)
+          git branch --merged origin/main -r \
+            | sed -E 's@^[* ]+origin/@@' \
+            | sort -u > "$merged_set_file"
+
+          # Protected list — space-separated env var into a set.
+          protected_set_file=$(mktemp)
+          for b in $PROTECTED_BRANCHES; do echo "$b"; done | sort -u > "$protected_set_file"
+
+          deletable_file=$(mktemp)
+          unmerged_file=$(mktemp)
+
+          # Enumerate every remote branch with its committerdate.
+          # Format: "<short-name> <iso8601-date>".
+          while IFS= read -r line; do
+            # Strip leading "origin/" from refname.
+            short=${line%% *}
+            short=${short#origin/}
+            date_str=${line#* }
+
+            # Skip HEAD and protected.
+            if [[ "$short" == "HEAD" ]]; then continue; fi
+            if grep -qxF "$short" "$protected_set_file"; then continue; fi
+
+            commit_epoch=$(date -u -d "$date_str" +%s 2>/dev/null || echo 0)
+            if [[ "$commit_epoch" == "0" ]]; then
+              echo "::warning::Could not parse date for $short ('$date_str'); skipping."
+              continue
+            fi
+
+            age=$(( now_epoch - commit_epoch ))
+
+            if grep -qxF "$short" "$merged_set_file"; then
+              # Merged into main — eligible for deletion if old enough.
+              if (( age > merged_threshold )); then
+                age_days=$(( age / 86400 ))
+                echo "$short ${age_days}d" >> "$deletable_file"
+              fi
+            else
+              # Not merged — needs human review if very old.
+              if (( age > unmerged_threshold )); then
+                age_days=$(( age / 86400 ))
+                echo "$short ${age_days}d" >> "$unmerged_file"
+              fi
+            fi
+          done < <(git for-each-ref \
+                     --format='%(refname:short) %(committerdate:iso8601)' \
+                     refs/remotes/origin)
+
+          # Sort by name for stable diffs.
+          sort -o "$deletable_file" "$deletable_file"
+          sort -o "$unmerged_file" "$unmerged_file"
+
+          # Pass file paths to subsequent steps.
+          echo "deletable_file=$deletable_file" >> "$GITHUB_OUTPUT"
+          echo "unmerged_file=$unmerged_file" >> "$GITHUB_OUTPUT"
+          echo "deletable_count=$(wc -l < "$deletable_file" | tr -d ' ')" >> "$GITHUB_OUTPUT"
+          echo "unmerged_count=$(wc -l < "$unmerged_file" | tr -d ' ')" >> "$GITHUB_OUTPUT"
+
+      - name: Write summary report
+        env:
+          EXECUTE: ${{ steps.mode.outputs.execute }}
+          DELETABLE_FILE: ${{ steps.classify.outputs.deletable_file }}
+          UNMERGED_FILE: ${{ steps.classify.outputs.unmerged_file }}
+          DELETABLE_COUNT: ${{ steps.classify.outputs.deletable_count }}
+          UNMERGED_COUNT: ${{ steps.classify.outputs.unmerged_count }}
+          STALE_MERGED_DAYS: ${{ env.STALE_MERGED_DAYS }}
+          STALE_UNMERGED_DAYS: ${{ env.STALE_UNMERGED_DAYS }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "# Branch stale sweep"
+            echo
+            if [[ "$EXECUTE" == "true" ]]; then
+              echo "**Mode:** EXECUTE — items in the deletable bucket will be deleted in the next step."
+            else
+              echo "**Mode:** report-only (dry run). Re-run via workflow_dispatch with \`execute=true\` to actually delete."
+            fi
+            echo
+            echo "## Deletable (merged into \`main\` & >${STALE_MERGED_DAYS} days old) — ${DELETABLE_COUNT}"
+            echo
+            if [[ -s "$DELETABLE_FILE" ]]; then
+              echo '| Branch | Age |'
+              echo '| --- | --- |'
+              awk '{printf "| `%s` | %s |\n", $1, $2}' "$DELETABLE_FILE"
+            else
+              echo '_None._'
+            fi
+            echo
+            echo "## Stale-unmerged-review (NOT merged & >${STALE_UNMERGED_DAYS} days old) — ${UNMERGED_COUNT}"
+            echo
+            echo "_Never auto-deleted. A human must check whether the work is salvageable._"
+            echo
+            if [[ -s "$UNMERGED_FILE" ]]; then
+              echo '| Branch | Age |'
+              echo '| --- | --- |'
+              awk '{printf "| `%s` | %s |\n", $1, $2}' "$UNMERGED_FILE"
+            else
+              echo '_None._'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Delete deletable branches (only when execute=true)
+        if: steps.mode.outputs.execute == 'true'
+        uses: actions/github-script@v7
+        env:
+          DELETABLE_FILE: ${{ steps.classify.outputs.deletable_file }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = process.env.DELETABLE_FILE;
+            if (!path || !fs.existsSync(path)) {
+              core.info('No deletable file present; nothing to do.');
+              return;
+            }
+            const lines = fs.readFileSync(path, 'utf8')
+              .split('\n')
+              .map(l => l.trim())
+              .filter(Boolean);
+
+            if (lines.length === 0) {
+              core.info('Deletable bucket is empty; nothing to do.');
+              return;
+            }
+
+            const deleted = [];
+            const failed = [];
+            for (const line of lines) {
+              // Format: "<short> <age>d" — take just the branch name.
+              const branch = line.split(/\s+/)[0];
+              if (!branch) continue;
+              try {
+                await github.rest.git.deleteRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: `heads/${branch}`,
+                });
+                deleted.push(branch);
+                core.info(`Deleted heads/${branch}.`);
+              } catch (err) {
+                if (err.status === 422) {
+                  // Already gone — treat as deleted.
+                  deleted.push(branch);
+                  core.info(`heads/${branch} already absent.`);
+                } else {
+                  failed.push({ branch, message: err.message });
+                  core.warning(
+                    `Failed to delete heads/${branch}: ${err.message}`
+                  );
+                }
+              }
+            }
+
+            let summary = core.summary
+              .addHeading('Stale sweep — execute results', 2)
+              .addRaw(`Deleted: **${deleted.length}**, failed: **${failed.length}**.`)
+              .addEOL();
+            if (deleted.length) {
+              summary = summary
+                .addHeading('Deleted', 3)
+                .addList(deleted.map(b => `\`${b}\``));
+            }
+            if (failed.length) {
+              summary = summary
+                .addHeading('Failed', 3)
+                .addList(failed.map(f => `\`${f.branch}\` — ${f.message}`));
+              core.setFailed(`${failed.length} branch deletion(s) failed.`);
+            }
+            await summary.write();

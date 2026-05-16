@@ -1,0 +1,83 @@
+name: Branch cleanup on merge
+
+# Phase E.1 — auto-delete the head ref of a PR once it has been merged.
+# Skips the protected list (currently just `main`). This closes the
+# cleanup vacuum that left ~30 stale worktree-naming branches in the
+# repo. Reports nothing on cancel or close-without-merge; only acts when
+# pull_request.merged === true.
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: branch-cleanup-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  delete-head-ref:
+    name: Delete merged PR head ref
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for branch metadata)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Delete head ref
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Protected list is inlined intentionally (see Phase E.1
+            // scope — no config file). Add entries here if more branches
+            // need permanent protection (e.g. release/*, develop).
+            const PROTECTED = new Set(['main']);
+
+            const pr = context.payload.pull_request;
+            const headRef = pr.head.ref;
+            const headRepoFullName = pr.head.repo && pr.head.repo.full_name;
+            const baseRepoFullName = pr.base.repo.full_name;
+
+            core.info(`PR #${pr.number} merged. head=${headRef} ` +
+              `head_repo=${headRepoFullName} base_repo=${baseRepoFullName}`);
+
+            // Forks: head.repo != base.repo. We can't (and shouldn't)
+            // delete a ref on someone else's fork.
+            if (headRepoFullName !== baseRepoFullName) {
+              core.info('Head is on a fork; skipping delete.');
+              return;
+            }
+
+            if (PROTECTED.has(headRef)) {
+              core.info(`Branch '${headRef}' is protected; skipping delete.`);
+              return;
+            }
+
+            try {
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `heads/${headRef}`,
+              });
+              core.info(`Deleted heads/${headRef}.`);
+              await core.summary
+                .addHeading('Branch cleanup on merge')
+                .addRaw(`Deleted \`${headRef}\` after merge of #${pr.number}.`)
+                .write();
+            } catch (err) {
+              // 422 = ref doesn't exist (already deleted via GitHub UI's
+              // "Delete branch" button, or never existed). Treat as
+              // success and log; surface anything else.
+              if (err.status === 422) {
+                core.info(`Ref heads/${headRef} already gone; nothing to do.`);
+              } else {
+                core.setFailed(
+                  `Failed to delete heads/${headRef}: ${err.message}`
+                );
+              }
+            }
