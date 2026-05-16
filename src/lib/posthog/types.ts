@@ -679,6 +679,7 @@ export type EventPayloadByName = {
   tutor_concept_viewed: TutorConceptViewedPayload;
   tutor_answer_submitted: TutorAnswerSubmittedPayload;
   tutor_answer_path_c_fallback: TutorAnswerPathCFallbackPayload;
+  projector_health_degraded: ProjectorHealthDegradedPayload;
 };
 
 // ── Adaptive Tutor payloads (ADR-004) ──────────────────────────────────
@@ -723,6 +724,26 @@ export interface TutorAnswerSubmittedPayload {
   correct: boolean;
   chosen_index: number;
   response_time_ms: number;
+}
+
+// ── Spine observability payloads (ADR-005, Phase-5 Iter. 2) ─────────────
+export interface ProjectorHealthDegradedPayload {
+  /** Name of the lagging subscriber per STANDARD_SUBSCRIBERS. */
+  subscriber_name: string;
+  /** Event kind the subscriber filters on (e.g., 'learner.concept_check_answered'). */
+  kind_filter: string;
+  /** Count of unprocessed events of `kind_filter` ahead of the cursor. */
+  events_behind: number;
+  /** Count of events currently in subscriber_retry_state. */
+  events_in_retry: number;
+  /** Cumulative count of events that have ever dead-lettered for this subscriber. */
+  events_dead_lettered: number;
+  /** Wall-clock seconds since the subscriber last advanced. */
+  age_behind_seconds: number;
+  /** Severity bucket per docs/architecture/SLO.md "Projector lag" row. */
+  severity: 'warn' | 'critical';
+  /** The threshold (in seconds) that this row crossed. */
+  threshold_seconds: number;
 }
 
 /** Generic helper: lookup payload type by event name. */
