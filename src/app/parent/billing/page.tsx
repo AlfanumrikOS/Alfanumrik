@@ -178,12 +178,18 @@ export default function ParentBillingPage() {
       });
       const json = await res.json();
       if (!res.ok || !json.success) {
+        // TODO(phase-e3): replace alert() with toast/modal
+        // eslint-disable-next-line no-restricted-syntax
         window.alert(json.error || t(isHi, 'Cancellation failed.', 'रद्द करना विफल।'));
         return;
       }
+      // TODO(phase-e3): replace alert() with toast/modal
+      // eslint-disable-next-line no-restricted-syntax
       window.alert(json.message || t(isHi, 'Cancellation scheduled.', 'रद्द करना अनुसूचित।'));
       await load();
     } catch {
+      // TODO(phase-e3): replace alert() with toast/modal
+      // eslint-disable-next-line no-restricted-syntax
       window.alert(t(isHi, 'Network error. Please try again.', 'नेटवर्क त्रुटि। कृपया पुनः प्रयास करें।'));
     } finally {
       setCancellingId(null);
