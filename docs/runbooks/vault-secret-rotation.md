@@ -106,12 +106,15 @@ Expected: 2 rows (`projector-runner-tick`, `projector-health-check-tick`) if Ite
 3. **Verify the change took effect.** Force the next cron tick by invoking `tickOne` manually, or wait one minute and check:
 
    ```sql
-   SELECT job_pid, status, return_message, start_time, end_time
-   FROM cron.job_run_details
-   WHERE jobname IN ('projector-runner-tick', 'projector-health-check-tick')
-   ORDER BY start_time DESC
+   SELECT jrd.job_pid, jrd.status, jrd.return_message, jrd.start_time, jrd.end_time
+   FROM cron.job_run_details jrd
+   JOIN cron.job j ON j.jobid = jrd.jobid
+   WHERE j.jobname IN ('projector-runner-tick', 'projector-health-check-tick')
+   ORDER BY jrd.start_time DESC
    LIMIT 5;
    ```
+
+   (`cron.job_run_details` keys on `jobid`, not `jobname` — JOIN to `cron.job` to filter by name. The naive `WHERE jobname = '…'` errors with `42703: column "jobname" does not exist`.)
 
    Expected: `status = 'succeeded'` for ticks after the update. If `status = 'failed'` with `HTTP 401` in `return_message`, the new JWT is malformed or wasn't accepted — restore from step 5.
 

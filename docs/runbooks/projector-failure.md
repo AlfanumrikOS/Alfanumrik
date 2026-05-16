@@ -50,12 +50,15 @@ SELECT jobid, jobname, schedule, active
 FROM cron.job
 WHERE jobname IN ('projector-runner-tick', 'projector-health-check-tick');
 
-SELECT job_pid, status, return_message, start_time, end_time
-FROM cron.job_run_details
-WHERE jobname = 'projector-runner-tick'
-ORDER BY start_time DESC
+SELECT jrd.job_pid, jrd.status, jrd.return_message, jrd.start_time, jrd.end_time
+FROM cron.job_run_details jrd
+JOIN cron.job j ON j.jobid = jrd.jobid
+WHERE j.jobname IN ('projector-runner-tick', 'projector-health-check-tick')
+ORDER BY jrd.start_time DESC
 LIMIT 10;
 ```
+
+Note: `cron.job_run_details` has no `jobname` column — it keys on `jobid` only. The JOIN to `cron.job` is how you filter by name. Verified on prod 2026-05-16 (the alternative — `WHERE jobname = '…'` — errors with `42703: column "jobname" does not exist`).
 
 Expected: rows every minute for `projector-runner-tick`, every 2 minutes for `projector-health-check-tick`, all with `status = 'succeeded'`. If `status = 'failed'`, read `return_message` — most common: HTTP 401 (auth header malformed), HTTP 500 from the function (env missing / DB error), or `network: TCP connection refused` (Edge Function not deployed).
 
