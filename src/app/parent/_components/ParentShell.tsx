@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter, usePathname } from 'next/navigation';
+import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
 import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
 import { useParentAuth } from './useParentAuth';
@@ -11,11 +12,50 @@ const NAV_ITEMS: SidebarNavItem[] = [
   { href: '/parent', label: 'Dashboard', labelHi: 'डैशबोर्ड', icon: '▦' },
   { href: '/parent/children', label: 'Children', labelHi: 'बच्चे', icon: '⊕' },
   { href: '/parent/calendar', label: 'Calendar', labelHi: 'कैलेंडर', icon: '◐' },
+  { href: '/parent/notifications', label: 'Notifications', labelHi: 'सूचनाएँ', icon: '◉' },
   { href: '/parent/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘' },
   { href: '/parent/billing', label: 'Billing', labelHi: 'बिलिंग', icon: '◈' },
   { href: '/parent/support', label: 'Support', labelHi: 'सहायता', icon: '⊛' },
   { href: '/parent/profile', label: 'Profile', labelHi: 'प्रोफ़ाइल', icon: '◎' },
 ];
+
+// Polling interval for the sidebar unread badge. Conservative — the
+// /parent/notifications page itself polls at 30s; the sidebar only needs
+// occasional refresh to keep the count "fresh enough" without hammering.
+const BADGE_POLL_MS = 60_000;
+
+interface UnreadResponse {
+  success: boolean;
+  unreadCount: number;
+}
+
+async function badgeFetcher(url: string): Promise<UnreadResponse> {
+  // Use the parent-notifications GET but force limit=1 to keep payloads
+  // tiny. The route still computes the unreadCount.
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+  } catch {
+    /* anonymous — fall through, server returns 401 */
+  }
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw new Error(`parent-notifications.badge_fetch_failed:${res.status}`);
+  return res.json() as Promise<UnreadResponse>;
+}
+
+function useParentUnreadBadge(enabled: boolean): number {
+  const { data } = useSWR<UnreadResponse>(
+    enabled ? '/api/parent/notifications?limit=1' : null,
+    badgeFetcher,
+    {
+      refreshInterval: BADGE_POLL_MS,
+      revalidateOnFocus: true,
+      shouldRetryOnError: false,
+    },
+  );
+  return data?.unreadCount ?? 0;
+}
 
 export default function ParentShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -24,6 +64,10 @@ export default function ParentShell({ children }: { children: React.ReactNode })
   const { mode, parentName, loading } = useParentAuth();
   // Call all hooks unconditionally at the top — rules-of-hooks.
   const atlasOn = useAtlasFlag('parent');
+  // Only guardian mode parents have a Supabase JWT; link-code parents
+  // can't authenticate against /api/parent/notifications. Guard the
+  // SWR fetch so we don't generate spurious 401s.
+  const unreadCount = useParentUnreadBadge(mode === 'guardian');
 
   // ─── Editorial Atlas pass-through ────────────────────────────────────
   // When Atlas is on, AtlasParent renders its own AtlasShell. Wrapping it
@@ -45,6 +89,7 @@ export default function ParentShell({ children }: { children: React.ReactNode })
   // Filter nav by mode: link-code parents have a single pinned child and don't
   // need the "Children" picker (it shows their one child). Hide it for clarity.
   // Profile is also restricted in link-code mode (no Supabase user to manage).
+  // Notifications is also gated: the API requires Supabase auth.
   const visibleItems = NAV_ITEMS.filter(item => {
     if (mode === 'link-code') {
       if (item.href === '/parent/children') return false;
@@ -54,9 +99,14 @@ export default function ParentShell({ children }: { children: React.ReactNode })
       // anonymous HMAC payloads and cannot be the subject of a Razorpay
       // subscription — hide the tab in that mode.
       if (item.href === '/parent/billing') return false;
+      // Notifications is API-gated by Supabase auth too — link-code
+      // parents can't authenticate against /api/parent/notifications.
+      if (item.href === '/parent/notifications') return false;
     }
     return true;
-  });
+  }).map(item =>
+    item.href === '/parent/notifications' ? { ...item, badge: unreadCount } : item,
+  );
 
   const handleLogout = async () => {
     if (mode === 'guardian') {
