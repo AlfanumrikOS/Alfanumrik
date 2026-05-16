@@ -134,6 +134,7 @@ export default function AtlasParent({ guardian, student, allChildren, isHi }: At
     { href: '/parent/calendar', label: t('Calendar', 'कैलेंडर'),                                  labelHi: 'कैलेंडर',       icon: 'calendar' },
     ...(children.length > 1 ? [{ href: '/parent/children', group: t('Children', 'बच्चे'), label: t('All children', 'सभी बच्चे'), labelHi: 'सभी बच्चे', icon: 'users' as const }] : []),
     { href: '/parent/reports',  group: t('Archive', 'अभिलेख'), label: t('Reports', 'रिपोर्ट'), labelHi: 'रिपोर्ट',           icon: 'document' },
+    { href: '/parent/billing',  group: t('Archive', 'अभिलेख'), label: t('Billing', 'बिलिंग'),  labelHi: 'बिलिंग',          icon: 'document' },
     { href: '/parent/support',  label: t('Foxy tips', 'Foxy टिप्स'),                              labelHi: 'Foxy टिप्स',     icon: 'lightbulb' },
   ];
 
