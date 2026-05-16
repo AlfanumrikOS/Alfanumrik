@@ -526,7 +526,16 @@ describe('get_class_trends — response shape', () => {
 // rather than spin up Deno, but if the source dispatcher ever drops one
 // of these cases, the grep below also fails.
 
-const REQUIRED_REPORTS_ACTIONS = ['get_class_overview', 'get_student_report', 'get_class_trends'] as const
+// Phase A.2 base actions + Phase A.2.1 aliases consumed by the /teacher/reports page.
+// The page calls get_trends (not get_class_trends) and get_students_list — both must
+// be present in the dispatcher source so the page never sees a 400.
+const REQUIRED_REPORTS_ACTIONS = [
+  'get_class_overview',
+  'get_student_report',
+  'get_class_trends',
+  'get_trends',
+  'get_students_list',
+] as const
 
 describe('teacher-dashboard dispatcher — Phase A.2 actions present', () => {
   // This is a static contract check: the dispatcher source MUST list each
