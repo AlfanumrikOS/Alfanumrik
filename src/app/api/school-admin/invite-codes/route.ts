@@ -3,6 +3,11 @@ import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { logSchoolAudit } from '@/lib/audit';
+import {
+  deliverEmail,
+  pickLocaleFromAcceptLanguage,
+  truncateInviteCode,
+} from '@/lib/email-delivery';
 
 /**
  * GET /api/school-admin/invite-codes
@@ -57,7 +62,13 @@ export async function GET(request: NextRequest) {
  * Generate a new invite code.
  * Permission: institution.manage_students
  *
- * Body: { role: 'teacher' | 'student', max_uses?: number, expires_in_days?: number }
+ * Body: {
+ *   role: 'teacher' | 'student',
+ *   max_uses?: number,
+ *   expires_in_days?: number,
+ *   recipient_email?: string,    // optional — if provided, an invite email is sent
+ *   recipient_name?: string,     // optional — used in the email greeting
+ * }
  *
  * Code format: {SCHOOL_SLUG}-{random6chars}
  */
@@ -80,6 +91,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Optional recipient_email — validate shape only if provided.
+    const recipientEmail =
+      typeof body.recipient_email === 'string' ? body.recipient_email.trim().toLowerCase() : '';
+    const recipientName =
+      typeof body.recipient_name === 'string' ? body.recipient_name.trim() : '';
+    if (recipientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
+      return NextResponse.json(
+        { success: false, error: 'recipient_email is not a valid email address' },
+        { status: 400 }
+      );
+    }
+
     // Validate max_uses (default 50 for students, 1 for teachers)
     const defaultMaxUses = body.role === 'teacher' ? 1 : 50;
     const maxUses = typeof body.max_uses === 'number'
@@ -91,10 +114,10 @@ export async function POST(request: NextRequest) {
       ? Math.min(365, Math.max(1, body.expires_in_days))
       : 30;
 
-    // Get school slug for code prefix
+    // Get school slug + display name for code prefix and email branding
     const { data: school, error: schoolError } = await supabase
       .from('schools')
-      .select('slug')
+      .select('slug, name')
       .eq('id', schoolId)
       .single();
 
@@ -142,6 +165,35 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'Failed to create invite code' },
         { status: 500 }
       );
+    }
+
+    // ── Fire-and-forget invite email (Phase B.2) ──
+    // Only dispatches when the caller supplied a recipient_email — otherwise
+    // the code is returned in JSON for manual hand-off (legacy behaviour).
+    // Email failure MUST NOT fail the API response.
+    if (recipientEmail) {
+      const locale = pickLocaleFromAcceptLanguage(
+        request.headers.get('accept-language')
+      );
+      const slug = school.slug || 'school';
+      void deliverEmail({
+        template: 'school-invite-code-issued',
+        to: recipientEmail,
+        locale,
+        params: {
+          school_name: school.name || 'Your school',
+          invite_code: code,
+          expires_at: expiresAt.toISOString(),
+          subdomain_url: `https://${slug}.alfanumrik.com`,
+          recipient_name: recipientName || undefined,
+        },
+      }).catch((err) => {
+        logger.warn('school_admin_invite_email_dispatch_failed', {
+          schoolId,
+          codeTruncated: truncateInviteCode(code),
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      });
     }
 
     return NextResponse.json({ success: true, data: inviteCode }, { status: 201 });

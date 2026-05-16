@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { checkApiRateLimit } from '@/lib/api-rate-limit';
+import {
+  deliverEmail,
+  pickLocaleFromAcceptLanguage,
+  truncateInviteCode,
+} from '@/lib/email-delivery';
 
 /* ─── Slug Generation ─── */
 
@@ -247,7 +252,43 @@ export async function POST(request: NextRequest) {
       board,
       subscriptionCreated,
       inviteStored,
+      inviteCodeTruncated: truncateInviteCode(inviteCode),
     });
+
+    // ── 6. Fire-and-forget email delivery (Phase B.2) ──
+    // We send the trial-provisioned email only when the invite code persisted
+    // — otherwise the recipient would receive a code that doesn't exist in
+    // the DB. Email failure MUST NOT fail the trial-create response: the
+    // promise is voided and surrounding errors are swallowed by deliverEmail.
+    if (inviteStored) {
+      const locale = pickLocaleFromAcceptLanguage(
+        request.headers.get('accept-language')
+      );
+      const trialEndIso = new Date();
+      trialEndIso.setDate(trialEndIso.getDate() + 90); // invite expiry, matches step 5
+      const subdomainUrl = `https://${finalSlug}.alfanumrik.com`;
+
+      void deliverEmail({
+        template: 'school-trial-provisioned',
+        to: principal_email,
+        locale,
+        params: {
+          school_name: school_name,
+          invite_code: inviteCode,
+          expires_at: trialEndIso.toISOString(),
+          subdomain_url: subdomainUrl,
+          recipient_name: principal_name,
+        },
+      }).catch((err) => {
+        // Belt-and-braces: deliverEmail already swallows its own errors, but
+        // we still .catch() to ensure no unhandled rejection escapes.
+        logger.warn('school_trial_email_dispatch_failed', {
+          schoolId: school.id,
+          codeTruncated: truncateInviteCode(inviteCode),
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
 
     return NextResponse.json({
       success: true,
