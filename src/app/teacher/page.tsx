@@ -3,11 +3,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
-import { supabase, supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON } from '@/lib/supabase';
+import { supabase, supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON, getFeatureFlags } from '@/lib/supabase';
 import type { HeatmapData, HeatmapCell, HeatmapRow, RiskAlert } from '@/lib/types';
 import { BottomNav } from '@/components/ui';
 import { SUBJECT_ROTATION } from '@/lib/challenge-config';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
+import { useRealtimeRevalidator } from '@/hooks/useRealtimeRevalidator';
+import { REALTIME_FLAGS } from '@/lib/feature-flags';
 import AtlasTeacher from './AtlasTeacher';
 
 // ============================================================
@@ -251,11 +253,37 @@ function InterventionsTab({ alerts, classId, dash, isHi }: { alerts: RiskAlert[]
   );
 }
 
-function PollTab({ classId, teacherId, isHi }: { classId: string; teacherId: string; isHi: boolean }) {
+function PollTab({ classId, teacherId, isHi, realtimeEnabled }: { classId: string; teacherId: string; isHi: boolean; realtimeEnabled: boolean }) {
   const [q, setQ] = useState(''); const [opts, setOpts] = useState(['','','','']); const [correctIdx, setCorrectIdx] = useState(0);
   const [poll, setPoll] = useState<PollData | null>(null); const [results, setResults] = useState<PollResults | null>(null); const [loading, setLoading] = useState(false);
   const launch = async () => { if (!q.trim()) return; setLoading(true); const data = await api('launch_poll', { teacher_id: teacherId, class_id: classId, question_text: q, options: opts.filter(o => o.trim()), correct_index: correctIdx, question_type: 'mcq', time_limit: 60 }); setPoll(data); setResults(null); setLoading(false); };
   const close = async () => { if (!poll?.poll_id) return; const data = await api('close_poll', { teacher_id: teacherId, poll_id: poll.poll_id }); setResults(data); setPoll(null); };
+
+  // Phase C.6 — realtime poll-response revalidation.
+  // Subscribe to classroom_poll_responses INSERT events filtered by the
+  // active poll_id. Each student vote produces one INSERT, so we refresh
+  // the poll details (specifically response_count) immediately. No
+  // throttle — votes are sparse and visible-immediately IS the UX goal.
+  const activePollId = poll?.poll_id || '';
+  const refreshPoll = useCallback(async () => {
+    if (!activePollId) return;
+    try {
+      const data = await api('get_poll_details', { teacher_id: teacherId, poll_id: activePollId });
+      if (data) setPoll((prev) => (prev ? { ...prev, ...data } : data));
+    } catch {
+      // Edge function may not support get_poll_details yet — non-fatal.
+      // The next user action (e.g. close poll) will reconcile state.
+    }
+  }, [activePollId, teacherId]);
+
+  useRealtimeRevalidator({
+    enabled: realtimeEnabled && Boolean(activePollId),
+    channel: `teacher-poll-${activePollId || 'none'}`,
+    table: 'classroom_poll_responses',
+    event: 'INSERT',
+    filter: activePollId ? `poll_id=eq.${activePollId}` : null,
+    onChange: refreshPoll,
+  });
   return (
     <div className="td-card">
       <div className="td-card-head"><h3>{tt(isHi, 'Classroom response', 'कक्षा प्रतिक्रिया')}</h3>{poll && <span className="td-badge bg-emerald-600">LIVE</span>}</div>
@@ -298,10 +326,27 @@ function LegacyTeacherPage() {
   const [tab, setTab] = useState('heatmap');
   const [loading, setLoading] = useState(true);
   const [challengeData, setChallengeData] = useState<ChallengeClassData | null>(null);
+  const [realtimeEnabled, setRealtimeEnabled] = useState(false);
 
   // Get teacher_id from auth session (no more hardcoded IDs)
   const teacherId = teacher?.id || '';
   const classId = dash?.classes?.[0]?.id || '';
+
+  // Phase C.6 — gate realtime subscriptions on ff_realtime_subscriptions_v1.
+  // Fetched once on mount; the hook short-circuits when disabled so the cost
+  // of leaving the call here is one fetch on dashboard open.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const flags = await getFeatureFlags({ role: 'teacher' });
+        if (!cancelled) setRealtimeEnabled(Boolean(flags[REALTIME_FLAGS.SUBSCRIPTIONS_V1]));
+      } catch {
+        if (!cancelled) setRealtimeEnabled(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!authLoading && (!isLoggedIn || (activeRole !== 'teacher' && !teacher))) {
@@ -390,6 +435,23 @@ function LegacyTeacherPage() {
   }, [teacherId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Phase C.6 — realtime heatmap revalidation.
+  // Subscribe to student_learning_profiles UPDATE events. RLS on
+  // student_learning_profiles already restricts visibility to the teacher's
+  // classes via the teacher_class_students join, so a school-wide channel
+  // here only fires for THIS teacher's students. Throttled 2s because a
+  // large class can emit dozens of profile updates per minute after a
+  // synchronous quiz.
+  useRealtimeRevalidator({
+    enabled: realtimeEnabled && Boolean(classId),
+    channel: `teacher-heatmap-${classId || 'none'}`,
+    table: 'student_learning_profiles',
+    event: 'UPDATE',
+    filter: null,
+    throttleMs: 2000,
+    onChange: load,
+  });
 
   const resolveAlert = async (id: string) => {
     await api('resolve_alert', { teacher_id: teacherId, alert_id: id });
@@ -638,7 +700,7 @@ function LegacyTeacherPage() {
       )}
       {tab === 'interventions' && <InterventionsTab alerts={alerts} classId={classId} dash={dash} isHi={isHi} />}
       {tab === 'alerts' && <AlertsTab alerts={alerts} onResolve={resolveAlert} isHi={isHi} />}
-      {tab === 'poll' && <PollTab classId={classId} teacherId={teacherId} isHi={isHi} />}
+      {tab === 'poll' && <PollTab classId={classId} teacherId={teacherId} isHi={isHi} realtimeEnabled={realtimeEnabled} />}
       <BottomNav />
     </div>
   );

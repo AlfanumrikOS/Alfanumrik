@@ -323,6 +323,29 @@ export const EDITORIAL_ATLAS_FLAGS = {
 } as const;
 
 /**
+ * Realtime subscriptions (Phase C.6).
+ *
+ *  ff_realtime_subscriptions_v1
+ *    Gates Supabase Realtime postgres_changes subscriptions on:
+ *      - teacher heatmap (student_learning_profiles UPDATE, throttled 2s)
+ *      - teacher poll results (classroom_poll_responses INSERT, unthrottled)
+ *      - parent child-progress (student_learning_profiles UPDATE, debounced 5s)
+ *    When OFF, dashboards fall back to the existing focus/visibility fetch
+ *    pattern. Default: false. Per-tenant opt-in via target_institutions.
+ *
+ *    PRECONDITION: the `supabase_realtime` Postgres publication must contain
+ *    `student_learning_profiles` and `classroom_poll_responses` before this
+ *    flag is flipped on. Verify with:
+ *      SELECT tablename FROM pg_publication_tables WHERE pubname = 'supabase_realtime';
+ *    See migration 20260527000002 header for the operator runbook.
+ *
+ * Seeded by 20260527000002_add_ff_realtime_subscriptions_v1.sql.
+ */
+export const REALTIME_FLAGS = {
+  SUBSCRIPTIONS_V1: 'ff_realtime_subscriptions_v1',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -347,6 +370,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [EDITORIAL_ATLAS_FLAGS.PARENT]:  false,
   [EDITORIAL_ATLAS_FLAGS.TEACHER]: false,
   [EDITORIAL_ATLAS_FLAGS.SCHOOL]:  false,
+  [REALTIME_FLAGS.SUBSCRIPTIONS_V1]: false,
 } as const;
 
 /**

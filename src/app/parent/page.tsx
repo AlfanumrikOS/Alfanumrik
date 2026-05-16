@@ -3,9 +3,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { supabase, getFeatureFlags } from '@/lib/supabase';
 import { getLevelFromScore } from '@/lib/score-config';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
+import { useRealtimeRevalidator } from '@/hooks/useRealtimeRevalidator';
+import { REALTIME_FLAGS } from '@/lib/feature-flags';
 import AtlasParent from './AtlasParent';
 import {
   type ParentSession,
@@ -397,6 +399,37 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi }: { guardian: 
   }, [student.id, guardian.id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Phase C.6 — realtime child-progress revalidation (default OFF via flag).
+  // Subscribe to student_learning_profiles UPDATE filtered by the children
+  // this parent is linked to. Debounced 5s — parents don't need sub-second
+  // granularity, and after a child finishes a quiz several rows may update
+  // in quick succession (one per subject). The 5s debounce coalesces them
+  // into a single refetch.
+  const [realtimeEnabled, setRealtimeEnabled] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const flags = await getFeatureFlags({ role: 'parent' });
+        if (!cancelled) setRealtimeEnabled(Boolean(flags[REALTIME_FLAGS.SUBSCRIPTIONS_V1]));
+      } catch {
+        if (!cancelled) setRealtimeEnabled(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const childIdsKey = children.map((c) => c.id).filter(Boolean).join(',');
+  useRealtimeRevalidator({
+    enabled: realtimeEnabled && childIdsKey.length > 0,
+    channel: `parent-children-${guardian.id}`,
+    table: 'student_learning_profiles',
+    event: 'UPDATE',
+    filter: childIdsKey ? `student_id=in.(${childIdsKey})` : null,
+    debounceMs: 5000,
+    onChange: load,
+  });
 
   // Bug fix (2026-04-29 IST timezone): refetch when the tab regains focus or
   // becomes visible. Without this, a parent who opens the dashboard once in
