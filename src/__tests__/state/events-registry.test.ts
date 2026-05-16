@@ -135,6 +135,24 @@ const VALID_PAYLOADS: Record<DomainEventKind, Record<string, unknown>> = {
     learnerAuthUserId: FIXTURE_UUID_C,
     reportKind: 'weekly',
   },
+  'parent.consent_granted': {
+    consentId: FIXTURE_UUID_A,
+    guardianId: FIXTURE_UUID_B,
+    studentId: FIXTURE_UUID_C,
+    consentVersion: 'v1-2026-05',
+    scopes: {
+      curriculum_access: true,
+      performance_data_sharing_with_teacher: true,
+      marketing_emails: false,
+    },
+    locale: 'en',
+  },
+  'parent.consent_revoked': {
+    consentId: FIXTURE_UUID_A,
+    guardianId: FIXTURE_UUID_B,
+    studentId: FIXTURE_UUID_C,
+    consentVersion: 'v1-2026-05',
+  },
   'parent.child_data_exported': {
     guardianId: FIXTURE_UUID_A,
     studentId: FIXTURE_UUID_C,
