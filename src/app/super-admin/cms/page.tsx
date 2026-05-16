@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
 import { VALID_GRADES } from '@/lib/identity';
+import { toast } from '@/components/ui/toast';
 
 // Local style constants — replaces former `S` and `colors` from admin-styles
 const tableStyle: React.CSSProperties = {
@@ -241,32 +242,32 @@ function CmsContent() {
       await apiPost('transition', { entity_type: entityType, entity_id: entityId, new_status: newStatus });
       if (view === 'topics') loadTopics(); else loadQuestions();
       loadStats();
-    } catch (e) { alert(e instanceof Error ? e.message : 'Transition failed'); }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Transition failed'); }
   };
 
   const rollbackVersion = async (versionId: string) => {
     if (!confirm('Rollback to this version? Current state will be saved as a new version first.')) return;
     try {
       await apiPost('rollback', { version_id: versionId });
-      alert('Rollback successful. Content reset to draft for review.');
+      toast.success('Rollback successful. Content reset to draft for review.');
       loadVersions();
-    } catch (e) { alert(e instanceof Error ? e.message : 'Rollback failed'); }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Rollback failed'); }
   };
 
   const createTopic = async () => {
     if (!topicForm.title || !topicForm.grade || !topicForm.subject_id) {
-      alert('Title, grade, and subject are required.'); return;
+      toast.error('Title, grade, and subject are required.'); return;
     }
     try {
       await apiPost('create_topic', topicForm);
       setShowCreateTopic(false); setTopicForm({});
       loadTopics(); loadStats();
-    } catch (e) { alert(e instanceof Error ? e.message : 'Create failed'); }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Create failed'); }
   };
 
   const createQuestion = async () => {
     if (!questionForm.question_text || !questionForm.grade || !questionForm.subject) {
-      alert('Question text, grade, and subject are required.'); return;
+      toast.error('Question text, grade, and subject are required.'); return;
     }
     try {
       const payload = {
@@ -278,7 +279,7 @@ function CmsContent() {
       await apiPost('create_question', payload);
       setShowCreateQuestion(false); setQuestionForm({});
       loadQuestions(); loadStats();
-    } catch (e) { alert(e instanceof Error ? e.message : 'Create failed'); }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Create failed'); }
   };
 
   const viewVersionDiff = async (versionId: string, versionNumber: number) => {
@@ -286,7 +287,7 @@ function CmsContent() {
       const r = await api(`action=version_detail&version_id=${versionId}`);
       setDiffSnapshot(r.data?.snapshot || r.data || null);
       setDiffVersionNum(versionNumber);
-    } catch (e) { alert(e instanceof Error ? e.message : 'Load failed'); }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Load failed'); }
   };
 
   const openVersions = (entityType: string, entityId: string) => {
@@ -306,7 +307,7 @@ function CmsContent() {
   };
 
   const registerAsset = async () => {
-    if (!assetForm.file_name || !assetForm.storage_path) { alert('File name and storage path required'); return; }
+    if (!assetForm.file_name || !assetForm.storage_path) { toast.error('File name and storage path required'); return; }
     try {
       await apiFetch('/api/super-admin/platform-ops?action=register_asset', {
         method: 'POST',
@@ -323,7 +324,7 @@ function CmsContent() {
       });
       setAssetForm({}); setShowAssetForm(false);
       if (assetEntityType && assetEntityId) loadAssets(assetEntityType, assetEntityId);
-    } catch (e) { alert(e instanceof Error ? e.message : 'Register failed'); }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Register failed'); }
   };
 
   const deleteAsset = async (assetId: string) => {
@@ -333,7 +334,7 @@ function CmsContent() {
         method: 'POST', body: JSON.stringify({ id: assetId }),
       });
       if (assetEntityType && assetEntityId) loadAssets(assetEntityType, assetEntityId);
-    } catch { alert('Delete failed'); }
+    } catch { toast.error('Delete failed'); }
   };
 
   const CmsStatusBadge = ({ status }: { status: string }) => {

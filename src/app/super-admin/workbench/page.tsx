@@ -5,6 +5,7 @@ import AdminShell, { useAdmin } from '../_components/AdminShell';
 import DataTable, { Column } from '../_components/DataTable';
 import DetailDrawer from '../_components/DetailDrawer';
 import StatusBadge from '../_components/StatusBadge';
+import { toast } from '@/components/ui/toast';
 
 type Entity = 'students' | 'teachers' | 'guardians' | 'institutions' | 'chapters' | 'topics' | 'questions';
 
@@ -58,7 +59,7 @@ function WorkbenchContent() {
     const typeMap: Record<string, string> = { students: 'students', teachers: 'teachers', guardians: 'parents' };
     const type = typeMap[entity] || entity;
     const res = await apiFetch(`/api/super-admin/reports?type=${type}&format=${format}`);
-    if (!res.ok) { alert('Export failed'); return; }
+    if (!res.ok) { toast.error('Export failed'); return; }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
