@@ -94,29 +94,34 @@ export async function POST(request: NextRequest) {
     //   Guardian-cancel (parent on behalf)   → body.student_id MUST be in the
     //     caller's linked-children set (listChildrenForGuardian). Cross-guardian
     //     attempts get the same 404 as "not your child" — no enumeration.
-    let studentId: string | null = null;
+    let resolvedStudentId: string | null = null;
 
     if (requestedStudentId) {
       const childrenRes = await listChildrenForGuardian(user.id);
-      if (
-        childrenRes.ok &&
-        childrenRes.data.some((c: { id: string }) => c.id === requestedStudentId)
-      ) {
-        studentId = requestedStudentId;
+      if (childrenRes.ok) {
+        const children = childrenRes.data as Array<{ id: string }>;
+        for (const child of children) {
+          if (child.id === requestedStudentId) {
+            resolvedStudentId = requestedStudentId;
+            break;
+          }
+        }
       }
     } else {
-      const { data: studentRow } = await admin
+      const { data: selfStudentRow } = await admin
         .from('students')
         .select('id')
         .eq('auth_user_id', user.id)
         .single();
-      if (studentRow) studentId = studentRow.id;
+      if (selfStudentRow) {
+        resolvedStudentId = selfStudentRow.id as string;
+      }
     }
 
-    if (!studentId) {
+    if (!resolvedStudentId) {
       return NextResponse.json({ error: 'Student not found' }, { status: 404 });
     }
-    const studentRow = { id: studentId };
+    const studentRow: { id: string } = { id: resolvedStudentId };
 
     const { data: sub } = await admin
       .from('student_subscriptions')
