@@ -3,7 +3,8 @@
   "extends": "./.eslintrc.json",
   "rules": {
     "alfanumrik/no-direct-ai-calls": "error",
-    "alfanumrik/no-direct-rag-rpc": "error"
+    "alfanumrik/no-direct-rag-rpc": "error",
+    "alfanumrik/no-canonical-write-outside-projector": "error"
   },
   "overrides": [
     {

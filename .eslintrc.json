@@ -19,6 +19,7 @@
       }
     ],
     "alfanumrik/no-raw-subject-imports": "error",
+    "alfanumrik/no-canonical-write-outside-projector": "warn",
     "alfanumrik/no-direct-ai-calls": "off",
     "alfanumrik/no-direct-rag-rpc": "off"
   },
