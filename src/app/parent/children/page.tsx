@@ -147,13 +147,14 @@ function MiniProgressBar({ label, percent, color }: { label: string; percent: nu
 // CHILD CARD
 // ============================================================
 function ChildCard({
-  child, expanded, onToggle, onViewReport, onUnlink,
+  child, expanded, onToggle, onViewReport, onUnlink, onDownloadData,
 }: {
   child: ChildData;
   expanded: boolean;
   onToggle: () => void;
   onViewReport: () => void;
   onUnlink: () => void;
+  onDownloadData: () => void;
 }) {
   const subjectColors = ['#16A34A', '#2563EB', '#D97706', '#8B5CF6', '#EC4899', '#06B6D4'];
 
@@ -354,8 +355,32 @@ function ChildCard({
             </div>
           )}
 
-          {/* Remove Link */}
+          {/* DPDP §13 — Download child data (Phase D.2) */}
           <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #FDBA7433' }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDownloadData(); }}
+              data-testid={`download-child-data-${child.id}`}
+              style={{
+                padding: '7px 16px',
+                backgroundColor: 'transparent',
+                color: '#2563EB',
+                border: '1px solid #2563EB',
+                borderRadius: 8,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                maxWidth: '100%',
+              }}
+            >
+              &#x2B07;&#xFE0F; {t(false, "Download my child's data", 'मेरे बच्चे का डेटा डाउनलोड करें')}
+            </button>
+          </div>
+
+          {/* Remove Link */}
+          <div style={{ marginTop: 12 }}>
             <button
               onClick={(e) => { e.stopPropagation(); onUnlink(); }}
               style={{
@@ -838,6 +863,82 @@ function UnlinkConfirmModal({
 }
 
 // ============================================================
+// DOWNLOAD DATA CONFIRMATION MODAL (DPDP §13, Phase D.2)
+// ============================================================
+function DownloadDataConfirmModal({
+  childName,
+  onConfirm,
+  onCancel,
+  isHi,
+}: {
+  childName: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  isHi: boolean;
+}) {
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 1000,
+      backgroundColor: 'rgba(0,0,0,0.45)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '0 20px',
+    }}>
+      <div style={{
+        backgroundColor: '#FFFFFF',
+        borderRadius: 18,
+        padding: '26px 22px',
+        maxWidth: 380,
+        width: '100%',
+        boxShadow: '0 8px 40px rgba(0,0,0,0.2)',
+      }}>
+        <div style={{ fontSize: 36, textAlign: 'center', marginBottom: 12 }}>&#x1F4C2;</div>
+        <h3 style={{ fontSize: 17, fontWeight: 700, color: '#1E293B', margin: '0 0 8px', textAlign: 'center' }}>
+          {t(isHi,
+            `Download data for ${childName}?`,
+            `${childName} का डेटा डाउनलोड करें?`
+          )}
+        </h3>
+        <p style={{ fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 1.6, margin: '0 0 16px' }}>
+          {t(isHi,
+            `This will download a JSON file with all of ${childName}'s data — quiz history, Foxy AI chats, learning progress, and account info.`,
+            `यह ${childName} के सभी डेटा के साथ एक JSON फ़ाइल डाउनलोड करेगा — क्विज़ इतिहास, फॉक्सी AI चैट, सीखने की प्रगति और खाता जानकारी।`
+          )}
+        </p>
+        <p style={{ fontSize: 11, color: '#94A3B8', textAlign: 'center', lineHeight: 1.5, margin: '0 0 20px' }}>
+          {t(isHi,
+            'DPDP §13 — Right to Access. Continue?',
+            'DPDP §13 — एक्सेस का अधिकार। जारी रखें?'
+          )}
+        </p>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            onClick={onCancel}
+            style={{
+              flex: 1, padding: '12px', backgroundColor: '#F1F5F9',
+              color: '#475569', border: 'none', borderRadius: 10,
+              fontSize: 14, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            {t(isHi, 'Cancel', 'रद्द करें')}
+          </button>
+          <button
+            onClick={onConfirm}
+            data-testid="confirm-download-data"
+            style={{
+              flex: 1, padding: '12px', backgroundColor: '#2563EB',
+              color: '#fff', border: 'none', borderRadius: 10,
+              fontSize: 14, fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            {t(isHi, 'Download', 'डाउनलोड')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // MAIN PAGE
 // ============================================================
 const t = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
@@ -851,6 +952,7 @@ export default function ParentChildrenPage() {
   const [expandedChild, setExpandedChild] = useState<string | null>(null);
   const [unlinkTarget, setUnlinkTarget] = useState<ChildData | null>(null);
   const [unlinkLoading, setUnlinkLoading] = useState(false);
+  const [downloadTarget, setDownloadTarget] = useState<ChildData | null>(null);
 
   const fetchChildren = useCallback(async () => {
     if (!guardian) return;
@@ -894,6 +996,17 @@ export default function ParentChildrenPage() {
     if (typeof window !== 'undefined') {
       window.location.href = '/parent/reports';
     }
+  };
+
+  const handleDownloadConfirm = () => {
+    if (!downloadTarget) return;
+    // Browser handles the download via Content-Disposition header.
+    // Same-origin GET preserves the parent's auth cookie automatically,
+    // so the API route can resolve the guardian + verify the link.
+    if (typeof window !== 'undefined') {
+      window.location.href = `/api/parent/children/${downloadTarget.id}/export`;
+    }
+    setDownloadTarget(null);
   };
 
   const handleUnlinkConfirm = async () => {
@@ -951,6 +1064,16 @@ export default function ParentChildrenPage() {
         />
       )}
 
+      {/* DPDP §13 — Download Data Confirmation Modal (Phase D.2) */}
+      {downloadTarget && (
+        <DownloadDataConfirmModal
+          childName={downloadTarget.name}
+          onConfirm={handleDownloadConfirm}
+          onCancel={() => setDownloadTarget(null)}
+          isHi={isHi}
+        />
+      )}
+
       {/* Header */}
       <div style={{
         background: 'linear-gradient(135deg, #F97316, #EA580C)',
@@ -988,6 +1111,7 @@ export default function ParentChildrenPage() {
               }
               onViewReport={handleViewReport}
               onUnlink={() => setUnlinkTarget(child)}
+              onDownloadData={() => setDownloadTarget(child)}
             />
           ))}
 
