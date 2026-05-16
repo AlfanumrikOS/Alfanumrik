@@ -117,7 +117,13 @@ export type PostHogEventName =
   // events_in_retry, events_dead_lettered, age_behind_seconds, severity:
   // 'warn'|'critical', threshold_seconds }. Zero events in steady state
   // — non-zero is on-call paging signal per docs/runbooks/projector-failure.md.
-  | 'projector_health_degraded';
+  | 'projector_health_degraded'
+  // Super-admin per-school health dashboard (Phase E.6). Fired client-side
+  // on page mount from /super-admin/health. PII-free — only the number of
+  // schools rendered + whether the synthetic-monitor table was present.
+  // Lets us measure how often ops consults the dashboard, and detect
+  // graceful-degradation paths in the wild.
+  | 'super_admin_health_dashboard_viewed';
 
 // ─── Base properties auto-attached by `capture()` ──────────────────────────
 
@@ -680,6 +686,7 @@ export type EventPayloadByName = {
   tutor_answer_submitted: TutorAnswerSubmittedPayload;
   tutor_answer_path_c_fallback: TutorAnswerPathCFallbackPayload;
   projector_health_degraded: ProjectorHealthDegradedPayload;
+  super_admin_health_dashboard_viewed: SuperAdminHealthDashboardViewedPayload;
 };
 
 // ── Adaptive Tutor payloads (ADR-004) ──────────────────────────────────
@@ -744,6 +751,28 @@ export interface ProjectorHealthDegradedPayload {
   severity: 'warn' | 'critical';
   /** The threshold (in seconds) that this row crossed. */
   threshold_seconds: number;
+}
+
+// ── Super-admin Health Dashboard payload (Phase E.6) ──────────────────
+//
+// Fired client-side once on /super-admin/health mount. We don't fire on
+// re-fetch — only the first successful render — so the event count is
+// "operator viewed the dashboard", not "the page hit /api/.../health".
+//
+// PII-free by design: only counts + the synthetic-monitor degradation
+// flag. No school names, no school ids, no operator email. The redactor
+// in src/lib/analytics.ts is a defense-in-depth backstop.
+export interface SuperAdminHealthDashboardViewedPayload {
+  /** Total schools returned by the BFF (pre-sort, post-filter). */
+  total_schools: number;
+  /** Schools with >0 distinct active users in the last 7 days. */
+  active_in_last_7d: number;
+  /**
+   * Whether the BFF degraded the synthetic-monitor column. True when
+   * the `synthetic_monitor_results` table is missing (E.5 not yet
+   * merged). Lets us alert if this ever flips back to true post-E.5.
+   */
+  synthetic_monitor_degraded: boolean;
 }
 
 /** Generic helper: lookup payload type by event name. */
