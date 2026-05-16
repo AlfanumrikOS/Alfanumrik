@@ -237,6 +237,35 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
     case 'parent.report_viewed':
       // Hidden from learner-facing; surfaced on parent-facing journey.
       return null;
+    case 'parent.consent_granted':
+      // Phase D.1 — DPDP consent grant. Surfaces on the parent-facing
+      // journey as an administrative "you signed the consent form" card.
+      // Not part of the learner's own timeline (the learner did nothing);
+      // the audit/notification subscribers consume it from the bus.
+      return {
+        id: e.eventId,
+        occurredAt: e.occurredAt,
+        category: 'parent',
+        title: 'Parent consent recorded',
+        detail: `Consent version ${e.payload.consentVersion}`,
+        emoji: '✅',
+        badge: 'info',
+        sourceKind: e.kind,
+      };
+    case 'parent.consent_revoked':
+      // Phase D.1 — DPDP consent revocation. Same rationale as the
+      // grant card: surface so the parent can see the action in their
+      // own timeline, but treat it as parent-actor, not learner-actor.
+      return {
+        id: e.eventId,
+        occurredAt: e.occurredAt,
+        category: 'parent',
+        title: 'Parent consent revoked',
+        detail: `Consent version ${e.payload.consentVersion}`,
+        emoji: '🛑',
+        badge: 'warning',
+        sourceKind: e.kind,
+      };
     case 'teacher.assignment_created':
       return {
         id: e.eventId,

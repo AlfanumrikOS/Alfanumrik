@@ -84,6 +84,8 @@ Verified by grep over `src/**` (2026-05-16) for `kind:` literals and `publishEve
 |---|---|---|
 | `parent.linked_to_learner` | 🟡 Schema-only | `/api/parent/approve-link` writes `guardian_student_links` directly; not yet publishing. Migration to publish target — closes the "implicit triggers blur ownership" gap (R8). |
 | `parent.report_viewed` | 🟡 Schema-only | Parent portal does not yet emit a view event. Low priority. |
+| `parent.consent_granted` | ✅ Live | [`src/app/api/parent/consent/route.ts`](../../src/app/api/parent/consent/route.ts) POST. DPDP-compliance audit trail for parental consent grants. Payload carries `consentVersion` + per-scope booleans + locale; IP/UA persist only in the canonical `parental_consent` row. Phase D.1. |
+| `parent.consent_revoked` | ✅ Live | [`src/app/api/parent/consent/route.ts`](../../src/app/api/parent/consent/route.ts) DELETE. Counterpart to `parent.consent_granted`; emitted when a guardian withdraws consent. Subscribers should treat as a "pause processing" signal. Phase D.1. |
 
 ### Teacher events
 

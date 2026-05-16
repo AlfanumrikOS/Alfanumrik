@@ -195,6 +195,48 @@ export const ParentReportViewedSchema = EventBaseSchema.extend({
   }),
 });
 
+// Phase D.1 — DPDP parental-consent capture. Emitted when a guardian
+// records explicit consent for a linked child via the consent capture
+// screen. Payload carries the consent_version + the boolean scope grants
+// so downstream subscribers (audit pipeline, parent notifications, DPDP
+// regulator report) can fan out without re-reading parental_consent.
+// IP and user-agent stay in the canonical row — payload is bounded to
+// what subscribers actually need.
+export const ParentConsentGrantedSchema = EventBaseSchema.extend({
+  kind: z.literal('parent.consent_granted'),
+  payload: z.object({
+    consentId:     uuidLike(),
+    guardianId:    uuidLike(),
+    studentId:     uuidLike(),
+    consentVersion: z.string().min(1).max(64),
+    // Per-scope boolean grants. Keys mirror CONSENT_SCOPES in
+    // src/lib/dpdp/consent.ts. Subscribers MUST treat missing keys as
+    // "not granted" — a forward-compatible default.
+    scopes: z.object({
+      curriculum_access:                       z.boolean().optional(),
+      performance_data_sharing_with_teacher:   z.boolean().optional(),
+      marketing_emails:                        z.boolean().optional(),
+    }),
+    locale: z.enum(['en', 'hi']),
+  }),
+});
+
+// Phase D.1 — DPDP parental-consent revocation. Emitted when a guardian
+// withdraws consent for a linked child. Subscribers should treat this as
+// a "stop processing this child's data" signal — pause notifications,
+// flag the account for human review, etc.
+export const ParentConsentRevokedSchema = EventBaseSchema.extend({
+  kind: z.literal('parent.consent_revoked'),
+  payload: z.object({
+    consentId:  uuidLike(),
+    guardianId: uuidLike(),
+    studentId:  uuidLike(),
+    // The version of consent that was revoked — lets the regulator audit
+    // which policy iteration the parent had agreed to.
+    consentVersion: z.string().min(1).max(64),
+  }),
+});
+
 // ── Teacher events ───────────────────────────────────────────────────
 
 export const TeacherAssignmentCreatedSchema = EventBaseSchema.extend({
@@ -371,6 +413,8 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   FoxySessionCompletedSchema,
   ParentLinkedSchema,
   ParentReportViewedSchema,
+  ParentConsentGrantedSchema,
+  ParentConsentRevokedSchema,
   TeacherAssignmentCreatedSchema,
   TeacherClassroomCreatedSchema,
   TeacherClassroomUpdatedSchema,
@@ -406,6 +450,8 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'ai.foxy_session_completed',
   'parent.linked_to_learner',
   'parent.report_viewed',
+  'parent.consent_granted',
+  'parent.consent_revoked',
   'teacher.assignment_created',
   'teacher.classroom_created',
   'teacher.classroom_updated',

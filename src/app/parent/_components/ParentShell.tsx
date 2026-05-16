@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
@@ -57,6 +58,51 @@ function useParentUnreadBadge(enabled: boolean): number {
   return data?.unreadCount ?? 0;
 }
 
+/**
+ * DPDP gate (Phase D.1).
+ *
+ * For guardian-mode parents, hit /api/parent/consent and check whether
+ * any linked child lacks an active consent at the current version. If
+ * so, redirect to /parent/consent with the original path as returnTo.
+ *
+ * Link-code parents skip the gate — they don't have a Supabase auth
+ * session, so the consent route would 401 them anyway. The plan is to
+ * surface a sign-in nudge before the link-code flow can persist consent
+ * authoritatively. Tracked for D.2.
+ */
+async function consentGateFetcher(url: string): Promise<{ allChildrenConsented: boolean }> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+  } catch {
+    /* anonymous — fall through */
+  }
+  const [consentRes, billingRes] = await Promise.all([
+    fetch(url, { headers }),
+    fetch('/api/parent/billing', { headers }),
+  ]);
+  if (!consentRes.ok || !billingRes.ok) {
+    // Network/auth glitch — fail open so a transient hiccup doesn't trap
+    // the parent on the consent screen. The gate re-runs on next render.
+    return { allChildrenConsented: true };
+  }
+  const consent = await consentRes.json();
+  const billing = await billingRes.json();
+  type ActiveRow = { studentId: string; consentVersion: string };
+  const rows = (consent?.items ?? []) as ActiveRow[];
+  const currentVersion = consent?.currentVersion as string | undefined;
+  const consentedSet = new Set(
+    rows
+      .filter((r) => !currentVersion || r.consentVersion === currentVersion)
+      .map((r) => r.studentId),
+  );
+  type BillingChild = { student_id: string };
+  const linked = ((billing?.data?.children ?? []) as BillingChild[]).map((c) => c.student_id);
+  const missing = linked.filter((id) => !consentedSet.has(id));
+  return { allChildrenConsented: missing.length === 0 };
+}
+
 export default function ParentShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -68,6 +114,28 @@ export default function ParentShell({ children }: { children: React.ReactNode })
   // can't authenticate against /api/parent/notifications. Guard the
   // SWR fetch so we don't generate spurious 401s.
   const unreadCount = useParentUnreadBadge(mode === 'guardian');
+
+  // DPDP consent gate. Only fires for guardian-mode sessions on non-
+  // consent paths — we skip while on /parent/consent itself so the
+  // parent can complete the form, and we skip on /parent (the login
+  // screen). The SWR cache makes this cheap on every navigation.
+  const consentGateEnabled =
+    mode === 'guardian' &&
+    pathname !== '/parent' &&
+    pathname !== '/parent/consent' &&
+    !pathname?.startsWith('/parent/consent');
+  const { data: gateData } = useSWR<{ allChildrenConsented: boolean }>(
+    consentGateEnabled ? '/api/parent/consent' : null,
+    consentGateFetcher,
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+  useEffect(() => {
+    if (!consentGateEnabled) return;
+    if (gateData && !gateData.allChildrenConsented) {
+      const returnTo = encodeURIComponent(pathname || '/parent');
+      router.replace(`/parent/consent?returnTo=${returnTo}`);
+    }
+  }, [consentGateEnabled, gateData, pathname, router]);
 
   // ─── Editorial Atlas pass-through ────────────────────────────────────
   // When Atlas is on, AtlasParent renders its own AtlasShell. Wrapping it
