@@ -385,7 +385,7 @@ function ChildCard({
 // LINK CHILD SECTION
 // ============================================================
 function LinkChildSection({
-  guardianId,
+  guardianId: _guardianId,
   onLinked,
   compact,
   isHi = false,
@@ -395,59 +395,164 @@ function LinkChildSection({
   compact?: boolean;
   isHi?: boolean;
 }) {
+  // Phase D.4: 2-step OTP-gated flow. step 1 = enter code, step 2 = enter OTP.
+  type Step = 'code' | 'otp' | 'locked';
+  const [step, setStep] = useState<Step>('code');
   const [code, setCode] = useState('');
+  const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [resendCooldownUntil, setResendCooldownUntil] = useState<number | null>(null);
 
-  const handleLink = async () => {
+  const requestOtp = async (codeToSend: string) => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/parent/link-code/request-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ link_code: codeToSend.trim().toUpperCase() }),
+      });
+      if (res.status === 429) {
+        setMessage({
+          type: 'error',
+          text: t(isHi,
+            'Too many attempts. Please wait an hour and try again.',
+            'बहुत अधिक प्रयास। कृपया एक घंटा प्रतीक्षा करें और पुनः प्रयास करें।'),
+        });
+        return false;
+      }
+      if (!res.ok) {
+        setMessage({
+          type: 'error',
+          text: t(isHi, 'Something went wrong. Please try again.', 'कुछ गलत हो गया। कृपया पुनः प्रयास करें।'),
+        });
+        return false;
+      }
+      // 1-minute resend cooldown on the client to mirror the server-side rule.
+      setResendCooldownUntil(Date.now() + 60_000);
+      setMessage({
+        type: 'info',
+        text: t(isHi,
+          "If the code is valid, we've sent a 6-digit code to your email. Check your inbox.",
+          'यदि कोड मान्य है, तो हमने आपके ईमेल पर 6-अंकीय कोड भेजा है। अपना इनबॉक्स देखें।'),
+      });
+      return true;
+    } catch {
+      setMessage({
+        type: 'error',
+        text: t(isHi, 'Network error. Please try again.', 'नेटवर्क त्रुटि। कृपया पुनः प्रयास करें।'),
+      });
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRequestCode = async () => {
     if (!code.trim()) {
       setMessage({ type: 'error', text: t(isHi, 'Please enter a link code.', 'कृपया एक लिंक कोड दर्ज करें।') });
+      return;
+    }
+    const ok = await requestOtp(code);
+    if (ok) setStep('otp');
+  };
+
+  const handleResend = async () => {
+    if (resendCooldownUntil && Date.now() < resendCooldownUntil) return;
+    await requestOtp(code);
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!/^\d{6}$/.test(otp.trim())) {
+      setMessage({
+        type: 'error',
+        text: t(isHi, 'Please enter the 6-digit code from your email.', 'कृपया अपने ईमेल से 6-अंकीय कोड दर्ज करें।'),
+      });
       return;
     }
     setLoading(true);
     setMessage(null);
     try {
-      const { data, error } = await supabase.rpc('link_guardian_to_student_via_code', {
-        p_guardian_id: guardianId,
-        p_invite_code: code.trim().toUpperCase(),
+      const res = await fetch('/api/parent/link-code/redeem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          link_code: code.trim().toUpperCase(),
+          otp: otp.trim(),
+        }),
       });
-      if (error) throw error;
-      if (data && typeof data === 'object' && 'error' in data) {
-        setMessage({ type: 'error', text: (data as { error: string }).error });
-      } else {
-        setMessage({ type: 'success', text: t(isHi, 'Child linked successfully!', 'बच्चा सफलतापूर्वक जुड़ गया!') });
-        // Analytics: F16 — see audit 2026-04-27.
-        // Fires once per successful link redemption. Never log raw student_id —
-        // hash to first 8 bytes (16 hex chars) for cohort analysis without PII.
-        try {
-          const studentId = data && typeof data === 'object' && 'student_id' in data
-            ? (data as { student_id: string }).student_id
-            : null;
-          let studentIdHash: string | undefined;
-          if (studentId && typeof crypto !== 'undefined' && crypto.subtle) {
-            const buf = new TextEncoder().encode(studentId);
-            const digest = await crypto.subtle.digest('SHA-256', buf);
-            studentIdHash = Array.from(new Uint8Array(digest).slice(0, 8))
-              .map((b) => b.toString(16).padStart(2, '0'))
-              .join('');
-          }
-          track('parent_linked', {
-            method: 'code',
-            link_method: 'code',
-            ...(studentIdHash ? { student_id_hash: studentIdHash } : {}),
-          });
-        } catch { /* analytics is non-critical */ }
-        setCode('');
-        setTimeout(() => {
-          setMessage(null);
-          onLinked();
-        }, 1500);
+      const body = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        error?: string;
+        linked?: boolean;
+        student_name?: string | null;
+        remaining_attempts?: number;
+      };
+      if (res.status === 423) {
+        setStep('locked');
+        setMessage({
+          type: 'error',
+          text: t(isHi,
+            'Too many incorrect attempts. Try again in 1 hour.',
+            'बहुत अधिक गलत प्रयास। 1 घंटे में पुनः प्रयास करें।'),
+        });
+        return;
       }
+      if (res.status === 429) {
+        setMessage({
+          type: 'error',
+          text: t(isHi,
+            'Too many attempts. Please wait an hour and try again.',
+            'बहुत अधिक प्रयास। कृपया एक घंटा प्रतीक्षा करें और पुनः प्रयास करें।'),
+        });
+        return;
+      }
+      if (!res.ok || !body.success) {
+        const remaining = body.remaining_attempts;
+        setMessage({
+          type: 'error',
+          text: typeof remaining === 'number'
+            ? t(isHi,
+                `Incorrect code. ${remaining} attempts left.`,
+                `गलत कोड। ${remaining} प्रयास शेष।`)
+            : body.error ?? t(isHi, 'Incorrect code.', 'गलत कोड।'),
+        });
+        return;
+      }
+
+      // Success — fire analytics (best effort) and reset the form.
+      try {
+        track('parent_linked', { method: 'code', link_method: 'code' });
+      } catch { /* non-critical */ }
+      setMessage({
+        type: 'success',
+        text: t(isHi, 'Child linked successfully!', 'बच्चा सफलतापूर्वक जुड़ गया!'),
+      });
+      setCode('');
+      setOtp('');
+      setTimeout(() => {
+        setMessage(null);
+        setStep('code');
+        onLinked();
+      }, 1500);
     } catch {
-      setMessage({ type: 'error', text: t(isHi, 'Invalid code or already linked. Please check and try again.', 'अमान्य कोड या पहले से जुड़ा हुआ। कृपया जाँच करें और पुनः प्रयास करें।') });
+      setMessage({
+        type: 'error',
+        text: t(isHi, 'Network error. Please try again.', 'नेटवर्क त्रुटि। कृपया पुनः प्रयास करें।'),
+      });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
+
+  const handleBackToCode = () => {
+    setOtp('');
+    setStep('code');
+    setMessage(null);
+  };
+
+  const resendDisabled = !!(resendCooldownUntil && Date.now() < resendCooldownUntil);
 
   return (
     <div style={{
@@ -466,58 +571,161 @@ function LinkChildSection({
         fontSize: 13, color: '#94A3B8', margin: compact ? '0 0 12px' : '0 0 16px',
         lineHeight: 1.5,
       }}>
-        {compact
-          ? t(isHi, "Enter your child's link code to connect and start tracking their progress.", 'अपने बच्चे का लिंक कोड दर्ज करें और उनकी प्रगति ट्रैक करना शुरू करें।')
-          : t(isHi, "Ask your child's teacher for the link code, or find it in your child's profile page under Settings.", 'लिंक कोड के लिए अपने बच्चे के शिक्षक से पूछें, या इसे बच्चे के प्रोफ़ाइल पेज में सेटिंग्स के तहत खोजें।')}
+        {step === 'code'
+          ? (compact
+              ? t(isHi, "Enter your child's link code to connect and start tracking their progress.", 'अपने बच्चे का लिंक कोड दर्ज करें और उनकी प्रगति ट्रैक करना शुरू करें।')
+              : t(isHi, "Ask your child's teacher for the link code, or find it in your child's profile page under Settings.", 'लिंक कोड के लिए अपने बच्चे के शिक्षक से पूछें, या इसे बच्चे के प्रोफ़ाइल पेज में सेटिंग्स के तहत खोजें।'))
+          : step === 'otp'
+            ? t(isHi,
+                "Enter the 6-digit code we sent to your email.",
+                'हमने आपके ईमेल पर भेजा गया 6-अंकीय कोड दर्ज करें।')
+            : t(isHi,
+                'Too many incorrect attempts. Try again in 1 hour.',
+                'बहुत अधिक गलत प्रयास। 1 घंटे में पुनः प्रयास करें।')}
       </p>
 
-      <div style={{ display: 'flex', gap: 8 }}>
-        <input
-          type="text"
-          placeholder={t(isHi, "Enter your child's link code", 'अपने बच्चे का लिंक कोड दर्ज करें')}
-          value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase())}
-          onKeyDown={(e) => e.key === 'Enter' && handleLink()}
-          maxLength={12}
-          style={{
-            flex: 1,
-            padding: '12px 14px',
-            backgroundColor: '#FFF8F0',
-            border: '1px solid #FDBA7444',
-            borderRadius: 10,
-            color: '#1E293B',
-            fontSize: 15,
-            letterSpacing: 2,
-            textTransform: 'uppercase' as const,
-            outline: 'none',
-            boxSizing: 'border-box' as const,
-          }}
-        />
-        <button
-          onClick={handleLink}
-          disabled={loading}
-          style={{
-            padding: '12px 20px',
-            backgroundColor: '#16A34A',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 10,
-            fontSize: 15,
-            fontWeight: 600,
-            cursor: loading ? 'default' : 'pointer',
-            opacity: loading ? 0.6 : 1,
-            whiteSpace: 'nowrap' as const,
-            minWidth: 100,
-          }}
-        >
-          {loading ? t(isHi, 'Linking...', 'जोड़ रहे हैं...') : t(isHi, 'Link Child', 'बच्चा जोड़ें')}
-        </button>
-      </div>
+      {step === 'code' && (
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            type="text"
+            placeholder={t(isHi, "Enter your child's link code", 'अपने बच्चे का लिंक कोड दर्ज करें')}
+            value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            onKeyDown={(e) => e.key === 'Enter' && handleRequestCode()}
+            maxLength={12}
+            style={{
+              flex: 1,
+              padding: '12px 14px',
+              backgroundColor: '#FFF8F0',
+              border: '1px solid #FDBA7444',
+              borderRadius: 10,
+              color: '#1E293B',
+              fontSize: 15,
+              letterSpacing: 2,
+              textTransform: 'uppercase' as const,
+              outline: 'none',
+              boxSizing: 'border-box' as const,
+            }}
+          />
+          <button
+            onClick={handleRequestCode}
+            disabled={loading}
+            style={{
+              padding: '12px 20px',
+              backgroundColor: '#16A34A',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 10,
+              fontSize: 15,
+              fontWeight: 600,
+              cursor: loading ? 'default' : 'pointer',
+              opacity: loading ? 0.6 : 1,
+              whiteSpace: 'nowrap' as const,
+              minWidth: 100,
+            }}
+          >
+            {loading
+              ? t(isHi, 'Sending...', 'भेज रहे हैं...')
+              : t(isHi, 'Send Code', 'कोड भेजें')}
+          </button>
+        </div>
+      )}
+
+      {step === 'otp' && (
+        <div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="000000"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              onKeyDown={(e) => e.key === 'Enter' && handleVerifyOtp()}
+              maxLength={6}
+              style={{
+                flex: 1,
+                padding: '12px 14px',
+                backgroundColor: '#FFF8F0',
+                border: '1px solid #FDBA7444',
+                borderRadius: 10,
+                color: '#1E293B',
+                fontSize: 18,
+                letterSpacing: 6,
+                textAlign: 'center' as const,
+                outline: 'none',
+                boxSizing: 'border-box' as const,
+              }}
+            />
+            <button
+              onClick={handleVerifyOtp}
+              disabled={loading}
+              style={{
+                padding: '12px 20px',
+                backgroundColor: '#16A34A',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 10,
+                fontSize: 15,
+                fontWeight: 600,
+                cursor: loading ? 'default' : 'pointer',
+                opacity: loading ? 0.6 : 1,
+                whiteSpace: 'nowrap' as const,
+                minWidth: 100,
+              }}
+            >
+              {loading
+                ? t(isHi, 'Verifying...', 'सत्यापित कर रहे हैं...')
+                : t(isHi, 'Verify', 'सत्यापित करें')}
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
+            <button
+              onClick={handleBackToCode}
+              type="button"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#64748B',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              {t(isHi, 'Back', 'वापस')}
+            </button>
+            <button
+              onClick={handleResend}
+              disabled={resendDisabled || loading}
+              type="button"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: resendDisabled ? '#94A3B8' : '#6C5CE7',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: resendDisabled ? 'default' : 'pointer',
+                padding: 0,
+              }}
+            >
+              {resendDisabled
+                ? t(isHi, 'Resend in 1 min', '1 मिनट में पुनः भेजें')
+                : t(isHi, 'Resend code', 'कोड पुनः भेजें')}
+            </button>
+          </div>
+        </div>
+      )}
 
       {message && (
         <p style={{
           fontSize: 13, margin: '10px 0 0',
-          color: message.type === 'success' ? '#22C55E' : '#EF4444',
+          color:
+            message.type === 'success'
+              ? '#22C55E'
+              : message.type === 'info'
+                ? '#64748B'
+                : '#EF4444',
           fontWeight: 500,
         }}>
           {message.text}

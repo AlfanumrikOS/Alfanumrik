@@ -87,10 +87,12 @@ function StudentCard({
   student,
   teacherId,
   isHi,
+  router,
 }: {
   student: StudentData;
   teacherId: string;
   isHi: boolean;
+  router: ReturnType<typeof useRouter>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [note, setNote] = useState('');
@@ -238,25 +240,44 @@ function StudentCard({
           />
         </div>
 
-        {/* View Details Button */}
-        <button
-          onClick={() => setExpanded(!expanded)}
-          style={{
-            marginTop: 12,
-            width: '100%',
-            padding: '8px 0',
-            backgroundColor: expanded ? '#1D4ED8' : 'transparent',
-            color: expanded ? '#fff' : '#2563EB',
-            border: expanded ? 'none' : '1px solid #2563EB',
-            borderRadius: 8,
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          {expanded ? tt(isHi, 'Hide Details', 'विवरण छुपाएं') : tt(isHi, 'View Details', 'विवरण देखें')}
-        </button>
+        {/* Action Row — View Details + Message Parent (Phase C.3) */}
+        <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            style={{
+              flex: 1,
+              padding: '8px 0',
+              backgroundColor: expanded ? '#1D4ED8' : 'transparent',
+              color: expanded ? '#fff' : '#2563EB',
+              border: expanded ? 'none' : '1px solid #2563EB',
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            {expanded ? tt(isHi, 'Hide Details', 'विवरण छुपाएं') : tt(isHi, 'View Details', 'विवरण देखें')}
+          </button>
+          <button
+            onClick={() => router.push(`/teacher/messages?student=${encodeURIComponent(student.id)}`)}
+            style={{
+              flex: 1,
+              padding: '8px 0',
+              backgroundColor: 'transparent',
+              color: '#6366F1',
+              border: '1px solid #6366F1',
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+            title={tt(isHi, 'Send a message to this student\'s parent', 'इस छात्र के अभिभावक को संदेश भेजें')}
+          >
+            ✉ {tt(isHi, 'Message Parent', 'संदेश भेजें')}
+          </button>
+        </div>
       </div>
 
       {/* Expanded Details */}
@@ -813,7 +834,7 @@ export default function TeacherStudentsPage() {
           }}
         >
           {filtered.map((student) => (
-            <StudentCard key={student.id} student={student} teacherId={teacherId} isHi={isHi} />
+            <StudentCard key={student.id} student={student} teacherId={teacherId} isHi={isHi} router={router} />
           ))}
         </div>
       )}
