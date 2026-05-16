@@ -11,6 +11,8 @@ const path = require('path');
 
 // Pre-existing rule in this package
 const noRawSubjectImports = require('./no-raw-subject-imports');
+// Phase 3 — canonical-write boundary (ADR-005 §"The enforceable rule" #1)
+const noCanonicalWriteOutsideProjector = require('./no-canonical-write-outside-projector');
 
 // Grounding-boundary rules live at the repo root under eslint-rules/
 // so they can be tested and referenced without mixing with subject rules.
@@ -23,6 +25,8 @@ module.exports = {
     // "main: no-raw-subject-imports.js" path still resolves for any legacy
     // consumers).
     'no-raw-subject-imports': noRawSubjectImports.rules['no-raw-subject-imports'],
+    'no-canonical-write-outside-projector':
+      noCanonicalWriteOutsideProjector.rules['no-canonical-write-outside-projector'],
     // Grounding-boundary rules (Tasks 3.18 / 3.19)
     'no-direct-ai-calls': noDirectAiCalls,
     'no-direct-rag-rpc': noDirectRagRpc,
