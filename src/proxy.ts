@@ -539,10 +539,35 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  // ── Build forwarded request headers (includes tenant x-school-* if resolved) ──
+  // CRITICAL: /api/school-config, /api/tenant/config, /api/school-config/manifest,
+  // and lib/tenant.ts → tenantFromHeaders() all read x-school-* off the INCOMING
+  // request headers (request.headers.get('x-school-id')). Headers set on the
+  // response are invisible to them — the response is what we send back, not what
+  // downstream handlers see. We must pass these into NextResponse.next() via
+  // `{ request: { headers: requestHeaders } }`, which is the Next.js canonical
+  // pattern for forwarding modified request headers to API routes and Server
+  // Components in the same request lifecycle.
+  //
+  // Without this, SchoolContext.tsx fetches /api/school-config, the API route
+  // sees no x-school-id, and the client renders default Alfanumrik branding even
+  // though tenant lookup (above) succeeded. This defeats the entire white-label
+  // substrate.
+  const requestHeaders = new Headers(request.headers);
+  if (schoolConfig) {
+    requestHeaders.set('x-school-id', schoolConfig.id);
+    requestHeaders.set('x-school-name', encodeURIComponent(schoolConfig.name));
+    requestHeaders.set('x-school-slug', schoolConfig.slug);
+    requestHeaders.set('x-school-logo', schoolConfig.logo_url || '');
+    requestHeaders.set('x-school-primary-color', schoolConfig.primary_color || '#7C3AED');
+    requestHeaders.set('x-school-secondary-color', schoolConfig.secondary_color || '#F97316');
+    requestHeaders.set('x-school-tagline', encodeURIComponent(schoolConfig.tagline || ''));
+  }
+
   // ── Layer 0: Supabase session refresh ──
   // This keeps the auth cookie fresh on every request.
   // Required for the PKCE email flow (signup confirm, password reset).
-  let response = NextResponse.next({ request });
+  let response = NextResponse.next({ request: { headers: requestHeaders } });
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -565,7 +590,10 @@ export async function proxy(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
-          response = NextResponse.next({ request });
+          // Preserve the augmented requestHeaders (with tenant context) when
+          // Supabase rewrites cookies during session refresh — otherwise the
+          // recreated NextResponse drops our x-school-* headers.
+          response = NextResponse.next({ request: { headers: requestHeaders } });
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
           );
@@ -753,9 +781,14 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // ── Inject school config headers (after response is created) ──
-  // These headers are read by /api/school-config and forwarded to SchoolContext.
-  // Also injected into request headers for API routes to consume via tenantFromHeaders().
+  // ── Mirror school config headers onto the RESPONSE (debug surface only) ──
+  // The load-bearing copy is on the FORWARDED REQUEST headers (built above and
+  // passed via `NextResponse.next({ request: { headers: requestHeaders } })`)
+  // — that's what /api/school-config, /api/tenant/config, manifest, and
+  // tenantFromHeaders() actually read. The response-header mirror here is kept
+  // purely so the browser DevTools Network panel reveals which tenant was
+  // resolved for a given request — useful when triaging "wrong school renders"
+  // reports. Nothing in the codebase reads x-school-* off response.headers.
   if (schoolConfig) {
     response.headers.set('x-school-id', schoolConfig.id);
     response.headers.set('x-school-name', encodeURIComponent(schoolConfig.name));
