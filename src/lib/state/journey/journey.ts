@@ -253,9 +253,13 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
     case 'teacher.classroom_archived':
     case 'teacher.student_note_set':
     case 'teacher.profile_updated':
+    case 'teacher.submission_reviewed':
       // Teacher-side admin events — not surfaced on learner-facing journey
       // (they describe teacher actions on classroom/student, not learner state
       // changes). Audit/notification subscribers consume these instead.
+      // Phase C.1: teacher.submission_reviewed could surface to learner
+      // when a parent-facing journey adds review notifications — kept null
+      // here to keep the learner timeline focused on their own work.
       return null;
     case 'school.module_toggled':
       return null; // admin-only signal

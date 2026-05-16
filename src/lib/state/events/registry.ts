@@ -274,6 +274,29 @@ export const TeacherProfileUpdatedSchema = EventBaseSchema.extend({
   }),
 });
 
+// Phase C.1 (ADR-005). Teacher reviewing a student's assignment submission:
+// records feedback and (optionally) a score override. Surfaces audit trail,
+// drives parent notifications, and feeds analytics on review turnaround.
+// The canonical `assignment_submissions.{teacher_feedback, graded_at,
+// graded_by, score}` columns are still updated directly today — projector
+// extraction is tracked TODO. Payload deliberately omits the feedback body
+// (subscribers fetch from the canonical row); we send only booleans + the
+// score override so payloads stay bounded.
+export const TeacherSubmissionReviewedSchema = EventBaseSchema.extend({
+  kind: z.literal('teacher.submission_reviewed'),
+  payload: z.object({
+    submissionId:  uuidLike(),
+    assignmentId: uuidLike(),
+    studentId:    uuidLike(),
+    teacherId:    uuidLike(),
+    hasFeedback:  z.boolean(),
+    // Final score the teacher endorsed (or auto-graded score if no
+    // override). null when neither the system nor the teacher set one.
+    scorePercent: z.number().min(0).max(100).nullable(),
+    scoreOverridden: z.boolean(),
+  }),
+});
+
 // ── School / tenant events ───────────────────────────────────────────
 
 export const SchoolModuleToggledSchema = EventBaseSchema.extend({
@@ -329,6 +352,7 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   TeacherClassroomArchivedSchema,
   TeacherStudentNoteSetSchema,
   TeacherProfileUpdatedSchema,
+  TeacherSubmissionReviewedSchema,
   SchoolModuleToggledSchema,
   BillingInvoicePaidSchema,
   MeshCycleCompletedSchema,
@@ -362,6 +386,7 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'teacher.classroom_archived',
   'teacher.student_note_set',
   'teacher.profile_updated',
+  'teacher.submission_reviewed',
   'school.module_toggled',
   'billing.invoice_paid',
   'mesh.cycle_completed',

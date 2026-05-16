@@ -95,6 +95,7 @@ Verified by grep over `src/**` (2026-05-16) for `kind:` literals and `publishEve
 | `teacher.classroom_archived` | ✅ Live | [`src/app/api/teacher/classes/[id]/archive/route.ts`](../../src/app/api/teacher/classes/[id]/archive/route.ts). Phase B.5. |
 | `teacher.student_note_set` | ✅ Live | [`src/app/api/teacher/students/[id]/notes/route.ts`](../../src/app/api/teacher/students/[id]/notes/route.ts) PUT. Payload only carries `hasNote/hasGoal` booleans; subscribers must fetch the full body from `teacher_student_notes`. Phase B.5. |
 | `teacher.profile_updated` | ✅ Live | [`src/app/api/teacher/profile/route.ts`](../../src/app/api/teacher/profile/route.ts) PATCH. Phase B.5. |
+| `teacher.submission_reviewed` | ✅ Live | [`src/app/api/teacher/submissions/[id]/review/route.ts`](../../src/app/api/teacher/submissions/[id]/review/route.ts) POST. Emitted when a teacher records feedback and (optionally) overrides the auto-score on a student's assignment submission. Payload omits the feedback body — subscribers fetch the full `teacher_feedback` from the canonical `assignment_submissions` row. Phase C.1. TODO: canonical write to `assignment_submissions.{graded_at, graded_by, teacher_feedback, score}` still in-route; extract to a `submission-review-projector` subscriber. |
 
 ### School / tenant events
 

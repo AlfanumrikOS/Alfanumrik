@@ -170,6 +170,15 @@ const VALID_PAYLOADS: Record<DomainEventKind, Record<string, unknown>> = {
     teacherId: FIXTURE_UUID_A,
     fields: ['name'],
   },
+  'teacher.submission_reviewed': {
+    submissionId: FIXTURE_UUID_C,
+    assignmentId: FIXTURE_UUID_A,
+    studentId: FIXTURE_UUID_B,
+    teacherId: FIXTURE_UUID_A,
+    hasFeedback: true,
+    scorePercent: 78,
+    scoreOverridden: false,
+  },
   'school.module_toggled': {
     moduleKey: 'ai_tutor',
     isEnabled: true,
