@@ -1,357 +1,199 @@
-# Event catalog (v1)
+# Event catalog (v2)
 
-**As of:** 2026-04-24, branch `feat/stabilization-phase-0`.
-**Status:** **no event bus exists today.** This document is a forward-
-looking catalog of the events that WOULD be needed if and when a
-service extraction happens (see
-[`MICROSERVICES_EXTRACTION_PLAN.md`](./MICROSERVICES_EXTRACTION_PLAN.md)).
-Every entry below is labelled **proposed** because none are implemented.
+**As of:** 2026-05-16.
+**Status:** **the event bus is LIVE.** Substrate landed in [PR #752](https://github.com/AlfanumrikOS/Alfanumrik/pull/752) (merged 2026-05-12), with the canonical event registry in [`src/lib/state/events/registry.ts`](../../src/lib/state/events/registry.ts) and the single publish entry point in [`src/lib/state/events/publish.ts`](../../src/lib/state/events/publish.ts). 16 typed event kinds are registered; producer status varies — see [§3 Catalog](#3-catalog).
 
-The abandoned v0 of this document listed 30+ events without
-implementation intent — most were speculative. This version:
+This document supersedes v1 (2026-04-24) which catalogued a forward-looking proposal under the premise "no event bus exists today." Most of v1's proposed E1–E10 events have either landed under different names or remain schema-only — the mapping is preserved in [§9 Relation to v1](#9-relation-to-v1).
 
-1. Lists only events for which a real synchronous coupling exists today
-   (so we know which boundary would need to become asynchronous).
-2. Names the **producing code path** that already exists.
-3. Names the **consumers that would subscribe**.
-4. Does not pretend a bus exists.
+## 1. Why an outbox pattern, not a distributed bus
 
-## Why an outbox pattern, not a distributed bus?
+The bus is implemented as `public.state_events` in the same Postgres as everything else. Producers write event rows in the same transaction as the source state change. Subscribers poll their own watermarks via the `projector-runner` Edge Function, ticked by pg_cron every minute. No Kafka, no SQS, no Redis Streams, no new vendor dependency — this preserves Blueprint Hard Rule #11 (stack lock).
 
-When (if) we start emitting events, the recommended mechanism is an
-**outbox table + polling worker** inside the existing Supabase
-Postgres. Concretely:
+The trade-offs documented in v1 still hold:
 
-- Producers write event rows into `public.domain_events` in the same
-  transaction as the source state change.
-- A single worker (Edge Function `queue-consumer` already exists and
-  can be repurposed) polls the outbox, dispatches to consumers
-  (Postgres triggers, Edge Functions, or future services), and marks
-  events processed.
+- **Ordering.** Per-`(kind, occurred_at, event_id)` ordering is preserved. Across kinds, no global ordering is guaranteed.
+- **Delivery semantics.** At-least-once. Subscribers must be idempotent.
+- **Worker concurrency.** Single `projector-runner` instance per cron tick. If we ever scale to multiple, the polling query must use `SELECT … FOR UPDATE SKIP LOCKED`. Not relevant today.
+- **Consumer death = silent backlog.** Addressed by [`subscriber_lag` view](../../supabase/migrations/20260524110001_state_runtime_per_subscriber.sql) + `projector-health-check` Edge Function ([Iteration 2 of Phase 5](../runbooks/projector-failure.md)).
+- **Growth.** `state_events` can grow unbounded. Partitioning + archival policy is queued; see [§7 Observability and operations](#7-observability-and-operations).
+- **DLQ.** Implemented as [`subscriber_dead_letters`](../../supabase/migrations/20260524110001_state_runtime_per_subscriber.sql) per subscriber. See [`docs/runbooks/dead-letter-inspection.md`](../runbooks/dead-letter-inspection.md).
+- **Backpressure.** Pause producers (flag off) rather than RLS throttling. Not exercised yet — flag-off mechanism untested in anger.
 
-This gives us event-driven integration **without** introducing Kafka,
-SQS, Redis Streams, or any new vendor dependency — fitting the
-brief's constraint "Do not invent infrastructure that the project
-cannot realistically run."
+## 2. Event envelope
 
-**The `public.domain_events` table does not exist today.** It would
-be created in Phase 0d.
+Every event carries the envelope below before its kind-specific `payload`. Defined in [`src/lib/state/events/registry.ts`](../../src/lib/state/events/registry.ts):
 
-## Event envelope (proposed)
+```ts
+const EventBaseSchema = z.object({
+  eventId:          uuidLike(),          // stable id assigned at publish time
+  occurredAt:       isoDatetime(),        // wall-clock the publisher captured
+  actorAuthUserId:  uuidLike(),          // the auth_user_id this event is "about"
+  tenantId:         uuidLike().nullable(), // tenant scope; null for B2C / global
+  idempotencyKey:   z.string().min(1).max(128), // dedup key for retries / replay
+});
+```
+
+DB table [`public.state_events`](../../supabase/migrations/20260516180000_domain_events_bus.sql) (renamed from `domain_events` per `20260521100000_state_events_bus_rename.sql`):
 
 ```sql
-CREATE TABLE public.domain_events (
-  event_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  event_type     TEXT NOT NULL,          -- e.g. 'quiz.completed'
-  aggregate_type TEXT NOT NULL,          -- e.g. 'quiz_session'
-  aggregate_id   UUID NOT NULL,          -- FK to the aggregate row
-  payload        JSONB NOT NULL,         -- domain-specific
-  correlation_id UUID,                   -- propagated from origin request
-  causation_id   UUID,                   -- parent event_id (or NULL)
-  actor_id       UUID,                   -- user who triggered (if any)
-  occurred_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  processed_at   TIMESTAMPTZ,            -- set by consumer worker
-  failed_at      TIMESTAMPTZ,            -- set on DLQ move
-  error_message  TEXT,
-  attempts       INTEGER NOT NULL DEFAULT 0
-);
--- Secondary sort by event_id breaks ties when two txns share a clock tick.
-CREATE INDEX idx_domain_events_unprocessed
-  ON public.domain_events (occurred_at, event_id)
-  WHERE processed_at IS NULL;
--- Consumers must dedupe by event_id (PRIMARY KEY above) to get
--- effectively-once semantics on top of at-least-once delivery.
+event_id              uuid PRIMARY KEY
+kind                  text NOT NULL                -- e.g. 'learner.quiz_completed'
+actor_auth_user_id    uuid NOT NULL
+tenant_id             uuid NULL
+idempotency_key       text NOT NULL                -- UNIQUE (event_id, idempotency_key)
+occurred_at           timestamptz NOT NULL
+payload               jsonb NOT NULL
+created_at            timestamptz DEFAULT now()
+-- RLS: service_role only.
 ```
 
-### Outbox design gotchas (architect-flagged)
+The UNIQUE constraint on `(event_id, idempotency_key)` makes `publishEvent()` retries safe — a duplicate insert returns `{ published: true, reason: 'duplicate' }` rather than throwing.
 
-- **Ordering.** Per-`aggregate_id` order is preserved by sorting on
-  `(occurred_at, event_id)`. Across aggregates, no order is
-  guaranteed — `now()` in separate transactions can collide on the
-  same clock tick. Consumers that care about cross-stream order must
-  reconstruct it, or the producer must serialize writes to a
-  causality log.
-- **Exactly-once = idempotent consumers + at-least-once delivery.**
-  There is no free exactly-once. Every consumer must use
-  `event_id` as a dedup key (persist last-processed event_id per
-  consumer in a companion table, or use `ON CONFLICT (event_id)
-  DO NOTHING` when writing projections).
-- **Worker concurrency.** If we ever run two `queue-consumer`
-  instances, the polling query MUST use `SELECT ... FOR UPDATE SKIP
-  LOCKED` to avoid double-processing. Single-instance is fine today
-  (Supabase Edge Functions don't support sticky singletons
-  natively — track as a risk when we scale beyond one poller).
-- **Consumer death = silent backlog.** If `queue-consumer` errors and
-  restarts loop-style, events pile up silently. Add an outbox-lag
-  metric (`max(NOW() - occurred_at) WHERE processed_at IS NULL`)
-  to the super-admin observability dashboard when E1 ships, and alert
-  when lag exceeds 60 s.
-- **Growth.** `quiz.completed` alone could be millions of rows per
-  year. Plan for either monthly partitioning of
-  `public.domain_events` (PostgreSQL native partitions by
-  `occurred_at`) OR a scheduled archive job that moves
-  `processed_at IS NOT NULL AND processed_at < NOW() - INTERVAL '30
-  days'` rows into `public.domain_events_archive`. Decide before
-  the first high-volume producer goes live.
-- **DLQ.** Events that exceed `attempts` (proposed cap 5) stay in
-  the same table with `failed_at` set and `processed_at` NULL. A
-  separate `public.domain_events_dlq` partition or VIEW surfaces
-  them for manual replay. Do not silently drop.
-- **Backpressure.** If consumers fall behind and the outbox grows
-  unbounded, pause producers (feature flag off) rather than try
-  to impose RLS throttling — latter is hard to reason about.
+## 3. Catalog
 
-## Catalog
+Each row of the registry's discriminated union is listed below with its producer status. **Producer status** is one of:
 
-### E1. `quiz.completed`  (proposed)
+- ✅ **Live** — code calls `publishEvent()` (or inserts directly into `state_events` via an RPC) in production. File path cited.
+- 🟡 **Schema-only** — registered for compile-time inventory; no producer in code yet. Waiting on the feature that needs it.
 
-**Source of truth today:** `atomic_quiz_profile_update` RPC in
-[`supabase/migrations/20260325160000_atomic_quiz_profile_update.sql`](../../supabase/migrations/).
+Verified by grep over `src/**` (2026-05-16) for `kind:` literals and `publishEvent(` call sites.
 
-**Producer (proposed):** append row to `domain_events` at the end of
-the same RPC transaction, immediately after `UPDATE students SET
-xp_total ...`.
+### Learner events
 
-**Payload (proposed):**
-```json
-{
-  "student_id": "uuid",
-  "subject": "string",
-  "xp_earned": 42,
-  "score_percent": 85,
-  "total_questions": 10,
-  "correct_answers": 8,
-  "time_seconds": 123,
-  "chapter_number": 5,
-  "bloom_distribution": { "remember": 3, "apply": 5 }
-}
-```
+| Kind | Producer status | Producer / Notes |
+|---|---|---|
+| `learner.signed_up` | 🟡 Schema-only | No call site found. Signup flow (`bootstrap_user_profile` RPC + `supabase/functions/identity/`) currently relies on trigger-fan-out per [`RISK_REGISTER.md`](./RISK_REGISTER.md) R8. Migration to publish target. |
+| `learner.session_started` | 🟡 Schema-only | Session establishment is handled by `src/middleware.ts` + `supabase/functions/session-guard/` today; no event publication. |
+| `learner.quiz_completed` | 🟡 Schema-only | [`src/lib/state/services/quiz-completion-service.ts`](../../src/lib/state/services/quiz-completion-service.ts) is the staging ground; verify call sites before relying. Today's canonical write is the `atomic_quiz_profile_update` RPC, which does **not** publish to the bus. Migration to publish target. |
+| `learner.lesson_completed` | ✅ Live | [`src/app/api/learner/lesson/progress/route.ts`](../../src/app/api/learner/lesson/progress/route.ts) |
+| `learner.mastery_changed` | ✅ Live | Consumed by `mastery-state-writer` subscriber (`src/lib/state/subscribers/mastery-state-writer.ts`). Producer is the orchestrator path — see [`src/lib/state/orchestrator.ts`](../../src/lib/state/orchestrator.ts). Chapter-level legacy event; new concept-level work uses `learner.concept_check_answered` instead. |
+| `learner.review_graded` | ✅ Live | [`src/app/api/learner/review/grade/route.ts`](../../src/app/api/learner/review/grade/route.ts). SM-2 quality button (0/3/4/5). |
+| `learner.scan_extracted` | ✅ Live | [`src/app/api/scan-solve/route.ts`](../../src/app/api/scan-solve/route.ts) |
+| `learner.concept_check_answered` | ✅ Live (via RPC) | [`src/app/api/tutor/answer/route.ts`](../../src/app/api/tutor/answer/route.ts) → `tutor_commit_attempt` RPC, which `INSERT`s into `state_events` inside the same transaction as `concept_attempts`. Consumed by [`concept-mastery-projector`](../../src/lib/state/subscribers/concept-mastery-projector.ts). ADR-005 Path C v2. |
 
-**Current synchronous consumers (would switch to async):**
-- Daily activity aggregation (`daily_activity` table) — already
-  written in the same RPC; could stay sync or move async later
-- Analytics dashboards read via polling; no sync coupling
+### AI events
 
-**Future / new consumers:**
-- B9 Assessment — updates `concept_mastery` using the response data
-  (today this is a separate call from the quiz submit handler)
-- B11 Notifications — fire "daily quiz streak" notifications at
-  end of the day once all expected quizzes are complete
-- B12 Analytics — update `student_analytics` aggregates
+| Kind | Producer status | Producer / Notes |
+|---|---|---|
+| `ai.foxy_session_started` | ✅ Live | [`src/app/api/foxy/route.ts`](../../src/app/api/foxy/route.ts) |
+| `ai.foxy_session_completed` | ✅ Live | [`src/app/api/foxy/route.ts`](../../src/app/api/foxy/route.ts) |
 
-**Why this is a good first event:** the RPC already owns atomic
-writes; adding one more `INSERT INTO domain_events` is trivial and
-safe. All downstream consumers are today read-only against the
-tables being written; switching them to read from the outbox instead
-of polling the base tables is a clean boundary.
+### Parent events
 
-### E2. `payment.completed` (proposed)
+| Kind | Producer status | Producer / Notes |
+|---|---|---|
+| `parent.linked_to_learner` | 🟡 Schema-only | `/api/parent/approve-link` writes `guardian_student_links` directly; not yet publishing. Migration to publish target — closes the "implicit triggers blur ownership" gap (R8). |
+| `parent.report_viewed` | 🟡 Schema-only | Parent portal does not yet emit a view event. Low priority. |
 
-**Source of truth today:** `activate_subscription` RPC and
-`atomic_subscription_activation` RPC (new on this branch).
+### Teacher events
 
-**Producer (proposed):** append to `domain_events` at the end of the
-activation transaction.
+| Kind | Producer status | Producer / Notes |
+|---|---|---|
+| `teacher.assignment_created` | 🟡 Schema-only | Teacher dashboard currently lives in `supabase/functions/teacher-dashboard/` (Deno); assignment-create flow is pre-multi-role-launch. Will publish from the post-migration Next.js route per the multi-role launch plan. |
 
-**Payload (proposed):**
-```json
-{
-  "student_id": "uuid",
-  "payment_id": "uuid",
-  "razorpay_payment_id": "string",
-  "razorpay_subscription_id": "string | null",
-  "plan_code": "string",
-  "billing_cycle": "monthly | yearly",
-  "amount_inr": 29900,
-  "current_period_end": "2026-05-24T00:00:00Z"
-}
-```
+### School / tenant events
 
-**Consumers:**
-- B11 Notifications — send welcome / upgrade email via
-  `send-welcome-email` (today, this is invoked synchronously from
-  the webhook route; async would be more robust against email
-  provider outages)
-- B12 Analytics — MRR / churn dashboards
-- B7 Foxy — quota reset / upgrade (today read via
-  `check_and_record_usage`)
+| Kind | Producer status | Producer / Notes |
+|---|---|---|
+| `school.module_toggled` | 🟡 Schema-only | Tenant module CRUD lives in `/api/school-admin/modules` (per [PR #570](https://github.com/AlfanumrikOS/Alfanumrik/pull/570)) and `/api/super-admin/module-overrides` (per [PR #573](https://github.com/AlfanumrikOS/Alfanumrik/pull/573)). Today they write `tenant_modules` + `school_audit_log` directly; not yet publishing to bus. Migration target. |
 
-**Why second priority:** the webhook is already idempotent (unique
-index on `razorpay_payment_id`), so adding an outbox row is safe
-against duplicate deliveries. Event also unlocks decoupling the
-welcome-email send — currently a failure in email delivery can break
-the webhook response, which Razorpay then retries.
+### Billing events
 
-### E3. `subscription.cancelled` (proposed)
+| Kind | Producer status | Producer / Notes |
+|---|---|---|
+| `billing.invoice_paid` | 🟡 Schema-only | Razorpay webhook in `/api/payments/webhook` currently writes `payments` + `student_subscriptions` + `school_subscriptions` directly (per PR #551 + #556). Not yet publishing. Bridge target — once published, the welcome-email + analytics + entitlements writes can decouple. See v1's E2 mapping for historical proposal. |
 
-**Source of truth today:** `/api/payments/cancel/route.ts`.
+### Mesh events
 
-**Payload (proposed):**
-```json
-{
-  "student_id": "uuid",
-  "razorpay_subscription_id": "string | null",
-  "cancel_reason": "string | null",
-  "cancelled_at": "2026-04-24T12:00:00Z",
-  "ended_at": "2026-05-24T00:00:00Z"
-}
-```
+| Kind | Producer status | Producer / Notes |
+|---|---|---|
+| `mesh.cycle_completed` | 🟡 Schema-only | Mesh runtime substrate per `project_agent_mesh_phase_alpha.md` (memory) — substrate landed; runtime not yet emitting events. Will publish from `agents/runtime/tick.ts` once `ff_agent_mesh_v1` activates. |
 
-**Consumers:** B11 Notifications (win-back email), B12 Analytics
-(churn).
+## 4. Naming convention
 
-### E4. `subscription.renewed` (proposed, webhook-triggered)
+Every kind is `<actor>.<verb_past>`. Canonical actors: `learner`, `parent`, `teacher`, `school`, `ai`, `billing`, `mesh`. Enforced by [`src/__tests__/state/events-registry.test.ts`](../../src/__tests__/state/events-registry.test.ts).
 
-**Source of truth today:** `razorpay.subscription.charged` webhook
-→ `/api/payments/webhook/route.ts`.
+`tenant.*` is **not** a canonical actor — tenant-scoped events use the `school.*` namespace because the canonical entity is `schools` (per the [Path B decision](./EXCEPTIONS.md#e4-legacy-srclibtenantts-coexists-with-srclibtenant-domain) in PR #558).
 
-Same payload shape as E2.
+## 5. Schema evolution rules
 
-### E5. `user.registered` (proposed)
+Unchanged from v1. Restated for completeness:
 
-**Source of truth today:** `bootstrap_user_profile` RPC.
+- Event types are versioned by suffix when payload shape breaks (`learner.quiz_completed` → `learner.quiz_completed_v2`). Never mutate a schema in place once a producer exists.
+- Consumers must handle an unknown event type by acknowledging and ignoring (never erroring), so new event types don't break old consumers.
+- Payload fields are additive only within a version.
+- Breaking changes require a new `.vN` and a dual-publish period.
+- Within a version, payload additions are safe; payload removals or type changes are not.
 
-**Consumers:**
-- B11 Notifications — welcome email (today, the
-  `send-welcome-email` Edge Function is called from the signup
-  flow — could move async)
-- B12 Analytics — funnel metrics
-- Auto-free subscription trigger (today in
-  [`supabase/migrations/20260409000002_auto_free_subscription_on_signup.sql`](../../supabase/migrations/20260409000002_auto_free_subscription_on_signup.sql))
-  — this is an implicit DB trigger today; making it an event would
-  make the flow observable
+For events still in schema-only state (🟡 rows above), the schema is mutable until a producer ships — there's no consumer to break. Once the first producer goes live, freeze.
 
-### E6. `relationship.linked` (proposed)
+## 6. Delivery guarantees
 
-**Source of truth today:** `/api/parent/approve-link/route.ts`
-inserts into `guardian_student_links`.
+- **At-least-once** delivery from the bus. The `subscriber_offsets.last_processed_event_id` watermark advances atomically with the projection write; if the projection write commits but cursor advance fails, the event is re-processed on next tick — hence the idempotency contract on subscribers.
+- **Consumers must be idempotent.** UPSERT-with-conflict-on-natural-key is the standard implementation (e.g., `concept-mastery-projector` UPSERTs on `(student_id, concept_id)`). Tested with `dispatcher.replay.test.ts` and per-subscriber tests.
+- **Per-subscriber maxRetries** is configurable in `STANDARD_SUBSCRIBERS`. After exhaustion, the event lands in `subscriber_dead_letters` and the subscriber's cursor stays before it — see [`docs/runbooks/dead-letter-inspection.md`](../runbooks/dead-letter-inspection.md).
+- **No backpressure mechanism today.** If a subscriber is fundamentally broken, dead-letter accumulation surfaces it via the health-check alert; ops decides whether to flag-off, fix, or replay.
 
-**Consumers:**
-- B11 Notifications — inform student "your parent is now linked"
-- B3 Parent portal — refresh dashboard
-- B12 Analytics — engagement funnel
+## 7. Observability and operations
 
-### E7. `school.provisioned` (proposed)
+- **Outbox lag.** `public.subscriber_lag` view materializes `events_behind`, `events_in_retry`, `events_dead_lettered`, and `age_behind` per subscriber. Created in [`20260524110001_state_runtime_per_subscriber.sql`](../../supabase/migrations/20260524110001_state_runtime_per_subscriber.sql).
+- **Alerting.** `supabase/functions/projector-health-check/index.ts` polls `subscriber_lag` every 2 minutes and emits `projector_health_degraded` PostHog events (added to taxonomy in [`src/lib/posthog/types.ts`](../../src/lib/posthog/types.ts)) when thresholds defined in [`SLO.md`](./SLO.md) are breached. Operator runbook is [`docs/runbooks/projector-failure.md`](../runbooks/projector-failure.md).
+- **Replay.** Per-student rebuild via `POST /api/super-admin/projectors/replay`. Procedure in [`docs/runbooks/replay-by-student.md`](../runbooks/replay-by-student.md).
+- **Dead-letter triage.** Per-event in [`docs/runbooks/dead-letter-inspection.md`](../runbooks/dead-letter-inspection.md).
+- **Bus volume.** No partitioning today. Acceptable while `state_events` is under ~1M rows; revisit at E1 trigger per [`MICROSERVICES_EXTRACTION_PLAN.md`](./MICROSERVICES_EXTRACTION_PLAN.md).
 
-**Source of truth today:** super-admin school creation endpoint
-under `/api/super-admin/*`.
+## 8. Explicitly NOT proposed
 
-**Consumers:**
-- B2 Tenant — seed default classes, admin user
-- B10 Billing — create draft subscription plan
-- B11 Notifications — welcome email to school admin
-- B12 Analytics
+Carried forward from v1 — these events are deliberately *not* in the registry because they would be too fine-grained, duplicate existing flows, or describe data already captured elsewhere:
 
-### E8. `practice.completed` / `review.completed` (proposed)
+- `question.answered` — too fine-grained; the RPC already captures this as a transactional write. `learner.concept_check_answered` is the closest live event and represents a *concept* check, not a question.
+- `content.question_added` — content ingestion is queued via `queue-consumer`; no need for an event layer on top.
+- `mastery.achieved` — milestone-style events; subsumed by `learner.mastery_changed` (consumers compute milestones).
+- `role.assigned` — RBAC changes are low-volume and currently poll-friendly. R3 in [`RISK_REGISTER.md`](./RISK_REGISTER.md) tracks the broader RBAC modernization.
+- `xp.updated` — XP changes always ride on `learner.quiz_completed` / `learner.review_graded` payloads; a standalone event is redundant.
 
-**Source of truth today:** SM-2 update path in `/api/review/*`.
+Premature eventification is a real anti-pattern; introduce events only when a synchronous alternative demonstrably hurts.
 
-**Consumers:** B9 Assessment, B12 Analytics, B11 Notifications
-(streak milestones).
+## 9. Relation to v1
 
-### E9. `foxy.message_sent` (proposed; sampled)
+v1 proposed events E1–E10. The mapping to the live registry:
 
-**Source of truth today:** `/api/foxy/route.ts` / `grounded-answer`
-Edge Function writes `foxy_chat_messages` + `grounded_ai_traces`.
-
-**Payload (proposed, PII-redacted):**
-```json
-{
-  "session_id": "uuid",
-  "student_id": "uuid",
-  "trace_id": "uuid",
-  "grounding_status": "verified | unverified | hard_abstain | fallback",
-  "confidence": 0.87,
-  "token_usage": { "input": 450, "output": 120 },
-  "latency_ms": 2300
-}
-```
-
-**Why sampled:** at 100% volume this would swamp the outbox. Sample
-at 10% (or all abstain + fallback events, 100% of errors).
-
-**Consumers:** B13 Ops (grounding health dashboard, already exists
-per commit `5e0d354`), B9 Assessment (response-quality signal).
-
-### E10. `weak_area.detected` (proposed)
-
-**Source of truth today:** `cme-engine` Edge Function heuristics.
-
-**Consumers:** B8 Practice (schedule reinforcement cards), B11
-Notifications (gentle nudge), B9 Assessment (gap tracking).
-
-## Explicitly NOT proposed (yet)
-
-Events that sound reasonable but have no concrete producer today or
-duplicate existing well-working flows:
-
-- `question.answered` — too fine-grained; the RPC already captures
-  this as a transactional write, no consumer needs individual
-  answers as an async stream
-- `content.question_added` — content ingestion is already queued
-  via `queue-consumer`; no need to wrap in an event layer on top
-- `mastery.achieved` — milestone-style events; nice-to-have, defer
-- `role.assigned` — RBAC changes are low-volume and can poll
-
-Premature eventification is a real anti-pattern; prefer to introduce
-events when the synchronous alternative demonstrably hurts.
-
-## Schema evolution rules (proposed)
-
-- Event types are versioned by suffix (`quiz.completed.v1`,
-  `quiz.completed.v2`) — never mutate a schema in place
-- Consumers must handle an unknown event type by acknowledging and
-  ignoring (not erroring), so new event types don't break old consumers
-- Payload fields are additive only within a version
-- Breaking changes require a new `.vN` and a dual-publish period
-
-## Delivery guarantees (proposed)
-
-- **At-least-once** delivery from outbox
-- Consumers must be **idempotent**. All our high-value consumers
-  already can be made idempotent cheaply: `concept_mastery` uses
-  `ON CONFLICT`; analytics aggregates can use `MERGE` / `ON
-  CONFLICT`; notifications can use a dedup key.
-
-## Observability (proposed)
-
-- Outbox lag metric: `max(NOW() - occurred_at) WHERE processed_at IS NULL`
-  — alert above 60 s
-- Consumer error rate per event type
-- Dead-letter queue table `public.domain_events_dlq` for events that
-  exceeded `attempts` (proposed cap 5)
-- Surface these in the existing super-admin observability dashboards
-
-## Relation to the brief
-
-The original brief (Section 12) named this set of example events:
-
-> `quiz.completed`, `practice.completed`, `review.completed`,
-> `xp.updated`, `payment.confirmed`, `subscription.changed`,
-> `tenant.provisioned`, `student.linked_to_parent`,
-> `weak_area_detected`
-
-Mapping to this catalog:
-
-| Brief name | This catalog |
+| v1 proposed | v2 status |
 |---|---|
-| `quiz.completed` | E1 |
-| `practice.completed`, `review.completed` | E8 (merged — same path) |
-| `xp.updated` | **not proposed** — XP changes always ride on E1 / E8; a standalone event is redundant |
-| `payment.confirmed` | E2 |
-| `subscription.changed` | E3, E4 (split by direction) |
-| `tenant.provisioned` | E7 |
-| `student.linked_to_parent` | E6 |
-| `weak_area_detected` | E10 |
+| E1 `quiz.completed` | renamed `learner.quiz_completed` — schema-only; producer migration target |
+| E2 `payment.completed` | renamed `billing.invoice_paid` — schema-only |
+| E3 `subscription.cancelled` | NOT in registry; v1 over-proposed. Subscription lifecycle currently lives in `school_subscriptions.status` transitions written by the Razorpay webhook (PR #551). Add to registry only when a consumer needs it. |
+| E4 `subscription.renewed` | NOT in registry; same logic as E3 |
+| E5 `user.registered` | renamed `learner.signed_up` — schema-only |
+| E6 `relationship.linked` | renamed `parent.linked_to_learner` — schema-only |
+| E7 `school.provisioned` | NOT in registry; super-admin school creation writes `schools` directly. Add when a consumer needs it. |
+| E8 `practice.completed` / `review.completed` | merged → `learner.review_graded` — ✅ live |
+| E9 `foxy.message_sent` | split into `ai.foxy_session_started` / `ai.foxy_session_completed` — ✅ live |
+| E10 `weak_area.detected` | NOT in registry; weak-area detection happens inside the assessment service today. Re-evaluate when CME engine is restructured. |
 
-## Uncertainty / gaps
+## 10. Relation to the brief
 
-- **Ordering:** outbox delivery is per-aggregate-id; across aggregates
-  no ordering is guaranteed. Consumers that need cross-stream
-  ordering (rare) must reconstruct via `occurred_at`.
-- **Volume:** no volumetric data exists for the proposed streams.
-  E9 is the only one likely to be high-volume. Capacity sizing is
-  deferred until at least one stream is in production.
-- **Backpressure:** outbox can grow unbounded if consumers fall
-  behind. Mitigation: monitor lag metric + pause producers if
-  exceeded (backpressure via RLS on domain_events is overkill today).
+The original architectural brief named: `quiz.completed`, `practice.completed`, `review.completed`, `xp.updated`, `payment.confirmed`, `subscription.changed`, `tenant.provisioned`, `student.linked_to_parent`, `weak_area_detected`. Mapping after v2:
+
+| Brief | This catalog | Status |
+|---|---|---|
+| `quiz.completed` | `learner.quiz_completed` | schema-only |
+| `practice.completed`, `review.completed` | `learner.review_graded` | ✅ live |
+| `xp.updated` | not proposed (see §8) | — |
+| `payment.confirmed` | `billing.invoice_paid` | schema-only |
+| `subscription.changed` | not in registry (see §9 E3, E4) | — |
+| `tenant.provisioned` | not in registry (see §9 E7) | — |
+| `student.linked_to_parent` | `parent.linked_to_learner` | schema-only |
+| `weak_area_detected` | not in registry (see §9 E10) | — |
+
+## 11. Uncertainty and gaps
+
+- **Producer migration cadence.** ~10 of 16 events are schema-only. Each migration is a small PR (route emits `publishEvent`, subscriber consumes); the order is driven by which consumer needs the decoupling first. Currently `billing.invoice_paid` is the highest-leverage candidate — it unblocks decoupling welcome-email + entitlements writes from the webhook synchronous path.
+- **Cross-actor namespaces.** A super-admin overriding a school's module is conceptually `platform.*` but is currently slotted under `school.module_toggled` for namespace consistency. Re-evaluate if `platform.*` becomes a useful actor for super-admin-originated events.
+- **Volumetric data.** No production volumes recorded yet. Once 3+ producers are live and `state_events` has weeks of data, derive partitioning + archival cadence from observed growth — don't speculate.
+- **Ordering across kinds.** Some downstream consumers (e.g., daily-schedule projector, when it lands) may want cross-stream ordering. The bus does not guarantee it. Such consumers must reconstruct order from `occurred_at` or accept eventual consistency.
+
+## Change log
+
+- **2026-05-16 v2** — full rewrite. Bus is live as of 2026-05-12; replaced "proposed" catalog with the 16 typed events from `src/lib/state/events/registry.ts` + producer status verified by grep. Restored philosophy sections from v1. Added v1→v2 mapping at §9, brief mapping at §10.
+- **2026-04-24 v1** — initial catalog. Premised on "no event bus exists today"; proposed 10 events as the forward-looking inventory.

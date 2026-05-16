@@ -108,7 +108,16 @@ export type PostHogEventName =
   // from /api/tutor/answer whenever the atomic tutor_commit_attempt RPC
   // fails and the route falls back to the legacy inline concept_mastery
   // write. Zero in steady state — non-zero is operations-critical.
-  | 'tutor_answer_path_c_fallback';
+  | 'tutor_answer_path_c_fallback'
+  // Spine observability (ADR-005, Phase-5 Iter. 2). Fired by
+  // supabase/functions/projector-health-check when a subscriber's
+  // lag exceeds the threshold in docs/architecture/SLO.md
+  // ("Projector lag" row). distinct_id is 'projector-health-check'.
+  // Payload (PII-free): { subscriber_name, kind_filter, events_behind,
+  // events_in_retry, events_dead_lettered, age_behind_seconds, severity:
+  // 'warn'|'critical', threshold_seconds }. Zero events in steady state
+  // — non-zero is on-call paging signal per docs/runbooks/projector-failure.md.
+  | 'projector_health_degraded';
 
 // ─── Base properties auto-attached by `capture()` ──────────────────────────
 
