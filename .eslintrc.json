@@ -50,6 +50,30 @@
     },
     {
       "files": [
+        "src/app/**/*.{ts,tsx}",
+        "src/components/**/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "src/**/*.test.{ts,tsx}",
+        "src/**/*.spec.{ts,tsx}",
+        "src/__tests__/**"
+      ],
+      "rules": {
+        "no-restricted-syntax": [
+          "error",
+          {
+            "selector": "CallExpression[callee.name='alert']",
+            "message": "alert() is forbidden in src/app/** and src/components/**. Use the toast component (import { toast } from '@/components/ui/toast') or a styled modal instead. (Phase E.3)"
+          },
+          {
+            "selector": "CallExpression[callee.object.name='window'][callee.property.name='alert']",
+            "message": "window.alert() is forbidden in src/app/** and src/components/**. Use the toast component (import { toast } from '@/components/ui/toast') or a styled modal instead. (Phase E.3)"
+          }
+        ]
+      }
+    },
+    {
+      "files": [
         "src/components/**/*.{ts,tsx}",
         "src/app/**/page.{ts,tsx}",
         "src/app/**/layout.{ts,tsx}",
