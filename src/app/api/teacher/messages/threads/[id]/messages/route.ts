@@ -10,10 +10,14 @@
  *
  * Query:
  *   ?cursor=<iso ts>  — created_at > cursor (older-first "load more")
+ *   ?before=<iso ts>  — Phase D.6 alias for ?cursor= (kept for forward-
+ *                       compat with the pagination contract documented in
+ *                       docs/runbooks/performance-targets.md)
  *   ?limit=N          — clamped 100
  *
  * Response 200:
- *   { success: true, messages: MessageRow[], nextCursor: string | null }
+ *   { success: true, messages: MessageRow[], nextCursor: string | null,
+ *     hasMore: boolean }
  *
  * Errors: 401/403 (auth or cross-tenant) · 404 thread missing · 500 db.
  */
@@ -72,7 +76,9 @@ export async function GET(
   if (thread.teacher_id !== teacher.id) return err('Thread not owned by caller', 403);
 
   const url = new URL(request.url);
-  const cursor = url.searchParams.get('cursor');
+  // Phase D.6: accept ?before= as alias of ?cursor= so callers can speak the
+  // standard pagination contract. ?cursor= remains for in-flight UI builds.
+  const cursor = url.searchParams.get('cursor') ?? url.searchParams.get('before');
   const rawLimit = Number(url.searchParams.get('limit'));
   const limit =
     Number.isFinite(rawLimit) && rawLimit > 0
@@ -124,5 +130,5 @@ export async function GET(
     }
   }
 
-  return NextResponse.json({ success: true, messages: page, nextCursor });
+  return NextResponse.json({ success: true, messages: page, nextCursor, hasMore });
 }

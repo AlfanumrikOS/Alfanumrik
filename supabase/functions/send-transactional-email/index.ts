@@ -81,6 +81,13 @@ const FROM_EMAIL = 'Alfanumrik <noreply@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'
 const SITE_URL = Deno.env.get('SITE_URL') || 'https://alfanumrik.com'
 
+// Phase D.6 cold-start mitigation: precompute the Mailgun endpoint URL and
+// the basic-auth header once. Both are deterministic functions of env
+// variables; recomputing per request wastes a `btoa()` call (cheap but
+// allocations matter when the Edge Function runs at cold-start).
+const MAILGUN_API_URL = `https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`
+const MAILGUN_AUTH_HEADER = `Basic ${btoa(`api:${MAILGUN_API_KEY}`)}`
+
 // ─── Mailgun client ──────────────────────────────────────────────────────────
 async function sendMailgunEmail(params: {
   to: string
@@ -103,9 +110,9 @@ async function sendMailgunEmail(params: {
   if (params.tags) {
     for (const t of params.tags) form.append('o:tag', `${t.name}:${t.value}`)
   }
-  const res = await fetch(`https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`, {
+  const res = await fetch(MAILGUN_API_URL, {
     method: 'POST',
-    headers: { Authorization: `Basic ${btoa(`api:${MAILGUN_API_KEY}`)}` },
+    headers: { Authorization: MAILGUN_AUTH_HEADER },
     body: form,
   })
   if (!res.ok) return { success: false, error: await res.text() }
