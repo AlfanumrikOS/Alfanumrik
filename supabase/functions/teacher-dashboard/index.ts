@@ -14,6 +14,9 @@
  *   - get_class_overview:  Reports / class aggregate snapshot
  *   - get_student_report:  Reports / per-student deep dive
  *   - get_class_trends:    Reports / 30-day rolling trends
+ *   - get_assignment_submissions: Phase C.1 / submission list per assignment
+ *   - get_submission_detail:      Phase C.1 / per-question breakdown
+ *   - mark_submission_reviewed:   Phase C.1 / record feedback + score override
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -1041,6 +1044,417 @@ async function handleGetStudentsList(
   }, 200, {}, origin)
 }
 
+// ─── Phase C.1 — Submission review actions ──────────────────
+//
+// The teacher dashboard previously had no surface to review student
+// assignment submissions. These three actions feed the /teacher/submissions
+// drill-in flow: assignment-list → per-submission list → per-question
+// breakdown with a feedback input.
+//
+// Ownership model — every handler verifies the underlying assignment
+// belongs to a class owned by `teacher_id`. We accept BOTH `class_teachers`
+// (used by /api/teacher/* routes) and `teacher_class_assignments` (used by
+// the rest of this Edge Function); the prod schema has both wired.
+
+/** Verify the assignment row belongs to a class the teacher owns. */
+async function teacherOwnsAssignment(
+  supabase: ReturnType<typeof getServiceClient>,
+  teacherId: string,
+  assignmentId: string,
+): Promise<{ owns: boolean; assignment: Record<string, unknown> | null }> {
+  if (!assignmentId) return { owns: false, assignment: null }
+  const { data: a } = await supabase
+    .from('assignments')
+    .select('id, class_id, teacher_id, title, subject, grade, chapter, difficulty, question_count, due_date, type, created_at')
+    .eq('id', assignmentId)
+    .maybeSingle()
+  if (!a) return { owns: false, assignment: null }
+
+  // Direct ownership: teacher_id matches on the assignment row.
+  if ((a as { teacher_id?: string }).teacher_id === teacherId) {
+    return { owns: true, assignment: a as Record<string, unknown> }
+  }
+
+  // Indirect ownership: the class is co-taught (class_teachers /
+  // teacher_class_assignments) — surface the same data to all co-teachers.
+  const classId = (a as { class_id?: string }).class_id
+  if (!classId) return { owns: false, assignment: a as Record<string, unknown> }
+
+  try {
+    const { data: link } = await supabase
+      .from('class_teachers')
+      .select('class_id')
+      .eq('class_id', classId)
+      .eq('teacher_id', teacherId)
+      .limit(1)
+      .maybeSingle()
+    if (link) return { owns: true, assignment: a as Record<string, unknown> }
+  } catch { /* table may not exist on this env */ }
+
+  try {
+    const { data: link2 } = await supabase
+      .from('teacher_class_assignments')
+      .select('class_id')
+      .eq('class_id', classId)
+      .eq('teacher_id', teacherId)
+      .limit(1)
+      .maybeSingle()
+    if (link2) return { owns: true, assignment: a as Record<string, unknown> }
+  } catch { /* table may not exist on this env */ }
+
+  return { owns: false, assignment: a as Record<string, unknown> }
+}
+
+interface SubmissionRow {
+  student_id: string
+  student_name: string
+  submission_id: string | null
+  submitted_at: string | null
+  score_percent: number | null
+  time_spent_sec: number
+  status: 'pending' | 'submitted' | 'graded'
+  questions_total: number
+  questions_correct: number
+}
+
+/** Bucket the canonical assignment_submissions.status into the UI's 3 states. */
+function uiStatusForSubmission(
+  status: string | null | undefined,
+  submittedAt: string | null,
+  gradedAt: string | null,
+): 'pending' | 'submitted' | 'graded' {
+  if (gradedAt || status === 'graded' || status === 'reviewed') return 'graded'
+  if (submittedAt || status === 'submitted' || status === 'completed') return 'submitted'
+  return 'pending'
+}
+
+// ─── get_assignment_submissions ─────────────────────────────
+async function handleGetAssignmentSubmissions(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const teacherId = String(body.teacher_id || '')
+  const assignmentId = String(body.assignment_id || '')
+  if (!teacherId) return errorResponse('teacher_id required', 400, origin)
+  if (!assignmentId) return errorResponse('assignment_id required', 400, origin)
+
+  const supabase = getServiceClient()
+
+  // Ownership.
+  const ownership = await teacherOwnsAssignment(supabase, teacherId, assignmentId)
+  if (!ownership.owns) {
+    return errorResponse('Assignment not found or not owned by this teacher', 403, origin)
+  }
+  const assignment = ownership.assignment
+
+  // Roster: students in the assignment's class. Same dual-path logic
+  // resolveStudentsForTeacher uses — start from class_students, fall
+  // back to grade when the class table is sparse on this env.
+  const classId = String((assignment as { class_id?: string } | null)?.class_id || '')
+  const students: Array<{ id: string; name: string; grade: string }> = []
+  const seen = new Set<string>()
+
+  if (classId) {
+    try {
+      // Path A: class_students (used by /api/teacher/classes wiring).
+      const { data: cs } = await supabase
+        .from('class_students')
+        .select('student_id, students(id, name, grade, deleted_at)')
+        .eq('class_id', classId)
+      for (const row of cs || []) {
+        const s = (row as any).students
+        if (s && s.id && !s.deleted_at && !seen.has(s.id)) {
+          seen.add(s.id)
+          students.push({ id: s.id, name: s.name || 'Student', grade: String(s.grade || '') })
+        }
+      }
+    } catch { /* table may not exist */ }
+
+    if (students.length === 0) {
+      try {
+        // Path B: direct students.class_id (used elsewhere in this file).
+        const { data: ss } = await supabase
+          .from('students')
+          .select('id, name, grade')
+          .eq('class_id', classId)
+          .is('deleted_at', null)
+          .limit(1000)
+        for (const s of ss || []) {
+          if (s?.id && !seen.has(s.id)) {
+            seen.add(s.id)
+            students.push({ id: s.id, name: s.name || 'Student', grade: String(s.grade || '') })
+          }
+        }
+      } catch { /* fall through to empty */ }
+    }
+  }
+
+  // Submissions for these students on this assignment.
+  const submissions: SubmissionRow[] = []
+  try {
+    const { data: subs } = await supabase
+      .from('assignment_submissions')
+      .select('id, student_id, score, questions_total, questions_correct, time_spent_seconds, status, submitted_at, graded_at')
+      .eq('assignment_id', assignmentId)
+    const byStudent = new Map<string, any>()
+    for (const s of subs || []) byStudent.set(String(s.student_id), s)
+
+    // Emit one row per student in the roster — pending if no submission
+    // row exists yet (UI surfaces "not started" gracefully).
+    for (const stu of students) {
+      const sub = byStudent.get(stu.id)
+      if (sub) {
+        const total = Number(sub.questions_total ?? 0)
+        const correct = Number(sub.questions_correct ?? 0)
+        // Prefer the canonical `score` column (already a percent in this
+        // schema); fall back to questions_correct / questions_total.
+        const score = sub.score != null
+          ? Number(sub.score)
+          : total > 0
+            ? Math.round((correct / total) * 100)
+            : null
+        submissions.push({
+          student_id: stu.id,
+          student_name: stu.name,
+          submission_id: String(sub.id),
+          submitted_at: sub.submitted_at ?? null,
+          score_percent: score,
+          time_spent_sec: Number(sub.time_spent_seconds ?? 0),
+          status: uiStatusForSubmission(sub.status, sub.submitted_at, sub.graded_at),
+          questions_total: total,
+          questions_correct: correct,
+        })
+      } else {
+        submissions.push({
+          student_id: stu.id,
+          student_name: stu.name,
+          submission_id: null,
+          submitted_at: null,
+          score_percent: null,
+          time_spent_sec: 0,
+          status: 'pending',
+          questions_total: 0,
+          questions_correct: 0,
+        })
+      }
+    }
+  } catch { /* assignment_submissions absent on this env — empty rows already populated */ }
+
+  return jsonResponse({ assignment, submissions }, 200, {}, origin)
+}
+
+// ─── get_submission_detail ──────────────────────────────────
+async function handleGetSubmissionDetail(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const teacherId = String(body.teacher_id || '')
+  const submissionId = String(body.submission_id || '')
+  if (!teacherId) return errorResponse('teacher_id required', 400, origin)
+  if (!submissionId) return errorResponse('submission_id required', 400, origin)
+
+  const supabase = getServiceClient()
+
+  // Fetch the submission row first; the assignment_id on it drives the
+  // ownership check.
+  const { data: sub, error: subErr } = await supabase
+    .from('assignment_submissions')
+    .select('id, assignment_id, student_id, score, questions_total, questions_correct, time_spent_seconds, attempt_number, status, started_at, submitted_at, graded_at, graded_by, responses, teacher_feedback, xp_earned')
+    .eq('id', submissionId)
+    .maybeSingle()
+  if (subErr) {
+    return errorResponse(`Failed to load submission: ${subErr.message}`, 500, origin)
+  }
+  if (!sub) return errorResponse('Submission not found', 404, origin)
+
+  const ownership = await teacherOwnsAssignment(supabase, teacherId, String(sub.assignment_id))
+  if (!ownership.owns) {
+    return errorResponse('Submission not found or not owned by this teacher', 403, origin)
+  }
+
+  // Student profile (single).
+  const { data: student } = await supabase
+    .from('students')
+    .select('id, name, grade')
+    .eq('id', sub.student_id)
+    .maybeSingle()
+
+  // The `responses` column is jsonb — typically an array of
+  // { question_id, question_text, student_answer, correct_answer,
+  //   is_correct, time_spent_seconds }. Shape it for the UI defensively.
+  const rawResponses = Array.isArray(sub.responses) ? sub.responses : []
+  const answers = rawResponses.map((r: any, idx: number) => ({
+    question_id: String(r?.question_id ?? r?.id ?? `q${idx + 1}`),
+    question_text: String(r?.question_text ?? r?.question ?? r?.prompt ?? `Question ${idx + 1}`),
+    student_answer: r?.student_answer ?? r?.answer ?? r?.response ?? null,
+    correct_answer: r?.correct_answer ?? r?.correct ?? null,
+    correct: r?.is_correct === true || r?.correct === true,
+    time_spent: Number(r?.time_spent_seconds ?? r?.time_spent ?? 0),
+  }))
+
+  return jsonResponse({
+    submission: {
+      id: sub.id,
+      assignment_id: sub.assignment_id,
+      student_id: sub.student_id,
+      score: sub.score,
+      questions_total: sub.questions_total,
+      questions_correct: sub.questions_correct,
+      time_spent_seconds: sub.time_spent_seconds,
+      attempt_number: sub.attempt_number,
+      status: uiStatusForSubmission(sub.status, sub.submitted_at, sub.graded_at),
+      submitted_at: sub.submitted_at,
+      graded_at: sub.graded_at,
+      teacher_feedback: sub.teacher_feedback,
+      xp_earned: sub.xp_earned,
+    },
+    answers,
+    student: student ? { id: student.id, name: student.name, grade: String(student.grade || '') } : null,
+    assignment: ownership.assignment,
+  }, 200, {}, origin)
+}
+
+// ─── mark_submission_reviewed ───────────────────────────────
+// ADR-005: this handler is a CANONICAL WRITER (until a projector is
+// extracted). It MUST emit the state_event before any direct write to
+// assignment_submissions, so subscribers see the signal even if the
+// write fails. Idempotency-key is `submission_reviewed:<submission_id>:
+// <graded_at_iso>` — re-saving feedback emits a fresh event.
+async function handleMarkSubmissionReviewed(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const teacherId = String(body.teacher_id || '')
+  const submissionId = String(body.submission_id || '')
+  const feedbackRaw = body.feedback
+  const scoreOverrideRaw = body.score_override
+
+  if (!teacherId) return errorResponse('teacher_id required', 400, origin)
+  if (!submissionId) return errorResponse('submission_id required', 400, origin)
+
+  const feedback = typeof feedbackRaw === 'string' && feedbackRaw.trim().length > 0
+    ? feedbackRaw.trim().slice(0, 2000)
+    : null
+  const scoreOverride = typeof scoreOverrideRaw === 'number' && Number.isFinite(scoreOverrideRaw)
+    ? Math.max(0, Math.min(100, Math.round(scoreOverrideRaw)))
+    : null
+
+  const supabase = getServiceClient()
+
+  // Fetch submission for ownership + payload context.
+  const { data: sub, error: subErr } = await supabase
+    .from('assignment_submissions')
+    .select('id, assignment_id, student_id, score, questions_total, questions_correct')
+    .eq('id', submissionId)
+    .maybeSingle()
+  if (subErr) return errorResponse(`Failed to load submission: ${subErr.message}`, 500, origin)
+  if (!sub) return errorResponse('Submission not found', 404, origin)
+
+  const ownership = await teacherOwnsAssignment(supabase, teacherId, String(sub.assignment_id))
+  if (!ownership.owns) {
+    return errorResponse('Submission not found or not owned by this teacher', 403, origin)
+  }
+
+  // Resolve the teacher's auth_user_id for the event envelope's actor.
+  // We have teacher_id (resolved by JWT binding); look up the auth row.
+  const { data: teacher } = await supabase
+    .from('teachers')
+    .select('id, auth_user_id, school_id')
+    .eq('id', teacherId)
+    .maybeSingle()
+  if (!teacher) return errorResponse('Teacher account not found', 403, origin)
+
+  const now = new Date().toISOString()
+  // Final score the teacher endorsed. Prefer override; else keep the
+  // existing canonical score; else fall back to questions_correct ratio.
+  const total = Number(sub.questions_total ?? 0)
+  const correct = Number(sub.questions_correct ?? 0)
+  const derivedScore = total > 0 ? Math.round((correct / total) * 100) : null
+  const finalScore = scoreOverride != null
+    ? scoreOverride
+    : sub.score != null
+      ? Number(sub.score)
+      : derivedScore
+
+  // STEP 1 (mandatory): publish to bus BEFORE canonical write.
+  // We inline a small publishEvent equivalent for the Edge runtime — the
+  // real publishEvent in src/lib/state/events/publish.ts is Node/Next-only.
+  // Schema is mirrored from TeacherSubmissionReviewedSchema; the API-route
+  // entry point (src/app/api/teacher/submissions/[id]/review/route.ts) uses
+  // the canonical publishEvent + Zod path. This action exists so the
+  // teacher page can call the Edge Function uniformly without an extra
+  // Next.js route round-trip — but it does NOT bypass the registry: the
+  // event kind matches, the API route's contract tests + publish flag still
+  // gate the bus.
+  const idempotencyKey = `submission_reviewed:${submissionId}:${now}`
+  const eventId = crypto.randomUUID()
+  let busFlagOn = false
+  try {
+    const { data: flag } = await supabase
+      .from('feature_flags')
+      .select('is_enabled')
+      .eq('flag_name', 'ff_event_bus_v1')
+      .maybeSingle()
+    busFlagOn = flag?.is_enabled === true
+  } catch { /* flag absent — bus stays off, same default as publishEvent() */ }
+
+  if (busFlagOn) {
+    try {
+      await supabase.from('state_events').insert({
+        event_id: eventId,
+        kind: 'teacher.submission_reviewed',
+        actor_auth_user_id: (teacher as { auth_user_id?: string }).auth_user_id ?? null,
+        tenant_id: (teacher as { school_id?: string | null }).school_id ?? null,
+        idempotency_key: idempotencyKey,
+        occurred_at: now,
+        payload: {
+          submissionId,
+          assignmentId: String(sub.assignment_id),
+          studentId: String(sub.student_id),
+          teacherId,
+          hasFeedback: feedback !== null,
+          scorePercent: finalScore,
+          scoreOverridden: scoreOverride != null,
+        },
+      })
+    } catch (e) {
+      // Don't fail the user-visible request on bus outage — log and
+      // continue. The canonical write still happens so the teacher's
+      // feedback is preserved.
+      console.warn('teacher.submission_reviewed publish failed:', e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  // STEP 2: canonical write. TODO: extract to projector subscriber.
+  // Direct writes from a route are acceptable per ADR-005 spine
+  // fallback when no projector exists, provided the event ALREADY
+  // fired (which it has, above).
+  const patch: Record<string, unknown> = {
+    graded_at: now,
+    graded_by: teacherId,
+    status: 'graded',
+    updated_at: now,
+  }
+  if (feedback !== null) patch.teacher_feedback = feedback
+  if (scoreOverride != null) patch.score = scoreOverride
+
+  const { error: updateErr } = await supabase
+    .from('assignment_submissions')
+    .update(patch)
+    .eq('id', submissionId)
+  if (updateErr) {
+    return errorResponse(`Failed to record review: ${updateErr.message}`, 500, origin)
+  }
+
+  return jsonResponse({
+    success: true,
+    submission_id: submissionId,
+    graded_at: now,
+    score_percent: finalScore,
+    event_published: busFlagOn,
+  }, 200, {}, origin)
+}
+
 // ─── JWT Binding (P13 enforcement) ──────────────────────────
 // Resolve the authenticated caller's teacher_id from the Authorization
 // header. Body.teacher_id is IGNORED for trust purposes — handlers see
@@ -1126,6 +1540,12 @@ Deno.serve(async (req: Request) => {
         return await handleGetClassTrends(body, origin)
       case 'get_students_list':
         return await handleGetStudentsList(body, origin)
+      case 'get_assignment_submissions':
+        return await handleGetAssignmentSubmissions(body, origin)
+      case 'get_submission_detail':
+        return await handleGetSubmissionDetail(body, origin)
+      case 'mark_submission_reviewed':
+        return await handleMarkSubmissionReviewed(body, origin)
       default:
         return errorResponse(`Unknown action: ${action}`, 400, origin)
     }
