@@ -1,3 +1,9 @@
+-- lint:allow-placeholder
+-- Intentional no-op (Phase E.2 lint allow-list): the three fixes captured by
+-- this MCP-applied version were folded back into 20260510064952_qb_fixer.sql
+-- before that PR merged. This file only exists to satisfy the Supabase CLI's
+-- local↔remote match.
+--
 -- Placeholder for an MCP-applied migration that exists in remote schema_migrations
 -- but had no corresponding file in this repo, blocking `supabase db push --include-all`
 -- with: "Remote migration versions not found in local migrations directory."

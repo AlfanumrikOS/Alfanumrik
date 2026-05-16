@@ -1,3 +1,9 @@
+-- lint:allow-placeholder
+-- TODO(phase-e2): write body — recover the actual DDL via `pg_dump --schema-only`
+-- on prod (project shktyoxqhundlvkiwguu) and replace this no-op so fresh
+-- staging / clone environments can rebuild parity. Tracked as HIGH priority
+-- back-fill in docs/runbooks/migration-placeholders-audit.md.
+--
 -- 20260525130001_security_and_performance_advisor_batch1.sql
 --
 -- RECONCILIATION FILE. No-op by design.

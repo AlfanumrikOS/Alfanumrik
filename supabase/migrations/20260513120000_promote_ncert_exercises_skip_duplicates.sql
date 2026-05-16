@@ -1,3 +1,9 @@
+-- lint:allow-placeholder
+-- Intentional no-op (Phase E.2 lint allow-list): the promotion logic was
+-- consolidated back into 20260513000000_promote_ncert_exercises_to_question_bank.sql
+-- after a third edge case surfaced. This file stays to preserve schema_migrations
+-- continuity for environments that already recorded this version.
+--
 -- ─── No-op stub (intentional) ───────────────────────────────────────────────
 --
 -- This migration was originally introduced in PR #658 as a follow-up to

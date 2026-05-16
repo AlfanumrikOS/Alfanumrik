@@ -1,3 +1,9 @@
+-- lint:allow-placeholder
+-- Intentional no-op (Phase E.2 lint allow-list): the real schema for this version
+-- lives in the prod database and is also expressed by the surrounding hot-fix
+-- migrations (20260509124350 .. 20260509161642). See audit row in
+-- docs/runbooks/migration-placeholders-audit.md for rationale.
+--
 -- Placeholder for an MCP-applied migration that exists in remote schema_migrations
 -- but had no corresponding file in this repo, blocking `supabase db push --linked`
 -- with: "Remote migration versions not found in local migrations directory."

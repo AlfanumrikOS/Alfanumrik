@@ -1,3 +1,8 @@
+-- lint:allow-placeholder
+-- Intentional no-op (Phase E.2 lint allow-list): canonical agent_runs / agent_steps
+-- DDL lives in 20260510043216_agent_traces.sql. This file only exists to satisfy
+-- the Supabase CLI's local↔remote match for the MCP-generated timestamp.
+--
 -- Placeholder for an MCP-applied migration that exists in remote schema_migrations
 -- but had no corresponding file in this repo, blocking `supabase db push --include-all`
 -- with: "Remote migration versions not found in local migrations directory."

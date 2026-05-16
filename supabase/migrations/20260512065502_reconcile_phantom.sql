@@ -1,3 +1,9 @@
+-- lint:allow-placeholder
+-- Intentional no-op (Phase E.2 lint allow-list): this is the staging-side
+-- phantom reconcile. The canonical body for the corresponding prod version
+-- lives in 20260512070302_ff_chapter_reader_v2.sql. There is no DDL behind
+-- this file — the placeholder IS the fix.
+--
 -- 20260512065502_reconcile_phantom.sql
 --
 -- STAGING PHANTOM RECONCILE — no-op body.
