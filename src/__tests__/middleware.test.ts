@@ -666,6 +666,197 @@ describe('F1: proxy.ts source structure', () => {
   });
 });
 
+// ─── Phase A.3: tenant headers forwarded as REQUEST headers ──────────
+//
+// Bug fixed by this PR: src/proxy.ts used to set x-school-* on response.headers
+// only, but /api/school-config/route.ts and lib/tenant.ts → tenantFromHeaders()
+// read x-school-id off the INCOMING request — the response is invisible to
+// them. Result: SchoolContext always returned isSchoolContext: false in
+// production even when tenant lookup succeeded.
+//
+// Fix: build a fresh Headers from request.headers, append x-school-* to it,
+// and pass via `NextResponse.next({ request: { headers: requestHeaders } })`.
+// This is the Next.js canonical pattern for forwarding modified request
+// headers to API routes + Server Components in the same lifecycle.
+describe('Phase A.3: tenant headers propagated via request, not response', () => {
+  // Simulates the augmentation logic that proxy.ts applies after Layer 0
+  // tenant resolution. Mirrors lines around 556-565 of src/proxy.ts.
+  interface FakeSchool {
+    id: string;
+    name: string;
+    slug: string;
+    logo_url: string | null;
+    primary_color: string;
+    secondary_color: string;
+    tagline: string | null;
+  }
+
+  function buildForwardedRequestHeaders(
+    incoming: Headers,
+    schoolConfig: FakeSchool | null,
+  ): Headers {
+    const requestHeaders = new Headers(incoming);
+    if (schoolConfig) {
+      requestHeaders.set('x-school-id', schoolConfig.id);
+      requestHeaders.set('x-school-name', encodeURIComponent(schoolConfig.name));
+      requestHeaders.set('x-school-slug', schoolConfig.slug);
+      requestHeaders.set('x-school-logo', schoolConfig.logo_url || '');
+      requestHeaders.set('x-school-primary-color', schoolConfig.primary_color || '#7C3AED');
+      requestHeaders.set('x-school-secondary-color', schoolConfig.secondary_color || '#F97316');
+      requestHeaders.set('x-school-tagline', encodeURIComponent(schoolConfig.tagline || ''));
+    }
+    return requestHeaders;
+  }
+
+  const DPS_NOIDA: FakeSchool = {
+    id: 'sch_dps_noida_uuid',
+    name: 'Delhi Public School, Noida',
+    slug: 'dps-noida',
+    logo_url: 'https://cdn.example.com/dps-noida.png',
+    primary_color: '#0066CC',
+    secondary_color: '#FFD200',
+    tagline: 'Excellence in Education',
+  };
+
+  it('forwards x-school-id on the request headers when a tenant resolves', () => {
+    const incoming = new Headers({ 'host': 'dps-noida.alfanumrik.com' });
+    const forwarded = buildForwardedRequestHeaders(incoming, DPS_NOIDA);
+
+    // This is the header /api/school-config/route.ts gates on:
+    //   const schoolId = request.headers.get('x-school-id');
+    //   if (!schoolId) return { isSchoolContext: false };
+    expect(forwarded.get('x-school-id')).toBe('sch_dps_noida_uuid');
+  });
+
+  it('forwards all 7 x-school-* headers on the request', () => {
+    const incoming = new Headers({ 'host': 'dps-noida.alfanumrik.com' });
+    const forwarded = buildForwardedRequestHeaders(incoming, DPS_NOIDA);
+
+    expect(forwarded.get('x-school-id')).toBe('sch_dps_noida_uuid');
+    expect(forwarded.get('x-school-name')).toBe(encodeURIComponent('Delhi Public School, Noida'));
+    expect(forwarded.get('x-school-slug')).toBe('dps-noida');
+    expect(forwarded.get('x-school-logo')).toBe('https://cdn.example.com/dps-noida.png');
+    expect(forwarded.get('x-school-primary-color')).toBe('#0066CC');
+    expect(forwarded.get('x-school-secondary-color')).toBe('#FFD200');
+    expect(forwarded.get('x-school-tagline')).toBe(encodeURIComponent('Excellence in Education'));
+  });
+
+  it('encodes the school name so commas/spaces survive the header transport', () => {
+    // School name "Delhi Public School, Noida" contains a comma, which is a
+    // header-delimiter token. URL-encoding it ensures the downstream
+    // decodeURIComponent call in /api/school-config/route.ts:33 round-trips
+    // back to the exact input.
+    const incoming = new Headers();
+    const forwarded = buildForwardedRequestHeaders(incoming, DPS_NOIDA);
+    const encoded = forwarded.get('x-school-name')!;
+    expect(decodeURIComponent(encoded)).toBe('Delhi Public School, Noida');
+  });
+
+  it('preserves the incoming request headers (e.g. host, cookie)', () => {
+    const incoming = new Headers({
+      'host': 'dps-noida.alfanumrik.com',
+      'cookie': 'sb-abc-auth-token=xxx',
+      'user-agent': 'Mozilla/5.0',
+    });
+    const forwarded = buildForwardedRequestHeaders(incoming, DPS_NOIDA);
+
+    // Original headers must be retained — Next.js, Supabase, and downstream
+    // handlers all rely on these.
+    expect(forwarded.get('host')).toBe('dps-noida.alfanumrik.com');
+    expect(forwarded.get('cookie')).toBe('sb-abc-auth-token=xxx');
+    expect(forwarded.get('user-agent')).toBe('Mozilla/5.0');
+    // And the tenant headers are added alongside.
+    expect(forwarded.get('x-school-id')).toBe('sch_dps_noida_uuid');
+  });
+
+  it('does NOT add x-school-* headers when no tenant resolved (B2C path)', () => {
+    const incoming = new Headers({ 'host': 'alfanumrik.com' });
+    const forwarded = buildForwardedRequestHeaders(incoming, null);
+
+    expect(forwarded.get('x-school-id')).toBeNull();
+    expect(forwarded.get('x-school-name')).toBeNull();
+    expect(forwarded.get('x-school-slug')).toBeNull();
+    // B2C requests must look exactly like the incoming request.
+    expect(forwarded.get('host')).toBe('alfanumrik.com');
+  });
+
+  it('defaults logo/tagline to empty string when school has null values', () => {
+    const incoming = new Headers();
+    const noBranding: FakeSchool = {
+      ...DPS_NOIDA,
+      logo_url: null,
+      tagline: null,
+    };
+    const forwarded = buildForwardedRequestHeaders(incoming, noBranding);
+
+    // Header values must be strings — null would be coerced to "null".
+    expect(forwarded.get('x-school-logo')).toBe('');
+    expect(forwarded.get('x-school-tagline')).toBe(encodeURIComponent(''));
+  });
+
+  it('defaults primary/secondary colors when school omits them', () => {
+    const incoming = new Headers();
+    const noColors: FakeSchool = {
+      ...DPS_NOIDA,
+      primary_color: '',
+      secondary_color: '',
+    };
+    const forwarded = buildForwardedRequestHeaders(incoming, noColors);
+
+    // Falls back to Alfanumrik default palette so the UI never renders unstyled.
+    expect(forwarded.get('x-school-primary-color')).toBe('#7C3AED');
+    expect(forwarded.get('x-school-secondary-color')).toBe('#F97316');
+  });
+});
+
+// ─── Phase A.3: proxy.ts source-level assertions (canonical pattern) ──
+//
+// These guard against accidental regression: the surgical fix MUST use
+// the `NextResponse.next({ request: { headers: ... } })` pattern. If a
+// future refactor reverts to `NextResponse.next({ request })` or sets
+// tenant headers only on `response.headers`, these tests catch it before
+// SchoolContext breaks in production again.
+describe('Phase A.3: proxy.ts forwards tenant via request, not response', () => {
+  it('builds requestHeaders from the incoming request', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const file = fs.readFileSync(path.resolve(process.cwd(), 'src/proxy.ts'), 'utf-8');
+    // The canonical clone: `new Headers(request.headers)`.
+    expect(file).toMatch(/const\s+requestHeaders\s*=\s*new\s+Headers\s*\(\s*request\.headers\s*\)/);
+  });
+
+  it('sets x-school-id on requestHeaders (not just response)', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const file = fs.readFileSync(path.resolve(process.cwd(), 'src/proxy.ts'), 'utf-8');
+    expect(file).toMatch(/requestHeaders\.set\(\s*['"]x-school-id['"]/);
+    expect(file).toMatch(/requestHeaders\.set\(\s*['"]x-school-slug['"]/);
+    expect(file).toMatch(/requestHeaders\.set\(\s*['"]x-school-name['"]/);
+  });
+
+  it('passes requestHeaders into NextResponse.next via { request: { headers } }', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const file = fs.readFileSync(path.resolve(process.cwd(), 'src/proxy.ts'), 'utf-8');
+    // Must use the canonical forwarding shape — bare `NextResponse.next({ request })`
+    // would leave the augmented headers behind.
+    expect(file).toMatch(/NextResponse\.next\(\s*\{\s*request:\s*\{\s*headers:\s*requestHeaders\s*\}\s*\}\s*\)/);
+  });
+
+  it('uses the same forwarded-headers shape inside the Supabase setAll callback', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const file = fs.readFileSync(path.resolve(process.cwd(), 'src/proxy.ts'), 'utf-8');
+    // Counts must be ≥ 2 — once for the initial response, once for the setAll
+    // recreation. If a future edit drops one, the tenant context is lost on
+    // requests where Supabase rotates the auth cookie (the exact path users
+    // hit on every login redirect).
+    const matches = file.match(/NextResponse\.next\(\s*\{\s*request:\s*\{\s*headers:\s*requestHeaders\s*\}\s*\}\s*\)/g);
+    expect(matches).not.toBeNull();
+    expect(matches!.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
 // ─── F4: Role-based route protection ─────────────────────────
 
 describe('F4: middleware-helpers findRouteRule', () => {
