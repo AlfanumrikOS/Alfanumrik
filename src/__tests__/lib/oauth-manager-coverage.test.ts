@@ -248,7 +248,7 @@ describe('registerApp — exception path (lines 126-131)', () => {
     // The catch wraps non-Error throws in `new Error(String(err))`. We
     // verify that branch fires by throwing a bare string.
     mockGetSupabaseAdmin.mockImplementation(() => {
-      // eslint-disable-next-line @typescript-eslint/no-throw-literal
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw 'plain string failure';
     });
     const result = await registerApp(validInput);
@@ -409,7 +409,7 @@ describe('validateAccessToken — failure paths (lines 196-198, 213-218)', () =>
 
   it('coerces non-Error throws in the validate catch (line 215 String(err) branch)', async () => {
     mockGetSupabaseAdmin.mockImplementation(() => {
-      // eslint-disable-next-line @typescript-eslint/no-throw-literal
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw 42;
     });
     const result = await validateAccessToken('any-token');
@@ -500,7 +500,7 @@ describe('revokeAppTokens — entire function (lines 226-256)', () => {
 
   it('coerces a non-Error throw in the revoke catch (line 253 String(err) branch)', async () => {
     mockGetSupabaseAdmin.mockImplementation(() => {
-      // eslint-disable-next-line @typescript-eslint/no-throw-literal
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw { code: 'WEIRD_OBJECT' };
     });
     await expect(revokeAppTokens('app-zzz')).resolves.toBeUndefined();

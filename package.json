@@ -33,6 +33,10 @@
     "smoke:agent": "npx tsx scripts/smoke-agent.ts"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/core": "^2.6.1",
+    "@opentelemetry/instrumentation": "^0.217.0",
+    "@opentelemetry/sdk-trace-base": "^2.6.1",
     "@sentry/nextjs": "^10.52.0",
     "@splinetool/react-spline": "^2.2.6",
     "@splinetool/runtime": "^1.9.27",
