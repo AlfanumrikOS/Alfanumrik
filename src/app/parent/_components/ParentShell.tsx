@@ -12,6 +12,7 @@ const NAV_ITEMS: SidebarNavItem[] = [
   { href: '/parent/children', label: 'Children', labelHi: 'बच्चे', icon: '⊕' },
   { href: '/parent/calendar', label: 'Calendar', labelHi: 'कैलेंडर', icon: '◐' },
   { href: '/parent/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘' },
+  { href: '/parent/billing', label: 'Billing', labelHi: 'बिलिंग', icon: '◈' },
   { href: '/parent/support', label: 'Support', labelHi: 'सहायता', icon: '⊛' },
   { href: '/parent/profile', label: 'Profile', labelHi: 'प्रोफ़ाइल', icon: '◎' },
 ];
@@ -48,6 +49,11 @@ export default function ParentShell({ children }: { children: React.ReactNode })
     if (mode === 'link-code') {
       if (item.href === '/parent/children') return false;
       if (item.href === '/parent/profile') return false;
+      // Billing requires a real Supabase auth session (guardian mode) to
+      // bind charges to a parent identity. Link-code sessions are
+      // anonymous HMAC payloads and cannot be the subject of a Razorpay
+      // subscription — hide the tab in that mode.
+      if (item.href === '/parent/billing') return false;
     }
     return true;
   });
