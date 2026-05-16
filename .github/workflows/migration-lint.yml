@@ -1,0 +1,31 @@
+name: Migration Lint — SELECT-1 placeholder guard
+
+# Phase E.2: block PRs that introduce a no-op SELECT-1 migration body.
+# Runs only when a PR touches supabase/migrations/** so unrelated changes
+# don't pay the cost. Files can opt out with a top-of-file
+# `-- lint:allow-placeholder` marker (see scripts/lint-migrations.js).
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/lint-migrations.js'
+      - '.github/workflows/migration-lint.yml'
+
+concurrency:
+  group: migration-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Lint migrations
+        run: npm run lint:migrations

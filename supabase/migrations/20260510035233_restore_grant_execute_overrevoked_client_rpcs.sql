@@ -1,3 +1,8 @@
+-- lint:allow-placeholder
+-- Intentional no-op (Phase E.2 lint allow-list): the canonical GRANT EXECUTE
+-- DDL lives in 20260510033000_restore_grant_execute_overrevoked_client_rpcs.sql.
+-- This file only exists to satisfy the Supabase CLI's local↔remote match.
+--
 -- Placeholder for an MCP-applied migration that exists in remote schema_migrations
 -- but had no corresponding file in this repo, blocking `supabase db push --include-all`
 -- with: "Remote migration versions not found in local migrations directory."

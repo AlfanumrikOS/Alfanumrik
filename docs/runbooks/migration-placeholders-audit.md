@@ -22,18 +22,33 @@ The placeholder pattern is: commit a file at the exact missing version with a `S
 
 ## Inventory (10 placeholders)
 
-| Filename | Origin | Real DDL location | Back-fill priority |
-|---|---|---|---|
-| `20260509130000_mcp_applied_placeholder.sql` | MCP-applied to staging | Unknown — staging only | Low |
-| `20260510035233_restore_grant_execute_overrevoked_client_rpcs.sql` | MCP-applied to staging during PR #678/#679/#681 series | `GRANT EXECUTE` on client RPCs (recoverable via `\df+` in psql) | Medium |
-| `20260510050527_agent_traces.sql` | MCP-applied during PR #683 | `agent_traces` table DDL (visible in current prod schema) | Medium |
-| `20260510065248_qb_fixer.sql` | MCP-applied during PR #686 | QB fixer agent tables | Medium |
-| `20260510070057_qb_fixer_fix_review_feedback.sql` | MCP-applied after initial qb_fixer | Review-feedback fix to QB fixer | Low |
-| `20260512065502_reconcile_phantom.sql` | Phantom from PR #749 | None — was the phantom itself | None (no DDL behind it) |
-| `20260512065503_reconcile_phantom.sql` | Companion phantom | None | None |
-| `20260513120000_promote_ncert_exercises_skip_duplicates.sql` | PR #658 follow-up superseded | Logic moved to a later migration | None (intentionally retired) |
-| `20260525130001_security_and_performance_advisor_batch1.sql` | Supabase Advisor recommendations applied directly | Security + performance indexes | **HIGH** |
-| `20260525130002_api_query_path_indexes_batch2.sql` | Supabase Advisor batch 2 | API query-path indexes | **HIGH** |
+| Filename | Origin | Real DDL location | Back-fill priority | E.2 annotation |
+|---|---|---|---|---|
+| `20260509130000_mcp_applied_placeholder.sql` | MCP-applied to staging | Unknown — staging only | Low | `lint:allow-placeholder` (intentional) |
+| `20260510035233_restore_grant_execute_overrevoked_client_rpcs.sql` | MCP-applied to staging during PR #678/#679/#681 series | `GRANT EXECUTE` on client RPCs (recoverable via `\df+` in psql) | Medium | `lint:allow-placeholder` (intentional — sibling `20260510033000_…` holds canonical body) |
+| `20260510050527_agent_traces.sql` | MCP-applied during PR #683 | `agent_traces` table DDL (visible in current prod schema) | Medium | `lint:allow-placeholder` (intentional — sibling `20260510043216_…` holds canonical body) |
+| `20260510065248_qb_fixer.sql` | MCP-applied during PR #686 | QB fixer agent tables | Medium | `lint:allow-placeholder` (intentional — sibling `20260510064952_…` holds canonical body) |
+| `20260510070057_qb_fixer_fix_review_feedback.sql` | MCP-applied after initial qb_fixer | Review-feedback fix to QB fixer | Low | `lint:allow-placeholder` (intentional — fixes folded back into `20260510064952_qb_fixer.sql`) |
+| `20260512065502_reconcile_phantom.sql` | Phantom from PR #749 | None — was the phantom itself | None (no DDL behind it) | `lint:allow-placeholder` (intentional — placeholder IS the fix) |
+| `20260512065503_reconcile_phantom.sql` | Companion phantom | None | None | `lint:allow-placeholder` (intentional — placeholder IS the fix) |
+| `20260513120000_promote_ncert_exercises_skip_duplicates.sql` | PR #658 follow-up superseded | Logic moved to a later migration | None (intentionally retired) | `lint:allow-placeholder` (intentional — logic merged into `20260513000000_…`) |
+| `20260525130001_security_and_performance_advisor_batch1.sql` | Supabase Advisor recommendations applied directly | Security + performance indexes | **HIGH** | `lint:allow-placeholder` + `TODO(phase-e2): write body` — recover DDL via `pg_dump` |
+| `20260525130002_api_query_path_indexes_batch2.sql` | Supabase Advisor batch 2 | API query-path indexes | **HIGH** | `lint:allow-placeholder` + `TODO(phase-e2): write body` — recover DDL via `pg_dump` |
+
+### E.2 annotation summary
+
+Phase E.2 (the CI guard in `scripts/lint-migrations.js`) requires every
+no-op `SELECT 1` migration to carry a top-of-file `-- lint:allow-placeholder`
+marker. All 10 existing placeholders above were retro-annotated as part of
+the lint introduction (PR for Phase E.2):
+
+- **8 intentional** — no DDL behind them, or the DDL is canonically expressed
+  in a sibling file. These will remain no-ops indefinitely; the allow-marker
+  acknowledges that.
+- **2 TODO(phase-e2)** — the advisor-batch placeholders DO have prod DDL
+  behind them that needs to be recovered via `pg_dump --schema-only`. They
+  carry both the allow-marker (so CI passes today) and a `TODO(phase-e2):
+  write body` comment so a future grep finds them.
 
 ## What's at risk
 
@@ -69,7 +84,7 @@ For each HIGH-priority placeholder:
 
 ## Operational guardrails added in Phase E
 
-- **Phase E.2** (already planned): migration-template lint that rejects `SELECT 1` bodies on new PRs. Existing 10 placeholders pre-date the lint and are explicitly allowlisted by filename pattern.
+- **Phase E.2** (shipped): migration-template lint at `scripts/lint-migrations.js`, wired via `.github/workflows/migration-lint.yml` on `pull_request` events that touch `supabase/migrations/**`. Rejects any new file whose body — after stripping comments and whitespace — is a no-op `SELECT 1` flavor (including `SELECT 1 WHERE false`, `SELECT 1::int`, `BEGIN; SELECT 1; COMMIT;`, etc.). Files opt out with a top-of-file `-- lint:allow-placeholder` marker. Existing 10 placeholders are retro-annotated (see "E.2 annotation" column above). Self-test at `scripts/__tests__/lint-migrations.test.sh`.
 - **Phase E.1** (already planned): branch-lifecycle GitHub Action that auto-deletes merged branches, reducing the "operator applies via MCP rather than fight a CI failure" temptation.
 - **Pre-deploy check** (new ask): a CI job that runs `supabase db reset` on a fresh staging clone and asserts no schema drift against prod. Would catch the drift proactively.
 

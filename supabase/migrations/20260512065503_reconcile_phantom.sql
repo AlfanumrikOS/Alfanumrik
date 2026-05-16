@@ -1,3 +1,9 @@
+-- lint:allow-placeholder
+-- Intentional no-op (Phase E.2 lint allow-list): the staging-side phantom
+-- reconcile companion. The canonical body lives in
+-- 20260512070624_backfill_g7_math_ch1_concepts_v2.sql. There is no DDL behind
+-- this file — the placeholder IS the fix.
+--
 -- 20260512065503_reconcile_phantom.sql
 --
 -- STAGING PHANTOM RECONCILE — no-op body. Companion to
