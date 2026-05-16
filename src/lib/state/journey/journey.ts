@@ -248,6 +248,15 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
         badge: 'info',
         sourceKind: e.kind,
       };
+    case 'teacher.classroom_created':
+    case 'teacher.classroom_updated':
+    case 'teacher.classroom_archived':
+    case 'teacher.student_note_set':
+    case 'teacher.profile_updated':
+      // Teacher-side admin events — not surfaced on learner-facing journey
+      // (they describe teacher actions on classroom/student, not learner state
+      // changes). Audit/notification subscribers consume these instead.
+      return null;
     case 'school.module_toggled':
       return null; // admin-only signal
     case 'billing.invoice_paid':
