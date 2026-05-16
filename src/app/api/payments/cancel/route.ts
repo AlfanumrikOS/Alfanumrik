@@ -99,12 +99,12 @@ export async function POST(request: NextRequest) {
     if (requestedStudentId) {
       const childrenRes = await listChildrenForGuardian(user.id);
       if (childrenRes.ok) {
-        const children = childrenRes.data as Array<{ id: string }>;
-        for (const child of children) {
-          if (child.id === requestedStudentId) {
-            resolvedStudentId = requestedStudentId;
-            break;
-          }
+        // ChildSummary.studentId — see src/lib/domains/types.ts:647-657
+        const matches = childrenRes.data.some(
+          (c) => c.studentId === requestedStudentId,
+        );
+        if (matches) {
+          resolvedStudentId = requestedStudentId;
         }
       }
     } else {
