@@ -137,13 +137,21 @@ export default function TeacherClassesPage() {
     }
     setCreating(true);
     try {
-      await supabase.rpc('teacher_create_class', {
-        p_teacher_id: teacherId,
-        p_name: formName.trim(),
-        p_grade: formGrade,
-        p_section: formSection || null,
-        p_subject: formSubject,
+      const res = await fetch('/api/teacher/classes', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: formName.trim(),
+          grade: formGrade,
+          section: formSection || null,
+          subject: formSubject,
+        }),
       });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `HTTP ${res.status}`);
+      }
       setShowModal(false);
       setFormName('');
       setFormGrade('9');
@@ -189,11 +197,16 @@ export default function TeacherClassesPage() {
     }
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('classes')
-        .update({ name, section: editSection || null, updated_at: new Date().toISOString() })
-        .eq('id', editingClass.id);
-      if (error) throw error;
+      const res = await fetch(`/api/teacher/classes/${editingClass.id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, section: editSection || null }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `HTTP ${res.status}`);
+      }
       setClasses(prev => prev.map(c => c.id === editingClass.id ? { ...c, name, section: editSection || undefined } : c));
       setEditingClass(null);
       showToast(tt(isHi, 'Class updated!', 'कक्षा अपडेट की गई!'));
@@ -206,11 +219,14 @@ export default function TeacherClassesPage() {
 
   const handleArchive = async (classId: string) => {
     try {
-      const { error } = await supabase
-        .from('classes')
-        .update({ is_active: false })
-        .eq('id', classId);
-      if (error) throw error;
+      const res = await fetch(`/api/teacher/classes/${classId}/archive`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `HTTP ${res.status}`);
+      }
       setClasses(prev => prev.filter(c => c.id !== classId));
       setArchiveConfirmId(null);
       showToast(tt(isHi, 'Class archived', 'कक्षा संग्रहीत की गई'));

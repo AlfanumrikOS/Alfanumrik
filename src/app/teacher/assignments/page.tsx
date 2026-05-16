@@ -195,19 +195,26 @@ export default function AssignmentsPage() {
     }
     setSubmitting(true);
     try {
-      const { error: insertErr } = await supabase.from('assignments').insert({
-        teacher_id: teacherId,
-        class_id: formClass,
-        title: formTitle.trim(),
-        subject: formSubject,
-        grade: autoGrade,
-        chapter: formChapter.trim() || null,
-        difficulty: formDifficulty.toLowerCase(),
-        question_count: formCount,
-        due_date: formDueDate || null,
-        type: 'quiz',
+      const res = await fetch('/api/teacher/assignments', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          class_id: formClass,
+          title: formTitle.trim(),
+          subject: formSubject,
+          grade: autoGrade,
+          chapter: formChapter.trim() || null,
+          difficulty: formDifficulty.toLowerCase(),
+          question_count: formCount,
+          due_date: formDueDate || null,
+          type: 'quiz',
+        }),
       });
-      if (insertErr) throw insertErr;
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `HTTP ${res.status}`);
+      }
       setShowModal(false);
       resetForm();
       showToast(tt(isHi, 'Assignment created successfully!', 'असाइनमेंट सफलतापूर्वक बनाया गया!'));
