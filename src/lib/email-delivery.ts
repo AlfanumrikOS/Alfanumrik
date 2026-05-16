@@ -22,16 +22,26 @@ import { logger } from '@/lib/logger';
 
 export type EmailTemplate =
   | 'school-trial-provisioned'
-  | 'school-invite-code-issued';
+  | 'school-invite-code-issued'
+  | 'parent-link-code-otp';
 
 export type EmailLocale = 'en' | 'hi';
 
 export interface EmailTemplateParams {
-  school_name: string;
-  invite_code: string;
-  expires_at: string;
+  // school-onboarding templates use these.
+  school_name?: string;
+  invite_code?: string;
+  expires_at?: string;
   subdomain_url?: string;
   recipient_name?: string;
+  // parent-link-code-otp uses these. We share the type rather than adding a
+  // union — the Edge Function validates the right combination per template.
+  otp?: string;
+  // Idempotency / log key for the OTP path. Required so the email-delivery
+  // idempotency guard keyed on invite_code doesn't accidentally collapse two
+  // distinct OTP challenges (each new request-otp call must email a fresh
+  // OTP). The route layer passes a fresh challenge id here.
+  idempotency_key?: string;
 }
 
 export interface DeliverEmailInput {
@@ -147,20 +157,28 @@ async function recordSent(
 export async function deliverEmail(input: DeliverEmailInput): Promise<DeliverEmailResult> {
   const { template, to, locale = 'en', params } = input;
 
-  if (!to || !params?.invite_code) {
+  // OTP path: keyed on a per-challenge idempotency key, since each
+  // request-otp invocation MUST email a fresh code. School-onboarding path
+  // remains keyed on invite_code (1 email per code, ever).
+  const isOtp = template === 'parent-link-code-otp';
+  const idempotencyKey = isOtp
+    ? params?.idempotency_key
+    : params?.invite_code;
+
+  if (!to || !idempotencyKey) {
     logger.warn('email_delivery_missing_input', {
       template,
       hasTo: !!to,
-      hasCode: !!params?.invite_code,
+      hasKey: !!idempotencyKey,
     });
     return { sent: false, skipped: 'no_email' };
   }
 
-  // Idempotency guard — short-circuit if we've already sent for this code.
-  if (await alreadySent(template, params.invite_code)) {
+  // Idempotency guard — short-circuit if we've already sent for this key.
+  if (await alreadySent(template, idempotencyKey)) {
     logger.info('email_delivery_skipped_duplicate', {
       template,
-      codeTruncated: truncateInviteCode(params.invite_code),
+      codeTruncated: truncateInviteCode(idempotencyKey),
     });
     return { sent: false, skipped: 'already_sent' };
   }
@@ -203,7 +221,7 @@ export async function deliverEmail(input: DeliverEmailInput): Promise<DeliverEma
       result = { sent: true, id: body.id };
       logger.info('email_delivery_sent', {
         template,
-        codeTruncated: truncateInviteCode(params.invite_code),
+        codeTruncated: truncateInviteCode(idempotencyKey),
         providerId: body.id,
         locale,
       });
@@ -211,7 +229,7 @@ export async function deliverEmail(input: DeliverEmailInput): Promise<DeliverEma
       result = { sent: false, error: body.error ?? `http_${res.status}` };
       logger.warn('email_delivery_provider_failed', {
         template,
-        codeTruncated: truncateInviteCode(params.invite_code),
+        codeTruncated: truncateInviteCode(idempotencyKey),
         status: res.status,
         providerError: body.error,
       });
@@ -221,7 +239,7 @@ export async function deliverEmail(input: DeliverEmailInput): Promise<DeliverEma
     result = { sent: false, error: message };
     logger.warn('email_delivery_fetch_failed', {
       template,
-      codeTruncated: truncateInviteCode(params.invite_code),
+      codeTruncated: truncateInviteCode(idempotencyKey),
       reason: message,
     });
   }
@@ -230,7 +248,7 @@ export async function deliverEmail(input: DeliverEmailInput): Promise<DeliverEma
   // idempotency purposes (we don't want to retry a hard provider rejection on
   // every Vercel request). Future operator action (resend-invites UI) lives
   // outside this path.
-  await recordSent(template, params.invite_code, {
+  await recordSent(template, idempotencyKey, {
     sent: result.sent,
     providerId: result.id ?? null,
     error: result.error ?? null,
