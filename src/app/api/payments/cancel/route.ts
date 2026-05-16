@@ -5,6 +5,7 @@ import { cancelRazorpaySubscription } from '@/lib/razorpay';
 import { logger } from '@/lib/logger';
 import { logOpsEvent } from '@/lib/ops-events';
 import { paymentCancelSchema, validateBody } from '@/lib/validation';
+import { listChildrenForGuardian } from '@/lib/domains/relationship';
 
 /**
  * Cancel Subscription Endpoint (P11)
@@ -75,20 +76,44 @@ export async function POST(request: NextRequest) {
     if (!validation.success) return validation.error;
     const { immediate = false, reason = null } = validation.data;
 
+    // Optional body.student_id lets a verified guardian cancel a child's
+    // subscription. Cast safely — paymentCancelSchema may not declare it yet,
+    // so we read from the raw body. Ownership is enforced via
+    // listChildrenForGuardian before any DB write touches that student.
+    const requestedStudentId =
+      typeof (rawBody as { student_id?: unknown })?.student_id === 'string'
+        ? (rawBody as { student_id: string }).student_id
+        : null;
+
     const admin = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    // Get student + subscription
-    const { data: studentRow } = await admin
-      .from('students')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .single();
+    // Resolve which student's subscription we're cancelling.
+    //   Self-cancel (student is the caller)  → look up students.auth_user_id = user.id
+    //   Guardian-cancel (parent on behalf)   → body.student_id MUST be in the
+    //     caller's linked-children set (listChildrenForGuardian). Cross-guardian
+    //     attempts get the same 404 as "not your child" — no enumeration.
+    let studentId: string | null = null;
 
-    if (!studentRow) {
+    if (requestedStudentId) {
+      const childrenRes = await listChildrenForGuardian(user.id);
+      if (childrenRes.ok && childrenRes.data.some(c => c.id === requestedStudentId)) {
+        studentId = requestedStudentId;
+      }
+    } else {
+      const { data: studentRow } = await admin
+        .from('students')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .single();
+      if (studentRow) studentId = studentRow.id;
+    }
+
+    if (!studentId) {
       return NextResponse.json({ error: 'Student not found' }, { status: 404 });
     }
+    const studentRow = { id: studentId };
 
     const { data: sub } = await admin
       .from('student_subscriptions')
