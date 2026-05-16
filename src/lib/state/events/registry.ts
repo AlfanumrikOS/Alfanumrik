@@ -208,6 +208,72 @@ export const TeacherAssignmentCreatedSchema = EventBaseSchema.extend({
   }),
 });
 
+// Phase B.5 (ADR-005 canonical-writer alignment): teacher classroom CRUD
+// previously went straight from the page to the DB via the anon-key client.
+// These events let any downstream subscriber (notifications, analytics,
+// audit trail) react to teacher actions without re-querying the DB.
+//
+// Naming uses `teacher.classroom_*` rather than `classroom.*` to keep the
+// actor in the canonical set (learner/parent/teacher/school/ai/billing/mesh) —
+// same pattern as `tenant.*` events living under `school.*`.
+export const TeacherClassroomCreatedSchema = EventBaseSchema.extend({
+  kind: z.literal('teacher.classroom_created'),
+  payload: z.object({
+    classId:     uuidLike(),
+    teacherId:   uuidLike(),
+    name:        z.string().min(1).max(100),
+    grade:       z.string().min(1).max(4),
+    section:     z.string().max(4).nullable(),
+    subjectCode: z.string().max(64).nullable(),
+    classCode:   z.string().min(1).max(16),
+  }),
+});
+
+export const TeacherClassroomUpdatedSchema = EventBaseSchema.extend({
+  kind: z.literal('teacher.classroom_updated'),
+  payload: z.object({
+    classId:   uuidLike(),
+    teacherId: uuidLike(),
+    // Only fields actually changed appear in the patch — nulls signal
+    // "explicitly cleared", absent fields signal "unchanged".
+    patch: z.object({
+      name:    z.string().min(1).max(100).optional(),
+      section: z.string().max(4).nullable().optional(),
+    }),
+  }),
+});
+
+export const TeacherClassroomArchivedSchema = EventBaseSchema.extend({
+  kind: z.literal('teacher.classroom_archived'),
+  payload: z.object({
+    classId:   uuidLike(),
+    teacherId: uuidLike(),
+  }),
+});
+
+export const TeacherStudentNoteSetSchema = EventBaseSchema.extend({
+  kind: z.literal('teacher.student_note_set'),
+  payload: z.object({
+    teacherId: uuidLike(),
+    studentId: uuidLike(),
+    // Note bodies are intentionally short — full text isn't sent on the
+    // bus to keep payloads bounded; the projector fetches it from the
+    // canonical `teacher_student_notes` row when it needs the full body.
+    hasNote: z.boolean(),
+    hasGoal: z.boolean(),
+  }),
+});
+
+export const TeacherProfileUpdatedSchema = EventBaseSchema.extend({
+  kind: z.literal('teacher.profile_updated'),
+  payload: z.object({
+    teacherId: uuidLike(),
+    // Which scalar fields were updated this call. Names mirror the
+    // teachers-table column names so subscribers don't need a mapping.
+    fields: z.array(z.enum(['name', 'school_name'])).min(1),
+  }),
+});
+
 // ── School / tenant events ───────────────────────────────────────────
 
 export const SchoolModuleToggledSchema = EventBaseSchema.extend({
@@ -258,6 +324,11 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   ParentLinkedSchema,
   ParentReportViewedSchema,
   TeacherAssignmentCreatedSchema,
+  TeacherClassroomCreatedSchema,
+  TeacherClassroomUpdatedSchema,
+  TeacherClassroomArchivedSchema,
+  TeacherStudentNoteSetSchema,
+  TeacherProfileUpdatedSchema,
   SchoolModuleToggledSchema,
   BillingInvoicePaidSchema,
   MeshCycleCompletedSchema,
@@ -286,6 +357,11 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'parent.linked_to_learner',
   'parent.report_viewed',
   'teacher.assignment_created',
+  'teacher.classroom_created',
+  'teacher.classroom_updated',
+  'teacher.classroom_archived',
+  'teacher.student_note_set',
+  'teacher.profile_updated',
   'school.module_toggled',
   'billing.invoice_paid',
   'mesh.cycle_completed',

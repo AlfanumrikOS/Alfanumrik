@@ -142,6 +142,34 @@ const VALID_PAYLOADS: Record<DomainEventKind, Record<string, unknown>> = {
     chapterNumbers: [1, 2, 3],
     dueAt: FIXTURE_ISO,
   },
+  'teacher.classroom_created': {
+    classId: FIXTURE_UUID_C,
+    teacherId: FIXTURE_UUID_A,
+    name: '10-A Science',
+    grade: '10',
+    section: 'A',
+    subjectCode: 'science',
+    classCode: 'ABC123',
+  },
+  'teacher.classroom_updated': {
+    classId: FIXTURE_UUID_C,
+    teacherId: FIXTURE_UUID_A,
+    patch: { name: '10-A Science Renamed' },
+  },
+  'teacher.classroom_archived': {
+    classId: FIXTURE_UUID_C,
+    teacherId: FIXTURE_UUID_A,
+  },
+  'teacher.student_note_set': {
+    teacherId: FIXTURE_UUID_A,
+    studentId: FIXTURE_UUID_C,
+    hasNote: true,
+    hasGoal: false,
+  },
+  'teacher.profile_updated': {
+    teacherId: FIXTURE_UUID_A,
+    fields: ['name'],
+  },
   'school.module_toggled': {
     moduleKey: 'ai_tutor',
     isEnabled: true,
