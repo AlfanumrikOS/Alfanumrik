@@ -16,12 +16,14 @@
  *
  * Query params:
  *   ?cursor=<iso ts>    — created_at < cursor (for "load more")
+ *   ?before=<iso ts>    — Phase D.6 alias for ?cursor= (standard pagination
+ *                          contract; docs/runbooks/performance-targets.md)
  *   ?filter=all|unread  — default 'all'
  *   ?limit=N            — clamped to 50 (we ship 50/page; UI cannot push)
  *
  * Response 200:
  *   { success: true, items: NotificationRow[], nextCursor: string | null,
- *     unreadCount: number }
+ *     hasMore: boolean, unreadCount: number }
  *
  * Errors: 401 / 403 (auth gate) · 404 guardian-row-missing · 500 db error.
  *
@@ -79,7 +81,9 @@ export async function GET(request: NextRequest) {
 
   const url = new URL(request.url);
   const filter = url.searchParams.get('filter') === 'unread' ? 'unread' : 'all';
-  const cursor = url.searchParams.get('cursor');
+  // Phase D.6: accept ?before= as cursor alias (forward-compat with the
+  // standard pagination contract). ?cursor= remains primary.
+  const cursor = url.searchParams.get('cursor') ?? url.searchParams.get('before');
   const rawLimit = Number(url.searchParams.get('limit'));
   const limit =
     Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), MAX_LIMIT) : DEFAULT_LIMIT;
@@ -137,6 +141,7 @@ export async function GET(request: NextRequest) {
     success: true,
     items: page,
     nextCursor,
+    hasMore,
     unreadCount: unreadCount ?? 0,
   });
 }

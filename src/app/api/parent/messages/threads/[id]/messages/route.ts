@@ -8,8 +8,10 @@
  *
  * Auth: `child.view_progress` permission + guardian-row resolution.
  *
- * Query: ?cursor=<iso ts>, ?limit=N (clamped 100).
- * Response 200: { success: true, messages: MessageRow[], nextCursor }
+ * Query: ?cursor=<iso ts>, ?before=<iso ts> (Phase D.6 alias), ?limit=N
+ *        (clamped 100).
+ * Response 200:
+ *   { success: true, messages: MessageRow[], nextCursor, hasMore }
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -65,7 +67,10 @@ export async function GET(
   if (thread.guardian_id !== guardian.id) return err('Thread not owned by caller', 403);
 
   const url = new URL(request.url);
-  const cursor = url.searchParams.get('cursor');
+  // Phase D.6: accept ?before= as alias of ?cursor=, matching the contract
+  // in docs/runbooks/performance-targets.md. ?cursor= remains for in-flight
+  // UI builds.
+  const cursor = url.searchParams.get('cursor') ?? url.searchParams.get('before');
   const rawLimit = Number(url.searchParams.get('limit'));
   const limit =
     Number.isFinite(rawLimit) && rawLimit > 0
@@ -115,5 +120,5 @@ export async function GET(
     }
   }
 
-  return NextResponse.json({ success: true, messages: page, nextCursor });
+  return NextResponse.json({ success: true, messages: page, nextCursor, hasMore });
 }
