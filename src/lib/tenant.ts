@@ -9,6 +9,7 @@
  */
 
 import { cacheGet, cacheSet, cacheDelete } from '@/lib/cache';
+import { setSentrySchoolContext } from '@/lib/sentry/school-context';
 import { NULL_TENANT } from '@/lib/types';
 import type { TenantContext, SchoolBranding } from '@/lib/types';
 
@@ -156,7 +157,7 @@ export function tenantFromHeaders(headers: Headers): TenantContext {
   const schoolId = headers.get('x-school-id');
   if (!schoolId) return NULL_TENANT;
 
-  return {
+  const ctx: TenantContext = {
     schoolId,
     schoolSlug: headers.get('x-school-slug') || null,
     schoolName: headers.get('x-school-name') || null,
@@ -164,6 +165,13 @@ export function tenantFromHeaders(headers: Headers): TenantContext {
     isActive: true, // If headers are present, assume active (middleware would have blocked inactive)
     branding: NULL_TENANT.branding, // Branding resolved separately by frontend from context
   };
+
+  // Tag the current Sentry scope so per-tenant errors are filterable in
+  // the Sentry UI (school_id:<uuid>) and queryable by the future
+  // super-admin health dashboard `errors_24h` column (Phase E.6 follow-up).
+  setSentrySchoolContext(ctx);
+
+  return ctx;
 }
 
 /* ─── Resolution (Supabase REST API) ─── */
