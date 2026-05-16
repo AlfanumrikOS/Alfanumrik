@@ -237,6 +237,13 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
     case 'parent.report_viewed':
       // Hidden from learner-facing; surfaced on parent-facing journey.
       return null;
+    case 'parent.child_data_exported':
+      // Phase D.2 — DPDP §13 export. Audit-only signal; not surfaced on
+      // the learner timeline (it describes a parent's compliance action,
+      // not a learner-visible event). Parent-facing surfaces can render
+      // their own download history without this projector — the audit_logs
+      // row + state_event is the canonical record for ops/compliance.
+      return null;
     case 'teacher.assignment_created':
       return {
         id: e.eventId,

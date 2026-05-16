@@ -85,6 +85,7 @@ Verified by grep over `src/**` (2026-05-16) for `kind:` literals and `publishEve
 | `parent.linked_to_learner` | 🟡 Schema-only | `/api/parent/approve-link` writes `guardian_student_links` directly; not yet publishing. Migration to publish target — closes the "implicit triggers blur ownership" gap (R8). |
 | `parent.report_viewed` | 🟡 Schema-only | Parent portal does not yet emit a view event. Low priority. |
 | `parent.teacher_message_sent` | ✅ Live | [`src/app/api/parent/messages/route.ts`](../../src/app/api/parent/messages/route.ts). Emitted when a guardian posts a message to a teacher on the parent↔teacher messaging surface. Payload omits the message body (subscribers fetch from `teacher_parent_messages`); carries `isNewThread`. Phase C.3. Surfaces on parent-facing journeys (`projectJourney` returns a 'parent' category card). |
+| `parent.child_data_exported` | ✅ Live | [`src/app/api/parent/children/[student_id]/export/route.ts`](../../src/app/api/parent/children/[student_id]/export/route.ts). DPDP §13 compliance signal. Emitted when a verified guardian downloads the full JSON export of their child's data. Payload carries `schemaVersion`, `payloadBytes`, `tableCount`, and `rowCountTotal` so audit + analytics subscribers see export volume without re-reading the audit_logs row. The 10MB guardrail (413 response) does NOT emit an event — only successful downloads. Phase D.2. |
 
 ### Teacher events
 

@@ -135,6 +135,14 @@ const VALID_PAYLOADS: Record<DomainEventKind, Record<string, unknown>> = {
     learnerAuthUserId: FIXTURE_UUID_C,
     reportKind: 'weekly',
   },
+  'parent.child_data_exported': {
+    guardianId: FIXTURE_UUID_A,
+    studentId: FIXTURE_UUID_C,
+    schemaVersion: 'v1-2026-05',
+    payloadBytes: 12345,
+    tableCount: 11,
+    rowCountTotal: 432,
+  },
   'teacher.assignment_created': {
     assignmentId: FIXTURE_UUID_C,
     classId: FIXTURE_UUID_A,

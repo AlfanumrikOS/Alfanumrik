@@ -195,6 +195,26 @@ export const ParentReportViewedSchema = EventBaseSchema.extend({
   }),
 });
 
+// Phase D.2 — DPDP §13. Emitted when a verified guardian downloads the
+// full export of their child's data via /api/parent/children/[id]/export.
+// `tableCounts` lets analytics + audit subscribers see the per-table row
+// volumes returned without re-reading the audit_logs row. `payloadBytes`
+// is the JSON byte size of the file the guardian downloaded — useful for
+// triggering ops handoff alerts when guardians repeatedly hit the
+// 10MB guardrail (an indicator the in-app endpoint isn't sufficient for
+// that child's history).
+export const ParentChildDataExportedSchema = EventBaseSchema.extend({
+  kind: z.literal('parent.child_data_exported'),
+  payload: z.object({
+    guardianId: uuidLike(),
+    studentId:  uuidLike(),
+    schemaVersion: z.string().min(1).max(32),
+    payloadBytes:  z.number().int().nonnegative(),
+    tableCount:    z.number().int().nonnegative(),
+    rowCountTotal: z.number().int().nonnegative(),
+  }),
+});
+
 // ── Teacher events ───────────────────────────────────────────────────
 
 export const TeacherAssignmentCreatedSchema = EventBaseSchema.extend({
@@ -403,6 +423,7 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   FoxySessionCompletedSchema,
   ParentLinkedSchema,
   ParentReportViewedSchema,
+  ParentChildDataExportedSchema,
   TeacherAssignmentCreatedSchema,
   TeacherClassroomCreatedSchema,
   TeacherClassroomUpdatedSchema,
@@ -440,6 +461,7 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'ai.foxy_session_completed',
   'parent.linked_to_learner',
   'parent.report_viewed',
+  'parent.child_data_exported',
   'teacher.assignment_created',
   'teacher.classroom_created',
   'teacher.classroom_updated',
