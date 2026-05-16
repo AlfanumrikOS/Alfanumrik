@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
     const { data: existingSchool } = await admin
       .from('schools')
       .select('id')
-      .eq('contact_email', principal_email)
+      .eq('email', principal_email)
       .maybeSingle();
 
     if (existingSchool) {
@@ -155,8 +155,8 @@ export async function POST(request: NextRequest) {
         city: city,
         state: state,
         principal_name: principal_name,
-        contact_email: principal_email,
-        contact_phone: phone,
+        email: principal_email,
+        phone: phone,
         school_type: 'private',
         is_active: true,
       })
