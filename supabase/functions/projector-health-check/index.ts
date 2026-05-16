@@ -245,10 +245,9 @@ Deno.serve(async (_req) => {
     if (critical.length > 0) {
       // Surface critical state in Edge Function logs so the operator can
       // grep without leaving the Supabase dashboard.
+      const names = critical.map((c) => c.subscriber_name).join(', ')
       console.warn(
-        `[projector-health-check] CRITICAL: ${critical.length} subscriber(s) lagging ≥ ${LAG_CRITICAL_SECONDS}s — ${critical
-          .map((c) => c.subscriber_name)
-          .join(', ')}`,
+        `[projector-health-check] CRITICAL: ${critical.length} subscriber(s) lagging >= ${LAG_CRITICAL_SECONDS}s -- ${names}`,
       )
     }
 
