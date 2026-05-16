@@ -1025,6 +1025,22 @@ async function handleGetClassTrends(
   }, 200, {}, origin)
 }
 
+// Lightweight student list for the Reports page's StudentAnalysisTab.
+// Returns just enough shape for the dropdown selector; per-student deep
+// dive is served by get_student_report.
+async function handleGetStudentsList(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const teacherId = String(body.teacher_id || '')
+  if (!teacherId) return errorResponse('teacher_id required', 400, origin)
+  const supabase = getServiceClient()
+  const students = await resolveStudentsForTeacher(supabase, teacherId)
+  return jsonResponse({
+    students: students.map(s => ({ id: s.id, name: s.name, grade: s.grade })),
+  }, 200, {}, origin)
+}
+
 // ─── JWT Binding (P13 enforcement) ──────────────────────────
 // Resolve the authenticated caller's teacher_id from the Authorization
 // header. Body.teacher_id is IGNORED for trust purposes — handlers see
@@ -1106,7 +1122,10 @@ Deno.serve(async (req: Request) => {
       case 'get_student_report':
         return await handleGetStudentReport(body, origin)
       case 'get_class_trends':
+      case 'get_trends':
         return await handleGetClassTrends(body, origin)
+      case 'get_students_list':
+        return await handleGetStudentsList(body, origin)
       default:
         return errorResponse(`Unknown action: ${action}`, 400, origin)
     }
