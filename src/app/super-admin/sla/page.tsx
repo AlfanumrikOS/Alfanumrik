@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import { DataTable, StatCard, StatusBadge, type Column } from '@/components/admin-ui';
+import { DataTable, StatCard, StatusBadge, NoDataState, type Column, type NoDataStateReason } from '@/components/admin-ui';
 
 const colors = {
   bg: '#FFFFFF',
@@ -68,18 +68,25 @@ interface SLATargets {
   cache_hit_pct: number;
 }
 
+// Phase F.5 / H.2 (2026-05-17): nullable fields + state markers so the UI can
+// distinguish "tables missing" from "live but healthy". UI renders <NoDataState>
+// when state !== 'live' instead of fabricating green numbers.
+type DataState = 'live' | 'no_data' | 'table_missing' | 'pending_instrumentation' | 'partial';
+
 interface UptimeData {
-  current_pct: number;
+  state: DataState;
+  current_pct: number | null;
   target_pct: number;
   health_checks_total: number;
   health_checks_failed: number;
   avg_response_ms: number;
-  status: string;
+  status: string | null;
 }
 
 interface ErrorData {
   count_24h: number;
-  total_requests_estimate: number;
+  requests_estimate_24h_heuristic: number;
+  estimate_method: string;
 }
 
 interface EndpointLatency {
@@ -92,12 +99,18 @@ interface EndpointLatency {
   [key: string]: unknown;
 }
 
+interface LatencyData {
+  state: DataState;
+  endpoints: EndpointLatency[];
+}
+
 interface SchoolSLA {
   school_id: string;
   school_name: string;
-  uptime_pct: number;
-  avg_latency_ms: number;
-  compliant: boolean;
+  uptime_pct: number | null;
+  avg_latency_ms: number | null;
+  compliant: boolean | null;
+  state: DataState;
   [key: string]: unknown;
 }
 
@@ -105,17 +118,27 @@ interface SLAData {
   targets: SLATargets;
   uptime: UptimeData;
   errors: ErrorData;
-  latencies: EndpointLatency[];
+  latency: LatencyData;
   school_sla: SchoolSLA[];
-  overall_status: string;
+  overall_status: string | null;
+  instrumentation_note: string | null;
 }
 
 // ── Helpers ──
 
-function statusVariant(status: string): 'success' | 'warning' | 'danger' {
+function statusVariant(status: string | null | undefined): 'success' | 'warning' | 'danger' | 'neutral' {
   if (status === 'healthy') return 'success';
   if (status === 'degraded') return 'warning';
-  return 'danger';
+  if (status === 'critical') return 'danger';
+  return 'neutral';
+}
+
+// Map API state to NoDataState reason
+function stateToReason(state: 'live' | 'no_data' | 'table_missing' | 'pending_instrumentation' | 'partial'): NoDataStateReason {
+  if (state === 'table_missing') return 'table_missing';
+  if (state === 'partial') return 'partial';
+  if (state === 'pending_instrumentation') return 'pending_instrumentation';
+  return 'no_data';
 }
 
 function msColor(ms: number, target: number): string {
@@ -208,28 +231,45 @@ function SLAContent() {
     {
       key: 'uptime_pct', label: 'Uptime',
       render: r => (
-        <span style={{ fontWeight: 600, color: r.uptime_pct >= data.targets.uptime_pct ? colors.success : colors.danger }}>
-          {r.uptime_pct}%
-        </span>
+        r.uptime_pct == null ? (
+          <span style={{ color: colors.text3 }}>—</span>
+        ) : (
+          <span style={{ fontWeight: 600, color: r.uptime_pct >= data.targets.uptime_pct ? colors.success : colors.danger }}>
+            {r.uptime_pct}%
+          </span>
+        )
       ),
     },
     {
       key: 'avg_latency_ms', label: 'Avg Latency (ms)',
       render: r => (
-        <span style={{ fontWeight: 600, color: r.avg_latency_ms > 0 ? msColor(r.avg_latency_ms, data.targets.api_p95_ms) : colors.text3 }}>
-          {r.avg_latency_ms > 0 ? `${r.avg_latency_ms}ms` : 'N/A'}
-        </span>
+        r.avg_latency_ms == null || r.avg_latency_ms <= 0 ? (
+          <span style={{ color: colors.text3 }}>N/A</span>
+        ) : (
+          <span style={{ fontWeight: 600, color: msColor(r.avg_latency_ms, data.targets.api_p95_ms) }}>
+            {r.avg_latency_ms}ms
+          </span>
+        )
       ),
     },
     {
       key: 'compliant', label: 'SLA Compliant',
-      render: r => <StatusBadge label={r.compliant ? 'Compliant' : 'Breached'} variant={r.compliant ? 'success' : 'danger'} />,
+      render: r => (
+        r.compliant == null ? (
+          <StatusBadge label="No data" variant="neutral" />
+        ) : (
+          <StatusBadge label={r.compliant ? 'Compliant' : 'Breached'} variant={r.compliant ? 'success' : 'danger'} />
+        )
+      ),
     },
   ];
 
-  const errorRate = data.errors.total_requests_estimate > 0
-    ? ((data.errors.count_24h / data.errors.total_requests_estimate) * 100).toFixed(2)
+  const errorRate = data.errors.requests_estimate_24h_heuristic > 0
+    ? ((data.errors.count_24h / data.errors.requests_estimate_24h_heuristic) * 100).toFixed(2)
     : '0.00';
+  const uptimePct = data.uptime.current_pct;
+  const uptimeLive = data.uptime.state === 'live' && typeof uptimePct === 'number';
+  const latencyLive = data.latency.state === 'live' && data.latency.endpoints.length > 0;
 
   return (
     <div>
@@ -243,7 +283,7 @@ function SLAContent() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <StatusBadge
-            label={`Overall: ${data.overall_status.toUpperCase()}`}
+            label={`Overall: ${(data.overall_status ?? 'unknown').toUpperCase()}`}
             variant={statusVariant(data.overall_status)}
           />
           <button
@@ -255,27 +295,41 @@ function SLAContent() {
         </div>
       </div>
 
+      {/* Phase H.2 (2026-05-17): instrumentation banner — surface upstream
+          "no data / table missing" state so operators don't read green where
+          green means "no measurement happened". */}
+      {data.instrumentation_note && (
+        <div style={{ marginBottom: 16 }}>
+          <NoDataState
+            reason={data.uptime.state === 'table_missing' || data.latency.state === 'table_missing' ? 'table_missing' : 'no_data'}
+            title="SLO instrumentation pending"
+            message={data.instrumentation_note}
+            learnMoreHref="https://github.com/AlfanumrikOS/Alfanumrik/blob/main/docs/runbooks/super-admin-sla.md"
+          />
+        </div>
+      )}
+
       {/* Uptime Gauge & Key Metrics */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
         <StatCard
           label="Platform Uptime"
-          value={`${data.uptime.current_pct}%`}
+          value={uptimeLive ? `${uptimePct}%` : '—'}
           icon="^"
-          accentColor={data.uptime.current_pct >= data.targets.uptime_pct ? colors.success : colors.danger}
-          subtitle={`Target: ${data.targets.uptime_pct}%`}
+          accentColor={uptimeLive && uptimePct! >= data.targets.uptime_pct ? colors.success : uptimeLive ? colors.danger : colors.text3}
+          subtitle={uptimeLive ? `Target: ${data.targets.uptime_pct}%` : 'No data'}
         />
         <StatCard
           label="Avg Response Time"
-          value={`${data.uptime.avg_response_ms}ms`}
+          value={uptimeLive && data.uptime.avg_response_ms > 0 ? `${data.uptime.avg_response_ms}ms` : '—'}
           icon="~"
-          accentColor={data.uptime.avg_response_ms <= 200 ? colors.success : data.uptime.avg_response_ms <= 500 ? colors.warning : colors.danger}
+          accentColor={uptimeLive && data.uptime.avg_response_ms <= 200 ? colors.success : uptimeLive && data.uptime.avg_response_ms <= 500 ? colors.warning : uptimeLive ? colors.danger : colors.text3}
         />
         <StatCard
           label="Error Rate (24h)"
           value={`${errorRate}%`}
           icon="!"
           accentColor={parseFloat(errorRate) <= 1 ? colors.success : colors.danger}
-          subtitle={`${data.errors.count_24h} errors`}
+          subtitle={`${data.errors.count_24h} errors · ${data.errors.estimate_method}`}
         />
         <StatCard
           label="Health Checks"
@@ -289,45 +343,56 @@ function SLAContent() {
       {/* Uptime Target vs Actual */}
       <div style={{ marginBottom: 24 }}>
         <h2 style={S.h2}>Uptime Target vs Actual</h2>
-        <div style={S.card}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: colors.text2, width: 80 }}>Target</span>
-            <div style={{ flex: 1, height: 24, background: colors.surface, borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
-              <div style={{
-                width: `${data.targets.uptime_pct}%`,
-                height: '100%',
-                background: colors.border,
-                borderRadius: 4,
-              }} />
-              <span style={{ position: 'absolute', right: 8, top: 4, fontSize: 11, fontWeight: 700, color: colors.text2 }}>
-                {data.targets.uptime_pct}%
-              </span>
+        {uptimeLive ? (
+          <div style={S.card}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: colors.text2, width: 80 }}>Target</span>
+              <div style={{ flex: 1, height: 24, background: colors.surface, borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
+                <div style={{
+                  width: `${data.targets.uptime_pct}%`,
+                  height: '100%',
+                  background: colors.border,
+                  borderRadius: 4,
+                }} />
+                <span style={{ position: 'absolute', right: 8, top: 4, fontSize: 11, fontWeight: 700, color: colors.text2 }}>
+                  {data.targets.uptime_pct}%
+                </span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: colors.text2, width: 80 }}>Actual</span>
+              <div style={{ flex: 1, height: 24, background: colors.surface, borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
+                <div style={{
+                  width: `${uptimePct}%`,
+                  height: '100%',
+                  background: uptimePct! >= data.targets.uptime_pct ? colors.success : colors.danger,
+                  borderRadius: 4,
+                  opacity: 0.7,
+                }} />
+                <span style={{
+                  position: 'absolute', right: 8, top: 4, fontSize: 11, fontWeight: 700,
+                  color: uptimePct! >= data.targets.uptime_pct ? colors.success : colors.danger,
+                }}>
+                  {uptimePct}%
+                </span>
+              </div>
+            </div>
+            <div style={{ marginTop: 12, fontSize: 12, color: colors.text3, textAlign: 'center' }}>
+              {uptimePct! >= data.targets.uptime_pct
+                ? 'Uptime target met. Platform is operating within SLA.'
+                : `Uptime below target by ${(data.targets.uptime_pct - uptimePct!).toFixed(3)}%. Investigation required.`}
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: colors.text2, width: 80 }}>Actual</span>
-            <div style={{ flex: 1, height: 24, background: colors.surface, borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
-              <div style={{
-                width: `${data.uptime.current_pct}%`,
-                height: '100%',
-                background: data.uptime.current_pct >= data.targets.uptime_pct ? colors.success : colors.danger,
-                borderRadius: 4,
-                opacity: 0.7,
-              }} />
-              <span style={{
-                position: 'absolute', right: 8, top: 4, fontSize: 11, fontWeight: 700,
-                color: data.uptime.current_pct >= data.targets.uptime_pct ? colors.success : colors.danger,
-              }}>
-                {data.uptime.current_pct}%
-              </span>
-            </div>
-          </div>
-          <div style={{ marginTop: 12, fontSize: 12, color: colors.text3, textAlign: 'center' }}>
-            {data.uptime.current_pct >= data.targets.uptime_pct
-              ? 'Uptime target met. Platform is operating within SLA.'
-              : `Uptime below target by ${(data.targets.uptime_pct - data.uptime.current_pct).toFixed(3)}%. Investigation required.`}
-          </div>
-        </div>
+        ) : (
+          <NoDataState
+            reason={stateToReason(data.uptime.state)}
+            title="No uptime data"
+            message={data.uptime.state === 'table_missing'
+              ? 'The health_check_log table is not migrated in this environment.'
+              : 'No health-check probes have landed yet. Will populate once the synthetic-host-monitor cron runs.'}
+            learnMoreHref="https://github.com/AlfanumrikOS/Alfanumrik/blob/main/docs/runbooks/super-admin-sla.md"
+          />
+        )}
       </div>
 
       {/* Latency Table */}
@@ -336,12 +401,23 @@ function SLAContent() {
         <div style={{ fontSize: 11, color: colors.text3, marginBottom: 8 }}>
           Targets: P95 &lt; {data.targets.api_p95_ms}ms | P99 &lt; {data.targets.api_p99_ms}ms
         </div>
-        <DataTable
-          columns={latencyColumns}
-          data={data.latencies}
-          keyField="endpoint"
-          emptyMessage="No latency data available"
-        />
+        {latencyLive ? (
+          <DataTable
+            columns={latencyColumns}
+            data={data.latency.endpoints}
+            keyField="endpoint"
+            emptyMessage="No latency data available"
+          />
+        ) : (
+          <NoDataState
+            reason={stateToReason(data.latency.state)}
+            title="No latency data"
+            message={data.latency.state === 'table_missing'
+              ? 'The school_slo table is not migrated in this environment.'
+              : 'No latency samples have been aggregated yet. Will populate once the SLO aggregator cron runs.'}
+            learnMoreHref="https://github.com/AlfanumrikOS/Alfanumrik/blob/main/docs/runbooks/super-admin-sla.md"
+          />
+        )}
       </div>
 
       {/* SLA Targets Reference */}
@@ -361,30 +437,42 @@ function SLAContent() {
                 <td style={S.td}>Platform Uptime</td>
                 <td style={S.td}><strong>{data.targets.uptime_pct}%</strong></td>
                 <td style={S.td}>
-                  <StatusBadge
-                    label={data.uptime.current_pct >= data.targets.uptime_pct ? 'Met' : 'Breached'}
-                    variant={data.uptime.current_pct >= data.targets.uptime_pct ? 'success' : 'danger'}
-                  />
+                  {uptimeLive ? (
+                    <StatusBadge
+                      label={uptimePct! >= data.targets.uptime_pct ? 'Met' : 'Breached'}
+                      variant={uptimePct! >= data.targets.uptime_pct ? 'success' : 'danger'}
+                    />
+                  ) : (
+                    <StatusBadge label="No data" variant="neutral" />
+                  )}
                 </td>
               </tr>
               <tr>
                 <td style={S.td}>API Response P95</td>
                 <td style={S.td}><strong>&lt; {data.targets.api_p95_ms}ms</strong></td>
                 <td style={S.td}>
-                  <StatusBadge
-                    label={data.latencies.every(l => l.p95 <= data.targets.api_p95_ms) ? 'Met' : 'Breached'}
-                    variant={data.latencies.every(l => l.p95 <= data.targets.api_p95_ms) ? 'success' : 'danger'}
-                  />
+                  {latencyLive ? (
+                    <StatusBadge
+                      label={data.latency.endpoints.every(l => l.p95 <= data.targets.api_p95_ms) ? 'Met' : 'Breached'}
+                      variant={data.latency.endpoints.every(l => l.p95 <= data.targets.api_p95_ms) ? 'success' : 'danger'}
+                    />
+                  ) : (
+                    <StatusBadge label="No data" variant="neutral" />
+                  )}
                 </td>
               </tr>
               <tr>
                 <td style={S.td}>API Response P99</td>
                 <td style={S.td}><strong>&lt; {data.targets.api_p99_ms}ms</strong></td>
                 <td style={S.td}>
-                  <StatusBadge
-                    label={data.latencies.every(l => l.p99 <= data.targets.api_p99_ms) ? 'Met' : 'Breached'}
-                    variant={data.latencies.every(l => l.p99 <= data.targets.api_p99_ms) ? 'success' : 'danger'}
-                  />
+                  {latencyLive ? (
+                    <StatusBadge
+                      label={data.latency.endpoints.every(l => l.p99 <= data.targets.api_p99_ms) ? 'Met' : 'Breached'}
+                      variant={data.latency.endpoints.every(l => l.p99 <= data.targets.api_p99_ms) ? 'success' : 'danger'}
+                    />
+                  ) : (
+                    <StatusBadge label="No data" variant="neutral" />
+                  )}
                 </td>
               </tr>
               <tr>
