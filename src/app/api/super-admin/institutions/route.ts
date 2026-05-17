@@ -17,8 +17,12 @@ export async function GET(request: NextRequest) {
     // institutions UI can display them and feed an upcoming edit flow.
     // Slug + custom_domain included for parity with /api/school-config so
     // ops can spot which schools have white-label routing wired up.
+    // paused_at / pause_reason / paused_by_super_admin_id surface the
+    // pause-workflow audit context (see migration
+    // 20260527000011_school_pause_audit.sql) so the drawer can show why
+    // a school is paused without an extra round-trip.
     const queryParts = [
-      'select=id,name,code,slug,board,school_type,city,state,principal_name,email,phone,subscription_plan,is_active,max_students,max_teachers,created_at,tenant_type,font_heading,font_body,border_radius_px,custom_domain,domain_verified',
+      'select=id,name,code,slug,board,school_type,city,state,principal_name,email,phone,subscription_plan,is_active,max_students,max_teachers,created_at,tenant_type,font_heading,font_body,border_radius_px,custom_domain,domain_verified,paused_at,pause_reason,paused_by_super_admin_id',
       'deleted_at=is.null',
       'order=created_at.desc',
       `offset=${offset}`,
