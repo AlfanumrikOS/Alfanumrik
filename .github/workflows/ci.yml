@@ -339,8 +339,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Bump Node heap to 6 GB. Default is ~2 GB which the project's bundle
+      # has outgrown — surfaced on PR #817 as a deterministic
+      # `FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap
+      # out of memory` during `next build`. ubuntu-latest runners have 7 GB
+      # RAM so 6144 MB leaves comfortable headroom. Vercel-side prod builds
+      # already use a higher limit on their own infra; this is just the CI
+      # sanity-check gate catching up.
       - name: Build
         run: npm run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
 
       - name: Bundle size report
         run: |
