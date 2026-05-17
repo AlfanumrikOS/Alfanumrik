@@ -165,12 +165,15 @@ export async function GET(request: NextRequest) {
           : 'no_data';
 
     // ── Per-school SLA compliance ──
+    // Phase F.5 (2026-05-17): nullable fields + state marker so the route can
+    // report "no data" without fabricating 99.9% / true compliance.
     interface SchoolSLA {
       school_id: string;
       school_name: string;
-      uptime_pct: number;
-      avg_latency_ms: number;
-      compliant: boolean;
+      uptime_pct: number | null;
+      avg_latency_ms: number | null;
+      compliant: boolean | null;
+      state: 'live' | 'no_data' | 'table_missing' | 'partial';
     }
 
     let schoolSLAs: SchoolSLA[] = [];
