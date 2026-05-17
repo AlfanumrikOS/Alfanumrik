@@ -189,7 +189,10 @@ function resolveWhiteLabel(
 // ─── Route ──────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: per-school health rollup is read-only state; support level OK.
+  // Phase H.4: Sentry integration was already shipped in Phase E.6
+  // (fetchSentryEventCountsBySchool below); no further wiring needed here.
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {
