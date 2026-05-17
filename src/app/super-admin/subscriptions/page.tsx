@@ -55,7 +55,8 @@ function SubscriptionsContent() {
     setLoading(true);
     try {
       const p = new URLSearchParams({ role: 'student', page: String(userPage), limit: '25' });
-      if (filterPlan) p.set('search', ''); // filter by plan is done client-side for now
+      // Phase F.6 (2026-05-17): users API now accepts plan filter server-side.
+      if (filterPlan) p.set('plan', filterPlan);
       const res = await apiFetch(`/api/super-admin/users?${p}`);
       if (res.ok) { const d = await res.json(); setUsers(d.data || []); setUserTotal(d.total || 0); }
     } catch { /* */ }

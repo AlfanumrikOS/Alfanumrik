@@ -19,22 +19,38 @@ export default function AdminLoginPage() {
     setLoading(true);
 
     try {
-      const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
-      if (authError) { setError(authError.message); setLoading(false); return; }
-
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { setError('Session not created. Please try again.'); setLoading(false); return; }
-
-      const res = await fetch('/api/super-admin/stats', {
-        headers: { 'Authorization': `Bearer ${session.access_token}` },
+      // Phase G.7 (2026-05-17): route through /api/super-admin/login which
+      // adds per-IP rate limit + per-email lockout BEFORE delegating to
+      // Supabase Auth. The previous direct supabase.auth.signInWithPassword
+      // call bypassed every protection in the proxy.
+      const loginRes = await fetch('/api/super-admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
       });
+      const loginPayload = await loginRes.json().catch(() => ({}));
 
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-        if (res.status === 403 || res.status === 401) await supabase.auth.signOut();
-        setError(detail.error || 'Verification failed. Please try again.');
+      if (!loginRes.ok) {
+        const code = loginPayload?.code;
+        let message = loginPayload?.error || 'Login failed';
+        if (code === 'EMAIL_LOCKED' && loginPayload?.retry_after_seconds) {
+          const min = Math.ceil(loginPayload.retry_after_seconds / 60);
+          message = `Too many failed attempts. Try again in ~${min} min.`;
+        } else if (code === 'IP_RATE_LIMITED') {
+          message = 'Too many login attempts from this network. Wait a few minutes.';
+        }
+        setError(message);
         setLoading(false);
         return;
+      }
+
+      // Hydrate the supabase-js client with the server-issued session so
+      // existing code (AdminShell, apiFetch) keeps working unchanged.
+      if (loginPayload?.session?.access_token && loginPayload?.session?.refresh_token) {
+        await supabase.auth.setSession({
+          access_token: loginPayload.session.access_token,
+          refresh_token: loginPayload.session.refresh_token,
+        });
       }
 
       window.location.href = '/super-admin';

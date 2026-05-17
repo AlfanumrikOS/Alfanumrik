@@ -51,9 +51,17 @@ export async function GET(request: NextRequest) {
 
     if (!res.ok) {
       const text = await res.text();
-      // Table may not exist yet — return empty gracefully
+      // Phase F.5 (2026-05-17): distinguish "table missing" from "no rules
+      // configured" so the UI can render the right empty state instead of
+      // looking like everything is fine.
       if (text.includes('relation') && text.includes('does not exist')) {
-        return NextResponse.json({ success: true, data: [], total: 0 });
+        return NextResponse.json({
+          success: true,
+          state: 'table_missing',
+          message: 'school_alert_rules table is not yet present in this environment.',
+          data: [],
+          total: 0,
+        });
       }
       return NextResponse.json({ success: false, error: `Fetch failed: ${text}` }, { status: res.status });
     }

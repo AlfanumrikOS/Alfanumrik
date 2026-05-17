@@ -79,10 +79,14 @@ export async function GET(request: NextRequest) {
     ]);
 
     // ── Uptime calculation ──
-    let uptimePct = 99.9; // default assumption
+    // No synthetic fallback: if the source table is missing or empty, return
+    // `state: 'no_data'` so the UI can render a banner instead of a fake number.
+    // Phase F.5 (2026-05-17) removed the previous `uptimePct = 99.9` default.
+    let uptimePct: number | null = null;
     let healthCheckCount = 0;
     let healthCheckFailures = 0;
     let avgResponseMs = 0;
+    let uptimeState: 'live' | 'no_data' | 'table_missing' = 'no_data';
 
     if (healthChecksRes && healthChecksRes.ok) {
       const checks = await safeJson<{
@@ -93,7 +97,10 @@ export async function GET(request: NextRequest) {
       if (healthCheckCount > 0) {
         uptimePct = parseFloat((((healthCheckCount - healthCheckFailures) / healthCheckCount) * 100).toFixed(3));
         avgResponseMs = Math.round(checks.reduce((sum, c) => sum + (c.response_time_ms || 0), 0) / healthCheckCount);
+        uptimeState = 'live';
       }
+    } else if (healthChecksRes && (healthChecksRes.status === 404 || healthChecksRes.status === 400)) {
+      uptimeState = 'table_missing';
     }
 
     // ── Error rate ──
@@ -146,30 +153,27 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // If no SLO data, provide reasonable estimates from known endpoints
-    if (endpointLatencies.length === 0) {
-      const defaultEndpoints = [
-        { endpoint: '/api/v1/health', p50: 45, p95: 120, p99: 250 },
-        { endpoint: '/api/payments/status', p50: 85, p95: 220, p99: 450 },
-        { endpoint: '/api/super-admin/stats', p50: 120, p95: 340, p99: 680 },
-        { endpoint: '/api/v1/study-plan', p50: 180, p95: 420, p99: 850 },
-        { endpoint: 'quiz_submission', p50: 95, p95: 280, p99: 520 },
-      ];
-      endpointLatencies = defaultEndpoints.map(e => ({
-        ...e,
-        sample_count: 0,
-        status: (e.p95 <= SLA_TARGETS.api_p95_ms ? 'healthy' :
-          e.p95 <= SLA_TARGETS.api_p95_ms * 2 ? 'degraded' : 'critical') as 'healthy' | 'degraded' | 'critical',
-      }));
-    }
+    // Phase F.5 (2026-05-17): removed the 5-row hardcoded endpoint-latency
+    // fallback that misled operators into thinking they were seeing real
+    // measurements. If school_slo is missing or empty, return an empty
+    // latency list with a state indicator the UI can render as a banner.
+    const latencyState: 'live' | 'no_data' | 'table_missing' =
+      endpointLatencies.length > 0
+        ? 'live'
+        : schoolSloRes && (schoolSloRes.status === 404 || schoolSloRes.status === 400)
+          ? 'table_missing'
+          : 'no_data';
 
     // ── Per-school SLA compliance ──
+    // Phase F.5 (2026-05-17): nullable fields + state marker so the route can
+    // report "no data" without fabricating 99.9% / true compliance.
     interface SchoolSLA {
       school_id: string;
       school_name: string;
-      uptime_pct: number;
-      avg_latency_ms: number;
-      compliant: boolean;
+      uptime_pct: number | null;
+      avg_latency_ms: number | null;
+      compliant: boolean | null;
+      state: 'live' | 'no_data' | 'table_missing' | 'partial';
     }
 
     let schoolSLAs: SchoolSLA[] = [];
@@ -199,9 +203,10 @@ export async function GET(request: NextRequest) {
               return {
                 school_id: s.id,
                 school_name: s.name,
-                uptime_pct: 99.9,
-                avg_latency_ms: 0,
-                compliant: true,
+                uptime_pct: null,
+                avg_latency_ms: null,
+                compliant: null,
+                state: 'no_data' as const,
               };
             }
             const avgLatency = Math.round(data.latencies.reduce((a, b) => a + b, 0) / data.latencies.length);
@@ -209,23 +214,41 @@ export async function GET(request: NextRequest) {
             return {
               school_id: s.id,
               school_name: s.name,
-              uptime_pct: 99.9, // per-school uptime not individually tracked yet
+              uptime_pct: null, // per-school uptime not tracked yet; state will be 'partial'
               avg_latency_ms: avgLatency,
               compliant: avgP95 <= SLA_TARGETS.api_p95_ms,
+              state: 'partial' as const,
             };
           });
         }
       }
 
-      // If no SLO data, list schools as compliant with no data
+      // Phase F.5 (2026-05-17): no longer fabricate per-school compliance =
+      // true with 99.9% uptime. Empty list means the operator should see
+      // "no data" UX, not green checks.
       if (schoolSLAs.length === 0) {
         schoolSLAs = schools.slice(0, 50).map(s => ({
           school_id: s.id,
           school_name: s.name,
-          uptime_pct: 99.9,
-          avg_latency_ms: 0,
-          compliant: true,
+          uptime_pct: null,
+          avg_latency_ms: null,
+          compliant: null,
+          state: 'no_data' as const,
         }));
+      }
+    }
+
+    // Phase F.5 (2026-05-17): overall_status is null when we don't have
+    // enough data to score. UI must render that as "instrumentation
+    // pending" not "healthy".
+    let overallStatus: 'healthy' | 'degraded' | 'critical' | null = null;
+    if (uptimeState === 'live' && latencyState === 'live' && uptimePct !== null) {
+      if (uptimePct >= SLA_TARGETS.uptime_pct && endpointLatencies.every(e => e.status === 'healthy')) {
+        overallStatus = 'healthy';
+      } else if (endpointLatencies.some(e => e.status === 'critical') || uptimePct < 99.0) {
+        overallStatus = 'critical';
+      } else {
+        overallStatus = 'degraded';
       }
     }
 
@@ -235,30 +258,33 @@ export async function GET(request: NextRequest) {
         targets: SLA_TARGETS,
         // Platform uptime
         uptime: {
+          state: uptimeState,
           current_pct: uptimePct,
           target_pct: SLA_TARGETS.uptime_pct,
           health_checks_total: healthCheckCount,
           health_checks_failed: healthCheckFailures,
           avg_response_ms: avgResponseMs,
-          status: uptimePct >= SLA_TARGETS.uptime_pct ? 'healthy' : uptimePct >= 99.0 ? 'degraded' : 'critical',
+          status:
+            uptimePct === null
+              ? null
+              : uptimePct >= SLA_TARGETS.uptime_pct ? 'healthy' : uptimePct >= 99.0 ? 'degraded' : 'critical',
         },
-        // Error rate
+        // Error rate (denominator is a heuristic — labeled accordingly)
         errors: {
           count_24h: errorCount24h,
-          total_requests_estimate: recentQuizCount * 5, // rough estimate: each quiz ~5 requests
+          requests_estimate_24h_heuristic: recentQuizCount * 5,
+          estimate_method: 'quiz_sessions_x5',
         },
         // Latency by endpoint
-        latencies: endpointLatencies,
+        latency: { state: latencyState, endpoints: endpointLatencies },
         // Per-school
         school_sla: schoolSLAs,
         // Summary
-        overall_status:
-          uptimePct >= SLA_TARGETS.uptime_pct &&
-          endpointLatencies.every(e => e.status === 'healthy')
-            ? 'healthy'
-            : endpointLatencies.some(e => e.status === 'critical') || uptimePct < 99.0
-              ? 'critical'
-              : 'degraded',
+        overall_status: overallStatus,
+        instrumentation_note:
+          uptimeState !== 'live' || latencyState !== 'live'
+            ? 'Some SLO instrumentation tables are empty or missing. See docs/runbooks/super-admin-sla.md.'
+            : null,
       },
     });
   } catch (err) {

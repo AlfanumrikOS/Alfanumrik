@@ -16,13 +16,47 @@ import { secureEqual } from '@/lib/secure-compare';
 
 // ─── Types ────────────────────────────────────────────────────
 
+/**
+ * Phase G.1 (2026-05-17): typed admin level hierarchy. Each level grants every
+ * permission of the levels below it. `support` is the floor — the lowest level
+ * an `admin_users` row can hold and still pass `authorizeAdmin`. Routes declare
+ * their minimum via `authorizeAdmin(request, 'super_admin')` etc.
+ *
+ * The order of values in this array IS the precedence (lowest → highest).
+ * Adding a new level: insert it at the right precedence and add to the rank map.
+ */
+export const ADMIN_LEVELS = [
+  'support',
+  'analyst',
+  'content_manager',
+  'finance',
+  'admin',
+  'super_admin',
+] as const;
+export type AdminLevel = (typeof ADMIN_LEVELS)[number];
+
+const LEVEL_RANK: Record<AdminLevel, number> = {
+  support: 0,
+  analyst: 1,
+  content_manager: 2,
+  finance: 3,
+  admin: 4,
+  super_admin: 5,
+};
+
+export function hasMinimumLevel(have: string | null | undefined, need: AdminLevel): boolean {
+  if (!have) return false;
+  if (!(have in LEVEL_RANK)) return false;
+  return LEVEL_RANK[have as AdminLevel] >= LEVEL_RANK[need];
+}
+
 export interface AdminAuth {
   authorized: true;
   userId: string;
   adminId: string;
   email: string;
   name: string;
-  adminLevel: string;
+  adminLevel: AdminLevel | string;
 }
 
 export interface AdminAuthFailure {
@@ -44,11 +78,24 @@ function getSupabaseConfig() {
 
 /**
  * Verify that the request comes from an authenticated admin user.
- * Checks Supabase session token, then looks up admin_users table.
- * Falls back to user's own token if service role query returns empty
- * (handles misconfigured service role key gracefully).
+ *
+ * Phase G.1 (2026-05-17): now accepts an optional `requiredLevel` argument.
+ * When provided, the caller's `admin_level` must satisfy `hasMinimumLevel`,
+ * else 403 with code ADMIN_INSUFFICIENT_LEVEL. Default is `'support'` (the
+ * floor — any active admin_users row passes), preserving today's behaviour
+ * for routes that haven't yet declared their required level. Routes that
+ * mutate sensitive state (impersonation, RBAC, feature flags, provisioning,
+ * bulk-actions, demo) should pass `'super_admin'`.
+ *
+ * Phase G.2 (2026-05-17): removed the silent JWT-fallback that retried the
+ * admin_users query with the caller's own token if the service-role query
+ * returned empty. That fallback defeated tightened RLS on admin_users and
+ * was a fail-soft path forbidden by the blueprint.
  */
-export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthResult> {
+export async function authorizeAdmin(
+  request: NextRequest,
+  requiredLevel: AdminLevel = 'support',
+): Promise<AdminAuthResult> {
   const { url, key } = getSupabaseConfig();
 
   if (!url) {
@@ -133,30 +180,36 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
       return { authorized: false, response: NextResponse.json({ error: 'Authorization check failed.', code: 'ADMIN_LOOKUP_FAILED' }, { status: 500 }) };
     }
 
-    let admins = await adminRes.json();
-
-    // Fallback: retry with user's own token if service role returned empty.
-    // This handles edge cases where RLS policies on admin_users might block the
-    // service role query (e.g., misconfigured policies after a migration).
-    if (Array.isArray(admins) && admins.length === 0) {
-      console.warn('[admin-auth] Service role query returned no admin, falling back to user token', { userId });
-      const retryRes = await fetch(adminQuery, {
-        headers: { 'apikey': key, 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      });
-      if (retryRes.ok) {
-        const retryData = await retryRes.json();
-        if (Array.isArray(retryData) && retryData.length > 0) {
-          admins = retryData;
-          console.warn('[admin-auth] Fallback succeeded — investigate why service role query failed', { userId });
-        }
-      }
-    }
+    const admins = await adminRes.json();
 
     if (!Array.isArray(admins) || admins.length === 0) {
       return { authorized: false, response: NextResponse.json({ error: 'You are not an authorized administrator.', code: 'ADMIN_NOT_FOUND' }, { status: 403 }) };
     }
 
     const admin = admins[0];
+
+    // Phase G.1 (2026-05-17): enforce minimum admin_level. Caller's level must
+    // satisfy LEVEL_RANK[level] >= LEVEL_RANK[requiredLevel].
+    if (!hasMinimumLevel(admin.admin_level, requiredLevel)) {
+      logger.warn('admin_auth_level_denied', {
+        userId,
+        haveLevel: admin.admin_level ?? null,
+        needLevel: requiredLevel,
+        route: new URL(request.url).pathname,
+      });
+      return {
+        authorized: false,
+        response: NextResponse.json(
+          {
+            error: `This action requires admin level "${requiredLevel}" or higher.`,
+            code: 'ADMIN_INSUFFICIENT_LEVEL',
+            required_level: requiredLevel,
+          },
+          { status: 403 },
+        ),
+      };
+    }
+
     return {
       authorized: true,
       userId,
@@ -171,33 +224,82 @@ export async function authorizeAdmin(request: NextRequest): Promise<AdminAuthRes
   }
 }
 
-/** Record an admin action to the audit trail (used by /api/super-admin/* routes). */
+/**
+ * Record an admin action to the audit trail.
+ *
+ * Phase G.4 (2026-05-17): dual-writes to `audit_logs` (canonical, actor_type=
+ * 'admin') AND `admin_audit_log` (legacy, kept for backwards compatibility
+ * with existing /super-admin/logs reads). Either side failing is logged but
+ * never blocks the calling action. A future migration will backfill
+ * audit_logs from admin_audit_log history and switch the read paths over.
+ *
+ * Optional `opts.before` / `opts.after` snapshots populate audit_logs.before_state /
+ * after_state for diff-based forensics. Pass them when the mutation produces
+ * a meaningful state diff (e.g. role elevation, plan change, suspend).
+ */
 export async function logAdminAudit(
-  admin: AdminAuth, action: string, entityType: string, entityId: string,
-  details?: Record<string, unknown>, ipAddress?: string
+  admin: AdminAuth,
+  action: string,
+  entityType: string,
+  entityId: string,
+  details?: Record<string, unknown>,
+  ipAddress?: string,
+  opts?: { before?: Record<string, unknown>; after?: Record<string, unknown>; userAgent?: string; schoolId?: string | null },
 ) {
-  try {
-    const { url, key } = getSupabaseConfig();
-    if (!url || !key) return;
-    await fetch(`${url}/rest/v1/admin_audit_log`, {
-      method: 'POST',
-      headers: { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-      body: JSON.stringify({
-        admin_id: admin.userId, action, entity_type: entityType, entity_id: entityId,
-        details: { ...details, admin_name: admin.name, admin_email: admin.email, admin_level: admin.adminLevel },
-        ip_address: ipAddress || null,
-      }),
+  const { url, key } = getSupabaseConfig();
+  if (!url || !key) return;
+
+  const headers = { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' };
+  const enrichedDetails = { ...details, admin_name: admin.name, admin_email: admin.email };
+
+  // 1. Canonical write: audit_logs with actor_type='admin'
+  const canonicalWrite = fetch(`${url}/rest/v1/audit_logs`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      auth_user_id: admin.userId,
+      actor_type: 'admin',
+      admin_level: admin.adminLevel,
+      action,
+      resource_type: entityType,
+      resource_id: entityId,
+      details: enrichedDetails,
+      before_state: opts?.before ?? null,
+      after_state: opts?.after ?? null,
+      ip_address: ipAddress || null,
+      user_agent: opts?.userAgent || null,
+      school_id: opts?.schoolId ?? null,
+      status: 'success',
+    }),
+  }).catch((e) => {
+    logger.error('audit_logs_admin_write_failed', {
+      error: e instanceof Error ? e : new Error(String(e)),
+      action, entityType, entityId, adminId: admin.userId,
     });
-  } catch (e) {
+    return null;
+  });
+
+  // 2. Legacy back-compat write: admin_audit_log
+  const legacyWrite = fetch(`${url}/rest/v1/admin_audit_log`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      admin_id: admin.userId, action, entity_type: entityType, entity_id: entityId,
+      details: { ...enrichedDetails, admin_level: admin.adminLevel },
+      ip_address: ipAddress || null,
+    }),
+  }).catch((e) => {
     logger.error('admin_audit_log_failed', {
       error: e instanceof Error ? e : new Error(String(e)),
-      route: 'admin-auth',
-      action,
-      entityType,
-      entityId,
-      adminId: admin.userId,
+      route: 'admin-auth', action, entityType, entityId, adminId: admin.userId,
     });
-  }
+    return null;
+  });
+
+  // Don't await — audit is fire-and-forget. But also don't drop the
+  // microtask if Node hasn't scheduled it (the function awaits a promise
+  // resolving to undefined immediately so the caller can keep going).
+  await Promise.allSettled([canonicalWrite, legacyWrite]);
 }
 
 /**
@@ -215,32 +317,61 @@ export async function logAdminAuditByUserId(
   entityId: string,
   details?: Record<string, unknown>,
   ipAddress?: string,
+  opts?: { before?: Record<string, unknown>; after?: Record<string, unknown>; userAgent?: string; schoolId?: string | null; adminLevel?: string | null },
 ) {
-  try {
-    const { url, key } = getSupabaseConfig();
-    if (!url || !key) return;
-    await fetch(`${url}/rest/v1/admin_audit_log`, {
-      method: 'POST',
-      headers: { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-      body: JSON.stringify({
-        admin_id: userId,
-        action,
-        entity_type: entityType,
-        entity_id: entityId,
-        details: details ?? {},
-        ip_address: ipAddress || null,
-      }),
+  const { url, key } = getSupabaseConfig();
+  if (!url || !key) return;
+
+  const headers = { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' };
+
+  // 1. Canonical: audit_logs
+  const canonicalWrite = fetch(`${url}/rest/v1/audit_logs`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      auth_user_id: userId,
+      actor_type: 'admin',
+      admin_level: opts?.adminLevel ?? null,
+      action,
+      resource_type: entityType,
+      resource_id: entityId,
+      details: details ?? {},
+      before_state: opts?.before ?? null,
+      after_state: opts?.after ?? null,
+      ip_address: ipAddress || null,
+      user_agent: opts?.userAgent || null,
+      school_id: opts?.schoolId ?? null,
+      status: 'success',
+    }),
+  }).catch((e) => {
+    logger.error('audit_logs_admin_write_failed', {
+      error: e instanceof Error ? e : new Error(String(e)),
+      action, entityType, entityId, adminId: userId,
     });
-  } catch (e) {
+    return null;
+  });
+
+  // 2. Legacy back-compat: admin_audit_log
+  const legacyWrite = fetch(`${url}/rest/v1/admin_audit_log`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      admin_id: userId,
+      action,
+      entity_type: entityType,
+      entity_id: entityId,
+      details: details ?? {},
+      ip_address: ipAddress || null,
+    }),
+  }).catch((e) => {
     logger.error('admin_audit_log_failed', {
       error: e instanceof Error ? e : new Error(String(e)),
-      route: 'admin-auth',
-      action,
-      entityType,
-      entityId,
-      adminId: userId,
+      route: 'admin-auth', action, entityType, entityId, adminId: userId,
     });
-  }
+    return null;
+  });
+
+  await Promise.allSettled([canonicalWrite, legacyWrite]);
 }
 
 export function supabaseAdminHeaders(prefer: string = 'count=exact') {

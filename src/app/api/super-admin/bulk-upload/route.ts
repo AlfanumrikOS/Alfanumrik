@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit } from '@/lib/admin-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { capture as posthogCapture } from '@/lib/posthog/server';
+import { generateSecurePassword } from '@/lib/crypto/password';
 
 // CSV template columns
 const REQUIRED_COLUMNS = ['name', 'grade', 'email'];
@@ -14,7 +15,9 @@ const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
  * Emails are redacted in audit logs (P13).
  */
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: bulk CSV upload creates up to 1000 student accounts per call.
+  // super_admin only.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -176,7 +179,7 @@ export async function POST(request: NextRequest) {
 
       // Create auth user + student record
       try {
-        const tempPassword = `Alf${Math.random().toString(36).slice(2, 8)}!${Math.floor(Math.random() * 100)}`;
+        const tempPassword = generateSecurePassword('Alf');
 
         const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
           email: emailLower,
@@ -257,7 +260,8 @@ export async function POST(request: NextRequest) {
  * Query params: ?action=template | ?action=jobs
  */
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: GET = CSV template download + job-status read; support level OK.
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   const action = new URL(request.url).searchParams.get('action');

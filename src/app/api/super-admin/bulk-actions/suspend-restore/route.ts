@@ -11,7 +11,9 @@ type SuspendAction = (typeof VALID_ACTIONS)[number];
 const MAX_BATCH = 500;
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: suspending/restoring users in bulk cuts off product access.
+  // super_admin only.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {
