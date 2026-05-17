@@ -86,18 +86,21 @@ export default function PlatformHealth({ stats, obsData, analytics, lastUpdated 
           </div>
         )}
 
-        {/* Simulation Health */}
+        {/* Simulation Health — live from stats route (Phase F.6 fix 2026-05-17) */}
         <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid #8B5CF6' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: '#111827' }}>{'🔬'} Simulation Lab</div>
-            <StatusBadge label="Active" variant="success" />
+            <StatusBadge
+              label={(stats.totals?.simulations || 0) > 0 ? 'Active' : 'Empty'}
+              variant={(stats.totals?.simulations || 0) > 0 ? 'success' : 'warning'}
+            />
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-            <span style={{ fontSize: 28, fontWeight: 800, color: '#8B5CF6' }}>19</span>
+            <span style={{ fontSize: 28, fontWeight: 800, color: '#8B5CF6' }}>{stats.totals?.simulations ?? 0}</span>
             <span style={{ fontSize: 11, color: '#9CA3AF' }}>built-in simulations</span>
           </div>
           <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>
-            Physics: 8 · Chemistry: 4 · Math: 7
+            Interactive: {stats.totals?.interactive_simulations ?? 0} · Exam: {stats.totals?.exam_simulations ?? 0}
           </div>
         </div>
       </div>

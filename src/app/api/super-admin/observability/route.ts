@@ -79,17 +79,25 @@ export async function GET(request: NextRequest) {
       const since24h = new Date(Date.now() - 86400000).toISOString();
       const since7d = new Date(Date.now() - 7 * 86400000).toISOString();
 
+      // Phase F.6 follow-up (2026-05-17): live-data correctness fixes.
+      // 1. `students` now filtered by is_demo=eq.false to match /api/super-admin/stats
+      //    (was returning a different number than Control Room, causing operator
+      //    drift between Diagnostics and Control Room "Students" KPI).
+      // 2. `chats24h` was reading legacy `chat_sessions` table (10 rows total).
+      //    Sum both foxy_sessions (live) + chat_sessions (legacy) so the
+      //    Diagnostics "Chats (24h)" tile reflects Foxy activity.
       const [totalStudents, totalTeachers, totalParents,
              activeStudents24h, activeStudents7d,
-             quizzes24h, chats24h, failedJobs, pendingJobs,
+             quizzes24h, foxyChats24h, legacyChats24h, failedJobs, pendingJobs,
              auditEntries24h, totalQuestions, totalTopics,
              flagsEnabled, flagsTotal, paymentIntegrity] = await Promise.all([
-        countRows('students', 'deleted_at=is.null'),
-        countRows('teachers'),
-        countRows('guardians'),
+        countRows('students', 'deleted_at=is.null&is_demo=eq.false'),
+        countRows('teachers', 'is_demo=eq.false'),
+        countRows('guardians', 'is_demo=eq.false'),
         countRows('quiz_sessions', `created_at=gte.${since24h}`),
         countRows('quiz_sessions', `created_at=gte.${since7d}`),
         countRows('quiz_sessions', `created_at=gte.${since24h}`),
+        countRows('foxy_sessions', `created_at=gte.${since24h}`),
         countRows('chat_sessions', `created_at=gte.${since24h}`),
         countRows('task_queue', 'status=eq.failed'),
         countRows('task_queue', 'status=eq.pending'),
@@ -100,6 +108,7 @@ export async function GET(request: NextRequest) {
         countRows('feature_flags'),
         paymentIntegritySnapshot(),
       ]);
+      const chats24h = foxyChats24h + legacyChats24h;
 
       return {
         health: { status: failedJobs > 10 ? 'degraded' : 'healthy', checked_at: new Date().toISOString() },
