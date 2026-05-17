@@ -250,7 +250,7 @@ export async function POST(request: NextRequest) {
       });
       void logAdminAuditByUserId(
         auth.userId,
-        'grounding.re_verify',
+        'question.reverify_requested',
         'question_bank',
         id,
         { action },
@@ -295,7 +295,7 @@ export async function POST(request: NextRequest) {
       });
       void logAdminAuditByUserId(
         auth.userId,
-        'grounding.soft_delete',
+        'question.soft_deleted',
         'question_bank',
         id,
         { action, reason },
@@ -400,7 +400,7 @@ export async function POST(request: NextRequest) {
       });
       void logAdminAuditByUserId(
         auth.userId,
-        'grounding.enforcement_enabled',
+        'question_bank.enforcement_enabled',
         'enforcement_pair',
         `${grade}::${subject_code}`,
         { action, grade, subject_code, verified_ratio, verified, total },
