@@ -47,6 +47,8 @@ interface SchoolHealthRow extends Record<string, unknown> {
 interface HealthDashboardResponse {
   schools: SchoolHealthRow[];
   synthetic_monitor_degraded: boolean;
+  errors_24h_degraded: boolean;
+  errors_24h_reason?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -129,6 +131,8 @@ function HealthDashboardContent() {
 
   const [rows, setRows] = useState<SchoolHealthRow[]>([]);
   const [degraded, setDegraded] = useState(false);
+  const [errorsDegraded, setErrorsDegraded] = useState(false);
+  const [errorsReason, setErrorsReason] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -148,6 +152,8 @@ function HealthDashboardContent() {
       const data: HealthDashboardResponse = await res.json();
       setRows(data.schools ?? []);
       setDegraded(Boolean(data.synthetic_monitor_degraded));
+      setErrorsDegraded(Boolean(data.errors_24h_degraded));
+      setErrorsReason(data.errors_24h_reason ?? null);
 
       // Fire the operator-usage event exactly once per mount, on the
       // first successful render. We don't want refresh-on-interval to
@@ -162,6 +168,8 @@ function HealthDashboardContent() {
           total_schools: total,
           active_in_last_7d: active7d,
           synthetic_monitor_degraded: Boolean(data.synthetic_monitor_degraded),
+          errors_24h_degraded: Boolean(data.errors_24h_degraded),
+          errors_24h_reason: data.errors_24h_reason ?? null,
         });
       }
     } catch (err) {
@@ -303,6 +311,29 @@ function HealthDashboardContent() {
         <div className="mb-3 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
           White-label health is partial — synthetic-monitor table not yet
           present (Phase E.5). Configured domains show <em>n/a</em>.
+        </div>
+      )}
+
+      {/* Errors (24h) degraded banner — appears when the Sentry events API
+          isn't configured or call failed. Same sticky-at-top pattern. The
+          reason text disambiguates "we never asked" (no_token) from "we
+          asked and it failed" (http_error / timeout / parse_error). */}
+      {errorsDegraded && (
+        <div className="mb-3 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+          {errorsReason === 'no_token' ? (
+            <>
+              Errors (24h) showing <em>—</em> because Sentry API isn&apos;t
+              configured. Set <code>SENTRY_AUTH_TOKEN</code>,{' '}
+              <code>SENTRY_ORG_SLUG</code>, and{' '}
+              <code>SENTRY_PROJECT_SLUG</code> env vars to enable.
+            </>
+          ) : (
+            <>
+              Errors (24h) temporarily unavailable
+              {errorsReason ? <> (<code>{errorsReason}</code>)</> : null}.
+              Will retry on next refresh.
+            </>
+          )}
         </div>
       )}
 
