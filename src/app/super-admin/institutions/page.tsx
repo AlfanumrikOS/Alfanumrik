@@ -31,6 +31,13 @@ interface InstitutionRecord {
   border_radius_px?: number | null;
   custom_domain?: string | null;
   domain_verified?: boolean | null;
+  // Pause audit columns — only populated when is_active=false.
+  // Exposed by /api/super-admin/institutions when that endpoint adds them
+  // to its select list; meanwhile the drawer renders defensively (NULL
+  // means "we don't know the pause context yet, just show the badge").
+  paused_at?: string | null;
+  pause_reason?: string | null;
+  paused_by_super_admin_id?: string | null;
   [key: string]: unknown;
 }
 
@@ -373,6 +380,203 @@ function ProvisionModal({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Pause / Resume Modal                                               */
+/*                                                                     */
+/*  PostHog-style guardrail: the operator must retype the school name  */
+/*  to confirm. Server enforces the same check — see                    */
+/*  /api/super-admin/institutions/[id]/{pause,resume}/route.ts — so a   */
+/*  malicious or buggy client can't bypass by skipping this modal.      */
+/* ------------------------------------------------------------------ */
+
+const PAUSE_REASON_MIN_LENGTH = 10;
+
+function PauseResumeModal({
+  open,
+  mode,
+  schoolName,
+  onClose,
+  onSubmit,
+  submitting,
+}: {
+  open: boolean;
+  mode: 'pause' | 'resume';
+  schoolName: string;
+  onClose: () => void;
+  onSubmit: (args: { reason: string; expectedSchoolName: string }) => void;
+  submitting: boolean;
+}) {
+  const [retypedName, setRetypedName] = useState('');
+  const [reason, setReason] = useState('');
+
+  // Reset whenever the modal opens for a new school / different action.
+  useEffect(() => {
+    if (open) {
+      setRetypedName('');
+      setReason('');
+    }
+  }, [open, schoolName, mode]);
+
+  if (!open) return null;
+
+  const nameMatches = retypedName.trim() === schoolName;
+  const reasonOk = mode === 'resume' || reason.trim().length >= PAUSE_REASON_MIN_LENGTH;
+  const canSubmit = nameMatches && reasonOk && !submitting;
+
+  const isPause = mode === 'pause';
+  const headerColor = isPause ? '#DC2626' : '#16A34A';
+  const headerLabel = isPause ? 'Pause School' : 'Resume School';
+  const ctaLabel = submitting
+    ? isPause ? 'Pausing…' : 'Resuming…'
+    : isPause ? 'Pause School' : 'Resume School';
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 999 }}
+      />
+      <div style={{
+        position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+        width: 520, maxHeight: '90vh', overflowY: 'auto',
+        background: '#FFFFFF', borderRadius: 12, zIndex: 1000,
+        boxShadow: '0 8px 32px rgba(0,0,0,0.12)', border: `1px solid ${'#E5E7EB'}`,
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '16px 20px', borderBottom: `1px solid ${'#E5E7EB'}`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: headerColor, margin: 0 }}>
+            {headerLabel}
+          </h3>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none', border: `1px solid ${'#E5E7EB'}`, borderRadius: 6,
+              padding: '4px 10px', fontSize: 13, cursor: 'pointer', color: '#6B7280',
+            }}
+          >
+            Close
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: 20 }}>
+          {/* Warning banner */}
+          <div style={{
+            padding: 12, marginBottom: 16, borderRadius: 6,
+            background: isPause ? '#FEF2F2' : '#F0FDF4',
+            border: `1px solid ${isPause ? '#FECACA' : '#BBF7D0'}`,
+            color: isPause ? '#991B1B' : '#166534',
+            fontSize: 12, lineHeight: 1.5,
+          }}>
+            {isPause ? (
+              <>
+                <strong>This will immediately block authentication and API access</strong>{' '}
+                for every student, teacher, and admin at <strong>{schoolName}</strong>.
+                Use this only when ops/billing/legal requires the tenant to be gated.
+              </>
+            ) : (
+              <>
+                This will restore authentication and API access for{' '}
+                <strong>{schoolName}</strong>.
+              </>
+            )}
+          </div>
+
+          {/* Retype name guardrail */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{
+              fontSize: 11, fontWeight: 600, color: '#6B7280', marginBottom: 6,
+              textTransform: 'uppercase', letterSpacing: 0.8, display: 'block',
+            }}>
+              Type the school name to confirm
+            </label>
+            <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 4, fontFamily: 'monospace' }}>
+              Expected: {schoolName}
+            </div>
+            <input
+              autoFocus
+              type="text"
+              value={retypedName}
+              onChange={e => setRetypedName(e.target.value)}
+              placeholder={schoolName}
+              disabled={submitting}
+              style={{
+                padding: '8px 12px', borderRadius: 6,
+                border: `1px solid ${retypedName && !nameMatches ? '#DC2626' : '#E5E7EB'}`,
+                background: '#FFFFFF', color: '#111827', fontSize: 13,
+                outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box',
+              }}
+            />
+            {retypedName && !nameMatches && (
+              <div style={{ fontSize: 11, color: '#DC2626', marginTop: 4 }}>
+                Does not match. Type the school name exactly as shown above.
+              </div>
+            )}
+          </div>
+
+          {/* Reason — pause only */}
+          {isPause && (
+            <div style={{ marginBottom: 8 }}>
+              <label style={{
+                fontSize: 11, fontWeight: 600, color: '#6B7280', marginBottom: 6,
+                textTransform: 'uppercase', letterSpacing: 0.8, display: 'block',
+              }}>
+                Reason (min {PAUSE_REASON_MIN_LENGTH} chars)
+              </label>
+              <textarea
+                value={reason}
+                onChange={e => setReason(e.target.value)}
+                placeholder="Explain why — surfaced in the audit log and the operator dashboard."
+                disabled={submitting}
+                rows={3}
+                style={{
+                  padding: '8px 12px', borderRadius: 6,
+                  border: '1px solid #E5E7EB',
+                  background: '#FFFFFF', color: '#111827', fontSize: 13,
+                  outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box',
+                  resize: 'vertical', minHeight: 60,
+                }}
+              />
+              <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>
+                {reason.trim().length} / {PAUSE_REASON_MIN_LENGTH}+ characters
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          padding: '12px 20px', borderTop: `1px solid ${'#E5E7EB'}`,
+          display: 'flex', justifyContent: 'flex-end', gap: 8,
+        }}>
+          <button
+            onClick={onClose}
+            disabled={submitting}
+            className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => canSubmit && onSubmit({ reason: reason.trim(), expectedSchoolName: retypedName.trim() })}
+            disabled={!canSubmit}
+            className="rounded-md px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
+            style={{
+              background: headerColor,
+              opacity: canSubmit ? 1 : 0.5,
+              cursor: canSubmit ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {ctaLabel}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Drawer Info Row                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -489,13 +693,73 @@ function InstitutionsContent() {
   const activeTrials = pipelineCounts.trial;
   const atRiskCount = schoolRows.filter(r => (r.health?.health_score ?? 100) < 60).length;
 
-  /* ----- toggle active ----- */
-  const toggleInstitution = async (inst: InstitutionRecord) => {
-    await apiFetch('/api/super-admin/institutions', {
-      method: 'PATCH', body: JSON.stringify({ id: inst.id, updates: { is_active: !inst.is_active } }),
-    });
-    fetchInstitutions();
+  /* ----- pause / resume workflow -----
+     Replaces the old single-click toggleInstitution. The button now opens
+     a confirmation modal (PauseResumeModal) that requires the operator to
+     retype the school name AND, for pause, provide a >=10-char reason.
+     POST hits the dedicated /pause or /resume route — those endpoints
+     enforce the guardrail SERVER-SIDE so this UI flow cannot be skipped
+     by a custom client. */
+  const [pauseTarget, setPauseTarget] = useState<InstitutionRecord | null>(null);
+  const [pauseMode, setPauseMode] = useState<'pause' | 'resume'>('pause');
+  const [pauseSubmitting, setPauseSubmitting] = useState(false);
+  const [pauseToast, setPauseToast] = useState<string | null>(null);
+
+  const openPauseResumeModal = (inst: InstitutionRecord) => {
+    setPauseMode(inst.is_active !== false ? 'pause' : 'resume');
+    setPauseTarget(inst);
   };
+
+  const closePauseResumeModal = () => {
+    if (pauseSubmitting) return;
+    setPauseTarget(null);
+  };
+
+  const submitPauseOrResume = async (args: { reason: string; expectedSchoolName: string }) => {
+    if (!pauseTarget) return;
+    setPauseSubmitting(true);
+    setError(null);
+    setPauseToast(null);
+    try {
+      const path = pauseMode === 'pause'
+        ? `/api/super-admin/institutions/${encodeURIComponent(pauseTarget.id)}/pause`
+        : `/api/super-admin/institutions/${encodeURIComponent(pauseTarget.id)}/resume`;
+      const payload = pauseMode === 'pause'
+        ? { reason: args.reason, expectedSchoolName: args.expectedSchoolName }
+        : { expectedSchoolName: args.expectedSchoolName };
+      const res = await apiFetch(path, { method: 'POST', body: JSON.stringify(payload) });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) {
+        setError(j?.error || `${pauseMode === 'pause' ? 'Pause' : 'Resume'} failed`);
+      } else {
+        setPauseToast(
+          pauseMode === 'pause'
+            ? `Paused ${pauseTarget.name}. Tenant access is now gated.`
+            : `Resumed ${pauseTarget.name}. Tenant access restored.`,
+        );
+        setPauseTarget(null);
+        // Refresh both the list and the drawer record so the new state
+        // shows up immediately.
+        fetchInstitutions();
+        setSelected(prev =>
+          prev && prev.id === pauseTarget.id
+            ? { ...prev, is_active: pauseMode === 'resume' }
+            : prev,
+        );
+      }
+    } catch {
+      setError(`Network error during ${pauseMode}`);
+    } finally {
+      setPauseSubmitting(false);
+    }
+  };
+
+  // Auto-dismiss the success toast after a few seconds.
+  useEffect(() => {
+    if (!pauseToast) return;
+    const t = setTimeout(() => setPauseToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [pauseToast]);
 
   /* ----- change tenant_type (Phase B super-admin) -----
      Loud, separate handler — distinct from the generic update path so the
@@ -758,7 +1022,7 @@ function InstitutionsContent() {
       key: '_actions', label: 'Actions', sortable: false,
       render: r => (
         <button
-          onClick={e => { e.stopPropagation(); toggleInstitution(r); }}
+          onClick={e => { e.stopPropagation(); openPauseResumeModal(r); }}
           style={{
             background: 'none',
             border: '1px solid #E5E7EB',
@@ -771,7 +1035,7 @@ function InstitutionsContent() {
             borderColor: r.is_active !== false ? '#DC2626' : '#16A34A',
           }}
         >
-          {r.is_active !== false ? 'Suspend' : 'Activate'}
+          {r.is_active !== false ? 'Pause' : 'Resume'}
         </button>
       ),
     },
@@ -792,6 +1056,24 @@ function InstitutionsContent() {
           <span>{error}</span>
           <button onClick={() => setError(null)} style={{
             background: 'none', border: 'none', color: '#DC2626',
+            cursor: 'pointer', fontWeight: 600, fontSize: 14,
+          }}>x</button>
+        </div>
+      )}
+
+      {/* Success toast — auto-dismisses after a few seconds (handled by
+          useEffect above). Kept inline rather than pulling in a toast lib
+          to stay consistent with the rest of this page's lightweight UI. */}
+      {pauseToast && (
+        <div style={{
+          padding: '10px 16px', marginBottom: 16, borderRadius: 6,
+          background: '#F0FDF4', color: '#166534', fontSize: 13,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          border: '1px solid #BBF7D0',
+        }}>
+          <span>{pauseToast}</span>
+          <button onClick={() => setPauseToast(null)} style={{
+            background: 'none', border: 'none', color: '#166534',
             cursor: 'pointer', fontWeight: 600, fontSize: 14,
           }}>x</button>
         </div>
@@ -939,6 +1221,19 @@ function InstitutionsContent() {
         submitting={provisioning}
       />
 
+      {/* Pause / Resume Modal — server enforces the retype-name guardrail
+          (see /api/super-admin/institutions/[id]/{pause,resume}/route.ts).
+          The UI guardrail here is for the operator's safety; the server
+          guardrail is what makes it secure. */}
+      <PauseResumeModal
+        open={!!pauseTarget}
+        mode={pauseMode}
+        schoolName={pauseTarget?.name ?? ''}
+        onClose={closePauseResumeModal}
+        onSubmit={submitPauseOrResume}
+        submitting={pauseSubmitting}
+      />
+
       {/* Detail Drawer */}
       <DetailDrawer
         open={!!selected}
@@ -948,6 +1243,30 @@ function InstitutionsContent() {
       >
         {selected && (
           <div>
+            {/* Paused banner — shown only when this school is currently
+                paused. Surfaces who/when/why so ops doesn't have to dig
+                into the audit log. Always rendered above the rest of the
+                drawer so the context is impossible to miss. */}
+            {selected.is_active === false && (
+              <div style={{
+                padding: 12, marginBottom: 16, borderRadius: 6,
+                background: '#FEF2F2', border: '1px solid #FECACA', color: '#991B1B',
+                fontSize: 12, lineHeight: 1.5,
+              }}>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>School is paused</div>
+                {selected.pause_reason && (
+                  <div style={{ marginBottom: 4 }}>
+                    Reason: <strong>{selected.pause_reason}</strong>
+                  </div>
+                )}
+                {selected.paused_at && (
+                  <div style={{ color: '#9F1239' }}>
+                    Paused at: {new Date(selected.paused_at).toLocaleString('en-IN')}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Health Gauge */}
             {h ? (
               <CircularGauge score={h.health_score} />
@@ -973,7 +1292,7 @@ function InstitutionsContent() {
             {/* Quick Actions */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
               <button
-                onClick={e => { e.stopPropagation(); toggleInstitution(selected); setSelected(null); }}
+                onClick={e => { e.stopPropagation(); openPauseResumeModal(selected); }}
                 style={{
                   background: 'none',
                   border: '1px solid #E5E7EB',
@@ -986,7 +1305,7 @@ function InstitutionsContent() {
                   padding: '6px 14px',
                 }}
               >
-                {selected.is_active !== false ? 'Suspend' : 'Activate'}
+                {selected.is_active !== false ? 'Pause' : 'Resume'}
               </button>
               {selected.slug && (
                 <button
