@@ -11,6 +11,7 @@
  */
 
 import { z } from 'zod';
+import { NextResponse } from 'next/server';
 import { GRADES } from './constants';
 
 // ── UUID Validation ──────────────────────────────────────
@@ -237,15 +238,20 @@ export const errorReportSchema = z.object({
 export function validateBody<T>(
   schema: z.ZodType<T>,
   body: unknown,
-): { success: true; data: T } | { success: false; error: Response } {
+): { success: true; data: T } | { success: false; error: NextResponse } {
+  // Phase F build fix (2026-05-17): return NextResponse instead of plain
+  // Response so callers typed as `Promise<NextResponse>` (e.g. the demo-
+  // accounts createSingleDemoAccount helper) can forward `validation.error`
+  // directly without TS structural-mismatch errors. NextResponse extends
+  // Response, so existing `Response`-typed callers remain compatible.
   const result = schema.safeParse(body);
   if (result.success) {
     return { success: true, data: result.data };
   }
   return {
     success: false,
-    error: new Response(
-      JSON.stringify({
+    error: NextResponse.json(
+      {
         success: false,
         error: 'Validation failed',
         code: 'VALIDATION_ERROR',
@@ -253,11 +259,8 @@ export function validateBody<T>(
           path: i.path.join('.'),
           message: i.message,
         })),
-      }),
-      {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
       },
+      { status: 400 },
     ),
   };
 }
