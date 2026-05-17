@@ -25,7 +25,10 @@ CREATE TABLE IF NOT EXISTS school_slo (
   p99_ms        INTEGER NOT NULL,
   sample_count  INTEGER NOT NULL DEFAULT 0,
   measured_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-  bucket_hour   TIMESTAMPTZ GENERATED ALWAYS AS (date_trunc('hour', measured_at)) STORED,
+  -- NOTE (2026-05-17 prod apply): a `bucket_hour` GENERATED column was
+  -- originally proposed but fails with `ERROR 42P17: generation expression
+  -- is not immutable` because `date_trunc('hour', timestamptz)` depends on
+  -- the session TimeZone. Removed; hourly aggregation runs at query time.
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -39,8 +42,9 @@ CREATE INDEX IF NOT EXISTS idx_school_slo_school_measured
   ON school_slo(school_id, measured_at DESC);
 CREATE INDEX IF NOT EXISTS idx_school_slo_endpoint_measured
   ON school_slo(endpoint, measured_at DESC);
-CREATE INDEX IF NOT EXISTS idx_school_slo_bucket
-  ON school_slo(bucket_hour DESC);
+-- idx_school_slo_bucket dropped along with the bucket_hour generated column
+-- (see comment on table above). The two indexes above cover the actual
+-- query patterns the route uses.
 
 -- 2. health_check_log ── platform-wide synthetic health probe history
 CREATE TABLE IF NOT EXISTS health_check_log (
