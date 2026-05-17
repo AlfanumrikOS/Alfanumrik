@@ -73,6 +73,36 @@ interface ObsData {
   activity_24h: { quizzes: number; chats: number; admin_actions: number };
 }
 
+interface MarkingPathMixRow {
+  path: string;
+  count: number;
+  percent: number;
+}
+
+type MarkingPathMixReason = 'no_token' | 'http_error' | 'timeout' | 'parse_error';
+
+interface MarkingPathMixData {
+  ok: boolean;
+  mix: MarkingPathMixRow[] | null;
+  window_days: number;
+  fetched_at: string;
+  reason?: MarkingPathMixReason;
+}
+
+// Color-codes the marking path so operators can tell at a glance which
+// rows are the deprecation target (green) vs the cutover-pending rows
+// (yellow/red). Anything not listed renders neutral grey.
+const MARKING_PATH_COLOR: Record<string, string> = {
+  oracle_v2: '#16A34A',         // target — green
+  oracle_v1_legacy: '#D97706',  // deprecation in flight — yellow/amber
+  client_fallback: '#DC2626',   // should be gone — red
+  foxy_freetext: '#DC2626',     // should be gone — red
+};
+
+function markingPathColor(path: string): string {
+  return MARKING_PATH_COLOR[path] ?? '#9CA3AF';
+}
+
 type TabId = 'engagement' | 'strategic';
 
 function LearningContent() {
@@ -80,19 +110,24 @@ function LearningContent() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [obsData, setObsData] = useState<ObsData | null>(null);
+  const [markingMix, setMarkingMix] = useState<MarkingPathMixData | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabId>('engagement');
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [aRes, sRes, oRes] = await Promise.all([
+    const [aRes, sRes, oRes, mRes] = await Promise.all([
       apiFetch('/api/super-admin/analytics'),
       apiFetch('/api/super-admin/stats'),
       apiFetch('/api/super-admin/observability'),
+      // marking-path-mix returns 200 even on degradation (no_token /
+      // http_error / timeout / parse_error). Drop it on hard 4xx/5xx.
+      apiFetch('/api/super-admin/marking-path-mix'),
     ]);
     if (aRes.ok) setAnalytics(await aRes.json());
     if (sRes.ok) setStats(await sRes.json());
     if (oRes.ok) setObsData(await oRes.json());
+    if (mRes.ok) setMarkingMix(await mRes.json());
     setLoading(false);
   }, [apiFetch]);
 
@@ -414,28 +449,109 @@ function LearningContent() {
         );
       })()}
 
-      {/* Marking Authenticity Path Mix — Wave 4 placeholder.
-          Backend has not built a dedicated PostHog HogQL endpoint for the
-          `quiz_graded` group-by `marking_authenticity_path` aggregation in this
-          parallel wave. Frontend chose option (a) per the runbook: render a
-          placeholder linking to PostHog and to the existing oracle-health page
-          so ops still has a single discovery surface, and document option (b)
-          (`/api/super-admin/marking-path-mix/route.ts`) as a follow-up. */}
+      {/* Marking Authenticity Path Mix — backed by /api/super-admin/marking-path-mix.
+          Endpoint returns 200 with { ok: false, reason } for graceful degradation
+          (no_token / http_error / timeout / parse_error) — mirrors the
+          errors_24h_degraded banner pattern on /super-admin/health (Phase E.6).
+          Goal: 100% on oracle_v2; remaining paths surface cutover work. */}
       <div style={{ marginBottom: 24 }}>
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ marginBottom: 12 }}>Marking Authenticity Path Mix</h2>
-        <div style={{ ...cardStyle, borderLeft: '3px solid #D97706' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 4 }}>
-            Coming soon
+        {!markingMix ? (
+          <div style={{ ...cardStyle, color: '#9CA3AF', fontSize: 13 }}>Loading marking-path mix...</div>
+        ) : !markingMix.ok ? (
+          // Degraded — render the same banner pattern as /super-admin/health.
+          // Reason text disambiguates "we never asked" (no_token) from "we
+          // asked and it failed" (http_error / timeout / parse_error).
+          <div className="mb-3 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+            {markingMix.reason === 'no_token' ? (
+              <>
+                Marking-path mix unavailable because the PostHog query API
+                isn&apos;t configured. Set <code>POSTHOG_API_KEY</code>,{' '}
+                <code>POSTHOG_HOST</code>, and <code>POSTHOG_PROJECT_ID</code>{' '}
+                env vars to enable.
+              </>
+            ) : (
+              <>
+                Marking-path mix temporarily unavailable
+                {markingMix.reason ? <> (<code>{markingMix.reason}</code>)</> : null}.
+                Will retry on next refresh.
+              </>
+            )}
           </div>
-          <div style={{ fontSize: 12, color: '#6B7280', lineHeight: 1.5 }}>
-            <p style={{ margin: 0, marginBottom: 6 }}>
-              <strong>Goal:</strong> 100% of <code style={{ background: '#F9FAFB', padding: '1px 5px', borderRadius: 3 }}>quiz_graded</code> events on path <code style={{ background: '#F9FAFB', padding: '1px 5px', borderRadius: 3 }}>oracle_v2</code>. Current mix indicates which deprecation cutovers are still pending (<code style={{ background: '#F9FAFB', padding: '1px 5px', borderRadius: 3 }}>client_fallback</code>, <code style={{ background: '#F9FAFB', padding: '1px 5px', borderRadius: 3 }}>foxy_freetext</code>, <code style={{ background: '#F9FAFB', padding: '1px 5px', borderRadius: 3 }}>oracle_v1_legacy</code>).
-            </p>
-            <p style={{ margin: 0, color: '#9CA3AF', fontSize: 11 }}>
-              Awaiting backend endpoint <code>GET /api/super-admin/marking-path-mix</code> (PostHog HogQL proxy, server-cached). Until then, query directly in PostHog. See <a href="/super-admin/oracle-health" style={{ color: '#2563EB' }}>Oracle Health</a> for adjacent signals.
-            </p>
+        ) : !markingMix.mix || markingMix.mix.length === 0 ? (
+          <div style={{ ...cardStyle, fontSize: 12, color: '#6B7280' }}>
+            No <code>quiz_graded</code> events in the last {markingMix.window_days} day(s).
           </div>
-        </div>
+        ) : (
+          <div style={{ ...cardStyle, padding: 16 }}>
+            {/* Stacked horizontal bar — one segment per path, width = percent. */}
+            <div
+              style={{
+                display: 'flex',
+                width: '100%',
+                height: 14,
+                borderRadius: 4,
+                overflow: 'hidden',
+                marginBottom: 12,
+                background: '#F3F4F6',
+              }}
+              role="img"
+              aria-label="Marking-path mix stacked bar"
+            >
+              {markingMix.mix.map(row => (
+                <div
+                  key={row.path}
+                  title={`${row.path}: ${row.percent.toFixed(1)}% (${row.count.toLocaleString()})`}
+                  style={{
+                    width: `${row.percent}%`,
+                    height: '100%',
+                    background: markingPathColor(row.path),
+                  }}
+                />
+              ))}
+            </div>
+            {/* Row-per-path table with colour swatch + percent + count. */}
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Path</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Count (7d)</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Percent</th>
+                </tr>
+              </thead>
+              <tbody>
+                {markingMix.mix.map(row => (
+                  <tr key={row.path}>
+                    <td style={tdStyle}>
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          width: 10,
+                          height: 10,
+                          borderRadius: 2,
+                          background: markingPathColor(row.path),
+                          marginRight: 8,
+                          verticalAlign: 'middle',
+                        }}
+                      />
+                      <code style={{ background: '#F9FAFB', padding: '1px 5px', borderRadius: 3 }}>{row.path}</code>
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {row.count.toLocaleString()}
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                      {row.percent.toFixed(1)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ marginTop: 10, fontSize: 11, color: '#9CA3AF' }}>
+              Target: 100% on <code>oracle_v2</code>. Window: last {markingMix.window_days}d.
+              Fetched {new Date(markingMix.fetched_at).toLocaleString()}.
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Content Coverage Signals */}
