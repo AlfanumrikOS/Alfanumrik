@@ -230,8 +230,14 @@ jobs:
           fi
           echo "Vercel env values look real (no placeholder markers detected)."
 
+      # vercel build internally calls `npm run build`. Default Node 22 heap
+      # is ~2 GB and the bundle has outgrown it — observed OOM on Deploy
+      # Production run 25990539824 (commit 42eb0076 after #824). #819 fixed
+      # the quality.Build step; this fixes the third site we'd missed.
       - name: Build with Vercel
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
 
       - name: Deploy to Vercel Production
         id: deploy
