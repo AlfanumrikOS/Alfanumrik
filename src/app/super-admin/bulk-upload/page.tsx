@@ -417,6 +417,9 @@ function BulkUploadContent() {
           <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Import students from CSV files for onboarded schools</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <a href="/super-admin/bulk-upload/schools" style={{ ...secondaryBtnStyle, textDecoration: 'none' }}>
+            Bulk Onboard Schools
+          </a>
           <button onClick={() => setShowHistory(!showHistory)} style={secondaryBtnStyle}>
             {showHistory ? 'Back to Upload' : 'Upload History'}
           </button>
