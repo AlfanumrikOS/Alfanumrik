@@ -22,6 +22,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, supabaseAdminHeaders, supabaseAdminUrl } from '@/lib/admin-auth';
+import { fetchSentryEventCountsBySchool } from '@/lib/sentry/admin-query';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -50,7 +51,12 @@ export interface SchoolHealthRow {
   subscription_plan: string | null;
   white_label: WhiteLabelStatus;
   custom_domain: string | null;
-  /** Placeholder for Sentry integration — always "—" until follow-up. */
+  /**
+   * Per-school error count from Sentry over the last 24h, rendered as
+   * a string so we can encode the degraded sentinel `'—'` in the same
+   * column. When `errors_24h_degraded` is true at the response level,
+   * every row reads `'—'` regardless of school state.
+   */
   errors_24h: string;
 }
 
@@ -58,6 +64,13 @@ export interface HealthDashboardResponse {
   schools: SchoolHealthRow[];
   /** True if we degraded the white-label column (synthetic table missing). */
   synthetic_monitor_degraded: boolean;
+  /**
+   * True if the Sentry events API call degraded (no token, HTTP error,
+   * timeout, or parse error). Operator sees a banner explaining why.
+   */
+  errors_24h_degraded: boolean;
+  /** Short reason for the degradation (`no_token` | `http_error` | `timeout` | `parse_error`). */
+  errors_24h_reason?: string;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────
@@ -214,6 +227,7 @@ export async function GET(request: NextRequest) {
       const body: HealthDashboardResponse = {
         schools: [],
         synthetic_monitor_degraded: false,
+        errors_24h_degraded: false,
       };
       return NextResponse.json(body, {
         headers: { 'Cache-Control': 'max-age=60, must-revalidate' },
@@ -223,9 +237,15 @@ export async function GET(request: NextRequest) {
     const schoolIds = schools.map(s => s.id);
 
     // 2. Probe synthetic_monitor_results table existence in parallel with
-    //    activity fetches so we don't add latency on the cold path.
-    const [syntheticPresent, studentActivityRes, sessionActivityRes] =
-      await Promise.all([
+    //    activity fetches and the Sentry events query so we don't add
+    //    latency on the cold path. Sentry has its own 10s timeout +
+    //    graceful-degradation semantics inside fetchSentryEventCountsBySchool.
+    const [
+      syntheticPresent,
+      studentActivityRes,
+      sessionActivityRes,
+      sentryResult,
+    ] = await Promise.all([
         syntheticMonitorTableExists(),
         // students.last_active is the per-student activity stamp. We pull
         // every active student that has touched the platform in the last
@@ -259,7 +279,11 @@ export async function GET(request: NextRequest) {
           ),
           { method: 'GET', headers: supabaseAdminHeaders('return=representation') },
         ),
+        fetchSentryEventCountsBySchool(schoolIds),
       ]);
+
+    const sentryDegraded = !sentryResult.ok;
+    const sentryCounts = sentryResult.counts;
 
     const studentActivity: Array<{ id: string; school_id: string; last_active: string | null }> =
       studentActivityRes.ok ? await studentActivityRes.json() : [];
@@ -324,12 +348,20 @@ export async function GET(request: NextRequest) {
         !syntheticPresent,
       ),
       custom_domain: s.custom_domain,
-      errors_24h: '—', // Sentry integration follow-up.
+      // When the Sentry query degrades we render '—' uniformly. When
+      // ok, missing-from-map means "Sentry knows about no errors for
+      // this school in the last 24h", which is `0` — operators read
+      // that as a healthy zero, not as missing data.
+      errors_24h: sentryDegraded ? '—' : String(sentryCounts.get(s.id) ?? 0),
     }));
 
     const body: HealthDashboardResponse = {
       schools: rows,
       synthetic_monitor_degraded: !syntheticPresent,
+      errors_24h_degraded: sentryDegraded,
+      ...(sentryDegraded && sentryResult.reason
+        ? { errors_24h_reason: sentryResult.reason }
+        : {}),
     };
 
     return NextResponse.json(body, {
