@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import AdminShell, { useAdmin } from '../../_components/AdminShell';
 import { StatCard } from '@/components/admin-ui';
+import { toast } from '@/components/ui/toast';
 
 /**
  * Grounding Verification Queue — super-admin page (Task 3.17b)
@@ -13,10 +14,12 @@ import { StatCard } from '@/components/admin-ui';
  *
  * Actions POST to the verification-queue API when the operator clicks
  * re-verify / soft-delete / enable-enforcement. The API endpoints for
- * actions are shared with the existing super-admin action pattern; the
- * handlers are stubbed with clear TODOs where the server route doesn't
- * yet exist (those arrive as a follow-up backend task — Phase 3 ships
- * the UI so ops can inspect state).
+ * actions ship in this PR — the server route
+ * `/api/super-admin/grounding/verification-queue` handles all three
+ * actions with super-admin auth, audit logging, and a server-side
+ * `verified_ratio >= 0.9` precondition on enable-enforcement so the
+ * client cannot bypass with a stale value. Toast feedback surfaces
+ * success/failure to ops.
  */
 
 interface PairRow {
@@ -64,12 +67,24 @@ const TH = 'sticky top-0 z-10 border-b-2 border-surface-3 bg-surface-2 px-3.5 py
 const TD = 'border-b border-surface-3 px-3.5 py-2.5 text-[13px] text-foreground';
 const H2 = 'mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground';
 
+// ── Action contract — kebab-case matches the server route's PostAction
+// union in src/app/api/super-admin/grounding/verification-queue/route.ts.
+type QueueAction = 're-verify' | 'soft-delete' | 'enable-enforcement';
+
+const ACTION_SUCCESS_MSG: Record<QueueAction, string> = {
+  're-verify': 'Re-verification queued',
+  'soft-delete': 'Question soft-deleted',
+  'enable-enforcement': 'Enforcement enabled for pair',
+};
+
 function VerificationQueueContent() {
   const { apiFetch } = useAdmin();
   const [data, setData] = useState<QueueResponse['data'] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionMsg, setActionMsg] = useState<string | null>(null);
+  // Tracks the currently-running action so we can disable buttons / show
+  // a spinner without re-rendering the whole table on every toast.
+  const [pending, setPending] = useState<string | null>(null);
 
   const fetchQueue = useCallback(async () => {
     setLoading(true);
@@ -99,26 +114,31 @@ function VerificationQueueContent() {
   }, [fetchQueue]);
 
   const runAction = useCallback(
-    async (action: string, payload: Record<string, unknown>) => {
-      setActionMsg(null);
+    async (action: QueueAction, payload: Record<string, unknown>, pendingKey: string) => {
+      if (pending) return; // single-flight; ignore double-clicks
+      setPending(pendingKey);
       try {
+        // Server expects { action, payload: {...} } (kebab-case action,
+        // nested payload). See route.ts top-of-file contract block.
         const res = await apiFetch('/api/super-admin/grounding/verification-queue', {
           method: 'POST',
-          body: JSON.stringify({ action, ...payload }),
+          body: JSON.stringify({ action, payload }),
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
-          setActionMsg(`Action failed: ${body.error || res.status}`);
+          toast.error(body.error || `Action failed (HTTP ${res.status})`);
           return;
         }
-        setActionMsg(`Action "${action}" queued successfully`);
-        // Refetch after action
+        toast.success(ACTION_SUCCESS_MSG[action]);
+        // Refetch after action so counts / ratios reflect the new state.
         fetchQueue();
       } catch (err) {
-        setActionMsg(err instanceof Error ? err.message : 'Action failed');
+        toast.error(err instanceof Error ? err.message : 'Action failed');
+      } finally {
+        setPending(null);
       }
     },
-    [apiFetch, fetchQueue],
+    [apiFetch, fetchQueue, pending],
   );
 
   return (
@@ -145,10 +165,6 @@ function VerificationQueueContent() {
         >
           Error: {error}
         </div>
-      )}
-
-      {actionMsg && (
-        <div className="mb-4 rounded-md bg-info/10 p-3 text-[13px] text-info">{actionMsg}</div>
       )}
 
       {loading && !data && (
@@ -226,14 +242,21 @@ function VerificationQueueContent() {
                       </td>
                       <td className={TD}>
                         <button
-                          disabled={!canEnforce}
-                          onClick={() => runAction('enable_enforcement', { grade: p.grade, subject: p.subject })}
+                          disabled={!canEnforce || pending !== null}
+                          onClick={() =>
+                            runAction(
+                              'enable-enforcement',
+                              { grade: p.grade, subject_code: p.subject },
+                              `enforce:${p.grade}-${p.subject}`,
+                            )
+                          }
                           className={`rounded-md border border-surface-3 bg-transparent px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-surface-2 ${
-                            canEnforce ? 'cursor-pointer' : 'cursor-not-allowed opacity-40'
+                            canEnforce && pending === null ? 'cursor-pointer' : 'cursor-not-allowed opacity-40'
                           }`}
                           title={canEnforce ? 'Flip ff_grounded_ai_enforced for this pair' : 'Needs >= 90% verified'}
+                          data-testid={`enable-enforcement-${p.grade}-${p.subject}`}
                         >
-                          Enable
+                          {pending === `enforce:${p.grade}-${p.subject}` ? 'Enabling…' : 'Enable'}
                         </button>
                       </td>
                     </tr>
@@ -283,16 +306,24 @@ function VerificationQueueContent() {
                     </td>
                     <td className={TD}>
                       <button
-                        onClick={() => runAction('reverify', { id: f.id })}
-                        className="mr-1.5 rounded-md border border-surface-3 bg-transparent px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-surface-2"
+                        onClick={() => runAction('re-verify', { id: f.id }, `reverify:${f.id}`)}
+                        disabled={pending !== null}
+                        className={`mr-1.5 rounded-md border border-surface-3 bg-transparent px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-surface-2 ${
+                          pending !== null ? 'cursor-not-allowed opacity-40' : ''
+                        }`}
+                        data-testid={`reverify-${f.id}`}
                       >
-                        Re-verify
+                        {pending === `reverify:${f.id}` ? 'Re-verifying…' : 'Re-verify'}
                       </button>
                       <button
-                        onClick={() => runAction('soft_delete', { id: f.id })}
-                        className="rounded-md border border-danger bg-transparent px-2.5 py-1 text-xs font-medium text-danger hover:bg-danger/10"
+                        onClick={() => runAction('soft-delete', { id: f.id }, `delete:${f.id}`)}
+                        disabled={pending !== null}
+                        className={`rounded-md border border-danger bg-transparent px-2.5 py-1 text-xs font-medium text-danger hover:bg-danger/10 ${
+                          pending !== null ? 'cursor-not-allowed opacity-40' : ''
+                        }`}
+                        data-testid={`soft-delete-${f.id}`}
                       >
-                        Soft-delete
+                        {pending === `delete:${f.id}` ? 'Deleting…' : 'Soft-delete'}
                       </button>
                     </td>
                   </tr>
