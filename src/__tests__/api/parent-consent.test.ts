@@ -56,12 +56,14 @@ vi.mock('@/lib/audit', () => ({
 //
 // All three tables operate via the same lightweight chainable builder.
 
-const G1_AUTH = '00000000-aaaa-0000-0000-000000000001';
-const G2_AUTH = '00000000-aaaa-0000-0000-000000000002';
-const G1_ID = '11111111-1111-1111-1111-111111111111';
-const G2_ID = '22222222-2222-2222-2222-222222222222';
-const S1_ID = '33333333-3333-3333-3333-333333333333';
-const S2_ID = '44444444-4444-4444-4444-444444444444';
+// v4 UUIDs — position 14 must be '4', position 19 must be [89ab].
+// The route uses isValidUUID (src/lib/sanitize.ts:31) which is strict v4.
+const G1_AUTH = '00000000-aaaa-4000-8000-000000000001';
+const G2_AUTH = '00000000-aaaa-4000-8000-000000000002';
+const G1_ID   = '11111111-1111-4111-8111-111111111111';
+const G2_ID   = '22222222-2222-4222-8222-222222222222';
+const S1_ID   = '33333333-3333-4333-8333-333333333333';
+const S2_ID   = '44444444-4444-4444-8444-444444444444';
 
 interface Tables {
   guardians: Array<{ id: string; auth_user_id: string }>;

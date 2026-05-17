@@ -79,11 +79,40 @@ function makeAdminClient(opts: {
       }
       if (table === 'school_invite_codes') {
         return {
-          insert: () => Promise.resolve(
-            opts.inviteInsertFails
-              ? { error: { message: 'invite insert failed' } }
-              : { error: null }
-          ),
+          // Dual-purpose: `await admin.from(...).insert(...)` (trial route,
+          // discards the returned row) AND `await admin.from(...).insert(...)
+          // .select(...).single()` (invite-codes route, reads back the row).
+          // The returned object is both thenable AND chainable.
+          insert: (row: Record<string, unknown>) => {
+            const error = opts.inviteInsertFails
+              ? { message: 'invite insert failed' }
+              : null;
+            const insertedRow = opts.inviteInsertFails
+              ? null
+              : {
+                  id: 'invite-1',
+                  code: (row.code as string | undefined) ?? 'TEST-CODE',
+                  role: row.role,
+                  max_uses: row.max_uses,
+                  uses_count: 0,
+                  expires_at: row.expires_at,
+                  is_active: true,
+                  created_at: new Date().toISOString(),
+                };
+            return {
+              select: () => ({
+                single: () => Promise.resolve({ data: insertedRow, error }),
+              }),
+              // Thenable so plain `await admin.from(...).insert(...)` works.
+              // The trial route only reads `error`, so we don't surface `data`.
+              then(
+                onfulfilled: (v: { error: unknown }) => unknown,
+                onrejected?: (reason: unknown) => unknown,
+              ) {
+                return Promise.resolve({ error }).then(onfulfilled, onrejected);
+              },
+            };
+          },
         };
       }
       if (table === 'ops_events') {

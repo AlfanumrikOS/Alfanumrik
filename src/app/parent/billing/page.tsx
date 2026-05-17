@@ -21,6 +21,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { toast } from '@/components/ui/toast';
 
 const t = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -178,19 +179,13 @@ export default function ParentBillingPage() {
       });
       const json = await res.json();
       if (!res.ok || !json.success) {
-        // TODO(phase-e3): replace alert() with toast/modal
-        // eslint-disable-next-line no-restricted-syntax
-        window.alert(json.error || t(isHi, 'Cancellation failed.', 'रद्द करना विफल।'));
+        toast.error(json.error || t(isHi, 'Cancellation failed.', 'रद्द करना विफल।'));
         return;
       }
-      // TODO(phase-e3): replace alert() with toast/modal
-      // eslint-disable-next-line no-restricted-syntax
-      window.alert(json.message || t(isHi, 'Cancellation scheduled.', 'रद्द करना अनुसूचित।'));
+      toast.success(json.message || t(isHi, 'Cancellation scheduled.', 'रद्द करना अनुसूचित।'));
       await load();
     } catch {
-      // TODO(phase-e3): replace alert() with toast/modal
-      // eslint-disable-next-line no-restricted-syntax
-      window.alert(t(isHi, 'Network error. Please try again.', 'नेटवर्क त्रुटि। कृपया पुनः प्रयास करें।'));
+      toast.error(t(isHi, 'Network error. Please try again.', 'नेटवर्क त्रुटि। कृपया पुनः प्रयास करें।'));
     } finally {
       setCancellingId(null);
     }
