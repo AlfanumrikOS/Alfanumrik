@@ -1,7 +1,21 @@
 /** Shared types for control room widgets — extracted from page.tsx */
 
+// Phase F.6 follow-up (2026-05-17): explicit fields for the catalog counts
+// added in /api/super-admin/stats so widgets type-check against them.
 export interface SystemStats {
-  totals: Record<string, number>;
+  totals: Record<string, number> & {
+    students?: number;
+    teachers?: number;
+    parents?: number;
+    schools?: number;
+    quiz_sessions?: number;
+    chat_sessions?: number;            // legacy + foxy summed
+    foxy_sessions?: number;            // active Foxy table only
+    legacy_chat_sessions?: number;     // legacy chat_sessions table only
+    simulations?: number;              // interactive + exam catalog
+    interactive_simulations?: number;
+    exam_simulations?: number;
+  };
   last_24h: Record<string, number>;
   last_7d?: Record<string, number>;
 }

@@ -47,7 +47,8 @@ export async function GET(request: NextRequest) {
     const [
       signupsRes,
       quizzesRes,
-      chatsRes,
+      foxyChatsRes,
+      legacyChatsRes,
       subjectsRes,
       plansRes,
       active1dRes,
@@ -63,7 +64,11 @@ export async function GET(request: NextRequest) {
       supabaseRest('students', `select=created_at&created_at=gte.${since30d}&is_demo=eq.false&order=created_at.asc&limit=10000`),
       // 2. Engagement: quizzes in last 30 days
       supabaseRest('quiz_sessions', `select=created_at&created_at=gte.${since30d}&order=created_at.asc&limit=10000`),
-      // 3. Engagement: chats in last 30 days
+      // 3. Engagement: Foxy AI chats in last 30 days.
+      // Phase F.6 fix (2026-05-17): legacy chat_sessions only had 10 rows in
+      // prod while the live foxy_sessions table has 488 rows in 30d. Sum
+      // both so the 30-day chart shows real Foxy activity.
+      supabaseRest('foxy_sessions', `select=created_at&created_at=gte.${since30d}&order=created_at.asc&limit=10000`),
       supabaseRest('chat_sessions', `select=created_at&created_at=gte.${since30d}&order=created_at.asc&limit=10000`),
       // 4. Popular subjects: all quiz sessions with subject
       supabaseRest('quiz_sessions', `select=subject&limit=50000`),
@@ -88,11 +93,12 @@ export async function GET(request: NextRequest) {
       try { const d = await res.json(); return Array.isArray(d) ? d : []; }
       catch { return []; }
     };
-    const [signups, quizzes, chats, subjectRows, planRows, active1dRows, active7dRows, active30dRows, topStudents, coverageRows] =
+    const [signups, quizzes, foxyChats, legacyChats, subjectRows, planRows, active1dRows, active7dRows, active30dRows, topStudents, coverageRows] =
       await Promise.all([
         safeJson<{ created_at: string }>(signupsRes),
         safeJson<{ created_at: string }>(quizzesRes),
-        safeJson<{ created_at: string }>(chatsRes),
+        safeJson<{ created_at: string }>(foxyChatsRes),
+        safeJson<{ created_at: string }>(legacyChatsRes),
         safeJson<{ subject: string }>(subjectsRes),
         safeJson<{ subscription_plan: string | null }>(plansRes),
         safeJson<{ student_id: string }>(active1dRes),
@@ -101,6 +107,9 @@ export async function GET(request: NextRequest) {
         safeJson<{ id: string; name: string; email: string; grade: string; xp_total: number; streak_days: number; avatar_url: string | null }>(topStudentsRes),
         safeJson<{ grade: string; subject: string }>(coverageRes),
       ]);
+    // Combine Foxy + legacy chat sessions into a single "chats" series for the
+    // 30-day engagement chart.
+    const chats = [...foxyChats, ...legacyChats];
 
     // --- 1. Engagement: daily breakdown ---
     const signupsByDate = countByDate(signups, days);

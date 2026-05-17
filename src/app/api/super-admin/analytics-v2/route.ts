@@ -47,7 +47,8 @@ export async function GET(request: NextRequest) {
       quizTotalCount,
       stemTodayCount,
       stemWeekCount,
-      stemTotalCount,
+      interactiveSimCount,
+      examSimCount,
       plansTodayCount,
       plansWeekCount,
       plansTotalCount,
@@ -69,10 +70,15 @@ export async function GET(request: NextRequest) {
       countRows('quiz_sessions', `created_at=gte.${todayStart}`),
       countRows('quiz_sessions', `created_at=gte.${since7d}`),
       countRows('quiz_sessions'),
-      // STEM Lab
+      // STEM Lab — Phase F.6 fix (2026-05-17): `student_simulation_progress`
+      // is empty in prod; the operator wants the CATALOG count (built-in
+      // simulations available). Sum interactive + exam simulations. The
+      // today/week windows still query student_simulation_progress so when
+      // engagement starts to land we'll see real numbers without a new fix.
       countRows('student_simulation_progress', `created_at=gte.${todayStart}`),
       countRows('student_simulation_progress', `created_at=gte.${since7d}`),
-      countRows('student_simulation_progress'),
+      countRows('interactive_simulations'),
+      countRows('exam_simulations'),
       // Study Plans
       countRows('study_plans', `created_at=gte.${todayStart}`),
       countRows('study_plans', `created_at=gte.${since7d}`),
@@ -192,7 +198,7 @@ export async function GET(request: NextRequest) {
       feature_usage: {
         foxy:        { today: foxyTodayCount,  week: foxyWeekCount,  total: foxyTotalCount + chatTotalCount },
         quizzes:     { today: quizTodayCount,  week: quizWeekCount,  total: quizTotalCount },
-        stem_lab:    { today: stemTodayCount,  week: stemWeekCount,  total: stemTotalCount },
+        stem_lab:    { today: stemTodayCount,  week: stemWeekCount,  total: interactiveSimCount + examSimCount },
         study_plans: { today: plansTodayCount, week: plansWeekCount, total: plansTotalCount },
       },
       subscription_distribution: dist,

@@ -95,6 +95,23 @@ interface FeatureFlag {
   target_roles: string[]; target_environments: string[];
 }
 
+// Phase F.6 follow-up (2026-05-17): pull catalog counts from /api/super-admin/stats
+// so the Simulation Lab + Content Quality widgets stop showing hardcoded numbers.
+interface StatsResponse {
+  totals?: {
+    students?: number;
+    teachers?: number;
+    parents?: number;
+    schools?: number;
+    quiz_sessions?: number;
+    chat_sessions?: number;
+    foxy_sessions?: number;
+    simulations?: number;
+    interactive_simulations?: number;
+    exam_simulations?: number;
+  };
+}
+
 function DiagnosticsContent() {
   const { apiFetch } = useAdmin();
   const [obsData, setObsData] = useState<ObsData | null>(null);
@@ -103,17 +120,19 @@ function DiagnosticsContent() {
   const [deployHistory, setDeployHistory] = useState<DeployRecord[]>([]);
   const [failedJobs, setFailedJobs] = useState<FailedJob[]>([]);
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
+  const [stats, setStats] = useState<StatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [obsRes, deployRes, backupRes, histRes, jobsRes, flagsRes] = await Promise.all([
+    const [obsRes, deployRes, backupRes, histRes, jobsRes, flagsRes, statsRes] = await Promise.all([
       apiFetch('/api/super-admin/observability'),
       apiFetch('/api/super-admin/deploy'),
       apiFetch('/api/super-admin/platform-ops?action=backups'),
       apiFetch('/api/super-admin/platform-ops?action=deployments&limit=10'),
       apiFetch('/api/super-admin/support?action=failed_jobs'),
       apiFetch('/api/super-admin/feature-flags'),
+      apiFetch('/api/super-admin/stats'),
     ]);
     if (obsRes.ok) setObsData(await obsRes.json());
     if (deployRes.ok) setDeployInfo(await deployRes.json());
@@ -121,6 +140,7 @@ function DiagnosticsContent() {
     if (histRes.ok) { const d = await histRes.json(); setDeployHistory(d.data || []); }
     if (jobsRes.ok) { const d = await jobsRes.json(); setFailedJobs(d.data || []); }
     if (flagsRes.ok) { const d = await flagsRes.json(); setFlags(d.data || []); }
+    if (statsRes.ok) setStats(await statsRes.json());
     setLoading(false);
   }, [apiFetch]);
 
@@ -207,15 +227,20 @@ function DiagnosticsContent() {
               <div style={{ fontSize: 11, color: colors.text3, marginTop: 2 }}>quizzes in last 24h</div>
             </div>
 
-            {/* Simulation Lab */}
+            {/* Simulation Lab — live from stats route (Phase F.6 fix 2026-05-17) */}
             <div style={S.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: colors.text1 }}>Simulation Lab</div>
-                <StatusBadge label="Verified" variant="success" />
+                <StatusBadge
+                  label={(stats?.totals?.simulations || 0) > 0 ? 'Active' : 'Empty'}
+                  variant={(stats?.totals?.simulations || 0) > 0 ? 'success' : 'warning'}
+                />
               </div>
-              <div style={{ fontSize: 24, fontWeight: 800, color: colors.text1, lineHeight: 1.2 }}>19</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: colors.text1, lineHeight: 1.2 }}>{stats?.totals?.simulations ?? 0}</div>
               <div style={{ fontSize: 11, color: colors.text3, marginTop: 2 }}>built-in simulations</div>
-              <div style={{ fontSize: 11, color: colors.success, marginTop: 2, fontWeight: 600 }}>14 &rarr; 19 (+5 this sprint)</div>
+              <div style={{ fontSize: 11, color: colors.text3, marginTop: 2 }}>
+                Interactive: {stats?.totals?.interactive_simulations ?? 0} · Exam: {stats?.totals?.exam_simulations ?? 0}
+              </div>
             </div>
 
             {/* Content Quality */}
