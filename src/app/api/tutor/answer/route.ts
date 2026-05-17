@@ -36,6 +36,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -43,6 +44,7 @@ import { isFeatureEnabled } from '@/lib/feature-flags';
 import { logger } from '@/lib/logger';
 import { capture } from '@/lib/posthog/server';
 import { MASTERY_THRESHOLD } from '@/lib/tutor/types';
+import { publishEvent } from '@/lib/state/events/publish';
 
 export const dynamic = 'force-dynamic';
 
@@ -274,6 +276,55 @@ export async function POST(request: Request) {
     path: 'legacy',
   });
 
+  // ── ADR-005 spine emit — learner.concept_check_answered ──────────────
+  //
+  // Best-effort publish from the legacy block. Gated by ff_event_bus_v1
+  // inside publishEvent (no-op when OFF). Never blocks the response.
+  //
+  // Note: when the Path C RPC succeeds (all four flags ON), the RPC
+  // tutor_commit_attempt inserts the state_events row itself under the
+  // same Postgres transaction — see line 20 of this file. This emit
+  // covers ONLY the legacy block: when ff_tutor_bkt_v1 / ff_event_bus_v1 /
+  // ff_projector_runner_v1 isn't fully ON, or when Path C fell through.
+  //
+  // attemptId: when body.attempt_id is missing (allowed when bktOn=false),
+  // we synthesize a UUID — the event still has a stable id for dedupe.
+  // The same attempt_id is reused on retry by the client (when present),
+  // so the idempotencyKey dedupes naturally on the bus.
+  try {
+    const tenantId = await resolveTenantIdForAuthUser(userId);
+    const attemptId = body.attempt_id ?? randomUUID();
+    const newAttempts = currentAttempts + 1;
+    await publishEvent(supabaseAdmin, {
+      kind: 'learner.concept_check_answered',
+      eventId: randomUUID(),
+      occurredAt: new Date().toISOString(),
+      actorAuthUserId: userId,
+      tenantId,
+      idempotencyKey: `concept-check-answered:${attemptId}`,
+      payload: {
+        studentId,
+        conceptId: body.concept_id,
+        attemptId,
+        questionId: `${body.concept_id}:practice:v1`,
+        correct: body.correct,
+        chosenIndex: body.chosen_index,
+        responseTimeMs: body.response_time_ms ?? null,
+        occurredAt: new Date().toISOString(),
+        attemptSequence: newAttempts,
+        priorMasteryMean: currentMean,
+        eventVersion: 1 as const,
+        subjectCode: conceptRow.subject as string,
+        chapterNumber: conceptRow.chapter_number as number,
+      },
+    });
+  } catch (err) {
+    logger.warn('tutor/answer: publishEvent learner.concept_check_answered failed', {
+      conceptId: body.concept_id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   return NextResponse.json({
     ok: true,
     optimistic: false,
@@ -286,4 +337,27 @@ export async function POST(request: Request) {
       mastered: newMean >= MASTERY_THRESHOLD,
     },
   });
+}
+
+/**
+ * Resolve the tenant scope for the calling auth user — read once from
+ * students.school_id. Returns null on B2C / read failure (logged + treated
+ * as B2C). Used by the route-level spine emit to populate the event
+ * envelope's tenantId.
+ */
+async function resolveTenantIdForAuthUser(authUserId: string): Promise<string | null> {
+  try {
+    const { data } = await supabaseAdmin
+      .from('students')
+      .select('school_id')
+      .eq('auth_user_id', authUserId)
+      .maybeSingle();
+    return (data as { school_id?: string | null } | null)?.school_id ?? null;
+  } catch (err) {
+    logger.warn('tutor/answer: resolveTenantIdForAuthUser failed', {
+      authUserId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
 }

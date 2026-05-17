@@ -18,12 +18,13 @@
  *     the full chain.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import {
   DomainEventSchema,
   LearnerScanExtractedSchema,
 } from '../../../lib/state/events/registry';
+import { publishEvent, __resetFlagCacheForTests } from '../../../lib/state/events/publish';
 
 // Replica of the event-building block in
 // src/app/api/scan-solve/route.ts. Keep these in sync — any divergence
@@ -162,5 +163,78 @@ describe('learner.scan_extracted — event shape published by /api/scan-solve', 
       subject: 'math',
     });
     expect(event.payload.questionCount).toBe(1);
+  });
+});
+
+// ─── Flag-OFF / Flag-ON publish contract ──────────────────────────────
+//
+// scan-solve's /api/scan-solve route calls publishEvent(supabaseAdmin, ...)
+// AFTER the canonical write to public.scans succeeds. publishEvent gates
+// internally on ff_event_bus_v1 — we exercise both branches here with a
+// minimal in-memory mock of the Supabase client.
+//
+// This is the canonical "is the spine emit actually flag-gated?" probe.
+// All four PR-wired emits (quiz_completed, mastery_changed,
+// concept_check_answered, scan_extracted) share this single gate.
+
+interface MockInsertCall { table: string; row: Record<string, unknown> }
+
+function makeMockSupabase(flagEnabled: boolean) {
+  const inserts: MockInsertCall[] = [];
+  const sb = {
+    from(table: string) {
+      if (table === 'feature_flags') {
+        return {
+          select() { return this; },
+          eq() { return this; },
+          maybeSingle: async () => ({ data: flagEnabled ? { is_enabled: true } : null, error: null }),
+        };
+      }
+      if (table === 'state_events') {
+        return {
+          insert: async (row: Record<string, unknown>) => {
+            inserts.push({ table, row });
+            return { error: null };
+          },
+        };
+      }
+      throw new Error(`unmocked table: ${table}`);
+    },
+  };
+  return { sb, inserts };
+}
+
+const SAMPLE_SCAN_EVENT = buildScanExtractedEvent({
+  scanId: '11111111-1111-1111-1111-111111111111',
+  authUserId: '22222222-2222-2222-2222-222222222222',
+  schoolId: null,
+  subject: 'math',
+  occurredAt: '2026-05-17T10:00:00.000Z',
+});
+
+describe('publishEvent flag-gate — learner.scan_extracted', () => {
+  beforeEach(() => {
+    __resetFlagCacheForTests();
+  });
+
+  it('is a no-op when ff_event_bus_v1 is OFF (no insert into state_events)', async () => {
+    const { sb, inserts } = makeMockSupabase(false);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await publishEvent(sb as any, SAMPLE_SCAN_EVENT);
+    expect(result.published).toBe(false);
+    expect(result.reason).toBe('flag_off');
+    expect(inserts).toHaveLength(0);
+  });
+
+  it('publishes one INSERT into state_events when ff_event_bus_v1 is ON', async () => {
+    const { sb, inserts } = makeMockSupabase(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await publishEvent(sb as any, SAMPLE_SCAN_EVENT);
+    expect(result.published).toBe(true);
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0].row).toMatchObject({
+      kind: 'learner.scan_extracted',
+      idempotency_key: SAMPLE_SCAN_EVENT.idempotencyKey,
+    });
   });
 });
