@@ -11,6 +11,7 @@
 export { StatCard, type StatCardProps } from './StatCard';
 export { StatusBadge, type StatusBadgeProps, type StatusBadgeVariant } from './StatusBadge';
 export { StalenessTag } from './StalenessTag';
+export { NoDataState, type NoDataStateProps, type NoDataStateReason } from './NoDataState';
 export { default as DetailDrawer } from './DetailDrawer';
 export type { DetailDrawerProps } from './DetailDrawer';
 export { default as DataTable } from './DataTable';
