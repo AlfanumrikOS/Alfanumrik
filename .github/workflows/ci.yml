@@ -39,6 +39,9 @@ jobs:
   secret-scan:
     name: Secret Scanning
     runs-on: ubuntu-latest
+    permissions:
+      contents: read       # gitleaks needs to read repo history
+      pull-requests: read  # gitleaks needs the PR commit list (fixes 403)
     steps:
       - uses: actions/checkout@v6
         with:
