@@ -48,8 +48,15 @@ jobs:
       - name: Run tests
         run: npm test -- --reporter=verbose
 
+      # Bump Node heap to 6 GB. The project's bundle outgrew Node 22's default
+      # ~2 GB and crashes with SIGABRT during `next build` (`Next.js build
+      # worker exited with code: null and signal: SIGABRT`). #818 fixed this
+      # in ci.yml but missed this and deploy-staging.yml. ubuntu-latest
+      # runners have 7 GB RAM so 6144 MB leaves headroom.
       - name: Build
         run: npm run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
 
   # ── Step 1b: Pre-Deployment Checklist ──
   pre-deploy-checklist:
