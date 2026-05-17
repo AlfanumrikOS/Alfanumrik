@@ -50,8 +50,12 @@ jobs:
       - name: Run unit tests
         run: npm run test -- --run
 
+      # Heap bump matches ci.yml + deploy-production.yml. See PR #818 / this PR
+      # for the SIGABRT-during-next-build root cause.
       - name: Build
         run: npm run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
 
   # ── Step 1b: Apply Database Migrations to Staging ──
   # Pushes any pending SQL migrations to the staging Supabase project before
