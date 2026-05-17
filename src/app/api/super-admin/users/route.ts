@@ -20,11 +20,19 @@ export async function GET(request: NextRequest) {
     if (search && search.length > 200) {
       return NextResponse.json({ error: 'Search query too long (max 200 characters)' }, { status: 400 });
     }
+    // Phase F.6 (2026-05-17): plan filter is now server-side; the subscriptions
+    // page no longer needs to filter client-side after fetch.
+    const plan = params.get('plan');
+    const VALID_PLANS = ['free', 'plus', 'pro', 'unlimited', 'family', 'school', 'institutional'];
+    if (plan && !VALID_PLANS.includes(plan)) {
+      return NextResponse.json({ error: `Invalid plan. Must be one of: ${VALID_PLANS.join(', ')}` }, { status: 400 });
+    }
     const offset = (page - 1) * limit;
 
     const table = role === 'teacher' ? 'teachers' : role === 'guardian' || role === 'parent' ? 'guardians' : 'students';
     let query = `select=*&order=created_at.desc&offset=${offset}&limit=${limit}`;
     if (search) query += `&name=ilike.*${encodeURIComponent(search)}*`;
+    if (plan && table === 'students') query += `&subscription_plan=eq.${encodeURIComponent(plan)}`;
 
     const res = await fetch(supabaseAdminUrl(table, query), { headers: supabaseAdminHeaders() });
     const data = await res.json();

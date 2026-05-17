@@ -103,6 +103,38 @@ export const zPlanCode = z.enum(['free', 'starter', 'pro', 'unlimited']);
 /** Zod: billing cycle */
 export const zBillingCycle = z.enum(['monthly', 'yearly']);
 
+// ── Phase G.6 (2026-05-17): admin-route helpers ────────
+
+/**
+ * Zod: admin level. Mirrors ADMIN_LEVELS in src/lib/admin-auth.ts (kept in
+ * sync manually to avoid a circular import). If you add a level there, add
+ * it here too.
+ */
+export const zAdminLevel = z.enum([
+  'support',
+  'analyst',
+  'content_manager',
+  'finance',
+  'admin',
+  'super_admin',
+]);
+
+/**
+ * Zod: integer hour count bounded for delegation/elevation grants. 1 hour to
+ * 72 hours covers every legitimate "lend me elevated access for a window"
+ * use case; longer windows should be a permanent role change instead.
+ */
+export const zDurationHours = z.number().int().min(1).max(72);
+
+/** Zod: integer day count bounded for token expiry. 1 to 365 days. */
+export const zDaysExpiry = z.number().int().min(1).max(365);
+
+/** Zod: reason text — required, length-bounded, trimmed. */
+export const zReason = z.string().trim().min(3, 'Reason must be at least 3 characters').max(500);
+
+/** Zod: optional reason text. */
+export const zReasonOptional = z.string().trim().max(500).optional();
+
 // ── Quiz Submission (P1, P3, P4) ────────────────────────
 
 export const quizAnswerSchema = z.object({

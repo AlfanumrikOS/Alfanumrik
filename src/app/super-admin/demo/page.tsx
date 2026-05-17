@@ -3,12 +3,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
 import { StatCard } from '@/components/admin-ui';
+import { DEMO_PERSONAS, DEMO_ROLES, type DemoPersona, type DemoRole } from '@/lib/demo/personas';
 
 interface DemoAccount {
   id: string;
   name: string;
   email: string;
-  role: 'student' | 'teacher' | 'parent';
+  role: DemoRole;
   persona: string | null;
   status: 'active' | 'inactive';
   last_reset: string | null;
@@ -24,15 +25,32 @@ interface CreatedCredentials {
   login_instructions?: string;
 }
 
+type ErrorBanner = { code: string; message: string; details?: string } | null;
+
+const ROLE_LABELS: Record<DemoRole, string> = {
+  student: 'Student',
+  teacher: 'Teacher',
+  parent: 'Parent',
+  school_admin: 'School Admin',
+  super_admin: 'Super Admin',
+};
+
+const PERSONA_LABELS: Record<DemoPersona, string> = {
+  weak_student: 'Weak Student',
+  average: 'Average',
+  high_performer: 'High Performer',
+};
+
 function DemoContent() {
   const { apiFetch } = useAdmin();
   const [accounts, setAccounts] = useState<DemoAccount[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorBanner>(null);
 
   // Create form state
-  const [formRole, setFormRole] = useState<'student' | 'teacher' | 'parent'>('student');
-  const [formPersona, setFormPersona] = useState<'average' | 'high_performer' | 'weak_student'>('average');
+  const [formRole, setFormRole] = useState<DemoRole>('student');
+  const [formPersona, setFormPersona] = useState<DemoPersona>('average');
   const [formName, setFormName] = useState('');
   const [formEmail, setFormEmail] = useState('');
   const [creating, setCreating] = useState(false);
@@ -42,14 +60,21 @@ function DemoContent() {
 
   const fetchAccounts = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await apiFetch('/api/super-admin/demo-accounts');
-      if (res.ok) {
-        const d = await res.json();
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) {
         setAccounts(d.data || []);
+      } else {
+        setError({
+          code: d.code || `http_${res.status}`,
+          message: d.message || d.error || `Failed to load demo accounts (${res.status})`,
+          details: d.details,
+        });
       }
-    } catch {
-      // silent
+    } catch (e) {
+      setError({ code: 'network_error', message: e instanceof Error ? e.message : 'Network error' });
     }
     setLoading(false);
   }, [apiFetch]);
@@ -69,35 +94,40 @@ function DemoContent() {
   const handleCreate = async () => {
     if (!formName.trim() || !formEmail.trim()) return;
     setCreating(true);
+    setError(null);
     try {
       const res = await apiFetch('/api/super-admin/demo-accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           role: formRole,
-          persona: formRole === 'student' ? formPersona : null,
+          persona: formRole === 'student' ? formPersona : undefined,
           name: formName.trim(),
           email: formEmail.trim(),
         }),
       });
-      if (res.ok) {
-        const d = await res.json();
-        if (d.success && d.data) {
-          setCredentials([{
-            email: d.data.email,
-            password: d.data.password,
-            name: formName.trim(),
-            role: d.data.role,
-            student_invite_code: d.data.student_invite_code,
-            login_instructions: d.data.login_instructions,
-          }]);
-        }
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success && d.data) {
+        setCredentials([{
+          email: d.data.email,
+          password: d.data.password,
+          name: formName.trim(),
+          role: d.data.role,
+          student_invite_code: d.data.student_invite_code,
+          login_instructions: d.data.login_instructions,
+        }]);
         setFormName('');
         setFormEmail('');
         fetchAccounts();
+      } else {
+        setError({
+          code: d.code || `http_${res.status}`,
+          message: d.message || d.error || 'Failed to create demo account',
+          details: d.details,
+        });
       }
-    } catch {
-      // silent
+    } catch (e) {
+      setError({ code: 'network_error', message: e instanceof Error ? e.message : 'Network error' });
     }
     setCreating(false);
   };
@@ -197,19 +227,26 @@ function DemoContent() {
     });
   };
 
-  const roleBadge = (role: string): React.CSSProperties => ({
-    fontSize: 10,
-    padding: '2px 8px',
-    borderRadius: 4,
-    fontWeight: 600,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
-    ...(role === 'student'
-      ? { background: '#EFF6FF', color: '#2563EB' }
-      : role === 'teacher'
-        ? { background: '#FFFBEB', color: '#D97706' }
-        : { background: '#F0FDF4', color: '#16A34A' }),
-  });
+  const roleBadge = (role: string): React.CSSProperties => {
+    const palette: Record<string, { bg: string; fg: string }> = {
+      student:      { bg: '#EFF6FF', fg: '#2563EB' },
+      teacher:      { bg: '#FFFBEB', fg: '#D97706' },
+      parent:       { bg: '#F0FDF4', fg: '#16A34A' },
+      school_admin: { bg: '#F3E8FF', fg: '#7C3AED' },
+      super_admin:  { bg: '#FCE7F3', fg: '#DB2777' },
+    };
+    const colors = palette[role] || { bg: '#F3F4F6', fg: '#6B7280' };
+    return {
+      fontSize: 10,
+      padding: '2px 8px',
+      borderRadius: 4,
+      fontWeight: 600,
+      textTransform: 'uppercase' as const,
+      letterSpacing: 0.5,
+      background: colors.bg,
+      color: colors.fg,
+    };
+  };
 
   const statusBadge = (status: string): React.CSSProperties => ({
     fontSize: 10,
@@ -259,11 +296,51 @@ function DemoContent() {
         </div>
       </div>
 
+      {/* Error banner */}
+      {error && (
+        <div
+          role="alert"
+          style={{
+            background: '#FEF2F2',
+            border: '1px solid #FCA5A5',
+            color: '#991B1B',
+            padding: '10px 14px',
+            borderRadius: 6,
+            marginBottom: 16,
+            fontSize: 13,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: 12,
+          }}
+        >
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600, marginBottom: 2 }}>
+              {error.message}{' '}
+              <code style={{ fontSize: 11, color: '#7F1D1D' }}>[{error.code}]</code>
+            </div>
+            {error.details && (
+              <details style={{ marginTop: 4 }}>
+                <summary style={{ cursor: 'pointer', fontSize: 11, color: '#7F1D1D' }}>details</summary>
+                <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap', margin: '4px 0 0' }}>{error.details}</pre>
+              </details>
+            )}
+          </div>
+          <button
+            onClick={() => setError(null)}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#991B1B', fontSize: 16 }}
+            aria-label="Dismiss"
+          >×</button>
+        </div>
+      )}
+
       {/* Overview Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
         <StatCard label="Students" value={byRole('student').length} accentColor="#2563EB" />
         <StatCard label="Teachers" value={byRole('teacher').length} accentColor="#D97706" />
         <StatCard label="Parents" value={byRole('parent').length} accentColor="#16A34A" />
+        <StatCard label="School Admins" value={byRole('school_admin').length} accentColor="#7C3AED" />
+        <StatCard label="Super Admins" value={byRole('super_admin').length} accentColor="#DB2777" />
         <StatCard label="Active" value={activeCount} accentColor="#16A34A" />
         <StatCard label="Inactive" value={inactiveCount} accentColor="#DC2626" />
         <StatCard label="Last Reset" value={formatDate(lastReset)} />
@@ -286,10 +363,10 @@ function DemoContent() {
           className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
           style={{ opacity: actionLoading === 'create-set' ? 0.6 : 1 }}
         >
-          {actionLoading === 'create-set' ? 'Creating...' : 'Create Demo Set'}
+          {actionLoading === 'create-set' ? 'Creating...' : 'Create Demo Set (5 roles)'}
         </button>
         <span style={{ fontSize: 12, color: '#9CA3AF', alignSelf: 'center' }}>
-          Creates one student + one teacher + one parent
+          Creates one of each: student, teacher, parent, school-admin, super-admin
         </span>
       </div>
 
@@ -304,12 +381,12 @@ function DemoContent() {
             <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Role</label>
             <select
               value={formRole}
-              onChange={e => setFormRole(e.target.value as 'student' | 'teacher' | 'parent')}
+              onChange={e => setFormRole(e.target.value as DemoRole)}
               className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer"
             >
-              <option value="student">Student</option>
-              <option value="teacher">Teacher</option>
-              <option value="parent">Parent</option>
+              {DEMO_ROLES.map(r => (
+                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+              ))}
             </select>
           </div>
           {formRole === 'student' && (
@@ -317,12 +394,12 @@ function DemoContent() {
               <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Persona</label>
               <select
                 value={formPersona}
-                onChange={e => setFormPersona(e.target.value as 'average' | 'high_performer' | 'weak_student')}
+                onChange={e => setFormPersona(e.target.value as DemoPersona)}
                 className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer"
               >
-                <option value="average">Average</option>
-                <option value="high_performer">High Performer</option>
-                <option value="weak_student">Weak Student</option>
+                {DEMO_PERSONAS.map(p => (
+                  <option key={p} value={p}>{PERSONA_LABELS[p]}</option>
+                ))}
               </select>
             </div>
           )}

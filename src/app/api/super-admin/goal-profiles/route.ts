@@ -73,6 +73,11 @@ export async function GET(request: NextRequest) {
         data: {
           flagEnabled,
           profiles,
+          // Phase F.5 (2026-05-17): make the in-code source explicit so the UI
+          // can render a "Read-only · configured in code" banner. The page used
+          // to look editable but offered no write path — surface the fact.
+          data_source: 'in_code',
+          data_source_location: 'src/lib/goals/goal-profile.ts',
         },
       },
       {

@@ -14,7 +14,8 @@ function delay(ms: number): Promise<void> {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: resending invite emails — outbound communication, admin level.
+  const auth = await authorizeAdmin(request, 'admin');
   if (!auth.authorized) return auth.response;
 
   try {

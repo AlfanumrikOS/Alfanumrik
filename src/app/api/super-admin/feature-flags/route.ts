@@ -15,7 +15,8 @@ import { z } from 'zod';
 
 // GET — list all flags
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: reading the flag list is OK at support level.
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -59,7 +60,9 @@ export async function GET(request: NextRequest) {
 
 // POST — create a new flag
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: creating a flag (and any subsequent rollout it gates) is a
+  // platform-wide change. super_admin only.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -131,7 +134,10 @@ export async function POST(request: NextRequest) {
 
 // PATCH — update a flag (toggle, scoping, description)
 export async function PATCH(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: flipping target_grades/target_institutions/target_roles/
+  // target_environments/rollout_percentage is a platform-wide change.
+  // super_admin only.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -227,7 +233,8 @@ export async function PATCH(request: NextRequest) {
 
 // DELETE — hard delete a flag
 export async function DELETE(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: hard-deleting a flag — super_admin only.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
+import { generateSecurePassword } from '../../../../lib/crypto/password';
 
 export async function POST(request: NextRequest) {
   const auth = await authorizeAdmin(request);
@@ -16,8 +17,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` }, { status: 400 });
     }
 
-    // Generate a random password
-    const password = `Test${Math.random().toString(36).slice(2, 8)}!${Math.floor(Math.random() * 100)}`;
+    const password = generateSecurePassword('Test');
 
     // Create auth user via Supabase Admin API
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

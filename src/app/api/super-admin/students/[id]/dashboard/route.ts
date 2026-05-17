@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, isValidUUID } from '@/lib/admin-auth';
+import { auditPiiReadThrottled } from '@/lib/admin-audit-throttle';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import {
   validateImpersonationSession,
@@ -11,13 +12,20 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: admin level required even for read because this route only
+  // serves dashboard data while impersonating; impersonation start required
+  // super_admin in /api/super-admin/students/[id]/impersonate POST.
+  const auth = await authorizeAdmin(request, 'admin');
   if (!auth.authorized) return auth.response;
 
   const { id: studentId } = await params;
   if (!isValidUUID(studentId)) {
     return NextResponse.json({ error: 'Invalid student ID' }, { status: 400 });
   }
+
+  // Phase G.5: throttled audit (1 entry per (admin,student,action)/hour)
+  const ipAddress = request.headers.get('x-forwarded-for') || undefined;
+  auditPiiReadThrottled(auth, 'student_dashboard.read', 'student', studentId, undefined, ipAddress);
 
   // Require active impersonation session
   const valid = await validateImpersonationSession(auth.adminId, studentId);

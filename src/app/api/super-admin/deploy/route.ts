@@ -20,7 +20,12 @@ export async function GET(request: NextRequest) {
     const deploymentId = process.env.VERCEL_DEPLOYMENT_ID || 'unknown';
     const vercelEnv = process.env.VERCEL_ENV || process.env.NODE_ENV || 'unknown';
     const region = process.env.VERCEL_REGION || 'unknown';
-    const appVersion = '2.0.0';
+    // Phase F.5 (2026-05-17): app_version was hardcoded as '2.0.0' regardless
+    // of what was actually deployed. Derive it from the build environment so
+    // the Control Room reflects truth.
+    const appVersion =
+      process.env.NEXT_PUBLIC_APP_VERSION ||
+      (commitSha !== 'unknown' ? commitSha.slice(0, 7) : 'dev');
 
     // Auto-record this deployment if commit SHA is known and not already recorded
     if (commitSha !== 'unknown') {

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl, isValidUUID } from '../../../../lib/admin-auth';
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl, isValidUUID, type AdminAuth } from '../../../../lib/admin-auth';
 import { validateBody } from '../../../../lib/validation';
 import { z } from 'zod';
+import { DEMO_PERSONAS, DEMO_ROLES, PERSONA_PROFILES, normalisePersona, type DemoRole } from '../../../../lib/demo/personas';
+import { generateSecurePassword } from '../../../../lib/crypto/password';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -14,36 +16,24 @@ function getSupabaseConfig() {
   return { url, key };
 }
 
-function generatePassword(): string {
-  const randomPart = Math.random().toString(36).slice(2, 8);
-  const number = Math.floor(Math.random() * 900) + 100;
-  return `Demo${randomPart}!${number}`;
-}
-
-function roleToTable(role: string): string {
-  if (role === 'teacher') return 'teachers';
-  if (role === 'parent') return 'guardians';
+function roleToTable(role: DemoRole): string {
+  if (role === 'teacher')      return 'teachers';
+  if (role === 'parent')       return 'guardians';
+  if (role === 'student')      return 'students';
+  if (role === 'school_admin') return 'school_admins';
+  if (role === 'super_admin')  return 'admin_users';
   return 'students';
 }
 
 /** Seed demo data onto a student profile based on persona. */
-async function seedDemoData(
+async function seedStudentDemoData(
   authUserId: string,
-  role: string,
   persona: string,
-  demoAccountId: string
+  demoAccountId: string,
 ): Promise<void> {
-  if (role !== 'student') return;
+  const normalised = normalisePersona(persona);
+  const profile = PERSONA_PROFILES[normalised];
 
-  const personaProfiles: Record<string, { xp_total: number; streak_days: number }> = {
-    high_performer: { xp_total: 2500, streak_days: 45 },
-    average: { xp_total: 800, streak_days: 12 },
-    weak: { xp_total: 150, streak_days: 3 },
-  };
-
-  const profile = personaProfiles[persona] || personaProfiles.average;
-
-  // Update student profile with persona stats
   const patchRes = await fetch(
     supabaseAdminUrl('students', `auth_user_id=eq.${authUserId}`),
     {
@@ -54,51 +44,270 @@ async function seedDemoData(
         streak_days: profile.streak_days,
         last_active: new Date().toISOString(),
       }),
-    }
+    },
   );
 
   if (!patchRes.ok) {
     console.error('[demo-accounts] Failed to seed student profile:', await patchRes.text());
   }
 
-  // Store seed snapshot in demo_seed_data for future resets
   await fetch(supabaseAdminUrl('demo_seed_data'), {
     method: 'POST',
     headers: supabaseAdminHeaders('return=minimal'),
     body: JSON.stringify({
       demo_account_id: demoAccountId,
       data_type: 'student_profile',
-      seed_data: { persona, ...profile },
+      seed_data: { persona: normalised, ...profile },
     }),
   });
 }
 
+// Resolve the plan UUID at runtime. Cached in module scope so the cost is
+// paid once per cold start. Required because student_subscriptions.plan_id
+// is NOT NULL with no default and the blueprint forbids hardcoded UUIDs.
+let _cachedUnlimitedPlanId: string | null = null;
+async function resolveUnlimitedPlanId(): Promise<string | null> {
+  if (_cachedUnlimitedPlanId) return _cachedUnlimitedPlanId;
+  const res = await fetch(
+    supabaseAdminUrl('subscription_plans', 'select=id&plan_code=eq.unlimited&limit=1'),
+    { method: 'GET', headers: supabaseAdminHeaders() },
+  );
+  if (!res.ok) return null;
+  const rows = await res.json();
+  if (Array.isArray(rows) && rows.length > 0 && rows[0].id) {
+    _cachedUnlimitedPlanId = rows[0].id as string;
+    return _cachedUnlimitedPlanId;
+  }
+  return null;
+}
+
+/**
+ * Provision an unlimited-plan subscription for a demo student. Demo subs
+ * are flagged is_demo=true so the daily purge cron can cascade-clean them
+ * without touching real customer billing rows.
+ */
+async function provisionDemoStudentSubscription(studentId: string): Promise<void> {
+  const planId = await resolveUnlimitedPlanId();
+  if (!planId) {
+    console.error('[demo-accounts] subscription_plans.unlimited not found; cannot provision demo sub');
+    return;
+  }
+
+  const periodStart = new Date();
+  const periodEnd = new Date(periodStart);
+  periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+
+  const res = await fetch(supabaseAdminUrl('student_subscriptions'), {
+    method: 'POST',
+    headers: supabaseAdminHeaders('return=minimal'),
+    body: JSON.stringify({
+      student_id: studentId,
+      plan_id: planId,
+      plan_code: 'unlimited',
+      status: 'active',
+      billing_cycle: 'yearly',
+      current_period_start: periodStart.toISOString(),
+      current_period_end: periodEnd.toISOString(),
+      is_demo: true,
+    }),
+  });
+
+  if (!res.ok) {
+    console.error('[demo-accounts] Failed to provision demo student subscription:', await res.text());
+  }
+}
+
+/** Build the role-specific profile payload. */
+function buildProfilePayload(
+  role: DemoRole,
+  authUserId: string,
+  name: string,
+  email: string,
+  opts: { grade?: string; schoolId?: string | null } = {},
+): Record<string, unknown> {
+  const base: Record<string, unknown> = { auth_user_id: authUserId, name, email, is_demo: true };
+
+  switch (role) {
+    case 'student':
+      return {
+        ...base,
+        is_active: true,
+        grade: opts.grade || '10',
+        board: 'CBSE',
+        subscription_plan: 'unlimited',
+        account_status: 'demo',
+        xp_total: 0,
+        streak_days: 0,
+        preferred_language: 'en',
+        preferred_subject: 'math',
+        ...(opts.schoolId ? { school_id: opts.schoolId } : {}),
+      };
+    case 'teacher':
+      return {
+        ...base,
+        is_active: true,
+        school_name: 'Demo School — Delhi Public School',
+        subjects_taught: ['math', 'science'],
+        grades_taught: ['10', '11', '12'],
+        board: 'CBSE',
+        preferred_language: 'en',
+        is_verified: true,
+        onboarding_completed: true,
+        ...(opts.schoolId ? { school_id: opts.schoolId } : {}),
+      };
+    case 'parent':
+      // guardians table has no is_active column
+      return {
+        ...base,
+        phone: '+919876543210',
+        relationship: 'parent',
+        preferred_language: 'en',
+        onboarding_completed: true,
+      };
+    case 'school_admin':
+      return {
+        ...base,
+        is_active: true,
+        ...(opts.schoolId ? { school_id: opts.schoolId } : {}),
+      };
+    case 'super_admin':
+      return {
+        auth_user_id: authUserId,
+        email,
+        name,
+        is_active: true,
+        is_demo: true,
+        admin_level: 'super_admin',
+      };
+  }
+}
+
+/**
+ * For school_admin demo accounts: create a demo school + 3 seed students +
+ * a trial school subscription. Returns the new school_id.
+ */
+async function provisionDemoSchool(adminAuthUserId: string, adminName: string): Promise<string | null> {
+  const config = getSupabaseConfig();
+  if (!config) return null;
+
+  const schoolRes = await fetch(supabaseAdminUrl('schools', undefined), {
+    method: 'POST',
+    headers: supabaseAdminHeaders('return=representation'),
+    body: JSON.stringify({
+      name: `Demo School — ${adminName}`,
+      board: 'CBSE',
+      is_active: true,
+      is_demo: true,
+    }),
+  });
+
+  if (!schoolRes.ok) {
+    console.error('[demo-accounts] Failed to provision demo school:', await schoolRes.text());
+    return null;
+  }
+
+  const schoolRows = await schoolRes.json();
+  const schoolId = Array.isArray(schoolRows) && schoolRows.length > 0 ? schoolRows[0].id as string : null;
+  if (!schoolId) return null;
+
+  // Trial subscription so school billing surfaces work
+  const periodStart = new Date();
+  const periodEnd = new Date(periodStart);
+  periodEnd.setDate(periodEnd.getDate() + 30);
+
+  // Note: school_subscriptions in prod uses `plan` (not plan_code) and
+  // `seats_purchased` (not seats). Verified via Supabase MCP 2026-05-17.
+  await fetch(supabaseAdminUrl('school_subscriptions'), {
+    method: 'POST',
+    headers: supabaseAdminHeaders('return=minimal'),
+    body: JSON.stringify({
+      school_id: schoolId,
+      plan: 'institutional',
+      status: 'trial',
+      seats_purchased: 50,
+      billing_cycle: 'yearly',
+      current_period_start: periodStart.toISOString(),
+      current_period_end: periodEnd.toISOString(),
+      is_demo: true,
+    }),
+  });
+
+  // Three seed students under the demo school
+  const seedStudents = [
+    { name: 'Aanya Sharma',  email: `aanya.${schoolId.slice(0, 8)}@alfanumrik.demo`,  persona: 'high_performer' },
+    { name: 'Rohan Verma',   email: `rohan.${schoolId.slice(0, 8)}@alfanumrik.demo`,   persona: 'average' },
+    { name: 'Priya Singh',   email: `priya.${schoolId.slice(0, 8)}@alfanumrik.demo`,   persona: 'weak_student' },
+  ];
+
+  for (const seed of seedStudents) {
+    const userRes = await fetch(`${config.url}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: {
+        'apikey': config.key,
+        'Authorization': `Bearer ${config.key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: seed.email,
+        password: generateSecurePassword('Demo'),
+        email_confirm: true,
+        user_metadata: { name: seed.name, role: 'student', is_demo_account: true, persona: seed.persona },
+      }),
+    });
+    if (!userRes.ok) continue;
+    const authUser = await userRes.json();
+    const studentRes = await fetch(supabaseAdminUrl('students'), {
+      method: 'POST',
+      headers: supabaseAdminHeaders('return=representation'),
+      body: JSON.stringify(buildProfilePayload('student', authUser.id, seed.name, seed.email, { schoolId })),
+    });
+    if (!studentRes.ok) continue;
+    const studentRows = await studentRes.json();
+    const studentId = Array.isArray(studentRows) && studentRows.length > 0 ? studentRows[0].id as string : null;
+    if (studentId) await provisionDemoStudentSubscription(studentId);
+  }
+
+  // Mark the admin's row with school_id
+  await fetch(supabaseAdminUrl('admin_users', `auth_user_id=eq.${adminAuthUserId}`), {
+    method: 'PATCH',
+    headers: supabaseAdminHeaders('return=minimal'),
+    body: JSON.stringify({ school_id: schoolId }),
+  }).catch(() => {});
+
+  return schoolId;
+}
+
 // ---------------------------------------------------------------------------
-// GET - List demo accounts
+// GET — List demo accounts
 // ---------------------------------------------------------------------------
 
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: read-only list of demo accounts is fine at support level.
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {
-    // Fetch all demo accounts
     const res = await fetch(
       supabaseAdminUrl('demo_accounts', 'select=*&order=created_at.desc'),
-      { method: 'GET', headers: supabaseAdminHeaders() }
+      { method: 'GET', headers: supabaseAdminHeaders() },
     );
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      return NextResponse.json({ success: false, error: err.message || 'Failed to fetch demo accounts' }, { status: 500 });
+      const body = await res.text();
+      // Surface the real cause to the operator instead of a silent zero.
+      const code = res.status === 404 || body.includes('relation') ? 'demo_table_missing' : 'fetch_failed';
+      return NextResponse.json(
+        { success: false, code, message: `Failed to fetch demo accounts (${res.status})`, details: body.slice(0, 280) },
+        { status: 500 },
+      );
     }
 
     const accounts = await res.json();
 
-    // Enrich each account with profile data from the role-appropriate table
     const enriched = await Promise.all(
       accounts.map(async (account: Record<string, unknown>) => {
-        const table = roleToTable(account.role as string);
+        const role = account.role as DemoRole;
+        const table = roleToTable(role);
         const authUserId = account.auth_user_id as string;
 
         let profileFields = 'id,name,email,is_demo';
@@ -106,14 +315,17 @@ export async function GET(request: NextRequest) {
           profileFields += ',is_active,grade,board,subscription_plan,xp_total,streak_days,account_status,last_active';
         } else if (table === 'teachers') {
           profileFields += ',is_active,school_name,subjects_taught,grades_taught';
+        } else if (table === 'admin_users') {
+          profileFields = 'id,email,is_active,admin_level,is_demo';
+        } else if (table === 'school_admins') {
+          profileFields = 'id,name,email,is_active,school_id';
         } else {
-          // guardians table does NOT have is_active column
           profileFields += ',phone,relationship';
         }
 
         const profileRes = await fetch(
           supabaseAdminUrl(table, `select=${profileFields}&auth_user_id=eq.${authUserId}&limit=1`),
-          { method: 'GET', headers: supabaseAdminHeaders() }
+          { method: 'GET', headers: supabaseAdminHeaders() },
         );
 
         let profile = null;
@@ -123,601 +335,481 @@ export async function GET(request: NextRequest) {
         }
 
         return { ...account, profile };
-      })
+      }),
     );
 
     return NextResponse.json({ success: true, data: enriched });
   } catch (err) {
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : 'Internal error' },
-      { status: 500 }
+      { success: false, code: 'internal_error', message: err instanceof Error ? err.message : 'Internal error' },
+      { status: 500 },
     );
   }
 }
 
 // ---------------------------------------------------------------------------
-// POST - Create demo account
+// POST — Create demo account
 // ---------------------------------------------------------------------------
 
+// Single source of truth for create input
+const demoAccountSchema = z.object({
+  role: z.enum(DEMO_ROLES),
+  name: z.string().min(1, 'Name is required').max(200),
+  email: z.string().email('Valid email is required').max(254),
+  persona: z.enum(DEMO_PERSONAS).optional(),
+  grade: z.string().regex(/^(6|7|8|9|10|11|12)$/, 'Grade must be a string "6"-"12"').optional(),
+});
+
+async function createSingleDemoAccount(
+  body: unknown,
+  auth: AdminAuth,
+  ipAddress: string | undefined,
+): Promise<NextResponse> {
+  const validation = validateBody(demoAccountSchema, body);
+  if (!validation.success) return validation.error;
+
+  const { role, name, email, persona, grade } = validation.data;
+  const effectivePersona = persona || 'average';
+
+  const config = getSupabaseConfig();
+  if (!config) {
+    return NextResponse.json(
+      { success: false, code: 'config_missing', message: 'Server configuration error' },
+      { status: 500 },
+    );
+  }
+
+  const password = generateSecurePassword('Demo');
+
+  // 1. Create auth user
+  const createUserRes = await fetch(`${config.url}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: {
+      'apikey': config.key,
+      'Authorization': `Bearer ${config.key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { name, role, is_demo_account: true, persona: effectivePersona },
+    }),
+  });
+
+  if (!createUserRes.ok) {
+    const err = await createUserRes.json().catch(() => ({}));
+    return NextResponse.json(
+      { success: false, code: 'auth_user_failed', message: err.msg || err.message || 'Failed to create auth user' },
+      { status: 400 },
+    );
+  }
+
+  const authUser = await createUserRes.json();
+  const authUserId: string = authUser.id;
+
+  // 2. For school_admin: provision the school first so the profile can hold school_id.
+  // Caveat: if the subsequent school_admin profile insert fails, the school + its
+  // 3 seed students + their subscriptions + auth users are orphaned. They're all
+  // flagged is_demo=true and will be reaped by the daily purge cron (Phase F.4
+  // migration 20260528000004). Acceptable trade-off vs. a multi-step transactional
+  // rollback that would balloon this function.
+  let schoolId: string | null = null;
+  if (role === 'school_admin') {
+    schoolId = await provisionDemoSchool(authUserId, name);
+  }
+
+  // 3. Create the role-specific profile row
+  const table = roleToTable(role);
+  const profileData = buildProfilePayload(role, authUserId, name, email, { grade, schoolId });
+
+  const profileRes = await fetch(supabaseAdminUrl(table), {
+    method: 'POST',
+    headers: supabaseAdminHeaders('return=representation'),
+    body: JSON.stringify(profileData),
+  });
+
+  if (!profileRes.ok) {
+    const errBody = await profileRes.text();
+    // Roll back the auth user
+    await fetch(`${config.url}/auth/v1/admin/users/${authUserId}`, {
+      method: 'DELETE',
+      headers: { 'apikey': config.key, 'Authorization': `Bearer ${config.key}` },
+    });
+    return NextResponse.json(
+      { success: false, code: 'profile_failed', message: 'Failed to create profile', details: errBody.slice(0, 280) },
+      { status: 400 },
+    );
+  }
+
+  const profileRows = await profileRes.json();
+  const profileId = Array.isArray(profileRows) && profileRows.length > 0 ? profileRows[0].id : null;
+
+  // 4. Provision subscription for student demos
+  if (role === 'student' && profileId) {
+    await provisionDemoStudentSubscription(profileId);
+  }
+
+  // 5. Auto-link parent to first active demo student (approved_by must be UUID, not the string 'admin')
+  let studentInviteCode: string | null = null;
+  if (role === 'parent' && profileId) {
+    const demoStudentRes = await fetch(
+      supabaseAdminUrl('students', 'select=id,invite_code,name&is_demo=eq.true&is_active=eq.true&limit=1'),
+      { method: 'GET', headers: supabaseAdminHeaders() },
+    );
+    if (demoStudentRes.ok) {
+      const demoStudents = await demoStudentRes.json();
+      if (Array.isArray(demoStudents) && demoStudents.length > 0) {
+        const demoStudent = demoStudents[0];
+        studentInviteCode = demoStudent.invite_code;
+        const linkRes = await fetch(supabaseAdminUrl('guardian_student_links'), {
+          method: 'POST',
+          headers: supabaseAdminHeaders('return=minimal'),
+          body: JSON.stringify({
+            guardian_id: profileId,
+            student_id: demoStudent.id,
+            status: 'active',
+            permission_level: 'view',
+            is_verified: true,
+            linked_at: new Date().toISOString(),
+            initiated_by: auth.userId,
+            approved_by: auth.userId,
+            approved_at: new Date().toISOString(),
+          }),
+        });
+        if (!linkRes.ok) {
+          console.error('[demo-accounts] guardian_student_links insert failed:', await linkRes.text());
+        }
+      }
+    }
+  }
+
+  // 6. demo_accounts registry row
+  const demoAccountRes = await fetch(supabaseAdminUrl('demo_accounts'), {
+    method: 'POST',
+    headers: supabaseAdminHeaders('return=representation'),
+    body: JSON.stringify({
+      auth_user_id: authUserId,
+      role,
+      persona: effectivePersona,
+      display_name: name,
+      email,
+      school_id: schoolId,
+      created_by: auth.userId,
+      is_active: true,
+    }),
+  });
+
+  if (!demoAccountRes.ok) {
+    const errBody = await demoAccountRes.text();
+    // Roll back profile + auth user
+    await fetch(supabaseAdminUrl(table, `auth_user_id=eq.${authUserId}`), {
+      method: 'DELETE',
+      headers: supabaseAdminHeaders('return=minimal'),
+    });
+    await fetch(`${config.url}/auth/v1/admin/users/${authUserId}`, {
+      method: 'DELETE',
+      headers: { 'apikey': config.key, 'Authorization': `Bearer ${config.key}` },
+    });
+    return NextResponse.json(
+      { success: false, code: 'registry_failed', message: 'Failed to create demo account record', details: errBody.slice(0, 280) },
+      { status: 500 },
+    );
+  }
+
+  const demoAccountRows = await demoAccountRes.json();
+  const demoAccountId = Array.isArray(demoAccountRows) && demoAccountRows.length > 0 ? demoAccountRows[0].id : null;
+
+  // 7. Persona seed for students
+  if (demoAccountId && role === 'student') {
+    await seedStudentDemoData(authUserId, effectivePersona, demoAccountId);
+  }
+
+  // 8. Audit
+  await logAdminAudit(
+    auth,
+    'create_demo_account',
+    'demo_accounts',
+    demoAccountId || authUserId,
+    { role, persona: effectivePersona, name, email, school_id: schoolId, is_demo: true },
+    ipAddress,
+  );
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      demo_account_id: demoAccountId,
+      profile_id: profileId,
+      auth_user_id: authUserId,
+      school_id: schoolId,
+      email,
+      password,
+      role,
+      persona: effectivePersona,
+      ...(role === 'parent' && studentInviteCode
+        ? {
+            student_invite_code: studentInviteCode,
+            login_instructions: 'Parent portal uses link code, not email/password. Go to /parent and enter the student invite code.',
+          }
+        : {}),
+    },
+  });
+}
+
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: creating accounts (esp. super_admin / school_admin) is a
+  // high-blast-radius mutation. super_admin only.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {
     const body = await request.json();
+    const ipAddress = request.headers.get('x-forwarded-for') || undefined;
 
-    // Handle bulk "create-set" action — creates student, teacher, and parent demo accounts
+    // Bulk "create-set" — student + teacher + parent + school_admin + super_admin
     if (body.action === 'create-set') {
-      const config = getSupabaseConfig();
-      if (!config) {
-        return NextResponse.json({ success: false, error: 'Server configuration error' }, { status: 500 });
-      }
-
       const timestamp = Date.now();
-      const demoSet = [
-        { role: 'student', name: 'Demo Student', email: `demo.student.${timestamp}@alfanumrik.demo`, persona: 'average' },
-        { role: 'teacher', name: 'Demo Teacher', email: `demo.teacher.${timestamp}@alfanumrik.demo`, persona: 'average' },
-        { role: 'parent', name: 'Demo Parent', email: `demo.parent.${timestamp}@alfanumrik.demo`, persona: 'average' },
+      const demoSet: Array<{ role: DemoRole; name: string; email: string; persona?: string }> = [
+        { role: 'student',      name: 'Demo Student',      email: `demo.student.${timestamp}@alfanumrik.demo`,      persona: 'average' },
+        { role: 'teacher',      name: 'Demo Teacher',      email: `demo.teacher.${timestamp}@alfanumrik.demo`,      persona: 'average' },
+        { role: 'parent',       name: 'Demo Parent',       email: `demo.parent.${timestamp}@alfanumrik.demo`,       persona: 'average' },
+        { role: 'school_admin', name: 'Demo Principal',    email: `demo.principal.${timestamp}@alfanumrik.demo`,    persona: 'average' },
+        { role: 'super_admin',  name: 'Demo Super-Admin',  email: `demo.superadmin.${timestamp}@alfanumrik.demo`,   persona: 'average' },
       ];
 
-      const results = [];
-
+      const results: unknown[] = [];
       for (const item of demoSet) {
-        const password = generatePassword();
-        const table = roleToTable(item.role);
-
-        // 1. Create auth user
-        const createUserRes = await fetch(`${config.url}/auth/v1/admin/users`, {
-          method: 'POST',
-          headers: {
-            'apikey': config.key,
-            'Authorization': `Bearer ${config.key}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: item.email,
-            password,
-            email_confirm: true,
-            user_metadata: { name: item.name, role: item.role, is_demo_account: true, persona: item.persona },
-          }),
-        });
-
-        if (!createUserRes.ok) continue;
-        const authUser = await createUserRes.json();
-        const authUserId = authUser.id;
-
-        // 2. Build profile data
-        const profileData: Record<string, unknown> = {
-          auth_user_id: authUserId,
-          name: item.name,
-          email: item.email,
-          is_demo: true,
-        };
-
-        if (item.role === 'student') {
-          profileData.is_active = true;
-          profileData.grade = '10';
-          profileData.board = 'CBSE';
-          profileData.subscription_plan = 'unlimited';
-          profileData.account_status = 'demo';
-          profileData.xp_total = 0;
-          profileData.streak_days = 0;
-          profileData.preferred_language = 'en';
-          profileData.preferred_subject = 'math';
-        } else if (item.role === 'teacher') {
-          profileData.is_active = true;
-          profileData.school_name = 'Demo School - Delhi Public School';
-          profileData.subjects_taught = ['math', 'science'];
-          profileData.grades_taught = ['10', '11', '12'];
-          profileData.board = 'CBSE';
-          profileData.preferred_language = 'en';
-          profileData.is_verified = true;
-          profileData.onboarding_completed = true;
+        const res = await createSingleDemoAccount(item, auth, ipAddress);
+        // Forward only the data block; skip failures silently in bulk mode but log them
+        if (res.status === 200) {
+          const payload = await res.json();
+          if (payload.success) results.push({ ...payload.data, name: item.name });
         } else {
-          // guardians table does NOT have is_active column
-          profileData.phone = '+919876543210';
-          profileData.relationship = 'parent';
-          profileData.preferred_language = 'en';
-          profileData.onboarding_completed = true;
+          const err = await res.json().catch(() => ({}));
+          console.error(`[demo-accounts] create-set failed for ${item.role}:`, err);
         }
-
-        // 3. Create profile
-        const profileRes = await fetch(supabaseAdminUrl(table), {
-          method: 'POST',
-          headers: supabaseAdminHeaders('return=representation'),
-          body: JSON.stringify(profileData),
-        });
-
-        if (!profileRes.ok) {
-          // Clean up auth user on failure
-          await fetch(`${config.url}/auth/v1/admin/users/${authUserId}`, {
-            method: 'DELETE',
-            headers: { 'apikey': config.key, 'Authorization': `Bearer ${config.key}` },
-          });
-          continue;
-        }
-
-        const profileRows = await profileRes.json();
-        const profileId = Array.isArray(profileRows) && profileRows.length > 0 ? profileRows[0].id : null;
-
-        // 4. Auto-link parent to the first active demo student
-        let studentInviteCode: string | null = null;
-        if (item.role === 'parent' && profileId) {
-          const demoStudentRes = await fetch(
-            supabaseAdminUrl('students', 'select=id,invite_code,name&is_demo=eq.true&is_active=eq.true&limit=1'),
-            { method: 'GET', headers: supabaseAdminHeaders() }
-          );
-          if (demoStudentRes.ok) {
-            const demoStudents = await demoStudentRes.json();
-            if (Array.isArray(demoStudents) && demoStudents.length > 0) {
-              const demoStudent = demoStudents[0];
-              studentInviteCode = demoStudent.invite_code;
-              await fetch(supabaseAdminUrl('guardian_student_links'), {
-                method: 'POST',
-                headers: supabaseAdminHeaders('return=minimal'),
-                body: JSON.stringify({
-                  guardian_id: profileId,
-                  student_id: demoStudent.id,
-                  status: 'active',
-                  permission_level: 'view',
-                  is_verified: true,
-                  linked_at: new Date().toISOString(),
-                  initiated_by: 'admin',
-                  approved_by: 'admin',
-                  approved_at: new Date().toISOString(),
-                }),
-              });
-            }
-          }
-        }
-
-        // 5. Create demo_accounts record
-        const demoAccountRes = await fetch(supabaseAdminUrl('demo_accounts'), {
-          method: 'POST',
-          headers: supabaseAdminHeaders('return=representation'),
-          body: JSON.stringify({
-            auth_user_id: authUserId,
-            role: item.role,
-            persona: item.persona,
-            display_name: item.name,
-            email: item.email,
-            is_active: true,
-          }),
-        });
-
-        const demoAccountRows = demoAccountRes.ok ? await demoAccountRes.json() : [];
-        const demoAccountId = Array.isArray(demoAccountRows) && demoAccountRows.length > 0 ? demoAccountRows[0].id : null;
-
-        // 6. Seed demo data for student accounts
-        if (demoAccountId && item.role === 'student') {
-          await seedDemoData(authUserId, item.role, item.persona, demoAccountId);
-        }
-
-        results.push({
-          demo_account_id: demoAccountId,
-          profile_id: profileId,
-          auth_user_id: authUserId,
-          email: item.email,
-          password,
-          name: item.name,
-          role: item.role,
-          persona: item.persona,
-          ...(item.role === 'parent' && studentInviteCode ? {
-            student_invite_code: studentInviteCode,
-            login_instructions: 'Parent portal uses link code, not email/password. Go to /parent and enter the student invite code.',
-          } : {}),
-        });
       }
 
-      // Audit log
-      const ipAddress = request.headers.get('x-forwarded-for') || undefined;
       await logAdminAudit(auth, 'create_demo_set', 'demo_accounts', 'bulk', { count: results.length }, ipAddress);
-
       return NextResponse.json({ success: true, data: results });
     }
 
-    // Validate single demo account creation with Zod
-    const demoAccountSchema = z.object({
-      role: z.enum(['student', 'teacher', 'parent']),
-      name: z.string().min(1, 'Name is required').max(200),
-      email: z.string().email('Valid email is required').max(254),
-      persona: z.enum(['weak', 'average', 'high_performer']).optional(),
-      grade: z.string().regex(/^(6|7|8|9|10|11|12)$/, 'Grade must be a string from "6" through "12"').optional(),
-    });
-
-    const validation = validateBody(demoAccountSchema, body);
-    if (!validation.success) return validation.error;
-
-    const { role, name, email, persona, grade: requestedGrade } = validation.data;
-    const effectivePersona = persona || 'average';
-
-    const config = getSupabaseConfig();
-    if (!config) {
-      return NextResponse.json({ success: false, error: 'Server configuration error' }, { status: 500 });
-    }
-
-    const password = generatePassword();
-
-    // 1. Create auth user
-    const createUserRes = await fetch(`${config.url}/auth/v1/admin/users`, {
-      method: 'POST',
-      headers: {
-        'apikey': config.key,
-        'Authorization': `Bearer ${config.key}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: { name, role, is_demo_account: true, persona: effectivePersona },
-      }),
-    });
-
-    if (!createUserRes.ok) {
-      const err = await createUserRes.json().catch(() => ({}));
-      return NextResponse.json(
-        { success: false, error: err.msg || err.message || 'Failed to create auth user' },
-        { status: 400 }
-      );
-    }
-
-    const authUser = await createUserRes.json();
-    const authUserId = authUser.id;
-
-    // 2. Create profile in role-appropriate table
-    const table = roleToTable(role);
-    const profileData: Record<string, unknown> = {
-      auth_user_id: authUserId,
-      name,
-      email,
-      is_demo: true,
-    };
-
-    if (role === 'student') {
-      profileData.is_active = true;
-      profileData.grade = requestedGrade || '10'; // P5: grade must be string "6" through "12"
-      profileData.board = 'CBSE';
-      profileData.subscription_plan = 'unlimited';
-      profileData.account_status = 'demo';
-      profileData.xp_total = 0;
-      profileData.streak_days = 0;
-      profileData.preferred_language = 'en';
-      profileData.preferred_subject = 'math';
-    } else if (role === 'teacher') {
-      profileData.is_active = true;
-      profileData.school_name = 'Demo School - Delhi Public School';
-      profileData.subjects_taught = ['math', 'science'];
-      profileData.grades_taught = ['10', '11', '12'];
-      profileData.board = 'CBSE';
-      profileData.preferred_language = 'en';
-      profileData.is_verified = true;
-      profileData.onboarding_completed = true;
-    } else {
-      // parent (guardian) — guardians table does NOT have is_active column
-      profileData.phone = '+919876543210';
-      profileData.relationship = 'parent';
-      profileData.preferred_language = 'en';
-      profileData.onboarding_completed = true;
-    }
-
-    const profileRes = await fetch(supabaseAdminUrl(table), {
-      method: 'POST',
-      headers: supabaseAdminHeaders('return=representation'),
-      body: JSON.stringify(profileData),
-    });
-
-    if (!profileRes.ok) {
-      const err = await profileRes.json().catch(() => ({}));
-      // Clean up auth user on profile creation failure
-      await fetch(`${config.url}/auth/v1/admin/users/${authUserId}`, {
-        method: 'DELETE',
-        headers: { 'apikey': config.key, 'Authorization': `Bearer ${config.key}` },
-      });
-      return NextResponse.json(
-        { success: false, error: err.message || 'Failed to create profile' },
-        { status: 400 }
-      );
-    }
-
-    const profileRows = await profileRes.json();
-    const profileId = Array.isArray(profileRows) && profileRows.length > 0 ? profileRows[0].id : null;
-
-    // 2b. For parent accounts, auto-link to an existing demo student
-    let studentInviteCode: string | null = null;
-    if (role === 'parent' && profileId) {
-      const demoStudentRes = await fetch(
-        supabaseAdminUrl('students', 'select=id,invite_code,name&is_demo=eq.true&is_active=eq.true&limit=1'),
-        { method: 'GET', headers: supabaseAdminHeaders() }
-      );
-
-      if (demoStudentRes.ok) {
-        const demoStudents = await demoStudentRes.json();
-        if (Array.isArray(demoStudents) && demoStudents.length > 0) {
-          const demoStudent = demoStudents[0];
-          studentInviteCode = demoStudent.invite_code;
-
-          // Create guardian_student_links record
-          await fetch(supabaseAdminUrl('guardian_student_links'), {
-            method: 'POST',
-            headers: supabaseAdminHeaders('return=minimal'),
-            body: JSON.stringify({
-              guardian_id: profileId,
-              student_id: demoStudent.id,
-              status: 'active',
-              permission_level: 'view',
-              is_verified: true,
-              linked_at: new Date().toISOString(),
-              initiated_by: 'admin',
-              approved_by: 'admin',
-              approved_at: new Date().toISOString(),
-            }),
-          });
-        }
-      }
-    }
-
-    // 3. Create demo_accounts record
-    const demoAccountRes = await fetch(supabaseAdminUrl('demo_accounts'), {
-      method: 'POST',
-      headers: supabaseAdminHeaders('return=representation'),
-      body: JSON.stringify({
-        auth_user_id: authUserId,
-        role,
-        persona: effectivePersona,
-        display_name: name,
-        email,
-        is_active: true,
-      }),
-    });
-
-    if (!demoAccountRes.ok) {
-      const err = await demoAccountRes.json().catch(() => ({}));
-      // Clean up profile and auth user
-      await fetch(supabaseAdminUrl(table, `auth_user_id=eq.${authUserId}`), {
-        method: 'DELETE',
-        headers: supabaseAdminHeaders('return=minimal'),
-      });
-      await fetch(`${config.url}/auth/v1/admin/users/${authUserId}`, {
-        method: 'DELETE',
-        headers: { 'apikey': config.key, 'Authorization': `Bearer ${config.key}` },
-      });
-      return NextResponse.json(
-        { success: false, error: err.message || 'Failed to create demo account record' },
-        { status: 400 }
-      );
-    }
-
-    const demoAccountRows = await demoAccountRes.json();
-    const demoAccountId = Array.isArray(demoAccountRows) && demoAccountRows.length > 0 ? demoAccountRows[0].id : null;
-
-    // 4. Seed demo data if persona specified and account creation succeeded
-    if (demoAccountId) {
-      await seedDemoData(authUserId, role, effectivePersona, demoAccountId);
-    }
-
-    // 5. Audit log
-    const ipAddress = request.headers.get('x-forwarded-for') || undefined;
-    await logAdminAudit(
-      auth,
-      'create_demo_account',
-      'demo_accounts',
-      demoAccountId || authUserId,
-      { role, persona: effectivePersona, name, email, is_demo: true },
-      ipAddress
-    );
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        demo_account_id: demoAccountId,
-        profile_id: profileId,
-        auth_user_id: authUserId,
-        email,
-        password,
-        role,
-        persona: effectivePersona,
-        ...(role === 'parent' && studentInviteCode ? {
-          student_invite_code: studentInviteCode,
-          login_instructions: 'Parent portal uses link code, not email/password. Go to /parent and enter the student invite code.',
-        } : {}),
-      },
-    });
+    // Single create
+    return await createSingleDemoAccount(body, auth, ipAddress);
   } catch (err) {
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : 'Internal error' },
-      { status: 500 }
+      { success: false, code: 'internal_error', message: err instanceof Error ? err.message : 'Internal error' },
+      { status: 500 },
     );
   }
 }
 
 // ---------------------------------------------------------------------------
-// PUT - Update demo account (reset / activate / deactivate / regenerate)
+// PUT — Update demo account (reset / activate / deactivate / toggle / regenerate)
 // ---------------------------------------------------------------------------
 
 export async function PUT(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: reset / regenerate / toggle on demo accounts is a mutation
+  // that can clear customer-visible (in sales walk-throughs) demo state.
+  // admin level is the floor — super_admin not required, but support is too low.
+  const auth = await authorizeAdmin(request, 'admin');
   if (!auth.authorized) return auth.response;
 
   try {
     const body = await request.json();
+    const ipAddress = request.headers.get('x-forwarded-for') || undefined;
 
-    // Handle bulk "reset-all" action — resets all active demo accounts
+    // Bulk reset-all
     if (body.action === 'reset-all') {
       const config = getSupabaseConfig();
       if (!config) {
-        return NextResponse.json({ success: false, error: 'Server configuration error' }, { status: 500 });
+        return NextResponse.json(
+          { success: false, code: 'config_missing', message: 'Server configuration error' },
+          { status: 500 },
+        );
       }
 
-      // Fetch all active demo accounts
       const allRes = await fetch(
         supabaseAdminUrl('demo_accounts', 'select=id,role,persona,auth_user_id&is_active=eq.true'),
-        { method: 'GET', headers: supabaseAdminHeaders() }
+        { method: 'GET', headers: supabaseAdminHeaders() },
       );
 
       if (!allRes.ok) {
-        return NextResponse.json({ success: false, error: 'Failed to fetch demo accounts' }, { status: 500 });
+        return NextResponse.json(
+          { success: false, code: 'fetch_failed', message: 'Failed to fetch demo accounts' },
+          { status: 500 },
+        );
       }
 
       const allAccounts = await allRes.json();
-      const resetResults = [];
+      const resetResults: Array<{ id: string; role: string; reset: boolean }> = [];
 
       for (const account of (allAccounts || [])) {
-        // Call reset RPC for each account
         const rpcRes = await fetch(`${config.url}/rest/v1/rpc/reset_demo_account`, {
           method: 'POST',
           headers: supabaseAdminHeaders('return=representation'),
           body: JSON.stringify({ p_demo_account_id: account.id }),
         });
 
-        // Clear old seed data
         await fetch(
           supabaseAdminUrl('demo_seed_data', `demo_account_id=eq.${account.id}`),
-          { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') }
+          { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') },
         );
 
-        // Re-seed with existing persona
-        await seedDemoData(account.auth_user_id, account.role, account.persona || 'average', account.id);
+        if (account.role === 'student') {
+          await seedStudentDemoData(account.auth_user_id, account.persona || 'average', account.id);
+        }
 
         resetResults.push({ id: account.id, role: account.role, reset: rpcRes.ok });
       }
 
-      const ipAddress = request.headers.get('x-forwarded-for') || undefined;
-      await logAdminAudit(auth, 'reset_all_demo_accounts', 'demo_accounts', 'bulk', { count: resetResults.length }, ipAddress);
+      const failures = resetResults.filter(r => !r.reset).length;
+      await logAdminAudit(auth, 'reset_all_demo_accounts', 'demo_accounts', 'bulk', { count: resetResults.length, failures }, ipAddress);
 
-      return NextResponse.json({ success: true, data: { reset_count: resetResults.length, results: resetResults } });
+      return NextResponse.json({
+        success: failures === 0,
+        data: { reset_count: resetResults.length, failures, results: resetResults },
+      });
     }
 
     const { id, action } = body as { id?: string; action?: string };
-
     if (!id || !isValidUUID(id)) {
-      return NextResponse.json({ success: false, error: 'Valid demo account id is required' }, { status: 400 });
+      return NextResponse.json(
+        { success: false, code: 'invalid_id', message: 'Valid demo account id is required' },
+        { status: 400 },
+      );
     }
 
-    const validActions = ['reset', 'activate', 'deactivate', 'regenerate'];
+    const validActions = ['reset', 'activate', 'deactivate', 'toggle', 'regenerate'];
     if (!action || !validActions.includes(action)) {
       return NextResponse.json(
-        { success: false, error: `action must be one of: ${validActions.join(', ')}` },
-        { status: 400 }
+        { success: false, code: 'invalid_action', message: `action must be one of: ${validActions.join(', ')}` },
+        { status: 400 },
       );
     }
 
     const config = getSupabaseConfig();
     if (!config) {
-      return NextResponse.json({ success: false, error: 'Server configuration error' }, { status: 500 });
+      return NextResponse.json(
+        { success: false, code: 'config_missing', message: 'Server configuration error' },
+        { status: 500 },
+      );
     }
 
-    // Fetch the demo account to verify it exists
     const accountRes = await fetch(
       supabaseAdminUrl('demo_accounts', `select=*&id=eq.${id}&limit=1`),
-      { method: 'GET', headers: supabaseAdminHeaders() }
+      { method: 'GET', headers: supabaseAdminHeaders() },
     );
     if (!accountRes.ok) {
-      return NextResponse.json({ success: false, error: 'Failed to look up demo account' }, { status: 500 });
+      return NextResponse.json(
+        { success: false, code: 'fetch_failed', message: 'Failed to look up demo account' },
+        { status: 500 },
+      );
     }
     const accountRows = await accountRes.json();
     if (!Array.isArray(accountRows) || accountRows.length === 0) {
-      return NextResponse.json({ success: false, error: 'Demo account not found' }, { status: 404 });
+      return NextResponse.json(
+        { success: false, code: 'not_found', message: 'Demo account not found' },
+        { status: 404 },
+      );
     }
     const account = accountRows[0];
-    const ipAddress = request.headers.get('x-forwarded-for') || undefined;
 
-    if (action === 'activate' || action === 'deactivate') {
-      const newStatus = action === 'activate';
+    // Resolve toggle to activate or deactivate
+    let resolvedAction = action;
+    if (action === 'toggle') resolvedAction = account.is_active ? 'deactivate' : 'activate';
+
+    if (resolvedAction === 'activate' || resolvedAction === 'deactivate') {
+      const newStatus = resolvedAction === 'activate';
       const patchRes = await fetch(
         supabaseAdminUrl('demo_accounts', `id=eq.${id}`),
         {
           method: 'PATCH',
           headers: supabaseAdminHeaders('return=minimal'),
           body: JSON.stringify({ is_active: newStatus }),
-        }
+        },
       );
-
       if (!patchRes.ok) {
-        return NextResponse.json({ success: false, error: `Failed to ${action} demo account` }, { status: 500 });
+        return NextResponse.json(
+          { success: false, code: 'patch_failed', message: `Failed to ${resolvedAction} demo account` },
+          { status: 500 },
+        );
       }
-
-      await logAdminAudit(auth, `${action}_demo_account`, 'demo_accounts', id, { role: account.role, email: account.email }, ipAddress);
-
-      return NextResponse.json({
-        success: true,
-        data: { id, action, is_active: newStatus },
-      });
+      await logAdminAudit(auth, `${resolvedAction}_demo_account`, 'demo_accounts', id, { role: account.role, email: account.email }, ipAddress);
+      return NextResponse.json({ success: true, data: { id, action: resolvedAction, is_active: newStatus } });
     }
 
-    if (action === 'reset' || action === 'regenerate') {
-      // Call the reset_demo_account RPC via Supabase REST
+    if (resolvedAction === 'reset' || resolvedAction === 'regenerate') {
       const rpcRes = await fetch(`${config.url}/rest/v1/rpc/reset_demo_account`, {
         method: 'POST',
         headers: supabaseAdminHeaders('return=representation'),
         body: JSON.stringify({ p_demo_account_id: id }),
       });
-
       if (!rpcRes.ok) {
-        const err = await rpcRes.json().catch(() => ({}));
+        const errBody = await rpcRes.text();
         return NextResponse.json(
-          { success: false, error: err.message || 'Failed to reset demo account' },
-          { status: 500 }
+          { success: false, code: 'rpc_failed', message: 'Failed to reset demo account', details: errBody.slice(0, 280) },
+          { status: 500 },
         );
       }
-
       const rpcResult = await rpcRes.json();
 
-      // Clear old seed data
       await fetch(
         supabaseAdminUrl('demo_seed_data', `demo_account_id=eq.${id}`),
-        { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') }
+        { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') },
       );
 
-      // For regenerate, use a varied persona to create fresh data
       let seedPersona = account.persona;
-      if (action === 'regenerate') {
-        const personas = ['weak', 'average', 'high_performer'];
-        const otherPersonas = personas.filter(p => p !== account.persona);
-        seedPersona = otherPersonas[Math.floor(Math.random() * otherPersonas.length)];
-
-        // Update the persona on demo_accounts
-        await fetch(
-          supabaseAdminUrl('demo_accounts', `id=eq.${id}`),
-          {
-            method: 'PATCH',
-            headers: supabaseAdminHeaders('return=minimal'),
-            body: JSON.stringify({ persona: seedPersona }),
-          }
-        );
+      if (resolvedAction === 'regenerate' && account.role === 'student') {
+        // Cycle to a different persona deterministically (no Math.random)
+        const personas = DEMO_PERSONAS.filter(p => p !== normalisePersona(account.persona));
+        if (personas.length > 0) {
+          // Use a hash of the demo account id for deterministic rotation
+          const idx = Math.abs(id.charCodeAt(0) + id.charCodeAt(id.length - 1)) % personas.length;
+          seedPersona = personas[idx];
+          await fetch(
+            supabaseAdminUrl('demo_accounts', `id=eq.${id}`),
+            {
+              method: 'PATCH',
+              headers: supabaseAdminHeaders('return=minimal'),
+              body: JSON.stringify({ persona: seedPersona }),
+            },
+          );
+        }
       }
 
-      // Re-seed demo data
-      await seedDemoData(account.auth_user_id, account.role, seedPersona, id);
+      if (account.role === 'student') {
+        await seedStudentDemoData(account.auth_user_id, seedPersona, id);
+      }
 
-      await logAdminAudit(auth, `${action}_demo_account`, 'demo_accounts', id, { role: account.role, email: account.email, persona: seedPersona }, ipAddress);
+      await logAdminAudit(auth, `${resolvedAction}_demo_account`, 'demo_accounts', id, { role: account.role, email: account.email, persona: seedPersona }, ipAddress);
 
       return NextResponse.json({
         success: true,
-        data: {
-          id,
-          action,
-          persona: seedPersona,
-          reset_result: rpcResult,
-        },
+        data: { id, action: resolvedAction, persona: seedPersona, reset_result: rpcResult },
       });
     }
 
-    return NextResponse.json({ success: false, error: 'Unknown action' }, { status: 400 });
+    return NextResponse.json(
+      { success: false, code: 'unknown_action', message: 'Unknown action' },
+      { status: 400 },
+    );
   } catch (err) {
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : 'Internal error' },
-      { status: 500 }
+      { success: false, code: 'internal_error', message: err instanceof Error ? err.message : 'Internal error' },
+      { status: 500 },
     );
   }
 }
 
 // ---------------------------------------------------------------------------
-// DELETE - Delete demo account
+// DELETE — Delete demo account (cascades through profile + auth user)
 // ---------------------------------------------------------------------------
 
 export async function DELETE(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: delete (cascades to schools/students/subscriptions for
+  // school_admin demos) — super_admin only.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -725,81 +817,106 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get('id');
 
     if (!id || !isValidUUID(id)) {
-      return NextResponse.json({ success: false, error: 'Valid demo account id query param is required' }, { status: 400 });
+      return NextResponse.json(
+        { success: false, code: 'invalid_id', message: 'Valid demo account id query param is required' },
+        { status: 400 },
+      );
     }
 
     const config = getSupabaseConfig();
     if (!config) {
-      return NextResponse.json({ success: false, error: 'Server configuration error' }, { status: 500 });
+      return NextResponse.json(
+        { success: false, code: 'config_missing', message: 'Server configuration error' },
+        { status: 500 },
+      );
     }
 
-    // Fetch demo account
     const accountRes = await fetch(
       supabaseAdminUrl('demo_accounts', `select=*&id=eq.${id}&limit=1`),
-      { method: 'GET', headers: supabaseAdminHeaders() }
+      { method: 'GET', headers: supabaseAdminHeaders() },
     );
     if (!accountRes.ok) {
-      return NextResponse.json({ success: false, error: 'Failed to look up demo account' }, { status: 500 });
+      return NextResponse.json(
+        { success: false, code: 'fetch_failed', message: 'Failed to look up demo account' },
+        { status: 500 },
+      );
     }
     const accountRows = await accountRes.json();
     if (!Array.isArray(accountRows) || accountRows.length === 0) {
-      return NextResponse.json({ success: false, error: 'Demo account not found' }, { status: 404 });
+      return NextResponse.json(
+        { success: false, code: 'not_found', message: 'Demo account not found' },
+        { status: 404 },
+      );
     }
     const account = accountRows[0];
-    const table = roleToTable(account.role);
+    const role = account.role as DemoRole;
+    const table = roleToTable(role);
     const authUserId = account.auth_user_id;
     const ipAddress = request.headers.get('x-forwarded-for') || undefined;
 
-    // 1. Set is_demo = false on the profile row first
+    // For school_admin: cascade-delete the demo school + everything under it
+    if (role === 'school_admin' && account.school_id) {
+      // Delete student subscriptions, then students, then school
+      await fetch(supabaseAdminUrl('student_subscriptions', `student_id=in.(select id from students where school_id=eq.${account.school_id})&is_demo=eq.true`), {
+        method: 'DELETE', headers: supabaseAdminHeaders('return=minimal'),
+      }).catch(() => {});
+      await fetch(supabaseAdminUrl('students', `school_id=eq.${account.school_id}&is_demo=eq.true`), {
+        method: 'DELETE', headers: supabaseAdminHeaders('return=minimal'),
+      }).catch(() => {});
+      await fetch(supabaseAdminUrl('school_subscriptions', `school_id=eq.${account.school_id}&is_demo=eq.true`), {
+        method: 'DELETE', headers: supabaseAdminHeaders('return=minimal'),
+      }).catch(() => {});
+      await fetch(supabaseAdminUrl('schools', `id=eq.${account.school_id}&is_demo=eq.true`), {
+        method: 'DELETE', headers: supabaseAdminHeaders('return=minimal'),
+      }).catch(() => {});
+    }
+
+    // For student: also wipe their demo subscription
+    if (role === 'student' && account.auth_user_id) {
+      await fetch(supabaseAdminUrl('student_subscriptions', `student_id=in.(select id from students where auth_user_id=eq.${authUserId})&is_demo=eq.true`), {
+        method: 'DELETE', headers: supabaseAdminHeaders('return=minimal'),
+      }).catch(() => {});
+    }
+
     await fetch(
       supabaseAdminUrl(table, `auth_user_id=eq.${authUserId}`),
       {
         method: 'PATCH',
         headers: supabaseAdminHeaders('return=minimal'),
         body: JSON.stringify({ is_demo: false }),
-      }
+      },
     );
 
-    // 2. Delete demo_seed_data (cascade should handle this, but be explicit)
     await fetch(
       supabaseAdminUrl('demo_seed_data', `demo_account_id=eq.${id}`),
-      { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') }
+      { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') },
     );
 
-    // 3. Delete demo_accounts record
     await fetch(
       supabaseAdminUrl('demo_accounts', `id=eq.${id}`),
-      { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') }
+      { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') },
     );
 
-    // 4. Delete profile from role table
     await fetch(
       supabaseAdminUrl(table, `auth_user_id=eq.${authUserId}`),
-      { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') }
+      { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') },
     );
 
-    // 5. Delete auth user via Supabase Admin API
     const deleteAuthRes = await fetch(`${config.url}/auth/v1/admin/users/${authUserId}`, {
       method: 'DELETE',
-      headers: {
-        'apikey': config.key,
-        'Authorization': `Bearer ${config.key}`,
-      },
+      headers: { 'apikey': config.key, 'Authorization': `Bearer ${config.key}` },
     });
-
     if (!deleteAuthRes.ok) {
-      // Non-fatal: the profile and demo record are already cleaned up
       console.error('[demo-accounts] Failed to delete auth user:', authUserId);
     }
 
-    // 6. Audit log
     await logAdminAudit(
       auth,
       'delete_demo_account',
       'demo_accounts',
       id,
-      { role: account.role, email: account.email, auth_user_id: authUserId },
-      ipAddress
+      { role: account.role, email: account.email, auth_user_id: authUserId, school_id: account.school_id },
+      ipAddress,
     );
 
     return NextResponse.json({
@@ -808,8 +925,8 @@ export async function DELETE(request: NextRequest) {
     });
   } catch (err) {
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : 'Internal error' },
-      { status: 500 }
+      { success: false, code: 'internal_error', message: err instanceof Error ? err.message : 'Internal error' },
+      { status: 500 },
     );
   }
 }

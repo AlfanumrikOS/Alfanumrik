@@ -193,6 +193,30 @@ export async function GET(request: NextRequest) {
       chaptersLastHour: studyPathChaptersRes.count ?? 0,
     };
 
+    // Phase F.5 (2026-05-17): query the new circuit_state column directly.
+    // Edge Function may not yet write the column, in which case state is
+    // 'pending_instrumentation' and the UI shows that explicitly rather than
+    // rendering an empty chart as if the breakers were closed.
+    const { data: circuitRows, error: circuitErr } = await supabaseAdmin
+      .from('grounded_ai_traces')
+      .select('circuit_caller, circuit_state')
+      .gte('created_at', oneMinAgo)
+      .not('circuit_state', 'is', null)
+      .limit(5000);
+
+    let circuitStates: Record<string, Record<string, number>> = {};
+    let circuitState: 'live' | 'pending_instrumentation' = 'pending_instrumentation';
+
+    if (!circuitErr && Array.isArray(circuitRows) && circuitRows.length > 0) {
+      circuitState = 'live';
+      for (const row of circuitRows as Array<{ circuit_caller: string | null; circuit_state: string | null }>) {
+        const caller = row.circuit_caller || 'unknown';
+        const state = row.circuit_state || 'unknown';
+        if (!circuitStates[caller]) circuitStates[caller] = { closed: 0, open: 0, half_open: 0 };
+        if (state in circuitStates[caller]) circuitStates[caller][state]++;
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -200,10 +224,8 @@ export async function GET(request: NextRequest) {
         groundedRate,
         abstainBreakdown,
         latency,
-        // Circuit breaker state lives in Edge Function process memory; a future
-        // migration will persist the current state on the trace row so we can
-        // surface it here. Empty for now — Tasks 3.16/3.17 render as "unknown".
-        circuitStates: {},
+        circuitStates,
+        circuitState,
         voyageErrorRate,
         claudeErrorRate,
         studyPathFallback,

@@ -19,7 +19,9 @@ const VALID_PLANS = [
 const MAX_BATCH = 500;
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: bulk plan changes touch billing across up to 500 students per
+  // batch. super_admin only.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {

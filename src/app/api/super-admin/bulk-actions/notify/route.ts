@@ -8,7 +8,9 @@ export const runtime = 'nodejs';
 const MAX_BATCH = 500;
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: outbound user-visible message in bulk. admin level minimum;
+  // super_admin not required since notifications are reversible.
+  const auth = await authorizeAdmin(request, 'admin');
   if (!auth.authorized) return auth.response;
 
   try {

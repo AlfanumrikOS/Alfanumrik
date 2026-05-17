@@ -3,7 +3,8 @@ import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl }
 
 // GET — list schools with pagination and search
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: read of tenant list is OK at support level.
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -54,7 +55,8 @@ export async function GET(request: NextRequest) {
 
 // POST — create a new school
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: creating a tenant is a platform-wide change. super_admin only.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -91,7 +93,8 @@ export async function POST(request: NextRequest) {
 
 // PATCH — update a school (including suspend/activate)
 export async function PATCH(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: tenant mutation including suspend/restore. super_admin only.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {

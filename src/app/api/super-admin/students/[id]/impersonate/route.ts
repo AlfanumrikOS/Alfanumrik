@@ -7,7 +7,8 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: read of impersonation state requires support level.
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   const { id: studentId } = await params;
@@ -60,7 +61,10 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: starting an impersonation lets the admin become any learner.
+  // super_admin only — even a "support" admin should not be able to read PII
+  // by impersonating into the student portal.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   const { id: studentId } = await params;
@@ -133,7 +137,9 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await authorizeAdmin(request);
+  // Phase G.1: ending an impersonation session — `admin` level is fine
+  // (you might end your own session, or an admin might end a peer's).
+  const auth = await authorizeAdmin(request, 'admin');
   if (!auth.authorized) return auth.response;
 
   const { id: studentId } = await params;
