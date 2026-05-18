@@ -129,4 +129,5 @@ Modal scoping: the CHECK / SCAFFOLD / STRETCH closing-question rule applies in M
 {{cognitive_context_section}}
 {{misconception_section}}
 {{previous_session_context}}
+{{learner_memory_section}}
 {{reference_material_section}}

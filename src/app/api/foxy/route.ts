@@ -63,6 +63,12 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { isFeatureEnabled } from '@/lib/feature-flags';
 import { validateSubjectWrite } from '@/lib/subjects';
+import {
+  EMPTY_LONG_MEMORY,
+  type LongMemorySnapshot,
+  buildLongMemoryPromptSection,
+  loadLongMemorySnapshot,
+} from '@/lib/learn/foxy-long-memory';
 import { callGroundedAnswer, callGroundedAnswerStream, type GroundedRequest, type Citation, type SuggestedAlternative, type AbstainReason } from '@/lib/ai/grounded-client';
 import { PER_PLAN_TIMEOUT_MS, SOFT_CONFIDENCE_BANNER_THRESHOLD } from '@/lib/grounding-config';
 import { classifyIntent, routeIntent } from '@/lib/ai';
@@ -1897,14 +1903,22 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
 
   let plan = 'free';
   let academicGoal: string | null = null;
+  // Phase 4 long-memory: stash the student name so we can scrub it from
+  // monthly_synthesis_runs.summary_text_en before injecting into Foxy's
+  // system prompt. The synthesis builder injects `${studentName}` into
+  // its generation prompt, so the cached text often contains the name in
+  // phrases like "Aarav showed strong progress…". P13 forbids forwarding
+  // names into the model — see `scrubStudentName` in foxy-long-memory.ts.
+  let studentName: string | null = null;
   try {
     const { data: studentRow } = await supabaseAdmin
       .from('students')
-      .select('subscription_plan, account_status, academic_goal')
+      .select('subscription_plan, account_status, academic_goal, name')
       .eq('id', studentId)
       .single();
     if (studentRow?.subscription_plan) plan = normalizePlan(studentRow.subscription_plan);
     if (studentRow?.academic_goal) academicGoal = studentRow.academic_goal;
+    if (studentRow?.name) studentName = studentRow.name as string;
     if (studentRow?.account_status === 'suspended') {
       return errorJson('Your account is suspended.', 'Aapka account suspend hai.', 403);
     }
@@ -1973,6 +1987,43 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     logger.warn('foxy_context_load_failed', {
       error: ctxErr instanceof Error ? ctxErr.message : String(ctxErr),
       studentId,
+    });
+  }
+
+  // 7b. Phase 4 — cross-session pedagogical memory (flag-gated).
+  //
+  // Loads the most recent monthly_synthesis_runs row + a high/low mastery
+  // snapshot for the subject, projects existing recentMisconceptions, and
+  // formats them into a LEARNER MEMORY prompt block. Default OFF via
+  // `ff_foxy_long_memory_v1`; when OFF we skip the DB roundtrip entirely
+  // and the prompt section is "" (template-safe).
+  //
+  // PII (P13): synthesis_text is scrubbed for studentName before injection.
+  // Concept titles + curated misconception labels are content-only by
+  // construction (editor-curated, no student data).
+  //
+  // Runs AFTER the cognitive-context Promise.all so we can reuse the
+  // already-loaded misconception labels (saves a DB roundtrip).
+  let longMemory: LongMemorySnapshot = EMPTY_LONG_MEMORY;
+  try {
+    const longMemoryEnabled = await isFeatureEnabled('ff_foxy_long_memory_v1', {
+      role: 'student',
+      userId: auth.userId!,
+    });
+    if (longMemoryEnabled) {
+      longMemory = await loadLongMemorySnapshot(
+        supabaseAdmin,
+        studentId,
+        subject,
+        studentName,
+        cognitiveCtx.recentMisconceptions.map((m) => m.label),
+      );
+    }
+  } catch (lmErr) {
+    // Non-fatal — Foxy works without long-memory.
+    logger.warn('foxy_long_memory_load_failed', {
+      error: lmErr instanceof Error ? lmErr.message : String(lmErr),
+      // P13: no studentId at warn-level here.
     });
   }
 
@@ -2338,6 +2389,10 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         // Task 1.3: cross-session memory. Empty string when no prior sessions
         // (template handles missing variables as empty by design).
         previous_session_context: buildPriorSessionPromptSection(priorSessionTurns),
+        // Phase 4 continuity: cross-session pedagogical memory. Empty string
+        // when ff_foxy_long_memory_v1 is OFF or no synthesis/mastery data
+        // exists yet (e.g. brand-new student). PII-scrubbed before injection.
+        learner_memory_section: buildLongMemoryPromptSection(longMemory),
         foxy_safety_rails: FOXY_SAFETY_RAILS,
         foxy_system_prompt: foxySystemPrompt,
         history_messages: JSON.stringify(history),
