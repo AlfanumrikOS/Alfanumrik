@@ -31,4 +31,10 @@ describe('postProcess', () => {
     const json = '{"items":[{"stem":"What?","options":["a","b","c","d"],"correct_index":0,"explanation":"because","difficulty":"easy","ncert_chapter":"1"}]}'
     expect(postProcess(json, 'quiz_generation')).toBe(json)
   })
+
+  it('does not truncate JSON tasks even if long', () => {
+    const json = '{"items":[' + Array.from({ length: 1000 }, (_, i) => `{"stem":"q${i}","options":["a","b","c","d"],"correct_index":0,"explanation":"e","difficulty":"easy","ncert_chapter":"1"}`).join(',') + ']}'
+    expect(json.length).toBeGreaterThan(8000)
+    expect(postProcess(json, 'quiz_generation').length).toBe(json.length)
+  })
 })

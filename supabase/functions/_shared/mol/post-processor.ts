@@ -22,8 +22,8 @@ export function postProcess(text: string, task: TaskType): string {
     out = out.replace(EMAIL_PATTERN, '[email]')
     out = out.replace(PHONE_PATTERN, '[number]')
     out = out.replace(/\n{3,}/g, '\n\n')
+    if (out.length > MAX_LEN) out = out.slice(0, MAX_LEN - 3) + '\n\n…'
   }
 
-  if (out.length > MAX_LEN) out = out.slice(0, MAX_LEN - 3) + '\n\n…'
   return out.trim()
 }
