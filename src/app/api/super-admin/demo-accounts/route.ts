@@ -97,23 +97,55 @@ async function provisionDemoStudentSubscription(studentId: string): Promise<void
   const periodEnd = new Date(periodStart);
   periodEnd.setFullYear(periodEnd.getFullYear() + 1);
 
-  const res = await fetch(supabaseAdminUrl('student_subscriptions'), {
+  // Phase F.8 follow-up (2026-05-18): the `on_student_created` trigger
+  // auto-inserts a `plan_code='free', status='active'` row on every new
+  // students row. Our plain POST was hitting the unique constraint on
+  // student_id and silently failing, leaving the demo student on 'free'
+  // — which then locked physics/chemistry/biology/computer_science behind
+  // a 422 plan_not_allowed from validateSubjectWrite → UI showed "Oops!".
+  //
+  // Switch to PATCH (update) first, with INSERT as fallback if no row
+  // exists. PostgREST returns 204 with content-range "0-0" if no rows
+  // matched; we detect that and POST.
+
+  const patchBody = {
+    plan_id: planId,
+    plan_code: 'unlimited',
+    status: 'active',
+    billing_cycle: 'yearly',
+    current_period_start: periodStart.toISOString(),
+    current_period_end: periodEnd.toISOString(),
+    is_demo: true,
+  };
+
+  const patchRes = await fetch(
+    supabaseAdminUrl('student_subscriptions', `student_id=eq.${studentId}`),
+    {
+      method: 'PATCH',
+      headers: supabaseAdminHeaders('return=representation'),
+      body: JSON.stringify(patchBody),
+    },
+  );
+
+  if (patchRes.ok) {
+    const rows = await patchRes.json().catch(() => []);
+    if (Array.isArray(rows) && rows.length > 0) return; // updated the auto-created free sub
+  } else {
+    console.error('[demo-accounts] subscription PATCH failed:', await patchRes.text());
+  }
+
+  // No row existed (or PATCH failed) — fall back to INSERT.
+  const insertRes = await fetch(supabaseAdminUrl('student_subscriptions'), {
     method: 'POST',
     headers: supabaseAdminHeaders('return=minimal'),
     body: JSON.stringify({
       student_id: studentId,
-      plan_id: planId,
-      plan_code: 'unlimited',
-      status: 'active',
-      billing_cycle: 'yearly',
-      current_period_start: periodStart.toISOString(),
-      current_period_end: periodEnd.toISOString(),
-      is_demo: true,
+      ...patchBody,
     }),
   });
 
-  if (!res.ok) {
-    console.error('[demo-accounts] Failed to provision demo student subscription:', await res.text());
+  if (!insertRes.ok) {
+    console.error('[demo-accounts] subscription INSERT fallback failed:', await insertRes.text());
   }
 }
 
