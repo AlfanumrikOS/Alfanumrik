@@ -15,6 +15,23 @@ export const DEMO_ROLES = [
 ] as const;
 export type DemoRole = (typeof DEMO_ROLES)[number];
 
+/**
+ * Phase F.7 follow-up (2026-05-18): stream is REQUIRED on grade 11/12 students
+ * for the subject list to filter correctly (grade_subject_map is partitioned
+ * by stream). Without it, the get_available_subjects_v2 RPC either returns
+ * the wrong subjects or empty results. For grades 6-10 stream is not used.
+ */
+export const DEMO_STREAMS = ['science', 'commerce', 'humanities'] as const;
+export type DemoStream = (typeof DEMO_STREAMS)[number];
+
+/** Grades that require a stream. */
+export const STREAMED_GRADES = ['11', '12'] as const;
+
+export function streamRequiredForGrade(grade: string | null | undefined): boolean {
+  if (!grade) return false;
+  return (STREAMED_GRADES as readonly string[]).includes(grade);
+}
+
 // Persona-driven seed values for a student profile. Used by both create and
 // reset paths so a freshly-created persona and a reset persona produce the
 // same dashboard shape.

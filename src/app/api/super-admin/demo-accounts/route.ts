@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl, isValidUUID, type AdminAuth } from '../../../../lib/admin-auth';
 import { validateBody } from '../../../../lib/validation';
 import { z } from 'zod';
-import { DEMO_PERSONAS, DEMO_ROLES, PERSONA_PROFILES, normalisePersona, type DemoRole } from '../../../../lib/demo/personas';
+import { DEMO_PERSONAS, DEMO_ROLES, DEMO_STREAMS, PERSONA_PROFILES, normalisePersona, streamRequiredForGrade, type DemoRole, type DemoStream } from '../../../../lib/demo/personas';
 import { generateSecurePassword } from '../../../../lib/crypto/password';
 
 // ---------------------------------------------------------------------------
@@ -123,25 +123,35 @@ function buildProfilePayload(
   authUserId: string,
   name: string,
   email: string,
-  opts: { grade?: string; schoolId?: string | null } = {},
+  opts: { grade?: string; stream?: DemoStream | null; schoolId?: string | null } = {},
 ): Record<string, unknown> {
   const base: Record<string, unknown> = { auth_user_id: authUserId, name, email, is_demo: true };
 
   switch (role) {
-    case 'student':
+    case 'student': {
+      const grade = opts.grade || '10';
+      // Phase F.7 follow-up (2026-05-18): stream is REQUIRED on grade 11/12
+      // for the subject list RPC to return the right subjects. Default to
+      // 'science' if the operator forgot — better than NULL which makes the
+      // RPC return zero/wrong rows. Grades 6-10 leave stream null.
+      const stream = streamRequiredForGrade(grade)
+        ? (opts.stream || 'science')
+        : null;
       return {
         ...base,
         is_active: true,
-        grade: opts.grade || '10',
+        grade,
         board: 'CBSE',
         subscription_plan: 'unlimited',
         account_status: 'demo',
         xp_total: 0,
         streak_days: 0,
         preferred_language: 'en',
-        preferred_subject: 'math',
+        preferred_subject: stream === 'commerce' ? 'accountancy' : stream === 'humanities' ? 'history_sr' : 'math',
+        ...(stream ? { stream } : {}),
         ...(opts.schoolId ? { school_id: opts.schoolId } : {}),
       };
+    }
     case 'teacher':
       return {
         ...base,
@@ -358,6 +368,9 @@ const demoAccountSchema = z.object({
   email: z.string().email('Valid email is required').max(254),
   persona: z.enum(DEMO_PERSONAS).optional(),
   grade: z.string().regex(/^(6|7|8|9|10|11|12)$/, 'Grade must be a string "6"-"12"').optional(),
+  // Phase F.7 follow-up (2026-05-18): stream is required for grade 11/12;
+  // optional in the schema so grades 6-10 don't have to send it.
+  stream: z.enum(DEMO_STREAMS).optional(),
 });
 
 async function createSingleDemoAccount(
@@ -368,7 +381,7 @@ async function createSingleDemoAccount(
   const validation = validateBody(demoAccountSchema, body);
   if (!validation.success) return validation.error;
 
-  const { role, name, email, persona, grade } = validation.data;
+  const { role, name, email, persona, grade, stream } = validation.data;
   const effectivePersona = persona || 'average';
 
   const config = getSupabaseConfig();
@@ -421,7 +434,7 @@ async function createSingleDemoAccount(
 
   // 3. Create the role-specific profile row
   const table = roleToTable(role);
-  const profileData = buildProfilePayload(role, authUserId, name, email, { grade, schoolId });
+  const profileData = buildProfilePayload(role, authUserId, name, email, { grade, stream, schoolId });
 
   const profileRes = await fetch(supabaseAdminUrl(table), {
     method: 'POST',
