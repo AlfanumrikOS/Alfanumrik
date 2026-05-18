@@ -39,7 +39,7 @@
     "@opentelemetry/core": "^2.6.1",
     "@opentelemetry/instrumentation": "^0.217.0",
     "@opentelemetry/sdk-trace-base": "^2.6.1",
-    "@sentry/nextjs": "^10.52.0",
+    "@sentry/nextjs": "^10.53.1",
     "@splinetool/react-spline": "^2.2.6",
     "@splinetool/runtime": "^1.9.27",
     "@supabase/ssr": "^0.10.3",
