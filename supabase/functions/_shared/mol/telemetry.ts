@@ -46,7 +46,8 @@ export interface LogPayload {
   exam_goal: string | null
 }
 
-let _client: ReturnType<typeof createClient> | null = null
+// deno-lint-ignore no-explicit-any
+let _client: any = null
 function client() {
   if (_client) return _client
   _client = createClient(
@@ -79,7 +80,10 @@ export function recordMolRequest(p: LogPayload): void {
       exam_goal: p.exam_goal,
     }).then(
       () => {},
-      (err) => { console.warn('[mol] telemetry write failed:', err?.message ?? err) },
+      (err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err)
+        console.warn('[mol] telemetry write failed:', msg)
+      },
     )
   } catch (err) {
     console.warn('[mol] telemetry call threw synchronously:', (err as Error)?.message ?? err)
