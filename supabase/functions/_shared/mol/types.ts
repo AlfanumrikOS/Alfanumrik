@@ -44,7 +44,7 @@ export interface GenerateRequest {
     preferred_provider?: 'openai' | 'anthropic'
     max_tokens_override?: number
     request_id?: string                 // for trace correlation
-    surface?: 'foxy' | 'quiz' | 'solver' | 'ocr' | string
+    surface?: 'foxy' | 'quiz' | 'solver' | 'ocr'
   }
 }
 

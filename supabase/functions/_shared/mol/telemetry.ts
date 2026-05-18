@@ -77,8 +77,13 @@ export function recordMolRequest(p: LogPayload): void {
       grade: p.grade,
       language: p.language,
       exam_goal: p.exam_goal,
-    }).then(() => {}, () => {})
-  } catch { /* swallow */ }
+    }).then(
+      () => {},
+      (err) => { console.warn('[mol] telemetry write failed:', err?.message ?? err) },
+    )
+  } catch (err) {
+    console.warn('[mol] telemetry call threw synchronously:', (err as Error)?.message ?? err)
+  }
 }
 
 /** Combine pass-1 and pass-2 token usage into a single MolResult tokens block. */
