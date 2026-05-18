@@ -147,22 +147,52 @@ beforeEach(() => {
   _opsEventsInserts.length = 0;
 });
 
-// ─── /api/student/subjects v2 ────────────────────────────────────────────────
+// ─── /api/student/subjects v1 (gating) + v2 (chapter counts) ─────────────────
+//
+// 2026-05-18 update: the route now calls both `get_available_subjects` (v1) for
+// isLocked/icon/color/etc. and `get_available_subjects_v2` for chapter counts,
+// merging by subject_code. v1 is the source of truth for the list. The
+// fallback path engages when v1 returns empty/errors (not v2).
 
-describe('GET /api/student/subjects (v2)', () => {
+type V1Row = {
+  code: string;
+  name: string;
+  name_hi: string | null;
+  icon: string;
+  color: string;
+  subject_kind: 'cbse_core' | 'cbse_elective' | 'platform_elective';
+  is_core: boolean;
+  is_locked: boolean;
+};
+type V2Row = {
+  subject_code: string;
+  subject_display: string;
+  subject_display_hi: string | null;
+  ready_chapter_count: number;
+};
+
+function rpcRouter(opts: {
+  v1?: { data: V1Row[] | null; error: { message: string } | null };
+  v2?: { data: V2Row[] | null; error: { message: string } | null };
+}) {
+  return async (name: string) => {
+    if (name === 'get_available_subjects') return opts.v1 ?? { data: [], error: null };
+    if (name === 'get_available_subjects_v2') return opts.v2 ?? { data: [], error: null };
+    return { data: [], error: null };
+  };
+}
+
+describe('GET /api/student/subjects', () => {
   it('401 without auth', async () => {
     const { GET } = await import('@/app/api/student/subjects/route');
     const res = await GET(new NextRequest('http://localhost/api/student/subjects'));
     expect(res.status).toBe(401);
   });
 
-  it('200 empty when RPC returns no rows AND no student record', async () => {
+  it('200 empty when both RPCs return no rows AND no student record', async () => {
     authOk();
-    _rpcImpl = async (name) => {
-      expect(name).toBe('get_available_subjects_v2');
-      return { data: [], error: null };
-    };
-    _studentLookup = { data: null, error: null };          // no student → no fallback
+    _rpcImpl = rpcRouter({ v1: { data: [], error: null }, v2: { data: [], error: null } });
+    _studentLookup = { data: null, error: null };
     const { GET } = await import('@/app/api/student/subjects/route');
     const res = await GET(reqWithBearer('http://localhost/api/student/subjects'));
     expect(res.status).toBe(200);
@@ -170,9 +200,9 @@ describe('GET /api/student/subjects (v2)', () => {
     expect(body.subjects).toEqual([]);
   });
 
-  it('FALLBACK: 200 with GRADE_SUBJECTS-derived list when RPC empty AND student has grade (hotfix 2026-04-18)', async () => {
+  it('FALLBACK: 200 with GRADE_SUBJECTS-derived list when v1 empty AND student has grade', async () => {
     authOk();
-    _rpcImpl = async () => ({ data: [], error: null });
+    _rpcImpl = rpcRouter({ v1: { data: [], error: null }, v2: { data: [], error: null } });
     _studentLookup = { data: { grade: '10' }, error: null };
     const { GET } = await import('@/app/api/student/subjects/route');
     const res = await GET(reqWithBearer('http://localhost/api/student/subjects'));
@@ -180,40 +210,45 @@ describe('GET /api/student/subjects (v2)', () => {
     const body = await res.json();
     expect(Array.isArray(body.subjects)).toBe(true);
     expect(body.subjects.length).toBeGreaterThan(0);
-    // Fallback signals "unverified coverage" via readyChapterCount=0
     for (const s of body.subjects) {
       expect(s).toHaveProperty('code');
       expect(s).toHaveProperty('name');
       expect(s.readyChapterCount).toBe(0);
     }
-    // ops_events fallback log fired
     expect(_opsEventsInserts.length).toBeGreaterThan(0);
     expect(_opsEventsInserts[0]).toMatchObject({
       category: 'grounding.study_path',
       source: 'api.student.subjects',
       severity: 'warning',
     });
-    expect(String(_opsEventsInserts[0].message)).toContain('v2_empty_rows');
+    expect(String(_opsEventsInserts[0].message)).toContain('v1_empty_rows');
   });
 
-  it('returns mapped subjects with code/name/nameHi shape', async () => {
+  it('returns merged subjects: v1 supplies isLocked/icon/color, v2 supplies chapter counts', async () => {
     authOk();
-    _rpcImpl = async () => ({
-      data: [
-        {
-          subject_code: 'physics',
-          subject_display: 'Physics',
-          subject_display_hi: 'भौतिक विज्ञान',
-          ready_chapter_count: 4,
-        },
-        {
-          subject_code: 'math',
-          subject_display: 'Mathematics',
-          subject_display_hi: null,
-          ready_chapter_count: 3,
-        },
-      ],
-      error: null,
+    _rpcImpl = rpcRouter({
+      v1: {
+        data: [
+          {
+            code: 'physics', name: 'Physics', name_hi: 'भौतिक विज्ञान',
+            icon: '⚡', color: '#2563EB', subject_kind: 'cbse_core',
+            is_core: true, is_locked: true,
+          },
+          {
+            code: 'math', name: 'Mathematics', name_hi: null,
+            icon: '∑', color: '#6C5CE7', subject_kind: 'cbse_core',
+            is_core: true, is_locked: false,
+          },
+        ],
+        error: null,
+      },
+      v2: {
+        data: [
+          { subject_code: 'physics', subject_display: 'Physics', subject_display_hi: null, ready_chapter_count: 4 },
+          { subject_code: 'math',    subject_display: 'Mathematics', subject_display_hi: null, ready_chapter_count: 3 },
+        ],
+        error: null,
+      },
     });
     const { GET } = await import('@/app/api/student/subjects/route');
     const res = await GET(reqWithBearer('http://localhost/api/student/subjects'));
@@ -224,18 +259,47 @@ describe('GET /api/student/subjects (v2)', () => {
       code: 'physics',
       name: 'Physics',
       nameHi: 'भौतिक विज्ञान',
+      icon: '⚡',
+      color: '#2563EB',
+      isCore: true,
+      isLocked: true,
       readyChapterCount: 4,
     });
-    expect(body.subjects[1].nameHi).toBe('Mathematics');
-    // No fallback fired — v2 returned rows.
+    expect(body.subjects[1]).toMatchObject({
+      code: 'math',
+      nameHi: 'Mathematics',   // null name_hi falls back to name
+      isLocked: false,
+      readyChapterCount: 3,
+    });
     expect(_opsEventsInserts.length).toBe(0);
   });
 
-  it('500 service_unavailable on RPC error AND no student record', async () => {
+  it('chapter count defaults to 0 when v2 has no row for a v1 subject', async () => {
     authOk();
-    _rpcImpl = async () => ({
-      data: null,
-      error: { message: 'rpc down' },
+    _rpcImpl = rpcRouter({
+      v1: {
+        data: [{
+          code: 'sanskrit', name: 'Sanskrit', name_hi: null,
+          icon: '🪔', color: '#92400E', subject_kind: 'cbse_elective',
+          is_core: false, is_locked: false,
+        }],
+        error: null,
+      },
+      v2: { data: [], error: null },  // cbse_syllabus drained
+    });
+    const { GET } = await import('@/app/api/student/subjects/route');
+    const res = await GET(reqWithBearer('http://localhost/api/student/subjects'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.subjects).toHaveLength(1);
+    expect(body.subjects[0]).toMatchObject({ code: 'sanskrit', readyChapterCount: 0 });
+  });
+
+  it('500 service_unavailable when v1 errors AND no student record', async () => {
+    authOk();
+    _rpcImpl = rpcRouter({
+      v1: { data: null, error: { message: 'rpc down' } },
+      v2: { data: [], error: null },
     });
     _studentLookup = { data: null, error: null };
     const { GET } = await import('@/app/api/student/subjects/route');
@@ -246,11 +310,11 @@ describe('GET /api/student/subjects (v2)', () => {
     expect(body.subjects).toBeUndefined();
   });
 
-  it('FALLBACK: 200 with GRADE_SUBJECTS list on RPC error if student has grade', async () => {
+  it('FALLBACK: 200 with GRADE_SUBJECTS list on v1 error if student has grade', async () => {
     authOk();
-    _rpcImpl = async () => ({
-      data: null,
-      error: { message: 'rpc down' },
+    _rpcImpl = rpcRouter({
+      v1: { data: null, error: { message: 'rpc down' } },
+      v2: { data: [], error: null },
     });
     _studentLookup = { data: { grade: '9' }, error: null };
     const { GET } = await import('@/app/api/student/subjects/route');
@@ -262,7 +326,29 @@ describe('GET /api/student/subjects (v2)', () => {
       category: 'grounding.study_path',
       severity: 'warning',
     });
-    expect(String(_opsEventsInserts[0].message)).toContain('v2_rpc_error');
+    expect(String(_opsEventsInserts[0].message)).toContain('v1_rpc_error');
+  });
+
+  it('v2 failure is non-fatal — v1 result still returned with readyChapterCount=0', async () => {
+    authOk();
+    _rpcImpl = rpcRouter({
+      v1: {
+        data: [{
+          code: 'english', name: 'English', name_hi: null,
+          icon: 'Aa', color: '#E17055', subject_kind: 'cbse_core',
+          is_core: true, is_locked: false,
+        }],
+        error: null,
+      },
+      v2: { data: null, error: { message: 'v2 down' } },
+    });
+    const { GET } = await import('@/app/api/student/subjects/route');
+    const res = await GET(reqWithBearer('http://localhost/api/student/subjects'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.subjects).toHaveLength(1);
+    expect(body.subjects[0]).toMatchObject({ code: 'english', isLocked: false, readyChapterCount: 0 });
+    expect(_opsEventsInserts.length).toBe(0);  // not a fallback — just a soft v2 miss
   });
 });
 
