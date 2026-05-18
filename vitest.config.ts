@@ -22,7 +22,10 @@ export default defineConfig({
     setupFiles: ['./src/__tests__/setup.ts'],
     include: isIntegrationRun
       ? INTEGRATION_TEST_PATTERNS.map((p) => `${p}/**/*.{test,spec}.{ts,tsx}`)
-      : ['src/**/*.{test,spec}.{ts,tsx}'],
+      : [
+          'src/**/*.{test,spec}.{ts,tsx}',
+          'supabase/functions/_shared/mol/__tests__/**/*.{test,spec}.ts',
+        ],
     exclude: isIntegrationRun
       ? ['node_modules/**']
       : [
@@ -210,6 +213,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // MOL Edge Function code imports supabase-js from a Deno URL.
+      // Map it to the installed npm package so Vitest can resolve it.
+      'https://esm.sh/@supabase/supabase-js@2': '@supabase/supabase-js',
     },
   },
 });
