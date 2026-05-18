@@ -606,9 +606,23 @@ Deno.serve(async (req: Request) => {
 
     if (sessionResult.data?.messages) {
       const msgs = Array.isArray(sessionResult.data.messages) ? sessionResult.data.messages : []
-      chatHistory = msgs.slice(-10).map((m: { role: string; content: string }) => ({
+      // Phase 2 of Foxy continuity fix (2026-05-18): bumped from slice(-10) to
+      // slice(-30) so a multi-turn Socratic round (5+ exchanges) keeps the
+      // original framing in context. Anthropic Haiku 4.5 has a 200k-token
+      // context window; 30 turns at ~150 tokens each = 4500 tokens, well
+      // under any soft limit.
+      chatHistory = msgs.slice(-30).map((m: { role: string; content: string }) => ({
         role: m.role === 'student' ? 'user' : 'assistant', content: m.content,
       }))
+      // Byte cap defense: 20K chars of history ~ 5K tokens. If the slice
+      // exceeds the cap (long answers, code blocks, etc.), drop oldest turns
+      // until under cap. Preserves the most recent context.
+      const HISTORY_BYTE_CAP = 20_000
+      let totalChars = chatHistory.reduce((sum, m) => sum + (m.content?.length ?? 0), 0)
+      while (chatHistory.length > 0 && totalChars > HISTORY_BYTE_CAP) {
+        const dropped = chatHistory.shift()
+        totalChars -= dropped?.content?.length ?? 0
+      }
     }
 
     let systemPrompt = buildSystemPrompt(grade, subject, safeLanguage, safeMode, safeTopicTitle, safeChapters, safeLessonStep, ragContext)

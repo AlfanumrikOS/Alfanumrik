@@ -489,6 +489,9 @@ export async function* runStreamingPipeline(
     timeoutMs: request.timeout_ms,
     apiKey: anthropicKey,
     modelPreference: request.generation.model_preference,
+    // Phase 2 of Foxy continuity fix (2026-05-18): prefer native conversation
+    // turns when supplied. Absent → byte-identical legacy single-user body.
+    conversationTurns: request.generation.conversation_turns,
   });
 
   let accumulated = '';

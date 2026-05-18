@@ -94,7 +94,11 @@ const MAX_MESSAGE_LENGTH = 1000;
 // Phase 2.4: bumped from 6 → 20 turns. Anthropic prompt caching
 // (cache_control: ephemeral) is applied to the system prompt + first ~10
 // turns so input cost stays roughly flat despite the longer history.
-const MAX_HISTORY_TURNS = 20;
+// Phase 2 of Foxy continuity fix (2026-05-18): bumped to 30 to capture full
+// Socratic rounds without scrolling original framing off. With native
+// conversation_turns flagged on, the grounded-answer service will pass these
+// to Claude as `messages[]` rather than string-interpolating them.
+const MAX_HISTORY_TURNS = 30;
 const RAG_MATCH_COUNT = 5;
 const SESSION_IDLE_MINUTES = 30;
 
@@ -428,12 +432,41 @@ async function resolveSession(
 // ─── Helper: load recent conversation history ─────────────────────────────────
 
 async function loadHistory(sessionId: string): Promise<ChatMessage[]> {
-  const { data: messages } = await supabaseAdmin
+  // Phase 2 of Foxy continuity fix (2026-05-18): exclude rows still awaiting
+  // their LLM completion (pending=true). The new persist-before-LLM path
+  // inserts a pending assistant row before the model call returns; if the
+  // call dies the row stays in place so the UI can render a "Foxy is
+  // thinking..." affordance, but it MUST NOT enter the next turn's prompt
+  // as if it were a real assistant response.
+  //
+  // The migration (20260528000012) sets DEFAULT false NOT NULL so every
+  // existing row evaluates `pending=false`. We additionally guard against
+  // the rare case where this code runs on an env that hasn't applied the
+  // migration yet (e.g., a fresh dev DB) — the predicate will fail with
+  // "column does not exist" and we fall back to the legacy unfiltered
+  // query so chat keeps working.
+  const { data: messages, error } = await supabaseAdmin
     .from('foxy_chat_messages')
     .select('role, content')
     .eq('session_id', sessionId)
+    .eq('pending', false)
     .order('created_at', { ascending: false })
     .limit(MAX_HISTORY_TURNS * 2);
+
+  if (error) {
+    logger.warn('foxy_load_history_pending_filter_failed', {
+      sessionId,
+      error: error.message,
+    });
+    const { data: fallback } = await supabaseAdmin
+      .from('foxy_chat_messages')
+      .select('role, content')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: false })
+      .limit(MAX_HISTORY_TURNS * 2);
+    if (!fallback || fallback.length === 0) return [];
+    return (fallback as ChatMessage[]).reverse();
+  }
 
   if (!messages || messages.length === 0) return [];
   return (messages as ChatMessage[]).reverse();
@@ -2206,6 +2239,26 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   const coachFeedback = await fetchCoachFeedbackSignal(studentId);
   const coachMode = resolveCoachMode(requestedCoachMode, cognitiveCtx.masteryLevel, coachFeedback);
 
+  // ── Phase 2 Foxy continuity fix (2026-05-18): native-turns + persist-before-LLM ──
+  // When `ff_foxy_native_turns_v1` is ON:
+  //   1. Pass history to grounded-answer as a native conversation_turns
+  //      array (Anthropic messages[] shape) — much stronger multi-turn
+  //      coherence than the legacy JSON-stringified template variable.
+  //   2. Insert the user row + a pending-assistant row BEFORE the LLM call,
+  //      then UPDATE the assistant row on completion. Survives stream
+  //      death / partial failures.
+  // OFF (default): byte-identical legacy behavior — history_messages
+  // template var only, persistence happens AFTER the LLM call.
+  const useNativeTurns = await isFeatureEnabled('ff_foxy_native_turns_v1', {
+    role: 'student',
+    userId: auth.userId!,
+  });
+
+  // history_messages is kept as a deprecated alias for one release so the
+  // grounded-answer service can switch over without forcing a synchronized
+  // deploy. The service now prefers conversation_turns when present.
+  const historyMessagesAlias = JSON.stringify(history);
+
   const groundedRequest: GroundedRequest = {
     caller: 'foxy',
     student_id: studentId,
@@ -2223,6 +2276,17 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       max_tokens: MODE_MAX_TOKENS[mode] ?? 1024,
       temperature: 0.3,
       system_prompt_template: 'foxy_tutor_v1',
+      // Phase 2 of Foxy continuity fix (2026-05-18): native multi-turn array.
+      // When flag is OFF, leave undefined → grounded-answer falls back to
+      // single-user-message body. When ON, prepend prior turns to messages[].
+      ...(useNativeTurns && history.length > 0
+        ? {
+            conversation_turns: history.map((m) => ({
+              role: m.role,
+              content: m.content,
+            })),
+          }
+        : {}),
       template_variables: {
         grade,
         subject,
@@ -2252,13 +2316,80 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         previous_session_context: buildPriorSessionPromptSection(priorSessionTurns),
         foxy_safety_rails: FOXY_SAFETY_RAILS,
         foxy_system_prompt: foxySystemPrompt,
-        history_messages: JSON.stringify(history),
+        // Deprecated alias: kept populated for one release so the service can
+        // switch over without a synchronized deploy. The Phase 2 grounded-
+        // answer code prefers conversation_turns when present.
+        history_messages: historyMessagesAlias,
         board,
       },
     },
     retrieval: { match_count: RAG_MATCH_COUNT },
     timeout_ms: PER_PLAN_TIMEOUT_MS[plan] ?? 20000,
   };
+
+  // Phase 2 of Foxy continuity fix: pre-insert user + pending-assistant rows
+  // when flag is ON. If both inserts succeed, downstream paths UPDATE rather
+  // than INSERT. If the pre-insert itself fails (network blip, RLS misconfig)
+  // we fall through to the legacy post-call INSERT path — the chat still
+  // works, we just don't get the partial-failure-survival guarantee for this
+  // one turn. preInsertedIds.assistantId / userId stay null in that case.
+  const preInsertedIds: { userId: string | null; assistantId: string | null } = {
+    userId: null,
+    assistantId: null,
+  };
+  if (useNativeTurns) {
+    try {
+      const now = new Date().toISOString();
+      const { data: inserted, error: preInsertErr } = await supabaseAdmin
+        .from('foxy_chat_messages')
+        .insert([
+          {
+            session_id: resolvedSessionId,
+            student_id: studentId,
+            role: 'user',
+            content: message,
+            sources: null,
+            tokens_used: null,
+            // user rows are never pending (the student already sent the
+            // message). Persisting NOT pending means loadHistory will
+            // include it on the very next turn even if this turn's LLM
+            // call dies.
+            pending: false,
+            created_at: now,
+          },
+          {
+            session_id: resolvedSessionId,
+            student_id: studentId,
+            role: 'assistant',
+            content: '', // filled by UPDATE on LLM completion
+            structured: null,
+            sources: null,
+            tokens_used: null,
+            coach_mode_used: coachMode,
+            // pending=true gates this row out of loadHistory's prompt
+            // assembly until the LLM call returns and UPDATEs to false.
+            pending: true,
+            created_at: new Date(Date.now() + 1).toISOString(),
+          },
+        ])
+        .select('id, role');
+      if (preInsertErr) {
+        logger.warn('foxy_pre_insert_failed', {
+          error: preInsertErr.message,
+          studentId,
+        });
+      } else if (inserted) {
+        preInsertedIds.userId = (inserted.find((r) => r.role === 'user')?.id as string) ?? null;
+        preInsertedIds.assistantId =
+          (inserted.find((r) => r.role === 'assistant')?.id as string) ?? null;
+      }
+    } catch (err) {
+      logger.warn('foxy_pre_insert_threw', {
+        error: err instanceof Error ? err.message : String(err),
+        studentId,
+      });
+    }
+  }
 
   // Hop timeout = service timeout + 2s buffer so we let the service return its
   // own abstain payload rather than giving up at the transport layer.
@@ -2288,6 +2419,12 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         mode,
         cognitiveCtx,
         coachMode,
+        // Phase 2 of Foxy continuity fix (2026-05-18): when these are set,
+        // persistOnDone UPDATEs the existing rows rather than INSERTing.
+        // When null (flag off or pre-insert failed), the legacy INSERT
+        // path runs verbatim.
+        preInsertedUserId: preInsertedIds.userId,
+        preInsertedAssistantId: preInsertedIds.assistantId,
       });
     }
     // Streaming requested but flag off → silently fall through to blocking.
@@ -2414,50 +2551,83 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     ? denormalizeFoxyResponse(structured)
     : grounded.answer;
 
-  // Persist both turns (non-fatal — response already generated). Capture the
-  // assistant row's id so we can return it to the client for B'-5 feedback
-  // wiring (👍/👎 needs the DB UUID, not the in-memory bubble id).
-  const now = new Date().toISOString();
+  // Persist both turns. Capture the assistant row's id so we can return it
+  // to the client for B'-5 feedback wiring (👍/👎 needs the DB UUID, not the
+  // in-memory bubble id).
+  //
+  // Phase 2 of Foxy continuity fix (2026-05-18): when we pre-inserted the
+  // rows before the LLM call (preInsertedIds.assistantId != null), UPDATE
+  // the assistant row to clear `pending` and set content. The user row was
+  // already inserted with pending=false so nothing to do there. Otherwise
+  // (flag off, or pre-insert failed) run the legacy INSERT path verbatim.
   let assistantMessageId: string | null = null;
-  try {
-    const { data: insertedRows } = await supabaseAdmin
-      .from('foxy_chat_messages')
-      .insert([
-        {
-          session_id: resolvedSessionId,
-          student_id: studentId,
-          role: 'user',
-          content: message,
-          sources: null,
-          tokens_used: null,
-          created_at: now,
-        },
-        {
-          session_id: resolvedSessionId,
-          student_id: studentId,
-          role: 'assistant',
+  if (preInsertedIds.assistantId) {
+    try {
+      const { error: updateErr } = await supabaseAdmin
+        .from('foxy_chat_messages')
+        .update({
           content: assistantContent,
-          // CHECK constraint `structured_role_check` permits structured only on
-          // assistant rows; the column is nullable so legacy/fallback writes
-          // explicitly null. Migration: 20260430010000_foxy_chat_messages_add_structured.
           structured: structured ?? null,
           sources: sources.length > 0 ? sources : null,
           tokens_used: grounded.meta.tokens_used,
-          // B'-5: persist the coach mode used for this turn so feedback rows
-          // can be correlated with the pedagogical mode (socratic/answer/review).
-          // Phase 2 read-path in resolveCoachMode reads recent feedback by
-          // coach_mode_used to decide whether to keep or flip the mode.
-          coach_mode_used: coachMode,
-          created_at: new Date(Date.now() + 1).toISOString(),
-        },
-      ])
-      .select('id, role');
-    if (insertedRows) {
-      const assistantRow = insertedRows.find((r) => r.role === 'assistant');
-      assistantMessageId = (assistantRow?.id as string | undefined) ?? null;
+          pending: false,
+        })
+        .eq('id', preInsertedIds.assistantId);
+      if (updateErr) {
+        console.warn('[foxy] message update failed:', updateErr.message);
+      }
+      assistantMessageId = preInsertedIds.assistantId;
+    } catch (saveErr) {
+      console.warn(
+        '[foxy] message update threw:',
+        saveErr instanceof Error ? saveErr.message : String(saveErr),
+      );
     }
-  } catch (saveErr) {
-    console.warn('[foxy] message save failed:', saveErr instanceof Error ? saveErr.message : String(saveErr));
+  } else {
+    const now = new Date().toISOString();
+    try {
+      const { data: insertedRows } = await supabaseAdmin
+        .from('foxy_chat_messages')
+        .insert([
+          {
+            session_id: resolvedSessionId,
+            student_id: studentId,
+            role: 'user',
+            content: message,
+            sources: null,
+            tokens_used: null,
+            created_at: now,
+          },
+          {
+            session_id: resolvedSessionId,
+            student_id: studentId,
+            role: 'assistant',
+            content: assistantContent,
+            // CHECK constraint `structured_role_check` permits structured only on
+            // assistant rows; the column is nullable so legacy/fallback writes
+            // explicitly null. Migration: 20260430010000_foxy_chat_messages_add_structured.
+            structured: structured ?? null,
+            sources: sources.length > 0 ? sources : null,
+            tokens_used: grounded.meta.tokens_used,
+            // B'-5: persist the coach mode used for this turn so feedback rows
+            // can be correlated with the pedagogical mode (socratic/answer/review).
+            // Phase 2 read-path in resolveCoachMode reads recent feedback by
+            // coach_mode_used to decide whether to keep or flip the mode.
+            coach_mode_used: coachMode,
+            created_at: new Date(Date.now() + 1).toISOString(),
+          },
+        ])
+        .select('id, role');
+      if (insertedRows) {
+        const assistantRow = insertedRows.find((r) => r.role === 'assistant');
+        assistantMessageId = (assistantRow?.id as string | undefined) ?? null;
+      }
+    } catch (saveErr) {
+      console.warn(
+        '[foxy] message save failed:',
+        saveErr instanceof Error ? saveErr.message : String(saveErr),
+      );
+    }
   }
 
   // Post-response cognitive logging (fire-and-forget)
@@ -2606,6 +2776,12 @@ async function handleStreamingFoxyTurn(params: {
   // the coach mode used for this turn (parity with the blocking path at
   // line ~2185). NULL is acceptable for legacy callers / tests.
   coachMode?: CoachMode;
+  // Phase 2 of Foxy continuity fix (2026-05-18): when these are non-null
+  // the caller pre-inserted user + pending-assistant rows before the LLM
+  // call. persistOnDone() UPDATEs rather than INSERTs in that case, and
+  // failure paths leave the rows in place (UI renders pending state).
+  preInsertedUserId?: string | null;
+  preInsertedAssistantId?: string | null;
 }): Promise<Response> {
   const upstream = await callGroundedAnswerStream(params.groundedRequest, {
     hopTimeoutMs: params.hopTimeoutMs,
@@ -2716,54 +2892,88 @@ async function handleStreamingFoxyTurn(params: {
       ? denormalizeFoxyResponse(structured)
       : accumulatedText;
 
-    try {
-      const now = new Date().toISOString();
-      const { data: insertedRows } = await supabaseAdmin
-        .from('foxy_chat_messages')
-        .insert([
-          {
-            session_id: params.resolvedSessionId,
-            student_id: params.studentId,
-            role: 'user',
-            content: params.message,
-            sources: null,
-            tokens_used: null,
-            created_at: now,
-          },
-          {
-            session_id: params.resolvedSessionId,
-            student_id: params.studentId,
-            role: 'assistant',
+    const sourcesPayload =
+      lastCitations.length > 0
+        ? lastCitations.map((c) => ({
+            chunk_id: c.chunk_id,
+            subject: params.subject,
+            chapter: c.chapter_title || (c.chapter_number ? `Chapter ${c.chapter_number}` : undefined),
+            page_number: c.page_number ?? undefined,
+            similarity: c.similarity,
+            content_preview: c.excerpt.slice(0, 150),
+            media_url: c.media_url,
+          }))
+        : null;
+
+    if (params.preInsertedAssistantId) {
+      // Phase 2 of Foxy continuity fix (2026-05-18): UPDATE rather than INSERT.
+      // The user row was already inserted with pending=false; the assistant
+      // row is the one we need to flip from pending=true → false + content.
+      try {
+        const { error: updateErr } = await supabaseAdmin
+          .from('foxy_chat_messages')
+          .update({
             content: assistantContent,
-            // CHECK constraint `structured_role_check` permits structured only
-            // on assistant rows; the column is nullable so legacy/fallback writes
-            // explicitly null. Migration: 20260430010000_foxy_chat_messages_add_structured.
             structured: structured ?? null,
-            sources: lastCitations.length > 0
-              ? lastCitations.map((c) => ({
-                  chunk_id: c.chunk_id,
-                  subject: params.subject,
-                  chapter: c.chapter_title || (c.chapter_number ? `Chapter ${c.chapter_number}` : undefined),
-                  page_number: c.page_number ?? undefined,
-                  similarity: c.similarity,
-                  content_preview: c.excerpt.slice(0, 150),
-                  media_url: c.media_url,
-                }))
-              : null,
+            sources: sourcesPayload,
             tokens_used: lastTokensUsed,
-            // B'-5: parity with the blocking path — record coach mode for
-            // feedback correlation.
-            coach_mode_used: params.coachMode ?? null,
-            created_at: new Date(Date.now() + 1).toISOString(),
-          },
-        ])
-        .select('id, role');
-      if (insertedRows) {
-        const assistantRow = insertedRows.find((r) => r.role === 'assistant');
-        assistantMessageId = (assistantRow?.id as string | undefined) ?? null;
+            pending: false,
+          })
+          .eq('id', params.preInsertedAssistantId);
+        if (updateErr) {
+          console.warn('[foxy] streaming message update failed:', updateErr.message);
+        }
+        assistantMessageId = params.preInsertedAssistantId;
+      } catch (err) {
+        console.warn(
+          '[foxy] streaming message update threw:',
+          err instanceof Error ? err.message : String(err),
+        );
       }
-    } catch (err) {
-      console.warn('[foxy] streaming message save failed:', err instanceof Error ? err.message : String(err));
+    } else {
+      // Legacy path (flag off, or pre-insert failed): INSERT both rows.
+      try {
+        const now = new Date().toISOString();
+        const { data: insertedRows } = await supabaseAdmin
+          .from('foxy_chat_messages')
+          .insert([
+            {
+              session_id: params.resolvedSessionId,
+              student_id: params.studentId,
+              role: 'user',
+              content: params.message,
+              sources: null,
+              tokens_used: null,
+              created_at: now,
+            },
+            {
+              session_id: params.resolvedSessionId,
+              student_id: params.studentId,
+              role: 'assistant',
+              content: assistantContent,
+              // CHECK constraint `structured_role_check` permits structured only
+              // on assistant rows; the column is nullable so legacy/fallback writes
+              // explicitly null. Migration: 20260430010000_foxy_chat_messages_add_structured.
+              structured: structured ?? null,
+              sources: sourcesPayload,
+              tokens_used: lastTokensUsed,
+              // B'-5: parity with the blocking path — record coach mode for
+              // feedback correlation.
+              coach_mode_used: params.coachMode ?? null,
+              created_at: new Date(Date.now() + 1).toISOString(),
+            },
+          ])
+          .select('id, role');
+        if (insertedRows) {
+          const assistantRow = insertedRows.find((r) => r.role === 'assistant');
+          assistantMessageId = (assistantRow?.id as string | undefined) ?? null;
+        }
+      } catch (err) {
+        console.warn(
+          '[foxy] streaming message save failed:',
+          err instanceof Error ? err.message : String(err),
+        );
+      }
     }
 
     try {

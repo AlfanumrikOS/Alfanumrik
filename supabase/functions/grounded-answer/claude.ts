@@ -25,6 +25,17 @@ const INSUFFICIENT_CONTEXT_SENTINEL = '{{INSUFFICIENT_CONTEXT}}';
 const PER_CALL_TIMEOUT_CAP_MS = 45_000;
 const PER_CALL_TIMEOUT_FRAC = 0.6;
 
+/**
+ * Phase 2 of Foxy continuity fix (2026-05-18): a single prior turn passed
+ * natively to Claude. When the pipeline supplies a non-empty
+ * `conversationTurns` array, callOnce/streamOnce prepend it to the
+ * `messages[]` body. The current `userMessage` is appended as the last turn.
+ */
+export interface ClaudeConversationTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface ClaudeRequest {
   systemPrompt: string;
   userMessage: string;
@@ -33,6 +44,13 @@ export interface ClaudeRequest {
   timeoutMs: number;
   apiKey: string;
   modelPreference: 'haiku' | 'sonnet' | 'auto';
+  /**
+   * Phase 2 of Foxy continuity fix: prior conversation turns in native shape.
+   * When provided and non-empty, the call body becomes
+   * `messages: [...conversationTurns, {role:'user', content: userMessage}]`.
+   * Absent or empty array → byte-identical legacy behavior (single user turn).
+   */
+  conversationTurns?: ClaudeConversationTurn[];
 }
 
 export type ClaudeResponse =
@@ -98,6 +116,7 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
       temperature: req.temperature,
       timeoutMs: perCallTimeout,
       apiKey: req.apiKey,
+      conversationTurns: req.conversationTurns,
     });
 
     if (attempt.kind === 'ok') {
@@ -145,6 +164,7 @@ async function callOnce(params: {
   temperature: number;
   timeoutMs: number;
   apiKey: string;
+  conversationTurns?: ClaudeConversationTurn[];
 }): Promise<SingleCallResult> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), params.timeoutMs);
@@ -162,11 +182,10 @@ async function callOnce(params: {
     // backend doesn't honor the header — hence safe across model
     // generations. See https://docs.anthropic.com/claude/docs/prompt-caching
     //
-    // History injection still flows via the system prompt string for now
-    // (callers JSON-stringify history_messages). When we move to native
-    // multi-turn message arrays, the same cache_control wrapping should
-    // be applied to the first ~10 turn pairs as well — see route.ts
-    // MAX_HISTORY_TURNS comment.
+    // Phase 2 of Foxy continuity fix (2026-05-18): prior turns are now passed
+    // natively via `params.conversationTurns` when provided. Anthropic's
+    // multi-turn coherence is markedly stronger for native messages[] than for
+    // string-interpolated history inside a single user-message blob.
     const systemBlocks = [
       {
         type: 'text',
@@ -174,6 +193,16 @@ async function callOnce(params: {
         cache_control: { type: 'ephemeral' },
       },
     ];
+
+    // Phase 2: prepend prior turns when supplied. Empty/undefined → byte-
+    // identical legacy single-user-message body.
+    const messages: ClaudeConversationTurn[] = [];
+    if (params.conversationTurns && params.conversationTurns.length > 0) {
+      for (const t of params.conversationTurns) {
+        messages.push({ role: t.role, content: t.content });
+      }
+    }
+    messages.push({ role: 'user', content: params.userMessage });
 
     const response = await fetch(ANTHROPIC_ENDPOINT, {
       method: 'POST',
@@ -187,7 +216,7 @@ async function callOnce(params: {
         max_tokens: params.maxTokens,
         temperature: params.temperature,
         system: systemBlocks,
-        messages: [{ role: 'user', content: params.userMessage }],
+        messages,
       }),
       signal: controller.signal,
     });
@@ -276,6 +305,7 @@ export async function* callClaudeStream(
       temperature: req.temperature,
       timeoutMs: perCallTimeout,
       apiKey: req.apiKey,
+      conversationTurns: req.conversationTurns,
       // If we've already started streaming text (any text_delta yielded) we
       // can't retry — we must commit to this model's outcome. streamOnce
       // tracks `firstTokenSent` to enforce this contract.
@@ -343,6 +373,7 @@ async function* streamOnce(params: {
   timeoutMs: number;
   apiKey: string;
   allowFallback: boolean;
+  conversationTurns?: ClaudeConversationTurn[];
 }): AsyncGenerator<ClaudeStreamEvent, StreamOnceResult, unknown> {
   void params.allowFallback; // reserved for future telemetry; behavior driven by caller's loop
 
@@ -363,6 +394,16 @@ async function* streamOnce(params: {
       },
     ];
 
+    // Phase 2 of Foxy continuity fix (2026-05-18): prepend native prior
+    // turns when provided. Empty/undefined preserves legacy behavior.
+    const messages: ClaudeConversationTurn[] = [];
+    if (params.conversationTurns && params.conversationTurns.length > 0) {
+      for (const t of params.conversationTurns) {
+        messages.push({ role: t.role, content: t.content });
+      }
+    }
+    messages.push({ role: 'user', content: params.userMessage });
+
     const response = await fetch(ANTHROPIC_ENDPOINT, {
       method: 'POST',
       headers: {
@@ -375,7 +416,7 @@ async function* streamOnce(params: {
         max_tokens: params.maxTokens,
         temperature: params.temperature,
         system: systemBlocks,
-        messages: [{ role: 'user', content: params.userMessage }],
+        messages,
         stream: true,
       }),
       signal: controller.signal,
