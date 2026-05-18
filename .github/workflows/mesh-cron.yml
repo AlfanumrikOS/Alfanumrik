@@ -53,7 +53,7 @@ jobs:
       MESH_GIT_AUTHOR: 'Alfanumrik Agent Mesh <mesh@alfanumrik.com>'
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0  # mesh needs full history for worktree baselines
 
