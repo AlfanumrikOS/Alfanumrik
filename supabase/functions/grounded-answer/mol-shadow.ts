@@ -341,15 +341,53 @@ export async function shadowFireOpenAI(args: ShadowFireArgs): Promise<void> {
  * `void Promise.allSettled([...])` so the caller never has to remember the
  * fire-and-forget idiom. Returns void synchronously — the shadow runs on
  * the event loop alongside (not after) the user-facing path.
+ *
+ * C4.2b-i (2026-05-19): when Supabase Edge's `EdgeRuntime.waitUntil` is
+ * available, register the floating promise with it. Without this hook the
+ * runtime can recycle the worker as soon as the user-facing response is
+ * flushed — which would tear down a still-running shadow call mid-flight
+ * (the OpenAI request might take 5-10s while the baseline Claude response
+ * returns in 1-2s for cache-hit prompts). `waitUntil` extends the worker's
+ * lifetime until the registered promise settles, preserving the shadow
+ * row write. Falls back gracefully in environments without EdgeRuntime
+ * (Vitest unit tests, local dev) — the floating promise still runs to
+ * completion in those environments because the event loop is owned by
+ * the test harness, not by Supabase's request-scoped runtime.
  */
 export function fireShadowAndForget(args: ShadowFireArgs): void {
-  void Promise.allSettled([shadowFireOpenAI(args)]).then(
+  const shadowPromise = Promise.allSettled([shadowFireOpenAI(args)]).then(
     () => {},
     (err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[mol-shadow] floating-promise rejection swallowed: ${msg}`);
     },
   );
+
+  // Edge Runtime extension: keep the function alive until the shadow
+  // completes. `EdgeRuntime` is a Supabase Edge global, not a Web standard;
+  // we check for its presence + the `waitUntil` method defensively because
+  // (a) Vitest and Deno-local don't define it, and (b) future runtime
+  // upgrades could rename the API. A missing API is fine — the floating
+  // promise still runs to completion in any environment that owns the
+  // event loop beyond the request scope.
+  const edgeRuntime = (globalThis as { EdgeRuntime?: unknown }).EdgeRuntime;
+  if (
+    typeof edgeRuntime !== 'undefined' &&
+    edgeRuntime !== null &&
+    typeof (edgeRuntime as { waitUntil?: unknown }).waitUntil === 'function'
+  ) {
+    try {
+      (edgeRuntime as { waitUntil: (p: Promise<unknown>) => void }).waitUntil(
+        shadowPromise,
+      );
+    } catch (err) {
+      // Defensive: any oddity in the waitUntil call must NEVER bubble.
+      // The shadow still runs on the event loop; we just lose the
+      // lifetime-extension guarantee.
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[mol-shadow] EdgeRuntime.waitUntil threw: ${msg}`);
+    }
+  }
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────

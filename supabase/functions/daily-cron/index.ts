@@ -26,6 +26,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 import { capture as posthogCapture } from '../_shared/posthog.ts'
 import { constantTimeEqual } from '../_shared/auth.ts'
+import { gradeMolShadowPairs as gradeMolShadowPairsImpl } from '../_shared/mol/grader-cron.ts'
+import { gradeShadowPair } from '../_shared/mol/grader.ts'
 
 // YYYY_MM_DD slug (UTC) used as the day component of idempotency_key.
 function todayUtcSlug(): string {
@@ -1158,6 +1160,47 @@ async function auditContractGracePeriods(supabase: ReturnType<typeof createClien
   return rows.length
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// C4.2b-i (2026-05-19): MOL shadow-pair grader cron step.
+//
+// Returns the count of pairs the grader actually scored. The driver
+// (gradeMolShadowPairsImpl) returns a richer GraderCronResult; we
+// destructure to keep the step's return type compatible with the cron
+// runner's (name, () => Promise<number>) tuple shape. The extra fields
+// (skipped_no_text, cost_cap_triggered, killed) are surfaced via the
+// step's console log line so ops can see them in Vercel logs without
+// needing a separate row in the response JSON.
+//
+// SCAFFOLD MODE: until C4.2b-ii lands response_text capture, every
+// sampled pair takes the skipped_no_text branch. The step still runs the
+// cost cap check, the kill switch flip, and the sampling logic so they
+// can be validated in canary BEFORE text storage is wired.
+//
+// Failure isolation: the driver SWALLOWS all errors internally and never
+// throws. Even if the kill-switch flip fails, the outer Promise.allSettled
+// in Deno.serve continues to run the other steps.
+// ──────────────────────────────────────────────────────────────────────────
+async function gradeMolShadowPairs(supabase: ReturnType<typeof createClient>): Promise<number> {
+  try {
+    const result = await gradeMolShadowPairsImpl(
+      // The driver only uses a tiny structural surface of the supabase
+      // client (from().select/update/insert), so the cast is safe.
+      supabase as unknown as Parameters<typeof gradeMolShadowPairsImpl>[0],
+      { grader: gradeShadowPair },
+    )
+    console.log(
+      `daily-cron: mol_shadow_grader — graded=${result.graded} skipped_no_text=${result.skipped_no_text} skipped_unsampled=${result.skipped_unsampled} daily_inr=${result.daily_shadow_cost_inr} cost_cap=${result.cost_cap_triggered} killed=${result.killed}`,
+    )
+    return result.graded
+  } catch (err) {
+    console.error(
+      `daily-cron: mol_shadow_grader threw (swallowed):`,
+      err instanceof Error ? err.message : String(err),
+    )
+    return 0
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method==='OPTIONS') return new Response('ok',{headers:corsHeaders})
   const t0=Date.now()
@@ -1188,6 +1231,12 @@ Deno.serve(async (req) => {
       // open expectations as 'expired' so they don't keep injecting into
       // future prompts. Idempotent. See migration 20260528000013.
       ['foxy_expectations_expired',()=>expireStaleFoxyExpectations(sb)],
+      // C4.2b-i (2026-05-19): grade sampled mol_shadow shadow rows via
+      // Sonnet. SCAFFOLD MODE until C4.2b-ii lands text capture — every
+      // sampled pair currently takes the skipped_no_text branch. The
+      // sampling + cost-cap + kill-switch paths are live regardless.
+      // See supabase/functions/_shared/mol/grader-cron.ts.
+      ['mol_shadow_pairs_graded',()=>gradeMolShadowPairs(sb)],
     ]
     const settled=await Promise.allSettled(steps.map(([,fn])=>fn()))
     const results:Record<string,number>={};const errors:Record<string,string>={}
