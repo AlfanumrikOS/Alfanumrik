@@ -133,8 +133,17 @@ export async function generateResponse(req: GenerateRequest): Promise<MolResult>
     }))
   }
 
-  // Build prompt
-  const system_prompt = buildSystemPrompt(task_type, req.student_context, req.rag_context ?? null)
+  // Build prompt.
+  //
+  // C4.2a wire-up: when req.config.system_prompt_override is set, use it
+  // verbatim and bypass the prompt-builder. This is the prompt-parity
+  // fix — shadow legs from grounded-answer must send the EXACT prompt
+  // baseline sent to Claude so the offline grader compares responses to
+  // the same question. The override path is exercised ONLY by mol-shadow.ts;
+  // direct MOL callers (foxy-tutor, ncert-solver, quiz-generator) leave it
+  // undefined and the prompt-builder runs normally.
+  const system_prompt = req.config?.system_prompt_override
+    ?? buildSystemPrompt(task_type, req.student_context, req.rag_context ?? null)
 
   const user_messages: Array<{ role: 'user' | 'assistant'; content: string }> = []
   if (req.input.chat_history) user_messages.push(...req.input.chat_history.slice(-10))
@@ -185,7 +194,14 @@ export async function generateResponse(req: GenerateRequest): Promise<MolResult>
 
   const latency_ms = Date.now() - start
 
-  // Telemetry (fire-and-forget)
+  // Telemetry (fire-and-forget).
+  //
+  // C4.2a wire-up: when the caller (mol-shadow.ts) passes shadow_role /
+  // shadow_of_request_id through req.config, propagate them onto the
+  // LogPayload here. This is the de-dup fix — the orchestrator's auto-log
+  // row is the ONLY row written per shadow call; the helper no longer
+  // appends a second row. Pre-C4 callers leave the fields undefined and
+  // the LogPayload's `??` defaults write NULLs (legacy contract).
   recordMolRequest({
     request_id,
     student_id: req.student_context.student_id,
@@ -203,6 +219,9 @@ export async function generateResponse(req: GenerateRequest): Promise<MolResult>
     grade: req.student_context.grade,
     language: req.student_context.language,
     exam_goal: req.student_context.exam_goal ?? null,
+    shadow_role: req.config?.shadow_role ?? null,
+    shadow_of_request_id: req.config?.shadow_of_request_id ?? null,
+    trace_id: req.config?.trace_id ?? null,
   })
 
   return {

@@ -39,7 +39,16 @@ import { callClaudeStream, type ClaudeResponse } from './claude.ts';
 // log of streaming Claude calls. Default-OFF flag, fire-and-forget.
 // TODO(c4-handoff): replace shadow log with a through-MOL routed streaming
 // call when C4 ships — do NOT stack a shadow log on top of routed calls.
-import { shadowLogClaudeCallIfEnabled } from './mol-telemetry-adapter.ts';
+import {
+  shadowLogClaudeCallIfEnabled,
+  mapCallerToSurface,
+  mapPipelineToTaskType,
+} from './mol-telemetry-adapter.ts';
+// C4.2a wire-up (2026-05-19): fire-and-forget OpenAI shadow on every
+// streaming Claude invocation. See pipeline.ts for the full design rationale.
+// Default-OFF feature flag means no production behavior change ships with
+// C4.2a — the wire-up here is "armed" only.
+import { fireShadowAndForget } from './mol-shadow.ts';
 import { extractCitations } from './citations.ts';
 import { computeConfidence } from './confidence.ts';
 import { loadTemplate, resolveTemplate, hashPrompt } from './prompts/index.ts';
@@ -73,6 +82,17 @@ import type {
 
 const VOYAGE_MODEL_ID = 'voyage-3';
 const RERANK_INITIAL_FETCH = 30;
+
+/**
+ * Synthetic MOL request_id for the C4.2a shadow wire-up. Same contract as
+ * the helper in pipeline.ts. NEVER reused; minted fresh per call.
+ */
+function newMolRequestId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `mol-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 function rerankEnabled(): boolean {
   const raw = (Deno.env.get('FOXY_RERANK_ENABLED') ?? 'true').toLowerCase();
@@ -491,6 +511,55 @@ export async function* runStreamingPipeline(
   // token). That mirrors how mol_request_logs.latency_ms is interpreted
   // for non-streaming rows so dashboards compare apples-to-apples.
   const claudeStreamStart = Date.now();
+
+  // C4.2a wire-up — fire OpenAI shadow BEFORE the stream is awaited so
+  // the shadow runs in parallel with the Anthropic stream on the event
+  // loop. The helper is fire-and-forget (returns void synchronously) so
+  // the streaming UX is byte-identical to before — Claude tokens still
+  // arrive on the same event loop tick they would have without the
+  // shadow.
+  //
+  // Why we fire here (not after the `final` event like the C3 shadow log):
+  //   - Parity with the blocking pipeline.ts wire-up: shadow leaves the
+  //     same event-loop window as baseline.
+  //   - We have the EXACT composed systemPrompt → prompt-parity.
+  //   - We have the exact maxTokens/temperature → grader compares
+  //     like-for-like resource budgets.
+  //
+  // baseline_model is heuristically resolved from model_preference because
+  // the real model id is only known at the FINAL event, after the shadow
+  // has already started. The grader doesn't read baseline_model for
+  // judging — it's analyst-only metadata. We resolve to the most likely
+  // model the streaming path will use ('haiku' is the foxy-tutor default).
+  const baselineModelHint =
+    request.generation.model_preference === 'sonnet'
+      ? 'claude-sonnet-4-20250514'
+      : 'claude-haiku-4-5-20251001';
+
+  fireShadowAndForget({
+    request_id: newMolRequestId(),
+    systemPrompt,
+    userMessage: request.query,
+    maxTokens: effectiveMaxTokens,
+    temperature: request.generation.temperature,
+    task_type: mapPipelineToTaskType({
+      caller: request.caller,
+      mode: request.mode,
+      isGroundingCheck: false,
+    }),
+    surface: mapCallerToSurface(request.caller),
+    baseline_provider: 'anthropic',
+    baseline_model: baselineModelHint,
+    trace_id: traceId, // streaming writes the trace row BEFORE the stream
+    student_context: {
+      student_id: request.student_id,
+      grade: request.scope.grade,
+      language: null,
+      exam_goal: null,
+      subject: request.scope.subject_code,
+    },
+  });
+
   const claudeStream = callClaudeStream({
     systemPrompt,
     userMessage: request.query,

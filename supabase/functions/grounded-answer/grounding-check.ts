@@ -49,7 +49,13 @@ export interface GroundingCheckResult {
   };
 }
 
-const GROUNDING_CHECK_SYSTEM_PROMPT = `You are a fact-checker. You will see STUDENT_QUESTION, CANDIDATE_ANSWER,
+/**
+ * Exported so the C4.2a shadow wire-up in pipeline.ts can hand the SAME
+ * system prompt to MOL's `system_prompt_override` field for the
+ * grounding-check shadow call. Without parity here, the offline grader
+ * would compare responses to different fact-check instructions.
+ */
+export const GROUNDING_CHECK_SYSTEM_PROMPT = `You are a fact-checker. You will see STUDENT_QUESTION, CANDIDATE_ANSWER,
 and SOURCE_CHUNKS. For each sentence in CANDIDATE_ANSWER that makes a
 factual claim, determine whether the claim is directly supported by
 SOURCE_CHUNKS.
@@ -167,6 +173,20 @@ export async function runGroundingCheck(
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+/**
+ * Exported so the C4.2a shadow wire-up in pipeline.ts can rebuild the
+ * exact user message the grounding-check sent to Claude. The shadow leg
+ * needs to answer the SAME composed question or the offline grader is
+ * comparing responses to different prompts.
+ */
+export function buildGroundingCheckUserMessage(
+  answer: string,
+  question: string,
+  chunks: { id: string; content: string }[],
+): string {
+  return buildUserMessage(answer, question, chunks);
 }
 
 function buildUserMessage(

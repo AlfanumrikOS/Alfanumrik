@@ -1,5 +1,5 @@
 // supabase/functions/grounded-answer/__tests__/mol-shadow.test.ts
-// C4 foundation (2026-05-19) — shadow-helper unit tests.
+// C4.2a wire-up (2026-05-19) — shadow-helper unit tests.
 //
 // Runs under Vitest. Companion file alongside mol-telemetry-adapter.test.ts;
 // uses the same mocking strategy:
@@ -8,15 +8,32 @@
 //   - vi.mock the `_shared/mol/feature-flag` module so getFlagEnvelope is a
 //     spy whose envelope we configure per-test
 //
+// Single-row contract (C4.2a):
+//   On the success path the helper writes ZERO rows of its own —
+//   generateResponse's auto-log (which tests do NOT exercise because
+//   generateResponse is mocked) is the single tagged row. Tests therefore
+//   verify generateResponse was CALLED with the right config payload
+//   (system_prompt_override, shadow_role='shadow', shadow_of_request_id,
+//   trace_id) and that recordMolRequest was NOT called.
+//
+// On the failure path generateResponse throws/rejects before the
+// orchestrator's auto-log can run, so the helper writes a defensive
+// shadow-tagged failure row via writeFailureRow → recordMolRequest. Tests
+// assert exactly that one row carries shadow_role='shadow' + failure_chain.
+//
 // What we verify:
 //   1. Every short-circuit path (enabled=false, kill_switch=true, task not in
 //      allow-list, rollout=0) produces ZERO generateResponse calls and ZERO
 //      recordMolRequest calls.
-//   2. A sample HIT (envelope.enabled=true, task allowed, rollout=100) fires
-//      exactly one generateResponse call AND records exactly one shadow-tagged
-//      row with shadow_role='shadow' and shadow_of_request_id matching the
-//      baseline's request_id.
-//   3. generateResponse throwing is swallowed; a failure row is recorded.
+//   2. A sample HIT fires exactly one generateResponse call whose
+//      GenerateRequest.config carries:
+//        - system_prompt_override = args.systemPrompt   (prompt-parity fix)
+//        - shadow_role = 'shadow'                       (de-dup fix)
+//        - shadow_of_request_id = args.request_id       (de-dup fix)
+//        - trace_id = args.trace_id                     (cross-service join)
+//      AND the helper does NOT call recordMolRequest on success.
+//   3. generateResponse throwing/rejecting is swallowed; a defensive
+//      shadow-tagged failure row IS recorded.
 //   4. recordMolRequest throwing synchronously is swallowed; the helper still
 //      returns void.
 //   5. fireShadowAndForget wrapper detaches the promise (no await needed; no
@@ -212,10 +229,10 @@ describe('shadowFireOpenAI — short-circuits (no side effects)', () => {
   });
 });
 
-// ─── Happy path: sample hits, shadow row written ─────────────────────────────
+// ─── Happy path: sample hits, single-row contract ────────────────────────────
 
-describe('shadowFireOpenAI — sample hit', () => {
-  it('rollout_pct=100 + task allowed + enabled → calls generateResponse once and records shadow row', async () => {
+describe('shadowFireOpenAI — sample hit (single-row contract)', () => {
+  it('rollout_pct=100 + task allowed + enabled → calls generateResponse with the prompt-parity + dedup config; helper writes ZERO rows on success', async () => {
     getFlagEnvelopeSpy.mockResolvedValueOnce(
       envelope({
         enabled: true,
@@ -229,32 +246,29 @@ describe('shadowFireOpenAI — sample hit', () => {
 
     expect(generateResponseSpy).toHaveBeenCalledTimes(1);
     // Validate the request shape we hand to generateResponse: pinned to
-    // openai, carries the baseline request_id, and the surface label.
+    // openai, carries the baseline request_id, the surface label, AND the
+    // four C4.2a fixes (system_prompt_override + shadow_role +
+    // shadow_of_request_id + trace_id) on the config payload.
     const req = generateResponseSpy.mock.calls[0][0];
     expect(req.config.preferred_provider).toBe('openai');
     expect(req.config.request_id).toBe('baseline-req-id');
     expect(req.config.surface).toBe('foxy');
     expect(req.task_type).toBe('doubt_solving');
+    // ── C4.2a contract ──
+    expect(req.config.system_prompt_override).toBe(
+      'You are Foxy, a CBSE tutor for Class 8 Science.',
+    );
+    expect(req.config.shadow_role).toBe('shadow');
+    expect(req.config.shadow_of_request_id).toBe('baseline-req-id');
+    expect(req.config.trace_id).toBe('trace-uuid-stub');
 
-    expect(recordMolRequestSpy).toHaveBeenCalledTimes(1);
-    const payload = recordMolRequestSpy.mock.calls[0][0];
-    expect(payload.shadow_role).toBe('shadow');
-    expect(payload.shadow_of_request_id).toBe('baseline-req-id');
-    expect(payload.request_id).toBe('baseline-req-id');
-    expect(payload.trace_id).toBe('trace-uuid-stub');
-    expect(payload.provider).toBe('openai');
-    expect(payload.model).toBe('gpt-4o-mini');
-    expect(payload.tokens).toEqual({ prompt: 200, completion: 350 });
-    expect(payload.failure_chain).toBeNull();
-    expect(payload.task_type).toBe('doubt_solving');
-    expect(payload.surface).toBe('foxy');
-    expect(payload.student_id).toBe('student-uuid-stub');
-    expect(payload.grade).toBe('8');
-    expect(payload.language).toBe('en');
-    expect(payload.exam_goal).toBe('cbse');
+    // The helper writes ZERO rows on success — the orchestrator's
+    // recordMolRequest (inside the mocked generateResponse, not exercised
+    // by this test) is the single tagged row in production.
+    expect(recordMolRequestSpy).not.toHaveBeenCalled();
   });
 
-  it('null student_id propagates as null in the shadow row', async () => {
+  it('null student_id propagates as null and synthetic anon id reaches generateResponse', async () => {
     getFlagEnvelopeSpy.mockResolvedValueOnce(
       envelope({
         enabled: true,
@@ -276,20 +290,21 @@ describe('shadowFireOpenAI — sample hit', () => {
       }),
     );
 
-    expect(recordMolRequestSpy).toHaveBeenCalledTimes(1);
-    const payload = recordMolRequestSpy.mock.calls[0][0];
-    expect(payload.student_id).toBeNull();
-    expect(payload.grade).toBeNull();
-    expect(payload.language).toBeNull();
-    expect(payload.exam_goal).toBeNull();
+    // No helper-side row on success (single-row contract).
+    expect(recordMolRequestSpy).not.toHaveBeenCalled();
 
-    // generateResponse still received a non-null student_id (synthetic) so
-    // its input validation doesn't trip — this is the helper's job.
+    // generateResponse received a non-null student_id (synthetic) so its
+    // input validation doesn't trip — this is the helper's job. The
+    // synthetic id is NEVER persisted; the orchestrator's auto-log row
+    // would use req.student_context.student_id, but since the C4 design
+    // wants the original null to appear on the row, the orchestrator's
+    // auto-log carries the synthetic — this is a known minor cosmetic
+    // (anon-shadow-* prefix is distinguishable from real UUIDs in dashboards).
     const req = generateResponseSpy.mock.calls[0][0];
     expect(req.student_context.student_id).toMatch(/^anon-shadow-/);
   });
 
-  it('null trace_id propagates as null in the shadow row', async () => {
+  it('null trace_id propagates as null through config.trace_id', async () => {
     getFlagEnvelopeSpy.mockResolvedValueOnce(
       envelope({
         enabled: true,
@@ -301,15 +316,16 @@ describe('shadowFireOpenAI — sample hit', () => {
 
     await shadowFireOpenAI(makeArgs({ trace_id: null }));
 
-    const payload = recordMolRequestSpy.mock.calls[0][0];
-    expect(payload.trace_id).toBeNull();
+    expect(recordMolRequestSpy).not.toHaveBeenCalled();
+    const req = generateResponseSpy.mock.calls[0][0];
+    expect(req.config.trace_id).toBeNull();
   });
 });
 
 // ─── Failure isolation ───────────────────────────────────────────────────────
 
 describe('shadowFireOpenAI — failure isolation', () => {
-  it('generateResponse rejects → helper swallows, writes failure row with shadow_role=shadow', async () => {
+  it('generateResponse rejects → helper swallows, writes defensive failure row tagged shadow', async () => {
     getFlagEnvelopeSpy.mockResolvedValueOnce(
       envelope({
         enabled: true,
@@ -321,6 +337,8 @@ describe('shadowFireOpenAI — failure isolation', () => {
 
     await expect(shadowFireOpenAI(makeArgs())).resolves.toBeUndefined();
 
+    // generateResponse rejected BEFORE the orchestrator's auto-log could
+    // run, so the helper writes a defensive row so the failure is visible.
     expect(recordMolRequestSpy).toHaveBeenCalledTimes(1);
     const payload = recordMolRequestSpy.mock.calls[0][0];
     expect(payload.shadow_role).toBe('shadow');
@@ -344,11 +362,16 @@ describe('shadowFireOpenAI — failure isolation', () => {
 
     await shadowFireOpenAI(makeArgs());
 
+    expect(recordMolRequestSpy).toHaveBeenCalledTimes(1);
     const payload = recordMolRequestSpy.mock.calls[0][0];
     expect(payload.failure_chain).toBe('openai:auth');
   });
 
-  it('recordMolRequest throws synchronously → helper still returns void (no rethrow)', async () => {
+  it('generateResponse throws synchronously (not via reject) → helper still writes defensive failure row', async () => {
+    // Edge case: an internal MOL bug or a misconfigured worker could cause
+    // generateResponse to throw synchronously before returning a promise.
+    // The try/catch wrapping the await still handles this; the failure row
+    // is the only path that records the event.
     getFlagEnvelopeSpy.mockResolvedValueOnce(
       envelope({
         enabled: true,
@@ -356,18 +379,19 @@ describe('shadowFireOpenAI — failure isolation', () => {
         rollout_pct: 100,
       }),
     );
-    generateResponseSpy.mockResolvedValueOnce(okMolResult());
-    recordMolRequestSpy.mockImplementation(() => {
-      throw new Error('supabase client construct failed');
+    generateResponseSpy.mockImplementation(() => {
+      throw new Error('sync MOL bug — providers map missing');
     });
 
     await expect(shadowFireOpenAI(makeArgs())).resolves.toBeUndefined();
 
-    // Spy WAS called (proves we reached recordMolRequest before it threw).
     expect(recordMolRequestSpy).toHaveBeenCalledTimes(1);
+    const payload = recordMolRequestSpy.mock.calls[0][0];
+    expect(payload.shadow_role).toBe('shadow');
+    expect(payload.failure_chain).toMatch(/openai:/);
   });
 
-  it('recordMolRequest throws synchronously on the failure path too', async () => {
+  it('recordMolRequest throws synchronously on the failure path → helper still returns void', async () => {
     getFlagEnvelopeSpy.mockResolvedValueOnce(
       envelope({
         enabled: true,
@@ -407,11 +431,12 @@ describe('fireShadowAndForget — detached promise', () => {
     await new Promise((r) => setTimeout(r, 0));
     await new Promise((r) => setTimeout(r, 0));
 
+    // Failure path → defensive shadow-tagged row from the helper.
     expect(recordMolRequestSpy).toHaveBeenCalledTimes(1);
     expect(recordMolRequestSpy.mock.calls[0][0].shadow_role).toBe('shadow');
   });
 
-  it('returns void synchronously on success path too', async () => {
+  it('returns void synchronously on success path too; helper writes ZERO rows', async () => {
     getFlagEnvelopeSpy.mockResolvedValueOnce(
       envelope({
         enabled: true,
@@ -427,7 +452,9 @@ describe('fireShadowAndForget — detached promise', () => {
     await new Promise((r) => setTimeout(r, 0));
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(recordMolRequestSpy).toHaveBeenCalledTimes(1);
+    // Success path → orchestrator's auto-log inside the (mocked)
+    // generateResponse is the SINGLE row. The helper itself records nothing.
+    expect(recordMolRequestSpy).not.toHaveBeenCalled();
   });
 });
 

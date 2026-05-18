@@ -32,7 +32,11 @@ import { applyMMR } from '../_shared/rag/mmr.ts';
 import { sanitizeChunkForPrompt } from '../_shared/rag/sanitize.ts';
 import { isMMRDiversityEnabled } from './_mmr-flag.ts';
 import { callClaude, type ClaudeResponse } from './claude.ts';
-import { runGroundingCheck } from './grounding-check.ts';
+import {
+  runGroundingCheck,
+  GROUNDING_CHECK_SYSTEM_PROMPT,
+  buildGroundingCheckUserMessage,
+} from './grounding-check.ts';
 // C3 (MOL grounded-answer integration, 2026-05-18). Telemetry-only shadow
 // log of every primary callClaude invocation into mol_request_logs.
 // Default-OFF feature flag (ff_grounded_answer_mol_telemetry_v1) is checked
@@ -41,7 +45,15 @@ import { runGroundingCheck } from './grounding-check.ts';
 // adapter sites in this file MUST be REPLACED with a through-MOL routed
 // call — DO NOT stack a shadow log on top of an already-routed request or
 // every row will double-count.
-import { shadowLogClaudeCallIfEnabled } from './mol-telemetry-adapter.ts';
+import { shadowLogClaudeCallIfEnabled, mapCallerToSurface, mapPipelineToTaskType } from './mol-telemetry-adapter.ts';
+// C4.2a wire-up (2026-05-19): every successful callClaude invocation in
+// grounded-answer ALSO fires a parallel OpenAI shadow call. The shadow's
+// response is discarded; only the row in mol_request_logs is kept for the
+// offline grader (C4.2b). Default-OFF feature flag means zero production
+// behavior change ships with C4.2a — the wire-up here is "armed" only.
+// See mol-shadow.ts for the full design contract (short-circuit gates,
+// prompt-parity fix, single-row telemetry contract).
+import { fireShadowAndForget } from './mol-shadow.ts';
 import { computeConfidence } from './confidence.ts';
 import { extractCitations } from './citations.ts';
 import {
@@ -90,6 +102,25 @@ import type {
 } from './types.ts';
 
 const VOYAGE_MODEL_ID = 'voyage-3';
+
+/**
+ * Synthetic MOL request_id minted for the C4.2a shadow wire-up. Used as
+ * both the shadow row's request_id AND its shadow_of_request_id so the
+ * mol_shadow_pairs_v1 view can self-join the shadow leg even before
+ * C4.2b unifies the baseline row's request_id (the C3 adapter's row
+ * currently uses its own internal UUID — see mol-telemetry-adapter.ts).
+ *
+ * NEVER reused across calls. Fresh per call to keep dashboards aligned
+ * with one-row-per-LLM-call.
+ */
+function newMolRequestId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // Fallback for environments without crypto.randomUUID (vitest under
+  // older Node). Not cryptographically strong; only used in tests.
+  return `mol-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 // Phase 1.1: rerank stage. We over-fetch from match_rag_chunks_ncert and
 // then call Voyage rerank-2 to pick the most relevant subset for the
@@ -909,8 +940,11 @@ export async function runPipeline(
   // work can stitch the two together by reading ctx.molRequestId after
   // finalizeGrounded if dashboards need cross-table joins.
   //
-  // TODO(c4-handoff): replace this shadow log with the through-MOL routed
-  // call; do NOT keep both or every request will double-count.
+  // TODO(c4.2b): retire shadowLogClaudeCallIfEnabled. The C4.2a wire-up
+  // below ALSO writes a row (the shadow leg's orchestrator auto-log).
+  // During the C3→C4 transition both rows coexist so dashboards keep
+  // working; C4.2b removes the C3 adapter site and routes baseline
+  // through MOL.
   shadowLogClaudeCallIfEnabled({
     studentId: request.student_id,
     grade: request.scope.grade,
@@ -935,6 +969,56 @@ export async function runPipeline(
     }
     return finalizeAbstain(sb, ctx, 'upstream_error');
   }
+
+  // C4.2a wire-up (2026-05-19): fire parallel OpenAI shadow call.
+  //
+  // Why HERE (after the ok:true branch, before the rest of the pipeline):
+  //   - We have the EXACT composed systemPrompt the baseline used →
+  //     prompt-parity holds for the offline grader.
+  //   - The baseline succeeded; firing a shadow when baseline failed
+  //     would write isolated shadow rows with no baseline to compare
+  //     against (waste of OpenAI tokens).
+  //   - The call is fire-and-forget so it runs on the event loop
+  //     alongside the remaining pipeline steps (grounding-check,
+  //     confidence, citations) — zero added user-facing latency.
+  //
+  // The flag is default-OFF; the helper short-circuits before
+  // generateResponse() runs when the envelope says so. See mol-shadow.ts
+  // for the full gating contract.
+  //
+  // The request_id we mint here is synthetic — it shows up as both the
+  // shadow row's request_id AND its shadow_of_request_id (so the
+  // mol_shadow_pairs_v1 view's self-join works on the shadow row even
+  // before C4.2b unifies the baseline row's request_id).
+  fireShadowAndForget({
+    request_id: newMolRequestId(),
+    systemPrompt,
+    userMessage: request.query,
+    maxTokens: effectiveMaxTokens,
+    temperature: request.generation.temperature,
+    task_type: mapPipelineToTaskType({
+      caller: request.caller,
+      mode: request.mode,
+      isGroundingCheck: false,
+    }),
+    surface: mapCallerToSurface(request.caller),
+    baseline_provider: 'anthropic',
+    baseline_model: claude.model,
+    // trace_id is null at this point — the grounded_ai_traces row is written
+    // by finalizeGrounded/finalizeAbstain later. The shadow row carries
+    // null trace_id today; C4.2b plumbs trace_id after writeTrace returns.
+    trace_id: null,
+    student_context: {
+      student_id: request.student_id,
+      grade: request.scope.grade,
+      // GroundedRequest doesn't carry language / exam_goal; leave undefined
+      // so the helper substitutes its safe defaults. Future C5 task may
+      // plumb these through GroundedRequest for richer telemetry.
+      language: null,
+      exam_goal: null,
+      subject: request.scope.subject_code,
+    },
+  });
 
   // Claude succeeded — stamp claude metadata into ctx for any downstream
   // abstain branch.
@@ -963,8 +1047,10 @@ export async function runPipeline(
     // edit) and the underlying HTTP call succeeded. Failed grounding-check
     // HTTP calls are skipped because the adapter's ok:false branch
     // intentionally does not log (see mol-telemetry-adapter.ts).
-    // TODO(c4-handoff): replace this shadow log with a through-MOL routed
-    // grounding-check when C4 ships; do NOT stack on top of routed calls.
+    // TODO(c4.2b): retire this C3 row. The C4.2a wire-up below ALSO writes
+    // a row (the shadow leg's orchestrator auto-log). During the C3→C4
+    // transition both rows coexist so dashboards keep working; C4.2b
+    // removes the C3 adapter site and routes baseline through MOL.
     if (verdict.meta) {
       const gcSynthetic: ClaudeResponse = verdict.meta.ok
         ? {
@@ -987,6 +1073,44 @@ export async function runPipeline(
         isGroundingCheck: true,
         latencyMs: verdict.meta.latencyMs,
         claudeResponse: gcSynthetic,
+      });
+
+      // C4.2a wire-up — fire the OpenAI shadow for the grounding-check
+      // pass. Fires only when the baseline grounding-check produced a
+      // verdict (meta.ok=true OR meta.ok=false; both reach here). When
+      // baseline failed we still fire because dashboards want to know
+      // whether OpenAI would also have failed on the SAME prompt — that
+      // tells us if the issue was Anthropic-specific or universal.
+      //
+      // Allow-list gating still applies: the flag's task_types[] must
+      // include 'grounding_check' for this leg to actually fire. The
+      // seeded envelope (migration 20260519000002) deliberately omits
+      // 'grounding_check' so primary-answer telemetry is the focus.
+      fireShadowAndForget({
+        request_id: newMolRequestId(),
+        systemPrompt: GROUNDING_CHECK_SYSTEM_PROMPT,
+        userMessage: buildGroundingCheckUserMessage(
+          claude.content,
+          request.query,
+          chunks.map((c) => ({ id: c.id, content: c.content })),
+        ),
+        // Mirror runGroundingCheck's token budget (MAX_OUTPUT_TOKENS=512)
+        // so the grader compares like-for-like resource budgets.
+        maxTokens: 512,
+        // Mirror runGroundingCheck's deterministic temperature.
+        temperature: 0.0,
+        task_type: 'grounding_check',
+        surface: mapCallerToSurface(request.caller),
+        baseline_provider: 'anthropic',
+        baseline_model: verdict.meta.model,
+        trace_id: null,
+        student_context: {
+          student_id: request.student_id,
+          grade: request.scope.grade,
+          language: null,
+          exam_goal: null,
+          subject: request.scope.subject_code,
+        },
       });
     }
     if (verdict.verdict === 'fail') {
