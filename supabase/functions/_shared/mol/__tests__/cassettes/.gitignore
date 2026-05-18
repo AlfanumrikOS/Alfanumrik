@@ -1,0 +1,7 @@
+# By default, recorded cassettes are not committed unless explicitly added.
+# Engineers may record cassettes locally for debugging without polluting git.
+# To commit a curated fixture, use `git add -f <path>` after review.
+
+# Sandbox area for ad-hoc local recordings.
+fixtures/
+*.local.json
