@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
 import { StatCard } from '@/components/admin-ui';
-import { DEMO_PERSONAS, DEMO_ROLES, type DemoPersona, type DemoRole } from '@/lib/demo/personas';
+import { DEMO_PERSONAS, DEMO_ROLES, DEMO_STREAMS, streamRequiredForGrade, type DemoPersona, type DemoRole, type DemoStream } from '@/lib/demo/personas';
 
 interface DemoAccount {
   id: string;
@@ -51,6 +51,10 @@ function DemoContent() {
   // Create form state
   const [formRole, setFormRole] = useState<DemoRole>('student');
   const [formPersona, setFormPersona] = useState<DemoPersona>('average');
+  // Phase F.7 follow-up (2026-05-18): grade + stream now required on the
+  // form so demo students land with the right subject filter.
+  const [formGrade, setFormGrade] = useState<string>('10');
+  const [formStream, setFormStream] = useState<DemoStream>('science');
   const [formName, setFormName] = useState('');
   const [formEmail, setFormEmail] = useState('');
   const [creating, setCreating] = useState(false);
@@ -102,6 +106,8 @@ function DemoContent() {
         body: JSON.stringify({
           role: formRole,
           persona: formRole === 'student' ? formPersona : undefined,
+          grade: formRole === 'student' ? formGrade : undefined,
+          stream: formRole === 'student' && streamRequiredForGrade(formGrade) ? formStream : undefined,
           name: formName.trim(),
           email: formEmail.trim(),
         }),
@@ -390,18 +396,46 @@ function DemoContent() {
             </select>
           </div>
           {formRole === 'student' && (
-            <div>
-              <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Persona</label>
-              <select
-                value={formPersona}
-                onChange={e => setFormPersona(e.target.value as DemoPersona)}
-                className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer"
-              >
-                {DEMO_PERSONAS.map(p => (
-                  <option key={p} value={p}>{PERSONA_LABELS[p]}</option>
-                ))}
-              </select>
-            </div>
+            <>
+              <div>
+                <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Persona</label>
+                <select
+                  value={formPersona}
+                  onChange={e => setFormPersona(e.target.value as DemoPersona)}
+                  className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer"
+                >
+                  {DEMO_PERSONAS.map(p => (
+                    <option key={p} value={p}>{PERSONA_LABELS[p]}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Grade</label>
+                <select
+                  value={formGrade}
+                  onChange={e => setFormGrade(e.target.value)}
+                  className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer"
+                >
+                  {['6', '7', '8', '9', '10', '11', '12'].map(g => (
+                    <option key={g} value={g}>Class {g}</option>
+                  ))}
+                </select>
+              </div>
+              {streamRequiredForGrade(formGrade) && (
+                <div>
+                  <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Stream</label>
+                  <select
+                    value={formStream}
+                    onChange={e => setFormStream(e.target.value as DemoStream)}
+                    className="w-full rounded-md border border-surface-3 bg-surface-1 px-3 py-2 text-sm cursor-pointer"
+                  >
+                    {DEMO_STREAMS.map(s => (
+                      <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </>
           )}
           <div>
             <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Name</label>
