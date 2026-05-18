@@ -32,6 +32,10 @@ export default defineConfig({
           // file path (not a glob over the directory) to avoid vitest
           // accidentally loading the Deno tests.
           'supabase/functions/grounded-answer/__tests__/mol-telemetry-adapter.test.ts',
+          // C4 foundation (2026-05-19). Shadow-helper unit tests. Same
+          // exact-path convention as the C3 adapter test above — every
+          // other __tests__ file in that dir is Deno-only.
+          'supabase/functions/grounded-answer/__tests__/mol-shadow.test.ts',
         ],
     exclude: isIntegrationRun
       ? ['node_modules/**']

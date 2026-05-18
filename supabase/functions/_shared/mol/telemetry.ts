@@ -44,6 +44,40 @@ export interface LogPayload {
   grade: string | null
   language: string | null
   exam_goal: string | null
+  // ── C4 foundation (2026-05-19): shadow-routing pair correlation ──
+  // All three fields OPTIONAL — pre-C4 callers (foxy-tutor, ncert-solver,
+  // direct MOL clients, and the C3 mol-telemetry-adapter) pass none of them
+  // and write NULLs into the new columns, preserving the legacy contract.
+  //
+  // The grader-cron fields (shadow_grader_score / shadow_grader_payload /
+  // shadow_graded_at) are intentionally NOT on LogPayload — those are
+  // written by the async grader in a separate UPDATE statement in C4.2,
+  // never by the request-time recorder.
+
+  /**
+   * When this log row is a shadow leg, the baseline leg's request_id.
+   * Maps directly to mol_request_logs.shadow_of_request_id.
+   * NULL/undefined for baseline rows and non-shadow callers.
+   */
+  shadow_of_request_id?: string | null
+
+  /**
+   * 'baseline' = this row served the user.
+   * 'shadow'   = this row was discarded, kept only for offline comparison.
+   * NULL/undefined for legacy / non-shadow rows.
+   *
+   * The shadow_role CHECK constraint in 20260519000001_mol_shadow_routing.sql
+   * enforces the same two-value enum at the DB level.
+   */
+  shadow_role?: 'baseline' | 'shadow' | null
+
+  /**
+   * grounded_ai_traces.id when this MOL call originated from grounded-answer.
+   * NULL/undefined for direct MOL callers (foxy-tutor, ncert-solver, etc).
+   * Cross-service correlation key — joins mol_request_logs to the trace row
+   * that spawned this LLM call.
+   */
+  trace_id?: string | null
 }
 
 // deno-lint-ignore no-explicit-any
@@ -60,6 +94,11 @@ function client() {
 /** Fire-and-forget. Never throw; observability must never break user requests. */
 export function recordMolRequest(p: LogPayload): void {
   try {
+    // C4 foundation: shadow_of_request_id / shadow_role / trace_id are all
+    // OPTIONAL on LogPayload. We coerce undefined → null at this boundary so
+    // the insert always writes an explicit value into the new NULLABLE
+    // columns. Legacy callers (no shadow fields) become explicit NULLs,
+    // matching the pre-C4 row shape.
     void client().from('mol_request_logs').insert({
       request_id: p.request_id,
       student_id: p.student_id,
@@ -78,6 +117,9 @@ export function recordMolRequest(p: LogPayload): void {
       grade: p.grade,
       language: p.language,
       exam_goal: p.exam_goal,
+      shadow_of_request_id: p.shadow_of_request_id ?? null,
+      shadow_role: p.shadow_role ?? null,
+      trace_id: p.trace_id ?? null,
     }).then(
       () => {},
       (err: unknown) => {

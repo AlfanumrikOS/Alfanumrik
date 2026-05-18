@@ -11,6 +11,11 @@ interface FlagRow {
   is_enabled: boolean
   target_environments: string[] | null
   rollout_percentage: number | null
+  // C4 foundation (2026-05-19): the shadow-routing flag stores its full
+  // gate envelope (kill switch, task allow-list, rollout %) in this jsonb
+  // column. The base isFlagEnabled() path ignores metadata; callers that
+  // need the envelope use getFlagEnvelope() below.
+  metadata?: Record<string, unknown> | null
 }
 
 let cache: FlagRow[] | null = null
@@ -27,7 +32,7 @@ async function load(): Promise<FlagRow[]> {
 
   try {
     const res = await fetch(
-      `${url}/rest/v1/feature_flags?select=flag_name,is_enabled,target_environments,rollout_percentage`,
+      `${url}/rest/v1/feature_flags?select=flag_name,is_enabled,target_environments,rollout_percentage,metadata`,
       { headers: { apikey: key, Authorization: `Bearer ${key}` } },
     )
     if (!res.ok) return cache || []
@@ -74,4 +79,31 @@ export async function isFlagEnabled(
 export function _resetFlagCache(): void {
   cache = null
   cache_expiry = 0
+}
+
+/**
+ * C4 foundation (2026-05-19): read the JSON envelope stored in
+ * feature_flags.metadata for a given flag, AND return is_enabled.
+ *
+ * Designed for flags whose gating policy is too rich for the simple
+ * environment+rollout shape — specifically ff_grounded_answer_mol_shadow_v1
+ * which carries `{ enabled, kill_switch, task_types[], rollout_pct }`.
+ *
+ * Returns `{ is_enabled: false, metadata: {} }` when the flag does not
+ * exist, the row read failed, or `metadata` is null. Never throws.
+ *
+ * NB: this helper does NOT apply target_environments or rollout_percentage
+ * filtering — the caller owns the policy. We deliberately split the read
+ * from the policy so the shadow helper can implement its own
+ * `hash(request_id + ':' + task_type) % 100 < rollout_pct` rule (which is
+ * different from the student-bucketed rule isFlagEnabled() implements).
+ */
+export async function getFlagEnvelope(
+  flag_name: string,
+): Promise<{ is_enabled: boolean; metadata: Record<string, unknown> }> {
+  const flags = await load()
+  const f = flags.find((x) => x.flag_name === flag_name)
+  if (!f) return { is_enabled: false, metadata: {} }
+  const meta = f.metadata && typeof f.metadata === 'object' ? f.metadata : {}
+  return { is_enabled: Boolean(f.is_enabled), metadata: meta }
 }
