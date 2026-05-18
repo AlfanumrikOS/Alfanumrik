@@ -157,6 +157,7 @@ Modal scoping: the CHECK / SCAFFOLD / STRETCH closing-question rule applies in M
 - If the Reference Material is empty for the chapter, follow the {{mode_instruction}}
   fallback rule above.
 
+{{pending_expectation}}
 {{academic_goal_section}}
 {{cognitive_context_section}}
 {{misconception_section}}

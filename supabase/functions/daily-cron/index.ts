@@ -113,6 +113,23 @@ async function recordHealthSnapshot(supabase: ReturnType<typeof createClient>): 
   return 1
 }
 
+// Phase 3 of Foxy continuity (2026-05-18). Sweeps OPEN
+// foxy_pending_expectations rows whose expires_at < now() into 'expired'.
+// Defined in migration 20260528000013_foxy_pending_expectations.sql.
+// Best-effort: any error is logged and swallowed so it cannot break the
+// rest of the daily-cron tick.
+async function expireStaleFoxyExpectations(supabase: ReturnType<typeof createClient>): Promise<number> {
+  try {
+    const {error}=await supabase.rpc('expire_stale_foxy_expectations')
+    if(error){console.error('expire_stale_foxy_expectations failed:', error.message); return 0}
+    console.log('daily-cron: expire_stale_foxy_expectations ok')
+    return 1
+  } catch(e){
+    console.error('expire_stale_foxy_expectations threw:', e instanceof Error ? e.message : String(e))
+    return 0
+  }
+}
+
 async function triggerModelRetrainIfNeeded(supabase: ReturnType<typeof createClient>): Promise<number> {
   const since=new Date(Date.now()-86400000).toISOString()
   const {count:n,error:e}=await supabase.from('quiz_responses').select('*',{count:'exact',head:true}).gte('created_at',since)
@@ -1167,6 +1184,10 @@ Deno.serve(async (req) => {
       ['contracts_expired',()=>expireContracts(sb)],
       ['contract_grace_audited',()=>auditContractGracePeriods(sb)],
       ['monthly_synthesis_triggered',()=>triggerMonthlySynthesis(sb)],
+      // Phase 3 of Foxy continuity (2026-05-18): mark abandoned-by-time
+      // open expectations as 'expired' so they don't keep injecting into
+      // future prompts. Idempotent. See migration 20260528000013.
+      ['foxy_expectations_expired',()=>expireStaleFoxyExpectations(sb)],
     ]
     const settled=await Promise.allSettled(steps.map(([,fn])=>fn()))
     const results:Record<string,number>={};const errors:Record<string,string>={}

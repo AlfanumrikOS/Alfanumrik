@@ -85,6 +85,20 @@ import { buildLabContextSection } from '@/lib/foxy/foxy-lab-prompt';
 import { maybeBuildFoxyContextBlock } from '@/lib/state/context/foxy-context-bridge';
 import { randomUUID } from 'node:crypto';
 import { publishEvent } from '@/lib/state/events/publish';
+// Phase 3 of Foxy conversation continuity (2026-05-18) — "the moat".
+// Server-side state for "Foxy asked X, expect answer to X". Flag-gated by
+// ff_foxy_pending_expectations_v1 (default OFF); helpers are pure imports
+// so OFF stays byte-identical to legacy.
+import {
+  extractExpectation,
+  writeExpectation,
+  loadOpenExpectation,
+  markExpectationAnswered,
+  markExpectationAbandoned,
+  buildExpectationPromptSection,
+  type OpenExpectation,
+  type StructuredAssistantPayload,
+} from '@/lib/learn/foxy-expectations';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -653,6 +667,57 @@ function buildPriorSessionPromptSection(turns: PriorSessionTurn[]): string {
     'Use this only as context — do not address the previous turns directly. The student\'s current question is in the user message.',
     ...lines,
   ].join('\n');
+}
+
+// ─── Phase 3 helper: classify lifecycle outcome of a prior open expectation ──
+
+// Acknowledgment signals — Foxy explicitly accepted/closed the answer.
+// English + Hinglish forms; Devanagari handled via Hindi keywords below.
+const FOXY_ACK_PATTERNS: RegExp[] = [
+  /\b(correct|right answer|exactly right|exactly|well done|good job|good work|nicely done|nice work|spot on|perfect)\b/i,
+  /\b(bilkul sahi|bilkul|sahi|shabash|wah|ekdum sahi)\b/i,
+  /\b(that's it|that is it|you got it|you've got it|you nailed it)\b/i,
+  /\b(close|almost|not quite|partly right|partially correct|good try|nice try)\b/i,
+  /\b(actually|the answer is|in fact)\b.{0,80}\b(is|are|equals?)\b/i,
+];
+
+const HINDI_ACK_RE = /(सही|बिल्कुल|शाबाश|बहुत बढ़िया|वाह)/;
+
+/**
+ * Classify what happened to a prior open expectation after Foxy's next reply.
+ *   - 'answered'   → Foxy explicitly acknowledged / addressed the answer
+ *   - 'abandoned'  → Foxy moved on with a new question and no acknowledgment
+ *   - 'unresolved' → ambiguous; leave OPEN so we re-inject next turn
+ *
+ * Heuristic by design — we accept some misclassification because the safety
+ * net is the 24h expires_at sweep. Tracked as `expectation_abandoned_rate`
+ * for future tuning.
+ */
+function classifyExpectationLifecycle(
+  assistantReply: string,
+  _prior: OpenExpectation,
+): 'answered' | 'abandoned' | 'unresolved' {
+  const text = (assistantReply ?? '').trim();
+  if (!text) return 'unresolved';
+
+  const ack = FOXY_ACK_PATTERNS.some((re) => re.test(text)) || HINDI_ACK_RE.test(text);
+
+  // Did Foxy ask a new question? "-> " marker is the strongest signal.
+  // Any `?` in the reply is a weaker signal.
+  const hasArrowPrompt = /^->\s+/m.test(text);
+  const hasAnyQuestion = text.includes('?');
+
+  if (ack) {
+    // Acknowledged: counts as answered even if a new question follows.
+    return 'answered';
+  }
+  if (hasArrowPrompt || hasAnyQuestion) {
+    // New question without acknowledgment → Foxy moved on.
+    return 'abandoned';
+  }
+  // No acknowledgment, no new question. Could be a clarifying statement
+  // mid-thread — leave open.
+  return 'unresolved';
 }
 
 // ─── Helper: load cognitive context from CME tables ─────────────────────────
@@ -2060,6 +2125,25 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     });
   }
 
+  // 7c. Phase 3 (2026-05-18) — server-side pending-expectations state.
+  //
+  // Flag-gated: when OFF, no extra DB read happens and the prompt variable
+  // resolves to empty string (template-safe). When ON, we look up the most
+  // recent OPEN expectation for this session and inject it into the prompt
+  // as an ANSWERING_NOW block so the model can't "forget" what it just
+  // asked. See migration 20260528000013 + src/lib/learn/foxy-expectations.ts.
+  //
+  // Runs separately from the Promise.all because the flag check itself is
+  // async and we want to skip the DB roundtrip entirely when OFF.
+  const usePendingExpectations = await isFeatureEnabled(
+    'ff_foxy_pending_expectations_v1',
+    { role: 'student', userId: auth.userId! },
+  );
+  let openExpectation: OpenExpectation | null = null;
+  if (usePendingExpectations) {
+    openExpectation = await loadOpenExpectation(supabaseAdmin, resolvedSessionId);
+  }
+
   // 8. Feature-flag gated: use grounded-answer service OR legacy inline flow.
   // `ff_grounded_ai_foxy` is the Phase 3 kill switch. When OFF we fall back to
   // the existing intent-router (src/lib/ai/workflows/*) which has been the
@@ -2450,6 +2534,12 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         // MISCONCEPTION_REPAIR branch in foxy_tutor_v1 with real data.
         // Empty string when no misconceptions observed (template-safe).
         misconception_section: buildMisconceptionPromptSection(cognitiveCtx.recentMisconceptions),
+        // Phase 3 of Foxy continuity (2026-05-18): if Foxy asked a question
+        // on the prior turn and the row is still OPEN, this renders an
+        // ANSWERING_NOW block so the model evaluates the student's current
+        // message AS THE ANSWER. Empty string when flag is OFF or no open
+        // expectation exists (template-safe; missing vars resolve to '').
+        pending_expectation: buildExpectationPromptSection(openExpectation),
         // Task 1.3: cross-session memory. Empty string when no prior sessions
         // (template handles missing variables as empty by design).
         previous_session_context: buildPriorSessionPromptSection(priorSessionTurns),
@@ -2568,6 +2658,11 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         // path runs verbatim.
         preInsertedUserId: preInsertedIds.userId,
         preInsertedAssistantId: preInsertedIds.assistantId,
+        // Phase 3 (2026-05-18): thread pending-expectations state so the
+        // streaming-path post-persist can mark answered/abandoned AND
+        // write the new expectation row. OFF → no-op in the helper.
+        usePendingExpectations,
+        openExpectation,
       });
     }
     // Streaming requested but flag off → silently fall through to blocking.
@@ -2773,6 +2868,55 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     }
   }
 
+  // Phase 3 (2026-05-18): pending-expectations lifecycle (post-persist).
+  //
+  // Two passes:
+  //   1. Resolve the PRIOR open expectation (if any): student's current
+  //      message implicitly answered it. We mark it answered when the new
+  //      reply acknowledges correctness, abandoned when it shifts topic.
+  //   2. Extract the NEW expectation from the just-persisted assistant
+  //      reply and persist it as the next-turn anchor.
+  //
+  // All best-effort. Flag-gated; OFF = byte-identical legacy.
+  if (usePendingExpectations) {
+    try {
+      // ── Pass 1: resolve prior ─────────────────────────────────────────
+      if (openExpectation) {
+        const lifecycle = classifyExpectationLifecycle(assistantContent, openExpectation);
+        if (lifecycle === 'answered') {
+          // fire-and-forget; we already have assistantMessageId or null
+          void markExpectationAnswered(supabaseAdmin, openExpectation.id, assistantMessageId);
+        } else if (lifecycle === 'abandoned') {
+          void markExpectationAbandoned(supabaseAdmin, openExpectation.id);
+        }
+        // 'unresolved' → leave row OPEN; next turn re-injects same prompt.
+      }
+
+      // ── Pass 2: extract new ───────────────────────────────────────────
+      const newExpectation = extractExpectation(assistantContent, {
+        structured: (structured ?? null) as StructuredAssistantPayload | null,
+      });
+      if (newExpectation) {
+        void writeExpectation(supabaseAdmin, {
+          sessionId: resolvedSessionId,
+          studentId,
+          expectation: newExpectation,
+          subject,
+          grade,
+          chapter: chapter ?? null,
+          askedMessageId: assistantMessageId,
+        });
+      }
+    } catch (expErr) {
+      // Helpers already swallow their own errors; this catch is just
+      // defensive against extractor surprises.
+      console.warn(
+        '[foxy] pending-expectations post-persist failed:',
+        expErr instanceof Error ? expErr.message : String(expErr),
+      );
+    }
+  }
+
   // Post-response cognitive logging (fire-and-forget)
   if (cognitiveCtx.nextAction) {
     Promise.resolve(
@@ -2925,6 +3069,11 @@ async function handleStreamingFoxyTurn(params: {
   // failure paths leave the rows in place (UI renders pending state).
   preInsertedUserId?: string | null;
   preInsertedAssistantId?: string | null;
+  // Phase 3 (2026-05-18): flag + open-row threading so streaming parity
+  // with blocking. When `usePendingExpectations` is false, the lifecycle
+  // hook below is skipped entirely (zero extra DB writes).
+  usePendingExpectations?: boolean;
+  openExpectation?: OpenExpectation | null;
 }): Promise<Response> {
   const upstream = await callGroundedAnswerStream(params.groundedRequest, {
     hopTimeoutMs: params.hopTimeoutMs,
@@ -3115,6 +3264,47 @@ async function handleStreamingFoxyTurn(params: {
         console.warn(
           '[foxy] streaming message save failed:',
           err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
+
+    // Phase 3 (2026-05-18): pending-expectations lifecycle for streaming
+    // path. Parity with the blocking flow at the same callsite. Best-effort.
+    if (params.usePendingExpectations) {
+      try {
+        if (params.openExpectation) {
+          const lifecycle = classifyExpectationLifecycle(
+            assistantContent,
+            params.openExpectation,
+          );
+          if (lifecycle === 'answered') {
+            void markExpectationAnswered(
+              supabaseAdmin,
+              params.openExpectation.id,
+              assistantMessageId,
+            );
+          } else if (lifecycle === 'abandoned') {
+            void markExpectationAbandoned(supabaseAdmin, params.openExpectation.id);
+          }
+        }
+        const newExpectation = extractExpectation(assistantContent, {
+          structured: (structured ?? null) as StructuredAssistantPayload | null,
+        });
+        if (newExpectation) {
+          void writeExpectation(supabaseAdmin, {
+            sessionId: params.resolvedSessionId,
+            studentId: params.studentId,
+            expectation: newExpectation,
+            subject: params.subject,
+            grade: params.grade,
+            chapter: params.chapter ?? null,
+            askedMessageId: assistantMessageId,
+          });
+        }
+      } catch (expErr) {
+        console.warn(
+          '[foxy] streaming pending-expectations failed:',
+          expErr instanceof Error ? expErr.message : String(expErr),
         );
       }
     }
