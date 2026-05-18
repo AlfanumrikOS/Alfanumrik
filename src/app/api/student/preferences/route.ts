@@ -14,6 +14,7 @@
  * Body shape (one of):
  *   { action: 'set_preferred_subject', subject: string }
  *   { action: 'set_selected_subjects', subjects: string[], preferred_subject: string }
+ *   { action: 'set_stream', stream: 'science' | 'commerce' | 'humanities' }
  *   { action: 'dismiss_nudge', nudge_id: string }
  */
 
@@ -23,8 +24,11 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { validateSubjectWrite } from '@/lib/subjects';
 
-const VALID_ACTIONS = ['set_preferred_subject', 'set_selected_subjects', 'dismiss_nudge'] as const;
+const VALID_ACTIONS = ['set_preferred_subject', 'set_selected_subjects', 'set_stream', 'dismiss_nudge'] as const;
 type Action = typeof VALID_ACTIONS[number];
+
+const VALID_STREAMS = ['science', 'commerce', 'humanities'] as const;
+type Stream = typeof VALID_STREAMS[number];
 
 function err(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status });
@@ -162,6 +166,69 @@ export async function PATCH(request: NextRequest) {
         });
 
         return NextResponse.json({ success: true });
+      }
+
+      case 'set_stream': {
+        // Phase F.9 follow-up (2026-05-18): the dashboard stream picker was
+        // writing localStorage only — every grade 11/12 student's DB stream
+        // stayed NULL, breaking subject-filter RPCs server-side. This action
+        // persists stream to students.stream so subject access works
+        // correctly.
+        const stream = body.stream;
+        if (typeof stream !== 'string' || !(VALID_STREAMS as readonly string[]).includes(stream)) {
+          return err(`stream must be one of: ${VALID_STREAMS.join(', ')}`, 400);
+        }
+
+        // Stream is only meaningful for grade 11/12. Look up the student's
+        // grade before writing — silently no-op for grades 6-10 rather than
+        // letting bad data accumulate.
+        const { data: studentRow, error: lookupErr } = await supabaseAdmin
+          .from('students')
+          .select('grade')
+          .eq('id', studentId)
+          .maybeSingle();
+
+        if (lookupErr || !studentRow) {
+          logger.error('student_preferences_set_stream_lookup_failed', {
+            error: lookupErr ? new Error(lookupErr.message) : new Error('student not found'),
+            studentId,
+          });
+          return err('Failed to look up student', 500);
+        }
+
+        const grade = String(studentRow.grade ?? '').trim();
+        if (grade !== '11' && grade !== '12') {
+          return NextResponse.json(
+            {
+              error: 'stream_not_applicable',
+              detail: `Stream is only applicable for grades 11-12; this student is grade ${grade || 'unknown'}.`,
+            },
+            { status: 422 },
+          );
+        }
+
+        const { error } = await supabaseAdmin
+          .from('students')
+          .update({ stream: stream as Stream, updated_at: new Date().toISOString() })
+          .eq('id', studentId);
+
+        if (error) {
+          logger.error('student_preferences_set_stream_failed', {
+            error: new Error(error.message),
+            studentId,
+            stream,
+          });
+          return err('Failed to update stream', 500);
+        }
+
+        logAudit(auth.userId!, {
+          action: 'set_stream',
+          resourceType: 'student',
+          resourceId: studentId,
+          details: { stream, grade },
+        });
+
+        return NextResponse.json({ success: true, stream });
       }
 
       case 'dismiss_nudge': {

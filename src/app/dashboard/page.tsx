@@ -172,6 +172,7 @@ function LegacyDashboard() {
     theme,
     toggleTheme,
     refreshSnapshot,
+    refreshStudent,
     activeRole,
   } = useAuth();
   const router = useRouter();
@@ -508,18 +509,34 @@ function LegacyDashboard() {
     };
   }, [student?.id, student?.grade, student?.created_at]);
 
-  // Stream selector for grades 11-12 (localStorage)
+  // Stream selector for grades 11-12.
+  // Phase F.9 follow-up (2026-05-18): DB is the source of truth, not
+  // localStorage. localStorage was a write-only sink — every grade 11/12
+  // student's DB stream stayed NULL, breaking the subject-filter RPCs
+  // server-side (validateSubjectWrite returned 422 'plan' for physics/
+  // chemistry/biology/computer_science because the RPC couldn't filter
+  // to the student's stream).
   useEffect(() => {
     if (!student) return;
     const g = student.grade;
     if (g !== '11' && g !== '12') return;
-    const stored = localStorage.getItem('alfanumrik_stream');
-    if (stored === 'science' || stored === 'commerce' || stored === 'humanities') {
-      setSelectedStream(stored);
-    } else {
-      setShowStreamPicker(true);
+    const dbStream = student.stream;
+    if (dbStream === 'science' || dbStream === 'commerce' || dbStream === 'humanities') {
+      setSelectedStream(dbStream);
+      // Keep localStorage as a hydration cache so the chip shows immediately
+      // on next page load without waiting for AuthContext.
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('alfanumrik_stream', dbStream);
+      }
+      return;
     }
-  }, [student?.grade, student?.id]);
+    // DB stream is null. Pre-fix users may have a localStorage value from
+    // when picker only wrote to localStorage; we DON'T silently backfill
+    // because the localStorage value could be stale or speculative. Always
+    // show the picker so the user explicitly confirms — the next click
+    // writes to DB.
+    setShowStreamPicker(true);
+  }, [student?.grade, student?.id, student?.stream]);
 
   // ─── Loading & guard ───────────────────────────────────────────────────
   if (isLoading) return <DashboardSkeleton />;
@@ -576,10 +593,38 @@ function LegacyDashboard() {
               {STREAM_OPTIONS.map((st) => (
                 <button
                   key={st.key}
-                  onClick={() => {
+                  onClick={async () => {
+                    // Optimistic UI — instant feedback, then persist to DB.
                     setSelectedStream(st.key);
-                    localStorage.setItem('alfanumrik_stream', st.key);
                     setShowStreamPicker(false);
+                    if (typeof window !== 'undefined') {
+                      localStorage.setItem('alfanumrik_stream', st.key);
+                    }
+                    // Phase F.9 fix: write to DB via authenticated route.
+                    try {
+                      const res = await fetch('/api/student/preferences', {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'set_stream', stream: st.key }),
+                      });
+                      if (!res.ok) {
+                        const body = await res.json().catch(() => ({}));
+                        console.error('[stream-picker] persist failed:', res.status, body);
+                        // Re-open the picker so the user sees the attempt didn't take.
+                        // localStorage retains the optimistic value but the server
+                        // will be the source of truth on next refresh.
+                        setShowStreamPicker(true);
+                      } else {
+                        // Refresh the AuthContext so subsequent subject queries see
+                        // the new stream. The picker stays closed.
+                        if (typeof refreshStudent === 'function') {
+                          void refreshStudent();
+                        }
+                      }
+                    } catch (e) {
+                      console.error('[stream-picker] persist network error:', e);
+                      setShowStreamPicker(true);
+                    }
                   }}
                   className="w-full flex items-center gap-4 p-4 rounded-2xl text-left transition-all hover:scale-[1.01]"
                   style={{ background: 'var(--surface-1)', border: `2px solid ${st.color}30` }}
