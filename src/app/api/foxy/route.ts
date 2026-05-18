@@ -96,7 +96,13 @@ const MAX_MESSAGE_LENGTH = 1000;
 // turns so input cost stays roughly flat despite the longer history.
 const MAX_HISTORY_TURNS = 20;
 const RAG_MATCH_COUNT = 5;
-const SESSION_IDLE_MINUTES = 30;
+// Phase 1 of Foxy continuity fix (2026-05-18): bumped 30 → 240 (4 hours).
+// 30 min was destroying session history every time a student paused to read a
+// long explanation, take a bathroom break, or think carefully. 4h covers a
+// school day + after-school study + network reconnections. The stricter
+// "never silently reset, even after 4h" semantics live behind
+// ff_foxy_session_reactivate_v1 in resolveSession().
+const SESSION_IDLE_MINUTES = 240;
 
 // Reasons for which we refund the quota (the student did not actually get
 // served an answer that consumed LLM tokens). Service-side validation errors
@@ -342,7 +348,8 @@ export function parseFoxyChapterNumber(chapter: string | null): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-async function resolveSession(
+/* @internal Exported for unit testing only — do NOT import from app code. */
+export async function resolveSession(
   studentId: string,
   subject: string,
   grade: string,
@@ -363,21 +370,102 @@ async function resolveSession(
   schoolId: string | null,
 ): Promise<string> {
   if (providedSessionId) {
-    const cutoff = new Date(Date.now() - SESSION_IDLE_MINUTES * 60 * 1000).toISOString();
-    const { data: existing } = await supabaseAdmin
-      .from('foxy_sessions')
-      .select('id')
-      .eq('id', providedSessionId)
-      .eq('student_id', studentId)
-      .gte('last_active_at', cutoff)
-      .single();
+    // Phase 1 (2026-05-18): flag-gated reactivation semantics. When ON, we
+    // load the session WITHOUT the idle filter and reuse it as long as the
+    // pedagogy context (subject + chapter + mode) still matches. This is
+    // the structural fix for RC1 in the Foxy continuity plan — silent
+    // session resets after the idle cutoff destroyed student-perceived
+    // history. The OLD path (flag OFF) is kept verbatim except for the
+    // new silent_reset telemetry line so we can measure RC1 in prod.
+    const reactivateMode = await isFeatureEnabled('ff_foxy_session_reactivate_v1', {
+      role: 'student',
+      userId: authUserId,
+    });
 
-    if (existing) {
-      await supabaseAdmin
+    if (reactivateMode) {
+      // NEW path: never silently reset; explicit context-change check.
+      const { data: existing } = await supabaseAdmin
         .from('foxy_sessions')
-        .update({ last_active_at: new Date().toISOString() })
-        .eq('id', providedSessionId);
-      return providedSessionId;
+        .select('id, subject, chapter, mode, last_active_at')
+        .eq('id', providedSessionId)
+        .eq('student_id', studentId)
+        .single();
+
+      if (existing) {
+        const ctxMatches =
+          existing.subject === subject
+          && (existing.chapter || null) === (chapter || null)
+          && existing.mode === mode;
+        const idleMs = Date.now() - new Date(existing.last_active_at).getTime();
+
+        if (ctxMatches) {
+          if (idleMs > SESSION_IDLE_MINUTES * 60 * 1000) {
+            logger.info('foxy.session.reactivated_after_idle', {
+              foxySessionId: providedSessionId,
+              studentId,
+              idleDurationMs: idleMs,
+            });
+          }
+          await supabaseAdmin
+            .from('foxy_sessions')
+            .update({ last_active_at: new Date().toISOString() })
+            .eq('id', providedSessionId);
+          return providedSessionId;
+        }
+
+        // Context mismatch — student switched subject / chapter / mode mid-conversation.
+        // This is a legitimate new-session boundary; log it for product analytics.
+        logger.info('foxy.session.context_changed', {
+          foxySessionId: providedSessionId,
+          studentId,
+          oldContext: {
+            subject: existing.subject,
+            chapter: existing.chapter,
+            mode: existing.mode,
+          },
+          newContext: { subject, chapter, mode },
+        });
+        // fall through to new-session create below
+      } else {
+        // Session row not found at all (deleted? wrong tenant?) — log so we can
+        // distinguish from idle-filter exclusion.
+        logger.warn('foxy.session.silent_reset', {
+          providedSessionId,
+          studentId,
+          reason: 'session_not_found',
+        });
+        // fall through to new-session create below
+      }
+    } else {
+      // OLD path (flag OFF): idle filter behavior. Kept verbatim except for
+      // the new silent_reset telemetry on the fall-through case.
+      const cutoff = new Date(Date.now() - SESSION_IDLE_MINUTES * 60 * 1000).toISOString();
+      const { data: existing } = await supabaseAdmin
+        .from('foxy_sessions')
+        .select('id')
+        .eq('id', providedSessionId)
+        .eq('student_id', studentId)
+        .gte('last_active_at', cutoff)
+        .single();
+
+      if (existing) {
+        await supabaseAdmin
+          .from('foxy_sessions')
+          .update({ last_active_at: new Date().toISOString() })
+          .eq('id', providedSessionId);
+        return providedSessionId;
+      }
+
+      // Phase 1 observability: log every case where the client sent a
+      // sessionId but the OLD path is about to create a new session. This
+      // is the silent_reset signal we never had before. Measurable in
+      // PostHog; should drop to near-zero once ff_foxy_session_reactivate_v1
+      // is rolled out to 100%.
+      logger.warn('foxy.session.silent_reset', {
+        providedSessionId,
+        studentId,
+        reason: 'idle_filter_excluded',
+      });
     }
   }
 
