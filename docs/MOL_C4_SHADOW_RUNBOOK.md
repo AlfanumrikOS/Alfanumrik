@@ -1,7 +1,9 @@
 # MOL C4 Shadow Routing — Canary & Operations Runbook
 
-**Status:** C4.2b-i shipped 2026-05-19. Default OFF on every environment.
+**Status:** C4.2b-i shipped 2026-05-19; review fixes (rubric v2 + parallelism + grader cap) landed same day.
+**Default:** OFF on every environment.
 **Owners:** ops (canary execution, kill switch) · ai-engineer (helper + grader code) · architect (schema, infra concerns)
+**Rubric version:** `mol-grader-v2` (filter `mol_request_logs.shadow_grader_payload->>'rubric_version'='mol-grader-v2'` for current-rubric scores)
 **Related:**
 - Architecture: `docs/MOL_ARCHITECTURE.md`
 - Operations index: `docs/MOL_OPERATIONS.md`
@@ -21,6 +23,38 @@
 | Health view | `mol_request_health_24h` (in `20260519000003_mol_request_health_24h.sql`) | Hourly rollup sliced by provider × task_type × shadow_role. |
 | Grader cron | `gradeMolShadowPairs` step in `supabase/functions/daily-cron/index.ts` | Stratified-sample shadow rows, call Sonnet grader, write score onto the shadow row. **Scaffold mode until C4.2b-ii lands text capture.** |
 | Flag | `ff_grounded_answer_mol_shadow_v1` (`20260519000002_mol_shadow_flag_seed.sql`) | Default `enabled=false`, `rollout_pct=0`. |
+
+### Rubric v2 (`mol-grader-v2`) at a glance
+
+Stratified sampling (`GRADER_SAMPLING_RATES` in `grader.ts`):
+
+| Task type | Rate | Rationale |
+|---|---:|---|
+| `doubt_solving` | 15% | Foxy core; scaffolding fidelity matters most here |
+| `step_by_step` | 15% | Board-exam stakes for ncert-solver textbook answers |
+| `concept_explanation` | 8% | High volume; grader signal still informative |
+| `explanation` | 5% | Highest volume, lowest unit pedagogical risk |
+| (anything else) | 0% | Outside C4 allow-list — no shadow rows exist to grade |
+
+Rubric weights (sum to 1.0; `citation_accuracy` is **optional** — when null the remaining weights renormalize):
+
+| Dimension | Weight | What it scores |
+|---|---:|---|
+| `accuracy`            | 0.30 | Underlying claims are true (highest weight) |
+| `cbse_scope`          | 0.25 | Stays inside CBSE / NCERT curriculum for the grade |
+| `age_appropriateness` | 0.20 | Language and depth fit the stated grade |
+| `scaffold_fidelity`   | 0.10 | Builds understanding step-by-step (matches coach mode if recorded) |
+| `helpfulness`         | 0.05 | Directly addresses the asked question |
+| `citation_accuracy`   | 0.10 | Citations match content. May be null on abstain turns / simple recall — when null, the four mandatory dimensions renormalize against `1 - 0.10` |
+
+Tie threshold (`overall` delta): ±0.03 (tightened from ±0.05 in v1).
+
+Anti-bias clauses bound at the system-prompt level:
+- Length is not quality — do not penalize purely for being shorter / longer.
+- Ignore stylistic preambles (`"As an AI assistant"`, `"Great question!"`, `"Let me help you"`) — model tells, not pedagogy signals.
+- Score on substance, not confidence-tone.
+
+Dimensions are deliberately harmonized with `src/lib/foxy/quality-eval.ts` so the same vocabulary applies to MOL cross-provider grading and single-provider Foxy quality scoring.
 
 ---
 
@@ -169,7 +203,22 @@ select date_trunc('day', created_at) as day,
  group by 1
  order by 1 desc;
 ```
-The grader cron flips `kill_switch=true` when today's `inr_cost_sum` exceeds ₹10,000 (`GRADER_DAILY_COST_CAP_INR` in `grader.ts`).
+The grader cron flips `kill_switch=true` when today's `inr_cost_sum` exceeds ₹10,000 (`GRADER_DAILY_COST_CAP_INR` in `grader.ts`). When the flip happens the cron also inserts one `audit_logs` row tagged `actor_type='cron'`, `action='mol_shadow_kill_switch_flipped'`, `resource_type='mol_shadow_grader'` so the super-admin SIEM picks up the event.
+
+### 5.4a Daily grader (Sonnet) cost — separate cap
+
+```sql
+select date_trunc('day', created_at) as day,
+       sum(inr_cost) as grader_inr_sum,
+       count(*) as grader_calls
+  from public.mol_request_logs
+ where task_type = 'shadow_grader'
+   and surface  = 'cron'
+   and created_at > now() - interval '7 days'
+ group by 1
+ order by 1 desc;
+```
+Each grader call writes its own telemetry row tagged `task_type='shadow_grader'`, `surface='cron'`, `provider='anthropic'`. The cron aborts remaining batches when its in-process estimate exceeds `GRADER_DAILY_CAP_INR=₹5,000`; this does NOT flip `kill_switch` (grader cost is operational overhead, not a signal that shadow itself is bad). If you see this cap trip repeatedly, lower the per-task-type sampling rates in `GRADER_SAMPLING_RATES` rather than raising the cap.
 
 ### 5.5 Pair coverage (mol_shadow_pairs_v1 returning rows)
 
@@ -292,7 +341,10 @@ After each ramp gate, run:
 | Gap | Tracker | Notes |
 |---|---|---|
 | Response text capture for grader | C4.2b-ii | The grader cron is in scaffold mode — every sampled pair reports `skipped_no_text`. The text-storage decision (column vs Redis vs ephemeral table) has P13 (PII) implications and needs its own design review. |
+| `coach_mode` column on `mol_request_logs` | C4.2b-iii | The grader's `scaffold_fidelity` dimension scores best when coach mode is known. Today the cron passes `null` so the grader falls back to "any recognisable scaffolding pattern". When text capture lands in C4.2b-ii, plumb coach mode at the same time. |
 | Super-admin UI for shadow pairs | C4.2b-ii | The view + grader exist; the dashboard surfacing them does not. Until then, ops queries the views directly. |
 | `newMolRequestId` dedupe | C4.2b-ii | Cosmetic — when the shadow helper crafts a synthetic request_id for the orchestrator's auto-log, the auto-log row may carry that id rather than the baseline's. Tracked separately. |
 | OpenAI date-pinning | C5 | gpt-4o-mini is currently un-pinned. Date-pin in C5 to lock the comparator semantics. |
 | Adding `grounding_check` / `quiz_generation` to the shadow allow-list | C5 | Today only 4 task_types are graded. After C4.2b-i canary lands, C5 evaluates whether expanding the allow-list is useful. |
+| CBSE-specific rubric patterns (A9-A11 review follow-ups) | C5 | Subject-specific scoring (math vs literature have different "factual correctness" semantics), regional / multilingual age-appropriateness norms, and curriculum-version awareness deferred to C5. |
+| Grader cost reconciliation | C5 | The grader cron charges a fixed estimated INR per call (`ESTIMATED_GRADER_INR_PER_CALL=1.0`) rather than the real Sonnet token cost. Real reconciliation requires reading `usage` from the API response and converting via USD→INR rates. |

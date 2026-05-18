@@ -1,14 +1,34 @@
 // supabase/functions/_shared/mol/grader-cron.ts
 //
 // C4.2b-i (2026-05-19): the daily-cron step that drives the shadow grader.
+// C4.2b-i review fixes (2026-05-19):
+//   * A1: forwards `grade` + `coach_mode` from the pair row to the grader.
+//   * B5: parallelizes the per-pair grader calls (Promise.allSettled,
+//         concurrency = BATCH_CONCURRENCY) so the cron stays under the
+//         150s Edge-function timeout once C4.2b-ii lands real text capture.
+//   * B6: enforces a separate GRADER_DAILY_CAP_INR on Sonnet spend. The
+//         cron tracks grader cost in-process during the run; if exceeded
+//         mid-batch the remaining batches abort cleanly without flipping
+//         the shadow kill switch (grader cost is operational overhead, not
+//         a signal that shadow is bad). Each grader call also writes its
+//         own telemetry row tagged task_type='shadow_grader' and
+//         surface='cron' so the existing mol_request_health_24h view picks
+//         it up automatically.
+//   * B1: when the shadow cost cap flips kill_switch=true, the cron inserts
+//         one audit_logs row tagged actor_type='cron' so the
+//         super-admin SIEM/forensics surface sees the event.
 //
 // What this module owns:
-//   1. Query the unaged shadow rows from mol_shadow_pairs_v1.
+//   1. Query the unaged shadow rows from mol_request_logs.
 //   2. Apply stratified per-task-type sampling (GRADER_SAMPLING_RATES).
-//   3. Enforce the daily INR cost cap — if the day's shadow spend exceeds
-//      GRADER_DAILY_COST_CAP_INR (₹10,000), FLIP the shadow flag's
-//      kill_switch and exit early WITHOUT calling Sonnet.
-//   4. For each sampled pair, call `gradeShadowPair` and write
+//   3. Enforce the daily INR cost cap on SHADOW spend — if the day's shadow
+//      cost exceeds GRADER_DAILY_COST_CAP_INR (₹10,000), FLIP the shadow
+//      flag's kill_switch and exit early WITHOUT calling Sonnet.
+//   4. Enforce a separate cap on GRADER (Sonnet) spend
+//      (GRADER_DAILY_CAP_INR, ₹5,000): aborts remaining batches but does
+//      NOT flip kill_switch.
+//   5. For each sampled pair, call `gradeShadowPair` (in parallel batches
+//      of BATCH_CONCURRENCY) and write
 //      shadow_grader_score / shadow_grader_payload / shadow_graded_at
 //      onto the shadow row in mol_request_logs.
 //
@@ -30,12 +50,34 @@
 //     they can be validated in canary BEFORE the text-storage decision
 //     is made.
 
-import type { gradeShadowPair as GradeShadowPairFn } from './grader.ts';
+import type { gradeShadowPair as GradeShadowPairFn, GraderResult } from './grader.ts';
 import {
+  GRADER_DAILY_CAP_INR,
   GRADER_DAILY_COST_CAP_INR,
   GRADER_SAMPLING_RATES,
   graderSampleBucket,
 } from './grader.ts';
+
+/**
+ * Max concurrent Sonnet calls per batch. 5 keeps us well clear of
+ * Anthropic's per-key concurrency limits (~50 by default) while reducing
+ * total wall time by ~5× compared to serial. Raise carefully — Sonnet
+ * has lower throughput per key than Haiku.
+ */
+const BATCH_CONCURRENCY = 5 as const;
+
+/**
+ * Estimated INR cost per grader call (Sonnet 4.6 @ ~600 input + 300 output
+ * tokens, USD→INR ≈ 85). We use a heuristic estimate at SCHEDULE time so
+ * the cap kicks in BEFORE we exhaust the budget — actual cost lands on
+ * the mol_request_logs telemetry row, but the in-process counter has to
+ * decide whether to start the NEXT batch without waiting for those rows.
+ * Tuned conservatively (slightly high) so we under-spend rather than over.
+ *
+ * Sonnet pricing (2026-05-19): $3/M input + $15/M output. At ~600/300
+ * tokens that's $0.0063 ≈ ₹0.54. We round up to ₹1 to absorb retries.
+ */
+const ESTIMATED_GRADER_INR_PER_CALL = 1.0 as const;
 
 /**
  * Supabase client type alias. We don't import the real type here because
@@ -53,14 +95,13 @@ interface SupabaseQueryBuilder {
   // deno-lint-ignore no-explicit-any
   update: (patch: Record<string, unknown>) => any;
   // deno-lint-ignore no-explicit-any
-  insert?: (rows: unknown[]) => any;
+  insert?: (rows: unknown[] | Record<string, unknown>) => any;
 }
 
 /**
- * One sampled pair from mol_shadow_pairs_v1. The grader cron resolves
+ * One sampled pair from mol_request_logs. The grader cron resolves
  * the text from somewhere (today: nowhere — see the C4.2b-i scaffold
- * note above) and then calls gradeShadowPair. The shape mirrors the
- * view's row layout but only carries the fields the cron uses.
+ * note above) and then calls gradeShadowPair.
  */
 export interface ShadowPairRow {
   request_id: string;
@@ -76,14 +117,20 @@ export interface GraderCronResult {
   cost_cap_triggered: boolean;
   killed: boolean;
   daily_shadow_cost_inr: number;
+  grader_cap_triggered: boolean;
+  estimated_grader_cost_inr: number;
 }
 
 /**
  * The grader cron step entry point. Driver-side knobs that callers
  * (the unit test, the daily-cron index.ts) can inject:
- *   - `now`     : injected clock for deterministic tests
- *   - `grader`  : the Anthropic Sonnet caller (real: gradeShadowPair)
- *   - `samplingRates`: override per-task-type rate (test seam only)
+ *   - `now`              : injected clock for deterministic tests
+ *   - `grader`           : the Anthropic Sonnet caller (real: gradeShadowPair)
+ *   - `samplingRates`    : override per-task-type rate (test seam only)
+ *   - `costCapInr`       : override shadow cap (test seam)
+ *   - `graderCapInr`     : override grader Sonnet cap (test seam)
+ *   - `batchConcurrency` : override Promise batch size (test seam)
+ *   - `estimatedGraderInrPerCall`: override per-call estimate (test seam)
  */
 export async function gradeMolShadowPairs(
   supabase: SupabaseLike,
@@ -92,11 +139,18 @@ export async function gradeMolShadowPairs(
     grader?: typeof GradeShadowPairFn;
     samplingRates?: Record<string, number>;
     costCapInr?: number;
+    graderCapInr?: number;
+    batchConcurrency?: number;
+    estimatedGraderInrPerCall?: number;
   } = {},
 ): Promise<GraderCronResult> {
   const nowFn = options.now ?? (() => new Date());
   const samplingRates = options.samplingRates ?? GRADER_SAMPLING_RATES;
   const costCapInr = options.costCapInr ?? GRADER_DAILY_COST_CAP_INR;
+  const graderCapInr = options.graderCapInr ?? GRADER_DAILY_CAP_INR;
+  const concurrency = options.batchConcurrency ?? BATCH_CONCURRENCY;
+  const estimatedGraderInrPerCall =
+    options.estimatedGraderInrPerCall ?? ESTIMATED_GRADER_INR_PER_CALL;
 
   const result: GraderCronResult = {
     graded: 0,
@@ -105,6 +159,8 @@ export async function gradeMolShadowPairs(
     cost_cap_triggered: false,
     killed: false,
     daily_shadow_cost_inr: 0,
+    grader_cap_triggered: false,
+    estimated_grader_cost_inr: 0,
   };
 
   // ── Step 1: enforce daily cost cap BEFORE any Sonnet calls ──
@@ -132,6 +188,16 @@ export async function gradeMolShadowPairs(
       if (sum > costCapInr) {
         result.cost_cap_triggered = true;
         result.killed = await flipKillSwitch(supabase, today);
+        // B1 review fix: emit an audit_logs row so the super-admin SIEM
+        // catches the kill-switch flip. Best-effort: do not let an audit
+        // failure mask the kill-switch outcome.
+        if (result.killed) {
+          await emitKillSwitchAudit(supabase, {
+            daily_shadow_cost_inr: result.daily_shadow_cost_inr,
+            cap_inr: costCapInr,
+            run_at: today.toISOString(),
+          });
+        }
         // EXIT EARLY: do not call Sonnet, do not grade. The flip propagates
         // to mol-shadow.ts via the 5-minute flag cache.
         return result;
@@ -146,16 +212,21 @@ export async function gradeMolShadowPairs(
   // We use mol_request_logs directly (not the v1 pairs view) because the
   // grader UPDATEs the shadow row by request_id, and the view doesn't
   // surface the shadow row's own request_id distinctly from the baseline's.
+  //
+  // A1 review fix: include `grade` so the grader can score age-appropriateness
+  // coherently. `coach_mode` is NOT yet a column on mol_request_logs (P13-
+  // bound design call deferred to a follow-up); for now we pass null.
   const cutoffIso = new Date(nowFn().getTime() - 48 * 3600 * 1000).toISOString();
   let candidates: Array<{
     request_id: string;
     task_type: string;
     shadow_of_request_id: string | null;
+    grade: string | null;
   }> = [];
   try {
     // deno-lint-ignore no-explicit-any
     const { data, error } = await (supabase.from('mol_request_logs') as any)
-      .select('request_id,task_type,shadow_of_request_id', { head: false })
+      .select('request_id,task_type,shadow_of_request_id,grade', { head: false })
       .eq('shadow_role', 'shadow')
       .is('shadow_grader_score', null)
       .gte('created_at', cutoffIso);
@@ -196,61 +267,152 @@ export async function gradeMolShadowPairs(
   // review). Every sampled pair is recorded as "skipped — text not
   // available" until C4.2b-ii decides on text storage.
   //
-  // The driver shape below is the SAME shape the post-text-capture cron
-  // will use: batches of 20, per-pair grader call, UPDATE the shadow row
-  // with the score + payload. Today the grader argument is unused (the
-  // text lookup yields null → we increment skipped_no_text). When text
-  // capture lands, replace `resolveTexts` to return real strings and the
-  // grader path will start running unchanged.
-  const BATCH = 20;
-  for (let i = 0; i < sampled.length; i += BATCH) {
-    const batch = sampled.slice(i, i + BATCH);
-    for (const pair of batch) {
-      const texts = await resolveTexts(supabase, pair);
-      if (!texts) {
+  // B5 review fix: each batch fans out via Promise.allSettled so the
+  // Sonnet calls run in parallel. Per-pair errors are caught inside the
+  // batch worker so one bad pair never blocks the rest. Once text capture
+  // lands, replace `resolveTexts` to return real strings and the grader
+  // path will start running unchanged.
+  for (let i = 0; i < sampled.length; i += concurrency) {
+    // B6 review fix: abort remaining batches when the in-process grader
+    // cost estimate exceeds the daily cap. We check BEFORE scheduling the
+    // next batch so a partially-completed batch is allowed to finish.
+    if (result.estimated_grader_cost_inr >= graderCapInr) {
+      result.grader_cap_triggered = true;
+      console.warn(
+        `[grader-cron] grader Sonnet cap reached: estimated=${result.estimated_grader_cost_inr} cap=${graderCapInr} — aborting remaining batches`,
+      );
+      // Remaining unscheduled pairs are counted as skipped_no_text so the
+      // ops dashboard does not lose them.
+      result.skipped_no_text += sampled.length - i;
+      break;
+    }
+
+    const batch = sampled.slice(i, i + concurrency);
+
+    // Schedule the whole batch in parallel.
+    const settled = await Promise.allSettled(
+      batch.map((pair) => gradeOnePair(supabase, pair, options.grader, today)),
+    );
+
+    for (const outcome of settled) {
+      if (outcome.status === 'rejected') {
+        // The per-pair worker swallows its own errors and returns a tagged
+        // outcome; a rejected status means a programming error escaped
+        // (rare). Treat as skipped so the run still counts as accounted.
         result.skipped_no_text += 1;
+        const reason = outcome.reason instanceof Error
+          ? outcome.reason.message
+          : String(outcome.reason);
+        console.warn(`[grader-cron] unexpected worker rejection: ${reason}`);
+        // Even rejected workers may have spent Sonnet quota — charge the
+        // estimate so the cap stays accurate.
+        result.estimated_grader_cost_inr =
+          Math.round((result.estimated_grader_cost_inr + estimatedGraderInrPerCall) * 10000) / 10000;
         continue;
       }
-      // Reached only when C4.2b-ii lands text capture. Today: unreachable.
-      // The grader argument is required so the production cron's contract
-      // is fully unit-tested — see __tests__/grader-cron.test.ts.
-      const grader = options.grader;
-      if (!grader) {
-        result.skipped_no_text += 1;
-        continue;
-      }
-      const out = await grader({
-        question: texts.question,
-        baseline_text: texts.baseline_text,
-        shadow_text: texts.shadow_text,
-      });
-      if (!out) {
-        result.skipped_no_text += 1;
-        continue;
-      }
-      try {
-        // deno-lint-ignore no-explicit-any
-        const { error: uErr } = await (supabase.from('mol_request_logs') as any)
-          .update({
-            shadow_grader_score: out.shadow.overall,
-            shadow_grader_payload: out,
-            shadow_graded_at: new Date().toISOString(),
-          })
-          .eq('request_id', pair.request_id)
-          .eq('shadow_role', 'shadow');
-        if (uErr) {
-          console.warn(`[grader-cron] update failed for ${pair.request_id}: ${uErr.message ?? String(uErr)}`);
-          continue;
-        }
+      const r = outcome.value;
+      if (r.kind === 'graded') {
         result.graded += 1;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[grader-cron] update threw for ${pair.request_id}: ${msg}`);
+      } else if (r.kind === 'skipped_no_text') {
+        result.skipped_no_text += 1;
+      }
+      if (r.charged) {
+        result.estimated_grader_cost_inr =
+          Math.round((result.estimated_grader_cost_inr + estimatedGraderInrPerCall) * 10000) / 10000;
       }
     }
   }
 
   return result;
+}
+
+interface PairOutcome {
+  kind: 'graded' | 'skipped_no_text';
+  /** True when a Sonnet call was actually issued (counts toward the grader cap). */
+  charged: boolean;
+}
+
+/**
+ * Per-pair worker. Resolves text, calls the grader, writes the result.
+ * Always returns a tagged outcome so the batch driver can attribute
+ * skips correctly.
+ *
+ * The grader is invoked with grade + coach_mode (A1 review fix). Coach mode
+ * is NOT yet stored on mol_request_logs (P13-bound design call deferred),
+ * so we pass null today and the grader prompt downgrades scaffold_fidelity
+ * scoring accordingly. TODO(C4.2b-iii): plumb coach_mode via a new column
+ * on mol_request_logs or via mol_shadow_pairs_v1.
+ */
+async function gradeOnePair(
+  supabase: SupabaseLike,
+  pair: {
+    request_id: string;
+    task_type: string;
+    shadow_of_request_id: string | null;
+    grade: string | null;
+  },
+  grader: typeof GradeShadowPairFn | undefined,
+  now: Date,
+): Promise<PairOutcome> {
+  const texts = await resolveTexts(supabase, pair);
+  if (!texts) {
+    return { kind: 'skipped_no_text', charged: false };
+  }
+  // Reached only when C4.2b-ii lands text capture. Today: unreachable.
+  // The grader argument is required so the production cron's contract
+  // is fully unit-tested — see __tests__/grader-cron.test.ts.
+  if (!grader) {
+    return { kind: 'skipped_no_text', charged: false };
+  }
+  const startMs = now.getTime();
+  let out: GraderResult | null;
+  try {
+    out = await grader({
+      question: texts.question,
+      baseline_text: texts.baseline_text,
+      shadow_text: texts.shadow_text,
+      grade: pair.grade ?? '',
+      // TODO(C4.2b-iii: coach_mode column on mol_request_logs).
+      coach_mode: null,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[grader-cron] grader threw for ${pair.request_id}: ${msg}`);
+    // We dispatched the Sonnet call — even on throw, charge the estimate.
+    return { kind: 'skipped_no_text', charged: true };
+  }
+  // Whether or not the grader returned a usable score, we issued the
+  // Sonnet request → charge the estimate against the daily cap.
+  if (!out) {
+    await writeGraderTelemetry(supabase, pair, null, now.getTime() - startMs);
+    return { kind: 'skipped_no_text', charged: true };
+  }
+  try {
+    // deno-lint-ignore no-explicit-any
+    const { error: uErr } = await (supabase.from('mol_request_logs') as any)
+      .update({
+        shadow_grader_score: out.shadow.overall,
+        shadow_grader_payload: out,
+        shadow_graded_at: new Date().toISOString(),
+      })
+      .eq('request_id', pair.request_id)
+      .eq('shadow_role', 'shadow');
+    if (uErr) {
+      console.warn(`[grader-cron] update failed for ${pair.request_id}: ${uErr.message ?? String(uErr)}`);
+      await writeGraderTelemetry(supabase, pair, out, now.getTime() - startMs);
+      return { kind: 'skipped_no_text', charged: true };
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[grader-cron] update threw for ${pair.request_id}: ${msg}`);
+    await writeGraderTelemetry(supabase, pair, out, now.getTime() - startMs);
+    return { kind: 'skipped_no_text', charged: true };
+  }
+  // B6 telemetry: persist the grader call so mol_request_health_24h
+  // surfaces it. Best-effort — telemetry failure does not roll back the
+  // grading row.
+  await writeGraderTelemetry(supabase, pair, out, now.getTime() - startMs);
+  return { kind: 'graded', charged: true };
 }
 
 /**
@@ -266,9 +428,14 @@ async function resolveTexts(
   // deno-lint-ignore no-unused-vars
   supabase: SupabaseLike,
   // deno-lint-ignore no-unused-vars
-  pair: { request_id: string; task_type: string; shadow_of_request_id: string | null },
+  pair: {
+    request_id: string;
+    task_type: string;
+    shadow_of_request_id: string | null;
+    grade: string | null;
+  },
 ): Promise<{ question: string; baseline_text: string; shadow_text: string } | null> {
-  // TODO(c4.2b-ii): plumb response text capture. Until then every pair
+  // TODO(C4.2b-ii): plumb response text capture. Until then every pair
   // takes the skipped_no_text branch. Tracker: C4.2b-ii grader.ts text
   // capture decision.
   return null;
@@ -307,5 +474,99 @@ async function flipKillSwitch(supabase: SupabaseLike, now: Date): Promise<boolea
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[grader-cron] kill-switch threw: ${msg}`);
     return false;
+  }
+}
+
+/**
+ * Emit one audit_logs row after a successful kill_switch flip (B1 review
+ * fix). Uses actor_type='cron' which matches the canonical check
+ * constraint added in 20260528000006_audit_logs_admin_actor_type.sql.
+ * Best-effort: telemetry failure must not mask the kill-switch outcome.
+ */
+async function emitKillSwitchAudit(
+  supabase: SupabaseLike,
+  payload: { daily_shadow_cost_inr: number; cap_inr: number; run_at: string },
+): Promise<void> {
+  try {
+    // The shape mirrors audit_logs columns added in the Phase G.4 migration:
+    //   actor_type='cron', resource_type='mol_shadow_grader',
+    //   action='mol_shadow_kill_switch_flipped', details=<jsonb>.
+    // We pass auth_user_id=null because the action originated from a
+    // scheduled job, not a user session.
+    // deno-lint-ignore no-explicit-any
+    const builder = (supabase.from('audit_logs') as any);
+    if (typeof builder.insert !== 'function') {
+      console.warn('[grader-cron] audit_logs insert unsupported on this client');
+      return;
+    }
+    const { error } = await builder.insert({
+      auth_user_id: null,
+      actor_type: 'cron',
+      action: 'mol_shadow_kill_switch_flipped',
+      resource_type: 'mol_shadow_grader',
+      resource_id: 'ff_grounded_answer_mol_shadow_v1',
+      details: {
+        daily_shadow_cost_inr: payload.daily_shadow_cost_inr,
+        cap_inr: payload.cap_inr,
+        run_at: payload.run_at,
+        actor: 'system:mol-grader-cron',
+      },
+      status: 'success',
+    });
+    if (error) {
+      console.warn(`[grader-cron] audit_logs insert failed: ${error.message ?? String(error)}`);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[grader-cron] audit_logs threw: ${msg}`);
+  }
+}
+
+/**
+ * Optional B6 telemetry: write one row per grader call into
+ * mol_request_logs tagged `task_type='shadow_grader'` and `surface='cron'`.
+ * Lets `mol_request_health_24h` and downstream dashboards surface Sonnet
+ * grader spend alongside baseline/shadow rows without a separate schema.
+ *
+ * Best-effort: telemetry failure must not roll back the grading row.
+ * Uses the ESTIMATED INR cost (not the actual API charge — Sonnet usage
+ * tokens are inside the grader payload). Real cost reconciliation is a
+ * follow-up.
+ */
+async function writeGraderTelemetry(
+  supabase: SupabaseLike,
+  pair: { request_id: string; task_type: string },
+  result: GraderResult | null,
+  latency_ms: number,
+): Promise<void> {
+  try {
+    // deno-lint-ignore no-explicit-any
+    const builder = (supabase.from('mol_request_logs') as any);
+    if (typeof builder.insert !== 'function') {
+      // Mocks that do not implement insert simply silently skip telemetry;
+      // production supabase-js always provides .insert.
+      return;
+    }
+    const failed = result === null;
+    await builder.insert({
+      request_id: `grader-${pair.request_id}`,
+      task_type: 'shadow_grader',
+      surface: 'cron',
+      provider: 'anthropic',
+      model: result?.model ?? 'claude-sonnet-4-6-20251022',
+      passes: 1,
+      fallback_count: 0,
+      failure_chain: failed ? 'grader:no_result' : null,
+      latency_ms: Math.max(0, Math.round(latency_ms)),
+      prompt_tokens: result?.prompt_tokens ?? 0,
+      completion_tokens: result?.completion_tokens ?? 0,
+      usd_cost: 0,
+      inr_cost: ESTIMATED_GRADER_INR_PER_CALL,
+      // shadow_role intentionally NULL — the grader telemetry rows are
+      // their own class; not baseline, not shadow.
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[grader-cron] grader telemetry failed: ${msg}`);
   }
 }
