@@ -516,6 +516,12 @@ function LegacyDashboard() {
   // server-side (validateSubjectWrite returned 422 'plan' for physics/
   // chemistry/biology/computer_science because the RPC couldn't filter
   // to the student's stream).
+  //
+  // 2026-05-18 follow-up: the *auto-show* path was hoisted into the global
+  // <StreamGate> mounted in src/app/layout.tsx so students who land on
+  // /foxy or /learn (not just /dashboard) also see the picker. We still
+  // sync `selectedStream` from the DB here so the dashboard chip + the
+  // chip-click "change stream" flow continue to work locally.
   useEffect(() => {
     if (!student) return;
     const g = student.grade;
@@ -523,19 +529,10 @@ function LegacyDashboard() {
     const dbStream = student.stream;
     if (dbStream === 'science' || dbStream === 'commerce' || dbStream === 'humanities') {
       setSelectedStream(dbStream);
-      // Keep localStorage as a hydration cache so the chip shows immediately
-      // on next page load without waiting for AuthContext.
       if (typeof window !== 'undefined') {
         localStorage.setItem('alfanumrik_stream', dbStream);
       }
-      return;
     }
-    // DB stream is null. Pre-fix users may have a localStorage value from
-    // when picker only wrote to localStorage; we DON'T silently backfill
-    // because the localStorage value could be stale or speculative. Always
-    // show the picker so the user explicitly confirms — the next click
-    // writes to DB.
-    setShowStreamPicker(true);
   }, [student?.grade, student?.id, student?.stream]);
 
   // ─── Loading & guard ───────────────────────────────────────────────────
