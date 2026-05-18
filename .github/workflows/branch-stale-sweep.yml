@@ -186,7 +186,7 @@ jobs:
 
       - name: Delete deletable branches (only when execute=true)
         if: steps.mode.outputs.execute == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           DELETABLE_FILE: ${{ steps.classify.outputs.deletable_file }}
         with:
