@@ -57,6 +57,13 @@ select * from public.ai_tutor_logs where mol_request_id = '<id>';
 ```
 Cross-reference the prompt by joining the chat session.
 
+> **Until C4 lands (current state, 2026-05-18 onward)**: `mol_request_logs.request_id`
+> is a synthetic UUID minted per MOL call and is NOT the same as the
+> `grounded_ai_traces.id` (trace_id) that the UI surfaces to support staff. To
+> correlate a student-reported issue to its MOL log row, fuzzy-match on
+> `(student_id, created_at ± 5 seconds, surface)`. A direct JOIN will become
+> available once C4 adds a `trace_id` column to `mol_request_logs`.
+
 ## Cost-cap behavior
 
 When `ff_mol_cost_cap_inr` is enabled (`rollout_percentage` field is overloaded as the ₹ cap value), the router refuses to use premium models if the projected cost (rough estimate from input length × output cap × output price) exceeds the cap. The fallback provider/model is used instead. Logged in `failure_chain` as `<provider>:cost_cap`.

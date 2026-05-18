@@ -159,10 +159,14 @@ describe('mapPipelineToTaskType', () => {
     ).toBe('concept_explanation');
   });
 
-  it('diagnostic → explanation (broad fallback)', () => {
+  it('diagnostic → evaluation (initial knowledge assessment, not generic explanation)', () => {
+    // Diagnostic callers run initial knowledge assessment — structurally
+    // 'evaluation', distinct from the 'explanation' fallback used for unknown
+    // callers. Fixed in C3 review (assessment-agent feedback) while the
+    // mapping is still unused in production (no diagnostic call sites wired).
     expect(
       mapPipelineToTaskType({ caller: 'diagnostic', mode: 'soft', isGroundingCheck: false }),
-    ).toBe('explanation');
+    ).toBe('evaluation');
   });
 
   it('unknown caller → explanation (broad fallback)', () => {

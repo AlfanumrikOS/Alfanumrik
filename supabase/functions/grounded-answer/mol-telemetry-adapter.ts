@@ -77,11 +77,20 @@ export function mapCallerToSurface(caller: string): 'foxy' | 'quiz' | 'solver' |
  * - caller='ncert-solver'  → 'step_by_step'    (the solver emits ordered steps)
  * - caller='quiz-generator'→ 'quiz_generation' (matches MOL plan-table label)
  * - caller='concept-engine'→ 'concept_explanation'
- * - caller='diagnostic' or unknown → 'explanation' (broad fallback)
+ * - caller='diagnostic'    → 'evaluation'      (initial knowledge assessment)
+ * - unknown caller         → 'explanation'     (broad fallback)
  *
  * Note on the mode parameter: today we don't split soft/strict in the task
  * type. We pass `mode` through so C4 can decide to split if dashboards need
  * it (e.g. 'doubt_solving' vs 'doubt_solving_strict'); for C3 it's ignored.
+ *
+ * TODO(c5): mapping-refinement
+ * When C5 lands, this map needs:
+ *   1. Foxy mode plumbed in to split doubt_solving/practice/learn/explain/revise
+ *   2. template_name plumbed in to split quiz-generator generator vs evaluator
+ *   3. New 'recall' literal added to TaskType union and used for Foxy revise + SRS reviews
+ * Backfill plan: SQL re-tag historical mol_request_logs rows by JOINing grounded_ai_traces
+ * on the new trace_id column (added in C4) to recover the original caller intent.
  */
 export function mapPipelineToTaskType(args: {
   caller: string;
@@ -91,14 +100,32 @@ export function mapPipelineToTaskType(args: {
   if (args.isGroundingCheck) return 'grounding_check';
   switch (args.caller) {
     case 'foxy':
+      // KNOWN COARSENESS (C5 refinement): collapses all Foxy modes (learn/explain/practice/revise)
+      // to doubt_solving. Pedagogically:
+      //   - practice mode is closer to quiz_generation
+      //   - learn mode is concept_explanation
+      //   - explain mode is explanation
+      //   - revise mode is recall (C5-pending task type)
+      // Fixing this requires plumbing Foxy mode into GroundedRequest.generation as a first-class
+      // field — a contract change that's out of scope for "telemetry-only" C3.
+      // See TODO(c5): mapping-refinement above.
       return 'doubt_solving';
     case 'ncert-solver':
       return 'step_by_step';
     case 'quiz-generator':
+      // KNOWN COARSENESS (C5 refinement): collapses pass-1 generator + pass-2 verifier calls.
+      // The verifier (quiz_answer_verifier_v1 template) is structurally `evaluation`, not
+      // `quiz_generation`. Distinguishing them requires the adapter to know which template
+      // the call uses — needs template_name plumbed into the call site.
+      // See TODO(c5): mapping-refinement above.
       return 'quiz_generation';
     case 'concept-engine':
       return 'concept_explanation';
     case 'diagnostic':
+      // Diagnostic callers run initial knowledge assessment, which is structurally
+      // `evaluation` (the student is being measured, not taught). Distinct from
+      // the broad `explanation` fallback used for unknown callers.
+      return 'evaluation';
     default:
       // Broad fallback — 'explanation' is the most generic TaskType in MOL.
       // Keeps telemetry rows valid even if a brand-new caller is registered
@@ -236,8 +263,10 @@ export async function shadowLogClaudeCall(args: {
  * Why a thin wrapper instead of calling shadowLogClaudeCall directly:
  *   - Centralizes the feature-flag check so we cannot accidentally ship a
  *     site that ignores the kill switch.
- *   - Centralizes the request_id generation so future C4 work has a single
- *     place to swap UUID-per-call for trace_id reuse.
+ *   - Centralizes request_id generation in one place. See generateRequestId()
+ *     below for the design invariant: request_id stays MOL-internal and
+ *     synthetic; cross-service correlation to grounded_ai_traces is added
+ *     via a separate trace_id column in C4.
  *   - Keeps the caller's diff minimal — one function call vs five lines of
  *     boilerplate per site.
  *
@@ -305,7 +334,20 @@ export function shadowLogClaudeCallIfEnabled(args: {
   });
 }
 
-/** Fresh per-call request_id. crypto.randomUUID is available in Deno. */
+/**
+ * Generates a fresh UUID for mol_request_logs.request_id on every call.
+ *
+ * DESIGN INVARIANT (do not change): request_id is intentionally synthetic and MOL-internal.
+ * It is the JOIN key for baseline-Anthropic ↔ shadow-OpenAI row pairs that C4 will write
+ * (baseline.request_id = shadow.shadow_of_request_id). Swapping to grounded_ai_traces.id
+ * reuse would break that JOIN because the router needs the SAME request_id for both legs of
+ * a single MOL call — which trace_id cannot provide (a grounded-answer trace can spawn
+ * multiple MOL calls: primary + grounding-check).
+ *
+ * Cross-service correlation (mol_request_logs ↔ grounded_ai_traces) is solved separately
+ * by adding a `trace_id text` column to mol_request_logs in C4, populated from the
+ * grounded-answer pipeline AFTER finalizeGrounded returns the trace_id.
+ */
 function generateRequestId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
