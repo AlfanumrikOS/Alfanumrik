@@ -36,6 +36,11 @@ export default defineConfig({
           // exact-path convention as the C3 adapter test above — every
           // other __tests__ file in that dir is Deno-only.
           'supabase/functions/grounded-answer/__tests__/mol-shadow.test.ts',
+          // C4.2a wire-up (2026-05-19). End-to-end shadow → orchestrator
+          // → single-row-contract integration test. Exercises the real MOL
+          // codepath with fetch-stubbed providers; verifies the prompt-
+          // parity + de-dup fixes work together.
+          'supabase/functions/grounded-answer/__tests__/mol-shadow.integration.test.ts',
         ],
     exclude: isIntegrationRun
       ? ['node_modules/**']

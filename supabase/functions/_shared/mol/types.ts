@@ -54,6 +54,63 @@ export interface GenerateRequest {
     max_tokens_override?: number
     request_id?: string                 // for trace correlation
     surface?: 'foxy' | 'quiz' | 'solver' | 'ocr'
+
+    // ── C4.2a wire-up (2026-05-19): grounded-answer shadow routing ──
+    // All three fields OPTIONAL. Pre-C4 callers (foxy-tutor, ncert-solver,
+    // quiz-generator, and any direct MOL client) pass none of them and the
+    // orchestrator behaves byte-identical to its pre-C4 contract.
+    //
+    // The grounded-answer shadow helper (mol-shadow.ts) is the only known
+    // caller today; future shadow-routing call sites should reuse this
+    // surface rather than inventing new flags.
+
+    /**
+     * When set, generateResponse() uses this string as the system prompt
+     * VERBATIM and SKIPS the prompt-builder. This is the prompt-parity
+     * fix from C4.1 review: shadow legs MUST send the EXACT same prompt
+     * baseline sent to Claude so the offline grader can compare the two
+     * responses to the SAME question. Without this, MOL's prompt-builder
+     * would compose its own Foxy-persona-aware prompt, which differs
+     * structurally from grounded-answer's RAG-templated prompt.
+     *
+     * Set ONLY by mol-shadow.ts. Direct MOL callers should leave undefined
+     * so the prompt-builder runs normally.
+     */
+    system_prompt_override?: string
+
+    /**
+     * Tag for the auto-logged telemetry row. When set, the orchestrator
+     * stamps it onto recordMolRequest's LogPayload.shadow_role so the row
+     * inserted by generateResponse() (and ONLY that row — there is no
+     * second row from the helper) carries the correct 'baseline' /
+     * 'shadow' label. This is the de-dup fix from C4.1 review: the helper
+     * no longer writes a SECOND row of its own.
+     *
+     * Pre-C4 callers leave this undefined and their auto-logged row reads
+     * shadow_role=NULL (matching the legacy contract).
+     */
+    shadow_role?: 'baseline' | 'shadow'
+
+    /**
+     * JOIN key for shadow row → baseline row. When the shadow helper sets
+     * shadow_role='shadow' it also sets this to the baseline's request_id
+     * so mol_shadow_pairs_v1 can pair the two legs.
+     *
+     * Pre-C4 callers leave this undefined; the auto-logged row writes
+     * shadow_of_request_id=NULL (legacy contract).
+     */
+    shadow_of_request_id?: string
+
+    /**
+     * Cross-service correlation: grounded_ai_traces.id when this MOL call
+     * originated from grounded-answer. The orchestrator propagates it onto
+     * the auto-logged row's LogPayload.trace_id column. Set by mol-shadow.ts
+     * to the same trace_id the baseline grounded_ai_traces row carries.
+     *
+     * Pre-C4 callers leave this undefined and the auto-logged row writes
+     * trace_id=NULL (legacy contract).
+     */
+    trace_id?: string | null
   }
 }
 

@@ -1,21 +1,21 @@
 // supabase/functions/grounded-answer/mol-shadow.ts
 //
-// C4 foundation (2026-05-19): fire-and-forget OpenAI shadow caller.
+// C4 wire-up (2026-05-19): fire-and-forget OpenAI shadow caller.
 //
 // Background:
 //   C3 shipped telemetry-only shadow LOGGING via mol-telemetry-adapter.ts — it
 //   writes a row into mol_request_logs every time grounded-answer makes a
-//   Claude call, but does NOT actually fire a second model. C4 takes that
-//   next step: every grounded-answer LLM invocation gets a parallel OpenAI
-//   shadow call. The shadow's response is discarded (Anthropic still serves
-//   the student); the row in mol_request_logs is kept for an offline grader
-//   to compare quality.
+//   Claude call, but does NOT actually fire a second model. C4.1 added this
+//   helper as dormant infrastructure; C4.2a wires it into pipeline.ts and
+//   pipeline-stream.ts so every grounded-answer LLM invocation gets a parallel
+//   OpenAI shadow call. The shadow's response is discarded (Anthropic still
+//   serves the student); the row in mol_request_logs is kept for an offline
+//   grader (C4.2b) to compare quality.
 //
-// Status of THIS file:
-//   * The helper is EXPORTED but NOT WIRED. pipeline.ts and pipeline-stream.ts
-//     do not import it yet. That wire-up is C4.2 (the next PR).
-//   * No production behavior change ships with C4.1 — even if pipeline did
-//     import this helper, the default-OFF feature flag would no-op every call.
+// Status of THIS file (C4.2a):
+//   * The helper is EXPORTED and WIRED into pipeline.ts + pipeline-stream.ts.
+//   * Default-OFF feature flag means no production behavior change ships
+//     until ops promotes the flag via super-admin UI (C4.2b).
 //
 // Architecture (locked, C4 architect review):
 //   - In-process fire-and-forget. The caller wraps `shadowFireOpenAI` in
@@ -49,18 +49,29 @@
 //   task and skip on another — useful when only `doubt_solving` is in the
 //   allow-list and the rest of grounded-answer is unaffected.
 //
-// Telemetry-row design (intentional trade-off for C4.1):
-//   This helper calls generateResponse(), which itself writes a row to
-//   mol_request_logs (orchestrator's auto-log). That row carries
-//   shadow_role=NULL because the MOL core doesn't know about shadow
-//   semantics. The helper THEN writes a SECOND row with shadow_role='shadow'
-//   and shadow_of_request_id=args.request_id. Two rows per shadow call is
-//   accepted noise for the foundation PR. C4.2 will either (a) plumb
-//   shadow context into generateResponse so the orchestrator writes the
-//   correctly-tagged row in one shot, or (b) bypass the orchestrator's
-//   auto-log path entirely for shadow calls. The analyst view
-//   mol_shadow_pairs_v1 filters on shadow_role IN ('baseline','shadow'),
-//   so the orchestrator's NULL-tagged row is harmless.
+// Telemetry-row design (C4.2a single-row model):
+//   On a sample HIT, this helper builds a GenerateRequest whose
+//   `config.system_prompt_override` carries the baseline's EXACT system
+//   prompt (prompt-parity fix from C4.1 review), and whose
+//   `config.shadow_role='shadow'` + `config.shadow_of_request_id` tell the
+//   orchestrator to TAG its own auto-logged telemetry row.
+//
+//   The orchestrator (generateResponse → recordMolRequest) writes exactly
+//   ONE row per shadow call. The helper writes NO additional rows on the
+//   success path — the double-row bug from C4.1 is fixed.
+//
+//   FAILURE PATHS still write a defensive row via writeFailureRow():
+//   when generateResponse throws or rejects (provider chain exhausted,
+//   timeout race won by the helper, etc), the orchestrator's
+//   recordMolRequest is never reached, so without writeFailureRow the
+//   shadow failure would be invisible. We tag that defensive row
+//   `shadow_role='shadow'` so cost/quality dashboards can filter on it
+//   identically to a happy-path shadow row.
+//
+//   Net per-call rows:
+//     - success                           → 1 (orchestrator auto-log, tagged)
+//     - generateResponse throws/rejects   → 1 (writeFailureRow, tagged)
+//     - flag off / kill / sample miss     → 0 (short-circuit, breadcrumb only)
 
 import {
   generateResponse,
@@ -200,15 +211,21 @@ function shadowBucket(request_id: string, task_type: string): number {
  * On a sample HIT:
  *   - Builds a GenerateRequest pinned to provider='openai' and
  *     request_id=args.request_id (so the orchestrator's auto-log row carries
- *     the baseline's request_id for traceability)
- *   - Calls generateResponse with an independent 10s timeout enforced by
- *     AbortController (Note: the MOL providers honor an opts.timeout_ms but
- *     generateResponse doesn't surface a top-level abort signal; we still
- *     cap our own latency budget here via Promise.race for defense in depth)
- *   - On success: writes a shadow-tagged LogPayload via recordMolRequest
- *   - On failure: writes a shadow-tagged LogPayload with failure_chain
- *     populated (so dashboards can spot pathological shadow-side errors
- *     without affecting baseline metrics)
+ *     the baseline's request_id for traceability).
+ *   - Passes `system_prompt_override = args.systemPrompt` through config so
+ *     MOL skips its own prompt-builder and uses the baseline's exact
+ *     composed prompt — prompt-parity fix from C4.1 review.
+ *   - Passes `shadow_role='shadow'` + `shadow_of_request_id` + `trace_id`
+ *     through config so the orchestrator's auto-logged
+ *     `recordMolRequest` row is the SINGLE correctly-tagged row per call
+ *     — de-dup fix from C4.1 review.
+ *   - Calls generateResponse with an independent 10s timeout enforced via
+ *     Promise.race (defense in depth; MOL's own per-provider timeout is 20s).
+ *
+ * Failure rows are still written by writeFailureRow() below — generateResponse
+ * throwing/rejecting bypasses the orchestrator's recordMolRequest call, so
+ * without this defensive row a shadow-side failure would be invisible to
+ * dashboards.
  */
 export async function shadowFireOpenAI(args: ShadowFireArgs): Promise<void> {
   // Single structured breadcrumb per invocation. Survives even if the
@@ -234,8 +251,9 @@ export async function shadowFireOpenAI(args: ShadowFireArgs): Promise<void> {
   if (!envelope.task_types.includes(args.task_type)) return;
   if (shadowBucket(args.request_id, args.task_type) >= envelope.rollout_pct) return;
 
-  // From here on: every code path MUST end in either a recordMolRequest
-  // call OR a swallowed error log. NEVER throw upward.
+  // From here on: every code path MUST end in either the orchestrator's
+  // auto-log (success path), a writeFailureRow call (error path), or a
+  // swallowed error log. NEVER throw upward.
   const startedAt = Date.now();
   let aborted = false;
   const abortTimer = setTimeout(() => {
@@ -251,20 +269,45 @@ export async function shadowFireOpenAI(args: ShadowFireArgs): Promise<void> {
       student_context: buildStudentContext(args),
       // RAG context already lives inside systemPrompt (the baseline composed
       // it). MOL's prompt-builder ignores rag_context when input.question is
-      // present anyway — we keep it null to be explicit.
+      // present anyway — we keep it null to be explicit. With
+      // system_prompt_override set below, MOL skips the prompt-builder
+      // entirely so rag_context here is irrelevant either way.
       rag_context: null,
       config: {
         preferred_provider: 'openai',
         request_id: args.request_id,
         surface: args.surface ?? undefined,
         max_tokens_override: args.maxTokens,
+        // ── C4.2a fixes ──
+        // Prompt-parity (HIGH severity in C4.1 review): hand MOL the
+        // baseline's EXACT composed prompt so the orchestrator skips its
+        // own prompt-builder. The shadow leg must answer the SAME question
+        // as baseline or the offline grader is comparing apples to oranges.
+        system_prompt_override: args.systemPrompt,
+        // De-dup (HIGH severity in C4.1 review): tell the orchestrator to
+        // stamp shadow_role='shadow' and shadow_of_request_id onto its own
+        // auto-logged recordMolRequest row. The helper no longer writes a
+        // SECOND row on the success path — exactly one tagged row per call.
+        shadow_role: 'shadow',
+        shadow_of_request_id: args.request_id,
+        // Cross-service correlation so the auto-logged row joins to the
+        // baseline's grounded_ai_traces row.
+        trace_id: args.trace_id,
       },
     };
 
     // Race generateResponse against our local timeout. MOL's per-provider
     // timeout is 20s by default — for shadow we cap at 10s so a stalled
     // shadow can never linger longer than the baseline path.
-    const result = await Promise.race([
+    //
+    // If our timeout wins the race, the rejected promise propagates into
+    // the catch below → writeFailureRow stamps a defensive shadow row.
+    // generateResponse might still be running on the event loop after that;
+    // if it eventually succeeds, the orchestrator will auto-log a second
+    // row. That row IS shadow-tagged (we passed shadow_role through config)
+    // so dashboards still attribute it correctly. Belt-and-braces noise of
+    // at-most-one extra row per timed-out shadow; intentional trade-off.
+    await Promise.race([
       generateResponse(request),
       new Promise<never>((_, reject) => {
         setTimeout(
@@ -281,29 +324,9 @@ export async function shadowFireOpenAI(args: ShadowFireArgs): Promise<void> {
       return;
     }
 
-    // Success: record the shadow-tagged row.
-    const payload: LogPayload = {
-      request_id: args.request_id,
-      student_id: args.student_context.student_id,
-      task_type: args.task_type,
-      surface: args.surface,
-      provider: result.provider,
-      model: result.model,
-      passes: result.passes,
-      fallback_count: result.fallback_count,
-      failure_chain: null,
-      latency_ms: Date.now() - startedAt,
-      tokens: result.tokens,
-      usd_cost: result.usd_cost,
-      inr_cost: result.inr_cost,
-      grade: args.student_context.grade,
-      language: args.student_context.language ?? null,
-      exam_goal: args.student_context.exam_goal ?? null,
-      shadow_of_request_id: args.request_id,
-      shadow_role: 'shadow',
-      trace_id: args.trace_id,
-    };
-    safeRecord(payload);
+    // Success path is intentionally EMPTY here. The orchestrator's
+    // recordMolRequest call (inside generateResponse) wrote the single
+    // tagged shadow row — see C4.2a de-dup fix above.
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     writeFailureRow(args, startedAt, [`openai:${classifyShadowError(msg)}`]);
@@ -313,10 +336,11 @@ export async function shadowFireOpenAI(args: ShadowFireArgs): Promise<void> {
 }
 
 /**
- * Convenience wrapper that pipeline.ts / pipeline-stream.ts will call in
- * C4.2. Wraps shadowFireOpenAI in `void Promise.allSettled([...])` so the
- * caller never has to remember the fire-and-forget idiom. Returns void
- * synchronously — the shadow runs on the event loop.
+ * Convenience wrapper that pipeline.ts / pipeline-stream.ts call after
+ * the baseline Claude call succeeds. Wraps shadowFireOpenAI in
+ * `void Promise.allSettled([...])` so the caller never has to remember the
+ * fire-and-forget idiom. Returns void synchronously — the shadow runs on
+ * the event loop alongside (not after) the user-facing path.
  */
 export function fireShadowAndForget(args: ShadowFireArgs): void {
   void Promise.allSettled([shadowFireOpenAI(args)]).then(
