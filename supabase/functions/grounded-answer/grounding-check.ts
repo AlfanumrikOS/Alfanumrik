@@ -28,6 +28,25 @@ const MAX_OUTPUT_TOKENS = 512;
 export interface GroundingCheckResult {
   verdict: 'pass' | 'fail';
   unsupportedSentences: string[];
+  /**
+   * C3 (MOL grounded-answer integration, 2026-05-18): optional metadata
+   * for the MOL shadow log. Absent when the call short-circuited before
+   * reaching Anthropic (missing API key) or when token/model info couldn't
+   * be parsed from the response body. Callers that don't shadow-log can
+   * ignore this field — it never affects the pass/fail contract.
+   */
+  meta?: {
+    /** Total wall-clock time of the Anthropic call (ms). */
+    latencyMs: number;
+    /** The model Anthropic actually ran (echoed in response.model). */
+    model: string;
+    /** Anthropic usage.input_tokens. 0 if missing. */
+    inputTokens: number;
+    /** Anthropic usage.output_tokens. 0 if missing. */
+    outputTokens: number;
+    /** Whether the underlying HTTP call succeeded (200 + parseable body). */
+    ok: boolean;
+  };
 }
 
 const GROUNDING_CHECK_SYSTEM_PROMPT = `You are a fact-checker. You will see STUDENT_QUESTION, CANDIDATE_ANSWER,
@@ -61,6 +80,7 @@ export async function runGroundingCheck(
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const startTime = Date.now();
 
   try {
     const response = await fetch(ANTHROPIC_ENDPOINT, {
@@ -83,7 +103,17 @@ export async function runGroundingCheck(
     if (!response.ok) {
       await response.text().catch(() => '');
       console.warn(`grounding-check: HTTP ${response.status} — conservative fail`);
-      return { verdict: 'fail', unsupportedSentences: [] };
+      return {
+        verdict: 'fail',
+        unsupportedSentences: [],
+        meta: {
+          latencyMs: Date.now() - startTime,
+          model: GROUNDING_CHECK_MODEL,
+          inputTokens: 0,
+          outputTokens: 0,
+          ok: false,
+        },
+      };
     }
 
     const body = await response.json().catch(() => null);
@@ -97,14 +127,43 @@ export async function runGroundingCheck(
       .join('')
       .trim();
 
-    return parseVerdict(text);
+    // Extract token usage for the shadow log. We tolerate missing/malformed
+    // usage blocks rather than failing the call — the verdict matters more
+    // than telemetry fidelity.
+    const inputTokens =
+      typeof body?.usage?.input_tokens === 'number' ? body.usage.input_tokens : 0;
+    const outputTokens =
+      typeof body?.usage?.output_tokens === 'number' ? body.usage.output_tokens : 0;
+    const echoedModel = typeof body?.model === 'string' ? body.model : GROUNDING_CHECK_MODEL;
+
+    const parsed = parseVerdict(text);
+    return {
+      ...parsed,
+      meta: {
+        latencyMs: Date.now() - startTime,
+        model: echoedModel,
+        inputTokens,
+        outputTokens,
+        ok: true,
+      },
+    };
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
       console.warn('grounding-check: timeout — conservative fail');
     } else {
       console.warn(`grounding-check: network error — ${String(err)}`);
     }
-    return { verdict: 'fail', unsupportedSentences: [] };
+    return {
+      verdict: 'fail',
+      unsupportedSentences: [],
+      meta: {
+        latencyMs: Date.now() - startTime,
+        model: GROUNDING_CHECK_MODEL,
+        inputTokens: 0,
+        outputTokens: 0,
+        ok: false,
+      },
+    };
   } finally {
     clearTimeout(timeoutId);
   }

@@ -9,6 +9,15 @@ export type TaskType =
   | 'evaluation'
   | 'doubt_solving'
   | 'ocr_extraction'
+  // C3 (MOL grounded-answer integration, 2026-05-18): grounded-answer's
+  // strict-mode runs a second Haiku pass that fact-checks the candidate
+  // answer against retrieved chunks. The shadow-log adapter labels that
+  // call as task_type='grounding_check' so cost/latency dashboards can
+  // separate fact-check spend from primary-answer spend.
+  // Additive only — no router/classifier changes; current MOL provider
+  // selection ignores unknown task_types and falls back to its default
+  // plan-table entry.
+  | 'grounding_check'
 
 export type Language = 'en' | 'hi' | 'hinglish'
 

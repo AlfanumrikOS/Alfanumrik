@@ -291,6 +291,70 @@ Deno.test('modelPreference=sonnet only calls Sonnet, never Haiku', async () => {
   }
 });
 
+// C3 (MOL grounded-answer integration, 2026-05-18): when Haiku fails AND
+// Sonnet succeeds, the ok-true response carries fallback_count + failure_chain.
+// This is the foundation for mol_request_logs attribution — without it,
+// shadow-log rows would record fallback_count: 0 for every call regardless of
+// what actually happened. We assert the exact label format ('anthropic:timeout')
+// so the adapter contract stays stable.
+Deno.test('Haiku timeout → Sonnet success → fallback_count:1, failure_chain:[anthropic:timeout]', async () => {
+  installFetchStub([
+    () => mockAbortPromise(),
+    () => Promise.resolve(mockAnthropicOkResponse('answer from sonnet')),
+  ]);
+
+  try {
+    const result = await callClaude({
+      systemPrompt: 'sp',
+      userMessage: 'q',
+      maxTokens: 512,
+      temperature: 0.3,
+      timeoutMs: 30_000,
+      apiKey: 'sk-test',
+      modelPreference: 'auto',
+    });
+
+    assertEquals(result.ok, true);
+    if (result.ok) {
+      assertEquals(result.model, SONNET_MODEL);
+      assertEquals(result.fallback_count, 1);
+      assertEquals(result.failure_chain, ['anthropic:timeout']);
+    }
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test('Haiku success on first try → fallback_count:0, failure_chain undefined', async () => {
+  // Regression guard: existing happy-path callers must NOT see a failure_chain
+  // array when no fallback fired. Empty arrays here would force every consumer
+  // to length-check; the contract is "absent or undefined when 0".
+  installFetchStub([
+    () => Promise.resolve(mockAnthropicOkResponse('answer from haiku')),
+  ]);
+
+  try {
+    const result = await callClaude({
+      systemPrompt: 'sp',
+      userMessage: 'q',
+      maxTokens: 512,
+      temperature: 0.3,
+      timeoutMs: 30_000,
+      apiKey: 'sk-test',
+      modelPreference: 'auto',
+    });
+
+    assertEquals(result.ok, true);
+    if (result.ok) {
+      assertEquals(result.model, HAIKU_MODEL);
+      assertEquals(result.fallback_count, 0);
+      assertEquals(result.failure_chain, undefined);
+    }
+  } finally {
+    restoreFetch();
+  }
+});
+
 Deno.test('missing API key → auth_error, no fetch', async () => {
   let calls = 0;
   globalThis.fetch = ((_u: string | URL, _i?: RequestInit) => {

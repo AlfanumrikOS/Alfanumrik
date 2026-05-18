@@ -31,8 +31,17 @@ import { rerankDocuments } from '../_shared/reranking.ts';
 import { applyMMR } from '../_shared/rag/mmr.ts';
 import { sanitizeChunkForPrompt } from '../_shared/rag/sanitize.ts';
 import { isMMRDiversityEnabled } from './_mmr-flag.ts';
-import { callClaude } from './claude.ts';
+import { callClaude, type ClaudeResponse } from './claude.ts';
 import { runGroundingCheck } from './grounding-check.ts';
+// C3 (MOL grounded-answer integration, 2026-05-18). Telemetry-only shadow
+// log of every primary callClaude invocation into mol_request_logs.
+// Default-OFF feature flag (ff_grounded_answer_mol_telemetry_v1) is checked
+// at the call site, not at module load. Zero user-visible behavior change.
+// TODO(c4-handoff): when shadow-routing through MOL lands in Phase C4, the
+// adapter sites in this file MUST be REPLACED with a through-MOL routed
+// call — DO NOT stack a shadow log on top of an already-routed request or
+// every row will double-count.
+import { shadowLogClaudeCallIfEnabled } from './mol-telemetry-adapter.ts';
 import { computeConfidence } from './confidence.ts';
 import { extractCitations } from './citations.ts';
 import {
@@ -869,6 +878,12 @@ export async function runPipeline(
     ? Math.ceil(request.generation.max_tokens * FOXY_STRUCTURED_TOKEN_MULTIPLIER)
     : request.generation.max_tokens;
 
+  // C3: capture timing immediately around the Claude call so the shadow
+  // log records true network latency (matches what the request handler
+  // would see). Done before the call so an exception path (which we don't
+  // expect — callClaude never throws — but defense in depth) still has a
+  // valid `claudeStart`.
+  const claudeStart = Date.now();
   const claude = await callClaude({
     systemPrompt,
     userMessage: request.query,
@@ -881,6 +896,30 @@ export async function runPipeline(
     // conversation turns when supplied. Absent → byte-identical legacy
     // single-user-message body to Claude.
     conversationTurns: request.generation.conversation_turns,
+  });
+  const claudeLatencyMs = Date.now() - claudeStart;
+  // C3 shadow log (telemetry-only). Fire-and-forget — telemetry MUST NOT
+  // extend request latency. The flag is cached in-process for ~5 minutes
+  // (see _shared/mol/feature-flag.ts) so the steady-state cost is a single
+  // Array.find() against a flag-rows array (sub-millisecond).
+  //
+  // We generate a fresh UUID for the MOL request_id rather than reusing
+  // the grounded_ai_traces row id because the trace row hasn't been
+  // written yet at this point and its id is server-generated. Future C4
+  // work can stitch the two together by reading ctx.molRequestId after
+  // finalizeGrounded if dashboards need cross-table joins.
+  //
+  // TODO(c4-handoff): replace this shadow log with the through-MOL routed
+  // call; do NOT keep both or every request will double-count.
+  shadowLogClaudeCallIfEnabled({
+    studentId: request.student_id,
+    grade: request.scope.grade,
+    subject: request.scope.subject_code,
+    caller: request.caller,
+    mode: request.mode,
+    isGroundingCheck: false,
+    latencyMs: claudeLatencyMs,
+    claudeResponse: claude,
   });
   // auth_error is a config problem, not an upstream outage — don't trip
   // the breaker on it (rotating keys would need admin intervention anyway).
@@ -919,6 +958,37 @@ export async function runPipeline(
       anthropicKey,
       5_000,
     );
+    // C3 shadow log for the grounding-check pass. Fires only when meta is
+    // populated (every reachable path in runGroundingCheck since the C3
+    // edit) and the underlying HTTP call succeeded. Failed grounding-check
+    // HTTP calls are skipped because the adapter's ok:false branch
+    // intentionally does not log (see mol-telemetry-adapter.ts).
+    // TODO(c4-handoff): replace this shadow log with a through-MOL routed
+    // grounding-check when C4 ships; do NOT stack on top of routed calls.
+    if (verdict.meta) {
+      const gcSynthetic: ClaudeResponse = verdict.meta.ok
+        ? {
+            ok: true,
+            content: verdict.verdict, // textual marker only; not surfaced to students
+            model: verdict.meta.model,
+            inputTokens: verdict.meta.inputTokens,
+            outputTokens: verdict.meta.outputTokens,
+            insufficientContext: false,
+            fallback_count: 0,
+            failure_chain: undefined,
+          }
+        : { ok: false, reason: 'unknown' };
+      shadowLogClaudeCallIfEnabled({
+        studentId: request.student_id,
+        grade: request.scope.grade,
+        subject: request.scope.subject_code,
+        caller: request.caller,
+        mode: request.mode,
+        isGroundingCheck: true,
+        latencyMs: verdict.meta.latencyMs,
+        claudeResponse: gcSynthetic,
+      });
+    }
     if (verdict.verdict === 'fail') {
       return finalizeAbstain(sb, ctx, 'no_supporting_chunks');
     }
