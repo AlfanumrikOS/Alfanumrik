@@ -22,6 +22,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { authHeader } from '@/lib/api/auth-header';
 
 type StreamKey = 'science' | 'commerce' | 'humanities';
 
@@ -63,9 +64,13 @@ export default function StreamGate() {
     setBusy(true);
     setError(null);
     try {
+      // Auth tokens live in localStorage in this app (no middleware syncs
+      // them to cookies). Server route's authorizeRequest() relies on the
+      // Authorization header; without it, every click 401s. See
+      // src/lib/api/auth-header.ts.
       const res = await fetch('/api/student/preferences', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
         body: JSON.stringify({ action: 'set_stream', stream: key }),
       });
       if (!res.ok) {

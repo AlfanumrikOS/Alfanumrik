@@ -35,6 +35,7 @@ import {
   getNextTopics,
   generateNotifications,
 } from '@/lib/supabase';
+import { authHeader } from '@/lib/api/auth-header';
 import { useDashboardData } from '@/lib/swr';
 import { Avatar, BottomNav } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
@@ -559,7 +560,7 @@ function LegacyDashboard() {
   const dismissNudge = async (nudgeId: string) => {
     await fetch('/api/student/preferences', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
       body: JSON.stringify({ action: 'dismiss_nudge', nudge_id: nudgeId }),
     });
     setNudges((prev) => prev.filter((n) => n.id !== nudgeId));
@@ -601,7 +602,7 @@ function LegacyDashboard() {
                     try {
                       const res = await fetch('/api/student/preferences', {
                         method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
                         body: JSON.stringify({ action: 'set_stream', stream: st.key }),
                       });
                       if (!res.ok) {
@@ -961,7 +962,7 @@ function LegacyDashboard() {
                         : [student.preferred_subject];
                     await fetch('/api/student/preferences', {
                       method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
                       body: JSON.stringify({
                         action: 'set_selected_subjects',
                         subjects: subs,
