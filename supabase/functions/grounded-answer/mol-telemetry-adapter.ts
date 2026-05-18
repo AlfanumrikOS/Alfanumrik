@@ -241,6 +241,29 @@ export async function shadowLogClaudeCall(args: {
       grade: args.studentContext?.grade ?? null,
       language: args.studentContext?.language ?? null,
       exam_goal: args.studentContext?.exam_goal ?? null,
+      // ── C4.2b-i baseline tagging fix (2026-05-19) ──
+      // Every row this adapter writes is, by definition, a BASELINE row:
+      // the C3 telemetry adapter only fires for the user-facing Claude
+      // call that served the student. Tagging shadow_role='baseline' here
+      // makes mol_shadow_pairs_v1 return non-empty rows once C4.2a's
+      // shadow rows start landing (the view's JOIN is
+      //    baseline.shadow_role = 'baseline' AND shadow.shadow_role = 'shadow').
+      // Before this fix, baseline rows wrote shadow_role=NULL and the
+      // view's INNER JOIN excluded every pair — silent zero-row defect
+      // architects flagged on PR #856.
+      //
+      // Two-flag interaction (recap, from the C4.2b-i task spec):
+      //   * ff_grounded_answer_mol_telemetry_v1 ON, shadow OFF
+      //     → baseline rows tagged 'baseline', no shadow rows
+      //     → view returns 0 rows (correct: no pairs to show)
+      //   * both telemetry + shadow flags ON
+      //     → baseline rows tagged 'baseline', shadow rows tagged 'shadow'
+      //     → view returns one row per pair (correct, what we want)
+      //   * only shadow flag ON
+      //     → shadow helper fires but adapter writes nothing (its own
+      //       feature-flag check short-circuited at the call site)
+      //     → view returns 0 rows (correct: no baseline anchor exists)
+      shadow_role: 'baseline',
     };
 
     // recordMolRequest is itself a fire-and-forget (returns void), but it

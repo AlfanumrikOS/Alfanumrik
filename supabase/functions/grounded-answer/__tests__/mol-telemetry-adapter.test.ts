@@ -269,6 +269,68 @@ describe('shadowLogClaudeCall — LogPayload contract', () => {
     expect(payload.exam_goal).toBeNull();
   });
 
+  // ── C4.2b-i baseline-row tagging (2026-05-19) ──
+  // The adapter must stamp shadow_role='baseline' on every row it writes
+  // so mol_shadow_pairs_v1 (which JOINs baseline.shadow_role='baseline' ↔
+  // shadow.shadow_role='shadow') can pair the legs. Before this fix the
+  // adapter wrote shadow_role=NULL on baseline rows and the view silently
+  // returned zero rows even when shadow was firing — architect-flagged on
+  // PR #856.
+  it('stamps shadow_role: "baseline" on every successful baseline row', async () => {
+    await shadowLogClaudeCall({
+      traceId: 'trace-baseline-tag',
+      studentContext: studentCtx,
+      caller: 'foxy',
+      mode: 'soft',
+      isGroundingCheck: false,
+      latencyMs: 1234,
+      claudeResponse: okClaude(),
+    });
+
+    expect(recordMolRequestSpy).toHaveBeenCalledTimes(1);
+    const payload = recordMolRequestSpy.mock.calls[0][0];
+    expect(payload.shadow_role).toBe('baseline');
+    // shadow_of_request_id and trace_id remain unset by the adapter —
+    // baseline rows have no "shadow of" anchor, and the C3 adapter does
+    // not yet plumb the grounded_ai_traces.id through (that's the C4.2b-ii
+    // follow-up). The LogPayload boundary in telemetry.ts coerces both
+    // undefined values to NULL at insert time.
+    expect(payload.shadow_of_request_id).toBeUndefined();
+    expect(payload.trace_id).toBeUndefined();
+  });
+
+  it('baseline tag applies regardless of caller / mode / grounding-check', async () => {
+    // The tag is unconditional: every row this adapter writes is a baseline
+    // row. We exercise the four most-common (caller, mode, isGroundingCheck)
+    // combinations to guarantee no branch silently strips the tag.
+    const matrix: Array<{
+      caller: string;
+      mode: 'soft' | 'strict';
+      isGroundingCheck: boolean;
+    }> = [
+      { caller: 'foxy', mode: 'soft', isGroundingCheck: false },
+      { caller: 'foxy', mode: 'strict', isGroundingCheck: true },
+      { caller: 'ncert-solver', mode: 'strict', isGroundingCheck: false },
+      { caller: 'quiz-generator', mode: 'strict', isGroundingCheck: false },
+    ];
+
+    for (const m of matrix) {
+      recordMolRequestSpy.mockReset();
+      await shadowLogClaudeCall({
+        traceId: `trace-${m.caller}-${m.mode}-${m.isGroundingCheck}`,
+        studentContext: studentCtx,
+        caller: m.caller,
+        mode: m.mode,
+        isGroundingCheck: m.isGroundingCheck,
+        latencyMs: 500,
+        claudeResponse: okClaude(),
+      });
+      const payload = recordMolRequestSpy.mock.calls[0]?.[0];
+      expect(payload).toBeDefined();
+      expect(payload.shadow_role).toBe('baseline');
+    }
+  });
+
   it('splits ClaudeResponse.inputTokens/outputTokens into LogPayload.tokens', async () => {
     await shadowLogClaudeCall({
       traceId: 'trace-tokens',

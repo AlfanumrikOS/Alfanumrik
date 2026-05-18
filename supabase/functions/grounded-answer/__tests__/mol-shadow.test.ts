@@ -468,3 +468,121 @@ describe('C4_SHADOW_FLAG constant', () => {
     expect(C4_SHADOW_FLAG).toBe('ff_grounded_answer_mol_shadow_v1');
   });
 });
+
+// ─── EdgeRuntime.waitUntil lifetime extension ────────────────────────────────
+
+// In Supabase Edge, fire-and-forget promises can be torn down when the
+// request completes (worker recycle). The architect's PR #856 review (note b)
+// flagged that shadow calls may outlive the baseline response — a 5-10s
+// OpenAI call vs a 1-2s cache-hit baseline. C4.2b-i wraps the floating
+// promise with EdgeRuntime.waitUntil so the runtime keeps the worker alive
+// until the shadow completes. We mock `globalThis.EdgeRuntime` to verify
+// the hook is invoked (and gracefully no-ops in environments without it).
+describe('fireShadowAndForget — EdgeRuntime.waitUntil lifetime extension', () => {
+  let originalEdgeRuntime: unknown;
+
+  beforeEach(() => {
+    originalEdgeRuntime = (globalThis as { EdgeRuntime?: unknown }).EdgeRuntime;
+  });
+
+  afterEach(() => {
+    if (typeof originalEdgeRuntime === 'undefined') {
+      delete (globalThis as { EdgeRuntime?: unknown }).EdgeRuntime;
+    } else {
+      (globalThis as { EdgeRuntime?: unknown }).EdgeRuntime = originalEdgeRuntime;
+    }
+  });
+
+  it('registers the shadow promise with EdgeRuntime.waitUntil when the API is present', async () => {
+    const waitUntilSpy = vi.fn();
+    (globalThis as { EdgeRuntime?: unknown }).EdgeRuntime = { waitUntil: waitUntilSpy };
+
+    getFlagEnvelopeSpy.mockResolvedValueOnce(
+      envelope({
+        enabled: true,
+        task_types: ['doubt_solving'],
+        rollout_pct: 100,
+      }),
+    );
+    generateResponseSpy.mockResolvedValueOnce(okMolResult());
+
+    fireShadowAndForget(makeArgs());
+
+    expect(waitUntilSpy).toHaveBeenCalledTimes(1);
+    const registered = waitUntilSpy.mock.calls[0][0];
+    // The argument must be the floating promise (Promise.allSettled chain)
+    // so the runtime can `await` it.
+    expect(registered).toBeInstanceOf(Promise);
+
+    // Let the floating promise settle so we don't leak it across tests.
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
+  it('is a no-op when EdgeRuntime is undefined (local / Vitest environment)', async () => {
+    delete (globalThis as { EdgeRuntime?: unknown }).EdgeRuntime;
+
+    getFlagEnvelopeSpy.mockResolvedValueOnce(
+      envelope({
+        enabled: true,
+        task_types: ['doubt_solving'],
+        rollout_pct: 100,
+      }),
+    );
+    generateResponseSpy.mockResolvedValueOnce(okMolResult());
+
+    // Returns void without throwing — the absence of EdgeRuntime is
+    // expected in Vitest and must not break the wrapper.
+    expect(fireShadowAndForget(makeArgs())).toBeUndefined();
+
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Shadow still ran (proves the wrapper didn't short-circuit on the
+    // missing API — only the lifetime-extension guarantee is dropped).
+    expect(generateResponseSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op when EdgeRuntime exists but lacks waitUntil', async () => {
+    (globalThis as { EdgeRuntime?: unknown }).EdgeRuntime = { somethingElse: true };
+
+    getFlagEnvelopeSpy.mockResolvedValueOnce(
+      envelope({
+        enabled: true,
+        task_types: ['doubt_solving'],
+        rollout_pct: 100,
+      }),
+    );
+    generateResponseSpy.mockResolvedValueOnce(okMolResult());
+
+    expect(fireShadowAndForget(makeArgs())).toBeUndefined();
+
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(generateResponseSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('swallows a synchronous throw from EdgeRuntime.waitUntil', async () => {
+    const waitUntilSpy = vi.fn(() => {
+      throw new Error('runtime exploded');
+    });
+    (globalThis as { EdgeRuntime?: unknown }).EdgeRuntime = { waitUntil: waitUntilSpy };
+
+    getFlagEnvelopeSpy.mockResolvedValueOnce(
+      envelope({
+        enabled: true,
+        task_types: ['doubt_solving'],
+        rollout_pct: 100,
+      }),
+    );
+    generateResponseSpy.mockResolvedValueOnce(okMolResult());
+
+    // Even if the runtime API itself blows up, the wrapper must not throw.
+    expect(() => fireShadowAndForget(makeArgs())).not.toThrow();
+    expect(waitUntilSpy).toHaveBeenCalledTimes(1);
+
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+  });
+});
