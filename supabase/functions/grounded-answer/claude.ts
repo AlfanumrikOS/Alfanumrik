@@ -61,6 +61,25 @@ export type ClaudeResponse =
       inputTokens: number;
       outputTokens: number;
       insufficientContext: boolean;
+      /**
+       * C3 (MOL grounded-answer integration, 2026-05-18): how many non-final
+       * models failed before this one succeeded. 0 = the first model in the
+       * preference order returned content. 1+ = at least one fallback fired.
+       *
+       * Optional and additive — older code that destructures the ok-true
+       * variant ignores it. Surfaced into mol_request_logs.fallback_count via
+       * the mol-telemetry-adapter so cost dashboards can attribute spend
+       * accurately when Sonnet handled what Haiku couldn't.
+       */
+      fallback_count?: number;
+      /**
+       * C3: human-readable trace of every non-final model failure, in order.
+       * Each entry is `'<provider>:<reason>'` (e.g. `'anthropic:timeout'`,
+       * `'anthropic:5xx'`, `'anthropic:unknown'`). Empty/undefined when no
+       * fallback fired. Mirrors mol_request_logs.failure_chain (joined with
+       * '|' at the LogPayload boundary).
+       */
+      failure_chain?: string[];
     }
   | {
       ok: false;
@@ -87,6 +106,15 @@ export type ClaudeStreamEvent =
       inputTokens: number;
       outputTokens: number;
       insufficientContext: boolean;
+      /**
+       * C3 (MOL grounded-answer integration, 2026-05-18): fallback bookkeeping.
+       * Same semantics as ClaudeResponse.fallback_count above; for streaming
+       * a fallback can only occur BEFORE any text_delta has shipped (the
+       * generator commits to one model once tokens start). Optional and
+       * additive — older consumers of the ok-true variant ignore it.
+       */
+      fallback_count?: number;
+      failure_chain?: string[];
     }
   | {
       type: 'final';
@@ -106,6 +134,11 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
   const perCallTimeout = Math.min(req.timeoutMs * PER_CALL_TIMEOUT_FRAC, PER_CALL_TIMEOUT_CAP_MS);
 
   let lastReason: 'timeout' | 'server_error' | 'unknown' = 'unknown';
+  // C3 fallback bookkeeping: every non-final-model failure pushes an entry
+  // onto failureChain and bumps fallbackCount. The successful model returns
+  // these counts so downstream telemetry can attribute cost/latency to the
+  // model that actually answered, not just the first model tried.
+  const failureChain: string[] = [];
 
   for (const model of modelOrder) {
     const attempt = await callOnce({
@@ -128,6 +161,8 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
         inputTokens: attempt.inputTokens,
         outputTokens: attempt.outputTokens,
         insufficientContext: trimmed === INSUFFICIENT_CONTEXT_SENTINEL,
+        fallback_count: failureChain.length,
+        failure_chain: failureChain.length > 0 ? failureChain.slice() : undefined,
       };
     }
 
@@ -136,11 +171,33 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
       return { ok: false, reason: 'auth_error' };
     }
 
-    // timeout | server_error | unknown → try next model
+    // timeout | server_error | unknown → record + try next model.
+    failureChain.push(claudeFailureLabel(attempt.kind));
     lastReason = attempt.kind;
   }
 
   return { ok: false, reason: lastReason };
+}
+
+/**
+ * C3 (MOL grounded-answer integration, 2026-05-18): map an internal
+ * SingleCallResult.kind to a stable 'provider:reason' string for telemetry.
+ *
+ * Kept narrow on purpose — adding new internal kinds requires explicit
+ * mapping here so the telemetry contract never drifts silently.
+ */
+function claudeFailureLabel(kind: 'timeout' | 'server_error' | 'unknown'): string {
+  switch (kind) {
+    case 'timeout':
+      return 'anthropic:timeout';
+    case 'server_error':
+      // 404 (model decommissioned) and 529 (overloaded) both map here; we
+      // collapse to '5xx' rather than splitting because the actionable
+      // signal is "Anthropic side is unhealthy" either way.
+      return 'anthropic:5xx';
+    case 'unknown':
+      return 'anthropic:unknown';
+  }
 }
 
 function resolveModelOrder(pref: 'haiku' | 'sonnet' | 'auto'): string[] {
@@ -293,6 +350,11 @@ export async function* callClaudeStream(
   const perCallTimeout = Math.min(req.timeoutMs * PER_CALL_TIMEOUT_FRAC, PER_CALL_TIMEOUT_CAP_MS);
 
   let lastReason: 'timeout' | 'server_error' | 'unknown' = 'unknown';
+  // C3 fallback bookkeeping (streaming variant). A fallback can only occur
+  // BEFORE any text_delta has shipped — once tokens flow we commit to the
+  // current model (see firstTokenSent below). Mirrors callClaude semantics
+  // so a single MOL telemetry adapter handles both paths.
+  const failureChain: string[] = [];
 
   for (let i = 0; i < modelOrder.length; i++) {
     const model = modelOrder[i];
@@ -321,6 +383,8 @@ export async function* callClaudeStream(
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
         insufficientContext: result.fullText.trim() === INSUFFICIENT_CONTEXT_SENTINEL,
+        fallback_count: failureChain.length,
+        failure_chain: failureChain.length > 0 ? failureChain.slice() : undefined,
       };
       return;
     }
@@ -343,6 +407,10 @@ export async function* callClaudeStream(
       return;
     }
 
+    // No tokens shipped yet — record the failure and try the next model.
+    failureChain.push(
+      claudeFailureLabel(result.reason as 'timeout' | 'server_error' | 'unknown'),
+    );
     lastReason = result.reason as 'timeout' | 'server_error' | 'unknown';
     // Try next model in the order.
   }

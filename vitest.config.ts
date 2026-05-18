@@ -25,6 +25,13 @@ export default defineConfig({
       : [
           'src/**/*.{test,spec}.{ts,tsx}',
           'supabase/functions/_shared/mol/__tests__/**/*.{test,spec}.ts',
+          // C3 (MOL grounded-answer integration, 2026-05-18). The
+          // mol-telemetry-adapter is the ONLY grounded-answer test that
+          // runs under vitest — every other file in that __tests__ dir
+          // uses Deno.test() and runs via `deno test`. We pick the exact
+          // file path (not a glob over the directory) to avoid vitest
+          // accidentally loading the Deno tests.
+          'supabase/functions/grounded-answer/__tests__/mol-telemetry-adapter.test.ts',
         ],
     exclude: isIntegrationRun
       ? ['node_modules/**']

@@ -34,7 +34,12 @@ import { checkCoverage } from './coverage.ts';
 import { generateEmbedding } from './embedding.ts';
 import { retrieveChunks, type RetrievedChunk } from './retrieval.ts';
 import { rerankDocuments } from '../_shared/reranking.ts';
-import { callClaudeStream } from './claude.ts';
+import { callClaudeStream, type ClaudeResponse } from './claude.ts';
+// C3 (MOL grounded-answer integration, 2026-05-18). Telemetry-only shadow
+// log of streaming Claude calls. Default-OFF flag, fire-and-forget.
+// TODO(c4-handoff): replace shadow log with a through-MOL routed streaming
+// call when C4 ships — do NOT stack a shadow log on top of routed calls.
+import { shadowLogClaudeCallIfEnabled } from './mol-telemetry-adapter.ts';
 import { extractCitations } from './citations.ts';
 import { computeConfidence } from './confidence.ts';
 import { loadTemplate, resolveTemplate, hashPrompt } from './prompts/index.ts';
@@ -481,6 +486,11 @@ export async function* runStreamingPipeline(
     ? Math.ceil(request.generation.max_tokens * FOXY_STRUCTURED_TOKEN_MULTIPLIER)
     : request.generation.max_tokens;
 
+  // C3: capture timing immediately before the stream starts. The shadow
+  // log records latency from request start to the FINAL event (not first
+  // token). That mirrors how mol_request_logs.latency_ms is interpreted
+  // for non-streaming rows so dashboards compare apples-to-apples.
+  const claudeStreamStart = Date.now();
   const claudeStream = callClaudeStream({
     systemPrompt,
     userMessage: request.query,
@@ -512,6 +522,30 @@ export async function* runStreamingPipeline(
         ctx.inputTokens = evt.inputTokens;
         ctx.outputTokens = evt.outputTokens;
         recordSuccess(cKey);
+        // C3 shadow log on the FINAL ok:true event — only this carries
+        // cumulative token totals. Intermediate text_delta events have no
+        // usage data. Build a synthetic ClaudeResponse so the adapter sees
+        // the same shape regardless of streaming vs. blocking.
+        const syntheticResponse: ClaudeResponse = {
+          ok: true,
+          content: accumulated,
+          model: evt.model,
+          inputTokens: evt.inputTokens,
+          outputTokens: evt.outputTokens,
+          insufficientContext: evt.insufficientContext,
+          fallback_count: evt.fallback_count,
+          failure_chain: evt.failure_chain,
+        };
+        shadowLogClaudeCallIfEnabled({
+          studentId: request.student_id,
+          grade: request.scope.grade,
+          subject: request.scope.subject_code,
+          caller: request.caller,
+          mode: request.mode,
+          isGroundingCheck: false,
+          latencyMs: Date.now() - claudeStreamStart,
+          claudeResponse: syntheticResponse,
+        });
       } else {
         if (evt.reason !== 'auth_error') recordFailure(cKey);
         // If we already streamed text we can't abstain — emit an error event
