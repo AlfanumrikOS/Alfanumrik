@@ -45,6 +45,22 @@ export type AbstainReason =
   | 'upstream_error'
   | 'circuit_open';
 
+/**
+ * A single prior turn in the conversation, in Anthropic's native messages[]
+ * shape. Added in Phase 2 of the Foxy continuity fix (2026-05-18): passing
+ * these as a native array lets the model's multi-turn coherence kick in,
+ * which is much stronger than string-interpolating history into the system
+ * prompt.
+ *
+ * The grounded-answer service prepends these to the `[{role:'user',
+ * content: query}]` it currently sends to Claude. Callers MUST NOT include
+ * the current turn here — `query` is the current turn.
+ */
+export interface ConversationTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface GroundedRequest {
   caller: Caller;
   student_id: string | null;
@@ -63,6 +79,15 @@ export interface GroundedRequest {
     temperature: number;
     system_prompt_template: string;
     template_variables: Record<string, string>;
+    /**
+     * Phase 2 of Foxy continuity fix: prior conversation turns in native
+     * Anthropic shape. When present and non-empty, the grounded-answer
+     * service prepends these to `messages[]` before the current `query`.
+     * When absent (legacy path), behavior is unchanged — history flows via
+     * `template_variables.history_messages` (deprecated alias kept for one
+     * release).
+     */
+    conversation_turns?: ConversationTurn[];
   };
   retrieval: {
     match_count: number;

@@ -877,6 +877,10 @@ export async function runPipeline(
     timeoutMs: request.timeout_ms,
     apiKey: anthropicKey,
     modelPreference: request.generation.model_preference,
+    // Phase 2 of Foxy continuity fix (2026-05-18): prefer native
+    // conversation turns when supplied. Absent → byte-identical legacy
+    // single-user-message body to Claude.
+    conversationTurns: request.generation.conversation_turns,
   });
   // auth_error is a config problem, not an upstream outage — don't trip
   // the breaker on it (rotating keys would need admin intervention anyway).

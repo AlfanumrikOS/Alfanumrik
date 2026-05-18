@@ -101,6 +101,44 @@ export function validateRequest(body: unknown): ValidationResult {
     return { error: { field: 'generation.template_variables', message: 'required object' } };
   }
 
+  // Phase 2 of Foxy continuity fix (2026-05-18): optional native-shape
+  // conversation history. Each entry must be {role: 'user'|'assistant',
+  // content: string}. Absent or empty array → legacy behavior preserved.
+  if (b.generation.conversation_turns !== undefined) {
+    if (!Array.isArray(b.generation.conversation_turns)) {
+      return {
+        error: { field: 'generation.conversation_turns', message: 'must be array' },
+      };
+    }
+    // Cap at 60 entries (30 turn-pairs) as a defense against pathological
+    // callers; the BFF already caps to 30 pairs via MAX_HISTORY_TURNS.
+    if (b.generation.conversation_turns.length > 60) {
+      return {
+        error: { field: 'generation.conversation_turns', message: 'exceeds 60 entries' },
+      };
+    }
+    for (let i = 0; i < b.generation.conversation_turns.length; i++) {
+      // deno-lint-ignore no-explicit-any
+      const t: any = b.generation.conversation_turns[i];
+      if (!t || (t.role !== 'user' && t.role !== 'assistant')) {
+        return {
+          error: {
+            field: `generation.conversation_turns[${i}].role`,
+            message: "must be 'user' or 'assistant'",
+          },
+        };
+      }
+      if (typeof t.content !== 'string') {
+        return {
+          error: {
+            field: `generation.conversation_turns[${i}].content`,
+            message: 'must be string',
+          },
+        };
+      }
+    }
+  }
+
   if (!b.retrieval || typeof b.retrieval !== 'object') {
     return { error: { field: 'retrieval', message: 'required' } };
   }

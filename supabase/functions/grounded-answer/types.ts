@@ -21,6 +21,21 @@ export type AbstainReason =
   | 'upstream_error'
   | 'circuit_open';
 
+/**
+ * Phase 2 of Foxy continuity fix (2026-05-18): a single prior turn in
+ * Anthropic's native messages[] shape. The pipeline (pipeline.ts +
+ * pipeline-stream.ts) prepends these to the [{role:'user', content: query}]
+ * it currently sends to Claude. Callers MUST NOT include the current turn —
+ * `query` is the current turn.
+ *
+ * When `conversation_turns` is absent (older callers, kill-switch path), the
+ * pipeline preserves byte-identical legacy behavior.
+ */
+export interface ConversationTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface GroundedRequest {
   caller: Caller;
   student_id: string | null;
@@ -39,6 +54,13 @@ export interface GroundedRequest {
     temperature: number;
     system_prompt_template: string;
     template_variables: Record<string, string>;
+    /**
+     * Phase 2 of Foxy continuity fix: prior conversation turns in native
+     * Anthropic shape. When present and non-empty, the pipeline prepends
+     * these to `messages[]` before the current `query`. When absent, the
+     * pipeline preserves byte-identical legacy behavior.
+     */
+    conversation_turns?: ConversationTurn[];
   };
   retrieval: {
     match_count: number;
