@@ -26,6 +26,10 @@ import { authHeader } from '@/lib/api/auth-header';
 
 type StreamKey = 'science' | 'commerce' | 'humanities';
 
+// DB enum value is `humanities`; UI label is "Arts" per CEO call (the two
+// terms are used interchangeably across CBSE schools — keeping the DB
+// canonical avoids cascading a rename through migrations, RPCs, demo
+// personas, and tests).
 const STREAM_OPTIONS: ReadonlyArray<{
   key: StreamKey;
   icon: string;
@@ -34,9 +38,9 @@ const STREAM_OPTIONS: ReadonlyArray<{
   desc: string;
   color: string;
 }> = [
-  { key: 'science',    icon: '⚗️', label: 'Science',    labelHi: 'विज्ञान', desc: 'Physics · Chemistry · Biology · Math',     color: '#2563EB' },
-  { key: 'commerce',   icon: '📊', label: 'Commerce',   labelHi: 'वाणिज्य',  desc: 'Accountancy · Economics · Business',       color: '#D97706' },
-  { key: 'humanities', icon: '🌍', label: 'Humanities', labelHi: 'मानविकी',  desc: 'History · Geography · Political Science', color: '#7C3AED' },
+  { key: 'science',    icon: '⚗️', label: 'Science',  labelHi: 'विज्ञान', desc: 'Physics · Chemistry · Biology · Math',     color: '#2563EB' },
+  { key: 'commerce',   icon: '📊', label: 'Commerce', labelHi: 'वाणिज्य',  desc: 'Accountancy · Business · Economics',       color: '#D97706' },
+  { key: 'humanities', icon: '🌍', label: 'Arts',     labelHi: 'मानविकी',  desc: 'History · Political Science · Geography', color: '#7C3AED' },
 ];
 
 function needsStream(grade: string | null | undefined, stream: string | null | undefined): boolean {
@@ -75,13 +79,20 @@ export default function StreamGate() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
+        // 409 stream_already_set means someone else (super-admin? race?) set
+        // it between hydration and click. Refresh AuthContext so the gate
+        // dismisses with the now-correct stream rather than showing an error.
+        if (res.status === 409 && body?.error === 'stream_already_set') {
+          await refreshStudent();
+          return;
+        }
         const reason = typeof body?.error === 'string' ? body.error : `HTTP ${res.status}`;
         setError(isHi ? `सहेजने में समस्या: ${reason}` : `Could not save: ${reason}`);
         return;
       }
-      if (typeof window !== 'undefined') {
-        try { localStorage.setItem('alfanumrik_stream', key); } catch { /* private mode */ }
-      }
+      // refreshStudent() pulls the new stream out of AuthContext, which
+      // dismisses this gate via needsStream(). No localStorage cache —
+      // nothing reads it (the dashboard chip reads student.stream).
       await refreshStudent();
     } catch (e) {
       console.error('[stream-gate] persist failed:', e);
@@ -115,6 +126,21 @@ export default function StreamGate() {
             {isHi
               ? 'इसके बिना विषय अनलॉक नहीं होंगे'
               : 'Subjects unlock based on this choice'}
+          </p>
+          {/* Stream is locked after the first pick (CEO requirement
+              2026-05-18). Make that visible *before* the click so students
+              don't tap through assuming it's reversible. */}
+          <p
+            className="text-[11px] mt-3 font-semibold px-3 py-1.5 rounded-lg inline-block"
+            style={{
+              background: 'rgba(217,119,6,0.10)',
+              color: '#B45309',
+              border: '1px solid rgba(217,119,6,0.30)',
+            }}
+          >
+            {isHi
+              ? '⚠️ यह चयन स्थायी है — सोच-समझ कर चुनें'
+              : '⚠️ This choice is permanent — pick carefully'}
           </p>
         </div>
 

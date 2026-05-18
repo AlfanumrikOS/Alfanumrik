@@ -338,6 +338,52 @@ describe('PATCH /api/student/preferences', () => {
       expect(await res.json()).toMatchObject({ error: 'Nudge not found' });
     });
   });
+
+  describe('action: set_stream — lock semantics', () => {
+    it('returns 400 when stream value is not one of science/commerce/humanities', async () => {
+      authorizedAs('s1');
+      const res = await call({ action: 'set_stream', stream: 'medical' });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 422 stream_not_applicable for grades 6-10', async () => {
+      authorizedAs('s1');
+      setFromResult('students', { data: { grade: '9', stream: null }, error: null });
+      const res = await call({ action: 'set_stream', stream: 'science' });
+      expect(res.status).toBe(422);
+      const body = await res.json();
+      expect(body.error).toBe('stream_not_applicable');
+    });
+
+    it('returns 200 on first pick when stream is NULL', async () => {
+      authorizedAs('s1');
+      setFromResult('students', { data: { grade: '12', stream: null }, error: null });
+      const res = await call({ action: 'set_stream', stream: 'science' });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toMatchObject({ success: true, stream: 'science' });
+    });
+
+    it('returns 409 stream_already_set when student already has a different stream', async () => {
+      authorizedAs('s1');
+      // Student already locked into commerce — should reject science attempt.
+      setFromResult('students', { data: { grade: '12', stream: 'commerce' }, error: null });
+      const res = await call({ action: 'set_stream', stream: 'science' });
+      expect(res.status).toBe(409);
+      const body = await res.json();
+      expect(body.error).toBe('stream_already_set');
+      expect(body.current_stream).toBe('commerce');
+    });
+
+    it('returns 200 idempotent success when re-picking the SAME stream (no write)', async () => {
+      authorizedAs('s1');
+      setFromResult('students', { data: { grade: '12', stream: 'science' }, error: null });
+      const res = await call({ action: 'set_stream', stream: 'science' });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toMatchObject({ success: true, stream: 'science', locked: true });
+    });
+  });
 });
 
 // =============================================================================

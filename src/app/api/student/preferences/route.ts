@@ -180,11 +180,13 @@ export async function PATCH(request: NextRequest) {
         }
 
         // Stream is only meaningful for grade 11/12. Look up the student's
-        // grade before writing — silently no-op for grades 6-10 rather than
-        // letting bad data accumulate.
+        // grade + current stream — we reject grades 6-10 and also lock the
+        // stream once it has been set (CEO requirement 2026-05-18: students
+        // cannot change their stream after the first pick; super-admin can
+        // still update directly via the admin path).
         const { data: studentRow, error: lookupErr } = await supabaseAdmin
           .from('students')
-          .select('grade')
+          .select('grade, stream')
           .eq('id', studentId)
           .maybeSingle();
 
@@ -204,6 +206,31 @@ export async function PATCH(request: NextRequest) {
               detail: `Stream is only applicable for grades 11-12; this student is grade ${grade || 'unknown'}.`,
             },
             { status: 422 },
+          );
+        }
+
+        const currentStream = studentRow.stream;
+        if (
+          currentStream === 'science' ||
+          currentStream === 'commerce' ||
+          currentStream === 'humanities'
+        ) {
+          // Idempotent re-pick of the same stream is a no-op success.
+          if (currentStream === stream) {
+            return NextResponse.json({ success: true, stream, locked: true });
+          }
+          logger.warn('student_preferences_set_stream_locked', {
+            studentId,
+            currentStream,
+            attemptedStream: stream,
+          });
+          return NextResponse.json(
+            {
+              error: 'stream_already_set',
+              detail: `Stream is locked to '${currentStream}'. Contact support to change it.`,
+              current_stream: currentStream,
+            },
+            { status: 409 },
           );
         }
 

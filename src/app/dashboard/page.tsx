@@ -93,12 +93,8 @@ const DailyRhythmQueue = dynamic(
   { ssr: false, loading: () => <SectionFallback /> },
 );
 
-// ─── Stream picker config (grades 11-12) ─────────────────────────────────
-const STREAM_OPTIONS = [
-  { key: 'science' as const, icon: '⚗️', label: 'Science', labelHi: 'विज्ञान', desc: 'Physics · Chemistry · Biology · Math', color: '#2563EB' },
-  { key: 'commerce' as const, icon: '📊', label: 'Commerce', labelHi: 'वाणिज्य', desc: 'Accountancy · Economics · Business', color: '#D97706' },
-  { key: 'humanities' as const, icon: '🌍', label: 'Humanities', labelHi: 'मानविकी', desc: 'History · Geography · Political Science', color: '#7C3AED' },
-];
+// Stream picker is now global at src/components/StreamGate.tsx — the
+// dashboard only shows the read-only stream chip below.
 
 // ─── Accordion primitive ─────────────────────────────────────────────────
 function Accordion({
@@ -222,9 +218,8 @@ function LegacyDashboard() {
   const [todaySubjectHi, setTodaySubjectHi] = useState<string | undefined>();
   const [todayTopic, setTodayTopic] = useState<string | undefined>();
   const [challengeBadges, setChallengeBadges] = useState<string[]>([]);
-  // Stream selector — grades 11-12 only
-  const [selectedStream, setSelectedStream] = useState<'science' | 'commerce' | 'humanities' | null>(null);
-  const [showStreamPicker, setShowStreamPicker] = useState(false);
+  // Stream picker is owned by the global <StreamGate />; dashboard reads
+  // student.stream directly for the read-only chip.
 
   // ─── Auth + role-aware redirects ───────────────────────────────────────
   useEffect(() => {
@@ -510,31 +505,11 @@ function LegacyDashboard() {
     };
   }, [student?.id, student?.grade, student?.created_at]);
 
-  // Stream selector for grades 11-12.
-  // Phase F.9 follow-up (2026-05-18): DB is the source of truth, not
-  // localStorage. localStorage was a write-only sink — every grade 11/12
-  // student's DB stream stayed NULL, breaking the subject-filter RPCs
-  // server-side (validateSubjectWrite returned 422 'plan' for physics/
-  // chemistry/biology/computer_science because the RPC couldn't filter
-  // to the student's stream).
-  //
-  // 2026-05-18 follow-up: the *auto-show* path was hoisted into the global
-  // <StreamGate> mounted in src/app/layout.tsx so students who land on
-  // /foxy or /learn (not just /dashboard) also see the picker. We still
-  // sync `selectedStream` from the DB here so the dashboard chip + the
-  // chip-click "change stream" flow continue to work locally.
-  useEffect(() => {
-    if (!student) return;
-    const g = student.grade;
-    if (g !== '11' && g !== '12') return;
-    const dbStream = student.stream;
-    if (dbStream === 'science' || dbStream === 'commerce' || dbStream === 'humanities') {
-      setSelectedStream(dbStream);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('alfanumrik_stream', dbStream);
-      }
-    }
-  }, [student?.grade, student?.id, student?.stream]);
+  // Stream state is owned by AuthContext + <StreamGate /> now. Stream is
+  // locked after the first pick, so this page just reads student.stream
+  // for the read-only chip — no local sync state needed. The legacy
+  // `alfanumrik_stream` localStorage write was dropped along with it
+  // (no other code reads that key).
 
   // ─── Loading & guard ───────────────────────────────────────────────────
   if (isLoading) return <DashboardSkeleton />;
@@ -568,80 +543,10 @@ function LegacyDashboard() {
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
-      {/* Stream Picker Modal — grades 11-12 first visit */}
-      {showStreamPicker && (student.grade === '11' || student.grade === '12') && (
-        <div
-          className="fixed inset-0 z-[80] flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.5)' }}
-        >
-          <div
-            className="w-full max-w-sm rounded-3xl p-6 shadow-2xl"
-            style={{ background: 'var(--warm-cream, #FFF9F0)', border: '1px solid var(--border)' }}
-          >
-            <div className="text-center mb-5">
-              <div className="text-4xl mb-2" aria-hidden="true">🎓</div>
-              <h2 className="font-bold text-xl" style={{ color: 'var(--text-1)' }}>
-                {isHi ? 'अपनी स्ट्रीम चुनें' : 'Choose Your Stream'}
-              </h2>
-              <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>
-                {isHi ? `कक्षा ${student.grade} · CBSE` : `Class ${student.grade} · CBSE`}
-              </p>
-            </div>
-            <div className="space-y-3">
-              {STREAM_OPTIONS.map((st) => (
-                <button
-                  key={st.key}
-                  onClick={async () => {
-                    // Optimistic UI — instant feedback, then persist to DB.
-                    setSelectedStream(st.key);
-                    setShowStreamPicker(false);
-                    if (typeof window !== 'undefined') {
-                      localStorage.setItem('alfanumrik_stream', st.key);
-                    }
-                    // Phase F.9 fix: write to DB via authenticated route.
-                    try {
-                      const res = await fetch('/api/student/preferences', {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
-                        body: JSON.stringify({ action: 'set_stream', stream: st.key }),
-                      });
-                      if (!res.ok) {
-                        const body = await res.json().catch(() => ({}));
-                        console.error('[stream-picker] persist failed:', res.status, body);
-                        // Re-open the picker so the user sees the attempt didn't take.
-                        // localStorage retains the optimistic value but the server
-                        // will be the source of truth on next refresh.
-                        setShowStreamPicker(true);
-                      } else {
-                        // Refresh the AuthContext so subsequent subject queries see
-                        // the new stream. The picker stays closed.
-                        if (typeof refreshStudent === 'function') {
-                          void refreshStudent();
-                        }
-                      }
-                    } catch (e) {
-                      console.error('[stream-picker] persist network error:', e);
-                      setShowStreamPicker(true);
-                    }
-                  }}
-                  className="w-full flex items-center gap-4 p-4 rounded-2xl text-left transition-all hover:scale-[1.01]"
-                  style={{ background: 'var(--surface-1)', border: `2px solid ${st.color}30` }}
-                >
-                  <span className="text-3xl" aria-hidden="true">{st.icon}</span>
-                  <div>
-                    <p className="font-bold text-base" style={{ color: st.color }}>
-                      {isHi ? st.labelHi : st.label}
-                    </p>
-                    <p className="text-xs" style={{ color: 'var(--text-2)' }}>
-                      {st.desc}
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Stream pick lives in the global <StreamGate /> mounted in
+          src/app/layout.tsx, so it appears on /foxy etc. too. Stream is
+          locked after first pick (CEO 2026-05-18) — no in-dashboard
+          re-pick path. The chip below is read-only. */}
 
       {/* Header — name, plan, lang toggle, notifications, avatar */}
       <header className="page-header">
@@ -656,45 +561,49 @@ function LegacyDashboard() {
                 {student.name} 👋
               </h1>
               <PlanBadge planCode={student.subscription_plan} size="sm" />
-              {(student.grade === '11' || student.grade === '12') && selectedStream && (
-                <button
-                  onClick={() => setShowStreamPicker(true)}
+              {(student.grade === '11' || student.grade === '12') && student.stream && (
+                <span
+                  // Read-only badge. Stream is locked once set (CEO
+                  // 2026-05-18); no in-app re-pick. The aria-label spells
+                  // that out for screen readers.
+                  aria-label={isHi ? 'चयनित स्ट्रीम (बदली नहीं जा सकती)' : 'Selected stream (locked)'}
+                  title={isHi ? 'स्ट्रीम स्थायी है' : 'Stream is locked'}
                   className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                   style={{
                     background:
-                      selectedStream === 'science'
+                      student.stream === 'science'
                         ? '#2563EB15'
-                        : selectedStream === 'commerce'
+                        : student.stream === 'commerce'
                           ? '#D9770615'
                           : '#7C3AED15',
                     color:
-                      selectedStream === 'science'
+                      student.stream === 'science'
                         ? '#2563EB'
-                        : selectedStream === 'commerce'
+                        : student.stream === 'commerce'
                           ? '#D97706'
                           : '#7C3AED',
                     border: `1px solid ${
-                      selectedStream === 'science'
+                      student.stream === 'science'
                         ? '#2563EB30'
-                        : selectedStream === 'commerce'
+                        : student.stream === 'commerce'
                           ? '#D9770630'
                           : '#7C3AED30'
                     }`,
                   }}
                 >
-                  {selectedStream === 'science' ? '⚗️' : selectedStream === 'commerce' ? '📊' : '🌍'}{' '}
+                  {student.stream === 'science' ? '⚗️' : student.stream === 'commerce' ? '📊' : '🌍'}{' '}
                   {isHi
-                    ? selectedStream === 'science'
+                    ? student.stream === 'science'
                       ? 'विज्ञान'
-                      : selectedStream === 'commerce'
+                      : student.stream === 'commerce'
                         ? 'वाणिज्य'
                         : 'मानविकी'
-                    : selectedStream === 'science'
+                    : student.stream === 'science'
                       ? 'Science'
-                      : selectedStream === 'commerce'
+                      : student.stream === 'commerce'
                         ? 'Commerce'
-                        : 'Humanities'}
-                </button>
+                        : 'Arts'}
+                </span>
               )}
             </div>
           </div>
