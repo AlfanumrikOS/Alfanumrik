@@ -12,6 +12,9 @@ export interface Student {
   board: string | null;
   preferred_language: string;
   preferred_subject: string | null;
+  // Phase F.9 fix (2026-05-18): stream is required for grades 11/12 — drives
+  // the subject filter RPC (get_available_subjects). NULL for grades 6-10.
+  stream: 'science' | 'commerce' | 'humanities' | null;
   onboarding_completed: boolean | null;
   is_active: boolean | null;
   school_name: string | null;
