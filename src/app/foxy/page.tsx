@@ -203,13 +203,27 @@ async function fetchConversationById(sessionId: string) {
 export default function FoxyPage() {
   const { student: authStudent, isLoggedIn, isLoading: authLoading } = useAuth();
   const router = useRouter();
-  const { unlocked: allowedSubjects } = useAllowedSubjects();
+  // 2026-05-18: render BOTH unlocked and locked subjects in the tab bar so
+  // students can see their full stream lineup and get an upgrade prompt
+  // on a locked tap (instead of locked subjects being invisible). The
+  // server already gates writes via validateSubjectWrite — this is a
+  // visibility change only, not a permission change.
+  const { subjects: allowedSubjects, unlocked: unlockedSubjects } = useAllowedSubjects();
 
-  // Allowed subjects come from the subjects service — respects grade, stream, plan,
-  // and the admin-curated master list. Build a lookup table for tab/dropdown rendering.
+  // Lookup table for tab/dropdown rendering — keep `unlocked` semantics for
+  // any code path that should only see usable subjects (e.g. the legacy
+  // dropdown). Tab bar reads from `allowedSubjects` (full list).
   const SUBJECTS: Record<string, SubjectConfig> = Object.fromEntries(
-    allowedSubjects.map((s) => [s.code, { name: s.name, icon: s.icon, color: s.color } as SubjectConfig]),
+    unlockedSubjects.map((s) => [s.code, { name: s.name, icon: s.icon, color: s.color } as SubjectConfig]),
   );
+
+  // Full lookup (incl. locked) for the tab bar.
+  const ALL_SUBJECTS_BY_CODE: Record<string, typeof allowedSubjects[number]> =
+    Object.fromEntries(allowedSubjects.map((s) => [s.code, s]));
+
+  // Tracks which locked subject the student tapped, so we can show the
+  // upgrade modal. Null = modal closed.
+  const [lockedTapped, setLockedTapped] = useState<typeof allowedSubjects[number] | null>(null);
 
   // Core state
   const [student, setStudent] = useState<any>(null);
@@ -976,6 +990,58 @@ export default function FoxyPage() {
   return (
     <div className="min-h-dvh flex flex-col pb-nav" style={{ background: 'var(--surface-2)' }}>
 
+      {/* Upgrade modal — surfaces when a student taps a locked subject tab.
+          Server still 422s on writes for locked subjects, this just makes
+          the gate friendlier and points at /pricing. */}
+      {lockedTapped && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="upgrade-modal-title"
+          className="fixed inset-0 z-[95] flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.55)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setLockedTapped(null); }}
+        >
+          <div
+            className="w-full max-w-sm rounded-3xl p-6 shadow-2xl"
+            style={{ background: 'var(--warm-cream, #FFF9F0)', border: '1px solid var(--border)' }}
+          >
+            <div className="text-center mb-4">
+              <div className="text-4xl mb-2" aria-hidden="true">{lockedTapped.icon}</div>
+              <h2 id="upgrade-modal-title" className="font-bold text-xl" style={{ color: 'var(--text-1)' }}>
+                {isHi
+                  ? `${lockedTapped.nameHi} अनलॉक करें`
+                  : `Unlock ${lockedTapped.name}`}
+              </h2>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>
+                {isHi
+                  ? `${lockedTapped.nameHi} एक पेड प्लान में उपलब्ध है। अभी मुफ्त प्लान में मैथ्स, अंग्रेज़ी और हिंदी मिलते हैं।`
+                  : `${lockedTapped.name} is part of our paid plans. Your free plan includes Math, English and Hindi.`}
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 mt-5">
+              <button
+                onClick={() => {
+                  setLockedTapped(null);
+                  router.push('/pricing');
+                }}
+                className="w-full px-4 py-3 rounded-2xl font-bold text-sm text-white"
+                style={{ background: lockedTapped.color }}
+              >
+                {isHi ? 'प्लान देखें' : 'View plans'}
+              </button>
+              <button
+                onClick={() => setLockedTapped(null)}
+                className="w-full px-4 py-2 rounded-2xl font-semibold text-xs"
+                style={{ background: 'transparent', color: 'var(--text-3)' }}
+              >
+                {isHi ? 'बाद में' : 'Maybe later'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ═══ HEADER ═══ */}
       <header className="sticky top-0 z-30 px-3 py-2.5 flex items-center gap-3" style={{ background: 'linear-gradient(135deg, #1a1a2e, #0f3460)', color: '#fff' }}>
         <button onClick={() => router.push('/dashboard')} className="text-white/60 text-sm">←</button>
@@ -1032,31 +1098,55 @@ export default function FoxyPage() {
           borderBottom: '1px solid var(--border)',
         }}
       >
-        {(studentSubs.length > 0 ? studentSubs : allowedSubjects.map((s) => s.code)).map((key: string) => {
-          const sub = SUBJECTS[key];
-          if (!sub) return null;
-          const isActive = activeSubject === key;
-          return (
-            <button
-              key={key}
-              onClick={() => {
-                if (key !== activeSubject) {
-                  switchSubject(key);
-                  setShowChapterDD(true);
-                }
-              }}
-              className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]"
-              style={{
-                background: isActive ? `${sub.color}15` : 'var(--surface-2)',
-                border: isActive ? `1.5px solid ${sub.color}40` : '1.5px solid var(--border)',
-                color: isActive ? sub.color : 'var(--text-2)',
-              }}
-            >
-              <span className="text-sm">{sub.icon}</span>
-              <span className="whitespace-nowrap">{sub.name.length > 8 ? sub.name.substring(0, 7) + '.' : sub.name}</span>
-            </button>
-          );
-        })}
+        {(() => {
+          // Build the visible tab list.
+          //  - If the student curated `selected_subjects`, honour that list.
+          //  - Otherwise show the full stream lineup (locked + unlocked).
+          //
+          // Each entry resolves to a Subject (with isLocked) via the full
+          // lookup so locked subjects stay visible — they render with a
+          // lock badge and tapping them opens the upgrade modal instead
+          // of switching subject (server would 422 anyway).
+          const visible = (studentSubs.length > 0 ? studentSubs : allowedSubjects.map((s) => s.code))
+            .map((code) => ALL_SUBJECTS_BY_CODE[code])
+            .filter(Boolean);
+
+          return visible.map((sub) => {
+            const isActive = activeSubject === sub.code;
+            const handleClick = () => {
+              if (sub.isLocked) {
+                setLockedTapped(sub);
+                return;
+              }
+              if (sub.code !== activeSubject) {
+                switchSubject(sub.code);
+                setShowChapterDD(true);
+              }
+            };
+            const displayName = sub.name.length > 8 ? sub.name.substring(0, 7) + '.' : sub.name;
+            return (
+              <button
+                key={sub.code}
+                onClick={handleClick}
+                aria-label={sub.isLocked ? `${sub.name} (locked — tap to upgrade)` : sub.name}
+                title={sub.isLocked ? (isHi ? 'अपग्रेड करें' : 'Upgrade to unlock') : undefined}
+                className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]"
+                style={{
+                  background: isActive ? `${sub.color}15` : 'var(--surface-2)',
+                  border: isActive ? `1.5px solid ${sub.color}40` : '1.5px solid var(--border)',
+                  color: isActive ? sub.color : 'var(--text-2)',
+                  opacity: sub.isLocked ? 0.55 : 1,
+                }}
+              >
+                <span className="text-sm">{sub.icon}</span>
+                <span className="whitespace-nowrap">{displayName}</span>
+                {sub.isLocked && (
+                  <span aria-hidden="true" className="text-[10px] leading-none">🔒</span>
+                )}
+              </button>
+            );
+          });
+        })()}
       </div>
 
       {/* ═══ CHAPTER SELECTOR + MODE BAR ═══ */}
