@@ -1189,7 +1189,7 @@ async function gradeMolShadowPairs(supabase: ReturnType<typeof createClient>): P
       { grader: gradeShadowPair },
     )
     console.log(
-      `daily-cron: mol_shadow_grader — graded=${result.graded} skipped_no_text=${result.skipped_no_text} skipped_unsampled=${result.skipped_unsampled} daily_inr=${result.daily_shadow_cost_inr} cost_cap=${result.cost_cap_triggered} killed=${result.killed}`,
+      `daily-cron: mol_shadow_grader — graded=${result.graded} skipped_no_text=${result.skipped_no_text} skipped_unsampled=${result.skipped_unsampled} daily_inr=${result.daily_shadow_cost_inr} cost_cap=${result.cost_cap_triggered} killed=${result.killed} grader_cap=${result.grader_cap_triggered} grader_inr=${result.estimated_grader_cost_inr}`,
     )
     return result.graded
   } catch (err) {
