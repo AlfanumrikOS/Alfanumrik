@@ -47,6 +47,13 @@ export default defineConfig({
           // C4.2b-ii text capture (2026-05-20). Tests for recordShadowText
           // + redaction aggregation + DB insert wiring.
           'supabase/functions/_shared/mol/__tests__/recordShadowText.test.ts',
+          // PR-2 bulk-jee-neet-import (2026-05-19). Static-source contract
+          // canary + pure-function tests for the validation helpers. The
+          // index.ts under test boots `Deno.serve()` and imports from
+          // esm.sh, so it cannot be loaded directly under vitest — the
+          // test file uses readFileSync inspection for the runtime handler
+          // and imports `validation.ts` (Deno-free) for parser coverage.
+          'supabase/functions/bulk-jee-neet-import/__tests__/index.test.ts',
         ],
     exclude: isIntegrationRun
       ? ['node_modules/**']
