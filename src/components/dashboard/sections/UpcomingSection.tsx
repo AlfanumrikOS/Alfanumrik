@@ -18,6 +18,7 @@
 import { Card, SectionHeader } from '@/components/ui';
 import PendingLinkApproval, { type PendingLink } from '@/components/dashboard/PendingLinkApproval';
 import type { Subject as AllowedSubject } from '@/lib/subjects.types';
+import { trackDashboardCta } from '@/lib/posthog/dashboard-cta';
 
 interface UpcomingExam {
   id: string;
@@ -193,7 +194,16 @@ export default function UpcomingSection({
               return (
                 <button
                   key={exam.id}
-                  onClick={() => router.push('/exams')}
+                  onClick={() => {
+                    // PII-free: action key encodes urgency bucket only;
+                    // exam name, subject, date NEVER enter the payload.
+                    trackDashboardCta({
+                      section: 'upcoming',
+                      action: isUrgent ? 'exam_urgent_tap' : 'exam_tap',
+                      destination: '/exams',
+                    });
+                    router.push('/exams');
+                  }}
                   className="w-full"
                 >
                   <Card className="!p-3 flex items-center gap-3">

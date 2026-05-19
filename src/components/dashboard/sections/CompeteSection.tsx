@@ -15,6 +15,7 @@
  */
 
 import ChallengeStreakBadge from '@/components/challenge/StreakBadge';
+import { trackDashboardCta } from '@/lib/posthog/dashboard-cta';
 
 interface CompeteSectionProps {
   isHi: boolean;
@@ -41,7 +42,17 @@ export default function CompeteSection({
       {/* Mini leaderboard card */}
       {showLeaderboard && (
         <button
-          onClick={() => router.push('/leaderboard')}
+          onClick={() => {
+            // `studentRank` value is intentionally NOT in the payload — it's
+            // a learner-state datum that belongs in cohort properties on
+            // identify(), not on a click event. PII-free here.
+            trackDashboardCta({
+              section: 'compete',
+              action: studentRank !== null ? 'leaderboard_ranked' : 'leaderboard_zero_state',
+              destination: '/leaderboard',
+            });
+            router.push('/leaderboard');
+          }}
           className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all active:scale-[0.98]"
           style={{
             background: 'linear-gradient(135deg, rgba(245,166,35,0.06), rgba(232,88,28,0.06))',
@@ -81,7 +92,14 @@ export default function CompeteSection({
       {/* Weekly Challenge — Concept Chain streak summary */}
       {showChallengeStreak && (
         <button
-          onClick={() => router.push('/challenge')}
+          onClick={() => {
+            trackDashboardCta({
+              section: 'compete',
+              action: 'weekly_challenge',
+              destination: '/challenge',
+            });
+            router.push('/challenge');
+          }}
           className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all active:scale-[0.98]"
           style={{
             background: 'linear-gradient(135deg, rgba(124,58,237,0.06), rgba(139,92,246,0.06))',

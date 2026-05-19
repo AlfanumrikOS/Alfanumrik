@@ -22,6 +22,7 @@ import FocusDashboard from '@/components/dashboard/FocusDashboard';
 import DailyChallengeCard from '@/components/challenge/DailyChallengeCard';
 import TodaysPlan from '@/components/dashboard/TodaysPlan';
 import type { CurriculumTopic, StudentSnapshot } from '@/lib/types';
+import { trackDashboardCta } from '@/lib/posthog/dashboard-cta';
 
 interface KnowledgeGap {
   id: string;
@@ -129,7 +130,14 @@ export default function TodaysFocusSection({
       {/* DUE REVIEWS — quick link */}
       {dueCount > 0 && spacedRepetitionEnabled && (
         <button
-          onClick={() => router.push('/review')}
+          onClick={() => {
+            trackDashboardCta({
+              section: 'todays_focus',
+              action: 'due_reviews',
+              destination: '/review',
+            });
+            router.push('/review');
+          }}
           className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all"
           style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.2)' }}
         >
@@ -169,14 +177,28 @@ export default function TodaysFocusSection({
             </div>
           </div>
           <button
-            onClick={() => router.push('/learn')}
+            onClick={() => {
+              trackDashboardCta({
+                section: 'todays_focus',
+                action: 'welcome_start_learning',
+                destination: '/learn',
+              });
+              router.push('/learn');
+            }}
             className="w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
             style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}
           >
             📚 {isHi ? 'पढ़ना शुरू करो →' : 'Start Learning →'}
           </button>
           <button
-            onClick={() => router.push('/foxy')}
+            onClick={() => {
+              trackDashboardCta({
+                section: 'todays_focus',
+                action: 'welcome_ask_foxy',
+                destination: '/foxy',
+              });
+              router.push('/foxy');
+            }}
             className="w-full mt-2 py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-[0.98]"
             style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}
           >
@@ -208,30 +230,41 @@ export default function TodaysFocusSection({
                 done: quizzesTaken >= 1,
                 icon: '✏️',
                 label: isHi ? 'पहला क्विज़ दो' : 'Take your first quiz',
-                action: () => router.push('/quiz'),
+                actionKey: 'getting_started_first_quiz',
+                dest: '/quiz',
               },
               {
                 done: totalXp > 0 && profilesLength > 0,
                 icon: '🦊',
                 label: isHi ? 'Foxy से कोई सवाल पूछो' : 'Ask Foxy a question',
-                action: () => router.push('/foxy'),
+                actionKey: 'getting_started_ask_foxy',
+                dest: '/foxy',
               },
               {
                 done: quizzesTaken >= 3,
                 icon: '📚',
                 label: isHi ? 'कम से कम 3 क्विज़ पूरा करो' : 'Complete at least 3 quizzes',
-                action: () => router.push('/quiz'),
+                actionKey: 'getting_started_three_quizzes',
+                dest: '/quiz',
               },
               {
                 done: (snapshot?.topics_mastered ?? 0) > 0 || (snapshot?.topics_in_progress ?? 0) > 0,
                 icon: '📈',
                 label: isHi ? 'अपनी प्रगति देखो' : 'Check your progress',
-                action: () => router.push('/progress'),
+                actionKey: 'getting_started_view_progress',
+                dest: '/progress',
               },
             ].map((step, i) => (
               <button
                 key={i}
-                onClick={step.action}
+                onClick={() => {
+                  trackDashboardCta({
+                    section: 'todays_focus',
+                    action: step.actionKey,
+                    destination: step.dest,
+                  });
+                  router.push(step.dest);
+                }}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all active:scale-[0.98]"
                 style={{
                   background: step.done ? 'rgba(22,163,74,0.06)' : 'rgba(232,88,28,0.04)',

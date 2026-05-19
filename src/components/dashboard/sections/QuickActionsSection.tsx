@@ -16,6 +16,7 @@
 
 import QuickActions from '@/components/dashboard/QuickActions';
 import { SectionHeader } from '@/components/ui';
+import { trackDashboardCta } from '@/lib/posthog/dashboard-cta';
 
 interface ShortcutTile {
   key: 'scan' | 'profile' | 'billing';
@@ -56,7 +57,15 @@ export default function QuickActionsSection({
           {SHORTCUTS.map((s) => (
             <button
               key={s.key}
-              onClick={() => router.push(s.href)}
+              onClick={() => {
+                // PII-free: section/action/destination are closed enums.
+                trackDashboardCta({
+                  section: 'quick_actions',
+                  action: `shortcut_${s.key}`,
+                  destination: s.href,
+                });
+                router.push(s.href);
+              }}
               /* min-h-[64px] + px-3 py-3.5: meets Apple HIG 44px touch target
                  with comfortable margin. Audit 2026-05-11 §0 F4. */
               className="flex flex-col items-center gap-2 px-3 py-3.5 rounded-xl transition-all active:scale-[0.97] min-h-[64px]"

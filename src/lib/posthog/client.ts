@@ -10,11 +10,34 @@
  *  - Fail-soft: returns null in dev when key is unset; never throws.
  *
  * Privacy posture (P13):
- *  - autocapture: false           — we want EXPLICIT events only
+ *  - autocapture: true            — see "Autocapture rationale" below
+ *  - mask_all_text: true          — autocaptured DOM text is masked at source
+ *  - mask_all_element_attributes: true — DOM attributes (alt, value, etc.) masked
  *  - disable_session_recording: true — defer until post P13 masking review
  *  - process_person_profile: 'identified_only' — no anonymous person profiles
  *  - api_host: '/ingest'          — same-origin proxy in next.config.js
  *  - ui_host: 'https://us.posthog.com' — so deep-links from PostHog UI work
+ *
+ * Autocapture rationale (2026-05-19, mobile-first redesign Phase 1.5):
+ *   The ops inventory before the AppShell migration found we had zero
+ *   ground-truth data on viewport widths, device class, or which dashboard
+ *   surfaces drive clicks. Explicit `track()` events alone can't answer
+ *   "what fraction of dashboard taps land on the streak chip vs the
+ *   continue card" because every chip would need bespoke instrumentation.
+ *
+ *   Enabling autocapture closes that gap. To stay P13-safe we pair it with
+ *   `mask_all_text: true` + `mask_all_element_attributes: true` so the
+ *   payload PostHog ships from the browser is the DOM SHAPE (tag names,
+ *   class hierarchy, css-selector path) without any text content or
+ *   attribute values. Student names, plan badges, XP totals, streak counts,
+ *   subject titles, etc. are masked at source — they never leave the
+ *   browser.
+ *
+ *   The whole autocapture surface is still gated by
+ *   `NEXT_PUBLIC_POSTHOG_ENABLED === 'true'`. Setting that env var to
+ *   anything other than the literal "true" disables PostHog entirely
+ *   (init() short-circuits before the dynamic import). That is the
+ *   operational kill-switch for autocapture.
  *
  * Bundle target: this module is small (< 4 kB minified) because posthog-js
  * itself is loaded via dynamic import inside init() — only when the flag is on.
@@ -94,9 +117,24 @@ export async function init(): Promise<PosthogModule | null> {
         // So deep-links from the PostHog UI back to events work.
         ui_host: 'https://us.posthog.com',
 
-        // Explicit events only — no autocaptured pageclicks.
-        // (P13 hygiene + bundle size — autocapture pulls in extra runtime weight.)
-        autocapture: false,
+        // Autocapture is ON to close the dashboard-CTA visibility gap (see
+        // header comment "Autocapture rationale"). PII protection is enforced
+        // by the next two options so the DOM text + attribute values never
+        // leave the browser. The master kill-switch is the
+        // NEXT_PUBLIC_POSTHOG_ENABLED env var read by `readKey()` above.
+        autocapture: true,
+        // P13: mask every text node in autocaptured events. PostHog records
+        // the DOM hierarchy + css-selector path but not the visible text —
+        // so student names, XP totals, streak counts, plan badges, subject
+        // titles, chapter names, foxy chat snippets, etc. are redacted at
+        // source. The `track()` API in this file is unaffected; it still
+        // accepts explicit, structured properties that we control end-to-end.
+        mask_all_text: true,
+        // P13: mask DOM attributes (alt, value, placeholder, aria-label,
+        // data-*) on autocaptured events too. These can leak the same kind
+        // of identity / progress data the visible text would. Defence-in-
+        // depth with `mask_all_text`.
+        mask_all_element_attributes: true,
 
         // Pageviews are OK — they're useful and PII-free at the URL level.
         // App Router doesn't auto-emit on client-side nav; we wire route changes
