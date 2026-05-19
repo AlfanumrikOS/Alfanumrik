@@ -76,16 +76,30 @@
 import {
   generateResponse,
   type GenerateRequest,
+  type MolResult,
   type TaskType,
   type Language,
   type ExamGoal,
   type StudentContext,
 } from '../_shared/mol/index.ts';
-import { recordMolRequest, type LogPayload } from '../_shared/mol/telemetry.ts';
+import {
+  recordMolRequest,
+  recordShadowText,
+  type LogPayload,
+} from '../_shared/mol/telemetry.ts';
 import { getFlagEnvelope } from '../_shared/mol/feature-flag.ts';
 
 /** Feature-flag name. Default OFF in feature_flags table — owner: ops. */
 export const C4_SHADOW_FLAG = 'ff_grounded_answer_mol_shadow_v1';
+
+/**
+ * Feature-flag name for the C4.2b-ii text-capture path. Default OFF.
+ * INDEPENDENT of C4_SHADOW_FLAG. Text capture writes to
+ * mol_shadow_text_buffer only when BOTH this flag AND C4_SHADOW_FLAG are
+ * enabled (since capture happens inside this helper, which itself is gated
+ * by C4_SHADOW_FLAG).
+ */
+export const C4_TEXT_CAPTURE_FLAG = 'ff_mol_shadow_text_capture_v1';
 
 /** Per-call shadow timeout. Independent from baseline; never blocks user. */
 const SHADOW_TIMEOUT_MS = 10_000;
@@ -138,6 +152,43 @@ export interface ShadowFireArgs {
     exam_goal?: ExamGoal | null;
     subject?: string | null;
   };
+
+  // ── C4.2b-ii text-capture (2026-05-20) ─────────────────────────────────
+  // The two fields below feed the Sonnet grader's offline comparison.
+  // Default-OFF feature flag (ff_mol_shadow_text_capture_v1) means these
+  // are written to the buffer table ONLY when ops explicitly enables text
+  // capture. Both fields are optional at the type level so existing
+  // call sites (which don't yet supply them) keep compiling.
+
+  /**
+   * The baseline (Anthropic) response text the user was served. Drives
+   * three text-capture behaviors:
+   *
+   *   * non-empty string → INLINE write. Non-streaming caller (pipeline.ts)
+   *     has baseline text ready at shadow-fire time; helper redacts +
+   *     writes mol_shadow_text_buffer inline.
+   *   * undefined → STASH. Streaming caller (pipeline-stream.ts) doesn't
+   *     have baseline text yet; helper stashes the shadow's text keyed
+   *     by request_id; caller drains via `recordShadowTextFromStash` after
+   *     stream completes.
+   *   * empty string ('') → SKIP. Callers (e.g. the grounding-check
+   *     shadow leg) that want the shadow row in mol_request_logs but NOT
+   *     a buffer row. No inline write, no stash entry.
+   *
+   * All three paths are gated by the ff_mol_shadow_text_capture_v1
+   * feature flag. When the flag is off, every path is a no-op.
+   */
+  baseline_response_text?: string;
+
+  /**
+   * The system prompt the shadow used, when it diverges from the baseline.
+   * NULL (the default) means prompt-parity (C4.2a fix) — the shadow reused
+   * the baseline's exact prompt verbatim. Non-null only when a future C5
+   * change adopts a divergent shadow prompt (e.g. for OpenAI-specific
+   * formatting tweaks); persisted on the buffer row so the grader can see
+   * what each leg actually saw.
+   */
+  shadow_system_prompt_override?: string | null;
 }
 
 /**
@@ -150,6 +201,30 @@ interface ShadowEnvelope {
   kill_switch?: boolean;
   task_types?: string[];
   rollout_pct?: number;
+}
+
+/**
+ * C4.2b-ii: read the text-capture feature flag. Cheaper than readShadowEnvelope
+ * because the text-capture flag only has the is_enabled column wired today —
+ * no rollout/allow-list envelope. Returns true iff is_enabled=true on the row.
+ *
+ * Cached for 5 minutes inside getFlagEnvelope so the call cost amortizes
+ * across requests in a single Edge worker.
+ *
+ * Never throws — on any error (flag missing, network), returns false so
+ * the text capture path stays dormant.
+ */
+async function isTextCaptureEnabled(): Promise<boolean> {
+  try {
+    const { is_enabled, metadata } = await getFlagEnvelope(C4_TEXT_CAPTURE_FLAG);
+    // Same pattern as readShadowEnvelope: an explicit metadata.enabled wins
+    // when set, otherwise the row's is_enabled column wins.
+    const md = (metadata ?? {}) as { enabled?: boolean };
+    if (typeof md.enabled === 'boolean') return md.enabled;
+    return is_enabled === true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -180,6 +255,58 @@ async function readShadowEnvelope(): Promise<Required<ShadowEnvelope>> {
   } catch {
     return { enabled: false, kill_switch: false, task_types: [], rollout_pct: 0 };
   }
+}
+
+// ─── In-process stash for streaming text-capture (C4.2b-ii) ────────────────
+//
+// pipeline-stream.ts cannot supply baseline_response_text at shadow fire
+// time (the stream hasn't started yet). The fix: stash the shadow's
+// resolved text inside this module keyed by the SHADOW's request_id, then
+// pipeline-stream.ts calls `recordShadowTextFromStash` AFTER the stream
+// completes (when accumulated baseline text is known).
+//
+// Lifecycle:
+//   * Entries added inside shadowFireOpenAI ONLY when both feature flags
+//     are on AND baseline_response_text is absent (streaming caller).
+//   * Entries removed when recordShadowTextFromStash drains them.
+//   * Entries auto-expire after STASH_TTL_MS so an orphaned shadow (caller
+//     never called recordShadowTextFromStash, e.g. stream errored before
+//     it could) does not leak memory across requests.
+//
+// Edge worker scope: the Map lives per worker. Supabase recycles workers
+// frequently; an entry that outlives its worker just gets garbage-collected
+// alongside the worker process. Worst case: one row never makes it into
+// mol_shadow_text_buffer. Acceptable — the grader treats missing rows as
+// `skipped_no_text` which is already a first-class outcome.
+
+interface StashedShadow {
+  shadow_request_id: string;
+  baseline_request_id: string;
+  baseline_system_prompt: string;
+  shadow_system_prompt: string | null;
+  shadow_response_text: string;
+  question_text: string;
+  expiresAt: number;
+}
+
+/** TTL for stashed shadow entries. 60s covers the slowest streaming case. */
+const STASH_TTL_MS = 60_000;
+
+const __shadowTextStash = new Map<string, StashedShadow>();
+
+/** Drop expired entries. Cheap O(N) sweep; N is bounded by per-worker QPS. */
+function sweepStash(now: number): void {
+  for (const [k, v] of __shadowTextStash.entries()) {
+    if (v.expiresAt <= now) __shadowTextStash.delete(k);
+  }
+}
+
+/**
+ * Test-only seam: reset the stash so unit tests don't share state.
+ * Not part of the public contract.
+ */
+export function __resetShadowTextStashForTests(): void {
+  __shadowTextStash.clear();
 }
 
 /**
@@ -307,7 +434,14 @@ export async function shadowFireOpenAI(args: ShadowFireArgs): Promise<void> {
     // row. That row IS shadow-tagged (we passed shadow_role through config)
     // so dashboards still attribute it correctly. Belt-and-braces noise of
     // at-most-one extra row per timed-out shadow; intentional trade-off.
-    await Promise.race([
+    //
+    // C4.2b-ii: capture the MolResult so we can write text capture (the
+    // shadow_response_text comes from molResult.text). For non-streaming
+    // callers (baseline_response_text present in args), we write the buffer
+    // row INLINE. For streaming callers (baseline_response_text absent),
+    // we stash the shadow text for `recordShadowTextFromStash` to pick up
+    // after the stream completes.
+    const molResult = (await Promise.race([
       generateResponse(request),
       new Promise<never>((_, reject) => {
         setTimeout(
@@ -315,7 +449,7 @@ export async function shadowFireOpenAI(args: ShadowFireArgs): Promise<void> {
           SHADOW_TIMEOUT_MS,
         );
       }),
-    ]);
+    ])) as MolResult;
 
     if (aborted) {
       // Race lost to the abort timer (defensive — Promise.race resolves
@@ -324,9 +458,81 @@ export async function shadowFireOpenAI(args: ShadowFireArgs): Promise<void> {
       return;
     }
 
-    // Success path is intentionally EMPTY here. The orchestrator's
-    // recordMolRequest call (inside generateResponse) wrote the single
-    // tagged shadow row — see C4.2a de-dup fix above.
+    // ── C4.2b-ii: text capture branch ──
+    // Gated by ff_mol_shadow_text_capture_v1 (default OFF). When OFF we
+    // skip the flag read AND the write entirely so the steady-state cost
+    // is zero for the (default) shadow-only configuration.
+    //
+    // Two paths, distinguished by args.baseline_response_text:
+    //   * INLINE path: baseline_response_text is a non-empty string. The
+    //     non-streaming caller (pipeline.ts) has baseline text ready at
+    //     shadow-fire time. Redact + write to mol_shadow_text_buffer now.
+    //   * STASH path: baseline_response_text is undefined. The streaming
+    //     caller (pipeline-stream.ts) doesn't have baseline text yet;
+    //     stash shadow text keyed by request_id; the caller drains via
+    //     recordShadowTextFromStash after the stream completes.
+    //   * SKIP path: baseline_response_text is an empty string. The
+    //     caller (e.g. grounding-check shadow) wants the shadow row but
+    //     NOT the text capture. No inline write, no stash entry.
+    //
+    // Sentinel semantics:
+    //   undefined → stash (streaming)
+    //   ''        → skip (text-capture-not-wanted-for-this-leg)
+    //   non-empty → inline (non-streaming with baseline text)
+    try {
+      if (
+        args.baseline_response_text !== ''
+        && (await isTextCaptureEnabled())
+      ) {
+        // The shadow's request_id is what the orchestrator stamped on the
+        // recordMolRequest row (and what generateResponse returns as
+        // request_id). We pass args.request_id (the baseline's id) as the
+        // MOL config.request_id, so molResult.request_id === args.request_id.
+        // The buffer's shadow_request_id therefore equals args.request_id
+        // — matches the grader cron's SELECT shape (look up by
+        // mol_request_logs.request_id, which is the SAME UUID).
+        const shadow_request_id = molResult.request_id ?? args.request_id;
+        const shadow_response_text = molResult.text ?? '';
+
+        if (typeof args.baseline_response_text === 'string') {
+          // Inline path: pipeline.ts has baseline text ready right now.
+          recordShadowText({
+            baseline_request_id: args.request_id,
+            shadow_request_id,
+            question_text: args.userMessage,
+            baseline_system_prompt: args.systemPrompt,
+            shadow_system_prompt: args.shadow_system_prompt_override ?? null,
+            baseline_response_text: args.baseline_response_text,
+            shadow_response_text,
+          });
+        } else {
+          // Stash path: pipeline-stream.ts will call recordShadowTextFromStash
+          // after the stream completes. Sweep first so we don't carry stale
+          // entries from previous requests on this worker.
+          const now = Date.now();
+          sweepStash(now);
+          __shadowTextStash.set(args.request_id, {
+            shadow_request_id,
+            baseline_request_id: args.request_id,
+            baseline_system_prompt: args.systemPrompt,
+            shadow_system_prompt: args.shadow_system_prompt_override ?? null,
+            shadow_response_text,
+            question_text: args.userMessage,
+            expiresAt: now + STASH_TTL_MS,
+          });
+        }
+      }
+    } catch (textErr) {
+      // Text-capture failure MUST NOT propagate. The orchestrator's
+      // single-row auto-log (mol_request_logs) is independent and has
+      // already been written.
+      const msg = textErr instanceof Error ? textErr.message : String(textErr);
+      console.warn(`[mol-shadow] text capture inline/stash threw: ${msg}`);
+    }
+
+    // Success path is intentionally EMPTY here for the mol_request_logs
+    // row. The orchestrator's recordMolRequest call (inside generateResponse)
+    // wrote the single tagged shadow row — see C4.2a de-dup fix above.
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     writeFailureRow(args, startedAt, [`openai:${classifyShadowError(msg)}`]);
@@ -387,6 +593,68 @@ export function fireShadowAndForget(args: ShadowFireArgs): void {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[mol-shadow] EdgeRuntime.waitUntil threw: ${msg}`);
     }
+  }
+}
+
+/**
+ * C4.2b-ii: complete the text-capture write for the streaming path.
+ *
+ * Streaming callers (pipeline-stream.ts) fire shadowFireOpenAI BEFORE the
+ * Claude stream starts (parity with the parallelism design from C4.2a).
+ * At that point the baseline_response_text is not known — it accumulates
+ * during the stream. shadowFireOpenAI therefore STASHES the shadow's
+ * response text keyed by the baseline's request_id; this function drains
+ * the stash and writes the mol_shadow_text_buffer row.
+ *
+ * Call this after the stream's `final` ok:true event lands, with the full
+ * accumulated baseline text. If the shadow never finished (timeout, error,
+ * flag off), the stash is empty and this is a no-op.
+ *
+ * Always returns synchronously (the underlying recordShadowText is fire-
+ * and-forget). Never throws.
+ *
+ * The args mirror the inline path:
+ *   baseline_request_id    : the baseline's request_id (also the stash key)
+ *   baseline_response_text : the FULL accumulated stream text
+ *
+ * The shadow_text, system prompts, and question_text are pulled from the
+ * stashed entry so the streaming caller doesn't have to re-derive them.
+ */
+export function recordShadowTextFromStash(args: {
+  baseline_request_id: string;
+  baseline_response_text: string;
+}): void {
+  try {
+    const now = Date.now();
+    sweepStash(now);
+    const entry = __shadowTextStash.get(args.baseline_request_id);
+    if (!entry) {
+      // No stash entry: text capture was disabled at fire time, OR the
+      // shadow short-circuited, OR the worker recycled. Either way, no
+      // row gets written for this request.
+      return;
+    }
+    // Drain immediately so a second accidental call cannot double-write.
+    __shadowTextStash.delete(args.baseline_request_id);
+
+    if (!args.baseline_response_text || args.baseline_response_text.length === 0) {
+      // Defensive: nothing useful to write. Don't pollute the buffer with
+      // empty rows.
+      return;
+    }
+
+    recordShadowText({
+      baseline_request_id: entry.baseline_request_id,
+      shadow_request_id: entry.shadow_request_id,
+      question_text: entry.question_text,
+      baseline_system_prompt: entry.baseline_system_prompt,
+      shadow_system_prompt: entry.shadow_system_prompt,
+      baseline_response_text: args.baseline_response_text,
+      shadow_response_text: entry.shadow_response_text,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[mol-shadow] recordShadowTextFromStash threw: ${msg}`);
   }
 }
 

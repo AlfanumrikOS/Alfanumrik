@@ -35,20 +35,14 @@
 // What this module does NOT own:
 //   * The Anthropic Sonnet call itself — that's grader.ts.
 //   * The HTTP layer / cron secret check — that's daily-cron/index.ts.
-//   * Adding response_text to mol_request_logs. THE GRADER NEEDS THE
-//     ACTUAL TEXT TO COMPARE, BUT THE SCHEMA DOES NOT STORE IT YET.
-//     C4.2b-i ships this cron in "scaffold mode": for every sampled
-//     pair we produce a structured `skipped: text_not_available`
-//     outcome that the cron's return value reports. C4.2b-ii or C5
-//     decides whether (a) to add a `response_text` column to
-//     mol_request_logs (P13 implications — student questions and
-//     answers are PII-adjacent), (b) to stream text into an ephemeral
-//     Redis store keyed by request_id, or (c) to defer entirely.
-//
-//     This deliberate "scaffold without text" design lets us ship the
-//     sampling logic, cost guardrail, and kill-switch behavior NOW so
-//     they can be validated in canary BEFORE the text-storage decision
-//     is made.
+//   * Storage of response text. C4.2b-ii (2026-05-20) added a dedicated
+//     bounded table `mol_shadow_text_buffer` with 7-day TTL and PII
+//     redaction at write time. `resolveTexts` below now SELECTs from
+//     that table; `cleanupGradedText` DELETEs the row after a successful
+//     grade. When the buffer row is missing (text-capture flag was off
+//     at fire time, worker recycled before drain, sweeper GC'd a stale
+//     row), the grader degrades gracefully to `skipped_no_text` —
+//     identical shape to the original scaffold-mode outcome.
 
 import type { gradeShadowPair as GradeShadowPairFn, GraderResult } from './grader.ts';
 import {
@@ -96,6 +90,8 @@ interface SupabaseQueryBuilder {
   update: (patch: Record<string, unknown>) => any;
   // deno-lint-ignore no-explicit-any
   insert?: (rows: unknown[] | Record<string, unknown>) => any;
+  // deno-lint-ignore no-explicit-any
+  delete?: () => any;
 }
 
 /**
@@ -356,11 +352,15 @@ async function gradeOnePair(
 ): Promise<PairOutcome> {
   const texts = await resolveTexts(supabase, pair);
   if (!texts) {
+    // Either the buffer row is missing (text capture off when the shadow
+    // ran, or worker recycled mid-stream before drain, or sweeper already
+    // GC'd a stale row) OR resolveTexts errored. Either way the grader
+    // has nothing to compare against; degrade gracefully.
     return { kind: 'skipped_no_text', charged: false };
   }
-  // Reached only when C4.2b-ii lands text capture. Today: unreachable.
-  // The grader argument is required so the production cron's contract
-  // is fully unit-tested — see __tests__/grader-cron.test.ts.
+  // Defensive: the grader argument is required at the production call site
+  // (daily-cron passes gradeShadowPair). Tests can omit it to exercise the
+  // skipped path without booting a real Anthropic key.
   if (!grader) {
     return { kind: 'skipped_no_text', charged: false };
   }
@@ -412,33 +412,116 @@ async function gradeOnePair(
   // surfaces it. Best-effort — telemetry failure does not roll back the
   // grading row.
   await writeGraderTelemetry(supabase, pair, out, now.getTime() - startMs);
+  // C4.2b-ii: belt-and-braces cleanup. The pg_cron sweeper (every 6h)
+  // will also catch unswept rows, but cleaning up here sheds storage as
+  // fast as the grader catches up. Best-effort: never blocks the score
+  // we just wrote.
+  await cleanupGradedText(supabase, pair.request_id);
   return { kind: 'graded', charged: true };
 }
 
 /**
- * Resolve baseline + shadow response texts for one pair. C4.2b-i scaffold
- * mode returns null because mol_request_logs does NOT store response
- * text. Replace the body with a real lookup once C4.2b-ii decides where
- * the text lives (column / Redis / ephemeral table).
+ * Resolve baseline + shadow response texts for one pair from
+ * mol_shadow_text_buffer (C4.2b-ii). Returns null when:
+ *   * the row is missing (text capture was off when the shadow ran, OR
+ *     the worker recycled before the streaming path drained its stash, OR
+ *     the 7-day TTL sweeper already deleted the row),
+ *   * the SELECT itself errors (network, RLS denial in non-service-role
+ *     environments — service role bypasses RLS so this is rare).
  *
- * The signature is fixed so the cron driver does not change when text
- * capture lands.
+ * On null the caller takes the `skipped_no_text` branch — identical
+ * shape to the C4.2b-i scaffold-mode outcome.
+ *
+ * Service-role read (the cron runs with the service-role JWT) bypasses
+ * mol_shadow_text_buffer's admin-only RLS policy. The select returns
+ * the four fields the grader needs:
+ *   - question_text          → texts.question
+ *   - baseline_response_text → texts.baseline_text
+ *   - shadow_response_text   → texts.shadow_text
+ *   - baseline_system_prompt → texts.baseline_system_prompt
+ *
+ * The grader's question/baseline/shadow shape predates this migration so
+ * we name the return fields the same way for minimal blast radius. The
+ * baseline_system_prompt is an additive field that future grader rubrics
+ * can read for scaffold_fidelity scoring; today it's unused.
  */
 async function resolveTexts(
-  // deno-lint-ignore no-unused-vars
   supabase: SupabaseLike,
-  // deno-lint-ignore no-unused-vars
   pair: {
     request_id: string;
     task_type: string;
     shadow_of_request_id: string | null;
     grade: string | null;
   },
-): Promise<{ question: string; baseline_text: string; shadow_text: string } | null> {
-  // TODO(C4.2b-ii): plumb response text capture. Until then every pair
-  // takes the skipped_no_text branch. Tracker: C4.2b-ii grader.ts text
-  // capture decision.
-  return null;
+): Promise<{
+  question: string;
+  baseline_text: string;
+  shadow_text: string;
+  baseline_system_prompt: string;
+} | null> {
+  try {
+    // deno-lint-ignore no-explicit-any
+    const { data, error } = await (supabase.from('mol_shadow_text_buffer') as any)
+      .select(
+        'question_text,baseline_system_prompt,baseline_response_text,shadow_response_text',
+      )
+      .eq('shadow_request_id', pair.request_id)
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      console.warn(
+        `[grader-cron] resolveTexts read error for ${pair.request_id}: ${error.message ?? String(error)}`,
+      );
+      return null;
+    }
+    if (!data) return null;
+    const row = data as {
+      question_text: string;
+      baseline_system_prompt: string;
+      baseline_response_text: string;
+      shadow_response_text: string;
+    };
+    return {
+      question: row.question_text,
+      baseline_text: row.baseline_response_text,
+      shadow_text: row.shadow_response_text,
+      baseline_system_prompt: row.baseline_system_prompt,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[grader-cron] resolveTexts threw for ${pair.request_id}: ${msg}`);
+    return null;
+  }
+}
+
+/**
+ * Belt-and-braces cleanup: after a successful grade lands the score on
+ * mol_request_logs, DELETE the corresponding text buffer row. The
+ * pg_cron sweeper (every 6h, 7-day TTL) will catch anything we miss, but
+ * grader-side delete sheds storage as fast as the grader catches up.
+ *
+ * Best-effort: cleanup failure MUST NOT roll back the grader write. We
+ * already have the score persisted; the worst case is the row lives for
+ * up to 7 days until the sweeper picks it up.
+ */
+async function cleanupGradedText(
+  supabase: SupabaseLike,
+  shadow_request_id: string,
+): Promise<void> {
+  try {
+    // deno-lint-ignore no-explicit-any
+    const { error } = await (supabase.from('mol_shadow_text_buffer') as any)
+      .delete()
+      .eq('shadow_request_id', shadow_request_id);
+    if (error) {
+      console.warn(
+        `[grader-cron] cleanupGradedText error for ${shadow_request_id}: ${error.message ?? String(error)}`,
+      );
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[grader-cron] cleanupGradedText threw for ${shadow_request_id}: ${msg}`);
+  }
 }
 
 /**

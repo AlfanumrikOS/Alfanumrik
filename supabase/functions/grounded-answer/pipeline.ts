@@ -1008,6 +1008,15 @@ export async function runPipeline(
     // by finalizeGrounded/finalizeAbstain later. The shadow row carries
     // null trace_id today; C4.2b plumbs trace_id after writeTrace returns.
     trace_id: null,
+    // ── C4.2b-ii text capture (2026-05-20) ──
+    // Non-streaming pipeline has the full baseline text ready BEFORE the
+    // shadow fires. Pass it inline so the helper writes
+    // mol_shadow_text_buffer in one shot when both feature flags are on.
+    // Gated by ff_mol_shadow_text_capture_v1; helper short-circuits when
+    // text capture is off.
+    baseline_response_text: claude.content,
+    // shadow_system_prompt_override stays at the default (null) — prompt-
+    // parity (C4.2a) means the shadow used the baseline's exact prompt.
     student_context: {
       student_id: request.student_id,
       grade: request.scope.grade,
@@ -1104,6 +1113,13 @@ export async function runPipeline(
         baseline_provider: 'anthropic',
         baseline_model: verdict.meta.model,
         trace_id: null,
+        // ── C4.2b-ii: skip text capture for the grounding-check leg ──
+        // The grounding-check baseline "answer" is a JSON verdict, not a
+        // student-facing answer. The grader's allow-list excludes
+        // 'grounding_check' anyway (see migration 20260519000002). Empty
+        // string here signals SKIP — no inline write, no stash entry,
+        // even if the text-capture flag is on for primary-answer rows.
+        baseline_response_text: '',
         student_context: {
           student_id: request.student_id,
           grade: request.scope.grade,
