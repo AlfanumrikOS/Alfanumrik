@@ -18,6 +18,14 @@ import {
   isUsableChapterDeck,
 } from '@/lib/chapter-reader/get-concepts-from-table';
 import { Card, Button, ProgressBar, BottomNav, LoadingFoxy } from '@/components/ui';
+// Mobile-first responsive shell (2026-05-19, Phase 2 — followup #1 of PR #867).
+// Wraps the chapter concept walkthrough in a CSS-Grid shell with safe-area
+// insets, scroll-compacting header, and one-handed mode. The page header
+// (subject icon + chapter title + Read-mode toggle + concept counter +
+// progress bar) moves into AppShell.header; the concept cards, Quick Check,
+// and "next concept" CTA remain as children. See dashboard/page.tsx for the
+// reference migration.
+import { AppShell } from '@/components/responsive';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { BLOOM_CONFIG, type BloomLevel } from '@/lib/cognitive-engine';
 import type { CurriculumTopic } from '@/lib/types';
@@ -478,18 +486,27 @@ export default function ChapterConceptPage() {
           ? (isHi ? '👍 अच्छा! क्विज़ देने के लिए तैयार हो!' : '👍 Good work! Ready for the quiz!')
           : (isHi ? '💪 थोड़ा और अभ्यास करो — नीचे कमज़ोर अवधारणाएँ देखो' : '💪 A bit more practice needed — see weak concepts below');
 
+    // Completion screen — wrapped in AppShell variant="mobile". Page header
+    // (back arrow + Chapter Complete/Summary title) moves into the sticky
+    // header slot; summary cards + CTAs remain as children. BottomNav is
+    // owned by AppShell.nav; the legacy `pb-nav` clearance is dropped
+    // since .app-shell-content already pads --shell-nav-h + safe-area.
     return (
-      <div className="mesh-bg min-h-dvh pb-nav flex flex-col">
-        <header className="page-header">
-          <div className="page-header-inner flex items-center gap-3">
-            <button onClick={() => router.push('/learn')} className="text-[var(--text-3)]">&larr;</button>
-            <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-              {scoreGood
-                ? (isHi ? 'अध्याय पूरा!' : 'Chapter Complete!')
-                : (isHi ? 'अध्याय सारांश' : 'Chapter Summary')}
-            </h1>
-          </div>
-        </header>
+      <div className="mesh-bg">
+        <AppShell
+          variant="mobile"
+          nav={<BottomNav />}
+          header={
+            <div className="page-header-inner flex items-center gap-3">
+              <button onClick={() => router.push('/learn')} className="text-[var(--text-3)]">&larr;</button>
+              <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+                {scoreGood
+                  ? (isHi ? 'अध्याय पूरा!' : 'Chapter Complete!')
+                  : (isHi ? 'अध्याय सारांश' : 'Chapter Summary')}
+              </h1>
+            </div>
+          }
+        >
         <main className="app-container py-6 max-w-lg mx-auto flex flex-col gap-5">
           <div className="text-center py-4">
             <div className="text-6xl mb-3">{scoreGood ? '🎉' : '📊'}</div>
@@ -597,23 +614,30 @@ export default function ChapterConceptPage() {
             </Button>
           </div>
         </main>
-        <BottomNav />
+        </AppShell>
       </div>
     );
   }
 
   // ── No topics fallback ──
+  // Wrapped in AppShell variant="mobile" — same migration pattern as the
+  // completion screen above. Header bag holds back-arrow + subject/chapter
+  // breadcrumb; the empty-state CTAs stay in children. pb-nav dropped.
   if (topics.length === 0) {
     return (
-      <div className="mesh-bg min-h-dvh pb-nav flex flex-col">
-        <header className="page-header">
-          <div className="page-header-inner flex items-center gap-3">
-            <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">&larr;</button>
-            <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-              {subMeta?.icon} {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
-            </span>
-          </div>
-        </header>
+      <div className="mesh-bg">
+        <AppShell
+          variant="mobile"
+          nav={<BottomNav />}
+          header={
+            <div className="page-header-inner flex items-center gap-3">
+              <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">&larr;</button>
+              <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+                {subMeta?.icon} {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
+              </span>
+            </div>
+          }
+        >
         <main className="app-container py-12 text-center">
           <div className="text-5xl mb-4">📚</div>
           <p className="text-base font-semibold text-[var(--text-2)] mb-2">
@@ -635,7 +659,7 @@ export default function ChapterConceptPage() {
             {isHi ? '⚡ क्विज़ लो' : '⚡ Take a Quiz'}
           </button>
         </main>
-        <BottomNav />
+        </AppShell>
       </div>
     );
   }
@@ -672,42 +696,60 @@ export default function ChapterConceptPage() {
     );
   }
 
-  return (
-    <div className="mesh-bg min-h-dvh pb-nav flex flex-col">
-      {/* Header */}
-      <header className="page-header" style={{ background: 'rgba(251,248,244,0.92)', backdropFilter: 'blur(20px)', borderColor: 'var(--border)' }}>
-        <div className="app-container py-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] mr-1">&larr;</button>
-              <span className="text-lg">{subMeta?.icon}</span>
-              <span className="text-sm font-semibold truncate" style={{ color: subMeta?.color }}>
-                {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              {readModeFlagOn && (
-                <button
-                  type="button"
-                  onClick={switchToReadMode}
-                  className="text-[10px] font-bold px-2 py-1 rounded-full transition-all active:scale-95"
-                  style={{ background: 'rgba(124,58,237,0.10)', color: '#7C3AED', border: '1px solid rgba(124,58,237,0.2)' }}
-                  data-testid="learn-mode-read-toggle"
-                  aria-label={isHi ? 'पढ़ाई मोड पर जाएँ' : 'Switch to Read mode'}
-                >
-                  📖 {isHi ? 'पढ़ें' : 'Read'}
-                </button>
-              )}
-              <span className="text-xs font-medium text-[var(--text-3)]">
-                {currentIdx + 1}/{topics.length}
-              </span>
-            </div>
-          </div>
-          <ProgressBar value={progressPct} color={subMeta?.color} height={5} />
+  // ── Main concept walkthrough ──
+  // Wrapped in AppShell variant="mobile". The page header (subject+chapter
+  // breadcrumb, optional Read-mode toggle, concept counter, ProgressBar)
+  // moves into the sticky header slot — AppShell.header is itself
+  // position:sticky with backdrop blur, so the original inline backdrop
+  // is dropped (the appshell-header CSS already paints the same effect).
+  // The main column (Readiness card, concept card, Quick Check, next-CTA)
+  // remains as children. The legacy `pb-nav` clearance is dropped since
+  // .app-shell-content already pads --shell-nav-h + safe-area on the
+  // bottom — so the "next concept" CTA pins above the BottomNav without
+  // needing extra clearance.
+  const learnHeaderContent = (
+    <div className="app-container py-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] mr-1">&larr;</button>
+          <span className="text-lg">{subMeta?.icon}</span>
+          <span className="text-sm font-semibold truncate" style={{ color: subMeta?.color }}>
+            {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
+          </span>
         </div>
-      </header>
+        <div className="flex items-center gap-2">
+          {readModeFlagOn && (
+            <button
+              type="button"
+              onClick={switchToReadMode}
+              className="text-[10px] font-bold px-2 py-1 rounded-full transition-all active:scale-95"
+              style={{ background: 'rgba(124,58,237,0.10)', color: '#7C3AED', border: '1px solid rgba(124,58,237,0.2)' }}
+              data-testid="learn-mode-read-toggle"
+              aria-label={isHi ? 'पढ़ाई मोड पर जाएँ' : 'Switch to Read mode'}
+            >
+              📖 {isHi ? 'पढ़ें' : 'Read'}
+            </button>
+          )}
+          <span className="text-xs font-medium text-[var(--text-3)]">
+            {currentIdx + 1}/{topics.length}
+          </span>
+        </div>
+      </div>
+      <ProgressBar value={progressPct} color={subMeta?.color} height={5} />
+    </div>
+  );
 
-      <main className="flex-1 app-container py-4 max-w-2xl mx-auto w-full flex flex-col gap-4">
+  return (
+    <div className="mesh-bg">
+      <AppShell
+        variant="mobile"
+        nav={<BottomNav />}
+        header={learnHeaderContent}
+      >
+      {/* `h-full` lets `mt-auto` on the next-concept CTA pin it to the
+          bottom of AppShell's content row — preserving the pre-shell
+          "primary action stays in thumb reach" behavior. */}
+      <main className="h-full app-container py-4 max-w-2xl mx-auto w-full flex flex-col gap-4">
 
         {/* ── Exam-Ready 360° Phase 2: per-chapter readiness card ──
             Suppressed on the very first concept of the chapter when the
@@ -1067,8 +1109,7 @@ export default function ChapterConceptPage() {
           );
         })()}
       </main>
-
-      <BottomNav />
+      </AppShell>
     </div>
   );
 }
