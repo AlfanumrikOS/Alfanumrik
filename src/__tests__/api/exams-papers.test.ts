@@ -4,9 +4,12 @@
  * Pins:
  *  - Auth gate fires (`exam.view` permission).
  *  - 401 when authorizeRequest fails.
- *  - Flag OFF: list returns only `cbse_board` papers (the flag/free-tier gate).
- *  - Flag ON: list returns all matching papers, irrespective of family.
- *  - exam_family query param filters via `.eq('exam_family', ...)`.
+ *  - Catalog returns all matching papers regardless of flag state — the
+ *    runner (`/api/exams/papers/[id]`) is the security boundary, not the
+ *    catalog. Frontend renders locked cards for non-cbse rows when the
+ *    flag is off (uses the `flag_enabled` field).
+ *  - exam_family query param filters via `.eq('exam_family', ...)` and is
+ *    honoured irrespective of flag state.
  *  - Invalid UUID on the detail route → 400.
  *  - 402 when caller is a student, flag OFF, and the paper is a non-cbse
  *    family → returns `competition_plan_required` + `upgrade_url`.
@@ -309,7 +312,7 @@ describe('GET /api/exams/papers', () => {
     expect(res.status).toBe(401);
   });
 
-  it('with flag OFF returns only cbse_board papers', async () => {
+  it('returns all papers regardless of flag state (flag controls only the runner gate)', async () => {
     setAuthorized();
     setFlag(false);
     seedDefaultPapers();
@@ -317,11 +320,14 @@ describe('GET /api/exams/papers', () => {
     const res = await listGET(makeListRequest());
     expect(res.status).toBe(200);
     const body = await res.json();
+    // Flag is OFF but the catalog still returns every active paper. The
+    // frontend reads `flag_enabled` and renders non-cbse rows as locked
+    // cards routed to /upgrade. The runner route enforces 402 row-by-row.
     expect(body.flag_enabled).toBe(false);
-    expect(body.papers).toHaveLength(1);
-    expect(body.papers[0].exam_family).toBe('cbse_board');
-    expect(body.papers[0].id).toBe(CBSE_PAPER_ID);
-    expect(body.total).toBe(1);
+    expect(body.papers).toHaveLength(2);
+    const families = body.papers.map((p: { exam_family: string }) => p.exam_family).sort();
+    expect(families).toEqual(['cbse_board', 'jee_main']);
+    expect(body.total).toBe(2);
   });
 
   it('with flag ON returns all matching papers', async () => {
@@ -352,7 +358,7 @@ describe('GET /api/exams/papers', () => {
     expect(body.papers[0].id).toBe(JEE_PAPER_ID);
   });
 
-  it('with flag OFF + exam_family=jee_main returns empty (gated)', async () => {
+  it('with flag OFF + exam_family=jee_main returns the JEE Main papers (runner enforces 402)', async () => {
     setAuthorized();
     setFlag(false);
     seedDefaultPapers();
@@ -360,10 +366,26 @@ describe('GET /api/exams/papers', () => {
     const res = await listGET(makeListRequest('exam_family=jee_main'));
     expect(res.status).toBe(200);
     const body = await res.json();
-    // Caller asked for jee_main; the flag gates the family, so the row is
-    // either filtered SQL-side or stripped client-side. Either way the
-    // returned array must be empty.
-    expect(body.papers).toHaveLength(0);
+    // Catalog returns matching papers regardless of flag — frontend uses
+    // `flag_enabled` to render them as locked cards. The runner route
+    // (`/api/exams/papers/[id]`) is where access is hard-blocked with 402.
+    expect(body.papers).toHaveLength(1);
+    expect(body.papers[0].exam_family).toBe('jee_main');
+    expect(body.papers[0].id).toBe(JEE_PAPER_ID);
+    expect(body.flag_enabled).toBe(false);
+  });
+
+  it('reports flag_enabled=false in the response when the flag is off', async () => {
+    setAuthorized();
+    setFlag(false);
+    seedDefaultPapers();
+
+    const res = await listGET(makeListRequest());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // The frontend depends on `flag_enabled` to decide which cards render
+    // as locked. If the catalog stopped reporting the flag, the lock UX
+    // would silently break — pin the contract here.
     expect(body.flag_enabled).toBe(false);
   });
 
