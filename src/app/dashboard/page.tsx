@@ -52,6 +52,11 @@ import AboveFoldHero from '@/components/dashboard/sections/AboveFoldHero';
 import type { PendingLink } from '@/components/dashboard/PendingLinkApproval';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
 import AtlasDashboard from './AtlasDashboard';
+// Mobile-first responsive shell (2026-05-19). Additive — preserves the
+// existing BottomNav/header behavior, but routes layout through CSS Grid
+// with safe-area-inset support, scroll-compacting header, fluid type, and
+// optional one-handed mode. See src/components/responsive/AppShell.tsx.
+import { AppShell } from '@/components/responsive';
 
 // ─── Lazy-loaded below-fold sections ─────────────────────────────────────
 // Each section keeps its widgets out of the first-paint bundle. Loading
@@ -541,16 +546,13 @@ function LegacyDashboard() {
     setNudges((prev) => prev.filter((n) => n.id !== nudgeId));
   };
 
-  return (
-    <div className="mesh-bg min-h-dvh pb-nav">
-      {/* Stream pick lives in the global <StreamGate /> mounted in
-          src/app/layout.tsx, so it appears on /foxy etc. too. Stream is
-          locked after first pick (CEO 2026-05-18) — no in-dashboard
-          re-pick path. The chip below is read-only. */}
-
-      {/* Header — name, plan, lang toggle, notifications, avatar */}
-      <header className="page-header">
-        <div className="page-header-inner flex items-center justify-between">
+  // Header content extracted so AppShell can render it in the sticky-
+  // header slot. The original <header className="page-header"> wrapper
+  // moved into AppShell — same visual result on mobile (sticky, blur),
+  // but now backed by the responsive Grid shell with safe-area-inset,
+  // scroll-compact transitions, and one-handed mode toggle.
+  const headerContent = (
+    <div className="page-header-inner flex items-center justify-between">
           <div>
             <p className="text-xs text-[var(--text-3)]">{greeting},</p>
             <div className="flex items-center gap-2 flex-wrap">
@@ -644,9 +646,12 @@ function LegacyDashboard() {
             </button>
           </div>
         </div>
-      </header>
+  );
 
-      <main className="app-container py-4 space-y-4">
+  // Main content — exact same children as before; only the wrapping
+  // chrome (header/main/nav) is restructured by AppShell.
+  const mainContent = (
+    <div className="app-container py-4 space-y-4">
         <SectionErrorBoundary section="Dashboard">
           {/* Pedagogy v2 — Wave 1B daily rhythm.
               Renders nothing when ff_pedagogy_v2_daily_rhythm is off,
@@ -893,10 +898,24 @@ function LegacyDashboard() {
             </div>
           </>
         )}
-      </main>
-
       <TrustFooter />
-      <BottomNav />
+    </div>
+  );
+
+  // Compose AppShell. Variant 'mobile' = single-column + bottom nav,
+  // which matches the current dashboard structure. The existing rich
+  // BottomNav (role switcher, More sheet, grade gates, flags) is
+  // rendered into AppShell.nav unchanged — AppShell is purely a layout
+  // primitive here, not a behavior replacement.
+  return (
+    <div className="mesh-bg">
+      <AppShell
+        variant="mobile"
+        header={headerContent}
+        nav={<BottomNav />}
+      >
+        {mainContent}
+      </AppShell>
     </div>
   );
 }
