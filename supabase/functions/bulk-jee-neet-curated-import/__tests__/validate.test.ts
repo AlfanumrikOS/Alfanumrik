@@ -1,10 +1,11 @@
-// supabase/functions/bulk-jee-neet-import/__tests__/validate.test.ts
+// supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts
 //
 // Deno test runner (not Vitest). Run via:
-//   cd supabase/functions/bulk-jee-neet-import && deno test --allow-all
+//   cd supabase/functions/bulk-jee-neet-curated-import && deno test --allow-all
 //
-// Covers the pure validation helpers in `../validate.ts`. No I/O, no Supabase
-// calls — all assertions are deterministic.
+// Covers the pure validation helpers in `../validate.ts` for the CURATED
+// ingestion path (the AI-augmented sibling lives at bulk-jee-neet-import/).
+// No I/O, no Supabase calls — all assertions are deterministic.
 
 import {
   assert,

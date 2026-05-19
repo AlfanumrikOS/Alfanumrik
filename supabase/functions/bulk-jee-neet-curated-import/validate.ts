@@ -1,6 +1,8 @@
-// supabase/functions/bulk-jee-neet-import/validate.ts
+// supabase/functions/bulk-jee-neet-curated-import/validate.ts
 //
-// Pure validation helpers for the bulk-jee-neet-import Edge Function.
+// Pure validation helpers for the bulk-jee-neet-curated-import Edge Function
+// (the CURATED ingestion path — admin POSTs fully-formed questions; no AI
+// calls). The AI-augmented sibling lives in bulk-jee-neet-import/.
 // No I/O, no Supabase calls — all functions are deterministic so they can
 // be unit-tested under `deno test` without any external dependencies.
 //

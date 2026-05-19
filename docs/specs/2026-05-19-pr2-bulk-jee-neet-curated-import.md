@@ -1,4 +1,4 @@
-# PR-2 — `exam_papers` Table + `bulk-jee-neet-import` Edge Function
+# PR-2 — `exam_papers` Table + `bulk-jee-neet-curated-import` Edge Function
 
 **Date:** 2026-05-19
 **Status:** In flight (this PR)
@@ -6,6 +6,8 @@
 **Successor:** PR-3 (content seed of 200 PYQs)
 **Authors:** architect (schema), backend (Edge Function), ops (this spec)
 **Reviewers required (P14):** assessment (P6 quality), testing, quality
+
+> **Two PR-2 ingestion paths shipped concurrently** — `bulk-jee-neet-import/` (AI-augmented, see #863) and `bulk-jee-neet-curated-import/` (this doc, manually-curated by admin). Both write to `question_bank` with `source_type ∈ {jee_archive, neet_archive, olympiad, board_paper, pyq, curated}` per PR-1's widened CHECK constraint.
 
 ---
 
@@ -103,12 +105,12 @@ Students and non-admin users have no read access to `exam_papers` directly — t
 
 ### Location
 
-`supabase/functions/bulk-jee-neet-import/index.ts` (shipped in this PR by the backend agent)
+`supabase/functions/bulk-jee-neet-curated-import/index.ts` (shipped in this PR by the backend agent)
 
 ### URL and method
 
 ```
-POST /functions/v1/bulk-jee-neet-import
+POST /functions/v1/bulk-jee-neet-curated-import
 Authorization: Bearer <user-jwt>
 Content-Type: application/json
 ```
@@ -297,7 +299,7 @@ Explicit non-goals (call these out so future engineers don't ask "why didn't PR-
 
 ## 7. Test plan
 
-Tests live in `supabase/functions/bulk-jee-neet-import/index.test.ts` (Deno test framework). The backend agent ships these alongside the function.
+Tests live in `supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts` (Deno test framework). The backend agent ships these alongside the function.
 
 1. **Happy path.** Import a NEET 2024 paper with 5 valid questions covering Physics, Chemistry, Biology. Assert paper row created, all 5 question rows created, `source_type = 'neet_archive'` on each, `exam_paper_id` FK populated, `verification_state = 'pending'`.
 2. **Each of the 13 rejection codes fires on its own malformed input.** Build a fixture per code; assert the response `rejections[].code` equals the expected value and the bad row is NOT in `question_bank`.
@@ -317,10 +319,10 @@ Tests live in `supabase/functions/bulk-jee-neet-import/index.test.ts` (Deno test
 ## 8. Rollout plan
 
 1. **Migration applies via the staging pipeline.** Per `.claude` memory, migrations go through the staging pipeline (`supabase/migrations/` root → CI → staging → prod), never via direct MCP. Architect's migration `20260520000005_exam_papers_and_pyq_import.sql` lands at the migrations root.
-2. **Edge Function deploys via `supabase functions deploy bulk-jee-neet-import`.** Backend agent runs this as part of the merge workflow.
+2. **Edge Function deploys via `supabase functions deploy bulk-jee-neet-curated-import`.** Backend agent runs this as part of the merge workflow.
 3. **Manual smoke test on staging:** import a 5-question NEET 2024 sample paper via:
    ```bash
-   curl -X POST "https://<staging>.supabase.co/functions/v1/bulk-jee-neet-import" \
+   curl -X POST "https://<staging>.supabase.co/functions/v1/bulk-jee-neet-curated-import" \
      -H "Authorization: Bearer <admin-jwt>" \
      -H "Content-Type: application/json" \
      -d @neet_2024_sample.json
@@ -349,7 +351,7 @@ If PR-2 has a bug in production:
 Supabase Edge Functions support version pinning. Roll back to the previous deployed revision:
 
 ```bash
-supabase functions deploy bulk-jee-neet-import --version <prior-revision>
+supabase functions deploy bulk-jee-neet-curated-import --version <prior-revision>
 ```
 
 This stops new bad imports immediately. Existing question rows stay in place.

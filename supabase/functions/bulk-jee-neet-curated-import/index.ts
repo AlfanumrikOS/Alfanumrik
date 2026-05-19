@@ -1,5 +1,9 @@
 /**
- * bulk-jee-neet-import — Alfanumrik Edge Function
+ * bulk-jee-neet-curated-import — Alfanumrik Edge Function
+ *
+ * This is the CURATED ingestion path — admin POSTs fully-formed questions;
+ * no AI calls. For the AI-augmented variant that generates explanations
+ * from raw PYQs via Claude, see `bulk-jee-neet-import/`.
  *
  * Admin-only curated ingestion path for JEE / NEET / Olympiad / Board /
  * other previous-year questions (PYQs). This is the second PR of the
@@ -170,7 +174,7 @@ function buildQuestionBankRow(
     chapter_number: q.chapter_number ?? null,
     chapter_id: q.chapter_id || null,
     topic_id: q.topic_id || null,
-    source: 'jee_neet_import',
+    source: 'jee_neet_curated_import',
     source_type: sourceType,
     is_active: true,
     is_verified: false,
@@ -250,7 +254,7 @@ Deno.serve(async (req: Request) => {
     const paper = paperResult.paper;
     if (paperResult.warnings.length > 0) {
       console.warn(
-        'bulk-jee-neet-import: paper-level warnings',
+        'bulk-jee-neet-curated-import: paper-level warnings',
         JSON.stringify(paperResult.warnings),
       );
     }
@@ -339,7 +343,7 @@ Deno.serve(async (req: Request) => {
           origin,
         );
       }
-      console.error('bulk-jee-neet-import: exam_papers insert failed:', paperErr.message);
+      console.error('bulk-jee-neet-curated-import: exam_papers insert failed:', paperErr.message);
       return errorResponse(`Failed to insert exam_papers row: ${paperErr.message}`, 500, origin);
     }
 
@@ -357,7 +361,7 @@ Deno.serve(async (req: Request) => {
       .select();
 
     if (insertErr) {
-      console.error('bulk-jee-neet-import: question_bank insert failed:', insertErr.message);
+      console.error('bulk-jee-neet-curated-import: question_bank insert failed:', insertErr.message);
       // We've already written the exam_papers row. Leaving the orphan is
       // acceptable — admin can retry the import with the same paper_code
       // (will get 409 + existing id) or manually clean up via SQL.
@@ -372,10 +376,10 @@ Deno.serve(async (req: Request) => {
 
     // ── 8. Audit log ────────────────────────────────────────────────────────
     await logOpsEvent({
-      category: 'content.pyq_import',
-      source: 'bulk-jee-neet-import',
+      category: 'content.pyq_curated_import',
+      source: 'bulk-jee-neet-curated-import',
       severity: rejections.length > 0 ? 'warning' : 'info',
-      message: 'PYQ batch imported',
+      message: 'PYQ batch imported (curated path)',
       context: {
         paper_code: paper.paper_code,
         paper_id: paperId,
@@ -390,8 +394,8 @@ Deno.serve(async (req: Request) => {
     });
 
     console.warn(JSON.stringify({
-      event: 'bulk_jee_neet_import',
-      function_name: 'bulk-jee-neet-import',
+      event: 'bulk_jee_neet_curated_import',
+      function_name: 'bulk-jee-neet-curated-import',
       paper_code: paper.paper_code,
       paper_id: paperId,
       exam_family: paper.exam_family,
@@ -418,7 +422,7 @@ Deno.serve(async (req: Request) => {
       origin,
     );
   } catch (err) {
-    console.error('bulk-jee-neet-import: unexpected error:', err);
+    console.error('bulk-jee-neet-curated-import: unexpected error:', err);
     return errorResponse('Internal server error', 500, origin);
   }
 });
