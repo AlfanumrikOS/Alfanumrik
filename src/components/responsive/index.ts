@@ -14,3 +14,6 @@ export type { MobileNavProps, MobileNavItem } from './MobileNav';
 
 export { Touchable } from './Touchable';
 export type { TouchableProps, TouchableSize } from './Touchable';
+
+export { Breadcrumbs } from './Breadcrumbs';
+export type { BreadcrumbsProps } from './Breadcrumbs';

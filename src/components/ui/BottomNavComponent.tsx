@@ -190,6 +190,39 @@ export default function BottomNavComponent() {
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({ Account: true });
   const moreSheetRef = useRef<HTMLDivElement>(null);
 
+  // ─── Hide-on-scroll for the mobile bar (visible-mobile-first redesign)
+  // rAF-throttled scroll listener that flips a data attribute on the nav.
+  // CSS reads the attribute and applies a translateY(110%) hide. Threshold
+  // mirrors MobileNav (8px delta to ignore touchpad jitter, always show
+  // within 80px of top). Respects prefers-reduced-motion.
+  const [navHidden, setNavHidden] = useState(false);
+  const lastScrollYRef = useRef(0);
+  const rafIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    if (reduced) return;
+    const onScroll = () => {
+      if (rafIdRef.current != null) return;
+      rafIdRef.current = window.requestAnimationFrame(() => {
+        rafIdRef.current = null;
+        const y = window.scrollY;
+        const last = lastScrollYRef.current;
+        const delta = y - last;
+        if (Math.abs(delta) < 8) return;
+        if (y < 80) setNavHidden(false);
+        else if (delta > 0) setNavHidden(true);
+        else setNavHidden(false);
+        lastScrollYRef.current = y;
+      });
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (rafIdRef.current != null) window.cancelAnimationFrame(rafIdRef.current);
+    };
+  }, []);
+
   // Focus management and keyboard support for More sheet
   useEffect(() => {
     if (showMore && moreSheetRef.current) {
@@ -411,22 +444,27 @@ export default function BottomNavComponent() {
         </>
       )}
 
-      {/* ─── Mobile Bottom Nav ──────────────── */}
+      {/* ─── Mobile Bottom Nav (refreshed visual, 2026-05-19) ────
+         Editorial mobile-first redesign:
+           - 5 slots max (tabs + More). Foxy is the center FAB, raised
+             above the baseline. Other slots show an orange underline
+             when active (CSS slide via .bottom-nav-mobile__slot::after).
+           - Active label: bold + orange. Inactive: ink-3 + semibold.
+           - safe-area-inset-bottom fallback dropped to 0 (was 6px) so
+             the bar sits flush on Android-without-gesture-bar devices
+             and lifts naturally over iPhone home indicators.
+           - 44px min tap area enforced by .touchable below each slot.
+           - rAF-throttled scroll listener (above) drives the
+             data-scroll-hidden attribute → translateY(110%) hide. */}
       <nav
-        className="bottom-nav-mobile fixed bottom-0 left-0 right-0 z-50 border-t"
+        className="bottom-nav-mobile fixed bottom-0 left-0 right-0 z-50"
         aria-label="Main navigation"
         role="navigation"
+        data-scroll-hidden={navHidden ? 'true' : 'false'}
         style={{
-          background: 'rgba(251, 248, 244, 0.95)',
-          backdropFilter: 'blur(24px)',
-          WebkitBackdropFilter: 'blur(24px)',
-          borderColor: 'var(--border)',
-          paddingBottom: 'env(safe-area-inset-bottom, 6px)',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
       >
-        {/* Increased padding for Indian thumb-zone ergonomics.
-            Research: Bottom nav gets 80% of taps on Indian phones.
-            Extra vertical padding prevents accidental taps. */}
         <div className="flex items-end justify-around px-2 pt-2 pb-1">
           {tabs.map((item) => {
             const active = isActive(item.href);
@@ -437,24 +475,36 @@ export default function BottomNavComponent() {
                 <button
                   key={item.href}
                   onClick={() => router.push(item.href)}
-                  aria-label={`${item.label} - AI Tutor`}
+                  aria-label={`${isHi ? item.labelHi : item.label} - AI Tutor`}
                   aria-current={active ? 'page' : undefined}
-                  className="flex flex-col items-center -mt-5 transition-transform active:scale-90"
+                  className="touchable flex flex-col items-center -mt-3 active:scale-95 transition-transform bg-transparent border-0"
+                  style={{ minWidth: 'var(--tap-comfort)' }}
                 >
-                  <div
-                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg"
+                  <span
+                    className="flex items-center justify-center rounded-2xl"
                     style={{
+                      width: 52,
+                      height: 52,
+                      marginTop: -12,
                       background: active
-                        ? 'linear-gradient(135deg, var(--orange), var(--gold))'
-                        : 'linear-gradient(135deg, var(--orange), #D84315)',
-                      boxShadow: '0 4px 16px rgb(var(--orange-rgb) / 0.35)',
+                        ? 'linear-gradient(135deg, var(--accent), var(--gold))'
+                        : 'linear-gradient(135deg, var(--accent), #D84315)',
+                      boxShadow: '0 8px 20px rgb(var(--orange-rgb) / 0.42)',
+                      color: '#fff',
+                      fontSize: 26,
+                      lineHeight: 1,
                     }}
+                    aria-hidden="true"
                   >
                     {item.icon}
-                  </div>
+                  </span>
                   <span
-                    className="text-[11px] font-bold mt-0.5"
-                    style={{ color: active ? 'var(--orange)' : 'var(--text-2)' }}
+                    className="font-bold mt-1"
+                    style={{
+                      fontSize: 'var(--text-2xs)',
+                      letterSpacing: '0.02em',
+                      color: active ? 'var(--accent)' : 'var(--ink-2)',
+                    }}
                   >
                     {isHi ? item.labelHi : item.label}
                   </span>
@@ -462,44 +512,60 @@ export default function BottomNavComponent() {
               );
             }
 
-            /* ── Regular tabs ── */
+            /* ── Regular tabs ──
+               - .touchable enforces 44×44 hit area
+               - .bottom-nav-mobile__slot enables the CSS underline
+               - data-active drives the underline width transition */
             return (
               <button
                 key={item.href}
                 onClick={() => router.push(item.href)}
-                aria-label={item.label}
+                aria-label={isHi ? item.labelHi : item.label}
                 aria-current={active ? 'page' : undefined}
-                className="flex flex-col items-center gap-1 min-w-[56px] py-2 transition-all relative"
-                style={{ color: active ? 'var(--orange)' : 'var(--text-3)' }}
+                data-active={active ? 'true' : 'false'}
+                className="touchable bottom-nav-mobile__slot flex flex-col items-center gap-0.5 py-1.5 px-2 bg-transparent border-0 relative"
+                style={{
+                  color: active ? 'var(--accent)' : 'var(--ink-3)',
+                  minWidth: 'var(--tap-comfort)',
+                }}
               >
-                <span className="relative inline-block">
-                  <span
-                    className="text-[22px] leading-none transition-transform block"
-                    aria-hidden="true"
-                    style={{
-                      transform: active ? 'scale(1.15)' : 'scale(1)',
-                      filter: active ? 'drop-shadow(0 0 6px rgb(var(--orange-rgb) / 0.35))' : 'none',
-                    }}
-                  >
-                    {active ? item.activeIcon : item.icon}
-                  </span>
+                <span
+                  className="relative inline-block"
+                  style={{
+                    fontSize: 22,
+                    lineHeight: 1,
+                    transform: active ? 'translateY(-1px) scale(1.06)' : 'scale(1)',
+                    transition: 'transform 200ms cubic-bezier(.22,1,.36,1)',
+                    filter: active ? 'drop-shadow(0 0 6px rgb(var(--orange-rgb) / 0.3))' : 'none',
+                  }}
+                  aria-hidden="true"
+                >
+                  {active ? item.activeIcon : item.icon}
                   {/* Streak badge on Home tab */}
                   {item.href === '/dashboard' && streakCount > 0 && activeRole === 'student' && (
                     <span
-                      className="absolute -top-1.5 -right-2.5 min-w-[20px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-bold px-0.5"
-                      style={{ background: '#F59E0B', color: '#fff' }}
+                      className="absolute -top-1.5 -right-2.5 min-w-[18px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-bold px-0.5"
+                      style={{
+                        background: '#F59E0B',
+                        color: '#fff',
+                        border: '1.5px solid var(--bg)',
+                      }}
                       aria-label={`${streakCount} day streak`}
                     >
                       {streakCount}
                     </span>
                   )}
                 </span>
-                <span className="text-[11px] font-semibold tracking-wide">
+                <span
+                  className="tracking-wide"
+                  style={{
+                    fontSize: 'var(--text-2xs)',
+                    fontWeight: active ? 700 : 600,
+                    letterSpacing: '0.02em',
+                  }}
+                >
                   {isHi ? item.labelHi : item.label}
                 </span>
-                {active && (
-                  <span className="w-1 h-1 rounded-full" style={{ background: 'var(--orange)' }} />
-                )}
               </button>
             );
           })}
@@ -507,16 +573,31 @@ export default function BottomNavComponent() {
           {/* ── More button (replaces hidden items) ── */}
           <button
             onClick={() => setShowMore(!showMore)}
-            aria-label="More options"
+            aria-label={isHi ? 'अधिक विकल्प' : 'More options'}
             aria-expanded={showMore}
-            className="flex flex-col items-center gap-0.5 min-w-[56px] py-1.5 transition-all"
-            style={{ color: isMoreActive ? 'var(--orange)' : 'var(--text-3)' }}
+            data-active={isMoreActive ? 'true' : 'false'}
+            className="touchable bottom-nav-mobile__slot flex flex-col items-center gap-0.5 py-1.5 px-2 bg-transparent border-0 relative"
+            style={{
+              color: isMoreActive ? 'var(--accent)' : 'var(--ink-3)',
+              minWidth: 'var(--tap-comfort)',
+            }}
           >
-            <span className="text-[22px] leading-none" aria-hidden="true">&#x2630;</span>
-            <span className="text-[11px] font-semibold tracking-wide">{isHi ? 'और' : 'More'}</span>
-            {isMoreActive && (
-              <span className="w-1 h-1 rounded-full" style={{ background: 'var(--orange)' }} />
-            )}
+            <span
+              aria-hidden="true"
+              style={{ fontSize: 22, lineHeight: 1 }}
+            >
+              &#x2630;
+            </span>
+            <span
+              className="tracking-wide"
+              style={{
+                fontSize: 'var(--text-2xs)',
+                fontWeight: isMoreActive ? 700 : 600,
+                letterSpacing: '0.02em',
+              }}
+            >
+              {isHi ? 'और' : 'More'}
+            </span>
           </button>
         </div>
       </nav>
