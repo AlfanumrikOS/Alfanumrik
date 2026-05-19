@@ -123,7 +123,17 @@ export type PostHogEventName =
   // schools rendered + whether the synthetic-monitor table was present.
   // Lets us measure how often ops consults the dashboard, and detect
   // graceful-degradation paths in the wild.
-  | 'super_admin_health_dashboard_viewed';
+  | 'super_admin_health_dashboard_viewed'
+  // Student dashboard CTA tracking (mobile-first redesign, Phase 1.5).
+  // Fired client-side from the seven section components under
+  // src/components/dashboard/sections/. Closes the "we don't know which
+  // dashboard section drives clicks" telemetry gap identified in the ops
+  // inventory before the Foxy/Learn/Parent/Teacher AppShell migration.
+  // PII-free by design — only the section identifier (closed enum), the
+  // action key (closed enum per section), and the destination route name.
+  // NEVER includes student name, email, phone, grade, raw IDs, or any
+  // chapter / subject metadata that could fingerprint a learner.
+  | 'dashboard_cta_clicked';
 
 // ─── Base properties auto-attached by `capture()` ──────────────────────────
 
@@ -687,6 +697,7 @@ export type EventPayloadByName = {
   tutor_answer_path_c_fallback: TutorAnswerPathCFallbackPayload;
   projector_health_degraded: ProjectorHealthDegradedPayload;
   super_admin_health_dashboard_viewed: SuperAdminHealthDashboardViewedPayload;
+  dashboard_cta_clicked: DashboardCtaClickedPayload;
 };
 
 // ── Adaptive Tutor payloads (ADR-004) ──────────────────────────────────
@@ -751,6 +762,56 @@ export interface ProjectorHealthDegradedPayload {
   severity: 'warn' | 'critical';
   /** The threshold (in seconds) that this row crossed. */
   threshold_seconds: number;
+}
+
+// ── Student dashboard CTA payload (mobile-first redesign Phase 1.5) ────
+//
+// Fired from the seven section components under
+// src/components/dashboard/sections/. Carries:
+//   - `section` (closed enum) — WHICH section the click happened in.
+//   - `action`  (closed enum) — WHAT the user activated within that section.
+//   - `destination` (string)  — WHERE the click routes the user.
+//
+// P13 (Data Privacy) — no PII fields ever attached:
+//   no name, no email, no phone, no raw user_id, no grade, no chapter/topic
+//   titles, no streak/XP numbers (those flow via existing `xp_awarded`
+//   events). The redactor in src/lib/analytics.ts is a defence-in-depth
+//   backstop, but the call sites themselves are the primary guarantee.
+//
+// `destination` is intentionally a string (not a closed enum) because the
+// dashboard CTAs already deep-link with query strings (e.g. /quiz?qid=...,
+// /learn/math/3). To keep PII-risk low we DO NOT facet on it in dashboards
+// — we facet on `section` + `action` and use `destination` only for
+// debugging the path the user took.
+
+export interface DashboardCtaClickedPayload {
+  /**
+   * Which dashboard section the CTA lives in. Closed set — adding a new
+   * section means adding the literal here so funnels never silently split.
+   *
+   * Section keys map 1:1 to component files under
+   * src/components/dashboard/sections/.
+   */
+  section:
+    | 'above_fold_hero'
+    | 'quick_actions'
+    | 'todays_focus'
+    | 'compete'
+    | 'progress'
+    | 'upcoming'
+    | 'daily_rhythm_queue';
+  /**
+   * The action key the user pressed within that section. Closed set so
+   * PostHog funnels stay stable across UI tweaks. Keep these short and
+   * kebab/snake-cased — they're analytics primary keys.
+   */
+  action: string;
+  /**
+   * The route the click is sending the user to. Free-form because some
+   * CTAs include query strings (e.g. `/quiz?mode=srs`, `/learn/math/3`).
+   * Capped at 256 chars on emit — see DASHBOARD_CTA_DESTINATION_MAX.
+   */
+  destination: string;
 }
 
 // ── Super-admin Health Dashboard payload (Phase E.6) ──────────────────

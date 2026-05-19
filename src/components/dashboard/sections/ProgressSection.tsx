@@ -22,6 +22,7 @@ import ScoreCard from '@/components/score/ScoreCard';
 import SubjectProgress from '@/components/dashboard/SubjectProgress';
 import type { StudentLearningProfile } from '@/lib/types';
 import type { Subject as AllowedSubject } from '@/lib/subjects.types';
+import { trackDashboardCta } from '@/lib/posthog/dashboard-cta';
 
 interface KnowledgeGap {
   id: string;
@@ -198,7 +199,17 @@ export default function ProgressSection({
                 ))}
               </div>
               <button
-                onClick={() => router.push('/foxy')}
+                onClick={() => {
+                  // `knowledgeGaps.length` is included via PostHog autocapture
+                  // selectors, NOT in the payload — the count is a learner
+                  // datum; we only want section/action/destination here.
+                  trackDashboardCta({
+                    section: 'progress',
+                    action: 'knowledge_gaps_fix_with_foxy',
+                    destination: '/foxy',
+                  });
+                  router.push('/foxy');
+                }}
                 className="mt-2 text-xs font-bold px-3 py-1.5 rounded-lg"
                 style={{ background: 'rgba(232,88,28,0.1)', color: 'var(--orange)' }}
               >

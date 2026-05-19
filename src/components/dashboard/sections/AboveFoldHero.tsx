@@ -23,6 +23,7 @@ import type { Subject as AllowedSubject } from '@/lib/subjects.types';
 import { useFeatureFlags, useLearnerNext } from '@/lib/swr';
 import { actionDisplay, actionPrimaryCta } from '@/lib/state/learner-loop/action-display';
 import type { LearnerAction } from '@/lib/state/learner-loop/types';
+import { trackDashboardCta } from '@/lib/posthog/dashboard-cta';
 
 interface AboveFoldHeroProps {
   student: Student;
@@ -74,7 +75,16 @@ export default function AboveFoldHero({
         const labelHi = cta?.hi ?? 'आज का क्विज़ शुरू करो';
         return (
           <button
-            onClick={() => router.push(url)}
+            onClick={() => {
+              // Analytics — dashboard CTA tracking (mobile-first redesign).
+              // PII-free: only the section + action key + destination route.
+              trackDashboardCta({
+                section: 'above_fold_hero',
+                action: loopAction ? 'loop_primary_cta' : 'default_primary_cta',
+                destination: url,
+              });
+              router.push(url);
+            }}
             className="w-full py-4 rounded-2xl font-bold text-base text-white transition-all active:scale-[0.98] shadow-md flex items-center justify-center gap-2"
             style={{
               background: 'linear-gradient(135deg, var(--purple, #7C3AED), #6D28D9)',
@@ -131,7 +141,14 @@ export default function AboveFoldHero({
           return (
             <Card
               hoverable
-              onClick={() => router.push(loopAction.url)}
+              onClick={() => {
+                trackDashboardCta({
+                  section: 'above_fold_hero',
+                  action: 'loop_action_card',
+                  destination: loopAction.url,
+                });
+                router.push(loopAction.url);
+              }}
               className="flex items-center gap-3 !p-4"
               data-testid="dashboard-loop-action-card"
             >
@@ -159,11 +176,17 @@ export default function AboveFoldHero({
       ) : topTopic ? (
         <Card
           hoverable
-          onClick={() =>
-            topTopic.chapter_number
-              ? router.push(`/learn/${student.preferred_subject}/${topTopic.chapter_number}`)
-              : router.push('/foxy')
-          }
+          onClick={() => {
+            const dest = topTopic.chapter_number
+              ? `/learn/${student.preferred_subject}/${topTopic.chapter_number}`
+              : '/foxy';
+            trackDashboardCta({
+              section: 'above_fold_hero',
+              action: 'continue_topic_card',
+              destination: dest,
+            });
+            router.push(dest);
+          }}
           className="flex items-center gap-3 !p-4"
         >
           <div
@@ -201,7 +224,14 @@ export default function AboveFoldHero({
           </p>
           {!hasSubjects && (
             <button
-              onClick={onPickSubjects}
+              onClick={() => {
+                trackDashboardCta({
+                  section: 'above_fold_hero',
+                  action: 'pick_subjects',
+                  destination: 'modal:subject_picker',
+                });
+                onPickSubjects();
+              }}
               className="mt-3 w-full py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
               style={{ background: 'var(--orange)' }}
             >

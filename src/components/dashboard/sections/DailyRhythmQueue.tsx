@@ -15,6 +15,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
+import { trackDashboardCta } from '@/lib/posthog/dashboard-cta';
 
 interface RhythmItem {
   kind: 'srs_review' | 'zpd_problem' | 'reflection';
@@ -182,6 +183,13 @@ function RhythmQueueBody({ isHi, srs, zpd, reflection, reflectionText }: RhythmQ
             href="/quiz?mode=srs"
             className="text-purple-700 underline font-medium"
             data-testid="rhythm-srs-cta"
+            onClick={() => {
+              trackDashboardCta({
+                section: 'daily_rhythm_queue',
+                action: 'srs_review',
+                destination: '/quiz?mode=srs',
+              });
+            }}
           >
             {isHi ? 'शुरू करो' : 'Start'}
           </Link>
@@ -198,6 +206,17 @@ function RhythmQueueBody({ isHi, srs, zpd, reflection, reflectionText }: RhythmQ
               href={zpd.questionId && !zpd.questionId.startsWith('__') ? `/quiz?qid=${encodeURIComponent(zpd.questionId)}` : '/quiz'}
               className="text-purple-700 underline font-medium"
               data-testid="rhythm-zpd-cta"
+              onClick={() => {
+                // `questionId` is a uuid (not PII) but we still don't emit
+                // it — destination keeps it as a query string for routing,
+                // and PostHog gets only the route prefix when the URL is
+                // captured via $pageview. Action key carries the variant.
+                trackDashboardCta({
+                  section: 'daily_rhythm_queue',
+                  action: zpd.workedExampleFirst ? 'zpd_guided' : 'zpd_challenge',
+                  destination: '/quiz',
+                });
+              }}
             >
               {isHi ? 'खोलो' : 'Open'}
             </Link>
@@ -214,6 +233,13 @@ function RhythmQueueBody({ isHi, srs, zpd, reflection, reflectionText }: RhythmQ
             <Link
               href="/synthesis"
               className="text-purple-700 underline font-medium"
+              onClick={() => {
+                trackDashboardCta({
+                  section: 'daily_rhythm_queue',
+                  action: 'synthesis_view',
+                  destination: '/synthesis',
+                });
+              }}
             >
               {isHi ? 'देखो' : 'View'}
             </Link>
@@ -236,6 +262,16 @@ function RhythmQueueBody({ isHi, srs, zpd, reflection, reflectionText }: RhythmQ
             <Link
               href="/dive"
               className="text-purple-700 underline font-medium"
+              onClick={() => {
+                // `weeklyStreakCount` is intentionally NOT emitted — that's
+                // a learner-state datum that belongs in identify() cohort
+                // properties, not on a click event.
+                trackDashboardCta({
+                  section: 'daily_rhythm_queue',
+                  action: diveState.state === 'completed' ? 'dive_view_completed' : 'dive_start',
+                  destination: '/dive',
+                });
+              }}
             >
               {diveState.state === 'completed'
                 ? (isHi ? 'देखो' : 'View')
