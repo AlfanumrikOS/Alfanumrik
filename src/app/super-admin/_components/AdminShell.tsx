@@ -31,6 +31,7 @@ const NAV_ITEMS: SidebarNavItem[] = [
   { href: '/super-admin/diagnostics', label: 'Diagnostics', labelHi: 'डायग्नोस्टिक्स', icon: '⊘' },
   { href: '/super-admin/marking-integrity', label: 'Marking Integrity', labelHi: 'अंकन सत्यनिष्ठा', icon: '⛉' },
   { href: '/super-admin/oracle-health', label: 'Oracle Health', labelHi: 'ओरेकल स्वास्थ्य', icon: '◐' },
+  { href: '/super-admin/mol-shadow', label: 'MOL Shadow', labelHi: 'MOL शैडो', icon: '◑' },
   { href: '/super-admin/health', label: 'Health', labelHi: 'स्वास्थ्य', icon: '♥' },
   { href: '/super-admin/observability', label: 'Observability', labelHi: 'अवलोकनीयता', icon: '◎' },
   { href: '/super-admin/subscribers', label: 'Subscribers', labelHi: 'सब्सक्राइबर', icon: '⊳' },
