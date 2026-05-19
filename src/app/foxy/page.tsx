@@ -7,6 +7,14 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { BottomNav } from '@/components/ui';
+// Mobile-first responsive shell (2026-05-19, Phase 2 — followup #1 of PR #867).
+// Wraps the existing Foxy chat chrome in a CSS-Grid shell with safe-area-inset
+// support, scroll-compacting header, and one-handed mode. The header bag
+// (dark gradient header + subject tabs + toolbar + conversation/lesson rows)
+// moves into AppShell.header; the chat area + ChatInput remain as children.
+// See src/components/responsive/AppShell.tsx + src/app/dashboard/page.tsx
+// (the reference migration) for the pattern.
+import { AppShell } from '@/components/responsive';
 import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@/lib/cognitive-engine';
 import { checkDailyUsage, clearUsageCache, type UsageResult } from '@/lib/usage';
 import { speak, isVoiceSupported } from '@/lib/voice';
@@ -987,70 +995,27 @@ export default function FoxyPage() {
     </div>
   );
 
-  return (
-    <div className="min-h-dvh flex flex-col pb-nav" style={{ background: 'var(--surface-2)' }}>
-
-      {/* Upgrade modal — surfaces when a student taps a locked subject tab.
-          Server still 422s on writes for locked subjects, this just makes
-          the gate friendlier and points at /pricing. */}
-      {lockedTapped && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="upgrade-modal-title"
-          className="fixed inset-0 z-[95] flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.55)' }}
-          onClick={(e) => { if (e.target === e.currentTarget) setLockedTapped(null); }}
-        >
-          <div
-            className="w-full max-w-sm rounded-3xl p-6 shadow-2xl"
-            style={{ background: 'var(--warm-cream, #FFF9F0)', border: '1px solid var(--border)' }}
-          >
-            <div className="text-center mb-4">
-              <div className="text-4xl mb-2" aria-hidden="true">{lockedTapped.icon}</div>
-              <h2 id="upgrade-modal-title" className="font-bold text-xl" style={{ color: 'var(--text-1)' }}>
-                {isHi
-                  ? `${lockedTapped.nameHi} अनलॉक करें`
-                  : `Unlock ${lockedTapped.name}`}
-              </h2>
-              <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>
-                {isHi
-                  ? `${lockedTapped.nameHi} एक पेड प्लान में उपलब्ध है। अभी मुफ्त प्लान में मैथ्स, अंग्रेज़ी और हिंदी मिलते हैं।`
-                  : `${lockedTapped.name} is part of our paid plans. Your free plan includes Math, English and Hindi.`}
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 mt-5">
-              <button
-                onClick={() => {
-                  setLockedTapped(null);
-                  router.push('/pricing');
-                }}
-                className="w-full px-4 py-3 rounded-2xl font-bold text-sm text-white"
-                style={{ background: lockedTapped.color }}
-              >
-                {isHi ? 'प्लान देखें' : 'View plans'}
-              </button>
-              <button
-                onClick={() => setLockedTapped(null)}
-                className="w-full px-4 py-2 rounded-2xl font-semibold text-xs"
-                style={{ background: 'transparent', color: 'var(--text-3)' }}
-              >
-                {isHi ? 'बाद में' : 'Maybe later'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
+  // ─── Header bag — passed into AppShell.header ─────────────────────────
+  // The Foxy sticky chrome was four/five stacked rows (top header, subject
+  // tab pills, chapter+mode toolbar, optional ConversationHeader, optional
+  // lesson-step progress). Pre-AppShell they were sticky siblings inside
+  // a flex-column body. With AppShell they become the single sticky header
+  // slot — AppShell.header is itself position:sticky with backdrop-filter,
+  // and each row keeps an opaque inline background so the AppShell scrim
+  // never bleeds through. Behavior is verbatim: no copy, mode, or logic
+  // changes.
+  const foxyHeaderContent = (
+    <>
       {/* ═══ HEADER ═══ */}
-      <header className="sticky top-0 z-30 px-3 py-2.5 flex items-center gap-3" style={{ background: 'linear-gradient(135deg, #1a1a2e, #0f3460)', color: '#fff' }}>
+      {/* `sticky top-0` is dropped — AppShell.header is itself position:sticky. */}
+      <div className="px-3 py-2.5 flex items-center gap-3" style={{ background: 'linear-gradient(135deg, #1a1a2e, #0f3460)', color: '#fff' }}>
         <button onClick={() => router.push('/dashboard')} className="text-white/60 text-sm">←</button>
         {/* Mobile: open conversation history sidebar */}
         <button
           onClick={() => setConversationSidebarOpen(true)}
           className="lg:hidden w-8 h-8 rounded-lg flex items-center justify-center transition-all active:scale-95"
           style={{ background: 'rgba(255,255,255,0.1)' }}
-          aria-label={isHi ? '\u091A\u0948\u091F \u0939\u093F\u0938\u094D\u091F\u094D\u0930\u0940' : 'Chat history'}
+          aria-label={isHi ? 'चैट हिस्ट्री' : 'Chat history'}
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -1088,7 +1053,7 @@ export default function FoxyPage() {
             </button>
           )}
         </div>
-      </header>
+      </div>
 
       {/* ═══ SUBJECT TAB BAR — horizontal scrollable pills ═══ */}
       <div
@@ -1157,19 +1122,19 @@ export default function FoxyPage() {
             <span className="text-sm">{cfg.icon}</span>
             <span>
               {activeTopic
-                ? `${language === 'hi' ? '\u0905\u0927\u094D\u092F\u093E\u092F' : 'Ch'} ${activeTopic.chapter_number}: ${activeTopic.title?.length > 15 ? activeTopic.title.substring(0, 14) + '...' : activeTopic.title}`
+                ? `${language === 'hi' ? 'अध्याय' : 'Ch'} ${activeTopic.chapter_number}: ${activeTopic.title?.length > 15 ? activeTopic.title.substring(0, 14) + '...' : activeTopic.title}`
                 : selectedChapters.length > 0
-                  ? `${selectedChapters.length} ${language === 'hi' ? '\u0905\u0927\u094D\u092F\u093E\u092F' : 'Ch'}`
-                  : (language === 'hi' ? '\u0905\u0927\u094D\u092F\u093E\u092F \u091A\u0941\u0928\u094B' : 'Select Chapter')}
+                  ? `${selectedChapters.length} ${language === 'hi' ? 'अध्याय' : 'Ch'}`
+                  : (language === 'hi' ? 'अध्याय चुनो' : 'Select Chapter')}
             </span>
-            <span className="text-[10px] ml-0.5 opacity-60">{showChapterDD ? '\u25B2' : '\u25BC'}</span>
+            <span className="text-[10px] ml-0.5 opacity-60">{showChapterDD ? '▲' : '▼'}</span>
           </button>
           {showChapterDD && (
             <div className="absolute top-full left-0 mt-1 z-50 w-[calc(100vw-24px)] sm:w-72 max-h-[50vh] rounded-2xl overflow-hidden shadow-lg flex flex-col" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
               <div className="p-2 px-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-3)]">{cfg.icon} {cfg.name} {language === 'hi' ? '\u0905\u0927\u094D\u092F\u093E\u092F' : 'Chapters'}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-3)]">{cfg.icon} {cfg.name} {language === 'hi' ? 'अध्याय' : 'Chapters'}</span>
                 {(selectedChapters.length > 0 || activeTopic) && (
-                  <button onClick={() => { setSelectedChapters([]); setActiveTopic(null); }} className="text-[10px] font-semibold" style={{ color: 'var(--orange)' }}>{language === 'hi' ? '\u0938\u092C \u0939\u091F\u093E\u0913' : 'Clear All'}</button>
+                  <button onClick={() => { setSelectedChapters([]); setActiveTopic(null); }} className="text-[10px] font-semibold" style={{ color: 'var(--orange)' }}>{language === 'hi' ? 'सब हटाओ' : 'Clear All'}</button>
                 )}
               </div>
               <div className="flex-1 overflow-y-auto">
@@ -1192,7 +1157,7 @@ export default function FoxyPage() {
                       className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all"
                       style={{ background: sel ? `${cfg.color}06` : 'transparent', borderBottom: '1px solid var(--border)' }}
                     >
-                      <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 text-[10px]" style={{ background: sel ? cfg.color : 'var(--surface-2)', color: sel ? '#fff' : 'var(--text-3)', border: sel ? 'none' : '1.5px solid var(--border)' }}>{sel ? '\u2713' : ''}</div>
+                      <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 text-[10px]" style={{ background: sel ? cfg.color : 'var(--surface-2)', color: sel ? '#fff' : 'var(--text-3)', border: sel ? 'none' : '1.5px solid var(--border)' }}>{sel ? '✓' : ''}</div>
                       <div className="flex-1 min-w-0"><div className="text-xs font-semibold truncate" style={{ color: 'var(--text-1)' }}>{language === 'hi' ? 'अध्याय' : 'Ch'} {topic.chapter_number}: {topic.title}</div></div>
                       <span className="text-[9px] font-bold capitalize px-1.5 py-0.5 rounded" style={{ background: `${lc}15`, color: lc }}>{lvl.replace('_', ' ')}</span>
                     </button>
@@ -1206,9 +1171,6 @@ export default function FoxyPage() {
         {/* Simplified mode pills — extracted to ./_components/FoxySettings.tsx */}
         <ModePicker sessionMode={sessionMode} color={cfg.color} isHi={isHi} onSwitchMode={switchMode} />
       </div>
-
-      {/* Close dropdowns */}
-      {(showSubjectDD || showChapterDD) && <div className="fixed inset-0 z-40" onClick={() => { setShowSubjectDD(false); setShowChapterDD(false); }} />}
 
       {/* ═══ CONTEXT BAR — shows active conversation header ═══ */}
       {messages.length > 0 && (
@@ -1309,6 +1271,92 @@ export default function FoxyPage() {
           )}
         </div>
       )}
+    </>
+  );
+
+  // ─── Main content — chat + ChatInput + modals ─────────────────────────
+  // The chat column needs `h-full flex flex-col min-h-0` so the scroll
+  // area can flex within AppShell's content grid row (which is `1fr`
+  // inside `grid-template-rows: auto 1fr auto`). The legacy `pb-32` chat
+  // clearance is dropped — AppShell.content already pads --shell-nav-h +
+  // safe-area-inset on the bottom. The wrapper uses negative inline
+  // margins only on the sides + top to neutralize .app-shell-content's
+  // fluid gutter so chat bubbles run edge-to-edge like the pre-shell
+  // layout. Bottom padding is preserved so the BottomNav (fixed at
+  // bottom:0) never overlaps the ChatInput composer.
+  const foxyMainContent = (
+    <div
+      className="h-full flex flex-col min-h-0"
+      style={{
+        // Cancel out .app-shell-content's default side + top padding so
+        // chat bubbles run edge-to-edge. The chat scroll container already
+        // adds its own px-3/md:px-5 gutter; this avoids double padding.
+        // Bottom is intentionally NOT negated — AppShell's bottom padding
+        // reserves clearance for the fixed BottomNav so the ChatInput
+        // composer renders directly above it without overlap.
+        marginInline: 'calc(var(--space-fluid-4) * -1)',
+        marginTop: 'calc(var(--space-fluid-4) * -1)',
+        background: 'var(--surface-2)',
+      }}
+    >
+
+      {/* Upgrade modal — surfaces when a student taps a locked subject tab.
+          Server still 422s on writes for locked subjects, this just makes
+          the gate friendlier and points at /pricing. */}
+      {lockedTapped && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="upgrade-modal-title"
+          className="fixed inset-0 z-[95] flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.55)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setLockedTapped(null); }}
+        >
+          <div
+            className="w-full max-w-sm rounded-3xl p-6 shadow-2xl"
+            style={{ background: 'var(--warm-cream, #FFF9F0)', border: '1px solid var(--border)' }}
+          >
+            <div className="text-center mb-4">
+              <div className="text-4xl mb-2" aria-hidden="true">{lockedTapped.icon}</div>
+              <h2 id="upgrade-modal-title" className="font-bold text-xl" style={{ color: 'var(--text-1)' }}>
+                {isHi
+                  ? `${lockedTapped.nameHi} अनलॉक करें`
+                  : `Unlock ${lockedTapped.name}`}
+              </h2>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>
+                {isHi
+                  ? `${lockedTapped.nameHi} एक पेड प्लान में उपलब्ध है। अभी मुफ्त प्लान में मैथ्स, अंग्रेज़ी और हिंदी मिलते हैं।`
+                  : `${lockedTapped.name} is part of our paid plans. Your free plan includes Math, English and Hindi.`}
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 mt-5">
+              <button
+                onClick={() => {
+                  setLockedTapped(null);
+                  router.push('/pricing');
+                }}
+                className="w-full px-4 py-3 rounded-2xl font-bold text-sm text-white"
+                style={{ background: lockedTapped.color }}
+              >
+                {isHi ? 'प्लान देखें' : 'View plans'}
+              </button>
+              <button
+                onClick={() => setLockedTapped(null)}
+                className="w-full px-4 py-2 rounded-2xl font-semibold text-xs"
+                style={{ background: 'transparent', color: 'var(--text-3)' }}
+              >
+                {isHi ? 'बाद में' : 'Maybe later'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {/* Close-dropdowns scrim: clicking anywhere outside the open
+          chapter/subject dropdown closes it. Lives in children (not the
+          header bag) because it is a full-viewport fixed overlay. */}
+      {(showSubjectDD || showChapterDD) && <div className="fixed inset-0 z-40" onClick={() => { setShowSubjectDD(false); setShowChapterDD(false); }} />}
 
       {/* ═══ MAIN CHAT AREA ═══ */}
       <SectionErrorBoundary section="Foxy Chat">
@@ -1355,7 +1403,11 @@ export default function FoxyPage() {
 
         {/* Chat column */}
         <div className="flex-1 flex flex-col min-w-0">
-          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-3 md:px-5 py-4 pb-32">
+          {/* `pb-32` removed — AppShell.app-shell-content already reserves
+              --shell-nav-h + safe-area-inset bottom space for the fixed
+              BottomNav. Adding pb-32 here would overpad the scroll area
+              and leave an awkward gap above the ChatInput. */}
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-3 md:px-5 py-4">
             {/* SEL mood check-in — shown once per day at session start */}
             {showSELCheckIn && student && (
               <div className="mb-4 animate-slide-up">
@@ -1586,8 +1638,22 @@ export default function FoxyPage() {
         }}
       />
       </SectionErrorBoundary>
-
-      <BottomNav />
     </div>
+  );
+
+  return (
+    <AppShell
+      variant="mobile"
+      header={foxyHeaderContent}
+      nav={<BottomNav />}
+      // One-handed mode toggle stays off on Foxy — the chat composer needs
+      // the full viewport vertical reach, and pulling content down would
+      // hide message context above the input on small phones. AppShell's
+      // toggle is the default-on affordance for editorial surfaces (dashboard,
+      // learn) where the toggle is helpful.
+      oneHandToggle={false}
+    >
+      {foxyMainContent}
+    </AppShell>
   );
 }
