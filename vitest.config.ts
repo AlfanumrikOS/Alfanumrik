@@ -41,6 +41,12 @@ export default defineConfig({
           // codepath with fetch-stubbed providers; verifies the prompt-
           // parity + de-dup fixes work together.
           'supabase/functions/grounded-answer/__tests__/mol-shadow.integration.test.ts',
+          // C4.2b-ii text capture (2026-05-20). Tests for the text-based
+          // PII redactor used by mol_shadow_text_buffer writes.
+          'supabase/functions/_shared/__tests__/redact-pii.test.ts',
+          // C4.2b-ii text capture (2026-05-20). Tests for recordShadowText
+          // + redaction aggregation + DB insert wiring.
+          'supabase/functions/_shared/mol/__tests__/recordShadowText.test.ts',
         ],
     exclude: isIntegrationRun
       ? ['node_modules/**']

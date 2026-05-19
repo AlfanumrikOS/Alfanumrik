@@ -48,7 +48,10 @@ import {
 // streaming Claude invocation. See pipeline.ts for the full design rationale.
 // Default-OFF feature flag means no production behavior change ships with
 // C4.2a — the wire-up here is "armed" only.
-import { fireShadowAndForget } from './mol-shadow.ts';
+// C4.2b-ii (2026-05-20): also import recordShadowTextFromStash so the
+// streaming code can write the text-capture row AFTER the stream completes
+// and the full baseline text is known. See mol-shadow.ts:STASH_TTL_MS.
+import { fireShadowAndForget, recordShadowTextFromStash } from './mol-shadow.ts';
 import { extractCitations } from './citations.ts';
 import { computeConfidence } from './confidence.ts';
 import { loadTemplate, resolveTemplate, hashPrompt } from './prompts/index.ts';
@@ -536,8 +539,16 @@ export async function* runStreamingPipeline(
       ? 'claude-sonnet-4-20250514'
       : 'claude-haiku-4-5-20251001';
 
+  // ── C4.2b-ii (2026-05-20): stash key ──
+  // Mint the shadow's request_id HERE (not inside the helper) so we can
+  // pass the same id to recordShadowTextFromStash later. The stash inside
+  // mol-shadow.ts is keyed by this id; the post-stream drain MUST use the
+  // same key. baseline_response_text is intentionally undefined here →
+  // stash path is selected inside shadowFireOpenAI.
+  const shadowRequestId = newMolRequestId();
+
   fireShadowAndForget({
-    request_id: newMolRequestId(),
+    request_id: shadowRequestId,
     systemPrompt,
     userMessage: request.query,
     maxTokens: effectiveMaxTokens,
@@ -551,6 +562,9 @@ export async function* runStreamingPipeline(
     baseline_provider: 'anthropic',
     baseline_model: baselineModelHint,
     trace_id: traceId, // streaming writes the trace row BEFORE the stream
+    // baseline_response_text deliberately omitted (undefined) → stash path:
+    // the helper will stash the shadow's response text under shadowRequestId,
+    // and the post-stream code below will drain it.
     student_context: {
       student_id: request.student_id,
       grade: request.scope.grade,
@@ -655,6 +669,25 @@ export async function* runStreamingPipeline(
   // for analytics; the wire-shape kept the pre-stream list for the metadata
   // event already).
   void extractCitations(accumulated, chunks);
+
+  // ── C4.2b-ii (2026-05-20): drain the shadow text stash ──
+  // shadowFireOpenAI stashed the shadow's response text under shadowRequestId
+  // when text capture is enabled. Now that we have the full accumulated
+  // baseline text, drain the stash and write the mol_shadow_text_buffer row.
+  // recordShadowTextFromStash is fire-and-forget — never throws, never
+  // blocks the user-facing `done` event below.
+  //
+  // No-op when:
+  //   * text-capture flag was off at fire time (no stash entry exists).
+  //   * shadow timed out / errored before reaching the success path.
+  //   * worker recycled between fire and drain (stash entry lost).
+  //
+  // In every no-op case the grader sees `skipped_no_text` and degrades
+  // gracefully — same as scaffold mode.
+  recordShadowTextFromStash({
+    baseline_request_id: shadowRequestId,
+    baseline_response_text: accumulated,
+  });
 
   ctx.answerLength = accumulated.length;
 

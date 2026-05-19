@@ -49,6 +49,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const generateResponseSpy = vi.fn();
 const recordMolRequestSpy = vi.fn();
 const getFlagEnvelopeSpy = vi.fn();
+// C4.2b-ii: spy on the text-capture write so we can assert inline-path
+// and stash-path behavior without booting a real supabase client.
+const recordShadowTextSpy = vi.fn();
 
 // Mock the MOL barrel index so `generateResponse` is a spy. Re-export the
 // type stubs the helper imports.
@@ -60,6 +63,8 @@ vi.mock('../../_shared/mol/index.ts', () => ({
 vi.mock('../../_shared/mol/telemetry.ts', () => ({
   recordMolRequest: (...args: unknown[]) =>
     (recordMolRequestSpy as unknown as (...a: unknown[]) => unknown)(...args),
+  recordShadowText: (...args: unknown[]) =>
+    (recordShadowTextSpy as unknown as (...a: unknown[]) => unknown)(...args),
 }));
 
 vi.mock('../../_shared/mol/feature-flag.ts', () => ({
@@ -71,7 +76,10 @@ vi.mock('../../_shared/mol/feature-flag.ts', () => ({
 import {
   shadowFireOpenAI,
   fireShadowAndForget,
+  recordShadowTextFromStash,
+  __resetShadowTextStashForTests,
   C4_SHADOW_FLAG,
+  C4_TEXT_CAPTURE_FLAG,
   type ShadowFireArgs,
 } from '../mol-shadow.ts';
 
@@ -142,6 +150,8 @@ beforeEach(() => {
   generateResponseSpy.mockReset();
   recordMolRequestSpy.mockReset();
   getFlagEnvelopeSpy.mockReset();
+  recordShadowTextSpy.mockReset();
+  __resetShadowTextStashForTests();
 });
 
 afterEach(() => {
@@ -584,5 +594,262 @@ describe('fireShadowAndForget — EdgeRuntime.waitUntil lifetime extension', () 
 
     await new Promise((r) => setTimeout(r, 0));
     await new Promise((r) => setTimeout(r, 0));
+  });
+});
+
+// ─── C4.2b-ii text capture (2026-05-20) ──────────────────────────────────────
+//
+// Behavior matrix:
+//   * args.baseline_response_text = non-empty + text-capture flag ON →
+//     INLINE write to mol_shadow_text_buffer.
+//   * args.baseline_response_text = undefined + text-capture flag ON →
+//     STASH the shadow text under args.request_id; caller drains via
+//     recordShadowTextFromStash.
+//   * args.baseline_response_text = '' (sentinel) → SKIP (no write, no
+//     stash) regardless of flag — used by grounding-check shadow leg.
+//   * text-capture flag OFF → skip everything regardless of args.
+//
+// Flag-name constant is also asserted.
+
+describe('shadowFireOpenAI — C4.2b-ii text capture', () => {
+  /** Helper: queue BOTH flag-envelope responses (shadow then text-capture). */
+  function queueFlags(opts: {
+    shadow: Parameters<typeof envelope>[0];
+    textCapture: { is_enabled: boolean; enabled?: boolean };
+  }): void {
+    getFlagEnvelopeSpy.mockResolvedValueOnce(envelope(opts.shadow));
+    getFlagEnvelopeSpy.mockResolvedValueOnce({
+      is_enabled: opts.textCapture.is_enabled,
+      metadata:
+        opts.textCapture.enabled !== undefined
+          ? { enabled: opts.textCapture.enabled }
+          : {},
+    });
+  }
+
+  // ── Inline path (non-streaming caller) ──
+
+  it('INLINE: baseline_response_text non-empty + flag ON → writes mol_shadow_text_buffer row', async () => {
+    queueFlags({
+      shadow: { enabled: true, task_types: ['doubt_solving'], rollout_pct: 100 },
+      textCapture: { is_enabled: true },
+    });
+    generateResponseSpy.mockResolvedValueOnce(
+      okMolResult({ text: 'shadow says: photosynthesis is fueled by sunlight.' }),
+    );
+
+    await shadowFireOpenAI(makeArgs({
+      baseline_response_text: 'Anthropic says: photosynthesis is the process by which plants make food.',
+    }));
+
+    expect(recordShadowTextSpy).toHaveBeenCalledTimes(1);
+    const payload = recordShadowTextSpy.mock.calls[0][0];
+    expect(payload.baseline_request_id).toBe('baseline-req-id');
+    expect(payload.shadow_request_id).toBe('baseline-req-id'); // okMolResult fixture uses same id
+    expect(payload.question_text).toBe('What is photosynthesis?');
+    expect(payload.baseline_system_prompt).toBe('You are Foxy, a CBSE tutor for Class 8 Science.');
+    expect(payload.shadow_system_prompt).toBeNull();
+    expect(payload.baseline_response_text).toBe(
+      'Anthropic says: photosynthesis is the process by which plants make food.',
+    );
+    expect(payload.shadow_response_text).toBe(
+      'shadow says: photosynthesis is fueled by sunlight.',
+    );
+  });
+
+  it('INLINE: shadow_system_prompt_override propagates to the buffer row', async () => {
+    queueFlags({
+      shadow: { enabled: true, task_types: ['doubt_solving'], rollout_pct: 100 },
+      textCapture: { is_enabled: true },
+    });
+    generateResponseSpy.mockResolvedValueOnce(okMolResult());
+
+    await shadowFireOpenAI(makeArgs({
+      baseline_response_text: 'baseline body',
+      shadow_system_prompt_override: 'You are an OpenAI-tuned Foxy.',
+    }));
+
+    expect(recordShadowTextSpy).toHaveBeenCalledTimes(1);
+    const payload = recordShadowTextSpy.mock.calls[0][0];
+    expect(payload.shadow_system_prompt).toBe('You are an OpenAI-tuned Foxy.');
+  });
+
+  // ── Stash path (streaming caller) ──
+
+  it('STASH: baseline_response_text undefined + flag ON → no inline write, recordShadowTextFromStash drains', async () => {
+    queueFlags({
+      shadow: { enabled: true, task_types: ['doubt_solving'], rollout_pct: 100 },
+      textCapture: { is_enabled: true },
+    });
+    generateResponseSpy.mockResolvedValueOnce(
+      okMolResult({ text: 'shadow stash content' }),
+    );
+
+    await shadowFireOpenAI(makeArgs()); // baseline_response_text omitted
+
+    // No inline write yet.
+    expect(recordShadowTextSpy).not.toHaveBeenCalled();
+
+    // Drain the stash. Pass the accumulated baseline text.
+    recordShadowTextFromStash({
+      baseline_request_id: 'baseline-req-id',
+      baseline_response_text: 'baseline accumulated from stream',
+    });
+
+    expect(recordShadowTextSpy).toHaveBeenCalledTimes(1);
+    const payload = recordShadowTextSpy.mock.calls[0][0];
+    expect(payload.baseline_request_id).toBe('baseline-req-id');
+    expect(payload.shadow_response_text).toBe('shadow stash content');
+    expect(payload.baseline_response_text).toBe('baseline accumulated from stream');
+  });
+
+  it('STASH: recordShadowTextFromStash is a no-op when no stash entry exists', () => {
+    // No shadowFireOpenAI call → no stash. Direct drain should not throw,
+    // not call recordShadowText, not log anything user-visible.
+    recordShadowTextFromStash({
+      baseline_request_id: 'never-fired',
+      baseline_response_text: 'whatever',
+    });
+    expect(recordShadowTextSpy).not.toHaveBeenCalled();
+  });
+
+  it('STASH: recordShadowTextFromStash drains exactly once (second call is a no-op)', async () => {
+    queueFlags({
+      shadow: { enabled: true, task_types: ['doubt_solving'], rollout_pct: 100 },
+      textCapture: { is_enabled: true },
+    });
+    generateResponseSpy.mockResolvedValueOnce(okMolResult());
+
+    await shadowFireOpenAI(makeArgs());
+
+    recordShadowTextFromStash({
+      baseline_request_id: 'baseline-req-id',
+      baseline_response_text: 'baseline 1',
+    });
+    expect(recordShadowTextSpy).toHaveBeenCalledTimes(1);
+
+    // Second drain: nothing left.
+    recordShadowTextFromStash({
+      baseline_request_id: 'baseline-req-id',
+      baseline_response_text: 'baseline 2',
+    });
+    expect(recordShadowTextSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('STASH: empty baseline_response_text on drain → no write (defensive)', async () => {
+    queueFlags({
+      shadow: { enabled: true, task_types: ['doubt_solving'], rollout_pct: 100 },
+      textCapture: { is_enabled: true },
+    });
+    generateResponseSpy.mockResolvedValueOnce(okMolResult());
+
+    await shadowFireOpenAI(makeArgs());
+
+    recordShadowTextFromStash({
+      baseline_request_id: 'baseline-req-id',
+      baseline_response_text: '',
+    });
+    // Stash entry was drained AND consumed; no row was written because
+    // baseline text is empty.
+    expect(recordShadowTextSpy).not.toHaveBeenCalled();
+  });
+
+  // ── Skip path (grounding-check leg) ──
+
+  it('SKIP: baseline_response_text = "" → no inline write, no stash entry', async () => {
+    queueFlags({
+      shadow: { enabled: true, task_types: ['doubt_solving'], rollout_pct: 100 },
+      textCapture: { is_enabled: true },
+    });
+    generateResponseSpy.mockResolvedValueOnce(okMolResult());
+
+    await shadowFireOpenAI(makeArgs({ baseline_response_text: '' }));
+
+    expect(recordShadowTextSpy).not.toHaveBeenCalled();
+
+    // No stash either — drain finds nothing.
+    recordShadowTextFromStash({
+      baseline_request_id: 'baseline-req-id',
+      baseline_response_text: 'whatever',
+    });
+    expect(recordShadowTextSpy).not.toHaveBeenCalled();
+  });
+
+  // ── Flag-off paths ──
+
+  it('FLAG OFF: text-capture is_enabled=false → no inline, no stash regardless of args', async () => {
+    queueFlags({
+      shadow: { enabled: true, task_types: ['doubt_solving'], rollout_pct: 100 },
+      textCapture: { is_enabled: false },
+    });
+    generateResponseSpy.mockResolvedValueOnce(okMolResult());
+
+    await shadowFireOpenAI(makeArgs({
+      baseline_response_text: 'baseline body would be captured if flag were on',
+    }));
+
+    // Shadow row still wrote (orchestrator auto-log handled by generateResponse mock).
+    // Text capture did NOT.
+    expect(recordShadowTextSpy).not.toHaveBeenCalled();
+
+    // No stash either.
+    recordShadowTextFromStash({
+      baseline_request_id: 'baseline-req-id',
+      baseline_response_text: 'baseline accum',
+    });
+    expect(recordShadowTextSpy).not.toHaveBeenCalled();
+  });
+
+  it('FLAG OFF: metadata.enabled=false wins over is_enabled=true (parity with shadow envelope)', async () => {
+    queueFlags({
+      shadow: { enabled: true, task_types: ['doubt_solving'], rollout_pct: 100 },
+      textCapture: { is_enabled: true, enabled: false }, // metadata wins
+    });
+    generateResponseSpy.mockResolvedValueOnce(okMolResult());
+
+    await shadowFireOpenAI(makeArgs({
+      baseline_response_text: 'baseline body',
+    }));
+
+    expect(recordShadowTextSpy).not.toHaveBeenCalled();
+  });
+
+  it('FLAG OFF: text-capture envelope read throws → treated as disabled, no write', async () => {
+    getFlagEnvelopeSpy.mockResolvedValueOnce(
+      envelope({ enabled: true, task_types: ['doubt_solving'], rollout_pct: 100 }),
+    );
+    // Second call (text capture) rejects.
+    getFlagEnvelopeSpy.mockRejectedValueOnce(new Error('flag read boom'));
+    generateResponseSpy.mockResolvedValueOnce(okMolResult());
+
+    await shadowFireOpenAI(makeArgs({ baseline_response_text: 'baseline body' }));
+    expect(recordShadowTextSpy).not.toHaveBeenCalled();
+  });
+
+  // ── Failure isolation ──
+
+  it('recordShadowText throwing must not propagate to the helper', async () => {
+    queueFlags({
+      shadow: { enabled: true, task_types: ['doubt_solving'], rollout_pct: 100 },
+      textCapture: { is_enabled: true },
+    });
+    generateResponseSpy.mockResolvedValueOnce(okMolResult());
+    recordShadowTextSpy.mockImplementation(() => {
+      throw new Error('insert blew up');
+    });
+
+    await expect(
+      shadowFireOpenAI(makeArgs({ baseline_response_text: 'baseline body' })),
+    ).resolves.toBeUndefined();
+
+    expect(recordShadowTextSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── Flag-name constants ─────────────────────────────────────────────────────
+
+describe('C4.2b-ii flag constants', () => {
+  it('C4_TEXT_CAPTURE_FLAG matches the seeded flag name', () => {
+    expect(C4_TEXT_CAPTURE_FLAG).toBe('ff_mol_shadow_text_capture_v1');
   });
 });

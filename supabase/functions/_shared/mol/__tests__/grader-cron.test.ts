@@ -41,10 +41,11 @@ interface SupabaseTableState {
   updates: Array<{ patch: Record<string, unknown>; predicates: Record<string, unknown> }>;
   selects: Array<{ predicates: Record<string, unknown> }>;
   inserts: Array<Record<string, unknown>>;
+  deletes: Array<{ predicates: Record<string, unknown> }>;
 }
 
 function makeTableState(rows: Array<Record<string, unknown>> = []): SupabaseTableState {
-  return { rows, updates: [], selects: [], inserts: [] };
+  return { rows, updates: [], selects: [], inserts: [], deletes: [] };
 }
 
 function makeSupabase(tables: Record<string, SupabaseTableState>) {
@@ -52,6 +53,7 @@ function makeSupabase(tables: Record<string, SupabaseTableState>) {
   const rowUpdateSpy = vi.fn();
   const auditInsertSpy = vi.fn();
   const telemetryInsertSpy = vi.fn();
+  const textBufferDeleteSpy = vi.fn();
 
   function from(table: string) {
     const state = tables[table] ?? makeTableState();
@@ -83,6 +85,11 @@ function makeSupabase(tables: Record<string, SupabaseTableState>) {
       ctx.kind = 'update';
       return builder;
     };
+    builder.delete = () => {
+      ctx.predicates = {} as Record<string, unknown>;
+      ctx.kind = 'delete';
+      return builder;
+    };
     builder.insert = async (row: Record<string, unknown> | Array<Record<string, unknown>>) => {
       const rowsToInsert = Array.isArray(row) ? row : [row];
       for (const r of rowsToInsert) {
@@ -109,6 +116,10 @@ function makeSupabase(tables: Record<string, SupabaseTableState>) {
       (ctx.predicates as Record<string, unknown>)[k] = ['__GTE__', v];
       return builder;
     };
+    // C4.2b-ii: resolveTexts uses .limit(1).maybeSingle() to read the
+    // single buffer row matched by shadow_request_id. The mock is a no-op
+    // — maybeSingle already returns matches[0] so the limit is implicit.
+    builder.limit = (_n: number) => builder;
     builder.maybeSingle = async () => {
       const predicates = (ctx.predicates ?? {}) as Record<string, unknown>;
       const matches = filterRows(predicates);
@@ -130,6 +141,17 @@ function makeSupabase(tables: Record<string, SupabaseTableState>) {
         for (const row of matches) Object.assign(row, ctx.patch);
         return onFulfilled({ data: matches, error: null });
       }
+      if (ctx.kind === 'delete') {
+        state.deletes.push({ predicates });
+        if (table === 'mol_shadow_text_buffer') textBufferDeleteSpy(predicates);
+        // Actually remove matched rows from state so subsequent reads
+        // observe the deletion (mirrors supabase-js DELETE semantics).
+        for (const row of matches) {
+          const idx = state.rows.indexOf(row);
+          if (idx >= 0) state.rows.splice(idx, 1);
+        }
+        return onFulfilled({ data: matches, error: null });
+      }
       state.selects.push({ predicates });
       return onFulfilled({ data: matches, error: null });
     };
@@ -143,7 +165,39 @@ function makeSupabase(tables: Record<string, SupabaseTableState>) {
     rowUpdateSpy,
     auditInsertSpy,
     telemetryInsertSpy,
+    textBufferDeleteSpy,
     tables,
+  };
+}
+
+/**
+ * C4.2b-ii: build a mol_shadow_text_buffer row keyed by `shadow_request_id`.
+ * Used by tests that want resolveTexts() to return a usable text triple.
+ */
+function makeTextBufferRow(args: {
+  shadow_request_id: string;
+  question?: string;
+  baseline_response?: string;
+  shadow_response?: string;
+  baseline_system_prompt?: string;
+  shadow_system_prompt?: string | null;
+  redaction_applied?: string[];
+}) {
+  return {
+    id: `buf-${args.shadow_request_id}`,
+    baseline_request_id: args.shadow_request_id,
+    shadow_request_id: args.shadow_request_id,
+    question_text: args.question ?? 'What is photosynthesis?',
+    baseline_system_prompt:
+      args.baseline_system_prompt ?? 'You are Foxy, a CBSE tutor for Class 8 Science.',
+    shadow_system_prompt: args.shadow_system_prompt ?? null,
+    baseline_response_text:
+      args.baseline_response ?? 'Photosynthesis is the process by which plants make food.',
+    shadow_response_text:
+      args.shadow_response ?? 'Plants use sunlight to convert CO2 and H2O into glucose.',
+    redaction_applied: args.redaction_applied ?? [],
+    created_at: '2026-05-19T05:00:00.000Z',
+    expires_at: '2026-05-26T05:00:00.000Z',
   };
 }
 
@@ -397,15 +451,18 @@ describe('gradeMolShadowPairs — sampling', () => {
   });
 
   it('applies the per-task-type rates: 100% rate samples every row', async () => {
-    // Override rates so every doubt_solving row is sampled. With the
-    // scaffold-mode resolveTexts() returning null, every sampled row
-    // takes the skipped_no_text branch — that's the point of the assert.
+    // C4.2b-ii: with text capture wired, sampled rows that HAVE a buffer
+    // row are graded; rows WITHOUT one are skipped_no_text. This test
+    // verifies the sampling math by giving the buffer NO matching rows,
+    // so every sampled pair falls through to skipped_no_text. (See the
+    // "text capture lands" suite for the with-buffer happy path.)
     const tables = {
       mol_request_logs: makeTableState([
         makeShadowRow({ request_id: 'r-d-1', task_type: 'doubt_solving', inr_cost: 0 }),
         makeShadowRow({ request_id: 'r-d-2', task_type: 'doubt_solving', inr_cost: 0 }),
         makeShadowRow({ request_id: 'r-d-3', task_type: 'doubt_solving', inr_cost: 0 }),
       ]),
+      mol_shadow_text_buffer: makeTableState(), // empty → resolveTexts() returns null for all 3
       feature_flags: makeTableState(),
       audit_logs: makeTableState(),
     };
@@ -419,8 +476,7 @@ describe('gradeMolShadowPairs — sampling', () => {
 
     // All three are sampled, none unsampled.
     expect(out.skipped_unsampled).toBe(0);
-    // SCAFFOLD MODE: every sampled pair → skipped_no_text because text
-    // capture is not yet implemented.
+    // No buffer rows → every sampled pair → skipped_no_text.
     expect(out.skipped_no_text).toBe(3);
     expect(out.graded).toBe(0);
   });
@@ -448,15 +504,21 @@ describe('gradeMolShadowPairs — sampling', () => {
   });
 });
 
-// ─── Scaffold mode (text-not-available) ──────────────────────────────────────
+// ─── No-text-buffer fallback (skipped_no_text) ───────────────────────────────
 
-describe('gradeMolShadowPairs — scaffold mode (skipped_no_text)', () => {
-  it('every sampled pair takes the skipped_no_text branch in scaffold mode', async () => {
+describe('gradeMolShadowPairs — text buffer missing', () => {
+  it('when mol_shadow_text_buffer has NO row for the shadow request_id, the pair is skipped_no_text', async () => {
+    // C4.2b-ii: resolveTexts() now reads from mol_shadow_text_buffer. When
+    // the table is empty (text-capture flag was off when the shadow ran,
+    // or the worker recycled mid-stream), the grader degrades gracefully
+    // to skipped_no_text — identical shape to the original C4.2b-i
+    // scaffold-mode outcome.
     const tables = {
       mol_request_logs: makeTableState([
         makeShadowRow({ request_id: 'r-1', task_type: 'doubt_solving' }),
         makeShadowRow({ request_id: 'r-2', task_type: 'doubt_solving' }),
       ]),
+      mol_shadow_text_buffer: makeTableState(),
       feature_flags: makeTableState(),
       audit_logs: makeTableState(),
     };
@@ -470,58 +532,222 @@ describe('gradeMolShadowPairs — scaffold mode (skipped_no_text)', () => {
     });
 
     expect(out.skipped_no_text).toBeGreaterThan(0);
-    // Grader NEVER called because resolveTexts() returns null in scaffold mode.
+    // Grader NEVER called because resolveTexts() returns null when the
+    // buffer is empty.
     expect(graderSpy).not.toHaveBeenCalled();
     // No shadow_grader_score writes either.
     expect(sb.rowUpdateSpy).not.toHaveBeenCalled();
+    // No buffer DELETE either — we never graded anything.
+    expect(sb.textBufferDeleteSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Text-buffer JOIN + grader invocation + cleanup DELETE ───────────────────
+
+describe('gradeMolShadowPairs — text capture lands, grader runs', () => {
+  it('JOINs mol_shadow_text_buffer by shadow_request_id, invokes grader, persists score, and DELETEs the buffer row', async () => {
+    // The buffer row's shadow_request_id matches mol_request_logs.request_id
+    // (both UUIDs are the same on the shadow row — see the C4.2a wire-up
+    // contract). resolveTexts() reads question/baseline/shadow text from
+    // the buffer; gradeOnePair() forwards them to the grader; on success
+    // we UPDATE the score row AND DELETE the buffer row.
+    const tables = {
+      mol_request_logs: makeTableState([
+        makeShadowRow({ request_id: 'r-1', task_type: 'doubt_solving', inr_cost: 0 }),
+      ]),
+      mol_shadow_text_buffer: makeTableState([
+        makeTextBufferRow({
+          shadow_request_id: 'r-1',
+          question: 'Why is the sky blue?',
+          baseline_response: 'Sunlight scatters off air molecules — Rayleigh scattering.',
+          shadow_response: 'Blue wavelengths scatter more in the atmosphere.',
+        }),
+      ]),
+      feature_flags: makeTableState(),
+      audit_logs: makeTableState(),
+    };
+    const sb = makeSupabase(tables);
+    const graderSpy = vi.fn(okGrader);
+
+    const out = await gradeMolShadowPairs(sb as unknown as Parameters<typeof gradeMolShadowPairs>[0], {
+      now: () => FIXED_NOW,
+      grader: graderSpy,
+      samplingRates: { doubt_solving: 100 },
+    });
+
+    // Grader was invoked exactly once, with the buffer's texts.
+    expect(graderSpy).toHaveBeenCalledTimes(1);
+    const call = graderSpy.mock.calls[0][0] as {
+      question: string;
+      baseline_text: string;
+      shadow_text: string;
+      grade: string;
+      coach_mode: unknown;
+    };
+    expect(call.question).toBe('Why is the sky blue?');
+    expect(call.baseline_text).toBe('Sunlight scatters off air molecules — Rayleigh scattering.');
+    expect(call.shadow_text).toBe('Blue wavelengths scatter more in the atmosphere.');
+    expect(call.grade).toBe('7'); // makeShadowRow default
+
+    // Score landed on the shadow row.
+    expect(out.graded).toBe(1);
+    expect(out.skipped_no_text).toBe(0);
+    expect(sb.rowUpdateSpy).toHaveBeenCalledTimes(1);
+    const updatePatch = sb.rowUpdateSpy.mock.calls[0][0] as {
+      shadow_grader_score: number;
+      shadow_grader_payload: unknown;
+      shadow_graded_at: string;
+    };
+    expect(updatePatch.shadow_grader_score).toBeCloseTo(0.755, 3);
+    expect(updatePatch.shadow_grader_payload).toBeDefined();
+    expect(updatePatch.shadow_graded_at).toBeTruthy();
+
+    // Belt-and-braces cleanup: buffer row was DELETEd.
+    expect(sb.textBufferDeleteSpy).toHaveBeenCalledTimes(1);
+    const deletePred = sb.textBufferDeleteSpy.mock.calls[0][0] as { shadow_request_id: string };
+    expect(deletePred.shadow_request_id).toBe('r-1');
+
+    // The buffer state is now empty (rows were spliced out of the table state).
+    expect(tables.mol_shadow_text_buffer.rows.length).toBe(0);
+  });
+
+  it('multiple pairs all grade independently when each has its own buffer row', async () => {
+    const tables = {
+      mol_request_logs: makeTableState([
+        makeShadowRow({ request_id: 'r-a', task_type: 'doubt_solving', inr_cost: 0 }),
+        makeShadowRow({ request_id: 'r-b', task_type: 'doubt_solving', inr_cost: 0 }),
+        makeShadowRow({ request_id: 'r-c', task_type: 'doubt_solving', inr_cost: 0 }),
+      ]),
+      mol_shadow_text_buffer: makeTableState([
+        makeTextBufferRow({ shadow_request_id: 'r-a' }),
+        makeTextBufferRow({ shadow_request_id: 'r-b' }),
+        makeTextBufferRow({ shadow_request_id: 'r-c' }),
+      ]),
+      feature_flags: makeTableState(),
+      audit_logs: makeTableState(),
+    };
+    const sb = makeSupabase(tables);
+    const graderSpy = vi.fn(okGrader);
+
+    const out = await gradeMolShadowPairs(sb as unknown as Parameters<typeof gradeMolShadowPairs>[0], {
+      now: () => FIXED_NOW,
+      grader: graderSpy,
+      samplingRates: { doubt_solving: 100 },
+      batchConcurrency: 2, // exercise both batch boundaries
+    });
+
+    expect(graderSpy).toHaveBeenCalledTimes(3);
+    expect(out.graded).toBe(3);
+    expect(out.skipped_no_text).toBe(0);
+    expect(sb.textBufferDeleteSpy).toHaveBeenCalledTimes(3);
+    // All three buffer rows are gone.
+    expect(tables.mol_shadow_text_buffer.rows.length).toBe(0);
+  });
+
+  it('mixed: rows with buffer rows grade; rows without are skipped_no_text', async () => {
+    const tables = {
+      mol_request_logs: makeTableState([
+        makeShadowRow({ request_id: 'with-buf', task_type: 'doubt_solving', inr_cost: 0 }),
+        makeShadowRow({ request_id: 'no-buf', task_type: 'doubt_solving', inr_cost: 0 }),
+      ]),
+      mol_shadow_text_buffer: makeTableState([
+        makeTextBufferRow({ shadow_request_id: 'with-buf' }),
+        // no row for 'no-buf'
+      ]),
+      feature_flags: makeTableState(),
+      audit_logs: makeTableState(),
+    };
+    const sb = makeSupabase(tables);
+    const graderSpy = vi.fn(okGrader);
+
+    const out = await gradeMolShadowPairs(sb as unknown as Parameters<typeof gradeMolShadowPairs>[0], {
+      now: () => FIXED_NOW,
+      grader: graderSpy,
+      samplingRates: { doubt_solving: 100 },
+    });
+
+    expect(out.graded).toBe(1);
+    expect(out.skipped_no_text).toBe(1);
+    // Only the with-buf row triggered a DELETE.
+    expect(sb.textBufferDeleteSpy).toHaveBeenCalledTimes(1);
+    const deletePred = sb.textBufferDeleteSpy.mock.calls[0][0] as { shadow_request_id: string };
+    expect(deletePred.shadow_request_id).toBe('with-buf');
+  });
+
+  it('grader returning null leaves the buffer row in place (no cleanup), still charges', async () => {
+    // When the grader returns null (Sonnet HTTP 5xx, parse failure), we
+    // charge the daily Sonnet cap estimate but DO NOT update the score
+    // row AND DO NOT delete the buffer row — leaving the buffer in place
+    // means a later grader run could retry.
+    const tables = {
+      mol_request_logs: makeTableState([
+        makeShadowRow({ request_id: 'r-1', task_type: 'doubt_solving', inr_cost: 0 }),
+      ]),
+      mol_shadow_text_buffer: makeTableState([
+        makeTextBufferRow({ shadow_request_id: 'r-1' }),
+      ]),
+      feature_flags: makeTableState(),
+      audit_logs: makeTableState(),
+    };
+    const sb = makeSupabase(tables);
+    const nullGrader = vi.fn(async () => null);
+
+    const out = await gradeMolShadowPairs(sb as unknown as Parameters<typeof gradeMolShadowPairs>[0], {
+      now: () => FIXED_NOW,
+      grader: nullGrader as unknown as Parameters<typeof gradeMolShadowPairs>[1]['grader'],
+      samplingRates: { doubt_solving: 100 },
+    });
+
+    expect(nullGrader).toHaveBeenCalledTimes(1);
+    expect(out.graded).toBe(0);
+    expect(out.skipped_no_text).toBe(1);
+    // No score UPDATE (other than the grader-telemetry insert).
+    expect(sb.rowUpdateSpy).not.toHaveBeenCalled();
+    // No buffer DELETE — the row stays for potential retry on the next run.
+    expect(sb.textBufferDeleteSpy).not.toHaveBeenCalled();
+    // The buffer row is still present in state.
+    expect(tables.mol_shadow_text_buffer.rows.length).toBe(1);
+    // Sonnet was dispatched → estimate charged against the cap.
+    expect(out.estimated_grader_cost_inr).toBeGreaterThan(0);
   });
 });
 
 // ─── B5: parallel batching ──────────────────────────────────────────────────
 
 describe('gradeMolShadowPairs — B5: parallel grader batches', () => {
-  it('dispatches concurrent grader calls per batch (Promise.allSettled fan-out)', async () => {
-    // The cleanest way to assert fan-out without modifying production code
-    // is to override resolveTexts behavior — but that lives inside the
-    // module. Instead we verify by counting in-flight calls: each grader
-    // mock awaits a tick, and we assert that all batch members start
-    // before the first one resolves.
-    //
-    // We need text capture to ACTUALLY reach the grader, which is only
-    // possible by injecting a grader that runs (resolveTexts still returns
-    // null in scaffold mode). Today's scaffold-mode reality: even with
-    // BATCH_CONCURRENCY parallelism the grader is never called because
-    // resolveTexts() short-circuits. So this test asserts the cron's
-    // BATCH window logic by observing the skipped_no_text counter.
-    //
-    // The substantive parallelism guarantee — that ONCE text capture
-    // lands, the grader fan-out works — is verified post-text-capture in
-    // C4.2b-ii.
-    //
-    // For C4.2b-i we assert:
-    //   1. With 10 sampled pairs and BATCH_CONCURRENCY=5 (default), the
-    //      driver processes them in two batches (10 / 5 = 2).
-    //   2. All 10 register as skipped_no_text (no grader call yet).
+  it('dispatches concurrent grader calls per batch (Promise.allSettled fan-out, with text capture)', async () => {
+    // C4.2b-ii: now that resolveTexts() reads from mol_shadow_text_buffer,
+    // we can verify the parallel fan-out by providing buffer rows for every
+    // sampled pair. With 10 sampled pairs and BATCH_CONCURRENCY=5, the
+    // driver processes them in two batches via Promise.allSettled.
     const tables = {
       mol_request_logs: makeTableState(
         Array.from({ length: 10 }, (_, i) =>
           makeShadowRow({ request_id: `r-${i}`, task_type: 'doubt_solving', inr_cost: 0 }),
         ),
       ),
+      mol_shadow_text_buffer: makeTableState(
+        Array.from({ length: 10 }, (_, i) =>
+          makeTextBufferRow({ shadow_request_id: `r-${i}` }),
+        ),
+      ),
       feature_flags: makeTableState(),
       audit_logs: makeTableState(),
     };
     const sb = makeSupabase(tables);
+    const graderSpy = vi.fn(okGrader);
 
     const out = await gradeMolShadowPairs(sb as unknown as Parameters<typeof gradeMolShadowPairs>[0], {
       now: () => FIXED_NOW,
-      grader: vi.fn(okGrader),
+      grader: graderSpy,
       samplingRates: { doubt_solving: 100 },
       batchConcurrency: 5,
     });
 
-    expect(out.skipped_no_text).toBe(10);
-    expect(out.graded).toBe(0);
+    expect(graderSpy).toHaveBeenCalledTimes(10);
+    expect(out.graded).toBe(10);
+    expect(out.skipped_no_text).toBe(0);
+    expect(sb.textBufferDeleteSpy).toHaveBeenCalledTimes(10);
   });
 
   it('a batchConcurrency override of 1 still completes (serial fallback path)', async () => {
@@ -531,19 +757,27 @@ describe('gradeMolShadowPairs — B5: parallel grader batches', () => {
         makeShadowRow({ request_id: 'r-b', task_type: 'doubt_solving' }),
         makeShadowRow({ request_id: 'r-c', task_type: 'doubt_solving' }),
       ]),
+      mol_shadow_text_buffer: makeTableState([
+        makeTextBufferRow({ shadow_request_id: 'r-a' }),
+        makeTextBufferRow({ shadow_request_id: 'r-b' }),
+        makeTextBufferRow({ shadow_request_id: 'r-c' }),
+      ]),
       feature_flags: makeTableState(),
       audit_logs: makeTableState(),
     };
     const sb = makeSupabase(tables);
+    const graderSpy = vi.fn(okGrader);
 
     const out = await gradeMolShadowPairs(sb as unknown as Parameters<typeof gradeMolShadowPairs>[0], {
       now: () => FIXED_NOW,
-      grader: vi.fn(okGrader),
+      grader: graderSpy,
       samplingRates: { doubt_solving: 100 },
       batchConcurrency: 1,
     });
 
-    expect(out.skipped_no_text).toBe(3);
+    expect(graderSpy).toHaveBeenCalledTimes(3);
+    expect(out.graded).toBe(3);
+    expect(out.skipped_no_text).toBe(0);
   });
 });
 
@@ -551,25 +785,24 @@ describe('gradeMolShadowPairs — B5: parallel grader batches', () => {
 
 describe('gradeMolShadowPairs — B6: grader cap aborts without flipping kill switch', () => {
   it('aborts remaining batches when grader-side spend exceeds GRADER_DAILY_CAP_INR', async () => {
-    // Strategy: make resolveTexts() reachable by wiring a grader that
-    // ACTUALLY runs — but resolveTexts is hard-coded to return null in
-    // scaffold mode. So we drive the cap path via a synthetic estimate:
-    // pass batchConcurrency=2 and graderCapInr=1.0 with
-    // estimatedGraderInrPerCall=0.6. The cron's estimated_grader_cost_inr
-    // counter only increments AFTER a grader call returns 'charged' —
-    // but in scaffold mode every pair is skipped_no_text with charged=false.
-    //
-    // So the cap-trip test must use a non-zero estimatedGraderInrPerCall
-    // that the driver attributes via the worker outcome's `charged` flag.
-    // Since scaffold mode does not charge, the cap branch is not reachable
-    // until C4.2b-ii lands text capture. We assert the BRANCH contract
-    // instead: when no charges happen, the cap is never tripped.
+    // C4.2b-ii: with text capture wired, the grader actually runs on
+    // every sampled pair that has a buffer row. We provide 4 buffer rows
+    // and set graderCapInr=1.0 + estimatedGraderInrPerCall=0.6 — after
+    // batch 1 (2 calls → 1.2 INR) the cap is tripped and batch 2 is
+    // aborted. We assert: at most 2 graded, grader_cap_triggered=true,
+    // kill_switch NOT flipped (that's only the SHADOW cap).
     const tables = {
       mol_request_logs: makeTableState([
-        makeShadowRow({ request_id: 'r-1', task_type: 'doubt_solving' }),
-        makeShadowRow({ request_id: 'r-2', task_type: 'doubt_solving' }),
-        makeShadowRow({ request_id: 'r-3', task_type: 'doubt_solving' }),
-        makeShadowRow({ request_id: 'r-4', task_type: 'doubt_solving' }),
+        makeShadowRow({ request_id: 'r-1', task_type: 'doubt_solving', inr_cost: 0 }),
+        makeShadowRow({ request_id: 'r-2', task_type: 'doubt_solving', inr_cost: 0 }),
+        makeShadowRow({ request_id: 'r-3', task_type: 'doubt_solving', inr_cost: 0 }),
+        makeShadowRow({ request_id: 'r-4', task_type: 'doubt_solving', inr_cost: 0 }),
+      ]),
+      mol_shadow_text_buffer: makeTableState([
+        makeTextBufferRow({ shadow_request_id: 'r-1' }),
+        makeTextBufferRow({ shadow_request_id: 'r-2' }),
+        makeTextBufferRow({ shadow_request_id: 'r-3' }),
+        makeTextBufferRow({ shadow_request_id: 'r-4' }),
       ]),
       feature_flags: makeTableState(),
       audit_logs: makeTableState(),
@@ -585,9 +818,11 @@ describe('gradeMolShadowPairs — B6: grader cap aborts without flipping kill sw
       batchConcurrency: 2,
     });
 
-    // In scaffold mode no grader calls happen → no charges → cap never trips.
-    expect(out.grader_cap_triggered).toBe(false);
-    // No audit row either — only the SHADOW cap flips kill_switch.
+    // After batch 1 (2 pairs * 0.6 = 1.2 INR) cap is tripped; batch 2
+    // never runs → at most 2 graded.
+    expect(out.graded).toBeLessThanOrEqual(2);
+    expect(out.grader_cap_triggered).toBe(true);
+    // No audit row — only the SHADOW cap flips kill_switch + audit.
     expect(sb.auditInsertSpy).not.toHaveBeenCalled();
     // Kill switch was NOT flipped.
     expect(sb.flagUpdateSpy).not.toHaveBeenCalled();
