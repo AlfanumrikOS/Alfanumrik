@@ -127,7 +127,10 @@ export function selectProviderChain(task: TaskType, opts: RouterOptions): Select
       chain: [
         { provider: 'anthropic', model: SONNET },
         { provider: 'anthropic', model: HAIKU },
-        { provider: 'openai', model: GPT_FULL },
+        // gpt-4o-mini chosen here (not GPT_FULL) for cost-effective fallback.
+        // GPT_FULL would make a doubt_solving cutover ~2× more expensive than
+        // the Anthropic baseline. See PR audit on 2026-05-19.
+        { provider: 'openai', model: GPT_MINI },
       ],
     }]
   }

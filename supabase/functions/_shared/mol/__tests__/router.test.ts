@@ -28,6 +28,18 @@ describe('selectProviderChain', () => {
     expect(chain.passes.length).toBe(1)
   })
 
+  it('uses gpt-4o-mini (NOT gpt-4o full) as the OpenAI fallback for doubt_solving non-hybrid', () => {
+    // Regression guard (2026-05-19 PR audit): a prior change had GPT_FULL
+    // here, which made the doubt_solving cutover ~2× more expensive than
+    // the Anthropic baseline. Cost-effective fallback requires GPT_MINI.
+    const chain = selectProviderChain('doubt_solving', { hybrid_enabled: false, openai_default: false, weights: {} })
+    const openaiTarget = chain.passes[0].chain.find((t) => t.provider === 'openai')
+    expect(openaiTarget).toBeDefined()
+    expect(openaiTarget?.model).toBe('gpt-4o-mini')
+    // Defensive: explicitly assert the full model is NOT in the chain.
+    expect(chain.passes[0].chain.some((t) => t.provider === 'openai' && t.model === 'gpt-4o')).toBe(false)
+  })
+
   it('forces openai primary when openai_default=true and task is step_by_step', () => {
     const chain = selectProviderChain('step_by_step', { hybrid_enabled: true, openai_default: true, weights: {} })
     expect(chain.passes[0].chain[0].provider).toBe('openai')

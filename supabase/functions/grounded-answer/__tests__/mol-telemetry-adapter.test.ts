@@ -24,7 +24,11 @@
 
 // @ts-ignore — stub Deno before module import; telemetry.ts and the
 // adapter touch globalThis.Deno when loaded.
-globalThis.Deno = { env: { get: (_k: string) => '' } };
+//
+// Return undefined (not '') so the `?? '83'` default in telemetry.ts's
+// usdToInrRate() kicks in. Returning '' would short-circuit the default
+// and `Number('')` = 0, zeroing every inr_cost assertion.
+globalThis.Deno = { env: { get: (_k: string) => undefined } };
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -32,10 +36,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // module-level spy reference is stable.
 const recordMolRequestSpy = vi.fn();
 
-vi.mock('../../_shared/mol/telemetry.ts', () => ({
-  recordMolRequest: (...args: unknown[]) =>
-    (recordMolRequestSpy as unknown as (...a: unknown[]) => unknown)(...args),
-}));
+// PR audit 2026-05-19: the adapter now imports calcCost + toInr alongside
+// recordMolRequest. We use REAL calcCost/toInr (they're pure functions with
+// no side effects — see _shared/mol/telemetry.ts) so the cost-payload
+// assertions exercise the real PRICING table.
+//
+// `vi.importActual` is used inside the factory because the same module
+// also constructs a real Supabase client when imported normally — by
+// running the factory through importActual we still get the pure functions
+// without the Deno-env side effect (Deno.env is stubbed at the top of this
+// file). The factory exports recordMolRequest as a spy and re-exports the
+// pure helpers verbatim.
+vi.mock('../../_shared/mol/telemetry.ts', async () => {
+  const actual = await vi.importActual<typeof import('../../_shared/mol/telemetry.ts')>(
+    '../../_shared/mol/telemetry.ts',
+  );
+  return {
+    recordMolRequest: (...args: unknown[]) =>
+      (recordMolRequestSpy as unknown as (...a: unknown[]) => unknown)(...args),
+    calcCost: actual.calcCost,
+    toInr: actual.toInr,
+  };
+});
 
 // Imports MUST come after vi.mock so the mocked binding is in place.
 import {
@@ -349,6 +371,79 @@ describe('shadowLogClaudeCall — LogPayload contract', () => {
     expect(payload.model).toBe('claude-haiku-4-5-20251001');
     expect(payload.task_type).toBe('doubt_solving');
     expect(payload.surface).toBe('foxy');
+  });
+
+  // ── PR audit 2026-05-19: baseline rows now carry computed cost ──
+  // Before this fix the adapter hardcoded usd_cost=0 / inr_cost=0 with a
+  // "backfill via SQL later" comment. Shadow data revealed 30 days of
+  // zero-cost baseline rows would make every C5 cutover dashboard look
+  // wrong. Cost is now computed at write time via calcCost() / toInr().
+  it('computes usd_cost and inr_cost for a known anthropic model (claude-haiku)', async () => {
+    // claude-haiku-4-5-20251001 pricing: input 1.00/1M, output 5.00/1M.
+    // tokens: 100_000 prompt + 50_000 completion
+    //   = (100_000 / 1_000_000) * 1.00 + (50_000 / 1_000_000) * 5.00
+    //   = 0.10 + 0.25 = 0.35 USD
+    // INR @ default rate 83 → 29.05; toInr() rounds to 4dp = 29.0500
+    await shadowLogClaudeCall({
+      traceId: 'trace-cost',
+      studentContext: studentCtx,
+      caller: 'foxy',
+      mode: 'soft',
+      isGroundingCheck: false,
+      latencyMs: 800,
+      claudeResponse: okClaude({ inputTokens: 100_000, outputTokens: 50_000 }),
+    });
+
+    const payload = recordMolRequestSpy.mock.calls[0][0];
+    expect(payload.usd_cost).toBeCloseTo(0.35, 4);
+    expect(payload.inr_cost).toBeCloseTo(29.05, 2);
+  });
+
+  it('computes cost via PRICING table for claude-sonnet too', async () => {
+    // claude-sonnet-4-6-20251022 pricing: input 3.00/1M, output 15.00/1M.
+    // tokens: 1_000_000 prompt + 1_000_000 completion
+    //   = 1.00 * 3.00 + 1.00 * 15.00 = 18.00 USD
+    // INR @ default rate 83 = 1494.00
+    await shadowLogClaudeCall({
+      traceId: 'trace-cost-sonnet',
+      studentContext: studentCtx,
+      caller: 'foxy',
+      mode: 'soft',
+      isGroundingCheck: false,
+      latencyMs: 1234,
+      claudeResponse: okClaude({
+        model: 'claude-sonnet-4-6-20251022',
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+      }),
+    });
+
+    const payload = recordMolRequestSpy.mock.calls[0][0];
+    expect(payload.usd_cost).toBeCloseTo(18.00, 4);
+    expect(payload.inr_cost).toBeCloseTo(1494.0, 2);
+  });
+
+  it('falls back to usd_cost=0 / inr_cost=0 for unknown model (no PRICING row)', async () => {
+    // claude-imaginary-model is not in PRICING → calcCost returns 0 → inr 0.
+    // This preserves the fail-safe: a missing PRICING row never breaks
+    // the request path; cost just shows up as 0 until SQL backfill runs.
+    await shadowLogClaudeCall({
+      traceId: 'trace-unknown-model',
+      studentContext: studentCtx,
+      caller: 'foxy',
+      mode: 'soft',
+      isGroundingCheck: false,
+      latencyMs: 700,
+      claudeResponse: okClaude({
+        model: 'claude-imaginary-future-model',
+        inputTokens: 1_000,
+        outputTokens: 500,
+      }),
+    });
+
+    const payload = recordMolRequestSpy.mock.calls[0][0];
+    expect(payload.usd_cost).toBe(0);
+    expect(payload.inr_cost).toBe(0);
   });
 
   it('isGroundingCheck=true emits task_type=grounding_check even for caller=foxy', async () => {
