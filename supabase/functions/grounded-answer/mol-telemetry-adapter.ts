@@ -25,7 +25,12 @@
 // shadow log on top of an already-routed call or every request will
 // double-count in mol_request_logs.
 
-import { recordMolRequest, type LogPayload } from '../_shared/mol/telemetry.ts';
+import {
+  recordMolRequest,
+  calcCost,
+  toInr,
+  type LogPayload,
+} from '../_shared/mol/telemetry.ts';
 import type { TaskType, StudentContext } from '../_shared/mol/types.ts';
 import { isFlagEnabled } from '../_shared/mol/feature-flag.ts';
 import type { ClaudeResponse } from './claude.ts';
@@ -210,6 +215,26 @@ export async function shadowLogClaudeCall(args: {
     // column reads as "no fallback fired" instead of an empty string.
     const failureChain = failureChainArr.length > 0 ? failureChainArr.join('|') : null;
 
+    const tokens = {
+      prompt: typeof claude.inputTokens === 'number' ? claude.inputTokens : 0,
+      completion: typeof claude.outputTokens === 'number' ? claude.outputTokens : 0,
+    };
+    // Cost is computed at write time via calcCost() / toInr(), using the
+    // PRICING table in _shared/mol/telemetry.ts. The PRICING table also
+    // does alias-prefix matching for date-pinned model strings (e.g.
+    // OpenAI's 'gpt-4o-2024-08-06' → 'gpt-4o' pricing). Unknown models
+    // yield 0; that's the same fail-safe as before the PR audit fix —
+    // we never want a missing PRICING row to break the request path.
+    //
+    // PR audit 2026-05-19: this used to hardcode 0/0 with a "cost can be
+    // backfilled via SQL" comment. The shadow data revealed that without
+    // baseline cost rows the C5 cutover decision is impossible without
+    // a SQL backfill step — and 30 days of zero-cost baseline rows make
+    // every dashboard look wrong in the meantime. Computing here at
+    // write time keeps mol_request_logs immediately useful.
+    const usdCost = calcCost(PROVIDER_LITERAL, claude.model, tokens);
+    const inrCost = toInr(usdCost);
+
     const payload: LogPayload = {
       request_id: args.traceId,
       student_id: args.studentContext?.student_id ?? null,
@@ -226,18 +251,9 @@ export async function shadowLogClaudeCall(args: {
       fallback_count: fallbackCount,
       failure_chain: failureChain,
       latency_ms: args.latencyMs,
-      tokens: {
-        prompt: typeof claude.inputTokens === 'number' ? claude.inputTokens : 0,
-        completion: typeof claude.outputTokens === 'number' ? claude.outputTokens : 0,
-      },
-      // Cost lives in the MOL telemetry helper — recordMolRequest only
-      // writes what LogPayload carries. C3 leaves cost computation to the
-      // pricing table in _shared/mol/telemetry.ts via calcCost() if a
-      // future call site wants to populate it. For shadow logs we ship
-      // 0 here; cost can be backfilled via SQL from prompt_tokens +
-      // completion_tokens + model_pricing seed.
-      usd_cost: 0,
-      inr_cost: 0,
+      tokens,
+      usd_cost: usdCost,
+      inr_cost: inrCost,
       grade: args.studentContext?.grade ?? null,
       language: args.studentContext?.language ?? null,
       exam_goal: args.studentContext?.exam_goal ?? null,

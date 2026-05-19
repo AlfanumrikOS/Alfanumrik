@@ -18,8 +18,15 @@ function usdToInrRate(): number {
 }
 
 export function calcCost(provider: string, model: string, t: TokenUsage): number {
-  const key = `${provider}/${model}`
-  const p = PRICING[key]
+  const exactKey = `${provider}/${model}`
+  let p = PRICING[exactKey]
+  if (!p) {
+    // OpenAI/Anthropic return date-pinned model strings (e.g. gpt-4o-2024-08-06).
+    // Strip the trailing -YYYY-MM-DD and retry with the base alias so we don't
+    // need to update PRICING every time a new dated version drops.
+    const baseModel = model.replace(/-\d{4}-\d{2}-\d{2}$/, '')
+    p = PRICING[`${provider}/${baseModel}`]
+  }
   if (!p) return 0
   return (t.prompt / 1_000_000) * p.input + (t.completion / 1_000_000) * p.output
 }
