@@ -70,7 +70,23 @@ const nextConfig = {
     ],
   },
   async redirects() {
-    return [];
+    return [
+      // Study Menu v2 — old routes redirect to their new homes.
+      // 301 permanent; preserves bookmarks. After Phase 6.4 (Day 12) deletes
+      // the old page files, these redirects are the only thing serving the
+      // old URLs. Spec: docs/superpowers/specs/2026-05-20-study-section-consolidation-design.md
+      //
+      // Note (2026-05-20): the menu flag ff_study_menu_v2 starts at default
+      // OFF. Until ops flips it ON in super-admin, the legacy sidebar still
+      // shows the old "Review" group — those links 301 to the new pages.
+      // That's a transient UX state during soak; once the flag is ON,
+      // sidebar and URLs are coherent. The new /refresh and /exam-prep
+      // pages stand alone (no flag required to render), so the redirected
+      // user lands on a working page either way.
+      { source: '/review',     destination: '/refresh?tab=flashcards', permanent: true },
+      { source: '/revise',     destination: '/refresh?tab=chapters',   permanent: true },
+      { source: '/study-plan', destination: '/exam-prep',              permanent: true },
+    ];
   },
   // PostHog reverse-proxy. /ingest/static/* → PostHog static assets (JS SDK,
   // session-recording bundle); /ingest/* → ingestion endpoints (capture,
