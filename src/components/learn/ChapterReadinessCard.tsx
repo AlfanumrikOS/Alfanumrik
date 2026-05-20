@@ -27,10 +27,12 @@
 import { memo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { useFeatureFlags } from '@/lib/swr';
 import {
   useChapterReadiness,
   type ChapterReadinessLevel,
 } from '@/lib/useChapterReadiness';
+import { reviewRoute } from '@/lib/routes/study-menu-routes';
 
 export interface ChapterReadinessCardProps {
   subjectCode: string;
@@ -111,6 +113,9 @@ function ChapterReadinessCardInner({
   const router = useRouter();
   const { isHi } = useAuth();
   const { readiness, isLoading } = useChapterReadiness(subjectCode, chapterNumber);
+  // Phase 5 Study-Menu v2 — route /review to /refresh when flag is on.
+  const { data: flags } = useFeatureFlags();
+  const flagsRecord = (flags ?? {}) as Record<string, boolean>;
 
   // Hide while loading or if the API returned nothing usable. The chapter
   // page already renders a progress bar + concept indicators; adding a
@@ -135,7 +140,7 @@ function ChapterReadinessCardInner({
         );
         return;
       case 'spaced_review':
-        router.push('/review');
+        router.push(reviewRoute(flagsRecord));
         return;
       case 'take_quiz':
         router.push(

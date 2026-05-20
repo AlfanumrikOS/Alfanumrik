@@ -23,6 +23,7 @@ import DailyChallengeCard from '@/components/challenge/DailyChallengeCard';
 import TodaysPlan from '@/components/dashboard/TodaysPlan';
 import type { CurriculumTopic, StudentSnapshot } from '@/lib/types';
 import { trackDashboardCta } from '@/lib/posthog/dashboard-cta';
+import { reviewRoute } from '@/lib/routes/study-menu-routes';
 
 interface KnowledgeGap {
   id: string;
@@ -66,6 +67,8 @@ interface TodaysFocusSectionProps {
   // Today's plan inputs
   knowledgeGaps: KnowledgeGap[];
   nextTopics: CurriculumTopic[];
+  // Phase 5 Study-Menu v2 — flag record used to route /review CTAs.
+  flags?: Record<string, boolean>;
 }
 
 export default function TodaysFocusSection({
@@ -92,8 +95,11 @@ export default function TodaysFocusSection({
   onDismissNudge,
   knowledgeGaps,
   nextTopics,
+  flags,
 }: TodaysFocusSectionProps) {
   const cleanGrade = (studentGrade || '9').replace('Grade ', '').trim();
+  const flagsRecord = (flags ?? {}) as Record<string, boolean>;
+  const reviewHref = reviewRoute(flagsRecord);
   const quizzesTaken = snapshot?.quizzes_taken ?? 0;
   const showWelcome = totalXp === 0 && profilesLength <= 1;
   const showGettingStarted = quizzesTaken < 5 && quizzesTaken > 0;
@@ -134,9 +140,9 @@ export default function TodaysFocusSection({
             trackDashboardCta({
               section: 'todays_focus',
               action: 'due_reviews',
-              destination: '/review',
+              destination: reviewHref,
             });
-            router.push('/review');
+            router.push(reviewHref);
           }}
           className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all"
           style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.2)' }}

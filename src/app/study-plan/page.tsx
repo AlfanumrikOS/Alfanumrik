@@ -4,12 +4,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getStudyPlan, generateStudyPlan, supabase } from '@/lib/supabase';
+import { useFeatureFlags } from '@/lib/swr';
 import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy, BottomNav } from '@/components/ui';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { BLOOM_CONFIG, type BloomLevel } from '@/lib/cognitive-engine';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import TodayLoopCard from '@/components/study-plan/TodayLoopCard';
 import { toast } from '@/components/ui/toast';
+import { reviewRoute } from '@/lib/routes/study-menu-routes';
 
 const TASK_BLOOM_MAP: Record<string, BloomLevel> = {
   learn: 'understand', quiz: 'apply', review: 'remember', revision: 'remember',
@@ -81,6 +83,9 @@ export default function StudyPlanPage() {
   const { student, isLoggedIn, isLoading, isHi, refreshSnapshot } = useAuth();
   const { unlocked: allowedSubjects } = useAllowedSubjects();
   const router = useRouter();
+  // Phase 5 Study-Menu v2 — route /review to /refresh when flag is on.
+  const { data: flags } = useFeatureFlags();
+  const flagsRecord = (flags ?? {}) as Record<string, boolean>;
 
   const [plan, setPlan] = useState<Plan | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -580,7 +585,7 @@ export default function StudyPlanPage() {
                                     )}
                                     {(task.task_type === 'review' || task.task_type === 'revision') && (
                                       <button
-                                        onClick={() => { markTask(task.id, 'in_progress'); router.push('/review'); }}
+                                        onClick={() => { markTask(task.id, 'in_progress'); router.push(reviewRoute(flagsRecord)); }}
                                         className="text-xs px-3 py-1.5 rounded-lg font-semibold"
                                         style={{ background: 'rgba(8,145,178,0.1)', border: '1px solid rgba(8,145,178,0.2)', color: '#0891B2' }}
                                       >

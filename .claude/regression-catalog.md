@@ -657,3 +657,92 @@ the canonical `token` name. The new shared module
 `src/lib/alfabot/sse-events.ts` is the single source of truth that the
 follow-up PR will import in all three places. Catalogue this here so
 the orchestrator knows there's a known deferred contract bug.
+
+## Study Menu v2 — /refresh consolidation + Build Your Own Deck (2026-05-20) — REG-69
+
+Source: Study Section Consolidation
+(`docs/superpowers/specs/2026-05-20-study-section-consolidation-design.md`,
+`docs/superpowers/plans/2026-05-20-study-section-consolidation-plan.md`).
+The 6-phase rollout merges the legacy `/review`, `/revise`, and exam-
+prep surfaces into a single `/refresh` page with four sections
+(A: Quick Recall, B: Chapter Refresh, C: Retention Tests, D: Build
+Your Own Deck). A new context-aware `/exam-prep` route replaces the
+old `/study-plan` page. The sidebar's `SIDEBAR_SECTIONS_V2` is gated
+behind `ff_study_menu_v2` so the old menu can be restored in seconds
+if the new IA regresses engagement. SM-2 scheduling and the
+underlying spaced-repetition engine are NOT touched by this work —
+"no engine drift" is an implicit invariant of the consolidation.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-69 | `study_menu_v2_refresh_consolidation` | (1) **Sidebar IA pin**: `SIDEBAR_SECTIONS_V2` in `BottomNavComponent.tsx` exposes Library + Refresh + Exam Sprint as the three Study-group items when `ff_study_menu_v2` is ON; E2E asserts the rendered sidebar matches this contract. Reverting the constant or removing one of the three items fails the E2E spec. (2) **301 redirect contract**: `next.config.js` declares permanent (301) redirects from `/review`, `/revise`, and `/study-plan` to `/refresh` (Sections A-C) and `/exam-prep` respectively. Three E2E redirect tests pin the wire status code and target path. (3) **Section D API contract**: `POST /api/learner/cards/create` accepts `{ chapter_id, front, back }`, validates body shape, calls `supabase.from('spaced_repetition_cards').insert(...)` with `source='student_created'`, and returns the inserted card row. 6 unit tests cover happy path, 400 on missing fields, 401 on unauthenticated, 422 on invalid chapter, 500 on DB error, and idempotent retry semantics. (4) **`spaced_repetition_cards.source` enum widening**: the table's CHECK constraint accepts `'student_created'` in addition to the legacy `'system_generated'` value; widening migration is required for Section D's INSERT to succeed. Removing `'student_created'` from the enum makes the API unit test fail on the DB write. (5) **Component contract**: `BuildYourOwnDeckSection.tsx` renders the composer form, submits to `/api/learner/cards/create`, shows success/error toasts, and resets the form on success; 4 component tests cover the rendering and submission paths. | `e2e/refresh-page.spec.ts` (5 tests: shell, Section D submission, 3 redirects) + `src/__tests__/api/learner/cards/create.test.ts` (6 unit tests) + `src/__tests__/components/refresh/BuildYourOwnDeckSection.test.tsx` (4 component tests) | E |
+
+### Invariants covered by this section
+
+- P14 (review chain completeness — frontend route consolidation
+  touches sidebar + page + API + flag, exercising the
+  ops/frontend/backend/testing review chain in the same PR series)
+- P10 (bundle budget — `/refresh` aggregates 3 prior surfaces; the
+  consolidation MUST keep the new page under 220 kB so the consolidated
+  route does not blow the per-page cap that the three smaller pages
+  individually respected)
+- Implicit "no engine drift" — SM-2 scheduling, mastery computation, and
+  the spaced-repetition engine are NOT modified by this work. REG-69's
+  API unit test asserts that `spaced_repetition_cards.insert(...)`
+  writes `source='student_created'` and lets the existing scheduler
+  consume the row through the same code path system-generated cards use.
+
+### Notes on test strategy
+
+REG-69 combines three test layers in the catalog entry:
+
+1. **E2E (Playwright)** — `e2e/refresh-page.spec.ts` exercises the
+   real route under `ff_study_menu_v2=ON`: page shell renders the four
+   sections, Section D submission round-trips through the API and
+   shows the toast, and the three 301 redirects (`/review`, `/revise`,
+   `/study-plan`) resolve to the new targets. The spec follows the
+   `refresh-page` pattern from the consolidation plan; redirect
+   assertions read `response.status()` and `response.url()` against
+   the request chain.
+2. **Unit (Vitest, route handler)** —
+   `src/__tests__/api/learner/cards/create.test.ts` mocks
+   `supabase.from('spaced_repetition_cards').insert(...)` and exercises
+   the 6 wire behaviours (200 happy, 400 missing fields, 401 unauth,
+   422 invalid chapter, 500 DB error, idempotent replay). This is the
+   layer that catches the `'student_created'` enum widening regression.
+3. **Component (Vitest + RTL)** —
+   `src/__tests__/components/refresh/BuildYourOwnDeckSection.test.tsx`
+   mounts the composer with a mocked `fetch` and asserts the render
+   tree, submission payload, success toast, error toast, and form-
+   reset behaviour. Catches UI-side regressions that would not fail
+   the API unit test (e.g. payload shape drift, missing CSRF header,
+   broken form validation).
+
+If any of these test files is deleted or any of the underlying
+contracts is reverted (sidebar constant, redirect declaration, API
+shape, enum widening, component submission flow), the suite fails
+and quality MUST reject.
+
+**Spec:** `docs/superpowers/specs/2026-05-20-study-section-consolidation-design.md`
+**Plan:** `docs/superpowers/plans/2026-05-20-study-section-consolidation-plan.md`
+
+**Related commits** (Phase 1-6 on branch `Alfanumrik/funny-rhodes-a348ce`,
+range `4aab7dbe..e3c243f1`):
+- `4aab7dbe` feat(study-menu): add ff_study_menu_v2 flag + widen card source enum
+- `56f21d3e` feat(study-menu): register ff_study_menu_v2 flag constant
+- `39691d78` feat(refresh): extract Quick Recall section from /review
+- `d15ee29d` feat(refresh): extract Chapter Refresh section from /revise
+- `73b53df7` feat(refresh): extract Retention Tests section
+- `ac2f2f83` feat(refresh): build /refresh page shell with Sections A-C
+- `f575fed3` feat(refresh): add POST /api/learner/cards/create for Section D
+- `48a7bb9d` feat(refresh): add Build Your Own Deck composer (Section D)
+- `b6d5b9f1` feat(refresh): wire Build Your Own Deck section into /refresh
+- `5d40e664` feat(exam-prep): build context-aware /exam-prep from /study-plan
+- `49c7f6ea` feat(study-menu): flag-gate sidebar Study group + Exam Sprint visibility
+- `e3c243f1` feat(study-menu): flag-gate internal /review and /study-plan links
+
+### Catalog total
+
+Pre-Study-Menu-v2: 39 entries. Study Menu v2 adds REG-69.
+
+**Total: 40 entries.**

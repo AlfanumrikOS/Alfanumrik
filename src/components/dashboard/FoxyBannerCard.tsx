@@ -3,6 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { FoxyBanner } from '@/components/ui';
 import type { CurriculumTopic } from '@/lib/types';
+import { useFeatureFlags } from '@/lib/swr';
+import { reviewRoute } from '@/lib/routes/study-menu-routes';
 
 /**
  * FoxyBannerCard — The single most important element on the dashboard.
@@ -33,6 +35,9 @@ export default function FoxyBannerCard({
   subjectMeta,
 }: FoxyBannerCardProps) {
   const router = useRouter();
+  // Phase 5 Study-Menu v2 — route /review to /refresh when flag is on.
+  const { data: flags } = useFeatureFlags();
+  const flagsRecord = (flags ?? {}) as Record<string, boolean>;
 
   // Priority 1: Streak at risk
   if (streak > 0 && streak <= 2) {
@@ -52,7 +57,7 @@ export default function FoxyBannerCard({
       <FoxyBanner
         message={isHi ? `${dueCount} चीज़ें भूलने वाली हैं — रिव्यू करो` : `${dueCount} topics need review before you forget`}
         actionLabel={isHi ? 'रिव्यू करो' : 'Review Now'}
-        onAction={() => router.push('/review')}
+        onAction={() => router.push(reviewRoute(flagsRecord))}
         accent="var(--gold)"
       />
     );

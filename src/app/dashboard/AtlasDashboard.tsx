@@ -29,8 +29,9 @@ import {
   supabase,
   getNextTopics,
 } from '@/lib/supabase';
-import { useDashboardData } from '@/lib/swr';
+import { useDashboardData, useFeatureFlags } from '@/lib/swr';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
+import { reviewRoute } from '@/lib/routes/study-menu-routes';
 import { BottomNav } from '@/components/ui';
 import { DashboardSkeleton } from '@/components/Skeleton';
 import {
@@ -59,6 +60,9 @@ export default function AtlasDashboard() {
     activeRole,
   } = useAuth();
   const { unlocked: allowedSubjects } = useAllowedSubjects();
+  // Phase 5 Study-Menu v2 — route /review to /refresh when flag is on.
+  const { data: flags } = useFeatureFlags();
+  const flagsRecord = (flags ?? {}) as Record<string, boolean>;
 
   const [nextTopics, setNextTopics] = useState<CurriculumTopic[]>([]);
   const [profiles, setProfiles] = useState<StudentLearningProfile[]>([]);
@@ -539,7 +543,7 @@ export default function AtlasDashboard() {
               <span className="dashboard-tile__icon" aria-hidden="true">📷</span>
               <span className="dashboard-tile__label">{isHi ? 'स्कैन' : 'Scan'}</span>
             </button>
-            <button type="button" className="dashboard-tile" onClick={() => router.push('/review')}>
+            <button type="button" className="dashboard-tile" onClick={() => router.push(reviewRoute(flagsRecord))}>
               <span className="dashboard-tile__icon" aria-hidden="true">🔁</span>
               <span className="dashboard-tile__label">{isHi ? 'दोहराओ' : 'Revise'}</span>
             </button>

@@ -323,6 +323,24 @@ export const EDITORIAL_ATLAS_FLAGS = {
 } as const;
 
 /**
+ * Study Menu v2 flags (2026-05-20).
+ *
+ *  ff_study_menu_v2
+ *    Master switch for the sidebar consolidation documented in
+ *    docs/superpowers/specs/2026-05-20-study-section-consolidation-design.md.
+ *    When ON, the BottomNav sidebar renders the "Study" group with three
+ *    items (Library / Refresh / Exam Sprint) and the old /review,
+ *    /revise, /study-plan routes 301 to their new homes. When OFF, the
+ *    legacy "Review" group with four items is rendered unchanged and the
+ *    old routes are reachable. Default: false.
+ *
+ *    Seeded by migration 20260520120000_study_menu_v2_flag.sql.
+ */
+export const STUDY_MENU_FLAGS = {
+  V2: 'ff_study_menu_v2',
+} as const;
+
+/**
  * Realtime subscriptions (Phase C.6).
  *
  *  ff_realtime_subscriptions_v1
