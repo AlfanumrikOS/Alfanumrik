@@ -206,83 +206,105 @@ export default function HeroV2() {
             </div>
           </div>
 
-          <div className={s.phoneFigureWrap}>
-            <figure className={s.phoneFigure}>
-              <span className={s.captionPill}>
-                {t('Live · Class 8 · Biology', 'लाइव · कक्षा 8 · जीव विज्ञान')}
-              </span>
-              <div className={s.phone}>
-                <div className={s.phoneScreen}>
-                  <div className="psTop">
-                    <span>9:41</span>
-                    <span>Mon · CBSE 8</span>
-                  </div>
-                  <div className="psGreet">
-                    {t('Good evening,', 'शुभ संध्या,')}{' '}
-                    <em>Ananya</em>.<br />
-                    {t('Ready for ten minutes?', 'दस मिनट के लिए तैयार?')}
-                  </div>
-                  <div className="psCard">
-                    <div className="psMono">
-                      {t("Tonight's plan · Biology", 'आज की योजना · जीव विज्ञान')}
-                    </div>
-                    <strong>
-                      {t('Photosynthesis — light reaction', 'प्रकाश-संश्लेषण — प्रकाश अभिक्रिया')}
-                    </strong>
-                    <div>
-                      {t(
-                        "You stalled here yesterday. Let's revisit the chloroplast diagram first.",
-                        'कल आप यहीं रुक गए थे। पहले क्लोरोप्लास्ट का चित्र फिर देखते हैं।',
-                      )}
-                    </div>
-                    <div className="bar"><div className="barFill" /></div>
-                  </div>
-                  <div className="psCard">
-                    <div className="psMono">{t('Mastery · last 7 days', 'महारत · पिछले 7 दिन')}</div>
-                    <strong className="psStrongLg">72%</strong>
-                    <div className="psMetaLine">
-                      {t('+8 from last week · ', 'पिछले सप्ताह से +8 · ')}Bloom's: Apply
-                    </div>
-                  </div>
-                  <div className="psFoxy">
-                    <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true">
-                      <path d="M6 8 L10 4 L12 10 Z" fill="var(--saffron)" />
-                      <path d="M26 8 L22 4 L20 10 Z" fill="var(--saffron)" />
-                      <path d="M8 6 L11 4.5 L11.5 7.5 Z" fill="var(--ink)" />
-                      <path d="M24 6 L21 4.5 L20.5 7.5 Z" fill="var(--ink)" />
-                      <ellipse cx="16" cy="18" rx="11" ry="9" fill="var(--saffron)" />
-                      <ellipse cx="16" cy="22" rx="6" ry="5" fill="var(--cream)" />
-                      <circle cx="12" cy="17" r="1.6" fill="var(--ink)" />
-                      <circle cx="20" cy="17" r="1.6" fill="var(--ink)" />
-                      <circle cx="11.5" cy="16.5" r=".5" fill="currentColor" />
-                      <circle cx="19.5" cy="16.5" r=".5" fill="currentColor" />
-                      <ellipse cx="16" cy="20.5" rx="1.2" ry=".8" fill="var(--ink)" />
-                    </svg>
-                    <span>
-                      Foxy: <em>{t('"shall we draw it together?"', '"क्या हम इसे साथ बनाएँ?"')}</em>
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </figure>
-            <p className={s.pencilNote}>
-              {t(
-                'a parent told us last week: "she now opens this before TikTok." we are still recovering.',
-                'पिछले सप्ताह एक अभिभावक ने कहा: "वह अब TikTok से पहले यह खोलती है।" हम अब भी सम्हल रहे हैं।',
-              )}
-            </p>
+          {/*
+            Right column of the hero grid — the Spline 3D Foxy panel.
+
+            Before PR #880 this column rendered the static phone mockup (the
+            iPhone-style figure with "Good evening, Ananya" and the mastery
+            card). PR #878 had introduced the Spline panel but mounted it
+            BELOW the grid, which meant the 3D scene was buried below the
+            fold on 1080p screens. We now put the Spline panel directly
+            inside this column so it appears above the fold to the right of
+            the editorial headline.
+
+            `self-stretch` overrides the heroGrid's `align-items: end` for
+            this cell only — the Spline card fills the full row height so
+            the dark panel anchors the right column edge-to-edge, instead of
+            being shrunk to its content and pinned to the bottom.
+
+            The legacy phone mockup JSX is preserved below this section in a
+            block-comment so it can be lifted into MissionV2/ShowcaseV2 (or
+            reinstated here) without rewriting the markup. Do not delete it.
+          */}
+          <div className="relative self-stretch w-full">
+            <HeroSplinePanel inGrid />
           </div>
         </div>
-
         {/*
-          Spline 3D Foxy panel.
-          Sits BELOW the editorial hero grid so the role-aware copy stays
-          above-the-fold and the heavy 3D runtime only loads when (a) the
-          card scrolls into view, (b) the viewport is ≥768px, and (c) the
-          connection isn't 2G/data-saver. Full gating logic lives in
-          HeroSplinePanel.tsx; this component is dynamic-imported above.
+          --- LEGACY phone-mockup column (kept for revert / future re-use) ---
+          Replaced 2026-05-20 (PR #880) by the Spline panel above. This JSX
+          previously sat as the right column of the heroGrid above. Restore
+          by swapping the <HeroSplinePanel inGrid /> mount with the markup
+          inside the comment fence below.
+
+            <div className={s.phoneFigureWrap}>
+              <figure className={s.phoneFigure}>
+                <span className={s.captionPill}>
+                  {t('Live · Class 8 · Biology', 'लाइव · कक्षा 8 · जीव विज्ञान')}
+                </span>
+                <div className={s.phone}>
+                  <div className={s.phoneScreen}>
+                    <div className="psTop">
+                      <span>9:41</span>
+                      <span>Mon · CBSE 8</span>
+                    </div>
+                    <div className="psGreet">
+                      {t('Good evening,', 'शुभ संध्या,')}{' '}
+                      <em>Ananya</em>.<br />
+                      {t('Ready for ten minutes?', 'दस मिनट के लिए तैयार?')}
+                    </div>
+                    <div className="psCard">
+                      <div className="psMono">
+                        {t("Tonight's plan · Biology", 'आज की योजना · जीव विज्ञान')}
+                      </div>
+                      <strong>
+                        {t('Photosynthesis — light reaction', 'प्रकाश-संश्लेषण — प्रकाश अभिक्रिया')}
+                      </strong>
+                      <div>
+                        {t(
+                          "You stalled here yesterday. Let's revisit the chloroplast diagram first.",
+                          'कल आप यहीं रुक गए थे। पहले क्लोरोप्लास्ट का चित्र फिर देखते हैं।',
+                        )}
+                      </div>
+                      <div className="bar"><div className="barFill" /></div>
+                    </div>
+                    <div className="psCard">
+                      <div className="psMono">{t('Mastery · last 7 days', 'महारत · पिछले 7 दिन')}</div>
+                      <strong className="psStrongLg">72%</strong>
+                      <div className="psMetaLine">
+                        {t('+8 from last week · ', 'पिछले सप्ताह से +8 · ')}Bloom's: Apply
+                      </div>
+                    </div>
+                    <div className="psFoxy">
+                      <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true">
+                        <path d="M6 8 L10 4 L12 10 Z" fill="var(--saffron)" />
+                        <path d="M26 8 L22 4 L20 10 Z" fill="var(--saffron)" />
+                        <path d="M8 6 L11 4.5 L11.5 7.5 Z" fill="var(--ink)" />
+                        <path d="M24 6 L21 4.5 L20.5 7.5 Z" fill="var(--ink)" />
+                        <ellipse cx="16" cy="18" rx="11" ry="9" fill="var(--saffron)" />
+                        <ellipse cx="16" cy="22" rx="6" ry="5" fill="var(--cream)" />
+                        <circle cx="12" cy="17" r="1.6" fill="var(--ink)" />
+                        <circle cx="20" cy="17" r="1.6" fill="var(--ink)" />
+                        <circle cx="11.5" cy="16.5" r=".5" fill="currentColor" />
+                        <circle cx="19.5" cy="16.5" r=".5" fill="currentColor" />
+                        <ellipse cx="16" cy="20.5" rx="1.2" ry=".8" fill="var(--ink)" />
+                      </svg>
+                      <span>
+                        Foxy: <em>{t('"shall we draw it together?"', '"क्या हम इसे साथ बनाएँ?"')}</em>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </figure>
+              <p className={s.pencilNote}>
+                {t(
+                  'a parent told us last week: "she now opens this before TikTok." we are still recovering.',
+                  'पिछले सप्ताह एक अभिभावक ने कहा: "वह अब TikTok से पहले यह खोलती है।" हम अब भी सम्हल रहे हैं।',
+                )}
+              </p>
+            </div>
+          --- END LEGACY phone-mockup column ---
         */}
-        <HeroSplinePanel />
       </div>
     </section>
   );
