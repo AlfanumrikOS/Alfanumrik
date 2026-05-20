@@ -1,30 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import dynamic from 'next/dynamic';
 import { useWelcomeV2, type Role } from './WelcomeV2Context';
 import { track } from '@/lib/posthog/client';
 import s from './welcome-v2.module.css';
-
-/**
- * The Spline 3D card is dynamic-imported with `ssr: false` so its ~250 kB
- * runtime (and the scene download) never enters the landing's initial chunk.
- * The component itself adds further gates: intersection observer, connection-
- * aware fallback, and a mobile static-fallback. See HeroSplinePanel.tsx for
- * the full performance contract.
- *
- * The loading placeholder uses the same min-height as the mounted panel so
- * there is zero CLS while the chunk fetches.
- */
-const HeroSplinePanel = dynamic(() => import('./HeroSplinePanel'), {
-  ssr: false,
-  loading: () => (
-    <div
-      className="mt-16 md:mt-24 min-h-[500px] md:min-h-[520px] w-full rounded-2xl bg-[#1a160f]"
-      aria-hidden="true"
-    />
-  ),
-});
 
 interface RoleCopy {
   eyebrow: { en: string; hi: string };
@@ -273,16 +252,6 @@ export default function HeroV2() {
             </p>
           </div>
         </div>
-
-        {/*
-          Spline 3D Foxy panel.
-          Sits BELOW the editorial hero grid so the role-aware copy stays
-          above-the-fold and the heavy 3D runtime only loads when (a) the
-          card scrolls into view, (b) the viewport is ≥768px, and (c) the
-          connection isn't 2G/data-saver. Full gating logic lives in
-          HeroSplinePanel.tsx; this component is dynamic-imported above.
-        */}
-        <HeroSplinePanel />
       </div>
     </section>
   );
