@@ -207,9 +207,13 @@ function buildProfilePayload(
         onboarding_completed: true,
       };
     case 'school_admin':
+      // Defensive: stamp role explicitly even though the column has a default.
+      // (a) Makes intent visible to operators reading the code; (b) survives
+      // any future change to the default value.
       return {
         ...base,
         is_active: true,
+        role: 'institution_admin',
         ...(opts.schoolId ? { school_id: opts.schoolId } : {}),
       };
     case 'super_admin':
@@ -224,13 +228,21 @@ function buildProfilePayload(
   }
 }
 
+type ProvisionResult =
+  | { ok: true; schoolId: string }
+  | { ok: false; code: 'school_insert_failed' | 'school_id_missing' | 'subscription_insert_failed' | 'config_missing'; details: string };
+
 /**
  * For school_admin demo accounts: create a demo school + 3 seed students +
- * a trial school subscription. Returns the new school_id.
+ * a trial school subscription. Returns a discriminated result so the caller
+ * can surface actionable error codes to the operator instead of collapsing
+ * every failure into a generic `profile_failed`.
  */
-async function provisionDemoSchool(adminAuthUserId: string, adminName: string): Promise<string | null> {
+async function provisionDemoSchool(adminAuthUserId: string, adminName: string): Promise<ProvisionResult> {
   const config = getSupabaseConfig();
-  if (!config) return null;
+  if (!config) {
+    return { ok: false, code: 'config_missing', details: 'Supabase service-role config missing (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY).' };
+  }
 
   const schoolRes = await fetch(supabaseAdminUrl('schools', undefined), {
     method: 'POST',
@@ -244,13 +256,16 @@ async function provisionDemoSchool(adminAuthUserId: string, adminName: string): 
   });
 
   if (!schoolRes.ok) {
-    console.error('[demo-accounts] Failed to provision demo school:', await schoolRes.text());
-    return null;
+    const body = await schoolRes.text();
+    console.error('[demo-accounts] Failed to provision demo school:', body);
+    return { ok: false, code: 'school_insert_failed', details: body.slice(0, 280) };
   }
 
   const schoolRows = await schoolRes.json();
   const schoolId = Array.isArray(schoolRows) && schoolRows.length > 0 ? schoolRows[0].id as string : null;
-  if (!schoolId) return null;
+  if (!schoolId) {
+    return { ok: false, code: 'school_id_missing', details: 'schools INSERT returned no id (empty response or unexpected shape).' };
+  }
 
   // Trial subscription so school billing surfaces work
   const periodStart = new Date();
@@ -259,7 +274,11 @@ async function provisionDemoSchool(adminAuthUserId: string, adminName: string): 
 
   // Note: school_subscriptions in prod uses `plan` (not plan_code) and
   // `seats_purchased` (not seats). Verified via Supabase MCP 2026-05-17.
-  await fetch(supabaseAdminUrl('school_subscriptions'), {
+  //
+  // Subscription failure does NOT block school creation — the school is the
+  // critical part. We log the failure and continue so the operator gets a
+  // usable demo school even if billing surfaces are temporarily broken.
+  const subRes = await fetch(supabaseAdminUrl('school_subscriptions'), {
     method: 'POST',
     headers: supabaseAdminHeaders('return=minimal'),
     body: JSON.stringify({
@@ -273,6 +292,9 @@ async function provisionDemoSchool(adminAuthUserId: string, adminName: string): 
       is_demo: true,
     }),
   });
+  if (!subRes.ok) {
+    console.error('[demo-accounts] school_subscriptions INSERT failed (non-blocking):', await subRes.text());
+  }
 
   // Three seed students under the demo school
   const seedStudents = [
@@ -316,7 +338,7 @@ async function provisionDemoSchool(adminAuthUserId: string, adminName: string): 
     body: JSON.stringify({ school_id: schoolId }),
   }).catch(() => {});
 
-  return schoolId;
+  return { ok: true, schoolId };
 }
 
 // ---------------------------------------------------------------------------
@@ -461,7 +483,19 @@ async function createSingleDemoAccount(
   // rollback that would balloon this function.
   let schoolId: string | null = null;
   if (role === 'school_admin') {
-    schoolId = await provisionDemoSchool(authUserId, name);
+    const result = await provisionDemoSchool(authUserId, name);
+    if (!result.ok) {
+      // Roll back the auth user so the operator can retry with the same email.
+      await fetch(`${config.url}/auth/v1/admin/users/${authUserId}`, {
+        method: 'DELETE',
+        headers: { 'apikey': config.key, 'Authorization': `Bearer ${config.key}` },
+      });
+      return NextResponse.json(
+        { success: false, code: result.code, message: 'Failed to provision demo school', details: result.details },
+        { status: 400 },
+      );
+    }
+    schoolId = result.schoolId;
   }
 
   // 3. Create the role-specific profile row
@@ -482,7 +516,7 @@ async function createSingleDemoAccount(
       headers: { 'apikey': config.key, 'Authorization': `Bearer ${config.key}` },
     });
     return NextResponse.json(
-      { success: false, code: 'profile_failed', message: 'Failed to create profile', details: errBody.slice(0, 280) },
+      { success: false, code: 'profile_failed', message: `Failed to create ${table} profile`, details: errBody.slice(0, 280) },
       { status: 400 },
     );
   }
@@ -899,12 +933,42 @@ export async function DELETE(request: NextRequest) {
     const authUserId = account.auth_user_id;
     const ipAddress = request.headers.get('x-forwarded-for') || undefined;
 
-    // For school_admin: cascade-delete the demo school + everything under it
+    // For school_admin: cascade-delete the demo school + everything under it.
+    //
+    // NOTE: PostgREST does NOT support `student_id=in.(select ...)` — that
+    // syntax silently no-ops (or 400s) because PostgREST expects a literal
+    // CSV inside `in.(...)`. Two-step: GET the ids, then DELETE against the
+    // CSV. Wrapped in .catch(() => {}) like the rest of this best-effort
+    // cascade so a transient failure doesn't break the parent delete.
     if (role === 'school_admin' && account.school_id) {
-      // Delete student subscriptions, then students, then school
-      await fetch(supabaseAdminUrl('student_subscriptions', `student_id=in.(select id from students where school_id=eq.${account.school_id})&is_demo=eq.true`), {
-        method: 'DELETE', headers: supabaseAdminHeaders('return=minimal'),
-      }).catch(() => {});
+      // Step 1: collect demo-student ids under this school
+      let demoStudentIds: string[] = [];
+      try {
+        const idsRes = await fetch(
+          supabaseAdminUrl('students', `select=id&school_id=eq.${account.school_id}&is_demo=eq.true`),
+          { method: 'GET', headers: supabaseAdminHeaders() },
+        );
+        if (idsRes.ok) {
+          const idRows = await idsRes.json();
+          demoStudentIds = Array.isArray(idRows)
+            ? idRows.map((r: { id?: string }) => r.id).filter((x): x is string => typeof x === 'string')
+            : [];
+        } else {
+          console.error('[demo-accounts] Failed to list demo students for school cascade:', account.school_id, idsRes.status);
+        }
+      } catch (err) {
+        console.error('[demo-accounts] Exception listing demo students for school cascade:', err);
+      }
+
+      // Step 2: delete their demo subscriptions (only if we have ids)
+      if (demoStudentIds.length > 0) {
+        const csv = demoStudentIds.join(',');
+        await fetch(
+          supabaseAdminUrl('student_subscriptions', `student_id=in.(${csv})&is_demo=eq.true`),
+          { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') },
+        ).catch(() => {});
+      }
+
       await fetch(supabaseAdminUrl('students', `school_id=eq.${account.school_id}&is_demo=eq.true`), {
         method: 'DELETE', headers: supabaseAdminHeaders('return=minimal'),
       }).catch(() => {});
@@ -916,11 +980,34 @@ export async function DELETE(request: NextRequest) {
       }).catch(() => {});
     }
 
-    // For student: also wipe their demo subscription
+    // For student: also wipe their demo subscription. Same PostgREST
+    // `in.(select ...)` caveat — replace with two-step.
     if (role === 'student' && account.auth_user_id) {
-      await fetch(supabaseAdminUrl('student_subscriptions', `student_id=in.(select id from students where auth_user_id=eq.${authUserId})&is_demo=eq.true`), {
-        method: 'DELETE', headers: supabaseAdminHeaders('return=minimal'),
-      }).catch(() => {});
+      let studentIds: string[] = [];
+      try {
+        const idsRes = await fetch(
+          supabaseAdminUrl('students', `select=id&auth_user_id=eq.${authUserId}`),
+          { method: 'GET', headers: supabaseAdminHeaders() },
+        );
+        if (idsRes.ok) {
+          const idRows = await idsRes.json();
+          studentIds = Array.isArray(idRows)
+            ? idRows.map((r: { id?: string }) => r.id).filter((x): x is string => typeof x === 'string')
+            : [];
+        } else {
+          console.error('[demo-accounts] Failed to list student ids for demo-subscription cleanup:', authUserId, idsRes.status);
+        }
+      } catch (err) {
+        console.error('[demo-accounts] Exception listing student ids for demo-subscription cleanup:', err);
+      }
+
+      if (studentIds.length > 0) {
+        const csv = studentIds.join(',');
+        await fetch(
+          supabaseAdminUrl('student_subscriptions', `student_id=in.(${csv})&is_demo=eq.true`),
+          { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') },
+        ).catch(() => {});
+      }
     }
 
     await fetch(

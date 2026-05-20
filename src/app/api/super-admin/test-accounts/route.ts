@@ -3,7 +3,9 @@ import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl }
 import { generateSecurePassword } from '../../../../lib/crypto/password';
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Creates real auth users with full sign-in privileges. Mirrors the
+  // demo-accounts POST gate (super_admin) — same risk surface.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {

@@ -187,7 +187,8 @@ async function emailAlreadyTaken(email: string): Promise<boolean> {
 // ─── POST handler ─────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Bulk-creates up to 200 trial schools per call. Matches /provision's gate.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   let body: { csv?: unknown; dry_run?: unknown; csv_filename?: unknown };
