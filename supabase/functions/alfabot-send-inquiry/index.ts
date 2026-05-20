@@ -273,16 +273,35 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ ok: false, error: 'method_not_allowed' }, 405, origin)
   }
 
-  // ── Auth: Bearer SUPABASE_SERVICE_ROLE_KEY only ──
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-  if (!serviceRoleKey) {
-    logEvent('alfabot_inquiry.config_missing', { reason: 'no_service_role_key' })
-    return jsonResponse({ ok: false, error: 'config_missing' }, 503, origin)
-  }
+  // ── Auth: require a Supabase service-role JWT ──
+  // Strict-equality against env-SRK was brittle (key rotations / multi-env
+  // mismatches caused 401s). We now decode the bearer JWT and check the
+  // `role` claim — same security model as the rest of the AI Edge Functions
+  // in this repo. The Supabase platform also validates the JWT signature
+  // upstream before our code runs, so unsigned bearers can never reach here.
   const authHeader = req.headers.get('Authorization') ?? ''
-  const expected = `Bearer ${serviceRoleKey}`
-  if (authHeader !== expected) {
-    logEvent('alfabot_inquiry.unauthorized', {})
+  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
+  if (!bearer) {
+    logEvent('alfabot_inquiry.unauthorized', { reason: 'no_bearer' })
+    return jsonResponse({ ok: false, error: 'unauthorized' }, 401, origin)
+  }
+  const parts = bearer.split('.')
+  if (parts.length !== 3) {
+    logEvent('alfabot_inquiry.unauthorized', { reason: 'bad_jwt_shape' })
+    return jsonResponse({ ok: false, error: 'unauthorized' }, 401, origin)
+  }
+  let role = ''
+  try {
+    // base64url decode the JWT payload (middle segment)
+    const padded = parts[1].replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((parts[1].length + 3) % 4)
+    const decoded = JSON.parse(atob(padded)) as { role?: string }
+    role = String(decoded.role ?? '')
+  } catch {
+    logEvent('alfabot_inquiry.unauthorized', { reason: 'jwt_decode_failed' })
+    return jsonResponse({ ok: false, error: 'unauthorized' }, 401, origin)
+  }
+  if (role !== 'service_role') {
+    logEvent('alfabot_inquiry.unauthorized', { reason: 'role_not_service', role })
     return jsonResponse({ ok: false, error: 'unauthorized' }, 401, origin)
   }
 
