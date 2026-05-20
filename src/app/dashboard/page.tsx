@@ -250,6 +250,10 @@ function LegacyDashboard() {
     if (!isLoading && !isLoggedIn) router.replace('/login');
     if (!isLoading && isLoggedIn && activeRole === 'teacher') router.replace('/teacher');
     if (!isLoading && isLoggedIn && activeRole === 'guardian') router.replace('/parent');
+    // School/institution admin lands on /dashboard when the login page doesn't
+    // yet know the role (no ?role= hint). Bounce to /school-admin so they
+    // don't see the student dashboard skeleton indefinitely.
+    if (!isLoading && isLoggedIn && activeRole === 'institution_admin') router.replace('/school-admin');
     if (
       !isLoading &&
       isLoggedIn &&
@@ -538,7 +542,16 @@ function LegacyDashboard() {
   // ─── Loading & guard ───────────────────────────────────────────────────
   if (isLoading) return <DashboardSkeleton />;
   if (!student) {
-    if (activeRole === 'teacher' || activeRole === 'guardian') return <DashboardSkeleton />;
+    // Show skeleton (not /login bounce) while non-student roles redirect to
+    // their own portal. institution_admin redirect to /school-admin is in
+    // flight from the useEffect above — render skeleton until it completes.
+    if (
+      activeRole === 'teacher' ||
+      activeRole === 'guardian' ||
+      activeRole === 'institution_admin'
+    ) {
+      return <DashboardSkeleton />;
+    }
     router.replace('/login');
     return <DashboardSkeleton />;
   }
