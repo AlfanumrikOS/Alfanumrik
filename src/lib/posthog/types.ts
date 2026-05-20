@@ -123,7 +123,21 @@ export type PostHogEventName =
   // schools rendered + whether the synthetic-monitor table was present.
   // Lets us measure how often ops consults the dashboard, and detect
   // graceful-degradation paths in the wild.
-  | 'super_admin_health_dashboard_viewed';
+  | 'super_admin_health_dashboard_viewed'
+  // AlfaBot landing widget (PR 3 of the AlfaBot feature). All client-side,
+  // fired from src/components/alfabot/*. PII-free — never includes message
+  // content, only audience, language, audit counts, and routing context.
+  | 'alfabot_opened'
+  | 'alfabot_closed'
+  | 'alfabot_message_sent'
+  | 'alfabot_message_received'
+  | 'alfabot_starter_chip_clicked'
+  | 'alfabot_audience_switched'
+  | 'alfabot_lang_nudge_shown'
+  | 'alfabot_lang_nudge_accepted'
+  | 'alfabot_escape_to_contact'
+  | 'alfabot_rate_limited'
+  | 'alfabot_error_shown';
 
 // ─── Base properties auto-attached by `capture()` ──────────────────────────
 
@@ -687,6 +701,17 @@ export type EventPayloadByName = {
   tutor_answer_path_c_fallback: TutorAnswerPathCFallbackPayload;
   projector_health_degraded: ProjectorHealthDegradedPayload;
   super_admin_health_dashboard_viewed: SuperAdminHealthDashboardViewedPayload;
+  alfabot_opened: AlfabotOpenedPayload;
+  alfabot_closed: AlfabotClosedPayload;
+  alfabot_message_sent: AlfabotMessageSentPayload;
+  alfabot_message_received: AlfabotMessageReceivedPayload;
+  alfabot_starter_chip_clicked: AlfabotStarterChipClickedPayload;
+  alfabot_audience_switched: AlfabotAudienceSwitchedPayload;
+  alfabot_lang_nudge_shown: AlfabotLangNudgeShownPayload;
+  alfabot_lang_nudge_accepted: AlfabotLangNudgeAcceptedPayload;
+  alfabot_escape_to_contact: AlfabotEscapeToContactPayload;
+  alfabot_rate_limited: AlfabotRateLimitedPayload;
+  alfabot_error_shown: AlfabotErrorShownPayload;
 };
 
 // ── Adaptive Tutor payloads (ADR-004) ──────────────────────────────────
@@ -751,6 +776,102 @@ export interface ProjectorHealthDegradedPayload {
   severity: 'warn' | 'critical';
   /** The threshold (in seconds) that this row crossed. */
   threshold_seconds: number;
+}
+
+// ── AlfaBot landing widget payloads (PR 3) ─────────────────────────────
+//
+// All payloads are PII-free. Never include message content, assistant text,
+// email, phone, name, or IP. The widget enforces this by passing ONLY the
+// fields below into `track()` — message strings stay in component state.
+
+export type AlfabotAudienceTag = 'parent' | 'student' | 'teacher' | 'school';
+export type AlfabotLangTag = 'en' | 'hi';
+
+interface AlfabotEventContextBase {
+  audience: AlfabotAudienceTag;
+  language: AlfabotLangTag;
+}
+
+export interface AlfabotOpenedPayload extends AlfabotEventContextBase {
+  /** Where the open came from. */
+  source: 'bubble' | 'speech_tail' | 'faq_link' | 'prefill';
+  /** Seconds since the page loaded — bucketed by widget caller. */
+  seconds_since_pageload: number;
+}
+
+export interface AlfabotClosedPayload extends AlfabotEventContextBase {
+  /** How the panel closed. */
+  via: 'close_button' | 'escape_key' | 'outside_click' | 'mobile_menu';
+  /** Total messages exchanged in the open session (user + assistant). */
+  message_count: number;
+}
+
+export interface AlfabotMessageSentPayload extends AlfabotEventContextBase {
+  /** Closed-set provenance — never the message text. */
+  via: 'typed' | 'starter_chip' | 'prefill' | 'faq_link';
+  /** Length bucket — keeps it PII-safe but lets us spot abusively long inputs. */
+  length_bucket: 'short' | 'medium' | 'long';
+  /** Index of the message in the session (0 = first). */
+  message_index: number;
+}
+
+export interface AlfabotMessageReceivedPayload extends AlfabotEventContextBase {
+  /** Did the bot abstain? Closed set mirrors AlfabotResponse['abstainReason']. */
+  abstain_reason?:
+    | 'prompt_injection'
+    | 'url_in_message'
+    | 'message_too_long'
+    | 'denylisted'
+    | 'upstream_failed'
+    | 'budget_exhausted'
+    | 'kb_no_match';
+  /** Number of KB sources the route reported. */
+  sources_used: number;
+  /** True iff the route returned `degradedMode: true`. */
+  degraded_mode: boolean;
+  /** Wall-clock streaming duration in ms. */
+  latency_ms: number;
+}
+
+export interface AlfabotStarterChipClickedPayload extends AlfabotEventContextBase {
+  /** 0-3 position of the chip in the rendered list. */
+  chip_index: number;
+  /** English chip text — analytics-friendly grouping even on Hi UI. */
+  chip_text_en: string;
+}
+
+export interface AlfabotAudienceSwitchedPayload {
+  from_audience: AlfabotAudienceTag;
+  to_audience: AlfabotAudienceTag;
+  /** Where the switch happened — header link or inline starter row. */
+  source: 'header' | 'starter';
+}
+
+export interface AlfabotLangNudgeShownPayload extends AlfabotEventContextBase {
+  /** Approx % Devanagari characters in the triggering user message. */
+  devanagari_ratio: number;
+}
+
+export interface AlfabotLangNudgeAcceptedPayload extends AlfabotEventContextBase {
+  /** 'accepted' = clicked switch; 'dismissed' = closed the nudge. */
+  action: 'accepted' | 'dismissed';
+}
+
+export interface AlfabotEscapeToContactPayload extends AlfabotEventContextBase {
+  /** Destination clicked. */
+  destination: 'contact_page' | 'whatsapp';
+}
+
+export interface AlfabotRateLimitedPayload extends AlfabotEventContextBase {
+  /** Which bucket tripped (mirrors AlfabotErrorResponse['scope']). */
+  scope: 'burst' | 'day' | 'ip' | 'session_max' | 'lead';
+  /** Seconds until the bucket resets (best-effort; null when unknown). */
+  reset_in_seconds: number | null;
+}
+
+export interface AlfabotErrorShownPayload extends AlfabotEventContextBase {
+  /** Closed-set error key — mirrors the AlfabotErrorResponse envelope. */
+  error: 'network_error' | 'upstream_failed' | 'invalid_input' | 'denied' | 'not_found';
 }
 
 // ── Super-admin Health Dashboard payload (Phase E.6) ──────────────────

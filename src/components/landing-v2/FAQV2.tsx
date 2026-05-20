@@ -138,7 +138,40 @@ export default function FAQV2() {
                   +
                 </span>
               </summary>
-              <div className={s.faqA}>{isHi ? faq.aHi : faq.aEn}</div>
+              <div className={s.faqA}>
+                {isHi ? faq.aHi : faq.aEn}
+                {/*
+                  AlfaBot deep-link: dispatches a window-level CustomEvent that
+                  the AlfaBotProvider listens for. When the widget is OFF (flag
+                  disabled / mount not present), the event has no listeners and
+                  the click is a silent no-op — exactly what we want.
+                */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof window === 'undefined') return;
+                    const question = isHi ? faq.qHi : faq.qEn;
+                    window.dispatchEvent(
+                      new CustomEvent('alfabot:prefill', { detail: { text: question } }),
+                    );
+                  }}
+                  style={{
+                    display: 'inline-block',
+                    marginTop: 12,
+                    padding: '6px 0',
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#0F5C5F',
+                    fontSize: 13,
+                    textDecoration: 'underline',
+                    textUnderlineOffset: 3,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {isHi ? 'और गहराई से जानना है? AlfaBot से पूछें →' : 'Want to dig deeper? Ask AlfaBot →'}
+                </button>
+              </div>
             </details>
           ))}
         </div>

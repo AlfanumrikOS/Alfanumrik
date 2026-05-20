@@ -262,6 +262,31 @@ once entries land.
 
 ---
 
+## 14. AlfaBot widget
+
+A bilingual chat assistant lives at the bottom-right of `/welcome` (and only
+`/welcome` in v1). It answers questions about Alfanumrik for parents,
+students, teachers, and schools. Underlying model: OpenAI `gpt-4o-mini` (per
+CEO directive 2026-05-19).
+
+| Component | Owns |
+|---|---|
+| `AlfaBotMount` | Feature-flag gate + dynamic import boundary |
+| `AlfaBotLauncher` | 56x56 floating bubble + speech-tail; lazy-loaded |
+| `AlfaBotPanel` | Chat window; lazy-loaded on first open |
+| `AlfaBotProvider` | Context: messages, audience, lang, session, rate-limit |
+| `AlfaBotStarterChips` | 4 audience-specific prompts |
+| `AlfaBotInput` | Textarea + send + char counter |
+| `AlfaBotEscapeHatch` | "Need a human?" → /contact or WhatsApp |
+| `AlfaBotLangNudge` | "Hindi me jawab chahiye?" prompt |
+| `AlfaBotRateLimit` | Friendly countdown when rate-limited |
+
+API: `POST /api/alfabot` (chat), `POST /api/alfabot/lead` (opt-in lead capture).
+Super-admin dashboard: `/super-admin/alfabot`.
+Runbook: [`docs/runbooks/alfabot-operations.md`](./runbooks/alfabot-operations.md).
+
+---
+
 ## See also
 
 - [`.claude/CLAUDE.md`](../.claude/CLAUDE.md) — product invariants P1–P15

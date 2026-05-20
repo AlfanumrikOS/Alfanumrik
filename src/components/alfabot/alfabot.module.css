@@ -1,0 +1,629 @@
+/* ============================================================
+   AlfaBot landing widget — CSS module
+   Mobile-first. Reuses welcome-v2 design tokens
+   (--cream, --ink, --saffron, --rule) — no new colors.
+   Owner: frontend agent (PR 3 of AlfaBot feature).
+   ============================================================ */
+
+/* ---------- LAUNCHER (always mounted, 0 panel weight) ---------- */
+.launcher {
+  position: fixed;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0));
+  right: calc(20px + env(safe-area-inset-right, 0));
+  z-index: 60;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--saffron, #E8581C);
+  color: #ffffff;
+  border: none;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(232, 88, 28, 0.32), 0 2px 6px rgba(14, 11, 7, 0.18);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  font-family: var(--body, system-ui, sans-serif);
+}
+.launcher:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(232, 88, 28, 0.36), 0 4px 10px rgba(14, 11, 7, 0.22);
+}
+.launcher:focus-visible {
+  outline: 3px solid var(--ink, #0E0B07);
+  outline-offset: 3px;
+}
+.launcher:active {
+  transform: translateY(0);
+}
+.launcherIcon {
+  width: 26px;
+  height: 26px;
+  pointer-events: none;
+}
+
+/* ---------- SPEECH TAIL ---------- */
+.speechTail {
+  position: fixed;
+  bottom: calc(86px + env(safe-area-inset-bottom, 0));
+  right: calc(20px + env(safe-area-inset-right, 0));
+  z-index: 60;
+  max-width: 260px;
+  background: #ffffff;
+  color: var(--ink, #0E0B07);
+  border: 1px solid var(--rule, rgba(14, 11, 7, 0.18));
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 8px 18px rgba(14, 11, 7, 0.12);
+  display: none;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--body, system-ui, sans-serif);
+}
+.speechTailVisible {
+  display: inline-flex;
+  animation: alfabotTailFade 280ms ease-out;
+}
+.speechTail::after {
+  content: '';
+  position: absolute;
+  bottom: -7px;
+  right: 22px;
+  width: 12px;
+  height: 12px;
+  background: #ffffff;
+  border-right: 1px solid var(--rule, rgba(14, 11, 7, 0.18));
+  border-bottom: 1px solid var(--rule, rgba(14, 11, 7, 0.18));
+  transform: rotate(45deg);
+}
+.speechTailText {
+  flex: 1;
+  min-width: 0;
+}
+.speechTailDismiss {
+  background: transparent;
+  border: none;
+  color: var(--ink-mute, #5B5141);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px;
+  margin: -4px -4px -4px 0;
+  border-radius: 4px;
+}
+.speechTailDismiss:hover {
+  color: var(--ink, #0E0B07);
+}
+
+/* ---------- PANEL — SHARED ---------- */
+.panelBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(14, 11, 7, 0.32);
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  animation: alfabotBackdropFade 200ms ease-out;
+}
+.panel {
+  background: var(--cream, #F4ECDB);
+  color: var(--ink, #0E0B07);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--body, system-ui, sans-serif);
+  /* Anchor to a fixed position so resize / virtual-keyboard movement
+     doesn't make the panel jump unpredictably on small phones. */
+  box-shadow: 0 -8px 32px rgba(14, 11, 7, 0.18);
+  overflow: hidden;
+}
+
+/* Mobile (≤640px) — bottom sheet */
+@media (max-width: 640px) {
+  .panel {
+    width: 100%;
+    max-width: 100%;
+    max-height: 70vh;
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    animation: alfabotSheetUp 280ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+/* Desktop (>640px) — anchored panel */
+@media (min-width: 641px) {
+  .panelBackdrop {
+    background: transparent;
+    pointer-events: none;
+    padding: 0 24px 24px 0;
+  }
+  .panel {
+    pointer-events: auto;
+    width: 380px;
+    height: 560px;
+    max-height: 80vh;
+    border-radius: 16px;
+    border: 1px solid var(--rule, rgba(14, 11, 7, 0.18));
+    animation: alfabotPanelIn 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+/* ---------- HEADER ---------- */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--cream-deep, #EADFC6);
+  border-bottom: 1px solid var(--rule, rgba(14, 11, 7, 0.18));
+}
+.headerLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.headerTitle {
+  font-family: var(--display, 'Newsreader', Georgia, serif);
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.headerAudience {
+  font-family: var(--mono, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-mute, #5B5141);
+}
+.headerClose {
+  background: transparent;
+  border: 1px solid var(--rule, rgba(14, 11, 7, 0.18));
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--ink, #0E0B07);
+  flex-shrink: 0;
+}
+.headerClose:hover {
+  background: rgba(14, 11, 7, 0.04);
+}
+.headerClose:focus-visible {
+  outline: 2px solid var(--saffron, #E8581C);
+  outline-offset: 2px;
+}
+
+/* ---------- BODY ---------- */
+.body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Reverse-flex column so the latest message anchors to the bottom; we still
+     append messages to the END of the array (no manual reversing) — the visual
+     latest-at-bottom comes from the natural document order + auto-scroll. */
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ---------- MESSAGE BUBBLES ---------- */
+.messageRow {
+  display: flex;
+  width: 100%;
+}
+.messageRowUser {
+  justify-content: flex-end;
+}
+.messageRowAssistant {
+  justify-content: flex-start;
+}
+.messageRowSystem {
+  justify-content: center;
+}
+.bubble {
+  max-width: 86%;
+  padding: 9px 13px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.bubbleUser {
+  background: var(--ink, #0E0B07);
+  color: var(--cream, #F4ECDB);
+  border-bottom-right-radius: 4px;
+}
+.bubbleAssistant {
+  background: #ffffff;
+  color: var(--ink, #0E0B07);
+  border: 1px solid var(--rule, rgba(14, 11, 7, 0.18));
+  border-left: 3px solid var(--saffron, #E8581C);
+  border-bottom-left-radius: 4px;
+}
+.bubbleSystem {
+  background: var(--cream-deep, #EADFC6);
+  color: var(--ink-mute, #5B5141);
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 6px 12px;
+  max-width: 90%;
+  text-align: center;
+  font-family: var(--mono, monospace);
+  letter-spacing: 0.04em;
+}
+.streamingCursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: currentColor;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: alfabotCursorBlink 900ms steps(2) infinite;
+}
+
+/* ---------- STARTER CHIPS ---------- */
+.starterWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0;
+}
+.starterIntro {
+  font-size: 13px;
+  color: var(--ink-mute, #5B5141);
+  line-height: 1.4;
+  margin: 0;
+}
+.starterChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.starterChip {
+  background: #ffffff;
+  border: 1px solid var(--rule, rgba(14, 11, 7, 0.22));
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  line-height: 1.3;
+  font-family: var(--body, system-ui, sans-serif);
+  color: var(--ink, #0E0B07);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  min-height: 36px;
+  text-align: left;
+}
+.starterChip:hover {
+  background: var(--cream-deep, #EADFC6);
+  border-color: var(--ink, #0E0B07);
+}
+.starterChip:focus-visible {
+  outline: 2px solid var(--saffron, #E8581C);
+  outline-offset: 2px;
+}
+.starterSwitchLink {
+  background: transparent;
+  border: none;
+  color: var(--peacock, #0F5C5F);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 0;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-family: var(--body, system-ui, sans-serif);
+  align-self: flex-start;
+}
+.starterSwitchLink:hover {
+  color: var(--saffron, #E8581C);
+}
+.starterAudiencePicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 0;
+}
+.starterAudiencePill {
+  background: transparent;
+  border: 1px solid var(--ink, #0E0B07);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  color: var(--ink, #0E0B07);
+}
+.starterAudiencePillActive {
+  background: var(--ink, #0E0B07);
+  color: var(--cream, #F4ECDB);
+}
+
+/* ---------- INPUT ---------- */
+.footer {
+  border-top: 1px solid var(--rule, rgba(14, 11, 7, 0.18));
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--cream, #F4ECDB);
+}
+.inputRow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.textareaWrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+}
+.textarea {
+  flex: 1;
+  border: 1px solid var(--rule, rgba(14, 11, 7, 0.22));
+  border-radius: 12px;
+  background: #ffffff;
+  color: var(--ink, #0E0B07);
+  padding: 10px 14px;
+  font-size: 14px;
+  font-family: var(--body, system-ui, sans-serif);
+  line-height: 1.4;
+  resize: none;
+  min-height: 44px;
+  max-height: 120px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.textarea:focus {
+  border-color: var(--saffron, #E8581C);
+}
+.textarea:disabled {
+  background: var(--cream-deep, #EADFC6);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.charCounter {
+  position: absolute;
+  bottom: 6px;
+  right: 10px;
+  font-size: 10px;
+  color: var(--ink-mute, #5B5141);
+  font-family: var(--mono, monospace);
+  pointer-events: none;
+}
+.charCounterWarn {
+  color: var(--vermilion, #DC2626);
+}
+.sendBtn {
+  background: var(--saffron, #E8581C);
+  color: #ffffff;
+  border: none;
+  border-radius: 12px;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.sendBtn:hover:not(:disabled) {
+  background: var(--saffron-deep, #C84411);
+}
+.sendBtn:focus-visible {
+  outline: 2px solid var(--ink, #0E0B07);
+  outline-offset: 2px;
+}
+.sendBtn:disabled {
+  background: var(--ink-mute, #5B5141);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.sendBtn :global(svg) {
+  width: 18px;
+  height: 18px;
+}
+.sendSpinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: alfabotSpin 700ms linear infinite;
+}
+
+/* ---------- ESCAPE HATCH ---------- */
+.escape {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--ink-mute, #5B5141);
+  flex-wrap: wrap;
+}
+.escapeLabel {
+  font-family: var(--mono, monospace);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.escapeLink {
+  color: var(--peacock, #0F5C5F);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.escapeLink:hover {
+  color: var(--saffron, #E8581C);
+}
+
+/* ---------- LANG NUDGE ---------- */
+.langNudge {
+  margin: 8px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--cream-deep, #EADFC6);
+  border: 1px solid var(--rule, rgba(14, 11, 7, 0.18));
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.langNudgeText {
+  flex: 1;
+  min-width: 0;
+}
+.langNudgeActions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.langNudgeAccept,
+.langNudgeDismiss {
+  background: transparent;
+  border: 1px solid var(--ink, #0E0B07);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-family: var(--mono, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  color: var(--ink, #0E0B07);
+}
+.langNudgeAccept {
+  background: var(--ink, #0E0B07);
+  color: var(--cream, #F4ECDB);
+}
+.langNudgeAccept:hover {
+  background: var(--saffron, #E8581C);
+  border-color: var(--saffron, #E8581C);
+}
+.langNudgeDismiss:hover {
+  background: rgba(14, 11, 7, 0.06);
+}
+
+/* ---------- RATE LIMIT ---------- */
+.rateLimitBanner {
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.32);
+  color: var(--vermilion, #DC2626);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rateLimitCountdown {
+  background: var(--vermilion, #DC2626);
+  color: #ffffff;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-family: var(--mono, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- ANIMATIONS ---------- */
+@keyframes alfabotBackdropFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes alfabotSheetUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes alfabotPanelIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes alfabotTailFade {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes alfabotCursorBlink {
+  to { opacity: 0; }
+}
+@keyframes alfabotSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---------- prefers-reduced-motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .panel,
+  .panelBackdrop,
+  .speechTailVisible {
+    animation: none !important;
+  }
+  .launcher {
+    transition: none;
+  }
+  .streamingCursor {
+    animation: none;
+    opacity: 1;
+  }
+  .sendSpinner {
+    animation-duration: 1800ms;
+  }
+}
+
+/* ---------- Dark mode (data-theme="dark") ---------- */
+/* The landing surface is locked to light (per welcome-v2 2026-05-11
+   decision); we keep these selectors so the widget renders correctly if
+   it's ever mounted on a surface that DOES carry data-theme="dark"
+   (e.g. embedded inside the app shell in a later milestone). */
+[data-theme='dark'] .panel,
+[data-theme='dark'] .footer {
+  background: #14110b;
+  color: var(--cream, #F4ECDB);
+}
+[data-theme='dark'] .header {
+  background: #1a160f;
+  border-bottom-color: rgba(244, 236, 219, 0.18);
+}
+[data-theme='dark'] .bubbleAssistant {
+  background: #1f1a12;
+  color: var(--cream, #F4ECDB);
+  border-color: rgba(244, 236, 219, 0.18);
+}
+[data-theme='dark'] .bubbleUser {
+  background: var(--cream, #F4ECDB);
+  color: var(--ink, #0E0B07);
+}
+[data-theme='dark'] .starterChip {
+  background: #1f1a12;
+  color: var(--cream, #F4ECDB);
+  border-color: rgba(244, 236, 219, 0.22);
+}
+[data-theme='dark'] .textarea {
+  background: #1f1a12;
+  color: var(--cream, #F4ECDB);
+  border-color: rgba(244, 236, 219, 0.22);
+}
+[data-theme='dark'] .speechTail {
+  background: #1f1a12;
+  color: var(--cream, #F4ECDB);
+  border-color: rgba(244, 236, 219, 0.22);
+}
+[data-theme='dark'] .speechTail::after {
+  background: #1f1a12;
+  border-right-color: rgba(244, 236, 219, 0.22);
+  border-bottom-color: rgba(244, 236, 219, 0.22);
+}
