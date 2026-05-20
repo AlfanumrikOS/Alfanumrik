@@ -37,9 +37,7 @@ import {
   AtlasShell,
   AtlasCard,
   AtlasPill,
-  AtlasButton,
   AtlasIcon,
-  EditorialHeadline,
   EditorialHighlight,
 } from '@/components/atlas';
 import type { CurriculumTopic, StudentLearningProfile } from '@/lib/types';
@@ -271,22 +269,23 @@ export default function AtlasDashboard() {
         {/* ─── LEFT COLUMN (7/12 on desktop) ─── */}
         <div className="atlas-dashboard-main" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-        {/* ─── 1. Today's mission ─── */}
-        <AtlasCard
-          style={{
-            position: 'relative', overflow: 'hidden',
-            padding: '32px 28px 28px',
-            backgroundImage:
-              'radial-gradient(ellipse at top right, rgba(232, 88, 28, 0.06), transparent 55%)',
-          }}
-        >
-          <p className="atlas-eyebrow atlas-eyebrow-accent" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {/* ─── 1. Today's mission ───
+            Editorial dark-ink hero: magazine-style headline on warm ink
+            background, single dominant orange CTA. This is the page's
+            primary anchor — every other surface stays quieter. */}
+        <section className="editorial-card editorial-card--ink atlas-mission-hero">
+          <p className="atlas-mission-eyebrow">
             <span
               aria-hidden="true"
-              className="atlas-pulse"
-              style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)' }}
+              className="atlas-pulse atlas-mission-eyebrow__dot"
             />
-            {isHi ? 'आज का मिशन' : "Today's mission"}
+            {isHi ? 'आज' : 'Today'}
+            {student.grade && (
+              <>
+                {' · '}
+                {isHi ? `कक्षा ${student.grade}` : `Class ${student.grade}`}
+              </>
+            )}
             {todaysTopic && (
               <>
                 {' · '}
@@ -297,11 +296,11 @@ export default function AtlasDashboard() {
             )}
           </p>
 
-          <EditorialHeadline size="xl" as="h1" style={{ margin: '6px 0 14px', maxWidth: '14ch' }}>
+          <h1 className="atlas-mission-headline">
             {todaysTopic?.title ?? (isHi ? 'अगला अध्याय शुरू करो' : 'Pick up where you left off')}
-          </EditorialHeadline>
+          </h1>
 
-          <p style={{ color: 'var(--ink-2)', fontSize: 15, margin: '0 0 24px', maxWidth: '42ch' }}>
+          <p className="atlas-mission-blurb">
             {isHi
               ? 'एक छोटा-सा वॉकथ्रू, फिर एक छोटी क्विज़। पिछली बार के बाद बस वही ले रहे हैं।'
               : todaysTopic
@@ -309,22 +308,24 @@ export default function AtlasDashboard() {
                 : 'A fresh start to today’s learning. Choose a subject below to begin.'}
           </p>
 
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 22 }}>
-            <MissionMeta label={isHi ? 'विषय' : 'Subject'} value={capitalize(subjectCode)} />
+          <div className="atlas-mission-meta-row">
+            <MissionMeta dark label={isHi ? 'विषय' : 'Subject'} value={capitalize(subjectCode)} />
             <MissionMeta
+              dark
               label={isHi ? 'अध्याय' : 'Chapter'}
               value={todaysTopic?.chapter_number ? `${todaysTopic.chapter_number}` : '—'}
             />
             <MissionMeta
+              dark
               label={isHi ? 'महारत' : 'Mastery'}
               value={todayMastery ? `${todayMastery.from} → ${todayMastery.to}%` : '—'}
             />
           </div>
 
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            <AtlasButton
-              variant="primary"
-              icon="arrow-right"
+          <div className="atlas-mission-cta-row">
+            <button
+              type="button"
+              className="atlas-mission-cta"
               onClick={() => {
                 if (todaysTopic) {
                   router.push(`/learn/${subjectCode}/${todaysTopic.chapter_number ?? 1}`);
@@ -333,28 +334,53 @@ export default function AtlasDashboard() {
                 }
               }}
             >
-              {isHi ? 'पाठ शुरू करो' : 'Begin lesson'}
-            </AtlasButton>
-            <AtlasButton variant="ghost" icon="refresh" iconPosition="left" onClick={() => router.push('/quiz')}>
-              {isHi ? 'क्विज़ की समीक्षा' : 'Quiz revision'}
-            </AtlasButton>
+              <span>{isHi ? 'पाठ शुरू करो' : 'Begin lesson'}</span>
+              <AtlasIcon name="arrow-right" size={18} strokeWidth={2.25} />
+            </button>
+            <button
+              type="button"
+              className="atlas-mission-ghost"
+              onClick={() => router.push('/quiz')}
+            >
+              <AtlasIcon name="refresh" size={16} strokeWidth={2} />
+              <span>{isHi ? 'क्विज़ की समीक्षा' : 'Quiz revision'}</span>
+            </button>
           </div>
-        </AtlasCard>
+        </section>
 
-        {/* ─── 2. The Atlas ─── */}
-        <AtlasCard>
-          <p className="atlas-eyebrow">
-            {isHi ? 'अध्यायों का नक्शा' : 'The Atlas'} · Class {student.grade ?? '—'}
+        {/* ─── 1b. At-a-glance stats strip ───
+            Three editorial cells in a single row — streak / week-active /
+            total XP. Sits directly below the hero so the student sees
+            their numbers immediately on first paint. */}
+        <div className="dashboard-stat-strip" aria-label={isHi ? 'इस हफ़्ते के आँकड़े' : "This week's numbers"}>
+          <div className="dashboard-stat-cell">
+            <span className="dashboard-stat-cell__value atlas-tabnum">{streak}</span>
+            <span className="dashboard-stat-cell__label">{isHi ? 'दिन की लय' : 'Day streak'}</span>
+          </div>
+          <div className="dashboard-stat-cell">
+            <span className="dashboard-stat-cell__value atlas-tabnum">
+              {last7Active.filter(Boolean).length}
+              <small className="atlas-stat-suffix">/7</small>
+            </span>
+            <span className="dashboard-stat-cell__label">{isHi ? 'सक्रिय दिन' : 'Active days'}</span>
+          </div>
+          <div className="dashboard-stat-cell">
+            <span className="dashboard-stat-cell__value atlas-tabnum">
+              {(student.xp_total ?? snapshot?.total_xp ?? 0).toLocaleString('en-IN')}
+            </span>
+            <span className="dashboard-stat-cell__label">{isHi ? 'कुल XP' : 'Total XP'}</span>
+          </div>
+        </div>
+
+        {/* ─── 2. The Atlas ───
+            Wrapped in an editorial-card so the chapter graph reads as a
+            framed editorial spread, not a free-floating SVG. The graph
+            itself is untouched — only the surrounding chrome changed. */}
+        <section className="editorial-card">
+          <p className="editorial-eyebrow">
+            {isHi ? 'आपका नक्शा' : 'Your atlas'} · {isHi ? `कक्षा ${student.grade ?? '—'}` : `Class ${student.grade ?? '—'}`}
           </p>
-          <h2
-            style={{
-              fontFamily: 'var(--font-serif)',
-              fontWeight: 500,
-              fontSize: 22,
-              margin: '0 0 16px',
-              letterSpacing: '-0.01em',
-            }}
-          >
+          <h2 className="editorial-section-title atlas-section-spaced">
             {isHi ? 'आप' : 'You are'}{' '}
             <em style={{ fontStyle: 'italic', color: 'var(--accent)' }}>{isHi ? 'यहाँ' : 'here'}</em>
           </h2>
@@ -374,7 +400,7 @@ export default function AtlasDashboard() {
             <Legend swatch="#E8581C" label={isHi ? 'अभी' : 'Today'} />
             <Legend swatch="transparent" border="1.5px dashed var(--ink-4)" label={isHi ? 'आने वाला' : 'Upcoming'} />
           </div>
-        </AtlasCard>
+        </section>
 
         </div>
 
@@ -497,16 +523,40 @@ export default function AtlasDashboard() {
           )}
         </AtlasCard>
 
-        {/* ─── 5. Quick actions ─── */}
-        <AtlasCard>
-          <p className="atlas-eyebrow">{isHi ? 'जल्दी' : 'Quick'}</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-            <QuickTile icon="grid" label={isHi ? 'मुक़ाबला' : 'Compete'} onClick={() => router.push('/leaderboard')} />
-            <QuickTile icon="scan" label={isHi ? 'स्कैन हल' : 'Scan'}    onClick={() => router.push('/scan')} />
-            <QuickTile icon="clock" label={isHi ? 'दोहराओ' : 'Revise'}    onClick={() => router.push('/review')} />
-            <QuickTile icon="foxy" label="Foxy"                          onClick={() => router.push('/foxy')} />
+        {/* ─── 5. Quick actions ───
+            Six editorial tiles in a real responsive grid (2 / 3 / 6 cols).
+            Square aspect-ratio + min 44px tap target — fingers find
+            squares faster than the old pills, and the grid scales cleanly
+            from 360px to 1440px. */}
+        <section>
+          <p className="editorial-eyebrow atlas-section-eyebrow">{isHi ? 'जल्दी से जाओ' : 'Jump in'}</p>
+          <div className="dashboard-tile-grid">
+            <button type="button" className="dashboard-tile" onClick={() => router.push('/leaderboard')}>
+              <span className="dashboard-tile__icon" aria-hidden="true">🏆</span>
+              <span className="dashboard-tile__label">{isHi ? 'मुक़ाबला' : 'Compete'}</span>
+            </button>
+            <button type="button" className="dashboard-tile" onClick={() => router.push('/scan')}>
+              <span className="dashboard-tile__icon" aria-hidden="true">📷</span>
+              <span className="dashboard-tile__label">{isHi ? 'स्कैन' : 'Scan'}</span>
+            </button>
+            <button type="button" className="dashboard-tile" onClick={() => router.push('/review')}>
+              <span className="dashboard-tile__icon" aria-hidden="true">🔁</span>
+              <span className="dashboard-tile__label">{isHi ? 'दोहराओ' : 'Revise'}</span>
+            </button>
+            <button type="button" className="dashboard-tile" onClick={() => router.push('/foxy')}>
+              <span className="dashboard-tile__icon" aria-hidden="true">🦊</span>
+              <span className="dashboard-tile__label">Foxy</span>
+            </button>
+            <button type="button" className="dashboard-tile" onClick={() => router.push('/quiz')}>
+              <span className="dashboard-tile__icon" aria-hidden="true">✏️</span>
+              <span className="dashboard-tile__label">{isHi ? 'अभ्यास' : 'Practice'}</span>
+            </button>
+            <button type="button" className="dashboard-tile" onClick={() => router.push('/simulations')}>
+              <span className="dashboard-tile__icon" aria-hidden="true">🔬</span>
+              <span className="dashboard-tile__label">{isHi ? 'प्रयोगशाला' : 'Lab'}</span>
+            </button>
           </div>
-        </AtlasCard>
+        </section>
 
         {/* ─── 6. Foxy whisper (engagement loop) ─── */}
         <AtlasCard tone="teal" style={{ padding: '18px 20px' }}>
@@ -663,7 +713,18 @@ function chromeBtn(): React.CSSProperties {
   };
 }
 
-function MissionMeta({ label, value }: { label: string; value: string }) {
+function MissionMeta({
+  label,
+  value,
+  dark = false,
+}: {
+  label: string;
+  value: string;
+  dark?: boolean;
+}) {
+  // `dark` switches the colour palette so the same component reads
+  // correctly on the dark-ink hero card (cream text + warm accent)
+  // as it does on the default paper card (ink text on cream).
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       <span
@@ -672,14 +733,19 @@ function MissionMeta({ label, value }: { label: string; value: string }) {
           fontSize: 10,
           textTransform: 'uppercase',
           letterSpacing: '0.16em',
-          color: 'var(--ink-3)',
+          color: dark ? 'rgba(255,255,255,0.55)' : 'var(--ink-3)',
         }}
       >
         {label}
       </span>
       <span
         className="atlas-tabnum"
-        style={{ fontFamily: 'var(--font-serif)', fontSize: 18, fontWeight: 500, color: 'var(--ink)' }}
+        style={{
+          fontFamily: 'var(--font-serif)',
+          fontSize: 18,
+          fontWeight: 500,
+          color: dark ? 'var(--cream)' : 'var(--ink)',
+        }}
       >
         {value}
       </span>
@@ -735,50 +801,6 @@ function StreakRing({ streak }: { streak: number }) {
         {streak}
       </text>
     </svg>
-  );
-}
-
-function QuickTile({
-  icon,
-  label,
-  onClick,
-}: {
-  icon: 'grid' | 'scan' | 'clock' | 'foxy';
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        background: 'var(--cream-2)',
-        border: '1px solid var(--line)',
-        borderRadius: 'var(--radius-atlas)',
-        padding: '14px 6px',
-        textAlign: 'center',
-        cursor: 'pointer',
-        transition: 'all 200ms var(--ease-atlas)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 6,
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.background = 'var(--paper)';
-        e.currentTarget.style.transform = 'translateY(-1px)';
-        e.currentTarget.style.boxShadow = 'var(--shadow-atlas-1)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = 'var(--cream-2)';
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = 'none';
-      }}
-    >
-      <AtlasIcon name={icon} size={20} style={{ color: 'var(--accent)' }} />
-      <small style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 11, color: 'var(--ink-2)' }}>
-        {label}
-      </small>
-    </button>
   );
 }
 
