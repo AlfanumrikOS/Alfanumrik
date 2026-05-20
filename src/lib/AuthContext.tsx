@@ -582,11 +582,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoading(true);
         // Allow bootstrap for the new sign-in session
         bootstrapAttemptedRef.current = false;
-        // Register device session for 2-device limit enforcement
-        fetch('/api/auth/session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ device_label: navigator.userAgent }),
+        // Register device session for 2-device limit enforcement.
+        //
+        // Auth token is forwarded as Authorization: Bearer so the server can
+        // validate the session even when supabase.auth.signInWithPassword wrote
+        // it to localStorage (the default) instead of cookies. Without this the
+        // server's cookie-based getUser() returned 401 on every page load and
+        // polluted browser consoles with 3+ entries per session. The server
+        // now returns 200/no_session_yet if both cookie and Bearer paths fail.
+        // 2026-05-20 — see api/auth/session/route.ts resolveAuthUser().
+        void supabase.auth.getSession().then(({ data: { session: authSession } }) => {
+          const token = authSession?.access_token;
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+          return fetch('/api/auth/session', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ device_label: navigator.userAgent }),
+          });
         }).catch((err: unknown) => {
           console.warn('[auth-session] session POST failed:', err instanceof Error ? err.message : String(err));
         }); // Best-effort, non-blocking

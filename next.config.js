@@ -130,7 +130,13 @@ const nextConfig = {
               //    /ingest/* covers the primary path; these hosts are listed
               //    so the SDK's direct-host fallback (used when the proxy is
               //    unreachable, e.g. dev) still works without a CSP block.
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://checkout.razorpay.com https://api.razorpay.com https://prod.spline.design https://us.i.posthog.com https://us-assets.i.posthog.com",
+              //  - fonts.googleapis.com + cdn.jsdelivr.net for the service
+              //    worker (public/sw.js) static-asset cache-first handler.
+              //    The main thread fetches these via <link>, but the SW's
+              //    fetch() call is a separate request that connect-src gates;
+              //    without these hosts the SW logs 4-5 CSP errors per page
+              //    load on every navigation (2026-05-20 CEO testing-noise fix).
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://checkout.razorpay.com https://api.razorpay.com https://prod.spline.design https://us.i.posthog.com https://us-assets.i.posthog.com https://fonts.googleapis.com https://cdn.jsdelivr.net",
               "media-src 'self' blob:",
               "worker-src 'self'",
               "frame-src https://api.razorpay.com https://checkout.razorpay.com",
