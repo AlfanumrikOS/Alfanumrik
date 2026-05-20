@@ -541,6 +541,196 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- INQUIRY FORM (Submit your query) ---------- */
+.inquiryForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0 12px;
+  font-family: var(--body, system-ui, sans-serif);
+}
+.inquiryIntro {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-mute, #5B5141);
+  margin: 0 0 4px;
+}
+.inquiryField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.inquiryLabel {
+  font-family: var(--mono, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink, #0E0B07);
+}
+.inquiryOptional {
+  color: var(--ink-mute, #5B5141);
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+.inquiryRequired {
+  color: var(--saffron, #E8581C);
+  margin-left: 2px;
+}
+.inquiryInput,
+.inquiryTextarea {
+  border: 1px solid var(--rule, rgba(14, 11, 7, 0.22));
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--ink, #0E0B07);
+  padding: 9px 12px;
+  font-size: 14px;
+  font-family: var(--body, system-ui, sans-serif);
+  line-height: 1.4;
+  outline: none;
+  transition: border-color 0.15s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+.inquiryTextarea {
+  resize: vertical;
+  min-height: 92px;
+  max-height: 220px;
+}
+.inquiryInput:focus,
+.inquiryTextarea:focus {
+  border-color: var(--saffron, #E8581C);
+}
+.inquiryInput:disabled,
+.inquiryTextarea:disabled {
+  background: var(--cream-deep, #EADFC6);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.inquiryCharCounter {
+  align-self: flex-end;
+  font-size: 10.5px;
+  color: var(--ink-mute, #5B5141);
+  font-family: var(--mono, monospace);
+}
+.inquiryCharCounterWarn {
+  color: var(--vermilion, #DC2626);
+}
+.inquiryHint {
+  font-family: var(--mono, monospace);
+}
+.inquiryPrivacy {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-mute, #5B5141);
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--cream-deep, #EADFC6);
+  border-radius: 8px;
+}
+.inquiryError {
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.32);
+  color: var(--vermilion, #DC2626);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.inquirySuccess {
+  background: rgba(15, 92, 95, 0.08);
+  border: 1px solid rgba(15, 92, 95, 0.32);
+  color: var(--peacock, #0F5C5F);
+  border-radius: 10px;
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.inquirySuccess strong {
+  font-size: 14px;
+  color: var(--ink, #0E0B07);
+}
+.inquirySuccessHint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-mute, #5B5141);
+}
+.inquiryActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.inquiryCancel,
+.inquirySubmit {
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-family: var(--body, system-ui, sans-serif);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+.inquiryCancel {
+  background: transparent;
+  border: 1px solid var(--rule, rgba(14, 11, 7, 0.22));
+  color: var(--ink, #0E0B07);
+}
+.inquiryCancel:hover:not(:disabled) {
+  background: rgba(14, 11, 7, 0.04);
+  border-color: var(--ink, #0E0B07);
+}
+.inquirySubmit {
+  background: var(--saffron, #E8581C);
+  color: #ffffff;
+  border: 1px solid var(--saffron, #E8581C);
+}
+.inquirySubmit:hover:not(:disabled) {
+  background: var(--saffron-deep, #C84411);
+  border-color: var(--saffron-deep, #C84411);
+}
+.inquirySubmit:focus-visible {
+  outline: 2px solid var(--ink, #0E0B07);
+  outline-offset: 2px;
+}
+.inquirySubmit:disabled,
+.inquiryCancel:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.inquirySubmitLabel {
+  display: inline-block;
+}
+.escapeInquiryBtn {
+  background: var(--ink, #0E0B07);
+  color: var(--cream, #F4ECDB);
+  border: 1px solid var(--ink, #0E0B07);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-family: var(--mono, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.escapeInquiryBtn:hover {
+  background: var(--saffron, #E8581C);
+  border-color: var(--saffron, #E8581C);
+}
+.escapeInquiryBtn:focus-visible {
+  outline: 2px solid var(--saffron, #E8581C);
+  outline-offset: 2px;
+}
+
 /* ---------- ANIMATIONS ---------- */
 @keyframes alfabotBackdropFade {
   from { opacity: 0; }
@@ -626,4 +816,14 @@
   background: #1f1a12;
   border-right-color: rgba(244, 236, 219, 0.22);
   border-bottom-color: rgba(244, 236, 219, 0.22);
+}
+[data-theme='dark'] .inquiryInput,
+[data-theme='dark'] .inquiryTextarea {
+  background: #1f1a12;
+  color: var(--cream, #F4ECDB);
+  border-color: rgba(244, 236, 219, 0.22);
+}
+[data-theme='dark'] .inquiryPrivacy {
+  background: #1a160f;
+  color: rgba(244, 236, 219, 0.72);
 }
