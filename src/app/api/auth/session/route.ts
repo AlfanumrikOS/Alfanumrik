@@ -31,6 +31,45 @@ const SESSION_COOKIE = 'alfanumrik_sid';
 const SESSION_MAX_AGE = 30 * 24 * 60 * 60; // 30 days
 
 /**
+ * Resolve the authenticated user from either:
+ *   1. The cookie-based server client (works when SSR/middleware has hydrated
+ *      the session into cookies), OR
+ *   2. An `Authorization: Bearer <access_token>` header (works when the
+ *      browser holds the session in localStorage — the default for
+ *      `signInWithPassword` — and explicitly forwards the token).
+ *
+ * Cookies win when both are present (preserves existing behaviour). Returns
+ * null if neither path produces a user. Never throws.
+ *
+ * 2026-05-20: added Bearer fallback because `signInWithPassword` writes the
+ * session to localStorage, not cookies, so the cookie-only path returned 401
+ * on every device-tracking POST from AuthContext.
+ */
+async function resolveAuthUser(request: NextRequest): Promise<{ id: string } | null> {
+  // Path 1: cookie-based (preferred — cookies still win if both present).
+  try {
+    const supabase = await createSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) return { id: user.id };
+  } catch { /* fall through to Bearer */ }
+
+  // Path 2: Authorization: Bearer <jwt>
+  const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
+  if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+    const token = authHeader.slice(7).trim();
+    if (token) {
+      try {
+        const admin = getSupabaseAdmin();
+        const { data: { user } } = await admin.auth.getUser(token);
+        if (user) return { id: user.id };
+      } catch { /* token invalid/expired/network */ }
+    }
+  }
+
+  return null;
+}
+
+/**
  * POST — Register a new session for the authenticated user.
  *
  * If the user already has a valid session cookie, refreshes last_seen_at.
@@ -39,10 +78,16 @@ const SESSION_MAX_AGE = 30 * 24 * 60 * 60; // 30 days
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createSupabaseServerClient();
-    const { data: { user }, error } = await supabase.auth.getUser();
-    if (error || !user) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    const user = await resolveAuthUser(request);
+    if (!user) {
+      // Fire-and-forget device tracking — 200 + no_session_yet is honest
+      // and silent. Returning 401 here was polluting browser consoles with
+      // 3+ entries per session and drowning out real auth failures.
+      // 2026-05-20: changed from 401 to 200 per CEO directive.
+      return NextResponse.json(
+        { status: 'no_session_yet', session_id: null },
+        { status: 200 }
+      );
     }
 
     // Check if user already has a valid session cookie
@@ -210,9 +255,8 @@ export async function DELETE(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createSupabaseServerClient();
-    const { data: { user }, error } = await supabase.auth.getUser();
-    if (error || !user) {
+    const user = await resolveAuthUser(request);
+    if (!user) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
