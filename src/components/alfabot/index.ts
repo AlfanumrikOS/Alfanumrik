@@ -17,3 +17,7 @@
  */
 
 export { default as AlfaBotMount } from './AlfaBotMount';
+// Subview re-export: kept for parity with other internal components, so test
+// suites or future surfaces can mount it standalone without re-implementing
+// the form. Not consumed by the launcher chunk.
+export { default as AlfaBotInquiryForm } from './AlfaBotInquiryForm';

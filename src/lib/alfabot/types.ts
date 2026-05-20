@@ -133,6 +133,29 @@ export interface AlfabotLeadResponse {
   leadId: string;
 }
 
+// ─── Inquiry (Submit your query) ────────────────────────────────────────────
+//
+// Distinct from lead capture: the inquiry form is a plain "contact us" path
+// where the visitor types a free-form question. No DPDPA consent contract
+// (we're only using the email + question to reply once). The submission is
+// routed through `/api/alfabot/inquiry`, which then forwards to a Supabase
+// Edge Function that mails the inquiry to a hardcoded ops inbox via Mailgun.
+
+export interface AlfabotInquiryRequest {
+  /** Optional visitor display name (≤120 chars after trim). */
+  name?: string;
+  /** RFC-5322 lite, ≤254 chars after trim. */
+  email: string;
+  /** 10-2000 chars after trim. */
+  question: string;
+}
+
+export interface AlfabotInquirySuccess {
+  ok: true;
+  /** Mailgun message id. May be empty string on Mailgun ack without id. */
+  messageId: string;
+}
+
 // ─── Error envelope ──────────────────────────────────────────────────────────
 
 export interface AlfabotErrorResponse {
@@ -142,10 +165,11 @@ export interface AlfabotErrorResponse {
     | 'denied'
     | 'session_max'
     | 'upstream_failed'
-    | 'not_found';
+    | 'not_found'
+    | 'mail_send_failed';
   detail?: string;
   /** ISO timestamp when the bucket refills (only on rate_limited / session_max). */
   resetAt?: string;
   /** Which limiter blocked (only on rate_limited / session_max). */
-  scope?: 'burst' | 'day' | 'ip' | 'session_max' | 'lead';
+  scope?: 'burst' | 'day' | 'ip' | 'session_max' | 'lead' | 'inquiry_day';
 }

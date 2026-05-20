@@ -28,6 +28,8 @@ import type {
   AlfabotErrorResponse,
   AlfabotLeadRequest,
   AlfabotLeadResponse,
+  AlfabotInquiryRequest,
+  AlfabotInquirySuccess,
 } from './types';
 import { ALFABOT_SSE_EVENTS } from './sse-events';
 
@@ -252,6 +254,40 @@ export async function submitLead(
     const body = await res.json();
     if (res.ok && body?.ok === true && typeof body.leadId === 'string') {
       return body as AlfabotLeadResponse;
+    }
+    return body as AlfabotErrorResponse;
+  } catch {
+    return { error: 'upstream_failed', detail: `http_${res.status}` };
+  }
+}
+
+// ─── submitInquiry — Submit your query (contact form) ───────────────────────
+//
+// POSTs to /api/alfabot/inquiry, which forwards the inquiry to the ops inbox
+// via the alfabot-send-inquiry Edge Function (Mailgun). No streaming, no
+// session required. Returns either a Mailgun message id or an error envelope.
+
+export async function submitInquiry(
+  req: AlfabotInquiryRequest,
+): Promise<AlfabotInquirySuccess | AlfabotErrorResponse> {
+  let res: Response;
+  try {
+    res = await fetch('/api/alfabot/inquiry', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+  } catch (err) {
+    return {
+      error: 'upstream_failed',
+      detail: err instanceof Error ? err.message : 'fetch_failed',
+    };
+  }
+  try {
+    const body = await res.json();
+    if (res.ok && body?.ok === true && typeof body.messageId === 'string') {
+      return body as AlfabotInquirySuccess;
     }
     return body as AlfabotErrorResponse;
   } catch {

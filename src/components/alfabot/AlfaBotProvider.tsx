@@ -55,6 +55,12 @@ import { useWelcomeV2, type Role } from '@/components/landing-v2/WelcomeV2Contex
 
 export type AlfabotRole = 'user' | 'assistant' | 'system';
 
+/**
+ * Which subview the panel is rendering. Default 'chat'. 'inquiry' swaps the
+ * chat body for the Submit-your-query form; the launcher / header stay put.
+ */
+export type AlfabotView = 'chat' | 'inquiry';
+
 export interface AlfabotChatMessage {
   id: string;
   role: AlfabotRole;
@@ -82,6 +88,8 @@ interface AlfabotContextValue {
   langNudgeVisible: boolean;
   /** Char-count seed for the input — set by `prefillInput()` and cleared on send. */
   prefilled: string | null;
+  /** Which subview the panel is rendering. */
+  view: AlfabotView;
 
   // Actions
   open: (source: 'bubble' | 'speech_tail' | 'faq_link' | 'prefill') => void;
@@ -93,6 +101,10 @@ interface AlfabotContextValue {
   clearConversation: () => void;
   prefillInput: (text: string) => void;
   clearPrefilled: () => void;
+  /** Switch the panel body to the Submit-your-query form. */
+  openInquiry: (source?: 'escape_hatch' | 'starter_chip' | 'rate_limit_banner') => void;
+  /** Switch the panel body back to the chat view. */
+  closeInquiry: () => void;
 }
 
 const Ctx = createContext<AlfabotContextValue | null>(null);
@@ -180,6 +192,7 @@ export function AlfaBotProvider({ children }: { children: ReactNode }) {
   const [langNudgeDismissed, setLangNudgeDismissed] = useState(false);
   const [langNudgeVisible, setLangNudgeVisible] = useState(false);
   const [prefilled, setPrefilled] = useState<string | null>(null);
+  const [view, setView] = useState<AlfabotView>('chat');
 
   // For PostHog "seconds_since_pageload" + per-open message_count.
   const pageMountedAt = useRef<number>(Date.now());
@@ -307,6 +320,22 @@ export function AlfaBotProvider({ children }: { children: ReactNode }) {
 
   const clearPrefilled = useCallback(() => {
     setPrefilled(null);
+  }, []);
+
+  const openInquiry = useCallback(
+    (source: 'escape_hatch' | 'starter_chip' | 'rate_limit_banner' = 'escape_hatch') => {
+      setView('inquiry');
+      track('alfabot_inquiry_opened', {
+        audience,
+        language: lang,
+        source,
+      });
+    },
+    [audience, lang],
+  );
+
+  const closeInquiry = useCallback(() => {
+    setView('chat');
   }, []);
 
   // ─── sendMessage — core chat call ─────────────────────────────────────────
@@ -509,6 +538,7 @@ export function AlfaBotProvider({ children }: { children: ReactNode }) {
       langNudgeDismissed,
       langNudgeVisible,
       prefilled,
+      view,
       open,
       close,
       sendMessage,
@@ -518,6 +548,8 @@ export function AlfaBotProvider({ children }: { children: ReactNode }) {
       clearConversation,
       prefillInput,
       clearPrefilled,
+      openInquiry,
+      closeInquiry,
     }),
     [
       isOpen,
@@ -531,6 +563,7 @@ export function AlfaBotProvider({ children }: { children: ReactNode }) {
       langNudgeDismissed,
       langNudgeVisible,
       prefilled,
+      view,
       open,
       close,
       sendMessage,
@@ -540,6 +573,8 @@ export function AlfaBotProvider({ children }: { children: ReactNode }) {
       clearConversation,
       prefillInput,
       clearPrefilled,
+      openInquiry,
+      closeInquiry,
     ],
   );
 

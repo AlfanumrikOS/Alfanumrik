@@ -3,12 +3,15 @@
 /**
  * AlfaBotEscapeHatch — "Need a human?" links below the input.
  *
- * Two links:
+ * Three entry points:
+ *   - Submit your query (inline form via the inquiry POST route — primary)
  *   - /contact
  *   - WhatsApp (via NEXT_PUBLIC_ALFANUMRIK_WA env var, falls back to /contact
  *     when unset so we never expose a dead `https://wa.me/` URL).
  *
- * Analytics: fires alfabot_escape_to_contact with the destination.
+ * Analytics:
+ *   - alfabot_inquiry_opened (provider fires it on view switch)
+ *   - alfabot_escape_to_contact with the destination
  */
 
 import { useAlfaBot } from './AlfaBotProvider';
@@ -17,7 +20,7 @@ import { track } from '@/lib/posthog/client';
 import s from './alfabot.module.css';
 
 export default function AlfaBotEscapeHatch() {
-  const { audience, lang } = useAlfaBot();
+  const { audience, lang, openInquiry } = useAlfaBot();
   const { t } = useWelcomeV2();
   const waNumber = process.env.NEXT_PUBLIC_ALFANUMRIK_WA;
   const waHref = waNumber ? `https://wa.me/${waNumber.replace(/[^0-9]/g, '')}` : '/contact';
@@ -29,6 +32,14 @@ export default function AlfaBotEscapeHatch() {
   return (
     <div className={s.escape}>
       <span className={s.escapeLabel}>{t('Need a human?', 'इंसान से बात करनी है?')}</span>
+      <button
+        type="button"
+        className={s.escapeInquiryBtn}
+        onClick={() => openInquiry('escape_hatch')}
+        data-testid="alfabot-escape-inquiry"
+      >
+        {t('Submit your query', 'अपना सवाल भेजें')}
+      </button>
       <a
         href="/contact"
         className={s.escapeLink}

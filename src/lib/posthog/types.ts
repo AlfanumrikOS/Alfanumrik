@@ -138,6 +138,9 @@ export type PostHogEventName =
   | 'alfabot_escape_to_contact'
   | 'alfabot_rate_limited'
   | 'alfabot_error_shown'
+  | 'alfabot_inquiry_opened'
+  | 'alfabot_inquiry_submitted'
+  | 'alfabot_inquiry_failed'
   // Student dashboard CTA tracking (mobile-first redesign, Phase 1.5).
   // Fired client-side from the seven section components under
   // src/components/dashboard/sections/. Closes the "we don't know which
@@ -722,6 +725,9 @@ export type EventPayloadByName = {
   alfabot_escape_to_contact: AlfabotEscapeToContactPayload;
   alfabot_rate_limited: AlfabotRateLimitedPayload;
   alfabot_error_shown: AlfabotErrorShownPayload;
+  alfabot_inquiry_opened: AlfabotInquiryOpenedPayload;
+  alfabot_inquiry_submitted: AlfabotInquirySubmittedPayload;
+  alfabot_inquiry_failed: AlfabotInquiryFailedPayload;
   dashboard_cta_clicked: DashboardCtaClickedPayload;
 };
 
@@ -883,6 +889,34 @@ export interface AlfabotRateLimitedPayload extends AlfabotEventContextBase {
 export interface AlfabotErrorShownPayload extends AlfabotEventContextBase {
   /** Closed-set error key — mirrors the AlfabotErrorResponse envelope. */
   error: 'network_error' | 'upstream_failed' | 'invalid_input' | 'denied' | 'not_found';
+}
+
+// AlfaBot inquiry (Submit your query) — three lifecycle events.
+//
+// PII-free: never includes name / email / question content. We only ship
+// the audience + language + a coarse reason key on failures.
+
+export interface AlfabotInquiryOpenedPayload extends AlfabotEventContextBase {
+  /** Where the inquiry view was opened from. */
+  source: 'escape_hatch' | 'starter_chip' | 'rate_limit_banner';
+}
+
+export interface AlfabotInquirySubmittedPayload extends AlfabotEventContextBase {
+  /** Whether the visitor provided an optional name (no name CONTENT). */
+  has_name: boolean;
+  /** Question length bucket — PII-safe but spots abusively long inputs. */
+  length_bucket: 'short' | 'medium' | 'long';
+}
+
+export interface AlfabotInquiryFailedPayload extends AlfabotEventContextBase {
+  /** Closed-set reason mirroring AlfabotErrorResponse. */
+  reason:
+    | 'invalid_input'
+    | 'rate_limited'
+    | 'denied'
+    | 'mail_send_failed'
+    | 'upstream_failed'
+    | 'network_error';
 }
 
 // ── Student dashboard CTA payload (mobile-first redesign Phase 1.5) ────

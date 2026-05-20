@@ -24,6 +24,7 @@ import AlfaBotInput from './AlfaBotInput';
 import AlfaBotEscapeHatch from './AlfaBotEscapeHatch';
 import AlfaBotLangNudge from './AlfaBotLangNudge';
 import AlfaBotRateLimit from './AlfaBotRateLimit';
+import AlfaBotInquiryForm from './AlfaBotInquiryForm';
 import type { AlfabotAudience } from '@/lib/alfabot/types';
 import s from './alfabot.module.css';
 
@@ -40,7 +41,7 @@ function isMobileViewport(): boolean {
 }
 
 export default function AlfaBotPanel() {
-  const { messages, isOpen, close, error, audience } = useAlfaBot();
+  const { messages, isOpen, close, error, audience, view } = useAlfaBot();
   const { t } = useWelcomeV2();
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -137,30 +138,38 @@ export default function AlfaBotPanel() {
         </header>
 
         <div ref={bodyRef} className={s.body} data-testid="alfabot-body">
-          {showStarters && <AlfaBotStarterChips />}
-          {messages.map((m) => (
-            <AlfaBotMessage key={m.id} message={m} />
-          ))}
-          {error && (
-            <AlfaBotMessage
-              message={{
-                id: 'error-banner',
-                role: 'system',
-                content: t(
-                  'Something went wrong. Please try again or message us via Contact / WhatsApp.',
-                  'कुछ ग़लत हो गया। कृपया दोबारा कोशिश करें या Contact / WhatsApp के ज़रिए हमें लिखें।',
-                ),
-              }}
-            />
+          {view === 'inquiry' ? (
+            <AlfaBotInquiryForm />
+          ) : (
+            <>
+              {showStarters && <AlfaBotStarterChips />}
+              {messages.map((m) => (
+                <AlfaBotMessage key={m.id} message={m} />
+              ))}
+              {error && (
+                <AlfaBotMessage
+                  message={{
+                    id: 'error-banner',
+                    role: 'system',
+                    content: t(
+                      'Something went wrong. Please try again or message us via Contact / WhatsApp.',
+                      'कुछ ग़लत हो गया। कृपया दोबारा कोशिश करें या Contact / WhatsApp के ज़रिए हमें लिखें।',
+                    ),
+                  }}
+                />
+              )}
+              <AlfaBotLangNudge />
+            </>
           )}
-          <AlfaBotLangNudge />
         </div>
 
-        <footer className={s.footer}>
-          <AlfaBotRateLimit />
-          <AlfaBotInput />
-          <AlfaBotEscapeHatch />
-        </footer>
+        {view === 'chat' && (
+          <footer className={s.footer}>
+            <AlfaBotRateLimit />
+            <AlfaBotInput />
+            <AlfaBotEscapeHatch />
+          </footer>
+        )}
       </div>
     </div>
   );
