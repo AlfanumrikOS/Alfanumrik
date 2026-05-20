@@ -318,6 +318,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (detectedPrimary === 'none') detectedPrimary = 'guardian';
         }
 
+        // Check school_admin (institution_admin role).
+        // The baseline `get_user_role` RPC only inspects students/teachers/
+        // guardians — school_admins are invisible to it. So a school admin
+        // whose RPC call succeeded with `roles: []` falls through to this
+        // fallback block, and without this check would end up with
+        // activeRole='none' and hang on /dashboard. We don't expose a
+        // separate schoolAdmin profile in AuthContext — the school-admin
+        // page (src/app/school-admin/page.tsx) re-queries the row itself.
+        // All we need from here is the role so routing works.
+        const { data: schoolAdminData } = await supabase
+          .from('school_admins')
+          .select('id, school_id')
+          .eq('auth_user_id', user.id)
+          .eq('is_active', true)
+          .maybeSingle();
+        if (schoolAdminData) {
+          detectedRoles.push('institution_admin');
+          if (detectedPrimary === 'none') detectedPrimary = 'institution_admin';
+        }
+
         if (detectedRoles.length > 0) {
           setRoles(detectedRoles);
           setActiveRoleState(detectedPrimary);
