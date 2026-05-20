@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { type SupabaseClient } from '@supabase/supabase-js';
 import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
 import { useAuth } from '@/lib/AuthContext';
+import { supabase } from '@/lib/supabase-client';
 
 interface AdminSession {
   accessToken: string;
@@ -55,9 +56,10 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [adminName, setAdminName] = useState('');
   const [currentPath, setCurrentPath] = useState('');
-  const [supabase] = useState(() =>
-    createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '')
-  );
+  // Supabase client is the canonical singleton from '@/lib/supabase-client'.
+  // Previously this component created its own client via createClient(), which
+  // produced a second GoTrueClient instance fighting AuthContext over the same
+  // localStorage key and intermittently failed /api/auth/session with 401.
   // useAuth() returns the default context (isHi: false) when no AuthProvider is
   // mounted — super-admin routes have their own /super-admin/login flow and may
   // not be wrapped in AuthProvider. Bilingual rendering activates only when

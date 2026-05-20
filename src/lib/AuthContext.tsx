@@ -192,257 +192,282 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [roles]);
 
   const fetchUser = useCallback(async () => {
-    let hasUser = false;
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setAuthUserId(null);
+    // Hard timeout — if any await stalls (network, RLS hang, Supabase outage)
+    // we fail open to a logged-out state so /dashboard's existing redirect
+    // takes the user to /login rather than spinning forever on a skeleton.
+    // 12s is fast enough that the user isn't stuck, generous enough that a
+    // slow connection still completes normally.
+    const TIMEOUT_MS = 12_000;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<void>((resolve) => {
+      timeoutId = setTimeout(() => {
+        console.warn(`[AuthContext] fetchUser exceeded ${TIMEOUT_MS}ms — failing open`);
         setStudent(null);
         setTeacher(null);
         setGuardian(null);
         setRoles([]);
         setActiveRoleState('none');
         setIsLoading(false);
-        return;
-      }
-      hasUser = true;
-      setAuthUserId(user.id);
+        resolve();
+      }, TIMEOUT_MS);
+    });
 
-      // Detect all roles using RPC
-      let rolesResolved = false;
+    const work = (async () => {
+      let hasUser = false;
       try {
-        const { data: roleData } = await supabase.rpc('get_user_role', {
-          p_auth_user_id: user.id,
-        });
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setAuthUserId(null);
+          setStudent(null);
+          setTeacher(null);
+          setGuardian(null);
+          setRoles([]);
+          setActiveRoleState('none');
+          setIsLoading(false);
+          return;
+        }
+        hasUser = true;
+        setAuthUserId(user.id);
 
-        if (roleData) {
-          const rd = roleData as RoleData;
-          setRoles(rd.roles || []);
-          rolesResolved = (rd.roles || []).length > 0;
+        // Detect all roles using RPC
+        let rolesResolved = false;
+        try {
+          const { data: roleData } = await supabase.rpc('get_user_role', {
+            p_auth_user_id: user.id,
+          });
 
-          // Restore saved role — ONLY if it's in the server-verified role list.
-          // This prevents the attack where someone manually writes
-          // localStorage.setItem('alfanumrik_active_role', 'teacher')
-          const savedRole = typeof window !== 'undefined'
-            ? localStorage.getItem('alfanumrik_active_role') as UserRole | null
-            : null;
-          const serverRoles = rd.roles || [];
-          const effectiveRole = savedRole && serverRoles.includes(savedRole)
-            ? savedRole
-            : rd.primary_role || 'student';
+          if (roleData) {
+            const rd = roleData as RoleData;
+            setRoles(rd.roles || []);
+            rolesResolved = (rd.roles || []).length > 0;
 
-          // If saved role was invalid, clean it from localStorage
-          if (savedRole && !serverRoles.includes(savedRole)) {
-            console.warn(`[Auth] Cleared invalid saved role "${savedRole}". Verified roles:`, serverRoles);
-            localStorage.removeItem('alfanumrik_active_role');
-          }
+            // Restore saved role — ONLY if it's in the server-verified role list.
+            // This prevents the attack where someone manually writes
+            // localStorage.setItem('alfanumrik_active_role', 'teacher')
+            const savedRole = typeof window !== 'undefined'
+              ? localStorage.getItem('alfanumrik_active_role') as UserRole | null
+              : null;
+            const serverRoles = rd.roles || [];
+            const effectiveRole = savedRole && serverRoles.includes(savedRole)
+              ? savedRole
+              : rd.primary_role || 'student';
 
-          setActiveRoleState(effectiveRole);
+            // If saved role was invalid, clean it from localStorage
+            if (savedRole && !serverRoles.includes(savedRole)) {
+              console.warn(`[Auth] Cleared invalid saved role "${savedRole}". Verified roles:`, serverRoles);
+              localStorage.removeItem('alfanumrik_active_role');
+            }
 
-          // Load student profile if role exists
-          if (rd.student) {
-            const { data: studentData } = await supabase
-              .from('students')
-              .select('*')
-              .eq('id', rd.student.id)
-              .single();
-            if (studentData) {
-              setStudent(studentData as Student);
-              setLanguageState(studentData.preferred_language ?? 'en');
+            setActiveRoleState(effectiveRole);
+
+            // Load student profile if role exists
+            if (rd.student) {
+              const { data: studentData } = await supabase
+                .from('students')
+                .select('*')
+                .eq('id', rd.student.id)
+                .single();
+              if (studentData) {
+                setStudent(studentData as Student);
+                setLanguageState(studentData.preferred_language ?? 'en');
+              }
+            }
+
+            // Load teacher profile if role exists
+            if (rd.teacher) {
+              const { data: teacherData } = await supabase
+                .from('teachers')
+                .select('id, name, school_name, subjects_taught, grades_taught, email, phone')
+                .eq('id', rd.teacher.id)
+                .single();
+              if (teacherData) setTeacher(teacherData as TeacherProfile);
+            }
+
+            // Load guardian profile if role exists
+            if (rd.guardian) {
+              const { data: guardianData } = await supabase
+                .from('guardians')
+                .select('id, name, email, phone')
+                .eq('id', rd.guardian.id)
+                .single();
+              if (guardianData) setGuardian(guardianData as GuardianProfile);
             }
           }
+        } catch (rpcErr) {
+          console.warn('get_user_role RPC failed, using fallback:', rpcErr);
+        }
 
-          // Load teacher profile if role exists
-          if (rd.teacher) {
-            const { data: teacherData } = await supabase
-              .from('teachers')
-              .select('id, name, school_name, subjects_taught, grades_taught, email, phone')
-              .eq('id', rd.teacher.id)
-              .single();
-            if (teacherData) setTeacher(teacherData as TeacherProfile);
+        // Fallback: try all role tables directly
+        if (!rolesResolved) {
+          const detectedRoles: UserRole[] = [];
+          let detectedPrimary: UserRole = 'none';
+
+          // Check student
+          const { data: studentData } = await supabase
+            .from('students')
+            .select('*')
+            .eq('auth_user_id', user.id)
+            .single();
+          if (studentData) {
+            setStudent(studentData as Student);
+            detectedRoles.push('student');
+            detectedPrimary = 'student';
+            setLanguageState(studentData.preferred_language ?? 'en');
           }
 
-          // Load guardian profile if role exists
-          if (rd.guardian) {
-            const { data: guardianData } = await supabase
-              .from('guardians')
-              .select('id, name, email, phone')
-              .eq('id', rd.guardian.id)
-              .single();
-            if (guardianData) setGuardian(guardianData as GuardianProfile);
+          // Check teacher
+          const { data: teacherData } = await supabase
+            .from('teachers')
+            .select('id, name, school_name, subjects_taught, grades_taught, email, phone')
+            .eq('auth_user_id', user.id)
+            .single();
+          if (teacherData) {
+            setTeacher(teacherData as TeacherProfile);
+            detectedRoles.push('teacher');
+            detectedPrimary = 'teacher'; // teacher takes priority
           }
-        }
-      } catch (rpcErr) {
-        console.warn('get_user_role RPC failed, using fallback:', rpcErr);
-      }
 
-      // Fallback: try all role tables directly
-      if (!rolesResolved) {
-        const detectedRoles: UserRole[] = [];
-        let detectedPrimary: UserRole = 'none';
+          // Check guardian
+          const { data: guardianData } = await supabase
+            .from('guardians')
+            .select('id, name, email, phone')
+            .eq('auth_user_id', user.id)
+            .single();
+          if (guardianData) {
+            setGuardian(guardianData as GuardianProfile);
+            detectedRoles.push('guardian');
+            if (detectedPrimary === 'none') detectedPrimary = 'guardian';
+          }
 
-        // Check student
-        const { data: studentData } = await supabase
-          .from('students')
-          .select('*')
-          .eq('auth_user_id', user.id)
-          .single();
-        if (studentData) {
-          setStudent(studentData as Student);
-          detectedRoles.push('student');
-          detectedPrimary = 'student';
-          setLanguageState(studentData.preferred_language ?? 'en');
-        }
+          // Check school_admin (institution_admin role).
+          // The baseline `get_user_role` RPC only inspects students/teachers/
+          // guardians — school_admins are invisible to it. So a school admin
+          // whose RPC call succeeded with `roles: []` falls through to this
+          // fallback block, and without this check would end up with
+          // activeRole='none' and hang on /dashboard. We don't expose a
+          // separate schoolAdmin profile in AuthContext — the school-admin
+          // page (src/app/school-admin/page.tsx) re-queries the row itself.
+          // All we need from here is the role so routing works.
+          const { data: schoolAdminData } = await supabase
+            .from('school_admins')
+            .select('id, school_id')
+            .eq('auth_user_id', user.id)
+            .eq('is_active', true)
+            .maybeSingle();
+          if (schoolAdminData) {
+            detectedRoles.push('institution_admin');
+            if (detectedPrimary === 'none') detectedPrimary = 'institution_admin';
+          }
 
-        // Check teacher
-        const { data: teacherData } = await supabase
-          .from('teachers')
-          .select('id, name, school_name, subjects_taught, grades_taught, email, phone')
-          .eq('auth_user_id', user.id)
-          .single();
-        if (teacherData) {
-          setTeacher(teacherData as TeacherProfile);
-          detectedRoles.push('teacher');
-          detectedPrimary = 'teacher'; // teacher takes priority
-        }
+          if (detectedRoles.length > 0) {
+            setRoles(detectedRoles);
+            setActiveRoleState(detectedPrimary);
+          } else if (!bootstrapAttemptedRef.current) {
+            // User is authenticated but has no profile yet.
+            // B10: Route through /api/auth/bootstrap (server-side, admin client, idempotent)
+            // instead of inserting directly via browser client (which bypasses RLS, triggers,
+            // and onboarding_state creation).
+            // Guard: only attempt bootstrap once to prevent infinite recursion if
+            // bootstrap succeeds but the subsequent profile query still fails.
+            bootstrapAttemptedRef.current = true;
+            const metaRole = user.user_metadata?.role as string | undefined;
+            const metaName = user.user_metadata?.name as string || user.email?.split('@')[0] || 'Student';
+            const metaGrade = user.user_metadata?.grade as string || '6';
+            const metaBoard = user.user_metadata?.board as string || 'CBSE';
 
-        // Check guardian
-        const { data: guardianData } = await supabase
-          .from('guardians')
-          .select('id, name, email, phone')
-          .eq('auth_user_id', user.id)
-          .single();
-        if (guardianData) {
-          setGuardian(guardianData as GuardianProfile);
-          detectedRoles.push('guardian');
-          if (detectedPrimary === 'none') detectedPrimary = 'guardian';
-        }
-
-        // Check school_admin (institution_admin role).
-        // The baseline `get_user_role` RPC only inspects students/teachers/
-        // guardians — school_admins are invisible to it. So a school admin
-        // whose RPC call succeeded with `roles: []` falls through to this
-        // fallback block, and without this check would end up with
-        // activeRole='none' and hang on /dashboard. We don't expose a
-        // separate schoolAdmin profile in AuthContext — the school-admin
-        // page (src/app/school-admin/page.tsx) re-queries the row itself.
-        // All we need from here is the role so routing works.
-        const { data: schoolAdminData } = await supabase
-          .from('school_admins')
-          .select('id, school_id')
-          .eq('auth_user_id', user.id)
-          .eq('is_active', true)
-          .maybeSingle();
-        if (schoolAdminData) {
-          detectedRoles.push('institution_admin');
-          if (detectedPrimary === 'none') detectedPrimary = 'institution_admin';
-        }
-
-        if (detectedRoles.length > 0) {
-          setRoles(detectedRoles);
-          setActiveRoleState(detectedPrimary);
-        } else if (!bootstrapAttemptedRef.current) {
-          // User is authenticated but has no profile yet.
-          // B10: Route through /api/auth/bootstrap (server-side, admin client, idempotent)
-          // instead of inserting directly via browser client (which bypasses RLS, triggers,
-          // and onboarding_state creation).
-          // Guard: only attempt bootstrap once to prevent infinite recursion if
-          // bootstrap succeeds but the subsequent profile query still fails.
-          bootstrapAttemptedRef.current = true;
-          const metaRole = user.user_metadata?.role as string | undefined;
-          const metaName = user.user_metadata?.name as string || user.email?.split('@')[0] || 'Student';
-          const metaGrade = user.user_metadata?.grade as string || '6';
-          const metaBoard = user.user_metadata?.board as string || 'CBSE';
-
-          let bootstrapSucceeded = false;
-          try {
-            let parsedSubjects: string[] | null = null;
-            let parsedGrades: string[] | null = null;
+            let bootstrapSucceeded = false;
             try {
-              if (user.user_metadata?.subjects_taught) parsedSubjects = JSON.parse(user.user_metadata.subjects_taught);
-              if (user.user_metadata?.grades_taught) parsedGrades = JSON.parse(user.user_metadata.grades_taught);
-            } catch { /* malformed JSON */ }
-
-            const payload: Record<string, unknown> = {
-              role: metaRole || 'student',
-              name: metaName,
-              grade: metaGrade,
-              board: metaBoard,
-            };
-            if (metaRole === 'teacher') {
-              payload.school_name = user.user_metadata?.school_name || null;
-              payload.subjects_taught = parsedSubjects;
-              payload.grades_taught = parsedGrades;
-            }
-
-            const res = await fetch('/api/auth/bootstrap', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload),
-            });
-            if (res.ok) {
-              bootstrapSucceeded = true;
-              // Analytics: F16 — see audit 2026-04-27.
-              // Bootstrap is the first successful server-side write of a profile,
-              // gated by Redis idempotency lock — fires exactly once per new user.
+              let parsedSubjects: string[] | null = null;
+              let parsedGrades: string[] | null = null;
               try {
-                const role: 'student' | 'teacher' | 'parent' | 'guardian' =
-                  metaRole === 'teacher' ? 'teacher'
-                    : metaRole === 'parent' || metaRole === 'guardian' ? 'guardian'
-                    : 'student';
-                track('signup_complete', { role, method: 'email' });
-              } catch { /* analytics is non-critical */ }
-              // Re-run fetchUser ONE MORE TIME to pick up newly created profile.
-              // bootstrapAttemptedRef.current is already true, so the recursive call
-              // will skip this bootstrap block — preventing infinite recursion.
-              await fetchUser();
-              return; // fetchUser will set all state; don't double-set below
-            }
-          } catch (bootstrapErr) {
-            console.warn('[Auth] Bootstrap via API failed, using direct insert fallback:', bootstrapErr);
-          }
+                if (user.user_metadata?.subjects_taught) parsedSubjects = JSON.parse(user.user_metadata.subjects_taught);
+                if (user.user_metadata?.grades_taught) parsedGrades = JSON.parse(user.user_metadata.grades_taught);
+              } catch { /* malformed JSON */ }
 
-          // If bootstrap failed, set role from metadata so UI shows something
-          // (user will be prompted to retry on next page load)
-          if (!bootstrapSucceeded) {
-            console.warn('[Auth] Bootstrap API unreachable — will retry on next load');
+              const payload: Record<string, unknown> = {
+                role: metaRole || 'student',
+                name: metaName,
+                grade: metaGrade,
+                board: metaBoard,
+              };
+              if (metaRole === 'teacher') {
+                payload.school_name = user.user_metadata?.school_name || null;
+                payload.subjects_taught = parsedSubjects;
+                payload.grades_taught = parsedGrades;
+              }
+
+              const res = await fetch('/api/auth/bootstrap', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+              });
+              if (res.ok) {
+                bootstrapSucceeded = true;
+                // Analytics: F16 — see audit 2026-04-27.
+                // Bootstrap is the first successful server-side write of a profile,
+                // gated by Redis idempotency lock — fires exactly once per new user.
+                try {
+                  const role: 'student' | 'teacher' | 'parent' | 'guardian' =
+                    metaRole === 'teacher' ? 'teacher'
+                      : metaRole === 'parent' || metaRole === 'guardian' ? 'guardian'
+                      : 'student';
+                  track('signup_complete', { role, method: 'email' });
+                } catch { /* analytics is non-critical */ }
+                // Re-run fetchUser ONE MORE TIME to pick up newly created profile.
+                // bootstrapAttemptedRef.current is already true, so the recursive call
+                // will skip this bootstrap block — preventing infinite recursion.
+                await fetchUser();
+                return; // fetchUser will set all state; don't double-set below
+              }
+            } catch (bootstrapErr) {
+              console.warn('[Auth] Bootstrap via API failed, using direct insert fallback:', bootstrapErr);
+            }
+
+            // If bootstrap failed, set role from metadata so UI shows something
+            // (user will be prompted to retry on next page load)
+            if (!bootstrapSucceeded) {
+              console.warn('[Auth] Bootstrap API unreachable — will retry on next load');
+              const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher'
+                : (metaRole === 'parent' || metaRole === 'guardian') ? 'guardian'
+                : 'student';
+              setRoles([fallbackRole]);
+              setActiveRoleState(fallbackRole);
+            }
+          } else {
+            // Bootstrap was already attempted but profile still not found.
+            // Fall through to metadata-based fallback to avoid infinite loop.
+            const metaRole = user.user_metadata?.role as string | undefined;
+            console.warn('[Auth] Profile not found after bootstrap — using metadata fallback');
             const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher'
               : (metaRole === 'parent' || metaRole === 'guardian') ? 'guardian'
               : 'student';
             setRoles([fallbackRole]);
             setActiveRoleState(fallbackRole);
           }
-        } else {
-          // Bootstrap was already attempted but profile still not found.
-          // Fall through to metadata-based fallback to avoid infinite loop.
-          const metaRole = user.user_metadata?.role as string | undefined;
-          console.warn('[Auth] Profile not found after bootstrap — using metadata fallback');
-          const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher'
-            : (metaRole === 'parent' || metaRole === 'guardian') ? 'guardian'
-            : 'student';
-          setRoles([fallbackRole]);
-          setActiveRoleState(fallbackRole);
+        }
+      } catch (err) {
+        console.error('Auth fetch error:', err);
+        // If user was authenticated, ensure they're not stuck as "logged out"
+        // Use role from auth metadata if available
+        if (hasUser) {
+          try {
+            const { data: { user: u } } = await supabase.auth.getUser();
+            const metaRole = u?.user_metadata?.role as string | undefined;
+            const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher' : metaRole === 'parent' ? 'guardian' : 'student';
+            setRoles([fallbackRole]);
+            setActiveRoleState(fallbackRole);
+          } catch {
+            // Don't assume student role if we can't verify anything
+            setRoles([]);
+            setActiveRoleState('none');
+          }
         }
       }
-    } catch (err) {
-      console.error('Auth fetch error:', err);
-      // If user was authenticated, ensure they're not stuck as "logged out"
-      // Use role from auth metadata if available
-      if (hasUser) {
-        try {
-          const { data: { user: u } } = await supabase.auth.getUser();
-          const metaRole = u?.user_metadata?.role as string | undefined;
-          const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher' : metaRole === 'parent' ? 'guardian' : 'student';
-          setRoles([fallbackRole]);
-          setActiveRoleState(fallbackRole);
-        } catch {
-          // Don't assume student role if we can't verify anything
-          setRoles([]);
-          setActiveRoleState('none');
-        }
-      }
-    }
-    setIsLoading(false);
+      setIsLoading(false);
+    })();
+
+    await Promise.race([work, timeoutPromise]);
+    if (timeoutId) clearTimeout(timeoutId);
   }, []);
 
   const refreshSnapshot = useCallback(async () => {
