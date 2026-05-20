@@ -65,6 +65,20 @@ export interface AppShellProps {
   className?: string;
   /** localStorage key for one-handed pref. Default 'alfanumrik:one-hand'. */
   oneHandKey?: string;
+  /**
+   * Full-bleed mode (default false). When true, the shell:
+   *   - Drops the tablet+ rail-column reservation (no empty 220px gutter
+   *     when variant="mobile").
+   *   - Removes the 1240px max-width + auto margin cap on the content
+   *     column at desktop+.
+   *   - Removes the fluid side padding on the content column.
+   *   - Preserves bottom padding for the fixed BottomNav clearance.
+   * Intended for chat-style surfaces (Foxy) whose internal layouts manage
+   * their own multi-column widths and must paint edge-to-edge. Editorial
+   * surfaces (dashboard, learn) should leave this off so they keep the
+   * readable 1240px cap.
+   */
+  bleed?: boolean;
 }
 
 const SCROLL_COMPACT_THRESHOLD = 24;
@@ -79,6 +93,7 @@ export function AppShell({
   oneHandToggle = true,
   oneHandKey = 'alfanumrik:one-hand',
   className,
+  bleed = false,
 }: AppShellProps) {
   const { isHi } = useAuth();
   const [headerCompact, setHeaderCompact] = useState(false);
@@ -144,6 +159,7 @@ export function AppShell({
       data-variant={variant}
       data-no-aside={!hasAside ? 'true' : 'false'}
       data-one-hand={oneHand ? 'true' : 'false'}
+      data-bleed={bleed ? 'true' : 'false'}
     >
       {/* Sticky header */}
       <header className="app-shell-header" data-compact={headerCompact ? 'true' : 'false'}>

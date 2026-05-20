@@ -1279,22 +1279,24 @@ export default function FoxyPage() {
   // area can flex within AppShell's content grid row (which is `1fr`
   // inside `grid-template-rows: auto 1fr auto`). The legacy `pb-32` chat
   // clearance is dropped — AppShell.content already pads --shell-nav-h +
-  // safe-area-inset on the bottom. The wrapper uses negative inline
-  // margins only on the sides + top to neutralize .app-shell-content's
-  // fluid gutter so chat bubbles run edge-to-edge like the pre-shell
-  // layout. Bottom padding is preserved so the BottomNav (fixed at
-  // bottom:0) never overlaps the ChatInput composer.
+  // safe-area-inset on the bottom. AppShell is rendered with `bleed` so
+  // the content column has no side padding, no rail-column reservation,
+  // and no 1240px max-width cap at desktop — Foxy's three internal
+  // columns (ConversationManager + topic sidebar + chat) need the full
+  // viewport width like before PR #870. The wrapper still nulls the
+  // top fluid gutter so the inline subject toolbar sits flush under the
+  // sticky header; bottom padding is preserved by AppShell so BottomNav
+  // (fixed at bottom:0) never overlaps the ChatInput composer.
   const foxyMainContent = (
     <div
       className="h-full flex flex-col min-h-0"
       style={{
-        // Cancel out .app-shell-content's default side + top padding so
-        // chat bubbles run edge-to-edge. The chat scroll container already
-        // adds its own px-3/md:px-5 gutter; this avoids double padding.
+        // Null AppShell.content's default top fluid gutter so the inline
+        // subject toolbar sits flush under the sticky header. Side gutters
+        // are already zero via `bleed` — see globals.css data-bleed rules.
         // Bottom is intentionally NOT negated — AppShell's bottom padding
         // reserves clearance for the fixed BottomNav so the ChatInput
         // composer renders directly above it without overlap.
-        marginInline: 'calc(var(--space-fluid-4) * -1)',
         marginTop: 'calc(var(--space-fluid-4) * -1)',
         background: 'var(--surface-2)',
       }}
@@ -1652,6 +1654,13 @@ export default function FoxyPage() {
       // toggle is the default-on affordance for editorial surfaces (dashboard,
       // learn) where the toggle is helpful.
       oneHandToggle={false}
+      // Full-bleed: Foxy's internal layout has its own three-column structure
+      // (ConversationManager sidebar at lg+, desktop topic sidebar at xl+,
+      // chat column). AppShell's tablet-width rail-column reservation and
+      // 1024px content cap would clip the leftmost sidebar off-screen and
+      // squeeze the chat. `bleed` drops both so Foxy paints edge-to-edge
+      // like before the AppShell migration (PR #870).
+      bleed
     >
       {foxyMainContent}
     </AppShell>
