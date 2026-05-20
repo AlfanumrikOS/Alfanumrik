@@ -28,6 +28,7 @@ import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import QuickRecallSection from '@/components/refresh/QuickRecallSection';
 import ChapterRefreshSection from '@/components/refresh/ChapterRefreshSection';
 import RetentionTestsSection from '@/components/refresh/RetentionTestsSection';
+import BuildYourOwnDeckSection from '@/components/refresh/BuildYourOwnDeckSection';
 
 export default function RefreshPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
@@ -95,6 +96,17 @@ export default function RefreshPage() {
             <RetentionTestsSection />
           </SectionErrorBoundary>
 
+          <SectionErrorBoundary section="Refresh:BuildYourOwnDeck">
+            <BuildYourOwnDeckSection
+              onCardCreated={() => {
+                // Re-fetch Section A so the new card count refreshes.
+                // Cheap hack: bump a key on the QuickRecallSection. Easier
+                // workaround until SWR is wired: do a full page refresh.
+                window.location.reload();
+              }}
+            />
+          </SectionErrorBoundary>
+
           {/* All-empty nudge — only renders when Section A has loaded and
               reports 0 cards. (B + C auto-hide so we don't need their
               counts.) Once Section D ships this falls back to D's tip. */}
@@ -106,8 +118,8 @@ export default function RefreshPage() {
               </p>
               <p className="text-xs text-[var(--text-3)] mb-5">
                 {isHi
-                  ? 'क्विज़ खेलो — नए कार्ड अपने आप बनेंगे।'
-                  : 'Take a quiz — new cards will be created automatically.'}
+                  ? 'क्विज़ खेलो — या नीचे अपना कार्ड जोड़ो।'
+                  : 'Take a quiz — or add your own card below.'}
               </p>
               <button
                 onClick={() => router.push('/quiz')}
