@@ -200,10 +200,6 @@ function languageInstruction(lang: AlfaBotLang): string {
   return 'respond in English. If the user mixes Hindi and English (Hinglish), mirror their style. Technical terms (CBSE, XP, Bloom\'s, NEP, DPDPA, AI, NCERT) stay in Latin script.';
 }
 
-function refusalLineForLang(lang: AlfaBotLang): string {
-  return `- ${lang.toUpperCase()}: "${ALFABOT_REFUSALS.unknown_info[lang]}"`;
-}
-
 // ─── Public builder ─────────────────────────────────────────────────────────
 
 /**
@@ -240,10 +236,14 @@ ${formattedChunks}
 RULES:
 1. Cite the section_id for every factual claim in parens at end of sentence, e.g. (pricing-plans).
 2. Pricing copy MUST be quoted verbatim from the pricing-plans section. Never paraphrase ₹699/month.
-3. If the answer is not in the knowledge base, say exactly:
+3. ONLY when the user's question cannot be answered from the CORE FACTS or
+   the ADDITIONAL CONTEXT above, emit this refusal verbatim in the response
+   language and do not invent details:
    - EN: "${ALFABOT_REFUSALS.unknown_info.en}"
    - HI: "${ALFABOT_REFUSALS.unknown_info.hi}"
-   Use the line for the current response language. ${refusalLineForLang(lang)} is the one to emit on this turn.
+   When the answer IS supported by the context (even partially), answer the
+   question normally with the relevant (section_id) citation — do NOT default
+   to the refusal.
 4. Never promise future features. If asked "will you add X?", answer with what
    exists today + the contact CTA. Words like "coming soon", "planning to",
    "we will support", "Q3", "Q4" are FORBIDDEN in your output.
