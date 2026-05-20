@@ -187,11 +187,104 @@ export async function POST(request: NextRequest) {
   );
   const admins = adminRes.ok ? await adminRes.json() : [];
   if (!Array.isArray(admins) || admins.length === 0) {
+    // The auth succeeded but the user isn't in admin_users. Most common case
+    // (caught in the wild 2026-05-20): a school_admin demo operator typed
+    // their creds into /super-admin/login by mistake — school_admins live in
+    // `school_admins`, not `admin_users`. Detect which non-admin table owns
+    // this user and tell the operator where they should actually sign in.
+    //
+    // Order matters: school_admin first (the high-confusion case we're
+    // fixing), then teacher, then guardian, then student. If the user is in
+    // none of these tables either, fall through to the generic ADMIN_NOT_FOUND
+    // message — that's the "auth user exists but no profile" edge case.
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || anonKey;
+    const lookupTables: Array<{
+      table: string;
+      role: 'school_admin' | 'teacher' | 'parent' | 'student';
+      suggested_login_url: string;
+      message: string;
+    }> = [
+      {
+        table: 'school_admins',
+        role: 'school_admin',
+        suggested_login_url: '/login',
+        message: "This is the platform admin login. School administrators sign in at /login (you'll be routed to /school-admin).",
+      },
+      {
+        table: 'teachers',
+        role: 'teacher',
+        suggested_login_url: '/login',
+        message: "This is the platform admin login. Teachers sign in at /login (you'll be routed to /teacher).",
+      },
+      {
+        table: 'guardians',
+        role: 'parent',
+        suggested_login_url: '/login',
+        message: "This is the platform admin login. Parents sign in at /login or /parent.",
+      },
+      {
+        table: 'students',
+        role: 'student',
+        suggested_login_url: '/login',
+        message: "This is the platform admin login. Students sign in at /login (you'll be routed to /dashboard).",
+      },
+    ];
+
+    let detectedRole: 'school_admin' | 'teacher' | 'parent' | 'student' | null = null;
+    let suggestedLoginUrl: string | null = null;
+    let helpfulMessage: string | null = null;
+
+    if (userId) {
+      for (const lookup of lookupTables) {
+        try {
+          const res = await fetch(
+            `${url}/rest/v1/${lookup.table}?select=id&auth_user_id=eq.${userId}&limit=1`,
+            {
+              headers: {
+                apikey: serviceKey,
+                Authorization: `Bearer ${serviceKey}`,
+              },
+            },
+          );
+          if (!res.ok) continue;
+          const rows = await res.json();
+          if (Array.isArray(rows) && rows.length > 0) {
+            detectedRole = lookup.role;
+            suggestedLoginUrl = lookup.suggested_login_url;
+            helpfulMessage = lookup.message;
+            break;
+          }
+        } catch (e) {
+          logger.warn('admin_login_role_detection_failed', {
+            table: lookup.table,
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }
+    }
+
     await recordLoginAttempt({ email, ipAddress: ip, userAgent, succeeded: false, failureCode: 'not_admin' });
     await logAdminAuditByUserId(
       userId || null, 'admin_login_denied_not_admin', 'admin_users', email,
-      { reason: 'not_in_admin_users' }, ip, { userAgent },
+      { reason: 'not_in_admin_users', detected_role: detectedRole },
+      ip,
+      { userAgent },
     );
+
+    if (detectedRole && suggestedLoginUrl && helpfulMessage) {
+      return NextResponse.json(
+        {
+          error: helpfulMessage,
+          code: 'USE_STANDARD_LOGIN',
+          suggested_login_url: suggestedLoginUrl,
+          detected_role: detectedRole,
+        },
+        { status: 403 },
+      );
+    }
+
+    // Generic fallback: auth succeeded but the user has no profile in any
+    // known table. Keep the deliberately generic message.
     return NextResponse.json(
       { error: 'You are not an authorized administrator.', code: 'ADMIN_NOT_FOUND' },
       { status: 403 },
