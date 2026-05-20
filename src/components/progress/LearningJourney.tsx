@@ -5,6 +5,8 @@ import { Card, ProgressBar } from '@/components/ui';
 import XPProgressRing from '@/components/xp/XPProgressRing';
 import { calculateLevel, xpToNextLevel, getLevelName } from '@/lib/xp-config';
 import type { StudentSnapshot, LearningVelocity } from '@/lib/types';
+import { useFeatureFlags } from '@/lib/swr';
+import { studyPlanRoute } from '@/lib/routes/study-menu-routes';
 
 /* ── Types ── */
 interface LearningJourneyProps {
@@ -70,6 +72,9 @@ export default function LearningJourney({
   isHi,
 }: LearningJourneyProps) {
   const router = useRouter();
+  // Phase 5 Study-Menu v2 — route /study-plan to /exam-prep when flag is on.
+  const { data: flags } = useFeatureFlags();
+  const flagsRecord = (flags ?? {}) as Record<string, boolean>;
   const level = calculateLevel(totalXp);
   const { current, needed } = xpToNextLevel(totalXp);
   const levelName = getLevelName(level, isHi);
@@ -158,7 +163,7 @@ export default function LearningJourney({
 
       {/* Personalized message */}
       <button
-        onClick={() => router.push('/study-plan')}
+        onClick={() => router.push(studyPlanRoute(flagsRecord))}
         className="mt-3 w-full text-left rounded-xl p-3 transition-all active:scale-[0.98]"
         style={{
           background: 'linear-gradient(135deg, #FFF7ED, #FEF3E2)',

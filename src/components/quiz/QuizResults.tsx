@@ -14,6 +14,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useFeatureFlags } from '@/lib/swr';
 import { getLevelFromScore } from '@/lib/score-config';
+import { reviewRoute, reviseRoute } from '@/lib/routes/study-menu-routes';
 import NextActionCard from '@/components/quiz/NextActionCard';
 import CelebrationOverlay from '@/components/quiz/CelebrationOverlay';
 import GoalScorecardSentence from '@/components/quiz/GoalScorecardSentence';
@@ -731,7 +732,7 @@ export default function QuizResults({
               </p>
             </div>
             <button
-              onClick={() => router.push('/review')}
+              onClick={() => router.push(reviewRoute((reviseFlags ?? {}) as Record<string, boolean>))}
               className="flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
               style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}
             >
@@ -828,9 +829,19 @@ export default function QuizResults({
               // deep-link back into the chapter's Read mode. When OFF,
               // we keep the legacy direct /learn/[s]/[c]?mode=read
               // deep-link (Phase 3-D behaviour).
+              //
+              // Phase 5 Study-Menu v2 — when ff_study_menu_v2 is ALSO on,
+              // /revise consolidates into /refresh?tab=chapters. We compose
+              // the base from reviseRoute(flags) and preserve the existing
+              // subject/chapter/from-quiz query string.
               const reviseOn = reviseFlags?.ff_revise_route_v1 === true;
+              const baseRevise = reviseRoute((reviseFlags ?? {}) as Record<string, boolean>);
+              // baseRevise is either '/refresh?tab=chapters' (v2 on) or
+              // '/revise' (v2 off). Join correctly with & or ? accordingly.
+              const joiner = baseRevise.includes('?') ? '&' : '?';
+              const reviseHref = `${baseRevise}${joiner}subject=${encodeURIComponent(selectedSubject)}&chapter=${firstChapter}&from=quiz`;
               const href = reviseOn
-                ? `/revise?subject=${encodeURIComponent(selectedSubject)}&chapter=${firstChapter}&from=quiz`
+                ? reviseHref
                 : `/learn/${encodeURIComponent(selectedSubject)}/${firstChapter}?mode=read&from=quiz`;
               return (
                 <div className="mt-3">

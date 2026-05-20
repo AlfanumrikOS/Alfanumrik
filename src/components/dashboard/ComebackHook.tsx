@@ -1,6 +1,8 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useFeatureFlags } from '@/lib/swr';
+import { reviewRoute } from '@/lib/routes/study-menu-routes';
 
 /**
  * Comeback Hook — Curiosity gap that pulls students back.
@@ -22,6 +24,9 @@ interface ComebackHookProps {
 
 export default function ComebackHook({ isHi, lastTopic, almostMastered, dueReviews, streak, quizzesTaken }: ComebackHookProps) {
   const router = useRouter();
+  // Phase 5 Study-Menu v2 — route /review to /refresh when flag is on.
+  const { data: flags } = useFeatureFlags();
+  const flagsRecord = (flags ?? {}) as Record<string, boolean>;
 
   // Priority 1: Streak at risk (most urgent emotional trigger)
   if (streak > 0 && streak <= 2) {
@@ -84,7 +89,7 @@ export default function ComebackHook({ isHi, lastTopic, almostMastered, dueRevie
   // Priority 4: Due reviews
   if (dueReviews > 0) {
     return (
-      <button onClick={() => router.push('/review')} className="w-full text-left rounded-xl p-3 flex items-center gap-3 transition-all active:scale-[0.98]"
+      <button onClick={() => router.push(reviewRoute(flagsRecord))} className="w-full text-left rounded-xl p-3 flex items-center gap-3 transition-all active:scale-[0.98]"
         style={{ background: 'rgba(245,166,35,0.06)', border: '1px solid rgba(245,166,35,0.15)' }}>
         <span className="text-xl">🧠</span>
         <div className="flex-1">

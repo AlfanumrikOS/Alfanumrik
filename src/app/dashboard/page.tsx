@@ -782,6 +782,7 @@ function LegacyDashboard() {
                 onDismissNudge={dismissNudge}
                 knowledgeGaps={knowledgeGaps}
                 nextTopics={nextTopics}
+                flags={flags}
               />
             </Accordion>
           </SectionErrorBoundary>

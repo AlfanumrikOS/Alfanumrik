@@ -2,6 +2,8 @@
 
 import { useRouter } from 'next/navigation';
 import type { CmeAction } from '@/lib/types';
+import { useFeatureFlags } from '@/lib/swr';
+import { reviewRoute } from '@/lib/routes/study-menu-routes';
 
 interface KnowledgeGap {
   id: string;
@@ -97,6 +99,9 @@ const CME_ACTION_CONFIG: Record<CmeAction['type'], {
 
 export default function TodaysPlan({ isHi, dueCount, knowledgeGaps, nextTopics, preferredSubject, streak, cmeAction }: Props) {
   const router = useRouter();
+  // Phase 5 Study-Menu v2 — route /review to /refresh when flag is on.
+  const { data: flags } = useFeatureFlags();
+  const flagsRecord = (flags ?? {}) as Record<string, boolean>;
 
   const items: { icon: string; label: string; sublabel: string; action: () => void; urgency: 'high' | 'medium' | 'low' }[] = [];
 
@@ -135,7 +140,7 @@ export default function TodaysPlan({ isHi, dueCount, knowledgeGaps, nextTopics, 
       icon: '🔄',
       label: isHi ? `${dueCount} कार्ड रिवीज़ करो` : `Review ${dueCount} cards`,
       sublabel: isHi ? 'भूलने से पहले दोहराओ' : 'Revise before you forget',
-      action: () => router.push('/review'),
+      action: () => router.push(reviewRoute(flagsRecord)),
       urgency: dueCount > 5 ? 'high' : 'medium',
     });
   }
