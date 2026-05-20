@@ -52,9 +52,150 @@ import { secureEqual } from '@/lib/secure-compare';
  * ═══════════════════════════════════════════════════════════════ */
 
 // ── Rate limiting: Distributed (Upstash Redis) with in-memory fallback ──
-const RATE_LIMIT_MAX = 200;       // 200 requests per minute per IP (each page load = 5-8 API calls)
+//
+// Limits are per-IP. India runs on CGNAT — Jio/Airtel/VI carriers may bucket
+// hundreds of subscribers behind a single egress IP — so the general bucket
+// has to absorb realistic peak load from many users at once. A normal student
+// dashboard mount fires ~10 same-origin API calls (rhythm, dive, synthesis,
+// preferences, subjects, feature-flags x N, tenant config, school config,
+// auth/session, plus the page nav itself + any _next/data hops between
+// /welcome → /login → /dashboard → /foxy). 200 req/min was empirically too
+// tight under CGNAT and produced the "JSON viewer instead of page" symptom
+// reported by the CEO 2026-05-20 — see rateLimitResponse() below for the
+// underlying browser behavior. The new ceiling gives ~30 concurrent users per
+// IP for a 60s window. The parent/admin buckets stay tight (auth surface).
+const RATE_LIMIT_MAX = 600;       // 600 requests per minute per IP (~30 concurrent users behind CGNAT)
 const RATE_LIMIT_PARENT_MAX = 20; // 20 parent requests per minute per IP
 const RATE_LIMIT_ADMIN_MAX = 60;  // 60 requests per minute for /internal/admin/*
+
+/**
+ * Build the rate-limit response. CRITICAL: returns HTML when the requester is
+ * a browser doing a page navigation (Accept: text/html), JSON when it's an
+ * XHR / fetch / API client.
+ *
+ * Why this matters (CEO bug report 2026-05-20):
+ *   Browsers asked for an HTML page (e.g., visiting /welcome or /login).
+ *   When this layer returned `{"error":"Rate limit exceeded..."}` with
+ *   `Content-Type: application/json`, Chromium/Firefox interpret the body as
+ *   a JSON document and render the native pretty-printer viewer with the
+ *   "Pretty-print" checkbox — exactly what the user screenshotted. There is
+ *   no app shell visible, no way to retry except hard refresh, and the user
+ *   reasonably assumes the entire site is broken.
+ *
+ * The HTML body is intentionally inlined (no asset hops) so the rate-limited
+ * response doesn't trigger MORE rate-limited sub-requests for CSS or fonts.
+ * It is bilingual (Hindi + English) and styled to match the editorial
+ * landing palette so it visually belongs to the product even on first
+ * impression. Includes meta-refresh to auto-recover after the retry window.
+ */
+function rateLimitResponse(request: NextRequest, retryAfterSeconds = 60): NextResponse {
+  const accept = request.headers.get('accept') || '';
+  const wantsHtml =
+    accept.includes('text/html') ||
+    accept.includes('application/xhtml') ||
+    // No Accept header at all → browser navigation in older clients; HTML is
+    // the safer surface than raw JSON. fetch() always sends */* by default
+    // PLUS x-requested-with or sec-fetch-mode=cors, but mid-2026 browsers
+    // still vary, so we only treat the empty-Accept case as HTML if there's
+    // no API signal.
+    (!accept && request.headers.get('sec-fetch-mode') !== 'cors' &&
+      !request.headers.get('x-requested-with'));
+
+  if (!wantsHtml) {
+    return new NextResponse(
+      JSON.stringify({ error: 'Rate limit exceeded. Please slow down.', retryAfter: retryAfterSeconds }),
+      {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'Retry-After': String(retryAfterSeconds),
+        },
+      }
+    );
+  }
+
+  // HTML response — inline, no asset hops. Bilingual. Editorial palette
+  // (#FBF8F4 cream, #F97316 orange, #1F1F1F ink) so the page visually
+  // belongs to Alfanumrik even on first impression. Meta-refresh after the
+  // retry window so users don't have to hit reload.
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta http-equiv="refresh" content="${retryAfterSeconds};url=${request.nextUrl.pathname}" />
+<title>Just a moment · Alfanumrik</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #FBF8F4;
+    color: #1F1F1F;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    line-height: 1.5;
+  }
+  .card {
+    max-width: 480px;
+    width: 100%;
+    background: #FFFFFF;
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 24px;
+    padding: 40px 32px;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.04);
+  }
+  .glyph { font-size: 48px; margin-bottom: 16px; line-height: 1; }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 24px;
+    font-weight: 600;
+    margin: 0 0 8px;
+    color: #1F1F1F;
+  }
+  p { color: #4A4A4A; font-size: 15px; margin: 0 0 8px; }
+  p.hi { color: #6B6B6B; font-size: 14px; }
+  .retry {
+    display: inline-block;
+    margin-top: 20px;
+    padding: 12px 24px;
+    background: #F97316;
+    color: #FFFFFF;
+    text-decoration: none;
+    font-weight: 600;
+    border-radius: 999px;
+    font-size: 14px;
+    transition: transform 0.15s ease;
+  }
+  .retry:hover { transform: translateY(-1px); }
+  .fine { color: #8A8A8A; font-size: 12px; margin-top: 16px; }
+</style>
+</head>
+<body>
+<main class="card" role="alert" aria-live="polite">
+  <div class="glyph" aria-hidden="true">🦊</div>
+  <h1>Just a moment</h1>
+  <p>Too many requests at once — we'll be ready again in a minute.</p>
+  <p class="hi" lang="hi">एक पल — हम एक मिनट में फिर तैयार हैं।</p>
+  <a class="retry" href="${request.nextUrl.pathname}">Try again</a>
+  <p class="fine">This page will refresh automatically.</p>
+</main>
+</body>
+</html>`;
+
+  return new NextResponse(html, {
+    status: 429,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Retry-After': String(retryAfterSeconds),
+      'Cache-Control': 'no-store',
+    },
+  });
+}
 
 // Distributed rate limiter via Upstash Redis (works across all Vercel instances).
 // Modules are lazy-loaded on first use to keep them off the middleware's
@@ -928,13 +1069,15 @@ export async function proxy(request: NextRequest) {
     const adminIp = getRateLimitKey(request);
     const { allowed: adminAllowed } = await checkRateLimit(`admin:${adminIp}`, RATE_LIMIT_ADMIN_MAX, 'admin');
     if (!adminAllowed) {
-      return new NextResponse(
-        JSON.stringify({ error: 'Rate limit exceeded. Please slow down.' }),
-        {
-          status: 429,
-          headers: { 'Content-Type': 'application/json', 'Retry-After': '60' },
-        }
-      );
+      // Structured log — admin bucket exhaustion is rare and worth observing.
+      console.warn(JSON.stringify({
+        level: 'warn',
+        message: 'rate_limit_exceeded',
+        bucket: 'admin',
+        path,
+        ip: adminIp,
+      }));
+      return rateLimitResponse(request);
     }
   }
 
@@ -959,17 +1102,16 @@ export async function proxy(request: NextRequest) {
   if (path === '/parent' || path.startsWith('/parent/')) {
     const { allowed, remaining } = await checkRateLimit(`parent:${ip}`, RATE_LIMIT_PARENT_MAX, 'parent');
     if (!allowed) {
-      return new NextResponse(
-        JSON.stringify({ error: 'Too many attempts. Please wait 1 minute.' }),
-        {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'Retry-After': '60',
-            'X-RateLimit-Remaining': '0',
-          },
-        }
-      );
+      console.warn(JSON.stringify({
+        level: 'warn',
+        message: 'rate_limit_exceeded',
+        bucket: 'parent',
+        path,
+        ip,
+      }));
+      const res = rateLimitResponse(request);
+      res.headers.set('X-RateLimit-Remaining', '0');
+      return res;
     }
 
     response.headers.set('X-RateLimit-Remaining', String(remaining));
@@ -1011,13 +1153,20 @@ export async function proxy(request: NextRequest) {
   // General rate limit for all routes
   const { allowed, remaining: generalRemaining } = await checkRateLimit(`general:${ip}`, RATE_LIMIT_MAX, 'general');
   if (!allowed) {
-    return new NextResponse(
-      JSON.stringify({ error: 'Rate limit exceeded. Please slow down.' }),
-      {
-        status: 429,
-        headers: { 'Content-Type': 'application/json', 'Retry-After': '60' },
-      }
-    );
+    // Structured log — the CEO-reported "JSON viewer at /welcome" symptom
+    // (2026-05-20) was a general-bucket exhaustion under CGNAT. Logging the
+    // path + the Accept signature lets us distinguish "browser nav landed
+    // on the rate limit" (returns HTML now) from "real API flood" in
+    // production logs without exposing PII.
+    console.warn(JSON.stringify({
+      level: 'warn',
+      message: 'rate_limit_exceeded',
+      bucket: 'general',
+      path,
+      ip,
+      accept: request.headers.get('accept')?.slice(0, 64) ?? null,
+    }));
+    return rateLimitResponse(request);
   }
 
   // Add rate limit + security headers for API routes
