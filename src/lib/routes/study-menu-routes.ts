@@ -1,19 +1,25 @@
-import { STUDY_MENU_FLAGS } from '@/lib/feature-flags';
-
 /**
- * Returns the correct destination URL depending on whether
- * ff_study_menu_v2 is enabled for this user.
+ * Study Menu v2 — Phase 6.4 cleanup.
  *
- * Used by every component that historically linked to /review,
- * /revise, or /study-plan so the soak period can flip without
- * breaking deep links.
+ * Originally these helpers were flag-gated to support the Day-0 to Day-12
+ * rollout. The flag (`ff_study_menu_v2`) was retired in migration
+ * 20260603120100_remove_ff_study_menu_v2.sql, so the helpers now always
+ * return the v2 (new) URLs. The optional `_flags` parameter is preserved
+ * so the 9 existing call sites don't need to be re-touched — they pass
+ * `flags` from their parent and the helper ignores it.
+ *
+ * Companion spec:
+ *   docs/superpowers/specs/2026-05-20-study-section-consolidation-design.md
  */
-export function reviewRoute(flags: Record<string, boolean>): string {
-  return flags[STUDY_MENU_FLAGS.V2] === true ? '/refresh' : '/review';
+
+export function reviewRoute(_flags?: Record<string, boolean>): string {
+  return '/refresh';
 }
-export function reviseRoute(flags: Record<string, boolean>): string {
-  return flags[STUDY_MENU_FLAGS.V2] === true ? '/refresh?tab=chapters' : '/revise';
+
+export function reviseRoute(_flags?: Record<string, boolean>): string {
+  return '/refresh?tab=chapters';
 }
-export function studyPlanRoute(flags: Record<string, boolean>): string {
-  return flags[STUDY_MENU_FLAGS.V2] === true ? '/exam-prep' : '/study-plan';
+
+export function studyPlanRoute(_flags?: Record<string, boolean>): string {
+  return '/exam-prep';
 }
