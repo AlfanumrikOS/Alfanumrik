@@ -1,31 +1,20 @@
 'use client';
 
 /**
- * HeroSplinePanel — interactive 3D Foxy card that occupies the RIGHT COLUMN of
- * the editorial hero grid on /welcome (the rendered v2 landing). Replaces the
- * legacy phone mockup so the 3D scene is visible above the fold at 1440x900
- * without scrolling. PR #878 originally placed this below the grid, which
- * meant the new visual was buried below the fold; the above-the-fold layout
- * landed in PR #880 (`fix(landing): move Spline panel above the fold`).
+ * HeroSplinePanel — interactive 3D Foxy card that mounts BELOW the editorial
+ * hero copy on /welcome (the rendered v2 landing).
  *
  * Rendered path: /welcome → WelcomeV2 → HeroV2 → HeroSplinePanel.
  * v1 (page-v1.tsx) is NOT affected by this file.
  *
- * Props:
- *   - `inGrid` (default false): when true, removes the `mt-16 md:mt-24` top
- *     margin so the panel sits flush inside the hero grid column. We keep
- *     `false` as the default so any future re-use of this component below
- *     the grid still gets the same vertical breathing room.
- *
  * Performance contract (the Spline runtime is ~250 kB gzipped — P10-sensitive):
  *   1. The whole Spline iframe is gated behind an IntersectionObserver, so the
  *      runtime import (and the 2-5 MB scene download) only fires once the card
- *      is within 200px of the viewport. Above-the-fold visitors do trigger it
- *      because the panel itself IS above the fold — but the cost lands AFTER
- *      first paint, never blocking the editorial copy on the left.
+ *      is within 200px of the viewport. Above-the-fold visitors who never
+ *      scroll never pay for it.
  *   2. The wrapper component itself is `next/dynamic`-imported by HeroV2 with
  *      `ssr: false`, so the Spline runtime never lands in the landing's
- *      initial chunk (still 0 kB added to initial JS).
+ *      initial chunk.
  *   3. Connection-aware fallback: `navigator.connection.effectiveType` in
  *      {`slow-2g`, `2g`} or `navigator.connection.saveData === true` renders a
  *      static cream-on-ink card instead of mounting Spline at all. Wrapped in
@@ -197,16 +186,7 @@ function SplineFallback({ label }: { label: string }) {
   );
 }
 
-interface HeroSplinePanelProps {
-  /**
-   * When true, removes the default top margin so the panel sits flush
-   * inside its parent (the hero grid right column). When false (default),
-   * the legacy "below-the-grid" margin is kept for backwards compat.
-   */
-  inGrid?: boolean;
-}
-
-export default function HeroSplinePanel({ inGrid = false }: HeroSplinePanelProps = {}) {
+export default function HeroSplinePanel() {
   const { isHi, t } = useWelcomeV2();
   const isMobile = useIsMobile();
   const slow = useSlowConnection();
@@ -228,10 +208,9 @@ export default function HeroSplinePanel({ inGrid = false }: HeroSplinePanelProps
   return (
     <div
       ref={setRef}
-      className={inGrid ? 'h-full w-full' : 'mt-16 md:mt-24'}
+      className="mt-16 md:mt-24"
       data-testid="hero-spline-panel"
       data-spline-mounted={mountSpline ? 'true' : 'false'}
-      data-spline-in-grid={inGrid ? 'true' : 'false'}
     >
       {/*
         bg-[#1a160f] = the welcome-v2 `--ink-deep` token (warm not pure black),
