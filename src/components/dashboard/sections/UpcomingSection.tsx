@@ -15,7 +15,6 @@
  * Owned by frontend. JSX moved verbatim from page.tsx — no behavior changes.
  */
 
-import { Card, SectionHeader } from '@/components/ui';
 import PendingLinkApproval, { type PendingLink } from '@/components/dashboard/PendingLinkApproval';
 import type { Subject as AllowedSubject } from '@/lib/subjects.types';
 import { trackDashboardCta } from '@/lib/posthog/dashboard-cta';
@@ -111,48 +110,66 @@ export default function UpcomingSection({
 
     return (
       <div
-        className="rounded-2xl p-4"
-        style={{ background: bgColor, border: `1.5px solid ${borderColor}` }}
+        className="editorial-card"
+        style={{
+          background: bgColor,
+          borderColor,
+          borderLeft: `4px solid ${urgencyColor}`,
+        }}
       >
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-              style={{ background: `${urgencyColor}15` }}
-              aria-hidden="true"
+          <div className="min-w-0">
+            <p
+              className="editorial-eyebrow"
+              style={{ color: urgencyColor }}
             >
-              🎓
-            </div>
-            <div>
-              <p
-                className="text-[11px] font-bold uppercase tracking-wider"
+              {isHi ? examLabelHi : examLabel}
+            </p>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span
+                className="dashboard-rank-display"
                 style={{ color: urgencyColor }}
               >
-                {isHi ? examLabelHi : examLabel}
-              </p>
-              <p
-                className="text-xl font-extrabold leading-none mt-0.5"
-                style={{ fontFamily: 'var(--font-display)', color: urgencyColor }}
+                {daysLeft}
+              </span>
+              <span
+                style={{
+                  fontFamily: 'var(--font-serif)',
+                  fontSize: 'var(--text-md)',
+                  color: 'var(--ink-2)',
+                  letterSpacing: '-0.01em',
+                }}
               >
-                {daysLeft} {isHi ? 'दिन बाकी' : 'days left'}
-              </p>
+                {isHi ? 'दिन बाकी' : 'days left'}
+              </span>
             </div>
           </div>
           {readinessPct > 0 && (
             <div className="text-right flex-shrink-0">
               <p
-                className="text-lg font-extrabold"
-                style={{ color: urgencyColor, fontFamily: 'var(--font-display)' }}
+                style={{
+                  fontFamily: 'var(--font-serif)',
+                  fontSize: 'var(--text-2xl)',
+                  fontWeight: 500,
+                  color: urgencyColor,
+                  letterSpacing: '-0.015em',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
               >
                 {readinessPct}%
               </p>
-              <p className="text-[10px]" style={{ color: 'var(--text-3)' }}>
+              <p
+                style={{ fontSize: 10, color: 'var(--ink-3)' }}
+              >
                 {isHi ? 'सिलेबस कवर' : 'syllabus covered'}
               </p>
             </div>
           )}
         </div>
-        <p className="text-xs mt-3" style={{ color: 'var(--text-3)' }}>
+        <p
+          className="mt-3"
+          style={{ fontSize: 'var(--text-xs)', color: 'var(--ink-3)' }}
+        >
           {isHi ? motivationHi : motivationEn}
         </p>
       </div>
@@ -169,21 +186,25 @@ export default function UpcomingSection({
       {/* Board exam countdown */}
       {renderBoardCountdown()}
 
-      {/* Upcoming exam list */}
+      {/* Upcoming exam timeline — each row has a 4px colored left-bar
+          that encodes days-until urgency: red < 7d, orange < 21d, gold
+          < 60d, ink otherwise. Reads like a calendar, not a list. */}
       {upcomingExams.length > 0 && (
         <div>
-          <SectionHeader icon="📋">
+          <p
+            className="editorial-eyebrow mb-2"
+            style={{ paddingLeft: 2 }}
+          >
             {isHi ? 'आगामी परीक्षाएँ' : 'Upcoming Exams'}
-          </SectionHeader>
-          <div className="space-y-2">
+          </p>
+          <div className="dashboard-timeline">
             {upcomingExams.map((exam) => {
-              const isUrgent = exam.days_left <= 7;
+              const days = exam.days_left;
+              const isUrgent = days <= 7;
               const examMeta = allowedSubjects.find((s) => s.code === exam.subject);
               const typeLabel =
                 exam.exam_type === 'unit_test'
-                  ? isHi
-                    ? 'UT'
-                    : 'UT'
+                  ? 'UT'
                   : exam.exam_type === 'half_yearly'
                     ? isHi
                       ? 'अर्ध-वार्षिक'
@@ -191,12 +212,19 @@ export default function UpcomingSection({
                     : isHi
                       ? 'वार्षिक'
                       : 'Annual';
+              // Urgency color → left-bar accent.
+              const urgencyColor =
+                days <= 7
+                  ? '#DC2626'
+                  : days <= 21
+                    ? '#F97316'
+                    : days <= 60
+                      ? '#D97706'
+                      : 'var(--ink-3)';
               return (
                 <button
                   key={exam.id}
                   onClick={() => {
-                    // PII-free: action key encodes urgency bucket only;
-                    // exam name, subject, date NEVER enter the payload.
                     trackDashboardCta({
                       section: 'upcoming',
                       action: isUrgent ? 'exam_urgent_tap' : 'exam_tap',
@@ -204,45 +232,71 @@ export default function UpcomingSection({
                     });
                     router.push('/exams');
                   }}
-                  className="w-full"
+                  className="dashboard-timeline-item text-left"
+                  style={{ borderLeftColor: urgencyColor }}
+                  aria-label={`${exam.exam_name} — ${days} ${isHi ? 'दिन बाकी' : 'days left'}`}
                 >
-                  <Card className="!p-3 flex items-center gap-3">
-                    <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
+                  <div
+                    className="rounded-lg flex items-center justify-center flex-shrink-0"
+                    style={{
+                      width: 36,
+                      height: 36,
+                      background: `${examMeta?.color ?? '#7D7264'}12`,
+                      alignSelf: 'center',
+                      fontSize: 18,
+                    }}
+                    aria-hidden="true"
+                  >
+                    {examMeta?.icon ?? '📋'}
+                  </div>
+                  <div className="flex-1 min-w-0 self-center">
+                    <p
+                      className="truncate"
                       style={{
-                        background: isUrgent
-                          ? 'rgba(220,38,38,0.1)'
-                          : `${examMeta?.color ?? 'var(--orange)'}15`,
+                        fontFamily: 'var(--font-serif)',
+                        fontWeight: 500,
+                        fontSize: 'var(--text-md)',
+                        color: 'var(--ink)',
+                        letterSpacing: '-0.01em',
                       }}
-                      aria-hidden="true"
                     >
-                      {examMeta?.icon ?? '📋'}
-                    </div>
-                    <div className="flex-1 min-w-0 text-left">
-                      <div className="font-semibold text-sm truncate">{exam.exam_name}</div>
-                      <div className="text-[10px] text-[var(--text-3)] mt-0.5">
-                        {typeLabel} ·{' '}
-                        {new Date(exam.exam_date).toLocaleDateString('en-IN', {
-                          day: 'numeric',
-                          month: 'short',
-                        })}
-                      </div>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <div
-                        className="text-lg font-bold"
-                        style={{
-                          color: isUrgent ? 'var(--danger)' : 'var(--orange)',
-                          fontFamily: 'var(--font-display)',
-                        }}
-                      >
-                        {exam.days_left}
-                      </div>
-                      <div className="text-[10px] text-[var(--text-3)]">
-                        {isHi ? 'दिन' : 'days'}
-                      </div>
-                    </div>
-                  </Card>
+                      {exam.exam_name}
+                    </p>
+                    <p
+                      style={{
+                        fontSize: 10,
+                        color: 'var(--ink-3)',
+                        marginTop: 2,
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      {typeLabel} ·{' '}
+                      {new Date(exam.exam_date).toLocaleDateString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                      })}
+                    </p>
+                  </div>
+                  <div
+                    className="self-center text-right flex-shrink-0"
+                    style={{ minWidth: 48 }}
+                  >
+                    <p
+                      className="dashboard-timeline-item__days"
+                      style={{ color: urgencyColor }}
+                    >
+                      {days}
+                    </p>
+                    <p
+                      style={{
+                        fontSize: 10,
+                        color: 'var(--ink-3)',
+                        marginTop: 2,
+                      }}
+                    >
+                      {isHi ? 'दिन' : 'days'}
+                    </p>
+                  </div>
                 </button>
               );
             })}

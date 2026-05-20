@@ -102,6 +102,9 @@ const DailyRhythmQueue = dynamic(
 // dashboard only shows the read-only stream chip below.
 
 // ─── Accordion primitive ─────────────────────────────────────────────────
+// Editorial chrome: paper background, hair-line border, atlas radius +
+// shadow, serif section title. Same accordion behavior — just a refreshed
+// visual language matched to .editorial-card.
 function Accordion({
   id,
   title,
@@ -120,31 +123,47 @@ function Accordion({
   return (
     <details
       open={defaultOpen}
-      className="rounded-2xl group"
-      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+      className="editorial-card group !p-0"
+      style={{ overflow: 'hidden' }}
       data-testid={`dashboard-accordion-${id}`}
     >
       <summary
-        className="cursor-pointer list-none flex items-center justify-between px-4 py-3.5 rounded-2xl select-none"
-        style={{ minHeight: 56 }}
+        className="cursor-pointer list-none flex items-center justify-between select-none"
+        style={{
+          minHeight: 56,
+          padding: 'var(--space-fluid-4) var(--space-fluid-5)',
+        }}
       >
-        <div className="flex items-center gap-3">
-          <span className="text-lg" aria-hidden="true">{icon}</span>
+        <div className="flex items-center gap-3 min-w-0">
           <span
-            className="text-sm font-bold"
-            style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}
+            aria-hidden="true"
+            style={{ fontSize: 22, lineHeight: 1, flexShrink: 0 }}
           >
+            {icon}
+          </span>
+          <span className="editorial-section-title truncate">
             {title}
           </span>
         </div>
         <span
-          className="text-[var(--text-3)] text-base transition-transform group-open:rotate-180"
           aria-hidden="true"
+          className="transition-transform group-open:rotate-180 flex-shrink-0"
+          style={{
+            color: 'var(--ink-3)',
+            fontSize: 16,
+          }}
         >
           ▾
         </span>
       </summary>
-      <div className="px-4 pb-4">{children}</div>
+      <div
+        style={{
+          padding:
+            '0 var(--space-fluid-5) var(--space-fluid-5) var(--space-fluid-5)',
+        }}
+      >
+        {children}
+      </div>
     </details>
   );
 }
@@ -547,111 +566,126 @@ function LegacyDashboard() {
   };
 
   // Header content extracted so AppShell can render it in the sticky-
-  // header slot. The original <header className="page-header"> wrapper
-  // moved into AppShell — same visual result on mobile (sticky, blur),
-  // but now backed by the responsive Grid shell with safe-area-inset,
-  // scroll-compact transitions, and one-handed mode toggle.
+  // header slot. Refreshed visual (2026-05-19): editorial wordmark on
+  // the left + the original action group on the right. The greeting
+  // ("Good morning, Pradeep") is rendered ABOVE the wordmark on first
+  // paint, and the AppShell scroll-compact rule hides it when the user
+  // scrolls — recovering ~24px of vertical real estate on a 360px phone.
+  const planLabel = (() => {
+    const p = student.subscription_plan;
+    if (!p || p === 'free') return null;
+    return p;
+  })();
+  void planLabel;
   const headerContent = (
-    <div className="page-header-inner flex items-center justify-between">
-          <div>
-            <p className="text-xs text-[var(--text-3)]">{greeting},</p>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1
-                className="text-lg md:text-xl font-bold"
-                style={{ fontFamily: 'var(--font-display)' }}
-              >
-                {student.name} 👋
-              </h1>
-              <PlanBadge planCode={student.subscription_plan} size="sm" />
-              {(student.grade === '11' || student.grade === '12') && student.stream && (
-                <span
-                  // Read-only badge. Stream is locked once set (CEO
-                  // 2026-05-18); no in-app re-pick. The aria-label spells
-                  // that out for screen readers.
-                  aria-label={isHi ? 'चयनित स्ट्रीम (बदली नहीं जा सकती)' : 'Selected stream (locked)'}
-                  title={isHi ? 'स्ट्रीम स्थायी है' : 'Stream is locked'}
-                  className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                  style={{
-                    background:
-                      student.stream === 'science'
-                        ? '#2563EB15'
-                        : student.stream === 'commerce'
-                          ? '#D9770615'
-                          : '#7C3AED15',
-                    color:
-                      student.stream === 'science'
-                        ? '#2563EB'
-                        : student.stream === 'commerce'
-                          ? '#D97706'
-                          : '#7C3AED',
-                    border: `1px solid ${
-                      student.stream === 'science'
-                        ? '#2563EB30'
-                        : student.stream === 'commerce'
-                          ? '#D9770630'
-                          : '#7C3AED30'
-                    }`,
-                  }}
-                >
-                  {student.stream === 'science' ? '⚗️' : student.stream === 'commerce' ? '📊' : '🌍'}{' '}
-                  {isHi
-                    ? student.stream === 'science'
-                      ? 'विज्ञान'
-                      : student.stream === 'commerce'
-                        ? 'वाणिज्य'
-                        : 'मानविकी'
-                    : student.stream === 'science'
-                      ? 'Science'
-                      : student.stream === 'commerce'
-                        ? 'Commerce'
-                        : 'Arts'}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <CoinBalance balance={coinBalance} isHi={isHi} />
-            <button
-              onClick={() => setLanguage(language === 'hi' ? 'en' : 'hi')}
-              className="text-xs px-3 py-1.5 rounded-xl border transition-colors"
-              style={{ borderColor: 'var(--border-mid)', color: 'var(--text-3)' }}
+    <div className="dashboard-header-row">
+      <div className="min-w-0 flex flex-col" style={{ gap: 2 }}>
+        <p className="dashboard-header-greeting">
+          {greeting}
+        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="dashboard-header-wordmark">
+            <span>Alfanumrik</span>
+            <span className="dashboard-header-wordmark__dot" aria-hidden="true" />
+          </span>
+          <PlanBadge planCode={student.subscription_plan} size="sm" />
+          {(student.grade === '11' || student.grade === '12') && student.stream && (
+            <span
+              // Read-only badge. Stream is locked once set (CEO
+              // 2026-05-18); no in-app re-pick. The aria-label spells
+              // that out for screen readers.
+              aria-label={isHi ? 'चयनित स्ट्रीम (बदली नहीं जा सकती)' : 'Selected stream (locked)'}
+              title={isHi ? 'स्ट्रीम स्थायी है' : 'Stream is locked'}
+              className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{
+                background:
+                  student.stream === 'science'
+                    ? '#2563EB15'
+                    : student.stream === 'commerce'
+                      ? '#D9770615'
+                      : '#7C3AED15',
+                color:
+                  student.stream === 'science'
+                    ? '#2563EB'
+                    : student.stream === 'commerce'
+                      ? '#D97706'
+                      : '#7C3AED',
+                border: `1px solid ${
+                  student.stream === 'science'
+                    ? '#2563EB30'
+                    : student.stream === 'commerce'
+                      ? '#D9770630'
+                      : '#7C3AED30'
+                }`,
+              }}
             >
-              {language === 'hi' ? '🌐 EN' : '🇮🇳 हिं'}
-            </button>
-            {/* Theme toggle removed 2026-05-11 — product is light-only.
-                See src/lib/AuthContext.tsx::resolveTheme. toggleTheme/theme
-                are still imported above (no-op + always 'light') so the
-                hook destructure doesn't break callers; remove on the
-                follow-up sweep that strips `dark:` Tailwind variants. */}
-            <button
-              onClick={() => router.push('/notifications')}
-              className="relative p-1.5"
-              aria-label={isHi ? 'सूचनाएँ' : 'Notifications'}
-            >
-              <span className="text-lg" aria-hidden="true">🔔</span>
-              {unreadCount > 0 && (
-                <span
-                  className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-                  style={{ background: 'var(--danger)', fontSize: 10, lineHeight: 1 }}
-                >
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => router.push('/profile')}
-              aria-label={isHi ? 'प्रोफ़ाइल' : 'Profile'}
-            >
-              <Avatar name={student.name} />
-            </button>
-          </div>
+              {student.stream === 'science' ? '⚗️' : student.stream === 'commerce' ? '📊' : '🌍'}{' '}
+              {isHi
+                ? student.stream === 'science'
+                  ? 'विज्ञान'
+                  : student.stream === 'commerce'
+                    ? 'वाणिज्य'
+                    : 'मानविकी'
+                : student.stream === 'science'
+                  ? 'Science'
+                  : student.stream === 'commerce'
+                    ? 'Commerce'
+                    : 'Arts'}
+            </span>
+          )}
         </div>
+      </div>
+      <div className="dashboard-header-actions">
+        <CoinBalance balance={coinBalance} isHi={isHi} />
+        <button
+          type="button"
+          onClick={() => setLanguage(language === 'hi' ? 'en' : 'hi')}
+          className="dashboard-header-langpill"
+          aria-label={isHi ? 'भाषा बदलें' : 'Change language'}
+        >
+          {language === 'hi' ? '🌐 EN' : '🇮🇳 हिं'}
+        </button>
+        {/* Theme toggle removed 2026-05-11 — product is light-only. */}
+        <button
+          type="button"
+          onClick={() => router.push('/notifications')}
+          className="dashboard-header-iconbtn"
+          aria-label={isHi ? 'सूचनाएँ' : 'Notifications'}
+        >
+          <span aria-hidden="true" style={{ fontSize: 18 }}>🔔</span>
+          {unreadCount > 0 && (
+            <span className="dashboard-header-iconbtn__badge" aria-hidden="true">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push('/profile')}
+          aria-label={isHi ? 'प्रोफ़ाइल' : 'Profile'}
+          className="dashboard-header-iconbtn"
+          style={{ padding: 0, overflow: 'hidden' }}
+        >
+          <Avatar name={student.name} size={36} />
+        </button>
+      </div>
+    </div>
   );
 
   // Main content — exact same children as before; only the wrapping
   // chrome (header/main/nav) is restructured by AppShell.
+  // Gap between sections uses --space-fluid-4 (12-16px) so the rhythm
+  // tightens on phone and breathes on tablet.
   const mainContent = (
-    <div className="app-container py-4 space-y-4">
+    <div
+      className="app-container"
+      style={{
+        paddingTop: 'var(--space-fluid-4)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--space-fluid-4)',
+      }}
+    >
         <SectionErrorBoundary section="Dashboard">
           {/* Pedagogy v2 — Wave 1B daily rhythm.
               Renders nothing when ff_pedagogy_v2_daily_rhythm is off,
@@ -677,6 +711,7 @@ function LegacyDashboard() {
             allowedSubjects={allowedSubjects}
             selectedSubjects={selectedSubjects}
             onPickSubjects={() => setShowSubjectPicker(true)}
+            totalXp={totalXp}
           />
 
           {/* Reselect banner — only when student has zero unlocked or zero

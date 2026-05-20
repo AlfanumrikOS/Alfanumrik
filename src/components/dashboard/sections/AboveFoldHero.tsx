@@ -16,7 +16,6 @@
  */
 
 import { useRouter } from 'next/navigation';
-import { Card } from '@/components/ui';
 import XPDailyStatus from '@/components/xp/XPDailyStatus';
 import type { CurriculumTopic, Student } from '@/lib/types';
 import type { Subject as AllowedSubject } from '@/lib/subjects.types';
@@ -24,6 +23,7 @@ import { useFeatureFlags, useLearnerNext } from '@/lib/swr';
 import { actionDisplay, actionPrimaryCta } from '@/lib/state/learner-loop/action-display';
 import type { LearnerAction } from '@/lib/state/learner-loop/types';
 import { trackDashboardCta } from '@/lib/posthog/dashboard-cta';
+import { calculateLevel } from '@/lib/xp-config';
 
 interface AboveFoldHeroProps {
   student: Student;
@@ -33,6 +33,8 @@ interface AboveFoldHeroProps {
   allowedSubjects: AllowedSubject[];
   selectedSubjects: string[];
   onPickSubjects: () => void;
+  /** Optional XP total — drives the level pill in the stat strip. */
+  totalXp?: number;
 }
 
 export default function AboveFoldHero({
@@ -43,6 +45,7 @@ export default function AboveFoldHero({
   allowedSubjects,
   selectedSubjects,
   onPickSubjects,
+  totalXp = 0,
 }: AboveFoldHeroProps) {
   const router = useRouter();
   const meta = allowedSubjects.find((s) => s.code === student.preferred_subject);
@@ -59,14 +62,49 @@ export default function AboveFoldHero({
   const dashboardLoopOn = flags?.ff_learner_loop_dashboard_v1 === true;
   const { data: nextResp } = useLearnerNext(dashboardLoopOn ? student.id : undefined);
   const loopAction = (nextResp?.action as LearnerAction | undefined) ?? null;
+  const level = calculateLevel(totalXp);
 
   return (
-    <div className="space-y-3">
-      {/* 1. PRIMARY CTA — single, opinionated, biggest tap target.
-            Phase 3b: when the Loop action is available, the CTA's url +
-            label come from it (the action might be a review, a revise,
-            a dive, etc — not always a quiz). Falls back to the legacy
-            hardcoded /quiz button when no action. */}
+    <div className="space-y-4">
+      {/* 1. EDITORIAL NAME + STAT STRIP — the hero's hero.
+            Fraunces serif name turns "school portal" into "editorial
+            product". 3-cell strip below it: streak / XP / level. */}
+      <div className="space-y-3">
+        <h1 className="editorial-name" data-testid="dashboard-greeting-name">
+          {student.name}
+        </h1>
+        <div className="dashboard-stat-strip" data-testid="dashboard-stat-strip">
+          <div className="dashboard-stat-cell">
+            <p className="dashboard-stat-cell__value">
+              {streak}
+            </p>
+            <p className="dashboard-stat-cell__label">
+              <span aria-hidden="true">🔥</span>{' '}
+              {isHi ? 'दिन की लय' : streak === 1 ? 'day streak' : 'day streak'}
+            </p>
+          </div>
+          <div className="dashboard-stat-cell">
+            <p className="dashboard-stat-cell__value">
+              {totalXp.toLocaleString('en-IN')}
+            </p>
+            <p className="dashboard-stat-cell__label">
+              {isHi ? 'कुल XP' : 'Total XP'}
+            </p>
+          </div>
+          <div className="dashboard-stat-cell">
+            <p className="dashboard-stat-cell__value">
+              {level}
+            </p>
+            <p className="dashboard-stat-cell__label">
+              {isHi ? 'स्तर' : 'Level'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. PRIMARY CTA — the single dominant button. Orange accent,
+            full-width, impossible to miss on 360px. Bigger min-height,
+            fluid padding so it scales smoothly to tablet/desktop. */}
       {(() => {
         const cta = loopAction ? actionPrimaryCta(loopAction) : null;
         const url = loopAction?.url ?? '/quiz';
@@ -76,8 +114,6 @@ export default function AboveFoldHero({
         return (
           <button
             onClick={() => {
-              // Analytics — dashboard CTA tracking (mobile-first redesign).
-              // PII-free: only the section + action key + destination route.
               trackDashboardCta({
                 section: 'above_fold_hero',
                 action: loopAction ? 'loop_primary_cta' : 'default_primary_cta',
@@ -85,62 +121,29 @@ export default function AboveFoldHero({
               });
               router.push(url);
             }}
-            className="w-full py-4 rounded-2xl font-bold text-base text-white transition-all active:scale-[0.98] shadow-md flex items-center justify-center gap-2"
-            style={{
-              background: 'linear-gradient(135deg, var(--purple, #7C3AED), #6D28D9)',
-              fontFamily: 'var(--font-display)',
-              minHeight: 56, // mobile tap target
-            }}
+            className="dashboard-hero-cta"
             data-testid="dashboard-primary-cta"
           >
-            <span className="text-xl">{icon}</span>
-            {isHi ? labelHi : labelEn}
+            <span aria-hidden="true" style={{ fontSize: 22, lineHeight: 1 }}>{icon}</span>
+            <span>{isHi ? labelHi : labelEn}</span>
           </button>
         );
       })()}
 
-      {/* 2. STREAK CHIP — flame + day count + bilingual unit */}
-      <div
-        className="rounded-2xl px-4 py-3 flex items-center justify-between"
-        style={{
-          background: 'linear-gradient(135deg, rgba(245,166,35,0.10), rgba(232,88,28,0.08))',
-          border: '1px solid rgba(245,166,35,0.20)',
-        }}
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-3xl streak-flame" aria-hidden="true">🔥</span>
-          <div>
-            <p
-              className="text-2xl font-extrabold leading-none"
-              style={{ color: 'var(--orange)', fontFamily: 'var(--font-display)' }}
-            >
-              {streak}
-            </p>
-            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-3)' }}>
-              {isHi
-                ? `${streak === 1 ? 'दिन' : 'दिन'} की लय`
-                : `day${streak === 1 ? '' : 's'} streak`}
-            </p>
-          </div>
-        </div>
-        {streak === 0 && (
-          <p className="text-[11px] text-right max-w-[55%]" style={{ color: 'var(--text-3)' }}>
-            {isHi ? 'आज क्विज़ दो — लय शुरू करो' : 'Take a quiz today — start your streak'}
-          </p>
-        )}
-      </div>
-
-      {/* 3. TODAY'S XP STRIP — quiz + chat caps from XPDailyStatus */}
+      {/* 3. TODAY'S XP STRIP — quiz + chat caps from XPDailyStatus.
+            Kept as-is (assessment owns this widget) but now nests
+            cleanly inside the editorial layout below the CTA. */}
       <XPDailyStatus studentId={student.id} streak={streak} isHi={isHi} />
 
-      {/* 4. NEXT ACTION — Learner Loop resolver when flag on, else legacy
-              BKT Continue card, else zero-state subject picker. */}
+      {/* 4. NEXT ACTION CARD — Learner Loop resolver when flag on,
+            else legacy BKT Continue card, else zero-state subject
+            picker. Now uses .editorial-card chrome for visual
+            consistency with every other dashboard section. */}
       {loopAction ? (
         (() => {
           const d = actionDisplay(loopAction);
           return (
-            <Card
-              hoverable
+            <button
               onClick={() => {
                 trackDashboardCta({
                   section: 'above_fold_hero',
@@ -149,33 +152,63 @@ export default function AboveFoldHero({
                 });
                 router.push(loopAction.url);
               }}
-              className="flex items-center gap-3 !p-4"
+              className="editorial-card w-full text-left flex items-center gap-4 active:scale-[0.99] transition-transform"
               data-testid="dashboard-loop-action-card"
             >
               <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                style={{ background: `${d.tint}15`, color: d.tint }}
+                className="rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{
+                  width: 52,
+                  height: 52,
+                  background: `${d.tint}15`,
+                  color: d.tint,
+                  fontSize: 22,
+                }}
+                aria-hidden="true"
               >
                 {d.icon}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
+                <p
+                  className="editorial-eyebrow"
+                  style={{ marginBottom: 4 }}
+                >
                   {isHi ? d.eyebrowHi : d.eyebrowEn}
                 </p>
-                <p className="font-semibold text-sm md:text-base truncate mt-0.5">
+                <p
+                  className="truncate"
+                  style={{
+                    fontFamily: 'var(--font-serif)',
+                    fontWeight: 500,
+                    fontSize: 'var(--text-lg)',
+                    color: 'var(--ink)',
+                    letterSpacing: '-0.01em',
+                  }}
+                >
                   {isHi ? d.titleHi : d.titleEn}
                 </p>
-                <p className="text-xs text-[var(--text-3)] mt-0.5 truncate">
+                <p
+                  className="truncate"
+                  style={{
+                    fontSize: 'var(--text-xs)',
+                    color: 'var(--ink-3)',
+                    marginTop: 2,
+                  }}
+                >
                   {isHi ? d.subHi : d.subEn}
                 </p>
               </div>
-              <span className="text-[var(--text-3)] text-lg" aria-hidden="true">→</span>
-            </Card>
+              <span
+                style={{ color: 'var(--ink-3)', fontSize: 22, lineHeight: 1 }}
+                aria-hidden="true"
+              >
+                →
+              </span>
+            </button>
           );
         })()
       ) : topTopic ? (
-        <Card
-          hoverable
+        <button
           onClick={() => {
             const dest = topTopic.chapter_number
               ? `/learn/${student.preferred_subject}/${topTopic.chapter_number}`
@@ -187,37 +220,78 @@ export default function AboveFoldHero({
             });
             router.push(dest);
           }}
-          className="flex items-center gap-3 !p-4"
+          className="editorial-card w-full text-left flex items-center gap-4 active:scale-[0.99] transition-transform"
         >
           <div
-            className="w-12 h-12 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-            style={{ background: `${meta?.color ?? 'var(--orange)'}15` }}
+            className="rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{
+              width: 52,
+              height: 52,
+              background: `${meta?.color ?? 'var(--accent)'}15`,
+              fontSize: 22,
+            }}
+            aria-hidden="true"
           >
             {meta?.icon ?? '📚'}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
+            <p className="editorial-eyebrow" style={{ marginBottom: 4 }}>
               {isHi ? 'जारी रखो' : 'Continue'}
             </p>
-            <p className="font-semibold text-sm md:text-base truncate mt-0.5">
+            <p
+              className="truncate"
+              style={{
+                fontFamily: 'var(--font-serif)',
+                fontWeight: 500,
+                fontSize: 'var(--text-lg)',
+                color: 'var(--ink)',
+                letterSpacing: '-0.01em',
+              }}
+            >
               {topTopic.title}
             </p>
-            <p className="text-xs text-[var(--text-3)] mt-0.5 truncate">
+            <p
+              className="truncate"
+              style={{
+                fontSize: 'var(--text-xs)',
+                color: 'var(--ink-3)',
+                marginTop: 2,
+              }}
+            >
               {topTopic.chapter_number
                 ? (isHi ? `अध्याय ${topTopic.chapter_number}` : `Chapter ${topTopic.chapter_number}`)
                 : (isHi ? 'Foxy के साथ सीखो' : 'Learn with Foxy')}
             </p>
           </div>
-          <span className="text-[var(--text-3)] text-lg" aria-hidden="true">→</span>
-        </Card>
+          <span
+            style={{ color: 'var(--ink-3)', fontSize: 22, lineHeight: 1 }}
+            aria-hidden="true"
+          >
+            →
+          </span>
+        </button>
       ) : (
-        <Card className="!p-4">
-          <p className="font-semibold text-sm" style={{ color: 'var(--text-1)' }}>
+        <div className="editorial-card">
+          <p
+            style={{
+              fontFamily: 'var(--font-serif)',
+              fontWeight: 500,
+              fontSize: 'var(--text-lg)',
+              color: 'var(--ink)',
+              letterSpacing: '-0.01em',
+            }}
+          >
             {hasSubjects
               ? (isHi ? 'पहला विषय शुरू करो' : 'Pick a subject to start')
               : (isHi ? 'अपने विषय चुनो' : 'Choose your subjects')}
           </p>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
+          <p
+            style={{
+              fontSize: 'var(--text-xs)',
+              color: 'var(--ink-3)',
+              marginTop: 6,
+            }}
+          >
             {hasSubjects
               ? (isHi ? 'नीचे "मेरे विषय" से चुनो' : 'Tap a subject below to begin')
               : (isHi ? 'पहले अपने विषय चुनना ज़रूरी है' : 'Select subjects to unlock learning')}
@@ -232,13 +306,13 @@ export default function AboveFoldHero({
                 });
                 onPickSubjects();
               }}
-              className="mt-3 w-full py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
-              style={{ background: 'var(--orange)' }}
+              className="dashboard-hero-cta"
+              style={{ marginTop: 16 }}
             >
               {isHi ? '+ विषय चुनो' : '+ Choose subjects'}
             </button>
           )}
-        </Card>
+        </div>
       )}
     </div>
   );
