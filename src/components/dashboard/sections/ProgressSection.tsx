@@ -17,11 +17,12 @@
  * Owned by frontend. JSX moved verbatim from page.tsx — no behavior changes.
  */
 
-import { Card, SectionHeader, StatCard } from '@/components/ui';
+import { SectionHeader, StatCard } from '@/components/ui';
 import ScoreCard from '@/components/score/ScoreCard';
 import SubjectProgress from '@/components/dashboard/SubjectProgress';
 import type { StudentLearningProfile } from '@/lib/types';
 import type { Subject as AllowedSubject } from '@/lib/subjects.types';
+import { trackDashboardCta } from '@/lib/posthog/dashboard-cta';
 
 interface KnowledgeGap {
   id: string;
@@ -84,12 +85,12 @@ export default function ProgressSection({
   errorBreakdown,
 }: ProgressSectionProps) {
   return (
-    <div className="space-y-4 pt-3">
-      {/* Performance score hero */}
+    <div className="space-y-4 pt-1">
+      {/* Performance score hero — editorial card with serif overall number */}
       {(perfScores.length > 0 || cbseReadiness !== null) && (
-        <Card>
+        <div className="editorial-card">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
+            <span className="editorial-eyebrow">
               {isHi ? 'समग्र प्रदर्शन' : 'Overall Performance'}
             </span>
             {velocityTrend && (
@@ -108,10 +109,13 @@ export default function ProgressSection({
 
           {overallPerfScore > 0 && (
             <div className="mb-4 text-center">
-              <p className="text-4xl font-extrabold" style={{ color: 'var(--orange)', fontFamily: 'var(--font-display)' }}>
+              <p
+                className="editorial-display"
+                style={{ color: 'var(--accent)' }}
+              >
                 {overallPerfScore}
               </p>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
+              <p className="text-xs mt-1" style={{ color: 'var(--ink-3)' }}>
                 {overallPerfLevel}
               </p>
             </div>
@@ -146,7 +150,7 @@ export default function ProgressSection({
               />
             )}
           </div>
-        </Card>
+        </div>
       )}
 
       {/* Per-subject Performance Score grid */}
@@ -183,24 +187,53 @@ export default function ProgressSection({
         />
       )}
 
-      {/* Knowledge Gaps Alert */}
+      {/* Knowledge Gaps Alert — editorial card with red accent border */}
       {knowledgeGaps.length > 0 && (
-        <div className="rounded-2xl p-4" style={{ background: 'var(--danger-light)', border: '1px solid rgba(244,63,94,0.15)' }}>
+        <div
+          className="editorial-card"
+          style={{
+            background: 'linear-gradient(180deg, rgba(244,63,94,0.06), var(--paper))',
+            borderColor: 'rgba(244,63,94,0.18)',
+          }}
+        >
           <div className="flex items-start gap-3">
             <span className="text-2xl" aria-hidden="true">🔍</span>
             <div className="flex-1">
-              <div className="font-semibold text-sm" style={{ color: 'var(--danger)' }}>
+              <div
+                className="font-semibold"
+                style={{
+                  fontFamily: 'var(--font-serif)',
+                  fontSize: 'var(--text-lg)',
+                  color: '#C32E2E',
+                }}
+              >
                 {knowledgeGaps.length} {isHi ? 'ज्ञान अंतराल पाए गए' : 'knowledge gaps found'}
               </div>
-              <div className="text-xs text-[var(--text-3)] mt-1 space-y-0.5">
+              <div
+                className="mt-2 space-y-1"
+                style={{ fontSize: 'var(--text-xs)', color: 'var(--ink-3)' }}
+              >
                 {knowledgeGaps.slice(0, 2).map((g) => (
                   <div key={g.id}>• {isHi && g.description_hi ? g.description_hi : g.description}</div>
                 ))}
               </div>
               <button
-                onClick={() => router.push('/foxy')}
-                className="mt-2 text-xs font-bold px-3 py-1.5 rounded-lg"
-                style={{ background: 'rgba(232,88,28,0.1)', color: 'var(--orange)' }}
+                onClick={() => {
+                  trackDashboardCta({
+                    section: 'progress',
+                    action: 'knowledge_gaps_fix_with_foxy',
+                    destination: '/foxy',
+                  });
+                  router.push('/foxy');
+                }}
+                className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl transition-all active:scale-95"
+                style={{
+                  background: 'var(--accent)',
+                  color: 'white',
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 700,
+                  fontSize: 'var(--text-xs)',
+                }}
               >
                 🦊 {isHi ? 'Foxy से ठीक करो' : 'Fix with Foxy'}
               </button>
@@ -209,16 +242,16 @@ export default function ProgressSection({
         </div>
       )}
 
-      {/* Error Breakdown */}
+      {/* Error Breakdown — editorial card */}
       {errorBreakdown && (
-        <Card>
+        <div className="editorial-card">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-base" aria-hidden="true">🔍</span>
-            <span className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+            <span className="editorial-section-title">
               {isHi ? 'गलती विश्लेषण' : 'Error Analysis'}
             </span>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             {[
               { label: isHi ? 'लापरवाही' : 'Careless', pct: errorBreakdown.careless, color: '#F59E0B', icon: '⚡' },
               { label: isHi ? 'अवधारणा' : 'Conceptual', pct: errorBreakdown.conceptual, color: '#EF4444', icon: '🧠' },
@@ -226,15 +259,25 @@ export default function ProgressSection({
             ].map((item) => (
               <div key={item.label} className="flex items-center gap-2">
                 <span className="text-xs w-4" aria-hidden="true">{item.icon}</span>
-                <span className="text-xs font-semibold w-20" style={{ color: item.color }}>{item.label}</span>
+                <span
+                  className="font-semibold w-20"
+                  style={{ color: item.color, fontSize: 'var(--text-xs)' }}
+                >
+                  {item.label}
+                </span>
                 <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: `${item.color}15` }}>
                   <div className="h-full rounded-full transition-all" style={{ width: `${item.pct}%`, background: item.color }} />
                 </div>
-                <span className="text-[10px] text-[var(--text-3)] w-10 text-right">{item.pct}%</span>
+                <span
+                  className="w-10 text-right"
+                  style={{ fontSize: 10, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}
+                >
+                  {item.pct}%
+                </span>
               </div>
             ))}
           </div>
-        </Card>
+        </div>
       )}
     </div>
   );

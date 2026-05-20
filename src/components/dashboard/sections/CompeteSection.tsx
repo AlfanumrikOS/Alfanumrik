@@ -15,6 +15,7 @@
  */
 
 import ChallengeStreakBadge from '@/components/challenge/StreakBadge';
+import { trackDashboardCta } from '@/lib/posthog/dashboard-cta';
 
 interface CompeteSectionProps {
   isHi: boolean;
@@ -37,65 +38,159 @@ export default function CompeteSection({
   const showChallengeStreak = challengeStreak > 0;
 
   return (
-    <div className="space-y-4 pt-3">
-      {/* Mini leaderboard card */}
+    <div className="space-y-4 pt-1">
+      {/* Leaderboard rank — HUGE serif number is the headline.
+          Was a small text row; now it reads as an editorial hero. */}
       {showLeaderboard && (
         <button
-          onClick={() => router.push('/leaderboard')}
-          className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all active:scale-[0.98]"
-          style={{
-            background: 'linear-gradient(135deg, rgba(245,166,35,0.06), rgba(232,88,28,0.06))',
-            border: '1px solid rgba(245,166,35,0.2)',
+          onClick={() => {
+            trackDashboardCta({
+              section: 'compete',
+              action: studentRank !== null ? 'leaderboard_ranked' : 'leaderboard_zero_state',
+              destination: '/leaderboard',
+            });
+            router.push('/leaderboard');
           }}
+          className="editorial-card w-full text-left active:scale-[0.99] transition-transform"
+          style={{
+            background: 'linear-gradient(135deg, var(--accent-soft) 0%, var(--paper) 70%)',
+            borderColor: 'var(--accent-quiet)',
+          }}
+          aria-label={
+            studentRank !== null
+              ? (isHi ? `तुम्हारी रैंक: ${studentRank}` : `Your rank: ${studentRank}`)
+              : (isHi ? 'रैंकिंग में शामिल हो' : 'Join the rankings')
+          }
         >
-          <span className="text-2xl" aria-hidden="true">🏆</span>
-          <div className="flex-1 text-left">
-            {studentRank !== null ? (
-              <>
-                <div className="text-sm font-bold" style={{ color: 'var(--gold)' }}>
-                  {isHi
-                    ? `तुम #${studentRank} हो इस हफ्ते!`
-                    : `You're #${studentRank} this week!`}
-                </div>
-                <div className="text-xs text-[var(--text-3)]">
-                  {isHi ? 'पूरी रैंकिंग देखो →' : 'See full rankings →'}
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="text-sm font-bold" style={{ color: 'var(--gold)' }}>
-                  {isHi ? 'रैंकिंग में आओ!' : 'Join the Rankings!'}
-                </div>
-                <div className="text-xs text-[var(--text-3)]">
-                  {isHi
-                    ? 'क्विज़ खेलो और टॉप पर जाओ'
-                    : 'Take quizzes to climb the leaderboard'}
-                </div>
-              </>
-            )}
-          </div>
-          <span className="text-[var(--text-3)]" aria-hidden="true">→</span>
+          <p className="editorial-eyebrow editorial-eyebrow--accent">
+            <span aria-hidden="true">🏆</span>{' '}
+            {isHi ? 'इस हफ्ते' : 'This Week'}
+          </p>
+          {studentRank !== null ? (
+            <>
+              <div className="flex items-baseline gap-1 mt-2">
+                <span className="dashboard-rank-display dashboard-rank-display--hash">#</span>
+                <span
+                  className="dashboard-rank-display"
+                  style={{ color: 'var(--accent)' }}
+                  data-testid="dashboard-compete-rank"
+                >
+                  {studentRank}
+                </span>
+              </div>
+              <p
+                className="mt-1"
+                style={{
+                  fontFamily: 'var(--font-serif)',
+                  fontSize: 'var(--text-md)',
+                  color: 'var(--ink-2)',
+                  letterSpacing: '-0.01em',
+                }}
+              >
+                {isHi ? 'तुम्हारी रैंक है।' : 'is your rank.'}
+              </p>
+              <p
+                className="mt-3 inline-flex items-center gap-1.5"
+                style={{
+                  fontFamily: 'var(--font-display)',
+                  fontSize: 'var(--text-xs)',
+                  fontWeight: 700,
+                  color: 'var(--accent)',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                {isHi ? 'पूरी रैंकिंग देखो' : 'See full rankings'} →
+              </p>
+            </>
+          ) : (
+            <>
+              <p
+                className="mt-2"
+                style={{
+                  fontFamily: 'var(--font-serif)',
+                  fontSize: 'clamp(22px, 5vw, 28px)',
+                  color: 'var(--ink)',
+                  letterSpacing: '-0.015em',
+                  lineHeight: 1.15,
+                }}
+              >
+                {isHi ? 'रैंकिंग में आओ।' : 'Join the rankings.'}
+              </p>
+              <p
+                className="mt-2"
+                style={{
+                  fontSize: 'var(--text-xs)',
+                  color: 'var(--ink-3)',
+                }}
+              >
+                {isHi
+                  ? 'क्विज़ खेलो और टॉप पर जाओ।'
+                  : 'Take quizzes to climb the leaderboard.'}
+              </p>
+              <p
+                className="mt-3 inline-flex items-center gap-1.5"
+                style={{
+                  fontFamily: 'var(--font-display)',
+                  fontSize: 'var(--text-xs)',
+                  fontWeight: 700,
+                  color: 'var(--accent)',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                {isHi ? 'अभी देखो' : 'Take a look'} →
+              </p>
+            </>
+          )}
         </button>
       )}
 
       {/* Weekly Challenge — Concept Chain streak summary */}
       {showChallengeStreak && (
         <button
-          onClick={() => router.push('/challenge')}
-          className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all active:scale-[0.98]"
+          onClick={() => {
+            trackDashboardCta({
+              section: 'compete',
+              action: 'weekly_challenge',
+              destination: '/challenge',
+            });
+            router.push('/challenge');
+          }}
+          className="editorial-card w-full text-left flex items-center gap-3 active:scale-[0.99] transition-transform"
           style={{
-            background: 'linear-gradient(135deg, rgba(124,58,237,0.06), rgba(139,92,246,0.06))',
-            border: '1px solid rgba(124,58,237,0.2)',
+            background: 'linear-gradient(135deg, rgba(124,58,237,0.06), var(--paper))',
+            borderColor: 'rgba(124,58,237,0.2)',
           }}
         >
-          <span className="text-2xl" aria-hidden="true">🧩</span>
+          <span
+            className="rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{
+              width: 44,
+              height: 44,
+              background: 'rgba(124,58,237,0.10)',
+              fontSize: 22,
+            }}
+            aria-hidden="true"
+          >
+            🧩
+          </span>
           <div className="flex-1 text-left">
-            <div className="text-sm font-bold" style={{ color: 'var(--purple)' }}>
+            <p
+              className="editorial-eyebrow"
+              style={{ color: '#7C3AED' }}
+            >
               {isHi ? 'साप्ताहिक चुनौती' : 'Weekly Challenge'}
-            </div>
-            <div className="text-xs text-[var(--text-3)] mt-0.5">
-              {isHi ? 'Concept Chain स्ट्रीक' : 'Concept Chain streak'}
-            </div>
+            </p>
+            <p
+              className="mt-1"
+              style={{
+                fontFamily: 'var(--font-serif)',
+                fontSize: 'var(--text-lg)',
+                color: 'var(--ink)',
+                letterSpacing: '-0.01em',
+              }}
+            >
+              {isHi ? 'Concept Chain' : 'Concept Chain'}
+            </p>
           </div>
           <ChallengeStreakBadge
             streak={challengeStreak}

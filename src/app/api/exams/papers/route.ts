@@ -6,10 +6,12 @@
  *
  * Permission: exam.view (matches PERMISSIONS.EXAM_VIEW in rbac.ts).
  *
- * Feature-flag gate (defense in depth on top of P9 RBAC + P11 plan gating):
- *   - `ff_competitive_exams_v1` OFF  → only `cbse_board` papers returned
- *     (CBSE board papers are free-tier, available to all authenticated users).
- *   - `ff_competitive_exams_v1` ON   → all matching papers returned.
+ * Feature-flag visibility (defense in depth, NOT a security boundary):
+ *   - The detail route (/api/exams/papers/[id]) returns HTTP 402 for non-cbse_board
+ *     papers when `ff_competitive_exams_v1` is OFF and the caller is not admin.
+ *   - The catalog returns all matching papers regardless of flag — the frontend
+ *     uses the `flag_enabled` field in the response to render JEE/NEET papers
+ *     with a "locked" badge that routes to /upgrade.
  *
  * Query params (all optional):
  *   exam_family  — jee_main | jee_advanced | neet | olympiad_* | cbse_board
@@ -62,10 +64,6 @@ const VALID_SUBJECTS = new Set(['physics', 'chemistry', 'math', 'biology']);
 const VALID_GRADES = new Set(['6', '7', '8', '9', '10', '11', '12']);
 
 const FF_COMPETITIVE_EXAMS = 'ff_competitive_exams_v1';
-
-const COMPETITION_GATED_FAMILIES = new Set(
-  Array.from(VALID_EXAM_FAMILIES).filter((f) => f !== 'cbse_board'),
-);
 
 // ─── Handler ─────────────────────────────────────────────────────────────
 
@@ -135,15 +133,14 @@ export async function GET(request: NextRequest) {
       )
       .eq('is_active', true);
 
-    // exam_family filter intersects with the flag gate: if the caller asked
-    // for a non-cbse family while the flag is off, we return an empty set
-    // (not 402) because the catalog route is the picker — the runner route
-    // is where we hard-block with 402.
     if (examFamilyParam) {
       query = query.eq('exam_family', examFamilyParam);
-    } else if (!flagEnabled) {
-      query = query.eq('exam_family', 'cbse_board');
     }
+    // NOTE: previously we restricted to exam_family='cbse_board' when the flag was off.
+    // That hid JEE/NEET/Olympiad papers entirely from free-tier students, which broke
+    // the catalog's locked-card UX (frontend never received locked papers to render
+    // with the upgrade CTA). The detail route still enforces HTTP 402 row-by-row, so
+    // returning all papers in the catalog is safe; the runner is the security boundary.
 
     if (subjectParam) {
       // subject_scope is a text[] column. Postgrest's `contains` (`cs`)
@@ -169,14 +166,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    let papers = data ?? [];
-
-    // If the flag is off but the caller named a non-cbse family, the SQL
-    // already returned matching rows — strip them at the application layer
-    // so the picker can't show competition papers behind a disabled flag.
-    if (!flagEnabled && examFamilyParam && examFamilyParam !== 'cbse_board') {
-      papers = papers.filter((p: { exam_family: string }) => p.exam_family === 'cbse_board');
-    }
+    const papers = data ?? [];
 
     // P13: log counts only, never paper codes or per-student state.
     logger.info('exams_papers_served', {
