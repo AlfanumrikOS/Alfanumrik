@@ -48,7 +48,10 @@ interface AttachResponse {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Attaching a domain to the Vercel project wires TLS routing — both legs of
+  // a brand-hijack risk. Read-or-write, gate at super_admin (the `status`
+  // action is included; we'd rather a support admin not probe Vercel state).
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   let body: { id?: string; action?: string };

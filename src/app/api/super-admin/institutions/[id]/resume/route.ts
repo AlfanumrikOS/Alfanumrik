@@ -41,7 +41,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await authorizeAdmin(request);
+  // Resume is symmetric with pause — same tenant-wide access gate. Doc-comment
+  // says super_admin only; make the gate match.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   const { id } = await params;

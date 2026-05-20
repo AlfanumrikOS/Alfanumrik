@@ -9,7 +9,8 @@ async function query(table: string, params: string) {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Read-only list of roles / permissions / user_roles — `support` floor is OK.
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   const params = new URL(request.url).searchParams;
@@ -50,7 +51,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Granting an RBAC role is a privilege-escalation operation. If a `support`
+  // admin could call this, they could grant themselves `super_admin` and
+  // bypass every other gate in this PR. super_admin only.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -88,7 +92,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Revoking an RBAC role is symmetric with granting one — super_admin only.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {

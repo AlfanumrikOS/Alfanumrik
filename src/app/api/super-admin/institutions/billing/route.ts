@@ -4,7 +4,8 @@ import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl }
 // ─── GET — billing details for a school ─────────────────────────
 
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Read-only billing detail view — `support` floor is OK.
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -126,8 +127,15 @@ export async function GET(request: NextRequest) {
 
 // ─── PATCH — update billing details ─────────────────────────────
 
+// TODO(backend+architect): Audit Finding #11 — this handler writes
+// `school_subscriptions` directly via PostgREST PATCH. Plan_code changes
+// should route through the `atomic_plan_change` RPC for P11 (REG-47)
+// consistency. Deferred to a follow-up PR (requires joint review). This
+// PR elevated the RBAC gate only; atomic-RPC migration tracked separately.
 export async function PATCH(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Changes seats / price / plan / status on a school subscription —
+  // revenue-impacting. super_admin only.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {

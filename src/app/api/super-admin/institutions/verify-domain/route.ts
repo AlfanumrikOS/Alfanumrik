@@ -51,7 +51,9 @@ interface VerifyResponse {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Domain ownership control: a verified custom_domain flips routing to the
+  // school's white-label hostname. super_admin only.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   let body: { id?: string };

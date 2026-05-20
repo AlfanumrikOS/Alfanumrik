@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
+import { authorizeAdmin, isValidUUID, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
+import { logger } from '@/lib/logger';
 
 // GET — list schools with pagination and search
 export async function GET(request: NextRequest) {
@@ -179,6 +180,132 @@ export async function PATCH(request: NextRequest) {
       'school.updated';
     await logAdminAudit(auth, action, 'school', id, { updates: safe });
     return NextResponse.json({ success: true, data: updated });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
+  }
+}
+
+// DELETE — soft-delete a school (default) or hard-delete (force=true).
+//
+// Soft delete (?id=<uuid>): flips deleted_at + is_active=false. The row stays
+// in the table for forensics and downstream join consistency (students /
+// subscriptions / audit_logs still resolve). All GET handlers already exclude
+// `deleted_at IS NOT NULL` rows (see /institutions GET line 27).
+//
+// Hard delete (?id=<uuid>&force=true): only allowed when the row is already
+// soft-deleted (deleted_at IS NOT NULL). This is the "expunge" path for
+// support tickets — empty test schools, GDPR-style scrub requests. Cascades
+// via existing FKs (students, school_subscriptions, etc. have
+// `ON DELETE CASCADE` referencing schools).
+//
+// The UI-prompt-style retype-name guard belongs in the super-admin page,
+// not here — the API just needs to be callable from a confirmation modal.
+export async function DELETE(request: NextRequest) {
+  // Cascades to everything under the tenant. super_admin only.
+  const auth = await authorizeAdmin(request, 'super_admin');
+  if (!auth.authorized) return auth.response;
+
+  try {
+    const params = new URL(request.url).searchParams;
+    const id = params.get('id');
+    const force = params.get('force') === 'true';
+
+    if (!id || !isValidUUID(id)) {
+      return NextResponse.json({ error: 'Valid "id" query param is required.' }, { status: 400 });
+    }
+
+    // Load current state so we can validate the soft/hard transition and
+    // capture before-state for the audit log.
+    const lookupRes = await fetch(
+      supabaseAdminUrl('schools', `select=id,name,is_active,deleted_at&id=eq.${encodeURIComponent(id)}&limit=1`),
+      { method: 'GET', headers: supabaseAdminHeaders() },
+    );
+    if (!lookupRes.ok) {
+      return NextResponse.json({ error: 'School lookup failed.' }, { status: 502 });
+    }
+    const rows = await lookupRes.json();
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return NextResponse.json({ error: 'School not found.' }, { status: 404 });
+    }
+    const school = rows[0] as { id: string; name: string; is_active: boolean | null; deleted_at: string | null };
+
+    // ── Hard delete branch (?force=true) ──
+    if (force) {
+      // Only allowed if the row is already soft-deleted. Hard-deleting a
+      // live school is the kind of mistake we want a two-step ramp to
+      // prevent — operator must soft-delete first, then come back to expunge.
+      if (school.deleted_at === null) {
+        return NextResponse.json(
+          { error: 'School is not soft-deleted yet. Soft-delete first, then re-run with ?force=true to expunge.' },
+          { status: 400 },
+        );
+      }
+
+      const hardRes = await fetch(
+        supabaseAdminUrl('schools', `id=eq.${encodeURIComponent(id)}`),
+        { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') },
+      );
+      if (!hardRes.ok) {
+        const text = await hardRes.text();
+        logger.error('school_hard_delete_failed', { schoolId: id, status: hardRes.status, body: text });
+        return NextResponse.json({ error: `Hard delete failed: ${text}` }, { status: hardRes.status });
+      }
+
+      await logAdminAudit(auth, 'hard_delete_school', 'schools', id, {
+        school_name: school.name,
+        previous_soft_deleted_at: school.deleted_at,
+      });
+
+      return NextResponse.json({
+        success: true,
+        data: { id, deleted_at: school.deleted_at, mode: 'hard' as const },
+      });
+    }
+
+    // ── Soft delete branch (default) ──
+    // Refuse to soft-delete an already soft-deleted row — the operator
+    // probably meant to hard-delete via ?force=true, or hit the button twice.
+    if (school.deleted_at !== null) {
+      return NextResponse.json(
+        { error: 'School is already soft-deleted. Re-run with ?force=true to expunge.' },
+        { status: 404 },
+      );
+    }
+
+    const nowIso = new Date().toISOString();
+    const softRes = await fetch(
+      supabaseAdminUrl('schools', `id=eq.${encodeURIComponent(id)}&deleted_at=is.null`),
+      {
+        method: 'PATCH',
+        headers: supabaseAdminHeaders('return=representation'),
+        body: JSON.stringify({
+          deleted_at: nowIso,
+          is_active: false,
+          updated_at: nowIso,
+        }),
+      },
+    );
+    if (!softRes.ok) {
+      const text = await softRes.text();
+      logger.error('school_soft_delete_failed', { schoolId: id, status: softRes.status, body: text });
+      return NextResponse.json({ error: `Soft delete failed: ${text}` }, { status: softRes.status });
+    }
+
+    const updated = await softRes.json();
+    if (Array.isArray(updated) && updated.length === 0) {
+      // Race: row was soft-deleted between the lookup and the PATCH.
+      return NextResponse.json({ error: 'School not found (or already deleted).' }, { status: 404 });
+    }
+
+    await logAdminAudit(auth, 'soft_delete_school', 'schools', id, {
+      school_name: school.name,
+      previously_active: school.is_active !== false,
+    });
+
+    return NextResponse.json({
+      success: true,
+      data: { id, deleted_at: nowIso, mode: 'soft' as const },
+    });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
   }

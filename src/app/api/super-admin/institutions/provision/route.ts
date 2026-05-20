@@ -63,7 +63,9 @@ async function ensureUniqueSlug(slug: string): Promise<string> {
 // ─── Route ──────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  // Provisioning a new tenant + admin is a platform-wide change.
+  // super_admin only — matches the PATCH/POST gates on /institutions itself.
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {
