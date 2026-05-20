@@ -1820,6 +1820,140 @@ img, video, iframe, canvas, svg {
   margin-right: 0.1em;
 }
 
+/* ─── Atlas mission hero ────────────────────────────────────────
+   The dark-ink editorial hero card on the student dashboard. Sits
+   on top of `.editorial-card--ink` and overrides only what the
+   editorial chrome doesn't already give us:
+     • Fluid serif headline (Fraunces) — clamps 28→44px so on a
+       Redmi 9A it never overflows but on a MacBook reads as a
+       magazine cover headline.
+     • Cream text + warm orange dot eyebrow on the dark ground.
+     • One dominant CTA + one quiet ghost — clear visual hierarchy. */
+.atlas-mission-hero {
+  padding: var(--space-fluid-6) var(--space-fluid-5);
+  background-image:
+    radial-gradient(ellipse at top right, rgba(232, 88, 28, 0.16), transparent 55%),
+    var(--ink);
+}
+@media (min-width: 768px) {
+  .atlas-mission-hero { padding: var(--space-fluid-8) var(--space-fluid-7); }
+}
+.atlas-mission-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 var(--space-fluid-3);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+}
+.atlas-mission-eyebrow__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px rgba(232, 88, 28, 0.18);
+}
+.atlas-mission-headline {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: clamp(28px, 6.4vw, 44px);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  color: var(--cream);
+  margin: 0 0 var(--space-fluid-3);
+  max-width: 14ch;
+}
+.atlas-mission-blurb {
+  color: rgba(255, 255, 255, 0.72);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  margin: 0 0 var(--space-fluid-5);
+  max-width: 42ch;
+}
+.atlas-mission-meta-row {
+  display: flex;
+  gap: var(--space-fluid-5);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-fluid-5);
+}
+.atlas-mission-cta-row {
+  display: flex;
+  gap: var(--space-fluid-3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.atlas-mission-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: var(--tap-comfort);
+  padding: var(--space-fluid-4) var(--space-fluid-6);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--cream);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-md);
+  letter-spacing: 0.005em;
+  border: 0;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(232, 88, 28, 0.4);
+  transition: transform 180ms var(--ease-atlas, cubic-bezier(.22,1,.36,1)),
+              box-shadow 180ms var(--ease-atlas, cubic-bezier(.22,1,.36,1));
+  -webkit-tap-highlight-color: transparent;
+}
+.atlas-mission-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 36px rgba(232, 88, 28, 0.5);
+}
+.atlas-mission-cta:active { transform: scale(0.98); }
+.atlas-mission-cta:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
+.atlas-mission-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--tap-min);
+  padding: var(--space-fluid-3) var(--space-fluid-4);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  transition: background 160ms var(--ease-atlas, cubic-bezier(.22,1,.36,1)),
+              border-color 160ms var(--ease-atlas, cubic-bezier(.22,1,.36,1));
+  -webkit-tap-highlight-color: transparent;
+}
+.atlas-mission-ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+.atlas-mission-ghost:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
+
+/* Small suffix inside a stat cell value (e.g. "5/7") — keeps the
+   secondary number quiet so the eye lands on the primary figure. */
+.atlas-stat-suffix {
+  font-size: 0.55em;
+  color: var(--ink-3);
+  margin-left: 2px;
+  font-weight: 400;
+}
+
+/* Section-level eyebrow + spacing for surfaces that use raw
+   <section> (not .editorial-card). Keeps quick-actions and other
+   plain sections in rhythm with the editorial cards above them. */
+.atlas-section-eyebrow { margin: 0 0 var(--space-fluid-3); }
+.atlas-section-spaced  { margin: 0 0 var(--space-fluid-4); }
+
 /* ─── Timeline-style upcoming list ──────────────────────────────
    Each row has a 4px colored left-bar showing days-until urgency.
    Visually distinct from the old flat list — reads as a calendar. */
