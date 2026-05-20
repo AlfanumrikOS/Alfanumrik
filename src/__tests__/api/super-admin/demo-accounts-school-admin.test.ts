@@ -198,6 +198,27 @@ describe('POST /api/super-admin/demo-accounts — school_admin error envelope', 
     expect(rollback).toBeUndefined();
   });
 
+  it('returns login_url + login_instructions in response for school_admin role', async () => {
+    // Same happy-path mock sequence as the test above — exercises the
+    // loginRoutingForRole() switch added 2026-05-20 so demo modals / Slack
+    // DMs / ops emails can route operators to /login (not /super-admin/login)
+    // for school_admin creds.
+    enqueue('POST auth/v1/admin/users', { ok: true, status: 200, body: { id: ADMIN_AUTH_USER_ID } });
+    enqueue('POST /rest/v1/schools', { ok: true, status: 200, body: [{ id: SCHOOL_ID }] });
+    enqueue('POST /rest/v1/school_admins', { ok: true, status: 200, body: [{ id: SCHOOL_ADMIN_PROFILE_ID }] });
+    enqueue('POST /rest/v1/demo_accounts', { ok: true, status: 200, body: [{ id: DEMO_ACCOUNT_ID }] });
+
+    const res = await POST(makeRequest(SCHOOL_ADMIN_BODY));
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.data.login_url).toBe('/login');
+    expect(typeof json.data.login_instructions).toBe('string');
+    expect(json.data.login_instructions).toContain('/login');
+    expect(json.data.login_instructions).toContain('/school-admin');
+  });
+
   it('returns school_insert_failed when schools INSERT rejects (rollback fires, school_admins never called)', async () => {
     enqueue('POST auth/v1/admin/users', { ok: true, status: 200, body: { id: ADMIN_AUTH_USER_ID } });
     enqueue('POST /rest/v1/schools', { ok: false, status: 500, body: { message: 'duplicate key violates unique constraint "schools_name_key"' } });

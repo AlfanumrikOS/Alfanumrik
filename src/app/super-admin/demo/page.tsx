@@ -21,6 +21,7 @@ interface CreatedCredentials {
   password: string;
   name: string;
   role: string;
+  login_url?: string;
   student_invite_code?: string;
   login_instructions?: string;
 }
@@ -119,6 +120,7 @@ function DemoContent() {
           password: d.data.password,
           name: formName.trim(),
           role: d.data.role,
+          login_url: d.data.login_url,
           student_invite_code: d.data.student_invite_code,
           login_instructions: d.data.login_instructions,
         }]);
@@ -213,6 +215,7 @@ function DemoContent() {
             password: item.password,
             name: item.name || item.role,
             role: item.role,
+            login_url: item.login_url,
             student_invite_code: item.student_invite_code,
             login_instructions: item.login_instructions,
           })));
@@ -500,6 +503,26 @@ function DemoContent() {
                 <div style={{ fontSize: 12, color: '#6B7280' }}>
                   Password: <code style={{ color: '#111827' }}>{cred.password}</code>
                 </div>
+                {cred.login_url && !cred.student_invite_code && (
+                  <>
+                    <div style={{ fontSize: 12, color: '#2563EB', marginTop: 6, fontWeight: 600 }}>
+                      Login at:{' '}
+                      <a
+                        href={cred.login_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: '#2563EB', textDecoration: 'underline', fontWeight: 700 }}
+                      >
+                        {cred.login_url}
+                      </a>
+                    </div>
+                    {cred.login_instructions && (
+                      <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2, fontStyle: 'italic' }}>
+                        {cred.login_instructions}
+                      </div>
+                    )}
+                  </>
+                )}
                 {cred.student_invite_code && (
                   <>
                     <div style={{ fontSize: 12, color: '#2563EB', marginTop: 6, fontWeight: 600 }}>

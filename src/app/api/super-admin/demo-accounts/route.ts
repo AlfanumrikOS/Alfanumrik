@@ -25,6 +25,53 @@ function roleToTable(role: DemoRole): string {
   return 'students';
 }
 
+/**
+ * Login routing for demo credentials.
+ *
+ * Why this exists: school_admin demos land in the `school_admins` table, not
+ * `admin_users`. Attempting to log in at /super-admin/login (which gates on
+ * admin_users) correctly bounces them with "not an authorized administrator"
+ * — but the demo-creation response previously didn't tell the operator that
+ * platform-admin login and school-admin login are different doors. This map
+ * makes the right destination explicit in the API response so the modal /
+ * Slack DM / email that surfaces the credentials can tell the operator where
+ * to actually sign in.
+ *
+ * Note: paths are relative (start with `/`); the frontend uses them as-is.
+ * Parent is the only role that has a non-/login flow surfaced here — the
+ * link-code path at /parent is the demo-friendly entry point even though
+ * /login also works for guardians.
+ */
+function loginRoutingForRole(role: DemoRole): { login_url: string; login_instructions: string } {
+  switch (role) {
+    case 'student':
+      return {
+        login_url: '/login',
+        login_instructions: "Log in at /login with email + password. You'll land on /dashboard.",
+      };
+    case 'teacher':
+      return {
+        login_url: '/login',
+        login_instructions: "Log in at /login with email + password. You'll land on /teacher portal.",
+      };
+    case 'parent':
+      return {
+        login_url: '/parent',
+        login_instructions: 'Parent portal uses link code, not email/password. Go to /parent and enter the student invite code.',
+      };
+    case 'school_admin':
+      return {
+        login_url: '/login',
+        login_instructions: "Log in at /login with email + password. You'll land on /school-admin portal. NOTE: Do NOT use /super-admin/login — that's for platform admins only.",
+      };
+    case 'super_admin':
+      return {
+        login_url: '/super-admin/login',
+        login_instructions: "Log in at /super-admin/login with email + password. You'll land on the super-admin panel.",
+      };
+  }
+}
+
 /** Seed demo data onto a student profile based on persona. */
 async function seedStudentDemoData(
   authUserId: string,
@@ -614,6 +661,8 @@ async function createSingleDemoAccount(
     ipAddress,
   );
 
+  const routing = loginRoutingForRole(role);
+
   return NextResponse.json({
     success: true,
     data: {
@@ -625,11 +674,14 @@ async function createSingleDemoAccount(
       password,
       role,
       persona: effectivePersona,
+      // Always surface login routing so the demo modal / Slack DM / ops email
+      // can point the operator to the correct sign-in door. school_admin
+      // demos in particular were silently being sent to /super-admin/login
+      // and bouncing with ADMIN_NOT_FOUND — see Phase G follow-up 2026-05-20.
+      login_url: routing.login_url,
+      login_instructions: routing.login_instructions,
       ...(role === 'parent' && studentInviteCode
-        ? {
-            student_invite_code: studentInviteCode,
-            login_instructions: 'Parent portal uses link code, not email/password. Go to /parent and enter the student invite code.',
-          }
+        ? { student_invite_code: studentInviteCode }
         : {}),
     },
   });

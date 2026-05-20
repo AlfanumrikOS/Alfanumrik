@@ -12,10 +12,12 @@ export default function AdminLoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [suggestedLoginUrl, setSuggestedLoginUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuggestedLoginUrl('');
     setLoading(true);
 
     try {
@@ -38,6 +40,10 @@ export default function AdminLoginPage() {
           message = `Too many failed attempts. Try again in ~${min} min.`;
         } else if (code === 'IP_RATE_LIMITED') {
           message = 'Too many login attempts from this network. Wait a few minutes.';
+        } else if (code === 'USE_STANDARD_LOGIN' && loginPayload?.suggested_login_url) {
+          // Backend already provided a human-readable message; expose the
+          // suggested URL as a clickable link below. No auto-redirect.
+          setSuggestedLoginUrl(loginPayload.suggested_login_url);
         }
         setError(message);
         setLoading(false);
@@ -91,6 +97,14 @@ export default function AdminLoginPage() {
             maxHeight: 200, overflowY: 'auto' as const, wordBreak: 'break-word' as const,
           }}>
             {error}
+            {suggestedLoginUrl && (
+              <a
+                href={suggestedLoginUrl}
+                style={{ color: '#2563EB', fontWeight: 600, marginTop: 8, display: 'inline-block' }}
+              >
+                {`→ Go to ${suggestedLoginUrl}`}
+              </a>
+            )}
           </div>
         )}
 
