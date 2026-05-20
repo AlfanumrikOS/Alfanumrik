@@ -4,7 +4,6 @@ import { useAuth, type UserRole } from '@/lib/AuthContext';
 import { ROLE_CONFIG } from '@/lib/constants';
 import { useDashboardData, useFeatureFlags } from '@/lib/swr';
 import { supabase } from '@/lib/supabase';
-import { STUDY_MENU_FLAGS } from '@/lib/feature-flags';
 
 // Module-level cache: avoid re-querying upcoming_exams on every nav render.
 // Keyed by student_id, value is { t: timestamp_ms, v: hasUpcomingExam }.
@@ -62,28 +61,11 @@ const CORE_TABS = [
   { href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति' },
 ];
 
-// ADR-001 Phase 4 — /revise route ships behind ff_revise_route_v1.
-// The nav entry carries `flagName` so the renderer can hide it when the
-// flag is off. Keeps `flagName` optional so most entries don't need it.
-const MORE_ITEMS_LEGACY = [
-  { href: '/simulations', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
-  { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },
-  { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9 },
-  { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'स्टडी प्लान' },
-  { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड' },
-  { href: '/learn', icon: '📚', label: 'Subjects & Chapters', labelHi: 'विषय और अध्याय' },
-  { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
-  { href: '/revise', icon: '🔁', label: 'Revise', labelHi: 'पुनरावलोकन', flagName: 'ff_revise_route_v1' },
-  { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
-  { href: '/notifications', icon: '🔔', label: 'Settings & Notifications', labelHi: 'सेटिंग्स और सूचनाएँ' },
-  { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
-  { href: '/support', icon: '📨', label: 'My Tickets', labelHi: 'मेरे टिकट' },
-];
-
-// Phase 5 Study-Menu v2 — drops /study-plan, /review (Flashcard Review label),
-// and /revise; adds /refresh and /exam-prep (latter gated by upcoming-exam).
-// /learn keeps its slot but is re-labeled "Library" to match the Study group.
-const MORE_ITEMS_V2 = [
+// Phase 5 Study-Menu v2 (now permanent — Phase 6.4 retired the flag).
+// Drops /study-plan, /review (Flashcard Review label), and /revise; adds
+// /refresh and /exam-prep (latter gated by upcoming-exam). /learn keeps
+// its slot but is re-labeled "Library" to match the Study group.
+const MORE_ITEMS = [
   { href: '/simulations', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
   { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },
   { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9 },
@@ -97,50 +79,14 @@ const MORE_ITEMS_V2 = [
   { href: '/support', icon: '📨', label: 'My Tickets', labelHi: 'मेरे टिकट' },
 ];
 
-const SIDEBAR_SECTIONS_LEGACY = [
-  {
-    title: 'Home', titleHi: 'होम',
-    items: [
-      { href: '/dashboard', icon: '🏠', label: 'Home', labelHi: 'होम' },
-      { href: '/foxy', icon: '🦊', label: 'Foxy AI Tutor', labelHi: 'फॉक्सी AI ट्यूटर' },
-      { href: '/progress', icon: '📈', label: 'My Progress', labelHi: 'मेरी प्रगति' },
-    ],
-  },
-  {
-    title: 'Practice', titleHi: 'अभ्यास',
-    items: [
-      { href: '/quiz', icon: '✏️', label: 'Practice', labelHi: 'अभ्यास' },
-      { href: '/simulations', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
-      { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },
-      { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9 },
-    ],
-  },
-  {
-    title: 'Review', titleHi: 'रिव्यू',
-    items: [
-      { href: '/learn', icon: '📚', label: 'Subjects & Chapters', labelHi: 'विषय और अध्याय' },
-      { href: '/study-plan', icon: '📅', label: 'Study Plan', labelHi: 'अध्ययन योजना' },
-      { href: '/review', icon: '🔄', label: 'Flashcard Review', labelHi: 'फ्लैशकार्ड रिव्यू' },
-      { href: '/revise', icon: '🔁', label: 'Revise', labelHi: 'पुनरावलोकन', flagName: 'ff_revise_route_v1' },
-    ],
-  },
-  {
-    title: 'Account', titleHi: 'खाता',
-    items: [
-      { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
-      { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
-      { href: '/support', icon: '📨', label: 'My Tickets', labelHi: 'मेरे टिकट' },
-    ],
-  },
-];
-
-// Phase 5 Study-Menu v2 — collapses the 4-item "Review" group down to a
-// 3-item "Study" group: Library (was Subjects & Chapters), Refresh (consolidates
-// /review + /revise), and Exam Sprint (replaces /study-plan; only shown when
-// the student has an upcoming exam within 30 days).
+// Phase 5 Study-Menu v2 (now permanent — Phase 6.4 retired the flag).
+// Collapses the historical 4-item "Review" group down to a 3-item "Study"
+// group: Library (was Subjects & Chapters), Refresh (consolidates
+// /review + /revise), and Exam Sprint (replaces /study-plan; only shown
+// when the student has an upcoming exam within 30 days).
 // CEO-approved Hindi labels per spec §10:
 //   Study=पढ़ाई, Library=अध्ययन सामग्री, Refresh=ताज़ा करो, Exam Sprint=परीक्षा की तैयारी.
-const SIDEBAR_SECTIONS_V2 = [
+const SIDEBAR_SECTIONS = [
   {
     title: 'Home', titleHi: 'होम',
     items: [
@@ -198,7 +144,7 @@ function getCoreTabs(role: UserRole) {
   return CORE_TABS; // default student tabs
 }
 
-function getMoreItems(role: UserRole, flags: Record<string, boolean>) {
+function getMoreItems(role: UserRole) {
   if (role === 'teacher') {
     const nav = ROLE_CONFIG.teacher.nav;
     return nav.slice(4).map(item => ({
@@ -211,11 +157,11 @@ function getMoreItems(role: UserRole, flags: Record<string, boolean>) {
       href: item.href, icon: item.icon, label: item.label, labelHi: item.labelHi,
     }));
   }
-  // Default student items — flag-switched.
-  return flags[STUDY_MENU_FLAGS.V2] === true ? MORE_ITEMS_V2 : MORE_ITEMS_LEGACY;
+  // Default student items — Study Menu v2 is now permanent.
+  return MORE_ITEMS;
 }
 
-function getSidebarSections(role: UserRole, flags: Record<string, boolean>) {
+function getSidebarSections(role: UserRole) {
   if (role === 'teacher') {
     const nav = ROLE_CONFIG.teacher.nav;
     return [
@@ -242,8 +188,8 @@ function getSidebarSections(role: UserRole, flags: Record<string, boolean>) {
       },
     ];
   }
-  // Default student sections — flag-switched.
-  return flags[STUDY_MENU_FLAGS.V2] === true ? SIDEBAR_SECTIONS_V2 : SIDEBAR_SECTIONS_LEGACY;
+  // Default student sections — Study Menu v2 is now permanent.
+  return SIDEBAR_SECTIONS;
 }
 
 export default function BottomNavComponent() {
@@ -306,10 +252,9 @@ export default function BottomNavComponent() {
 
   // ADR-001 Phase 4 — feature-flag visibility for nav entries (e.g.
   // `/revise` only appears when ff_revise_route_v1 is ON). Items
-  // without a flagName are always visible. Also drives ff_study_menu_v2,
-  // which switches sidebar + more-sheet content shape.
+  // without a flagName are always visible. (ff_study_menu_v2 was retired
+  // in Phase 6.4; sidebar + more-sheet shape is now unconditional v2.)
   const { data: navFlags } = useFeatureFlags();
-  const navFlagsRecord = (navFlags ?? {}) as Record<string, boolean>;
 
   // Phase 5 Study-Menu v2 — gate the "Exam Sprint" entry on whether the
   // student actually has an upcoming exam in the next 30 days. We default
@@ -348,7 +293,7 @@ export default function BottomNavComponent() {
   }, [auth.student?.id]);
 
   const tabs = getCoreTabs(activeRole);
-  const allSidebarSections = getSidebarSections(activeRole, navFlagsRecord);
+  const allSidebarSections = getSidebarSections(activeRole);
   // Grade-gated items (PYQ, Mock Exam: grade 9+) are now SHOWN as visibly locked
   // instead of silently hidden — surfaces future value for younger students. See
   // Phase 5B UX mission: "locked state > missing state".
@@ -384,7 +329,7 @@ export default function BottomNavComponent() {
     }));
   // More-sheet items: drop flag-gated entries whose flag is off,
   // and drop exam-gated entries when there's no upcoming exam.
-  const moreItems = getMoreItems(activeRole, navFlagsRecord)
+  const moreItems = getMoreItems(activeRole)
     .filter(item => isItemVisibleForFlags(item as NavFlagGatedItem, navFlags))
     .filter(passesExamGate);
 
