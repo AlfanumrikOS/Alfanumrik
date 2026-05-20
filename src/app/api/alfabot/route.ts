@@ -1128,8 +1128,9 @@ async function handleStreamingTurn(args: StreamingTurnArgs): Promise<Response> {
 
   const transform = new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
-      // Re-emit verbatim.
-      controller.enqueue(chunk);
+      // SWALLOW upstream done — re-emit only token/citation/other so our
+      // own done frame in flush() is the last one the client sees (carries
+      // sessionId/traceId/rateLimitRemaining required by mergeMeta).
       parseBuffer += decoder.decode(chunk, { stream: true });
       let sepIdx: number;
       while ((sepIdx = parseBuffer.indexOf('\n\n')) !== -1) {
@@ -1151,6 +1152,8 @@ async function handleStreamingTurn(args: StreamingTurnArgs): Promise<Response> {
         }
         if (eventName === ALFABOT_SSE_EVENTS.TOKEN) {
           if (typeof payload.delta === 'string') accumulatedText += payload.delta;
+          // Forward token frames so client renders progressively.
+          controller.enqueue(encoder.encode(raw + '\n\n'));
         } else if (eventName === ALFABOT_SSE_EVENTS.DONE) {
           doneSeen = true;
           if (typeof payload.tokensUsed === 'number') upstreamTokensUsed = payload.tokensUsed;
@@ -1162,6 +1165,9 @@ async function handleStreamingTurn(args: StreamingTurnArgs): Promise<Response> {
           if (typeof payload.response === 'string' && !accumulatedText) {
             accumulatedText = payload.response;
           }
+        } else {
+          // Other events (citation, error, future): forward as-is.
+          controller.enqueue(encoder.encode(raw + '\n\n'));
         }
       }
     },
@@ -1183,7 +1189,16 @@ async function handleStreamingTurn(args: StreamingTurnArgs): Promise<Response> {
       };
       try {
         controller.enqueue(
-          encoder.encode(`event: ${ALFABOT_SSE_EVENTS.META}\ndata: ${JSON.stringify(finalEnvelope)}\n\n`),
+          encoder.encode(`event: ${ALFABOT_SSE_EVENTS.META}
+data: ${JSON.stringify(finalEnvelope)}
+
+`),
+        );
+        controller.enqueue(
+          encoder.encode(`event: ${ALFABOT_SSE_EVENTS.DONE}
+data: ${JSON.stringify(finalEnvelope)}
+
+`),
         );
       } catch { /* controller closed */ }
 
