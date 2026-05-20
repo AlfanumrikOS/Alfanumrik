@@ -571,3 +571,89 @@ what enables the catalog target to be reached today while keeping the
 contract auditable in TS.
 
   to Sentry)
+
+## AlfaBot Landing-Page Widget (2026-05-19) — REG-65..REG-68
+
+Source: AlfaBot v1 rollout — PRs 1-4 (migration, Edge Function + Next
+routes, frontend widget, super-admin dashboard). AlfaBot is the
+landing-page chat surface on `/welcome?v=2` that answers anonymous
+visitors' product/pricing/school/parent/teacher questions before
+sign-up. It is NOT Foxy — it explicitly refuses tutoring requests.
+
+Model: OpenAI gpt-4o-mini (CEO directive 2026-05-19, cost-efficient).
+The model swap from Claude to OpenAI is the reason REG-67 below is
+catalogued — any future provider/model change needs a documented human
+review and a catalog update in the same PR.
+
+Concomitant work in this PR series: shared SSE event-name constants
+shipped to `src/lib/alfabot/sse-events.ts` to prevent the drift between
+Edge Function producer (`event: token`) and Next route / client lib
+parsers (which historically used `event: text`). The drift is currently
+non-fatal because the route's `done` frame carries `response` as a
+fallback, but the contract test in
+`src/__tests__/contract/alfabot-route-edge-contract.test.ts` pins the
+expected names and includes a `.fails` assertion that surfaces the
+remaining drift in the consumer surfaces.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-65 | `alfabot_pricing_verbatim_guard` | (1) `docs/alfabot/knowledge-base.md` contains the canonical literal `₹699` in the `pricing-plans` section, with the per-month framing alongside (so the post-processor's ₹-adjacency banned-phrase check has the full string to match). (2) `src/components/landing-v2/FAQV2.tsx` contains the same literal in the pricing FAQ row, with English `month` or Hindi `माह` adjacent. (3) Cross-file drift detector: extract the first `₹\d{2,5}` from both files and assert the digits are identical AND equal to `699`. Edge Function side — pricing-unbacked rejections live in the Deno integration test at `supabase/functions/alfabot-answer/__tests__/integration.test.ts` (banned-phrase + pricing-banned check). | `src/__tests__/contract/alfabot-kb-pricing-drift.test.ts` | E |
+| REG-66 | `alfabot_scope_lock_no_tutoring` | (1) `ALFABOT_HARD_REFUSAL_PATTERNS` in `src/lib/ai/prompts/alfabot-system.ts` enumerates 4 hard-refusal categories: math/homework (routes to `not_a_tutor`), medical/legal/mental-health (routes to `off_topic`), politics/religion/news (routes to `off_topic`), other students' data (routes to `other_student_data`). (2) `ALFABOT_REFUSALS` has both `en` and `hi` strings for each refusal id. (3) Server-side mirror: `supabase/functions/alfabot-answer/shared.ts` `detectHardRefusal()` matches the same patterns and emits the canned `ALFABOT_REFUSALS[id][lang]` string WITHOUT calling OpenAI (defense-in-depth at the Edge Function boundary). (4) Pre-LLM regex filter in `src/app/api/alfabot/route.ts` (`PROMPT_INJECTION_PATTERNS`) is an independent abuse short-circuit (prompt injection / URLs / base64 runs) on the route path — different surface, same defense-in-depth posture. (5) Existing prompt-module unit tests cover ALFABOT_REFUSALS / ALFABOT_HARD_REFUSAL_PATTERNS / ALFABOT_BANNED_PHRASES at the data layer; the route-level abuse path is covered by `src/__tests__/api/alfabot/route.test.ts:321` ("abstains on prompt injection without calling Edge Function"). | `src/lib/ai/prompts/alfabot-system.test.ts` (prompt module) + `src/__tests__/api/alfabot/route.test.ts` (route abuse abstain) + `supabase/functions/alfabot-answer/__tests__/integration.test.ts` (Deno, refusal flow) | P |
+| REG-67 | `alfabot_model_provenance` | Every `alfabot.respond` audit row, every `alfabot_messages.model` value on assistant rows, AND every response envelope's `body.model` field must equal `'gpt-4o-mini'` (or the configured fallback returned by the Edge Function). Drift cases asserted: (a) upstream returns `gpt-4o` fallback → all three places reflect `gpt-4o`; (b) upstream omits `model` field → route falls back to the `MODEL_ID` constant (`gpt-4o-mini`); (c) upstream failure path's `alfabot.upstream_failed` audit row also stamps `model=gpt-4o-mini` for forensic continuity. User rows in `alfabot_messages` MUST NOT carry a model field (per route documentation). Because user approval is required for AI model changes (`.claude/CLAUDE.md`), this regression's failure forces an explicit catalog update in the same PR. | `src/__tests__/api/alfabot/model-provenance.test.ts` | E |
+| REG-68 | `alfabot_pii_boundary_in_audit` | `audit_logs.details` for the `alfabot.respond`, `alfabot.upstream_failed`, and `alfabot.abuse_blocked` actions MAY contain: anonId, sessionId, audience, lang, tokensUsed, latencyMs, degradedMode, sourcesCount, model, abuseReason, traceId. MUST NEVER contain: message text, assistant text, email, phone, name, school_name, raw IP. Hashed IP (`ip_hash`) is permitted ONLY in `alfabot_sessions` rows, never in audit details. Existing happy-path test in `src/__tests__/api/alfabot/route.test.ts` (line 484) and lead-capture test in `src/__tests__/api/alfabot/lead.test.ts` already pin the negative shape via `JSON.stringify(details).not.toContain(message)`; REG-68 catalogues that pattern as the regression contract. | `src/__tests__/api/alfabot/route.test.ts` (happy + abuse + upstream fail audits) + `src/__tests__/api/alfabot/lead.test.ts` (lead audit) | E |
+
+### Invariants covered by this section
+
+- P11-adjacent (pricing brand/legal risk — REG-65) — hallucinated price
+  on the landing page is a chargeback / consumer-protection vector
+  even though no payment flows through AlfaBot.
+- P12 (AI safety — REG-66 scope-lock; REG-67 model provenance gate)
+- P13 (data privacy — REG-68 audit-log PII boundary; matches the
+  `audit_logs.details` policy stated in `src/app/api/alfabot/route.ts`
+  module header)
+
+### Notes on test strategy
+
+REG-65 and the SSE-event contract test are static-source drift detectors
+in the same family as REG-51, REG-54, REG-57: they read the relevant
+files via `node:fs` and assert on string contracts without booting
+runtime infrastructure. This is the only way to enforce drift between
+two source-of-truth files (the KB markdown and the FAQ TSX, in REG-65's
+case) without an end-to-end harness.
+
+REG-67 exercises the `/api/alfabot` route handler with the same
+supabase-admin + logAudit mocking pattern as `route.test.ts` (the
+existing PR-2 test fixture). It runs the route end-to-end for four
+cases: happy-path gpt-4o-mini, upstream gpt-4o fallback, upstream
+omits-model, and upstream-failure audit-row stamping.
+
+REG-66 is currently `P` (partial) because the canonical hard-refusal
+test lives in the prompt-module unit suite (PR 1 ai-engineer) and the
+server-side mirror lives in the Deno integration suite (PR 2). Neither
+file is duplicated here; the catalog entry references both and surfaces
+the dual-surface contract.
+
+REG-68 is also `E` via reference rather than a new dedicated file —
+the existing route + lead tests already JSON.stringify the audit
+payload and assert no PII strings survive. Promoting that pattern into
+the catalog makes it block-on-removal under orchestrator Gate 5 and
+quality veto.
+
+### Catalog total
+
+Pre-AlfaBot: 35 entries (target reached as of 2026-05-04, Marking-
+Authenticity Wave 5). AlfaBot v1 adds REG-65, REG-66, REG-67, REG-68.
+
+**Total: 39 entries.**
+
+### Contract drift surfaced during this work
+
+The SSE event-name contract between the Edge Function (`event: token`)
+and the Next route + client lib consumers (`event: text`) is currently
+drifted. The drift is documented in
+`src/__tests__/contract/alfabot-route-edge-contract.test.ts` with a
+`.fails` test that flips to passing when both consumer surfaces adopt
+the canonical `token` name. The new shared module
+`src/lib/alfabot/sse-events.ts` is the single source of truth that the
+follow-up PR will import in all three places. Catalogue this here so
+the orchestrator knows there's a known deferred contract bug.

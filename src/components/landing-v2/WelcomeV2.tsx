@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { WelcomeV2Provider, useWelcomeV2 } from './WelcomeV2Context';
 import NavV2 from './NavV2';
 import HeroV2 from './HeroV2';
@@ -14,6 +15,18 @@ import FAQV2 from './FAQV2';
 import FinalCtaV2 from './FinalCtaV2';
 import FooterV2 from './FooterV2';
 import s from './welcome-v2.module.css';
+
+/**
+ * AlfaBot landing chat widget — gated by `ff_alfabot_v1`. The mount
+ * component performs its own flag probe and renders nothing when the flag
+ * is off, so unconditional inclusion here is safe. `ssr: false` keeps it
+ * out of the initial server-rendered HTML; the launcher chunk loads after
+ * hydration on first paint.
+ */
+const AlfaBotMount = dynamic(
+  () => import('@/components/alfabot').then((m) => m.AlfaBotMount),
+  { ssr: false, loading: () => null },
+);
 
 /**
  * Inline blocking script that runs BEFORE first paint.
@@ -71,6 +84,7 @@ function ThemedShell() {
         <FinalCtaV2 />
       </main>
       <FooterV2 />
+      <AlfaBotMount />
     </div>
   );
 }
