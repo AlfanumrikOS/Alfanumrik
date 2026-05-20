@@ -35,25 +35,16 @@ export default function LoginPage() {
   }, [isLoggedIn, isLoading, activeRole, router, redirectTo]);
 
   // Role-aware onSuccess handler: after login, navigate to the correct portal.
-  //
-  // Historical bug (2026-05-20): this used to call
-  //   router.replace(getRoleDestination(roleParam || 'student'))
-  // which sent every visitor to /dashboard whenever ?role= was absent — even
-  // school_admins, who then saw the student-dashboard skeleton forever
-  // because they had no `students` row.
-  //
-  // Fix: do NOT route from here. The useEffect above already handles the
-  // redirect once AuthContext picks up the new session and resolves
-  // activeRole via get_user_role (and its school_admin fallback). All we
-  // need to do here is force a client-side refresh so that effect re-runs.
-  //
-  // Trade-off: if AuthContext takes >~2s to populate activeRole, the user
-  // briefly sees the AuthScreen still rendered after submitting. That's a
-  // degraded UX worth solving separately (e.g. a "Signing you in…" overlay),
-  // but it is strictly better than mis-routing non-student roles.
+  // We use the roleParam hint from the URL since activeRole may not be updated yet.
   const handleSuccess = useCallback(() => {
+    // After successful auth, trigger a client-side refresh then navigate.
+    // AuthContext's onAuthStateChange will detect the new session.
     router.refresh();
-  }, [router]);
+    const destination = redirectTo && redirectTo.startsWith('/')
+      ? redirectTo
+      : getRoleDestination(roleParam || 'student');
+    router.replace(destination);
+  }, [router, roleParam, redirectTo]);
 
   // Always show the login form — never block on loading state.
   // If the user is already logged in, the useEffect redirect will fire.
