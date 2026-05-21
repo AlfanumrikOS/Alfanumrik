@@ -44,5 +44,11 @@
         ]
       }
     ]
+  },
+  "permissions": {
+    "allow": [
+      "mcp__Supabase__*",
+      "mcp__Slack__*"
+    ]
   }
 }
