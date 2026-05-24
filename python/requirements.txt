@@ -6,6 +6,11 @@ uvicorn[standard]>=0.32,<0.33
 pydantic>=2.9,<3.0
 pydantic-settings>=2.6,<3.0
 httpx>=0.28,<0.29
+# python-multipart: required by FastAPI for `UploadFile` / multipart-form bodies.
+# Phase 2 voice (/v1/voice/transcribe) reads `audio/*` uploads via `UploadFile`,
+# which fails import-time inside the FastAPI route decorator without this dep.
+# Same minor-pinning posture as the rest of the file.
+python-multipart>=0.0.20,<0.1
 structlog>=24.4,<25.0
 sentry-sdk[fastapi]>=2.18,<3.0
 python-json-logger>=2.0,<3.0

@@ -18,6 +18,9 @@ dependencies = [
   "pydantic>=2.9,<3.0",
   "pydantic-settings>=2.6,<3.0",
   "httpx>=0.28,<0.29",
+  # Required by FastAPI to parse multipart/form-data bodies (UploadFile).
+  # Adopted Phase 2 for the voice /v1/voice/transcribe endpoint.
+  "python-multipart>=0.0.20,<0.1",
   "structlog>=24.4,<25.0",
   "sentry-sdk[fastapi]>=2.18,<3.0",
   "python-json-logger>=2.0,<3.0",
