@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   applyWeeklyCompletion,
+  computeWeeklyStreakFromHistory,
   weeksBetween,
   MISS_TOLERANCE_WEEKS,
   type WeeklyStreakState,
@@ -95,5 +96,53 @@ describe('applyWeeklyCompletion', () => {
 describe('MISS_TOLERANCE_WEEKS constant', () => {
   it('exposes the documented threshold', () => {
     expect(MISS_TOLERANCE_WEEKS).toBe(4);
+  });
+});
+
+describe('computeWeeklyStreakFromHistory', () => {
+  it('empty history -> 0', () => {
+    expect(computeWeeklyStreakFromHistory([])).toBe(0);
+  });
+
+  it('single completed week -> 1', () => {
+    expect(computeWeeklyStreakFromHistory(['2026-W10'])).toBe(1);
+  });
+
+  it('three consecutive weeks -> 3', () => {
+    expect(computeWeeklyStreakFromHistory(['2026-W10', '2026-W11', '2026-W12'])).toBe(3);
+  });
+
+  it('REGRESSION: one missed week stays within tolerance -> 2 (NOT 1)', () => {
+    // ['2026-W10','2026-W12'] skips W11 (1 missed week). The strict
+    // exact-consecutive rule that the /api/dive routes re-derived would
+    // return 1; the forgiving canonical model must return 2.
+    expect(computeWeeklyStreakFromHistory(['2026-W10', '2026-W12'])).toBe(2);
+  });
+
+  it('within tolerance: elapsed=4 (3 missed weeks) -> 2', () => {
+    // weeksBetween('2026-W01','2026-W05') === 4, which is NOT > MISS_TOLERANCE_WEEKS (4).
+    expect(computeWeeklyStreakFromHistory(['2026-W01', '2026-W05'])).toBe(2);
+  });
+
+  it('beyond tolerance: elapsed=5 (4 missed weeks) resets -> 1', () => {
+    // weeksBetween('2026-W01','2026-W06') === 5, which IS > MISS_TOLERANCE_WEEKS (4) → reset.
+    expect(computeWeeklyStreakFromHistory(['2026-W01', '2026-W06'])).toBe(1);
+  });
+
+  it('unordered input with duplicates is de-duped and sorted -> 3', () => {
+    expect(
+      computeWeeklyStreakFromHistory(['2026-W12', '2026-W10', '2026-W10', '2026-W11']),
+    ).toBe(3);
+  });
+
+  it('year boundary: 2025-W52 then 2026-W01 -> 2', () => {
+    expect(computeWeeklyStreakFromHistory(['2025-W52', '2026-W01'])).toBe(2);
+  });
+
+  it('filters out invalid-format weeks before folding', () => {
+    // Garbage entries are dropped; only the two valid consecutive weeks count.
+    expect(
+      computeWeeklyStreakFromHistory(['', 'not-a-week', '2026-W10', 'W11', '2026-W11']),
+    ).toBe(2);
   });
 });

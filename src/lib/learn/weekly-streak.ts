@@ -105,3 +105,23 @@ export function applyWeeklyCompletion(
 
   return { count: state.count + 1, lastIsoWeek: currentIsoWeek };
 }
+
+/**
+ * Derive the current weekly-streak count from a student's full set of
+ * completed ISO weeks (any order, may contain duplicates). Folds the
+ * canonical applyWeeklyCompletion over the de-duplicated, chronologically
+ * ascending weeks so the result honours the forgiving MISS_TOLERANCE_WEEKS
+ * model exactly — identical to incrementally applying each completion. This
+ * is the single source of truth for history-based streak derivation used by
+ * the /api/dive/state and /api/dive/artifact routes.
+ */
+export function computeWeeklyStreakFromHistory(completedIsoWeeks: string[]): number {
+  const unique = Array.from(
+    new Set(completedIsoWeeks.filter((w) => /^\d{4}-W\d{2}$/.test(w))),
+  ).sort(); // 'YYYY-Www' is zero-padded → lexicographic sort == chronological
+  let state: WeeklyStreakState = { count: 0, lastIsoWeek: null };
+  for (const week of unique) {
+    state = applyWeeklyCompletion(state, week);
+  }
+  return state.count;
+}

@@ -46,10 +46,36 @@ export async function GET(request: Request) {
     ? rawLimit
     : DEFAULT_LIMIT;
 
+  // Resolve the surrogate students.id (random uuid; distinct from the auth
+  // uid). dive_artifacts.student_id references this surrogate — keying the
+  // read on the auth uid would always miss. Same resolution pattern as
+  // /api/dive/state + /api/dive/artifact + src/lib/supabase.ts. A missing
+  // student row degrades to the empty-history success shape rather than 500.
+  let studentDbId: string | null = null;
+  {
+    const { data: studentRow, error: studentErr } = await supabase
+      .from('students')
+      .select('id')
+      .eq('auth_user_id', userId)
+      .maybeSingle();
+    if (studentErr) {
+      logger.warn('dive/history: students fetch failed (degrading)', {
+        userId, error: studentErr.message,
+      });
+    }
+    if (studentRow) studentDbId = (studentRow as { id: string }).id ?? null;
+  }
+  if (!studentDbId) {
+    return NextResponse.json(
+      { artifacts: [] },
+      { headers: { 'Cache-Control': 'private, max-age=0, must-revalidate' } },
+    );
+  }
+
   const { data, error } = await supabase
     .from('dive_artifacts')
     .select('id, iso_week, picker_option, dive_topic, dive_subjects, phenomenon_slug, title, created_at')
-    .eq('student_id', userId)
+    .eq('student_id', studentDbId)
     .order('iso_week', { ascending: false })
     .limit(limit);
 
