@@ -133,3 +133,42 @@ See `telemetry.ts` `PRICING` (kept in sync with `model_pricing` table). Cost is 
 | `nep-compliance` | unwired | No direct LLM call. |
 | `coverage-audit`, `verify-question-bank`, `monthly-synthesis-builder` | unwired | Route through `grounded-answer/` service or have no LLM call at all. |
 | `grounded-answer/` | not-a-direct-caller | Owns its own Claude client (`claude.ts`) plus the C4 shadow leg into MoL. |
+
+## Transition to Python (Phase 0+, 2026-05-24 onwards)
+
+The CEO approved a strategic shift to consolidate all AI/ML code into a
+Python FastAPI service on Google Cloud Run (`asia-south1` / Mumbai). The
+3-6 week migration ports the 6 Phase 1A admin-traffic functions first
+(lowest blast radius), then student-facing functions (Phase 1B in the
+original MoL plan). The Python service lives at `python/services/ai/`
+and is owned by ai-engineer; the Cloud Run deploy pipeline is owned by
+architect; the operational layer (runbooks, dashboards, alerts) is owned
+by ops.
+
+The proxy pattern keeps URLs stable during transition. Each Supabase
+Edge Function becomes a thin forwarder gated by the `ff_python_ai_services_v1`
+feature flag with per-function rollout via
+`metadata.functions_enabled[]` and `metadata.rollout_percentage`. Mobile
+and web callers continue to hit the same Edge Function URLs they always
+have. The proxy fan-out: when the flag is OFF the Edge Function executes
+locally (current behavior); when ON it forwards to the Python service
+on Cloud Run, awaits the response, and returns it unchanged. The same
+`mol_request_logs` row is written either way — the
+[super-admin MOL dashboard](../src/app/super-admin/mol-shadow/page.tsx)
+keeps working without changes.
+
+The TS MoL framework described in this document REMAINS LIVE throughout
+the transition. The Python service is not a replacement for MoL — it
+implements MoL in Python (same routing matrix, same provider chain, same
+telemetry, same rollback flag semantics). The cutover is a per-function
+runtime change, not a framework change. Once a function reaches
+100%-Python with 7 days of clean cost/latency parity, ai-engineer can
+delete the legacy TS Edge handler in a follow-up PR and the migration
+tracking table in [PYTHON_AI_OPERATIONS.md](PYTHON_AI_OPERATIONS.md#migration-tracking)
+is updated in the same PR.
+
+Where to learn more:
+- `docs/PYTHON_AI_ARCHITECTURE.md` — Python service architecture (architect, in flight)
+- [`docs/PYTHON_AI_OPERATIONS.md`](PYTHON_AI_OPERATIONS.md) — daily checks, alerts, rollback procedures, cost monitoring, migration tracking
+- [`docs/super-admin-python-ai-dashboard-spec.md`](super-admin-python-ai-dashboard-spec.md) — spec for the `/super-admin/python-ai-health` dashboard (frontend follow-up)
+- [`.claude/regression-catalog.md`](../.claude/regression-catalog.md) — REG-72 health-contract pin for `/healthz` vs `/readyz`

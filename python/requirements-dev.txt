@@ -1,0 +1,12 @@
+# Dev dependencies: pytest stack, linters, type checker.
+# Layered on top of requirements.txt — install with:
+#   pip install -r requirements.txt -r requirements-dev.txt
+pytest>=8.3,<9.0
+pytest-asyncio>=0.24,<0.25
+pytest-cov>=6.0,<7.0
+respx>=0.22,<1.0
+# 0.22+ is required for httpx 0.28 compat — respx 0.21 ships
+# HTTPCoreMocker.to_httpx_request that returns httpcore's bytes method
+# straight to httpx.Request(method=...), which httpx 0.28 rejects.
+ruff>=0.7,<0.8
+mypy>=1.13,<2.0

@@ -1,0 +1,61 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Keep the build context small and the runtime image free of dev/test files.
+# Order: dev caches → tests → secrets → infra noise → defensive (just in case).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Python bytecode + caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+
+# Virtualenvs / installer caches
+.venv/
+venv/
+env/
+.tox/
+pip-wheel-metadata/
+
+# Tests are not shipped with the runtime image; CI runs them outside of docker.
+tests/
+
+# Local dev secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+
+# Docs (keep README.md for the build context to remain self-describing).
+*.md
+!README.md
+
+# Editor / VCS / OS noise
+.git/
+.gitignore
+.gitattributes
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Defensive — these should never appear inside python/ but the build
+# context is rooted at python/ so the rules are cheap.
+node_modules/
+build/
+dist/
+*.egg-info/
+
+# Docker artifacts themselves
+Dockerfile
+.dockerignore
