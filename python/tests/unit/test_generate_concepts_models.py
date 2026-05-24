@@ -19,10 +19,10 @@ from services.ai.business.generate_concepts.models import (
     ChapterInfo,
     ChapterPreview,
     ConceptInsertRow,
-    GeneratedConcept,
     GenerateConceptsRequest,
     GenerateConceptsResponse,
     GenerateConceptsStatusResponse,
+    GeneratedConcept,
     StatusBreakdownEntry,
 )
 

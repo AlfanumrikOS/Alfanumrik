@@ -16,6 +16,7 @@ Covers the pipeline branches that the integration test can't easily reach:
 
 from __future__ import annotations
 
+import contextlib
 import json
 from typing import Any
 
@@ -1034,10 +1035,8 @@ async def test_handler_telemetry_does_not_block_on_failure(
     # deliberately re-mock to swallow so the path is exercised even though
     # the contract is "telemetry can't break the batch".
     async def fake_log_swallow(**_):
-        try:
+        with contextlib.suppress(Exception):
             await fake_log()
-        except Exception:
-            pass
 
     monkeypatch.setattr(
         "services.ai.business.generate_concepts.handler.log_generate_concepts_event",
