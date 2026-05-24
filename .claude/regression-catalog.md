@@ -1087,3 +1087,81 @@ Pre-Phase-2-generate-concepts: 46 entries. Phase 2 generate-concepts
 adds REG-76.
 
 **Total: 47 entries.**
+## Voice 2 Frontend Wiring — Cloud Run STT/TTS Fallback Safety (2026-05-24) — REG-77
+
+Source: Voice 2 frontend wiring shipped the per-student flag-gated route
+swap (`ff_python_voice_tts_v1`) from browser Web Speech API → Cloud Run
+FastAPI (Whisper STT + Azure neural TTS) for the Foxy chat mic and
+speaker buttons. The fallback path from Python to Web Speech is the
+user-visible safety net — if a flag misconfiguration OR Cloud Run
+outage causes a hard failure instead of fallback, voice breaks for
+every gated student during the rollout.
+
+The Voice 2 flag is per-STUDENT (not per-request like the admin-side
+proxies in REG-73/74) so the same student gets a consistent voice
+experience within a session. The hash function in
+`src/lib/voice-feature-flag.ts:hashStudentBucket` is the byte-for-byte
+port of `supabase/functions/_shared/python-ai-proxy.ts:hashBucket` so
+server-side and client-side bucket calculations agree.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-77 | `voice_2_python_to_web_speech_fallback_safety` | (1) **Python success returns transcript/audio**: `startListening({ pythonEnabled: true, getJwt })` with a successful `transcribePython` mock emits `onResult(transcript, true)` + `onEnd()`; `speak({ pythonEnabled: true })` with a successful `synthesizePython` mock plays the audio Blob via Audio + fires `onEnd`. (2) **Python failure falls back to Web Speech (NOT user-visible)**: when `transcribePython` / `synthesizePython` throws ANY `PythonVoiceError` (4xx, 5xx, 0/NETWORK, 0/TIMEOUT, 0/ABORTED), `src/lib/voice.ts` catches the throw, emits a `console.warn` whose message contains "Python STT failed" / "Python TTS failed" + status + code BUT NEVER the transcript, audio bytes, or JWT, then calls into the existing Web Speech path. The Web Speech recognizer / utterance is created on the fallback — the user does not see a hard error. (3) **Flag OFF skips Python entirely**: `pythonEnabled: false` causes `startListening` and `speak` to run the legacy Web Speech path immediately with no `transcribePython` / `synthesizePython` invocation and no console.warn. (4) **No JWT → fallback without fetch attempt**: `pythonEnabled: true` + `getJwt: async () => null` falls through to Web Speech without invoking the Python client (no Cloud Run round-trip on an unauthenticated mic press). (5) **Fetch wrapper status preservation**: `voice-python-client.ts` throws `PythonVoiceError` with `.status` matching the HTTP status (401, 413, 503) and `.code` parsed from the response's `detail.error` field. Network rejections produce status=0 code=NETWORK_ERROR; AbortSignal cancellation produces status=0 code=ABORTED. Empty JWT triggers an immediate AUTH_FAILED throw with NO fetch attempt. (6) **Feature-flag safe defaults**: `usePythonVoiceEnabled(studentId)` returns false when studentId is null, when SWR data is undefined (fetch failed), when `kill_switch` is true, when `enabled` is false, when `rollout_pct` is 0, OR when the hash bucket misses. The hash bucket function is deterministic and matches `python-ai-proxy.ts:hashBucket` byte-for-byte. | `src/__tests__/lib/voice-python-routing.test.ts` (Voice 2 routing + fallback contract) + `src/__tests__/lib/voice-python-client.test.ts` (client error envelopes) + `src/__tests__/lib/voice-feature-flag.test.ts` (flag hook safe defaults + hash parity) | E |
+
+### Pinned tests
+
+- `src/__tests__/lib/voice-python-routing.test.ts::startListening — Python path::falls_back_to_web_speech_when_python_throws — REG-77`
+- `src/__tests__/lib/voice-python-routing.test.ts::startListening — Python path::falls_back_to_web_speech_when_flag_off — REG-77`
+- `src/__tests__/lib/voice-feature-flag.test.ts::usePythonVoiceEnabled::returns false when SWR fetch errored (data === undefined)`
+- `src/__tests__/lib/voice-python-client.test.ts::transcribePython::throws PythonVoiceError with status 503 when service is misconfigured`
+
+### Invariants covered by this section
+
+- P12 (AI safety) — the user-visible safety net. A regressed fallback
+  (e.g. a refactor that removes the try/catch around `transcribePython`)
+  would cause Cloud Run outages to silently break voice for every
+  student in the rollout bucket; only an explicit alarm on voice
+  fallback rate would surface the failure. REG-77 pins the fallback
+  contract so quality must reject any PR that breaks it.
+- P7 (Bilingual UI) — `usePythonVoiceEnabled` returns the same
+  decision for the same studentId, so a student speaking Hindi
+  doesn't get a different voice provider on their next message. The
+  hash parity test ensures client-side and server-side bucketing
+  agree (the client decides voice routing; server-side analytics will
+  partition request_id traffic via the existing python-ai-proxy
+  helper).
+- P13 (data privacy) — the `console.warn` on fallback logs ONLY error
+  class + status + code, never the transcript, audio bytes, or JWT.
+
+### Notes on test strategy
+
+REG-77 spans three test files (mirroring the
+`alfabot-system.test.ts` + `route.test.ts` + integration pattern used
+by REG-66):
+
+1. **`voice-python-client.test.ts`** — exercises every error branch of
+   the fetch wrapper. Mocks `global.fetch` directly; never boots a real
+   Cloud Run round-trip. Catches a regression that would let a 503
+   silently return success or a 0/network throw under the wrong code.
+2. **`voice-feature-flag.test.ts`** — exercises the `usePythonVoiceEnabled`
+   hook + the underlying `decidePythonVoice` pure function. Includes the
+   byte-for-byte hash-parity assertion against an inline re-implementation
+   of `python-ai-proxy.ts:hashBucket` so a drift in either implementation
+   surfaces in CI.
+3. **`voice-python-routing.test.ts`** — exercises the `startListening` /
+   `speak` wrappers in `src/lib/voice.ts` with a mocked Python client and
+   a fake MediaRecorder / SpeechRecognition / SpeechSynthesis. Pins the
+   four user-visible code paths: Python success, Python failure →
+   fallback, flag-off → legacy path, JWT-missing → fallback without
+   contacting Cloud Run.
+
+If any of these contracts is reverted (e.g. a refactor moves the
+`try/catch` out of the wrapper, the kill-switch precedence in the
+hook flips, or the hash function changes), the suite fails and quality
+MUST reject.
+
+### Catalog total
+
+Pre-Voice-2: 47 entries. Voice 2 adds REG-77.
+
+**Total: 48 entries.**

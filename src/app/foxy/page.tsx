@@ -18,6 +18,7 @@ import { AppShell } from '@/components/responsive';
 import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@/lib/cognitive-engine';
 import { checkDailyUsage, clearUsageCache, type UsageResult } from '@/lib/usage';
 import { speak, isVoiceSupported } from '@/lib/voice';
+import { usePythonVoiceEnabled } from '@/lib/voice-feature-flag';
 import { ConversationStarters } from '@/components/foxy/ConversationStarters';
 import type { StarterIntent } from '@/lib/foxy/starter-intents';
 import { findSimulation, InlineSimulation } from '@/components/InlineSimulation';
@@ -334,6 +335,26 @@ export default function FoxyPage() {
   useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
   useEffect(() => { voiceLangRef.current = language; }, [language]);
 
+  // Voice 2 — per-student Cloud Run TTS routing for the auto-speak path.
+  // When the flag is on for this student, speak() forwards to the Python
+  // Azure neural TTS endpoint; otherwise the browser speechSynthesis runs
+  // unchanged. On any Python failure speak() falls back internally — see
+  // REG-77 + docs/PYTHON_AI_VOICE_2_FRONTEND.md.
+  const pythonVoiceEnabled = usePythonVoiceEnabled(student?.id ?? null);
+  const pythonVoiceEnabledRef = useRef(false);
+  useEffect(() => { pythonVoiceEnabledRef.current = pythonVoiceEnabled; }, [pythonVoiceEnabled]);
+  const getJwtRef = useRef<(() => Promise<string | null>) | null>(null);
+  if (!getJwtRef.current) {
+    getJwtRef.current = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        return data.session?.access_token ?? null;
+      } catch {
+        return null;
+      }
+    };
+  }
+
   // Load persisted preference
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -360,6 +381,10 @@ export default function FoxyPage() {
     speakCancelRef.current = speak(text, {
       language: voiceLangRef.current,
       rate: 0.9,
+      // Voice 2 — opt into Python TTS when the flag is on. The fallback to
+      // Web Speech is automatic inside speak() on any failure (REG-77).
+      pythonEnabled: pythonVoiceEnabledRef.current,
+      getJwt: getJwtRef.current ?? undefined,
       onEnd: () => setIsSpeaking(false),
     });
   };
@@ -712,6 +737,10 @@ export default function FoxyPage() {
             speakCancelRef.current = speak(reply, {
               language: voiceLangRef.current,
               rate: 0.9,
+              // Voice 2 — opt into Python TTS when the flag is on; fallback
+              // to Web Speech is automatic inside speak() on any failure.
+              pythonEnabled: pythonVoiceEnabledRef.current,
+              getJwt: getJwtRef.current ?? undefined,
               onEnd: () => setIsSpeaking(false),
             });
           }
