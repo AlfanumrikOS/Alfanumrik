@@ -78,10 +78,12 @@ USER appuser
 
 EXPOSE 8080
 
-# Cloud Run probes /healthz over HTTP; HEALTHCHECK is mostly useful for
+# Cloud Run probes /live over HTTP; HEALTHCHECK is mostly useful for
 # local docker/podman runs. 30s interval matches the runbook expectation.
+# Path is /live (not /healthz) because Cloud Run's frontend intercepts
+# the path /healthz before it reaches the container (confirmed 2026-05-24).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl --fail --silent --show-error "http://127.0.0.1:${PORT}/healthz" || exit 1
+    CMD curl --fail --silent --show-error "http://127.0.0.1:${PORT}/live" || exit 1
 
 # tini → uvicorn keeps Ctrl-C and Cloud Run's SIGTERM clean.
 # Shell form on the uvicorn line is intentional so $PORT is expanded by /bin/sh.

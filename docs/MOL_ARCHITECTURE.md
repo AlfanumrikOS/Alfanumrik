@@ -191,4 +191,4 @@ Where to learn more:
 - `docs/PYTHON_AI_ARCHITECTURE.md` — Python service architecture (architect, in flight)
 - [`docs/PYTHON_AI_OPERATIONS.md`](PYTHON_AI_OPERATIONS.md) — daily checks, alerts, rollback procedures, cost monitoring, migration tracking
 - [`docs/super-admin-python-ai-dashboard-spec.md`](super-admin-python-ai-dashboard-spec.md) — spec for the `/super-admin/python-ai-health` dashboard (frontend follow-up)
-- [`.claude/regression-catalog.md`](../.claude/regression-catalog.md) — REG-72 health-contract pin for `/healthz` vs `/readyz`
+- [`.claude/regression-catalog.md`](../.claude/regression-catalog.md) — REG-72 health-contract pin for `/live` vs `/readyz`

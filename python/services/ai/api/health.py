@@ -1,7 +1,10 @@
 """Health + readiness endpoints.
 
-- ``GET /healthz`` (liveness): static 200; never checks external deps. Used
+- ``GET /live`` (liveness): static 200; never checks external deps. Used
   by Cloud Run / Kubernetes to decide whether to restart the container.
+  Named ``/live`` (not ``/healthz``) because Cloud Run's frontend
+  intercepts the path ``/healthz`` before it reaches the container and
+  returns Google's own 404 HTML page (confirmed 2026-05-24).
 - ``GET /readyz`` (readiness): checks Supabase + that at least one provider
   has an API key. 200 when ready; 503 when not. Used by load balancers to
   decide whether to send traffic.
@@ -17,12 +20,16 @@ from ..db.supabase import ping_supabase
 router = APIRouter(tags=["health"])
 
 
-@router.get("/healthz", summary="Liveness probe")
-async def healthz() -> dict:
+@router.get("/live", summary="Liveness probe")
+async def live() -> dict:
     """Always-200 liveness probe.
 
     No external deps — if the process is up, it's live. Restart decisions
     are driven by this endpoint, so don't add I/O that could flap.
+
+    Path is ``/live`` rather than ``/healthz`` because Cloud Run's
+    frontend intercepts ``/healthz`` before it reaches the container
+    (Google returns its own 404 HTML page for that path).
     """
     return {"status": "ok"}
 
