@@ -512,7 +512,7 @@ weekly during Phase 1-6. Status key:
 | `bulk-question-gen` | proxy-ready (legacy serves all traffic) | TBD | Admin-only. First canary candidate (lowest blast radius). Edge proxy + `ff_python_bulk_question_gen_v1` flag shipped 2026-05-24 (default OFF, `rollout_pct=0`). Awaiting Cloud Run setup + `PYTHON_AI_BASE_URL` env wiring before first 10% ramp. |
 | `bulk-non-mcq-gen` | legacy-only | TBD | Admin-only. |
 | `generate-concepts` | legacy-only | TBD | Admin x-admin-key. |
-| `generate-answers` | legacy-only | TBD | Admin x-admin-key. RAG context baked into system prompt. |
+| `generate-answers` | proxy-ready (legacy serves all traffic) | TBD | Admin x-admin-key. Second function in Python cutover order. Edge proxy + `ff_python_generate_answers_v1` flag shipped 2026-05-24 (default OFF, `rollout_pct=0`). Python implementation at `python/services/ai/business/generate_answers/` runs the "no NCERT reference material" prompt branch; the TS path keeps the RAG-grounded branch until the Python rag/ module ships. Awaiting Cloud Run setup + `PYTHON_AI_BASE_URL` env wiring + `ADMIN_API_KEY` env on Cloud Run before first 10% ramp. Alert thresholds from [MOL_OPERATIONS.md](MOL_OPERATIONS.md) admin long-form quiz/eval (p95 < 8000ms) apply once cutover begins. |
 | `extract-ncert-questions` | legacy-only | TBD | Admin x-admin-key. |
 | `parent-report-generator` | legacy-only | TBD | Parent JWT, rate-limited 1/day. Has template fallback. |
 | `foxy-tutor` | legacy-only | TBD | Student-facing. Phase 1B in original MoL plan. |
