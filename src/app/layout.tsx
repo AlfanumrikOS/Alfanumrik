@@ -1,4 +1,7 @@
 import './globals.css';
+// KaTeX math styling, self-hosted from the npm package (was a third-party CDN
+// <link> that browsers' Tracking Prevention blocked + version-mismatched).
+import 'katex/dist/katex.min.css';
 import type { Metadata, Viewport } from 'next';
 import { AuthProvider } from '@/lib/AuthContext';
 import { SchoolProvider } from '@/lib/SchoolContext';
@@ -89,7 +92,6 @@ export default function RootLayout({
           rel="stylesheet"
         />
         <JsonLd />
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossOrigin="anonymous" />
       </head>
       <body>
         <a href="#main-content" className="skip-nav">Skip to content</a>
