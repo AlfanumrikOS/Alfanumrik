@@ -22,6 +22,7 @@ dependencies = [
   "sentry-sdk[fastapi]>=2.18,<3.0",
   "python-json-logger>=2.0,<3.0",
   "postgrest>=0.18,<1.0",
+  "tenacity>=9.0,<10.0",
 ]
 
 [project.optional-dependencies]
