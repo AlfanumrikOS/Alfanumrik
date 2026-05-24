@@ -746,3 +746,58 @@ range `4aab7dbe..e3c243f1`):
 Pre-Study-Menu-v2: 39 entries. Study Menu v2 adds REG-69.
 
 **Total: 40 entries.**
+
+## MoL Phase 1A — Admin-Functions Rollback Flag + Oracle Grader Bypass (2026-06-03) — REG-70..REG-71
+
+Source: Mixture-of-LLMs Phase 1A migration routed 6 admin/async Edge Functions
+(`bulk-question-gen`, `bulk-non-mcq-gen`, `generate-concepts`, `generate-answers`,
+`extract-ncert-questions`, `parent-report-generator`) from direct
+`fetch('https://api.anthropic.com/v1/messages', ...)` to MoL `generateResponse()`
+with OpenAI gpt-4o-mini as the cost-cut primary. The rollback flag
+(`ff_mol_admin_functions_v1`) flips all six back to legacy Anthropic in seconds
+without a redeploy. The `bulk-question-gen` MCQ oracle grader is the one path
+that ALWAYS bypasses MoL — it requires deterministic temperature=0 verdicts
+that MoL cannot honor until `GenerateRequest.config.temperature_override`
+lands (tracked as a follow-up).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-70 | `mol_admin_routing_rollback_flag_p12` | `ff_mol_admin_functions_v1` rollback flag flips all 6 admin Edge Functions (`bulk-question-gen`, `bulk-non-mcq-gen`, `generate-concepts`, `generate-answers`, `extract-ncert-questions`, `parent-report-generator`) back to the legacy direct-Anthropic-API path within the 5-min flag-cache TTL. Kill-switch precedence (per `supabase/functions/_shared/mol/admin-rollback-flag.ts`): `metadata.kill_switch === true` → legacy; else `typeof metadata.enabled === 'boolean'` → that value; else `is_enabled` column. Defensive default: any flag-read failure → legacy path (never routes to OpenAI when ops thinks the switch is off). Verification: ops `update feature_flags set is_enabled=false where flag_name='ff_mol_admin_functions_v1'`; within 5 min `mol_request_logs.provider` for the 6 functions = 'anthropic' on new rows. | `supabase/functions/_shared/mol/admin-rollback-flag.ts` (helper + unit-test coverage in `_shared/mol/__tests__/admin-rollback-flag.test.ts`) | E |
+| REG-71 | `bulk_question_gen_oracle_grader_bypasses_mol_p6` | `callOracleGrader` in `supabase/functions/bulk-question-gen/index.ts` bypasses MoL routing entirely and unconditionally calls `callOracleGraderLegacy` (direct Anthropic `claude-haiku-4-5-20251001` with `temperature: 0` and `QUIZ_ORACLE_GRADER_SYSTEM_PROMPT`). The function body MUST NOT contain an `isMolAdminRoutingEnabled()` branch — the bypass is unconditional. The MCQ-GENERATION path (`callClaude`) still routes through MoL because its validators reject bad output; the grader has no such safety net because it IS the validator. Until `GenerateRequest.config.temperature_override` is implemented, MoL providers' ~0.7 default would break REG-54's admission-gate determinism. Verification: source-grep `callOracleGrader` in `bulk-question-gen/index.ts` shows NO `isMolAdminRoutingEnabled` check; calls `callOracleGraderLegacy` directly. Why this matters: P6 admission gate must be deterministic; non-deterministic verdicts would cause oracle telemetry skew and undermine REG-54 audit reliability. | `supabase/functions/bulk-question-gen/index.ts` (`callOracleGrader` function — static-source pin; suite under `supabase/functions/bulk-question-gen/__tests__/`) | E |
+
+### Invariants covered by this section
+
+- P6 (question quality — REG-71 keeps the oracle admission gate
+  deterministic by pinning temperature=0; non-deterministic verdicts
+  would let inconsistent admit/reject decisions corrupt the
+  `question_bank` quality bar that REG-54 audits)
+- P12 (AI safety — REG-70 instant rollback flag bounds blast radius of
+  any OpenAI-side incident across all 6 admin Edge Functions without a
+  redeploy; defensive-default-legacy on flag-read failure ensures
+  ops-intended OFF state always wins)
+
+### Notes on test strategy
+
+REG-70 is enforced by the existing
+`supabase/functions/_shared/mol/__tests__/admin-rollback-flag.test.ts`
+unit suite which exercises the three-tier precedence ladder and the
+defensive-default-on-read-error branch. The 5-min cache TTL is part of
+the flag-helper's documented contract (cached read with TTL eviction);
+the test asserts the precedence ladder, not the cache wall clock.
+
+REG-71 is a static-source canary in the same family as REG-50, REG-57,
+REG-59: the contract is the absence of a code path. If a future PR
+re-introduces `isMolAdminRoutingEnabled()` into `callOracleGrader`,
+the canary fails. The bypass MUST be deleted only when
+`GenerateRequest.config.temperature_override` lands and the MoL
+evaluation chain can honor `temperature: 0`; at that point both
+REG-71 and the function-header comment block should be updated in the
+same PR.
+
+### Catalog total
+
+Pre-MoL-Phase-1A: 40 entries. MoL Phase 1A adds REG-70, REG-71.
+
+**Total: 42 entries.**
+
+**Total: 40 entries.**

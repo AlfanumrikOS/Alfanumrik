@@ -107,3 +107,29 @@ Per `references/ai-rag-foxy.md`: the MOL never invents curriculum content. RAG c
 ## Cost model
 
 See `telemetry.ts` `PRICING` (kept in sync with `model_pricing` table). Cost is calculated from `usage` returned by each provider; both passes of a hybrid call contribute to the total. INR conversion uses the `USD_TO_INR` env var (default 83).
+
+## Caller status (updated 2026-05-24, Phase 1A)
+
+| Caller | Status | Notes |
+|---|---|---|
+| `bulk-question-gen` (legacy single-pass + oracle grader) | wired | `task_type='quiz_generation'` / `'evaluation'`. Admin posture: `preferred_provider='openai'`. |
+| `bulk-non-mcq-gen` | wired | `task_type='quiz_generation'`. |
+| `generate-concepts` | wired | `task_type='concept_explanation'`. |
+| `generate-answers` | wired | `task_type='explanation'`. RAG context baked into `system_prompt_override`. |
+| `extract-ncert-questions` | wired | `task_type='quiz_generation'`. |
+| `parent-report-generator` | wired | `task_type='evaluation'`. Uses real `student_id` (not synthetic); template fallback retained for hard failures. |
+| `bulk-question-gen` (grounded two-pass path, behind `ff_grounded_ai_quiz_generator`) | unwired | Routes through `grounded-answer/` service which carries its own LLM client (claude.ts). C4 MOL-shadow already mirrors that traffic into mol_request_logs. |
+| `foxy-tutor` Edge Function | unwired | Student-facing. Phase 1B (needs inline verifier). |
+| `ncert-solver` | unwired | Student-facing. Phase 1B. |
+| `ncert-question-engine` | unwired | Student-facing (answer grading). Phase 1B. |
+| `quiz-generator` Edge Function | unwired | Student-facing wrapper around `question_bank` reads — minimal direct LLM call; defer until Phase 1B holistic review. |
+| `cme-engine` | unwired | Algorithmic (BKT/IRT) — no LLM call to migrate. |
+| `grade-experiment-conclusion` | unwired | Student-facing (writes coins). Phase 1B. |
+| `scan-ocr` | unwired | Vision (Claude Sonnet). MoL `ocr_extraction` chain exists but vision is being migrated separately. |
+| `daily-cron` (challenge generator) | unwired | Background cron, low volume; defer. |
+| `extract-diagrams` (caption Claude call) | unwired | Tiny surface; defer. |
+| `bulk-jee-neet-import` / `bulk-jee-neet-curated-import` | unwired | Source-grep test pins haiku model string; complex 4-call pipeline — defer. |
+| `embed-ncert-qa`, `embed-questions`, `embed-diagrams`, `generate-embeddings` | unwired | Embedding-only paths — MoL does not yet expose an embedding entrypoint. |
+| `nep-compliance` | unwired | No direct LLM call. |
+| `coverage-audit`, `verify-question-bank`, `monthly-synthesis-builder` | unwired | Route through `grounded-answer/` service or have no LLM call at all. |
+| `grounded-answer/` | not-a-direct-caller | Owns its own Claude client (`claude.ts`) plus the C4 shadow leg into MoL. |

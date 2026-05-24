@@ -55,6 +55,22 @@ import {
   buildQuizOracleGraderUserPrompt,
 } from '../_shared/quiz-oracle-prompts.ts'
 import { logOpsEvent } from '../_shared/ops-events.ts'
+// MoL (Model Orchestration Layer) router — Phase 1A migration (2026-05-24).
+// Replaces direct fetch('https://api.anthropic.com/v1/messages', ...) so that
+// (a) admin-only generation can be routed to OpenAI gpt-4o-mini (~85–90% cost
+//     reduction vs Haiku 4.5) with Claude fallback;
+// (b) telemetry, circuit-breaker, retries, and cost accounting live in one
+//     module instead of being copy-pasted into every Edge function;
+// (c) the existing oracle and P6 validators continue to run AFTER the LLM
+//     call (NOT inside it) — see callClaude + validateWithCacheAndLogging.
+//
+// Rollback flag (2026-06-03): `isMolAdminRoutingEnabled()` reads
+// ff_mol_admin_functions_v1 and short-circuits to the legacy
+// direct-Anthropic-fetch path below (`callClaudeLegacy` / `callOracleGraderLegacy`)
+// when ops trips the kill switch. The legacy implementations are preserved
+// byte-for-byte from pre-Phase-1A so rollback is trustworthy.
+import { generateResponse, MolError } from '../_shared/mol/index.ts'
+import { isMolAdminRoutingEnabled } from '../_shared/mol/admin-rollback-flag.ts'
 
 // ─── Environment ──────────────────────────────────────────────────────────────
 const ANTHROPIC_API_KEY   = Deno.env.get('ANTHROPIC_API_KEY')   || ''
@@ -321,16 +337,86 @@ function isValidQuestion(q: unknown): q is GeneratedQuestion {
 async function callClaude(
   systemPrompt: string,
   userPrompt:   string,
+  grade:        string,
+  subject:      string,
 ): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  // Local circuit-breaker short-circuit — MoL has its own internal breaker
+  // (providers/shared.ts), but we keep this admin-side gate so a sustained
+  // back-office outage doesn't block the entire batch with retry latency.
   if (!circuitBreaker.canRequest()) {
     return { ok: false, error: 'Claude API circuit breaker is open. Try again in a moment.' }
   }
 
+  // ROLLBACK GATE (Phase 1A — 2026-06-03):
+  // If ops trips ff_mol_admin_functions_v1 (kill_switch=true or enabled=false),
+  // revert to the byte-for-byte legacy direct-Anthropic path below. The flag
+  // check is fast (5-minute per-worker cache) so this dispatch costs ~0ms in
+  // steady state. On any flag-read failure, we ALSO take the legacy path —
+  // see isMolAdminRoutingEnabled() for the rationale.
+  if (!(await isMolAdminRoutingEnabled())) {
+    return callClaudeLegacy(systemPrompt, userPrompt)
+  }
+
+  try {
+    // Route through the MoL: OpenAI gpt-4o-mini primary (admin-only, force via
+    // preferred_provider: 'openai'), Claude Haiku auto-fallback. The router's
+    // quiz_generation chain matches this exact preference; preferred_provider
+    // reorders defensively in case routing weights or future flags change.
+    //
+    // task_type='quiz_generation' so the post-processor leaves the JSON output
+    // untouched (post-processor.ts skips vendor scrub for quiz_generation).
+    //
+    // student_context.student_id is a synthetic admin-namespaced UUID — the
+    // generator has no student. Required by MoL's INVALID_INPUT validator.
+    const molResult = await generateResponse({
+      task_type: 'quiz_generation',
+      input: { instruction: userPrompt },
+      student_context: {
+        // Synthetic but stable so deterministic rollout bucketing is consistent.
+        student_id: `admin-bulk-question-gen-${grade}-${subject}`,
+        grade,
+        language: 'en',
+      },
+      config: {
+        surface: 'quiz',
+        preferred_provider: 'openai',
+        system_prompt_override: systemPrompt,
+        max_tokens_override: 8192, // up to 50 questions × ~150 tokens each
+      },
+    })
+
+    circuitBreaker.recordSuccess()
+    return { ok: true, text: molResult.text }
+  } catch (err) {
+    circuitBreaker.recordFailure()
+    if (err instanceof MolError) {
+      return { ok: false, error: `MoL ${err.code}: ${err.message}` }
+    }
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+/**
+ * LEGACY PATH (pre-Phase-1A, kept byte-for-byte). Restored from git HEAD
+ * snapshot so the rollback flag can revert to known-good behavior on
+ * emergency. Do not modify without re-validating against the original
+ * pre-migration callClaude implementation.
+ *
+ * The only structural delta vs the pre-Phase-1A source: the
+ * `eslint-disable alfanumrik/no-direct-ai-calls` annotation was kept
+ * because the no-direct-ai-calls rule still considers this path a direct
+ * fetch; the Phase 1A migration did NOT delete the rule, it only added
+ * the MoL alternative.
+ */
+async function callClaudeLegacy(
+  systemPrompt: string,
+  userPrompt:   string,
+): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 45_000) // 45 s for bulk calls
 
   try {
-    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): bulk-question-gen is a batch back-office ingestion path that predates grounded-answer; route through service when bulk grounding API is added.
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- legacy rollback path for ff_mol_admin_functions_v1; do not remove without retiring the rollback flag.
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -414,12 +500,27 @@ function extractJsonArray(text: string): unknown[] | null {
 // Rejections are logged to ops_events with category='quiz.oracle_rejection'
 // (severity='info' — rejections are expected, that's the oracle working).
 
-const ORACLE_LLM_GRADER_TIMEOUT_MS = 12_000 // single-turn JSON ~ small payload
+// Note: the legacy ORACLE_LLM_GRADER_TIMEOUT_MS constant was removed when this
+// path moved to MoL — the router enforces its own timeout per provider
+// (providers/openai.ts and providers/anthropic.ts default to 20s with
+// withTimeout). 12s was a hand-tuned single-call ceiling that no longer maps
+// cleanly to MoL's multi-pass chain semantics.
 
 /**
  * Call Claude as the oracle's LLM grader. Returns a structured verdict or
  * throws on hard failure (network, timeout, parse). The oracle module catches
  * thrown errors and surfaces them as 'llm_grader_unavailable' rejections.
+ *
+ * IMPORTANT — MoL bypass (REG-71, 2026-06-03):
+ * Oracle grader requires deterministic temperature=0 verdicts (REG-54
+ * admission gate). MoL providers default to ~0.7 and
+ * `GenerateRequest.config.temperature_override` is not yet implemented
+ * (tracked as a follow-up). Until that lands, the oracle grader bypasses
+ * MoL entirely and always uses the legacy direct-Anthropic-temperature-0
+ * path — regardless of the `ff_mol_admin_functions_v1` flag state. The
+ * MCQ-GENERATION path (`callClaude` above) still routes through MoL
+ * because its downstream validators reject bad output; the grader has no
+ * such safety net because it IS the validator.
  */
 async function callOracleGrader(input: {
   question_text: string
@@ -429,11 +530,27 @@ async function callOracleGrader(input: {
 }): Promise<LlmGradeResult> {
   const userPrompt = buildQuizOracleGraderUserPrompt(input)
 
+  // Unconditional legacy path — see function header for rationale.
+  // Do NOT add an `isMolAdminRoutingEnabled()` branch here until
+  // `GenerateRequest.config.temperature_override` exists.
+  return callOracleGraderLegacy(userPrompt)
+}
+
+/**
+ * LEGACY ORACLE GRADER (pre-Phase-1A, kept byte-for-byte). Restored from
+ * git HEAD snapshot. Same rationale as callClaudeLegacy.
+ *
+ * The 12s timeout constant was inlined here to keep the legacy path
+ * self-contained — the original code defined it as
+ * `ORACLE_LLM_GRADER_TIMEOUT_MS = 12_000` at the top of the file.
+ */
+async function callOracleGraderLegacy(userPrompt: string): Promise<LlmGradeResult> {
+  const ORACLE_LLM_GRADER_TIMEOUT_MS = 12_000 // single-turn JSON ~ small payload
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), ORACLE_LLM_GRADER_TIMEOUT_MS)
 
   try {
-    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): oracle grader is a back-office content-audit path; route through grounded service when an unscoped LLM-grader API exists.
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- legacy rollback path for ff_mol_admin_functions_v1; do not remove without retiring the rollback flag.
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -458,7 +575,6 @@ async function callOracleGrader(input: {
     const text: string = data?.content?.[0]?.text || ''
     const parsed = parseLlmGraderResponse(text)
     if (!parsed) {
-      // Treat unparseable grader output as ambiguous — caller will reject.
       return { verdict: 'ambiguous', reasoning: 'grader returned unparseable JSON' }
     }
     return parsed
@@ -891,8 +1007,11 @@ Deno.serve(async (req: Request) => {
     return errorResponse('Method not allowed', 405, origin)
   }
 
-  if (!ANTHROPIC_API_KEY) {
-    return errorResponse('Bulk question generation is not configured (missing API key)', 503, origin)
+  // MoL requires at least one provider key. OpenAI is preferred for the
+  // admin-only generation posture (cost), Anthropic is the auto-fallback.
+  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') || ''
+  if (!ANTHROPIC_API_KEY && !OPENAI_API_KEY) {
+    return errorResponse('Bulk question generation is not configured (no LLM provider key)', 503, origin)
   }
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
     return errorResponse('Supabase not configured', 503, origin)
@@ -1170,7 +1289,7 @@ Deno.serve(async (req: Request) => {
     const userPrompt   = buildPrompt(grade, safeSubject, safeChapter, count, difficulty, bloomLevel)
 
     // ── 4. Call Claude ──────────────────────────────────────────────────────
-    const claudeResult = await callClaude(systemPrompt, userPrompt)
+    const claudeResult = await callClaude(systemPrompt, userPrompt, grade, safeSubject)
     if (!claudeResult.ok) {
       console.error('bulk-question-gen: Claude API failed:', claudeResult.error)
       return errorResponse(`AI generation failed: ${claudeResult.error}`, 503, origin)
@@ -1324,7 +1443,10 @@ Deno.serve(async (req: Request) => {
       oracle_rejected: oracleRejectedCount,
       difficulty,
       bloom_level:     bloomLevel,
-      model:           'claude-haiku-4-5-20251001',
+      // Model attribution now lives in mol_request_logs (request_id JOIN);
+      // the local field is a routing hint rather than a hard claim about
+      // which provider served the request (MoL may have fallen back).
+      routing:         'mol/quiz_generation (openai-preferred)',
       ts:              new Date().toISOString(),
     }))
 

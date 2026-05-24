@@ -23,6 +23,17 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { constantTimeEqual } from '../_shared/auth.ts'
+// MoL (Model Orchestration Layer) — Phase 1A migration (2026-05-24).
+// generate-concepts is admin-key-gated batch ingestion (writes chapter_concepts
+// rows). Routes through OpenAI gpt-4o-mini primary, Haiku fallback. All P12
+// validation (parseConceptsResponse: required fields, valid bloom level,
+// difficulty range) runs AFTER the LLM call and remains unchanged.
+//
+// Rollback flag (2026-06-03): ff_mol_admin_functions_v1. When ops trips the
+// kill switch, callClaude short-circuits to callClaudeLegacy below
+// (pre-Phase-1A direct-Anthropic-fetch with 60s timeout + temp 0.3).
+import { generateResponse, MolError } from '../_shared/mol/index.ts'
+import { isMolAdminRoutingEnabled } from '../_shared/mol/admin-rollback-flag.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -310,12 +321,67 @@ async function callClaude(
   systemPrompt: string,
   userPrompt: string,
   maxTokens: number,
+  grade: string,
+  subject: string,
+): Promise<string> {
+  // ROLLBACK GATE (Phase 1A — 2026-06-03):
+  // ff_mol_admin_functions_v1 OFF → legacy direct-Anthropic-fetch path.
+  if (!(await isMolAdminRoutingEnabled())) {
+    return callClaudeLegacy(systemPrompt, userPrompt, maxTokens)
+  }
+
+  // Concepts are factual NCERT-grounded extraction — task_type='concept_explanation'
+  // matches the router matrix (gpt-4o-mini primary, Haiku fallback). The legacy
+  // implementation forced temperature=0.3; MoL providers use the
+  // ProviderCallOptions.temperature default (0.7 OpenAI / 0.7 Anthropic). For
+  // concept extraction this delta is acceptable because parseConceptsResponse
+  // rejects malformed/missing fields downstream.
+  // TODO(ai-engineer): expose temperature_override through GenerateRequest.config
+  // so factual extraction paths can opt back to ~0.3.
+  try {
+    const molResult = await generateResponse({
+      task_type: 'concept_explanation',
+      input: { instruction: userPrompt },
+      student_context: {
+        student_id: `admin-generate-concepts-${grade}-${subject}`,
+        grade,
+        language: 'en',
+        subject,
+      },
+      config: {
+        preferred_provider: 'openai',
+        system_prompt_override: systemPrompt,
+        max_tokens_override: maxTokens,
+      },
+    })
+    return molResult.text || ''
+  } catch (err) {
+    // Preserve legacy contract: caller checks for empty string + parses
+    // downstream. Throwing here would change call-site semantics.
+    if (err instanceof MolError) {
+      console.error('[generate-concepts] MoL error:', err.code, err.message)
+    } else {
+      console.error('[generate-concepts] MoL exception:', err instanceof Error ? err.message : String(err))
+    }
+    return ''
+  }
+}
+
+/**
+ * LEGACY PATH (pre-Phase-1A, kept byte-for-byte). Restored from git HEAD
+ * snapshot. Same '' on bad-response contract as the MoL branch so caller
+ * semantics are identical.
+ */
+async function callClaudeLegacy(
+  systemPrompt: string,
+  userPrompt: string,
+  maxTokens: number,
 ): Promise<string> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS)
 
   try {
-    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): generate-concepts is ingestion/authoring-time, not student-facing.
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- legacy rollback path for ff_mol_admin_functions_v1; do not remove without retiring the rollback flag.
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -564,9 +630,12 @@ async function handlePost(req: Request, origin: string | null): Promise<Response
   const supabase = getSupabaseAdmin()
   const startTime = Date.now()
 
-  // Validate Anthropic API key
-  if (!ANTHROPIC_API_KEY) {
-    return errorResponse('ANTHROPIC_API_KEY not configured', 500, origin)
+  // Validate at least one LLM provider is configured. MoL needs either
+  // OPENAI_API_KEY (preferred, admin posture) or ANTHROPIC_API_KEY
+  // (fallback). MoL will hard-fail with NO_PROVIDER_AVAILABLE otherwise.
+  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') || ''
+  if (!ANTHROPIC_API_KEY && !OPENAI_API_KEY) {
+    return errorResponse('No LLM provider configured (need OPENAI_API_KEY or ANTHROPIC_API_KEY)', 500, origin)
   }
 
   // Parse params
@@ -682,8 +751,14 @@ async function handlePost(req: Request, origin: string | null): Promise<Response
       const systemPrompt = buildSystemPrompt(chapter.grade, chapter.subject)
       const userPrompt = buildUserPrompt(chapter, ragChunks, diagramRefs, sampleQuestion)
 
-      // Step 4: Call Claude
-      const rawResponse = await callClaude(systemPrompt, userPrompt, 4096)
+      // Step 4: Call Claude (routed through MoL)
+      const rawResponse = await callClaude(
+        systemPrompt,
+        userPrompt,
+        4096,
+        chapter.grade,
+        chapter.subject,
+      )
 
       // Step 5: Parse response
       const concepts = parseConceptsResponse(rawResponse)
