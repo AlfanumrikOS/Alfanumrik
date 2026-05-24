@@ -1416,7 +1416,13 @@ export default function FoxyPage() {
               --shell-nav-h + safe-area-inset bottom space for the fixed
               BottomNav. Adding pb-32 here would overpad the scroll area
               and leave an awkward gap above the ChatInput. */}
-          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-3 md:px-5 py-4">
+          <div
+            ref={scrollContainerRef}
+            className="flex-1 overflow-y-auto px-3 md:px-5 py-4"
+            // Promote the chat scroll region to its own compositing layer as
+            // defense-in-depth against residual scroll flicker on Chromium.
+            style={{ transform: 'translateZ(0)' }}
+          >
             {/* SEL mood check-in — shown once per day at session start */}
             {showSELCheckIn && student && (
               <div className="mb-4 animate-slide-up">
@@ -1652,6 +1658,7 @@ export default function FoxyPage() {
 
   return (
     <AppShell
+      className="foxy-shell"
       variant="mobile"
       header={foxyHeaderContent}
       nav={<BottomNav />}
