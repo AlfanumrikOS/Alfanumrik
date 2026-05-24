@@ -68,6 +68,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // clearAllMocks does NOT drain the mockResolvedValueOnce/mockRejectedValueOnce
+  // queue on the fetch spy; restoreAllMocks fully removes the spy so stale
+  // *Once entries can't bleed into later tests.
+  vi.restoreAllMocks();
   process.env = ORIGINAL_ENV;
 });
 
@@ -257,19 +261,32 @@ describe('logAdminAudit', () => {
 
     await logAdminAudit(admin, 'flag.toggle', 'feature_flag', 'ff-1', { x: 1 }, '203.0.113.1');
 
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchSpy.mock.calls[0];
-    expect(String(url)).toBe('https://test.supabase.co/rest/v1/admin_audit_log');
-    expect((init as RequestInit).method).toBe('POST');
-    const body = JSON.parse(((init as RequestInit).body as string) ?? '{}');
-    expect(body.action).toBe('flag.toggle');
-    expect(body.details).toMatchObject({
+    // Phase G.4: logAdminAudit dual-writes — canonical (audit_logs) + legacy
+    // (admin_audit_log). Both fetches fire; order/index is not guaranteed, so
+    // locate each call by its URL suffix.
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    const legacyCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).endsWith('/rest/v1/admin_audit_log'),
+    );
+    const canonicalCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).endsWith('/rest/v1/audit_logs'),
+    );
+    expect(legacyCall).toBeDefined();
+    expect(canonicalCall).toBeDefined();
+
+    const legacyInit = legacyCall![1] as RequestInit;
+    expect(legacyInit.method).toBe('POST');
+    const legacyBody = JSON.parse((legacyInit.body as string) ?? '{}');
+    expect(legacyBody.action).toBe('flag.toggle');
+    // Legacy admin_audit_log nests admin_level inside details (source ~288).
+    expect(legacyBody.details).toMatchObject({
       x: 1,
       admin_name: 'Admin',
       admin_email: 'admin@x.com',
       admin_level: 'super',
     });
-    expect(body.ip_address).toBe('203.0.113.1');
+    expect(legacyBody.ip_address).toBe('203.0.113.1');
     fetchSpy.mockRestore();
   });
 
@@ -403,7 +420,7 @@ describe('authorizeAdmin', () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'u-1', email: 'a@x.com' }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([{
-        id: 'admin-id-1', name: 'Alice', email: 'admin@x.com', admin_level: 'super',
+        id: 'admin-id-1', name: 'Alice', email: 'admin@x.com', admin_level: 'super_admin',
       }]), { status: 200 }));
 
     const r = await authorizeAdmin(reqWith({ Authorization: 'Bearer good' }));
@@ -413,30 +430,31 @@ describe('authorizeAdmin', () => {
       expect(r.adminId).toBe('admin-id-1');
       expect(r.email).toBe('admin@x.com');
       expect(r.name).toBe('Alice');
-      expect(r.adminLevel).toBe('super');
+      expect(r.adminLevel).toBe('super_admin');
     }
   });
 
-  it('falls back to user-token retry when service role returns empty', async () => {
+  it('returns 403 ADMIN_NOT_FOUND when service role lookup is empty (no JWT fallback retry)', async () => {
+    // Phase G.2 (2026-05-17): the silent JWT user-token fallback was removed.
+    // An empty service-role admin lookup must deny immediately with no third fetch.
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
 
-    vi.spyOn(globalThis, 'fetch')
-      // GoTrue
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      // GoTrue user
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'u-2' }), { status: 200 }))
-      // Service role: empty
-      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
-      // Fallback retry: returns the admin row
-      .mockResolvedValueOnce(new Response(JSON.stringify([{
-        id: 'admin-2', name: 'Bob', email: 'bob@x.com', admin_level: 'standard',
-      }]), { status: 200 }));
+      // Service role admin lookup: empty
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
 
     const r = await authorizeAdmin(reqWith({ Authorization: 'Bearer good' }));
-    expect(r.authorized).toBe(true);
-    if (r.authorized) {
-      expect(r.adminId).toBe('admin-2');
-      expect(r.name).toBe('Bob');
+    expect(r.authorized).toBe(false);
+    if (!r.authorized) {
+      expect(r.response.status).toBe(403);
+      const body = await r.response.json();
+      expect(body.code).toBe('ADMIN_NOT_FOUND');
     }
+    // Exactly 2 fetches: GoTrue + service-role lookup. No third fallback retry.
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it('returns 500 ADMIN_AUTH_EXCEPTION when fetch throws unexpectedly', async () => {
@@ -466,7 +484,7 @@ describe('authorizeAdmin', () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'u-3', email: 'c@x.com' }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify([{
-        id: 'admin-3', name: 'Cam', email: 'c@x.com', admin_level: 'super',
+        id: 'admin-3', name: 'Cam', email: 'c@x.com', admin_level: 'super_admin',
       }]), { status: 200 }));
 
     const r = await authorizeAdmin(reqWith({ Cookie: cookie }));

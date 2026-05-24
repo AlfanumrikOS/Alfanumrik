@@ -177,11 +177,13 @@ describe('<ChapterReadinessCard />', () => {
     expect(pushSpy).toHaveBeenCalledWith('/quiz?subject=science&chapter=4');
   });
 
-  it('routes to /review on spaced_review CTA click', () => {
+  it('routes to /refresh on spaced_review CTA click', () => {
+    // reviewRoute() now always returns /refresh (ff_study_menu_v2 retired in
+    // migration 20260603120100; Study Menu v2 is permanent).
     setReadiness({ ...baseReady, level: 'almost', next_action: 'spaced_review' });
     render(<ChapterReadinessCard subjectCode="science" chapterNumber={4} />);
     fireEvent.click(screen.getByTestId('chapter-readiness-cta'));
-    expect(pushSpy).toHaveBeenCalledWith('/review');
+    expect(pushSpy).toHaveBeenCalledWith('/refresh');
   });
 
   it('fires onReviewWeakConcept callback for review_concept next_action', () => {

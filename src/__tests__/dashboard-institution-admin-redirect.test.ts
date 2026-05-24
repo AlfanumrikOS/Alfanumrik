@@ -27,8 +27,11 @@ import { getRoleDestination } from '@/lib/identity';
  *   2. dashboard/page.tsx contains a redirect branch for institution_admin
  *   3. dashboard/page.tsx renders DashboardSkeleton (not /login bounce)
  *      while institution_admin redirect is in flight
- *   4. login/page.tsx no longer hard-defaults the post-success destination
- *      to 'student' — it must wait for activeRole to populate
+ *   4. login/page.tsx handleSuccess does an immediate redirect (commit
+ *      #892 stuck-button fix) — it must not block login on activeRole.
+ *      The school_admin protection is no longer enforced login-side; it is
+ *      enforced downstream (dashboard/page.tsx redirect + AuthContext's
+ *      school_admins fallback, both asserted below).
  *   5. AuthContext fallback path queries the school_admins table
  *
  * We do source-level structural assertions rather than mount the full
@@ -81,21 +84,32 @@ describe('post-login redirect chain — source structure', () => {
     );
   });
 
-  it('login/page.tsx handleSuccess no longer hard-defaults to the student destination', () => {
+  it('login/page.tsx handleSuccess does an immediate redirect (#892 stuck-button fix); school_admin protection is enforced downstream', () => {
     const file = readFileSync(
       path.resolve(process.cwd(), 'src/app/login/page.tsx'),
       'utf-8'
     );
-    // The bug-causing call shape was
-    //   getRoleDestination(roleParam || 'student')
-    // inside handleSuccess. After the fix, the only call to
-    // getRoleDestination is inside the role-aware useEffect that consumes
-    // activeRole. Pin: handleSuccess must NOT contain "|| 'student'".
+    // INTENTIONAL DESIGN (commit #892 "fix(auth): restore immediate redirect
+    // on login to prevent stuck '...' button"):
+    // handleSuccess performs an immediate router.replace so the login button
+    // never gets stuck showing "..." while waiting for activeRole to resolve.
+    // This re-introduced the immediate redirect that the original 2026-05-20
+    // fix had removed — and that is correct. The original "school_admin stuck
+    // on the student dashboard" regression stays fixed WITHOUT blocking login
+    // on activeRole, because the protection now lives downstream:
+    //   - dashboard/page.tsx re-routes institution_admin -> /school-admin
+    //     (asserted by the "dashboard/page.tsx redirects institution_admin"
+    //     test above), and
+    //   - AuthContext's school_admins fallback resolves the role
+    //     (asserted by the "AuthContext fallback path queries the
+    //     school_admins table" test below).
+    // So a school_admin who momentarily lands on /dashboard is immediately
+    // re-routed to /school-admin; login is never the enforcement point.
     const handleSuccessMatch = file.match(/const handleSuccess[\s\S]*?\}, \[[^\]]*\]\);/);
     expect(handleSuccessMatch).not.toBeNull();
     const handleSuccessBody = handleSuccessMatch![0];
-    expect(handleSuccessBody).not.toMatch(/getRoleDestination\(roleParam \|\| ['"]student['"]\)/);
-    expect(handleSuccessBody).not.toMatch(/router\.replace\s*\(\s*destination\s*\)/);
+    // Positively assert the immediate redirect contract.
+    expect(handleSuccessBody).toMatch(/router\.replace/);
   });
 
   it('login/page.tsx still uses activeRole for routing in the role-aware useEffect', () => {

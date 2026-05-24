@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { _resetAuditThrottleForTests, auditPiiReadThrottled } from './admin-audit-throttle';
 import * as adminAuth from './admin-auth';
 import type { AdminAuth } from './admin-auth';
@@ -20,6 +20,12 @@ describe('auditPiiReadThrottled', () => {
   beforeEach(() => {
     _resetAuditThrottleForTests();
     logSpy = vi.spyOn(adminAuth, 'logAdminAudit').mockResolvedValue();
+  });
+
+  afterEach(() => {
+    // The logAdminAudit spy is recreated each test but never restored, so its
+    // call count accumulates across tests. Restore it for per-test isolation.
+    vi.restoreAllMocks();
   });
 
   it('writes audit on first call', () => {
