@@ -297,9 +297,13 @@ export default function LeaderboardPage() {
     else if (tab === 'titles') loadTitles();
     else if (tab === 'streaks') loadStreaks();
     else if (tab === 'mastery') loadMastery();
-  }, [tab, student, loadRanks, loadCompetitions, loadFame, loadTitles, loadStreaks]);
+    // Intentionally key on student?.id, not the student object, to avoid re-firing on every AuthContext refresh — see render-loop fix.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, student?.id, loadRanks, loadCompetitions, loadFame, loadTitles, loadStreaks, loadMastery]);
 
-  useEffect(() => { if (student && tab === 'ranks') loadRanks(); }, [period, student, tab, loadRanks]);
+  // Intentionally key on student?.id, not the student object, to avoid re-firing on every AuthContext refresh — see render-loop fix.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (student && tab === 'ranks') loadRanks(); }, [period, student?.id, tab, loadRanks]);
 
   const handleJoin = async (compId: string) => {
     if (!student) return;

@@ -1,5 +1,6 @@
 // src/lib/useAllowedSubjects.ts
 'use client';
+import { useMemo, useCallback } from 'react';
 import useSWR from 'swr';
 import { supabase } from './supabase-client';
 import type { Subject } from './subjects.types';
@@ -25,12 +26,19 @@ export function useAllowedSubjects() {
     revalidateOnFocus: false,
     dedupingInterval: 60_000,
   });
+  // Memoize derived values so identity is stable across renders when SWR
+  // `data` is unchanged. ~24 consumers put these in effect/memo/callback
+  // dependency arrays; unstable references caused render loops / flicker.
+  const subjects = useMemo(() => data?.subjects ?? [], [data]);
+  const unlocked = useMemo(() => subjects.filter((s) => !s.isLocked), [subjects]);
+  const locked = useMemo(() => subjects.filter((s) => s.isLocked), [subjects]);
+  const refresh = useCallback(() => { mutate(); }, [mutate]);
   return {
-    subjects: data?.subjects ?? [],
-    unlocked: (data?.subjects ?? []).filter((s) => !s.isLocked),
-    locked:   (data?.subjects ?? []).filter((s) =>  s.isLocked),
+    subjects,
+    unlocked,
+    locked,
     isLoading,
     error: error ?? null,
-    refresh: () => mutate(),
+    refresh,
   };
 }
