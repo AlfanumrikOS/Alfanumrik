@@ -224,7 +224,7 @@ shows the entire Python-cutover fleet at a glance.
 Apply this checklist verbatim for each subsequent function port.
 
 - [ ] `PYTHON_AI_BASE_URL` env var set on the Edge Function (architect).
-- [ ] Cloud Run service health: `/healthz` returns 200, `/readyz` returns
+- [ ] Cloud Run service health: `/live` returns 200, `/readyz` returns
       200 (no upstream issues).
 - [ ] Staging smoke test: hit the Python service URL directly with a
       valid admin JWT and a known-good `bulk-question-gen` request body.
@@ -372,13 +372,16 @@ deliberate.
 3. **Service health from outside** (don't trust internal probes during an
    incident):
    ```bash
-   curl -i https://<SERVICE_URL>/healthz
+   curl -i https://<SERVICE_URL>/live
    curl -i https://<SERVICE_URL>/readyz
    ```
    The Cloud Run service URL pattern is
-   `https://ai-services-<HASH>-asia-south1.run.app`. `/healthz` should
+   `https://ai-services-<HASH>-asia-south1.run.app`. `/live` should
    return 200 if the process is alive; `/readyz` returns 503 if upstream
-   dependencies (Supabase, providers) are unhealthy. See REG-72 in
+   dependencies (Supabase, providers) are unhealthy. (We use `/live`
+   instead of `/healthz` because Cloud Run's frontend intercepts the
+   path `/healthz` before it reaches the container — confirmed
+   2026-05-24.) See REG-72 in
    [`.claude/regression-catalog.md`](../.claude/regression-catalog.md) for
    the contract.
 4. **Provider status pages**:
@@ -491,4 +494,4 @@ weekly during Phase 1-6. Status key:
 - [`docs/MOL_ARCHITECTURE.md`](MOL_ARCHITECTURE.md) — TS MoL framework architecture (live throughout transition)
 - `docs/PYTHON_AI_ARCHITECTURE.md` — Python service architecture (architect, in flight)
 - [`docs/super-admin-python-ai-dashboard-spec.md`](super-admin-python-ai-dashboard-spec.md) — spec for the `/super-admin/python-ai-health` page (frontend to build)
-- [`.claude/regression-catalog.md`](../.claude/regression-catalog.md) — REG-72 health contract for `/healthz` and `/readyz`
+- [`.claude/regression-catalog.md`](../.claude/regression-catalog.md) — REG-72 health contract for `/live` and `/readyz`

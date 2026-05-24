@@ -809,7 +809,7 @@ ops owns the operational layer ([PYTHON_AI_OPERATIONS.md](../docs/PYTHON_AI_OPER
 [super-admin-python-ai-dashboard-spec.md](../docs/super-admin-python-ai-dashboard-spec.md)).
 
 Cloud Run uses the readiness probe to decide whether to route traffic to
-an instance. A service that returns 200 from `/healthz` (process alive)
+an instance. A service that returns 200 from `/live` (process alive)
 but cannot actually serve requests (missing Supabase credentials,
 provider API keys unreachable, configuration drift) MUST be taken out
 of rotation automatically. The two-endpoint pattern is the standard
@@ -817,16 +817,25 @@ Kubernetes-style liveness/readiness split adapted to Cloud Run; getting
 it wrong means a half-broken instance serves errors until ops manually
 notices.
 
+The liveness endpoint is named `/live` (not `/healthz`) because Cloud
+Run's frontend intercepts the path `/healthz` before it reaches the
+container and returns Google's own 404 HTML page (confirmed
+2026-05-24 by direct probe — `/foo` returned FastAPI's JSON 404,
+`/openapi.json` showed `/healthz` IS registered, but external
+`curl /healthz` returned Google's HTML 404 instead of `{"status":"ok"}`).
+`/live` is not reserved by Cloud Run and works as expected. The contract
+itself (always-200, no I/O, no external deps) is unchanged.
+
 | # | Test name | Asserts | Location | Status |
 |---|---|---|---|---|
-| REG-72 | `python_ai_service_health_contract` | Cloud Run service exposes two distinct HTTP endpoints with different semantics: (1) `/healthz` returns 200 whenever the FastAPI process is alive — used by Cloud Run liveness probe to decide whether to restart the container. (2) `/readyz` returns 200 ONLY when ALL upstream dependencies are healthy (Supabase URL + service-role key resolve and respond; Anthropic + OpenAI API keys present and not expired); returns 503 with a diagnostic JSON body listing which dependency failed when any of these checks fail — used by Cloud Run startup probe to gate the instance from being added to the load-balancer rotation. The Cloud Run service manifest MUST configure the startup probe to hit `/readyz` (not `/healthz` and not a TCP probe) so a degraded service is removed from rotation automatically rather than serving requests it cannot fulfill. On Cloud Run gen2, the startup probe is the gating signal — once it passes, the instance is in rotation, and the liveness probe (against `/healthz`) governs whether to restart. Verification: pytest integration tests in `python/tests/integration/test_generate_endpoint.py` cover the two-endpoint contract (good env → both 200; missing provider key → /readyz 503). The Cloud Run service manifest at `python/deploy/service.yaml` declares `startupProbe.httpGet.path: /readyz` and `livenessProbe.httpGet.path: /healthz`. | `python/tests/integration/test_generate_endpoint.py` (FastAPI TestClient — health endpoint contracts) + `python/deploy/service.yaml` (Knative-on-Cloud-Run manifest, version-controlled probe wiring) + `.github/workflows/python-ai-deploy.yml` (declarative `gcloud run services replace` step) | R (resolved 2026-05-24 — service.yaml landed with startup-probe → /readyz and liveness-probe → /healthz; workflow switched from `gcloud run deploy` CLI flags to declarative manifest apply) |
+| REG-72 | `python_ai_service_health_contract` | Cloud Run service exposes two distinct HTTP endpoints with different semantics: (1) `/live` returns 200 whenever the FastAPI process is alive — used by Cloud Run liveness probe to decide whether to restart the container. The path is `/live` (not `/healthz`) because Cloud Run's frontend intercepts `/healthz` before the request reaches the container; confirmed 2026-05-24. (2) `/readyz` returns 200 ONLY when ALL upstream dependencies are healthy (Supabase URL + service-role key resolve and respond; Anthropic + OpenAI API keys present and not expired); returns 503 with a diagnostic JSON body listing which dependency failed when any of these checks fail — used by Cloud Run startup probe to gate the instance from being added to the load-balancer rotation. The Cloud Run service manifest MUST configure the startup probe to hit `/readyz` (not `/live` and not a TCP probe) so a degraded service is removed from rotation automatically rather than serving requests it cannot fulfill. On Cloud Run gen2, the startup probe is the gating signal — once it passes, the instance is in rotation, and the liveness probe (against `/live`) governs whether to restart. Verification: pytest integration tests in `python/tests/integration/test_generate_endpoint.py` cover the two-endpoint contract (good env → both 200; missing provider key → /readyz 503). The Cloud Run service manifest at `python/deploy/service.yaml` declares `startupProbe.httpGet.path: /readyz` and `livenessProbe.httpGet.path: /live`. | `python/tests/integration/test_generate_endpoint.py` (FastAPI TestClient — health endpoint contracts) + `python/deploy/service.yaml` (Knative-on-Cloud-Run manifest, version-controlled probe wiring) + `.github/workflows/python-ai-deploy.yml` (declarative `gcloud run services replace` step) | R (resolved 2026-05-24 — service.yaml landed with startup-probe → /readyz and liveness-probe → /live; workflow switched from `gcloud run deploy` CLI flags to declarative manifest apply; liveness path renamed from /healthz → /live to bypass Cloud Run frontend interception) |
 
 ### Invariants covered by this section
 
 - Service-availability contract (operational invariant) — the readiness
   probe is the only mechanism by which Cloud Run knows a Python instance
   is unhealthy. If `/readyz` is wired to the same code path as
-  `/healthz`, a Python instance with broken Supabase credentials will
+  `/live`, a Python instance with broken Supabase credentials will
   serve 500s until the next deploy. REG-72 pins the distinct-semantics
   contract.
 - P12 (AI safety — adjacent): a Python instance that returns 503 from
@@ -844,7 +853,7 @@ REG-72 shipped in three iterations and resolved 2026-05-24:
    landing the FastAPI app without both endpoints OR without YAML
    probe wiring must fail REG-72.
 2. **Phase 1 (M).** FastAPI app landed at `python/services/ai/api/`
-   with the two-endpoint split (`health.py:healthz` + `health.py:readyz`).
+   with the two-endpoint split (`health.py:live` + `health.py:readyz`).
    Integration tests at `python/tests/integration/test_generate_endpoint.py`
    exercise both endpoints. Deploy workflow still used `gcloud run deploy`
    CLI flags, which do not expose `startupProbe.httpGet.path` — so a
@@ -853,11 +862,15 @@ REG-72 shipped in three iterations and resolved 2026-05-24:
 3. **Phase 1A wave 2 (R, 2026-05-24).** `python/deploy/service.yaml`
    landed as a Knative-on-Cloud-Run manifest declaring
    `startupProbe.httpGet.path: /readyz` and
-   `livenessProbe.httpGet.path: /healthz`. The deploy workflow switched
+   `livenessProbe.httpGet.path: /live`. The deploy workflow switched
    from `gcloud run deploy` (CLI flags) to `gcloud run services replace`
-   (declarative manifest apply). REG-72 is now end-to-end: app exposes
-   the two endpoints, tests assert their contract, and the manifest
-   pins the probe wiring in version control.
+   (declarative manifest apply). The liveness path was renamed from
+   `/healthz` → `/live` in the same wave after a post-deploy smoke
+   confirmed Cloud Run's frontend intercepts `/healthz` before it
+   reaches the container (Google returns its own 404 HTML page).
+   REG-72 is now end-to-end: app exposes the two endpoints, tests
+   assert their contract, and the manifest pins the probe wiring in
+   version control.
 
 The follow-up dedicated YAML-contract test (originally proposed as
 `python/deploy/__tests__/test_service_yaml.py`) is deferred — the

@@ -212,7 +212,7 @@ Cloud Run configuration lives in `python/deploy/service.yaml` — a declarative 
 | Probe | Endpoint | Period | Failure threshold | What happens on failure |
 | --- | --- | --- | --- | --- |
 | `startupProbe` | `/readyz` | 5s (after 5s delay) | 10 | Cloud Run does NOT add the instance to the load-balancer pool; revision rollout marks the instance unhealthy. Up to 55s total grace for cold start. |
-| `livenessProbe` | `/healthz` | 30s | 3 | Cloud Run SIGTERMs the container and starts a new one. 90s total grace. |
+| `livenessProbe` | `/live` | 30s | 3 | Cloud Run SIGTERMs the container and starts a new one. 90s total grace. Path is `/live` (not `/healthz`) because Cloud Run's frontend intercepts `/healthz` before it reaches the container — confirmed 2026-05-24. |
 | (steady-state readiness) | implicit | — | — | Cloud Run gen2 does not re-poll a readiness probe after startup. Clients must retry transient 5xx with backoff. |
 
 **Cold-start behaviour.** With `autoscaling.knative.dev/minScale=0` (default), the first request after a period of inactivity pays a cold-start cost of ~3-8s for the container plus up to 5s for the first startup-probe success. To eliminate cold starts for production traffic, set `minScale=1`. Cost: ~₹600/mo per always-warm instance. Recommendation: keep `minScale=0` until foxy-tutor lands on Python (Phase 3) and the p95-latency budget becomes hostile to cold starts.
@@ -246,9 +246,9 @@ The token whitelist is explicit in `envsubst '...'` so any unintended `${...}` l
 3. Merge to `main`. The `python-ai-deploy.yml` workflow runs `test` → `build-and-push` → `deploy` → `post-deploy-smoke`.
 4. Confirm the workflow summary shows:
    - Image pushed to `asia-south1-docker.pkg.dev/<PROJECT_ID>/ai-services/api:<sha>`
-   - `/healthz` returned 200
+   - `/live` returned 200
    - `/readyz` returned 200 (or 503 with a clear cause if a secret is missing)
-5. Hit the printed Cloud Run URL by hand: `curl https://ai-services-XXXXXX-as.a.run.app/healthz`
+5. Hit the printed Cloud Run URL by hand: `curl https://ai-services-XXXXXX-as.a.run.app/live`
 
 If the first deploy fails on `iam.serviceAccounts.actAs`, re-check step 1.5 — the deploy SA needs `roles/iam.serviceAccountUser` on the **runtime SA**, not on the project.
 

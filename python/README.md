@@ -20,7 +20,7 @@ cp .env.example .env
 
 uvicorn services.ai.api.main:app --reload --port 8080
 # Swagger UI: http://localhost:8080/docs
-# Liveness:   http://localhost:8080/healthz
+# Liveness:   http://localhost:8080/live
 # Readiness:  http://localhost:8080/readyz
 ```
 
@@ -52,7 +52,7 @@ python/
 │   ├── config.py                  Pydantic Settings (env-var loader)
 │   ├── api/                       FastAPI app
 │   │   ├── main.py                app factory + middleware
-│   │   ├── health.py              /healthz + /readyz
+│   │   ├── health.py              /live + /readyz
 │   │   └── v1/generate.py         POST /v1/generate
 │   ├── mol/                       Model Orchestration Layer
 │   │   ├── types.py               Pydantic models (mirrors types.ts)

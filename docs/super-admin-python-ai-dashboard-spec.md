@@ -39,7 +39,7 @@ A single-card summary of Cloud Run service state.
 
 | Field | Source | Render |
 |---|---|---|
-| Service status | Cloud Run metrics API (v2) OR last `/healthz` ping (v1) | Pill: `Healthy` (green) / `Degraded` (yellow) / `Down` (red) / `Unknown` (gray, v1 only) |
+| Service status | Cloud Run metrics API (v2) OR last `/live` ping (v1) | Pill: `Healthy` (green) / `Degraded` (yellow) / `Down` (red) / `Unknown` (gray, v1 only) |
 | Active revision | `gcloud run revisions list` (v2) | Truncated revision id (`ai-services-00042-xyz`) + deploy timestamp |
 | Instance count | Cloud Run metrics API (v2) | Integer, with trendline last 1h |
 | Last deploy | Deploy webhook → `deployment_history` (existing table) | Relative time ("2h ago") + commit SHA + author |

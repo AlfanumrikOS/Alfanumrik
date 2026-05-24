@@ -24,8 +24,8 @@ def client() -> TestClient:
 # ─── Health endpoints ───────────────────────────────────────────────────────
 
 
-def test_healthz_always_returns_200(client: TestClient):
-    res = client.get("/healthz")
+def test_live_always_returns_200(client: TestClient):
+    res = client.get("/live")
     assert res.status_code == 200
     assert res.json() == {"status": "ok"}
 

@@ -179,7 +179,7 @@ Categorized by **NOW** (this PR or already-shipped), **PHASE 2** (next 1-2 weeks
 | Errors | Sentry (`@sentry/python`) | — | per-task error budget tracking |
 | Cost | `mol_request_logs.inr_cost`; super-admin MoL dashboard | cost forecasting (predict month-end spend); daily budget guard (this PR shipped scaffolding) | per-tenant cost dashboard; reserved-capacity recommendation engine |
 | Latency | Cloud Run built-in (p50/p95/p99) | OpenTelemetry FastAPI instrumentation → Cloud Trace; per-task latency metric | SLI/SLO definitions (e.g. 99.5% of foxy-tutor < 3s p95); burn-rate alerts |
-| Health | `/healthz` + `/readyz` (REG-72) | synthetic-monitor probe from outside GCP (Pingdom or similar) | end-to-end synthetic from student-app POV |
+| Health | `/live` + `/readyz` (REG-72) | synthetic-monitor probe from outside GCP (Pingdom or similar) | end-to-end synthetic from student-app POV |
 | Traces | (none) | OpenTelemetry-distributed-trace stitching across Supabase Edge → Cloud Run | sampling strategy (1% prod, 100% staging) |
 
 ---

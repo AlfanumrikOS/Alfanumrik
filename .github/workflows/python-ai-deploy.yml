@@ -275,17 +275,20 @@ jobs:
         # serving traffic. A short fixed wait is cheaper than a busy loop.
         run: sleep 15
 
-      - name: Check /healthz
+      - name: Check /live
         run: |
           URL="${{ needs.deploy.outputs.service_url }}"
-          echo "Probing ${URL}/healthz"
+          # Path is /live (not /healthz) because Cloud Run's frontend
+          # intercepts /healthz before it reaches the container
+          # (returns Google's 404 HTML page). Confirmed 2026-05-24.
+          echo "Probing ${URL}/live"
           STATUS=$(curl --silent --output /dev/stderr --write-out '%{http_code}' \
-            --max-time 10 --retry 3 --retry-delay 5 "${URL}/healthz")
+            --max-time 10 --retry 3 --retry-delay 5 "${URL}/live")
           if [[ "${STATUS}" != "200" ]]; then
-            echo "::error::/healthz returned ${STATUS} (expected 200)"
+            echo "::error::/live returned ${STATUS} (expected 200)"
             exit 1
           fi
-          echo "/healthz OK (200)"
+          echo "/live OK (200)"
 
       - name: Check /readyz
         run: |

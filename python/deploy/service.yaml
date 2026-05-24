@@ -29,9 +29,12 @@
 #     to gate initial traffic. Once it passes, the instance is added to
 #     the load-balancer pool. Configured with initialDelaySeconds=5,
 #     periodSeconds=5, failureThreshold=10 → up to 50s for cold start.
-#   - liveness probe → /healthz. Only kills the container if the process
+#   - liveness probe → /live. Only kills the container if the process
 #     is truly stuck (failureThreshold=3, periodSeconds=30 = 90s grace).
-#     /healthz must NEVER touch external deps; it is liveness-only.
+#     /live must NEVER touch external deps; it is liveness-only.
+#     Path is /live (not /healthz) because Cloud Run's frontend
+#     intercepts the path /healthz before it reaches the container and
+#     returns Google's own 404 HTML page (confirmed 2026-05-24).
 #   - readiness during steady-state: Cloud Run gen2 does not poll a
 #     readiness probe after startup. We rely on (a) the startup probe
 #     gating the initial roll-in, and (b) client-side retries on transient
@@ -176,10 +179,14 @@ spec:
             failureThreshold: 10
 
           # ── Liveness probe ────────────────────────────────────────────────
-          # /healthz is the always-200 endpoint (no I/O). The only reason
+          # /live is the always-200 endpoint (no I/O). The only reason
           # the liveness probe would fail is a deadlocked or OOM-killed
           # Python process. Cloud Run kills + restarts on failureThreshold
           # consecutive failures.
+          #
+          # Path is /live (not /healthz) because Cloud Run's frontend
+          # intercepts the path /healthz before it reaches the container
+          # (Google returns its own 404 HTML page). Confirmed 2026-05-24.
           #
           # Timing math: 30s period * 3 failures = 90s grace before kill.
           # Conservative because killing a healthy instance mid-request
@@ -187,7 +194,7 @@ spec:
           # requests benefit from the slack.
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /live
               port: 8080
             periodSeconds: 30
             timeoutSeconds: 3
