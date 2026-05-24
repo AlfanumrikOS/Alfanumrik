@@ -144,11 +144,32 @@ export async function POST(request: Request) {
   let diveTopic = WEAK_TOPIC_FALLBACK_LABEL;
   let diveSubjects: string[] = [];
   {
-    const { data: dueRows, error: dueErr } = await supabase.rpc('get_due_reviews', {
-      p_student_id: userId,
-      p_subject_code: null,
-      p_limit: WEAK_TOPIC_RPC_LIMIT,
-    });
+    // Resolve the surrogate students.id (random uuid; distinct from the auth
+    // uid). get_due_reviews keys on the surrogate — same convention as every
+    // other student-scoped table/RPC (see /api/dive/state + src/lib/supabase.ts).
+    // A missing student row degrades the resolution to the generic fallback
+    // label rather than 500 — the dive must always be able to start.
+    let studentDbId: string | null = null;
+    {
+      const { data: studentRow, error: studentErr } = await supabase
+        .from('students')
+        .select('id')
+        .eq('auth_user_id', userId)
+        .maybeSingle();
+      if (studentErr) {
+        logger.warn('dive/start: students fetch failed (degrading)', {
+          userId, error: studentErr.message,
+        });
+      }
+      if (studentRow) studentDbId = (studentRow as { id: string }).id ?? null;
+    }
+    const { data: dueRows, error: dueErr } = studentDbId
+      ? await supabase.rpc('get_due_reviews', {
+          p_student_id: studentDbId,
+          p_subject_code: null,
+          p_limit: WEAK_TOPIC_RPC_LIMIT,
+        })
+      : { data: null, error: null };
     if (dueErr) {
       logger.warn('dive/start: get_due_reviews RPC failed (degrading)', {
         userId, error: dueErr.message,

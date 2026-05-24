@@ -1,5 +1,5 @@
 /**
- * Pedagogy v2 — Wave 2 Task 5 (backend glue — shipped 2026-05-24)
+ * Pedagogy v2 — Wave 2 Task 5b (backend glue)
  * POST /api/dive/artifact
  *
  * Persists the student-authored weekly Curiosity Dive artifact as a
@@ -12,10 +12,10 @@
  *     diveTopic: string,
  *     diveSubjects: string[],
  *     phenomenonSlug: string | null,
- *     title: string,
- *     keyConcepts: string[],       // 1..12 non-empty lines
- *     workedExample?: string,      // optional
- *     studentVoice: string,        // ≥ 20 chars
+ *     title: string,            // non-empty
+ *     keyConcepts: unknown[],
+ *     workedExample?: string,   // optional
+ *     studentVoice: string,     // non-empty
  *   }
  *
  * Response:
@@ -23,31 +23,45 @@
  *   409 { error: 'already_saved_this_week' }   (UNIQUE student_id+iso_week)
  *   400 { error: '<validation_code>' }
  *
- * Server-gated by ff_pedagogy_v2_weekly_dive — 404 when off (matches the
- * sibling dive routes). RLS on dive_artifacts (dive_artifacts_self_insert)
- * enforces ownership; we resolve the caller's students.id so the INSERT's
- * student_id satisfies the WITH CHECK. No service-role bypass.
+ * Server-gated by ff_pedagogy_v2_weekly_dive — 404 when off (mirrors
+ * /api/dive/state + /api/dive/history). The streak count is recomputed from
+ * the durable dive_artifacts history using the SAME algorithm as
+ * /api/dive/state, so the value returned here matches what the page reads back
+ * on its next state fetch.
+ *
+ * RLS: uses the user-bound supabase client. dive_artifacts INSERT/SELECT is
+ * restricted to the caller's own rows by RLS. student_id is written as the
+ * SURROGATE students.id (random uuid; distinct from the auth uid), resolved
+ * via auth_user_id — the established convention shared with /api/dive/state
+ * and /api/dive/history (all key students / dive_artifacts off the surrogate,
+ * NOT the auth uid). This is what the RLS policy `student_id IN (SELECT id
+ * FROM students WHERE auth_user_id = auth.uid())` requires, so an artifact
+ * saved here is found by /api/dive/state's surrogate-keyed read. No
+ * service-role bypass.
+ *
+ * Spec: docs/superpowers/specs/2026-05-08-pedagogy-v2-three-speed-rhythm-design.md §5.2
+ * Plan: docs/superpowers/plans/2026-05-09-pedagogy-v2-wave-2-weekly-dive.md
  */
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { isFeatureEnabled, PEDAGOGY_V2_FLAGS } from '@/lib/feature-flags';
-import { isoWeekOf } from '@/lib/learn/weekly-dive-orchestrator';
-import { applyWeeklyCompletion } from '@/lib/learn/weekly-streak';
+import { isoWeekOf, type DivePickerOption } from '@/lib/learn/weekly-dive-orchestrator';
+import { computeWeeklyStreakFromHistory } from '@/lib/learn/weekly-streak';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
 const TITLE_MAX = 200;
 const TEXT_MAX = 4000;
-const KEY_CONCEPTS_MIN = 1;
 const KEY_CONCEPTS_MAX = 12;
-const STUDENT_VOICE_MIN = 20;
-const PICKER_OPTIONS = ['phenomenon', 'weak_topic', 'own_topic'] as const;
+const PICKER_OPTIONS: DivePickerOption[] = ['phenomenon', 'weak_topic', 'own_topic'];
 
-type PickerOption = (typeof PICKER_OPTIONS)[number];
+function isPickerOption(value: unknown): value is DivePickerOption {
+  return typeof value === 'string' && (PICKER_OPTIONS as string[]).includes(value);
+}
 
 interface ParsedArtifact {
-  pickerOption: PickerOption;
+  pickerOption: DivePickerOption;
   diveTopic: string;
   diveSubjects: string[];
   phenomenonSlug: string | null;
@@ -57,40 +71,39 @@ interface ParsedArtifact {
   studentVoice: string;
 }
 
-/** Validate the composer payload. Returns either a parsed artifact or an error code (400). */
+/** Validate the composer payload. Returns the parsed artifact or an error code (400). */
 function parseArtifact(raw: unknown): { ok: true; value: ParsedArtifact } | { ok: false; error: string } {
   if (!raw || typeof raw !== 'object') return { ok: false, error: 'invalid_body' };
   const b = raw as Record<string, unknown>;
 
-  const pickerOption = b.pickerOption;
-  if (typeof pickerOption !== 'string' || !PICKER_OPTIONS.includes(pickerOption as PickerOption)) {
+  if (!isPickerOption(b.pickerOption)) {
     return { ok: false, error: 'invalid_picker_option' };
   }
+  const pickerOption = b.pickerOption;
 
-  const diveTopic = typeof b.diveTopic === 'string' ? b.diveTopic.trim() : '';
-  if (diveTopic.length === 0) return { ok: false, error: 'missing_dive_topic' };
+  const diveTopic = typeof b.diveTopic === 'string' ? b.diveTopic.trim().slice(0, TITLE_MAX) : '';
 
   const diveSubjects = Array.isArray(b.diveSubjects)
-    ? b.diveSubjects.filter((x): x is string => typeof x === 'string' && x.trim().length > 0).map((x) => x.trim())
+    ? b.diveSubjects
+        .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+        .map((x) => x.trim())
     : [];
 
-  const phenomenonSlug =
+  // phenomenon_slug is only meaningful for phenomenon dives.
+  const rawSlug =
     typeof b.phenomenonSlug === 'string' && b.phenomenonSlug.trim().length > 0
       ? b.phenomenonSlug.trim()
       : null;
-  // Cross-field invariant: phenomenon_slug is only meaningful for phenomenon dives.
-  const resolvedSlug = pickerOption === 'phenomenon' ? phenomenonSlug : null;
+  const phenomenonSlug = pickerOption === 'phenomenon' ? rawSlug : null;
 
   const title = typeof b.title === 'string' ? b.title.trim().slice(0, TITLE_MAX) : '';
   if (title.length === 0) return { ok: false, error: 'missing_title' };
 
-  const keyConceptsRaw = Array.isArray(b.keyConcepts) ? b.keyConcepts : [];
-  const keyConcepts = keyConceptsRaw
+  const keyConcepts = (Array.isArray(b.keyConcepts) ? b.keyConcepts : [])
     .filter((x): x is string => typeof x === 'string')
     .map((x) => x.trim())
     .filter((x) => x.length > 0)
     .slice(0, KEY_CONCEPTS_MAX);
-  if (keyConcepts.length < KEY_CONCEPTS_MIN) return { ok: false, error: 'need_at_least_one_key_concept' };
 
   const workedExample =
     typeof b.workedExample === 'string' && b.workedExample.trim().length > 0
@@ -98,63 +111,12 @@ function parseArtifact(raw: unknown): { ok: true; value: ParsedArtifact } | { ok
       : null;
 
   const studentVoice = typeof b.studentVoice === 'string' ? b.studentVoice.trim().slice(0, TEXT_MAX) : '';
-  if (studentVoice.length < STUDENT_VOICE_MIN) return { ok: false, error: 'student_voice_too_short' };
+  if (studentVoice.length === 0) return { ok: false, error: 'missing_student_voice' };
 
   return {
     ok: true,
-    value: {
-      pickerOption: pickerOption as PickerOption,
-      diveTopic: diveTopic.slice(0, TITLE_MAX),
-      diveSubjects,
-      phenomenonSlug: resolvedSlug,
-      title,
-      keyConcepts,
-      workedExample,
-      studentVoice,
-    },
+    value: { pickerOption, diveTopic, diveSubjects, phenomenonSlug, title, keyConcepts, workedExample, studentVoice },
   };
-}
-
-/**
- * Compute the consecutive-weeks streak ending at the most-recent completed
- * ISO week, from a descending list of completed weeks. Mirrors the derivation
- * in /api/dive/state so the count returned here matches what the page shows on
- * a subsequent state fetch. Deterministic + idempotent.
- */
-function isoWeekToMonday(label: string): Date | null {
-  const m = /^(\d{4})-W(\d{2})$/.exec(label);
-  if (!m) return null;
-  const isoYear = parseInt(m[1], 10);
-  const week = parseInt(m[2], 10);
-  if (!Number.isFinite(isoYear) || !Number.isFinite(week) || week < 1 || week > 53) return null;
-  const jan4 = new Date(Date.UTC(isoYear, 0, 4));
-  const jan4Dow = jan4.getUTCDay() === 0 ? 7 : jan4.getUTCDay();
-  const week1Monday = new Date(jan4);
-  week1Monday.setUTCDate(jan4.getUTCDate() - (jan4Dow - 1));
-  const result = new Date(week1Monday);
-  result.setUTCDate(week1Monday.getUTCDate() + (week - 1) * 7);
-  return result;
-}
-
-function computeWeeklyStreak(completedWeeksDesc: string[]): number {
-  if (completedWeeksDesc.length === 0) return 0;
-  const seen = new Set<string>();
-  const ordered: Date[] = [];
-  for (const label of completedWeeksDesc) {
-    if (seen.has(label)) continue;
-    seen.add(label);
-    const monday = isoWeekToMonday(label);
-    if (monday) ordered.push(monday);
-  }
-  if (ordered.length === 0) return 0;
-  let streak = 1;
-  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-  for (let i = 1; i < ordered.length; i += 1) {
-    const gap = ordered[i - 1].getTime() - ordered[i].getTime();
-    if (Math.abs(gap - ONE_WEEK_MS) < 1000) streak += 1;
-    else break;
-  }
-  return streak;
 }
 
 export async function POST(request: Request) {
@@ -185,34 +147,41 @@ export async function POST(request: Request) {
   }
   const artifact = parsed.value;
 
-  // Resolve the caller's students.id (RLS: students_select_merged → self) so
-  // the INSERT's student_id satisfies dive_artifacts_self_insert's WITH CHECK.
-  const { data: studentRow, error: studentErr } = await supabase
-    .from('students')
-    .select('id, weekly_streak_count, weekly_streak_last_iso_week')
-    .eq('auth_user_id', userId)
-    .maybeSingle();
-  if (studentErr || !studentRow) {
-    logger.warn('dive/artifact: student profile lookup failed', {
-      userId, error: studentErr?.message,
-    });
-    return NextResponse.json({ error: 'no_student_profile' }, { status: 400 });
+  // Resolve the surrogate students.id (random uuid; distinct from the auth
+  // uid). dive_artifacts.student_id references this surrogate — the RLS
+  // policy is `student_id IN (SELECT id FROM students WHERE auth_user_id =
+  // auth.uid())`, so writing the auth uid would be rejected by WITH CHECK and
+  // would never be found by /api/dive/state's surrogate-keyed read. Same
+  // resolution pattern as /api/dive/state + src/lib/supabase.ts.
+  let studentDbId: string | null = null;
+  {
+    const { data: studentRow, error: studentErr } = await supabase
+      .from('students')
+      .select('id')
+      .eq('auth_user_id', userId)
+      .maybeSingle();
+    if (studentErr) {
+      logger.warn('dive/artifact: students fetch failed', { userId, error: studentErr.message });
+    }
+    if (studentRow) studentDbId = (studentRow as { id: string }).id ?? null;
   }
-  const student = studentRow as {
-    id: string;
-    weekly_streak_count: number | null;
-    weekly_streak_last_iso_week: string | null;
-  };
+  if (!studentDbId) {
+    // No student profile → nothing to attach the artifact to. The RLS insert
+    // would fail anyway. Surface a clean error rather than a raw 500.
+    return NextResponse.json({ error: 'student_profile_not_found' }, { status: 404 });
+  }
 
   const isoWeek = isoWeekOf(new Date());
 
-  // Insert the artifact. The UNIQUE(student_id, iso_week) constraint enforces
-  // one artifact per ISO week — a duplicate surfaces as a 409 the composer
-  // already handles.
+  // Insert the artifact. student_id is the surrogate students.id (resolved
+  // above) — the id /api/dive/state reads dive_artifacts by. RLS
+  // (dive_artifacts_self_insert) confirms ownership. The UNIQUE(student_id,
+  // iso_week) constraint enforces one artifact per ISO week; a duplicate
+  // surfaces as Postgres error 23505 → 409.
   const { data: inserted, error: insertErr } = await supabase
     .from('dive_artifacts')
     .insert({
-      student_id: student.id,
+      student_id: studentDbId,
       iso_week: isoWeek,
       picker_option: artifact.pickerOption,
       dive_topic: artifact.diveTopic,
@@ -237,50 +206,28 @@ export async function POST(request: Request) {
 
   const artifactId = (inserted as { id: string }).id;
 
-  // ── Weekly streak. Authoritative value is derived from the durable
-  //    dive_artifacts history (deterministic + idempotent). We also persist
-  //    the students.weekly_streak_* columns best-effort via the tolerant
-  //    applyWeeklyCompletion state machine; a failure there never blocks the
-  //    save (the history derivation remains correct on the next state read).
+  // ── Recompute the weekly streak from the durable dive_artifacts history,
+  //    reusing the SAME algorithm as /api/dive/state (deterministic +
+  //    idempotent). On a read error we degrade to 1 — this row was just saved,
+  //    so the streak is at least 1 — rather than failing the request.
   let weeklyStreakCount = 1;
-  const { data: weekRows, error: weekErr } = await supabase
-    .from('dive_artifacts')
-    .select('iso_week')
-    .eq('student_id', student.id)
-    .order('iso_week', { ascending: false })
-    .limit(120);
-  if (weekErr) {
-    logger.warn('dive/artifact: streak history fetch failed (degrading)', {
-      userId, error: weekErr.message,
-    });
-    // Fall back to the column-based tolerant state machine.
-    const next = applyWeeklyCompletion(
-      {
-        count: Number.isFinite(student.weekly_streak_count as number) ? Number(student.weekly_streak_count) : 0,
-        lastIsoWeek: student.weekly_streak_last_iso_week ?? null,
-      },
-      isoWeek,
-    );
-    weeklyStreakCount = next.count;
-  } else {
-    const weeks = (weekRows ?? [])
-      .map((r) => String((r as { iso_week: string }).iso_week ?? ''))
-      .filter((w) => w.length > 0);
-    weeklyStreakCount = computeWeeklyStreak(weeks);
-  }
-
-  // Persist the streak columns (best-effort; RLS: students_update_own).
-  const { error: updateErr } = await supabase
-    .from('students')
-    .update({
-      weekly_streak_count: weeklyStreakCount,
-      weekly_streak_last_iso_week: isoWeek,
-    })
-    .eq('id', student.id);
-  if (updateErr) {
-    logger.warn('dive/artifact: streak column update failed (non-fatal)', {
-      userId, error: updateErr.message,
-    });
+  {
+    const { data: weekRows, error: weekErr } = await supabase
+      .from('dive_artifacts')
+      .select('iso_week')
+      .eq('student_id', studentDbId)
+      .order('iso_week', { ascending: false })
+      .limit(120);
+    if (weekErr) {
+      logger.warn('dive/artifact: streak history fetch failed (degrading)', {
+        userId, error: weekErr.message,
+      });
+    } else {
+      const weeks = (weekRows ?? [])
+        .map((r) => String((r as { iso_week: string }).iso_week ?? ''))
+        .filter((w) => w.length > 0);
+      weeklyStreakCount = computeWeeklyStreakFromHistory(weeks);
+    }
   }
 
   return NextResponse.json({ artifactId, weeklyStreakCount, isoWeek });

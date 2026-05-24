@@ -34,6 +34,7 @@ import {
   planWeeklyDive,
   type DivePickerOption,
 } from '@/lib/learn/weekly-dive-orchestrator';
+import { computeWeeklyStreakFromHistory } from '@/lib/learn/weekly-streak';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -70,64 +71,6 @@ interface DiveStateResponse {
 
 const PHENOMENA_LIMIT = 24;
 const WEAK_TOPIC_LIMIT = 8;
-
-/**
- * Convert an ISO week label 'YYYY-Www' to the UTC date of that week's Monday.
- * Returns null on an unparseable label so streak math can skip it safely.
- */
-function isoWeekToMonday(label: string): Date | null {
-  const m = /^(\d{4})-W(\d{2})$/.exec(label);
-  if (!m) return null;
-  const isoYear = parseInt(m[1], 10);
-  const week = parseInt(m[2], 10);
-  if (!Number.isFinite(isoYear) || !Number.isFinite(week) || week < 1 || week > 53) {
-    return null;
-  }
-  // ISO 8601: week 1 is the week containing Jan 4. Find the Monday of week 1,
-  // then add (week-1) weeks.
-  const jan4 = new Date(Date.UTC(isoYear, 0, 4));
-  const jan4Dow = jan4.getUTCDay() === 0 ? 7 : jan4.getUTCDay(); // Mon=1..Sun=7
-  const week1Monday = new Date(jan4);
-  week1Monday.setUTCDate(jan4.getUTCDate() - (jan4Dow - 1));
-  const result = new Date(week1Monday);
-  result.setUTCDate(week1Monday.getUTCDate() + (week - 1) * 7);
-  return result;
-}
-
-/**
- * Count the consecutive-weeks streak ending at the most recently completed
- * ISO week. Walks distinct completed weeks (most-recent first) and counts how
- * many are exactly one ISO week apart. Computed from `dive_artifacts` history
- * (the durable source of truth) rather than the students.weekly_streak_*
- * columns, so the count is deterministic and idempotent even though the
- * column-maintaining write path was never wired up.
- */
-function computeWeeklyStreak(completedWeeksDesc: string[]): number {
-  if (completedWeeksDesc.length === 0) return 0;
-  // De-duplicate while preserving the descending order.
-  const seen = new Set<string>();
-  const ordered: Date[] = [];
-  for (const label of completedWeeksDesc) {
-    if (seen.has(label)) continue;
-    seen.add(label);
-    const monday = isoWeekToMonday(label);
-    if (monday) ordered.push(monday);
-  }
-  if (ordered.length === 0) return 0;
-
-  let streak = 1;
-  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-  for (let i = 1; i < ordered.length; i += 1) {
-    const gap = ordered[i - 1].getTime() - ordered[i].getTime();
-    // Allow tiny float drift; expect an exact 7-day gap for a consecutive week.
-    if (Math.abs(gap - ONE_WEEK_MS) < 1000) {
-      streak += 1;
-    } else {
-      break;
-    }
-  }
-  return streak;
-}
 
 /**
  * Best-effort grade-band match: phenomena.grade_band is 'min-max' (e.g.
@@ -170,11 +113,15 @@ export async function GET(_request: Request) {
   //    the picker still works via own_topic.
   let persona: string | null = null;
   let studentGrade = '';
+  // Surrogate students.id (random uuid; distinct from the auth uid). ALL
+  // student-scoped child tables (dive_artifacts) and RPCs (get_due_reviews)
+  // key on this surrogate, NOT the auth uid. Resolved via auth_user_id.
+  let studentDbId: string | null = null;
   {
     const { data: studentRow, error: studentErr } = await supabase
       .from('students')
       .select('id, grade, academic_goal')
-      .eq('id', userId)
+      .eq('auth_user_id', userId)
       .maybeSingle();
     if (studentErr) {
       logger.warn('dive/state: students fetch failed (degrading)', {
@@ -182,22 +129,24 @@ export async function GET(_request: Request) {
       });
     }
     if (studentRow) {
+      studentDbId = (studentRow as { id: string }).id ?? null;
       persona = (studentRow as { academic_goal: string | null }).academic_goal ?? null;
       studentGrade = String((studentRow as { grade: string | null }).grade ?? '');
     }
   }
 
   // ── Dive history → state, lastCompletedIsoWeek, weeklyStreakCount.
-  //    RLS scopes this to the caller's own rows. On error we degrade to an
-  //    open dive with a zero streak rather than 500.
+  //    Keyed on the surrogate studentDbId. Missing student row (studentDbId
+  //    null) degrades to an open dive with a zero streak — we never query with
+  //    a null id. On error we likewise degrade rather than 500.
   let state: 'open' | 'completed' = 'open';
   let lastCompletedIsoWeek: string | null = null;
   let weeklyStreakCount = 0;
-  {
+  if (studentDbId) {
     const { data: artifactRows, error: artifactErr } = await supabase
       .from('dive_artifacts')
       .select('iso_week')
-      .eq('student_id', userId)
+      .eq('student_id', studentDbId)
       .order('iso_week', { ascending: false })
       .limit(120);
     if (artifactErr) {
@@ -210,7 +159,7 @@ export async function GET(_request: Request) {
       .filter((w) => w.length > 0);
     if (weeks.includes(currentIsoWeek)) state = 'completed';
     lastCompletedIsoWeek = weeks.length > 0 ? weeks[0] : null;
-    weeklyStreakCount = computeWeeklyStreak(weeks);
+    weeklyStreakCount = computeWeeklyStreakFromHistory(weeks);
   }
 
   // ── Eligible phenomena (active + grade-band match). Empty array on error
@@ -256,9 +205,9 @@ export async function GET(_request: Request) {
   //    SECURITY DEFINER, returns (topic_id, title, title_hi, mastery_probability,
   //    ...) ordered by mastery_probability ASC. Empty array on error/none.
   const weakTopics: PickerWeakTopic[] = [];
-  {
+  if (studentDbId) {
     const { data: dueRows, error: dueErr } = await supabase.rpc('get_due_reviews', {
-      p_student_id: userId,
+      p_student_id: studentDbId,
       p_subject_code: null,
       p_limit: WEAK_TOPIC_LIMIT,
     });
