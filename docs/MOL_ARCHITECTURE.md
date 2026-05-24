@@ -115,7 +115,7 @@ See `telemetry.ts` `PRICING` (kept in sync with `model_pricing` table). Cost is 
 | `bulk-question-gen` (legacy single-pass + oracle grader) | wired | `task_type='quiz_generation'` / `'evaluation'`. Admin posture: `preferred_provider='openai'`. |
 | `bulk-non-mcq-gen` | wired | `task_type='quiz_generation'`. |
 | `generate-concepts` | wired | `task_type='concept_explanation'`. |
-| `generate-answers` | wired | `task_type='explanation'`. RAG context baked into `system_prompt_override`. |
+| `generate-answers` | wired + Python proxy-ready (2026-05-24) | `task_type='explanation'`. RAG context baked into `system_prompt_override` (TS path only — Python port at `python/services/ai/business/generate_answers/` runs the "no NCERT reference material" branch until the Python-side rag/ module lands). Edge proxy block at `supabase/functions/generate-answers/index.ts:684-733`; flag `ff_python_generate_answers_v1` (migration `20260603180000`) default OFF. |
 | `extract-ncert-questions` | wired | `task_type='quiz_generation'`. |
 | `parent-report-generator` | wired | `task_type='evaluation'`. Uses real `student_id` (not synthetic); template fallback retained for hard failures. |
 | `bulk-question-gen` (grounded two-pass path, behind `ff_grounded_ai_quiz_generator`) | unwired | Routes through `grounded-answer/` service which carries its own LLM client (claude.ts). C4 MOL-shadow already mirrors that traffic into mol_request_logs. |
