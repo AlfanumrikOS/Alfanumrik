@@ -108,7 +108,7 @@ export default function ExamPrepPage() {
 
   // Upcoming exam detection (Phase 4 of study consolidation): pre-fills the generate form
   // and switches the header to a "sprint" framing when an exam is within 30 days.
-  const [upcomingExam, setUpcomingExam] = useState<UpcomingExam | null>(null);
+  const [upcomingExam] = useState<UpcomingExam | null>(null);
   const [examLoading, setExamLoading] = useState(true);
 
   useEffect(() => {
@@ -172,41 +172,15 @@ export default function ExamPrepPage() {
   }, [student, load]);
 
   // Detect the nearest upcoming exam in the next 30 days and pre-fill the generate form.
-  // If no row in upcoming_exams matches, upcomingExam stays null and the "no exams" banner
-  // renders below as the fallback path. Errors are non-fatal — the page must still load
-  // even if the upcoming_exams table is empty or RLS rejects the query.
+  // TODO(backend): the per-student `upcoming_exams` view does not exist yet, so
+  // we default to showing the exam CTA. When a `upcoming_exams` view (derived
+  // from school_exams + class enrollment, RLS-scoped per student) is created,
+  // restore the count query here to reflect real upcoming exams.
+  // Until then `upcomingExam` stays null and the "no exams" banner renders below
+  // as the fallback path. We still settle `examLoading` to false so that banner shows.
   useEffect(() => {
     if (!student) return;
-    let cancelled = false;
-    (async () => {
-      setExamLoading(true);
-      try {
-        const today = new Date();
-        const horizon = new Date(today.getTime() + 30 * 86400000).toISOString().split('T')[0];
-        const { data } = await supabase
-          .from('upcoming_exams')
-          .select('id, exam_name, exam_type, subject, exam_date')
-          .eq('student_id', student.id)
-          .lte('exam_date', horizon)
-          .gte('exam_date', today.toISOString().split('T')[0])
-          .order('exam_date')
-          .limit(1)
-          .maybeSingle();
-        if (!cancelled && data) {
-          const days = Math.max(0, Math.ceil(
-            (new Date(data.exam_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
-          ));
-          setUpcomingExam({ ...data, days_left: days });
-          // Pre-fill the generate form with this exam's subject + days.
-          // Use min(7, days) to keep plan duration sane — the DAY_OPTIONS
-          // const limits to [5,7] anyway, so days > 7 silently rounds.
-          setGenSubject(data.subject);
-          setGenDays(Math.min(7, Math.max(1, days)));
-        }
-      } catch { /* non-fatal */ }
-      finally { if (!cancelled) setExamLoading(false); }
-    })();
-    return () => { cancelled = true; };
+    setExamLoading(false);
   }, [student]);
 
   const handleGenerate = async () => {
