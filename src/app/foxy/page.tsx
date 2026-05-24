@@ -599,15 +599,32 @@ export default function FoxyPage() {
     })();
   }, [activeSubject, studentGrade, student?.id]);
 
-  // Auto-scroll. During streaming (loading), pin to the bottom INSTANTLY —
-  // re-triggering a smooth scroll on every streamed token causes visible
-  // jank/stutter. Smooth-scroll only once the turn settles.
+  // Auto-scroll. REG-78 flicker fix (2026-05-24): split into two effects so
+  // the smooth-scroll at turn end doesn't race the final streamed-token
+  // setMessages flush, and so streaming-token re-renders don't schedule a
+  // brand-new rAF on every flush (~20Hz). Behavior preserved:
+  //   - Brand-new messages.length change   → pin to bottom INSTANTLY (auto)
+  //   - Streaming completes (loading: 1→0) → smooth-scroll ONCE
+  // We also guard against the stale-rAF case where a final flush arrives
+  // after the smooth-scroll is queued (causes visible jitter on Chromium).
+  const messagesLengthRef = useRef(messages.length);
   useEffect(() => {
-    requestAnimationFrame(() => {
+    if (messagesLengthRef.current !== messages.length) {
+      messagesLengthRef.current = messages.length;
       const el = scrollContainerRef.current;
-      if (el) el.scrollTo({ top: el.scrollHeight, behavior: loading ? 'auto' : 'smooth' });
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'auto' });
+    }
+  }, [messages.length]);
+  useEffect(() => {
+    if (loading) return;
+    // Smooth-scroll exactly ONCE per turn-completion. Defer one frame so any
+    // synchronous flushDelta finishing in the same tick can settle first.
+    const rafId = requestAnimationFrame(() => {
+      const el = scrollContainerRef.current;
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
     });
-  }, [messages, loading]);
+    return () => cancelAnimationFrame(rafId);
+  }, [loading]);
 
   // Send message — thin wrapper over the streaming-aware sendMessage from
   // useFoxyChat. Owns the page-side cross-cutting concerns (foxy face,
@@ -1025,6 +1042,34 @@ export default function FoxyPage() {
       : `${cfg.name} — Ch ${activeTopic.chapter_number}: ${activeTopic.title}`;
   };
 
+  // REG-78 flicker fix (2026-05-24): stable callback so memoised
+  // ConversationHeader doesn't re-render on every parent render due to a new
+  // inline function ref for onOpenSidebar.
+  const openConversationSidebar = useCallback(() => {
+    setConversationSidebarOpen(true);
+  }, []);
+
+  // REG-78: memoise the streaming conversation title so the auto-derived
+  // string is stable when message *content* is mutating (during a streamed
+  // token flush) but the visible title (derived from the first user message)
+  // is not. Without this, ConversationHeader's memo never hit during streaming
+  // because `generateTitle(messages.map(...))` produced a new string ref every
+  // render even when the title text was identical.
+  //
+  // The dependency is intentionally narrow: only messages.length and
+  // activeSubject affect what generateTitle outputs in practice (the title is
+  // derived from the FIRST student message, which doesn't mutate after send).
+  // If a future change makes generateTitle sensitive to per-message content
+  // mutation, widen the deps accordingly.
+  const conversationHeaderTitle = useMemo(
+    () => generateTitle(
+      messages.map((m: ChatMessage) => ({ role: m.role, content: m.content })),
+      activeSubject,
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [messages.length, activeSubject, messages[0]?.id],
+  );
+
   if (authLoading || !student) return (
     <div className="mesh-bg min-h-dvh flex items-center justify-center">
       <div className="text-center"><div className="text-5xl animate-float mb-3">{FOXY_FACES.idle}</div><p className="text-sm text-[var(--text-3)]">{isHi ? 'फॉक्सी लोड हो रहा है...' : 'Loading Foxy...'}</p></div>
@@ -1211,13 +1256,13 @@ export default function FoxyPage() {
       {/* ═══ CONTEXT BAR — shows active conversation header ═══ */}
       {messages.length > 0 && (
         <ConversationHeader
-          title={generateTitle(messages.map((m: ChatMessage) => ({ role: m.role, content: m.content })), activeSubject)}
+          title={conversationHeaderTitle}
           subject={activeSubject}
           mode={sessionMode}
           messageCount={messages.length}
           isHi={isHi}
           onNewChat={handleNewConversation}
-          onOpenSidebar={() => setConversationSidebarOpen(true)}
+          onOpenSidebar={openConversationSidebar}
           topicTitle={activeTopic?.title}
           chapterNumber={activeTopic?.chapter_number}
         />
@@ -1448,9 +1493,17 @@ export default function FoxyPage() {
           <div
             ref={scrollContainerRef}
             className="flex-1 overflow-y-auto px-3 md:px-5 py-4"
-            // Promote the chat scroll region to its own compositing layer as
-            // defense-in-depth against residual scroll flicker on Chromium.
-            style={{ transform: 'translateZ(0)' }}
+            // ⚠️ DO NOT re-add `transform: translateZ(0)` (or any other GPU
+            // compositing promotion) here. Removed in fd0847d8 (2026-05-24)
+            // because promoting the chat scroll region to its own layer
+            // caused sub-pixel text-rasterization mismatches on
+            // Chromium/Windows visible as text-shimmer flicker during the
+            // streaming reply. It accidentally re-landed via PR #903 (a
+            // test-only PR that slipped a source change) and was re-removed
+            // as part of the comprehensive REG-78 flicker fix (2026-05-24).
+            // If a future reviewer is tempted to add it back as "defense in
+            // depth", add a foxy-no-flicker.test.tsx case measuring frame
+            // counts first.
           >
             {/* SEL mood check-in — shown once per day at session start */}
             {showSELCheckIn && student && (

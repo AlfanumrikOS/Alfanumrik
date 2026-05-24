@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { memo, useState, type ReactNode } from 'react';
 import { UnverifiedBanner } from '@/components/foxy/UnverifiedBanner';
 import { HardAbstainCard } from '@/components/grounding/HardAbstainCard';
 import { ReportIssueModal } from '@/components/foxy/ReportIssueModal';
@@ -67,7 +67,7 @@ interface ChatBubbleProps {
   questionBankId?: string;
 }
 
-export function ChatBubble({
+function ChatBubbleInner({
   role,
   content,
   rawContent,
@@ -258,3 +258,54 @@ export function ChatBubble({
     </div>
   );
 }
+
+/**
+ * REG-78 flicker fix (2026-05-24): memoize the bubble so a parent re-render
+ * during AI streaming (~20Hz) does NOT re-render every existing bubble in the
+ * list. Previously the list re-rendered fully on every flushed token, which
+ * stacked with `animate-slide-up` and the per-bubble `useAuth()` Context
+ * subscription to produce a visible flicker.
+ *
+ * Custom comparator: we deliberately do NOT diff `content` (a ReactNode that
+ * the parent reconstructs on every render — diffing it would defeat memo) or
+ * the `onFeedback` / `onReport` / `onSpeak` callbacks (recreated by the
+ * parent's useCallback on every render due to dependent state). Instead we
+ * diff the underlying message identity:
+ *   - rawContent (string) — the actual streamed text changes per token
+ *   - feedback / reported / groundingStatus / traceId / abstainReason —
+ *     state that drives visible UI
+ *   - role / timestamp / color / activeSubject — bubble identity
+ *
+ * For the streaming bubble, `rawContent` changes per flush so the bubble DOES
+ * re-render. For every other bubble in the list, none of these change → the
+ * bubble is skipped. That is the entire flicker fix at the bubble level.
+ */
+function chatBubbleArePropsEqual(
+  prev: ChatBubbleProps,
+  next: ChatBubbleProps,
+): boolean {
+  if (prev.rawContent !== next.rawContent) return false;
+  if (prev.role !== next.role) return false;
+  if (prev.timestamp !== next.timestamp) return false;
+  if (prev.feedback !== next.feedback) return false;
+  if (prev.reported !== next.reported) return false;
+  if (prev.color !== next.color) return false;
+  if (prev.activeSubject !== next.activeSubject) return false;
+  if (prev.studentName !== next.studentName) return false;
+  if (prev.groundingStatus !== next.groundingStatus) return false;
+  if (prev.traceId !== next.traceId) return false;
+  if (prev.abstainReason !== next.abstainReason) return false;
+  if (prev.messageId !== next.messageId) return false;
+  if (prev.questionBankId !== next.questionBankId) return false;
+  // suggestedAlternatives changes on hard-abstain only; compare by length
+  // (suggestions never mutate in place — the server emits a fresh array).
+  const prevAltLen = prev.suggestedAlternatives?.length ?? 0;
+  const nextAltLen = next.suggestedAlternatives?.length ?? 0;
+  if (prevAltLen !== nextAltLen) return false;
+  // onSpeak presence (function vs undefined) drives whether the 🔊 affordance
+  // is shown, so the bubble must re-render when it toggles.
+  if (Boolean(prev.onSpeak) !== Boolean(next.onSpeak)) return false;
+  return true;
+}
+
+export const ChatBubble = memo(ChatBubbleInner, chatBubbleArePropsEqual);

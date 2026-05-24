@@ -1160,8 +1160,125 @@ If any of these contracts is reverted (e.g. a refactor moves the
 hook flips, or the hash function changes), the suite fails and quality
 MUST reject.
 
+## Foxy chat surface flicker prevention — REG-78 (2026-05-24)
+
+Source: Fifth attempt at eliminating chat-surface flicker on `/foxy`.
+CEO declared P1 ("strictly not acceptable") after four prior single-
+symptom fixes shipped on the same day (`e38ced70` compact-on-scroll,
+`fd0847d8` translateZ on scroll container, `ac1998cd` sticky+backdrop-
+filter, `fd11840b` global sidebar gutter). The proximate regression
+this PR closes: PR #903 ("test-only" PR) silently re-applied the
+`transform: translateZ(0)` style that `fd0847d8` had just removed, so
+the same text-shimmer flicker returned within hours.
+
+The catalogued tests below are the durable systemic backstop. They
+fire regardless of which individual CSS / React anti-pattern is the
+next root cause:
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-78 | `foxy_chat_surface_no_flicker_during_stream` | (1) **ChatBubble memoisation contract**: `chatBubbleArePropsEqual` skips re-render when only the `content` ReactNode reference changes, and DOES re-render when `rawContent`, `feedback`, `reported`, `groundingStatus`, `traceId`, or `abstainReason` mutate. Without this, parent re-renders at ~20Hz during streaming cascade into every existing bubble. (2) **Per-token re-render isolation**: simulating 50 streamed-token flushes against a list of 2 bubbles (1 student, 1 streaming tutor), only the tutor bubble re-renders — the student bubble's render body executes exactly ONCE. (3) **No GPU compositing promotion on the chat scroll container**: a structural E2E guard asserts the scroll container's inline `style` attribute never contains `translateZ`, `will-change`, or `transform: translate`. This is the durable backstop against the PR #903 regression returning by any path. | `src/__tests__/foxy/foxy-no-flicker.test.tsx` (unit gate — 3 tests) + `e2e/foxy-stability.spec.ts` (E2E structural guard) | E |
+
+### Pinned tests
+
+- `src/__tests__/foxy/foxy-no-flicker.test.tsx::REG-78 — ChatBubble memoisation prevents per-token re-renders::chat_bubble_is_memoized_correctly`
+- `src/__tests__/foxy/foxy-no-flicker.test.tsx::REG-78 — ChatBubble memoisation prevents per-token re-renders::chat_bubble_memo_busts_on_meaningful_state_changes`
+- `src/__tests__/foxy/foxy-no-flicker.test.tsx::REG-78 — ChatBubble memoisation prevents per-token re-renders::message_list_does_not_re_render_more_than_5_times_during_stream`
+- `e2e/foxy-stability.spec.ts::REG-78 — Foxy chat surface pixel stability::foxy_page_loads_without_translateZ_on_scroll_container — REG-78 regression guard`
+
+### Prior fixes in this series (do not regress)
+
+- `e38ced70` — `fix(foxy): stop 30Hz header flicker by disabling compact-on-scroll`
+- `fd0847d8` — `fix(foxy): remove translateZ(0) on chat scroll container (text-shimmer)` ← re-applied by REG-78 PR after PR #903 reverted it
+- `ac1998cd` — `fix(foxy): stop scroll flicker by dropping sticky-header backdrop-filter`
+- `fd11840b` — `fix(foxy): render /foxy full-width by suppressing the global sidebar gutter`
+
+### Root causes addressed by REG-78 PR
+
+1. **`transform: translateZ(0)` on the chat scroll container** (page.tsx
+   line ~1450) — re-applied via PR #903's source change inside an
+   ostensibly test-only PR. Promoting the chat scroll region to its own
+   compositing layer caused sub-pixel text-rasterization mismatches on
+   Chromium/Windows, visible as text-shimmer flicker during streaming.
+   Re-removed.
+2. **ChatBubble not memoised** — every bubble re-rendered on every
+   parent re-render during ~20Hz token flushes. Wrapped in
+   `React.memo` with a custom comparator that diffs message-identity
+   props (rawContent, feedback, reported, groundingStatus, etc.) and
+   ignores ReactNode-content + callback prop reference churn.
+3. **MessageList not memoised** — the dedup IIFE + `.map` + per-message
+   `recoverFoxyResponseFromText` + `isFoxyResponse` work ran on every
+   parent render. Wrapped in `React.memo` (default shallow comparator
+   works correctly given the prop shape).
+4. **Auto-scroll effect schedules a rAF on every messages mutation** —
+   page.tsx had one `useEffect([messages, loading])` that fired at
+   ~20Hz during streaming. Split into two effects: one that pins to
+   the bottom INSTANTLY when `messages.length` changes (new message
+   added), another that smooth-scrolls ONCE per turn-completion when
+   `loading` transitions 1→0. Eliminates the race between the final
+   flushDelta and the smooth-scroll.
+5. **ConversationHeader receives `generateTitle(messages.map(...))`
+   every render** — `messages.map` allocates a fresh array on every
+   parent render, defeating any downstream memo. Title computation
+   wrapped in `useMemo` keyed on `messages.length + messages[0]?.id +
+   activeSubject`. ConversationHeader itself wrapped in `React.memo`.
+   `onOpenSidebar` lifted from an inline arrow to a stable
+   `useCallback` so the memo can hit.
+6. **MessageInput recomputes `messages.filter(role==='student')` every
+   render** — wrapped in `useMemo`. Component itself wrapped in
+   `React.memo`.
+7. **AppShell compact-on-scroll height transition on the Foxy
+   header** — Foxy's header is a 4-5-row stack much taller than the
+   56px → 44px transition envelope. Even though Foxy's chat scrolls
+   internally (not window-scroll), defense-in-depth CSS forces
+   `height: auto !important` + `transition: none` on
+   `.foxy-shell > .app-shell-header` so a future change that does
+   trigger window scroll on /foxy can't reintroduce the header-clip
+   jank.
+
+### Invariants covered by this section
+
+- **P10 (bundle budget)** — the wrap-in-memo changes add < 1 kB to the
+  Foxy page bundle. The pre-existing dynamic imports for the heavy
+  KaTeX-bearing structured renderer are preserved.
+- **P7 (bilingual UI)** — none of the memo wraps depend on `isHi`;
+  the language toggle still propagates correctly.
+- **UX critical-path** — the Foxy chat surface is the #1 student
+  engagement surface (foxy_sessions > 562 active per the recent
+  super-admin counter fix). A visible flicker on this surface
+  trains students that the AI tutor is "broken" and drops session
+  duration. Catalogued at P1 priority by CEO directive.
+
+### Notes on test strategy
+
+REG-78 deliberately spans three layers (mirroring REG-77's three-file
+pattern):
+
+1. **`foxy-no-flicker.test.tsx`** — exercises the ChatBubble memo
+   comparator directly. Uses a render-counter probe in the `content`
+   prop to count how many times the bubble's render body actually
+   executes under N parent re-renders. This is the fastest signal
+   for any future refactor that breaks memoisation (e.g. converting
+   ChatBubble back to a plain function, or adding a new prop that
+   defeats the comparator).
+2. **`e2e/foxy-stability.spec.ts::foxy_page_loads_without_translateZ_on_scroll_container`**
+   — a structural assertion against the live DOM. Catches any
+   refactor that re-applies a GPU compositing promotion to the chat
+   scroll container, including PRs (like PR #903) that claim to be
+   "test-only" but slip a source edit.
+3. **`e2e/foxy-stability.spec.ts::no_pixel_flicker_in_static_regions_during_stream`**
+   (test.fixme) — pinned for catalog completeness. Becomes the
+   pixel-level backstop once the test-student fixture lands in CI.
+   Until then the unit + structural tests carry the gate.
+
+If any of these contracts is reverted (e.g. a refactor unwraps the
+ChatBubble memo, the comparator stops diffing rawContent, or a future
+"defense-in-depth" PR re-applies translateZ on the scroll container),
+the suite fails and quality MUST reject.
+
 ### Catalog total
 
-Pre-Voice-2: 47 entries. Voice 2 adds REG-77.
+Pre-Voice-2: 47 entries. Voice 2 adds REG-77. REG-78 closes the Foxy
+chat flicker series.
 
-**Total: 48 entries.**
+**Total: 49 entries.**

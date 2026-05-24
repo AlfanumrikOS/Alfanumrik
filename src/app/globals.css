@@ -1252,12 +1252,23 @@ img, video, iframe, canvas, svg {
    backdrop-filter re-rasterizes every scroll frame on Chromium/Windows, which
    flickers as the chat scrolls beneath it. Drop the blur + promote the header
    to its own compositing layer on /foxy to eliminate the flicker. Scoped to
-   /foxy via the .foxy-shell class on AppShell; other routes keep the blur. */
+   /foxy via the .foxy-shell class on AppShell; other routes keep the blur.
+   REG-78 (2026-05-24): also opt OUT of the compact-on-scroll height
+   transition. Foxy's header is a 4-5-row stack (gradient header + subject
+   tabs + chapter/mode toolbar + ConversationHeader + lesson progress) which
+   blows past the 56px → 44px envelope; the transition produced a visible
+   clip-on-scroll jank. Foxy keeps its full header height regardless of
+   scrollY. Other routes keep the compact transition. */
 .app-shell-v2.foxy-shell > .app-shell-header {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   background: var(--bg);
   transform: translateZ(0);
+  height: auto !important;
+  transition: none;
+}
+.app-shell-v2.foxy-shell > .app-shell-header[data-compact="true"] {
+  height: auto !important;
 }
 
 .app-shell-v2 > .app-shell-header[data-compact="true"] {

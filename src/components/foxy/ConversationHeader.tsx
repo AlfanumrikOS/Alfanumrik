@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import { useSubjectLookup } from '@/lib/useSubjectLookup';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -34,7 +35,7 @@ const MODE_LABELS: Record<string, { en: string; hi: string; icon: string }> = {
   lesson: { en: 'Lesson', hi: '\u092A\u093E\u0920', icon: '\uD83C\uDF93' },
 };
 
-export function ConversationHeader({
+function ConversationHeaderInner({
   title,
   subject,
   mode,
@@ -141,3 +142,12 @@ export function ConversationHeader({
     </div>
   );
 }
+
+/**
+ * REG-78 flicker fix (2026-05-24): memoize the ConversationHeader so the
+ * parent re-rendering during streaming (~20Hz) doesn't repeatedly re-run the
+ * subject lookup and re-derive the mode-label map for an unchanged header.
+ * The header only changes when title / subject / mode / messageCount changes,
+ * which during a typical streaming turn happens at most twice (start + end).
+ */
+export const ConversationHeader = memo(ConversationHeaderInner);

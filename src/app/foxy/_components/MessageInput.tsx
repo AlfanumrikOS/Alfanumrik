@@ -13,6 +13,7 @@
  * nudge sits visually attached to the input on the page.
  */
 
+import { memo, useMemo } from 'react';
 import { ChatInput } from '@/components/foxy/ChatInput';
 import type { ChatMessage } from '../_lib/foxy-types';
 
@@ -29,7 +30,7 @@ export interface MessageInputProps {
   onNewConversation: () => void;
 }
 
-export function MessageInput({
+function MessageInputInner({
   messages,
   language,
   isHi,
@@ -39,7 +40,13 @@ export function MessageInput({
   onSend,
   onNewConversation,
 }: MessageInputProps) {
-  const studentTurnCount = messages.filter((m) => m.role === 'student').length;
+  // REG-78 flicker fix (2026-05-24): memoise the student-turn count so the
+  // .filter() doesn't allocate a fresh array on every parent re-render during
+  // streaming. The count only changes when `messages` mutates by reference.
+  const studentTurnCount = useMemo(
+    () => messages.filter((m) => m.role === 'student').length,
+    [messages],
+  );
 
   return (
     <>
@@ -73,3 +80,20 @@ export function MessageInput({
     </>
   );
 }
+
+/**
+ * REG-78 flicker fix (2026-05-24): memoise MessageInput so the page-level
+ * parent re-rendering during a stream doesn't force ChatInput to re-render
+ * (which would re-evaluate the math-symbol tab list and the
+ * useSubjectLookup() call). The memo lets us skip the entire subtree when
+ * only the streaming bubble's content changed.
+ *
+ * Default shallow comparator works because:
+ *   - `messages` mutates by reference on each flush — that DOES still trigger
+ *     a re-render (necessary because the "long conversation nudge" depends
+ *     on the student-turn count), but the useMemo above prevents the .filter
+ *     work from running unless the array ref actually changed.
+ *   - `onSend` / `onNewConversation` are stable useCallbacks from the page.
+ *   - All other props are primitives.
+ */
+export const MessageInput = memo(MessageInputInner);

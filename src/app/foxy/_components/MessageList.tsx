@@ -21,6 +21,7 @@
  * P10 bundle-budget purpose they did when the page owned them.
  */
 
+import { memo } from 'react';
 import dynamic from 'next/dynamic';
 import { ChatBubble } from '@/components/foxy/ChatBubble';
 import { StructuredRenderBoundary } from '@/components/foxy/StructuredRenderBoundary';
@@ -61,7 +62,7 @@ export interface MessageListProps {
   onSpeak?: (text: string) => void;
 }
 
-export function MessageList({
+function MessageListInner({
   messages,
   collapsedAbove,
   onSetCollapsedAbove,
@@ -200,3 +201,23 @@ export function MessageList({
     </>
   );
 }
+
+/**
+ * REG-78 flicker fix (2026-05-24): wrap MessageList in React.memo so a
+ * parent re-render that doesn't actually change ANY of MessageList's props
+ * (notably the optional-callback props during streaming) doesn't force the
+ * dedup IIFE + .map + per-message recovery work to run again.
+ *
+ * The per-bubble ChatBubble memo already prevents already-rendered bubbles
+ * from re-running their render bodies, but the parent JSX construction (the
+ * dedup + map + tutorContent JSX trees + the savedMessageIds set lookups)
+ * still ran on every parent render before this wrap. With React.memo here,
+ * MessageList only re-renders when one of its props actually changes
+ * reference — which, during a streamed turn, only happens once per ~50ms
+ * flush instead of on every unrelated parent state change.
+ *
+ * Default shallow comparator is correct: every prop is a primitive, a
+ * stable array reference (savedMessageIds is a Set), a stable useCallback,
+ * or the messages array itself (which mutates by reference on each flush).
+ */
+export const MessageList = memo(MessageListInner);
