@@ -143,7 +143,7 @@ def retry_with_backoff(
                 raise
             # Unreachable but satisfies type checker — AsyncRetrying always
             # returns from within the `with` block or raises.
-            raise RuntimeError("retry_with_backoff exhausted without return")
+            raise RuntimeError("retry_with_backoff exhausted without return")  # pragma: no cover
 
         # Preserve qualname so logs / Sentry traces show the wrapped fn.
         wrapper.__name__ = fn.__name__
