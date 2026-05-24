@@ -52,6 +52,17 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// MoL (Model Orchestration Layer) — Phase 1A migration (2026-05-24).
+// Routes SA/LA generation through the shared orchestrator (OpenAI gpt-4o-mini
+// primary, Claude Haiku fallback). The per-type validator in isValidQuestion
+// still runs AFTER MoL returns — content validation never moves into the LLM
+// call, which is what makes this migration P6-safe.
+//
+// Rollback flag (2026-06-03): ff_mol_admin_functions_v1. When ops trips the
+// kill switch, callClaude short-circuits to callClaudeLegacy below (pre-Phase-1A
+// byte-for-byte direct-Anthropic-fetch path).
+import { generateResponse, MolError } from '../_shared/mol/index.ts'
+import { isMolAdminRoutingEnabled } from '../_shared/mol/admin-rollback-flag.ts'
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
 const ALLOWED_ORIGINS = [
@@ -340,15 +351,75 @@ Do not include any other fields. The marks in the marking_scheme.points array mu
 async function callClaude(
   systemPrompt: string,
   userPrompt: string,
+  grade: string,
+  subject: string,
 ): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  // Local circuit-breaker stays in place — admin gate so a sustained outage
+  // doesn't drown the batch in MoL retry latency. MoL has its own internal
+  // circuit-breaker (providers/shared.ts) gating provider-level retries.
   if (!circuitBreaker.canRequest()) {
     return { ok: false, error: 'Circuit breaker open — too many recent failures' }
   }
+
+  // ROLLBACK GATE (Phase 1A — 2026-06-03):
+  // ff_mol_admin_functions_v1 OFF (or kill_switch=true) → legacy path.
+  if (!(await isMolAdminRoutingEnabled())) {
+    return callClaudeLegacy(systemPrompt, userPrompt)
+  }
+
+  try {
+    // task_type='quiz_generation' — the router's quiz_generation chain matches
+    // exactly what we want (gpt-4o-mini primary, Haiku fallback). Force OpenAI
+    // primary via preferred_provider; preserves admin-only cost posture even
+    // if routing weights drift.
+    const molResult = await generateResponse({
+      task_type: 'quiz_generation',
+      input: { instruction: userPrompt },
+      student_context: {
+        // Synthetic admin namespace — no real student behind this call.
+        student_id: `admin-bulk-non-mcq-gen-${grade}-${subject}`,
+        grade,
+        language: 'en',
+      },
+      config: {
+        surface: 'quiz',
+        preferred_provider: 'openai',
+        system_prompt_override: systemPrompt,
+        max_tokens_override: 4096, // SA/LA batches: 5×500 or 3×1500 output tokens
+      },
+    })
+    if (!molResult.text) {
+      circuitBreaker.recordFailure()
+      return { ok: false, error: 'MoL returned empty content' }
+    }
+    circuitBreaker.recordSuccess()
+    return { ok: true, text: molResult.text }
+  } catch (e) {
+    circuitBreaker.recordFailure()
+    if (e instanceof MolError) {
+      return { ok: false, error: `MoL ${e.code}: ${e.message}` }
+    }
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/**
+ * LEGACY PATH (pre-Phase-1A, kept byte-for-byte). Restored from git HEAD
+ * snapshot so the rollback flag can revert to known-good behavior on
+ * emergency. The circuit-breaker accounting matches the MoL path's
+ * recordSuccess / recordFailure boundaries so a flag flip doesn't bias
+ * the breaker.
+ */
+async function callClaudeLegacy(
+  systemPrompt: string,
+  userPrompt: string,
+): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   if (!ANTHROPIC_API_KEY) {
     return { ok: false, error: 'ANTHROPIC_API_KEY not configured' }
   }
 
   try {
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- legacy rollback path for ff_mol_admin_functions_v1; do not remove without retiring the rollback flag.
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -630,7 +701,7 @@ Deno.serve(async (req: Request) => {
     ? buildLAUserPrompt(grade, subject, chapterTitle, count, bloomLevel, context)
     : buildSAUserPrompt(grade, subject, chapterTitle, count, bloomLevel, context)
 
-  const claudeResult = await callClaude(systemPrompt, userPrompt)
+  const claudeResult = await callClaude(systemPrompt, userPrompt, grade, subject)
   if (!claudeResult.ok) {
     return errorResponse(`AI generation failed: ${claudeResult.error}`, 503, origin)
   }

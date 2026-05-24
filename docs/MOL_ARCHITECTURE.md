@@ -107,3 +107,68 @@ Per `references/ai-rag-foxy.md`: the MOL never invents curriculum content. RAG c
 ## Cost model
 
 See `telemetry.ts` `PRICING` (kept in sync with `model_pricing` table). Cost is calculated from `usage` returned by each provider; both passes of a hybrid call contribute to the total. INR conversion uses the `USD_TO_INR` env var (default 83).
+
+## Caller status (updated 2026-05-24, Phase 1A)
+
+| Caller | Status | Notes |
+|---|---|---|
+| `bulk-question-gen` (legacy single-pass + oracle grader) | wired | `task_type='quiz_generation'` / `'evaluation'`. Admin posture: `preferred_provider='openai'`. |
+| `bulk-non-mcq-gen` | wired | `task_type='quiz_generation'`. |
+| `generate-concepts` | wired | `task_type='concept_explanation'`. |
+| `generate-answers` | wired | `task_type='explanation'`. RAG context baked into `system_prompt_override`. |
+| `extract-ncert-questions` | wired | `task_type='quiz_generation'`. |
+| `parent-report-generator` | wired | `task_type='evaluation'`. Uses real `student_id` (not synthetic); template fallback retained for hard failures. |
+| `bulk-question-gen` (grounded two-pass path, behind `ff_grounded_ai_quiz_generator`) | unwired | Routes through `grounded-answer/` service which carries its own LLM client (claude.ts). C4 MOL-shadow already mirrors that traffic into mol_request_logs. |
+| `foxy-tutor` Edge Function | unwired | Student-facing. Phase 1B (needs inline verifier). |
+| `ncert-solver` | unwired | Student-facing. Phase 1B. |
+| `ncert-question-engine` | unwired | Student-facing (answer grading). Phase 1B. |
+| `quiz-generator` Edge Function | unwired | Student-facing wrapper around `question_bank` reads — minimal direct LLM call; defer until Phase 1B holistic review. |
+| `cme-engine` | unwired | Algorithmic (BKT/IRT) — no LLM call to migrate. |
+| `grade-experiment-conclusion` | unwired | Student-facing (writes coins). Phase 1B. |
+| `scan-ocr` | unwired | Vision (Claude Sonnet). MoL `ocr_extraction` chain exists but vision is being migrated separately. |
+| `daily-cron` (challenge generator) | unwired | Background cron, low volume; defer. |
+| `extract-diagrams` (caption Claude call) | unwired | Tiny surface; defer. |
+| `bulk-jee-neet-import` / `bulk-jee-neet-curated-import` | unwired | Source-grep test pins haiku model string; complex 4-call pipeline — defer. |
+| `embed-ncert-qa`, `embed-questions`, `embed-diagrams`, `generate-embeddings` | unwired | Embedding-only paths — MoL does not yet expose an embedding entrypoint. |
+| `nep-compliance` | unwired | No direct LLM call. |
+| `coverage-audit`, `verify-question-bank`, `monthly-synthesis-builder` | unwired | Route through `grounded-answer/` service or have no LLM call at all. |
+| `grounded-answer/` | not-a-direct-caller | Owns its own Claude client (`claude.ts`) plus the C4 shadow leg into MoL. |
+
+## Transition to Python (Phase 0+, 2026-05-24 onwards)
+
+The CEO approved a strategic shift to consolidate all AI/ML code into a
+Python FastAPI service on Google Cloud Run (`asia-south1` / Mumbai). The
+3-6 week migration ports the 6 Phase 1A admin-traffic functions first
+(lowest blast radius), then student-facing functions (Phase 1B in the
+original MoL plan). The Python service lives at `python/services/ai/`
+and is owned by ai-engineer; the Cloud Run deploy pipeline is owned by
+architect; the operational layer (runbooks, dashboards, alerts) is owned
+by ops.
+
+The proxy pattern keeps URLs stable during transition. Each Supabase
+Edge Function becomes a thin forwarder gated by the `ff_python_ai_services_v1`
+feature flag with per-function rollout via
+`metadata.functions_enabled[]` and `metadata.rollout_percentage`. Mobile
+and web callers continue to hit the same Edge Function URLs they always
+have. The proxy fan-out: when the flag is OFF the Edge Function executes
+locally (current behavior); when ON it forwards to the Python service
+on Cloud Run, awaits the response, and returns it unchanged. The same
+`mol_request_logs` row is written either way — the
+[super-admin MOL dashboard](../src/app/super-admin/mol-shadow/page.tsx)
+keeps working without changes.
+
+The TS MoL framework described in this document REMAINS LIVE throughout
+the transition. The Python service is not a replacement for MoL — it
+implements MoL in Python (same routing matrix, same provider chain, same
+telemetry, same rollback flag semantics). The cutover is a per-function
+runtime change, not a framework change. Once a function reaches
+100%-Python with 7 days of clean cost/latency parity, ai-engineer can
+delete the legacy TS Edge handler in a follow-up PR and the migration
+tracking table in [PYTHON_AI_OPERATIONS.md](PYTHON_AI_OPERATIONS.md#migration-tracking)
+is updated in the same PR.
+
+Where to learn more:
+- `docs/PYTHON_AI_ARCHITECTURE.md` — Python service architecture (architect, in flight)
+- [`docs/PYTHON_AI_OPERATIONS.md`](PYTHON_AI_OPERATIONS.md) — daily checks, alerts, rollback procedures, cost monitoring, migration tracking
+- [`docs/super-admin-python-ai-dashboard-spec.md`](super-admin-python-ai-dashboard-spec.md) — spec for the `/super-admin/python-ai-health` dashboard (frontend follow-up)
+- [`.claude/regression-catalog.md`](../.claude/regression-catalog.md) — REG-72 health-contract pin for `/healthz` vs `/readyz`

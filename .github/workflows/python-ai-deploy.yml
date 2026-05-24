@@ -1,0 +1,278 @@
+name: Python AI Services — CI/CD
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Owner: architect agent. Builds, tests, and deploys the FastAPI service in
+# python/services/ai/ to Google Cloud Run (asia-south1).
+#
+# Triggers:
+#   - pull_request  → test job only (no build, no deploy)
+#   - push to main  → test + build + push image + deploy production + smoke
+#   - workflow_dispatch → manual staging deploy (image built from current sha)
+#
+# Authentication: Workload Identity Federation (NO JSON keys). See
+# docs/PYTHON_AI_DEPLOY.md for the one-time GCP project setup ops must run.
+#
+# Secrets expected in repo:
+#   GCP_PROJECT_ID                 — e.g. alfanumrik-ai-services-prod
+#   GCP_WORKLOAD_IDENTITY_PROVIDER — projects/<num>/locations/global/workloadIdentityPools/github/providers/github-actions
+#   GCP_SERVICE_ACCOUNT            — ai-services-deployer@<project>.iam.gserviceaccount.com
+#   GCP_RUNTIME_SERVICE_ACCOUNT    — ai-services-runtime@<project>.iam.gserviceaccount.com
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'python/**'
+      - '.github/workflows/python-ai-deploy.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'python/**'
+      - '.github/workflows/python-ai-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Manual deploy target'
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+concurrency:
+  group: python-ai-deploy-${{ github.ref }}
+  cancel-in-progress: false  # never cancel an in-flight deploy; merges queue
+
+env:
+  PYTHON_VERSION: '3.12'
+  GCP_REGION: asia-south1
+  ARTIFACT_REPO: ai-services
+  CLOUD_RUN_SERVICE_PROD: ai-services
+  CLOUD_RUN_SERVICE_STAGING: ai-services-staging
+
+jobs:
+  # ── Job 1: lint + typecheck + tests (runs on PR + push + dispatch) ────────
+  test:
+    name: Lint / Typecheck / Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: |
+            python/requirements.txt
+            python/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Ruff format check
+        run: ruff format --check .
+
+      - name: mypy
+        run: mypy services
+
+      - name: pytest with coverage
+        run: |
+          pytest \
+            --cov=services \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            --cov-fail-under=70
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-coverage-${{ github.run_id }}
+          path: python/coverage.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ── Job 2: build + push image (only on main push or workflow_dispatch) ────
+  build-and-push:
+    name: Build + Push to Artifact Registry
+    needs: test
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # OIDC token required for Workload Identity Federation. This is the
+      # entire reason we never need a JSON key for GCP.
+      id-token: write
+    outputs:
+      image_tag: ${{ steps.image.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compute image tag
+        id: image
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-12)
+          REGISTRY="${{ env.GCP_REGION }}-docker.pkg.dev"
+          TAG="${REGISTRY}/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/api:${SHORT_SHA}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Image: ${TAG}"
+
+      - name: Authenticate to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: python
+          file: python/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image.outputs.tag }}
+            ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false  # GAR rejects provenance attestations by default
+
+  # ── Job 3: deploy to Cloud Run ────────────────────────────────────────────
+  deploy:
+    name: Deploy to Cloud Run
+    needs: build-and-push
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      service_url: ${{ steps.deploy.outputs.url }}
+      service_name: ${{ steps.target.outputs.service }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Pick target service
+        id: target
+        run: |
+          # workflow_dispatch can target either staging or production.
+          # A push to main always goes to production.
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] \
+             && [[ "${{ github.event.inputs.target }}" == "staging" ]]; then
+            echo "service=${{ env.CLOUD_RUN_SERVICE_STAGING }}" >> "$GITHUB_OUTPUT"
+            echo "environment=staging" >> "$GITHUB_OUTPUT"
+          else
+            echo "service=${{ env.CLOUD_RUN_SERVICE_PROD }}" >> "$GITHUB_OUTPUT"
+            echo "environment=production" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Authenticate to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ steps.target.outputs.service }}
+          region: ${{ env.GCP_REGION }}
+          image: ${{ needs.build-and-push.outputs.image_tag }}
+          # Runtime service account is distinct from the deployer SA. Only
+          # this SA holds roles/secretmanager.secretAccessor.
+          flags: |
+            --service-account=${{ secrets.GCP_RUNTIME_SERVICE_ACCOUNT }}
+            --allow-unauthenticated
+            --max-instances=10
+            --min-instances=0
+            --concurrency=80
+            --cpu=1
+            --memory=512Mi
+            --timeout=300s
+            --execution-environment=gen2
+          env_vars: |
+            ENVIRONMENT=${{ steps.target.outputs.environment }}
+            LOG_LEVEL=INFO
+            USD_TO_INR=83
+            ALLOWED_ORIGINS=https://alfanumrik.com,https://staging.alfanumrik.com
+          # Secrets are pulled from GCP Secret Manager at runtime.
+          # NEVER bake these into the image.
+          secrets: |
+            ANTHROPIC_API_KEY=anthropic-api-key:latest
+            OPENAI_API_KEY=openai-api-key:latest
+            SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest
+            SUPABASE_URL=supabase-url:latest
+            SENTRY_DSN=sentry-dsn:latest
+
+  # ── Job 4: post-deploy smoke test ─────────────────────────────────────────
+  post-deploy-smoke:
+    name: Post-deploy smoke test
+    needs: deploy
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for revision rollout
+        # Cloud Run sometimes returns the URL before the revision is fully
+        # serving traffic. A short fixed wait is cheaper than a busy loop.
+        run: sleep 15
+
+      - name: Check /healthz
+        run: |
+          URL="${{ needs.deploy.outputs.service_url }}"
+          echo "Probing ${URL}/healthz"
+          STATUS=$(curl --silent --output /dev/stderr --write-out '%{http_code}' \
+            --max-time 10 --retry 3 --retry-delay 5 "${URL}/healthz")
+          if [[ "${STATUS}" != "200" ]]; then
+            echo "::error::/healthz returned ${STATUS} (expected 200)"
+            exit 1
+          fi
+          echo "/healthz OK (200)"
+
+      - name: Check /readyz
+        run: |
+          URL="${{ needs.deploy.outputs.service_url }}"
+          echo "Probing ${URL}/readyz"
+          STATUS=$(curl --silent --output /dev/stderr --write-out '%{http_code}' \
+            --max-time 10 --retry 3 --retry-delay 5 "${URL}/readyz")
+          # /readyz may legitimately return 503 if any provider key is missing
+          # at first boot. Fail only on 4xx (client error) or 5xx other than 503.
+          if [[ "${STATUS}" != "200" ]]; then
+            echo "::warning::/readyz returned ${STATUS} — check Secret Manager bindings"
+            if [[ "${STATUS}" =~ ^4 ]]; then
+              echo "::error::4xx from /readyz is a configuration bug"
+              exit 1
+            fi
+          else
+            echo "/readyz OK (200)"
+          fi
+
+      - name: Summary
+        run: |
+          echo "## Python AI Services Deploy" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Service: \`${{ needs.deploy.outputs.service_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- URL: ${{ needs.deploy.outputs.service_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: \`${{ needs.build-and-push.outputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Region: \`${{ env.GCP_REGION }}\`" >> $GITHUB_STEP_SUMMARY

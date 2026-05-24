@@ -746,3 +746,124 @@ range `4aab7dbe..e3c243f1`):
 Pre-Study-Menu-v2: 39 entries. Study Menu v2 adds REG-69.
 
 **Total: 40 entries.**
+
+## MoL Phase 1A — Admin-Functions Rollback Flag + Oracle Grader Bypass (2026-06-03) — REG-70..REG-71
+
+Source: Mixture-of-LLMs Phase 1A migration routed 6 admin/async Edge Functions
+(`bulk-question-gen`, `bulk-non-mcq-gen`, `generate-concepts`, `generate-answers`,
+`extract-ncert-questions`, `parent-report-generator`) from direct
+`fetch('https://api.anthropic.com/v1/messages', ...)` to MoL `generateResponse()`
+with OpenAI gpt-4o-mini as the cost-cut primary. The rollback flag
+(`ff_mol_admin_functions_v1`) flips all six back to legacy Anthropic in seconds
+without a redeploy. The `bulk-question-gen` MCQ oracle grader is the one path
+that ALWAYS bypasses MoL — it requires deterministic temperature=0 verdicts
+that MoL cannot honor until `GenerateRequest.config.temperature_override`
+lands (tracked as a follow-up).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-70 | `mol_admin_routing_rollback_flag_p12` | `ff_mol_admin_functions_v1` rollback flag flips all 6 admin Edge Functions (`bulk-question-gen`, `bulk-non-mcq-gen`, `generate-concepts`, `generate-answers`, `extract-ncert-questions`, `parent-report-generator`) back to the legacy direct-Anthropic-API path within the 5-min flag-cache TTL. Kill-switch precedence (per `supabase/functions/_shared/mol/admin-rollback-flag.ts`): `metadata.kill_switch === true` → legacy; else `typeof metadata.enabled === 'boolean'` → that value; else `is_enabled` column. Defensive default: any flag-read failure → legacy path (never routes to OpenAI when ops thinks the switch is off). Verification: ops `update feature_flags set is_enabled=false where flag_name='ff_mol_admin_functions_v1'`; within 5 min `mol_request_logs.provider` for the 6 functions = 'anthropic' on new rows. | `supabase/functions/_shared/mol/admin-rollback-flag.ts` (helper + unit-test coverage in `_shared/mol/__tests__/admin-rollback-flag.test.ts`) | E |
+| REG-71 | `bulk_question_gen_oracle_grader_bypasses_mol_p6` | `callOracleGrader` in `supabase/functions/bulk-question-gen/index.ts` bypasses MoL routing entirely and unconditionally calls `callOracleGraderLegacy` (direct Anthropic `claude-haiku-4-5-20251001` with `temperature: 0` and `QUIZ_ORACLE_GRADER_SYSTEM_PROMPT`). The function body MUST NOT contain an `isMolAdminRoutingEnabled()` branch — the bypass is unconditional. The MCQ-GENERATION path (`callClaude`) still routes through MoL because its validators reject bad output; the grader has no such safety net because it IS the validator. Until `GenerateRequest.config.temperature_override` is implemented, MoL providers' ~0.7 default would break REG-54's admission-gate determinism. Verification: source-grep `callOracleGrader` in `bulk-question-gen/index.ts` shows NO `isMolAdminRoutingEnabled` check; calls `callOracleGraderLegacy` directly. Why this matters: P6 admission gate must be deterministic; non-deterministic verdicts would cause oracle telemetry skew and undermine REG-54 audit reliability. | `supabase/functions/bulk-question-gen/index.ts` (`callOracleGrader` function — static-source pin; suite under `supabase/functions/bulk-question-gen/__tests__/`) | E |
+
+### Invariants covered by this section
+
+- P6 (question quality — REG-71 keeps the oracle admission gate
+  deterministic by pinning temperature=0; non-deterministic verdicts
+  would let inconsistent admit/reject decisions corrupt the
+  `question_bank` quality bar that REG-54 audits)
+- P12 (AI safety — REG-70 instant rollback flag bounds blast radius of
+  any OpenAI-side incident across all 6 admin Edge Functions without a
+  redeploy; defensive-default-legacy on flag-read failure ensures
+  ops-intended OFF state always wins)
+
+### Notes on test strategy
+
+REG-70 is enforced by the existing
+`supabase/functions/_shared/mol/__tests__/admin-rollback-flag.test.ts`
+unit suite which exercises the three-tier precedence ladder and the
+defensive-default-on-read-error branch. The 5-min cache TTL is part of
+the flag-helper's documented contract (cached read with TTL eviction);
+the test asserts the precedence ladder, not the cache wall clock.
+
+REG-71 is a static-source canary in the same family as REG-50, REG-57,
+REG-59: the contract is the absence of a code path. If a future PR
+re-introduces `isMolAdminRoutingEnabled()` into `callOracleGrader`,
+the canary fails. The bypass MUST be deleted only when
+`GenerateRequest.config.temperature_override` lands and the MoL
+evaluation chain can honor `temperature: 0`; at that point both
+REG-71 and the function-header comment block should be updated in the
+same PR.
+
+### Catalog total
+
+Pre-MoL-Phase-1A: 40 entries. MoL Phase 1A adds REG-70, REG-71.
+
+**Total: 42 entries.**
+
+## Python AI Service Health Contract (2026-05-24) — REG-72
+
+Source: Phase 0 of the Python-on-Cloud-Run migration. The CEO approved
+the TypeScript-to-Python AI/ML rewrite (3-6 week transition). ai-engineer
+owns `python/services/ai/`; architect owns the Cloud Run deploy pipeline;
+ops owns the operational layer ([PYTHON_AI_OPERATIONS.md](../docs/PYTHON_AI_OPERATIONS.md),
+[super-admin-python-ai-dashboard-spec.md](../docs/super-admin-python-ai-dashboard-spec.md)).
+
+Cloud Run uses the readiness probe to decide whether to route traffic to
+an instance. A service that returns 200 from `/healthz` (process alive)
+but cannot actually serve requests (missing Supabase credentials,
+provider API keys unreachable, configuration drift) MUST be taken out
+of rotation automatically. The two-endpoint pattern is the standard
+Kubernetes-style liveness/readiness split adapted to Cloud Run; getting
+it wrong means a half-broken instance serves errors until ops manually
+notices.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-72 | `python_ai_service_health_contract` | Cloud Run service exposes two distinct HTTP endpoints with different semantics: (1) `/healthz` returns 200 whenever the FastAPI process is alive — used by Cloud Run liveness probe to decide whether to restart the container. (2) `/readyz` returns 200 ONLY when ALL upstream dependencies are healthy (Supabase URL + service-role key resolve and respond; Anthropic + OpenAI API keys present and not expired); returns 503 with a diagnostic JSON body listing which dependency failed when any of these checks fail — used by Cloud Run readiness probe to take the instance out of the load-balancer rotation. The Cloud Run deploy YAML MUST configure the readiness probe to hit `/readyz` (not `/healthz` and not a TCP probe) so a degraded service is removed from rotation automatically rather than serving requests it cannot fulfill. Verification: pytest integration test that boots FastAPI app with a bogus `SUPABASE_URL` env var and asserts `GET /readyz` returns 503; second case boots with valid env vars and asserts both endpoints return 200; third case asserts the Cloud Run service YAML at `python/deploy/service.yaml` declares `readinessProbe.httpGet.path: /readyz`. | `python/services/ai/tests/test_health_contract.py` (pytest integration suite — boots FastAPI app under uvicorn TestClient and parameterizes env var setup) + `python/deploy/__tests__/test_service_yaml.py` (YAML contract pin) | M (test files to be created by ai-engineer + architect when Python service lands) |
+
+### Invariants covered by this section
+
+- Service-availability contract (operational invariant) — the readiness
+  probe is the only mechanism by which Cloud Run knows a Python instance
+  is unhealthy. If `/readyz` is wired to the same code path as
+  `/healthz`, a Python instance with broken Supabase credentials will
+  serve 500s until the next deploy. REG-72 pins the distinct-semantics
+  contract.
+- P12 (AI safety — adjacent): a Python instance that returns 503 from
+  `/readyz` cannot accept requests, so it cannot serve any AI response
+  (correct or otherwise). Fail-closed posture matches existing
+  defensive defaults in `admin-rollback-flag.ts` and the proxy fallback
+  flag.
+
+### Notes on test strategy
+
+REG-72 is the first catalog entry in the Python service domain. It ships
+in `M` (missing) status pending the ai-engineer / architect work to
+land the FastAPI app and Cloud Run deploy YAML. Once the Python
+service lives at `python/services/ai/`:
+
+1. ai-engineer implements `app/health.py` (or equivalent) with the
+   two-endpoint split.
+2. ai-engineer creates `python/services/ai/tests/test_health_contract.py`
+   exercising the three cases (good env, bad SUPABASE_URL, missing
+   provider key).
+3. architect creates `python/deploy/service.yaml` (or Cloud Build
+   equivalent) wiring the readiness probe to `/readyz`.
+4. architect creates `python/deploy/__tests__/test_service_yaml.py`
+   asserting the probe path; this can be a pytest test that reads the
+   YAML via `pyyaml`.
+5. CI pipeline includes a Python test job (architect-owned config in
+   `.github/workflows/`); REG-72 flips from `M` to `E` once both
+   test files exist and pass in CI.
+
+Until the Python service lands, REG-72's status is `M` and this
+catalog entry serves as the SPECIFICATION the implementation must
+satisfy. Any PR that lands the FastAPI app without both endpoints OR
+without the YAML probe wiring MUST fail quality review on REG-72
+unsatisfied.
+
+### Catalog total
+
+Pre-Phase-0: 42 entries. Phase 0 adds REG-72.
+
+**Total: 43 entries.**

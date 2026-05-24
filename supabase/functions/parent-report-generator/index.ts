@@ -27,6 +27,19 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
+// MoL (Model Orchestration Layer) — Phase 1A migration (2026-05-24).
+// parent-report-generator emits weekly summary text for parents. P13: PII
+// (student name) IS sent to the LLM by design — parents see the report
+// addressed to their child — but never logged. MoL's recordMolRequest does
+// not log the prompt body; only token counts, costs, and request_id. The
+// existing buildFallbackReport template path remains as the failover and
+// will catch any MoL hard-failure on either provider.
+//
+// Rollback flag (2026-06-03): ff_mol_admin_functions_v1. When ops trips the
+// kill switch, the LLM call short-circuits to callClaudeLegacy below
+// (pre-Phase-1A direct-Anthropic-fetch with 15s timeout + Haiku 4.5).
+import { generateResponse, MolError } from '../_shared/mol/index.ts'
+import { isMolAdminRoutingEnabled } from '../_shared/mol/admin-rollback-flag.ts'
 
 // ─── Environment ────────────────────────────────────────────────
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
@@ -401,8 +414,8 @@ async function generateAIReport(
   stats: WeeklyStats,
   language: string,
   studentName: string,
+  studentId: string,
 ): Promise<WeeklyReport | null> {
-  if (!ANTHROPIC_API_KEY) return null
   if (!circuitBreaker.canRequest()) return null
 
   const period = formatPeriod(language)
@@ -441,36 +454,15 @@ Return ONLY valid JSON with this exact structure:
 }`
 
   try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 15_000)
-
-    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): parent-report-generator is analytics narrative generation, not student-facing; exempt from grounded-answer routing.
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 512,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-      signal: controller.signal,
-    })
-
-    clearTimeout(timeoutId)
-
-    if (!res.ok) {
-      circuitBreaker.recordFailure()
-      return null
-    }
+    // ROLLBACK GATE (Phase 1A — 2026-06-03):
+    // ff_mol_admin_functions_v1 OFF → legacy direct-Anthropic-fetch path.
+    // Both paths return the raw text body so the JSON parser below is
+    // shared and only runs once.
+    const text = (await isMolAdminRoutingEnabled())
+      ? await callLlmViaMol(prompt, studentId, language)
+      : await callLlmLegacy(prompt)
 
     circuitBreaker.recordSuccess()
-
-    const data = await res.json()
-    const text = data.content?.[0]?.text || ''
 
     // Extract JSON from response (handle markdown code blocks)
     const jsonMatch = text.match(/\{[\s\S]*\}/)
@@ -499,8 +491,97 @@ Return ONLY valid JSON with this exact structure:
     }
   } catch (err) {
     circuitBreaker.recordFailure()
-    console.error('AI report generation failed:', err instanceof Error ? err.message : String(err))
+    if (err instanceof MolError) {
+      console.error('AI report generation failed (MoL):', err.code, err.message)
+    } else {
+      console.error('AI report generation failed:', err instanceof Error ? err.message : String(err))
+    }
     return null
+  }
+}
+
+/**
+ * Route the parent-report prompt through MoL. task_type='evaluation' so the
+ * post-processor leaves the JSON output untouched (post-processor.ts skips
+ * vendor/PII scrub for 'evaluation' / 'quiz_generation' / 'ocr_extraction').
+ *
+ * We use a minimal system prompt (kept inline by passing input.instruction
+ * and an empty system_prompt_override). The actual instructions live in
+ * the user prompt above to preserve the legacy behavior exactly.
+ *
+ * student_id is the REAL student UUID. This is acceptable here because
+ * mol_request_logs.student_id is service-role-only (RLS gated) and is
+ * the same shape the per-plan usage limits already key on.
+ */
+async function callLlmViaMol(
+  prompt: string,
+  studentId: string,
+  language: string,
+): Promise<string> {
+  const molResult = await generateResponse({
+    task_type: 'evaluation',
+    input: { instruction: prompt },
+    student_context: {
+      student_id: studentId,
+      // Parent reports don't carry the student's grade in this path —
+      // hardcoded to '10' as a neutral default. The prompt itself doesn't
+      // reference grade.
+      grade: '10',
+      language: language === 'hi' ? 'hi' : 'en',
+    },
+    config: {
+      preferred_provider: 'openai',
+      // Empty system_prompt_override keeps the prompt-builder from
+      // injecting the Foxy persona (which would misframe the report).
+      system_prompt_override: 'You are an analytics assistant generating a structured weekly summary for a parent. Output strict JSON only.',
+      max_tokens_override: 512,
+    },
+  })
+  return molResult.text || ''
+}
+
+/**
+ * LEGACY PATH (pre-Phase-1A, kept byte-for-byte). Restored from git HEAD
+ * snapshot so the rollback flag can revert to known-good behavior on
+ * emergency.
+ *
+ * The pre-Phase-1A code did NOT pass a `system` field to Claude — the
+ * entire prompt lived in messages[0].content. We preserve that exactly.
+ *
+ * Throws on non-2xx so the outer try/catch records circuit-breaker failure
+ * the same way the MoL path does on MolError. The outer catch is unchanged
+ * from the MoL branch — failures map to `return null` and trigger the
+ * caller's buildFallbackReport template path.
+ */
+async function callLlmLegacy(prompt: string): Promise<string> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 15_000)
+
+  try {
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- legacy rollback path for ff_mol_admin_functions_v1; do not remove without retiring the rollback flag.
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 512,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+      signal: controller.signal,
+    })
+
+    if (!res.ok) {
+      throw new Error(`Claude API ${res.status}`)
+    }
+
+    const data = await res.json()
+    return data.content?.[0]?.text || ''
+  } finally {
+    clearTimeout(timeoutId)
   }
 }
 
@@ -583,7 +664,7 @@ Deno.serve(async (req: Request) => {
     const stats = await fetchWeeklyStats(supabase, student_id)
 
     // ── Generate report (AI with fallback) ──
-    let report = await generateAIReport(stats, safeLanguage, studentName)
+    let report = await generateAIReport(stats, safeLanguage, studentName, student_id)
 
     if (!report) {
       // Fallback: template-based report without AI

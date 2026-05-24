@@ -1,0 +1,12 @@
+# Runtime dependencies for the Alfanumrik AI service.
+# Pinned to minor versions; patch updates allowed via the resolver.
+# Generated to keep Docker builds reproducible (architect agent owns the Dockerfile).
+fastapi>=0.115,<0.116
+uvicorn[standard]>=0.32,<0.33
+pydantic>=2.9,<3.0
+pydantic-settings>=2.6,<3.0
+httpx>=0.28,<0.29
+structlog>=24.4,<25.0
+sentry-sdk[fastapi]>=2.18,<3.0
+python-json-logger>=2.0,<3.0
+postgrest>=0.18,<1.0

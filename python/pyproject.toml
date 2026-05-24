@@ -1,0 +1,128 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alfanumrik-ai-services"
+version = "0.1.0"
+description = "Alfanumrik AI services — Python port of the Model Orchestration Layer (MoL)."
+requires-python = ">=3.12,<3.15"
+readme = "README.md"
+license = { text = "Proprietary" }
+authors = [
+  { name = "Alfanumrik / Cusiosense Learning India" },
+]
+dependencies = [
+  "fastapi>=0.115,<0.116",
+  "uvicorn[standard]>=0.32,<0.33",
+  "pydantic>=2.9,<3.0",
+  "pydantic-settings>=2.6,<3.0",
+  "httpx>=0.28,<0.29",
+  "structlog>=24.4,<25.0",
+  "sentry-sdk[fastapi]>=2.18,<3.0",
+  "python-json-logger>=2.0,<3.0",
+  "postgrest>=0.18,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9.0",
+  "pytest-asyncio>=0.24,<0.25",
+  "pytest-cov>=6.0,<7.0",
+  "respx>=0.22,<1.0",   # 0.22+ required for httpx 0.28 compat
+  "ruff>=0.7,<0.8",
+  "mypy>=1.13,<2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["services*"]
+
+# ─── Pytest ───────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = [
+  "-ra",
+  "--strict-markers",
+  "--strict-config",
+  "--cov=services",
+  "--cov-report=term-missing",
+  "--cov-fail-under=70",
+]
+filterwarnings = [
+  "error",
+  # pytest-asyncio occasionally fires a future-deprecation on default-loop-scope.
+  # That setting moves to required in 1.0; we pin it now via ini option.
+  "ignore::DeprecationWarning:pytest_asyncio",
+  # Python 3.14 ships a deprecation for asyncio.iscoroutinefunction that FastAPI
+  # / starlette / uvicorn still trip on. Upstream fixes are in flight; ignore
+  # at the test boundary so 3.14 envs don't fail clean test runs. Safe to drop
+  # this once FastAPI 0.116+ adopts inspect.iscoroutinefunction().
+  "ignore:'asyncio.iscoroutinefunction':DeprecationWarning",
+  # postgrest-py imports a vendored "deprecation" warning on AsyncPostgrestClient
+  # construction; not our code. Architect's Phase-1 task tracks the swap to a
+  # supported supabase-py async surface.
+  "ignore::DeprecationWarning:postgrest",
+]
+
+# ─── Coverage ─────────────────────────────────────────────────────────────────
+[tool.coverage.run]
+branch = true
+source = ["services"]
+omit = [
+  "services/ai/api/main.py",   # Started via uvicorn; covered by integration tests
+  "*/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "if __name__ == .__main__.:",
+  "raise NotImplementedError",
+  "if TYPE_CHECKING:",
+]
+show_missing = true
+precision = 1
+
+# ─── Ruff (linter + formatter) ────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv", "build", "dist"]
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "F",   # pyflakes
+  "I",   # isort
+  "B",   # flake8-bugbear
+  "UP",  # pyupgrade
+  "C4",  # flake8-comprehensions
+  "SIM", # flake8-simplify
+]
+ignore = [
+  "E501", # line too long — formatter handles
+  "B008", # FastAPI uses Depends() in defaults intentionally
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]  # assert False is fine in tests
+
+# ─── mypy ─────────────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.12"
+strict_optional = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = true
+disallow_untyped_defs = false  # Phased: full strict comes in Phase 1
+ignore_missing_imports = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false

@@ -26,6 +26,18 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { constantTimeEqual } from '../_shared/auth.ts'
+// MoL (Model Orchestration Layer) — Phase 1A migration (2026-05-24).
+// extract-ncert-questions is admin-key-gated batch extraction from
+// rag_content_chunks. parseExtractedQuestions enforces P6 (4 distinct
+// non-empty options, correct_answer_index 0-3, non-empty explanation, no
+// "{{" / "[BLANK]" template markers, valid bloom_level, difficulty 1-3)
+// AFTER the LLM call — those checks are untouched by this migration.
+//
+// Rollback flag (2026-06-03): ff_mol_admin_functions_v1. When ops trips the
+// kill switch, callClaude short-circuits to callClaudeLegacy below
+// (pre-Phase-1A direct-Anthropic-fetch path with 60s abort + 0.3 temperature).
+import { generateResponse, MolError } from '../_shared/mol/index.ts'
+import { isMolAdminRoutingEnabled } from '../_shared/mol/admin-rollback-flag.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -241,12 +253,65 @@ async function callClaude(
   systemPrompt: string,
   userPrompt: string,
   maxTokens: number,
+  grade: string,
+  subject: string,
+): Promise<string> {
+  // ROLLBACK GATE (Phase 1A — 2026-06-03):
+  // ff_mol_admin_functions_v1 OFF → legacy direct-Anthropic-fetch path.
+  if (!(await isMolAdminRoutingEnabled())) {
+    return callClaudeLegacy(systemPrompt, userPrompt, maxTokens)
+  }
+
+  // task_type='quiz_generation' — extraction emits the same JSON-array
+  // structure as the bulk MCQ generator (4 options + correct index +
+  // explanation), so post-processor.ts correctly skips vendor-string scrub
+  // for this task_type (would otherwise corrupt JSON output).
+  try {
+    const molResult = await generateResponse({
+      task_type: 'quiz_generation',
+      input: { instruction: userPrompt },
+      student_context: {
+        student_id: `admin-extract-ncert-questions-${grade}-${subject}`,
+        grade,
+        language: 'en',
+        subject,
+      },
+      config: {
+        surface: 'quiz',
+        preferred_provider: 'openai',
+        system_prompt_override: systemPrompt,
+        max_tokens_override: maxTokens,
+      },
+    })
+    return molResult.text || ''
+  } catch (err) {
+    if (err instanceof MolError) {
+      console.error('[extract-ncert-questions] MoL error:', err.code, err.message)
+      // Throwing preserves the legacy try/catch contract in processChapter.
+      throw new Error(`MoL ${err.code}: ${err.message}`)
+    }
+    throw err
+  }
+}
+
+/**
+ * LEGACY PATH (pre-Phase-1A, kept byte-for-byte). Restored from git HEAD
+ * snapshot. processChapter's outer try/catch absorbs errors — the legacy
+ * path returns '' on bad-response and lets the JSON parser downstream
+ * decide. Throwing AbortError on timeout is intentional: it surfaces as
+ * 'extraction timeout' in processChapter logs the same way it did before
+ * Phase 1A.
+ */
+async function callClaudeLegacy(
+  systemPrompt: string,
+  userPrompt: string,
+  maxTokens: number,
 ): Promise<string> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS)
 
   try {
-    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): extract-ncert-questions is ingestion-time content extraction, not student-facing.
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- legacy rollback path for ff_mol_admin_functions_v1; do not remove without retiring the rollback flag.
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -526,10 +591,16 @@ async function processChapter(
   )
   const userPrompt = buildExtractionUserPrompt(chapterTitle, chunks)
 
-  // Call Claude — use higher max_tokens since we expect 10-20 questions
+  // Call Claude (routed through MoL) — higher max_tokens since we expect 10-20 questions
   let rawResponse: string
   try {
-    rawResponse = await callClaude(systemPrompt, userPrompt, 4096)
+    rawResponse = await callClaude(
+      systemPrompt,
+      userPrompt,
+      4096,
+      chapter.grade,
+      chapter.subject,
+    )
   } catch (err) {
     result.errors.push(
       `Claude API error: ${err instanceof Error ? err.message : String(err)}`,
@@ -678,9 +749,11 @@ async function handlePost(req: Request, origin: string | null): Promise<Response
   const supabase = getSupabaseAdmin()
   const startTime = Date.now()
 
-  // Validate Anthropic API key
-  if (!ANTHROPIC_API_KEY) {
-    return errorResponse('ANTHROPIC_API_KEY not configured', 500, origin)
+  // Validate at least one LLM provider is configured. MoL needs either
+  // OPENAI_API_KEY (preferred, admin posture) or ANTHROPIC_API_KEY (fallback).
+  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') || ''
+  if (!ANTHROPIC_API_KEY && !OPENAI_API_KEY) {
+    return errorResponse('No LLM provider configured (need OPENAI_API_KEY or ANTHROPIC_API_KEY)', 500, origin)
   }
 
   // Parse params

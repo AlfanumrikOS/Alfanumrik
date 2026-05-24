@@ -24,6 +24,18 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { fetchRAGContext } from '../_shared/rag-retrieval.ts'
 import { constantTimeEqual } from '../_shared/auth.ts'
+// MoL (Model Orchestration Layer) — Phase 1A migration (2026-05-24).
+// generate-answers writes board-exam-style model answers into question_bank
+// (admin-key only). RAG retrieval happens BEFORE this call; we pass the
+// composed system prompt verbatim via system_prompt_override so the NCERT
+// grounding text Foxy uses is preserved end-to-end. P12: answers go through
+// parseAnswerResponse + length check AFTER the LLM, never inside.
+//
+// Rollback flag (2026-06-03): ff_mol_admin_functions_v1. When ops trips the
+// kill switch, callClaude short-circuits to callClaudeLegacy below
+// (pre-Phase-1A direct-Anthropic-fetch with CLAUDE_TIMEOUT_MS + temp 0.3).
+import { generateResponse, MolError } from '../_shared/mol/index.ts'
+import { isMolAdminRoutingEnabled } from '../_shared/mol/admin-rollback-flag.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -108,12 +120,65 @@ async function callClaude(
   systemPrompt: string,
   userPrompt: string,
   maxTokens: number,
+  grade: string,
+  subject: string,
+): Promise<string> {
+  // ROLLBACK GATE (Phase 1A — 2026-06-03):
+  // ff_mol_admin_functions_v1 OFF → legacy direct-Anthropic-fetch path.
+  if (!(await isMolAdminRoutingEnabled())) {
+    return callClaudeLegacy(systemPrompt, userPrompt, maxTokens)
+  }
+
+  // task_type='explanation' — answer-writing is structured factual
+  // explanation, matches router matrix (gpt-4o-mini primary, Haiku fallback).
+  // Force OpenAI primary via preferred_provider for admin-only cost posture.
+  // RAG context is already baked into systemPrompt before we get here;
+  // system_prompt_override preserves it verbatim.
+  // Note: temperature drift (0.3 → MoL default ~0.7) — see comment on
+  // generate-concepts. parseAnswerResponse + length-check downstream catches
+  // any quality drift.
+  try {
+    const molResult = await generateResponse({
+      task_type: 'explanation',
+      input: { instruction: userPrompt },
+      student_context: {
+        student_id: `admin-generate-answers-${grade}-${subject}`,
+        grade,
+        language: 'en',
+        subject,
+      },
+      config: {
+        preferred_provider: 'openai',
+        system_prompt_override: systemPrompt,
+        max_tokens_override: maxTokens,
+      },
+    })
+    return molResult.text || ''
+  } catch (err) {
+    if (err instanceof MolError) {
+      console.error('[generate-answers] MoL error:', err.code, err.message)
+    } else {
+      console.error('[generate-answers] MoL exception:', err instanceof Error ? err.message : String(err))
+    }
+    return ''
+  }
+}
+
+/**
+ * LEGACY PATH (pre-Phase-1A, kept byte-for-byte). Restored from git HEAD
+ * snapshot. Returns '' on any error so the downstream parseAnswerResponse
+ * path handles it the same way as the MoL branch — no behavior split.
+ */
+async function callClaudeLegacy(
+  systemPrompt: string,
+  userPrompt: string,
+  maxTokens: number,
 ): Promise<string> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS)
 
   try {
-    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): generate-answers is ingestion/authoring-time, not student-facing.
+    // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- legacy rollback path for ff_mol_admin_functions_v1; do not remove without retiring the rollback flag.
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -380,9 +445,11 @@ async function handlePost(req: Request, origin: string | null): Promise<Response
   const supabase = getSupabaseAdmin()
   const startTime = Date.now()
 
-  // Validate Anthropic API key
-  if (!ANTHROPIC_API_KEY) {
-    return errorResponse('ANTHROPIC_API_KEY not configured', 500, origin)
+  // Validate at least one LLM provider is configured. MoL needs either
+  // OPENAI_API_KEY (preferred, admin posture) or ANTHROPIC_API_KEY (fallback).
+  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') || ''
+  if (!ANTHROPIC_API_KEY && !OPENAI_API_KEY) {
+    return errorResponse('No LLM provider configured (need OPENAI_API_KEY or ANTHROPIC_API_KEY)', 500, origin)
   }
 
   // Parse params
@@ -496,8 +563,14 @@ async function handlePost(req: Request, origin: string | null): Promise<Response
       const systemPrompt = buildSystemPrompt(question.grade, question.subject, ragContext)
       const userPrompt = buildUserPrompt(question)
 
-      // Step 3: Call Claude
-      const rawResponse = await callClaude(systemPrompt, userPrompt, 800)
+      // Step 3: Call Claude (routed through MoL)
+      const rawResponse = await callClaude(
+        systemPrompt,
+        userPrompt,
+        800,
+        question.grade,
+        question.subject,
+      )
 
       // Step 4: Parse response
       const isMCQ = question.question_type_v2 === 'mcq'
