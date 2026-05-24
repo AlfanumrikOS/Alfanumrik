@@ -1,43 +1,54 @@
-"""``POST /v1/voice/transcribe`` — student-facing speech-to-text.
+"""Student-facing voice endpoints.
 
-Thin wrapper around :func:`services.ai.business.voice.handler.transcribe_audio`.
-Responsibilities are intentionally narrow (same pattern as the
-bulk-question-gen route):
+Two sibling routes share this module and the same student-JWT auth path:
 
-  1. Read the multipart body (``audio`` file + optional ``language_hint``).
-  2. Validate the audio format against our allowlist.
-  3. Verify the student JWT via :func:`verify_student`.
-  4. Hand off to the handler.
-  5. Translate domain exceptions → HTTP status codes.
-  6. Bind ``request_id`` into structlog context for the call lifetime.
+1. ``POST /v1/voice/transcribe`` — Voice 1a — speech-to-text via OpenAI
+   Whisper. Multipart body (audio file + optional language hint), JSON
+   response.
 
-HTTP contract:
-    Request:
-        POST /v1/voice/transcribe
-        Authorization: Bearer <supabase user JWT>
-        Content-Type: multipart/form-data
-        Body:
-          - audio: <file>  (required, ≤ 25 MiB, format in allowlist)
-          - language_hint: 'en' | 'hi' | 'hinglish'  (optional, form field)
-    Response 200: TranscribeResponse
-        { transcript, detected_language, duration_seconds, audio_format,
-          confidence?, cost_inr, request_id }
-    Errors (TranscribeError envelope under HTTPException.detail):
-        400 — unsupported audio format
-        401 — missing/invalid Authorization header
-        403 — student not found OR account inactive
-        413 — audio > 25 MiB
-        422 — multipart parse failure (FastAPI built-in)
-        429 — daily INR budget exceeded
-        500 — internal error
-        502 — Whisper upstream error (after retries)
-        503 — Supabase / Whisper API key misconfigured
+2. ``POST /v1/voice/synthesize`` — Voice 1b — text-to-speech with Indian-
+   accent neural voices via Azure Cognitive Services. JSON body, binary
+   ``audio/mpeg`` response with metadata in custom headers.
 
-Out of scope for this route (Voice 1b/2/3):
-    - TTS endpoint
-    - Frontend wiring (src/lib/voice.ts)
+Both routes:
+  - Verify the student JWT via :func:`verify_student` BEFORE reading the
+    body (so unauthenticated callers can't make us buffer large payloads).
+  - Bind ``request_id`` into structlog context for the call lifetime.
+  - Emit an error envelope (TranscribeError / SynthesizeError) under
+    ``HTTPException.detail`` for consistent frontend error handling.
+
+HTTP contracts:
+
+    /transcribe:
+        Request:
+            POST /v1/voice/transcribe
+            Authorization: Bearer <supabase user JWT>
+            Content-Type: multipart/form-data
+            Body:
+              - audio: <file>  (required, ≤ 25 MiB, format in allowlist)
+              - language_hint: 'en' | 'hi' | 'hinglish'  (optional)
+        Response 200: TranscribeResponse JSON
+        Errors: 400/401/403/413/422/429/500/502/503
+
+    /synthesize:
+        Request:
+            POST /v1/voice/synthesize
+            Authorization: Bearer <supabase user JWT>
+            Content-Type: application/json
+            Body: { text: 1..2000 chars,
+                    language: 'en' | 'hi' | 'hinglish',
+                    gender?: 'female' | 'male',  // default female
+                    voice_override?: 'xx-XX-NameNeural' }
+        Response 200: raw audio/mpeg bytes + headers:
+            X-Voice-Used, X-Cost-Inr, X-Char-Count, X-Request-Id
+        Errors: 400/401/403/413/422/429/500/502/503
+
+Out of scope for both routes:
+    - Frontend wiring (src/lib/voice.ts) — Voice 2
     - Streaming partial transcripts (Whisper API doesn't offer this)
+    - Streaming TTS via Azure SSE (Voice 3 or later)
     - Speaker diarization
+    - Redis caching of repeated TTS phrases (Phase 3)
 """
 
 from __future__ import annotations
@@ -46,6 +57,7 @@ import uuid
 
 import structlog
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile, status
+from starlette.responses import Response
 
 from ...business.voice.auth import AuthFailed, verify_student
 from ...business.voice.handler import (
@@ -57,7 +69,15 @@ from ...business.voice.handler import (
 )
 from ...business.voice.models import (
     SUPPORTED_AUDIO_FORMATS,
+    SynthesizeRequest,
     TranscribeResponse,
+)
+from ...business.voice.synthesize_handler import (
+    SynthesizeBudgetExceededError,
+    SynthesizeHandlerError,
+    TextTooLongError,
+    UpstreamAzureError,
+    synthesize_speech,
 )
 
 router = APIRouter(prefix="/v1/voice", tags=["voice"])
@@ -226,5 +246,158 @@ async def post_transcribe(
                     "request_id": rid,
                 },
             ) from err
+    finally:
+        structlog.contextvars.clear_contextvars()
+
+
+# ── POST /v1/voice/synthesize — Voice 1b ──────────────────────────────────
+
+
+@router.post(
+    "/synthesize",
+    summary="Synthesize text to Indian-accent neural speech (student-facing, Azure TTS).",
+    responses={
+        # Success returns audio/mpeg, NOT JSON — so we declare a custom
+        # content type here for the OpenAPI doc rather than the default
+        # JSON response_model. The frontend reads X-* headers for
+        # metadata.
+        200: {
+            "description": "MP3 audio (audio-24khz-48kbitrate-mono-mp3).",
+            "content": {"audio/mpeg": {}},
+        },
+        400: {"description": "Bad request — invalid body."},
+        401: {"description": "Missing or invalid Authorization header."},
+        403: {"description": "Caller is not an active student."},
+        413: {"description": "Text exceeds 2000 characters."},
+        422: {"description": "Pydantic validation error on the JSON body."},
+        429: {"description": "Daily voice budget exceeded."},
+        500: {"description": "Internal error during synthesis pipeline."},
+        502: {"description": "Azure TTS upstream returned an error."},
+        503: {"description": "Service misconfigured (Supabase/Azure key missing)."},
+    },
+)
+async def post_synthesize(
+    request: Request,
+    body: SynthesizeRequest,
+    authorization: str | None = Header(
+        default=None,
+        description="Bearer <supabase user JWT> — must be an active student.",
+    ),
+) -> Response:
+    """Synthesize ``body.text`` to Indian-accent speech via Azure Speech.
+
+    Pipeline: auth → handler (length guard → budget guard → voice resolve
+    → Azure call → telemetry → result). All sensitive failure paths emit
+    a :class:`SynthesizeError` envelope via ``HTTPException.detail``.
+
+    The success response is binary ``audio/mpeg`` with metadata in custom
+    headers (``X-Voice-Used``, ``X-Cost-Inr``, ``X-Char-Count``,
+    ``X-Request-Id``). The middleware will also echo ``X-Request-Id`` on
+    the response, but we set it on the response directly here so it's
+    present even if the middleware path changes.
+    """
+    rid = request.headers.get("x-request-id") or str(uuid.uuid4())
+    structlog.contextvars.bind_contextvars(request_id=rid, route="voice.synthesize")
+
+    try:
+        # 1. Auth — done BEFORE the handler so an unauthenticated caller
+        #    can't make us call Azure.
+        try:
+            student = await verify_student(authorization)
+        except AuthFailed as err:
+            raise HTTPException(
+                status_code=err.status,
+                detail={
+                    "error": "AUTH_FAILED",
+                    "detail": str(err),
+                    "request_id": rid,
+                },
+            ) from err
+
+        # 2. Handler — owns length guard + budget + Azure + telemetry.
+        try:
+            result = await synthesize_speech(
+                body.text,
+                body.language,
+                body.gender,
+                body.voice_override,
+                student,
+                request_id=rid,
+            )
+        except TextTooLongError as err:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail={
+                    "error": "TEXT_TOO_LONG",
+                    "detail": str(err),
+                    "request_id": rid,
+                },
+            ) from err
+        except SynthesizeBudgetExceededError as err:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={
+                    "error": "BUDGET_EXCEEDED",
+                    "detail": str(err),
+                    "request_id": rid,
+                },
+            ) from err
+        except UpstreamAzureError as err:
+            # 502 (Azure 5xx) vs 503 (we're misconfigured — empty key /
+            # auth failure). The handler already mapped this.
+            api_error_code = (
+                "SERVICE_MISCONFIGURED"
+                if err.status == status.HTTP_503_SERVICE_UNAVAILABLE
+                else "AZURE_TTS_ERROR"
+            )
+            raise HTTPException(
+                status_code=err.status,
+                detail={
+                    "error": api_error_code,
+                    "detail": str(err),
+                    "request_id": rid,
+                },
+            ) from err
+        except SynthesizeHandlerError as err:
+            raise HTTPException(
+                status_code=err.status,
+                detail={
+                    "error": "HANDLER_ERROR",
+                    "detail": str(err),
+                    "request_id": rid,
+                },
+            ) from err
+        except HTTPException:
+            raise
+        except Exception as err:  # noqa: BLE001 — last-line safety net
+            # Log + return generic 500 (PII-safe — no text, no audio).
+            logger.exception(
+                "voice.synthesize_route.unexpected_error",
+                error=str(err),
+                request_id=rid,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={
+                    "error": "INTERNAL_ERROR",
+                    "detail": "Synthesis failed.",
+                    "request_id": rid,
+                },
+            ) from err
+
+        # 3. Build the binary response. The middleware sets X-Request-Id
+        #    on the final response, but we also set it here so it's
+        #    present at the handler boundary (test assertions can read
+        #    it directly without depending on middleware ordering).
+        return Response(
+            content=result.audio_bytes,
+            media_type="audio/mpeg",
+            headers={
+                "X-Voice-Used": result.voice_used,
+                "X-Cost-Inr": f"{result.cost_inr:.4f}",
+                "X-Char-Count": str(result.char_count),
+                "X-Request-Id": rid,
+            },
+        )
     finally:
         structlog.contextvars.clear_contextvars()

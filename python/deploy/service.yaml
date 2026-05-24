@@ -151,6 +151,18 @@ spec:
                 secretKeyRef:
                   name: sentry-dsn
                   key: latest
+            # Voice 1b — Azure Cognitive Services Speech (Indian-accent TTS).
+            # Ops creates the Secret Manager secret as `azure-speech-key`
+            # before deploy; the region is a plain env (not sensitive).
+            # Empty key → /v1/voice/synthesize returns 503 per-request; the
+            # service itself still boots and serves the other endpoints.
+            - name: AZURE_SPEECH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: azure-speech-key
+                  key: latest
+            - name: AZURE_SPEECH_REGION
+              value: centralindia
 
           # ── Startup probe (REG-72) ────────────────────────────────────────
           # Cloud Run gen2 uses ONLY the startup probe to decide when an

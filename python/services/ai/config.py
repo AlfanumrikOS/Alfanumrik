@@ -48,6 +48,20 @@ class Settings(BaseSettings):
     anthropic_api_key: str = Field(default="", description="Claude API key (sk-ant-...).")
     openai_api_key: str = Field(default="", description="OpenAI API key (sk-proj-...).")
 
+    # ── Azure Cognitive Services (Voice 1b — Indian-accent TTS) ──
+    # Same posture as Anthropic/OpenAI: empty defaults so the service still
+    # BOOTS in CI/test. /readyz surfaces voice-tts readiness; the TTS
+    # handler itself returns 503 SERVICE_MISCONFIGURED when the key is
+    # missing so callers don't pay the latency to discover that.
+    azure_speech_key: str = Field(
+        default="",
+        description="Azure Cognitive Services Speech subscription key.",
+    )
+    azure_speech_region: str = Field(
+        default="centralindia",
+        description="Azure Speech region (e.g. centralindia). Empty disables TTS.",
+    )
+
     # ── Observability ──
     sentry_dsn: str = Field(default="", description="Empty disables Sentry.")
     log_level: str = Field(default="INFO", description="Stdlib log level.")

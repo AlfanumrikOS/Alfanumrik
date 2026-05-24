@@ -46,6 +46,12 @@ async def readyz(response: Response) -> dict:
     s = get_settings()
     supabase_ok = await ping_supabase()
     providers_ok = bool(s.anthropic_api_key) or bool(s.openai_api_key)
+    # Voice 1b — Azure Speech is OPTIONAL capability. We surface it on
+    # /readyz for operator visibility but do NOT include it in the
+    # providers_ok gating: a service without Azure keys should still be
+    # added to rotation; the TTS endpoint returns 503 per-request when
+    # the key is missing. Same posture as Anthropic/OpenAI vs Whisper.
+    azure_speech_ok = bool(s.azure_speech_key and s.azure_speech_region)
 
     checks = {
         "supabase": supabase_ok,
@@ -54,6 +60,7 @@ async def readyz(response: Response) -> dict:
             "anthropic": bool(s.anthropic_api_key),
             "openai": bool(s.openai_api_key),
         },
+        "azure_speech": azure_speech_ok,
     }
 
     if supabase_ok and providers_ok:

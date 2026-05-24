@@ -1,33 +1,43 @@
-"""Pydantic request/response models for ``POST /v1/voice/transcribe``.
+"""Pydantic request/response models for the voice endpoints.
 
-The endpoint accepts ``multipart/form-data`` (an audio file + optional
-``language_hint`` form field), so the *request* envelope is the FastAPI
-route's signature, not a Pydantic model. What this module owns:
+Two sibling endpoints share this module:
 
-- :class:`TranscribeResponse` — success envelope returned to the caller
-  (frontend ``src/lib/voice.ts`` will read these fields directly).
-- :class:`TranscribeError` — error envelope. The route raises
-  ``HTTPException`` with a JSON ``detail`` body; this model documents the
-  shape so the frontend has a typed schema to target.
-- Audio-format + detected-language enums + the Whisper→Alfanumrik
-  language mapping helper.
+1. ``POST /v1/voice/transcribe`` (Voice 1a — Whisper STT). Accepts
+   ``multipart/form-data`` so the *request* envelope is the FastAPI route's
+   signature, not a Pydantic model. Owned models:
+   - :class:`TranscribeResponse` — success envelope.
+   - :class:`TranscribeError` — error envelope.
+   - :data:`SupportedAudioFormat`, :data:`DetectedLanguage` enums.
+   - :func:`map_whisper_language` Whisper→Alfanumrik language helper.
+
+2. ``POST /v1/voice/synthesize`` (Voice 1b — Azure neural TTS). Accepts
+   JSON. Returns binary ``audio/mpeg`` so there is NO ``SynthesizeResponse``
+   Pydantic model — the route emits a ``starlette.responses.Response``
+   directly. Owned models:
+   - :class:`SynthesizeRequest` — JSON body validated by FastAPI.
+   - :class:`SynthesizeError` — error envelope (parallel to TranscribeError).
+   - :data:`SynthesisLanguage`, :data:`SynthesisGender` enums.
 
 Product invariants enforced at the model layer:
 - P5: ``grade`` is a string (downstream consumers expect ``'6'..'12'``).
-  We don't surface grade in the response, but the response carries
-  ``request_id`` so logs can correlate.
-- P13: response carries no PII — ``transcript`` is whatever the student
-  uttered (their own speech, not someone else's), ``detected_language``
-  and ``duration_seconds`` are derived; we never echo the student email
-  or name back. The frontend uses ``transcript`` as the chat input, so
-  it's by-definition user-owned data.
+  We don't surface grade in either response, but both carry ``request_id``
+  so logs can correlate.
+- P12: text length capped at 2000 chars in :class:`SynthesizeRequest` so a
+  pathological prompt cannot run up Azure billing. The TTS handler also
+  enforces this as defense-in-depth.
+- P13: responses carry no PII — ``transcript`` is the student's own
+  speech, derived fields (``detected_language``, ``duration_seconds``,
+  ``cost_inr``) carry no name/email/phone. The TTS response is raw audio
+  bytes; custom headers (X-Voice-Used, X-Cost-Inr, X-Char-Count) carry
+  only ID-like or numeric metadata.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ── Audio + language enums ─────────────────────────────────────────────────
 #
@@ -204,3 +214,138 @@ def map_whisper_language(
         return "hi"
 
     return "unknown"
+
+
+# ── Voice 1b — Azure neural TTS request envelope + enums ───────────────────
+#
+# These models are wire-stable for ``POST /v1/voice/synthesize``. Voice 2
+# will wire the frontend (``src/lib/voice.ts`` TTS half); any field rename
+# here breaks that wiring. The endpoint returns binary ``audio/mpeg`` so
+# there's no Pydantic response model — see :class:`SynthesizeError` for
+# the error envelope shape.
+
+# Language the caller wants Foxy to speak. Symmetric with
+# :data:`DetectedLanguage` minus the 'unknown' branch (the TTS endpoint
+# must always know what to render — a fallback to a sane default would
+# silently violate the CEO ask of "respond in same language as student").
+SynthesisLanguage = Literal["en", "hi", "hinglish"]
+
+# Foxy persona genders. Default female (mirrors the visual persona). The
+# voice catalog in ``tts.py`` maps (language, gender) → an Azure voice id.
+SynthesisGender = Literal["female", "male"]
+
+# Hard cap on text length per synthesize call. Tracks the CEO ask of
+# "explain a concept" — a 2000-char ceiling fits a multi-paragraph
+# explanation (~300-400 words) without exposing Azure billing to an
+# unbounded payload from a compromised client. The handler also enforces
+# this; this field-level cap returns the cleaner 422 from Pydantic when
+# the request shape itself is wrong.
+_SYNTH_MAX_TEXT_CHARS = 2000
+
+# Azure neural voice id pattern: ``xx-XX-NameNeural``. Examples that match:
+# ``en-IN-NeerjaNeural``, ``hi-IN-SwaraNeural``, ``en-US-JennyNeural``.
+# We enforce this as defense in depth on ``voice_override`` so an
+# arbitrary attacker-controlled string can never reach Azure's SSML.
+_AZURE_NEURAL_VOICE_RE = re.compile(r"^[a-z]{2}-[A-Z]{2}-[A-Za-z]+Neural$")
+
+
+class SynthesizeRequest(BaseModel):
+    """Request body for ``POST /v1/voice/synthesize``.
+
+    Voice 1b — Indian-accent neural TTS. The response is binary audio so we
+    don't have a SynthesizeResponse Pydantic model; instead the route returns
+    a ``starlette.responses.Response`` with ``audio/mpeg`` + custom headers
+    (``X-Voice-Used``, ``X-Cost-Inr``, ``X-Char-Count``, ``X-Request-Id``).
+
+    Field shape is wire-stable — frontend ``src/lib/voice.ts`` (Voice 2)
+    will POST these field names directly. Any rename breaks the frontend.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(
+        ...,
+        min_length=1,
+        max_length=_SYNTH_MAX_TEXT_CHARS,
+        description=(
+            "Text to synthesize. 1..2000 chars. SSML-special characters "
+            "(``& < > \" '``) are escaped server-side before embedding in "
+            "the Azure SSML body — callers MAY pass raw text."
+        ),
+    )
+    language: SynthesisLanguage = Field(
+        ...,
+        description=(
+            "Language the Indian-accent voice should render: 'en' (English), "
+            "'hi' (Hindi), or 'hinglish' (Hindi voice rendering code-switched "
+            "text — Azure's Hindi neural voices pronounce Latin loanwords "
+            "with natural Indian-English phonemes)."
+        ),
+    )
+    gender: SynthesisGender = Field(
+        default="female",
+        description="Voice gender. Defaults to female (Foxy's persona).",
+    )
+    voice_override: str | None = Field(
+        default=None,
+        max_length=64,
+        description=(
+            "Full Azure voice id (e.g. ``hi-IN-SwaraNeural``). When set, "
+            "bypasses the (language, gender) catalog lookup. MUST match the "
+            "Azure neural-voice regex; arbitrary strings are rejected. "
+            "Admin/testing escape hatch — not used by the frontend."
+        ),
+    )
+
+    @field_validator("voice_override")
+    @classmethod
+    def _voice_override_must_match_azure_regex(cls, v: str | None) -> str | None:
+        """Reject arbitrary voice_override strings before they reach Azure.
+
+        Empty/None → unused, falls through to catalog lookup.
+        Non-empty MUST match ``^[a-z]{2}-[A-Z]{2}-[A-Za-z]+Neural$`` — the
+        Azure documented neural voice id shape. Any other shape is a
+        client bug or an injection attempt and we 422 early.
+        """
+        if v is None:
+            return v
+        # Normalize empty-string to None so downstream code only has to
+        # handle "missing" rather than "empty vs missing".
+        s = v.strip()
+        if not s:
+            return None
+        if not _AZURE_NEURAL_VOICE_RE.match(s):
+            raise ValueError(
+                "voice_override must match the Azure neural voice id pattern "
+                "(e.g. 'hi-IN-SwaraNeural')"
+            )
+        return s
+
+
+class SynthesizeError(BaseModel):
+    """Error envelope for ``POST /v1/voice/synthesize``.
+
+    Shape mirrors :class:`TranscribeError` so the frontend (Voice 2) can
+    reuse a single error-handling branch across both voice endpoints.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    error: str = Field(
+        ...,
+        description=(
+            "Machine-readable error code (e.g. 'AUTH_FAILED', 'TEXT_TOO_LONG', "
+            "'BUDGET_EXCEEDED', 'AZURE_TTS_ERROR', 'SERVICE_MISCONFIGURED')."
+        ),
+    )
+    detail: str = Field(
+        ...,
+        description=(
+            "Human-readable explanation. Safe to log; never contains the "
+            "synthesized text or Azure-internal error details."
+        ),
+    )
+    request_id: str = Field(
+        ...,
+        description="UUIDv4 echoed for log correlation.",
+    )
