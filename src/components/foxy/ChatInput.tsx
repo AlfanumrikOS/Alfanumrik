@@ -1,8 +1,11 @@
 'use client';
 
-import { useState, useRef, memo, useEffect } from 'react';
+import { useState, useRef, memo, useEffect, useCallback } from 'react';
 import { useSubjectLookup } from '@/lib/useSubjectLookup';
 import { startListening, isVoiceSupported } from '@/lib/voice';
+import { usePythonVoiceEnabled } from '@/lib/voice-feature-flag';
+import { useAuth } from '@/lib/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/toast';
 
 /* ══════════════════════════════════════════════════════════════
@@ -67,6 +70,26 @@ export const ChatInput = memo(function ChatInput({
   // Feature-detect once (SSR-safe)
   const { stt: sttSupported } = isVoiceSupported();
 
+  // Voice 2 — per-student Cloud Run STT routing.
+  //
+  // When the flag is enabled AND the student is in the rollout bucket, the
+  // mic button records via MediaRecorder + posts to Cloud Run Whisper.
+  // Otherwise the existing browser Web Speech API path runs unchanged.
+  // The fallback path inside startListening catches any Python failure and
+  // falls through to Web Speech automatically — see REG-77.
+  const { student } = useAuth();
+  const pythonVoiceEnabled = usePythonVoiceEnabled(student?.id ?? null);
+  // Pull the Supabase session JWT lazily on each mic press. Cached internally
+  // by supabase-js, so this is a fast in-memory read in the common case.
+  const getJwt = useCallback(async (): Promise<string | null> => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      return data.session?.access_token ?? null;
+    } catch {
+      return null;
+    }
+  }, []);
+
   // Stop recognition on unmount
   useEffect(() => {
     return () => {
@@ -122,6 +145,10 @@ export const ChatInput = memo(function ChatInput({
 
     listenHandleRef.current = startListening({
       language,
+      // Voice 2 routing: opt-in fields. When `pythonEnabled` is false the
+      // legacy Web Speech path runs immediately and these are no-ops.
+      pythonEnabled: pythonVoiceEnabled,
+      getJwt,
       onResult: (transcript, isFinal) => {
         setText(transcript);
         setIsInterim(!isFinal);
