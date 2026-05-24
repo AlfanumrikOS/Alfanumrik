@@ -341,6 +341,23 @@ export default function BottomNavComponent() {
   const streakCount: number = (auth as any)?.snapshot?.current_streak ?? 0;
 
   const isActive = (href: string) => pathname === href || (href !== '/' && pathname.startsWith(href));
+
+  // ─── Focused-Foxy route: suppress the fixed desktop sidebar rail ───
+  // /foxy renders its own full-screen chat shell (dark header with a
+  // back-arrow, conversation sidebar, subject tabs, chapter list) via
+  // <AppShell variant="mobile" bleed>. The global desktop rail is
+  // redundant there AND harmful: when the <aside className="sidebar-nav">
+  // is in the DOM, the global `body:has(.sidebar-nav) .app-shell` rule
+  // (globals.css) reserves a 240px (var(--sidebar-width)) left margin on
+  // the root-layout wrapper, leaving a blank gutter and shifting Foxy
+  // right. By NOT rendering the aside on /foxy, `body:has(.sidebar-nav)`
+  // no longer matches, the margin is removed by the existing CSS, and
+  // Foxy paints edge-to-edge. Scoped to /foxy only — every other route
+  // keeps its rail and `.app-shell` margin unchanged. Foxy's own
+  // back-arrow preserves navigation; the mobile bottom bar is retained
+  // (AppShell reserves bottom clearance for it so ChatInput is never
+  // overlapped — see src/app/foxy/page.tsx).
+  const isFocusedFoxy = pathname === '/foxy' || pathname.startsWith('/foxy');
   // isMoreActive should only consider items the user can actually reach.
   const isMoreActive = moreItems.some(m => !getItemLock(m).locked && isActive(m.href));
   const hasMultipleRoles = roles.length > 1;
@@ -666,7 +683,10 @@ export default function BottomNavComponent() {
       </nav>
 
       {/* ─── Desktop Sidebar ──────────────── */}
-      <aside
+      {/* Suppressed on the focused-Foxy route so the global
+          `body:has(.sidebar-nav) .app-shell` margin-left rule stops
+          matching and Foxy paints full-width (see isFocusedFoxy above). */}
+      {!isFocusedFoxy && <aside
         className={`sidebar-nav flex-col border-r ${collapsed ? 'sidebar-collapsed' : ''}`}
         style={{
           background: 'var(--surface-1)',
@@ -798,7 +818,7 @@ export default function BottomNavComponent() {
             <div className="mt-0.5">Cusiosense Learning India Pvt Ltd</div>
           </div>}
         </div>
-      </aside>
+      </aside>}
     </>
   );
 }
