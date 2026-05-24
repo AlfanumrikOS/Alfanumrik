@@ -38,6 +38,11 @@ OpsSeverity = Literal["info", "warning", "error", "critical"]
 VOICE_EVENT_SUCCESS = "voice.transcribe.success"
 VOICE_EVENT_FAILURE = "voice.transcribe.failure"
 
+# Voice 1b — Azure TTS event categories. Distinct from transcribe so the
+# dashboard can filter by direction (input vs output) of the voice loop.
+VOICE_SYNTH_EVENT_SUCCESS = "voice.synthesize.success"
+VOICE_SYNTH_EVENT_FAILURE = "voice.synthesize.failure"
+
 
 async def log_voice_event(
     *,
@@ -128,6 +133,109 @@ async def log_voice_event(
     except Exception as err:  # noqa: BLE001 — fire-and-forget by contract
         logger.warning(
             "voice.ops_events.write_failed",
+            error=str(err),
+            category=category,
+            request_id=request_id,
+        )
+
+
+async def log_voice_synthesize_event(
+    *,
+    request_id: str,
+    student_id: str | None,
+    grade: str | None,
+    voice_used: str,
+    char_count: int,
+    cost_inr: float,
+    language: str,
+    gender: str,
+    severity: OpsSeverity = "info",
+    success: bool = True,
+    failure_reason: str | None = None,
+) -> None:
+    """Insert one row into ``public.ops_events`` for a synthesis event.
+
+    Row shape parallels :func:`log_voice_event` (the transcribe writer) so
+    the super-admin dashboard surfaces both halves of the voice loop with
+    a single category filter:
+
+        {
+          occurred_at: now(),
+          category: 'voice.synthesize.success' | 'voice.synthesize.failure',
+          source:   'voice-synthesize',
+          severity: 'info'|'warning'|'error'|'critical',
+          subject_type: 'student',
+          subject_id: <students.id UUID>,
+          message:  short human description,
+          context:  { request_id, voice_used, char_count, cost_inr,
+                       language, gender, grade, [failure_reason] },
+          request_id: <UUID for log correlation>,
+          environment: 'production' | 'staging' | 'local',
+        }
+
+    PII safety (P13): NO raw text in ``context``. The TTS handler hands us
+    char_count only — never the synthesized text. The transcribe writer
+    follows the same pattern (length, not content).
+
+    The two writers are kept as DISTINCT public functions (rather than a
+    union with a discriminator) so they can diverge later — e.g. the
+    synthesize event may eventually carry a "audio bytes returned" int
+    that the transcribe event doesn't need.
+
+    Never raises — failures are swallowed with a structured warn line.
+    """
+    client = get_service_client()
+    if client is None:
+        logger.debug(
+            "voice.synth_ops_events.skipped",
+            reason="no_supabase_client",
+            request_id=request_id,
+        )
+        return
+
+    s = get_settings()
+    category = VOICE_SYNTH_EVENT_SUCCESS if success else VOICE_SYNTH_EVENT_FAILURE
+    message = (
+        f"Voice synthesized: {char_count} chars ({language} / {voice_used})"
+        if success
+        else f"Voice synthesis failed: {failure_reason or 'unknown'}"
+    )
+
+    context: dict[str, Any] = {
+        "request_id": request_id,
+        "voice_used": voice_used,
+        "char_count": int(char_count),
+        "cost_inr": cost_inr,
+        "language": language,
+        "gender": gender,
+        "grade": grade,
+    }
+    if failure_reason and not success:
+        # Truncate to keep the context blob small; the full failure trace
+        # belongs in Cloud Run logs (structlog), not in ops_events.
+        context["failure_reason"] = failure_reason[:300]
+
+    row = {
+        "occurred_at": datetime.now(UTC).isoformat(),
+        "category": category,
+        "source": "voice-synthesize",
+        "severity": severity,
+        "subject_type": "student" if student_id else None,
+        "subject_id": student_id,
+        "message": message,
+        # PII safety reminder: never put the synthesized text or audio
+        # bytes here. Caller already passes char_count only — keep it
+        # that way.
+        "context": context,
+        "request_id": request_id,
+        "environment": s.environment,
+    }
+
+    try:
+        await client.table("ops_events").insert(row).execute()
+    except Exception as err:  # noqa: BLE001 — fire-and-forget by contract
+        logger.warning(
+            "voice.synth_ops_events.write_failed",
             error=str(err),
             category=category,
             request_id=request_id,

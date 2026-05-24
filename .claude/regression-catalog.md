@@ -969,3 +969,58 @@ Python-migration surface.
 Pre-Phase-1: 43 entries. Phase 1 adds REG-73, REG-74.
 
 **Total: 45 entries.**
+
+## Voice 1b — Azure Indian-Accent TTS (2026-05-24) — REG-75
+
+Source: Voice 1b adds `POST /v1/voice/synthesize` on the Python AI Cloud
+Run service — the output half of Foxy's voice loop (Voice 1a / Whisper
+STT is the input half, REG-72-adjacent telemetry). Returns Indian-accent
+neural speech (en-IN-* and hi-IN-*) via Azure Cognitive Services Speech.
+
+The endpoint isn't wired to any client yet (Voice 2 lands the
+`src/lib/voice.ts` half behind `ff_python_voice_tts_v1`), so the surface
+is service-side only. But the voice catalog and SSML builder are the
+two layers between student text and Azure billing, and either regressing
+silently would be a direct CEO-ask violation: the entire feature is
+"Indian accent" (catalog regression → wrong accent shipped to students)
+or "no spend leakage" (SSML escape regression → injection of SSML tags
+into the request body).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-75 | `voice_1b_tts_voice_selection_and_ssml_safety` | Two-pronged contract on the TTS request builder. (1) **Voice catalog correctness:** `VOICE_CATALOG` covers all 6 (language, gender) tuples (en/hi/hinglish × female/male). EVERY voice id is an Indian-accent neural voice — prefix `en-IN-` or `hi-IN-`, suffix `Neural`. Hinglish routes through Hindi voices (Swara/Madhur) because they pronounce Latin loanwords with natural Indian-English phonemes. `resolve_voice` precedence: override > catalog > en-IN-Neerja fallback. A regression to e.g. `en-US-JennyNeural` would ship audio with a US accent and violate the direct CEO ask. (2) **SSML escaping safety:** `build_ssml` HTML-escapes all 5 XML special chars (`& < > " '`) via `html.escape(text, quote=True)` before embedding into the SSML body. A student-supplied `</voice>` would otherwise prematurely close the voice tag and inject neighbouring audio segments; a raw `<voice name='evil'>` could swap in an arbitrary voice mid-utterance. (3) **voice_override regex enforcement:** Pydantic field validator rejects any voice_override that doesn't match `^[a-z]{2}-[A-Z]{2}-[A-Za-z]+Neural$` — arbitrary attacker-controlled strings cannot reach Azure's SSML. xml:lang derivation from voice prefix is also pinned (en-IN-* → `xml:lang='en-IN'`; hi-IN-* → `xml:lang='hi-IN'`). | `python/tests/unit/test_voice_tts.py::test_resolve_voice_returns_indian_voices_for_all_lang_gender_combos`, `python/tests/unit/test_voice_tts.py::test_build_ssml_escapes_xml_entities`, `python/tests/unit/test_voice_tts.py::test_build_ssml_uses_correct_xml_lang_for_voice_prefix`, `python/tests/unit/test_voice_models.py::test_voice_override_must_match_neural_regex` | E |
+
+### Invariants covered by this section
+
+- P12 (AI safety) — REG-75 pins the voice-catalog correctness (no
+  wrong-accent regression) and the SSML escape contract (no
+  attacker-controlled SSML reaches Azure). Both are defense lines
+  between student-supplied text and Azure's billing surface; a silent
+  regression on either would be a direct CEO-ask violation or an
+  Azure-spend amplification.
+- P13 (data privacy) — adjacent: the synthesize handler and
+  repository writer carry only `char_count`, never the raw text, into
+  `ops_events.context`. Same posture as the Whisper writer.
+
+### Notes on test strategy
+
+REG-75 follows the **same-file unit-test pattern** as REG-39 (Foxy
+remediation distractor index 0..3) and REG-54 (AI quiz-generator
+validation oracle) — three of the four pinned tests live in a single
+unit file (`test_voice_tts.py`) and the fourth in the request-validator
+file (`test_voice_models.py`). The full test suite for Voice 1b is 74
+tests across 4 files; the 4 pinned tests above are the load-bearing
+ones — adding a voice or relaxing the override regex without updating
+them would break the catalog.
+
+The voice_override regex is enforced at the **Pydantic field validator
+layer**, not in the handler. This means an attacker who bypasses the
+HTTP route entirely (e.g. by calling the handler from a future internal
+helper) is still gated by the model boundary — the validator MUST stay
+on `SynthesizeRequest`, not migrate to the route function body.
+
+### Catalog total
+
+Pre-Voice-1b: 45 entries. Voice 1b adds REG-75.
+
+**Total: 46 entries.**

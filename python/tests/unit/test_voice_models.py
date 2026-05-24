@@ -6,6 +6,9 @@ Coverage targets:
 - map_whisper_language heuristic (en / hi / hinglish / unknown branches).
 - Romanized-vs-Devanagari script detector edge cases.
 - SUPPORTED_AUDIO_FORMATS membership matches the Literal.
+- SynthesizeRequest field constraints (extra=forbid, length caps).
+- SynthesizeRequest.voice_override regex enforcement (REG-75).
+- SynthesizeError envelope shape.
 """
 
 from __future__ import annotations
@@ -15,6 +18,8 @@ from pydantic import ValidationError
 
 from services.ai.business.voice.models import (
     SUPPORTED_AUDIO_FORMATS,
+    SynthesizeError,
+    SynthesizeRequest,
     TranscribeError,
     TranscribeResponse,
     _looks_romanized_latin,
@@ -224,3 +229,127 @@ def test_supported_audio_formats_matches_whisper_documented_list():
     # — wrapped in set() to satisfy ruff's SIM300 Yoda-condition check
     # while staying readable.
     assert set(SUPPORTED_AUDIO_FORMATS) == expected
+
+
+# ── SynthesizeRequest (Voice 1b) ────────────────────────────────────────────
+
+
+def test_synthesize_request_happy_path():
+    r = SynthesizeRequest(
+        text="Hello there",
+        language="en",
+        gender="female",
+        voice_override=None,
+    )
+    assert r.text == "Hello there"
+    assert r.language == "en"
+    assert r.gender == "female"
+    assert r.voice_override is None
+
+
+def test_synthesize_request_gender_defaults_to_female():
+    r = SynthesizeRequest(text="hi", language="hi")
+    assert r.gender == "female"
+
+
+def test_synthesize_request_rejects_extra_fields():
+    with pytest.raises(ValidationError):
+        SynthesizeRequest(text="hi", language="en", bogus="x")
+
+
+def test_synthesize_request_rejects_empty_text():
+    with pytest.raises(ValidationError):
+        SynthesizeRequest(text="", language="en")
+
+
+def test_synthesize_request_rejects_text_over_2000_chars():
+    with pytest.raises(ValidationError):
+        SynthesizeRequest(text="x" * 2001, language="en")
+
+
+def test_synthesize_request_accepts_2000_char_text():
+    """The cap is INCLUSIVE — exactly 2000 chars is allowed."""
+    r = SynthesizeRequest(text="x" * 2000, language="en")
+    assert len(r.text) == 2000
+
+
+def test_synthesize_request_rejects_invalid_language():
+    with pytest.raises(ValidationError):
+        SynthesizeRequest(text="hi", language="fr")  # type: ignore[arg-type]
+
+
+def test_synthesize_request_rejects_invalid_gender():
+    with pytest.raises(ValidationError):
+        SynthesizeRequest(
+            text="hi", language="en", gender="neutral"  # type: ignore[arg-type]
+        )
+
+
+def test_synthesize_request_accepts_valid_voice_override():
+    """REG-75 — voice_override matching the Azure regex passes."""
+    r = SynthesizeRequest(
+        text="hi", language="en", voice_override="hi-IN-SwaraNeural"
+    )
+    assert r.voice_override == "hi-IN-SwaraNeural"
+
+
+def test_voice_override_must_match_neural_regex():
+    """REG-75 — pinned regression test.
+
+    Reject arbitrary strings so they cannot reach Azure's SSML body.
+    """
+    bad_overrides = [
+        "evil",
+        "en-IN-NeerjaStandard",  # not Neural
+        "EN-IN-NeerjaNeural",  # caps wrong
+        "en_IN_NeerjaNeural",  # underscore
+        "en-IN-Neerja",  # no Neural suffix
+        "<script>alert(1)</script>",
+        "../etc/passwd",
+        "en-IN-Neerja Neural",  # space
+        "en-IN-NeerjaNeural; DROP TABLE",
+        "en-IN--Neural",  # missing name segment
+    ]
+    for bad in bad_overrides:
+        with pytest.raises(ValidationError):
+            SynthesizeRequest(text="hi", language="en", voice_override=bad)
+
+
+def test_voice_override_empty_string_normalizes_to_none():
+    """Empty / whitespace voice_override → None (falls through to catalog)."""
+    r = SynthesizeRequest(text="hi", language="en", voice_override="")
+    assert r.voice_override is None
+    r = SynthesizeRequest(text="hi", language="en", voice_override="   ")
+    assert r.voice_override is None
+
+
+def test_voice_override_max_length_64():
+    """A truly massive voice_override is rejected even if it matches the regex shape."""
+    # Construct a string longer than 64 chars that still vaguely looks
+    # like the pattern — the max_length check fires before the regex.
+    too_long = "en-IN-" + ("a" * 60) + "Neural"  # >> 64 chars
+    with pytest.raises(ValidationError):
+        SynthesizeRequest(
+            text="hi", language="en", voice_override=too_long
+        )
+
+
+# ── SynthesizeError envelope ────────────────────────────────────────────────
+
+
+def test_synthesize_error_happy_path():
+    e = SynthesizeError(
+        error="AZURE_TTS_ERROR",
+        detail="upstream 503",
+        request_id="r-1",
+    )
+    assert e.error == "AZURE_TTS_ERROR"
+    assert e.detail == "upstream 503"
+    assert e.request_id == "r-1"
+
+
+def test_synthesize_error_rejects_extras():
+    with pytest.raises(ValidationError):
+        SynthesizeError(
+            error="X", detail="y", request_id="r", debug_info="oops"
+        )
