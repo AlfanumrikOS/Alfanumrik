@@ -6,7 +6,9 @@ This runbook covers everything ops needs to ship `python/services/ai/` (FastAPI 
 
 Companion docs:
 - Architecture: `docs/PYTHON_AI_ARCHITECTURE.md`
+- Long-term vision: `docs/PYTHON_AI_LONG_TERM_VISION.md`
 - Pipeline: `.github/workflows/python-ai-deploy.yml`
+- Cloud Run manifest: `python/deploy/service.yaml`
 - Image: `python/Dockerfile`
 
 ---
@@ -192,6 +194,48 @@ Paste these into the canonical repo (`Settings → Secrets and variables → Act
 | `GCP_RUNTIME_SERVICE_ACCOUNT` | from step 1.4 | `ai-services-runtime@alfanumrik-ai-prod.iam.gserviceaccount.com` |
 
 For staging deploys via `workflow_dispatch`, repeat steps 1.1–1.7 with `alfanumrik-ai-staging` and add a **GitHub Environment** named `staging` that overrides the secrets above. The workflow currently does not branch on environment; expand it later if staging needs distinct secrets.
+
+---
+
+## 2a. Cloud Run service manifest (`python/deploy/service.yaml`)
+
+Cloud Run configuration lives in `python/deploy/service.yaml` — a declarative Knative-on-Cloud-Run service manifest. The deploy workflow renders it (via `envsubst`) and applies with `gcloud run services replace`. **Do not edit deploy posture via CLI flags** — every knob (CPU, memory, concurrency, probes, scaling, env vars, secret bindings) is in the manifest.
+
+### Why declarative
+
+1. **REG-72 — readiness probe wiring.** `gcloud run deploy` does not expose `startupProbe.httpGet.path`. Without the manifest, Cloud Run falls back to a TCP-port-8080 startup probe, which routes traffic to a container that has not yet validated Supabase or provider keys. The manifest pins the probe to `/readyz`.
+2. **Audit trail.** Every change to runtime posture shows up in git diff.
+3. **GitOps-ready.** Future migration to Config Connector / ACM is a one-line change in the workflow, not a rewrite.
+
+### Probe semantics
+
+| Probe | Endpoint | Period | Failure threshold | What happens on failure |
+| --- | --- | --- | --- | --- |
+| `startupProbe` | `/readyz` | 5s (after 5s delay) | 10 | Cloud Run does NOT add the instance to the load-balancer pool; revision rollout marks the instance unhealthy. Up to 55s total grace for cold start. |
+| `livenessProbe` | `/healthz` | 30s | 3 | Cloud Run SIGTERMs the container and starts a new one. 90s total grace. |
+| (steady-state readiness) | implicit | — | — | Cloud Run gen2 does not re-poll a readiness probe after startup. Clients must retry transient 5xx with backoff. |
+
+**Cold-start behaviour.** With `autoscaling.knative.dev/minScale=0` (default), the first request after a period of inactivity pays a cold-start cost of ~3-8s for the container plus up to 5s for the first startup-probe success. To eliminate cold starts for production traffic, set `minScale=1`. Cost: ~₹600/mo per always-warm instance. Recommendation: keep `minScale=0` until foxy-tutor lands on Python (Phase 3) and the p95-latency budget becomes hostile to cold starts.
+
+### Modifying the manifest
+
+1. Edit `python/deploy/service.yaml`.
+2. Validate locally: `python -c "import yaml; yaml.safe_load(open('python/deploy/service.yaml'))"`.
+3. Open a PR. The `Render Cloud Run manifest` step in `python-ai-deploy.yml` re-validates with `envsubst` + `yaml.safe_load` before any `gcloud` call runs.
+4. On merge, the apply happens automatically; the rendered manifest is printed in the workflow log for audit.
+
+### Manifest variables
+
+The workflow substitutes these tokens before applying:
+
+| Token | Source | Example |
+| --- | --- | --- |
+| `${IMAGE_TAG}` | `build-and-push.outputs.image_tag` | `asia-south1-docker.pkg.dev/<project>/ai-services/api:<sha>` |
+| `${RUNTIME_SERVICE_ACCOUNT}` | secret `GCP_RUNTIME_SERVICE_ACCOUNT` | `ai-services-runtime@<project>.iam.gserviceaccount.com` |
+| `${ENVIRONMENT}` | computed (`staging` or `production`) | `production` |
+| `${ALLOWED_ORIGINS}` | workflow constant | `https://alfanumrik.com,https://staging.alfanumrik.com` |
+
+The token whitelist is explicit in `envsubst '...'` so any unintended `${...}` literal in the YAML survives unmodified.
 
 ---
 

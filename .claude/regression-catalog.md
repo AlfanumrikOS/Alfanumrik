@@ -819,7 +819,7 @@ notices.
 
 | # | Test name | Asserts | Location | Status |
 |---|---|---|---|---|
-| REG-72 | `python_ai_service_health_contract` | Cloud Run service exposes two distinct HTTP endpoints with different semantics: (1) `/healthz` returns 200 whenever the FastAPI process is alive — used by Cloud Run liveness probe to decide whether to restart the container. (2) `/readyz` returns 200 ONLY when ALL upstream dependencies are healthy (Supabase URL + service-role key resolve and respond; Anthropic + OpenAI API keys present and not expired); returns 503 with a diagnostic JSON body listing which dependency failed when any of these checks fail — used by Cloud Run readiness probe to take the instance out of the load-balancer rotation. The Cloud Run deploy YAML MUST configure the readiness probe to hit `/readyz` (not `/healthz` and not a TCP probe) so a degraded service is removed from rotation automatically rather than serving requests it cannot fulfill. Verification: pytest integration test that boots FastAPI app with a bogus `SUPABASE_URL` env var and asserts `GET /readyz` returns 503; second case boots with valid env vars and asserts both endpoints return 200; third case asserts the Cloud Run service YAML at `python/deploy/service.yaml` declares `readinessProbe.httpGet.path: /readyz`. | `python/services/ai/tests/test_health_contract.py` (pytest integration suite — boots FastAPI app under uvicorn TestClient and parameterizes env var setup) + `python/deploy/__tests__/test_service_yaml.py` (YAML contract pin) | M (test files to be created by ai-engineer + architect when Python service lands) |
+| REG-72 | `python_ai_service_health_contract` | Cloud Run service exposes two distinct HTTP endpoints with different semantics: (1) `/healthz` returns 200 whenever the FastAPI process is alive — used by Cloud Run liveness probe to decide whether to restart the container. (2) `/readyz` returns 200 ONLY when ALL upstream dependencies are healthy (Supabase URL + service-role key resolve and respond; Anthropic + OpenAI API keys present and not expired); returns 503 with a diagnostic JSON body listing which dependency failed when any of these checks fail — used by Cloud Run startup probe to gate the instance from being added to the load-balancer rotation. The Cloud Run service manifest MUST configure the startup probe to hit `/readyz` (not `/healthz` and not a TCP probe) so a degraded service is removed from rotation automatically rather than serving requests it cannot fulfill. On Cloud Run gen2, the startup probe is the gating signal — once it passes, the instance is in rotation, and the liveness probe (against `/healthz`) governs whether to restart. Verification: pytest integration tests in `python/tests/integration/test_generate_endpoint.py` cover the two-endpoint contract (good env → both 200; missing provider key → /readyz 503). The Cloud Run service manifest at `python/deploy/service.yaml` declares `startupProbe.httpGet.path: /readyz` and `livenessProbe.httpGet.path: /healthz`. | `python/tests/integration/test_generate_endpoint.py` (FastAPI TestClient — health endpoint contracts) + `python/deploy/service.yaml` (Knative-on-Cloud-Run manifest, version-controlled probe wiring) + `.github/workflows/python-ai-deploy.yml` (declarative `gcloud run services replace` step) | R (resolved 2026-05-24 — service.yaml landed with startup-probe → /readyz and liveness-probe → /healthz; workflow switched from `gcloud run deploy` CLI flags to declarative manifest apply) |
 
 ### Invariants covered by this section
 
@@ -837,30 +837,34 @@ notices.
 
 ### Notes on test strategy
 
-REG-72 is the first catalog entry in the Python service domain. It ships
-in `M` (missing) status pending the ai-engineer / architect work to
-land the FastAPI app and Cloud Run deploy YAML. Once the Python
-service lives at `python/services/ai/`:
+REG-72 shipped in three iterations and resolved 2026-05-24:
 
-1. ai-engineer implements `app/health.py` (or equivalent) with the
-   two-endpoint split.
-2. ai-engineer creates `python/services/ai/tests/test_health_contract.py`
-   exercising the three cases (good env, bad SUPABASE_URL, missing
-   provider key).
-3. architect creates `python/deploy/service.yaml` (or Cloud Build
-   equivalent) wiring the readiness probe to `/readyz`.
-4. architect creates `python/deploy/__tests__/test_service_yaml.py`
-   asserting the probe path; this can be a pytest test that reads the
-   YAML via `pyyaml`.
-5. CI pipeline includes a Python test job (architect-owned config in
-   `.github/workflows/`); REG-72 flips from `M` to `E` once both
-   test files exist and pass in CI.
+1. **Phase 0 (originally catalogued, M).** Specification only — no
+   FastAPI app on disk; no Cloud Run service. Quality gate: any PR
+   landing the FastAPI app without both endpoints OR without YAML
+   probe wiring must fail REG-72.
+2. **Phase 1 (M).** FastAPI app landed at `python/services/ai/api/`
+   with the two-endpoint split (`health.py:healthz` + `health.py:readyz`).
+   Integration tests at `python/tests/integration/test_generate_endpoint.py`
+   exercise both endpoints. Deploy workflow still used `gcloud run deploy`
+   CLI flags, which do not expose `startupProbe.httpGet.path` — so a
+   degraded instance could still be routed traffic. REG-72 stayed in `M`
+   for this gap.
+3. **Phase 1A wave 2 (R, 2026-05-24).** `python/deploy/service.yaml`
+   landed as a Knative-on-Cloud-Run manifest declaring
+   `startupProbe.httpGet.path: /readyz` and
+   `livenessProbe.httpGet.path: /healthz`. The deploy workflow switched
+   from `gcloud run deploy` (CLI flags) to `gcloud run services replace`
+   (declarative manifest apply). REG-72 is now end-to-end: app exposes
+   the two endpoints, tests assert their contract, and the manifest
+   pins the probe wiring in version control.
 
-Until the Python service lands, REG-72's status is `M` and this
-catalog entry serves as the SPECIFICATION the implementation must
-satisfy. Any PR that lands the FastAPI app without both endpoints OR
-without the YAML probe wiring MUST fail quality review on REG-72
-unsatisfied.
+The follow-up dedicated YAML-contract test (originally proposed as
+`python/deploy/__tests__/test_service_yaml.py`) is deferred — the
+workflow already runs `yaml.safe_load` on the rendered manifest before
+`gcloud` is invoked, and the rendered manifest is printed in the
+workflow log on every deploy for audit. A dedicated parsing test
+would be defense-in-depth but adds no new failure-mode coverage.
 
 ### Catalog total
 

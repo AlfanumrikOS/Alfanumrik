@@ -1,0 +1,200 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Cloud Run service manifest — Alfanumrik AI Services
+#
+# Owned by: architect. This file is the source of truth for Cloud Run
+# configuration. The deploy workflow (.github/workflows/python-ai-deploy.yml)
+# substitutes ${IMAGE_TAG} with the SHA-pinned image URL at deploy time
+# and runs:
+#
+#   gcloud run services replace python/deploy/service.yaml \
+#     --region asia-south1 \
+#     --project ${GCP_PROJECT_ID}
+#
+# Why declarative instead of `gcloud run deploy` flags:
+#   1. Version-controlled — every change to probe config, memory, scaling,
+#      or env vars shows up in a git diff. CLI flags are invisible after
+#      deploy.
+#   2. Audit-friendly — security reviewers see exact runtime posture in one
+#      file rather than reading workflow YAML for the flag set.
+#   3. GitOps-friendly — once stable, this could be reconciled by Config
+#      Connector or Anthos Config Management.
+#   4. Probe wiring — `gcloud run deploy` does not expose the startup/
+#      liveness probe fields. This was the trigger for REG-72: without a
+#      manifest, the readiness probe defaults to a TCP check on port 8080,
+#      which would route traffic to a half-initialized container that
+#      cannot reach Supabase.
+#
+# Probe semantics (REG-72):
+#   - startup probe → /readyz. Cloud Run gen2 uses ONLY the startup probe
+#     to gate initial traffic. Once it passes, the instance is added to
+#     the load-balancer pool. Configured with initialDelaySeconds=5,
+#     periodSeconds=5, failureThreshold=10 → up to 50s for cold start.
+#   - liveness probe → /healthz. Only kills the container if the process
+#     is truly stuck (failureThreshold=3, periodSeconds=30 = 90s grace).
+#     /healthz must NEVER touch external deps; it is liveness-only.
+#   - readiness during steady-state: Cloud Run gen2 does not poll a
+#     readiness probe after startup. We rely on (a) the startup probe
+#     gating the initial roll-in, and (b) client-side retries on transient
+#     5xx from /v1/* endpoints. If Supabase becomes unreachable AFTER
+#     startup, the request handler returns 503 with a structured error;
+#     callers (Supabase Edge proxy) retry with exponential backoff.
+#
+# Cold-start behavior:
+#   With min-instances=0 (default for staging), the first request after a
+#   period of inactivity pays the cold-start cost (~3-8 s for a 512 MiB
+#   Python container plus startup probe time). To eliminate cold starts
+#   for production traffic, set spec.template.spec.containers[0].resources
+#   below and bump annotations.autoscaling.knative.dev/minScale to 1.
+#   Cost impact: ~₹600/mo per always-warm instance. Phase 3 trigger:
+#   when foxy-tutor lands and p95 latency must stay sub-3s.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: ai-services
+  labels:
+    cloud.googleapis.com/location: asia-south1
+  annotations:
+    # Default to ALL traffic on the new revision. Phase 3 swaps this for
+    # split-traffic blue/green via `gcloud run services update-traffic`.
+    run.googleapis.com/launch-stage: GA
+    # Ingress: all means publicly reachable. Phase 5 may flip this to
+    # internal-and-cloud-load-balancing once the API gateway lands.
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        # ── Autoscaling ─────────────────────────────────────────────────────
+        # minScale=0 keeps cost at zero when idle. Phase 1A is low-volume
+        # admin traffic, so cold starts are acceptable.
+        # maxScale=10 is a conservative cap to prevent runaway autoscale
+        # during a traffic spike or compromised webhook. Bump to 25+ when
+        # foxy-tutor moves to Python (Phase 3 trigger).
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "10"
+        # Gen2 execution environment — required for startup-probe support
+        # AND for the 8-second cold-start improvement vs gen1. Do not
+        # downgrade without re-running the probe-timing math.
+        run.googleapis.com/execution-environment: gen2
+        # CPU is throttled when no request is in flight. This is the
+        # default for Cloud Run and keeps cost down. Background tasks
+        # (none today) would need "always-allocated".
+        run.googleapis.com/cpu-throttling: "true"
+    spec:
+      # ── Concurrency ────────────────────────────────────────────────────────
+      # 80 in-flight requests per instance. FastAPI + httpx is async, so
+      # each request is mostly I/O-bound on the upstream LLM call. Memory
+      # ceiling at concurrency=80 with httpx clients is ~480 MiB measured
+      # locally — within the 512 MiB limit. If memory pressure increases
+      # (e.g. response caching), drop to 60.
+      containerConcurrency: 80
+      # Per-request timeout. 300s is the Cloud Run upper bound for HTTP/1.
+      # bulk-question-gen synchronous endpoint can take 30-60s for large
+      # batches; foxy-tutor streaming responses are well under 60s. The
+      # generous ceiling is defense against pathological prompts.
+      timeoutSeconds: 300
+      # Runtime service account — only this SA holds
+      # roles/secretmanager.secretAccessor. The deploy SA is distinct.
+      # ${RUNTIME_SERVICE_ACCOUNT} is substituted by the deploy workflow.
+      serviceAccountName: ${RUNTIME_SERVICE_ACCOUNT}
+      containers:
+        - name: api
+          # ${IMAGE_TAG} → asia-south1-docker.pkg.dev/<project>/ai-services/api:<sha>
+          # substituted by .github/workflows/python-ai-deploy.yml
+          image: ${IMAGE_TAG}
+          ports:
+            - name: http1
+              containerPort: 8080
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          env:
+            - name: ENVIRONMENT
+              value: ${ENVIRONMENT}
+            - name: LOG_LEVEL
+              value: INFO
+            - name: USD_TO_INR
+              value: "83"
+            - name: ALLOWED_ORIGINS
+              value: ${ALLOWED_ORIGINS}
+            # ── Secret-Manager-backed env vars ────────────────────────────
+            # Cloud Run pulls these on every revision start. Rotation =
+            # `gcloud secrets versions add` + redeploy (or `gcloud run
+            # services update`).
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: anthropic-api-key
+                  key: latest
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-api-key
+                  key: latest
+            - name: SUPABASE_SERVICE_ROLE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: supabase-service-role-key
+                  key: latest
+            - name: SUPABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: supabase-url
+                  key: latest
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: sentry-dsn
+                  key: latest
+
+          # ── Startup probe (REG-72) ────────────────────────────────────────
+          # Cloud Run gen2 uses ONLY the startup probe to decide when an
+          # instance is ready to receive its first request. Once it passes,
+          # the instance is added to the load-balancer pool and Cloud Run
+          # does NOT poll readiness again until the instance is replaced.
+          #
+          # Probe target: /readyz — checks Supabase reachability AND that
+          # at least one provider API key is present. A container that
+          # cannot reach Supabase or has no provider keys returns 503 here
+          # and is NEVER added to rotation — solving the original REG-72
+          # half-broken-instance risk.
+          #
+          # Timing math: initialDelaySeconds=5 + periodSeconds=5 *
+          # failureThreshold=10 = up to 55s for cold start. Measured cold
+          # start for our container is ~3-8s (Python imports + Supabase
+          # client init), so failureThreshold=10 leaves ~45s of headroom
+          # for transient upstream slowness during init.
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 10
+
+          # ── Liveness probe ────────────────────────────────────────────────
+          # /healthz is the always-200 endpoint (no I/O). The only reason
+          # the liveness probe would fail is a deadlocked or OOM-killed
+          # Python process. Cloud Run kills + restarts on failureThreshold
+          # consecutive failures.
+          #
+          # Timing math: 30s period * 3 failures = 90s grace before kill.
+          # Conservative because killing a healthy instance mid-request
+          # breaks the user-facing call; long-running bulk-question-gen
+          # requests benefit from the slack.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+  # ── Traffic ────────────────────────────────────────────────────────────────
+  # Single-revision traffic. Blue/green via traffic splitting is a Phase 3
+  # follow-up — see docs/PYTHON_AI_LONG_TERM_VISION.md §2.
+  traffic:
+    - latestRevision: true
+      percent: 100
