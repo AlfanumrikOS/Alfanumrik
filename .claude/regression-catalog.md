@@ -1024,3 +1024,66 @@ on `SynthesizeRequest`, not migrate to the route function body.
 Pre-Voice-1b: 45 entries. Voice 1b adds REG-75.
 
 **Total: 46 entries.**
+
+## Phase 2 generate-concepts Python port (2026-05-24) — REG-76
+
+Source: Phase 2 continued — the third admin function port from TS Edge
+to Python AI Cloud Run (after bulk-question-gen and generate-answers).
+The Python port lives at `python/services/ai/business/generate_concepts/`;
+the TS Edge function at `supabase/functions/generate-concepts/index.ts`
+gains a proxy block that forwards to Cloud Run when
+`ff_python_generate_concepts_v1` is bumped, with TS fallback on any
+proxy failure. Default OFF (rollout_pct=0) until ops ramps.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-76 | `phase_2_generate_concepts_python_port_p5_p6_parity` | Three-pronged contract on the Python port of the concept-validation logic. (1) **P5 grade-as-string contract:** integer grade values must be rejected at the wire layer; every grade field on response chapter previews is a JSON string. (2) **P6 concept-quality validation parity:** `parse_concepts_response` rejects arrays with fewer than 3 concepts, caps arrays at 6 concepts, defaults invalid `difficulty` to 2 (matches TS index.ts:510-512), defaults invalid `bloom_level` to `understand` (matches TS index.ts:515-517), and silently skips concepts missing required fields (title / learning_objective / explanation / example_title / example_content). (3) **Wire-shape parity:** the response chapter preview surface (dry_run path) carries P5 string grade end-to-end so a Pydantic regression that accepted int grades on `ConceptInsertRow` would surface in integration tests before splitting traffic. | `python/tests/unit/test_generate_concepts_validator.py::test_rejects_array_with_less_than_3_concepts`, `python/tests/unit/test_generate_concepts_validator.py::test_caps_array_at_6_concepts`, `python/tests/unit/test_generate_concepts_validator.py::test_defaults_invalid_difficulty_to_2`, `python/tests/unit/test_generate_concepts_validator.py::test_defaults_invalid_bloom_to_understand`, `python/tests/unit/test_generate_concepts_validator.py::test_skips_concept_missing_required_field`, `python/tests/integration/test_generate_concepts_endpoint.py::test_post_returns_grade_as_string_in_response_chapters` | E |
+
+### Invariants covered by this section
+
+- P5 (grade format — strings) — REG-76 wire-level + insert-row contract
+- P6 (question / concept quality) — REG-76 3-6 concept array bound,
+  required-field validation, bloom + difficulty coercion
+- P12 (AI safety) — REG-76 adjacent: the parser is the LAST gate before
+  malformed LLM output reaches `chapter_concepts`. A regression that
+  allowed 2-concept arrays or arbitrary bloom strings would ship bad
+  concepts to students through the student-facing concept-card surface.
+
+### Notes on test strategy
+
+REG-76 is catalogued because the port introduces a SECOND
+implementation of the concept-validation logic. The Edge proxy fallback
+means traffic could be split: TS path returns rejection on bad input,
+Python path inserts garbage — exactly the kind of split-brain we
+designed the cutover to AVOID. The pinned tests live in:
+
+- `python/tests/unit/test_generate_concepts_validator.py` — five tests
+  on `parse_concepts_response`. These mirror the TS-side parser tests
+  byte-for-byte at the contract level.
+- `python/tests/integration/test_generate_concepts_endpoint.py` — one
+  end-to-end test confirming the response chapter preview surface
+  carries P5 string grade.
+
+The Python and TS validators MUST agree on these rejection conditions:
+
+| Input                          | TS verdict | Python verdict |
+|--------------------------------|------------|----------------|
+| Empty / non-array JSON         | None       | None           |
+| Array with < 3 valid concepts  | None       | None           |
+| Array with > 6 concepts        | Sliced to 6| Sliced to 6    |
+| difficulty=99                  | Default 2  | Default 2      |
+| bloom_level="evaluate"         | "understand" | "understand" |
+| Missing learning_objective     | Skip concept | Skip concept |
+| Missing explanation            | Skip concept | Skip concept |
+
+If a future change diverges either side, REG-76 fails and the catalog
+gates the PR. The pinned-test list at the top of this section is the
+floor; the wider unit suite at `test_generate_concepts_validator.py`
+(31 tests, every branch covered) provides the surface area.
+
+### Catalog total
+
+Pre-Phase-2-generate-concepts: 46 entries. Phase 2 generate-concepts
+adds REG-76.
+
+**Total: 47 entries.**
