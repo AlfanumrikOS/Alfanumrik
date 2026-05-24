@@ -191,14 +191,21 @@ vi.mock('@/lib/constants', async () => {
 // would cause an infinite re-render loop. Use vi.hoisted so the stable
 // references are created before the (hoisted) vi.mock factory runs.
 const stable = vi.hoisted(() => ({
+  // `subjects` is the FULL list (unlocked + locked). With locked empty here it
+  // equals the unlocked entries. The page destructures `subjects` and calls
+  // `.map` on it, so the mock must provide it.
+  subjects: [
+    { code: 'science', name: 'Science', icon: '⚛', color: '#10B981' },
+    { code: 'math', name: 'Math', icon: '➗', color: '#3B82F6' },
+  ],
   unlocked: [
     { code: 'science', name: 'Science', icon: '⚛', color: '#10B981' },
     { code: 'math', name: 'Math', icon: '➗', color: '#3B82F6' },
   ],
   locked: [] as unknown[],
-  result: null as { unlocked: unknown[]; locked: unknown[]; loading: boolean; error: null } | null,
+  result: null as { subjects: unknown[]; unlocked: unknown[]; locked: unknown[]; loading: boolean; error: null } | null,
 }));
-stable.result = { unlocked: stable.unlocked, locked: stable.locked, loading: false, error: null };
+stable.result = { subjects: stable.subjects, unlocked: stable.unlocked, locked: stable.locked, loading: false, error: null };
 vi.mock('@/lib/useAllowedSubjects', () => ({
   useAllowedSubjects: () => stable.result,
 }));
