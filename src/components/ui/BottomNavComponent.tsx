@@ -3,12 +3,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth, type UserRole } from '@/lib/AuthContext';
 import { ROLE_CONFIG } from '@/lib/constants';
 import { useDashboardData, useFeatureFlags } from '@/lib/swr';
-import { supabase } from '@/lib/supabase';
-
-// Module-level cache: avoid re-querying upcoming_exams on every nav render.
-// Keyed by student_id, value is { t: timestamp_ms, v: hasUpcomingExam }.
-// TTL: 5 minutes.
-const examCache = new Map<string, { t: number; v: boolean }>();
 
 /* ═══ NAVIGATION ARCHITECTURE ═══
  * Research-backed: Duolingo 5-tab model (the gold standard for EdTech)
@@ -258,39 +252,12 @@ export default function BottomNavComponent() {
 
   // Phase 5 Study-Menu v2 — gate the "Exam Sprint" entry on whether the
   // student actually has an upcoming exam in the next 30 days. We default
-  // to TRUE so the item shows on first paint (better to show + 404-late
-  // than hide a real-CTA on a soft network). The useEffect below queries
-  // upcoming_exams once per student-id and caches for 5 minutes.
-  const [hasUpcomingExam, setHasUpcomingExam] = useState(true);
-  useEffect(() => {
-    if (!auth.student?.id) return;
-    const studentId = auth.student.id;
-    // 5-min in-memory cache
-    const cached = examCache.get(studentId);
-    if (cached && Date.now() - cached.t < 5 * 60_000) {
-      setHasUpcomingExam(cached.v);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const today = new Date().toISOString().split('T')[0];
-        const horizon = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
-        const { count } = await supabase
-          .from('upcoming_exams')
-          .select('id', { count: 'exact', head: true })
-          .eq('student_id', studentId)
-          .gte('exam_date', today)
-          .lte('exam_date', horizon);
-        const v = (count ?? 0) > 0;
-        if (!cancelled) {
-          setHasUpcomingExam(v);
-          examCache.set(studentId, { t: Date.now(), v });
-        }
-      } catch { /* non-fatal — keep default true */ }
-    })();
-    return () => { cancelled = true; };
-  }, [auth.student?.id]);
+  // to TRUE so the item always shows.
+  // TODO(backend): the per-student `upcoming_exams` view does not exist yet, so
+  // we default to showing the exam CTA. When a `upcoming_exams` view (derived
+  // from school_exams + class enrollment, RLS-scoped per student) is created,
+  // restore the count query here to reflect real upcoming exams.
+  const [hasUpcomingExam] = useState(true);
 
   const tabs = getCoreTabs(activeRole);
   const allSidebarSections = getSidebarSections(activeRole);
