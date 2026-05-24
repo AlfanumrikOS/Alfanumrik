@@ -258,6 +258,45 @@ the Python service since it writes the same `mol_request_logs` rows.
 | Monthly Cloud Run cost > ₹2,000 (10x baseline projection) | P3 | Likely a runaway loop or dropped request-caching. Investigate via `mol_request_logs` top offenders (existing pattern: `tsx scripts/mol-cost-report.ts --hours=24`). |
 | `gcloud run services list` shows revision count > 20 for `ai-services` | P4 (housekeeping) | Old revisions are charged storage; prune via `gcloud run revisions delete` keeping the last 5. |
 
+### Voice (Phase 2 — Voice 1a, delivered 2026-05-24)
+
+Whisper transcription cost is metered per-call in `ops_events.context.cost_inr`
+(not in `mol_request_logs` — the Whisper path doesn't route through MoL).
+Alert thresholds calibrated against the Phase 2 starting volume; revisit
+after Voice 2 (frontend wiring) drives traffic upward.
+
+| Condition | Severity | Action |
+|---|---|---|
+| Daily voice cost > ₹500 (sum of `context.cost_inr` for `category='voice.transcribe.success'` in last 24h) | P3 | Verify legitimate traffic; if abnormal, flip `kill_switch` on the voice feature flag once that flag exists (Voice 2 will introduce). Until then, deactivate the Cloud Run revision with `gcloud run services update-traffic ai-services --to-revisions=<previous_rev>=100`. |
+| Whisper failure rate > 5% over 15 min (rows in `ops_events` with `category='voice.transcribe.failure'`) | P2 | Check OpenAI status page. If sustained > 30 min, manually disable the route at the Edge (Voice 2 flag) or scale Cloud Run to zero for the function. |
+| Whisper p95 latency > 30s over 10 min | P3 | OpenAI degraded — same check as above. Confirm `retry_with_backoff` is firing (Cloud Run logs `retry.attempt_failed`). |
+| Single transcription > 25 MiB rejected with 413 (rows in `ops_events.context.failure_reason ILIKE 'payload_too_large%'`) > 5 in 1h | P3 | Frontend not enforcing the size cap — flag the frontend team (Voice 2 work). |
+| `ops_events.context.failure_reason='daily_budget_exceeded'` row appears | P2 | Daily INR cap was hit — investigate via `mol_request_logs` whether bulk-question-gen or voice drove the spend; bump `DAILY_AI_BUDGET_INR_CAP` env if the cap is too tight for current traffic. |
+
+Query for voice activity in the last 24h:
+
+```sql
+select category,
+       severity,
+       count(*) as events,
+       round(sum((context->>'cost_inr')::numeric), 4) as total_inr,
+       round(sum((context->>'audio_duration_seconds')::numeric), 1) as total_seconds,
+       round(avg((context->>'audio_duration_seconds')::numeric), 2) as avg_seconds_per_clip,
+       count(distinct subject_id) as distinct_students
+  from public.ops_events
+ where source = 'voice-transcribe'
+   and occurred_at > now() - interval '24 hours'
+ group by category, severity
+ order by category, severity;
+```
+
+PII reminder when triaging voice events: `ops_events.context` for
+`source='voice-transcribe'` carries only `transcript_length` (an integer),
+audio duration, format, detected language, INR cost, and grade. It NEVER
+carries the raw transcript or audio bytes — if a row ever shows up with
+a `transcript` field in `context`, that's a P0 P13 regression and
+requires a hotfix to `python/services/ai/business/voice/repository.py`.
+
 ## Rollback procedures
 
 Three options, ranked from fastest to safest.

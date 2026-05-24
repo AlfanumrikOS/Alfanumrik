@@ -225,6 +225,7 @@ The Phase 1 pattern (proxy gate + per-function cutover) is the canonical migrati
 | Order | Function | Why this order |
 | --- | --- | --- |
 | 1 | bulk-question-gen | DONE (Phase 1) — lowest risk (admin-only, batch), validates the pattern |
+| 1a | voice/transcribe (Whisper STT) | DELIVERED 2026-05-24 (Phase 2 — Voice 1a). NEW capability, not a TS port — student-facing speech-to-text via OpenAI Whisper at `POST /v1/voice/transcribe`. Returns transcript + detected_language + duration_seconds + cost_inr. Daily org budget cap via `check_daily_budget`. PII-safe ops_events telemetry. Coverage: 86-100% across new files. Voice 1b (TTS via Azure Indian accent), Voice 2 (frontend wiring in `src/lib/voice.ts`), and Voice 3 (adaptive language end-to-end) follow in successive PRs. |
 | 2 | generate-answers | Highest volume non-AI-prompt function; embeddings-only; well-defined I/O |
 | 3 | foxy-tutor | Highest impact (student-facing); streaming responses; biggest test of the proxy |
 | 4 | ncert-solver | Lower volume than Foxy but same shape (RAG + LLM); validates Phase 3 split |

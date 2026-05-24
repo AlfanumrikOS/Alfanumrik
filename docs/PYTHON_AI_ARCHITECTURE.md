@@ -264,6 +264,82 @@ Each phase has its own rollout plan; this document is the long-horizon map, not 
 
 ---
 
+## 8a. Voice (Phase 2 — Voice 1a delivered 2026-05-24)
+
+The Python service now hosts the platform's first voice capability: a
+student-facing speech-to-text endpoint at `POST /v1/voice/transcribe`.
+
+**Topology** — this is a NEW capability, not a TS port. Clients (the
+Foxy web UI, mobile via `src/lib/voice.ts` once Voice 2 lands) call
+Cloud Run directly OR via a future Supabase Edge proxy in the same
+cutover pattern as bulk-question-gen.
+
+**Endpoint contract:**
+- Request: `POST /v1/voice/transcribe`
+- Body: `multipart/form-data`
+  - `audio` (file, required): one of webm / mp3 / wav / m4a / ogg / mpga / flac, ≤ 25 MiB
+  - `language_hint` (form field, optional): `'en' | 'hi' | 'hinglish'`
+- Auth: `Authorization: Bearer <Supabase student JWT>` — validated against
+  the `students` table (NOT `admin_users`).
+- Response (200): `TranscribeResponse { transcript, detected_language,
+  duration_seconds, audio_format, cost_inr, request_id }`
+- Errors emit a `TranscribeError { error, detail, request_id }` envelope
+  under `HTTPException.detail`.
+
+**Underlying model**: OpenAI Whisper `whisper-1` via
+`https://api.openai.com/v1/audio/transcriptions`. Pricing $0.006/min →
+₹0.498/min at USD→INR=83. Per-call INR cost computed from the
+`duration` field of Whisper's `verbose_json` response and persisted to
+ops_events for the super-admin voice dashboard.
+
+**Hinglish detection (Phase 2 floor)**: Whisper returns iso-639-1 codes
+(`en`, `hi`). When Whisper says `'hi'` AND the transcript is Latin-script-dominant
+(≥3x more Latin than Devanagari letters), we tag the response
+`detected_language='hinglish'` so the chat layer can decide how to
+respond. This is a heuristic; Voice 3 will swap in a proper
+language-id model.
+
+**Robustness primitives reused:**
+- `shared/retry.py` `@retry_with_backoff` on the Whisper HTTP call (3
+  attempts, 1-8 s exponential backoff for 502/503/timeout).
+- `shared/budget_guard.py` `check_daily_budget(scope='org')` short-circuits
+  before the Whisper call when the daily INR cap is exhausted.
+
+**No circuit breaker (yet)**: Whisper is a single-provider call. A naive
+breaker would gate ALL transcription on the first run of transient
+errors; the retry primitive already covers the common 502/503 patterns.
+Phase 2.5 will revisit if production traffic shows sustained Whisper
+instability.
+
+**PII posture (P13)**: ops_events rows carry transcript LENGTH (not the
+transcript), audio duration in seconds (not the raw bytes), and
+student_id as a UUID (existing convention — UUIDs aren't PII per
+codebase posture). Name / email / phone are never read from the
+`students` row (we only select `id`, `grade`, `preferred_language`).
+
+**CORS**: the existing FastAPI CORS middleware (`api/main.py`) allows
+`Authorization`, `Content-Type`, `X-Request-Id` on POST/OPTIONS from the
+configured `ALLOWED_ORIGINS` (`https://alfanumrik.com` +
+`https://www.alfanumrik.com` in prod). Browser multipart uploads with
+the bearer token preflight cleanly — verified during the Voice 1a PR.
+
+**Tests**: 81 new tests (4 unit + 1 integration file) at 86–100%
+coverage on each new module. Provider HTTP (`respx`), Supabase Auth
+(`respx`), and `students` / `ops_events` table writes are all mocked —
+no real Whisper or DB calls in the test suite.
+
+**Voice phases (next)**:
+- Voice 1b: TTS endpoint at `POST /v1/voice/synthesize` via Azure
+  Speech (Indian-accent voices). Same `students`-table auth + budget
+  guard + ops_events posture.
+- Voice 2: Frontend integration — `src/lib/voice.ts` switches from
+  Web-Speech-API STT to the Cloud Run Whisper endpoint; Foxy chat input
+  receives transcripts via the existing `/api/foxy` route.
+- Voice 3: Adaptive language end-to-end — student speaks Hindi →
+  Whisper returns `hi` → Foxy responds in Hindi → TTS speaks Hindi.
+
+---
+
 ## 9. Non-goals (Phase 0)
 
 - No traffic routing changes. The Edge functions still run their current TS code.

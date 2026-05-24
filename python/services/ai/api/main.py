@@ -24,6 +24,7 @@ from ..observability.sentry import configure_sentry
 from .health import router as health_router
 from .v1.bulk_question_gen import router as bulk_question_gen_router
 from .v1.generate import router as generate_router
+from .v1.voice import router as voice_router
 
 
 @asynccontextmanager
@@ -118,6 +119,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(generate_router)
     app.include_router(bulk_question_gen_router)
+    app.include_router(voice_router)
 
     return app
 
