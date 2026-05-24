@@ -47,3 +47,32 @@ When the SVG source changes, regenerate via the script above. Modern Chrome
 will prefer the SVG entries when available (they're listed first in
 manifest.icons), so PNG regeneration is only needed when the visual brand
 shifts.
+
+---
+
+# Browser auto-probe icons - DONE (2026-05-24)
+
+Browsers request a few root-level icon paths on *every* page load regardless
+of what `<link rel="icon">` / `manifest.json` declares. When absent they emit
+persistent `Failed to load resource: 404` console errors in production.
+Generated **2026-05-24** via `sharp` from the source SVGs in this folder
+(opaque white background, matching the PWA icon style above):
+
+- `public/favicon.ico` (32x32 PNG-in-ICO, ~0.5 kB) - from `favicon.svg`. Every
+  browser requests this; the most common persistent 404.
+- `public/apple-touch-icon.png` (180x180, ~3.1 kB) - from `icon-512x512.svg`.
+  iOS Safari auto-probe.
+- `public/apple-touch-icon-precomposed.png` (180x180, identical output) - iOS
+  Safari auto-probe.
+
+`sharp` cannot write the `.ico` container, so `favicon.ico` wraps a 32x32 PNG
+buffer in a hand-built single-image ICONDIR/ICONDIRENTRY (browsers accept
+PNG-compressed ICO entries).
+
+## Regeneration (auto-probe icons)
+
+Committed and reproducible via:
+
+```bash
+node scripts/gen-icons.mjs
+```
