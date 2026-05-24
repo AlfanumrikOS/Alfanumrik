@@ -105,6 +105,142 @@ TypeScript Edge Functions to Python. Each port is a separate canary cycle.
   handler in a follow-up PR. Update the migration tracking checklist below
   in the same PR.
 
+## Cutover procedure for individual functions
+
+Phase 1 (2026-05-24) ships a dedicated **per-function** feature flag for
+each port instead of the originally-planned shared
+`ff_python_ai_services_v1` flag. The decision: per-function control means
+each function has its own cutover schedule + blast radius, and an OpenAI
+incident on one function doesn't force-flip every other function to TS at
+the same time. This mirrors the Phase 1A admin-routing pattern but inverts
+the granularity (one flag per function, not one shared flag for six
+functions).
+
+Each function's flag is named `ff_python_<function_name>_v1` and carries
+the same envelope shape:
+
+```json
+{
+  "enabled": false,
+  "kill_switch": false,
+  "rollout_pct": 0,
+  "description": "...",
+  "owner": "ai-engineer"
+}
+```
+
+Kill-switch precedence (read by `shouldProxyToPython` in
+`supabase/functions/_shared/python-ai-proxy.ts`):
+
+1. `metadata.kill_switch === true` → never proxy (legacy TS path)
+2. `typeof metadata.enabled === 'boolean'` → that value wins
+3. else → `is_enabled` column
+
+Defensive default on any flag-read failure: do NOT proxy. Cost > correctness
+during a flag-read outage — same trade-off as `isMolAdminRoutingEnabled()`.
+
+### Bumping rollout for one function
+
+Replace `<function>` with the migrated function name (first port:
+`bulk_question_gen`).
+
+**10% canary** (after Cloud Run smoke tests are green):
+
+```sql
+update public.feature_flags
+   set is_enabled = true,
+       metadata = metadata
+                  || jsonb_build_object(
+                       'enabled', true,
+                       'kill_switch', false,
+                       'rollout_pct', 10
+                     ),
+       updated_at = now()
+ where flag_name = 'ff_python_<function>_v1';
+```
+
+5-minute flag-cache TTL → 10% of traffic begins forwarding to Cloud Run
+within 5 min. Watch `mol_request_logs` and Cloud Run dashboards for 8-12h
+per the rollout playbook above.
+
+**25% / 50% / 100% ramps** — same SQL, change `rollout_pct` to the next
+step:
+
+```sql
+update public.feature_flags
+   set metadata = metadata || jsonb_build_object('rollout_pct', 25),
+       updated_at = now()
+ where flag_name = 'ff_python_<function>_v1';
+```
+
+```sql
+update public.feature_flags
+   set metadata = metadata || jsonb_build_object('rollout_pct', 50),
+       updated_at = now()
+ where flag_name = 'ff_python_<function>_v1';
+```
+
+```sql
+update public.feature_flags
+   set metadata = metadata || jsonb_build_object('rollout_pct', 100),
+       updated_at = now()
+ where flag_name = 'ff_python_<function>_v1';
+```
+
+### Emergency kill switch for one function
+
+When Cloud Run is up but producing bad output for this specific function,
+flip the kill switch WITHOUT touching the other in-flight cutovers:
+
+```sql
+update public.feature_flags
+   set metadata = metadata || jsonb_build_object('kill_switch', true),
+       updated_at = now()
+ where flag_name = 'ff_python_<function>_v1';
+```
+
+Within 5 minutes the proxy reverts the affected function to its legacy
+TS path; other functions in mid-cutover are unaffected.
+
+### Verify the current rollout state
+
+```sql
+select flag_name,
+       is_enabled,
+       (metadata->>'enabled')::boolean         as metadata_enabled,
+       (metadata->>'kill_switch')::boolean     as kill_switch,
+       (metadata->>'rollout_pct')::int         as rollout_pct,
+       updated_at
+  from public.feature_flags
+ where flag_name like 'ff_python_%_v1'
+ order by flag_name;
+```
+
+The same row shape applies to every per-function flag; this query
+shows the entire Python-cutover fleet at a glance.
+
+### First-port checklist (bulk-question-gen)
+
+Apply this checklist verbatim for each subsequent function port.
+
+- [ ] `PYTHON_AI_BASE_URL` env var set on the Edge Function (architect).
+- [ ] Cloud Run service health: `/healthz` returns 200, `/readyz` returns
+      200 (no upstream issues).
+- [ ] Staging smoke test: hit the Python service URL directly with a
+      valid admin JWT and a known-good `bulk-question-gen` request body.
+      Compare response shape to the TS function's output.
+- [ ] Flag exists and is in default state:
+      `select * from public.feature_flags where flag_name = 'ff_python_bulk_question_gen_v1';`
+      should show `is_enabled=false`, `rollout_pct=0`.
+- [ ] Bump to 10% canary using the SQL above.
+- [ ] Watch 8-12h: Cloud Run error rate < 1%, p95 latency parity vs TS,
+      `mol_request_logs` shows correct provider attribution for the
+      forwarded slice.
+- [ ] Ramp 25% → 50% → 100% per the cadence above.
+- [ ] At 100% Python for 7 days clean → ai-engineer deletes the legacy TS
+      Edge handler in a follow-up PR, updates the migration tracking
+      table below.
+
 ## Alerts
 
 Thresholds below are CLOUD-RUN-SPECIFIC. For underlying provider-fallback
@@ -318,6 +454,11 @@ weekly during Phase 1-6. Status key:
 
 - **legacy-only**: still served by TS Edge Function, no Python equivalent
   deployed.
+- **proxy-ready (legacy serves all traffic)**: Supabase Edge proxy block
+  merged + per-function flag created (default OFF, `rollout_pct=0`), but
+  either Cloud Run isn't deployed yet OR `PYTHON_AI_BASE_URL` env var
+  isn't wired. Functionally identical to `legacy-only` at runtime; the
+  delta is the proxy infrastructure is in place ready to ramp.
 - **proxied (canary)**: Python implementation deployed, proxy flag at
   rollout < 100%.
 - **proxied (100%)**: Python serves all traffic via the proxy; TS Edge
@@ -326,7 +467,7 @@ weekly during Phase 1-6. Status key:
 
 | Function | Status | Cutover date | Notes |
 |---|---|---|---|
-| `bulk-question-gen` | legacy-only | TBD | Admin-only. First canary candidate (lowest blast radius). |
+| `bulk-question-gen` | proxy-ready (legacy serves all traffic) | TBD | Admin-only. First canary candidate (lowest blast radius). Edge proxy + `ff_python_bulk_question_gen_v1` flag shipped 2026-05-24 (default OFF, `rollout_pct=0`). Awaiting Cloud Run setup + `PYTHON_AI_BASE_URL` env wiring before first 10% ramp. |
 | `bulk-non-mcq-gen` | legacy-only | TBD | Admin-only. |
 | `generate-concepts` | legacy-only | TBD | Admin x-admin-key. |
 | `generate-answers` | legacy-only | TBD | Admin x-admin-key. RAG context baked into system prompt. |

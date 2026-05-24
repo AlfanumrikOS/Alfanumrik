@@ -71,6 +71,14 @@ import { logOpsEvent } from '../_shared/ops-events.ts'
 // byte-for-byte from pre-Phase-1A so rollback is trustworthy.
 import { generateResponse, MolError } from '../_shared/mol/index.ts'
 import { isMolAdminRoutingEnabled } from '../_shared/mol/admin-rollback-flag.ts'
+// Phase 1 (2026-05-24): Python AI services cutover proxy. When
+// ff_python_bulk_question_gen_v1 is enabled AND the per-request bucket
+// falls within rollout_pct, the handler forwards the request to Cloud Run
+// (asia-south1) instead of running the Phase 1A TS path below. On ANY
+// proxy failure the handler falls through to the TS path — never 502 the
+// user because Cloud Run is down. Default OFF (rollout_pct=0) until
+// architect wires PYTHON_AI_BASE_URL + ops bumps the flag.
+import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
 
 // ─── Environment ──────────────────────────────────────────────────────────────
 const ANTHROPIC_API_KEY   = Deno.env.get('ANTHROPIC_API_KEY')   || ''
@@ -1022,6 +1030,53 @@ Deno.serve(async (req: Request) => {
     const authResult = await verifyAdminAuth(req)
     if (!authResult.authorized) {
       return errorResponse(authResult.error, authResult.status, origin)
+    }
+
+    // ── 1a. Python AI services cutover (Phase 1 — 2026-05-24) ───────────────
+    // When ff_python_bulk_question_gen_v1 is enabled AND the per-request
+    // hash bucket falls within rollout_pct, forward the entire request to
+    // Cloud Run instead of running the Phase 1A TS path below. Default
+    // rollout_pct=0 means ZERO traffic forwards until ops bumps the
+    // envelope; first deploy ramp is 10% → 25% → 50% → 100% over 24-48h
+    // per the docs/PYTHON_AI_OPERATIONS.md rollout playbook.
+    //
+    // The traceId is locally generated (function has no upstream request
+    // id today). Same UUID is passed to shouldProxyToPython so the hash
+    // bucket is reproducible across helper invocations within this call.
+    //
+    // Rollback gate is identical to the rest of Phase 1A: if Cloud Run is
+    // returning bad results, ops flips metadata.kill_switch=true and the
+    // 5-min flag cache TTL drains the proxy without a redeploy. If Cloud
+    // Run is hard-down, the proxy throws and we fall through to the TS
+    // path — the user never sees a 502 because the TS path is the safety
+    // net during transition (P12 — never crash the user-facing path).
+    const proxyTraceId =
+      req.headers.get('x-request-id') ??
+      (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `bqg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`)
+
+    const proxyDecision = await shouldProxyToPython({
+      flag_name: 'ff_python_bulk_question_gen_v1',
+      endpoint_path: '/v1/bulk-question-gen',
+      request_id: proxyTraceId,
+    })
+
+    if (proxyDecision.should_proxy && proxyDecision.target_url) {
+      try {
+        return await forwardToPython({
+          target_url: proxyDecision.target_url,
+          request: req,
+        })
+      } catch (err) {
+        // Proxy failure: log + fall through to the existing TS path. We
+        // intentionally never 502 the user because of proxy-layer issues
+        // during transition — TS is the safety net.
+        console.warn(
+          `[python-ai-proxy] forward failed for bulk-question-gen: ${err instanceof Error ? err.message : String(err)}; falling back to TS path`,
+        )
+        // Continue to the existing TS code below.
+      }
     }
 
     // ── 2. Parse + validate request body ───────────────────────────────────

@@ -867,3 +867,88 @@ unsatisfied.
 Pre-Phase-0: 42 entries. Phase 0 adds REG-72.
 
 **Total: 43 entries.**
+
+## Python AI Service Phase 1 — Request/Response Parity + Cutover Kill Switch (2026-05-24) — REG-73..REG-74
+
+Source: Phase 1 of the Python-on-Cloud-Run migration ships the first
+production AI workload (`bulk-question-gen`) on the new FastAPI service.
+The TS Edge Function at `supabase/functions/bulk-question-gen/index.ts`
+remains the canonical entry point; the new `_shared/python-ai-proxy.ts`
+helper forwards eligible requests to the Cloud Run endpoint and falls
+back to the legacy TS path on any rejection. REG-73 pins the
+TS↔Python wire contract; REG-74 pins the 3-layer rollback / cutover
+gating that ramps the rollout.
+
+These are the first two catalog entries that span the TS Edge Function
+boundary and the Python FastAPI surface — a future cutover regression
+on either side would cascade into total `bulk-question-gen` outage
+(and, by extension, every Phase 2-6 workload once they reuse the same
+proxy helper).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-73 | `python_ai_bulk_question_gen_request_response_parity` | TS↔Python wire-contract parity for `bulk-question-gen`. (1) **Request body shape**: TS Edge Function destructures exactly 7 fields from the JSON body — `grade`, `subject`, `chapter`, `chapter_id`, `count`, `difficulty`, `bloom_level`. Python `BulkQuestionGenRequest` Pydantic model at `python/services/ai/business/bulk_question_gen/models.py` declares the same 7 fields with identical names, types, and defaults. (2) **Strict-mode rejection**: the Pydantic model uses `model_config = ConfigDict(extra='forbid')` so any future TS-side field addition that Python doesn't know about will fail with HTTP 422 — drift between the two sides cannot be silent. (3) **Response body shape**: Python returns `{generated, inserted, rejected, oracle_evaluated, oracle_rejected, questions[], warning?}`; TS proxy passes this through unchanged. Field-for-field equality enforced — adding a Python field without the TS proxy expecting it is also a breaking change. Closes the #1 Phase 1 cutover risk: a silent TS-or-Python-only field addition that 422s every bulk-question-gen request after deploy. | `supabase/functions/bulk-question-gen/index.ts` body destructuring + `python/services/ai/business/bulk_question_gen/models.py` Pydantic model (parity contract; dedicated parity test file to be added in Phase 1.2 — recommend a contract test that reads both source files and asserts field-set equality, OR a runtime test that POSTs the same JSON to both surfaces and asserts no 422). | M (parity contract documented; dedicated test file to land in Phase 1.2 — catalog entry acts as the explicit gating contract until then) |
+| REG-74 | `python_ai_cutover_kill_switch_three_layer_precedence` | 3-layer kill-switch precedence in `supabase/functions/_shared/python-ai-proxy.ts` MUST evaluate in this order and short-circuit to the TS legacy path on ANY layer rejecting: (1) `PYTHON_AI_BASE_URL` env unset → TS path regardless of flag state (architect-level escape hatch — beats the 5-min flag cache, takes effect on next Edge Function deploy in seconds). (2) `metadata.enabled === false` OR `metadata.kill_switch === true` on the feature flag → TS path. (3) Hash-bucket(`request_id`) % 100 ≥ `metadata.rollout_pct` → TS path (deterministic per-request bucketing so the same student gets the same provider within a session). Only if all 3 layers say "yes" does the proxy forward to Cloud Run. The 5-min flag-cache TTL bounds the worst-case ops-controlled rollback latency; the env-unset layer is the seconds-scale escape hatch. Existing 14 unit tests cover each layer in isolation; REG-74's addition is the **precedence-order parity test** that asserts the full chain — a future refactor could drop or reorder a layer and the per-layer tests would still pass while the contract was silently broken. | `supabase/functions/_shared/python-ai-proxy.ts` (proxy module) + `supabase/functions/_shared/__tests__/python-ai-proxy.test.ts` (14 unit tests cover per-layer behaviour; ONE additional precedence-chain order test to land in Phase 1.2 asserting env-unset > enabled-true > kill-switch-false > rollout-bucket-hit must all hold for the proxy to forward) | P (per-layer coverage exists at 14 unit tests; precedence-chain order test deferred to Phase 1.2) |
+
+### Invariants covered by this section
+
+- HTTP contract integrity (operational invariant) — REG-73 pins
+  request/response shape parity across the TS Edge proxy and the
+  Python FastAPI endpoint. Any silent TS-or-Python-only field addition
+  would cascade into HTTP 422 on every bulk-question-gen request after
+  deploy; the contract being explicit in the catalog forces both sides
+  to update together.
+- P12 (AI safety) — REG-74 pins the cutover safety boundary. Three
+  independent rejection layers (env unset, flag disabled, rollout
+  bucket miss) each route to the TS legacy path; the seconds-scale
+  env-unset escape hatch beats the 5-min flag-cache TTL so a Cloud Run
+  outage can be drained on the next Edge Function deploy without
+  waiting for the cache to settle. The same proxy helper is reused by
+  Phases 2-6 workloads, so REG-74's precedence-order contract bounds
+  blast radius for the entire Python migration.
+- Service-availability contract (operational invariant, adjacent to
+  REG-72) — together with REG-72's `/readyz` readiness-probe pin,
+  REG-74's kill-switch ensures a degraded Python service cannot be
+  silently traffic-pinned: Cloud Run takes the instance out of
+  rotation on `/readyz` 503, and the proxy short-circuits to TS on
+  flag/env disable. Defense in depth.
+
+### Notes on test strategy
+
+REG-73 follows the contract / parity pattern (see REG-37, REG-50,
+REG-51, REG-54, REG-71): the canonical sources are the TS handler's
+body destructuring and the Python Pydantic model. A dedicated parity
+test can be either:
+
+1. **Static-source contract test** — read both files via `node:fs`
+   (TS) and `pyyaml`/AST (Python), extract the field sets, assert
+   equality. Fast, no runtime dependency.
+2. **Runtime contract test** — boot the Python FastAPI app under
+   `TestClient`, POST a request the TS handler would forward, assert
+   no 422 and matching response shape. Catches semantic drift the
+   static test would miss (e.g. default-value drift).
+
+Phase 1.2 should ship the static test as the gating regression and
+the runtime test as an integration check. Until then, REG-73's
+catalog entry is the gating contract — quality MUST reject any PR
+that adds a field to one side without the other.
+
+REG-74 is enforced today by the existing per-layer unit suite at
+`supabase/functions/_shared/__tests__/python-ai-proxy.test.ts`
+(14 tests). The Phase 1.2 follow-up adds ONE precedence-chain order
+test asserting the full ladder semantics — env-unset wins over
+enabled-true wins over kill-switch-false wins over rollout=100. The
+existing tests would still pass if a future refactor swapped the
+order; the new test pins the order itself.
+
+The 3-layer kill-switch design is the same fail-closed-on-failure
+posture as `admin-rollback-flag.ts` (REG-70) and matches the
+operational philosophy that ops-intended-OFF must always beat
+any other signal. REG-74 catalogues that posture for the
+Python-migration surface.
+
+### Catalog total
+
+Pre-Phase-1: 43 entries. Phase 1 adds REG-73, REG-74.
+
+**Total: 45 entries.**
