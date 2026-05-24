@@ -1,6 +1,14 @@
 // D2: verify useAllowedSubjects partitions subjects into unlocked/locked.
 // The hook is the single source of truth used by dashboard/foxy/profile/etc.
+//
+// NOTE (2026-05-24): the hook now derives `subjects/unlocked/locked` via real
+// React.useMemo and `refresh` via useCallback (referential-stability fix for
+// the infinite-render-loop bug). Real hooks require an active React render
+// dispatcher, so these tests use renderHook(...) instead of calling the hook
+// bare — calling it outside a render context now throws
+// "Cannot read properties of null (reading 'useMemo')".
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { renderHook } from '@testing-library/react';
 
 // Mock swr so we can feed a deterministic server response to the hook.
 const fetcherMock = vi.fn();
@@ -30,7 +38,8 @@ describe('useAllowedSubjects', () => {
         { code: 'physics', name: 'Physics', nameHi: 'भौतिकी', icon: '⚡', color: '#111', subjectKind: 'cbse_core', isCore: true, isLocked: true },
       ],
     });
-    const { subjects, unlocked, locked } = useAllowedSubjects();
+    const { result } = renderHook(() => useAllowedSubjects());
+    const { subjects, unlocked, locked } = result.current;
     expect(subjects).toHaveLength(2);
     expect(unlocked.map(s => s.code)).toEqual(['math']);
     expect(locked.map(s => s.code)).toEqual(['physics']);
@@ -38,7 +47,8 @@ describe('useAllowedSubjects', () => {
 
   it('returns empty arrays when no data yet', () => {
     fetcherMock.mockReturnValue(undefined);
-    const { subjects, unlocked, locked } = useAllowedSubjects();
+    const { result } = renderHook(() => useAllowedSubjects());
+    const { subjects, unlocked, locked } = result.current;
     expect(subjects).toEqual([]);
     expect(unlocked).toEqual([]);
     expect(locked).toEqual([]);

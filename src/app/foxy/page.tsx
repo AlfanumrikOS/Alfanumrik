@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
@@ -221,13 +221,18 @@ export default function FoxyPage() {
   // Lookup table for tab/dropdown rendering — keep `unlocked` semantics for
   // any code path that should only see usable subjects (e.g. the legacy
   // dropdown). Tab bar reads from `allowedSubjects` (full list).
-  const SUBJECTS: Record<string, SubjectConfig> = Object.fromEntries(
-    unlockedSubjects.map((s) => [s.code, { name: s.name, icon: s.icon, color: s.color } as SubjectConfig]),
+  const SUBJECTS = useMemo<Record<string, SubjectConfig>>(
+    () => Object.fromEntries(
+      unlockedSubjects.map((s) => [s.code, { name: s.name, icon: s.icon, color: s.color } as SubjectConfig]),
+    ),
+    [unlockedSubjects],
   );
 
   // Full lookup (incl. locked) for the tab bar.
-  const ALL_SUBJECTS_BY_CODE: Record<string, typeof allowedSubjects[number]> =
-    Object.fromEntries(allowedSubjects.map((s) => [s.code, s]));
+  const ALL_SUBJECTS_BY_CODE = useMemo<Record<string, typeof allowedSubjects[number]>>(
+    () => Object.fromEntries(allowedSubjects.map((s) => [s.code, s])),
+    [allowedSubjects],
+  );
 
   // Tracks which locked subject the student tapped, so we can show the
   // upgrade modal. Null = modal closed.
@@ -569,11 +574,13 @@ export default function FoxyPage() {
     })();
   }, [activeSubject, studentGrade, student?.id]);
 
-  // Auto-scroll
+  // Auto-scroll. During streaming (loading), pin to the bottom INSTANTLY —
+  // re-triggering a smooth scroll on every streamed token causes visible
+  // jank/stutter. Smooth-scroll only once the turn settles.
   useEffect(() => {
     requestAnimationFrame(() => {
       const el = scrollContainerRef.current;
-      if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior: loading ? 'auto' : 'smooth' });
     });
   }, [messages, loading]);
 
