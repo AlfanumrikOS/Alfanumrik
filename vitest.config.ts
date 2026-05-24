@@ -44,6 +44,10 @@ export default defineConfig({
           // C4.2b-ii text capture (2026-05-20). Tests for the text-based
           // PII redactor used by mol_shadow_text_buffer writes.
           'supabase/functions/_shared/__tests__/redact-pii.test.ts',
+          // Phase 1 Python AI services cutover (2026-05-24). Tests for
+          // the proxy helper used by bulk-question-gen (and future
+          // Phase 1+ ports) to forward traffic to Cloud Run.
+          'supabase/functions/_shared/__tests__/python-ai-proxy.test.ts',
           // C4.2b-ii text capture (2026-05-20). Tests for recordShadowText
           // + redaction aggregation + DB insert wiring.
           'supabase/functions/_shared/mol/__tests__/recordShadowText.test.ts',

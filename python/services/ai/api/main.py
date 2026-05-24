@@ -22,6 +22,7 @@ from ..db.supabase import get_service_client
 from ..observability.logger import configure_logging, get_logger
 from ..observability.sentry import configure_sentry
 from .health import router as health_router
+from .v1.bulk_question_gen import router as bulk_question_gen_router
 from .v1.generate import router as generate_router
 
 
@@ -116,6 +117,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(generate_router)
+    app.include_router(bulk_question_gen_router)
 
     return app
 

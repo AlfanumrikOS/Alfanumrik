@@ -167,6 +167,26 @@ delete the legacy TS Edge handler in a follow-up PR and the migration
 tracking table in [PYTHON_AI_OPERATIONS.md](PYTHON_AI_OPERATIONS.md#migration-tracking)
 is updated in the same PR.
 
+**Per-function flag granularity (locked 2026-05-24):** instead of the
+originally-planned shared `ff_python_ai_services_v1` flag, each function
+ships with its own `ff_python_<function>_v1` flag carrying the same
+`{ enabled, kill_switch, rollout_pct }` envelope. The decision: per-function
+control means each function gets its own cutover schedule + blast radius,
+and an OpenAI incident on one function doesn't force-flip every other
+function to TS at the same time. See the [cutover procedure for individual
+functions](PYTHON_AI_OPERATIONS.md#cutover-procedure-for-individual-functions)
+runbook for the SQL.
+
+**First function in cutover: `bulk-question-gen`** (status: code ready,
+deploy gated on Cloud Run setup). The Supabase Edge proxy block lives at
+the top of `supabase/functions/bulk-question-gen/index.ts` and the
+helper at `supabase/functions/_shared/python-ai-proxy.ts`. The flag
+`ff_python_bulk_question_gen_v1` is created via migration
+`supabase/migrations/20260603170000_python_bulk_question_gen_flag.sql`
+with `is_enabled=false, rollout_pct=0` (default OFF). The proxy
+additionally short-circuits when `PYTHON_AI_BASE_URL` env var is empty —
+zero behavior change until architect wires the Cloud Run service URL.
+
 Where to learn more:
 - `docs/PYTHON_AI_ARCHITECTURE.md` — Python service architecture (architect, in flight)
 - [`docs/PYTHON_AI_OPERATIONS.md`](PYTHON_AI_OPERATIONS.md) — daily checks, alerts, rollback procedures, cost monitoring, migration tracking
