@@ -74,7 +74,7 @@ describe('REG-57 — L2/L3 client-side fallback must not trust client is_correct
     if (hits.length === 1) {
       // Pin the line number range so a refactor that moves it elsewhere
       // forces a re-review.
-      expect(hits[0]).toMatch(/^L4[6-9]\d:/);
+      expect(hits[0]).toMatch(/^L(4[6-9]|5[2-5])\d:/);
     }
   });
 

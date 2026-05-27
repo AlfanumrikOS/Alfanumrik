@@ -46,10 +46,10 @@ export async function GET(request: NextRequest) {
 
   const studentId = auth.studentId!;
 
-  // 1. Read goal from students table.
+  // 1. Read goal and class_id from students table.
   const { data: student, error: fetchError } = await supabaseAdmin
     .from('students')
-    .select('id, academic_goal')
+    .select('id, academic_goal, class_id')
     .eq('id', studentId)
     .single();
 
@@ -69,20 +69,79 @@ export async function GET(request: NextRequest) {
     userId: studentId,
   });
 
-  // 3. Resolve plan: empty when flag off OR goal unknown; otherwise authored plan.
-  let plan: DailyPlan;
-  if (!flagEnabled) {
-    plan = buildDailyPlanByCode(null);
-  } else if (!isKnownGoalCode(student.academic_goal)) {
-    plan = buildDailyPlanByCode(null);
-  } else {
-    plan = buildDailyPlanByCode(student.academic_goal as GoalCode);
+  // 3. Resolve plan: check if there's a classroom lesson plan for today
+  let plan: DailyPlan = buildDailyPlanByCode(null);
+  let intercepted = false;
+
+  if (flagEnabled) {
+    // Resolve student's class_id
+    let classId: string | null = student.class_id || null;
+
+    if (!classId) {
+      const { data: cs } = await supabaseAdmin
+        .from('class_students')
+        .select('class_id')
+        .eq('student_id', studentId)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (cs) {
+        classId = cs.class_id;
+      }
+    }
+
+    if (classId) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const { data: lessonPlan } = await supabaseAdmin
+        .from('classroom_lesson_plans')
+        .select('topic_id, curriculum_topics(id, title)')
+        .eq('class_id', classId)
+        .eq('date', todayStr)
+        .maybeSingle();
+
+      if (lessonPlan) {
+        const topicTitle = (lessonPlan as any).curriculum_topics?.title || "Today's Topic";
+        const topicId = lessonPlan.topic_id;
+        plan = {
+          goal: student.academic_goal as GoalCode,
+          totalMinutes: 18,
+          items: [
+            {
+              kind: 'concept',
+              titleEn: `Classroom Sync: Concept walkthrough on "${topicTitle}"`,
+              titleHi: `कक्षा सिंक: "${topicTitle}" पर अवधारणा वॉकथ्रू`,
+              estimatedMinutes: 8,
+              rationale: `classroom_sync: topic=${topicId}, class_id=${classId}, goal=${student.academic_goal || 'none'}`
+            },
+            {
+              kind: 'practice',
+              titleEn: `Classroom Sync: Targeted practice on "${topicTitle}"`,
+              titleHi: `कक्षा सिंक: "${topicTitle}" पर लक्षित अभ्यास`,
+              estimatedMinutes: 10,
+              rationale: `classroom_sync: topic=${topicId}, class_id=${classId}, goal=${student.academic_goal || 'none'}`
+            }
+          ],
+          generatedAt: new Date().toISOString()
+        };
+        intercepted = true;
+      }
+    }
+  }
+
+  if (!intercepted) {
+    if (!flagEnabled) {
+      plan = buildDailyPlanByCode(null);
+    } else if (!isKnownGoalCode(student.academic_goal)) {
+      plan = buildDailyPlanByCode(null);
+    } else {
+      plan = buildDailyPlanByCode(student.academic_goal as GoalCode);
+    }
   }
 
   logger.info('daily-plan.requested', {
     studentId: 'present',
     flagEnabled,
     hasGoal: !!student.academic_goal,
+    intercepted,
     itemCount: plan.items.length,
   });
 
@@ -90,5 +149,6 @@ export async function GET(request: NextRequest) {
     success: true,
     data: plan,
     flagEnabled,
+    intercepted,
   });
 }

@@ -82,9 +82,125 @@ export default function AtlasTeacher() {
   const [pollResults, setPollResults] = useState<PollResults | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [topics, setTopics] = useState<any[]>([]);
+  const [selectedTopicId, setSelectedTopicId] = useState<string>('');
+  const [lessonNotes, setLessonNotes] = useState<string>('');
+  const [todayLesson, setTodayLesson] = useState<any>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [momentAlerts, setMomentAlerts] = useState<any[]>([]);
+  const [deployingIntervention, setDeployingIntervention] = useState<Record<string, boolean>>({});
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message: msg, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
+
   const teacherId = teacher?.id ?? '';
   const cls = dash?.classes?.[0];
   const t = (en: string, hi: string) => (isHi ? hi : en);
+
+  const fetchTodayLesson = useCallback(async (classId: string) => {
+    try {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const res = await api('get_lesson_plans', {
+        class_id: classId,
+        start_date: todayStr,
+        end_date: todayStr,
+      });
+      if (res && res.length > 0) {
+        setTodayLesson(res[0]);
+        setSelectedTopicId(res[0].topic_id);
+        setLessonNotes(res[0].notes || '');
+      } else {
+        setTodayLesson(null);
+        setSelectedTopicId('');
+        setLessonNotes('');
+      }
+    } catch (err) {
+      console.error("Error fetching today's lesson:", err);
+    }
+  }, [isHi]);
+
+  const fetchTopicsForClass = useCallback(async (classId: string) => {
+    try {
+      const { data: classData } = await supabase
+        .from('classes')
+        .select('grade')
+        .eq('id', classId)
+        .maybeSingle();
+
+      const grade = classData?.grade || '6';
+
+      const { data: topicsData } = await supabase
+        .from('curriculum_topics')
+        .select('id, title, chapter_number')
+        .eq('grade', grade)
+        .eq('is_active', true)
+        .order('chapter_number', { ascending: true })
+        .order('display_order', { ascending: true });
+
+      setTopics(topicsData || []);
+    } catch (err) {
+      console.error('Error fetching curriculum topics:', err);
+    }
+  }, []);
+
+  const fetchMomentAlerts = useCallback(async (classId: string) => {
+    try {
+      const res = await api('get_in_the_moment_alerts', { class_id: classId });
+      setMomentAlerts(res || []);
+    } catch (err) {
+      console.error('Error fetching in-the-moment alerts:', err);
+    }
+  }, []);
+
+  const deployIntervention = async (alert: any) => {
+    const alertId = alert.id;
+    setDeployingIntervention(prev => ({ ...prev, [alertId]: true }));
+    try {
+      const studentTiers = {
+        tier1: alert.tiers.tier1.map((s: any) => s.id),
+        tier2: alert.tiers.tier2.map((s: any) => s.id),
+        tier3: alert.tiers.tier3.map((s: any) => s.id),
+      };
+
+      const res = await api('deploy_intervention', {
+        class_id: cls?.id,
+        topic_id: alert.topic_id,
+        tiers: studentTiers,
+      });
+
+      if (res.success) {
+        showToast(t('Intervention pathways deployed successfully!', 'हस्तक्षेप पथों को सफलतापूर्वक तैनात किया गया!'));
+      }
+    } catch (err) {
+      console.error('Error deploying intervention:', err);
+      showToast(t('Failed to deploy intervention pathways', 'हस्तक्षेप पथों को तैनात करने में विफल'), 'error');
+    } finally {
+      setDeployingIntervention(prev => ({ ...prev, [alertId]: false }));
+    }
+  };
+
+  const syncToBell = async () => {
+    if (!cls?.id || !selectedTopicId) return;
+    setSyncing(true);
+    try {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      await api('set_lesson_plan', {
+        class_id: cls.id,
+        date: todayStr,
+        topic_id: selectedTopicId,
+        notes: lessonNotes,
+      });
+      await fetchTodayLesson(cls.id);
+      showToast(t('Synced successfully with Foxy micro-tasks!', 'Foxy सूक्ष्म-कार्यों के साथ सफलतापूर्वक सिंक किया गया!'));
+    } catch (err) {
+      console.error('Error syncing lesson plan:', err);
+      showToast(t('Failed to sync lesson plan', 'पाठ योजना सिंक करने में विफल'), 'error');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   useEffect(() => {
     if (!authLoading && (!isLoggedIn || (activeRole !== 'teacher' && !teacher))) {
@@ -106,13 +222,19 @@ export default function AtlasTeacher() {
         ]);
         setHeatmap(h);
         setAlerts(a.alerts || []);
+
+        await Promise.all([
+          fetchTodayLesson(firstClassId),
+          fetchTopicsForClass(firstClassId),
+          fetchMomentAlerts(firstClassId),
+        ]);
       }
     } catch (err) {
       console.error('AtlasTeacher load:', err);
     } finally {
       setLoading(false);
     }
-  }, [teacherId]);
+  }, [teacherId, fetchTodayLesson, fetchTopicsForClass, fetchMomentAlerts]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -266,6 +388,84 @@ export default function AtlasTeacher() {
       >
         {/* LEFT RAIL — at-risk students */}
         <aside style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* In-the-Moment Struggles Card */}
+          {momentAlerts.length > 0 && (
+            <AtlasCard tone="paper" compact style={{ background: '#FAF0F0', border: '1px solid rgba(217, 56, 58, 0.2)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                <span className="atlas-pulse" style={{ width: 8, height: 8, borderRadius: '50%', background: '#D9383A' }} />
+                <h3 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontWeight: 500, fontSize: 17, color: '#9E2A2B' }}>
+                  {t('In-the-Moment Struggles', 'सक्रिय शैक्षणिक संघर्ष')}
+                </h3>
+              </div>
+              <p className="atlas-eyebrow" style={{ marginBottom: 12, color: '#D9383A' }}>
+                {t('Morning Session Alerts', 'सुबह के सत्र की चेतावनी')}
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {momentAlerts.map(alert => (
+                  <div
+                    key={alert.id}
+                    style={{
+                      padding: 12,
+                      background: 'rgba(255, 255, 255, 0.6)',
+                      border: '1px solid rgba(158, 42, 43, 0.15)',
+                      borderRadius: 10,
+                      fontSize: 13,
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>
+                      {alert.topic_title}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 8 }}>
+                      {alert.struggling_count} {t('students struggling today', 'छात्रों को आज कठिनाई हो रही है')}
+                    </div>
+
+                    <details style={{ cursor: 'pointer', marginBottom: 10 }}>
+                      <summary style={{ fontSize: 11, fontWeight: 600, color: '#9E2A2B' }}>
+                        {t('View Tiers & Accuracy', 'टियर और सटीकता देखें')}
+                      </summary>
+                      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                        {alert.tiers.tier1.length > 0 && (
+                          <div>
+                            <span style={{ fontWeight: 600, color: '#D9383A' }}>Tier 1 (Intensive &lt;30%):</span>
+                            <div style={{ paddingLeft: 8, color: 'var(--ink-2)' }}>
+                              {alert.tiers.tier1.map((s: any) => `${s.name} (${Math.round(s.accuracy * 100)}%)`).join(', ')}
+                            </div>
+                          </div>
+                        )}
+                        {alert.tiers.tier2.length > 0 && (
+                          <div>
+                            <span style={{ fontWeight: 600, color: '#C86B28' }}>Tier 2 (Targeted 30%-60%):</span>
+                            <div style={{ paddingLeft: 8, color: 'var(--ink-2)' }}>
+                              {alert.tiers.tier2.map((s: any) => `${s.name} (${Math.round(s.accuracy * 100)}%)`).join(', ')}
+                            </div>
+                          </div>
+                        )}
+                        {alert.tiers.tier3.length > 0 && (
+                          <div>
+                            <span style={{ fontWeight: 600, color: '#1F7A4C' }}>Tier 3 (On-Track &gt;60%):</span>
+                            <div style={{ paddingLeft: 8, color: 'var(--ink-2)' }}>
+                              {alert.tiers.tier3.map((s: any) => `${s.name} (${Math.round(s.accuracy * 100)}%)`).join(', ')}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </details>
+
+                    <AtlasButton
+                      variant="ink"
+                      onClick={() => deployIntervention(alert)}
+                      disabled={deployingIntervention[alert.id]}
+                      style={{ width: '100%', fontSize: 11, padding: '6px 12px' }}
+                    >
+                      {deployingIntervention[alert.id] ? t('Deploying…', 'तैनात हो रहा है…') : t('Deploy Interventions', 'हस्तक्षेप तैनात करें')}
+                    </AtlasButton>
+                  </div>
+                ))}
+              </div>
+            </AtlasCard>
+          )}
+
           <AtlasCard compact>
             <h3 style={{ margin: '0 0 6px', fontFamily: 'var(--font-serif)', fontWeight: 500, fontSize: 17 }}>
               {t('Needs you', 'सहायता चाहिए')}
@@ -296,7 +496,7 @@ export default function AtlasTeacher() {
               )}
             </div>
           </AtlasCard>
-
+ 
           {mediumAlerts.length > 0 && (
             <AtlasCard compact>
               <h3 style={{ margin: '0 0 6px', fontFamily: 'var(--font-serif)', fontWeight: 500, fontSize: 17 }}>
@@ -313,9 +513,98 @@ export default function AtlasTeacher() {
             </AtlasCard>
           )}
         </aside>
-
+ 
         {/* CENTER — the heatmap */}
         <article>
+          {/* Lesson Planner Widget */}
+          <AtlasCard style={{ marginBottom: 20, padding: 20 }}>
+            <h3 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontWeight: 500, fontSize: 19, marginBottom: 4 }}>
+              {t('Classroom Lesson Planner', 'कक्षा पाठ योजनाकार')}
+            </h3>
+            <p className="atlas-eyebrow" style={{ marginBottom: 16 }}>
+              {t('Sync Foxy daily micro-tasks to today\'s lesson topic', 'Foxy के दैनिक सूक्ष्म-कार्यों को आज के पाठ विषय से सिंक करें')}
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', marginBottom: 6 }}>
+                    {t('Select Synced Topic', 'सिंक किया गया विषय चुनें')}
+                  </label>
+                  <select
+                    value={selectedTopicId}
+                    onChange={e => setSelectedTopicId(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: 8,
+                      border: '1px solid var(--line)',
+                      background: 'var(--cream-light, #FAF8F5)',
+                      fontFamily: 'var(--font-display)',
+                      fontSize: 13,
+                      color: 'var(--ink)',
+                    }}
+                  >
+                    <option value="">-- {t('Select curriculum topic', 'पाठ्यक्रम विषय चुनें')} --</option>
+                    {topics.map(topic => (
+                      <option key={topic.id} value={topic.id}>
+                        {topic.chapter_number != null ? `Ch ${topic.chapter_number}: ` : ''}{topic.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', marginBottom: 6 }}>
+                    {t('Lesson Planner Notes', 'पाठ योजना नोट्स')}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={t('Optional notes for class…', 'कक्षा के लिए वैकल्पिक नोट्स…')}
+                    value={lessonNotes}
+                    onChange={e => setLessonNotes(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: 8,
+                      border: '1px solid var(--line)',
+                      background: 'var(--cream-light, #FAF8F5)',
+                      fontFamily: 'var(--font-display)',
+                      fontSize: 13,
+                      color: 'var(--ink)',
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                {todayLesson ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--teal-deep, #1F7A4C)', fontSize: 13, fontWeight: 550 }}>
+                    <AtlasIcon name="check" size={14} />
+                    <span>
+                      {t('Synced to Bell: ', 'घंटी से सिंक: ')}
+                      <strong>{todayLesson.curriculum_topics?.title}</strong>
+                    </span>
+                  </div>
+                ) : (
+                  <div style={{ color: 'var(--ink-3)', fontSize: 12 }}>
+                    {t('No topic synced for today. Foxy will use default adaptive path.', 'आज के लिए कोई विषय सिंक नहीं है। Foxy सामान्य पथ का उपयोग करेगी।')}
+                  </div>
+                )}
+
+                <AtlasButton
+                  variant="primary"
+                  onClick={syncToBell}
+                  disabled={!selectedTopicId || syncing}
+                  icon="send"
+                  iconPosition="left"
+                >
+                  {syncing ? t('Syncing…', 'सिंक हो रहा है…') : t('Sync to Bell', 'घंटी से सिंक करें')}
+                </AtlasButton>
+              </div>
+            </div>
+          </AtlasCard>
+
           <AtlasCard>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 }}>
               <div>
@@ -486,6 +775,18 @@ export default function AtlasTeacher() {
           __html: `@media (max-width: 1140px){.atlas-teacher-grid{grid-template-columns:1fr !important;}}`,
         }}
       />
+
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24,
+          padding: '12px 20px', borderRadius: 8,
+          background: toast.type === 'success' ? '#1F7A4C' : '#D9383A',
+          color: '#fff', fontSize: 14, fontWeight: 600,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 1000
+        }}>
+          {toast.message}
+        </div>
+      )}
 
       <BottomNav />
     </AtlasShell>

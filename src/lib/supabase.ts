@@ -113,25 +113,50 @@ export async function getFeatureFlags(context?: { role?: string; institutionId?:
 
 /* ── Next topics to learn ── */
 export async function getNextTopics(studentId: string, subject: string | null | undefined, grade: string) {
+  let lessonTopic: any = null;
+  try {
+    // 1. Resolve student's class_id
+    const { data: student } = await supabase
+      .from('students')
+      .select('class_id')
+      .eq('id', studentId)
+      .single();
+
+    let classId = student?.class_id;
+    if (!classId) {
+      const { data: cs } = await supabase
+        .from('class_students')
+        .select('class_id')
+        .eq('student_id', studentId)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (cs) classId = cs.class_id;
+    }
+
+    // 2. Fetch today's lesson plan if class exists
+    if (classId) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const { data: lessonPlan } = await supabase
+        .from('classroom_lesson_plans')
+        .select('topic_id, curriculum_topics(*)')
+        .eq('class_id', classId)
+        .eq('date', todayStr)
+        .maybeSingle();
+
+      if (lessonPlan?.curriculum_topics) {
+        lessonTopic = lessonPlan.curriculum_topics;
+      }
+    }
+  } catch (err) {
+    console.error('[getNextTopics] Error fetching classroom lesson plan:', err);
+  }
+
   let query = supabase.from('curriculum_topics').select('*').eq('is_active', true).eq('grade', grade).order('display_order').limit(10);
   if (subject) {
     const { data: subjectRow } = await supabase.from('subjects').select('id').eq('code', subject).single();
     if (subjectRow) {
       query = query.eq('subject_id', subjectRow.id);
     } else {
-      // The student's `preferred_subject` does not match any
-      // `subjects.code` value — query silently falls back to "no subject
-      // filter," returning whatever subject has display_order=1 for the
-      // grade. That used to manifest as a Today's-Mission card that
-      // looked broken/random across users with the same wrong value
-      // (e.g. `Mathematics` instead of canonical `math`).
-      //
-      // Loud-log it so the same kind of drift surfaces in Sentry/server
-      // logs immediately next time, instead of taking a dashboard
-      // walkthrough to spot. See companion migration
-      // `supabase/migrations/20260525120000_coerce_students_preferred_subject.sql`
-      // for the one-shot data fix; FK to `subjects(code)` is a separate
-      // follow-up (would prevent recurrence at the column level).
       console.warn(
         '[getNextTopics] preferred_subject did not resolve to a subjects.code row; ' +
           'falling back to "any subject" for grade.',
@@ -141,7 +166,15 @@ export async function getNextTopics(studentId: string, subject: string | null | 
   }
   const { data, error } = await query;
   if (error) console.error('getNextTopics:', error.message);
-  return data ?? [];
+
+  let topicsList = data ?? [];
+
+  if (lessonTopic) {
+    // Filter out the classroom-synced topic from the rest of the list to avoid duplicate rendering
+    topicsList = [lessonTopic, ...topicsList.filter(t => t.id !== lessonTopic.id)].slice(0, 10);
+  }
+
+  return topicsList;
 }
 
 /* ── Foxy AI tutor chat ── */

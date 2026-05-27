@@ -7,9 +7,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockAuthorizeRequest = vi.fn();
 const mockIsFeatureEnabled = vi.fn();
 const mockSingle = vi.fn();
-const mockEq = vi.fn(() => ({ single: mockSingle }));
-const mockSelect = vi.fn(() => ({ eq: mockEq }));
-const mockFrom = vi.fn(() => ({ select: mockSelect }));
+const mockMaybeSingle = vi.fn();
+const mockEq = vi.fn();
+const mockSelect = vi.fn();
+const mockFrom = vi.fn();
+
+const queryBuilder = {
+  eq: mockEq,
+  single: mockSingle,
+  maybeSingle: mockMaybeSingle,
+};
+mockEq.mockImplementation(() => queryBuilder);
+mockSelect.mockImplementation(() => queryBuilder);
+mockFrom.mockImplementation(() => ({ select: mockSelect }));
+
 const mockLoggerInfo = vi.fn();
 const mockLoggerWarn = vi.fn();
 
@@ -51,7 +62,11 @@ beforeEach(() => {
   mockAuthorizeRequest.mockResolvedValue(AUTH_OK);
   mockIsFeatureEnabled.mockResolvedValue(false);
   mockSingle.mockResolvedValue({
-    data: { id: STUDENT_ID, academic_goal: null },
+    data: { id: STUDENT_ID, academic_goal: null, class_id: null },
+    error: null,
+  });
+  mockMaybeSingle.mockResolvedValue({
+    data: null,
     error: null,
   });
 });
@@ -151,6 +166,33 @@ describe('GET /api/student/daily-plan: flag ON', () => {
     expect(body.flagEnabled).toBe(true);
     expect(body.data.goal).toBeNull();
     expect(body.data.items).toEqual([]);
+  });
+
+  it('returns classroom-aligned daily plan if classroom lesson plan exists', async () => {
+    mockIsFeatureEnabled.mockResolvedValueOnce(true);
+    mockSingle.mockResolvedValueOnce({
+      data: { id: STUDENT_ID, academic_goal: 'board_topper', class_id: 'class-123' },
+      error: null,
+    });
+    mockMaybeSingle.mockResolvedValueOnce({
+      data: {
+        topic_id: 'topic-999',
+        curriculum_topics: { id: 'topic-999', title: 'Quadratic Equations' },
+      },
+      error: null,
+    });
+
+    const { GET } = await import('@/app/api/student/daily-plan/route');
+    const res = await GET(buildRequest() as never);
+    const body = await res.json();
+
+    expect(body.flagEnabled).toBe(true);
+    expect(body.intercepted).toBe(true);
+    expect(body.data.items.length).toBe(2);
+    expect(body.data.items[0].kind).toBe('concept');
+    expect(body.data.items[0].titleEn).toContain('Quadratic Equations');
+    expect(body.data.items[1].kind).toBe('practice');
+    expect(body.data.items[1].titleEn).toContain('Quadratic Equations');
   });
 });
 

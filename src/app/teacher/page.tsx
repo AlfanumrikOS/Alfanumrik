@@ -184,21 +184,158 @@ function AlertsTab({ alerts, onResolve, isHi }: { alerts: RiskAlert[]; onResolve
   );
 }
 
-function InterventionsTab({ alerts, classId, dash, isHi }: { alerts: RiskAlert[]; classId: string; dash: DashboardData | null; isHi: boolean }) {
+function InterventionsTab({
+  alerts,
+  classId,
+  dash,
+  isHi,
+  teacherId,
+}: {
+  alerts: RiskAlert[];
+  classId: string;
+  dash: DashboardData | null;
+  isHi: boolean;
+  teacherId: string;
+}) {
+  const [topics, setTopics] = useState<any[]>([]);
+  const [selectedTopicId, setSelectedTopicId] = useState<string>('');
+  const [lessonNotes, setLessonNotes] = useState<string>('');
+  const [todayLesson, setTodayLesson] = useState<any>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [momentAlerts, setMomentAlerts] = useState<any[]>([]);
+  const [deployingIntervention, setDeployingIntervention] = useState<Record<string, boolean>>({});
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message: msg, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
+
+  const t = (en: string, hi: string) => (isHi ? hi : en);
+
+  const fetchTodayLesson = useCallback(async () => {
+    if (!classId) return;
+    try {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const res = await api('get_lesson_plans', {
+        class_id: classId,
+        start_date: todayStr,
+        end_date: todayStr,
+      });
+      if (res && res.length > 0) {
+        setTodayLesson(res[0]);
+        setSelectedTopicId(res[0].topic_id);
+        setLessonNotes(res[0].notes || '');
+      } else {
+        setTodayLesson(null);
+        setSelectedTopicId('');
+        setLessonNotes('');
+      }
+    } catch (err) {
+      console.error('Error fetching today\'s lesson:', err);
+    }
+  }, [classId]);
+
+  const fetchTopicsForClass = useCallback(async () => {
+    if (!classId) return;
+    try {
+      const { data: classData } = await supabase
+        .from('classes')
+        .select('grade')
+        .eq('id', classId)
+        .maybeSingle();
+
+      const grade = classData?.grade || '6';
+
+      const { data: topicsData } = await supabase
+        .from('curriculum_topics')
+        .select('id, title, chapter_number')
+        .eq('grade', grade)
+        .eq('is_active', true)
+        .order('chapter_number', { ascending: true })
+        .order('display_order', { ascending: true });
+
+      setTopics(topicsData || []);
+    } catch (err) {
+      console.error('Error fetching curriculum topics:', err);
+    }
+  }, [classId]);
+
+  const fetchMomentAlerts = useCallback(async () => {
+    if (!classId) return;
+    try {
+      const res = await api('get_in_the_moment_alerts', { class_id: classId });
+      setMomentAlerts(res || []);
+    } catch (err) {
+      console.error('Error fetching in-the-moment alerts:', err);
+    }
+  }, [classId]);
+
+  useEffect(() => {
+    fetchTodayLesson();
+    fetchTopicsForClass();
+    fetchMomentAlerts();
+  }, [classId, fetchTodayLesson, fetchTopicsForClass, fetchMomentAlerts]);
+
+  const syncToBell = async () => {
+    if (!classId || !selectedTopicId) return;
+    setSyncing(true);
+    try {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      await api('set_lesson_plan', {
+        class_id: classId,
+        date: todayStr,
+        topic_id: selectedTopicId,
+        notes: lessonNotes,
+      });
+      await fetchTodayLesson();
+      showToast(t('Synced successfully with Foxy micro-tasks!', 'Foxy सूक्ष्म-कार्यों के साथ सफलतापूर्वक सिंक किया गया!'));
+    } catch (err) {
+      console.error('Error syncing lesson plan:', err);
+      showToast(t('Failed to sync lesson plan', 'पाठ योजना सिंक करने में विफल'), 'error');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const deployIntervention = async (alertObj: any) => {
+    const alertId = alertObj.id;
+    setDeployingIntervention(prev => ({ ...prev, [alertId]: true }));
+    try {
+      const studentTiers = {
+        tier1: alertObj.tiers.tier1.map((s: any) => s.id),
+        tier2: alertObj.tiers.tier2.map((s: any) => s.id),
+        tier3: alertObj.tiers.tier3.map((s: any) => s.id),
+      };
+
+      const res = await api('deploy_intervention', {
+        class_id: classId,
+        topic_id: alertObj.topic_id,
+        tiers: studentTiers,
+      });
+
+      if (res.success) {
+        showToast(t('Intervention pathways deployed successfully!', 'हस्तक्षेप पथों को सफलतापूर्वक तैनात किया गया!'));
+      }
+    } catch (err) {
+      console.error('Error deploying intervention:', err);
+      showToast(t('Failed to deploy intervention pathways', 'हस्तक्षेप पथों को तैनात करने में विफल'), 'error');
+    } finally {
+      setDeployingIntervention(prev => ({ ...prev, [alertId]: false }));
+    }
+  };
+
   const criticalCount = alerts.filter(a => a.severity === 'critical' || a.severity === 'high').length;
   const avgMastery = dash?.classes?.[0]?.avg_mastery ?? 0;
   const studentCount = dash?.stats?.total_students ?? 0;
   const weakStudents = alerts.length;
 
-  // Generate actionable suggestions based on class state
-  const suggestions: { icon: string; title: string; desc: string; action: string; color: string }[] = [];
+  const suggestions: { icon: string; title: string; desc: string; color: string }[] = [];
 
   if (criticalCount > 0) {
     suggestions.push({
       icon: '🚨',
-      title: tt(isHi, `${criticalCount} students need urgent help`, `${criticalCount} छात्रों को तत्काल मदद चाहिए`),
-      desc: tt(isHi, 'These students have critical learning gaps. Consider one-on-one revision or a remedial quiz.', 'इन छात्रों में गंभीर सीखने की कमियां हैं। एक-एक करके रिवीज़न या उपचारात्मक क्विज़ पर विचार करें।'),
-      action: tt(isHi, 'View at-risk students', 'जोखिम वाले छात्र देखें'),
+      title: t(`${criticalCount} students need urgent help`, `${criticalCount} छात्रों को तत्काल मदद चाहिए`),
+      desc: t('These students have critical learning gaps. Consider one-on-one revision or a remedial quiz.', 'इन छात्रों में गंभीर सीखने की कमियां हैं। एक-एक करके रिवीज़न या उपचारात्मक क्विज़ पर विचार करें।'),
       color: 'border-red-600',
     });
   }
@@ -206,9 +343,8 @@ function InterventionsTab({ alerts, classId, dash, isHi }: { alerts: RiskAlert[]
   if (avgMastery < 50 && studentCount > 0) {
     suggestions.push({
       icon: '📊',
-      title: tt(isHi, 'Class mastery below 50%', 'कक्षा मास्टरी 50% से कम'),
-      desc: tt(isHi, `Average mastery is ${avgMastery}%. Consider re-teaching the weakest chapters before moving forward.`, `औसत मास्टरी ${avgMastery}% है। आगे बढ़ने से पहले कमज़ोर अध्यायों को दोबारा पढ़ाने पर विचार करें।`),
-      action: tt(isHi, 'View mastery heatmap', 'मास्टरी हीटमैप देखें'),
+      title: t('Class mastery below 50%', 'कक्षा मास्टरी 50% से कम'),
+      desc: t(`Average mastery is ${avgMastery}%. Consider re-teaching the weakest chapters before moving forward.`, `औसत मास्टरी ${avgMastery}% है। आगे बढ़ने से पहले कमज़ोर अध्यायों को दोबारा पढ़ाने पर विचार करें।`),
       color: 'border-amber-600',
     });
   }
@@ -216,9 +352,8 @@ function InterventionsTab({ alerts, classId, dash, isHi }: { alerts: RiskAlert[]
   if (weakStudents > 3) {
     suggestions.push({
       icon: '📝',
-      title: tt(isHi, `${weakStudents} students struggling — assign revision quiz`, `${weakStudents} छात्र कठिनाई में — रिवीज़न क्विज़ दें`),
-      desc: tt(isHi, 'A targeted revision quiz on weak topics would help these students catch up with the class.', 'कमज़ोर विषयों पर लक्षित रिवीज़न क्विज़ इन छात्रों को कक्षा के साथ चलने में मदद करेगी।'),
-      action: tt(isHi, 'Create quiz for weak topics', 'कमज़ोर विषयों के लिए क्विज़ बनाएं'),
+      title: t(`${weakStudents} students struggling — assign revision quiz`, `${weakStudents} छात्र कठिनाई में — रिवीज़न क्विज़ दें`),
+      desc: t('A targeted revision quiz on weak topics would help these students catch up with the class.', 'कमज़ोर विषयों पर लक्षित रिवीज़न क्विज़ इन छात्रों को कक्षा के साथ चलने में मदद करेगी।'),
       color: 'border-indigo-500',
     });
   }
@@ -226,28 +361,158 @@ function InterventionsTab({ alerts, classId, dash, isHi }: { alerts: RiskAlert[]
   if (suggestions.length === 0) {
     suggestions.push({
       icon: '✅',
-      title: tt(isHi, 'Class is on track', 'कक्षा सही दिशा में है'),
-      desc: tt(isHi, 'No urgent interventions needed. Continue with the current teaching plan.', 'कोई तत्काल हस्तक्षेप आवश्यक नहीं। वर्तमान शिक्षण योजना जारी रखें।'),
-      action: '',
+      title: t('Class is on track', 'कक्षा सही दिशा में है'),
+      desc: t('No urgent interventions needed. Continue with the current teaching plan.', 'कोई तत्काल हस्तक्षेप आवश्यक नहीं। वर्तमान शिक्षण योजना जारी रखें।'),
       color: 'border-emerald-600',
     });
   }
 
   return (
-    <div className="td-card">
-      <div className="td-card-head"><h3>{tt(isHi, 'Intervention suggestions', 'हस्तक्षेप सुझाव')}</h3><span className="td-badge bg-indigo-500">{/* eslint-disable-next-line react/jsx-no-comment-textnodes */}{tt(isHi, 'AI-powered', 'AI-संचालित')}</span></div>
-      <div className="mt-3 flex flex-col gap-2.5">
-        {suggestions.map((s, i) => (
-          <div key={i} className={`bg-slate-800 rounded-lg p-3.5 border-l-[3px] ${s.color}`}>
-            <div className="flex items-start gap-2.5">
-              <span className="text-xl shrink-0">{s.icon}</span>
-              <div className="flex-1">
-                <div className="font-semibold text-slate-100 text-sm mb-1">{s.title}</div>
-                <p className="text-slate-400 text-[13px] m-0 leading-relaxed">{s.desc}</p>
-              </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      {/* Lesson Planner Card */}
+      <div className="td-card">
+        <div className="td-card-head">
+          <h3>{t('Classroom Lesson Planner', 'कक्षा पाठ योजनाकार')}</h3>
+        </div>
+        <div className="mt-3">
+          <p className="text-slate-400 text-xs mb-3">
+            {t('Sync Foxy daily micro-tasks to today\'s lesson topic', 'Foxy के दैनिक सूक्ष्म-कार्यों को आज के पाठ विषय से सिंक करें')}
+          </p>
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="text-slate-500 text-[10px] uppercase font-bold tracking-wide block mb-1">
+                {t('Select Synced Topic', 'सिंक किया गया विषय चुनें')}
+              </label>
+              <select
+                value={selectedTopicId}
+                onChange={e => setSelectedTopicId(e.target.value)}
+                className="td-input"
+              >
+                <option value="">-- {t('Select curriculum topic', 'विषय चुनें')} --</option>
+                {topics.map(topic => (
+                  <option key={topic.id} value={topic.id}>
+                    {topic.chapter_number != null ? `Ch ${topic.chapter_number}: ` : ''}{topic.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-slate-500 text-[10px] uppercase font-bold tracking-wide block mb-1">
+                {t('Lesson Planner Notes', 'पाठ योजना नोट्स')}
+              </label>
+              <input
+                type="text"
+                placeholder={t('Optional notes…', 'वैकल्पिक नोट्स…')}
+                value={lessonNotes}
+                onChange={e => setLessonNotes(e.target.value)}
+                className="td-input"
+              />
             </div>
           </div>
-        ))}
+
+          <div className="flex justify-between items-center mt-3">
+            {todayLesson ? (
+              <span className="text-emerald-500 text-xs font-semibold">
+                ✓ {t('Synced: ', 'सिंक किया गया: ')} {todayLesson.curriculum_topics?.title}
+              </span>
+            ) : (
+              <span className="text-slate-500 text-xs">
+                {t('No topic synced for today', 'आज के लिए कोई विषय सिंक नहीं है')}
+              </span>
+            )}
+            <button
+              onClick={syncToBell}
+              disabled={!selectedTopicId || syncing}
+              className="py-1.5 px-3 bg-indigo-500 text-white rounded-lg text-xs font-semibold cursor-pointer border-none"
+            >
+              {syncing ? t('Syncing…', 'सिंक हो रहा है…') : t('Sync to Bell', 'घंटी से सिंक करें')}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* In-the-Moment Struggles Card */}
+      {momentAlerts.length > 0 && (
+        <div className="td-card border-red-900/45">
+          <div className="td-card-head">
+            <h3 className="text-red-400 flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse inline-block" />
+              {t('In-the-Moment Struggles', 'सक्रिय शैक्षणिक संघर्ष')}
+            </h3>
+            <span className="td-badge bg-red-600/15 text-red-400">{momentAlerts.length}</span>
+          </div>
+          <div className="mt-3 flex flex-col gap-3">
+            {momentAlerts.map(alert => (
+              <div key={alert.id} className="bg-slate-800 rounded-lg p-3 border border-red-900/20">
+                <div className="font-semibold text-slate-200 text-sm">{alert.topic_title}</div>
+                <div className="text-slate-400 text-xs mt-1">
+                  {alert.struggling_count} {t('students struggling today', 'छात्रों को आज कठिनाई हो रही है')}
+                </div>
+
+                <details className="mt-2 text-xs">
+                  <summary className="text-indigo-400 cursor-pointer font-medium">
+                    {t('View Tiers & Accuracy', 'टियर और सटीकता देखें')}
+                  </summary>
+                  <div className="mt-2 flex flex-col gap-1.5 bg-slate-900/50 p-2 rounded">
+                    {alert.tiers.tier1.length > 0 && (
+                      <div>
+                        <span className="text-red-400 font-semibold">Tier 1 (Intensive &lt;30%):</span>
+                        <div className="text-slate-300 ml-2">
+                          {alert.tiers.tier1.map((s: any) => `${s.name} (${Math.round(s.accuracy * 100)}%)`).join(', ')}
+                        </div>
+                      </div>
+                    )}
+                    {alert.tiers.tier2.length > 0 && (
+                      <div>
+                        <span className="text-amber-500 font-semibold">Tier 2 (Targeted 30%-60%):</span>
+                        <div className="text-slate-300 ml-2">
+                          {alert.tiers.tier2.map((s: any) => `${s.name} (${Math.round(s.accuracy * 100)}%)`).join(', ')}
+                        </div>
+                      </div>
+                    )}
+                    {alert.tiers.tier3.length > 0 && (
+                      <div>
+                        <span className="text-emerald-500 font-semibold">Tier 3 (On-Track &gt;60%):</span>
+                        <div className="text-slate-300 ml-2">
+                          {alert.tiers.tier3.map((s: any) => `${s.name} (${Math.round(s.accuracy * 100)}%)`).join(', ')}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </details>
+
+                <button
+                  onClick={() => deployIntervention(alert)}
+                  disabled={deployingIntervention[alert.id]}
+                  className="mt-3 w-full py-1.5 bg-indigo-600 text-white rounded text-xs font-semibold cursor-pointer border-none"
+                >
+                  {deployingIntervention[alert.id] ? t('Deploying…', 'तैनात हो रहा है…') : t('Deploy Interventions', 'हस्तक्षेप तैनात करें')}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Legacy Suggestions */}
+      <div className="td-card">
+        <div className="td-card-head">
+          <h3>{t('Intervention suggestions', 'हस्तक्षेप सुझाव')}</h3>
+          <span className="td-badge bg-indigo-500">{t('AI-powered', 'AI-संचालित')}</span>
+        </div>
+        <div className="mt-3 flex flex-col gap-2.5">
+          {suggestions.map((s, i) => (
+            <div key={i} className={`bg-slate-800 rounded-lg p-3.5 border-l-[3px] ${s.color}`}>
+              <div className="flex items-start gap-2.5">
+                <span className="text-xl shrink-0">{s.icon}</span>
+                <div className="flex-1">
+                  <div className="font-semibold text-slate-100 text-sm mb-1">{s.title}</div>
+                  <p className="text-slate-400 text-[13px] m-0 leading-relaxed">{s.desc}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -698,7 +963,7 @@ function LegacyTeacherPage() {
           </div>
         </div>
       )}
-      {tab === 'interventions' && <InterventionsTab alerts={alerts} classId={classId} dash={dash} isHi={isHi} />}
+      {tab === 'interventions' && <InterventionsTab alerts={alerts} classId={classId} dash={dash} isHi={isHi} teacherId={teacherId} />}
       {tab === 'alerts' && <AlertsTab alerts={alerts} onResolve={resolveAlert} isHi={isHi} />}
       {tab === 'poll' && <PollTab classId={classId} teacherId={teacherId} isHi={isHi} realtimeEnabled={realtimeEnabled} />}
       <BottomNav />

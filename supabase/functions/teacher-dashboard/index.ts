@@ -91,7 +91,20 @@ async function assertTeacherOwnsClass(
     .eq('class_id', classId)
     .limit(1)
     .maybeSingle()
-  return !!assignment
+  if (assignment) return true
+
+  try {
+    const { data: classTeacher } = await supabase
+      .from('class_teachers')
+      .select('class_id')
+      .eq('teacher_id', teacherId)
+      .eq('class_id', classId)
+      .limit(1)
+      .maybeSingle()
+    if (classTeacher) return true
+  } catch { /* ignore */ }
+
+  return false
 }
 
 /**
@@ -1990,6 +2003,395 @@ async function handleExportGradeBookCsv(
   }, 200, {}, origin)
 }
 
+// ─── get_lesson_plans ──────────────────────────────────────
+async function handleGetLessonPlans(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const classId = String(body.class_id || '')
+  const teacherId = String(body.teacher_id || '')
+  const startDate = body.start_date ? String(body.start_date) : null
+  const endDate = body.end_date ? String(body.end_date) : null
+
+  if (!classId) return errorResponse('class_id required', 400, origin)
+
+  const supabase = getServiceClient()
+  const owns = await assertTeacherOwnsClass(supabase, teacherId, classId)
+  if (!owns) return errorResponse('Unauthorized access to class lesson plans', 403, origin)
+
+  let query = supabase
+    .from('classroom_lesson_plans')
+    .select(`
+      id,
+      class_id,
+      date,
+      topic_id,
+      notes,
+      curriculum_topics (
+        id,
+        title,
+        description,
+        grade,
+        chapter_number
+      )
+    `)
+    .eq('class_id', classId)
+
+  if (startDate) {
+    query = query.gte('date', startDate)
+  }
+  if (endDate) {
+    query = query.lte('date', endDate)
+  }
+
+  const { data, error } = await query.order('date', { ascending: true })
+  if (error) {
+    return errorResponse(`Failed to fetch lesson plans: ${error.message}`, 500, origin)
+  }
+
+  return jsonResponse(data, 200, {}, origin)
+}
+
+// ─── set_lesson_plan ───────────────────────────────────────
+async function handleSetLessonPlan(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const classId = String(body.class_id || '')
+  const teacherId = String(body.teacher_id || '')
+  const date = String(body.date || '')
+  const topicId = String(body.topic_id || '')
+  const notes = body.notes ? String(body.notes) : null
+
+  if (!classId || !date || !topicId) {
+    return errorResponse('class_id, date, and topic_id are required', 400, origin)
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return errorResponse('Invalid date format. Expected YYYY-MM-DD', 400, origin)
+  }
+
+  const supabase = getServiceClient()
+  const owns = await assertTeacherOwnsClass(supabase, teacherId, classId)
+  if (!owns) return errorResponse('Unauthorized access to class lesson plans', 403, origin)
+
+  const { data: topic, error: topicErr } = await supabase
+    .from('curriculum_topics')
+    .select('id')
+    .eq('id', topicId)
+    .maybeSingle()
+
+  if (topicErr || !topic) {
+    return errorResponse('Curriculum topic not found', 404, origin)
+  }
+
+  const { data, error } = await supabase
+    .from('classroom_lesson_plans')
+    .upsert(
+      {
+        class_id: classId,
+        date,
+        topic_id: topicId,
+        notes,
+        updated_at: new Date().toISOString(),
+      },
+      {
+        onConflict: 'class_id,date',
+      }
+    )
+    .select()
+    .single()
+
+  if (error) {
+    return errorResponse(`Failed to save lesson plan: ${error.message}`, 500, origin)
+  }
+
+  return jsonResponse(data, 200, {}, origin)
+}
+
+// ─── get_in_the_moment_alerts ──────────────────────────────
+async function handleGetInTheMomentAlerts(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const classId = String(body.class_id || '')
+  const teacherId = String(body.teacher_id || '')
+
+  if (!classId) return errorResponse('class_id required', 400, origin)
+
+  const supabase = getServiceClient()
+  const owns = await assertTeacherOwnsClass(supabase, teacherId, classId)
+  if (!owns) return errorResponse('Unauthorized access to class alerts', 403, origin)
+
+  const students = await resolveStudentsForClass(supabase, classId)
+  if (students.length === 0) {
+    return jsonResponse([], 200, {}, origin)
+  }
+
+  const studentMap = new Map(students.map(s => [s.id, s]))
+  const studentIds = students.map(s => s.id)
+
+  const now = new Date()
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  const todayStr = todayUtc.toISOString()
+
+  const { data: interactions, error: queryErr } = await supabase
+    .from('adaptive_interactions')
+    .select('student_id, topic_id, is_correct')
+    .in('student_id', studentIds)
+    .gte('created_at', todayStr)
+
+  if (queryErr) {
+    return errorResponse(`Failed to fetch interactions: ${queryErr.message}`, 500, origin)
+  }
+
+  if (!interactions || interactions.length === 0) {
+    return jsonResponse([], 200, {}, origin)
+  }
+
+  const topicStudentStats: Record<string, Record<string, { correct: number; total: number }>> = {}
+
+  for (const intr of interactions) {
+    const topicId = intr.topic_id
+    const studentId = intr.student_id
+    if (!topicId || !studentId) continue
+
+    if (!topicStudentStats[topicId]) {
+      topicStudentStats[topicId] = {}
+    }
+    if (!topicStudentStats[topicId][studentId]) {
+      topicStudentStats[topicId][studentId] = { correct: 0, total: 0 }
+    }
+
+    topicStudentStats[topicId][studentId].total += 1
+    if (intr.is_correct === true) {
+      topicStudentStats[topicId][studentId].correct += 1
+    }
+  }
+
+  const uniqueTopicIds = Object.keys(topicStudentStats)
+  const topicsInfo: Record<string, { title: string; chapter_number: number | null; chapter_name?: string | null }> = {}
+  
+  if (uniqueTopicIds.length > 0) {
+    const { data: topicsData } = await supabase
+      .from('curriculum_topics')
+      .select('id, title, chapter_number, description')
+      .in('id', uniqueTopicIds)
+
+    if (topicsData) {
+      for (const t of topicsData) {
+        topicsInfo[t.id] = {
+          title: t.title,
+          chapter_number: t.chapter_number,
+          chapter_name: t.description || '',
+        }
+      }
+    }
+  }
+
+  const alerts = []
+
+  for (const topicId of uniqueTopicIds) {
+    const stats = topicStudentStats[topicId]
+    const tier1: Array<{ id: string; name: string; accuracy: number; correct: number; total: number }> = []
+    const tier2: Array<{ id: string; name: string; accuracy: number; correct: number; total: number }> = []
+    const tier3: Array<{ id: string; name: string; accuracy: number; correct: number; total: number }> = []
+
+    for (const studentId of Object.keys(stats)) {
+      const student = studentMap.get(studentId)
+      if (!student) continue
+
+      const { correct, total } = stats[studentId]
+      const accuracy = correct / total
+
+      const studentInfo = {
+        id: student.id,
+        name: student.name,
+        accuracy,
+        correct,
+        total,
+      }
+
+      if (accuracy < 0.30) {
+        tier1.push(studentInfo)
+      } else if (accuracy <= 0.60) {
+        tier2.push(studentInfo)
+      } else {
+        tier3.push(studentInfo)
+      }
+    }
+
+    const struggleCount = tier1.length + tier2.length
+
+    if (struggleCount >= 2) {
+      const topicMeta = topicsInfo[topicId] || { title: 'Unknown Topic', chapter_number: null, chapter_name: '' }
+      alerts.push({
+        id: `struggle-${topicId}-${todayStr.slice(0, 10)}`,
+        topic_id: topicId,
+        topic_title: topicMeta.title,
+        chapter_number: topicMeta.chapter_number,
+        chapter_name: topicMeta.chapter_name,
+        struggling_count: struggleCount,
+        created_at: new Date().toISOString(),
+        tiers: {
+          tier1,
+          tier2,
+          tier3,
+        },
+        recommendations: {
+          tier1: 'Remedial walkthrough',
+          tier2: '5-question practice',
+          tier3: 'Peer-tutor challenge',
+        }
+      })
+    }
+  }
+
+  return jsonResponse(alerts, 200, {}, origin)
+}
+
+// ─── deploy_intervention ──────────────────────────────────
+async function handleDeployIntervention(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const classId = String(body.class_id || '')
+  const teacherId = String(body.teacher_id || '')
+  const topicId = String(body.topic_id || '')
+  const tiers = body.tiers as {
+    tier1?: string[]
+    tier2?: string[]
+    tier3?: string[]
+  } | undefined
+
+  if (!classId || !topicId || !tiers) {
+    return errorResponse('class_id, topic_id, and tiers are required', 400, origin)
+  }
+
+  const supabase = getServiceClient()
+  const owns = await assertTeacherOwnsClass(supabase, teacherId, classId)
+  if (!owns) return errorResponse('Unauthorized access to class interventions', 403, origin)
+
+  const { data: topic, error: topicErr } = await supabase
+    .from('curriculum_topics')
+    .select('title, grade, subject_id')
+    .eq('id', topicId)
+    .maybeSingle()
+
+  if (topicErr || !topic) {
+    return errorResponse('Curriculum topic not found', 404, origin)
+  }
+
+  let subjectCode: string | null = null
+  if (topic.subject_id) {
+    const { data: subj } = await supabase
+      .from('subjects')
+      .select('code')
+      .eq('id', topic.subject_id)
+      .maybeSingle()
+    subjectCode = subj?.code ?? null
+  }
+
+  const results: Record<string, { assignment_id: string; student_count: number }> = {}
+  const now = new Date().toISOString()
+  const dueDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
+
+  if (Array.isArray(tiers.tier1) && tiers.tier1.length > 0) {
+    const assignmentId = crypto.randomUUID()
+    const { error: insErr } = await supabase.from('assignments').insert({
+      id: assignmentId,
+      class_id: classId,
+      teacher_id: teacherId,
+      title: `Remedial: ${topic.title}`,
+      assignment_type: 'worksheet',
+      topic_id: topicId,
+      subject: subjectCode,
+      grade: topic.grade,
+      due_date: dueDate,
+      question_count: 5,
+      status: 'active',
+      created_at: now,
+      updated_at: now,
+    })
+
+    if (!insErr) {
+      const submissions = tiers.tier1.map(sid => ({
+        assignment_id: assignmentId,
+        student_id: sid,
+        status: 'not_started',
+      }))
+      await supabase.from('assignment_submissions').insert(submissions)
+      results.tier1 = { assignment_id: assignmentId, student_count: tiers.tier1.length }
+    } else {
+      console.error('Failed to create Tier 1 assignment:', insErr.message)
+    }
+  }
+
+  if (Array.isArray(tiers.tier2) && tiers.tier2.length > 0) {
+    const assignmentId = crypto.randomUUID()
+    const { error: insErr } = await supabase.from('assignments').insert({
+      id: assignmentId,
+      class_id: classId,
+      teacher_id: teacherId,
+      title: `Practice: ${topic.title}`,
+      assignment_type: 'quiz',
+      topic_id: topicId,
+      subject: subjectCode,
+      grade: topic.grade,
+      due_date: dueDate,
+      question_count: 10,
+      status: 'active',
+      created_at: now,
+      updated_at: now,
+    })
+
+    if (!insErr) {
+      const submissions = tiers.tier2.map(sid => ({
+        assignment_id: assignmentId,
+        student_id: sid,
+        status: 'not_started',
+      }))
+      await supabase.from('assignment_submissions').insert(submissions)
+      results.tier2 = { assignment_id: assignmentId, student_count: tiers.tier2.length }
+    } else {
+      console.error('Failed to create Tier 2 assignment:', insErr.message)
+    }
+  }
+
+  if (Array.isArray(tiers.tier3) && tiers.tier3.length > 0) {
+    const assignmentId = crypto.randomUUID()
+    const { error: insErr } = await supabase.from('assignments').insert({
+      id: assignmentId,
+      class_id: classId,
+      teacher_id: teacherId,
+      title: `Challenge: ${topic.title}`,
+      assignment_type: 'quiz',
+      topic_id: topicId,
+      subject: subjectCode,
+      grade: topic.grade,
+      due_date: dueDate,
+      question_count: 10,
+      status: 'active',
+      created_at: now,
+      updated_at: now,
+    })
+
+    if (!insErr) {
+      const submissions = tiers.tier3.map(sid => ({
+        assignment_id: assignmentId,
+        student_id: sid,
+        status: 'not_started',
+      }))
+      await supabase.from('assignment_submissions').insert(submissions)
+      results.tier3 = { assignment_id: assignmentId, student_count: tiers.tier3.length }
+    } else {
+      console.error('Failed to create Tier 3 assignment:', insErr.message)
+    }
+  }
+
+  return jsonResponse({ success: true, deployments: results }, 200, {}, origin)
+}
+
 // ─── JWT Binding (P13 enforcement) ──────────────────────────
 // Resolve the authenticated caller's teacher_id from the Authorization
 // header. Body.teacher_id is IGNORED for trust purposes — handlers see
@@ -2087,6 +2489,14 @@ Deno.serve(async (req: Request) => {
         return await handleSetGradeBookCell(body, origin)
       case 'export_grade_book_csv':
         return await handleExportGradeBookCsv(body, origin)
+      case 'get_lesson_plans':
+        return await handleGetLessonPlans(body, origin)
+      case 'set_lesson_plan':
+        return await handleSetLessonPlan(body, origin)
+      case 'get_in_the_moment_alerts':
+        return await handleGetInTheMomentAlerts(body, origin)
+      case 'deploy_intervention':
+        return await handleDeployIntervention(body, origin)
       default:
         return errorResponse(`Unknown action: ${action}`, 400, origin)
     }
