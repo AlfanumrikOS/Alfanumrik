@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useState, type ReactNode, memo } from 'react';
 import { UnverifiedBanner } from '@/components/foxy/UnverifiedBanner';
 import { HardAbstainCard } from '@/components/grounding/HardAbstainCard';
 import { ReportIssueModal } from '@/components/foxy/ReportIssueModal';
@@ -87,6 +87,7 @@ export function ChatBubble({
   messageId,
   questionBankId,
 }: ChatBubbleProps) {
+  console.time('ChatBubble render');
   const { isHi } = useAuth();
   const isTutor = role === 'tutor';
   const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -94,6 +95,7 @@ export function ChatBubble({
   const showHardAbstainCard = isTutor && groundingStatus === 'hard-abstain';
   const [issueModalOpen, setIssueModalOpen] = useState(false);
 
+  console.timeEnd('ChatBubble render');
   return (
     <div className="mb-4 w-full animate-slide-up">
       {/* Header row */}
@@ -257,4 +259,29 @@ export function ChatBubble({
       )}
     </div>
   );
+};
+
+// Custom prop comparator for memoization
+function areChatBubblePropsEqual(prev: React.ComponentProps<typeof ChatBubble>, next: React.ComponentProps<typeof ChatBubble>) {
+  return (
+    prev.role === next.role &&
+    prev.content === next.content &&
+    prev.rawContent === next.rawContent &&
+    prev.timestamp === next.timestamp &&
+    prev.studentName === next.studentName &&
+    prev.xp === next.xp &&
+    prev.feedback === next.feedback &&
+    prev.reported === next.reported &&
+    prev.color === next.color &&
+    prev.activeSubject === next.activeSubject &&
+    prev.groundingStatus === next.groundingStatus &&
+    prev.traceId === next.traceId &&
+    prev.abstainReason === next.abstainReason &&
+    JSON.stringify(prev.suggestedAlternatives) === JSON.stringify(next.suggestedAlternatives) &&
+    prev.messageId === next.messageId &&
+    prev.questionBankId === next.questionBankId
+  );
 }
+
+export default memo(ChatBubble, areChatBubblePropsEqual);
+

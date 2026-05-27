@@ -1,6 +1,7 @@
 // supabase/functions/_shared/mol/router.ts
 
-import type { TaskType } from './types.ts'
+import type { TaskType, StudentContext } from './types.ts'
+import { determineUseCase, USE_CASES } from './use-cases.ts'
 
 export type ProviderId = 'openai' | 'anthropic'
 
@@ -27,6 +28,9 @@ export interface RouterOptions {
   openai_default: boolean
   /** Per-(task_type) weight in [0,1]. If weights[task] > 0.5, primary becomes openai. */
   weights: Record<string, number>
+  student_context?: StudentContext
+  query?: string
+  use_cases_routing_enabled?: boolean
 }
 
 const HAIKU = 'claude-haiku-4-5-20251001'
@@ -117,6 +121,38 @@ const MAX_TOKENS: Record<TaskType, number> = {
 const PASS2_SIMPLIFY_MAX = 1200
 
 export function selectProviderChain(task: TaskType, opts: RouterOptions): SelectedChain {
+  // Check if a custom use case applies
+  if (opts.use_cases_routing_enabled) {
+    const useCaseKey = determineUseCase(task, opts.student_context, opts.query)
+    if (useCaseKey && USE_CASES[useCaseKey]) {
+      const uc = USE_CASES[useCaseKey]
+      let passes: Pass[] = [{
+        role: 'single',
+        chain: [
+          { provider: uc.primary.provider as any, model: uc.primary.model },
+          ...uc.fallbacks.map((f) => ({ provider: f.provider as any, model: f.model }))
+        ]
+      }]
+
+      // Per-task weight: weights[task] > 0.5 → ensure openai is primary
+      const w = opts.weights[task]
+      if (typeof w === 'number' && w > 0.5) {
+        passes = passes.map((p) => {
+          const openaiTarget = p.chain.find((t) => t.provider === 'openai')
+          if (!openaiTarget) return p
+          const reordered = [openaiTarget, ...p.chain.filter((t) => t !== openaiTarget)]
+          return { ...p, chain: reordered }
+        })
+      }
+
+      return {
+        task_type: task,
+        passes,
+        mode: 'single',
+      }
+    }
+  }
+
   // Clone so we never mutate BASE_MATRIX
   let passes: Pass[] = BASE_MATRIX[task].map((p) => ({ role: p.role, chain: [...p.chain] }))
 

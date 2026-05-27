@@ -9,8 +9,12 @@ import { redactPIIInText } from '../redact-pii.ts'
 const PRICING: Record<string, { input: number; output: number }> = {
   'openai/gpt-4o-mini': { input: 0.15, output: 0.60 },
   'openai/gpt-4o':      { input: 2.50, output: 10.00 },
+  'openai/o3-mini':     { input: 1.10, output: 4.40 },
+  'openai/o1':          { input: 15.00, output: 60.00 },
   'anthropic/claude-haiku-4-5-20251001':  { input: 1.00, output: 5.00 },
   'anthropic/claude-sonnet-4-6-20251022': { input: 3.00, output: 15.00 },
+  'anthropic/claude-3-5-sonnet-20241022': { input: 3.00, output: 15.00 },
+  'anthropic/claude-3-opus-20240229':    { input: 15.00, output: 75.00 },
 }
 
 function usdToInrRate(): number {

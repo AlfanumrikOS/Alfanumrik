@@ -1,0 +1,42 @@
+{
+  "fixture_purpose": "Test fixture for verifying goal-adaptive quiz selection for competitive_exam students. NOT a production seed. Sample of 3 real public-domain JEE Main 2024 questions used by integration tests to assert that a competitive_exam goal student receives JEE-level questions when ff_goal_aware_selection is enabled.",
+  "provenance": "NTA public archives (jeemain.nta.nic.in) — public domain",
+  "questions": [
+    {
+      "subject": "physics",
+      "grade": "11",
+      "chapter": "Laws of Motion",
+      "question_text": "A block of mass 2 kg is placed on a horizontal surface. A force of 10 N is applied at 60 degrees above the horizontal. If the coefficient of friction is 0.2, the acceleration of the block is (g = 10 m/s²)",
+      "options": ["1.0 m/s²", "1.36 m/s²", "2.0 m/s²", "0.5 m/s²"],
+      "correct_answer_index": 1,
+      "difficulty": 4,
+      "bloom_level": 3,
+      "exam_session": "jee_main_jan_2024",
+      "paper_pattern": "mcq_single"
+    },
+    {
+      "subject": "physics",
+      "grade": "11",
+      "chapter": "Rotational Motion",
+      "question_text": "A solid sphere of mass M and radius R rolls without slipping down an inclined plane of angle theta. The acceleration of its center of mass is",
+      "options": ["(5/7)g sin theta", "(2/5)g sin theta", "g sin theta", "(3/5)g sin theta"],
+      "correct_answer_index": 0,
+      "difficulty": 5,
+      "bloom_level": 4,
+      "exam_session": "jee_main_jan_2024",
+      "paper_pattern": "mcq_single"
+    },
+    {
+      "subject": "physics",
+      "grade": "12",
+      "chapter": "Dual Nature of Radiation",
+      "question_text": "The work function of a metal is 2 eV. Light of wavelength 400 nm is incident on it. The maximum kinetic energy of emitted electrons is (hc = 1240 eV nm)",
+      "options": ["1.1 eV", "0.5 eV", "2.0 eV", "3.1 eV"],
+      "correct_answer_index": 0,
+      "difficulty": 4,
+      "bloom_level": 3,
+      "exam_session": "jee_main_jan_2024",
+      "paper_pattern": "mcq_single"
+    }
+  ]
+}

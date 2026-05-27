@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alfanumrik — Launch Readiness Report · 5 May 2026</title>
+<style>
+  :root {
+    --bg: #0d0f14;
+    --card: #14171f;
+    --border: #1e2330;
+    --text: #e2e8f0;
+    --muted: #6b7280;
+    --red: #ef4444;
+    --red-bg: #1a0a0a;
+    --red-border: #3f1010;
+    --amber: #f59e0b;
+    --amber-bg: #1a1300;
+    --amber-border: #3d2e00;
+    --green: #22c55e;
+    --green-bg: #071a0d;
+    --green-border: #0d3b1a;
+    --blue: #3b82f6;
+    --blue-bg: #070e1f;
+    --purple: #a855f7;
+    --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; line-height: 1.6; }
+
+  .header {
+    background: linear-gradient(135deg, #1a0533 0%, #0a1628 50%, #0d0f14 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 36px 40px 28px;
+  }
+  .header-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  .logo { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+  .logo span { color: var(--purple); }
+  .badge { background: #1a0a3f; border: 1px solid #4c1d95; color: #c4b5fd; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px; letter-spacing: 0.5px; text-transform: uppercase; }
+  .header-title { font-size: 28px; font-weight: 700; margin-top: 16px; color: #fff; }
+  .header-meta { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .header-meta span { color: var(--text); font-weight: 500; }
+
+  .verdict-bar {
+    margin: 0 40px;
+    background: #1a0a0a;
+    border: 2px solid #7f1d1d;
+    border-radius: 12px;
+    padding: 20px 28px;
+    display: flex; align-items: center; gap: 20px;
+    transform: translateY(-20px);
+  }
+  .verdict-icon { font-size: 36px; flex-shrink: 0; }
+  .verdict-text h2 { font-size: 18px; font-weight: 700; color: var(--red); margin-bottom: 4px; }
+  .verdict-text p { font-size: 13px; color: #fca5a5; line-height: 1.5; }
+  .verdict-text strong { color: #fef2f2; }
+
+  main { padding: 8px 40px 60px; }
+
+  .scorecard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 28px 0; }
+  .score-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; text-align: center; }
+  .score-card .num { font-size: 28px; font-weight: 800; line-height: 1; }
+  .score-card .label { font-size: 11px; color: var(--muted); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .score-card.red .num { color: var(--red); }
+  .score-card.amber .num { color: var(--amber); }
+  .score-card.green .num { color: var(--green); }
+  .score-card.blue .num { color: var(--blue); }
+
+  h2.section-title {
+    font-size: 16px; font-weight: 700; color: var(--text);
+    border-left: 3px solid var(--purple); padding-left: 12px;
+    margin: 32px 0 16px;
+  }
+
+  .issue-list { display: flex; flex-direction: column; gap: 10px; }
+  .issue {
+    border-radius: 10px; border: 1px solid; padding: 16px 18px;
+    position: relative;
+  }
+  .issue.red    { background: var(--red-bg);   border-color: var(--red-border); }
+  .issue.amber  { background: var(--amber-bg); border-color: var(--amber-border); }
+  .issue.green  { background: var(--green-bg); border-color: var(--green-border); }
+
+  .issue-header { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
+  .issue-badge {
+    flex-shrink: 0; font-size: 10px; font-weight: 700;
+    padding: 3px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.6px;
+    margin-top: 2px;
+  }
+  .issue.red   .issue-badge { background: #7f1d1d; color: #fca5a5; }
+  .issue.amber .issue-badge { background: #78350f; color: #fde68a; }
+  .issue.green .issue-badge { background: #14532d; color: #86efac; }
+
+  .issue-title { font-size: 15px; font-weight: 600; color: var(--text); }
+  .issue.red .issue-title { color: #fef2f2; }
+
+  .issue-body { font-size: 13px; color: var(--muted); margin-left: 60px; }
+  .issue-body strong { color: var(--text); }
+  .issue-body code { background: rgba(255,255,255,0.07); padding: 1px 5px; border-radius: 3px; font-size: 12px; font-family: 'Cascadia Code', 'Fira Code', monospace; color: #c4b5fd; }
+
+  .fix-box {
+    margin-top: 10px; margin-left: 60px;
+    background: rgba(255,255,255,0.04); border-left: 3px solid;
+    border-radius: 0 6px 6px 0; padding: 10px 14px;
+    font-size: 12.5px;
+  }
+  .issue.red   .fix-box { border-color: var(--red); }
+  .issue.amber .fix-box { border-color: var(--amber); }
+  .fix-box strong { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .issue.red   .fix-box strong { color: var(--red); }
+  .issue.amber .fix-box strong { color: var(--amber); }
+
+  .green-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
+  .green-item {
+    background: var(--green-bg); border: 1px solid var(--green-border);
+    border-radius: 8px; padding: 12px 14px;
+    display: flex; gap: 10px; align-items: flex-start;
+  }
+  .green-item .tick { color: var(--green); font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .green-item .gi-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .green-item .gi-detail { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .module-table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  .module-table th { background: var(--card); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+  .module-table td { padding: 11px 14px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+  .module-table tr:last-child td { border-bottom: none; }
+  .module-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; flex-shrink: 0; }
+  .dot.red { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .dot.amber { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  .dot.green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+  .stat-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 14px 0; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; }
+  .stat .sv { font-size: 20px; font-weight: 700; color: var(--text); }
+  .stat .sk { font-size: 11px; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.4px; }
+
+  .roadmap { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin: 14px 0; }
+  .rm-col { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .rm-col h3 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+  .rm-col.now h3 { color: var(--red); }
+  .rm-col.soon h3 { color: var(--amber); }
+  .rm-col.later h3 { color: var(--green); }
+  .rm-item { font-size: 12.5px; color: var(--muted); padding: 6px 0; border-bottom: 1px solid var(--border); display: flex; gap: 8px; }
+  .rm-item:last-child { border-bottom: none; }
+  .rm-item::before { content: '→'; flex-shrink: 0; }
+  .rm-col.now .rm-item::before { color: var(--red); }
+  .rm-col.soon .rm-item::before { color: var(--amber); }
+  .rm-col.later .rm-item::before { color: var(--green); }
+
+  footer { background: var(--card); border-top: 1px solid var(--border); padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+  footer .fc { font-size: 12px; color: var(--muted); }
+  footer .fc strong { color: var(--text); }
+
+  @media (max-width: 700px) {
+    .header, main, footer { padding-left: 16px; padding-right: 16px; }
+    .verdict-bar { margin: 0 16px; }
+    .roadmap { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-top">
+    <div class="logo">alfa<span>numrik</span></div>
+    <div class="badge">🔒 Confidential — CEO Only</div>
+  </div>
+  <div class="header-title">Application Health & Launch Readiness Report</div>
+  <div class="header-meta">
+    Generated: <span>5 May 2026 · 21:10 IST</span> &nbsp;|&nbsp;
+    Supabase Project: <span>shktyoxqhundlvkiwguu</span> &nbsp;|&nbsp;
+    Vercel: <span>alfanumrik (READY · PR #545)</span> &nbsp;|&nbsp;
+    Analyst: <span>Claude (CTO-mode Audit)</span>
+  </div>
+</div>
+
+<!-- LAUNCH VERDICT -->
+<div class="verdict-bar">
+  <div class="verdict-icon">🚫</div>
+  <div class="verdict-text">
+    <h2>NOT READY FOR PUBLIC LAUNCH — 3 Critical Blockers Active</h2>
+    <p>The infrastructure is architecturally sound and Wave 1 flags are correctly gated. However, <strong>3 critical blockers must be resolved</strong> before any real students or investors interact with the platform. An additional <strong>8 amber items</strong> must be addressed before scale. Estimated time-to-clear with focused engineering: <strong>2–4 days.</strong></p>
+  </div>
+</div>
+
+<main>
+
+<!-- SCORECARD -->
+<div class="scorecard-grid">
+  <div class="score-card red"><div class="num">3</div><div class="label">Critical Blockers</div></div>
+  <div class="score-card amber"><div class="num">8</div><div class="label">Amber Issues</div></div>
+  <div class="score-card green"><div class="num">21</div><div class="label">Green Checks</div></div>
+  <div class="score-card blue"><div class="num">71</div><div class="label">Edge Functions Active</div></div>
+  <div class="score-card blue"><div class="num">28</div><div class="label">Migrations Applied</div></div>
+  <div class="score-card blue"><div class="num">15,411</div><div class="label">RAG Chunks</div></div>
+  <div class="score-card blue"><div class="num">545</div><div class="label">GitHub PRs Merged</div></div>
+  <div class="score-card blue"><div class="num">17</div><div class="label">Active Subscriptions</div></div>
+</div>
+
+<!-- MODULE STATUS TABLE -->
+<h2 class="section-title">Module-by-Module Status</h2>
+<table class="module-table">
+  <thead>
+    <tr>
+      <th>Module</th>
+      <th>Status</th>
+      <th>Key Metric / Evidence</th>
+      <th>Blocker?</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Vercel Deployment</strong></td>
+      <td><span class="dot green"></span>READY</td>
+      <td>Latest deploy READY · PR #545 (088906f) · 0 errors in last 24h</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><strong>Auth (Supabase)</strong></td>
+      <td><span class="dot amber"></span>WARN</td>
+      <td>21 users · 6 active/7d · 1x AuthApiError on GET / (7d ago)</td>
+      <td>Amber</td>
+    </tr>
+    <tr>
+      <td><strong>Quiz Engine</strong></td>
+      <td><span class="dot red"></span>CRITICAL</td>
+      <td>66 completed quizzes · Score stored as XP (10×correct), not %. Display could show 1000%</td>
+      <td>🔴 Yes</td>
+    </tr>
+    <tr>
+      <td><strong>Foxy AI Tutor</strong></td>
+      <td><span class="dot green"></span>LIVE</td>
+      <td>v46 deployed · 310 Foxy sessions · Homework mode + RAG-only rules active</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><strong>Adaptive / BKT</strong></td>
+      <td><span class="dot amber"></span>PARTIAL</td>
+      <td>Only 1 mastery record for 17 students with 66 quizzes. Triggers may not be firing consistently.</td>
+      <td>Amber</td>
+    </tr>
+    <tr>
+      <td><strong>IRT / Theta</strong></td>
+      <td><span class="dot green"></span>ACTIVE</td>
+      <td>Calibrated 2,598 questions · IRT theta trigger on quiz_responses · ff_irt_question_selection=100%</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><strong>Payments / Razorpay</strong></td>
+      <td><span class="dot red"></span>CRITICAL</td>
+      <td>DB shows Unlimited at ₹1,499 · Investor deck says Family/School at ₹1,099. Mismatch.</td>
+      <td>🔴 Yes</td>
+    </tr>
+    <tr>
+      <td><strong>RAG / Content</strong></td>
+      <td><span class="dot green"></span>HEALTHY</td>
+      <td>15,411 chunks · 11 subjects · 7 grades · All with Voyage embeddings</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><strong>Question Bank</strong></td>
+      <td><span class="dot amber"></span>PARTIAL</td>
+      <td>8,057 total questions · Only 2,598 verified (32%). 5,459 unverified could violate NCERT mandate.</td>
+      <td>Amber</td>
+    </tr>
+    <tr>
+      <td><strong>Edge Functions</strong></td>
+      <td><span class="dot red"></span>CRITICAL</td>
+      <td>71 deployed in prod · Only 35 in source repo · 36 orphan functions untracked</td>
+      <td>🔴 Yes</td>
+    </tr>
+    <tr>
+      <td><strong>Feature Flags</strong></td>
+      <td><span class="dot amber"></span>PARTIAL</td>
+      <td>Wave 1 (7 flags) ✅ live · Wave 2/3 staged ✅ · But several ff_ flags enabled=true, rollout=0%</td>
+      <td>Amber</td>
+    </tr>
+    <tr>
+      <td><strong>RLS / Security</strong></td>
+      <td><span class="dot amber"></span>WARN</td>
+      <td>RLS enabled on all 11 key tables ✅ · But 461 multiple_permissive_policies still open</td>
+      <td>Amber</td>
+    </tr>
+    <tr>
+      <td><strong>Monitoring / SRE</strong></td>
+      <td><span class="dot amber"></span>PARTIAL</td>
+      <td>platform_health_snapshots table exists but 0 rows. Vercel cron health unverified.</td>
+      <td>Amber</td>
+    </tr>
+    <tr>
+      <td><strong>Analytics (PostHog)</strong></td>
+      <td><span class="dot amber"></span>DARK</td>
+      <td>PostHog connected but 0 feature flags + no events tracked. Product is analytically blind.</td>
+      <td>Amber</td>
+    </tr>
+    <tr>
+      <td><strong>Legal / DPDP</strong></td>
+      <td><span class="dot amber"></span>IN PROGRESS</td>
+      <td>Account deletion ✅ Pre-debit notice ✅ Privacy + ToS scaffold ✅ · 22 founder-fill items pending lawyer</td>
+      <td>Amber</td>
+    </tr>
+    <tr>
+      <td><strong>i18n / Hindi</strong></td>
+      <td><span class="dot green"></span>DONE</td>
+      <td>Hindi parity: Foxy RAG refusal + RBI pre-debit email · PR #541 merged</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><strong>PWA / Mobile</strong></td>
+      <td><span class="dot green"></span>DONE</td>
+      <td>manifest.json + PNG icons (192x512) generated · PR #542 merged</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><strong>DB Performance</strong></td>
+      <td><span class="dot amber"></span>WARN</td>
+      <td>Auth pool hardcoded at 10 connections. Unacceptable at 100K+ users.</td>
+      <td>Amber</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- CRITICAL ISSUES -->
+<h2 class="section-title">🔴 Critical Blockers — Must Fix Before Any Launch</h2>
+<div class="issue-list">
+
+  <div class="issue red">
+    <div class="issue-header">
+      <span class="issue-badge">C-01 · CRITICAL</span>
+      <span class="issue-title">Quiz Score Data Type Mismatch — XP Points Stored, Not Percentage</span>
+    </div>
+    <div class="issue-body">
+      The <code>quiz_sessions.score</code> column stores <strong>XP points (10 per correct answer)</strong>, not percentage. A perfect 20-question quiz has <code>score = 200</code>. Recent data confirms: score=200 with 20 questions (1000%), score=10 with 5 questions (200%). The average stored score is 113.3 — clearly not a percentage.<br><br>
+      <strong>Risk:</strong> Any UI component that renders <code>score</code> directly as a percentage will show "1000%" to a student who scored perfectly. This is a student-facing embarrassment and a credibility killer. The correct formula is: <code>percentage = (score / (total_questions × 10)) × 100</code>.
+    </div>
+    <div class="fix-box">
+      <strong>Fix Required</strong>
+      1. Grep all UI files rendering quiz score for direct use of <code>score</code> field without this formula. &nbsp;
+      2. Confirm all <code>SubjectProgress</code>, quiz result pages, and parent dashboard use the correct calculation. &nbsp;
+      3. Add a DB-level computed column or a typed helper function <code>get_score_pct()</code> to prevent future drift.
+    </div>
+  </div>
+
+  <div class="issue red">
+    <div class="issue-header">
+      <span class="issue-badge">C-02 · CRITICAL</span>
+      <span class="issue-title">Pricing Mismatch — DB Plan "Unlimited" at ₹1,499 vs Investor Deck "Family/School" at ₹1,099</span>
+    </div>
+    <div class="issue-body">
+      The <code>subscription_plans</code> table has: Explorer ₹0 · Starter ₹299 · Pro ₹699 · <strong>Unlimited ₹1,499/month</strong>. The official corporate identity document (used in investor materials, pre-seed deck) states: Starter ₹299 · Pro ₹699 · <strong>Family/School ₹1,099/month</strong>. There is a <strong>₹400/month discrepancy</strong> and a naming mismatch on the top tier.<br><br>
+      <strong>Risk:</strong> If an investor checks the live pricing page and sees ₹1,499, but the deck says ₹1,099, it raises questions about data integrity and governance. If a real parent pays ₹1,499 when told ₹1,099, it is a compliance issue.
+    </div>
+    <div class="fix-box">
+      <strong>Fix Required</strong>
+      Decide canonical price before launch and sync: either (a) update DB plan to ₹1,099 + rename "Unlimited" → "Family / School" + update Razorpay plan <code>plan_Sb0bD6umoH12gf</code>, or (b) update investor deck to ₹1,499. One source of truth. Both must match.
+    </div>
+  </div>
+
+  <div class="issue red">
+    <div class="issue-header">
+      <span class="issue-badge">C-03 · CRITICAL</span>
+      <span class="issue-title">36 Orphan Edge Functions in Production — Untracked, Unreviewed</span>
+    </div>
+    <div class="issue-body">
+      Production has <strong>71 Edge Functions deployed</strong> but only <strong>35 exist in the source repo</strong>. The drift was documented in PR #544 but the orphans were NOT decommissioned — they remain live and callable. These 36 functions cannot be code-reviewed, cannot be tested, and their logic is unknown. Any production API call that accidentally hits one of these (via shared naming, edge case routing, or documentation references) returns undefined behaviour.<br><br>
+      <strong>Risk:</strong> Unreviewed logic running in production. Security exposure. Cannot be audited. Blocks SOC2/ISO compliance path.
+    </div>
+    <div class="fix-box">
+      <strong>Fix Required</strong>
+      Pull the list of 36 orphan function slugs from the drift report. For each: (1) verify it is not called by any live client or Edge Function. (2) Deploy a tombstone (HTTP 410 Gone) or delete via Supabase Dashboard. (3) Commit a "production-function-inventory.json" to repo so this never drifts again.
+    </div>
+  </div>
+
+</div>
+
+<!-- AMBER ISSUES -->
+<h2 class="section-title">🟡 Amber Issues — Fix Before Scale</h2>
+<div class="issue-list">
+
+  <div class="issue amber">
+    <div class="issue-header">
+      <span class="issue-badge">A-01 · Amber</span>
+      <span class="issue-title">BKT / Adaptive Mastery: Only 1 Record for 17 Students</span>
+    </div>
+    <div class="issue-body">
+      17 students have completed 66 quizzes, but <code>adaptive_mastery</code> has only <strong>1 row</strong>. The BKT triggers (<code>trg_quiz_session_bkt_update</code>, <code>trg_quiz_response_bkt_update</code>) were verified in P3 sprint but clearly only fired once in production. The core differentiator of the product — adaptive personalization — is non-functional for 16 of 17 students.
+    </div>
+    <div class="fix-box">
+      <strong>Fix</strong> Run a backfill: call <code>update_bkt_mastery()</code> for all completed quiz_sessions. Then check trigger ENABLING status in production schema. Verify <code>chapter_number</code> is not NULL on recent quiz_sessions (was root cause in P3).
+    </div>
+  </div>
+
+  <div class="issue amber">
+    <div class="issue-header">
+      <span class="issue-badge">A-02 · Amber</span>
+      <span class="issue-title">PostHog: 0 Events Tracked — Product is Analytically Blind</span>
+    </div>
+    <div class="issue-body">
+      PostHog is connected (EU project 159341) but has <strong>zero feature flags and zero tracked events</strong>. There is no funnel data, no DAU/WAU metric, no Foxy engagement tracking, no quiz completion rate — nothing. The SRE runbook and platform_health_snapshots table exist but are empty. You are launching a product with no visibility into how students use it.
+    </div>
+    <div class="fix-box">
+      <strong>Fix</strong> Wire <code>posthog.capture()</code> for: signup, login, quiz_started, quiz_completed (with score_pct), foxy_message_sent, subscription_upgrade. Add PostHog's <code>identify()</code> on student load with grade+plan. Takes 1 day. Minimum viable observability.
+    </div>
+  </div>
+
+  <div class="issue amber">
+    <div class="issue-header">
+      <span class="issue-badge">A-03 · Amber</span>
+      <span class="issue-title">Question Bank: 68% Unverified (5,459 questions)</span>
+    </div>
+    <div class="issue-body">
+      8,057 questions in <code>question_bank</code> but only 2,598 are <code>is_verified = true</code>. 5,459 questions (68%) may contain AI-generated content that has not been NCERT-validated. Per the CLAUDE.md mandate: "NO hallucinated content is allowed." Serving unverified questions to students violates the platform's core promise.
+    </div>
+    <div class="fix-box">
+      <strong>Fix</strong> Before launch: (1) Gate quiz_generator to only use <code>is_verified = true</code> questions. (2) Run the <code>verify-question-bank</code> Edge Function on all remaining 5,459. (3) Flag any failing NCERT match for manual review.
+    </div>
+  </div>
+
+  <div class="issue amber">
+    <div class="issue-header">
+      <span class="issue-badge">A-04 · Amber</span>
+      <span class="issue-title">Feature Flags: is_enabled=true but rollout_percentage=0 (Undefined Behaviour)</span>
+    </div>
+    <div class="issue-body">
+      Multiple flags are <code>is_enabled = true</code> with <code>rollout_percentage = 0</code>: <code>ff_goal_daily_plan</code>, <code>ff_server_only_quiz_submit</code>, <code>ff_v1_quiz_rpc_web_blocked</code>, <code>ff_quiz_oracle_enabled</code>, <code>ff_goal_aware_foxy</code>, and others. Depending on whether the flag-check reads <code>is_enabled</code> OR <code>rollout_percentage</code>, these flags may be treated as "on" for 0% of users or "on" for all users.
+    </div>
+    <div class="fix-box">
+      <strong>Fix</strong> Audit the flag evaluation function. Enforce the rule: <code>is_enabled=true AND rollout_percentage=0</code> = effectively disabled. Update each conflicting flag to either <code>is_enabled=false</code> or a non-zero rollout. Add a DB constraint or CHECK to prevent this state.
+    </div>
+  </div>
+
+  <div class="issue amber">
+    <div class="issue-header">
+      <span class="issue-badge">A-05 · Amber</span>
+      <span class="issue-title">Platform Health Monitoring: Snapshots Empty, Cron Unverified</span>
+    </div>
+    <div class="issue-body">
+      <code>platform_health_snapshots</code> table has 0 rows. Migration <code>disable_pg_cron_daily_in_favor_of_vercel</code> was applied today, meaning the nightly cron that calls <code>record_platform_health_snapshot()</code> was migrated to Vercel. However, there is no evidence the Vercel cron is wired and running. The SRE runbook exists but the monitoring pipeline is dark.
+    </div>
+    <div class="fix-box">
+      <strong>Fix</strong> Verify the Vercel cron job config (<code>vercel.json</code> or <code>crons</code> setting) exists and targets the <code>/api/cron/daily</code> route. Trigger it manually once and confirm a row appears in <code>platform_health_snapshots</code>.
+    </div>
+  </div>
+
+  <div class="issue amber">
+    <div class="issue-header">
+      <span class="issue-badge">A-06 · Amber</span>
+      <span class="issue-title">AuthApiError on Homepage (GET /) — Invalid Session State</span>
+    </div>
+    <div class="issue-body">
+      Vercel runtime logs show: <code>Error [AuthApiError]: Inval…</code> on GET / in production (7 days ago, one occurrence). This is likely a stale/corrupt session cookie causing the auth middleware to throw on homepage load. While it appears to be a single event, it indicates a potential edge case in session persistence or token refresh logic.
+    </div>
+    <div class="fix-box">
+      <strong>Fix</strong> Reproduce by letting a session expire. Check <code>src/middleware.ts</code> and the Supabase auth client's <code>onAuthStateChange</code> handler. Ensure invalid sessions are silently cleared and redirect to login rather than throwing.
+    </div>
+  </div>
+
+  <div class="issue amber">
+    <div class="issue-header">
+      <span class="issue-badge">A-07 · Amber</span>
+      <span class="issue-title">DB Connection Pool Hardcoded at 10 — Will Fail at Scale</span>
+    </div>
+    <div class="issue-body">
+      Auth DB connections are hardcoded at 10 in Supabase settings (known since P3, still unfixed). At 100K+ concurrent users this will cause <code>FATAL: too many connections</code> errors on authentication. This is a <strong>configuration fix only</strong> — no code change required.
+    </div>
+    <div class="fix-box">
+      <strong>Fix</strong> Supabase Dashboard → Project Settings → Auth → change <em>"Maximum number of sessions per user"</em> and DB pool size from hardcoded 10 to percentage-based (recommended: 60% of max connections). Takes 2 minutes.
+    </div>
+  </div>
+
+  <div class="issue amber">
+    <div class="issue-header">
+      <span class="issue-badge">A-08 · Amber</span>
+      <span class="issue-title">461 Multiple Permissive Policies — Anon Role Security Gap</span>
+    </div>
+    <div class="issue-body">
+      461 instances of <code>multiple_permissive_policies</code> remain from P3/P4 cleanup. "Service role full access" policies are still applying to the <code>anon</code> role on some tables. This is a residual risk that could allow unauthenticated reads on sensitive tables under specific conditions.
+    </div>
+    <div class="fix-box">
+      <strong>Fix</strong> Run the P4-style dynamic DROP + recreate script scoped to remaining violating policies. Filter for policies where <code>roles @&gt; ARRAY['anon']</code> and <code>policy_name LIKE '%service role%'</code>. Drop and recreate scoped only to <code>TO service_role</code>.
+    </div>
+  </div>
+
+</div>
+
+<!-- GREEN CHECKS -->
+<h2 class="section-title">✅ Green Checks — Launch-Ready Components</h2>
+<div class="green-grid">
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">Vercel Production: READY</div><div class="gi-detail">PR #545 deployed · commit 088906f · turbopack build</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">71 Edge Functions Active</div><div class="gi-detail">All ACTIVE status · foxy-tutor v46 · quiz-generator v36</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">RLS on All Critical Tables</div><div class="gi-detail">students, quiz_sessions, foxy_sessions, subscriptions, etc.</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">Wave 1 Flags Live & Correct</div><div class="gi-detail">7 flags enabled · Math+Science Gr 6-12 · Wave 2/3 staged</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">Razorpay Plans Mapped</div><div class="gi-detail">3 yearly plan IDs in subscription_plans · webhooks live</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">15,411 RAG Chunks</div><div class="gi-detail">11 subjects · 7 grades · 33+ chapters · All with embeddings</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">28 Clean Migrations</div><div class="gi-detail">Latest: account_deletion_flow, pre_debit_notice_events (today)</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">DPDP Compliance: Account Deletion</div><div class="gi-detail">account-purge Edge Function + account_deletion_flow migration</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">RBI Compliance: Pre-Debit Notice</div><div class="gi-detail">send-pre-debit-notice · Hindi+English · All required fields</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">Atomic Cancel Subscription RPC</div><div class="gi-detail">No orphaned subscriptions on cancel · idempotent</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">Hindi Parity: Foxy + RBI Email</div><div class="gi-detail">RAG-only refusal bilingual · Pre-debit notice bilingual</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">PWA Icons Generated</div><div class="gi-detail">icon-192.png + icon-512.png · manifest.json complete</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">Dashboard UX Simplified</div><div class="gi-detail">5 above-fold widgets · 5 lazy accordions · No cognitive overload</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">Bundle CI Gate: 160KB cap</div><div class="gi-detail">Largest shared chunk 91KB · CI enforced on every push</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">IRT Theta Calibrated</div><div class="gi-detail">2,598 questions with irt_difficulty · Newton-Raphson MLE trigger</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">Student Profiles Complete</div><div class="gi-detail">0 students missing grade · 17 active subscriptions</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">Staging Sync Workflow</div><div class="gi-detail">sync-staging-functions.yml · 35 functions in source = staging</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">SECURITY DEFINER Cleaned</div><div class="gi-detail">P4: 52 postgres-owned functions fixed · search_path secured</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">Covering Indexes: 31 FK indexes</div><div class="gi-detail">All unindexed foreign keys covered · Performance P4</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">Foxy v46: Socratic + RAG-only</div><div class="gi-detail">Homework mode · No hallucination · Quota enforced via DB</div></div></div>
+  <div class="green-item"><div class="tick">✓</div><div><div class="gi-title">Lawyer Engagement Pack</div><div class="gi-detail">6 docs ready · 9 auto-filled · 26 defaults · 22 items for founder</div></div></div>
+</div>
+
+<!-- LIVE DATA SNAPSHOT -->
+<h2 class="section-title">📊 Live Database Snapshot (as of 5 May 2026)</h2>
+<div class="stat-row">
+  <div class="stat"><div class="sv">21</div><div class="sk">Total Auth Users</div></div>
+  <div class="stat"><div class="sv">6</div><div class="sk">Active (last 7d)</div></div>
+  <div class="stat"><div class="sv">17</div><div class="sk">Students (w/ profile)</div></div>
+  <div class="stat"><div class="sv">17</div><div class="sk">Active Subscriptions</div></div>
+  <div class="stat"><div class="sv">66</div><div class="sk">Completed Quizzes</div></div>
+  <div class="stat"><div class="sv">310</div><div class="sk">Foxy Sessions</div></div>
+  <div class="stat"><div class="sv">8,057</div><div class="sk">Total Questions</div></div>
+  <div class="stat"><div class="sv">2,598</div><div class="sk">Verified Questions (32%)</div></div>
+  <div class="stat"><div class="sv">15,411</div><div class="sk">RAG Chunks</div></div>
+  <div class="stat"><div class="sv">1</div><div class="sk">BKT Mastery Records ⚠️</div></div>
+  <div class="stat"><div class="sv">39</div><div class="sk">Active Feature Flags</div></div>
+  <div class="stat"><div class="sv">0</div><div class="sk">PostHog Events Tracked ⚠️</div></div>
+</div>
+
+<!-- IMPROVEMENT ROADMAP -->
+<h2 class="section-title">🗺️ Improvement Roadmap — Priority Queue</h2>
+<div class="roadmap">
+  <div class="rm-col now">
+    <h3>🔴 Now (Before Launch)</h3>
+    <div class="rm-item">Fix quiz score display: use (score / total_q×10) × 100%</div>
+    <div class="rm-item">Reconcile pricing: ₹1,099 vs ₹1,499 — pick one, sync DB + deck</div>
+    <div class="rm-item">Decommission 36 orphan Edge Functions in prod</div>
+    <div class="rm-item">Verify + fix BKT trigger firing for all 17 students</div>
+    <div class="rm-item">Wire PostHog: 5 core events (signup, quiz, foxy, upgrade)</div>
+    <div class="rm-item">Verify Vercel cron replacing pg_cron daily job</div>
+    <div class="rm-item">Fix AuthApiError on homepage (invalid session handling)</div>
+  </div>
+  <div class="rm-col soon">
+    <h3>🟡 Sprint 1 (Week 1–2)</h3>
+    <div class="rm-item">Gate quiz to verified questions only (is_verified=true)</div>
+    <div class="rm-item">Run bulk question verification on 5,459 unverified</div>
+    <div class="rm-item">Fix 461 multiple_permissive_policies (anon role)</div>
+    <div class="rm-item">Fix Auth DB pool: hardcoded 10 → percentage-based</div>
+    <div class="rm-item">Resolve ff_ flags with enabled=true, rollout=0 conflict</div>
+    <div class="rm-item">Complete founder-fill legal checklist (22 items, ~90 min)</div>
+    <div class="rm-item">Add PostHog funnels: signup→quiz→upgrade conversion</div>
+    <div class="rm-item">Seed platform_health_snapshots via manual cron trigger</div>
+  </div>
+  <div class="rm-col later">
+    <h3>🟢 Sprint 2–3 (Month 1)</h3>
+    <div class="rm-item">Wave 2 activation gate: ≥500 DAU for 7 days</div>
+    <div class="rm-item">Build queue-consumer Edge Function for ml_retrain</div>
+    <div class="rm-item">Enable leaderboard_global when ≥50 students with mastery</div>
+    <div class="rm-item">Add Upstash Redis caching for high-frequency queries</div>
+    <div class="rm-item">SOC2-prep: audit log review + RBAC documentation</div>
+    <div class="rm-item">Teacher portal hardening for Wave 2</div>
+    <div class="rm-item">Load test: simulate 1,000 concurrent quiz sessions</div>
+    <div class="rm-item">Supabase advisor: 105 admin-owned SECDEF functions (support ticket)</div>
+  </div>
+</div>
+
+</main>
+
+<footer>
+  <div class="fc"><strong>Alfanumrik</strong> · Cusiosense Learning India Private Limited · <strong>Startup India Recognised</strong></div>
+  <div class="fc">Confidential · Generated by Claude Audit · <strong>5 May 2026</strong></div>
+</footer>
+
+</body>
+</html>

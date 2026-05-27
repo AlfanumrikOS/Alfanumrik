@@ -116,10 +116,14 @@ export async function generateResponse(req: GenerateRequest): Promise<MolResult>
     getRoutingWeights(),
   ])
 
+  const user_text = req.input.question || req.input.instruction || req.input.topic || ''
+
   const selected = selectProviderChain(task_type, {
     hybrid_enabled: hybridOn,
     openai_default: openaiDefault,
     weights,
+    student_context: req.student_context,
+    query: user_text,
   })
 
   // Per-request preferred_provider override (admin only)
@@ -147,7 +151,6 @@ export async function generateResponse(req: GenerateRequest): Promise<MolResult>
 
   const user_messages: Array<{ role: 'user' | 'assistant'; content: string }> = []
   if (req.input.chat_history) user_messages.push(...req.input.chat_history.slice(-10))
-  const user_text = req.input.question || req.input.instruction || req.input.topic || ''
   user_messages.push({ role: 'user', content: user_text })
 
   const max_tokens = req.config?.max_tokens_override ?? getMaxTokens(task_type)
