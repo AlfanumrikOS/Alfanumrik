@@ -1,8 +1,9 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useResponsiveCanvas } from '@/hooks/useResponsiveCanvas';
 
 export default function AlveoliBreathingLab() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { canvasRef, containerRef, size } = useResponsiveCanvas(560 / 240);
   const animRef = useRef<number>(0);
   const tRef = useRef(0);
   const [playing, setPlaying] = useState(true);
@@ -13,7 +14,8 @@ export default function AlveoliBreathingLab() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
-    const W = canvas.width, H = canvas.height;
+    const W = size.width;
+    const H = size.height;
     ctx.clearRect(0, 0, W, H);
 
     const period = (60 / bpm) * 60;
@@ -73,9 +75,15 @@ export default function AlveoliBreathingLab() {
       ctx.fillStyle = isO2 ? '#1565C0' : '#C62828';
       ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 6px sans-serif';
-      ctx.fillText(isO2 ? 'O₂' : 'CO₂', dx - 7, dy + 2);
+      ctx.font = 'bold 6.5px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(isO2 ? 'O₂' : 'CO₂', dx, dy);
     }
+
+    // Restore alignment for subsequent text drawing
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
 
     ctx.fillStyle = '#333';
     ctx.font = '12px sans-serif';
@@ -87,7 +95,7 @@ export default function AlveoliBreathingLab() {
     ctx.fillRect(W - 100, 28, 10, 10); ctx.fillText('CO₂ (out)', W - 85, 38);
 
     tRef.current += speed;
-  }, [speed, bpm]);
+  }, [speed, bpm, size, canvasRef]);
 
   useEffect(() => {
     if (!playing) return;
@@ -99,7 +107,9 @@ export default function AlveoliBreathingLab() {
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Alveoli Breathing Lab</h3>
-      <canvas ref={canvasRef} width={560} height={240} style={{ width: '100%', borderRadius: 8, display: 'block', background: '#E3F2FD' }} />
+      <div ref={containerRef} className="w-full" style={{ aspectRatio: '560/240' }}>
+        <canvas ref={canvasRef} style={{ borderRadius: 8, display: 'block', background: '#E3F2FD' }} />
+      </div>
       <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center' }}>
         <button onClick={() => setPlaying(p => !p)} style={{ padding: '6px 16px', background: playing ? '#f44336' : '#4CAF50', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>
           {playing ? 'Pause' : 'Play'}

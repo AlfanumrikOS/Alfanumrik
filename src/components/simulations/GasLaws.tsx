@@ -47,7 +47,17 @@ export default function GasLaws() {
   const [moles, setMoles] = useState(1);
   const [mode, setMode] = useState<'boyle' | 'charles' | 'free'>('boyle');
 
-  // Derived: P = nRT/V
+  // Keep Boyle's & Charles's laws synchronized
+  useEffect(() => {
+    if (mode === 'boyle') {
+      setTemperature(300);
+    } else if (mode === 'charles') {
+      const targetVol = (moles * R * temperature) / 50;
+      setVolume(Math.max(20, Math.min(100, Math.round(targetVol))));
+    }
+  }, [mode, temperature, moles]);
+
+  // Derived: P = nRT/V (in kPa if V is in Litres)
   const pressure = (moles * R * temperature) / volume;
   // Particle speed proportional to √T
   const particleSpeed = Math.sqrt(temperature / 300) * 3;
@@ -153,7 +163,7 @@ export default function GasLaws() {
     const gaugeW = 30;
     const gaugeH = containerH - 20;
     const gaugeY = containerY + 10;
-    const pressureFrac = Math.min(1, pressure / 200000);
+    const pressureFrac = Math.min(1, pressure / 200); // Max 200 kPa for visual scale
 
     ctx.fillStyle = '#f1f5f9';
     ctx.fillRect(gaugeX, gaugeY, gaugeW, gaugeH);
@@ -173,7 +183,7 @@ export default function GasLaws() {
     ctx.textAlign = 'center';
     ctx.fillText('P', gaugeX + gaugeW / 2, gaugeY - 4);
     ctx.font = '10px system-ui';
-    ctx.fillText(`${(pressure / 1000).toFixed(1)}`, gaugeX + gaugeW / 2, gaugeY + gaugeH + 14);
+    ctx.fillText(`${pressure.toFixed(1)}`, gaugeX + gaugeW / 2, gaugeY + gaugeH + 14);
     ctx.fillText('kPa', gaugeX + gaugeW / 2, gaugeY + gaugeH + 26);
 
     animRef.current = requestAnimationFrame(draw);
@@ -236,11 +246,11 @@ export default function GasLaws() {
         {/* Pressure (calculated) */}
         <div style={{ padding: '10px 12px', background: '#faf5ff', borderRadius: 8, border: '1px solid #e9d5ff' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#6b21a8', marginBottom: 4 }}>⬆️ Pressure (P)</div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: pressure > 150000 ? '#ef4444' : '#1e293b', textAlign: 'center', marginTop: 8 }}>
-            {(pressure / 1000).toFixed(1)} <span style={{ fontSize: 11, fontWeight: 400, color: '#64748B' }}>kPa</span>
+          <div style={{ fontSize: 20, fontWeight: 700, color: pressure > 150 ? '#ef4444' : '#1e293b', textAlign: 'center', marginTop: 8 }}>
+            {pressure.toFixed(1)} <span style={{ fontSize: 11, fontWeight: 400, color: '#64748B' }}>kPa</span>
           </div>
           <div style={{ fontSize: 10, color: '#64748B', textAlign: 'center' }}>
-            {(pressure / 101325).toFixed(2)} atm
+            {(pressure / 101.325).toFixed(2)} atm
           </div>
         </div>
       </div>
@@ -248,7 +258,7 @@ export default function GasLaws() {
       {/* Formula display */}
       <div style={{ marginTop: 12, padding: '8px 12px', background: '#f1f5f9', borderRadius: 8, textAlign: 'center' }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>
-          PV = nRT → {(pressure / 1000).toFixed(1)} × {volume} = {moles} × 8.314 × {temperature}
+          PV = nRT → {pressure.toFixed(1)} × {volume} = {moles} × 8.314 × {temperature}
         </span>
         <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>
           {mode === 'boyle' ? "Boyle's Law: as V ↓, P ↑ (T constant)" :

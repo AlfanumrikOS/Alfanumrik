@@ -344,6 +344,14 @@ export default function LensRayDiagram() {
   const handlePointerUp = () => setIsDragging(false);
 
   const imgInfo = computeImage(objectDist, focalLength, optType);
+  const isLens = optType.includes('lens');
+  const uSigned = -Math.abs(objectDist);
+  let fSigned: number;
+  if (optType === 'convex-lens') fSigned = Math.abs(focalLength);
+  else if (optType === 'concave-lens') fSigned = -Math.abs(focalLength);
+  else if (optType === 'concave-mirror') fSigned = -Math.abs(focalLength);
+  else fSigned = Math.abs(focalLength);
+
 
   const opticTypes: { value: OpticsType; label: string }[] = [
     { value: 'convex-lens', label: 'Convex Lens' },
@@ -470,9 +478,19 @@ export default function LensRayDiagram() {
           marginTop: '12px', padding: '10px', background: '#fff',
           borderRadius: '8px', textAlign: 'center', fontSize: '13px', color: '#555',
         }}>
-          <span style={{ fontWeight: 700 }}>Lens Formula: </span>
-          1/v − 1/u = 1/f &nbsp;→&nbsp;
-          1/{isFinite(imgInfo.v) ? imgInfo.v.toFixed(1) : '∞'} − 1/(-{objectDist.toFixed(1)}) = 1/{focalLength}
+          {isLens ? (
+            <>
+              <span style={{ fontWeight: 700 }}>Lens Formula: </span>
+              1/v − 1/u = 1/f &nbsp;→&nbsp;
+              1/{isFinite(imgInfo.v) ? imgInfo.v.toFixed(1) : '∞'} − 1/({uSigned.toFixed(1)}) = 1/{fSigned.toFixed(1)}
+            </>
+          ) : (
+            <>
+              <span style={{ fontWeight: 700 }}>Mirror Formula: </span>
+              1/v + 1/u = 1/f &nbsp;→&nbsp;
+              1/{isFinite(imgInfo.v) ? imgInfo.v.toFixed(1) : '∞'} + 1/({uSigned.toFixed(1)}) = 1/{fSigned.toFixed(1)}
+            </>
+          )}
         </div>
       </div>
 

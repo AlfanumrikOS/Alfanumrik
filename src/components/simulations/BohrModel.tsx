@@ -179,7 +179,7 @@ export default function BohrModel() {
 
   const valenceElectrons = element.config[element.config.length - 1];
   const isMetal = valenceElectrons <= 3 && element.z > 2;
-  const isNobleGas = element.config[element.config.length - 1] === SHELL_MAX[element.config.length - 1] || element.z === 2;
+  const isNobleGas = valenceElectrons === 8 || element.z === 2;
 
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif' }}>

@@ -8,7 +8,7 @@ const ELEMENTS = [
   { symbol: 'C', name: 'Carbon', z: 6, correct: 'Non-Metal' },
   { symbol: 'Na', name: 'Sodium', z: 11, correct: 'Metal' },
   { symbol: 'Mg', name: 'Magnesium', z: 12, correct: 'Metal' },
-  { symbol: 'Al', name: 'Aluminium', z: 13, correct: 'Metalloid' },
+  { symbol: 'Al', name: 'Aluminium', z: 13, correct: 'Metal' },
   { symbol: 'S', name: 'Sulfur', z: 16, correct: 'Non-Metal' },
   { symbol: 'Cl', name: 'Chlorine', z: 17, correct: 'Non-Metal' },
   { symbol: 'Ar', name: 'Argon', z: 18, correct: 'Non-Metal' },
