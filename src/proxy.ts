@@ -705,6 +705,12 @@ export async function proxy(request: NextRequest) {
     requestHeaders.set('x-school-tagline', encodeURIComponent(schoolConfig.tagline || ''));
   }
 
+  if (pathname === '/manifest.json') {
+    const rewriteUrl = new URL('/api/school-config/manifest', request.url);
+    const rewriteRes = NextResponse.rewrite(rewriteUrl, { request: { headers: requestHeaders } });
+    return addSecurityHeaders(rewriteRes, request);
+  }
+
   // ── Layer 0: Supabase session refresh ──
   // This keeps the auth cookie fresh on every request.
   // Required for the PKCE email flow (signup confirm, password reset).
@@ -1227,7 +1233,7 @@ function addSecurityHeaders(response: NextResponse, request: NextRequest): NextR
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|icons|robots.txt).*)',
+    '/((?!_next/static|_next/image|favicon.ico|sw.js|icons|robots.txt).*)',
   ],
 };
 

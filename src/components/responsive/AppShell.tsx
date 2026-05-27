@@ -129,6 +129,9 @@ export function AppShell({
   // listener to keep cheap Android phones smooth.
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    const isFoxy = className?.includes('foxy-shell');
+    if (isFoxy) return;
+
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     // We still compact under reduced-motion, but without the transition
     // (CSS already disables the transition when prefers-reduced-motion is set).
@@ -147,7 +150,7 @@ export function AppShell({
       window.removeEventListener('scroll', onScroll);
       if (rafIdRef.current != null) window.cancelAnimationFrame(rafIdRef.current);
     };
-  }, []);
+  }, [className]);
 
   // Variant flags
   const hasRail = variant === 'rail' || variant === 'split';

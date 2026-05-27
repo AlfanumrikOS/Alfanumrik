@@ -1253,6 +1253,15 @@ img, video, iframe, canvas, svg {
    flickers as the chat scrolls beneath it. Drop the blur + promote the header
    to its own compositing layer on /foxy to eliminate the flicker. Scoped to
    /foxy via the .foxy-shell class on AppShell; other routes keep the blur. */
+html:has(.foxy-shell),
+body:has(.foxy-shell) {
+  overflow: hidden;
+  height: 100%;
+  position: fixed;
+  width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
 .app-shell-v2.foxy-shell {
   height: 100dvh;
   max-height: 100dvh;
@@ -1269,6 +1278,15 @@ img, video, iframe, canvas, svg {
   -webkit-backdrop-filter: none;
   background: var(--bg);
   transform: translateZ(0);
+}
+
+.foxy-subject-tabs {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.foxy-subject-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .app-shell-v2 > .app-shell-header[data-compact="true"] {

@@ -349,7 +349,7 @@ describe('Middleware config', () => {
     expect(pattern).toContain('_next/static');
     expect(pattern).toContain('_next/image');
     expect(pattern).toContain('favicon');
-    expect(pattern).toContain('manifest');
+    expect(pattern).not.toContain('manifest');
     expect(pattern).toContain('sw');
     expect(pattern).toContain('robots');
   });
