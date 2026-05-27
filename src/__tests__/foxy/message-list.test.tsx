@@ -33,8 +33,8 @@ vi.mock('@/components/foxy/FoxyStructuredRenderer', () => ({
 vi.mock('@/components/foxy/StructuredRenderBoundary', () => ({
   StructuredRenderBoundary: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
-vi.mock('@/components/foxy/ChatBubble', () => ({
-  ChatBubble: ({
+vi.mock('@/components/foxy/ChatBubble', () => {
+  const ChatBubbleMock = ({
     role,
     content,
     onFeedback,
@@ -54,8 +54,12 @@ vi.mock('@/components/foxy/ChatBubble', () => ({
         </>
       )}
     </div>
-  ),
-}));
+  );
+  return {
+    ChatBubble: ChatBubbleMock,
+    default: ChatBubbleMock,
+  };
+});
 vi.mock('@/lib/foxy/is-foxy-response', () => ({
   isFoxyResponse: () => false,
 }));

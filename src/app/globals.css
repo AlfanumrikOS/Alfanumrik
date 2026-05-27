@@ -1388,15 +1388,10 @@ img, video, iframe, canvas, svg {
   }
 }
 
-/* ─── Full-bleed override (data-bleed="true") ───────────────────────
-   Opt-in via AppShell's `bleed` prop. Drops the reserved rail column,
-   the 1240px content cap, and side padding so the surface paints
-   edge-to-edge across the viewport. Bottom clearance for the fixed
-   BottomNav is preserved. Used by chat-style surfaces (Foxy) whose
-   internal layouts manage their own multi-column widths.
-   IMPORTANT: only collapses the rail when variant="mobile" — if a
-   caller asks for variant="rail" or "split" they explicitly want the
-   rail rendered, and `bleed` should not silently hide it. */
+.app-shell-v2[data-bleed="true"] > .app-shell-content {
+  padding-inline: 0;
+}
+
 @media (min-width: 768px) {
   .app-shell-v2[data-bleed="true"][data-variant="mobile"] {
     grid-template-areas:

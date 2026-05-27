@@ -281,7 +281,7 @@ function MarkdownBlock({ content, cfg }: { content: string; cfg: { color: string
           const isOrdered = typeof index === 'number';
           if (isOrdered) {
             return (
-              <div className="flex gap-2.5 py-1.5 items-start" style={{ borderBottom: '1px solid #f0f0f0' }}>
+              <li className="flex gap-2.5 py-1.5 items-start" style={{ borderBottom: '1px solid #f0f0f0' }}>
                 <span
                   className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
                   style={{ background: `${cfg.color}20`, color: cfg.color }}
@@ -289,7 +289,7 @@ function MarkdownBlock({ content, cfg }: { content: string; cfg: { color: string
                   {index + 1}
                 </span>
                 <span className="leading-relaxed text-sm">{children}</span>
-              </div>
+              </li>
             );
           }
           return (

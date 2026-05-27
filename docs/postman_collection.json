@@ -1,0 +1,57 @@
+{
+  "info": {
+    "_postman_id": "2e85c9b9-dc6e-4b84-9e70-7c4c12a1b2e5",
+    "name": "Alfanumrik API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth – Bootstrap",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{BASE_URL}}/api/auth/bootstrap",
+        "body": {
+          "mode": "raw",
+          "raw": "{ \"email\": \"test@example.com\" }"
+        }
+      }
+    },
+    {
+      "name": "Auth – Get Session",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }],
+        "url": "{{BASE_URL}}/api/auth/session"
+      }
+    },
+    {
+      "name": "Alfabot – Inquiry",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+        ],
+        "url": "{{BASE_URL}}/api/alfabot/inquiry",
+        "body": {
+          "mode": "raw",
+          "raw": "{ \"question\": \"What is the capital of India?\" }"
+        }
+      }
+    },
+    {
+      "name": "Cron – Daily",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "x-api-key", "value": "{{API_KEY}}" }],
+        "url": "{{BASE_URL}}/api/cron/daily-cron"
+      }
+    }
+  ],
+  "variable": [
+    { "key": "BASE_URL", "value": "http://localhost:3000" },
+    { "key": "ACCESS_TOKEN", "value": "" },
+    { "key": "API_KEY", "value": "" }
+  ]
+}

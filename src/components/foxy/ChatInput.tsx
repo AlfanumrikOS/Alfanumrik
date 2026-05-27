@@ -193,14 +193,20 @@ export const ChatInput = memo(function ChatInput({
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      send();
-    } else if (e.key === 'Enter' && e.shiftKey && pointMode) {
-      e.preventDefault();
-      const n = pointCount + 1;
-      insertAt(`\n${n}. `);
-      setPointCount(n);
+    if (e.key === 'Enter') {
+      if (e.shiftKey) {
+        if (pointMode) {
+          e.preventDefault();
+          const n = pointCount + 1;
+          insertAt(`\n${n}. `);
+          setPointCount(n);
+        }
+        // Let Shift+Enter naturally insert a newline in standard mode
+      } else {
+        // Plain Enter (or Ctrl/Meta+Enter) sends the message
+        e.preventDefault();
+        send();
+      }
     }
   };
 
@@ -324,8 +330,14 @@ export const ChatInput = memo(function ChatInput({
         )}
 
         <span className="flex-1" />
+        {text.length > 0 && (
+          <span className="text-[10px] text-[var(--text-3)] mr-1">
+            {text.length}/5000
+          </span>
+        )}
+        {text.length > 0 && <span className="text-[10px] text-[var(--text-3)] hidden sm:inline mr-1.5">·</span>}
         <span className="text-[10px] text-[var(--text-3)] hidden sm:inline">
-          Enter = new line · Ctrl+Enter = send
+          {language === 'hi' ? 'Enter से भेजें · Shift+Enter से नई लाइन' : 'Enter to send · Shift+Enter for new line'}
         </span>
       </div>
 
@@ -350,12 +362,13 @@ export const ChatInput = memo(function ChatInput({
           value={text}
           onChange={autoGrow}
           onKeyDown={handleKey}
+          maxLength={5000}
           placeholder={
             isListening
-              ? 'Listening… speak now'
+              ? (language === 'hi' ? 'सुन रहा हूँ… अब बोलें' : 'Listening… speak now')
               : pointMode
-                ? '1. Write your answer point by point…\n(Shift+Enter for next point)'
-                : 'Ask Foxy anything…\nPress Enter for new line, Ctrl+Enter to send'
+                ? (language === 'hi' ? '1. अपना उत्तर बिंदुवार लिखें…\n(अगले बिंदु के लिए Shift+Enter दबाएं)' : '1. Write your answer point by point…\n(Shift+Enter for next point)')
+                : (language === 'hi' ? 'Foxy से कुछ भी पूछें…\nभेजने के लिए Enter दबाएं, नई लाइन के लिए Shift+Enter' : 'Ask Foxy anything…\nEnter to send, Shift+Enter for new line')
           }
           rows={pointMode ? 3 : 2}
           className="flex-1 min-w-0 text-sm rounded-2xl px-4 py-2.5 resize-none outline-none leading-relaxed"

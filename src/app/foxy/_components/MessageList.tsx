@@ -21,7 +21,7 @@
  * P10 bundle-budget purpose they did when the page owned them.
  */
 
-import { ChatBubble } from '@/components/foxy/ChatBubble';
+import ChatBubble from '@/components/foxy/ChatBubble';
 import { StructuredRenderBoundary } from '@/components/foxy/StructuredRenderBoundary';
 import { isFoxyResponse } from '@/lib/foxy/is-foxy-response';
 import { recoverFoxyResponseFromText } from '@/lib/foxy/recover-from-text';

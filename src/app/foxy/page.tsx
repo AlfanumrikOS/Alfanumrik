@@ -22,7 +22,6 @@ import { usePythonVoiceEnabled } from '@/lib/voice-feature-flag';
 import { ConversationStarters } from '@/components/foxy/ConversationStarters';
 import type { StarterIntent } from '@/lib/foxy/starter-intents';
 import { findSimulation, InlineSimulation } from '@/components/InlineSimulation';
-import { ChatBubble } from '@/components/foxy/ChatBubble';
 import { LoadingState } from '@/components/foxy/LoadingState';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import type { FoxyResponse } from '@/lib/foxy/schema';
@@ -301,6 +300,15 @@ export default function FoxyPage() {
 
   const endRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
+  const prevMessagesLengthRef = useRef(0);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const threshold = 150; // px near bottom
+    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+  }, []);
 
   // Usage enforcement
   const [chatUsage, setChatUsage] = useState<UsageResult | null>(null);
@@ -602,14 +610,29 @@ export default function FoxyPage() {
     })();
   }, [activeSubject, studentGrade, student?.id]);
 
-  // Auto-scroll. During streaming (loading), pin to the bottom INSTANTLY —
-  // re-triggering a smooth scroll on every streamed token causes visible
-  // jank/stutter. Smooth-scroll only once the turn settles.
+  // Smart auto-scroll. Pin to the bottom during streaming only if the user was already
+  // near the bottom. Always scroll to bottom on new student message or initial load.
   useEffect(() => {
-    requestAnimationFrame(() => {
-      const el = scrollContainerRef.current;
-      if (el) el.scrollTo({ top: el.scrollHeight, behavior: loading ? 'auto' : 'smooth' });
-    });
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    const len = messages.length;
+    const prevLen = prevMessagesLengthRef.current;
+    prevMessagesLengthRef.current = len;
+
+    const lastMessage = messages[len - 1];
+    const lastIsStudent = lastMessage?.role === 'student';
+
+    const shouldScroll = lastIsStudent || isNearBottomRef.current || (prevLen === 0 && len > 0);
+
+    if (shouldScroll) {
+      requestAnimationFrame(() => {
+        el.scrollTo({
+          top: el.scrollHeight,
+          behavior: loading && !lastIsStudent ? 'auto' : 'smooth',
+        });
+      });
+    }
   }, [messages, loading]);
 
   // Send message — thin wrapper over the streaming-aware sendMessage from
@@ -1450,6 +1473,7 @@ export default function FoxyPage() {
               and leave an awkward gap above the ChatInput. */}
           <div
             ref={scrollContainerRef}
+            onScroll={handleScroll}
             className="flex-1 overflow-y-auto px-3 md:px-5 py-4"
             // Promote the chat scroll region to its own compositing layer as
             // defense-in-depth against residual scroll flicker on Chromium.
