@@ -35,7 +35,7 @@ import type { Subject } from '@/lib/subjects.types';
 // ONLY when both v1 and v2 RPCs return zero rows. This matches the
 // pre-Task-3.7 soft-fail behavior exactly.
 // eslint-disable-next-line alfanumrik/no-raw-subject-imports
-import { getSubjectsForGrade } from '@/lib/constants';
+import { getSubjectsForGrade, SUBJECT_META } from '@/lib/constants';
 
 export const runtime = 'nodejs';
 
@@ -81,7 +81,40 @@ function rowToSubject(r: SubjectV1Row): Subject {
  * readyChapterCount=0 — client can still render the picker; AI surfaces
  * below (grounded-answer, quiz) enforce their own gates.
  */
-function fallbackSubjectsForGrade(grade: string): SubjectResponse[] {
+async function fallbackSubjectsForGradeAndBoard(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  grade: string,
+  board: string | null | undefined
+): Promise<SubjectResponse[]> {
+  if (board) {
+    try {
+      const { data: mappings } = await supabase
+        .from('grade_subject_map')
+        .select('subject_code, is_core')
+        .eq('grade', grade)
+        .eq('board', board);
+
+      if (mappings && mappings.length > 0) {
+        return mappings.map((m) => {
+          const meta = SUBJECT_META.find((s) => s.code === m.subject_code);
+          return {
+            code: m.subject_code,
+            name: meta?.name ?? m.subject_code,
+            nameHi: meta?.name ?? m.subject_code,
+            icon: meta?.icon ?? '📚',
+            color: meta?.color ?? '#6C5CE7',
+            subjectKind: 'cbse_core',
+            isCore: m.is_core ?? true,
+            isLocked: false,
+            readyChapterCount: 0,
+          };
+        });
+      }
+    } catch (e) {
+      logger.error('subjects.fallback_board_query_failed', { err: String(e) });
+    }
+  }
+
   const meta = getSubjectsForGrade(grade);
   return meta.map((s) => ({
     code: s.code,
@@ -157,13 +190,13 @@ export async function GET(request: NextRequest) {
       // to fall back via grade so the page still renders something.
       const { data: student } = await supabase
         .from('students')
-        .select('grade')
+        .select('grade, board')
         .or(`id.eq.${userId},auth_user_id.eq.${userId}`)
         .limit(1)
         .maybeSingle();
 
       if (student?.grade) {
-        const subjects = fallbackSubjectsForGrade(String(student.grade));
+        const subjects = await fallbackSubjectsForGradeAndBoard(supabase, String(student.grade), student.board);
         await logFallback(userId, 'v1_rpc_error', subjects.length);
         return NextResponse.json({ subjects });
       }
@@ -203,13 +236,13 @@ export async function GET(request: NextRequest) {
     // student's grade so the study path always renders something.
     const { data: student } = await supabase
       .from('students')
-      .select('grade')
+      .select('grade, board')
       .or(`id.eq.${userId},auth_user_id.eq.${userId}`)
       .limit(1)
       .maybeSingle();
 
     if (student?.grade) {
-      const subjects = fallbackSubjectsForGrade(String(student.grade));
+      const subjects = await fallbackSubjectsForGradeAndBoard(supabase, String(student.grade), student.board);
       await logFallback(userId, 'v1_empty_rows', subjects.length);
       return NextResponse.json({ subjects });
     }

@@ -45,15 +45,36 @@ export async function backfillCbseSyllabus(opts: Options = {}): Promise<Backfill
   );
   if (bankErr) throw new Error(`bank tuple fetch failed: ${bankErr.message}`);
 
+  // Fetch grade_subject_map to resolve boards
+  const { data: mappings, error: mapErr } = await supabaseAdmin
+    .from('grade_subject_map')
+    .select('grade, subject_code, board');
+  if (mapErr) {
+    logger.warn('backfill_cbse_syllabus.map_fetch_failed_nonfatal', {
+      error: mapErr.message,
+    });
+  }
+
+  const boardLookup = new Map<string, string>();
+  if (mappings) {
+    for (const m of mappings) {
+      if (m.board) {
+        boardLookup.set(`${m.grade}|${m.subject_code}`, m.board);
+      }
+    }
+  }
+
   const merged = new Map<string, {
-    grade: string; subject_code: string; chapter_number: number;
+    board: string; grade: string; subject_code: string; chapter_number: number;
     chapter_title: string; subject_display: string;
   }>();
 
   for (const t of [...(chunkTuples || []), ...(bankTuples || [])]) {
-    const key = `${t.grade}|${t.subject_code}|${t.chapter_number}`;
+    const resolvedBoard = (t as any).board || boardLookup.get(`${t.grade}|${t.subject_code}`) || 'CBSE';
+    const key = `${resolvedBoard}|${t.grade}|${t.subject_code}|${t.chapter_number}`;
     if (!merged.has(key)) {
       merged.set(key, {
+        board: resolvedBoard,
         grade: t.grade,
         subject_code: t.subject_code,
         chapter_number: t.chapter_number,
@@ -68,7 +89,7 @@ export async function backfillCbseSyllabus(opts: Options = {}): Promise<Backfill
 
   for (const row of merged.values()) {
     const { error } = await supabaseAdmin.from('cbse_syllabus').insert({
-      board: 'CBSE',
+      board: row.board,
       grade: row.grade,
       subject_code: row.subject_code,
       subject_display: row.subject_display,
