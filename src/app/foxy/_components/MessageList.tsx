@@ -21,23 +21,14 @@
  * P10 bundle-budget purpose they did when the page owned them.
  */
 
-import dynamic from 'next/dynamic';
 import { ChatBubble } from '@/components/foxy/ChatBubble';
 import { StructuredRenderBoundary } from '@/components/foxy/StructuredRenderBoundary';
 import { isFoxyResponse } from '@/lib/foxy/is-foxy-response';
 import { recoverFoxyResponseFromText } from '@/lib/foxy/recover-from-text';
 import { denormalizeFoxyResponse } from '@/lib/foxy/denormalize';
 import type { ChatMessage } from '../_lib/foxy-types';
-
-const RichContent = dynamic(
-  () => import('@/components/foxy/RichContent').then((m) => ({ default: m.RichContent })),
-  { ssr: false, loading: () => null },
-);
-
-const FoxyStructuredRenderer = dynamic(
-  () => import('@/components/foxy/FoxyStructuredRenderer').then((m) => ({ default: m.FoxyStructuredRenderer })),
-  { ssr: false, loading: () => null },
-);
+import { RichContent } from '@/components/foxy/RichContent';
+import { FoxyStructuredRenderer } from '@/components/foxy/FoxyStructuredRenderer';
 
 export interface MessageListProps {
   messages: ChatMessage[];

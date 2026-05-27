@@ -169,10 +169,10 @@ export function checkConfigFilesPresent(): CheckResult {
 export function checkConfigParity(): CheckResult {
   // Delegates to the existing shell script. On Windows we invoke via bash if
   // available (git bash is present per repo convention).
-  const script = join(REPO_ROOT, 'scripts', 'check-config-parity.sh');
+  const script = join(REPO_ROOT, 'scripts', 'check-config-parity.sh').replace(/\\/g, '/');
   if (!existsSync(script)) return fail('config parity', `script missing: ${script}`);
   try {
-    execSync(`bash "${script}"`, { cwd: REPO_ROOT, stdio: 'pipe' });
+    execSync('bash scripts/check-config-parity.sh', { cwd: REPO_ROOT, stdio: 'pipe' });
     return ok('config parity', 'web + deno config constants match');
   } catch (err) {
     const out = err instanceof Error && 'stdout' in err

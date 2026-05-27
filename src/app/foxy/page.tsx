@@ -52,8 +52,11 @@ const UpgradeModal = dynamic(
   () => import('@/components/UpgradeModal').then((m) => ({ default: m.UpgradeModal })),
   { ssr: false },
 );
+const MessageList = dynamic(
+  () => import('./_components/MessageList').then((m) => ({ default: m.MessageList })),
+  { ssr: false, loading: () => null }
+);
 const SELCheckIn = dynamic(() => import('@/components/SELCheckIn'), { ssr: false });
-import { MessageList } from './_components/MessageList';
 import { MessageInput } from './_components/MessageInput';
 import { ReportDialog } from './_components/ReportDialog';
 import { LanguagePicker, ModePicker } from './_components/FoxySettings';

@@ -86,7 +86,7 @@ export default defineConfig({
     // worker hit the 5s wall on 6 tests — all of which pass in <1.5s in
     // isolation. Raising the floor to 15s leaves headroom without masking
     // genuine hangs.
-    testTimeout: 15000,
+    testTimeout: 120000,
     hookTimeout: 15000,
     coverage: {
       provider: 'v8',

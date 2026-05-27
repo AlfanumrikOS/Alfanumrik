@@ -31,7 +31,7 @@ interface SearchParams {
 export default async function WelcomePage({
   searchParams,
 }: {
-  searchParams: Promise<SearchParams> | SearchParams;
+  searchParams: Promise<SearchParams>;
 }) {
   // In Next 15+/16, searchParams is a Promise; older versions pass it directly.
   const params: SearchParams = await Promise.resolve(searchParams);
