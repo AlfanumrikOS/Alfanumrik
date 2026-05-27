@@ -25,7 +25,7 @@
  * P13: context MUST NOT contain raw email, phone, or other PII.
  * If a PII value is needed for correlation, hash it with hashPII() first.
  */
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 import { createHash } from 'crypto';
 
 export type OpsSeverity = 'info' | 'warning' | 'error' | 'critical';
@@ -72,16 +72,7 @@ export function hashPII(value: string): string {
 export async function logOpsEvent(input: OpsEventInput): Promise<void> {
   const doWrite = async (): Promise<void> => {
     try {
-      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      if (!url || !serviceKey) {
-        console.warn('[ops-events] missing env, skipping', { category: input.category });
-        return;
-      }
-
-      const admin = createClient(url, serviceKey, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
+      const admin = supabaseAdmin;
 
       const row = {
         occurred_at: (input.occurredAt ?? new Date()).toISOString(),

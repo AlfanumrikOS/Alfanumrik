@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 import { verifyRazorpaySignature } from '@/lib/payment-verification';
 import { logOpsEvent } from '@/lib/ops-events';
 import { logger } from '@/lib/logger';
@@ -505,9 +506,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Server not configured' }, { status: 503 });
     }
 
-    const admin = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
+    const admin = supabaseAdmin;
 
     // ── Global kill switch (razorpay_payments) ──
     // Seeded by 20260425160000_p0_launch_kill_switches_and_expiry_rpc.sql

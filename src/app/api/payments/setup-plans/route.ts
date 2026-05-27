@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 import { createRazorpayPlan } from '@/lib/razorpay';
 import { logger } from '@/lib/logger';
 import { secureEqual } from '@/lib/secure-compare';
@@ -30,9 +30,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Not configured' }, { status: 503 });
     }
 
-    const admin = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
+    const admin = supabaseAdmin;
 
     // Get paid plans that need Razorpay plan IDs
     const { data: plans } = await admin

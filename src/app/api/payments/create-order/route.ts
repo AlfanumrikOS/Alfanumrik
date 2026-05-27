@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { supabase as globalSupabase } from '@/lib/supabase-client';
 import { capture as posthogCapture } from '@/lib/posthog/server';
 import { paymentSubscribeSchema, validateBody } from '@/lib/validation';
 
@@ -28,11 +29,8 @@ export async function POST(request: NextRequest) {
       // Fallback: use Authorization header (client passes access token directly)
       const authHeader = request.headers.get('Authorization');
       if (authHeader?.startsWith('Bearer ')) {
-        const { createClient } = await import('@supabase/supabase-js');
-        const directClient = createClient(supabaseUrl, supabaseKey, {
-          global: { headers: { Authorization: authHeader } },
-        });
-        user = (await directClient.auth.getUser()).data.user;
+        const token = authHeader.substring(7);
+        user = (await globalSupabase.auth.getUser(token)).data.user;
       }
     }
     if (!user) {

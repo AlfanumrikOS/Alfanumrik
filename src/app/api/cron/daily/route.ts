@@ -13,7 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
 const CRON_SECRET  = process.env.CRON_SECRET ?? '';
 const SB_URL       = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
 
   // ── 2. Record platform health snapshot ────────────────────────────────────────
   try {
-    const admin = createClient(SB_URL, SB_SERVICE);
+    const admin = supabaseAdmin;
     const { data, error } = await admin.rpc('record_platform_health_snapshot');
     if (error) {
       results.snapshot_error = error.message;

@@ -11,6 +11,20 @@ vi.mock('@supabase/supabase-js', async () => {
 });
 
 import { createClient } from '@supabase/supabase-js';
+
+// Module-scoped variable to hold the active mock client for proxying
+let globalMockAdmin: any;
+
+vi.mock('@/lib/supabase-admin', () => ({
+  supabaseAdmin: new Proxy({} as any, {
+    get(_target, prop) {
+      if (!globalMockAdmin) return undefined;
+      const value = globalMockAdmin[prop];
+      return typeof value === 'function' ? value.bind(globalMockAdmin) : value;
+    },
+  }),
+}));
+
 import { POST } from '@/app/api/payments/webhook/route';
 import * as opsEvents from '@/lib/ops-events';
 import crypto from 'crypto';
@@ -60,6 +74,7 @@ describe('webhook route — event-level dedupe', () => {
       from: vi.fn(),
     };
     (createClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdmin);
+    globalMockAdmin = mockAdmin;
   });
 
   it('on duplicate event_id, returns 200 with note=dedupe and skips activation', async () => {
@@ -92,6 +107,7 @@ describe('webhook route — atomic downgrade', () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service_key';
     mockAdmin = { rpc: vi.fn(), from: vi.fn() };
     (createClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdmin);
+    globalMockAdmin = mockAdmin;
   });
 
   it('subscription.cancelled calls atomic_downgrade_subscription RPC, not raw UPDATEs', async () => {
@@ -136,6 +152,7 @@ describe('webhook route — subscription.pending', () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service_key';
     mockAdmin = { rpc: vi.fn(), from: vi.fn() };
     (createClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdmin);
+    globalMockAdmin = mockAdmin;
   });
 
   it('subscription.pending calls mark_subscription_past_due RPC', async () => {
@@ -208,6 +225,7 @@ describe('webhook route — RPC fallback ladder', () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service_key';
     mockAdmin = { rpc: vi.fn(), from: vi.fn() };
     (createClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdmin);
+    globalMockAdmin = mockAdmin;
   });
 
   function studentResolver() {
@@ -306,6 +324,7 @@ describe('webhook route — observability', () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service_key';
     mockAdmin = { rpc: vi.fn(), from: vi.fn() };
     (createClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdmin);
+    globalMockAdmin = mockAdmin;
     opsEventSpy = vi.spyOn(opsEvents, 'logOpsEvent').mockResolvedValue(undefined);
   });
 

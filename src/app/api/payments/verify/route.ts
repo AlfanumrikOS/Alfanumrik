@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase-admin';
+import { supabase as globalSupabase } from '@/lib/supabase-client';
 import crypto from 'crypto';
 import { logger } from '@/lib/logger';
 import { logOpsEvent } from '@/lib/ops-events';
@@ -41,10 +42,8 @@ export async function POST(request: NextRequest) {
     if (!user) {
       const authHeader = request.headers.get('Authorization');
       if (authHeader?.startsWith('Bearer ')) {
-        const directClient = createClient(supabaseUrl, supabaseKey, {
-          global: { headers: { Authorization: authHeader } },
-        });
-        user = (await directClient.auth.getUser()).data.user;
+        const token = authHeader.substring(7);
+        user = (await globalSupabase.auth.getUser(token)).data.user;
       }
     }
     if (!user) {
@@ -86,9 +85,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Use Supabase admin client (service_role) for all DB operations
-    const admin = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
+    const admin = supabaseAdmin;
 
     // ── Global kill switch (razorpay_payments) ──
     // Seeded by 20260425160000_p0_launch_kill_switches_and_expiry_rpc.sql

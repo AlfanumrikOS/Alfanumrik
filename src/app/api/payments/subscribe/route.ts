@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase-admin';
+import { supabase as globalSupabase } from '@/lib/supabase-client';
 import { createRazorpaySubscription, createRazorpayOrder } from '@/lib/razorpay';
 import { logger } from '@/lib/logger';
 import { paymentSubscribeSchema, validateBody } from '@/lib/validation';
@@ -56,10 +57,8 @@ export async function POST(request: NextRequest) {
     if (!user) {
       const authHeader = request.headers.get('Authorization');
       if (authHeader?.startsWith('Bearer ')) {
-        const directClient = createClient(supabaseUrl, supabaseKey, {
-          global: { headers: { Authorization: authHeader } },
-        });
-        user = (await directClient.auth.getUser()).data.user;
+        const token = authHeader.substring(7);
+        user = (await globalSupabase.auth.getUser(token)).data.user;
       }
     }
     if (!user) {
@@ -79,9 +78,7 @@ export async function POST(request: NextRequest) {
     // Canonicalize plan_code BEFORE any DB write so pending & active rows match.
     const plan_code = canonicalizePlan(rawPlan);
 
-    const admin = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
+    const admin = supabaseAdmin;
 
     // Look up plan from DB
     const { data: plan, error: planErr } = await admin
