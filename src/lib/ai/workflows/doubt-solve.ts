@@ -15,6 +15,7 @@ import { retrieveNcertChunks } from '../retrieval/ncert-retriever';
 import { buildFoxySystemPrompt } from '../prompts/foxy-system';
 import { validateOutput } from '../validation/output-guard';
 import { TraceLogger, logTrace } from '../tracing/trace-logger';
+import { loadWorkflowCognitiveContext } from './context-loader';
 
 export interface DoubtWorkflowParams {
   subject: string;
@@ -56,6 +57,13 @@ export async function runDoubtWorkflow(
 
     // 2. Build system prompt with doubt mode + direct-answer instruction
     trace.startStep('prompt_build');
+    const cognitiveContext = await loadWorkflowCognitiveContext(
+      params.studentId,
+      params.subject,
+      params.grade,
+      params.chapter ?? null,
+    );
+
     const basePrompt = buildFoxySystemPrompt({
       grade: params.grade,
       subject: params.subject,
@@ -67,10 +75,16 @@ export async function runDoubtWorkflow(
       tenantPersonality: params.tenantPersonality,
       tenantTone: params.tenantTone,
       tenantPedagogy: params.tenantPedagogy,
+      loSkills: cognitiveContext.loSkills,
+      misconceptions: cognitiveContext.misconceptions,
     });
     const systemPrompt = basePrompt +
       '\n\n## Additional Instruction\nThe student has a specific doubt. Give a direct, clear answer first, then explain the reasoning. Do not ask questions back unless the doubt is genuinely ambiguous.';
-    trace.endStep({ mode: 'doubt' });
+    trace.endStep({
+      mode: 'doubt',
+      hasLoSkills: cognitiveContext.loSkills.length > 0,
+      hasMisconceptions: cognitiveContext.misconceptions.length > 0,
+    });
 
     // 3. Call Claude
     trace.startStep('llm_call');

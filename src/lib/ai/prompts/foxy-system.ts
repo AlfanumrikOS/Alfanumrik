@@ -125,6 +125,8 @@ export interface FoxySystemPromptParams {
   tenantPersonality?: 'warm_mentor' | 'rigorous_coach' | 'formal_examiner' | 'playful_buddy';
   tenantTone?: 'formal' | 'neutral' | 'casual';
   tenantPedagogy?: 'socratic' | 'direct_instruction' | 'worked_example';
+  loSkills?: Array<{ loCode: string; loStatement: string; pKnow: number; pSlip: number; theta: number }>;
+  misconceptions?: Array<{ code: string; label: string; count: number; remediationText: string }>;
 }
 
 // ─── Tenant persona variants ───────────────────────────────────────────────
@@ -203,6 +205,8 @@ export function buildFoxySystemPrompt(params: FoxySystemPromptParams): string {
     tenantPersonality,
     tenantTone,
     tenantPedagogy,
+    loSkills,
+    misconceptions,
   } = params;
 
   const chapterLabel = chapter ? `, Chapter: ${chapter}` : '';
@@ -240,6 +244,41 @@ export function buildFoxySystemPrompt(params: FoxySystemPromptParams): string {
     goalSection = `\n## Student's Academic Goal\n${GOAL_PROMPT_MAP[academicGoal] ?? academicGoal}\nAdjust depth, pacing, and challenge level to match this goal.\n`;
   }
 
+  let loSection = '';
+  if (loSkills && loSkills.length > 0) {
+    const loLines = loSkills.map((lo) => {
+      const pct = Math.round(lo.pKnow * 100);
+      const label = `[${lo.loCode}] ${lo.loStatement}`;
+      let directive = '';
+      if (lo.pKnow < 0.5) {
+        directive = `weak (mastery ${pct}%) — open the explanation with a concrete real-world analogy or worked example BEFORE introducing the formal definition.`;
+      } else if (lo.pKnow < 0.75) {
+        directive = `partial (mastery ${pct}%) — quick recap (1 sentence), then advance to application.`;
+      } else {
+        directive = `strong (mastery ${pct}%) — skip basics, go straight to challenge or transfer task.`;
+      }
+      return `- ${label} is ${directive}`;
+    });
+    loSection = `\n## Learning Objective Mastery\n${loLines.join('\n')}\n`;
+  }
+
+  let mcSection = '';
+  if (misconceptions && misconceptions.length > 0) {
+    const mcLines = misconceptions.map((m) => {
+      let remediation = '';
+      if (m.remediationText) {
+        const cleaned = m.remediationText.replace(/\s+/g, ' ').trim();
+        const truncated =
+          cleaned.length > 400
+            ? `${cleaned.slice(0, 399)}…`
+            : cleaned;
+        remediation = ` — fix: ${truncated}`;
+      }
+      return `- [${m.code}] ${m.label} (seen ${m.count}x in last 30 days)${remediation}`;
+    });
+    mcSection = `\n## Known Misconceptions\n${mcLines.join('\n')}\n`;
+  }
+
   const ragSection = ragContext
     ? `\n## NCERT Reference Material\n${ragContext}\n`
     : '';
@@ -275,5 +314,5 @@ ${modeInstruction}
 - If the student seems frustrated, be extra encouraging
 - Keep all language age-appropriate for grades 6-12
 - Do not discuss topics outside academics
-${goalSection}${ragSection}`;
+${goalSection}${loSection}${mcSection}${ragSection}`;
 }

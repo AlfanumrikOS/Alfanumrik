@@ -288,117 +288,66 @@ async function fetchDueReviewQuestions(
 ): Promise<{ questions: QuestionRow[]; reviewTopicCount: number }> {
   if (maxCount <= 0) return { questions: [], reviewTopicCount: 0 }
 
-  const now = new Date().toISOString()
+  const todayStr = new Date().toISOString().split('T')[0]
 
-  // 1. Find concepts due for review, ordered by lowest retention (most urgent).
-  //    current_retention may be NULL for topics that haven't decayed yet — treat
-  //    those as lowest priority within the due set (NULLS LAST in ascending).
-  const { data: dueRows, error: dueError } = await supabase
-    .from('concept_mastery')
-    .select(`
-      topic_id,
-      mastery_level,
-      current_retention,
-      next_review_at,
-      curriculum_topics!inner(subject_id, chapter_number, concept_tag)
-    `)
+  // 1. Fetch due cards from spaced_repetition_cards, ordered by lowest ease_factor and next_review_date
+  const { data: dueCards, error: dueError } = await supabase
+    .from('spaced_repetition_cards')
+    .select('source_id, topic, ease_factor, next_review_date')
     .eq('student_id', studentId)
-    .eq('curriculum_topics.subject_id', subjectId)
-    .lte('next_review_at', now)
-    .order('current_retention', { ascending: true, nullsFirst: true })
-    .limit(15)
+    .eq('subject', subjectCode)
+    .eq('is_active', true)
+    .lte('next_review_date', todayStr)
+    .order('next_review_date', { ascending: true })
+    .order('ease_factor', { ascending: true })
 
   if (dueError) {
-    console.warn(`fetchDueReviewQuestions mastery fetch: ${dueError.message}`)
+    console.warn(`fetchDueReviewQuestions cards fetch failed: ${dueError.message}`)
     return { questions: [], reviewTopicCount: 0 }
   }
 
-  const dueTopics = (dueRows ?? []) as (ConceptMasteryRow & { current_retention: number | null })[]
-  if (dueTopics.length === 0) return { questions: [], reviewTopicCount: 0 }
-
-  const questions: QuestionRow[] = []
-  const usedIds = new Set<string>(excludeIds)
-
-  // Allocate slots per due topic
-  const slotsPerTopic = Math.max(1, Math.floor(maxCount / Math.max(dueTopics.length, 1)))
-  const targetTopics = dueTopics.slice(0, Math.ceil(maxCount / slotsPerTopic))
-
-  for (const topic of targetTopics) {
-    if (questions.length >= maxCount) break
-
-    const chapterNum = topic.curriculum_topics?.chapter_number
-    const conceptTag = topic.curriculum_topics?.concept_tag
-    const targetDifficulty = masteryToDifficulty(topic.mastery_level)
-    // Enforce Bloom ceiling for review questions too
-    const maxBloom = masteryToMaxBloomLevel(topic.mastery_level)
-    const allowedBlooms = getBloomLevelsUpTo(maxBloom)
-    const need = Math.min(slotsPerTopic, maxCount - questions.length)
-
-    const exclusionList = usedIds.size > 0
-      ? [...usedIds].join(',')
-      : '00000000-0000-0000-0000-000000000000'
-
-    let query = supabase
-      .from('question_bank')
-      .select('*')
-      .eq('subject', subjectCode)
-      .eq('grade', grade)
-      .eq('is_active', true)
-      .not('id', 'in', `(${exclusionList})`)
-      .eq('difficulty', targetDifficulty)
-      .in('bloom_level', allowedBlooms)
-
-    if (chapterNum != null) {
-      query = query.eq('chapter_number', chapterNum)
-    }
-    if (conceptTag) {
-      query = query.eq('concept_tag', conceptTag)
-    }
-
-    let { data: qs } = await query.limit(need * 2)
-
-    // Fallback: relax concept_tag
-    if ((!qs || qs.length < need) && conceptTag && chapterNum != null) {
-      const fb = await supabase
-        .from('question_bank')
-        .select('*')
-        .eq('subject', subjectCode)
-        .eq('grade', grade)
-        .eq('is_active', true)
-        .not('id', 'in', `(${exclusionList})`)
-        .eq('chapter_number', chapterNum)
-        .eq('difficulty', targetDifficulty)
-        .in('bloom_level', allowedBlooms)
-        .limit(need * 2)
-      qs = fb.data ?? qs ?? []
-    }
-
-    // Fallback: relax bloom constraint
-    if (!qs || qs.length < need) {
-      let fb2Query = supabase
-        .from('question_bank')
-        .select('*')
-        .eq('subject', subjectCode)
-        .eq('grade', grade)
-        .eq('is_active', true)
-        .not('id', 'in', `(${exclusionList})`)
-        .eq('difficulty', targetDifficulty)
-      if (chapterNum != null) {
-        fb2Query = fb2Query.eq('chapter_number', chapterNum)
-      }
-      const fb2 = await fb2Query.limit(need * 2)
-      qs = fb2.data ?? qs ?? []
-    }
-
-    for (const q of shuffle((qs ?? []) as QuestionRow[]).slice(0, need)) {
-      if (!usedIds.has(q.id)) {
-        questions.push(q)
-        usedIds.add(q.id)
-      }
-    }
+  if (!dueCards || dueCards.length === 0) {
+    return { questions: [], reviewTopicCount: 0 }
   }
 
-  return { questions, reviewTopicCount: targetTopics.length }
+  // Filter out questions that have already been seen or excluded
+  const candidateIds = dueCards
+    .map(c => c.source_id)
+    .filter((id): id is string => !!id && !excludeIds.has(id))
+
+  if (candidateIds.length === 0) {
+    return { questions: [], reviewTopicCount: 0 }
+  }
+
+  // Fetch the actual questions from question_bank
+  const { data: qs, error: qsError } = await supabase
+    .from('question_bank')
+    .select('*')
+    .in('id', candidateIds)
+    .eq('is_active', true)
+
+  if (qsError) {
+    console.warn(`fetchDueReviewQuestions question_bank fetch failed: ${qsError.message}`)
+    return { questions: [], reviewTopicCount: 0 }
+  }
+
+  const questions = (qs ?? []) as QuestionRow[]
+
+  // Tag questions as coming from review
+  for (const q of questions) {
+    (q as any)._source = 'review'
+  }
+
+  // Calculate unique topics in the due set
+  const uniqueTopics = new Set(dueCards.map(c => c.topic).filter(Boolean))
+
+  // Limit the returned questions to maxCount
+  const finalQuestions = questions.slice(0, maxCount)
+
+  return {
+    questions: finalQuestions,
+    reviewTopicCount: uniqueTopics.size,
+  }
 }
 
 // ─── Adaptive question selection ──────────────────────────────────────────────

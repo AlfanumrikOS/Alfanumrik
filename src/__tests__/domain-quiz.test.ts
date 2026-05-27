@@ -154,6 +154,7 @@ describe('fetchQuizQuestions', () => {
       if (!result.ok) throw new Error('expected ok');
       expect(result.data.source).toBe('edge_fn');
       expect(result.data.questions).toHaveLength(5);
+      expect(mockInvoke).toHaveBeenCalledWith('quiz-generator', expect.any(Object));
     });
 
     it('logs warn and falls through when edge function returns partial questions', async () => {

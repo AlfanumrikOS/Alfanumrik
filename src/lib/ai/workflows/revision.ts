@@ -15,6 +15,7 @@ import { retrieveNcertChunks } from '../retrieval/ncert-retriever';
 import { buildFoxySystemPrompt } from '../prompts/foxy-system';
 import { validateOutput } from '../validation/output-guard';
 import { TraceLogger, logTrace } from '../tracing/trace-logger';
+import { loadWorkflowCognitiveContext } from './context-loader';
 
 export interface RevisionWorkflowParams {
   subject: string;
@@ -56,6 +57,13 @@ export async function runRevisionWorkflow(
 
     // 2. Build system prompt with revise mode + bullet-point format instruction
     trace.startStep('prompt_build');
+    const cognitiveContext = await loadWorkflowCognitiveContext(
+      params.studentId,
+      params.subject,
+      params.grade,
+      params.chapter ?? null,
+    );
+
     const basePrompt = buildFoxySystemPrompt({
       grade: params.grade,
       subject: params.subject,
@@ -67,10 +75,16 @@ export async function runRevisionWorkflow(
       tenantPersonality: params.tenantPersonality,
       tenantTone: params.tenantTone,
       tenantPedagogy: params.tenantPedagogy,
+      loSkills: cognitiveContext.loSkills,
+      misconceptions: cognitiveContext.misconceptions,
     });
     const systemPrompt = basePrompt +
       '\n\n## Format Instruction\nStructure your revision summary as concise bullet points. Include key definitions, formulas, mnemonics, and frequently-tested areas. Keep it scannable for quick review before exams.';
-    trace.endStep({ mode: 'revise' });
+    trace.endStep({
+      mode: 'revise',
+      hasLoSkills: cognitiveContext.loSkills.length > 0,
+      hasMisconceptions: cognitiveContext.misconceptions.length > 0,
+    });
 
     // 3. Call Claude
     trace.startStep('llm_call');

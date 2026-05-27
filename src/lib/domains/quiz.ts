@@ -103,7 +103,7 @@ export async function fetchQuizQuestions(
   // ── Source 1: Edge Function (adaptive + RAG + IRT) ───────────────────────
   try {
     const { data: funcData, error: funcError } = await supabase.functions.invoke(
-      'quiz-engine',
+      'quiz-generator',
       {
         body: {
           student_id: input.studentId,
