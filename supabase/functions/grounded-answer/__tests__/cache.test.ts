@@ -25,6 +25,7 @@ function groundedResponse(answer: string): GroundedResponse {
     answer,
     citations: [],
     confidence: 0.9,
+    groundedFromChunks: true,
     trace_id: 'trace-x',
     meta: { claude_model: 'haiku', tokens_used: 100, latency_ms: 500 },
   };

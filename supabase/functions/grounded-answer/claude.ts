@@ -19,6 +19,8 @@ const ANTHROPIC_VERSION = '2023-06-01';
 
 const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 const SONNET_MODEL = 'claude-sonnet-4-20250514';
+const GPT_MINI_MODEL = 'gpt-4o-mini';
+const GPT_FULL_MODEL = 'gpt-4o';
 
 const INSUFFICIENT_CONTEXT_SENTINEL = '{{INSUFFICIENT_CONTEXT}}';
 
@@ -43,6 +45,7 @@ export interface ClaudeRequest {
   temperature: number;
   timeoutMs: number;
   apiKey: string;
+  openaiApiKey?: string;
   modelPreference: 'haiku' | 'sonnet' | 'auto';
   /**
    * Phase 2 of Foxy continuity fix: prior conversation turns in native shape.
@@ -58,6 +61,7 @@ export type ClaudeResponse =
       ok: true;
       content: string;
       model: string;
+      provider?: 'openai' | 'anthropic';
       inputTokens: number;
       outputTokens: number;
       insufficientContext: boolean;
@@ -103,6 +107,7 @@ export type ClaudeStreamEvent =
       ok: true;
       fullText: string;
       model: string;
+      provider?: 'openai' | 'anthropic';
       inputTokens: number;
       outputTokens: number;
       insufficientContext: boolean;
@@ -125,11 +130,15 @@ export type ClaudeStreamEvent =
       model: string | null;
     };
 
+export interface ModelTarget {
+  provider: 'openai' | 'anthropic';
+  model: string;
+}
+
 export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
-  if (!req.apiKey) {
+  if (!req.apiKey && !req.openaiApiKey) {
     return { ok: false, reason: 'auth_error' };
   }
-
   const modelOrder = resolveModelOrder(req.modelPreference);
   const perCallTimeout = Math.min(req.timeoutMs * PER_CALL_TIMEOUT_FRAC, PER_CALL_TIMEOUT_CAP_MS);
 
@@ -140,24 +149,43 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
   // model that actually answered, not just the first model tried.
   const failureChain: string[] = [];
 
-  for (const model of modelOrder) {
-    const attempt = await callOnce({
-      model,
-      systemPrompt: req.systemPrompt,
-      userMessage: req.userMessage,
-      maxTokens: req.maxTokens,
-      temperature: req.temperature,
-      timeoutMs: perCallTimeout,
-      apiKey: req.apiKey,
-      conversationTurns: req.conversationTurns,
-    });
+  for (const target of modelOrder) {
+    if (target.provider === 'openai' && !req.openaiApiKey) {
+      continue;
+    }
+    if (target.provider === 'anthropic' && !req.apiKey) {
+      continue;
+    }
+
+    const attempt = target.provider === 'openai'
+      ? await callOpenAIOnce({
+          model: target.model,
+          systemPrompt: req.systemPrompt,
+          userMessage: req.userMessage,
+          maxTokens: req.maxTokens,
+          temperature: req.temperature,
+          timeoutMs: perCallTimeout,
+          apiKey: req.openaiApiKey!,
+          conversationTurns: req.conversationTurns,
+        })
+      : await callOnce({
+          model: target.model,
+          systemPrompt: req.systemPrompt,
+          userMessage: req.userMessage,
+          maxTokens: req.maxTokens,
+          temperature: req.temperature,
+          timeoutMs: perCallTimeout,
+          apiKey: req.apiKey,
+          conversationTurns: req.conversationTurns,
+        });
 
     if (attempt.kind === 'ok') {
       const trimmed = attempt.content.trim();
       return {
         ok: true,
         content: attempt.content,
-        model,
+        model: target.model,
+        provider: target.provider,
         inputTokens: attempt.inputTokens,
         outputTokens: attempt.outputTokens,
         insufficientContext: trimmed === INSUFFICIENT_CONTEXT_SENTINEL,
@@ -172,7 +200,7 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
     }
 
     // timeout | server_error | unknown → record + try next model.
-    failureChain.push(claudeFailureLabel(attempt.kind));
+    failureChain.push(failureLabel(target.provider, attempt.kind));
     lastReason = attempt.kind;
   }
 
@@ -186,24 +214,35 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
  * Kept narrow on purpose — adding new internal kinds requires explicit
  * mapping here so the telemetry contract never drifts silently.
  */
-function claudeFailureLabel(kind: 'timeout' | 'server_error' | 'unknown'): string {
-  switch (kind) {
-    case 'timeout':
-      return 'anthropic:timeout';
-    case 'server_error':
-      // 404 (model decommissioned) and 529 (overloaded) both map here; we
-      // collapse to '5xx' rather than splitting because the actionable
-      // signal is "Anthropic side is unhealthy" either way.
-      return 'anthropic:5xx';
-    case 'unknown':
-      return 'anthropic:unknown';
-  }
+function failureLabel(provider: 'openai' | 'anthropic', kind: 'timeout' | 'server_error' | 'unknown'): string {
+  const reason = kind === 'server_error' ? '5xx' : kind;
+  return `${provider}:${reason}`;
 }
 
-function resolveModelOrder(pref: 'haiku' | 'sonnet' | 'auto'): string[] {
-  if (pref === 'haiku') return [HAIKU_MODEL];
-  if (pref === 'sonnet') return [SONNET_MODEL];
-  return [HAIKU_MODEL, SONNET_MODEL];
+// Deprecated fallback mapping for backwards compatibility
+function claudeFailureLabel(kind: 'timeout' | 'server_error' | 'unknown'): string {
+  return failureLabel('anthropic', kind);
+}
+
+function resolveModelOrder(pref: 'haiku' | 'sonnet' | 'auto'): ModelTarget[] {
+  if (pref === 'haiku') {
+    return [
+      { provider: 'openai', model: GPT_MINI_MODEL },
+      { provider: 'anthropic', model: HAIKU_MODEL },
+    ];
+  }
+  if (pref === 'sonnet') {
+    return [
+      { provider: 'openai', model: GPT_FULL_MODEL },
+      { provider: 'anthropic', model: SONNET_MODEL },
+    ];
+  }
+  return [
+    { provider: 'openai', model: GPT_MINI_MODEL },
+    { provider: 'openai', model: GPT_FULL_MODEL },
+    { provider: 'anthropic', model: HAIKU_MODEL },
+    { provider: 'anthropic', model: SONNET_MODEL },
+  ];
 }
 
 type SingleCallResult =
@@ -341,11 +380,10 @@ async function callOnce(params: {
 export async function* callClaudeStream(
   req: ClaudeRequest,
 ): AsyncGenerator<ClaudeStreamEvent, void, unknown> {
-  if (!req.apiKey) {
+  if (!req.apiKey && !req.openaiApiKey) {
     yield { type: 'final', ok: false, reason: 'auth_error', partialText: '', model: null };
     return;
   }
-
   const modelOrder = resolveModelOrder(req.modelPreference);
   const perCallTimeout = Math.min(req.timeoutMs * PER_CALL_TIMEOUT_FRAC, PER_CALL_TIMEOUT_CAP_MS);
 
@@ -357,29 +395,46 @@ export async function* callClaudeStream(
   const failureChain: string[] = [];
 
   for (let i = 0; i < modelOrder.length; i++) {
-    const model = modelOrder[i];
+    const target = modelOrder[i];
+    if (target.provider === 'openai' && !req.openaiApiKey) {
+      continue;
+    }
+    if (target.provider === 'anthropic' && !req.apiKey) {
+      continue;
+    }
+
     const isLastModel = i === modelOrder.length - 1;
-    const result = yield* streamOnce({
-      model,
-      systemPrompt: req.systemPrompt,
-      userMessage: req.userMessage,
-      maxTokens: req.maxTokens,
-      temperature: req.temperature,
-      timeoutMs: perCallTimeout,
-      apiKey: req.apiKey,
-      conversationTurns: req.conversationTurns,
-      // If we've already started streaming text (any text_delta yielded) we
-      // can't retry — we must commit to this model's outcome. streamOnce
-      // tracks `firstTokenSent` to enforce this contract.
-      allowFallback: !isLastModel,
-    });
+    const result = target.provider === 'openai'
+      ? yield* streamOpenAIOnce({
+          model: target.model,
+          systemPrompt: req.systemPrompt,
+          userMessage: req.userMessage,
+          maxTokens: req.maxTokens,
+          temperature: req.temperature,
+          timeoutMs: perCallTimeout,
+          apiKey: req.openaiApiKey!,
+          conversationTurns: req.conversationTurns,
+          allowFallback: !isLastModel,
+        })
+      : yield* streamOnce({
+          model: target.model,
+          systemPrompt: req.systemPrompt,
+          userMessage: req.userMessage,
+          maxTokens: req.maxTokens,
+          temperature: req.temperature,
+          timeoutMs: perCallTimeout,
+          apiKey: req.apiKey,
+          conversationTurns: req.conversationTurns,
+          allowFallback: !isLastModel,
+        });
 
     if (result.ok) {
       yield {
         type: 'final',
         ok: true,
         fullText: result.fullText,
-        model,
+        model: target.model,
+        provider: target.provider,
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
         insufficientContext: result.fullText.trim() === INSUFFICIENT_CONTEXT_SENTINEL,
@@ -390,7 +445,7 @@ export async function* callClaudeStream(
     }
 
     if (result.reason === 'auth_error') {
-      yield { type: 'final', ok: false, reason: 'auth_error', partialText: '', model };
+      yield { type: 'final', ok: false, reason: 'auth_error', partialText: '', model: target.model };
       return;
     }
 
@@ -400,16 +455,16 @@ export async function* callClaudeStream(
       yield {
         type: 'final',
         ok: false,
-        reason: result.reason,
+        reason: result.reason || 'unknown',
         partialText: result.fullText,
-        model,
+        model: target.model,
       };
       return;
     }
 
     // No tokens shipped yet — record the failure and try the next model.
     failureChain.push(
-      claudeFailureLabel(result.reason as 'timeout' | 'server_error' | 'unknown'),
+      failureLabel(target.provider, result.reason as 'timeout' | 'server_error' | 'unknown'),
     );
     lastReason = result.reason as 'timeout' | 'server_error' | 'unknown';
     // Try next model in the order.
@@ -568,6 +623,200 @@ async function* streamOnce(params: {
       return { ok: false, reason: 'timeout', fullText, inputTokens, outputTokens, firstTokenSent };
     }
     console.warn(`claude(stream): network error on ${params.model} — ${String(err)}`);
+    return { ok: false, reason: 'unknown', fullText, inputTokens, outputTokens, firstTokenSent };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function callOpenAIOnce(params: {
+  model: string;
+  systemPrompt: string;
+  userMessage: string;
+  maxTokens: number;
+  temperature: number;
+  timeoutMs: number;
+  apiKey: string;
+  conversationTurns?: ClaudeConversationTurn[];
+}): Promise<SingleCallResult> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), params.timeoutMs);
+
+  try {
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: params.systemPrompt }
+    ];
+    if (params.conversationTurns && params.conversationTurns.length > 0) {
+      for (const t of params.conversationTurns) {
+        messages.push({ role: t.role, content: t.content });
+      }
+    }
+    messages.push({ role: 'user', content: params.userMessage });
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${params.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: params.model,
+        messages,
+        max_tokens: params.maxTokens,
+        temperature: params.temperature,
+      }),
+      signal: controller.signal,
+    });
+
+    if (response.status === 401 || response.status === 403) {
+      await response.text().catch(() => '');
+      return { kind: 'auth_error' };
+    }
+
+    if (response.status === 404 || response.status === 429 || response.status >= 500) {
+      await response.text().catch(() => '');
+      return { kind: 'server_error' };
+    }
+
+    if (!response.ok) {
+      await response.text().catch(() => '');
+      console.warn(`openai: unexpected HTTP ${response.status} for model ${params.model}`);
+      return { kind: 'unknown' };
+    }
+
+    const body = await response.json().catch(() => null);
+    if (!body) return { kind: 'unknown' };
+
+    const text = (body.choices?.[0]?.message?.content ?? '').trim();
+    const inputTokens = body.usage?.prompt_tokens ?? 0;
+    const outputTokens = body.usage?.completion_tokens ?? 0;
+
+    return { kind: 'ok', content: text, inputTokens, outputTokens };
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      return { kind: 'timeout' };
+    }
+    console.warn(`openai: network error on ${params.model} — ${String(err)}`);
+    return { kind: 'unknown' };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function* streamOpenAIOnce(params: {
+  model: string;
+  systemPrompt: string;
+  userMessage: string;
+  maxTokens: number;
+  temperature: number;
+  timeoutMs: number;
+  apiKey: string;
+  allowFallback: boolean;
+  conversationTurns?: ClaudeConversationTurn[];
+}): AsyncGenerator<ClaudeStreamEvent, StreamOnceResult, unknown> {
+  void params.allowFallback;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), params.timeoutMs);
+
+  let fullText = '';
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let firstTokenSent = false;
+
+  try {
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: params.systemPrompt }
+    ];
+    if (params.conversationTurns && params.conversationTurns.length > 0) {
+      for (const t of params.conversationTurns) {
+        messages.push({ role: t.role, content: t.content });
+      }
+    }
+    messages.push({ role: 'user', content: params.userMessage });
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${params.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: params.model,
+        messages,
+        max_tokens: params.maxTokens,
+        temperature: params.temperature,
+        stream: true,
+        stream_options: { include_usage: true },
+      }),
+      signal: controller.signal,
+    });
+
+    if (response.status === 401 || response.status === 403) {
+      await response.body?.cancel().catch(() => {});
+      return { ok: false, reason: 'auth_error', fullText, inputTokens, outputTokens, firstTokenSent };
+    }
+    if (response.status === 404 || response.status === 429 || response.status >= 500) {
+      await response.body?.cancel().catch(() => {});
+      return { ok: false, reason: 'server_error', fullText, inputTokens, outputTokens, firstTokenSent };
+    }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+      console.warn(`openai(stream): unexpected HTTP ${response.status} for ${params.model}`);
+      return { ok: false, reason: 'unknown', fullText, inputTokens, outputTokens, firstTokenSent };
+    }
+
+    if (!response.body) {
+      return { ok: false, reason: 'unknown', fullText, inputTokens, outputTokens, firstTokenSent };
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let sepIdx: number;
+      while ((sepIdx = buffer.indexOf('\n\n')) !== -1) {
+        const rawEvent = buffer.slice(0, sepIdx);
+        buffer = buffer.slice(sepIdx + 2);
+        const dataLines = rawEvent
+          .split('\n')
+          .filter((line) => line.startsWith('data: '))
+          .map((line) => line.slice(6));
+        if (dataLines.length === 0) continue;
+        const dataPayload = dataLines.join('\n');
+        if (dataPayload.trim() === '[DONE]') continue;
+        let parsed: any = null;
+        try {
+          parsed = JSON.parse(dataPayload);
+        } catch {
+          continue;
+        }
+        if (!parsed || typeof parsed !== 'object') continue;
+
+        const deltaText = parsed.choices?.[0]?.delta?.content;
+        if (typeof deltaText === 'string') {
+          fullText += deltaText;
+          firstTokenSent = true;
+          yield { type: 'text_delta', delta: deltaText };
+        }
+
+        if (parsed.usage) {
+          inputTokens = parsed.usage.prompt_tokens ?? 0;
+          outputTokens = parsed.usage.completion_tokens ?? 0;
+        }
+      }
+    }
+
+    return { ok: true, fullText, inputTokens, outputTokens, firstTokenSent };
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      return { ok: false, reason: 'timeout', fullText, inputTokens, outputTokens, firstTokenSent };
+    }
+    console.warn(`openai(stream): network error on ${params.model} — ${String(err)}`);
     return { ok: false, reason: 'unknown', fullText, inputTokens, outputTokens, firstTokenSent };
   } finally {
     clearTimeout(timeoutId);

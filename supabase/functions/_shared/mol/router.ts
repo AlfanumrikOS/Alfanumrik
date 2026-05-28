@@ -63,8 +63,8 @@ const BASE_MATRIX: Record<TaskType, Pass[]> = {
   reasoning: [{
     role: 'single',
     chain: [
-      { provider: 'anthropic', model: SONNET },
       { provider: 'openai', model: GPT_FULL },
+      { provider: 'anthropic', model: SONNET },
       { provider: 'anthropic', model: HAIKU },
     ],
   }],
@@ -78,14 +78,15 @@ const BASE_MATRIX: Record<TaskType, Pass[]> = {
   evaluation: [{
     role: 'single',
     chain: [
-      { provider: 'anthropic', model: HAIKU },
       { provider: 'openai', model: GPT_MINI },
+      { provider: 'anthropic', model: HAIKU },
     ],
   }],
   doubt_solving: [
     {
       role: 'reason',
       chain: [
+        { provider: 'openai', model: GPT_FULL },
         { provider: 'anthropic', model: SONNET },
         { provider: 'anthropic', model: HAIKU },
       ],
@@ -101,8 +102,15 @@ const BASE_MATRIX: Record<TaskType, Pass[]> = {
   ocr_extraction: [{
     role: 'vision',
     chain: [
-      { provider: 'anthropic', model: SONNET },
       { provider: 'openai', model: GPT_FULL },
+      { provider: 'anthropic', model: SONNET },
+    ],
+  }],
+  grounding_check: [{
+    role: 'single',
+    chain: [
+      { provider: 'openai', model: GPT_MINI },
+      { provider: 'anthropic', model: HAIKU },
     ],
   }],
 }
@@ -116,6 +124,7 @@ const MAX_TOKENS: Record<TaskType, number> = {
   evaluation: 400,
   doubt_solving: 2500, // pass-1 cap; pass-2 uses simplifyMaxTokens
   ocr_extraction: 1500,
+  grounding_check: 1024,
 }
 
 const PASS2_SIMPLIFY_MAX = 1200
@@ -161,12 +170,10 @@ export function selectProviderChain(task: TaskType, opts: RouterOptions): Select
     passes = [{
       role: 'single',
       chain: [
+        { provider: 'openai', model: GPT_FULL },
+        { provider: 'openai', model: GPT_MINI },
         { provider: 'anthropic', model: SONNET },
         { provider: 'anthropic', model: HAIKU },
-        // gpt-4o-mini chosen here (not GPT_FULL) for cost-effective fallback.
-        // GPT_FULL would make a doubt_solving cutover ~2× more expensive than
-        // the Anthropic baseline. See PR audit on 2026-05-19.
-        { provider: 'openai', model: GPT_MINI },
       ],
     }]
   }

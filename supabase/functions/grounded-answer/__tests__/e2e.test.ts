@@ -26,6 +26,9 @@ import {
 import { __clearCacheForTests } from '../cache.ts';
 import { __resetAllForTests as __resetCircuitsForTests } from '../circuit.ts';
 
+Deno.env.set('ANTHROPIC_API_KEY', 'test-key');
+Deno.env.set('OPENAI_API_KEY', 'test-key');
+
 const originalFetch = globalThis.fetch;
 function restoreFetch() {
   globalThis.fetch = originalFetch;
@@ -44,12 +47,19 @@ function voyageOk(): Response {
   );
 }
 
-function claudeOk(text: string, inputTokens = 50, outputTokens = 100): Response {
+function llmOk(url: string, text: string, inputTokens = 50, outputTokens = 100): Response {
+  const isOpenAI = url.includes('openai.com');
+  const body = isOpenAI
+    ? {
+        choices: [{ message: { content: text } }],
+        usage: { prompt_tokens: inputTokens, completion_tokens: outputTokens },
+      }
+    : {
+        content: [{ type: 'text', text }],
+        usage: { input_tokens: inputTokens, output_tokens: outputTokens },
+      };
   return new Response(
-    JSON.stringify({
-      content: [{ type: 'text', text }],
-      usage: { input_tokens: inputTokens, output_tokens: outputTokens },
-    }),
+    JSON.stringify(body),
     { status: 200, headers: { 'Content-Type': 'application/json' } },
   );
 }
@@ -183,14 +193,14 @@ function mkRequest(body: unknown): Request {
   });
 }
 
-function fiveChunks(sim = 0.9) {
+function fiveChunks(sim = 0.025) {
   return [1, 2, 3, 4, 5].map((n) => ({
     id: `chunk-${n}`,
     content: `NCERT content about photosynthesis (chunk ${n}).`,
     chapter_number: 1,
     chapter_title: 'Light',
     page_number: n,
-    similarity: sim - n * 0.02,
+    similarity: sim - n * 0.001,
   }));
 }
 
@@ -235,7 +245,7 @@ Deno.test('e2e: low_similarity abstains in strict mode', async () => {
     chapter_number: 1,
     chapter_title: 'Light',
     page_number: n,
-    similarity: 0.4,
+    similarity: 0.015,
   }));
   __setSupabaseClientForTests(
     sbStub({ chapter_ready: true, flag_enabled: true, chunks: weakChunks }),
@@ -243,9 +253,10 @@ Deno.test('e2e: low_similarity abstains in strict mode', async () => {
   globalThis.fetch = ((url: string | URL) => {
     const u = String(url);
     if (u.includes('voyageai')) return Promise.resolve(voyageOk());
-    if (u.includes('anthropic')) {
+    if (u.includes('anthropic') || u.includes('openai.com')) {
       return Promise.resolve(
-        claudeOk(
+        llmOk(
+          u,
           JSON.stringify({ verdict: 'pass', unsupported_sentences: [] }),
         ),
       );
@@ -255,7 +266,7 @@ Deno.test('e2e: low_similarity abstains in strict mode', async () => {
 
   try {
     const body = validBody({
-      retrieval: { match_count: 10, min_similarity_override: 0.1 },
+      retrieval: { match_count: 10, min_similarity_override: 0.01 },
     });
     // Claude will be called once for answer, once for grounding check.
     // Our simple stub returns the same JSON both times; the "answer" call
@@ -281,11 +292,12 @@ Deno.test('e2e: no_supporting_chunks on grounding-check fail', async () => {
   globalThis.fetch = ((url: string | URL) => {
     const u = String(url);
     if (u.includes('voyageai')) return Promise.resolve(voyageOk());
-    if (u.includes('anthropic')) {
+    if (u.includes('anthropic') || u.includes('openai.com')) {
       call++;
-      if (call === 1) return Promise.resolve(claudeOk('An answer not supported by chunks.'));
+      if (call === 1) return Promise.resolve(llmOk(u, 'An answer not supported by chunks.'));
       return Promise.resolve(
-        claudeOk(
+        llmOk(
+          u,
           JSON.stringify({
             verdict: 'fail',
             unsupported_sentences: ['An answer not supported by chunks.'],
@@ -315,7 +327,7 @@ Deno.test('e2e: upstream_error when Claude returns 529 on both models', async ()
   globalThis.fetch = ((url: string | URL) => {
     const u = String(url);
     if (u.includes('voyageai')) return Promise.resolve(voyageOk());
-    if (u.includes('anthropic')) return Promise.resolve(claude529());
+    if (u.includes('anthropic') || u.includes('openai.com')) return Promise.resolve(claude529());
     throw new Error(`unexpected ${u}`);
   }) as typeof fetch;
 
@@ -338,7 +350,7 @@ Deno.test('e2e: circuit_open after 3 consecutive upstream failures', async () =>
   globalThis.fetch = ((url: string | URL) => {
     const u = String(url);
     if (u.includes('voyageai')) return Promise.resolve(voyageOk());
-    if (u.includes('anthropic')) return Promise.resolve(claude529());
+    if (u.includes('anthropic') || u.includes('openai.com')) return Promise.resolve(claude529());
     throw new Error(`unexpected ${u}`);
   }) as typeof fetch;
 
@@ -369,15 +381,15 @@ Deno.test('e2e: grounded:true on happy path with citations', async () => {
   globalThis.fetch = ((url: string | URL) => {
     const u = String(url);
     if (u.includes('voyageai')) return Promise.resolve(voyageOk());
-    if (u.includes('anthropic')) {
+    if (u.includes('anthropic') || u.includes('openai.com')) {
       call++;
       if (call === 1) {
         return Promise.resolve(
-          claudeOk('Photosynthesis produces food [1]. Chlorophyll absorbs light [2].'),
+          llmOk(u, 'Photosynthesis produces food [1]. Chlorophyll absorbs light [2].'),
         );
       }
       return Promise.resolve(
-        claudeOk(JSON.stringify({ verdict: 'pass', unsupported_sentences: [] })),
+        llmOk(u, JSON.stringify({ verdict: 'pass', unsupported_sentences: [] })),
       );
     }
     throw new Error(`unexpected ${u}`);

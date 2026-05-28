@@ -287,6 +287,7 @@ export async function* runStreamingPipeline(
   startedAt: number,
   anthropicKey: string,
   voyageKey: string,
+  openaiApiKey = '',
 ): AsyncGenerator<PipelineStreamEvent, void, unknown> {
   ensureSb();
   const sb = getSb();
@@ -534,10 +535,10 @@ export async function* runStreamingPipeline(
   // has already started. The grader doesn't read baseline_model for
   // judging — it's analyst-only metadata. We resolve to the most likely
   // model the streaming path will use ('haiku' is the foxy-tutor default).
-  const baselineModelHint =
-    request.generation.model_preference === 'sonnet'
-      ? 'claude-sonnet-4-20250514'
-      : 'claude-haiku-4-5-20251001';
+  const baselineProviderHint = openaiApiKey ? 'openai' : 'anthropic';
+  const baselineModelHint = openaiApiKey
+    ? (request.generation.model_preference === 'sonnet' ? 'gpt-4o' : 'gpt-4o-mini')
+    : (request.generation.model_preference === 'sonnet' ? 'claude-sonnet-4-20250514' : 'claude-haiku-4-5-20251001');
 
   // ── C4.2b-ii (2026-05-20): stash key ──
   // Mint the shadow's request_id HERE (not inside the helper) so we can
@@ -559,7 +560,7 @@ export async function* runStreamingPipeline(
       isGroundingCheck: false,
     }),
     surface: mapCallerToSurface(request.caller),
-    baseline_provider: 'anthropic',
+    baseline_provider: baselineProviderHint,
     baseline_model: baselineModelHint,
     trace_id: traceId, // streaming writes the trace row BEFORE the stream
     // baseline_response_text deliberately omitted (undefined) → stash path:
@@ -581,6 +582,7 @@ export async function* runStreamingPipeline(
     temperature: request.generation.temperature,
     timeoutMs: request.timeout_ms,
     apiKey: anthropicKey,
+    openaiApiKey,
     modelPreference: request.generation.model_preference,
     // Phase 2 of Foxy continuity fix (2026-05-18): prefer native conversation
     // turns when supplied. Absent → byte-identical legacy single-user body.
@@ -613,6 +615,7 @@ export async function* runStreamingPipeline(
           ok: true,
           content: accumulated,
           model: evt.model,
+          provider: evt.provider,
           inputTokens: evt.inputTokens,
           outputTokens: evt.outputTokens,
           insufficientContext: evt.insufficientContext,

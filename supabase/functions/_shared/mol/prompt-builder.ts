@@ -25,6 +25,7 @@ const TASK_STYLE: Record<TaskType, string> = {
 Schema: { "score": 0-100, "rubric": [{"criterion": string, "max": number, "awarded": number, "feedback": string}], "overall_feedback": string }`,
   doubt_solving: `Diagnose the source of confusion first. Then resolve it with a short, clear explanation and one worked example. Avoid restating what the student already knows.`,
   ocr_extraction: `Read the image. Transcribe any printed/handwritten question text verbatim. Then identify subject, chapter (if inferable from content), and any options. Output JSON: { "extracted_text": string, "subject": string, "grade_hint": string|null, "options": string[]|null }`,
+  grounding_check: `Verify that the candidate answer is completely supported by and grounded in the NCERT reference material.`,
 }
 
 const EXAM_GOAL_HINT = {

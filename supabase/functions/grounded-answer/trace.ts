@@ -112,8 +112,8 @@ export function redactPreview(q: string): string {
   const raw = (q ?? '').slice(0, 200);
   return raw
     .replace(EMAIL_PATTERN, '[email]')
-    .replace(PHONE_PATTERN, '[phone]')
-    .replace(TOKEN_PATTERN, '[token]');
+    .replace(TOKEN_PATTERN, '[token]')
+    .replace(PHONE_PATTERN, '[phone]');
 }
 
 /**
