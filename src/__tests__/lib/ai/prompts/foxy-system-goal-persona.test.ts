@@ -99,8 +99,10 @@ Ensure your response is structured exactly for a CBSE board-paper evaluator to s
 4. Subject-Specific Formats:
    - Science: Use scientific terms/laws and cause-effect chains.
    - Social Science: Present points in chronological/thematic order with headings, dates, acts, and linking terms like "as a result", "therefore".
-   - Differentiate: Always present differences in a markdown table format.
-   - English Literature: Answer the exact question first, reference the text/poem/chapter directly, keep language formal and concise, and avoid over-philosophizing.
+   - Differentiate: Always present differences point-by-point using separate comparative blocks or a clean markdown table.
+   - English Literature: Answer the exact question first, reference the text/poem/chapter directly, keeping language formal and concise, and avoid over-philosophizing.
+5. Structured JSON Output Compliance:
+   - When outputting in structured JSON block format, represent separate value points, bullets, and steps as **separate JSON blocks** (e.g., multiple "step" or "paragraph" blocks) instead of raw markdown lists inside a single block.
 
 ## Student's Academic Goal
 Board Topper (90%+). Teach with depth, cover edge cases, use HOTS-style questioning, and push for thorough understanding.
