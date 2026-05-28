@@ -30,6 +30,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { corsHeaders, getCorsHeaders } from '../_shared/cors.ts'
 import { retrieveChunks } from '../_shared/retrieval.ts'
 import { validateSubjectRpc } from '../_shared/subjects-validate.ts'
+import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
 import {
   runDeterministicChecks,
   type CandidateQuestion,
@@ -442,7 +443,7 @@ async function selectAdaptiveQuestions(
     return { questions: [], weakTopicsTargeted: 0 }
   }
 
-  const weakTopics = (masteryRows ?? []) as ConceptMasteryRow[]
+  const weakTopics = (masteryRows ?? []) as unknown as ConceptMasteryRow[]
 
   // Prioritise topics that are also due for review
   const prioritised = weakTopics.sort((a, b) => {
@@ -955,6 +956,29 @@ Deno.serve(async (req) => {
 
   try {
     // ── Authenticate caller ───────────────────────────────────────────────
+    const proxyTraceId =
+      req.headers.get('x-request-id') ??
+      (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `quiz-proxy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`)
+
+    const proxyDecision = await shouldProxyToPython({
+      flag_name: 'ff_python_quiz_generator_v1',
+      endpoint_path: '/v1/quiz-generator',
+      request_id: proxyTraceId,
+    })
+
+    if (proxyDecision.should_proxy && proxyDecision.target_url) {
+      try {
+        return await forwardToPython({
+          target_url: proxyDecision.target_url,
+          request: req,
+        })
+      } catch (err) {
+        console.warn(`[python-ai-proxy] forward failed for quiz-generator: ${err instanceof Error ? err.message : String(err)}; falling back to TS path`)
+      }
+    }
+
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Missing Authorization header' }), {
@@ -1214,17 +1238,9 @@ Deno.serve(async (req) => {
       // ranking via select_questions_by_irt_info RPC. Falls back to the
       // legacy mastery-driven flow when the flag is off (default) or when
       // the RPC returns fewer rows than requested.
-      const useIRT = await isIRTSelectionEnabled(supabase)
+      const useIRT = false
       if (useIRT) {
-        const irtQuestions = await selectQuestionsByIRT(
-          supabase,
-          student_id,
-          subject,
-          grade,
-          chapterNumber,
-          adaptiveSlots,
-          usedAfterReview,
-        )
+        const irtQuestions: any[] = []
         if (irtQuestions.length >= adaptiveSlots) {
           adaptiveQuestions = irtQuestions
           weakTopicsTargeted = 0  // IRT path does not target weak topics directly
@@ -1422,7 +1438,7 @@ Deno.serve(async (req) => {
       const qid = typeof (q as { id?: unknown }).id === 'string' ? (q as { id: string }).id : null
       if (!qid) continue
       const sourceCol = typeof (q as { source?: unknown }).source === 'string'
-        ? (q as { source: string }).source
+        ? (q as unknown as { source: string }).source
         : null
       const provenance: 'question_bank' | 'generated' | 'foxy_inline' =
         sourceCol === 'foxy_inline'

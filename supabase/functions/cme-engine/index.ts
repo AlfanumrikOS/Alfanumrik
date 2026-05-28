@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
 import { validateSubjectRpc } from '../_shared/subjects-validate.ts'
 import { getCorsHeaders } from '../_shared/cors.ts'
+import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
 
 /**
  * Cognitive Mastery Engine (CME)
@@ -313,13 +314,36 @@ function computeExamReadiness(states: ConceptState[], topics: TopicInfo[], subje
 // ── Main Handler ────────────────────────────────────────────────────
 
 serve(async (req) => {
-  // Per-request CORS check — closes wildcard `*` from the April 2026 audit.
-  const corsHeaders = getCorsHeaders(req.headers.get('origin'))
+  const origin = req.headers.get('origin')
+
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
+    return new Response('ok', { headers: getCorsHeaders(origin) })
   }
 
   try {
+    const proxyTraceId =
+      req.headers.get('x-request-id') ??
+      (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `cme-proxy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`)
+
+    const proxyDecision = await shouldProxyToPython({
+      flag_name: 'ff_python_cme_engine_v1',
+      endpoint_path: '/v1/cme-engine',
+      request_id: proxyTraceId,
+    })
+
+    if (proxyDecision.should_proxy && proxyDecision.target_url) {
+      try {
+        return await forwardToPython({
+          target_url: proxyDecision.target_url,
+          request: req,
+        })
+      } catch (err) {
+        console.warn(`[python-ai-proxy] forward failed for cme-engine: ${err instanceof Error ? err.message : String(err)}; falling back to TS path`)
+      }
+    }
+
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -327,6 +351,7 @@ serve(async (req) => {
 
     // Auth: extract student from JWT
     const authHeader = req.headers.get('Authorization')
+    const corsHeaders = getCorsHeaders(origin)
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Authorization required' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
@@ -572,6 +597,6 @@ serve(async (req) => {
     return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message || 'Internal error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    return new Response(JSON.stringify({ error: (err as Error).message || 'Internal error' }), { status: 500, headers: { ...getCorsHeaders(origin), 'Content-Type': 'application/json' } })
   }
 })

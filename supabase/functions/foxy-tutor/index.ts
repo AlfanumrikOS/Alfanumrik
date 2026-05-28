@@ -60,6 +60,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { logOpsEvent } from '../_shared/ops-events.ts'
 import { validateSubjectRpc } from '../_shared/subjects-validate.ts'
+import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
 import {
   validateCandidate,
   type CandidateQuestion,
@@ -428,7 +429,7 @@ RULES:
 
 // ─── RAG retrieval (FTS via match_rag_chunks, best-effort) ───────────────────
 async function fetchRAGContext(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   query: string, subject: string, grade: string, board: string | null = null,
 ): Promise<string | null> {
   try {
@@ -437,8 +438,8 @@ async function fetchRAGContext(
       query_text: query, p_subject: subject, p_grade: grade,
       match_count: 3, p_board: board, p_min_quality: 0.5,
     })
-    if (error || !data || data.length === 0) return null
-    return data.map((chunk: { content: string }) => chunk.content).join('\n\n---\n\n')
+    if (error || !data || (data as any[]).length === 0) return null
+    return (data as any[]).map((chunk: { content: string }) => chunk.content).join('\n\n---\n\n')
   } catch { return null }
 }
 
@@ -474,6 +475,29 @@ Deno.serve(async (req: Request) => {
   if (!ANTHROPIC_API_KEY) return errorResponse('Tutor not configured', 503, origin)
 
   try {
+    const proxyTraceId =
+      req.headers.get('x-request-id') ??
+      (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `foxy-proxy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`)
+
+    const proxyDecision = await shouldProxyToPython({
+      flag_name: 'ff_python_foxy_tutor_v1',
+      endpoint_path: '/v1/foxy-tutor',
+      request_id: proxyTraceId,
+    })
+
+    if (proxyDecision.should_proxy && proxyDecision.target_url) {
+      try {
+        return await forwardToPython({
+          target_url: proxyDecision.target_url,
+          request: req,
+        })
+      } catch (err) {
+        console.warn(`[python-ai-proxy] forward failed for foxy-tutor: ${err instanceof Error ? err.message : String(err)}; falling back to TS path`)
+      }
+    }
+
     const authResult = await verifyAndGetStudentId(req)
     if ('error' in authResult) return errorResponse(authResult.error, authResult.status, origin)
     const { studentId: student_id, authUserId } = authResult
@@ -840,7 +864,7 @@ Deno.serve(async (req: Request) => {
         messages: [...trimmedPrev, ...newMessages],
         message_count: trimmedPrev.length + newMessages.length,
         updated_at: now,
-      }).eq('id', activeSessionId).eq('student_id', student_id).then(() => {}).catch(() => {})
+      }).eq('id', activeSessionId).eq('student_id', student_id).then(() => {}, () => {})
     } else {
       const { data: newSession } = await supabase.from('chat_sessions').insert({
         student_id, subject, grade,
@@ -852,7 +876,7 @@ Deno.serve(async (req: Request) => {
 
     if (xpEarned > 0) {
       supabase.rpc('add_xp', { p_student_id: student_id, p_xp: xpEarned, p_source: `foxy_${subject}` })
-        .then(() => {}).catch((e: Error) => console.error('add_xp failed:', e.message))
+        .then(() => {}, (e: Error) => console.error('add_xp failed:', e.message))
     }
 
     supabase.from('ai_tutor_logs').insert({
@@ -861,7 +885,7 @@ Deno.serve(async (req: Request) => {
       message_length: safeMessage.length, reply_length: reply.length,
       latency_ms: latencyMs, model: 'claude-haiku-4-5-20251001',
       xp_earned: xpEarned, language: safeLanguage, created_at: now,
-    }).then(() => {}).catch(() => {})
+    }).then(() => {}, () => {})
 
     logOpsEvent({
       category: 'ai',

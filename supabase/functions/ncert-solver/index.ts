@@ -22,8 +22,9 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
+import { getCorsHeaders, errorResponse, jsonResponse } from '../_shared/cors.ts'
 import { fetchRAGContext } from '../_shared/rag-retrieval.ts'
+import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
 import { validateSubjectRpc } from '../_shared/subjects-validate.ts'
 import {
   callGroundedAnswer,
@@ -85,6 +86,29 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const proxyTraceId =
+      req.headers.get('x-request-id') ??
+      (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `ncert-proxy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`)
+
+    const proxyDecision = await shouldProxyToPython({
+      flag_name: 'ff_python_ncert_solver_v1',
+      endpoint_path: '/v1/ncert-solver',
+      request_id: proxyTraceId,
+    })
+
+    if (proxyDecision.should_proxy && proxyDecision.target_url) {
+      try {
+        return await forwardToPython({
+          target_url: proxyDecision.target_url,
+          request: req,
+        })
+      } catch (err) {
+        console.warn(`[python-ai-proxy] forward failed for ncert-solver: ${err instanceof Error ? err.message : String(err)}; falling back to TS path`)
+      }
+    }
+
     // ── Auth ──
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) return errorResponse('Unauthorized', 401, origin)
@@ -130,8 +154,7 @@ Deno.serve(async (req) => {
       if (!studentRow?.id) {
         return jsonResponse(
           { error: 'subject_not_allowed', reason: 'grade', subject },
-          422,
-          origin,
+          422, {}, origin,
         )
       }
       resolvedStudentId = studentRow.id
@@ -139,16 +162,14 @@ Deno.serve(async (req) => {
       if (!check.ok) {
         return jsonResponse(
           { error: 'subject_not_allowed', reason: check.reason, subject },
-          422,
-          origin,
+          422, {}, origin,
         )
       }
     } catch (subjErr) {
       console.error('ncert-solver subject validation failed:', subjErr instanceof Error ? subjErr.message : String(subjErr))
       return jsonResponse(
         { error: 'subject_not_allowed', reason: 'grade', subject },
-        422,
-        origin,
+        422, {}, origin,
       )
     }
 
@@ -174,8 +195,7 @@ Deno.serve(async (req) => {
           used: usageRow?.used_count ?? null,
           message: "You've used all your NCERT-solver requests for today. Come back tomorrow! 🦊",
         },
-        429,
-        origin,
+        429, {}, origin,
       )
     }
 
@@ -241,8 +261,7 @@ Deno.serve(async (req) => {
             suggested_alternatives: grounded.suggested_alternatives,
             flow: 'grounded-answer',
           },
-          200,
-          origin,
+          200, {}, origin,
         )
       }
 
@@ -268,8 +287,7 @@ Deno.serve(async (req) => {
           citations: grounded.citations,
           flow: 'grounded-answer',
         },
-        200,
-        origin,
+        200, {}, origin,
       )
     }
 
@@ -278,8 +296,7 @@ Deno.serve(async (req) => {
       console.warn('ncert-solver: circuit breaker OPEN — returning 503')
       return jsonResponse(
         { error: 'Service temporarily unavailable, please try again shortly' },
-        503,
-        origin,
+        503, {}, origin,
       )
     }
 
@@ -355,7 +372,7 @@ Deno.serve(async (req) => {
       solver_type: route.solver,
       question_type: parsed.type,
       marks: parsed.marks,
-    }, 200, origin)
+    }, 200, {}, origin)
 
   } catch (err) {
     console.error('Solver error:', err)
