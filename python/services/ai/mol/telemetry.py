@@ -17,6 +17,7 @@ before persisting.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -125,3 +126,81 @@ def sum_tokens(usages: list[TokenUsage]) -> TokenUsage:
     for u in usages:
         total = total + u
     return total
+
+
+@dataclass
+class ShadowTextPayload:
+    """Payload for record_shadow_text. All text fields are pre-PII-redaction."""
+    baseline_request_id: str
+    shadow_request_id: str
+    question_text: str
+    baseline_system_prompt: str
+    shadow_system_prompt: str | None
+    baseline_response_text: str
+    shadow_response_text: str
+
+
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_PHONE_RE = re.compile(r"(?:\+?91[\s-]?)?[6-9]\d{9}\b")
+_RZP_ID_RE = re.compile(r"\b(pay|order|rzp|cust|sub|inv)_[A-Za-z0-9]{14,}\b")
+
+
+def redact_pii_in_text(s: str) -> tuple[str, list[str]]:
+    """Strip email/Indian-phone/Razorpay-ID patterns and return applied labels."""
+    if not s:
+        return s, []
+    applied = set()
+    out = s
+    if _EMAIL_RE.search(out):
+        out = _EMAIL_RE.sub("[REDACTED_EMAIL]", out)
+        applied.add("email")
+    if _PHONE_RE.search(out):
+        out = _PHONE_RE.sub("[REDACTED_PHONE]", out)
+        applied.add("phone")
+    if _RZP_ID_RE.search(out):
+        out = _RZP_ID_RE.sub("[REDACTED_PAYMENT_ID]", out)
+        applied.add("payment_id")
+    return out, sorted(list(applied))
+
+
+async def record_shadow_text(p: ShadowTextPayload) -> None:
+    """Fire-and-forget write to mol_shadow_text_buffer with PII redaction.
+    
+    The DB has a 7-day TTL. The async grader CRON reads these rows, grades the
+    shadow response, and deletes the row upon completion.
+    """
+    try:
+        from ..db.supabase import get_service_client
+
+        client = get_service_client()
+        if client is None:
+            logger.debug("mol.telemetry.shadow_text_skipped", reason="no_supabase_client")
+            return
+
+        q_text, q_app = redact_pii_in_text(p.question_text)
+        base_sys_text, base_sys_app = redact_pii_in_text(p.baseline_system_prompt)
+        base_resp_text, base_resp_app = redact_pii_in_text(p.baseline_response_text)
+        shadow_resp_text, shadow_resp_app = redact_pii_in_text(p.shadow_response_text)
+        
+        if p.shadow_system_prompt is not None:
+            shadow_sys_text, shadow_sys_app = redact_pii_in_text(p.shadow_system_prompt)
+        else:
+            shadow_sys_text, shadow_sys_app = None, []
+
+        applied = sorted(list(set(q_app + base_sys_app + base_resp_app + shadow_resp_app + shadow_sys_app)))
+
+        row = {
+            "baseline_request_id": p.baseline_request_id,
+            "shadow_request_id": p.shadow_request_id,
+            "question_text": q_text,
+            "baseline_system_prompt": base_sys_text,
+            "shadow_system_prompt": shadow_sys_text,
+            "baseline_response_text": base_resp_text,
+            "shadow_response_text": shadow_resp_text,
+            "redaction_applied": applied,
+        }
+        
+        await client.table("mol_shadow_text_buffer").insert(row).execute()
+    except Exception as err:
+        msg = str(err) if err else type(err).__name__
+        logger.warning("mol.telemetry.shadow_text_write_failed", error=msg)
