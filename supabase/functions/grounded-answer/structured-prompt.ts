@@ -62,6 +62,8 @@ Constraints:
 - "math" blocks must not include "text"; non-math blocks must not include "latex".
 - Bilingual: write "text" in the user's language (English, Hindi, or Hinglish).
   Do NOT translate technical terms: CBSE, XP, Bloom's, NCERT, IRT.
+- Use "step" blocks ONLY for actual sequential steps (calculations, derivations, sequential procedures). Do NOT use them for static facts, classifications, or definitions. For general concept explanations, prefer "definition", "paragraph", and "example" blocks.
+- Do NOT include the word "Step" or the step number in the "label" or "text" of step blocks. The UI renderer automatically numbers and formats them. Use "label" only for brief sub-topic context (e.g., "Given", "Formula", "Calculation") or omit it.
 
 # SUBJECT RULES
 
@@ -75,8 +77,9 @@ Constraints:
 
 ## Math (Class 7, linear equations)
 {"title":"Solving 2x + 3 = 11","subject":"math","blocks":[
-  {"type":"step","label":"Step 1","text":"Subtract 3 from both sides to isolate the variable term."},
+  {"type":"step","label":"Isolate x term","text":"Subtract 3 from both sides of the equation."},
   {"type":"math","latex":"2x = 8"},
+  {"type":"step","label":"Solve for x","text":"Divide both sides by 2."},
   {"type":"answer","text":"x = 4"}
 ]}
 
