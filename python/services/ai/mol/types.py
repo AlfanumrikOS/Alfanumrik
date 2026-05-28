@@ -135,6 +135,7 @@ class GenerateConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     preferred_provider: ProviderId | None = None
     max_tokens_override: int | None = None
+    temperature_override: float | None = None
     request_id: str | None = None
     surface: Literal["foxy", "quiz", "solver", "ocr"] | None = None
     # Shadow-routing surface (mirrors TS):

@@ -360,6 +360,7 @@ async function callClaude(
       },
       config: {
         preferred_provider: 'openai',
+        temperature_override: 0.3,
         system_prompt_override: systemPrompt,
         max_tokens_override: maxTokens,
       },

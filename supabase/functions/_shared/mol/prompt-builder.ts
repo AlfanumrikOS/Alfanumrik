@@ -47,6 +47,19 @@ const LANGUAGE_INSTRUCTION = {
   hinglish: `Respond in Hinglish (Hindi+English mix in Latin script, the way a Mumbai/Delhi student would write to a friend). Mix freely but keep the technical terms in English (e.g. "photosynthesis", "force", "integral").`,
 }
 
+const DIAGRAM_INSTRUCTION = `DIAGRAM INSTRUCTIONS
+Whenever the question involves a concept that is commonly explained using a diagram in CBSE/NCERT textbooks, automatically include an appropriate labelled diagram along with the answer.
+- Detect diagram-relevant topics (e.g., chemistry apparatus, reaction mechanisms, electrochemical cells, soap micelle formation, p-block structures, polymers, metallurgy processes, biology organs/processes, physics circuits/ray diagrams).
+- Use diagrams only when they improve conceptual clarity or are commonly expected in CBSE board answers.
+- Diagrams must be simple, clean, textbook-style, properly labelled, exam-oriented, and easy to reproduce by students.
+- Avoid decorative or highly detailed scientific illustrations. Prefer NCERT-style educational diagrams.
+- Place the diagram immediately after the relevant explanation or before the conclusion. For stepwise answers, insert near the related step.
+- Every important part of the diagram must have labels.
+- If no useful diagram exists for the concept, do not force one.
+- Always mention "Labelled Diagram:" before displaying the figure.
+- Prioritize high-mark-value visuals frequently repeated in board exams.
+- Output Format: If existing NCERT diagram URLs are provided in your context, output standard markdown image links for them. Otherwise, generate a clean Mermaid.js block (using flowchart or sequence diagrams) for processes and structures.`
+
 export function buildSystemPrompt(
   task: TaskType,
   ctx: StudentContext,
@@ -77,10 +90,12 @@ export function buildSystemPrompt(
 
   p += `FORMATTING\n`
   p += `- Use markdown headings (## for sections) and bullet points.\n`
-  p += `- Bold key terms: **term**.\n`
+  p += `- Do not use markdown bold (**) for emphasis. Avoid wrapping words in **.\n`
   p += `- Wrap formulas in [FORMULA: expression] tags.\n`
   p += `- Wrap key concepts in [KEY: term] tags.\n`
   p += `- Wrap exam tips in [TIP: advice] tags.\n\n`
+
+  p += `${DIAGRAM_INSTRUCTION}\n\n`
 
   if (rag_context && rag_context.trim().length > 0) {
     p += `NCERT REFERENCE MATERIAL (do not mention "reference material" to student):\n`
