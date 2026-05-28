@@ -1,5 +1,5 @@
 import { render } from '@testing-library/react';
-import { vi } from 'vitest';
+import { vi, describe, beforeAll, afterAll, it, expect } from 'vitest';
 import ChatBubble from '@/components/foxy/ChatBubble';
 import React from 'react';
 

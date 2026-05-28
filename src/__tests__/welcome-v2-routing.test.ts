@@ -84,7 +84,7 @@ describe('welcome page routing — v1 vs v2 decision', () => {
     it('?v=1 forces v1 even when flag is ON', async () => {
       mockIsFeatureEnabled.mockResolvedValue(true);
       const Page = await importPage();
-      const result = await Page({ searchParams: { v: '1' } });
+      const result = await Page({ searchParams: Promise.resolve({ v: '1' }) });
       expect(elementType(result)).toBe(FakeV1);
       // Flag should not even be evaluated
       expect(mockIsFeatureEnabled).not.toHaveBeenCalled();
@@ -93,7 +93,7 @@ describe('welcome page routing — v1 vs v2 decision', () => {
     it('?v=2 forces v2 even when flag is OFF', async () => {
       mockIsFeatureEnabled.mockResolvedValue(false);
       const Page = await importPage();
-      const result = await Page({ searchParams: { v: '2' } });
+      const result = await Page({ searchParams: Promise.resolve({ v: '2' }) });
       expect(elementType(result)).toBe(FakeV2);
       expect(mockIsFeatureEnabled).not.toHaveBeenCalled();
     });
@@ -101,7 +101,7 @@ describe('welcome page routing — v1 vs v2 decision', () => {
     it('?v=2 still wins when flag throws (defensive)', async () => {
       mockIsFeatureEnabled.mockRejectedValue(new Error('DB down'));
       const Page = await importPage();
-      const result = await Page({ searchParams: { v: '2' } });
+      const result = await Page({ searchParams: Promise.resolve({ v: '2' }) });
       expect(elementType(result)).toBe(FakeV2);
     });
   });
@@ -111,7 +111,7 @@ describe('welcome page routing — v1 vs v2 decision', () => {
       mockIsFeatureEnabled.mockResolvedValue(false);
       mockCookieValue = '11111111-1111-4111-8111-111111111111';
       const Page = await importPage();
-      const result = await Page({ searchParams: {} });
+      const result = await Page({ searchParams: Promise.resolve({}) });
       expect(elementType(result)).toBe(FakeV1);
     });
 
@@ -119,7 +119,7 @@ describe('welcome page routing — v1 vs v2 decision', () => {
       mockIsFeatureEnabled.mockResolvedValue(true);
       mockCookieValue = '11111111-1111-4111-8111-111111111111';
       const Page = await importPage();
-      const result = await Page({ searchParams: {} });
+      const result = await Page({ searchParams: Promise.resolve({}) });
       expect(elementType(result)).toBe(FakeV2);
     });
 
@@ -129,7 +129,7 @@ describe('welcome page routing — v1 vs v2 decision', () => {
       mockIsFeatureEnabled.mockResolvedValue(false);
       mockCookieValue = '11111111-1111-4111-8111-111111111111';
       const Page = await importPage();
-      const result = await Page({ searchParams: {} });
+      const result = await Page({ searchParams: Promise.resolve({}) });
       expect(elementType(result)).toBe(FakeV1);
     });
   });
@@ -140,7 +140,7 @@ describe('welcome page routing — v1 vs v2 decision', () => {
       mockCookieValue = stableId;
       mockIsFeatureEnabled.mockResolvedValue(true);
       const Page = await importPage();
-      await Page({ searchParams: {} });
+      await Page({ searchParams: Promise.resolve({}) });
       expect(mockIsFeatureEnabled).toHaveBeenCalledWith(
         'ff_welcome_v2',
         expect.objectContaining({ userId: stableId }),
@@ -158,7 +158,7 @@ describe('welcome page routing — v1 vs v2 decision', () => {
         return h < 50;
       });
       const Page = await importPage();
-      const result = await Page({ searchParams: {} });
+      const result = await Page({ searchParams: Promise.resolve({}) });
       expect(elementType(result)).toBe(FakeV2);
     });
 
@@ -170,7 +170,7 @@ describe('welcome page routing — v1 vs v2 decision', () => {
         return h < 50;
       });
       const Page = await importPage();
-      const result = await Page({ searchParams: {} });
+      const result = await Page({ searchParams: Promise.resolve({}) });
       expect(elementType(result)).toBe(FakeV1);
     });
   });
@@ -180,7 +180,7 @@ describe('welcome page routing — v1 vs v2 decision', () => {
       mockCookieValue = undefined; // No cookie
       mockIsFeatureEnabled.mockResolvedValue(true);
       const Page = await importPage();
-      const result = await Page({ searchParams: {} });
+      const result = await Page({ searchParams: Promise.resolve({}) });
 
       // Documented existing fallback behavior:
       // 1. A fresh UUID is generated and passed as userId for THIS request.
@@ -212,7 +212,7 @@ describe('welcome page routing — v1 vs v2 decision', () => {
       mockCookieValue = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
       mockIsFeatureEnabled.mockResolvedValue(false);
       const Page = await importPage();
-      await Page({ searchParams: {} });
+      await Page({ searchParams: Promise.resolve({}) });
       expect(mockCookieSet).not.toHaveBeenCalled();
     });
   });
