@@ -355,6 +355,11 @@ function shadowBucket(request_id: string, task_type: string): number {
  * dashboards.
  */
 export async function shadowFireOpenAI(args: ShadowFireArgs): Promise<void> {
+  // If baseline is already openai, shadowing with openai is redundant and wasteful.
+  if (args.baseline_provider === 'openai') {
+    return;
+  }
+
   // Single structured breadcrumb per invocation. Survives even if the
   // flag-read or downstream call fails silently. Useful for ops to prove
   // call-attempt counts match logged rows.

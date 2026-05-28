@@ -631,6 +631,7 @@ export async function runPipeline(
   startedAt: number,
   anthropicKey: string,
   voyageKey: string,
+  openaiApiKey = '',
 ): Promise<GroundedResponse> {
   ensureSb();
   const sb = getSb();
@@ -922,6 +923,7 @@ export async function runPipeline(
     temperature: request.generation.temperature,
     timeoutMs: request.timeout_ms,
     apiKey: anthropicKey,
+    openaiApiKey,
     modelPreference: request.generation.model_preference,
     // Phase 2 of Foxy continuity fix (2026-05-18): prefer native
     // conversation turns when supplied. Absent → byte-identical legacy
@@ -1002,7 +1004,7 @@ export async function runPipeline(
       isGroundingCheck: false,
     }),
     surface: mapCallerToSurface(request.caller),
-    baseline_provider: 'anthropic',
+    baseline_provider: claude.provider || 'anthropic',
     baseline_model: claude.model,
     // trace_id is null at this point — the grounded_ai_traces row is written
     // by finalizeGrounded/finalizeAbstain later. The shadow row carries

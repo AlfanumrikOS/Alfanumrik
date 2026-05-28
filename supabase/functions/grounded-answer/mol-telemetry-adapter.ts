@@ -232,7 +232,8 @@ export async function shadowLogClaudeCall(args: {
     // a SQL backfill step — and 30 days of zero-cost baseline rows make
     // every dashboard look wrong in the meantime. Computing here at
     // write time keeps mol_request_logs immediately useful.
-    const usdCost = calcCost(PROVIDER_LITERAL, claude.model, tokens);
+    const provider = claude.provider || 'anthropic';
+    const usdCost = calcCost(provider, claude.model, tokens);
     const inrCost = toInr(usdCost);
 
     const payload: LogPayload = {
@@ -240,7 +241,7 @@ export async function shadowLogClaudeCall(args: {
       student_id: args.studentContext?.student_id ?? null,
       task_type: taskType,
       surface,
-      provider: PROVIDER_LITERAL,
+      provider: provider,
       // C3 always reports the model that actually answered. C4/C5 will
       // start splitting this between attempted and answered models.
       model: claude.model,

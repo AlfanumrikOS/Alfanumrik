@@ -165,7 +165,7 @@ export interface RetrievalResult {
 export class RetrievalError extends Error {
   readonly phase: RetrievePhase;
   readonly caller: string;
-  readonly cause?: unknown;
+  override readonly cause?: unknown;
   constructor(phase: RetrievePhase, caller: string, message: string, cause?: unknown) {
     super(`[retrieve:${caller}:${phase}] ${message}`);
     this.name = 'RetrievalError';

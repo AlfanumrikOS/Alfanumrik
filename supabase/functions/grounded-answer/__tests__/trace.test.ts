@@ -34,6 +34,7 @@ function baseRow(): TraceRow {
     prompt_template_id: 'foxy_tutor_v1',
     prompt_hash: null,
     grounded: true,
+    grounded_from_chunks: true,
     abstain_reason: null,
     confidence: 0.8,
     answer_length: 100,
@@ -70,7 +71,7 @@ Deno.test('hashQuery differs for different queries', async () => {
 });
 
 Deno.test('redactPreview caps at 200 chars', () => {
-  const long = 'a'.repeat(500);
+  const long = 'a '.repeat(250);
   assertEquals(redactPreview(long).length, 200);
 });
 

@@ -31,16 +31,16 @@ export default defineConfig({
           // uses Deno.test() and runs via `deno test`. We pick the exact
           // file path (not a glob over the directory) to avoid vitest
           // accidentally loading the Deno tests.
-          'supabase/functions/grounded-answer/__tests__/mol-telemetry-adapter.test.ts',
+          'supabase/functions/grounded-answer/__vitest__/mol-telemetry-adapter.vitest-harness.ts',
           // C4 foundation (2026-05-19). Shadow-helper unit tests. Same
           // exact-path convention as the C3 adapter test above — every
           // other __tests__ file in that dir is Deno-only.
-          'supabase/functions/grounded-answer/__tests__/mol-shadow.test.ts',
+          'supabase/functions/grounded-answer/__vitest__/mol-shadow.vitest-harness.ts',
           // C4.2a wire-up (2026-05-19). End-to-end shadow → orchestrator
           // → single-row-contract integration test. Exercises the real MOL
           // codepath with fetch-stubbed providers; verifies the prompt-
           // parity + de-dup fixes work together.
-          'supabase/functions/grounded-answer/__tests__/mol-shadow.integration.test.ts',
+          'supabase/functions/grounded-answer/__vitest__/mol-shadow.integration.vitest-harness.ts',
           // C4.2b-ii text capture (2026-05-20). Tests for the text-based
           // PII redactor used by mol_shadow_text_buffer writes.
           'supabase/functions/_shared/__tests__/redact-pii.test.ts',

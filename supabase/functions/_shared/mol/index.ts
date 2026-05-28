@@ -78,7 +78,7 @@ async function executePass(
         const status = m ? parseInt(m[1], 10) : undefined
         attemptError = { code: msg, status }
         failures.push(`${target.provider}:${status ?? 'err'}`)
-        if (status && !isRetryable(status)) break
+        if (status === undefined || !isRetryable(status)) break
         if (attempt === 0) {
           await new Promise((r) => setTimeout(r, 500 * 2 ** attempt))
           continue

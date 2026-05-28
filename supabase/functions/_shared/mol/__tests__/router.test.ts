@@ -11,15 +11,15 @@ describe('selectProviderChain', () => {
     expect(chain.passes[0].chain[1]).toEqual({ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' })
   })
 
-  it('routes reasoning to anthropic sonnet primary', () => {
+  it('routes reasoning to openai gpt-4o primary', () => {
     const chain = selectProviderChain('reasoning', { hybrid_enabled: true, openai_default: false, weights: {} })
-    expect(chain.passes[0].chain[0]).toEqual({ provider: 'anthropic', model: 'claude-sonnet-4-6-20251022' })
+    expect(chain.passes[0].chain[0]).toEqual({ provider: 'openai', model: 'gpt-4o' })
   })
 
   it('returns two passes for doubt_solving when hybrid enabled', () => {
     const chain = selectProviderChain('doubt_solving', { hybrid_enabled: true, openai_default: false, weights: {} })
     expect(chain.passes.length).toBe(2)
-    expect(chain.passes[0].chain[0].provider).toBe('anthropic')
+    expect(chain.passes[0].chain[0].provider).toBe('openai')
     expect(chain.passes[1].chain[0].provider).toBe('openai')
   })
 
@@ -28,16 +28,10 @@ describe('selectProviderChain', () => {
     expect(chain.passes.length).toBe(1)
   })
 
-  it('uses gpt-4o-mini (NOT gpt-4o full) as the OpenAI fallback for doubt_solving non-hybrid', () => {
-    // Regression guard (2026-05-19 PR audit): a prior change had GPT_FULL
-    // here, which made the doubt_solving cutover ~2× more expensive than
-    // the Anthropic baseline. Cost-effective fallback requires GPT_MINI.
+  it('uses gpt-4o as primary and gpt-4o-mini as fallback for doubt_solving non-hybrid', () => {
     const chain = selectProviderChain('doubt_solving', { hybrid_enabled: false, openai_default: false, weights: {} })
-    const openaiTarget = chain.passes[0].chain.find((t) => t.provider === 'openai')
-    expect(openaiTarget).toBeDefined()
-    expect(openaiTarget?.model).toBe('gpt-4o-mini')
-    // Defensive: explicitly assert the full model is NOT in the chain.
-    expect(chain.passes[0].chain.some((t) => t.provider === 'openai' && t.model === 'gpt-4o')).toBe(false)
+    expect(chain.passes[0].chain[0]).toEqual({ provider: 'openai', model: 'gpt-4o' })
+    expect(chain.passes[0].chain[1]).toEqual({ provider: 'openai', model: 'gpt-4o-mini' })
   })
 
   it('forces openai primary when openai_default=true and task is step_by_step', () => {

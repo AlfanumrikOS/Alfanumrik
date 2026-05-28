@@ -151,7 +151,7 @@ Deno.test('accepts a valid request', () => {
 });
 
 Deno.test('accepts null chapter_number (subject-wide query)', () => {
-  const body = validRequest();
+  const body = validRequest() as any;
   body.scope.chapter_number = null;
   body.scope.chapter_title = null;
   const { error, request } = validateRequest(body);

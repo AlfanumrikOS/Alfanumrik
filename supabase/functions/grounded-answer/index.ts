@@ -151,6 +151,7 @@ export async function handleRequest(req: Request): Promise<Response> {
 
   const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY') ?? '';
   const voyageKey = Deno.env.get('VOYAGE_API_KEY') ?? '';
+  const openaiKey = Deno.env.get('OPENAI_API_KEY') ?? '';
 
   if (wantsStream) {
     // Streaming guards: only soft-mode + retrieve_only=false are supported.
@@ -161,7 +162,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     if (r.mode === 'soft' && r.retrieve_only !== true) {
       try {
         ensureSb();
-        return buildStreamingResponse(r, started, anthropicKey, voyageKey);
+        return buildStreamingResponse(r, started, anthropicKey, voyageKey, openaiKey);
       } catch (err) {
         console.error(
           `grounded-answer: streaming setup threw — ${String(err instanceof Error ? err.stack ?? err.message : err)}`,
@@ -180,6 +181,7 @@ export async function handleRequest(req: Request): Promise<Response> {
       started,
       anthropicKey,
       voyageKey,
+      openaiKey,
     );
     // Server-side word-cap guard: enforce the foxy_tutor_v1 prompt's
     // 150-word soft cap (with a 30-word grace) before the response leaves
@@ -236,6 +238,7 @@ function buildStreamingResponse(
   startedAt: number,
   anthropicKey: string,
   voyageKey: string,
+  openaiKey: string,
 ): Response {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -250,6 +253,7 @@ function buildStreamingResponse(
           startedAt,
           anthropicKey,
           voyageKey,
+          openaiKey,
         )) {
           if (evt.kind === 'metadata') {
             send('metadata', {

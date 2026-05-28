@@ -62,37 +62,41 @@ export const USE_CASES: Record<string, UseCaseConfig> = {
   },
   deep_theory_explanation: {
     name: 'Deep Theory Explanation',
-    primary: { provider: 'anthropic', model: 'claude-3-opus-20240229' },
+    primary: { provider: 'openai', model: 'gpt-4o' },
     fallbacks: [
+      { provider: 'anthropic', model: 'claude-3-opus-20240229' },
       { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' },
     ],
   },
   student_tutoring: {
     name: 'Student Tutoring',
-    primary: { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' },
+    primary: { provider: 'openai', model: 'gpt-4o' },
     fallbacks: [
+      { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' },
       { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
     ],
   },
   creating_question_banks: {
     name: 'Creating Question Banks',
-    primary: { provider: 'anthropic', model: 'claude-3-opus-20240229' },
+    primary: { provider: 'openai', model: 'gpt-4o' },
     fallbacks: [
+      { provider: 'anthropic', model: 'claude-3-opus-20240229' },
       { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' },
     ],
   },
   generating_hints: {
     name: 'Generating Hints',
-    primary: { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' },
+    primary: { provider: 'openai', model: 'gpt-4o-mini' },
     fallbacks: [
+      { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' },
       { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
     ],
   },
   long_pdf_analysis: {
     name: 'Long PDF/Book Analysis',
-    primary: { provider: 'anthropic', model: 'claude-3-opus-20240229' },
+    primary: { provider: 'openai', model: 'gpt-4o' },
     fallbacks: [
-      { provider: 'openai', model: 'gpt-4o' },
+      { provider: 'anthropic', model: 'claude-3-opus-20240229' },
     ],
   },
 }

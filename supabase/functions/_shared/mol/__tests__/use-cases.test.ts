@@ -102,7 +102,7 @@ describe('selectProviderChain with custom use cases', () => {
     expect(chain.passes[0].chain[2]).toEqual({ provider: 'openai', model: 'gpt-4o' })
   })
 
-  it('routes Deep Theory Explanation to Claude Opus 4 primary, Claude Sonnet 4 fallback', () => {
+  it('routes Deep Theory Explanation to OpenAI GPT-4o as primary, Claude Opus and Claude Sonnet as fallbacks', () => {
     const context: StudentContext = {
       student_id: 'student-123',
       grade: '10',
@@ -120,7 +120,8 @@ describe('selectProviderChain with custom use cases', () => {
     })
 
     expect(chain.passes.length).toBe(1)
-    expect(chain.passes[0].chain[0]).toEqual({ provider: 'anthropic', model: 'claude-3-opus-20240229' })
-    expect(chain.passes[0].chain[1]).toEqual({ provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' })
+    expect(chain.passes[0].chain[0]).toEqual({ provider: 'openai', model: 'gpt-4o' })
+    expect(chain.passes[0].chain[1]).toEqual({ provider: 'anthropic', model: 'claude-3-opus-20240229' })
+    expect(chain.passes[0].chain[2]).toEqual({ provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' })
   })
 })

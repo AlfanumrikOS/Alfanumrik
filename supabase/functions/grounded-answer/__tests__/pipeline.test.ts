@@ -36,7 +36,7 @@ function restoreFetch() {
 
 interface StubResponses {
   voyage?: () => Response;
-  claude?: Array<() => Response>; // Claude may be called twice (answer + grounding-check)
+  claude?: Array<() => any>; // Claude may be called twice (answer + grounding-check)
 }
 
 function installFetchStub(resp: StubResponses) {
@@ -46,10 +46,14 @@ function installFetchStub(resp: StubResponses) {
     if (u.includes('voyageai.com')) {
       return Promise.resolve(resp.voyage ? resp.voyage() : voyageOk());
     }
-    if (u.includes('anthropic.com')) {
+    if (u.includes('anthropic.com') || u.includes('openai.com')) {
       const handler = resp.claude?.[claudeIdx++];
       if (!handler) throw new Error(`no claude stub for call ${claudeIdx - 1}`);
-      return Promise.resolve(handler());
+      const resVal = handler();
+      if (typeof resVal === 'function') {
+        return Promise.resolve(resVal(u));
+      }
+      return Promise.resolve(resVal);
     }
     throw new Error(`unexpected fetch to ${u}`);
   }) as typeof fetch;
@@ -64,14 +68,23 @@ function voyageOk(): Response {
   );
 }
 
-function claudeOk(text: string, inputTokens = 50, outputTokens = 120): Response {
-  return new Response(
-    JSON.stringify({
-      content: [{ type: 'text', text }],
-      usage: { input_tokens: inputTokens, output_tokens: outputTokens },
-    }),
-    { status: 200, headers: { 'Content-Type': 'application/json' } },
-  );
+function claudeOk(text: string, inputTokens = 50, outputTokens = 120): any {
+  return (url?: string) => {
+    const isOpenAI = url?.includes('openai.com') ?? false;
+    const body = isOpenAI
+      ? {
+          choices: [{ message: { content: text } }],
+          usage: { prompt_tokens: inputTokens, completion_tokens: outputTokens },
+        }
+      : {
+          content: [{ type: 'text', text }],
+          usage: { input_tokens: inputTokens, output_tokens: outputTokens },
+        };
+    return new Response(
+      JSON.stringify(body),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+  };
 }
 
 // ── Supabase stub builder ───────────────────────────────────────────────────
@@ -213,7 +226,7 @@ function fiveChunks() {
     chapter_number: 1,
     chapter_title: 'Light Reflection',
     page_number: n,
-    similarity: 0.9 - n * 0.02,
+    similarity: 0.025 - n * 0.001,
   }));
 }
 
@@ -619,22 +632,31 @@ Deno.test('Win 4: chunk with prompt-injection prefix is sanitized in system prom
   globalThis.fetch = ((url: string | URL, init?: RequestInit) => {
     const u = String(url);
     if (u.includes('voyageai.com')) return Promise.resolve(voyageOk());
-    if (u.includes('anthropic.com')) {
+    if (u.includes('anthropic.com') || u.includes('openai.com')) {
       const idx = claudeCallIdx++;
       if (idx === 0) {
         try {
           const body = JSON.parse(String(init?.body ?? '{}'));
           if (typeof body.system === 'string') {
             capturedSystemPrompt = body.system;
+          } else if (Array.isArray(body.system)) {
+            // deno-lint-ignore no-explicit-any
+            capturedSystemPrompt = body.system
+              .filter((b: any) => b?.type === 'text' && typeof b.text === 'string')
+              // deno-lint-ignore no-explicit-any
+              .map((b: any) => b.text as string)
+              .join('');
+          } else if (Array.isArray(body.messages) && body.messages[0]?.role === 'system') {
+            capturedSystemPrompt = body.messages[0].content;
           }
         } catch {
           /* ignore */
         }
-        return Promise.resolve(claudeOk('Plants make food via photosynthesis [1].'));
+        return Promise.resolve(claudeOk('Plants make food via photosynthesis [1].')(u));
       }
       // Second call — grounding-check pass verdict.
       return Promise.resolve(
-        claudeOk(JSON.stringify({ verdict: 'pass', unsupported_sentences: [] })),
+        claudeOk(JSON.stringify({ verdict: 'pass', unsupported_sentences: [] }))(u),
       );
     }
     throw new Error(`unexpected fetch to ${u}`);
@@ -783,14 +805,25 @@ Deno.test('soft mode + zero retrieved chunks + chapter_not_ready → Claude is s
   globalThis.fetch = ((url: string | URL, init?: RequestInit) => {
     const u = String(url);
     if (u.includes('voyageai.com')) return Promise.resolve(voyageOk());
-    if (u.includes('anthropic.com')) {
+    if (u.includes('anthropic.com') || u.includes('openai.com')) {
       claudeWasCalled = true;
       try {
         const body = JSON.parse(String(init?.body ?? '{}'));
-        if (typeof body.system === 'string') capturedSystemPrompt = body.system;
+        if (typeof body.system === 'string') {
+          capturedSystemPrompt = body.system;
+        } else if (Array.isArray(body.system)) {
+          // deno-lint-ignore no-explicit-any
+          capturedSystemPrompt = body.system
+            .filter((b: any) => b?.type === 'text' && typeof b.text === 'string')
+            // deno-lint-ignore no-explicit-any
+            .map((b: any) => b.text as string)
+            .join('');
+        } else if (Array.isArray(body.messages) && body.messages[0]?.role === 'system') {
+          capturedSystemPrompt = body.messages[0].content;
+        }
       } catch { /* ignore */ }
       return Promise.resolve(
-        claudeOk('From general CBSE knowledge: arithmetic expressions are...'),
+        claudeOk('From general CBSE knowledge: arithmetic expressions are...')(u),
       );
     }
     throw new Error(`unexpected fetch to ${u}`);
