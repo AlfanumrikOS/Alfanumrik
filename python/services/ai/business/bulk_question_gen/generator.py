@@ -83,6 +83,7 @@ async def generate_candidates(
         student_context=student_ctx,
         config=GenerateConfig(
             preferred_provider="openai",
+            temperature_override=0.3,
             request_id=request_id,
             surface="quiz",
             max_tokens_override=_GENERATION_MAX_TOKENS,

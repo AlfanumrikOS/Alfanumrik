@@ -531,6 +531,7 @@ async function callLlmViaMol(
     },
     config: {
       preferred_provider: 'openai',
+      temperature_override: 0.3,
       // Empty system_prompt_override keeps the prompt-builder from
       // injecting the Foxy persona (which would misframe the report).
       system_prompt_override: 'You are an analytics assistant generating a structured weekly summary for a parent. Output strict JSON only.',

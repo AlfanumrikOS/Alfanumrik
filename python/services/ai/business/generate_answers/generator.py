@@ -119,6 +119,7 @@ async def generate_answer_for_question(
         student_context=student_ctx,
         config=GenerateConfig(
             preferred_provider="openai",
+            temperature_override=0.3,
             request_id=request_id,
             max_tokens_override=_GENERATION_MAX_TOKENS,
             system_prompt_override=system_prompt,

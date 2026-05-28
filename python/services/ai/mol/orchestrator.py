@@ -36,9 +36,12 @@ from collections.abc import Iterable
 
 import structlog
 
+from .classifier import classify as classify_task_type
 from .cost import compute_cost
 from .errors import MolError
 from .feature_flag import is_flag_enabled
+from .post_processor import post_process
+from .prompt_builder import build_simplify_prompt, build_system_prompt
 from .providers.anthropic import AnthropicProvider
 from .providers.base import ModelProvider, is_retryable_status
 from .providers.openai import OpenAIProvider
@@ -64,80 +67,48 @@ _providers: dict[str, ModelProvider] = {
 }
 
 
-# ─── Phase-0 stubs (Phase 1 replaces) ────────────────────────────────────────
 
 
-def classify_task_type(req: GenerateRequest) -> TaskType:
-    """Phase-0 classifier stub.
-
-    Phase 1 ports the TS LLM classifier (``classifier.ts``). Until then,
-    the caller MUST pass ``task_type`` explicitly; otherwise we default to
-    ``'explanation'`` (the most common surface) and emit a structured warn
-    line so the gap is observable in dashboards.
-    """
-    if req.task_type is not None:
-        return req.task_type
-    logger.warning(
-        "mol.classifier.stub_default",
-        student_id=req.student_context.student_id,
-        chosen="explanation",
-        hint="Phase 1 will replace the stub with the LLM classifier.",
-    )
-    return "explanation"
-
-
-def build_system_prompt(
-    task_type: TaskType,
-    req: GenerateRequest,
-) -> str:
-    """Phase-0 prompt-builder stub.
-
-    Phase 1 ports the full Foxy-persona + CBSE-scope + safety-rails
-    template tree (``prompt-builder.ts``). Until then, we compose a minimal
-    grade/subject-aware system prompt so the provider call has *something*
-    valid to send. Callers can bypass this entirely via
-    ``config.system_prompt_override`` (the shadow-routing prompt-parity
-    contract relies on that bypass).
-    """
-    sc = req.student_context
-    parts = [
-        f"You are an AI tutor for Class {sc.grade}.",
-        "Stay strictly within the CBSE curriculum.",
-        "Keep explanations age-appropriate and concise.",
-        f"Task: {task_type}.",
-    ]
-    if sc.subject:
-        parts.append(f"Subject: {sc.subject}.")
-    if sc.language:
-        parts.append(f"Respond in language code '{sc.language}'.")
-    if req.rag_context:
-        parts.append("Reference material (use as the SOLE source of truth):")
-        parts.append("---")
-        parts.append(req.rag_context)
-        parts.append("---")
-    return "\n".join(parts)
-
-
-def build_simplify_prompt(req: GenerateRequest, pass1_text: str) -> str:
-    """Phase-0 simplify-prompt stub for the doubt_solving 2-pass chain."""
-    sc = req.student_context
-    return (
-        f"Rewrite the following Class {sc.grade} answer in simpler language "
-        f"suitable for a {sc.learning_speed or 'moderate'}-paced learner. "
-        "Keep all factual content intact.\n\n"
-        f"Original answer:\n{pass1_text}"
-    )
-
-
-def post_process(text: str, task_type: TaskType) -> str:
-    """Phase-0 post-processor stub — Phase 1 ports the shaper."""
-    del task_type  # unused in stub
-    return text
+_weights_cache: dict[str, float] | None = None
+_weights_cache_expiry: float = 0.0
+_WEIGHTS_TTL_SEC: float = 300.0  # 5 minutes
 
 
 async def get_routing_weights() -> dict[str, float]:
-    """Phase-0 routing-weights stub — Phase 1 reads ``mol_routing_weights``."""
-    return {}
+    """Phase-2 routing weights — reads ``mol_routing_weights`` with a 5m cache."""
+    global _weights_cache, _weights_cache_expiry
+    now = time.monotonic()
+    
+    if _weights_cache is not None and now < _weights_cache_expiry:
+        return _weights_cache
+
+    try:
+        from ..db.supabase import get_service_client
+        client = get_service_client()
+        if not client:
+            return _weights_cache or {}
+            
+        result = await client.table("mol_routing_weights").select("task_type, openai_weight").execute()
+        
+        data = getattr(result, "data", None)
+        if data is None and isinstance(result, dict):
+            data = result.get("data")
+            
+        if data is not None:
+            new_cache = {}
+            for row in data:
+                task_type = row.get("task_type")
+                weight = row.get("openai_weight")
+                if task_type and weight is not None:
+                    new_cache[task_type] = float(weight)
+            _weights_cache = new_cache
+            _weights_cache_expiry = now + _WEIGHTS_TTL_SEC
+        
+        return _weights_cache or {}
+    except Exception as err:
+        # Avoid crashing the orchestration loop; just fallback to empty/stale cache
+        logger.warning("mol.get_routing_weights_failed", error=str(err))
+        return _weights_cache or {}
 
 
 # ─── Orchestrator helpers ────────────────────────────────────────────────────
@@ -308,7 +279,7 @@ async def generate_response(req: GenerateRequest) -> MolResult:
     user_messages.append(ChatTurn(role="user", content=user_text))
 
     max_tokens = cfg.max_tokens_override or get_max_tokens(task_type)
-    temperature = 0.7  # Phase 0 default; per-task overrides land in Phase 1.
+    temperature = cfg.temperature_override if cfg.temperature_override is not None else 0.7
 
     # Step 7 (cont.) — execute passes
     responses: list[ProviderResponse] = []

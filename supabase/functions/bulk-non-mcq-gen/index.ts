@@ -384,6 +384,7 @@ async function callClaude(
       config: {
         surface: 'quiz',
         preferred_provider: 'openai',
+        temperature_override: 0.3,
         system_prompt_override: systemPrompt,
         max_tokens_override: 4096, // SA/LA batches: 5×500 or 3×1500 output tokens
       },

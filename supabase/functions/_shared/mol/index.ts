@@ -165,6 +165,7 @@ export async function generateResponse(req: GenerateRequest): Promise<MolResult>
     system_prompt,
     user_messages,
     max_tokens,
+    temperature: req.config?.temperature_override,
     image_url: req.input.image_url,
     timeout_ms: 20_000,
   })
@@ -179,6 +180,7 @@ export async function generateResponse(req: GenerateRequest): Promise<MolResult>
       system_prompt: simplify_prompt,
       user_messages: [{ role: 'user', content: 'Rewrite the answer above.' }],
       max_tokens: getSimplifyMaxTokens(),
+      temperature: req.config?.temperature_override,
       timeout_ms: 15_000,
     })
     responses.push(pass2.response)

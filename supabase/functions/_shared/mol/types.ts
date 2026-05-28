@@ -52,6 +52,7 @@ export interface GenerateRequest {
   config?: {
     preferred_provider?: 'openai' | 'anthropic'
     max_tokens_override?: number
+    temperature_override?: number
     request_id?: string                 // for trace correlation
     surface?: 'foxy' | 'quiz' | 'solver' | 'ocr'
 

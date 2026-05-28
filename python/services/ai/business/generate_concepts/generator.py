@@ -120,6 +120,7 @@ async def call_mol_for_concepts(
         student_context=student_ctx,
         config=GenerateConfig(
             preferred_provider="openai",
+            temperature_override=0.3,
             request_id=request_id,
             max_tokens_override=max_tokens,
             system_prompt_override=system_prompt,
