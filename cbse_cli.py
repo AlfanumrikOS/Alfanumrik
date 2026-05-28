@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 from cbse_parser.generator import generate_answer
 
 
@@ -15,9 +16,10 @@ def main():
         except Exception as e:
             print(f"Error reading template file: {e}")
             return
-    answer = generate_answer(args.question, custom_template)
+    answer = asyncio.run(generate_answer(args.question, custom_template))
     print(answer)
 
 
 if __name__ == "__main__":
     main()
+
