@@ -36,7 +36,7 @@ async def post_foxy_tutor(request: FoxyRequest) -> FoxyResponse:
         )
 
     try:
-        answer = generate_answer(request.question)
+        answer = await generate_answer(request.question)
     except Exception as exc:  # pragma: no cover – defensive catch
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
