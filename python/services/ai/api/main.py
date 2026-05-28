@@ -27,6 +27,7 @@ from .v1.generate import router as generate_router
 from .v1.generate_answers import router as generate_answers_router
 from .v1.generate_concepts import router as generate_concepts_router
 from .v1.voice import router as voice_router
+from .v1.foxy_tutor import router as foxy_tutor_router
 
 
 @asynccontextmanager
@@ -124,6 +125,7 @@ def create_app() -> FastAPI:
     app.include_router(generate_answers_router)
     app.include_router(generate_concepts_router)
     app.include_router(voice_router)
+    app.include_router(foxy_tutor_router)
 
     return app
 
