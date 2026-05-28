@@ -17,6 +17,13 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import RateLimitHeadersMiddleware
+
+from .limiter import limiter
+
 from ..config import get_settings
 from ..db.supabase import get_service_client
 from ..observability.logger import configure_logging, get_logger
@@ -28,6 +35,8 @@ from .v1.generate_answers import router as generate_answers_router
 from .v1.generate_concepts import router as generate_concepts_router
 from .v1.voice import router as voice_router
 from .v1.foxy_tutor import router as foxy_tutor_router
+from ..business.cme_engine.router import router as cme_router
+from ..business.ncert_solver.router import router as ncert_solver_router
 
 
 @asynccontextmanager
@@ -84,6 +93,11 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-Request-Id"],
     )
+    
+    # slowapi integration
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(RateLimitHeadersMiddleware)
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):
@@ -126,6 +140,11 @@ def create_app() -> FastAPI:
     app.include_router(generate_concepts_router)
     app.include_router(voice_router)
     app.include_router(foxy_tutor_router)
+    app.include_router(cme_router)
+    app.include_router(ncert_solver_router)
+
+    # opentelemetry integration
+    FastAPIInstrumentor.instrument_app(app)
 
     return app
 
