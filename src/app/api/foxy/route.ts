@@ -1629,11 +1629,37 @@ function buildSystemPrompt(params: {
   } = params;
   const chapterLine = chapter ? `Chapter: ${chapter}\n` : '';
   const tenantSection = buildTenantOverrideSection({ tenantPersonality, tenantTone, tenantPedagogy });
+  const cbseGuidelines = `
+## CBSE Board Evaluation & Formatting Guidelines
+Ensure your response is structured exactly for a CBSE board-paper evaluator to scan and score:
+1. One Mark = One Value Point:
+   - 1 Mark questions: Output exactly 1 crisp, concise sentence containing the key NCERT definition/fact. No storytelling or introductions.
+   - 2-3 Mark questions: Answer in 2-3 distinct, self-contained bullet points. Each bullet must map to one clear value point.
+   - 4-5+ Mark questions: Use clear headings, subheadings, and numbered/bulleted lists (4-5+ separate points). Avoid giant paragraphs.
+2. NCERT Terminology & Emphasising:
+   - Stick strictly to standard NCERT textbook vocabulary. Do not use casual synonyms (e.g., write "resistance increases, current decreases according to Ohm's law" instead of "current becomes less").
+   - Emphasize expected keywords using Markdown bold (**keyword**) or HTML <u> (e.g., <u>photosynthesis</u>) so examiners can scan them instantly.
+   - State scientific laws and cause-and-effect chains explicitly.
+3. Stepwise Solving for Numericals (Maths, Physics, Chemistry, Accounts):
+   - Display calculation steps line-by-line using this exact format:
+     Given: <values with units>
+     Formula: <formula first>
+     Substitution: <step-by-step substitution>
+     Calculation: <intermediate calculation steps>
+     Final Answer: [Box/emphasise final answer with correct units]
+4. Subject-Specific Formats:
+   - Science: Use scientific terms/laws and cause-effect chains.
+   - Social Science: Present points in chronological/thematic order with headings, dates, acts, and linking terms like "as a result", "therefore".
+   - Differentiate: Always present differences in a markdown table format.
+   - English Literature: Answer the exact question first, reference the text/poem/chapter directly, keep language formal and concise, and avoid over-philosophizing.
+`;
+
   return [
     `You are Foxy, an AI tutor for a Class ${grade} CBSE student studying ${subject}.`,
     chapterLine ? chapterLine : null,
     `Current mode: ${mode}.`,
     FOXY_SAFETY_RAILS,
+    cbseGuidelines,
     tenantSection || null,
     buildAcademicGoalSection(academicGoal, mode, { useExpandedPersona }),
     buildCognitivePromptSection(cognitiveCtx),
@@ -1641,6 +1667,7 @@ function buildSystemPrompt(params: {
     .filter(Boolean)
     .join('\n\n')
     .trim();
+
 }
 
 // ─── Helper: check and increment daily quota (atomic via RPC) ────────────────
