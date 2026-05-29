@@ -19,7 +19,8 @@ def updateMastery(
     correct: bool,
     questionDifficulty: float,
     responseTimeMs: float,
-    expectedTimeMs: float
+    expectedTimeMs: float,
+    telemetry: Optional[Any] = None
 ) -> Dict[str, Any]:
     studentAbility = state.get("mastery_mean", 0.3) * 6 - 3
     qDiff = (questionDifficulty or 2) - 3
@@ -27,9 +28,16 @@ def updateMastery(
     surprise = abs((1 if correct else 0) - pCorrect)
     alpha = state.get("mastery_variance", 0.25) * 0.5 + 0.05
 
+    # Telemetry penalties
+    latency_penalty = 1.0
+    if correct and telemetry and getattr(telemetry, 'latency_ms', 0) and getattr(telemetry, 'latency_ms', 0) > 60000:
+        latency_penalty = 0.5  # Heavy hesitation penalty
+    if correct and telemetry and getattr(telemetry, 'changed_answers_count', 0) > 1:
+        latency_penalty *= 0.7 # Guessing penalty
+
     newMastery = state.get("mastery_mean", 0.3)
     if correct:
-        newMastery += alpha * (1 - newMastery) * (1 + surprise * 0.3)
+        newMastery += alpha * (1 - newMastery) * (1 + surprise * 0.3) * latency_penalty
     else:
         newMastery -= alpha * newMastery * (0.5 + surprise * 0.3)
     newMastery = max(0.01, min(0.99, newMastery))

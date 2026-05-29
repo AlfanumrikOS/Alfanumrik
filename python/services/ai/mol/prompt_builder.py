@@ -90,7 +90,8 @@ def build_system_prompt(
     p += "- Do not use markdown bold (**) for emphasis. Avoid wrapping words in **.\n"
     p += "- Wrap formulas in [FORMULA: expression] tags.\n"
     p += "- Wrap key concepts in [KEY: term] tags.\n"
-    p += "- Wrap exam tips in [TIP: advice] tags.\n\n"
+    p += "- Wrap exam tips in [TIP: advice] tags.\n"
+    p += "- DYNAMIC SCAFFOLDING: If a student is struggling and would benefit from a visual manipulative, you may output a JSON block at the very end of your response enclosed in ```json ... ``` with the format {\"ui_action\": {\"type\": \"render_number_line\", \"data\": { ... }}}. Do NOT output this for standard explanations.\n\n"
 
     p += f"{DIAGRAM_INSTRUCTION}\n\n"
 

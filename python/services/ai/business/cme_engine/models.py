@@ -11,6 +11,11 @@ class NextActionResponse(BaseModel):
     reason: str
     difficulty: int
 
+class MicroTelemetry(BaseModel):
+    latency_ms: Optional[int] = None
+    changed_answers_count: Optional[int] = 0
+    hints_used: Optional[int] = 0
+
 class RecordResponseRequest(BaseModel):
     concept_id: str
     question_id: Optional[str] = None
@@ -19,6 +24,7 @@ class RecordResponseRequest(BaseModel):
     response_time_ms: Optional[int] = 30000
     student_answer: Optional[str] = None
     correct_answer: Optional[str] = None
+    telemetry: Optional[MicroTelemetry] = None
 
 class RecordResponseResponse(BaseModel):
     mastery: float

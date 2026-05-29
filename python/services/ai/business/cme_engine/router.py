@@ -99,7 +99,8 @@ async def record_response(req: RecordResponseRequest, student: Dict[str, Any] = 
         correct=req.correct,
         questionDifficulty=req.difficulty or 2,
         responseTimeMs=req.response_time_ms or 30000,
-        expectedTimeMs=30000
+        expectedTimeMs=30000,
+        telemetry=req.telemetry
     )
 
     max_diff = current_state.get("max_difficulty_succeeded") or 1
@@ -136,6 +137,19 @@ async def record_response(req: RecordResponseRequest, student: Dict[str, Any] = 
             "student_answer": (req.student_answer or "")[:500],
             "correct_answer": (req.correct_answer or "")[:500],
             "response_time_ms": req.response_time_ms,
+        }).execute()
+
+    if req.telemetry:
+        await client.table("micro_telemetry_events").insert({
+            "student_id": student["id"],
+            "event_type": "question_response_telemetry",
+            "metadata": {
+                "concept_id": req.concept_id,
+                "question_id": req.question_id,
+                "latency_ms": getattr(req.telemetry, 'latency_ms', None),
+                "changed_answers_count": getattr(req.telemetry, 'changed_answers_count', 0),
+                "hints_used": getattr(req.telemetry, 'hints_used', 0)
+            }
         }).execute()
 
     return {
