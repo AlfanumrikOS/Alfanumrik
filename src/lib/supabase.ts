@@ -610,7 +610,7 @@ export async function processAdaptiveLearning(
   studentId: string,
   subject: string,
   grade: string,
-  responses: Array<{ question_id: string; is_correct: boolean; time_spent: number; selected_option: number; error_type?: string }>,
+  responses: Array<{ question_id: string; is_correct: boolean; time_spent: number; selected_option: number; error_type?: string; telemetry?: { latency_ms?: number, changed_answers_count?: number, hints_used?: number } }>,
   questions: Array<{ id: string; chapter_number: number; difficulty: number; bloom_level: string }>,
   sessionId: string,
 ): Promise<void> {
@@ -684,6 +684,7 @@ export async function processAdaptiveLearning(
           correct: response.is_correct,
           difficulty: question.difficulty ?? 2,
           response_time_ms: (response.time_spent ?? 10) * 1000,
+          telemetry: response.telemetry,
         }),
       }, 5000); // 5s timeout per call — best-effort
       cmeSuccessCount++;

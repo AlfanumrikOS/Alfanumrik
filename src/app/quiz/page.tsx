@@ -84,6 +84,11 @@ interface Response {
    * `question_bank.correct_answer_index`.
    */
   shuffle_map?: number[] | null;
+  telemetry?: {
+    latency_ms?: number;
+    changed_answers_count?: number;
+    hints_used?: number;
+  };
 }
 
 // ─── Written answer helpers ──────────────────────────────────────────────────
@@ -240,6 +245,7 @@ export default function QuizPage() {
   const [hintLevel, setHintLevel] = useState(0);
   const [timer, setTimer] = useState(0);
   const [questionTimer, setQuestionTimer] = useState(0);
+  const [changedAnswersCount, setChangedAnswersCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [noQuestionsError, setNoQuestionsError] = useState(false);
   const [noQuestionsMessage, setNoQuestionsMessage] = useState('');
@@ -520,6 +526,7 @@ export default function QuizPage() {
       setCurrentIdx(0);
       setResponses([]);
       setSelectedOption(null);
+      setChangedAnswersCount(0);
       setShowExplanation(false);
       setTimer(0);
       setCogLoad(initialCognitiveLoad());
@@ -540,6 +547,9 @@ export default function QuizPage() {
 
   const selectAnswer = (optIdx: number) => {
     if (showExplanation) return;
+    if (selectedOption !== null && selectedOption !== optIdx) {
+      setChangedAnswersCount(c => c + 1);
+    }
     setSelectedOption(optIdx);
   };
 
@@ -606,6 +616,11 @@ export default function QuizPage() {
       // this field; v1 RPC accepts null and treats selected_option as
       // already-original (correct fallback semantics).
       shuffle_map: null,
+      telemetry: {
+        latency_ms: questionTimer * 1000,
+        changed_answers_count: changedAnswersCount,
+        hints_used: hintLevel,
+      },
     }]);
 
     // In exam mode, skip explanation — go straight to next question
@@ -614,6 +629,7 @@ export default function QuizPage() {
       if (currentIdx < questions.length - 1) {
         setCurrentIdx(i => i + 1);
         setSelectedOption(null);
+        setChangedAnswersCount(0);
         setHintLevel(0);
         return;
       }
@@ -709,6 +725,11 @@ export default function QuizPage() {
       // P1 server-side shuffle fix: written answers are not shuffled,
       // selected_option (-1) is already in original space.
       shuffle_map: null,
+      telemetry: {
+        latency_ms: timeSpent * 1000,
+        changed_answers_count: 0,
+        hints_used: hintLevel,
+      },
     }]);
 
     // Store full evaluation result for rich feedback display
@@ -745,11 +766,17 @@ export default function QuizPage() {
       rubric_feedback: 'Skipped',
       // P1 server-side shuffle fix: skipped written answers carry no shuffle.
       shuffle_map: null,
+      telemetry: {
+        latency_ms: 0,
+        changed_answers_count: 0,
+        hints_used: hintLevel,
+      },
     }]);
     // Move to next question
     if (currentIdx < questions.length - 1) {
       setCurrentIdx(i => i + 1);
       setSelectedOption(null);
+      setChangedAnswersCount(0);
       setShowExplanation(false);
       setReflection(null);
       setHintLevel(0);
@@ -762,6 +789,7 @@ export default function QuizPage() {
     if (currentIdx < questions.length - 1) {
       setCurrentIdx(i => i + 1);
       setSelectedOption(null);
+      setChangedAnswersCount(0);
       setShowExplanation(false);
       setReflection(null);
       setHintLevel(0);
@@ -790,6 +818,11 @@ export default function QuizPage() {
               is_correct: lastIsCorrect,
               time_spent: questionTimer,
               shuffle_map: null,
+              telemetry: {
+                latency_ms: questionTimer * 1000,
+                changed_answers_count: changedAnswersCount,
+                hints_used: hintLevel,
+              },
             });
           }
         }
