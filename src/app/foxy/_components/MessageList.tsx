@@ -29,6 +29,7 @@ import { denormalizeFoxyResponse } from '@/lib/foxy/denormalize';
 import type { ChatMessage } from '../_lib/foxy-types';
 import { RichContent } from '@/components/foxy/RichContent';
 import { FoxyStructuredRenderer } from '@/components/foxy/FoxyStructuredRenderer';
+import DynamicScaffold from '@/app/foxy/_components/DynamicScaffold';
 
 export interface MessageListProps {
   messages: ChatMessage[];
@@ -118,9 +119,19 @@ export function MessageList({
         const effectiveStructured = msg.structured ?? recoveredStructured ?? undefined;
         const useStructured =
           msg.role === 'tutor' && effectiveStructured && isFoxyResponse(effectiveStructured);
-        const effectiveContent = recoveredStructured
+        let effectiveContent = recoveredStructured
           ? denormalizeFoxyResponse(recoveredStructured)
           : msg.content;
+
+        let uiActionPayload = null;
+        try {
+          const match = effectiveContent.match(/```json\s*(\{[\s\S]*?"ui_action"[\s\S]*?\})\s*```/);
+          if (match) {
+             const parsed = JSON.parse(match[1]);
+             if (parsed.ui_action) uiActionPayload = parsed.ui_action;
+             effectiveContent = effectiveContent.replace(match[0], '').trim();
+          }
+        } catch(e) {}
 
         const legacyTutorContent = (
           <RichContent content={effectiveContent} subjectKey={activeSubject} />
@@ -140,7 +151,12 @@ export function MessageList({
           <div key={msg.id}>
             <ChatBubble
               role={msg.role}
-              content={msg.role === 'tutor' ? tutorContent : (
+              content={msg.role === 'tutor' ? (
+                <div>
+                  {tutorContent}
+                  {uiActionPayload && <DynamicScaffold action={uiActionPayload} />}
+                </div>
+              ) : (
                 <div>
                   {msg.imageUrl && (
                     <div className="mb-2 rounded-xl overflow-hidden max-w-[220px]">

@@ -37,7 +37,7 @@ from .v1.voice import router as voice_router
 from .v1.foxy_tutor import router as foxy_tutor_router
 from ..business.cme_engine.router import router as cme_router
 from ..business.ncert_solver.router import router as ncert_solver_router
-
+from ..business.quiz_generator.router import router as quiz_generator_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -142,7 +142,7 @@ def create_app() -> FastAPI:
     app.include_router(foxy_tutor_router)
     app.include_router(cme_router)
     app.include_router(ncert_solver_router)
-
+    app.include_router(quiz_generator_router)
     # opentelemetry integration
     FastAPIInstrumentor.instrument_app(app)
 
