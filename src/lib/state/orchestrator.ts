@@ -57,6 +57,26 @@ import type {
 } from './services/service';
 import type { StudentState, StudentStateBuilder } from './student-state';
 
+// ---------- Observability ----------
+import { Counter, Histogram, Gauge } from 'prom-client';
+
+// Dispatch latency histogram
+const dispatchDuration = new Histogram({
+  name: 'orchestrator_dispatch_duration_seconds',
+  help: 'Time taken for a dispatch call',
+  buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5],
+});
+
+// Token usage counter (aggregate across LLM calls)
+const tokenUsage = new Counter({
+  name: 'orchestrator_llm_tokens_total',
+  help: 'Total number of LLM tokens consumed by the orchestrator',
+});
+
+// State cache hit/miss gauges
+const cacheHits = new Gauge({ name: 'orchestrator_state_cache_hits_total', help: 'Number of state cache hits' });
+const cacheMisses = new Gauge({ name: 'orchestrator_state_cache_misses_total', help: 'Number of state cache misses' });
+
 const ORCHESTRATOR_FLAG = 'ff_orchestrator_v1';
 
 // ── State cache ─────────────────────────────────────────────────────
@@ -148,6 +168,7 @@ export class Orchestrator {
   async dispatch<Input, Output>(
     args: DispatchArgs<Input>,
   ): Promise<DispatchResult<Output>> {
+    const timer = dispatchDuration.startTimer();
     return withLearnerLock(args.authUserId, async () => {
       const enabled = await this.isOrchestratorEnabled();
       const state = await this.getStudentState(args.authUserId);
@@ -184,11 +205,18 @@ export class Orchestrator {
         }
       }
 
-      return {
+      const out = {
         output: result.output,
         publishedEventCount,
         state, // pre-mutation snapshot — caller can read but not mutate
       };
+
+      // Record any token usage if present on the result (assumes ServiceResult may contain `tokensUsed`)
+      if ((result as any).tokensUsed) {
+        tokenUsage.inc((result as any).tokensUsed);
+      }
+      timer(); // stop latency timer
+      return out;
     });
   }
 
@@ -236,8 +264,10 @@ export class Orchestrator {
     const now = this.now().getTime();
     const cached = this.stateCache.get(authUserId);
     if (cached && now - cached.builtAt < STATE_CACHE_TTL_MS) {
+      cacheHits.inc();
       return cached.state;
     }
+    cacheMisses.inc();
     const state = await this.buildState(authUserId);
     this.stateCache.set(authUserId, { state, builtAt: now });
     return state;

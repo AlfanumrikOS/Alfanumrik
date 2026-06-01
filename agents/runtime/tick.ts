@@ -339,10 +339,21 @@ function l4_stub_execute(task: TaskAssignment): CompletedTask {
 
 // ─── L5 dispatch: run the configured evaluators ───────────────────────
 
-// Map from canonical evaluator slug → script path relative to repo root.
-// To register a new evaluator: add the slug here, add it to
-// agents/contracts/evaluation.schema.json, and add an `eval:<slug>`
-// npm script for independent CI use.
+import { spawn } from 'node:child_process';
+import { Counter, Histogram } from 'prom-client';
+
+// Metrics for L5 evaluator execution
+const evaluatorDuration = new Histogram({
+  name: 'mesh_l5_evaluator_duration_seconds',
+  help: 'Duration of L5 evaluator execution in seconds',
+  labelNames: ['evaluator'] as const,
+});
+const evaluatorFailure = new Counter({
+  name: 'mesh_l5_evaluator_failures_total',
+  help: 'Total number of failed L5 evaluator runs',
+  labelNames: ['evaluator'] as const,
+});
+
 const EVALUATOR_SCRIPTS: Record<string, string> = {
   tenant_isolation: 'eval/tenant-isolation/run.ts',
   unit_tests: 'eval/unit-tests/run.ts',
@@ -357,92 +368,69 @@ async function l5_runEvaluators(
   commit: boolean,
   worktreeRoot: string | null,
 ): Promise<Array<{ evaluator: string; verdict: Verdict; blocking: boolean; notes: string }>> {
-  const out: Array<{ evaluator: string; verdict: Verdict; blocking: boolean; notes: string }> = [];
   const repoRoot = path.resolve(__dirname, '..', '..');
-  // Evaluators run in the worktree when a real-L4 produced a diff (so
-  // unit_tests / type_check / lint / tenant_isolation see the agent's
-  // actual changes). When there's no worktree (stub L4 mode), they run
-  // against the host repo — which is on `main`, so the verdicts reflect
-  // baseline state. The evaluator scripts themselves are loaded by
-  // absolute path so they work from either cwd.
   const evalCwd = worktreeRoot ?? repoRoot;
 
-  for (const evaluator of evaluators) {
+  const evaluatorPromises = evaluators.map(async (evaluator) => {
     const scriptRel = EVALUATOR_SCRIPTS[evaluator];
     if (!scriptRel) {
-      // Declared required but not wired into the runtime. Per the rubric,
-      // a missing required evaluator is a blocking failure — the Critic
-      // will reject. This is intentional: the stub L2 declared this slug
-      // and the runtime is contracted to either run it or surface its
-      // absence loudly.
-      out.push({
+      return {
         evaluator,
-        verdict: 'skipped',
+        verdict: 'skipped' as Verdict,
         blocking: true,
         notes: `Evaluator '${evaluator}' is declared required but has no runtime registration in EVALUATOR_SCRIPTS.`,
-      });
-      continue;
+      };
     }
 
-    // Pass the full command as a single quoted string with shell:true.
-    // shell:true uses cmd.exe on Windows; the absolute script path contains
-    // a space (repo at "C:\Users\Bharangpur Primary\..."), so wrap it in
-    // double-quotes to prevent word-splitting. Passing one string is
-    // cmd.exe's well-behaved mode; arg arrays are where the splitting lives.
     const absScript = path.join(repoRoot, scriptRel);
     const taskArgs = commit ? ` --task-id ${taskId} --cycle-id ${cycleId}` : '';
     const cmdline = `npx tsx "${absScript}" --json${taskArgs}`;
     log('L5', `→ (cwd=${path.relative(repoRoot, evalCwd) || '.'}) ${cmdline}`);
-    const result = spawnSync(cmdline, [], {
-      cwd: evalCwd,
-      encoding: 'utf8',
-      env: process.env,
-      shell: true,
+
+    const timer = evaluatorDuration.startTimer({ evaluator });
+    return new Promise<{ evaluator: string; verdict: Verdict; blocking: boolean; notes: string }>((resolve) => {
+      const child = spawn(cmdline, [], { cwd: evalCwd, shell: true, env: process.env });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
+      child.stdout.on('data', (data) => (stdout += data));
+      child.stderr.on('data', (data) => (stderr += data));
+      child.on('close', (code) => {
+        timer();
+        if (code !== 0) {
+          evaluatorFailure.inc({ evaluator });
+          resolve({
+            evaluator,
+            verdict: 'skipped',
+            blocking: true,
+            notes: `Evaluator process exited with code ${code}: ${stderr.trim()}`,
+          });
+          return;
+        }
+        try {
+          const parsed = JSON.parse(stdout);
+          resolve({
+            evaluator,
+            verdict: parsed.verdict,
+            blocking: parsed.blocking,
+            notes: parsed.notes,
+          });
+        } catch {
+          evaluatorFailure.inc({ evaluator });
+          resolve({
+            evaluator,
+            verdict: 'skipped',
+            blocking: true,
+            notes: `Evaluator output was not valid JSON: ${stdout.slice(0, 200)}`,
+          });
+        }
+      });
     });
+  });
 
-    if (result.error) {
-      out.push({
-        evaluator,
-        verdict: 'skipped',
-        blocking: true,
-        notes: `Spawn failed: ${result.error.message}`,
-      });
-      continue;
-    }
-
-    if (result.status === 2) {
-      out.push({
-        evaluator,
-        verdict: 'skipped',
-        blocking: true,
-        notes: `Evaluator errored: ${result.stderr?.trim() ?? 'unknown'}`,
-      });
-      continue;
-    }
-
-    // Parse the JSON verdict the evaluator printed.
-    let parsed: { verdict: Verdict; blocking: boolean; notes: string } | null = null;
-    try {
-      parsed = JSON.parse(result.stdout);
-    } catch {
-      out.push({
-        evaluator,
-        verdict: 'skipped',
-        blocking: true,
-        notes: `Evaluator output was not valid JSON: ${result.stdout.slice(0, 200)}`,
-      });
-      continue;
-    }
-    if (!parsed) continue;
-    out.push({
-      evaluator,
-      verdict: parsed.verdict,
-      blocking: parsed.blocking,
-      notes: parsed.notes,
-    });
-  }
-
-  return out;
+  const results = await Promise.all(evaluatorPromises);
+  return results;
 }
 
 // ─── L6 stub: apply the decision tree ─────────────────────────────────
