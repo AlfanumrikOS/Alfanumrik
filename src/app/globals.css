@@ -1271,6 +1271,7 @@ body:has(.foxy-shell) {
 .app-shell-v2.foxy-shell > .app-shell-content {
   min-height: 0;
   height: 100%;
+  padding-bottom: var(--safe-bottom) !important;
 }
 
 .app-shell-v2.foxy-shell > .app-shell-header {
@@ -1392,6 +1393,7 @@ body:has(.foxy-shell) {
     max-width: var(--layout-max-content);
     margin-inline: auto;
     width: 100%;
+    padding-bottom: calc(var(--space-fluid-6) + var(--safe-bottom));
   }
   /* Hide the bottom-nav slot at the same breakpoint that hides
      .bottom-nav-mobile (globals.css line 687). Otherwise the wrapper
