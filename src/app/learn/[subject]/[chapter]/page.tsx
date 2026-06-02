@@ -1058,11 +1058,12 @@ export default function ChapterConceptPage() {
         variant="mobile"
         nav={<BottomNav />}
         header={learnHeaderContent}
+        bleed={true}
       >
       {/* `h-full` lets `mt-auto` on the next-concept CTA pin it to the
           bottom of AppShell's content row — preserving the pre-shell
           "primary action stays in thumb reach" behavior. */}
-      <main className="h-full app-container py-4 max-w-5xl mx-auto w-full flex flex-col md:flex-row gap-6">
+      <main className="h-full app-container py-4 w-full flex flex-col md:flex-row gap-6">
         
         {/* Sidebar Index (hidden on mobile, permanent on desktop md:flex) */}
         {phase === 'explaining' && (
