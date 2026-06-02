@@ -107,6 +107,12 @@ export default function ChapterConceptPage() {
   const [showCompletion, setShowCompletion] = useState(false);
   const [revealedCorePoints, setRevealedCorePoints] = useState<Record<number, number>>({});
   const [showAllCore, setShowAllCore] = useState<Record<number, boolean>>({});
+  const [phase, setPhase] = useState<'explaining' | 'quiz' | 'report'>('explaining');
+  const [completedTopics, setCompletedTopics] = useState<Set<string>>(new Set());
+  const [quizCurrentIdx, setQuizCurrentIdx] = useState(0);
+  const [quizAnswers, setQuizAnswers] = useState<Record<string, { selectedOption: number; isCorrect: boolean }>>({});
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [quizSelectedOption, setQuizSelectedOption] = useState<number | null>(null);
 
   // ── Phase 2-B: Read mode (gated by ff_learn_read_mode_v1) ──
   // The flag controls visibility of the Practice/Read toggle. When the page
@@ -282,6 +288,10 @@ export default function ChapterConceptPage() {
     setQuestions(questionsData as Question[]);
     setDiagrams(diagramsData as Diagram[]);
     setV2SourceUsed(curatedConcepts.length > 0 ? 'curated' : 'rag_fallback');
+    setPhase('explaining');
+    setCompletedTopics(new Set());
+    setQuizCurrentIdx(0);
+    setQuizAnswers({});
     setLoading(false);
   }, [student, subject, chapterNum, chapterReaderV2FlagOn]);
 
@@ -504,6 +514,43 @@ export default function ChapterConceptPage() {
     }
   };
 
+  const handleMarkUnderstood = () => {
+    const topic = topics[currentIdx];
+    if (!topic) return;
+
+    const nextCompleted = new Set(completedTopics);
+    nextCompleted.add(topic.id);
+    setCompletedTopics(nextCompleted);
+
+    // Track concept advanced
+    track('learn_concept_advanced', {
+      ...telemetryBase,
+      concept_idx: currentIdx,
+      direction: 'next',
+    });
+
+    // Check if there is an uncompleted topic in the list
+    let nextUncompletedIdx = -1;
+    for (let i = 0; i < topics.length; i++) {
+      const idx = (currentIdx + i + 1) % topics.length;
+      if (!nextCompleted.has(topics[idx].id)) {
+        nextUncompletedIdx = idx;
+        break;
+      }
+    }
+
+    if (nextCompleted.size >= topics.length || nextUncompletedIdx === -1) {
+      // Transition to Quiz Phase!
+      setPhase('quiz');
+      setQuizCurrentIdx(0);
+      setQuizAnswers({});
+    } else {
+      // Navigate to next uncompleted topic
+      setCurrentIdx(nextUncompletedIdx);
+      setActiveTab('core');
+    }
+  };
+
   const goPrev = () => {
     if (currentIdx > 0) {
       const prevIdx = currentIdx - 1;
@@ -539,6 +586,47 @@ export default function ChapterConceptPage() {
   const switchToPracticeMode = () => {
     setMode('practice');
   };
+
+  const getTopicIdForQuestion = useCallback((q: Question) => {
+    if (!q) return null;
+    const cleanQText = q.question_text.toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (const t of topics) {
+      const cleanTitle = t.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (cleanQText.includes(cleanTitle) || cleanTitle.includes(cleanQText)) {
+        return t.id;
+      }
+    }
+    if (q.explanation) {
+      const cleanExplanation = q.explanation.toLowerCase().replace(/[^a-z0-9]/g, '');
+      for (const t of topics) {
+        const cleanTitle = t.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanExplanation.includes(cleanTitle)) {
+          return t.id;
+        }
+      }
+    }
+    return topics[0]?.id || null;
+  }, [topics]);
+
+  const handleFinishQuiz = useCallback(() => {
+    setPhase('report');
+    if (student) {
+      updateChapterProgress(subject, student.grade, chapterNum).catch((err: unknown) => {
+        console.warn('[chapter-progress] update failed:', err instanceof Error ? err.message : String(err));
+      });
+    }
+    const totalQ = questions.length;
+    const correctQ = Object.values(quizAnswers).filter(a => a.isCorrect).length;
+    const pct = totalQ > 0 ? Math.round((correctQ / totalQ) * 100) : 0;
+    
+    track('learn_chapter_completed', {
+      ...telemetryBase,
+      score_pct: pct,
+      total_answered: totalQ,
+      correct_count: correctQ,
+      passed_threshold: pct >= 60,
+    });
+  }, [student, subject, chapterNum, questions, quizAnswers, telemetryBase]);
 
   if (isLoading || loading) return <LoadingFoxy />;
 
@@ -870,6 +958,16 @@ export default function ChapterConceptPage() {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          {phase === 'explaining' && (
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(true)}
+              className="md:hidden text-[10px] font-bold px-2.5 py-1 rounded-full transition-all active:scale-95 flex items-center gap-1"
+              style={{ background: 'rgba(232,88,28,0.10)', color: 'var(--orange)', border: '1px solid rgba(232,88,28,0.2)' }}
+            >
+              📋 {isHi ? 'सूची' : 'Index'}
+            </button>
+          )}
           {readModeFlagOn && (
             <button
               type="button"
@@ -882,9 +980,11 @@ export default function ChapterConceptPage() {
               📖 {isHi ? 'पढ़ें' : 'Read'}
             </button>
           )}
-          <span className="text-xs font-medium text-[var(--text-3)]">
-            {currentIdx + 1}/{topics.length}
-          </span>
+          {phase === 'explaining' && (
+            <span className="text-xs font-medium text-[var(--text-3)]">
+              {currentIdx + 1}/{topics.length}
+            </span>
+          )}
         </div>
       </div>
       <ProgressBar value={progressPct} color={subMeta?.color} height={5} />
@@ -901,696 +1001,1041 @@ export default function ChapterConceptPage() {
       {/* `h-full` lets `mt-auto` on the next-concept CTA pin it to the
           bottom of AppShell's content row — preserving the pre-shell
           "primary action stays in thumb reach" behavior. */}
-      <main className="h-full app-container py-4 max-w-2xl mx-auto w-full flex flex-col gap-4">
+      <main className="h-full app-container py-4 max-w-5xl mx-auto w-full flex flex-col md:flex-row gap-6">
+        
+        {/* Sidebar Index (hidden on mobile, permanent on desktop md:flex) */}
+        {phase === 'explaining' && (
+          <aside className="hidden md:flex flex-col w-64 shrink-0 bg-white/70 backdrop-blur-md border border-gray-100 rounded-2xl p-4 self-start sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-3" style={{ fontFamily: 'var(--font-display)' }}>
+              {isHi ? 'अध्याय की अवधारणाएँ' : 'Chapter Concepts'}
+            </h3>
+            <div className="space-y-1.5">
+              {topics.map((t, idx) => {
+                const isSelected = idx === currentIdx;
+                const isCompleted = completedTopics.has(t.id);
+                
+                let statusIcon = '○';
+                let statusText = isHi ? 'अपठित' : 'Not started';
+                let statusBg = 'bg-gray-100 text-gray-600';
+                
+                if (isCompleted) {
+                  statusIcon = '✓';
+                  statusText = isHi ? 'पूर्ण' : 'Understood';
+                  statusBg = 'bg-green-50 text-green-700 border border-green-200/50';
+                } else if (isSelected) {
+                  statusIcon = '📖';
+                  statusText = isHi ? 'पढ़ रहे हैं' : 'Reading';
+                  statusBg = 'bg-orange-50 text-orange-700 border border-orange-200/50';
+                }
 
-        {/* ── Exam-Ready 360° Phase 2: per-chapter readiness card ──
-            Suppressed on the very first concept of the chapter when the
-            student hasn't attempted anything yet. Otherwise the card's
-            "Review Weak Concepts" CTA competes for attention with the
-            actual lesson below — students would land here, see a red
-            "Not Yet Ready / 23/100" banner, and not know whether to
-            click Review or start the concept. Once they've attempted
-            at least one concept (or moved past the first), the readiness
-            summary becomes useful context and is allowed to render. */}
-        {(currentIdx > 0 || Object.values(conceptStates).some(s => s.submitted)) && (
-          <ChapterReadinessCard
-            subjectCode={subject}
-            chapterNumber={chapterNum}
-            subjectColor={subMeta?.color}
-          />
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      setCurrentIdx(idx);
+                      setActiveTab('core');
+                    }}
+                    className={`w-full text-left p-2.5 rounded-xl transition-all flex flex-col gap-1 text-xs border ${
+                      isSelected 
+                        ? 'bg-white border-orange-200 shadow-sm font-semibold' 
+                        : 'border-transparent hover:bg-white/50 text-gray-700'
+                    }`}
+                  >
+                    <span className="leading-snug truncate">
+                      {idx + 1}. {isHi && t.title_hi ? t.title_hi : t.title}
+                    </span>
+                    <span className={`self-start text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide flex items-center gap-0.5 ${statusBg}`}>
+                      <span>{statusIcon}</span>
+                      <span>{statusText}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
         )}
 
-        {/* Concept label */}
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-bold text-[var(--text-3)] uppercase tracking-wider">
-            {isHi ? `अवधारणा ${currentIdx + 1}/${topics.length}` : `Concept ${currentIdx + 1} of ${topics.length}`}
-          </span>
-          <span
-            className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-            style={{ background: `${bloomCfg.color}18`, color: bloomCfg.color }}
-          >
-            {bloomCfg.icon} {isHi ? bloomCfg.labelHi : bloomCfg.label}
-          </span>
-        </div>
-
-        {/* ── Progress bar + estimated time ── */}
-        <div className="space-y-1">
-          <div className="w-full bg-gray-200 rounded-full h-1.5">
-            <div
-              className="bg-orange-500 h-1.5 rounded-full transition-all duration-500"
-              style={{ width: `${((currentIdx + 1) / topics.length) * 100}%` }}
+        {/* Slide-out Mobile Drawer */}
+        {phase === 'explaining' && isSidebarOpen && (
+          <div className="fixed inset-0 z-50 flex md:hidden animate-fadeIn">
+            {/* Backdrop */}
+            <div 
+              className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+              onClick={() => setIsSidebarOpen(false)}
             />
-          </div>
-          {(() => {
-            const remaining = topics.length - currentIdx - 1;
-            const remainingMin = remaining * 3;
-            return remaining > 0 ? (
-              <p className="text-[10px] text-gray-400 text-right">
-                {isHi ? `~${remainingMin} मिनट शेष` : `~${remainingMin} min remaining`}
-              </p>
-            ) : null;
-          })()}
-        </div>
-
-        {/* Concept card with tabbed layout */}
-        <Card className="!p-5 flex flex-col gap-4">
-          {/* Title — always visible so the student knows what they're attempting */}
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-bold leading-tight mb-1" style={{ fontFamily: 'var(--font-display)' }}>
-                {isHi && (topic as { title_hi?: string | null }).title_hi
-                  ? (topic as { title_hi?: string | null }).title_hi
-                  : topic.title}
-              </h2>
-              {topic.ncert_page_range && (
-                <p className="text-xs text-gray-500 font-medium flex items-center gap-1">
-                  📖 {isHi ? `एनसीईआरटी पृष्ठ ${topic.ncert_page_range}` : `NCERT Page ${topic.ncert_page_range}`}
-                </p>
-              )}
-            </div>
-            {(topic as any).key_formula && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 uppercase whitespace-nowrap">
-                {isHi ? '📐 सूत्र शामिल' : '📐 Formula Included'}
-              </span>
-            )}
-          </div>
-
-          {/* Premium editorial-style tabs navigation */}
-          <div className="flex border-b border-gray-100 pb-px gap-4">
-            <button
-              onClick={() => setActiveTab('core')}
-              className={`pb-2 text-xs font-semibold tracking-wider uppercase border-b-2 transition-all ${
-                activeTab === 'core'
-                  ? 'border-[var(--accent)] text-[var(--accent)]'
-                  : 'border-transparent text-[var(--text-3)] hover:text-[var(--text-2)]'
-              }`}
-            >
-              📖 {isHi ? 'मुख्य पाठ' : 'Learning Core'}
-            </button>
-            <button
-              onClick={() => setActiveTab('example')}
-              className={`pb-2 text-xs font-semibold tracking-wider uppercase border-b-2 transition-all ${
-                activeTab === 'example'
-                  ? 'border-[var(--accent)] text-[var(--accent)]'
-                  : 'border-transparent text-[var(--text-3)] hover:text-[var(--text-2)]'
-              }`}
-            >
-              📝 {isHi ? 'हल किया हुआ उदाहरण' : 'Solved Example'}
-            </button>
-            <button
-              onClick={() => setActiveTab('cheat')}
-              className={`pb-2 text-xs font-semibold tracking-wider uppercase border-b-2 transition-all ${
-                activeTab === 'cheat'
-                  ? 'border-[var(--accent)] text-[var(--accent)]'
-                  : 'border-transparent text-[var(--text-3)] hover:text-[var(--text-2)]'
-              }`}
-            >
-              🦊 {isHi ? 'चीट शीट' : "Foxy's Notes"}
-            </button>
-          </div>
-
-          {/* Tab contents */}
-          <div className="mt-2">
-            {activeTab === 'core' && (
-              <div className="space-y-4">
-                {/* Productive-failure banner: shown when flag is on and the Quick Check
-                    has not yet been attempted. Tutorial content (description, diagram,
-                    learning objectives) is hidden until attempt — Manu Kapur's productive
-                    failure: struggle first, then teach. Auto-clears after submit. */}
-                {productiveFailureActive && question && !isAnswered && (
-                  <div
-                    className="rounded-xl p-3 mb-3"
-                    style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)' }}
-                    data-testid="productive-failure-banner"
-                  >
-                    <p className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: '#F97316' }}>
-                      {isHi ? 'पहले इसे आज़माओ' : 'Try this first'}
-                    </p>
-                    <p className="text-xs text-[var(--text-2)] leading-snug">
-                      {isHi
-                        ? 'पाठ देखने से पहले नीचे का सवाल हल करो — सीखने का यह सबसे असरदार तरीका है।'
-                        : 'Attempt the Quick Check below before reading the explanation — research shows this is the most effective way to learn.'}
-                    </p>
-                  </div>
-                )}
-
-                {/* Diagram — hidden until attempt when productive-failure is active */}
-                {(!productiveFailureActive || isAnswered) && diagram && diagram.image_url && (
-                  <div className="rounded-xl overflow-hidden mb-3" style={{ border: '1px solid var(--border)' }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={diagram.image_url}
-                      alt={diagram.alt_text || topic.title}
-                      className="w-full object-contain max-h-52"
-                      style={{ background: 'var(--surface-2)' }}
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                    />
-                    {(diagram.caption || diagram.caption_hi) && (
-                      <p className="text-[11px] text-[var(--text-3)] px-3 py-2 text-center">
-                        {isHi && diagram.caption_hi ? diagram.caption_hi : diagram.caption}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Stepped reveal content progress header */}
-                {(() => {
-                  const coreText = isHi && (topic as any).explanation_hi
-                    ? (topic as any).explanation_hi
-                    : (topic as any).explanation
-                    ? (topic as any).explanation
-                    : topic.description || '';
-
-                  const coreBlocks = parseLearningCoreText(coreText);
-                  const totalBlocks = coreBlocks.length;
-                  const currentRevealedCount = revealedCorePoints[currentIdx] || 1;
-                  const showAll = showAllCore[currentIdx] || false;
-
-                  if (totalBlocks <= 0) return null;
-
-                  const visibleBlocks = showAll ? coreBlocks : coreBlocks.slice(0, currentRevealedCount);
-
-                  return (
-                    <>
-                      {(!productiveFailureActive || isAnswered) && totalBlocks > 1 && (
-                        <div className="flex items-center justify-between mb-2 text-[10px] text-gray-400 font-bold uppercase tracking-wider bg-gray-50/50 p-2 rounded-lg border border-gray-100">
-                          <div className="flex items-center gap-1.5">
-                            <span>{isHi ? 'प्रगति' : 'Progress'}:</span>
-                            <div className="flex gap-1">
-                              {coreBlocks.map((_, bIdx) => (
-                                <span
-                                  key={bIdx}
-                                  className="w-1.5 h-1.5 rounded-full transition-all duration-300"
-                                  style={{
-                                    backgroundColor: showAll || bIdx < currentRevealedCount
-                                      ? (subMeta?.color || 'var(--orange)')
-                                      : 'var(--border)'
-                                  }}
-                                />
-                              ))}
-                            </div>
-                            <span className="ml-1 text-gray-500">
-                              {showAll ? totalBlocks : currentRevealedCount}/{totalBlocks}
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setShowAllCore(prev => ({ ...prev, [currentIdx]: !showAll }))}
-                            className="transition-all flex items-center gap-1 uppercase tracking-wider font-bold"
-                            style={{ color: subMeta?.color || 'var(--orange)' }}
-                          >
-                            {showAll 
-                              ? (isHi ? '⚡ चरणबद्ध पढ़ें' : '⚡ Read Stepwise') 
-                              : (isHi ? '📖 सब दिखाएं' : '📖 Show All')}
-                          </button>
-                        </div>
-                      )}
-
-                      {(!productiveFailureActive || isAnswered) && (
-                        <div className="space-y-4 animate-fadeIn">
-                          {visibleBlocks.map((block, bIdx) => {
-                            if (block.type === 'heading') {
-                              return (
-                                <h3
-                                  key={bIdx}
-                                  className="text-sm font-bold text-[var(--text-1)] border-l-2 pl-2 transition-all duration-300 animate-fadeIn"
-                                  style={{ borderColor: subMeta?.color || 'var(--orange)' }}
-                                >
-                                  {block.text}
-                                </h3>
-                              );
-                            }
-
-                            if (block.type === 'highlight') {
-                              return (
-                                <div
-                                  key={bIdx}
-                                  className="p-3.5 rounded-xl border transition-all duration-300 animate-fadeIn"
-                                  style={{
-                                    background: 'rgba(232, 88, 28, 0.04)',
-                                    borderColor: 'rgba(232, 88, 28, 0.18)',
-                                    borderLeftWidth: '4px',
-                                    borderLeftColor: subMeta?.color || '#E8581C'
-                                  }}
-                                >
-                                  <div className="flex items-start gap-2">
-                                    <span className="text-sm">💡</span>
-                                    <p className="text-xs leading-relaxed text-gray-700 font-medium whitespace-pre-wrap">
-                                      {block.text}
-                                    </p>
-                                  </div>
-                                </div>
-                              );
-                            }
-
-                            if (block.type === 'list' && block.items) {
-                              return (
-                                <div
-                                  key={bIdx}
-                                  className="p-3.5 rounded-xl border border-gray-100 bg-gray-50/50 transition-all duration-300 animate-fadeIn"
-                                >
-                                  <ul className="space-y-2">
-                                    {block.items.map((item, iIdx) => (
-                                      <li key={iIdx} className="flex items-start gap-2.5 text-xs text-[var(--text-2)] leading-relaxed">
-                                        <span 
-                                          className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[9px] font-bold text-white mt-0.5"
-                                          style={{ backgroundColor: subMeta?.color || 'var(--orange)' }}
-                                        >
-                                          ✓
-                                        </span>
-                                        <span className="flex-1">{item}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              );
-                            }
-
-                            return (
-                              <p
-                                key={bIdx}
-                                className="text-sm leading-relaxed text-[var(--text-2)] transition-all duration-300 animate-fadeIn"
-                                style={{ whiteSpace: 'pre-wrap' }}
-                              >
-                                {block.text}
-                              </p>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {/* Reveal Next Point button */}
-                      {!showAll && currentRevealedCount < totalBlocks && (!productiveFailureActive || isAnswered) && (
-                        <Button
-                          fullWidth
-                          variant="soft"
-                          color={subMeta?.color}
-                          onClick={() => setRevealedCorePoints(prev => ({ ...prev, [currentIdx]: currentRevealedCount + 1 }))}
-                          className="mt-3 text-xs font-bold py-2.5 rounded-xl transition-all active:scale-[0.97]"
-                        >
-                          👇 {isHi ? 'अगला बिंदु समझें' : 'Next Concept Point'} ({currentRevealedCount}/{totalBlocks})
-                        </Button>
-                      )}
-
-                      {/* Completion badge for core points reveal */}
-                      {(!showAll && currentRevealedCount === totalBlocks && totalBlocks > 1 && (!productiveFailureActive || isAnswered)) && (
-                        <div
-                          className="rounded-xl p-3 mt-3 flex items-center gap-2 border animate-fadeIn"
-                          style={{
-                            background: 'rgba(22, 163, 74, 0.04)',
-                            borderColor: 'rgba(22, 163, 74, 0.15)',
-                          }}
-                        >
-                          <span className="text-base">🚀</span>
-                          <span className="text-xs font-bold text-green-700">
-                            {isHi 
-                              ? 'सभी मुख्य बिंदु पढ़ लिए! नीचे के प्रश्न का उत्तर दें।' 
-                              : 'All points read! Ready to check your understanding below.'}
-                          </span>
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-
-                {/* Learning Objectives — hidden until attempt when productive-failure is active */}
-                {(!productiveFailureActive || isAnswered) && topic.learning_objectives && topic.learning_objectives.length > 0 && (
-                  <div className="rounded-xl p-3" style={{ background: `${subMeta?.color || 'var(--orange)'}08`, border: `1px solid ${subMeta?.color || 'var(--orange)'}20` }}>
-                    <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: subMeta?.color }}>
-                      {isHi ? 'इस अवधारणा में सीखोगे' : 'You will learn'}
-                    </p>
-                    <ul className="space-y-1">
-                      {topic.learning_objectives.slice(0, 4).map((obj, i) => (
-                        <li key={i} className="flex items-start gap-2 text-xs text-[var(--text-2)]">
-                          <span className="mt-0.5 flex-shrink-0" style={{ color: subMeta?.color }}>•</span>
-                          {obj}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+            {/* Drawer Content */}
+            <div className="absolute right-0 top-0 bottom-0 w-72 bg-white p-4 shadow-2xl flex flex-col gap-4 overflow-y-auto">
+              <div className="flex items-center justify-between border-b pb-2">
+                <h3 className="text-sm font-bold text-gray-800" style={{ fontFamily: 'var(--font-display)' }}>
+                  {isHi ? 'अध्याय की अवधारणाएँ' : 'Chapter Concepts'}
+                </h3>
+                <button onClick={() => setIsSidebarOpen(false)} className="text-gray-400 font-bold text-lg">&times;</button>
               </div>
-            )}
-
-            {activeTab === 'example' && (() => {
-              // Parse Worked Solved Example
-              const exampleRaw = isHi && (topic as any).example_content_hi
-                ? (topic as any).example_content_hi
-                : (topic as any).example_content
-                ? (topic as any).example_content
-                : isHi
-                ? `प्रश्न: ${topic.title} को समझाइए और एक उदाहरण दीजिए।\n\n[चरण 1: परिभाषा]\nसबसे पहले, ${topic.title} की मुख्य अवधारणा को समझें। यह एक महत्वपूर्ण CBSE अवधारणा है।\n\n[चरण 2: व्याख्या]\nइस नियम के अनुसार, हम चरणों में काम करते हैं।\n\n[चरण 3: बोर्ड परीक्षा टिप]\nपरीक्षा में अच्छे अंक प्राप्त करने के लिए हमेशा साफ-सुथरा आरेख बनाएं और महत्वपूर्ण शब्दों को रेखांकित करें।`
-                : `Question: Explain the core concepts of ${topic.title} and give a step-by-step solved problem.\n\n[Step 1: Definition & Formula]\nLet's state the fundamental principle of ${topic.title}. Understand the main variables and relations.\n\n[Step 2: Mathematical Derivation / Application]\nApply the formula step-by-step to compute the result. Ensure units are correct.\n\n[Step 3: Board Exam Tip]\nAlways write down the given values, state the formula used, and draw a neat diagram to score full marks in your CBSE board exams.`;
-
-              const steps = exampleRaw.split(/(?=\[Step|\[चरण|Step|चरण)/i).map((s: string) => s.trim()).filter(Boolean);
-              const maxSteps = steps.length;
-              const revealedCount = visibleSteps[currentIdx] || 1;
-
-              return (
-                <div className="space-y-4">
-                  <div className="space-y-3">
-                    {steps.slice(0, revealedCount).map((stepText: string, sIdx: number) => {
-                      return (
-                        <div
-                          key={sIdx}
-                          className={`p-3 rounded-xl transition-all duration-300 animate-fadeIn ${
-                            sIdx === 0
-                              ? 'bg-cream border border-orange-100'
-                              : 'bg-gray-50 border border-gray-100'
-                          }`}
-                        >
-                          <p className="text-sm text-[var(--text-2)] whitespace-pre-wrap leading-relaxed">
-                            {stepText}
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {revealedCount < maxSteps && (
-                    <Button
-                      fullWidth
-                      variant="soft"
-                      color={subMeta?.color}
-                      onClick={() => setVisibleSteps(prev => ({ ...prev, [currentIdx]: revealedCount + 1 }))}
-                      className="mt-2 text-xs font-bold py-2 rounded-xl transition-all active:scale-[0.97]"
-                    >
-                      👇 {isHi ? 'अगला चरण देखें' : 'Reveal Next Step'} ({revealedCount}/{maxSteps})
-                    </Button>
-                  )}
-                </div>
-              );
-            })()}
-
-            {activeTab === 'cheat' && (
-              <div className="space-y-3">
-                {/* Formulas & Definitions */}
-                {((topic as any).key_formula || isHi) && (
-                  <div className="p-3.5 rounded-xl bg-orange-50/40 border border-orange-100/60">
-                    <p className="text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-1.5">
-                      📐 {isHi ? 'महत्वपूर्ण सूत्र / दृष्टिकोण' : 'Key Formula / Mnemonic'}
-                    </p>
-                    <p className="text-sm font-semibold text-gray-800 font-mono">
-                      {(topic as any).key_formula || (isHi ? 'मुख्य अवधारणाओं को याद रखें।' : 'Understand the relations and apply rules step by step.')}
-                    </p>
-                  </div>
-                )}
-
-                {/* Common Board Mistakes */}
-                <div className="p-3.5 rounded-xl bg-red-50/30 border border-red-100/50">
-                  <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-1.5">
-                    ⚠️ {isHi ? 'सीबीएसई बोर्ड परीक्षा की सामान्य गलतियाँ' : 'Common Board Exam Mistakes to Avoid'}
-                  </p>
-                  <ul className="space-y-1.5 text-xs text-red-800/80 leading-relaxed list-disc pl-4">
-                    <li>
-                      {isHi
-                        ? 'जल्दबाजी में संकेतों (+/-) की गलती न करें।'
-                        : 'Do not hurry through calculations; check the signs (+/-) at each step.'}
-                    </li>
-                    <li>
-                      {isHi
-                        ? 'हमेशा अपने उत्तर के साथ सही इकाई (SI units) लिखें।'
-                        : 'Always specify the final units in the answer; CBSE deducts marks for missing units.'}
-                    </li>
-                    <li>
-                      {isHi
-                        ? 'उत्तर लिखने से पहले दिया गया डेटा (Given data) जरूर लिखें।'
-                        : 'For maximum marks, write down the "Given parameters" before starting the calculation.'}
-                    </li>
-                  </ul>
-                </div>
-
-                {/* Foxy's Tip */}
-                <div className="p-3.5 rounded-xl bg-teal-50/30 border border-teal-100/50">
-                  <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wider mb-1">
-                    🦊 {isHi ? 'Foxy की सलाह' : "Foxy's Quick Revision Tip"}
-                  </p>
-                  <p className="text-xs text-teal-900/80 leading-relaxed">
-                    {isHi
-                      ? 'इस अवधारणा से सीधे सवाल पूछे जाते हैं। परिभाषा के साथ एक उदाहरण याद रखें!'
-                      : 'CBSE frequently asks direct theoretical or derivation questions on this concept. Memorize the basic statement along with one solved board example!'}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        </Card>
-
-        {/* Quick Check */}
-        {question && (() => {
-          const getQuestionParameter = (q: any) => {
-            const level = q?.bloom_level?.toLowerCase() || 'remember';
-            if (level === 'remember') return { label: isHi ? '🧠 स्मरण और याद' : '🧠 Remember & Recall', color: '#6B7280', bg: 'rgba(107, 114, 128, 0.08)' };
-            if (level === 'understand') return { label: isHi ? '💡 समझें और समझाएं' : '💡 Understand & Explain', color: '#2563EB', bg: 'rgba(37, 99, 235, 0.08)' };
-            if (level === 'apply') return { label: isHi ? '🛠️ लागू करें और हल करें' : '🛠️ Apply & Solve', color: '#059669', bg: 'rgba(5, 150, 105, 0.08)' };
-            return { label: isHi ? '🔥 उच्च स्तरीय सोच (HOTS)' : '🔥 Higher Order Thinking (HOTS)', color: '#7C3AED', bg: 'rgba(124, 58, 237, 0.08)' };
-          };
-          const param = getQuestionParameter(question);
-
-          return (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[11px] font-bold text-[var(--text-3)] uppercase tracking-wider">
-                  {isHi ? '⚡ त्वरित जाँच' : '⚡ Quick Check'}
-                </p>
-                <span
-                  className="text-[10px] font-bold px-2.5 py-0.5 rounded-full"
-                  style={{ color: param.color, background: param.bg }}
-                >
-                  {param.label}
-                </span>
-              </div>
-              <Card className="!p-4">
-              <p className="text-sm font-semibold leading-relaxed mb-4" style={{ whiteSpace: 'pre-wrap' }}>
-                {isHi && question.question_hi ? question.question_hi : question.question_text}
-              </p>
-
-              {/* Empty-state fallback for questions that lack MCQ options
-                  (free-response prompts authored without a/b/c/d, or
-                  malformed `options` JSON). Without this, the box rendered
-                  a question + a disabled "Check Answer" button with no way
-                  to answer — read as broken UX. We now route the student
-                  to Foxy explicitly so they can still engage with the
-                  concept. See screenshot from 2026-05-11 (Mathematics ·
-                  Chapter 1, "Round 7,348,926 to the nearest lakh"). */}
-              {opts.length === 0 && !isAnswered && (
-                <div
-                  className="rounded-xl p-4 flex items-start gap-3"
-                  style={{
-                    background: 'rgba(232, 88, 28, 0.06)',
-                    border: '1px solid rgba(232, 88, 28, 0.18)',
-                  }}
-                >
-                  <span className="text-xl shrink-0" aria-hidden="true">🦊</span>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-1)' }}>
-                      {isHi
-                        ? 'यह प्रश्न खुले उत्तर का है — Foxy के साथ हल करो।'
-                        : 'This one needs working out — solve it with Foxy.'}
-                    </p>
-                    <p className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>
-                      {isHi
-                        ? 'Foxy तुम्हें step-by-step ले जाएगा। फिर अगली अवधारणा पर बढ़ो।'
-                        : 'Foxy will walk you through it step by step, then you can move to the next concept.'}
-                    </p>
-                    <Button
-                      color="#E8581C"
-                      className="mt-3"
-                      onClick={askFoxy}
-                    >
-                      🦊 {isHi ? 'Foxy से हल कराओ' : 'Solve with Foxy'}
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                {opts.map((opt, idx) => {
-                  const letter = OPTION_LETTERS[idx] || String(idx + 1);
-                  const optText = opt.replace(/^[A-D][\.\)]\s*/, '');
-                  const isSelected = conceptState?.selectedOption === idx;
-                  const isCorrectOpt = idx === question.correct_answer_index;
-
-                  let bg = 'var(--surface-2)';
-                  let border = 'transparent';
-                  let textColor = 'var(--text-2)';
-                  let letterBg = 'var(--surface-1)';
-                  let letterColor = 'var(--text-3)';
-
-                  if (isAnswered) {
-                    if (isCorrectOpt) {
-                      bg = 'rgba(22,163,74,0.08)'; border = 'rgba(22,163,74,0.4)';
-                      textColor = '#16A34A'; letterBg = '#16A34A'; letterColor = '#fff';
-                    } else if (isSelected) {
-                      bg = 'rgba(220,38,38,0.06)'; border = 'rgba(220,38,38,0.3)';
-                      textColor = '#DC2626'; letterBg = '#DC2626'; letterColor = '#fff';
-                    }
+              <div className="space-y-1.5 flex-1">
+                {topics.map((t, idx) => {
+                  const isSelected = idx === currentIdx;
+                  const isCompleted = completedTopics.has(t.id);
+                  
+                  let statusIcon = '○';
+                  let statusText = isHi ? 'अपठित' : 'Not started';
+                  let statusBg = 'bg-gray-100 text-gray-600';
+                  
+                  if (isCompleted) {
+                    statusIcon = '✓';
+                    statusText = isHi ? 'पूर्ण' : 'Understood';
+                    statusBg = 'bg-green-50 text-green-700 border border-green-200/50';
                   } else if (isSelected) {
-                    bg = `${subMeta?.color || 'var(--orange)'}08`;
-                    border = subMeta?.color || 'var(--orange)';
-                    letterBg = subMeta?.color || 'var(--orange)';
-                    letterColor = '#fff';
+                    statusIcon = '📖';
+                    statusText = isHi ? 'पढ़ रहे हैं' : 'Reading';
+                    statusBg = 'bg-orange-50 text-orange-700 border border-orange-200/50';
                   }
 
                   return (
                     <button
-                      key={idx}
-                      onClick={() => selectOption(idx)}
-                      disabled={isAnswered}
-                      className="w-full rounded-xl py-3 px-3 flex items-center gap-3 transition-all active:scale-[0.98] text-left"
-                      style={{ background: bg, border: `1.5px solid ${border}`, minHeight: 48 }}
+                      key={t.id}
+                      onClick={() => {
+                        setCurrentIdx(idx);
+                        setActiveTab('core');
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`w-full text-left p-2.5 rounded-xl transition-all flex flex-col gap-1 text-xs border ${
+                        isSelected 
+                          ? 'bg-white border-orange-200 shadow-sm font-semibold' 
+                          : 'border-transparent hover:bg-white/50 text-gray-700'
+                      }`}
                     >
-                      <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all" style={{ background: letterBg, color: letterColor }}>
-                        {letter}
+                      <span className="leading-snug truncate">
+                        {idx + 1}. {isHi && t.title_hi ? t.title_hi : t.title}
                       </span>
-                      <span className="text-sm font-medium leading-snug flex-1" style={{ color: textColor }}>
-                        {optText}
+                      <span className={`self-start text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide flex items-center gap-0.5 ${statusBg}`}>
+                        <span>{statusIcon}</span>
+                        <span>{statusText}</span>
                       </span>
-                      {isAnswered && isCorrectOpt && <span className="ml-auto text-base flex-shrink-0">✓</span>}
-                      {isAnswered && isSelected && !isCorrectOpt && <span className="ml-auto text-base flex-shrink-0">✗</span>}
                     </button>
                   );
                 })}
               </div>
+            </div>
+          </div>
+        )}
 
-              {/* Check Answer button — only when MCQ options exist. For
-                  the no-options fallback above, the Foxy CTA replaces it
-                  so we don't render a permanently-disabled button. */}
-              {!isAnswered && opts.length > 0 && (
+        {/* Main Card Panel Column */}
+        <div className="flex-1 max-w-2xl w-full flex flex-col gap-4">
+
+          {phase === 'explaining' && (
+            <>
+              {/* ── Exam-Ready 360° Phase 2: per-chapter readiness card ── */}
+              {(currentIdx > 0 || Object.values(conceptStates).some(s => s.submitted)) && (
+                <ChapterReadinessCard
+                  subjectCode={subject}
+                  chapterNumber={chapterNum}
+                  subjectColor={subMeta?.color}
+                />
+              )}
+
+              {/* Concept label */}
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-[var(--text-3)] uppercase tracking-wider">
+                  {isHi ? `अवधारणा ${currentIdx + 1}/${topics.length}` : `Concept ${currentIdx + 1} of ${topics.length}`}
+                </span>
+                <span
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                  style={{ background: `${bloomCfg.color}18`, color: bloomCfg.color }}
+                >
+                  {bloomCfg.icon} {isHi ? bloomCfg.labelHi : bloomCfg.label}
+                </span>
+              </div>
+
+              {/* Progress bar + estimated time */}
+              <div className="space-y-1">
+                <div className="w-full bg-gray-200 rounded-full h-1.5">
+                  <div
+                    className="bg-orange-500 h-1.5 rounded-full transition-all duration-500"
+                    style={{ width: `${((currentIdx + 1) / topics.length) * 100}%` }}
+                  />
+                </div>
+                {(() => {
+                  const remaining = topics.length - currentIdx - 1;
+                  const remainingMin = remaining * 3;
+                  return remaining > 0 ? (
+                    <p className="text-[10px] text-gray-400 text-right">
+                      {isHi ? `~${remainingMin} मिनट शेष` : `~${remainingMin} min remaining`}
+                    </p>
+                  ) : null;
+                })()}
+              </div>
+
+              {/* Concept card with tabbed layout */}
+              <Card className="!p-5 flex flex-col gap-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-bold leading-tight mb-1" style={{ fontFamily: 'var(--font-display)' }}>
+                      {isHi && (topic as { title_hi?: string | null }).title_hi
+                        ? (topic as { title_hi?: string | null }).title_hi
+                        : topic.title}
+                    </h2>
+                    {topic.ncert_page_range && (
+                      <p className="text-xs text-gray-500 font-medium flex items-center gap-1">
+                        📖 {isHi ? `एनसीईआरटी पृष्ठ ${topic.ncert_page_range}` : `NCERT Page ${topic.ncert_page_range}`}
+                      </p>
+                    )}
+                  </div>
+                  {(topic as any).key_formula && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 uppercase whitespace-nowrap">
+                      {isHi ? '📐 सूत्र शामिल' : '📐 Formula Included'}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex border-b border-gray-100 pb-px gap-4">
+                  <button
+                    onClick={() => setActiveTab('core')}
+                    className={`pb-2 text-xs font-semibold tracking-wider uppercase border-b-2 transition-all ${
+                      activeTab === 'core'
+                        ? 'border-[var(--accent)] text-[var(--accent)]'
+                        : 'border-transparent text-[var(--text-3)] hover:text-[var(--text-2)]'
+                    }`}
+                  >
+                    📖 {isHi ? 'मुख्य पाठ' : 'Learning Core'}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('example')}
+                    className={`pb-2 text-xs font-semibold tracking-wider uppercase border-b-2 transition-all ${
+                      activeTab === 'example'
+                        ? 'border-[var(--accent)] text-[var(--accent)]'
+                        : 'border-transparent text-[var(--text-3)] hover:text-[var(--text-2)]'
+                    }`}
+                  >
+                    📝 {isHi ? 'हल किया हुआ उदाहरण' : 'Solved Example'}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('cheat')}
+                    className={`pb-2 text-xs font-semibold tracking-wider uppercase border-b-2 transition-all ${
+                      activeTab === 'cheat'
+                        ? 'border-[var(--accent)] text-[var(--accent)]'
+                        : 'border-transparent text-[var(--text-3)] hover:text-[var(--text-2)]'
+                    }`}
+                  >
+                    🦊 {isHi ? 'चीट शीट' : "Foxy's Notes"}
+                  </button>
+                </div>
+
+                <div className="mt-2">
+                  {activeTab === 'core' && (
+                    <div className="space-y-4">
+                      {productiveFailureActive && question && !isAnswered && (
+                        <div
+                          className="rounded-xl p-3 mb-3"
+                          style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)' }}
+                          data-testid="productive-failure-banner"
+                        >
+                          <p className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: '#F97316' }}>
+                            {isHi ? 'पहले इसे आज़माओ' : 'Try this first'}
+                          </p>
+                          <p className="text-xs text-[var(--text-2)] leading-snug">
+                            {isHi
+                              ? 'पाठ देखने से पहले नीचे का सवाल हल करो — सीखने का यह सबसे असरदार तरीका है।'
+                              : 'Attempt the Quick Check below before reading the explanation — research shows this is the most effective way to learn.'}
+                          </p>
+                        </div>
+                      )}
+
+                      {(!productiveFailureActive || isAnswered) && diagram && diagram.image_url && (
+                        <div className="rounded-xl overflow-hidden mb-3" style={{ border: '1px solid var(--border)' }}>
+                          <img
+                            src={diagram.image_url}
+                            alt={diagram.alt_text || topic.title}
+                            className="w-full object-contain max-h-52"
+                            style={{ background: 'var(--surface-2)' }}
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          />
+                          {(diagram.caption || diagram.caption_hi) && (
+                            <p className="text-[11px] text-[var(--text-3)] px-3 py-2 text-center">
+                              {isHi && diagram.caption_hi ? diagram.caption_hi : diagram.caption}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {(() => {
+                        const coreText = isHi && (topic as any).explanation_hi
+                          ? (topic as any).explanation_hi
+                          : (topic as any).explanation
+                          ? (topic as any).explanation
+                          : topic.description || '';
+
+                        const coreBlocks = parseLearningCoreText(coreText);
+                        const totalBlocks = coreBlocks.length;
+                        const currentRevealedCount = revealedCorePoints[currentIdx] || 1;
+                        const showAll = showAllCore[currentIdx] || false;
+
+                        if (totalBlocks <= 0) return null;
+
+                        const visibleBlocks = showAll ? coreBlocks : coreBlocks.slice(0, currentRevealedCount);
+
+                        return (
+                          <>
+                            {(!productiveFailureActive || isAnswered) && totalBlocks > 1 && (
+                              <div className="flex items-center justify-between mb-2 text-[10px] text-gray-400 font-bold uppercase tracking-wider bg-gray-50/50 p-2 rounded-lg border border-gray-100">
+                                <div className="flex items-center gap-1.5">
+                                  <span>{isHi ? 'प्रगति' : 'Progress'}:</span>
+                                  <div className="flex gap-1">
+                                    {coreBlocks.map((_, bIdx) => (
+                                      <span
+                                        key={bIdx}
+                                        className="w-1.5 h-1.5 rounded-full transition-all duration-300"
+                                        style={{
+                                          backgroundColor: showAll || bIdx < currentRevealedCount
+                                            ? (subMeta?.color || 'var(--orange)')
+                                            : 'var(--border)'
+                                        }}
+                                      />
+                                    ))}
+                                  </div>
+                                  <span className="ml-1 text-gray-500">
+                                    {showAll ? totalBlocks : currentRevealedCount}/{totalBlocks}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAllCore(prev => ({ ...prev, [currentIdx]: !showAll }))}
+                                  className="transition-all flex items-center gap-1 uppercase tracking-wider font-bold"
+                                  style={{ color: subMeta?.color || 'var(--orange)' }}
+                                >
+                                  {showAll 
+                                    ? (isHi ? '⚡ चरणबद्ध पढ़ें' : '⚡ Read Stepwise') 
+                                    : (isHi ? '📖 सब दिखाएं' : '📖 Show All')}
+                                </button>
+                              </div>
+                            )}
+
+                            {(!productiveFailureActive || isAnswered) && (
+                              <div className="space-y-4 animate-fadeIn">
+                                {visibleBlocks.map((block, bIdx) => {
+                                  if (block.type === 'heading') {
+                                    return (
+                                      <h3
+                                        key={bIdx}
+                                        className="text-sm font-bold text-[var(--text-1)] border-l-2 pl-2 transition-all duration-300 animate-fadeIn"
+                                        style={{ borderColor: subMeta?.color || 'var(--orange)' }}
+                                      >
+                                        {block.text}
+                                      </h3>
+                                    );
+                                  }
+
+                                  if (block.type === 'highlight') {
+                                    return (
+                                      <div
+                                        key={bIdx}
+                                        className="p-3.5 rounded-xl border transition-all duration-300 animate-fadeIn"
+                                        style={{
+                                          background: 'rgba(232, 88, 28, 0.04)',
+                                          borderColor: 'rgba(232, 88, 28, 0.18)',
+                                          borderLeftWidth: '4px',
+                                          borderLeftColor: subMeta?.color || '#E8581C'
+                                        }}
+                                      >
+                                        <div className="flex items-start gap-2">
+                                          <span className="text-sm">💡</span>
+                                          <p className="text-xs leading-relaxed text-gray-700 font-medium whitespace-pre-wrap">
+                                            {block.text}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    );
+                                  }
+
+                                  if (block.type === 'list' && block.items) {
+                                    return (
+                                      <div
+                                        key={bIdx}
+                                        className="p-3.5 rounded-xl border border-gray-100 bg-gray-50/50 transition-all duration-300 animate-fadeIn"
+                                      >
+                                        <ul className="space-y-2">
+                                          {block.items.map((item, iIdx) => (
+                                            <li key={iIdx} className="flex items-start gap-2.5 text-xs text-[var(--text-2)] leading-relaxed">
+                                              <span 
+                                                className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[9px] font-bold text-white mt-0.5"
+                                                style={{ backgroundColor: subMeta?.color || 'var(--orange)' }}
+                                              >
+                                                ✓
+                                              </span>
+                                              <span className="flex-1">{item}</span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    );
+                                  }
+
+                                  return (
+                                    <p
+                                      key={bIdx}
+                                      className="text-sm leading-relaxed text-[var(--text-2)] transition-all duration-300 animate-fadeIn"
+                                      style={{ whiteSpace: 'pre-wrap' }}
+                                    >
+                                      {block.text}
+                                    </p>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {!showAll && currentRevealedCount < totalBlocks && (!productiveFailureActive || isAnswered) && (
+                              <Button
+                                fullWidth
+                                variant="soft"
+                                color={subMeta?.color}
+                                onClick={() => setRevealedCorePoints(prev => ({ ...prev, [currentIdx]: currentRevealedCount + 1 }))}
+                                className="mt-3 text-xs font-bold py-2.5 rounded-xl transition-all active:scale-[0.97]"
+                              >
+                                👇 {isHi ? 'अगला बिंदु समझें' : 'Next Concept Point'} ({currentRevealedCount}/{totalBlocks})
+                              </Button>
+                            )}
+
+                            {(!showAll && currentRevealedCount === totalBlocks && totalBlocks > 1 && (!productiveFailureActive || isAnswered)) && (
+                              <div
+                                className="rounded-xl p-3 mt-3 flex items-center gap-2 border animate-fadeIn"
+                                style={{
+                                  background: 'rgba(22, 163, 74, 0.04)',
+                                  borderColor: 'rgba(22, 163, 74, 0.15)',
+                                }}
+                              >
+                                <span className="text-base">🚀</span>
+                                <span className="text-xs font-bold text-green-700">
+                                  {isHi 
+                                    ? 'सभी मुख्य बिंदु पढ़ लिए! नीचे के प्रश्न का उत्तर दें।' 
+                                    : 'All points read! Ready to check your understanding below.'}
+                                </span>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+
+                      {(!productiveFailureActive || isAnswered) && topic.learning_objectives && topic.learning_objectives.length > 0 && (
+                        <div className="rounded-xl p-3" style={{ background: `${subMeta?.color || 'var(--orange)'}08`, border: `1px solid ${subMeta?.color || 'var(--orange)'}20` }}>
+                          <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: subMeta?.color }}>
+                            {isHi ? 'इस अवधारणा में सीखोगे' : 'You will learn'}
+                          </p>
+                          <ul className="space-y-1">
+                            {topic.learning_objectives.slice(0, 4).map((obj, i) => (
+                              <li key={i} className="flex items-start gap-2 text-xs text-[var(--text-2)]">
+                                <span className="mt-0.5 flex-shrink-0" style={{ color: subMeta?.color }}>•</span>
+                                {obj}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {activeTab === 'example' && (() => {
+                    const exampleRaw = isHi && (topic as any).example_content_hi
+                      ? (topic as any).example_content_hi
+                      : (topic as any).example_content
+                      ? (topic as any).example_content
+                      : isHi
+                      ? `प्रश्न: ${topic.title} को समझाइए और एक उदाहरण दीजिए।\n\n[चरण 1: परिभाषा]\nसबसे पहले, ${topic.title} की मुख्य अवधारणा को समझें। यह एक महत्वपूर्ण CBSE अवधारणा है।\n\n[चरण 2: व्याख्या]\nइस नियम के अनुसार, हम चरणों में काम करते हैं।\n\n[चरण 3: बोर्ड परीक्षा टिप]\nपरीक्षा में अच्छे अंक प्राप्त करने के लिए हमेशा साफ-सुथरा आरेख बनाएं और महत्वपूर्ण शब्दों को रेखांकित करें।`
+                      : `Question: Explain the core concepts of ${topic.title} and give a step-by-step solved problem.\n\n[Step 1: Definition & Formula]\nLet's state the fundamental principle of ${topic.title}. Understand the main variables and relations.\n\n[Step 2: Mathematical Derivation / Application]\nApply the formula step-by-step to compute the result. Ensure units are correct.\n\n[Step 3: Board Exam Tip]\nAlways write down the given values, state the formula used, and draw a neat diagram to score full marks in your CBSE board exams.`;
+
+                    const steps = exampleRaw.split(/(?=\[Step|\[चरण|Step|चरण)/i).map((s: string) => s.trim()).filter(Boolean);
+                    const maxSteps = steps.length;
+                    const revealedCount = visibleSteps[currentIdx] || 1;
+
+                    return (
+                      <div className="space-y-4">
+                        <div className="space-y-3">
+                          {steps.slice(0, revealedCount).map((stepText: string, sIdx: number) => {
+                            return (
+                              <div
+                                key={sIdx}
+                                className={`p-3 rounded-xl transition-all duration-300 animate-fadeIn ${
+                                  sIdx === 0
+                                    ? 'bg-cream border border-orange-100'
+                                    : 'bg-gray-50 border border-gray-100'
+                                }`}
+                              >
+                                <p className="text-sm text-[var(--text-2)] whitespace-pre-wrap leading-relaxed">
+                                  {stepText}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {revealedCount < maxSteps && (
+                          <Button
+                            fullWidth
+                            variant="soft"
+                            color={subMeta?.color}
+                            onClick={() => setVisibleSteps(prev => ({ ...prev, [currentIdx]: revealedCount + 1 }))}
+                            className="mt-2 text-xs font-bold py-2 rounded-xl transition-all active:scale-[0.97]"
+                          >
+                            👇 {isHi ? 'अगला चरण देखें' : 'Reveal Next Step'} ({revealedCount}/{maxSteps})
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {activeTab === 'cheat' && (
+                    <div className="space-y-3">
+                      {((topic as any).key_formula || isHi) && (
+                        <div className="p-3.5 rounded-xl bg-orange-50/40 border border-orange-100/60">
+                          <p className="text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-1.5">
+                            📐 {isHi ? 'महत्वपूर्ण सूत्र / दृष्टिकोण' : 'Key Formula / Mnemonic'}
+                          </p>
+                          <p className="text-sm font-semibold text-gray-800 font-mono">
+                            {(topic as any).key_formula || (isHi ? 'मुख्य अवधारणाओं को याद रखें।' : 'Understand the relations and apply rules step by step.')}
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="p-3.5 rounded-xl bg-red-50/30 border border-red-100/50">
+                        <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-1.5">
+                          ⚠️ {isHi ? 'सीबीएसई बोर्ड परीक्षा की सामान्य गलतियाँ' : 'Common Board Exam Mistakes to Avoid'}
+                        </p>
+                        <ul className="space-y-1.5 text-xs text-red-800/80 leading-relaxed list-disc pl-4">
+                          <li>
+                            {isHi
+                              ? 'जल्दबाजी में संकेतों (+/-) की गलती न करें।'
+                              : 'Do not hurry through calculations; check the signs (+/-) at each step.'}
+                          </li>
+                          <li>
+                            {isHi
+                              ? 'हमेशा अपने उत्तर के साथ सही इकाई (SI units) लिखें।'
+                              : 'Always specify the final units in the answer; CBSE deducts marks for missing units.'}
+                          </li>
+                          <li>
+                            {isHi
+                              ? 'उत्तर लिखने से पहले दिया गया डेटा (Given data) जरूर लिखें।'
+                              : 'For maximum marks, write down the "Given parameters" before starting the calculation.'}
+                          </li>
+                        </ul>
+                      </div>
+
+                      <div className="p-3.5 rounded-xl bg-teal-50/30 border border-teal-100/50">
+                        <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wider mb-1">
+                          🦊 {isHi ? 'Foxy की सलाह' : "Foxy's Quick Revision Tip"}
+                        </p>
+                        <p className="text-xs text-teal-900/80 leading-relaxed">
+                          {isHi
+                            ? 'इस अवधारणा से सीधे सवाल पूछे जाते हैं। परिभाषा के साथ एक उदाहरण याद रखें!'
+                            : 'CBSE frequently asks direct theoretical or derivation questions on this concept. Memorize the basic statement along with one solved board example!'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </Card>
+
+              {/* Quick Check */}
+              {question && (() => {
+                const getQuestionParameter = (q: any) => {
+                  const level = q?.bloom_level?.toLowerCase() || 'remember';
+                  if (level === 'remember') return { label: isHi ? '🧠 स्मरण और याद' : '🧠 Remember & Recall', color: '#6B7280', bg: 'rgba(107, 114, 128, 0.08)' };
+                  if (level === 'understand') return { label: isHi ? '💡 समझें और समझाएं' : '💡 Understand & Explain', color: '#2563EB', bg: 'rgba(37, 99, 235, 0.08)' };
+                  if (level === 'apply') return { label: isHi ? '🛠️ लागू करें और हल करें' : '🛠️ Apply & Solve', color: '#059669', bg: 'rgba(5, 150, 105, 0.08)' };
+                  return { label: isHi ? '🔥 उच्च स्तरीय सोच (HOTS)' : '🔥 Higher Order Thinking (HOTS)', color: '#7C3AED', bg: 'rgba(124, 58, 237, 0.08)' };
+                };
+                const param = getQuestionParameter(question);
+
+                return (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[11px] font-bold text-[var(--text-3)] uppercase tracking-wider">
+                        {isHi ? '⚡ त्वरित जाँच' : '⚡ Quick Check'}
+                      </p>
+                      <span
+                        className="text-[10px] font-bold px-2.5 py-0.5 rounded-full"
+                        style={{ color: param.color, background: param.bg }}
+                      >
+                        {param.label}
+                      </span>
+                    </div>
+                    <Card className="!p-4">
+                      <p className="text-sm font-semibold leading-relaxed mb-4" style={{ whiteSpace: 'pre-wrap' }}>
+                        {isHi && question.question_hi ? question.question_hi : question.question_text}
+                      </p>
+
+                      {opts.length === 0 && !isAnswered && (
+                        <div className="rounded-xl p-4 flex items-start gap-3" style={{ background: 'rgba(232, 88, 28, 0.06)', border: '1px solid rgba(232, 88, 28, 0.18)' }}>
+                          <span className="text-xl shrink-0" aria-hidden="true">🦊</span>
+                          <div className="flex-1">
+                            <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-1)' }}>
+                              {isHi ? 'यह प्रश्न खुले उत्तर का है — Foxy के साथ हल करो।' : 'This one needs working out — solve it with Foxy.'}
+                            </p>
+                            <p className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                              {isHi ? 'Foxy तुम्हें step-by-step ले जाएगा। फिर अगली अवधारणा पर बढ़ो।' : 'Foxy will walk you through it step by step, then you can move to the next concept.'}
+                            </p>
+                            <Button color="#E8581C" className="mt-3" onClick={askFoxy}>
+                              🦊 {isHi ? 'Foxy से हल कराओ' : 'Solve with Foxy'}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        {opts.map((opt, idx) => {
+                          const letter = OPTION_LETTERS[idx] || String(idx + 1);
+                          const optText = opt.replace(/^[A-D][\.\)]\s*/, '');
+                          const isSelected = conceptState?.selectedOption === idx;
+                          const isCorrectOpt = idx === question.correct_answer_index;
+
+                          let bg = 'var(--surface-2)';
+                          let border = 'transparent';
+                          let textColor = 'var(--text-2)';
+                          let letterBg = 'var(--surface-1)';
+                          let letterColor = 'var(--text-3)';
+
+                          if (isAnswered) {
+                            if (isCorrectOpt) {
+                              bg = 'rgba(22,163,74,0.08)'; border = 'rgba(22,163,74,0.4)';
+                              textColor = '#16A34A'; letterBg = '#16A34A'; letterColor = '#fff';
+                            } else if (isSelected) {
+                              bg = 'rgba(220,38,38,0.06)'; border = 'rgba(220,38,38,0.3)';
+                              textColor = '#DC2626'; letterBg = '#DC2626'; letterColor = '#fff';
+                            }
+                          } else if (isSelected) {
+                            bg = `${subMeta?.color || 'var(--orange)'}08`;
+                            border = subMeta?.color || 'var(--orange)';
+                            letterBg = subMeta?.color || 'var(--orange)';
+                            letterColor = '#fff';
+                          }
+
+                          return (
+                            <button
+                              key={idx}
+                              onClick={() => selectOption(idx)}
+                              disabled={isAnswered}
+                              className="w-full rounded-xl py-3 px-3 flex items-center gap-3 transition-all active:scale-[0.98] text-left"
+                              style={{ background: bg, border: `1.5px solid ${border}`, minHeight: 48 }}
+                            >
+                              <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all" style={{ background: letterBg, color: letterColor }}>
+                                {letter}
+                              </span>
+                              <span className="text-sm font-semibold leading-snug flex-1" style={{ color: textColor }}>
+                                {optText}
+                              </span>
+                              {isAnswered && isCorrectOpt && <span className="ml-auto text-base flex-shrink-0">✓</span>}
+                              {isAnswered && isSelected && !isCorrectOpt && <span className="ml-auto text-base flex-shrink-0">✗</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {!isAnswered && opts.length > 0 && (
+                        <Button
+                          fullWidth
+                          className="mt-3"
+                          color={subMeta?.color}
+                          onClick={submitAnswer}
+                          disabled={conceptState?.selectedOption === undefined || conceptState?.selectedOption === null}
+                        >
+                          {isHi ? 'जवाब जाँचो' : 'Check Answer'}
+                        </Button>
+                      )}
+
+                      {isAnswered && (
+                        <div
+                          className="mt-3 rounded-xl p-3"
+                          style={{
+                            background: isCorrect ? 'rgba(22,163,74,0.05)' : 'rgba(220,38,38,0.04)',
+                            border: `1px solid ${isCorrect ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.12)'}`,
+                          }}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <span>{isCorrect ? '🎉' : '💡'}</span>
+                            <span className="text-xs font-bold" style={{ color: isCorrect ? '#16A34A' : '#DC2626' }}>
+                              {isCorrect
+                                ? (isHi ? 'शाबाश! सही जवाब!' : 'Correct!')
+                                : (isHi ? 'गलत — पर सीखो!' : 'Not quite — here\'s why:')}
+                            </span>
+                          </div>
+                          <p className="text-xs leading-relaxed text-[var(--text-2)]">
+                            {isHi && question.explanation_hi ? question.explanation_hi : question.explanation || (isHi ? 'ऊपर दी गई अवधारणा दोबारा पढ़ो।' : 'Review the concept.')}
+                          </p>
+                        </div>
+                      )}
+                    </Card>
+                  </div>
+                );
+              })()}
+
+              {/* Explainer Phase Navigation */}
+              <div className="flex flex-col gap-2 mt-auto pb-2">
                 <Button
                   fullWidth
-                  className="mt-3"
                   color={subMeta?.color}
-                  onClick={submitAnswer}
-                  disabled={conceptState?.selectedOption === undefined || conceptState?.selectedOption === null}
+                  onClick={handleMarkUnderstood}
                 >
-                  {isHi ? 'जवाब जाँचो' : 'Check Answer'}
+                  {isHi ? '✓ अवधारणा समझी, आगे बढ़ें →' : '✓ Understood, Continue →'}
                 </Button>
-              )}
+                <div className="flex gap-2">
+                  <Button variant="ghost" onClick={goPrev} disabled={currentIdx === 0} className="flex-1">
+                    ← {isHi ? 'पिछला' : 'Prev'}
+                  </Button>
+                  <Button variant="soft" color="#E8581C" onClick={askFoxy} className="flex-1">
+                    🦊 {isHi ? 'Foxy से पूछो' : 'Ask Foxy'}
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
 
-              {/* Explanation */}
-              {isAnswered && (
-                <div
-                  className="mt-3 rounded-xl p-3"
-                  style={{
-                    background: isCorrect ? 'rgba(22,163,74,0.05)' : 'rgba(220,38,38,0.04)',
-                    border: `1px solid ${isCorrect ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.12)'}`,
-                  }}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span>{isCorrect ? '🎉' : '💡'}</span>
-                    <span className="text-xs font-bold" style={{ color: isCorrect ? '#16A34A' : '#DC2626' }}>
-                      {isCorrect
-                        ? (isHi ? 'शाबाश! सही जवाब!' : 'Correct!')
-                        : (isHi ? 'गलत — पर सीखो!' : 'Not quite — here\'s why:')}
+          {phase === 'quiz' && (
+            <div className="space-y-4 animate-fadeIn">
+              {/* Quiz status / progress */}
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-bold text-[var(--text-3)] uppercase tracking-wider">
+                  {isHi ? `प्रश्न ${quizCurrentIdx + 1}/${questions.length}` : `Question ${quizCurrentIdx + 1} of ${questions.length}`}
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-100">
+                  📝 {isHi ? 'NCERT आधारित मूल्यांकन' : 'NCERT Aligned Quiz'}
+                </span>
+              </div>
+
+              {questions.length === 0 ? (
+                <Card className="p-6 text-center">
+                  <p className="text-sm font-semibold text-gray-600 mb-4">
+                    {isHi ? 'इस अध्याय के लिए कोई अभ्यास प्रश्न नहीं मिले।' : 'No quiz questions found for this chapter.'}
+                  </p>
+                  <Button onClick={() => setPhase('report')} color={subMeta?.color}>
+                    {isHi ? 'परिणाम रिपोर्ट देखें' : 'View Performance Report'}
+                  </Button>
+                </Card>
+              ) : (() => {
+                const q = questions[quizCurrentIdx];
+                const qOpts = parseOptions(q.options);
+                const isAns = quizAnswers[q.id] !== undefined;
+                const selectAns = quizAnswers[q.id];
+                const isCorr = selectAns?.isCorrect ?? false;
+
+                return (
+                  <Card className="!p-5 flex flex-col gap-4">
+                    <p className="text-sm font-semibold leading-relaxed mb-2" style={{ whiteSpace: 'pre-wrap' }}>
+                      {isHi && q.question_hi ? q.question_hi : q.question_text}
+                    </p>
+
+                    <div className="space-y-2">
+                      {qOpts.map((opt, idx) => {
+                        const letter = OPTION_LETTERS[idx] || String(idx + 1);
+                        const optText = opt.replace(/^[A-D][\.\)]\s*/, '');
+                        const isSel = quizSelectedOption === idx;
+                        const isCorrOpt = idx === q.correct_answer_index;
+
+                        let bg = 'var(--surface-2)';
+                        let border = 'transparent';
+                        let textColor = 'var(--text-2)';
+                        let letterBg = 'var(--surface-1)';
+                        let letterColor = 'var(--text-3)';
+
+                        if (isAns) {
+                          if (isCorrOpt) {
+                            bg = 'rgba(22,163,74,0.08)';
+                            border = 'rgba(22,163,74,0.4)';
+                            textColor = '#16A34A';
+                            letterBg = '#16A34A';
+                            letterColor = '#fff';
+                          } else if (selectAns?.selectedOption === idx) {
+                            bg = 'rgba(220,38,38,0.06)';
+                            border = 'rgba(220,38,38,0.3)';
+                            textColor = '#DC2626';
+                            letterBg = '#DC2626';
+                            letterColor = '#fff';
+                          }
+                        } else if (isSel) {
+                          bg = `${subMeta?.color || 'var(--orange)'}08`;
+                          border = subMeta?.color || 'var(--orange)';
+                          letterBg = subMeta?.color || 'var(--orange)';
+                          letterColor = '#fff';
+                        }
+
+                        return (
+                          <button
+                            key={idx}
+                            onClick={() => {
+                              if (!isAns) setQuizSelectedOption(idx);
+                            }}
+                            disabled={isAns}
+                            className="w-full rounded-xl py-3 px-3 flex items-center gap-3 transition-all active:scale-[0.98] text-left"
+                            style={{ background: bg, border: `1.5px solid ${border}`, minHeight: 48 }}
+                          >
+                            <span
+                              className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all"
+                              style={{ background: letterBg, color: letterColor }}
+                            >
+                              {letter}
+                            </span>
+                            <span className="text-sm font-semibold leading-snug flex-1" style={{ color: textColor }}>
+                              {optText}
+                            </span>
+                            {isAns && isCorrOpt && <span className="ml-auto text-base flex-shrink-0">✓</span>}
+                            {isAns && selectAns?.selectedOption === idx && !isCorrOpt && <span className="ml-auto text-base flex-shrink-0">✗</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {!isAns && (
+                      <Button
+                        fullWidth
+                        className="mt-3"
+                        color={subMeta?.color}
+                        onClick={() => {
+                          if (quizSelectedOption === null) return;
+                          const isCorrect = quizSelectedOption === q.correct_answer_index;
+                          
+                          setQuizAnswers(prev => ({
+                            ...prev,
+                            [q.id]: { selectedOption: quizSelectedOption, isCorrect }
+                          }));
+
+                          const matchedTopicId = getTopicIdForQuestion(q);
+                          if (student && matchedTopicId) {
+                            recordLearningEvent(
+                              student.id,
+                              matchedTopicId,
+                              isCorrect,
+                              'practice',
+                              q.bloom_level
+                            ).catch((err: unknown) => {
+                              console.warn('[quiz] recordLearningEvent failed:', err instanceof Error ? err.message : String(err));
+                            });
+                          }
+
+                          track('learn_quick_check_submitted', {
+                            ...telemetryBase,
+                            concept_idx: quizCurrentIdx,
+                            is_correct: isCorrect,
+                            source: 'chapter_quiz',
+                          });
+                        }}
+                        disabled={quizSelectedOption === null}
+                      >
+                        {isHi ? 'जवाब जाँचो' : 'Check Answer'}
+                      </Button>
+                    )}
+
+                    {isAns && (
+                      <div className="space-y-4 mt-2">
+                        <div
+                          className="rounded-xl p-3"
+                          style={{
+                            background: isCorr ? 'rgba(22,163,74,0.05)' : 'rgba(220,38,38,0.04)',
+                            border: `1px solid ${isCorr ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.12)'}`,
+                          }}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <span>{isCorr ? '🎉' : '💡'}</span>
+                            <span className="text-xs font-bold" style={{ color: isCorr ? '#16A34A' : '#DC2626' }}>
+                              {isCorr
+                                ? (isHi ? 'शाबाश! सही जवाब!' : 'Correct!')
+                                : (isHi ? 'गलत — पर सीखो!' : 'Incorrect. Let\'s understand:')}
+                            </span>
+                          </div>
+                          <p className="text-xs leading-relaxed text-[var(--text-2)] whitespace-pre-wrap">
+                            {isHi && q.explanation_hi ? q.explanation_hi : q.explanation || (isHi ? 'अवधारणा की व्याख्या उपलब्ध नहीं है।' : 'No explanation available.')}
+                          </p>
+                        </div>
+
+                        {quizCurrentIdx < questions.length - 1 ? (
+                          <Button
+                            fullWidth
+                            color={subMeta?.color}
+                            onClick={() => {
+                              setQuizSelectedOption(null);
+                              setQuizCurrentIdx(prev => prev + 1);
+                            }}
+                          >
+                            {isHi ? 'अगला प्रश्न →' : 'Next Question →'}
+                          </Button>
+                        ) : (
+                          <Button
+                            fullWidth
+                            color={subMeta?.color}
+                            onClick={handleFinishQuiz}
+                          >
+                            {isHi ? 'परिणाम रिपोर्ट देखें →' : 'View Performance Report →'}
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </Card>
+                );
+              })()}
+            </div>
+          )}
+
+          {phase === 'report' && (() => {
+            const totalQ = questions.length;
+            const correctQ = Object.values(quizAnswers).filter(a => a.isCorrect).length;
+            const pct = totalQ > 0 ? Math.round((correctQ / totalQ) * 100) : 0;
+            const scoreGood = pct >= 60;
+
+            const topicStats: Record<string, { total: number; correct: number; title: string; title_hi?: string | null; id: string }> = {};
+            questions.forEach((q) => {
+              const topicId = getTopicIdForQuestion(q) || 'unknown';
+              const topic = topics.find(t => t.id === topicId);
+              const ans = quizAnswers[q.id];
+              if (!ans) return;
+
+              if (!topicStats[topicId]) {
+                topicStats[topicId] = {
+                  id: topicId,
+                  total: 0,
+                  correct: 0,
+                  title: topic ? topic.title : (isHi ? 'अतिरिक्त अभ्यास' : 'Additional Concepts'),
+                  title_hi: topic ? topic.title_hi : null,
+                };
+              }
+              topicStats[topicId].total += 1;
+              if (ans.isCorrect) {
+                topicStats[topicId].correct += 1;
+              }
+            });
+
+            const strengths = Object.values(topicStats).filter(s => s.correct === s.total);
+            const gaps = Object.values(topicStats).filter(s => s.correct < s.total);
+
+            return (
+              <div className="space-y-5 animate-fadeIn">
+                <Card className="text-center py-6 flex flex-col items-center gap-2">
+                  <div className="text-5xl mb-1">{scoreGood ? '🏆' : '📈'}</div>
+                  <h2 className="text-xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+                    {isHi ? 'क्विज़ पूरा हुआ!' : 'Quiz Completed!'}
+                  </h2>
+                  <p className="text-xs text-[var(--text-3)] mb-2">
+                    {isHi ? `अध्याय ${chapterNum} के प्रश्नों का मूल्यांकन` : `Performance evaluation for Chapter ${chapterNum}`}
+                  </p>
+                  
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="text-3xl font-extrabold" style={{ color: scoreGood ? '#16A34A' : '#D97706' }}>
+                      {correctQ}/{totalQ}
+                    </span>
+                    <span className="text-sm font-bold text-gray-500">
+                      ({pct}%)
                     </span>
                   </div>
-                  <p className="text-xs leading-relaxed text-[var(--text-2)]">
-                    {isHi && question.explanation_hi ? question.explanation_hi : question.explanation || (isHi ? 'ऊपर दी गई अवधारणा दोबारा पढ़ो।' : 'Review the concept above.')}
+                  
+                  <ProgressBar value={pct} color={scoreGood ? '#16A34A' : '#D97706'} showPercent />
+                  
+                  <p className="text-xs font-semibold px-4 mt-2" style={{ color: scoreGood ? '#16A34A' : '#D97706' }}>
+                    {scoreGood
+                      ? (isHi ? 'शानदार! तुमने इस अध्याय की अधिकांश अवधारणाओं को समझ लिया है।' : 'Great job! You have understood most of the concepts in this chapter.')
+                      : (isHi ? 'अच्छा प्रयास! कुछ अवधारणाओं को दोबारा पढ़ने की आवश्यकता है।' : 'Nice try! Some concepts need to be reviewed to complete the syllabus.')}
                   </p>
+                </Card>
+
+                <div className="space-y-4">
+                  {strengths.length > 0 && (
+                    <div className="space-y-2">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-green-700 flex items-center gap-1.5" style={{ fontFamily: 'var(--font-display)' }}>
+                        <span>✓</span>
+                        <span>{isHi ? 'तुम्हारी ताकत (महारत हासिल अवधारणाएं)' : 'Your Strengths (Mastered Concepts)'}</span>
+                      </h3>
+                      <div className="grid gap-2">
+                        {strengths.map((s, idx) => (
+                          <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-green-50/40 border border-green-100 text-xs">
+                            <span className="font-semibold text-gray-800">
+                              {isHi && s.title_hi ? s.title_hi : s.title}
+                            </span>
+                            <span className="font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full text-[10px]">
+                              {s.correct}/{s.total} {isHi ? 'सही' : 'Correct'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {gaps.length > 0 && (
+                    <div className="space-y-2">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-red-600 flex items-center gap-1.5" style={{ fontFamily: 'var(--font-display)' }}>
+                        <span>⚠️</span>
+                        <span>{isHi ? 'सुधार की जरूरत (अवधारणा अंतराल)' : 'Gaps in Understanding'}</span>
+                      </h3>
+                      <div className="grid gap-3">
+                        {gaps.map((s, idx) => {
+                          const topicIndex = topics.findIndex(t => t.id === s.id);
+                          return (
+                            <div key={idx} className="p-3.5 rounded-xl bg-red-50/20 border border-red-100/50 flex flex-col gap-2.5">
+                              <div className="flex items-start justify-between gap-3 text-xs">
+                                <span className="font-semibold text-gray-800 leading-snug">
+                                  {isHi && s.title_hi ? s.title_hi : s.title}
+                                </span>
+                                <span className="font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap">
+                                  {s.correct}/{s.total} {isHi ? 'सही' : 'Correct'}
+                                </span>
+                              </div>
+
+                              <div className="flex gap-2">
+                                {topicIndex !== -1 && (
+                                  <button
+                                    onClick={() => {
+                                      setPhase('explaining');
+                                      setCurrentIdx(topicIndex);
+                                      setActiveTab('core');
+                                    }}
+                                    className="flex-1 py-1.5 px-3 rounded-lg text-[10px] font-bold bg-white border border-red-200 text-red-700 hover:bg-red-50 active:scale-[0.98] transition-all flex items-center justify-center gap-1"
+                                  >
+                                    📖 {isHi ? 'अवधारणा दोबारा पढ़ें' : 'Re-explain Concept'}
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => {
+                                    const topicParam = encodeURIComponent(s.title);
+                                    track('learn_foxy_doubt_clicked', {
+                                      ...telemetryBase,
+                                      source: 'gaps_report',
+                                      topic_title: s.title,
+                                    });
+                                    router.push(`/foxy?subject=${subject}&mode=doubt&topic=${topicParam}`);
+                                  }}
+                                  className="flex-1 py-1.5 px-3 rounded-lg text-[10px] font-bold bg-red-600 text-white hover:bg-red-700 active:scale-[0.98] transition-all flex items-center justify-center gap-1"
+                                >
+                                  🦊 {isHi ? 'Foxy से डाउट पूछें' : 'Ask Foxy'}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-              </Card>
-            </div>
-          );
-        })()}
 
-
-
-        {/* Navigation — Next is the primary action */}
-        {currentIdx === topics.length - 1 ? (() => {
-          // FIXED: Only show completion celebration if student has answered questions
-          // and achieved a meaningful score. No more celebrating wrong answers.
-          const answered = Object.values(conceptStates).filter(s => s.submitted).length;
-          const correct = Object.values(conceptStates).filter(s => s.submitted && s.isCorrect).length;
-          const chapterPct = answered > 0 ? Math.round((correct / answered) * 100) : 0;
-          const isChapterComplete = answered > 0 && chapterPct >= 60;
-
-          return isChapterComplete ? (
-          <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200 p-5 text-center space-y-3 mt-auto mb-2">
-            <h3 className="text-base font-bold text-green-800">
-              {isHi ? 'अध्याय पूरा!' : 'Chapter Complete!'}
-            </h3>
-            <p className="text-xs text-green-600">
-              {isHi ? `${correct}/${answered} सही — बहुत बढ़िया!` : `${correct}/${answered} correct — great job!`}
-            </p>
-            <div className="flex gap-2 pt-2">
-              <button onClick={goPrev}
-                className="flex-1 py-2 rounded-lg text-xs font-medium bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 active:scale-[0.98] transition-all">
-                {isHi ? '← पिछला' : '← Previous'}
-              </button>
-              <button onClick={() => {
-                  const p = new URLSearchParams({ subject, mode: 'practice' });
-                  router.push(`/quiz?${p.toString()}`);
-                }}
-                className="flex-1 py-2 rounded-lg text-xs font-medium bg-green-600 text-white hover:bg-green-700 active:scale-[0.98] transition-all">
-                {isHi ? '⚡ क्विज़ लो' : '⚡ Take Quiz'}
-              </button>
-            </div>
-          </div>
-          ) : (
-          <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl border border-amber-200 p-5 text-center space-y-3 mt-auto mb-2">
-            <h3 className="text-base font-bold text-amber-800">
-              {isHi
-                ? (answered === 0 ? 'अभ्यास करो!' : 'और अभ्यास करो!')
-                : (answered === 0 ? 'Practice the concepts!' : 'Keep practicing!')}
-            </h3>
-            <p className="text-xs text-amber-600">
-              {answered === 0
-                ? (isHi ? 'प्रश्नों का उत्तर दो और अध्याय पूरा करो' : 'Answer the concept questions to complete this chapter')
-                : (isHi ? `${correct}/${answered} सही (${chapterPct}%) — 60% चाहिए` : `${correct}/${answered} correct (${chapterPct}%) — need 60% to complete`)}
-            </p>
-            <div className="flex gap-2 pt-2">
-              <button onClick={goPrev}
-                className="flex-1 py-2 rounded-lg text-xs font-medium bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 active:scale-[0.98] transition-all">
-                {isHi ? '← पिछला' : '← Previous'}
-              </button>
-              <button onClick={() => setCurrentIdx(0)}
-                className="flex-1 py-2 rounded-lg text-xs font-medium bg-amber-600 text-white hover:bg-amber-700 active:scale-[0.98] transition-all">
-                {isHi ? '🔄 फिर से करो' : '🔄 Try Again'}
-              </button>
-            </div>
-          </div>
-          );
-        })()
-        : (() => {
-          // Strategic gate: when the current concept has a Quick Check and
-          // the student hasn't attempted it yet, the Next button is the
-          // secondary action — not the primary orange CTA. This nudges the
-          // student toward the productive-failure attempt loop instead of
-          // letting them skip straight through every concept.
-          const hasUnattemptedCheck = !!question && !isAnswered && opts.length > 0;
-          const primaryColor = hasUnattemptedCheck ? undefined : subMeta?.color;
-          return (
-          <div className="flex flex-col gap-2 mt-auto pb-2">
-            {hasUnattemptedCheck && (
-              <p className="text-[11px] text-center text-[var(--text-3)] -mb-1">
-                {isHi
-                  ? 'पहले Quick Check try करो — फिर आगे बढ़ो।'
-                  : 'Attempt the Quick Check first, then move on.'}
-              </p>
-            )}
-            <Button
-              fullWidth
-              variant={hasUnattemptedCheck ? 'ghost' : 'primary'}
-              color={primaryColor}
-              onClick={goNext}
-            >
-              {isHi
-                ? `अगला: ${topics[currentIdx + 1]?.title?.slice(0, 28)} →`
-                : `Next: ${topics[currentIdx + 1]?.title?.slice(0, 28)} →`}
-            </Button>
-            <div className="flex gap-2">
-              <Button variant="ghost" onClick={goPrev} disabled={currentIdx === 0} className="flex-1">
-                ← {isHi ? 'पिछला' : 'Prev'}
-              </Button>
-              <Button variant="soft" color="#E8581C" onClick={askFoxy} className="flex-1">
-                🦊 {isHi ? 'Foxy से पूछो' : 'Ask Foxy'}
-              </Button>
-            </div>
-          </div>
-          );
-        })()}
+                <div className="space-y-3 pt-3 border-t border-gray-100">
+                  <Button
+                    fullWidth
+                    color={subMeta?.color}
+                    onClick={() => {
+                      setPhase('explaining');
+                      setCurrentIdx(0);
+                      setActiveTab('core');
+                      setCompletedTopics(new Set());
+                      setQuizAnswers({});
+                      setQuizCurrentIdx(0);
+                      setQuizSelectedOption(null);
+                    }}
+                  >
+                    🔄 {isHi ? 'अध्याय को दोबारा पढ़ें' : 'Restart Chapter'}
+                  </Button>
+                  <Button
+                    fullWidth
+                    variant="ghost"
+                    onClick={() => router.push('/dashboard')}
+                  >
+                    🏠 {isHi ? 'डैशबोर्ड पर वापस जाएं' : 'Return to Dashboard'}
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
       </main>
       </AppShell>
     </div>
