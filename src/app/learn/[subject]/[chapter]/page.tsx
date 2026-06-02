@@ -28,6 +28,7 @@ import { Card, Button, ProgressBar, BottomNav, LoadingFoxy } from '@/components/
 import { AppShell } from '@/components/responsive';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { BLOOM_CONFIG, type BloomLevel } from '@/lib/cognitive-engine';
+import confetti from 'canvas-confetti';
 import type { CurriculumTopic } from '@/lib/types';
 import { track } from '@/lib/posthog/client';
 import { loadChapterContent } from './actions';
@@ -284,8 +285,23 @@ export default function ChapterConceptPage() {
     // Sort by display order / ordering to keep logical sequence
     mergedTopics.sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
 
+    const sortedQuestions = [...(questionsData as Question[])].sort((a, b) => {
+      const bloomOrder: Record<string, number> = {
+        remember: 1,
+        understand: 2,
+        apply: 3,
+        analyze: 4,
+        evaluate: 5,
+        create: 6,
+        hots: 7,
+      };
+      const aLevel = (a.bloom_level || 'remember').toLowerCase();
+      const bLevel = (b.bloom_level || 'remember').toLowerCase();
+      return (bloomOrder[aLevel] || 1) - (bloomOrder[bLevel] || 1);
+    });
+
     setTopics(mergedTopics);
-    setQuestions(questionsData as Question[]);
+    setQuestions(sortedQuestions);
     setDiagrams(diagramsData as Diagram[]);
     setV2SourceUsed(curatedConcepts.length > 0 ? 'curated' : 'rag_fallback');
     setPhase('explaining');
@@ -478,6 +494,16 @@ export default function ChapterConceptPage() {
       ...prev,
       [currentIdx]: { ...state, submitted: true, isCorrect },
     }));
+
+    if (isCorrect) {
+      confetti({
+        particleCount: 50,
+        spread: 60,
+        origin: { y: 0.8 },
+        colors: ['#16A34A', '#22C55E', '#86EFAC']
+      });
+    }
+
     if (student && topics[currentIdx]) {
       recordLearningEvent(
         student.id,
@@ -541,9 +567,17 @@ export default function ChapterConceptPage() {
 
     if (nextCompleted.size >= topics.length || nextUncompletedIdx === -1) {
       // Transition to Quiz Phase!
-      setPhase('quiz');
-      setQuizCurrentIdx(0);
-      setQuizAnswers({});
+      if (questions.length === 0) {
+        setPhase('report');
+        if (student) {
+          updateChapterProgress(subject, student.grade, chapterNum).catch(console.warn);
+        }
+      } else {
+        setPhase('quiz');
+        setQuizCurrentIdx(0);
+        setQuizAnswers({});
+        setQuizSelectedOption(null);
+      }
     } else {
       // Navigate to next uncompleted topic
       setCurrentIdx(nextUncompletedIdx);
@@ -589,10 +623,14 @@ export default function ChapterConceptPage() {
 
   const getTopicIdForQuestion = useCallback((q: Question) => {
     if (!q) return null;
+    if ((q as any).topic_id) {
+      const exactMatch = topics.find(t => t.id === (q as any).topic_id);
+      if (exactMatch) return exactMatch.id;
+    }
     const cleanQText = q.question_text.toLowerCase().replace(/[^a-z0-9]/g, '');
     for (const t of topics) {
       const cleanTitle = t.title.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (cleanQText.includes(cleanTitle) || cleanTitle.includes(cleanQText)) {
+      if (cleanTitle.length > 3 && (cleanQText.includes(cleanTitle) || cleanTitle.includes(cleanQText))) {
         return t.id;
       }
     }
@@ -600,12 +638,12 @@ export default function ChapterConceptPage() {
       const cleanExplanation = q.explanation.toLowerCase().replace(/[^a-z0-9]/g, '');
       for (const t of topics) {
         const cleanTitle = t.title.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (cleanExplanation.includes(cleanTitle)) {
+        if (cleanTitle.length > 3 && cleanExplanation.includes(cleanTitle)) {
           return t.id;
         }
       }
     }
-    return topics[0]?.id || null;
+    return topics.length > 0 ? topics[0].id : null;
   }, [topics]);
 
   const handleFinishQuiz = useCallback(() => {
@@ -619,6 +657,17 @@ export default function ChapterConceptPage() {
     const correctQ = Object.values(quizAnswers).filter(a => a.isCorrect).length;
     const pct = totalQ > 0 ? Math.round((correctQ / totalQ) * 100) : 0;
     
+    if (pct >= 60) {
+      setTimeout(() => {
+        confetti({
+          particleCount: 150,
+          spread: 80,
+          origin: { y: 0.6 },
+          colors: ['#16A34A', '#FDE047', '#3B82F6']
+        });
+      }, 300);
+    }
+
     track('learn_chapter_completed', {
       ...telemetryBase,
       score_pct: pct,
@@ -906,8 +955,15 @@ export default function ChapterConceptPage() {
   const question = questions.length > 0 ? questions[currentIdx % questions.length] : null;
   const diagram = diagrams.length > 0 ? diagrams[currentIdx % diagrams.length] : null;
   const conceptState = conceptStates[currentIdx];
-  const progressPct = ((currentIdx + 1) / topics.length) * 100;
-  const bloomLevel = (topic.bloom_focus || 'remember') as BloomLevel;
+  
+  let progressPct = topics.length > 0 ? ((currentIdx + 1) / topics.length) * 100 : 0;
+  if (phase === 'quiz') {
+    progressPct = questions.length > 0 ? ((quizCurrentIdx + 1) / questions.length) * 100 : 100;
+  } else if (phase === 'report') {
+    progressPct = 100;
+  }
+  
+  const bloomLevel = (topic?.bloom_focus || 'remember') as BloomLevel;
   const bloomCfg = BLOOM_CONFIG[bloomLevel] || BLOOM_CONFIG.remember;
   const opts = question ? parseOptions(question.options) : [];
   const isAnswered = conceptState?.submitted ?? false;
@@ -983,6 +1039,11 @@ export default function ChapterConceptPage() {
           {phase === 'explaining' && (
             <span className="text-xs font-medium text-[var(--text-3)]">
               {currentIdx + 1}/{topics.length}
+            </span>
+          )}
+          {phase === 'quiz' && (
+            <span className="text-xs font-medium text-[var(--text-3)]">
+              {quizCurrentIdx + 1}/{questions.length}
             </span>
           )}
         </div>
@@ -1821,6 +1882,15 @@ export default function ChapterConceptPage() {
                           if (quizSelectedOption === null) return;
                           const isCorrect = quizSelectedOption === q.correct_answer_index;
                           
+                          if (isCorrect) {
+                            confetti({
+                              particleCount: 50,
+                              spread: 60,
+                              origin: { y: 0.8 },
+                              colors: ['#16A34A', '#22C55E', '#86EFAC']
+                            });
+                          }
+
                           setQuizAnswers(prev => ({
                             ...prev,
                             [q.id]: { selectedOption: quizSelectedOption, isCorrect }
@@ -2178,7 +2248,7 @@ const TEACHER_INSIGHTS: Record<string, Record<string, TeacherInsight>> = {
       mnemonic: "PMAT: Prophase, Metaphase (Middle), Anaphase (Apart), Telophase (Two)."
     },
     quadratic: {
-      analogy: "Finding the roots of a quadratic equation is like finding where a rollercoaster touches the ground level. The discriminant (D = b^2 - 4ac) is like a detector: if D > 0, it hits twice; if D = 0, it barely grazes once; if D < 0, it stays flying!",
+      analogy: "Finding the roots of a quadratic equation is like finding where a rollercoaster touches the ground level. The discriminant (D = b² − 4ac) is like a detector: if D > 0, it hits twice; if D = 0, it barely grazes once; if D < 0, it stays flying!",
       examHack: "CBSE frequently asks for the nature of roots. Always write the value of D first, show your calculation clearly, and then state whether the roots are 'Real and Distinct', 'Real and Equal', or 'No Real Roots'.",
       mnemonic: "Discriminant detector: positive = 2 real roots, zero = 1 real root, negative = no real roots."
     },
@@ -2186,6 +2256,106 @@ const TEACHER_INSIGHTS: Record<string, Record<string, TeacherInsight>> = {
       analogy: "Think of light refraction like a lawnmower moving from concrete to grass at an angle. The wheel that hits the grass first slows down first, causing the lawnmower to turn (bend). That's exactly why light bends when it goes from air to glass!",
       examHack: "Sign conventions! object distance (u) is ALWAYS negative. For convex mirror/lens, focal length (f) is positive. For concave mirror/lens, focal length (f) is negative. Draw ray diagrams with arrows (no arrows = 0 marks!).",
       mnemonic: "Concave is a Cave: curves inward. Convex is Vexed: bulges outward."
+    },
+    photosynthesis: {
+      analogy: "Photosynthesis is like a solar-powered kitchen. The leaf is the kitchen, sunlight is the gas stove, CO₂ is the raw ingredient from the air, and water is the other ingredient from the soil. The leaf cooks them into glucose (food) and releases O₂ as the aroma!",
+      examHack: "CBSE loves the balanced equation: 6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂ (in presence of sunlight and chlorophyll). Always mention 'in the presence of sunlight and chlorophyll' — students lose marks by omitting the conditions.",
+      mnemonic: "CO₂ + Water + Sunlight → Glucose + O₂. Remember: 'CWS makes GO' (Carbon Water Sunlight → Glucose Oxygen)."
+    },
+    digestive: {
+      analogy: "Your digestive system is like a factory assembly line. The mouth is the crushing machine (teeth grind food), the stomach is the acid bath (HCl breaks it down), the small intestine is the quality control department (absorbs nutrients), and the large intestine is the waste management unit.",
+      examHack: "CBSE frequently asks about the role of enzymes. Remember: Salivary amylase (mouth, breaks starch), Pepsin (stomach, breaks proteins), Bile (liver, emulsifies fats), Pancreatic juice (breaks all three). Always write the organ + enzyme + substrate for full marks.",
+      mnemonic: "My Stomach Likes Lunch: Mouth → Stomach → Liver (bile) → Large intestine. Enzymes: 'Some People Buy Pancakes' (Salivary amylase, Pepsin, Bile, Pancreatic juice)."
+    },
+    metals: {
+      analogy: "Metals and non-metals are like two teams in a tug-of-war. Metals are the team that loves to give away electrons (they're generous donors). Non-metals are the team that loves to grab electrons (they're greedy takers). When they meet, an ionic bond forms — like a handshake agreement!",
+      examHack: "CBSE asks the reactivity series almost every year. Remember the order from most reactive to least: K, Na, Ca, Mg, Al, Zn, Fe, Ni, Sn, Pb, H, Cu, Hg, Ag, Au, Pt. Questions on displacement reactions always depend on this series.",
+      mnemonic: "King Naughty Called Maggie All Zinc's Friends: Nick Sat Plucking Hair; Cute Hens Argued Goldenly Platinum. (K Na Ca Mg Al Zn Fe Ni Sn Pb H Cu Hg Ag Au Pt)"
+    },
+    magnetic: {
+      analogy: "Magnetic field lines around a current-carrying wire are like the ripples when you dip a stick straight into water. The ripples form concentric circles around the stick. Similarly, magnetic field lines form concentric circles around the wire.",
+      examHack: "CBSE loves the right-hand thumb rule and Fleming's left-hand rule. For the right-hand rule: thumb = current direction, curled fingers = magnetic field direction. For Fleming's: Forefinger = Field, Middle finger = Current, Thumb = Force/Motion.",
+      mnemonic: "Fleming's Left: FBI rule — Forefinger = B (Field), Middle = I (Current), Thumb = F (Force). Right-hand rule: Thumb Up = Current Up, Fingers Curl = Field direction."
+    },
+    heredity: {
+      analogy: "Genes are like a recipe book passed from parents to children. Each parent contributes one copy of every recipe (gene). Some recipes are 'bold font' (dominant) and always show up, while others are 'light font' (recessive) and only appear when both copies are light.",
+      examHack: "CBSE always asks Mendel's monohybrid cross. Draw the Punnett square neatly with all 4 boxes filled. State phenotypic ratio (3:1) and genotypic ratio (1:2:1) separately — many students mix them up and lose marks.",
+      mnemonic: "Mendel's 3:1 ratio: 'Three Tall, One Short' — TT, Tt, Tt, tt. Dominant always wins unless both copies are recessive (tt)."
+    },
+    carbon: {
+      analogy: "Carbon is like a social butterfly at a party. It has 4 hands (valence electrons) and can shake hands with up to 4 other atoms at once. This is why carbon forms millions of compounds — it's the most 'friendly' element in chemistry!",
+      examHack: "CBSE loves homologous series questions. Remember: each next member differs by -CH₂- and 14 u in molecular mass. Write the general formula (CₙH₂ₙ₊₂ for alkanes) and at least 3 members with names for full marks.",
+      mnemonic: "Carbon's tetravalency: 'Carbon Has Four Hands' — it can bond with H, O, N, and even itself. Homologous: 'Meth-Eth-Prop-But' (1C, 2C, 3C, 4C)."
+    },
+    lifeprocess: {
+      analogy: "Life processes are like the daily chores that keep a house running. Nutrition is grocery shopping, respiration is paying the electricity bill (energy), transportation is the plumbing system (blood), and excretion is taking out the garbage.",
+      examHack: "CBSE often asks 'why are life processes necessary?' — the answer must mention 'maintenance of living state' and 'repair of damaged molecules'. For respiration, always distinguish between aerobic (with O₂, 38 ATP) and anaerobic (without O₂, 2 ATP).",
+      mnemonic: "NTRE: Nutrition, Transportation, Respiration, Excretion — the 4 pillars of life processes."
+    },
+    control: {
+      analogy: "The nervous system is like a WhatsApp group for your body. The brain is the admin, nerves are the internet cables, and electrical impulses are the messages. The endocrine system is like posting a letter — hormones travel through blood and take longer to arrive but the effect lasts longer.",
+      examHack: "CBSE loves comparing nervous vs hormonal control. Make a table: Speed (nerve = fast, hormone = slow), Duration (nerve = short, hormone = long), Pathway (nerve = electrical, hormone = chemical via blood). Always mention at least 3 differences.",
+      mnemonic: "Nervous = Express Delivery (fast, short). Hormones = Regular Post (slow, long-lasting). Brain → Spinal Cord → Nerves = Central → Peripheral."
+    },
+    linear: {
+      analogy: "A linear equation in two variables is like a seesaw balance. If you change x, y adjusts to keep the equation balanced. The graph is a straight line — every point on that line is a solution that keeps both sides equal.",
+      examHack: "CBSE asks for the graphical method of solving pair of linear equations. Always: (1) make a table of at least 3 values for each equation, (2) plot both lines on the same graph, (3) clearly mark the intersection point as the solution. Write 'consistent/inconsistent' as conclusion.",
+      mnemonic: "One solution = intersecting lines, No solution = parallel lines (a₁/a₂ = b₁/b₂ ≠ c₁/c₂), Infinite solutions = coincident lines (a₁/a₂ = b₁/b₂ = c₁/c₂)."
+    },
+    ap: {
+      analogy: "An Arithmetic Progression is like climbing stairs where each step has the same height. The first step is 'a' (first term), and each subsequent step adds 'd' (common difference). If d is positive, you climb up; if negative, you climb down.",
+      examHack: "CBSE 4-mark AP questions almost always need: aₙ = a + (n−1)d (nth term) and Sₙ = n/2 [2a + (n−1)d] (sum). Write both formulas first, then substitute. For 'find the number of terms', set aₙ = given value and solve for n.",
+      mnemonic: "AP formulas: 'An Apple a Day' — Aₙ = A + (n−1)D. Sum: 'Snake eats N/2 apples' — Sₙ = n/2 × [2a + (n−1)d]."
+    },
+    circle: {
+      analogy: "A tangent to a circle is like a cricket ball just grazing the edge of a round boundary. It touches at exactly one point and then flies away. The radius to that touching point is always perpendicular (90°) to the tangent — like the umpire standing straight at that point!",
+      examHack: "CBSE construction questions (tangents from external point) carry 3-4 marks. Steps: draw the circle, join center to external point, bisect that line, draw arc to find tangent points. Label everything — marks are given for each construction step shown.",
+      mnemonic: "Tangent touches once, at 90° to radius. From external point: always 2 tangents, equal in length."
+    },
+    surfacearea: {
+      analogy: "Surface area is like the wrapping paper needed to cover a gift box — it's the total outside area. Volume is like how much sand you can pour inside the box. A cylinder is like a tin can: two circular lids (tops) + one curved sheet wrapped around.",
+      examHack: "CBSE loves combination problems (cone on cylinder, hemisphere on cylinder). Always calculate each shape's contribution separately, then add. For CSA: don't include the joining circle. For TSA: include all exposed surfaces only.",
+      mnemonic: "Cylinder: CSA = 2πrh (the label), TSA = 2πr(r+h) (label + 2 lids). Cone: CSA = πrl (the cone wrapper). Sphere: TSA = 4πr²."
+    },
+    statistics: {
+      analogy: "Mean, Median, and Mode are like three friends describing a cricket team's scores. Mean says 'let's share equally' (total/count). Median says 'let's find the middle person when lined up'. Mode says 'let's find the most popular score'.",
+      examHack: "CBSE asks for mean using Direct, Assumed Mean, or Step Deviation method. Step Deviation is fastest for large numbers. Always state which method you're using. For median of grouped data, use: L + [(N/2 - cf)/f] × h. Write the formula first!",
+      mnemonic: "Mean = Sum/N, Median = Middle value, Mode = Most frequent. For grouped data: 'Learn the Median formula by heart' — L + [(N/2 − cf)/f] × h."
+    },
+    polynomial: {
+      analogy: "A polynomial is like a machine with gears. The degree tells you how many curves the machine can make. Degree 1 (linear) = straight road, Degree 2 (quadratic) = one hill/valley, Degree 3 (cubic) = a snake-like road with two turns.",
+      examHack: "CBSE always asks the relationship between zeroes and coefficients. For ax² + bx + c: sum of zeroes = −b/a, product of zeroes = c/a. Always verify your zeroes satisfy both relationships for full marks.",
+      mnemonic: "Sum = −b/a (Subtract B over A), Product = c/a (Carry C over A). Zeroes of p(x) are where the graph crosses the x-axis."
+    },
+    realnumber: {
+      analogy: "Real numbers are like a number line highway. Rational numbers are the well-marked exits (fractions, terminating/repeating decimals). Irrational numbers are the stretches between exits that go on forever without repeating (like √2 or π). Together they cover every point on the highway.",
+      examHack: "CBSE loves HCF × LCM = Product of two numbers. For Euclid's division: always write a = bq + r clearly. For prime factorization: draw the factor tree. Always state 'by the Fundamental Theorem of Arithmetic' when using prime factorization.",
+      mnemonic: "HCF = smallest powers of common primes. LCM = highest powers of all primes. HCF × LCM = a × b."
+    },
+    democracy: {
+      analogy: "Democracy is like a class where every student gets one vote to decide the picnic destination. Even if the topper wants mountains but the majority wants beach, beach wins. That's the power of majority rule — every vote counts equally!",
+      examHack: "CBSE asks 'why democracy?' and 'what are the challenges?' — structure your answer as: (1) merits/demerits table, (2) at least 3 points for each, (3) examples from India. Mention 'accountability', 'dignity', and 'conflict resolution' for the merits section.",
+      mnemonic: "Democracy's 5 features: PEARL — People's participation, Equality, Accountability, Rule of law, Liberty."
+    },
+    federalism: {
+      analogy: "Federalism is like a family business. The grandfather (Central government) makes big decisions. Each son (State government) runs their own branch with their own rules for local matters. Some decisions need both to agree (Concurrent List), like choosing the family logo.",
+      examHack: "CBSE loves the 3 lists: Union (Defence, Foreign affairs), State (Police, Agriculture), Concurrent (Education, Marriage). Always mention the 73rd/74th Amendment for local self-governance (Panchayats/Municipalities). Draw a simple diagram of the 3-tier structure.",
+      mnemonic: "3 Lists: 'U Suck Candy' — Union, State, Concurrent. Residuary powers go to Central government."
+    },
+    development: {
+      analogy: "Development is not just about getting richer — it's like upgrading from a bicycle to a car to a plane. But if the car pollutes the air and the plane makes you deaf, are you really better off? That's why we need to look at income + health + education together (HDI).",
+      examHack: "CBSE compares countries using HDI (Human Development Index), not just per capita income. Always mention the 3 indicators: (1) Per capita income, (2) Literacy rate, (3) Infant mortality rate. Give examples: Sri Lanka has better HDI than India despite lower income.",
+      mnemonic: "HDI = Income + Literacy + Life expectancy. 'I Love Life' — the three pillars of development."
+    },
+    globalisation: {
+      analogy: "Globalisation is like a giant shopping mall where shops from every country set up stalls. MNCs are the big chain stores that open branches everywhere. WTO is the mall's security guard making sure every shop follows the same trade rules.",
+      examHack: "CBSE asks about impact of globalisation on India. Always present both sides: positive (more jobs, better technology, consumer choice) and negative (small industries suffer, job insecurity, cultural impact). Mention 'SEZs' and 'liberalisation' for bonus marks.",
+      mnemonic: "Globalisation = Trade + Technology + MNCs. LPG reforms: Liberalisation, Privatisation, Globalisation (1991)."
+    },
+    resources: {
+      analogy: "Resources are like tools in a toolbox. Some are renewable (like a rechargeable battery — forests, water). Others are non-renewable (like a match — once burned, gone forever — coal, petroleum). Sustainable development means using the toolbox wisely so future generations also have tools.",
+      examHack: "CBSE loves resource classification. Remember the 4 ways: (1) Origin: biotic/abiotic, (2) Exhaustibility: renewable/non-renewable, (3) Ownership: individual/community/national/international, (4) Status: potential/developed/stock/reserve. Make a classification chart for 5-mark questions.",
+      mnemonic: "Resource classification: 'OEOS' — Origin, Exhaustibility, Ownership, Status. Sustainable = 'Use wisely, save for kids'."
     }
   },
   hi: {
@@ -2215,7 +2385,7 @@ const TEACHER_INSIGHTS: Record<string, Record<string, TeacherInsight>> = {
       mnemonic: "PMAT: Prophase, Metaphase (मध्य), Anaphase (अलग), Telophase (दो)."
     },
     quadratic: {
-      analogy: "द्विघात समीकरण के मूल खोजना यह पता लगाने जैसा है कि हवा में फेंकी गई गेंद जमीन को कहाँ छूती है। विविक्तकर (D = b^2 - 4ac) एक डिटेक्टर की तरह है: यदि D > 0, गेंद जमीन को दो बार छूती है; यदि D = 0, यह जमीन को केवल एक बार छूती है; यदि D < 0, यह हवा में ही रहती है।",
+      analogy: "द्विघात समीकरण के मूल खोजना यह पता लगाने जैसा है कि हवा में फेंकी गई गेंद जमीन को कहाँ छूती है। विविक्तकर (D = b² − 4ac) एक डिटेक्टर की तरह है: यदि D > 0, गेंद जमीन को दो बार छूती है; यदि D = 0, यह जमीन को केवल एक बार छूती है; यदि D < 0, यह हवा में ही रहती है।",
       examHack: "CBSE अक्सर मूलों की प्रकृति पूछता है। हमेशा पहले D का मान लिखें, गणना स्पष्ट रूप से दिखाएं, और फिर लिखें कि मूल 'वास्तविक और भिन्न', 'वास्तविक और समान', या 'वास्तविक नहीं' हैं।",
       mnemonic: "D का नियम: धनात्मक = 2 मूल, शून्य = 1 मूल, ऋणात्मक = कोई वास्तविक मूल नहीं।"
     },
@@ -2223,6 +2393,106 @@ const TEACHER_INSIGHTS: Record<string, Record<string, TeacherInsight>> = {
       analogy: "प्रकाश के अपवर्तन को कंक्रीट से घास पर तिरछे जाने वाले पहिये की तरह समझें। जो पहिया पहले घास को छुएगा वह पहले धीमा हो जाएगा, जिससे पहिया मुड़ जाएगा। यही कारण है कि प्रकाश हवा से कांच में जाने पर मुड़ जाता है!",
       examHack: "चिह्न परिपाटी (Sign Conventions) में छात्र सबसे ज्यादा गलती करते हैं। याद रखें: वस्तु की दूरी (u) हमेशा ऋणात्मक होती है। उत्तल दर्पण/लेंस के लिए फोकस दूरी (f) धनात्मक होती है। अवतल के लिए ऋणात्मक होती है। किरणों पर तीरों के निशान जरूर लगाएं!",
       mnemonic: "अवतल (Concave): अंदर की ओर झुका हुआ (गुफा की तरह)। उत्तल (Convex): ऊपर की ओर उठा हुआ तल।"
+    },
+    photosynthesis: {
+      analogy: "प्रकाश संश्लेषण एक सौर ऊर्जा से चलने वाली रसोई की तरह है। पत्ती रसोई है, सूर्य का प्रकाश गैस चूल्हा है, CO₂ हवा से आया कच्चा माल है, और पानी मिट्टी से आया दूसरा सामान। पत्ती इन्हें ग्लूकोज (भोजन) में पकाती है और O₂ को सुगंध की तरह छोड़ती है!",
+      examHack: "CBSE संतुलित समीकरण पूछता है: 6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂ (सूर्य प्रकाश और क्लोरोफिल की उपस्थिति में)। हमेशा 'सूर्य प्रकाश और क्लोरोफिल की उपस्थिति में' लिखें — इसे छोड़ने पर अंक कटते हैं।",
+      mnemonic: "CO₂ + पानी + सूर्य → ग्लूकोज + O₂। याद रखें: 'CPS बनाए GO' (कार्बन पानी सूर्य → ग्लूकोज ऑक्सीजन)।"
+    },
+    digestive: {
+      analogy: "पाचन तंत्र एक फैक्ट्री असेंबली लाइन की तरह है। मुँह कुचलने वाली मशीन है (दाँत भोजन पीसते हैं), पेट एसिड बाथ है (HCl तोड़ता है), छोटी आंत गुणवत्ता नियंत्रण विभाग है (पोषक तत्व अवशोषित करती है), और बड़ी आंत कचरा प्रबंधन इकाई है।",
+      examHack: "CBSE अक्सर एंजाइमों की भूमिका पूछता है। याद रखें: लार एमाइलेज (मुँह, स्टार्च तोड़ता है), पेप्सिन (पेट, प्रोटीन तोड़ता है), पित्त (यकृत, वसा का पायसीकरण), अग्न्याशय रस (तीनों तोड़ता है)। पूर्ण अंक के लिए अंग + एंजाइम + सब्सट्रेट लिखें।",
+      mnemonic: "पाचन क्रम: 'मुँह पेट छोटी बड़ी' — मुँह → आमाशय → छोटी आंत → बड़ी आंत। एंजाइम: 'सप पैन' (सैलिवरी एमाइलेज, पेप्सिन, अग्न्याशय रस)।"
+    },
+    metals: {
+      analogy: "धातु और अधातु दो टीमों की रस्साकशी की तरह हैं। धातुएँ वह टीम हैं जो इलेक्ट्रॉन देना पसंद करती हैं (वे उदार दाता हैं)। अधातुएँ वह टीम हैं जो इलेक्ट्रॉन लेना पसंद करती हैं (वे लालची लेने वाली हैं)। जब वे मिलते हैं, तो आयनिक बंध बनता है!",
+      examHack: "CBSE हर साल सक्रियता श्रेणी पूछता है। क्रम याद रखें: K, Na, Ca, Mg, Al, Zn, Fe, Ni, Sn, Pb, H, Cu, Hg, Ag, Au, Pt। विस्थापन अभिक्रियाओं के प्रश्न हमेशा इस श्रेणी पर निर्भर करते हैं।",
+      mnemonic: "के ना कर मगर अलू जिंदा फिर नींबू सनकी प्लम हवाई कप हगा औरंगजेब प्लेटिनम (K Na Ca Mg Al Zn Fe Ni Sn Pb H Cu Hg Ag Au Pt)"
+    },
+    magnetic: {
+      analogy: "धारावाहक तार के चारों ओर चुंबकीय क्षेत्र रेखाएँ वैसी ही हैं जैसे पानी में सीधी छड़ी डालने पर बनने वाली लहरें। लहरें छड़ी के चारों ओर संकेंद्रित वृत्त बनाती हैं। इसी तरह, चुंबकीय क्षेत्र रेखाएँ तार के चारों ओर संकेंद्रित वृत्त बनाती हैं।",
+      examHack: "CBSE दायें हाथ का अंगूठा नियम और फ्लेमिंग का बायें हाथ का नियम पूछता है। दायें हाथ: अंगूठा = धारा दिशा, मुड़ी उंगलियाँ = चुंबकीय क्षेत्र। फ्लेमिंग: तर्जनी = क्षेत्र, मध्यमा = धारा, अंगूठा = बल।",
+      mnemonic: "फ्लेमिंग बायाँ: FBI — Forefinger = B (क्षेत्र), Middle = I (धारा), Thumb = F (बल)।"
+    },
+    heredity: {
+      analogy: "जीन एक रेसिपी बुक की तरह हैं जो माता-पिता से बच्चों को मिलती हैं। हर माता-पिता हर रेसिपी (जीन) की एक कॉपी देते हैं। कुछ रेसिपी 'बोल्ड फॉन्ट' (प्रभावी) में होती हैं और हमेशा दिखती हैं, जबकि अन्य 'हल्के फॉन्ट' (अप्रभावी) में होती हैं।",
+      examHack: "CBSE हमेशा मेंडल का एकसंकर क्रॉस पूछता है। पनेट वर्ग (Punnett square) साफ-सुथरा बनाएं। लक्षणप्ररूपी अनुपात (3:1) और जीनप्ररूपी अनुपात (1:2:1) अलग-अलग लिखें।",
+      mnemonic: "मेंडल का 3:1 अनुपात: TT, Tt, Tt, tt। प्रभावी हमेशा जीतता है जब तक दोनों कॉपी अप्रभावी (tt) न हों।"
+    },
+    carbon: {
+      analogy: "कार्बन एक पार्टी में सोशल बटरफ्लाई की तरह है। इसके 4 हाथ (संयोजकता इलेक्ट्रॉन) हैं और यह एक साथ 4 अन्य परमाणुओं के साथ हाथ मिला सकता है। इसीलिए कार्बन लाखों यौगिक बनाता है — यह रसायन विज्ञान का सबसे 'मिलनसार' तत्व है!",
+      examHack: "CBSE समजातीय श्रेणी पर प्रश्न पूछता है। याद रखें: प्रत्येक अगला सदस्य -CH₂- और 14u आणविक द्रव्यमान से भिन्न होता है। सामान्य सूत्र (एल्केन: CₙH₂ₙ₊₂) और कम से कम 3 सदस्यों के नाम लिखें।",
+      mnemonic: "कार्बन की चतुर्संयोजकता: 'कार्बन के चार हाथ'। समजातीय: 'मीथ-ईथ-प्रोप-ब्यूट' (1C, 2C, 3C, 4C)।"
+    },
+    lifeprocess: {
+      analogy: "जैव प्रक्रियाएँ घर चलाने के दैनिक कामों की तरह हैं। पोषण किराने की खरीदारी है, श्वसन बिजली बिल भुगतान है (ऊर्जा), परिवहन प्लंबिंग सिस्टम है (रक्त), और उत्सर्जन कचरा बाहर फेंकना है।",
+      examHack: "CBSE पूछता है 'जैव प्रक्रियाएँ क्यों आवश्यक हैं?' — उत्तर में 'जीवित अवस्था का रखरखाव' और 'क्षतिग्रस्त अणुओं की मरम्मत' जरूर लिखें। श्वसन के लिए: वायवीय (O₂ के साथ, 38 ATP) और अवायवीय (O₂ के बिना, 2 ATP) में अंतर करें।",
+      mnemonic: "NTRE: पोषण (Nutrition), परिवहन (Transportation), श्वसन (Respiration), उत्सर्जन (Excretion) — जैव प्रक्रियाओं के 4 स्तंभ।"
+    },
+    control: {
+      analogy: "तंत्रिका तंत्र आपके शरीर के WhatsApp ग्रुप की तरह है। मस्तिष्क एडमिन है, तंत्रिकाएँ इंटरनेट केबल हैं, और विद्युत आवेग संदेश हैं। अंतःस्रावी तंत्र पत्र भेजने जैसा है — हार्मोन रक्त से यात्रा करते हैं और पहुँचने में समय लगता है लेकिन प्रभाव लंबा रहता है।",
+      examHack: "CBSE तंत्रिका बनाम हार्मोनल नियंत्रण की तुलना पूछता है। तालिका बनाएं: गति (तंत्रिका = तेज़, हार्मोन = धीमी), अवधि (तंत्रिका = कम, हार्मोन = लंबी), मार्ग (तंत्रिका = विद्युत, हार्मोन = रासायनिक)। कम से कम 3 अंतर लिखें।",
+      mnemonic: "तंत्रिका = एक्सप्रेस डिलीवरी (तेज़, छोटी)। हार्मोन = सामान्य डाक (धीमी, लंबे समय तक)। मस्तिष्क → मेरुरज्जु → तंत्रिकाएँ।"
+    },
+    linear: {
+      analogy: "दो चरों में रैखिक समीकरण एक झूले के संतुलन की तरह है। यदि आप x बदलते हैं, तो y समीकरण को संतुलित रखने के लिए समायोजित होता है। ग्राफ एक सीधी रेखा है — उस रेखा पर हर बिंदु एक हल है।",
+      examHack: "CBSE ग्राफीय विधि से रैखिक समीकरण युग्म हल करने को पूछता है। हमेशा: (1) प्रत्येक समीकरण के लिए कम से कम 3 मानों की तालिका बनाएं, (2) एक ही ग्राफ पर दोनों रेखाएं प्लॉट करें, (3) प्रतिच्छेदन बिंदु को हल के रूप में स्पष्ट चिह्नित करें।",
+      mnemonic: "एक हल = प्रतिच्छेदी रेखाएं, कोई हल नहीं = समांतर रेखाएं, अनंत हल = संपाती रेखाएं।"
+    },
+    ap: {
+      analogy: "समांतर श्रेणी (AP) सीढ़ियाँ चढ़ने जैसी है जहाँ हर सीढ़ी की ऊँचाई समान है। पहली सीढ़ी 'a' (पहला पद) है, और हर अगली सीढ़ी 'd' (सार्व अंतर) जोड़ती है। d धनात्मक हो तो ऊपर चढ़ो, ऋणात्मक हो तो नीचे उतरो।",
+      examHack: "CBSE 4 अंक के AP प्रश्नों में: aₙ = a + (n−1)d (nवाँ पद) और Sₙ = n/2 [2a + (n−1)d] (योग)। पहले दोनों सूत्र लिखें, फिर मान रखें।",
+      mnemonic: "AP सूत्र: Aₙ = A + (n−1)D। योग: Sₙ = n/2 × [2a + (n−1)d]।"
+    },
+    circle: {
+      analogy: "वृत्त की स्पर्श रेखा क्रिकेट की गेंद की तरह है जो गोल बाउंड्री के किनारे को छूकर निकल जाती है। यह ठीक एक बिंदु पर छूती है। उस बिंदु तक त्रिज्या हमेशा स्पर्श रेखा पर लंबवत (90°) होती है।",
+      examHack: "CBSE रचना प्रश्न (बाहरी बिंदु से स्पर्श रेखाएँ) 3-4 अंक के होते हैं। चरण: वृत्त बनाएं, केंद्र से बाहरी बिंदु जोड़ें, उस रेखा को समद्विभाजित करें। हर रचना चरण को दिखाने पर अंक मिलते हैं।",
+      mnemonic: "स्पर्श रेखा एक बार छूती है, त्रिज्या से 90° पर। बाहरी बिंदु से: हमेशा 2 स्पर्श रेखाएँ, समान लंबाई।"
+    },
+    surfacearea: {
+      analogy: "पृष्ठीय क्षेत्रफल उपहार बॉक्स पर लगाने वाले रैपिंग पेपर की तरह है — यह कुल बाहरी क्षेत्र है। आयतन बॉक्स में कितनी रेत भर सकते हैं। बेलन एक टिन के डिब्बे जैसा है: दो गोल ढक्कन + एक लपेटा हुआ कर्व शीट।",
+      examHack: "CBSE संयोजित आकृतियों (शंकु + बेलन, अर्धगोला + बेलन) पर प्रश्न पूछता है। हर आकृति का योगदान अलग से गिनें, फिर जोड़ें। CSA में: जुड़ने वाला वृत्त शामिल न करें। TSA में: केवल खुली सतहें शामिल करें।",
+      mnemonic: "बेलन: CSA = 2πrh, TSA = 2πr(r+h)। शंकु: CSA = πrl। गोला: TSA = 4πr²।"
+    },
+    statistics: {
+      analogy: "माध्य, माध्यिका, और बहुलक क्रिकेट टीम के स्कोर बताने वाले तीन दोस्तों की तरह हैं। माध्य कहता है 'बराबर बाँटो' (कुल/संख्या)। माध्यिका कहता है 'बीच वाला खोजो'। बहुलक कहता है 'सबसे ज्यादा बार आने वाला खोजो'।",
+      examHack: "CBSE माध्य की गणना प्रत्यक्ष, कल्पित माध्य, या पद विचलन विधि से पूछता है। बड़ी संख्याओं के लिए पद विचलन विधि सबसे तेज़ है। सवर्गीकृत आंकड़ों के माध्यिका सूत्र: L + [(N/2 - cf)/f] × h।",
+      mnemonic: "माध्य = योग/N, माध्यिका = बीच का मान, बहुलक = सबसे अधिक बार। सूत्र: L + [(N/2 − cf)/f] × h।"
+    },
+    polynomial: {
+      analogy: "बहुपद एक गियर वाली मशीन की तरह है। घात बताता है कि मशीन कितने मोड़ ले सकती है। घात 1 (रैखिक) = सीधी सड़क, घात 2 (द्विघात) = एक पहाड़ी, घात 3 (त्रिघात) = साँप जैसी सड़क।",
+      examHack: "CBSE हमेशा शून्यकों और गुणांकों के बीच संबंध पूछता है। ax² + bx + c के लिए: शून्यकों का योग = −b/a, शून्यकों का गुणनफल = c/a। दोनों संबंधों से सत्यापित करें।",
+      mnemonic: "योग = −b/a, गुणनफल = c/a। p(x) के शून्यक वे बिंदु हैं जहाँ ग्राफ x-अक्ष को काटता है।"
+    },
+    realnumber: {
+      analogy: "वास्तविक संख्याएँ संख्या रेखा के राजमार्ग की तरह हैं। परिमेय संख्याएँ चिह्नित निकास बिंदु हैं (भिन्न, सांत/आवर्ती दशमलव)। अपरिमेय संख्याएँ बीच के वे भाग हैं जो बिना दोहराव के अनंत तक जाते हैं (जैसे √2 या π)।",
+      examHack: "CBSE पसंद करता है: HCF × LCM = दो संख्याओं का गुणनफल। यूक्लिड विभाजन के लिए: a = bq + r स्पष्ट लिखें। अभाज्य गुणनखंड के लिए: गुणनखंड वृक्ष बनाएं। 'अंकगणित की मूलभूत प्रमेय' जरूर लिखें।",
+      mnemonic: "HCF = उभयनिष्ठ अभाज्य गुणनखंडों की न्यूनतम घात। LCM = सभी अभाज्य गुणनखंडों की अधिकतम घात। HCF × LCM = a × b।"
+    },
+    democracy: {
+      analogy: "लोकतंत्र एक ऐसी कक्षा है जहाँ हर छात्र को पिकनिक स्थान चुनने का एक वोट मिलता है। भले ही टॉपर पहाड़ चाहे लेकिन बहुमत बीच चाहे, तो बीच जीतता है। यही बहुमत का नियम है!",
+      examHack: "CBSE पूछता है 'लोकतंत्र क्यों?' और 'चुनौतियाँ क्या हैं?' — उत्तर की संरचना: (1) गुण/दोष तालिका, (2) प्रत्येक के कम से कम 3 बिंदु, (3) भारत से उदाहरण। गुणों में 'जवाबदेही', 'गरिमा', और 'संघर्ष समाधान' जरूर लिखें।",
+      mnemonic: "लोकतंत्र की 5 विशेषताएँ: जनभागीदारी, समानता, जवाबदेही, कानून का शासन, स्वतंत्रता।"
+    },
+    federalism: {
+      analogy: "संघवाद पारिवारिक व्यवसाय की तरह है। दादाजी (केंद्र सरकार) बड़े फैसले लेते हैं। हर बेटा (राज्य सरकार) अपनी शाखा अपने नियमों से चलाता है। कुछ फैसलों में दोनों की सहमति चाहिए (समवर्ती सूची)।",
+      examHack: "CBSE 3 सूचियाँ पूछता है: संघ (रक्षा, विदेश), राज्य (पुलिस, कृषि), समवर्ती (शिक्षा, विवाह)। स्थानीय स्वशासन के लिए 73वें/74वें संशोधन (पंचायत/नगरपालिका) जरूर लिखें।",
+      mnemonic: "3 सूचियाँ: संघ, राज्य, समवर्ती। अवशिष्ट शक्तियाँ केंद्र सरकार को मिलती हैं।"
+    },
+    development: {
+      analogy: "विकास सिर्फ अमीर होना नहीं है — यह साइकिल से कार और फिर हवाई जहाज में अपग्रेड करने जैसा है। लेकिन अगर कार प्रदूषण फैलाए तो क्या आप वाकई बेहतर हैं? इसीलिए आय + स्वास्थ्य + शिक्षा (HDI) तीनों देखने होंगे।",
+      examHack: "CBSE देशों की तुलना HDI (मानव विकास सूचकांक) से करता है, सिर्फ प्रति व्यक्ति आय से नहीं। 3 संकेतक: (1) प्रति व्यक्ति आय, (2) साक्षरता दर, (3) शिशु मृत्यु दर। उदाहरण: श्रीलंका का HDI भारत से बेहतर है।",
+      mnemonic: "HDI = आय + साक्षरता + जीवन प्रत्याशा। 'आसान जीवन' — विकास के तीन स्तंभ।"
+    },
+    globalisation: {
+      analogy: "वैश्वीकरण एक विशाल शॉपिंग मॉल की तरह है जहाँ हर देश की दुकानें हैं। MNC बड़ी चेन स्टोर हैं। WTO मॉल का सिक्योरिटी गार्ड है जो सुनिश्चित करता है कि हर दुकान समान नियम मानें।",
+      examHack: "CBSE भारत पर वैश्वीकरण के प्रभाव पूछता है। दोनों पक्ष प्रस्तुत करें: सकारात्मक (अधिक नौकरियाँ, बेहतर तकनीक) और नकारात्मक (छोटे उद्योग प्रभावित, नौकरी असुरक्षा)। 'SEZ' और 'उदारीकरण' लिखें।",
+      mnemonic: "वैश्वीकरण = व्यापार + तकनीक + MNC। LPG सुधार: उदारीकरण, निजीकरण, वैश्वीकरण (1991)।"
+    },
+    resources: {
+      analogy: "संसाधन टूलबॉक्स में औजारों की तरह हैं। कुछ नवीकरणीय हैं (रिचार्जेबल बैटरी की तरह — वन, जल)। कुछ अनवीकरणीय हैं (माचिस की तरह — एक बार जले तो हमेशा के लिए खत्म — कोयला, पेट्रोलियम)।",
+      examHack: "CBSE संसाधन वर्गीकरण पूछता है। 4 तरीके: (1) उत्पत्ति: जैव/अजैव, (2) समाप्यता: नवीकरणीय/अनवीकरणीय, (3) स्वामित्व: व्यक्तिगत/सामुदायिक/राष्ट्रीय/अंतर्राष्ट्रीय, (4) स्थिति: संभावी/विकसित/भंडार/आरक्षित।",
+      mnemonic: "संसाधन वर्गीकरण: उत्पत्ति, समाप्यता, स्वामित्व, स्थिति। सतत विकास = 'समझदारी से उपयोग करो, बच्चों के लिए बचाओ'।"
     }
   }
 };
@@ -2230,28 +2500,48 @@ const TEACHER_INSIGHTS: Record<string, Record<string, TeacherInsight>> = {
 function getTeacherInsights(topicTitle: string, isHi: boolean): TeacherInsight {
   const lang = isHi ? 'hi' : 'en';
   const title = (topicTitle || '').toLowerCase();
+  const titleHi = (topicTitle || '');
   
-  let key = '';
-  if (title.includes('ohm') || title.includes('electr') || title.includes('poten') || title.includes('resist')) {
-    key = 'electricity';
-  } else if (title.includes('chem') || title.includes('reaction') || title.includes('equat') || title.includes('balanc')) {
-    key = 'chemical';
-  } else if (title.includes('acid') || title.includes('base') || title.includes('ph ') || title.includes('salt')) {
-    key = 'acid';
-  } else if (title.includes('trig') || title.includes('ratio') || title.includes('height') || title.includes('distance')) {
-    key = 'trigonometry';
-  } else if (title.includes('mitos') || title.includes('meios') || title.includes('cell divis') || title.includes('cell-divis')) {
-    key = 'mitosis';
-  } else if (title.includes('quadrat') || title.includes('roots') || title.includes('discrim')) {
-    key = 'quadratic';
-  } else if (title.includes('light') || title.includes('reflect') || title.includes('refract') || title.includes('mirror') || title.includes('lens')) {
-    key = 'light';
+  // Map of keyword patterns to insight keys — expanded for 20+ topics
+  const KEYWORD_MAP: Array<{ key: string; patterns: RegExp }> = [
+    { key: 'electricity', patterns: /ohm|electr|poten|resist|circuit|विद्युत|प्रतिरोध|ओम/ },
+    { key: 'chemical', patterns: /chem.*react|equat|balanc|रासायनिक|अभिक्रिया|समीकरण|संतुलित/ },
+    { key: 'acid', patterns: /acid|base|ph\b|salt|अम्ल|क्षार|लवण|pH/ },
+    { key: 'trigonometry', patterns: /trig|sin\b|cos\b|tan\b|ratio|height.*distance|त्रिकोणमित|ऊंचाई.*दूरी/ },
+    { key: 'mitosis', patterns: /mitos|meios|cell.?divis|कोशिका.?विभाजन|समसूत्री|अर्धसूत्री/ },
+    { key: 'quadratic', patterns: /quadrat|discrimin|roots.*equat|द्विघात|मूल|विविक्तकर/ },
+    { key: 'light', patterns: /\blight\b|reflect|refract|mirror|lens|प्रकाश|अपवर्तन|परावर्तन|दर्पण|लेंस/ },
+    { key: 'photosynthesis', patterns: /photosynth|chlorophyll|प्रकाश.*संश्लेषण|क्लोरोफिल|पत्ती/ },
+    { key: 'digestive', patterns: /digest|stomach|intestin|enzyme|पाचन|आमाशय|आंत|एंजाइम/ },
+    { key: 'metals', patterns: /metal.*non|non.*metal|reactivity.*series|ionic|धातु|अधातु|सक्रियता|आयनिक/ },
+    { key: 'magnetic', patterns: /magnet|solenoid|fleming|electro.*magnet|चुंबक|सोलेनॉइड|फ्लेमिंग|विद्युत.*चुंबक/ },
+    { key: 'heredity', patterns: /heredit|mendel|gene|chromosome|आनुवंशिक|मेंडल|जीन|गुणसूत्र/ },
+    { key: 'carbon', patterns: /carbon.*compound|organic|hydrocarbon|homolog|कार्बन.*यौगिक|कार्बनिक|हाइड्रोकार्बन|समजातीय/ },
+    { key: 'lifeprocess', patterns: /life.*process|nutrition|respiration|excretion|जैव.*प्रक्रिया|पोषण|श्वसन|उत्सर्जन/ },
+    { key: 'control', patterns: /control.*coord|nervous|hormone|endocrine|नियंत्रण.*समन्वय|तंत्रिका|हार्मोन|अंतःस्रावी/ },
+    { key: 'linear', patterns: /linear.*equat|pair.*equat|रैखिक.*समीकरण|समीकरण.*युग्म/ },
+    { key: 'ap', patterns: /arithmetic.*progress|a\.?p\.|common.*differ|समांतर.*श्रेणी|सार्व.*अंतर/ },
+    { key: 'circle', patterns: /circle|tangent|chord|secant|वृत्त|स्पर्श.*रेखा|जीवा/ },
+    { key: 'surfacearea', patterns: /surface.*area|volume|cylinder|cone|sphere|पृष्ठीय.*क्षेत्रफल|आयतन|बेलन|शंकु|गोला/ },
+    { key: 'statistics', patterns: /statistic|mean|median|mode|सांख्यिकी|माध्य|माध्यिका|बहुलक/ },
+    { key: 'polynomial', patterns: /polynomial|zero.*polynomial|बहुपद|शून्यक/ },
+    { key: 'realnumber', patterns: /real.*number|irrational|euclid|hcf|lcm|वास्तविक.*संख्या|अपरिमेय|यूक्लिड/ },
+    { key: 'democracy', patterns: /democra|लोकतंत्र/ },
+    { key: 'federalism', patterns: /federal|union.*list|state.*list|संघवाद|संघ.*सूची/ },
+    { key: 'development', patterns: /\bdevelop|hdi|human.*develop|विकास|मानव.*विकास/ },
+    { key: 'globalisation', patterns: /globali[sz]|mnc|wto|वैश्वीकरण/ },
+    { key: 'resources', patterns: /resource.*develop|renewable|non.*renewable|संसाधन|नवीकरणीय|अनवीकरणीय/ },
+  ];
+
+  for (const { key, patterns } of KEYWORD_MAP) {
+    if (patterns.test(title) || patterns.test(titleHi)) {
+      if (TEACHER_INSIGHTS[lang][key]) {
+        return TEACHER_INSIGHTS[lang][key];
+      }
+    }
   }
   
-  if (key && TEACHER_INSIGHTS[lang][key]) {
-    return TEACHER_INSIGHTS[lang][key];
-  }
-  
+  // Fallback — generic but still helpful
   return {
     analogy: isHi
       ? `इस अवधारणा को दैनिक जीवन के उदाहरण से समझें। जब आप इसे अपने आस-पास की चीज़ों से जोड़ते हैं, तो जटिल विज्ञान/गणित भी बिल्कुल आसान लगने लगता है।`
@@ -2268,23 +2558,28 @@ function getTeacherInsights(topicTitle: string, isHi: boolean): TeacherInsight {
 interface CbseStep {
   title: string;
   titleHi: string;
-  type: 'story' | 'problem' | 'math' | 'fact' | 'summary';
+  type: 'story' | 'problem' | 'math' | 'fact' | 'summary' | 'definition' | 'list';
   content: string;
   contentHi?: string;
   mathExpression?: string;
+  listItems?: string[];
 }
 
-const STEP_THEMES = {
+const STEP_THEMES: Record<string, { icon: string; badge: string; bg: string; label: string }> = {
   story: { icon: "📖", badge: "Context / कहानी", bg: "bg-emerald-50/45 border-emerald-100/70 text-emerald-800", label: "Real-world Hook" },
   problem: { icon: "❓", badge: "Problem / समस्या", bg: "bg-amber-50/45 border-amber-100/70 text-amber-800", label: "Core Problem" },
   math: { icon: "📐", badge: "Math / गणना", bg: "bg-blue-50/45 border-blue-100/70 text-blue-800", label: "Calculation Step" },
   fact: { icon: "💡", badge: "Concept / अवधारणा", bg: "bg-indigo-50/45 border-indigo-100/70 text-indigo-800", label: "Concept Breakdown" },
-  summary: { icon: "🎯", badge: "Summary / सारांश", bg: "bg-purple-50/45 border-purple-100/70 text-purple-800", label: "CBSE Exam Focus" }
+  summary: { icon: "🎯", badge: "Summary / सारांश", bg: "bg-purple-50/45 border-purple-100/70 text-purple-800", label: "CBSE Exam Focus" },
+  definition: { icon: "📝", badge: "Definition / परिभाषा", bg: "bg-teal-50/45 border-teal-100/70 text-teal-800", label: "Key Definition" },
+  list: { icon: "📋", badge: "Key Points / मुख्य बिंदु", bg: "bg-rose-50/45 border-rose-100/70 text-rose-800", label: "Important Points" },
 };
 
 const getCbseCustomTutorCard = (text: string, title: string, isHi: boolean): CbseStep[] | null => {
   const lowerText = (text || '').toLowerCase();
+  const lowerTitle = (title || '').toLowerCase();
   
+  // "A Lakh Varieties" math narrative
   if (lowerText.includes('eshwarappa') || lowerText.includes('lakh varieties') || lowerText.includes('chintamani') || (lowerText.includes('lakh') && lowerText.includes('varieties'))) {
     return [
       {
@@ -2318,17 +2613,80 @@ const getCbseCustomTutorCard = (text: string, title: string, isHi: boolean): Cbs
       }
     ];
   }
+
+  // Photosynthesis custom card
+  if (/photosynth|प्रकाश.*संश्लेषण/i.test(lowerTitle) || (/photosynth|chlorophyll/i.test(lowerText) && lowerText.length < 300)) {
+    return [
+      { title: "Step 1: Why Do Plants Need Food?", titleHi: "चरण 1: पौधों को भोजन की आवश्यकता क्यों है?", type: "story",
+        content: "Just like you need breakfast to start your day, plants need glucose (sugar) for energy. But plants can't walk to a restaurant — so they make their own food using sunlight, CO₂ from air, and water from soil. This incredible process is called Photosynthesis!",
+        contentHi: "जैसे आपको दिन शुरू करने के लिए नाश्ते की ज़रूरत है, पौधों को ऊर्जा के लिए ग्लूकोज (शर्करा) चाहिए। लेकिन पौधे रेस्तरां नहीं जा सकते — इसलिए वे सूर्य प्रकाश, हवा से CO₂, और मिट्टी से पानी का उपयोग करके अपना भोजन बनाते हैं। इस अद्भुत प्रक्रिया को प्रकाश संश्लेषण कहते हैं!" },
+      { title: "Step 2: The Chemical Equation", titleHi: "चरण 2: रासायनिक समीकरण", type: "math",
+        content: "6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂\n(In the presence of Sunlight + Chlorophyll)\n\nCarbon Dioxide + Water → Glucose + Oxygen\n\nThe chlorophyll in leaves absorbs sunlight and powers this reaction.",
+        contentHi: "6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂\n(सूर्य प्रकाश + क्लोरोफिल की उपस्थिति में)\n\nकार्बन डाइऑक्साइड + पानी → ग्लूकोज + ऑक्सीजन\n\nपत्तियों में क्लोरोफिल सूर्य प्रकाश को अवशोषित करके इस अभिक्रिया को शक्ति देता है।",
+        mathExpression: "6\\text{CO}_2 + 6\\text{H}_2\\text{O} \\xrightarrow{\\text{Sunlight, Chlorophyll}} \\text{C}_6\\text{H}_{12}\\text{O}_6 + 6\\text{O}_2" },
+      { title: "Step 3: CBSE Board Exam Focus", titleHi: "चरण 3: बोर्ड परीक्षा फोकस", type: "summary",
+        content: "Key Points for Board Exam:\n• Site of photosynthesis: Chloroplasts in leaf cells (specifically mesophyll)\n• Raw materials: CO₂ (from stomata) + H₂O (from roots via xylem)\n• Products: Glucose (stored as starch) + O₂ (released via stomata)\n• Conditions: Sunlight + Chlorophyll are necessary\n• Always mention conditions in the equation for full marks!",
+        contentHi: "बोर्ड परीक्षा के मुख्य बिंदु:\n• प्रकाश संश्लेषण का स्थान: पत्ती कोशिकाओं में हरित लवक (मीसोफिल)\n• कच्चे माल: CO₂ (रंध्रों से) + H₂O (जड़ों से जाइलम द्वारा)\n• उत्पाद: ग्लूकोज (स्टार्च के रूप में संग्रहित) + O₂ (रंध्रों से निकलती है)\n• शर्तें: सूर्य प्रकाश + क्लोरोफिल आवश्यक\n• पूर्ण अंक के लिए समीकरण में शर्तें जरूर लिखें!" },
+    ];
+  }
   
   return null;
 };
+
+/** Detect if a paragraph is primarily a mathematical expression or formula */
+function isMathParagraph(p: string): boolean {
+  // Count math-like characters vs total
+  const mathChars = (p.match(/[0-9=+\-×÷²³√∑∫πΔ><≥≤≠∞±∝∴∵→←⇒⇐αβγθλμσφψω]/g) || []).length;
+  const hasFormulaPatterns = /[a-z][\s]*[=][\s]*[a-z0-9]/i.test(p) || /\d+\s*[×÷+\-]\s*\d+/.test(p) || /[²³√∑∫]/.test(p);
+  return (mathChars > p.length * 0.15 && p.length < 300) || hasFormulaPatterns;
+}
+
+/** Detect definition-style paragraphs */
+function isDefinitionParagraph(p: string): boolean {
+  return /^(definition|defn|note|important|key\s*concept|attention|warning|remember|formula|law|theorem|rule|principle|परिभाषा|नोट|महत्वपूर्ण|विशेष|ध्यान|सूत्र|नियम|प्रमेय|सिद्धांत)[:\-–—]/i.test(p.trim());
+}
+
+/** Detect list paragraphs (bullets or numbered) */
+function isListParagraph(p: string): boolean {
+  const lines = p.split('\n').filter(l => l.trim().length > 0);
+  if (lines.length < 2) return false;
+  const listLines = lines.filter(l => /^[\s]*[-•●◦▸▹★✓✗\*]\s+/.test(l) || /^[\s]*\d+[\.\)]\s+/.test(l) || /^[\s]*[a-z][\.\)]\s+/i.test(l));
+  return listLines.length >= lines.length * 0.6;
+}
+
+/** Extract list items from a list paragraph */
+function extractListItems(p: string): string[] {
+  return p.split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 0)
+    .map(l => l.replace(/^[-•●◦▸▹★✓✗\*]\s+/, '').replace(/^\d+[\.\)]\s+/, '').replace(/^[a-z][\.\)]\s+/i, '').trim())
+    .filter(Boolean);
+}
+
+/** Detect if paragraph has a markdown-style heading */
+function extractHeading(p: string): { heading: string; body: string } | null {
+  // ## Heading or ### Heading
+  const mdMatch = p.match(/^(#{1,4})\s+(.+?)\n([\s\S]*)/);
+  if (mdMatch) return { heading: mdMatch[2].trim(), body: mdMatch[3].trim() };
+  // **Bold Heading** followed by content
+  const boldMatch = p.match(/^\*\*(.+?)\*\*[\s:]*\n([\s\S]*)/);
+  if (boldMatch) return { heading: boldMatch[1].trim(), body: boldMatch[2].trim() };
+  return null;
+}
+
+/** Extract math expressions from text for highlighted rendering */
+function extractMathExpression(p: string): string | undefined {
+  // Look for inline formulas like "V = IR", "a² + b² = c²", "F = ma"
+  const formulaMatch = p.match(/(?:^|\n)\s*([A-Za-z₀-₉]+\s*[=]\s*[^\n]{3,40})\s*(?:\n|$)/);
+  if (formulaMatch) return formulaMatch[1].trim();
+  return undefined;
+}
 
 function parseCbseTeacherExplanation(text: string, title: string, isHi: boolean): CbseStep[] {
   const custom = getCbseCustomTutorCard(text, title, isHi);
   if (custom) return custom;
 
-  const rawParagraphs = (text || '').split(/\n\s*\n+/).map(p => p.trim()).filter(p => p.length > 10);
-  
-  if (rawParagraphs.length === 0) {
+  if (!text || text.trim().length === 0) {
     return [{
       title: isHi ? "अवधारणा का परिचय" : "Concept Introduction",
       titleHi: "अवधारणा का परिचय",
@@ -2337,59 +2695,117 @@ function parseCbseTeacherExplanation(text: string, title: string, isHi: boolean)
     }];
   }
 
-  const steps: CbseStep[] = [];
+  // Split by double newlines (respecting Hindi sentence endings with ।)
+  const rawParagraphs = text
+    .split(/\n\s*\n+/)
+    .map(p => p.trim())
+    .filter(p => p.length > 8);
   
+  if (rawParagraphs.length === 0) {
+    return [{
+      title: isHi ? "अवधारणा का परिचय" : "Concept Introduction",
+      titleHi: "अवधारणा का परिचय",
+      type: "fact",
+      content: text
+    }];
+  }
+
+  const steps: CbseStep[] = [];
+
   if (rawParagraphs.length === 1) {
-    const sentences = rawParagraphs[0].match(/[^.!?\।]+[.!?\।]+/g) || [rawParagraphs[0]];
+    // Single block — try to split by sentences for better card-per-concept
+    const sentencePattern = /[^.!?\।]+[.!?\।]+/g;
+    const sentences = rawParagraphs[0].match(sentencePattern) || [rawParagraphs[0]];
     
     if (sentences.length <= 2) {
+      // Too short to split — detect type intelligently
+      const p = rawParagraphs[0];
+      let type: CbseStep['type'] = 'fact';
+      if (isDefinitionParagraph(p)) type = 'definition';
+      else if (isMathParagraph(p)) type = 'math';
+      else if (isListParagraph(p)) type = 'list';
+
       steps.push({
         title: isHi ? "अवधारणा विवरण" : "Concept Details",
         titleHi: "अवधारणा विवरण",
-        type: "fact",
-        content: rawParagraphs[0]
+        type,
+        content: p,
+        mathExpression: type === 'math' ? extractMathExpression(p) : undefined,
+        listItems: type === 'list' ? extractListItems(p) : undefined,
       });
     } else {
+      // Split into 3 balanced groups
       const groupSize = Math.ceil(sentences.length / 3);
+      const typeMap: CbseStep['type'][] = ['story', 'fact', 'summary'];
+      const titleMap = isHi
+        ? ['चरण 1: संदर्भ और परिचय', 'चरण 2: विस्तृत समझ', 'चरण 3: मुख्य सारांश']
+        : ['Step 1: Context & Introduction', 'Step 2: Core Explanation', 'Step 3: Key Takeaway'];
+      
       for (let i = 0; i < sentences.length; i += groupSize) {
-        const stepIdx = Math.floor(i / groupSize) + 1;
+        const stepIdx = Math.min(Math.floor(i / groupSize), 2);
         const content = sentences.slice(i, i + groupSize).join(' ').trim();
+        if (!content) continue;
         steps.push({
-          title: isHi ? `चरण ${stepIdx}: मुख्य समझ` : `Step ${stepIdx}: Key Explanation`,
-          titleHi: `चरण ${stepIdx}: मुख्य समझ`,
-          type: stepIdx === 1 ? 'story' : stepIdx === 2 ? 'fact' : 'summary',
-          content: content
+          title: titleMap[stepIdx],
+          titleHi: titleMap[stepIdx],
+          type: typeMap[stepIdx],
+          content,
+          mathExpression: typeMap[stepIdx] === 'math' ? extractMathExpression(content) : undefined,
         });
       }
     }
   } else {
+    // Multiple paragraphs — classify each intelligently
     rawParagraphs.forEach((p, idx) => {
-      let type: 'story' | 'problem' | 'math' | 'fact' | 'summary' = 'fact';
-      let stepTitle = '';
-      
       const stepNum = idx + 1;
-      if (idx === 0) {
+      let type: CbseStep['type'] = 'fact';
+      let stepTitle = '';
+      let mathExpr: string | undefined;
+      let listItems: string[] | undefined;
+
+      // Check for markdown headings within the paragraph
+      const headingExtract = extractHeading(p);
+      if (headingExtract && headingExtract.body.length > 5) {
+        stepTitle = headingExtract.heading;
+        p = headingExtract.body;
+      }
+
+      // Classify paragraph type
+      if (isDefinitionParagraph(p)) {
+        type = 'definition';
+        if (!stepTitle) stepTitle = isHi ? `चरण ${stepNum}: मुख्य परिभाषा` : `Step ${stepNum}: Key Definition`;
+      } else if (isListParagraph(p)) {
+        type = 'list';
+        listItems = extractListItems(p);
+        if (!stepTitle) stepTitle = isHi ? `चरण ${stepNum}: मुख्य बिंदु` : `Step ${stepNum}: Key Points`;
+      } else if (isMathParagraph(p)) {
+        type = 'math';
+        mathExpr = extractMathExpression(p);
+        if (!stepTitle) stepTitle = isHi ? `चरण ${stepNum}: गणितीय व्याख्या` : `Step ${stepNum}: Mathematical Breakdown`;
+      } else if (/example|for instance|consider|suppose|उदाहरण|मान लो|विचार करें/i.test(p)) {
+        type = 'problem';
+        if (!stepTitle) stepTitle = isHi ? `चरण ${stepNum}: हल किया हुआ उदाहरण` : `Step ${stepNum}: Worked Example`;
+      } else if (idx === 0) {
         type = 'story';
-        stepTitle = isHi ? `चरण 1: संदर्भ और परिचय` : `Step 1: Real-life Context & Hook`;
+        if (!stepTitle) stepTitle = isHi ? `चरण 1: संदर्भ और परिचय` : `Step 1: Real-life Context & Hook`;
       } else if (idx === rawParagraphs.length - 1) {
         type = 'summary';
-        stepTitle = isHi ? `चरण ${stepNum}: मुख्य सारांश और निष्कर्ष` : `Step ${stepNum}: CBSE Summary & Takeaway`;
+        if (!stepTitle) stepTitle = isHi ? `चरण ${stepNum}: मुख्य सारांश और निष्कर्ष` : `Step ${stepNum}: CBSE Summary & Takeaway`;
       } else {
-        const containsMath = /[\d\+\-\*\/\\=\>\<\%]+/g.test(p);
-        type = containsMath ? 'math' : 'fact';
-        stepTitle = containsMath 
-          ? (isHi ? `चरण ${stepNum}: गणितीय व्याख्या` : `Step ${stepNum}: Mathematical Breakdown`)
-          : (isHi ? `चरण ${stepNum}: विस्तृत समझ` : `Step ${stepNum}: Concept Breakdown`);
+        if (!stepTitle) stepTitle = isHi ? `चरण ${stepNum}: विस्तृत समझ` : `Step ${stepNum}: Concept Breakdown`;
       }
       
       steps.push({
         title: stepTitle,
         titleHi: stepTitle,
         type,
-        content: p
+        content: p,
+        mathExpression: mathExpr,
+        listItems,
       });
     });
   }
   
   return steps;
 }
+
