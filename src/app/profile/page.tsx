@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getStudentProfiles, getSubjects, studentJoinClass } from '@/lib/supabase';
-import { Card, Button, Input, Select, Avatar, SectionHeader, ProgressBar, StatCard, LoadingFoxy, BottomNav } from '@/components/ui';
+import { Card, Button, Input, Select, Avatar, SectionHeader, ProgressBar, StatCard, LoadingFoxy } from '@/components/ui';
 import { toast } from '@/components/ui/toast';
 import TrustFooter from '@/components/TrustFooter';
 import { GRADES, BOARDS, LANGUAGES } from '@/lib/constants';
@@ -1027,7 +1027,7 @@ export default function ProfilePage() {
         </p>
       </main>
       <TrustFooter />
-      <BottomNav />
+      
     </div>
   );
 }

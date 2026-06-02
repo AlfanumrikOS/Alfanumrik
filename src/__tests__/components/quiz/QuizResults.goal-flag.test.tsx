@@ -123,7 +123,6 @@ vi.mock('@/components/ui', () => ({
   StatCard: ({ value, label }: { value: React.ReactNode; label: string }) => (
     <div>{label}: {value}</div>
   ),
-  BottomNav: () => <nav data-testid="bottom-nav" />,
 }));
 vi.mock('@/lib/cognitive-engine', () => ({
   BLOOM_CONFIG: {},

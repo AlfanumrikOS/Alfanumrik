@@ -11,7 +11,6 @@ import {
   Skeleton,
   SectionHeader,
   EmptyState,
-  BottomNav,
 } from '@/components/ui';
 import ManageSubscriptionSection from './ManageSubscriptionSection';
 
@@ -357,7 +356,7 @@ export default function SchoolBillingPage() {
             </Button>
           </Card>
         </main>
-        <BottomNav />
+        
       </div>
     );
   }
@@ -574,7 +573,7 @@ export default function SchoolBillingPage() {
         </section>
       </main>
 
-      <BottomNav />
+      
     </div>
   );
 }

@@ -13,7 +13,6 @@ import {
   Skeleton,
   EmptyState,
   SheetModal,
-  BottomNav,
   SectionHeader,
 } from '@/components/ui';
 
@@ -603,7 +602,7 @@ export default function SchoolAdminTeachersPage() {
             </Button>
           </Card>
         </main>
-        <BottomNav />
+        
       </div>
     );
   }
@@ -728,7 +727,7 @@ export default function SchoolAdminTeachersPage() {
         />
       )}
 
-      <BottomNav />
+      
     </div>
   );
 }

@@ -17,7 +17,7 @@ import {
   getChapterTopicsFromConcepts,
   isUsableChapterDeck,
 } from '@/lib/chapter-reader/get-concepts-from-table';
-import { Card, Button, ProgressBar, BottomNav, LoadingFoxy } from '@/components/ui';
+import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
 // Mobile-first responsive shell (2026-05-19, Phase 2 — followup #1 of PR #867).
 // Wraps the chapter concept walkthrough in a CSS-Grid shell with safe-area
 // insets, scroll-compacting header, and one-handed mode. The page header
@@ -707,14 +707,12 @@ export default function ChapterConceptPage() {
 
     // Completion screen — wrapped in AppShell variant="mobile". Page header
     // (back arrow + Chapter Complete/Summary title) moves into the sticky
-    // header slot; summary cards + CTAs remain as children. BottomNav is
-    // owned by AppShell.nav; the legacy `pb-nav` clearance is dropped
-    // since .app-shell-content already pads --shell-nav-h + safe-area.
+    // header slot; summary cards + CTAs remain as children.
     return (
       <div className="mesh-bg">
         <AppShell
           variant="mobile"
-          nav={<BottomNav />}
+          
           header={
             <div className="page-header-inner flex items-center gap-3">
               <button onClick={() => router.push('/learn')} className="text-[var(--text-3)]">&larr;</button>
@@ -915,7 +913,7 @@ export default function ChapterConceptPage() {
       <div className="mesh-bg">
         <AppShell
           variant="mobile"
-          nav={<BottomNav />}
+          
           header={
             <div className="page-header-inner flex items-center gap-3">
               <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">&larr;</button>
@@ -1056,7 +1054,7 @@ export default function ChapterConceptPage() {
     <div className="mesh-bg">
       <AppShell
         variant="mobile"
-        nav={<BottomNav />}
+        
         header={learnHeaderContent}
         bleed={true}
       >

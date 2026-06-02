@@ -14,7 +14,6 @@ import {
   Avatar,
   Skeleton,
   EmptyState,
-  BottomNav,
 } from '@/components/ui';
 
 /* ─────────────────────────────────────────────────────────────
@@ -493,7 +492,7 @@ export default function SchoolAdminStudentsPage() {
             </Button>
           </Card>
         </main>
-        <BottomNav />
+        
       </div>
     );
   }
@@ -642,7 +641,7 @@ export default function SchoolAdminStudentsPage() {
         )}
       </main>
 
-      <BottomNav />
+      
     </div>
   );
 }

@@ -5,7 +5,6 @@ import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useTeacherAllowedSubjects } from '@/lib/useTeacherAllowedSubjects';
-import { BottomNav } from '@/components/ui';
 
 const tt = (hi: boolean, en: string, hiText: string) => hi ? hiText : en;
 
@@ -162,7 +161,7 @@ export default function TeacherProfilePage() {
           {tt(isHi, 'Sign Out', 'साइन आउट')}
         </button>
       </div>
-      <BottomNav />
+      
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getLeaderboard, getCompetitions, joinCompetition, getCompetitionLeaderboard, getHallOfFame, supabase } from '@/lib/supabase';
-import { Card, Button, SectionHeader, LoadingFoxy, BottomNav, Avatar, EmptyState } from '@/components/ui';
+import { Card, Button, SectionHeader, LoadingFoxy, Avatar, EmptyState } from '@/components/ui';
 import { BarChart } from '@/components/admin-ui';
 import { getLevelFromScore } from '@/lib/score-config';
 import type { LeaderboardEntry } from '@/lib/types';
@@ -1044,7 +1044,7 @@ export default function LeaderboardPage() {
         </SectionErrorBoundary>
       </main>
 
-      <BottomNav />
+      
     </div>
   );
 }

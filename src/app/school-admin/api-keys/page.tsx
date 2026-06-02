@@ -12,7 +12,6 @@ import {
   Skeleton,
   EmptyState,
   SheetModal,
-  BottomNav,
 } from '@/components/ui';
 
 /* -----------------------------------------------------------------
@@ -830,7 +829,7 @@ export default function SchoolAdminApiKeysPage() {
       </SheetModal>
 
       {/* ---- BOTTOM NAV ---- */}
-      <BottomNav />
+      
     </div>
   );
 }

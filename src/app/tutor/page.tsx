@@ -21,7 +21,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { Card, Button, ProgressBar, BottomNav, LoadingFoxy } from '@/components/ui';
+import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
 import type { TutorNextResponse, TutorConceptRow } from '@/lib/tutor/types';
 import { track } from '@/lib/posthog/client';
 
@@ -148,7 +148,7 @@ export default function TutorPage() {
           </p>
           <Button onClick={() => router.push('/dashboard')}>← {isHi ? 'डैशबोर्ड' : 'Back to dashboard'}</Button>
         </main>
-        <BottomNav />
+        
       </div>
     );
   }
@@ -162,7 +162,7 @@ export default function TutorPage() {
           </p>
           <Button onClick={() => router.push('/welcome')}>{isHi ? 'चलें' : 'Get started'}</Button>
         </main>
-        <BottomNav />
+        
       </div>
     );
   }
@@ -204,7 +204,7 @@ export default function TutorPage() {
           </p>
           <Button onClick={() => router.push('/dashboard')}>← {isHi ? 'डैशबोर्ड' : 'Dashboard'}</Button>
         </main>
-        <BottomNav />
+        
       </div>
     );
   }
@@ -219,7 +219,7 @@ export default function TutorPage() {
           </p>
           <Button onClick={() => router.push('/dashboard')}>← {isHi ? 'डैशबोर्ड' : 'Dashboard'}</Button>
         </main>
-        <BottomNav />
+        
       </div>
     );
   }
@@ -385,7 +385,7 @@ function ConceptScreen(p: ConceptScreenProps) {
         </button>
       </main>
 
-      <BottomNav />
+      
     </div>
   );
 }

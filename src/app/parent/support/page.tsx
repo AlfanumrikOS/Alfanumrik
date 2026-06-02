@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { BottomNav } from '@/components/ui';
 
 // ============================================================
 // FAQ DATA
@@ -567,7 +566,7 @@ export default function ParentSupportPage() {
       {/* Modals & Toast */}
       {showPrivacy && <PrivacyModal onClose={() => setShowPrivacy(false)} />}
       {toast && <Toast message={toast} onDone={() => setToast('')} />}
-      <BottomNav />
+      
     </div>
   );
 }

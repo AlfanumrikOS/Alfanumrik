@@ -207,20 +207,6 @@ describe('Auth flow — AuthContext exports', () => {
 
 // ─── Navigation consistency ──────────────────────────────────
 
-describe('Navigation — BottomNav export', () => {
-  it('BottomNav is exported from components/ui', async () => {
-    const uiMod = await import('@/components/ui');
-    expect(uiMod.BottomNav).toBeDefined();
-  });
-
-  it('BottomNav is a valid React component', async () => {
-    const uiMod = await import('@/components/ui');
-    // React components (or memo-wrapped) are either functions or objects
-    const navType = typeof uiMod.BottomNav;
-    expect(['function', 'object']).toContain(navType);
-  });
-});
-
 // ─── Usage enforcement ───────────────────────────────────────
 
 describe('Usage enforcement — public API surface', () => {

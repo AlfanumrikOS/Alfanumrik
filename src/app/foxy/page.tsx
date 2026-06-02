@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
-import { BottomNav } from '@/components/ui';
+
 // Mobile-first responsive shell (2026-05-19, Phase 2 — followup #1 of PR #867).
 // Wraps the existing Foxy chat chrome in a CSS-Grid shell with safe-area-inset
 // support, scroll-compacting header, and one-handed mode. The header bag
@@ -1734,7 +1734,7 @@ export default function FoxyPage() {
       className="foxy-shell"
       variant="mobile"
       header={foxyHeaderContent}
-      nav={<BottomNav />}
+      
       // One-handed mode toggle stays off on Foxy — the chat composer needs
       // the full viewport vertical reach, and pulling content down would
       // hide message context above the input on small phones. AppShell's

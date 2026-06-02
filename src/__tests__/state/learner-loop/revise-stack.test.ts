@@ -12,7 +12,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { modalityForMastery } from '../../../app/api/learner/revise-stack/route';
-import { isItemVisibleForFlags } from '../../../components/ui/BottomNavComponent';
+import { isItemVisibleForFlags } from '../../../components/navigation/nav-config';
 
 // ─── modalityForMastery ──────────────────────────────────────────────
 

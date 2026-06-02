@@ -14,7 +14,6 @@ import {
   Skeleton,
   SectionHeader,
   EmptyState,
-  BottomNav,
 } from '@/components/ui';
 
 /* ─────────────────────────────────────────────────────────────
@@ -538,7 +537,7 @@ function LegacySchoolAdminPage() {
       {/* ═══════════════════════════════════════
           BOTTOM NAV
       ═══════════════════════════════════════ */}
-      <BottomNav />
+      
     </div>
   );
 }

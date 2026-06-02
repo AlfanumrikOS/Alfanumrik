@@ -22,7 +22,6 @@ import {
   supabaseUrl as SUPABASE_URL,
   supabaseAnonKey as SUPABASE_ANON,
 } from '@/lib/supabase';
-import { BottomNav } from '@/components/ui';
 import {
   AtlasShell,
   AtlasCard,
@@ -275,7 +274,7 @@ export default function AtlasTeacher() {
             style={{ borderColor: 'var(--cream-3)', borderTopColor: 'var(--accent)' }}
           />
         </div>
-        <BottomNav />
+        
       </AtlasShell>
     );
   }
@@ -293,7 +292,7 @@ export default function AtlasTeacher() {
             {t('Refresh', 'रिफ्रेश')}
           </AtlasButton>
         </AtlasCard>
-        <BottomNav />
+        
       </AtlasShell>
     );
   }
@@ -311,7 +310,7 @@ export default function AtlasTeacher() {
             {t('Create a class', 'कक्षा बनाएँ')}
           </AtlasButton>
         </AtlasCard>
-        <BottomNav />
+        
       </AtlasShell>
     );
   }
@@ -788,7 +787,7 @@ export default function AtlasTeacher() {
         </div>
       )}
 
-      <BottomNav />
+      
     </AtlasShell>
   );
 }

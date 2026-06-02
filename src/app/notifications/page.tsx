@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getStudentNotifications, supabase } from '@/lib/supabase';
-import { Card, Button, LoadingFoxy, BottomNav, EmptyState } from '@/components/ui';
+import { Card, Button, LoadingFoxy, EmptyState } from '@/components/ui';
 
 const TYPE_CONFIG: Record<string, { icon: string; color: string; label: string; labelHi: string }> = {
   streak_risk: { icon: '🔥', color: '#DC2626', label: 'Streak Alert', labelHi: 'स्ट्रीक अलर्ट' },
@@ -231,7 +231,7 @@ export default function NotificationsPage() {
           ))
         )}
       </main>
-      <BottomNav />
+      
     </div>
   );
 }

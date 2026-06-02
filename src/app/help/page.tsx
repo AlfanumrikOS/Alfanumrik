@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/constants';
-import { Card, Button, LoadingFoxy, BottomNav } from '@/components/ui';
+import { Card, Button, LoadingFoxy } from '@/components/ui';
 
 /* ══════════════════════════════════════════════════════════════
    HELP & SUPPORT — Alfanumrik Support Center
@@ -549,8 +549,6 @@ export default function HelpPage() {
           </div>
         )}
       </main>
-
-      {isLoggedIn && <BottomNav />}
 
 {/* Foxy styles in globals.css */}
     </div>

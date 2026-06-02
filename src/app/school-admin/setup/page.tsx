@@ -13,7 +13,6 @@ import {
   StepIndicator,
   Skeleton,
   EmptyState,
-  BottomNav,
 } from '@/components/ui';
 
 /* ─────────────────────────────────────────────────────────────
@@ -1085,7 +1084,7 @@ export default function SchoolAdminSetupPage() {
         )}
       </main>
 
-      <BottomNav />
+      
     </div>
   );
 }

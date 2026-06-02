@@ -1097,4 +1097,4 @@ export function Skeleton({ className = '', width, height, rounded = 'rounded-lg'
 }
 
 /* ─── Bottom Nav ──────────────────────────────────────────── */
-export { default as BottomNav } from './BottomNavComponent';
+

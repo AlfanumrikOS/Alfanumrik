@@ -20,7 +20,6 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { BottomNav } from '@/components/ui';
 import {
   AtlasShell,
   AtlasCard,
@@ -206,7 +205,7 @@ export default function AtlasSchoolAdmin() {
           <div className="w-10 h-10 border-[3px] rounded-full animate-spin"
                style={{ borderColor: 'var(--cream-3)', borderTopColor: 'var(--accent)' }}/>
         </div>
-        <BottomNav />
+        
       </AtlasShell>
     );
   }
@@ -493,7 +492,7 @@ export default function AtlasSchoolAdmin() {
         }}
       />
 
-      <BottomNav />
+      
     </AtlasShell>
   );
 }

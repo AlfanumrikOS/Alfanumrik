@@ -32,7 +32,6 @@ import {
 import { useDashboardData, useFeatureFlags } from '@/lib/swr';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { reviewRoute } from '@/lib/routes/study-menu-routes';
-import { BottomNav } from '@/components/ui';
 import { DashboardSkeleton } from '@/components/Skeleton';
 import {
   AtlasShell,
@@ -701,7 +700,7 @@ export default function AtlasDashboard() {
       >
         {isHi ? 'Foxy से पूछो' : 'Ask Foxy'}
       </button>
-      <BottomNav />
+      
     </AtlasShell>
   );
 }

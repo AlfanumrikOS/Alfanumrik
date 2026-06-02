@@ -10,7 +10,6 @@ import {
   Badge,
   Skeleton,
   EmptyState,
-  BottomNav,
 } from '@/components/ui';
 
 /* -----------------------------------------------------------------
@@ -601,7 +600,7 @@ export default function SchoolAdminAuditLogPage() {
       </main>
 
       {/* ---- BOTTOM NAV ---- */}
-      <BottomNav />
+      
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
-import { LoadingFoxy, BottomNav, Button, Card, SectionHeader } from '@/components/ui';
+import { LoadingFoxy, Button, Card, SectionHeader } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { supabase } from '@/lib/supabase';
 import DailyChallengeCard from '@/components/challenge/DailyChallengeCard';
@@ -653,7 +653,7 @@ export default function ChallengePage() {
           )}
         </SectionErrorBoundary>
       </div>
-      <BottomNav />
+      
     </div>
   );
 }

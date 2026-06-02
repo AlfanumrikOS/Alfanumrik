@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { BottomNav } from '@/components/ui';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -737,7 +736,7 @@ export default function TeacherReportsPage() {
       {tab === 'overview' && <ClassOverviewTab data={overviewData} isHi={isHi} />}
       {tab === 'student' && <StudentAnalysisTab students={studentsList} teacherId={teacherId} isHi={isHi} />}
       {tab === 'trends' && <TrendsTab data={trendsData} isHi={isHi} />}
-      <BottomNav />
+      
     </div>
   );
 }

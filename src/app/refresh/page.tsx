@@ -23,7 +23,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { LoadingFoxy, BottomNav } from '@/components/ui';
+import { LoadingFoxy } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import QuickRecallSection from '@/components/refresh/QuickRecallSection';
 import ChapterRefreshSection from '@/components/refresh/ChapterRefreshSection';
@@ -133,7 +133,7 @@ export default function RefreshPage() {
         </SectionErrorBoundary>
       </main>
 
-      <BottomNav />
+      
     </div>
   );
 }

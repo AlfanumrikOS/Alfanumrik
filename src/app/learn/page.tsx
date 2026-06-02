@@ -21,7 +21,7 @@ import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
 import { getChaptersForSubject, supabase } from '@/lib/supabase';
-import { BottomNav, LoadingFoxy } from '@/components/ui';
+import {  LoadingFoxy } from '@/components/ui';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { getPlanConfig } from '@/lib/plans';
@@ -453,7 +453,7 @@ export default function LearnPage() {
         </SectionErrorBoundary>
       </main>
 
-      <BottomNav />
+      
     </div>
   );
 }

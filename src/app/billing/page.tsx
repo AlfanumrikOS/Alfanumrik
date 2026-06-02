@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
-import { BottomNav } from '@/components/ui';
 
 interface SubStatus {
   plan_code: string;
@@ -146,7 +145,7 @@ export default function BillingPage() {
             </div>
           </div>
         </div>
-        <BottomNav />
+        
       </div>
     );
   }
@@ -166,7 +165,7 @@ export default function BillingPage() {
             </button>
           </div>
         </div>
-        <BottomNav />
+        
       </div>
     );
   }
@@ -384,7 +383,7 @@ export default function BillingPage() {
           </p>
         )}
       </div>
-      <BottomNav />
+      
     </div>
   );
 }

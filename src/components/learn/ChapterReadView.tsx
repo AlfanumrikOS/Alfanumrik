@@ -7,7 +7,7 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
-import { Card, Button, BottomNav, LoadingFoxy } from '@/components/ui';
+import { Card, Button, LoadingFoxy } from '@/components/ui';
 import type { ChapterContent } from '@/lib/learn/fetchChapterContent';
 
 /**

@@ -20,7 +20,6 @@ import {
   Button,
   LoadingFoxy,
   FormField,
-  BottomNav,
 } from '@/components/ui';
 
 type TicketCategory = 'bug' | 'billing' | 'content' | 'account' | 'other';
@@ -418,7 +417,7 @@ export default function SupportNewPage() {
         </Card>
       </main>
 
-      <BottomNav />
+      
     </div>
   );
 }

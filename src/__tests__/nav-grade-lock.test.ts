@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getItemLockForGrade } from '@/components/ui/BottomNavComponent';
+import { getItemLockForGrade } from '@/components/navigation/nav-config';
 
 /**
  * Phase 5B Surface 1 — grade-gated nav items are now SHOWN as visibly locked

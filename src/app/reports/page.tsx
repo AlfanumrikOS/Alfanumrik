@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { computeMonthlyReportMetrics, type MonthlyReportData, type ExamChapter } from '@/lib/cognitive-engine';
 import { REPORT_MONTHS_COUNT } from '@/lib/constants';
-import { Card, Button, ProgressBar, SectionHeader, StatCard, LoadingFoxy, BottomNav } from '@/components/ui';
+import { Card, Button, ProgressBar, SectionHeader, StatCard, LoadingFoxy } from '@/components/ui';
 
 /* ── DB Row Types ── */
 interface QuizRow {
@@ -572,7 +572,7 @@ export default function MonthlyReportsPage() {
           )}
         </main>
         <div className="no-print">
-          <BottomNav />
+          
         </div>
       </div>
     </>

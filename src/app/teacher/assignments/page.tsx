@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useTeacherAllowedSubjects } from '@/lib/useTeacherAllowedSubjects';
 import { VALID_GRADES } from '@/lib/identity';
-import { BottomNav } from '@/components/ui';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -599,7 +598,7 @@ export default function AssignmentsPage() {
         </div>
       )}
 
-      <BottomNav />
+      
     </div>
   );
 }

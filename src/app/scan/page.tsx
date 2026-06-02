@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { Card, Button, SectionHeader, LoadingFoxy, BottomNav, Badge } from '@/components/ui';
+import { Card, Button, SectionHeader, LoadingFoxy, Badge } from '@/components/ui';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
@@ -584,7 +584,7 @@ export default function ScanPage() {
         </SectionErrorBoundary>
       </main>
 
-      <BottomNav />
+      
     </div>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Card, Button, BottomNav } from '@/components/ui';
+import { Card, Button } from '@/components/ui';
 import { getChaptersForSubject } from '@/lib/supabase';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 

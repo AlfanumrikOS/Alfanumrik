@@ -14,7 +14,6 @@ import {
   Skeleton,
   EmptyState,
   SheetModal,
-  BottomNav,
 } from '@/components/ui';
 
 /* ─────────────────────────────────────────────────────────────
@@ -859,7 +858,7 @@ export default function InviteCodesPage() {
       {/* ══════════════════════════════════════
           BOTTOM NAV
       ══════════════════════════════════════ */}
-      <BottomNav />
+      
     </div>
   );
 }

@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useTeacherAllowedSubjects } from '@/lib/useTeacherAllowedSubjects';
-import { BottomNav } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
 import { VALID_GRADES } from '@/lib/identity';
 import { posthogCapture } from '@/lib/posthog-client';
@@ -575,7 +574,7 @@ export default function TeacherWorksheetsPage() {
           )}
         </div>
       )}
-      <BottomNav />
+      
     </div>
   );
 }

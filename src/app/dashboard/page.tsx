@@ -37,7 +37,7 @@ import {
 } from '@/lib/supabase';
 import { authHeader } from '@/lib/api/auth-header';
 import { useDashboardData } from '@/lib/swr';
-import { Avatar, BottomNav } from '@/components/ui';
+import { Avatar } from '@/components/ui';
 import TrustFooter from '@/components/TrustFooter';
 import { DashboardSkeleton } from '@/components/Skeleton';
 import { calculateLevel } from '@/lib/xp-config';
@@ -961,7 +961,6 @@ function LegacyDashboard() {
       <AppShell
         variant="mobile"
         header={headerContent}
-        nav={<BottomNav />}
       >
         {mainContent}
       </AppShell>

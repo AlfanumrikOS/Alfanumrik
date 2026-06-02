@@ -8,7 +8,7 @@ import { getStudentProfiles, getSubjects, getBloomProgression, getLearningVeloci
 import { BLOOM_CONFIG, BLOOM_LEVELS, BLOOM_ORDER, getHighestMasteredBloom, predictMasteryDate } from '@/lib/cognitive-engine';
 import { getLevelFromScore } from '@/lib/score-config';
 import type { BloomLevel, KnowledgeGap, LearningVelocity, CognitiveSessionMetrics, StudentLearningProfile, Subject } from '@/lib/types';
-import { Card, Badge, ProgressBar, SectionHeader, StatCard, MasteryRing, LoadingFoxy, BottomNav, Button, EmptyState } from '@/components/ui';
+import { Card, Badge, ProgressBar, SectionHeader, StatCard, MasteryRing, LoadingFoxy, Button, EmptyState } from '@/components/ui';
 import { LineChart } from '@/components/admin-ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import ScoreHero from '@/components/score/ScoreHero';
@@ -893,7 +893,7 @@ export default function ProgressPage() {
         )}
         </SectionErrorBoundary>
       </main>
-      <BottomNav />
+      
     </div>
   );
 }

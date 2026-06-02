@@ -5,7 +5,6 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { getLevelFromScore } from '@/lib/score-config';
 import { REPORT_MONTHS_COUNT } from '@/lib/constants';
-import { BottomNav } from '@/components/ui';
 import ParentLabReportWidget from '@/components/parent/ParentLabReportWidget';
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -1651,7 +1650,7 @@ export default function ParentReportsPage() {
           </>
         )}
       </div>
-      <BottomNav />
+      
     </div>
   );
 }

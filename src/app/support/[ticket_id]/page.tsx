@@ -19,7 +19,6 @@ import {
   Button,
   LoadingFoxy,
   Badge,
-  BottomNav,
   Avatar,
 } from '@/components/ui';
 
@@ -348,7 +347,7 @@ export default function SupportTicketDetailPage() {
         )}
       </main>
 
-      <BottomNav />
+      
     </div>
   );
 }

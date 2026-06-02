@@ -13,7 +13,7 @@
  *   - Tests want to assert the mapping never leaks unmapped kinds.
  *
  * The icon is an emoji string so the dashboard's existing emoji-as-icon
- * design (see AboveFoldHero, BottomNav) renders without a sprite import.
+ * design (see AboveFoldHero) renders without a sprite import.
  */
 
 import type { LearnerAction } from './types';

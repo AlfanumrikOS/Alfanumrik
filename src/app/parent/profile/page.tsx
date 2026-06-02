@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { BottomNav } from '@/components/ui';
 
 export default function ParentProfilePage() {
   const { guardian, isLoggedIn, isLoading: authLoading, activeRole, signOut, isHi } = useAuth();
@@ -138,7 +137,7 @@ export default function ParentProfilePage() {
           {tp('Sign Out', 'साइन आउट')}
         </button>
       </div>
-      <BottomNav />
+      
     </div>
   );
 }

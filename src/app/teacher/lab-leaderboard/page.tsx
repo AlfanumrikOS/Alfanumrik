@@ -29,7 +29,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
-import { BottomNav } from '@/components/ui';
 
 // ─── Bilingual helper (P7) ────────────────────────────────────────
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
@@ -542,7 +541,7 @@ export default function LabLeaderboardPage() {
           </Link>
         </div>
       </div>
-      <BottomNav />
+      
     </div>
   );
 }

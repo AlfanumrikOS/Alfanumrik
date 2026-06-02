@@ -12,7 +12,6 @@ import {
   Skeleton,
   EmptyState,
   SheetModal,
-  BottomNav,
 } from '@/components/ui';
 
 /* ─────────────────────────────────────────────────────────────
@@ -922,7 +921,7 @@ export default function SchoolAdminAnnouncementsPage() {
             </Button>
           </Card>
         </main>
-        <BottomNav />
+        
       </div>
     );
   }
@@ -1050,7 +1049,7 @@ export default function SchoolAdminAnnouncementsPage() {
         </div>
       )}
 
-      <BottomNav />
+      
     </div>
   );
 }

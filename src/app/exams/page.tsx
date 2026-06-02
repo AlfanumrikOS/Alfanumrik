@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy, BottomNav, Badge } from '@/components/ui';
+import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy, Badge } from '@/components/ui';
 import { toast } from '@/components/ui/toast';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
@@ -571,7 +571,7 @@ export default function ExamsPage() {
         </SectionErrorBoundary>
       </main>
 
-      <BottomNav />
+      
     </div>
   );
 }

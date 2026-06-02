@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { getStudyPlan, generateStudyPlan, supabase } from '@/lib/supabase';
-import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy, BottomNav } from '@/components/ui';
+import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy } from '@/components/ui';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { BLOOM_CONFIG, type BloomLevel } from '@/lib/cognitive-engine';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
@@ -714,7 +714,7 @@ export default function ExamPrepPage() {
         </SectionErrorBoundary>
       </main>
 
-      <BottomNav />
+      
     </div>
   );
 }

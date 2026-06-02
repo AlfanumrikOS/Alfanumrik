@@ -22,7 +22,6 @@ import {
   LoadingFoxy,
   EmptyState,
   Badge,
-  BottomNav,
 } from '@/components/ui';
 import { CardListSkeleton } from '@/components/Skeleton';
 
@@ -307,7 +306,7 @@ export default function SupportListPage() {
         )}
       </main>
 
-      <BottomNav />
+      
     </div>
   );
 }

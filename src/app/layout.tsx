@@ -13,6 +13,7 @@ import LayoutDeferredChrome from '@/components/LayoutDeferredChrome';
 import DemoModeWrapper from '@/components/DemoModeWrapper';
 import StreamGate from '@/components/StreamGate';
 import { Toaster } from '@/components/ui/toast';
+import { GlobalAppLayout } from '@/components/navigation/GlobalAppLayout';
 
 export const metadata: Metadata = {
   title: {
@@ -110,7 +111,9 @@ export default function RootLayout({
           <SchoolProvider>
             <AuthProvider>
               <ErrorBoundary>
-                <div id="main-content" className="app-shell">{children}</div>
+                <div id="main-content" className="app-shell">
+                  <GlobalAppLayout>{children}</GlobalAppLayout>
+                </div>
               </ErrorBoundary>
               <DemoModeWrapper />
               {/* Forces grade 11/12 students to pick a stream before any page

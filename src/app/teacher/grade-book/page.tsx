@@ -21,7 +21,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { BottomNav } from '@/components/ui';
 
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -492,7 +491,7 @@ export default function TeacherGradeBookPage() {
             {tt(isHi, 'Go to Classes', 'कक्षाओं पर जाएं')} →
           </button>
         </div>
-        <BottomNav />
+        
       </div>
     );
   }
@@ -613,7 +612,7 @@ export default function TeacherGradeBookPage() {
         />
       )}
 
-      <BottomNav />
+      
     </div>
   );
 }

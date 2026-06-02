@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card, Button, StatCard, BottomNav } from '@/components/ui';
+import { Card, Button, StatCard } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import {

@@ -5,7 +5,6 @@ import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase, supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON, getFeatureFlags } from '@/lib/supabase';
 import type { HeatmapData, HeatmapCell, HeatmapRow, RiskAlert } from '@/lib/types';
-import { BottomNav } from '@/components/ui';
 import { SUBJECT_ROTATION } from '@/lib/challenge-config';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
 import { useRealtimeRevalidator } from '@/hooks/useRealtimeRevalidator';
@@ -752,7 +751,7 @@ function LegacyTeacherPage() {
           {tt(isHi, 'Refresh', 'रिफ्रेश')}
         </button>
       </div>
-      <BottomNav />
+      
     </div>
   );
 
@@ -772,7 +771,7 @@ function LegacyTeacherPage() {
           {tt(isHi, 'Create a Class', 'कक्षा बनाएं')}
         </button>
       </div>
-      <BottomNav />
+      
     </div>
   );
 
@@ -966,7 +965,7 @@ function LegacyTeacherPage() {
       {tab === 'interventions' && <InterventionsTab alerts={alerts} classId={classId} dash={dash} isHi={isHi} teacherId={teacherId} />}
       {tab === 'alerts' && <AlertsTab alerts={alerts} onResolve={resolveAlert} isHi={isHi} />}
       {tab === 'poll' && <PollTab classId={classId} teacherId={teacherId} isHi={isHi} realtimeEnabled={realtimeEnabled} />}
-      <BottomNav />
+      
     </div>
   );
 }

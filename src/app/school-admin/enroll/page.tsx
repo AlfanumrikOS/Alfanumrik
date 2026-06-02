@@ -13,7 +13,6 @@ import {
   ProgressBar,
   Skeleton,
   EmptyState,
-  BottomNav,
 } from '@/components/ui';
 
 /* ─────────────────────────────────────────────────────────────
@@ -678,7 +677,7 @@ export default function SchoolAdminEnrollPage() {
         )}
       </main>
 
-      <BottomNav />
+      
     </div>
   );
 }

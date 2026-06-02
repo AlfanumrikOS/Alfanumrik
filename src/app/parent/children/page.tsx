@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { BottomNav } from '@/components/ui';
 import { track } from '@/lib/analytics';
 import ChildDataErasureSection from '@/components/parent/ChildDataErasureSection';
 
@@ -1135,7 +1134,7 @@ export default function ParentChildrenPage() {
       <p style={{ textAlign: 'center', fontSize: 11, color: '#475569', margin: '24px 0 12px' }}>
         Alfanumrik Learning OS | {t(isHi, 'Parent Portal', 'अभिभावक पोर्टल')}
       </p>
-      <BottomNav />
+      
     </div>
   );
 }
