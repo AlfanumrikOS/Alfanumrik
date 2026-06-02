@@ -1101,13 +1101,40 @@ export async function getChapterTopics(subject: string, grade: string, chapterNu
   const { data: ragSubjectRow } = await supabase.rpc('subject_code_to_rag_name', { p_code: subject });
   const ragSubject = typeof ragSubjectRow === 'string' && ragSubjectRow ? ragSubjectRow : subject;
 
-  const { data, error } = await supabase.rpc('get_chapter_rag_content', {
-    p_grade: ragGrade,
-    p_subject: ragSubject,
-    p_chapter_number: chapterNumber,
-    p_content_type: null,
-  });
-  if (error) console.error('getChapterTopics (RAG):', error.message);
+  const [ragResult, subjectRow] = await Promise.all([
+    supabase.rpc('get_chapter_rag_content', {
+      p_grade: ragGrade,
+      p_subject: ragSubject,
+      p_chapter_number: chapterNumber,
+      p_content_type: null,
+    }),
+    supabase
+      .from('subjects')
+      .select('id')
+      .eq('code', subject)
+      .maybeSingle()
+  ]);
+
+  if (ragResult.error) console.error('getChapterTopics (RAG):', ragResult.error.message);
+  const data = ragResult.data;
+
+  const normalisedGrade = grade.replace(/^Grade\s*/i, '').trim();
+
+  // Find curriculum topics matching subject, grade, and chapter number
+  let curriculumTopics: Array<{ id: string; title: string }> = [];
+  if (subjectRow?.data) {
+    const { data: ctData, error: ctErr } = await supabase
+      .from('curriculum_topics')
+      .select('id, title')
+      .eq('subject_id', subjectRow.data.id)
+      .eq('grade', normalisedGrade)
+      .eq('chapter_number', chapterNumber);
+    if (ctErr) {
+      console.error('getChapterTopics (curriculum_topics):', ctErr.message);
+    } else if (ctData) {
+      curriculumTopics = ctData;
+    }
+  }
 
   interface RagChunk {
     chunk_id: string;
@@ -1121,6 +1148,8 @@ export async function getChapterTopics(subject: string, grade: string, chapterNu
   }
   const chunks = (data ?? []) as RagChunk[];
 
+  const cleanString = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+
   // Group RAG chunks by concept (or topic) so the Learn page sees one card per
   // concept instead of 10+ raw chunks. Preserves ordering via min chunk_index.
   const byKey = new Map<string, {
@@ -1130,15 +1159,26 @@ export async function getChapterTopics(subject: string, grade: string, chapterNu
     estimated_minutes: number | null; tags: string[] | null;
     is_active: boolean; display_order: number;
     learning_objectives: string[] | null; bloom_focus: string | null;
+    ncert_page_range: string | null;
+    topic_type: string;
+    page_numbers: number[];
   }>();
 
   for (const c of chunks) {
     const key = (c.concept ?? c.topic ?? `chunk-${c.chunk_index ?? c.chunk_id}`).trim() || c.chunk_id;
     const existing = byKey.get(key);
+    const pageNum = typeof c.page_number === 'number' && c.page_number > 0 ? c.page_number : null;
+
     if (!existing) {
+      const cleanKey = cleanString(key);
+      const matchedCt = curriculumTopics.find((ct) => {
+        const cleanCt = cleanString(ct.title);
+        return cleanCt === cleanKey || cleanCt.includes(cleanKey) || cleanKey.includes(cleanCt);
+      });
+
       byKey.set(key, {
-        id: c.chunk_id,
-        subject_id: '',
+        id: matchedCt ? matchedCt.id : c.chunk_id,
+        subject_id: subjectRow?.data?.id ?? '',
         title: key,
         title_hi: null,
         description: c.chunk_text ?? '',
@@ -1152,12 +1192,36 @@ export async function getChapterTopics(subject: string, grade: string, chapterNu
         display_order: c.chunk_index ?? 0,
         learning_objectives: null,
         bloom_focus: null,
+        ncert_page_range: null,
+        topic_type: 'rag_topic',
+        page_numbers: pageNum ? [pageNum] : [],
       });
-    } else if (c.chunk_text) {
-      existing.description = (existing.description ?? '') + '\n\n' + c.chunk_text;
+    } else {
+      if (c.chunk_text) {
+        existing.description = (existing.description ?? '') + '\n\n' + c.chunk_text;
+      }
+      if (pageNum && !existing.page_numbers.includes(pageNum)) {
+        existing.page_numbers.push(pageNum);
+      }
     }
   }
-  return Array.from(byKey.values()).sort((a, b) => a.display_order - b.display_order);
+
+  // Finalize page ranges
+  const result = Array.from(byKey.values()).map(({ page_numbers, ...rest }) => {
+    let range: string | null = null;
+    if (page_numbers.length > 0) {
+      const sorted = [...page_numbers].sort((a, b) => a - b);
+      const min = sorted[0];
+      const max = sorted[sorted.length - 1];
+      range = min === max ? `${min}` : `${min}-${max}`;
+    }
+    return {
+      ...rest,
+      ncert_page_range: range,
+    };
+  });
+
+  return result.sort((a, b) => a.display_order - b.display_order);
 }
 
 /* ── Questions filtered by chapter (for chapter quiz + quick-check) ── */

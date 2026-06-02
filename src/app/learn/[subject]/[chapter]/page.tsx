@@ -91,6 +91,12 @@ export default function ChapterConceptPage() {
   const [topics, setTopics] = useState<CurriculumTopic[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [diagrams, setDiagrams] = useState<Diagram[]>([]);
+  const [chapterMeta, setChapterMeta] = useState<{
+    title: string;
+    title_hi: string | null;
+    ncert_page_start: number | null;
+    ncert_page_end: number | null;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [activeTab, setActiveTab] = useState<'core' | 'example' | 'cheat'>('core');
@@ -171,39 +177,109 @@ export default function ChapterConceptPage() {
     setLoading(true);
     const grade = student.grade;
 
-    // ── Chapter Reader v2 swap ─────────────────────────────────────────
-    // When the flag is on, try the curated `chapter_concepts` table first.
-    // Three failure modes fall through to the legacy RAG-chunk path:
-    //   1. flag off → never try v2
-    //   2. table query errors or returns no rows for this chapter
-    //   3. quality gate (isUsableChapterDeck) rejects the rows (too few,
-    //      tiny titles, or placeholder explanations)
-    // No try/catch on the v2 call — getChapterTopicsFromConcepts already
-    // returns [] on error and logs to console.
-    let v2Topics: CurriculumTopic[] | null = null;
-    if (chapterReaderV2FlagOn) {
-      const rows = await getChapterTopicsFromConcepts(subject, grade, chapterNum);
-      if (isUsableChapterDeck(rows)) {
-        v2Topics = rows;
-        setV2SourceUsed('curated');
-      } else {
-        setV2SourceUsed('rag_fallback');
+    // Load RAG topics, curated concepts, questions, diagrams, and chapter/subject metadata in parallel
+    const [
+      ragTopicsRaw,
+      curatedConcepts,
+      questionsData,
+      diagramsData,
+      chapterMetaResult,
+      subjectRow
+    ] = await Promise.all([
+      getChapterTopics(subject, grade, chapterNum),
+      chapterReaderV2FlagOn
+        ? getChapterTopicsFromConcepts(subject, grade, chapterNum)
+        : Promise.resolve([]),
+      getChapterQuestions(subject, grade, chapterNum, 30),
+      getTopicDiagrams(subject, grade, chapterNum),
+      supabase
+        .from('chapters')
+        .select('title, title_hi, ncert_page_start, ncert_page_end')
+        .eq('subject_code', subject)
+        .eq('grade', grade.replace(/^Grade\s*/i, '').trim())
+        .eq('chapter_number', chapterNum)
+        .eq('is_active', true)
+        .maybeSingle(),
+      supabase
+        .from('subjects')
+        .select('id')
+        .eq('code', subject)
+        .maybeSingle()
+    ]);
+
+    if (chapterMetaResult?.data) {
+      setChapterMeta(chapterMetaResult.data);
+    } else {
+      setChapterMeta(null);
+    }
+
+    const normalizedGrade = grade.replace(/^Grade\s*/i, '').trim();
+    let curriculumTopics: Array<{ id: string; title: string }> = [];
+    if (subjectRow?.data) {
+      const { data: ctData } = await supabase
+        .from('curriculum_topics')
+        .select('id, title')
+        .eq('subject_id', subjectRow.data.id)
+        .eq('grade', normalizedGrade)
+        .eq('chapter_number', chapterNum);
+      if (ctData) {
+        curriculumTopics = ctData;
       }
     }
 
-    // Always fetch questions + diagrams (they come from question_bank +
-    // diagrams tables and are independent of the topics source).
-    const [legacyTopicsData, questionsData, diagramsData] = await Promise.all([
-      v2Topics === null
-        ? getChapterTopics(subject, grade, chapterNum)
-        : Promise.resolve(v2Topics),
-      getChapterQuestions(subject, grade, chapterNum, 30),
-      getTopicDiagrams(subject, grade, chapterNum),
-    ]);
+    const ragTopics = ragTopicsRaw as CurriculumTopic[];
 
-    setTopics(legacyTopicsData as CurriculumTopic[]);
+    // Merge curated concepts into RAG topics to ensure 100% NCERT coverage
+    const mergedTopics: CurriculumTopic[] = [];
+    const usedCuratedIds = new Set<string>();
+
+    ragTopics.forEach((ragTopic) => {
+      // Find a matching curated concept by title (case-insensitive, alphanumeric match)
+      const matchingCurated = curatedConcepts.find((c) => {
+        const cleanCurated = c.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const cleanRag = ragTopic.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return cleanCurated === cleanRag || cleanRag.includes(cleanCurated) || cleanCurated.includes(cleanRag);
+      });
+
+      if (matchingCurated) {
+        mergedTopics.push({
+          ...ragTopic,
+          ...matchingCurated,
+          id: ragTopic.id, // Explicitly retain RAG/curriculum topic ID to avoid foreign key violations
+          ncert_page_range: ragTopic.ncert_page_range || matchingCurated.ncert_page_range || null,
+          description: (matchingCurated as any).explanation || matchingCurated.description || ragTopic.description,
+          topic_type: 'merged_concept',
+        } as any);
+        usedCuratedIds.add(matchingCurated.id);
+      } else {
+        mergedTopics.push(ragTopic);
+      }
+    });
+
+    // Append any curated concepts that were not matched to any RAG topic
+    curatedConcepts.forEach((c) => {
+      if (!usedCuratedIds.has(c.id)) {
+        // Attempt to match unmatched curated concept to curriculum_topics by title to prevent FK errors
+        const cleanCurated = c.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const matchedCt = curriculumTopics.find((ct) => {
+          const cleanCt = ct.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return cleanCt === cleanCurated || cleanCt.includes(cleanCurated) || cleanCurated.includes(cleanCt);
+        });
+
+        mergedTopics.push({
+          ...c,
+          id: matchedCt ? matchedCt.id : c.id,
+        });
+      }
+    });
+
+    // Sort by display order / ordering to keep logical sequence
+    mergedTopics.sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+
+    setTopics(mergedTopics);
     setQuestions(questionsData as Question[]);
     setDiagrams(diagramsData as Diagram[]);
+    setV2SourceUsed(curatedConcepts.length > 0 ? 'curated' : 'rag_fallback');
     setLoading(false);
   }, [student, subject, chapterNum, chapterReaderV2FlagOn]);
 
@@ -787,6 +863,8 @@ export default function ChapterConceptPage() {
           <span className="text-lg">{subMeta?.icon}</span>
           <span className="text-sm font-semibold truncate" style={{ color: subMeta?.color }}>
             {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
+            {chapterMeta ? `: ${isHi && chapterMeta.title_hi ? chapterMeta.title_hi : chapterMeta.title}` : ''}
+            {chapterMeta?.ncert_page_start ? (isHi ? ` (पृष्ठ ${chapterMeta.ncert_page_start}-${chapterMeta.ncert_page_end})` : ` (Pages ${chapterMeta.ncert_page_start}-${chapterMeta.ncert_page_end})`) : ''}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -876,11 +954,18 @@ export default function ChapterConceptPage() {
         <Card className="!p-5 flex flex-col gap-4">
           {/* Title — always visible so the student knows what they're attempting */}
           <div className="flex items-start justify-between gap-3">
-            <h2 className="text-lg font-bold leading-tight" style={{ fontFamily: 'var(--font-display)' }}>
-              {isHi && (topic as { title_hi?: string | null }).title_hi
-                ? (topic as { title_hi?: string | null }).title_hi
-                : topic.title}
-            </h2>
+            <div>
+              <h2 className="text-lg font-bold leading-tight mb-1" style={{ fontFamily: 'var(--font-display)' }}>
+                {isHi && (topic as { title_hi?: string | null }).title_hi
+                  ? (topic as { title_hi?: string | null }).title_hi
+                  : topic.title}
+              </h2>
+              {topic.ncert_page_range && (
+                <p className="text-xs text-gray-500 font-medium flex items-center gap-1">
+                  📖 {isHi ? `एनसीईआरटी पृष्ठ ${topic.ncert_page_range}` : `NCERT Page ${topic.ncert_page_range}`}
+                </p>
+              )}
+            </div>
             {(topic as any).key_formula && (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 uppercase whitespace-nowrap">
                 {isHi ? '📐 सूत्र शामिल' : '📐 Formula Included'}
