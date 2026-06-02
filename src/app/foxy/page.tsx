@@ -322,6 +322,7 @@ export default function FoxyPage() {
   // it must only apply once per page load (otherwise switching subjects later
   // re-triggers and clobbers the user's manual choice).
   const urlContextAppliedRef = useRef(false);
+  const promptSentRef = useRef(false);
 
   // Save-to-flashcard — tracks which message IDs have been saved
   const [savedMessageIds, setSavedMessageIds] = useState<Set<number>>(new Set());
@@ -774,6 +775,22 @@ export default function FoxyPage() {
       },
     );
   }, [student, studentGrade, activeSubject, language, sessionMode, activeTopic, chatSessionId, selectedChapters, topics, refreshConversations, sendMessageCore]);
+
+  // Auto-send prompt parameter if provided in URL (e.g. from Lesson Blackboard doubts)
+  useEffect(() => {
+    if (!student || promptSentRef.current) return;
+    if (typeof window === 'undefined') return;
+    
+    const params = new URLSearchParams(window.location.search);
+    const promptParam = params.get('prompt');
+    if (promptParam) {
+      promptSentRef.current = true;
+      const t = setTimeout(() => {
+        sendMessage(promptParam);
+      }, 1000);
+      return () => clearTimeout(t);
+    }
+  }, [student, sendMessage]);
 
 
   /**

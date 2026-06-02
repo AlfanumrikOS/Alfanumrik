@@ -1414,6 +1414,79 @@ export default function ChapterConceptPage() {
                         );
                       })()}
 
+                      {/* Teacher's Corner */}
+                      {(!productiveFailureActive || isAnswered) && (() => {
+                        const insights = getTeacherInsights(topic.title, isHi);
+                        return (
+                          <div className="mt-5 p-4.5 rounded-2xl bg-gradient-to-br from-indigo-50/70 to-purple-50/50 border border-indigo-100/80 shadow-sm space-y-3.5 animate-fadeIn">
+                            <div className="flex items-center justify-between pb-2 border-b border-indigo-100/50">
+                              <span className="text-xs font-bold text-indigo-800 flex items-center gap-1.5" style={{ fontFamily: 'var(--font-display)' }}>
+                                <span>🎓</span>
+                                <span>{isHi ? 'शिक्षक का ब्लैकबोर्ड (Tricks & Analogy)' : "Teacher's Blackboard (Tricks & Analogy)"}</span>
+                              </span>
+                              <span className="text-[10px] font-extrabold uppercase tracking-wider text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full">
+                                CBSE Guide
+                              </span>
+                            </div>
+
+                            {/* Analogy */}
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
+                                <span>💡</span>
+                                <span>{isHi ? 'सरल दैनिक जीवन का उदाहरण (Analogy)' : 'Real-World Analogy'}</span>
+                              </p>
+                              <p className="text-xs text-gray-700 leading-relaxed font-medium">
+                                {insights.analogy}
+                              </p>
+                            </div>
+
+                            {/* Exam Hack */}
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
+                                <span>🎯</span>
+                                <span>{isHi ? 'बोर्ड परीक्षा टिप (Exam Secret)' : 'Board Exam Secret'}</span>
+                              </p>
+                              <p className="text-xs text-gray-700 leading-relaxed font-medium">
+                                {insights.examHack}
+                              </p>
+                            </div>
+
+                            {/* Mnemonic */}
+                            {insights.mnemonic && (
+                              <div className="space-y-1">
+                                <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
+                                  <span>🔑</span>
+                                  <span>{isHi ? 'याद रखने का शॉर्टकट (Memory Trick)' : 'Memory Shortcut / Mnemonic'}</span>
+                                </p>
+                                <p className="text-xs text-gray-700 font-mono font-bold bg-indigo-50/50 p-2 rounded-lg border border-indigo-100/30">
+                                  {insights.mnemonic}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Ask Doubt Link */}
+                            <div className="pt-2">
+                              <button
+                                onClick={() => {
+                                  const promptText = isHi
+                                    ? `कृपया मुझे "${topic.title}" की अवधारणा को एक और सरल उदाहरण और बोर्ड परीक्षा के प्रश्नों के साथ समझाएं।`
+                                    : `Please explain the concept of "${topic.title}" with another simple analogy and show me how CBSE asks questions from this topic.`;
+                                  const topicParam = encodeURIComponent(topic.title);
+                                  track('learn_foxy_doubt_clicked', {
+                                    ...telemetryBase,
+                                    source: 'in_flow',
+                                  });
+                                  router.push(`/foxy?subject=${subject}&mode=doubt&topic=${topicParam}&prompt=${encodeURIComponent(promptText)}`);
+                                }}
+                                className="w-full py-2.5 px-3 rounded-xl text-[10px] font-bold bg-indigo-600 text-white hover:bg-indigo-700 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 shadow-sm shadow-indigo-600/10"
+                              >
+                                💬 {isHi ? 'शिक्षक से इस विषय पर डाउट पूछें' : 'Ask Teacher a Doubt / Analogy'}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       {(!productiveFailureActive || isAnswered) && topic.learning_objectives && topic.learning_objectives.length > 0 && (
                         <div className="rounded-xl p-3" style={{ background: `${subMeta?.color || 'var(--orange)'}08`, border: `1px solid ${subMeta?.color || 'var(--orange)'}20` }}>
                           <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: subMeta?.color }}>
@@ -2110,4 +2183,125 @@ function parseLearningCoreText(text: string): CoreContentBlock[] {
   }
 
   return parsed;
+}
+
+interface TeacherInsight {
+  analogy: string;
+  examHack: string;
+  mnemonic: string | null;
+}
+
+const TEACHER_INSIGHTS: Record<string, Record<string, TeacherInsight>> = {
+  en: {
+    electricity: {
+      analogy: "Imagine water flowing through a pipe. Voltage is the water pressure pushing it, Current is the water flowing per second, and Resistance is a narrow squeeze in the pipe that slows the water down.",
+      examHack: "CBSE loves asking for the V-I graph. Always plot V on the y-axis and I on the x-axis. The slope of the line gives you the Resistance (R = V/I). Don't forget to mention that temperature must remain constant!",
+      mnemonic: "V = I × R (Viper Is Red)"
+    },
+    chemical: {
+      analogy: "Balancing a chemical equation is like a recipe for cookies. If you start with 2 cups of flour and 1 cup of chocolate chips, your final cookies must contain exactly 2 cups of flour and 1 cup of chips. No atoms can vanish or appear out of thin air!",
+      examHack: "CBSE examiners check physical states. Always write symbols like (s) for solid, (l) for liquid, (g) for gas, and (aq) for aqueous next to reactants and products to score full marks.",
+      mnemonic: "Law of Conservation of Mass: Mass is neither created nor destroyed."
+    },
+    acid: {
+      analogy: "Think of the pH scale as a thermometer for acidity. Neutral 7 is like comfortable room temperature. As you go down towards 0, it gets freezing cold (super acidic like lemon juice). As you go up to 14, it gets boiling hot (super basic like bleach).",
+      examHack: "Remember that pH is logarithmic. A change of 1 pH unit means a 10-fold change in H+ concentration. CBSE often tests this concept in conceptual multiple-choice questions.",
+      mnemonic: "BAR: Blue litmus turns Acid Red. Base turns Red to Blue (Base = Blue)!"
+    },
+    trigonometry: {
+      analogy: "Trigonometric ratios are like scaling factor recipes for right-angled triangles. If you know one angle, the ratios tell you the exact proportion between the sides, no matter how tiny or massive the triangle is.",
+      examHack: "CBSE height & distance questions always depend on a correct diagram. Draw the diagram first, mark the angles of elevation/depression clearly, and state which triangle you are applying tan/sin to.",
+      mnemonic: "SOH CAH TOA (Some Of Her Children Are Having Trouble Over Algebra) or Pandit Badri Prasad Har Har Bole (P/H = Sin, B/H = Cos, P/B = Tan)."
+    },
+    mitosis: {
+      analogy: "Mitosis is like a photocopy machine. You put in one document (cell) and get two identical copies. Meiosis is like dividing a recipe in half to share; it reduces the chromosome count so offspring have the correct number.",
+      examHack: "Make sure you can draw and label the stages of mitosis (especially Metaphase where chromosomes align at the equator). CBSE diagrams are evaluated on labelling accuracy.",
+      mnemonic: "PMAT: Prophase, Metaphase (Middle), Anaphase (Apart), Telophase (Two)."
+    },
+    quadratic: {
+      analogy: "Finding the roots of a quadratic equation is like finding where a rollercoaster touches the ground level. The discriminant (D = b^2 - 4ac) is like a detector: if D > 0, it hits twice; if D = 0, it barely grazes once; if D < 0, it stays flying!",
+      examHack: "CBSE frequently asks for the nature of roots. Always write the value of D first, show your calculation clearly, and then state whether the roots are 'Real and Distinct', 'Real and Equal', or 'No Real Roots'.",
+      mnemonic: "Discriminant detector: positive = 2 real roots, zero = 1 real root, negative = no real roots."
+    },
+    light: {
+      analogy: "Think of light refraction like a lawnmower moving from concrete to grass at an angle. The wheel that hits the grass first slows down first, causing the lawnmower to turn (bend). That's exactly why light bends when it goes from air to glass!",
+      examHack: "Sign conventions! object distance (u) is ALWAYS negative. For convex mirror/lens, focal length (f) is positive. For concave mirror/lens, focal length (f) is negative. Draw ray diagrams with arrows (no arrows = 0 marks!).",
+      mnemonic: "Concave is a Cave: curves inward. Convex is Vexed: bulges outward."
+    }
+  },
+  hi: {
+    electricity: {
+      analogy: "इसे पानी की नली की तरह समझें। वोल्टेज पानी का दबाव है, करंट बहता हुआ पानी है, और प्रतिरोध नली का तंग हिस्सा है जो पानी के बहाव को धीमा कर देता है।",
+      examHack: "CBSE अक्सर V-I ग्राफ पूछता है। हमेशा y-अक्ष पर V और x-अक्ष पर I को प्लॉट करें। रेखा का ढलान आपको प्रतिरोध (R = V/I) देगा। यह उल्लेख करना न भूलें कि तापमान स्थिर रहना चाहिए!",
+      mnemonic: "V = I × R (वीआईपी लोग हमेशा राज करते हैं - VIP Raj)"
+    },
+    chemical: {
+      analogy: "रासायनिक समीकरण को संतुलित करना बिस्कुट बनाने की रेसिपी की तरह है। यदि आप 2 कप आटा और 1 कप चॉकलेट के साथ शुरू करते हैं, तो तैयार बिस्कुट में भी बिल्कुल उतना ही आटा और चॉकलेट होना चाहिए। कोई भी परमाणु अचानक गायब या उत्पन्न नहीं हो सकता!",
+      examHack: "CBSE परीक्षक भौतिक अवस्थाओं (s, l, g, aq) की जांच करते हैं। पूर्ण अंक प्राप्त करने के लिए अभिकारकों और उत्पादों के बगल में ठोस (s), तरल (l), गैस (g), और जलीय (aq) लिखना न भूलें।",
+      mnemonic: "द्रव्यमान संरक्षण का नियम: द्रव्यमान न तो बनाया जा सकता है और न ही नष्ट किया जा सकता है।"
+    },
+    acid: {
+      analogy: "pH स्केल को अम्लता मापने वाले थर्मामीटर की तरह समझें। उदासीन 7 आरामदायक कमरे के तापमान जैसा है। जैसे-जैसे आप 0 की ओर नीचे जाते हैं, यह बहुत अम्लीय (नींबू के रस की तरह) होता जाता है। जैसे-जैसे आप 14 की ओर ऊपर जाते हैं, यह क्षारीय (साबुन की तरह) होता जाता है।",
+      examHack: "याद रखें कि pH मान में 1 इकाई के बदलाव का मतलब H+ आयनों की सांद्रता में 10 गुना बदलाव है। CBSE अक्सर इस पर बहुविकल्पीय प्रश्न पूछता है।",
+      mnemonic: "अनीला: अम्ल नीले लिटमस को लाल करता है। छालनी: क्षारक लाल को नीला करता है।"
+    },
+    trigonometry: {
+      analogy: "त्रिकोणमितीय अनुपात समकोण त्रिभुज के पक्षों के बीच के अनुपात को दर्शाते हैं। यदि आपको एक कोण पता है, तो अनुपात आपको भुजाओं के बीच का सटीक संबंध बताते हैं, चाहे त्रिभुज कितना भी छोटा या बड़ा क्यों न हो।",
+      examHack: "ऊंचाई और दूरी (Heights and Distances) वाले प्रश्नों में हमेशा एक सही आरेख आवश्यक होता है। पहले आरेख बनाएं, उन्नयन/अवनमन कोणों को स्पष्ट रूप से दर्शाएं, और बताएं कि आप किस त्रिभुज में tan/sin लगा रहे हैं।",
+      mnemonic: "लाल/कक्का (LAL/KKA): L/K = साइन (Sin), A/K = कॉस (Cos), L/A = टेन (Tan)."
+    },
+    mitosis: {
+      analogy: "माइटोसिस एक फोटोकॉपी मशीन की तरह है। आप एक कोशिका डालते हैं और दो बिल्कुल वैसी ही कोशिकाएँ प्राप्त करते हैं। मियोसिस गुणसूत्रों की संख्या को आधा कर देता है ताकि संतान में गुणसूत्रों की संख्या सामान्य रहे।",
+      examHack: "सुनिश्चित करें कि आप समसूत्री विभाजन के चरणों (विशेष रूप से मेटाफ़ेज़) का आरेख बना सकते हैं। CBSE में आरेखों के नामांकन (labelling) पर अंक मिलते हैं।",
+      mnemonic: "PMAT: Prophase, Metaphase (मध्य), Anaphase (अलग), Telophase (दो)."
+    },
+    quadratic: {
+      analogy: "द्विघात समीकरण के मूल खोजना यह पता लगाने जैसा है कि हवा में फेंकी गई गेंद जमीन को कहाँ छूती है। विविक्तकर (D = b^2 - 4ac) एक डिटेक्टर की तरह है: यदि D > 0, गेंद जमीन को दो बार छूती है; यदि D = 0, यह जमीन को केवल एक बार छूती है; यदि D < 0, यह हवा में ही रहती है।",
+      examHack: "CBSE अक्सर मूलों की प्रकृति पूछता है। हमेशा पहले D का मान लिखें, गणना स्पष्ट रूप से दिखाएं, और फिर लिखें कि मूल 'वास्तविक और भिन्न', 'वास्तविक और समान', या 'वास्तविक नहीं' हैं।",
+      mnemonic: "D का नियम: धनात्मक = 2 मूल, शून्य = 1 मूल, ऋणात्मक = कोई वास्तविक मूल नहीं।"
+    },
+    light: {
+      analogy: "प्रकाश के अपवर्तन को कंक्रीट से घास पर तिरछे जाने वाले पहिये की तरह समझें। जो पहिया पहले घास को छुएगा वह पहले धीमा हो जाएगा, जिससे पहिया मुड़ जाएगा। यही कारण है कि प्रकाश हवा से कांच में जाने पर मुड़ जाता है!",
+      examHack: "चिह्न परिपाटी (Sign Conventions) में छात्र सबसे ज्यादा गलती करते हैं। याद रखें: वस्तु की दूरी (u) हमेशा ऋणात्मक होती है। उत्तल दर्पण/लेंस के लिए फोकस दूरी (f) धनात्मक होती है। अवतल के लिए ऋणात्मक होती है। किरणों पर तीरों के निशान जरूर लगाएं!",
+      mnemonic: "अवतल (Concave): अंदर की ओर झुका हुआ (गुफा की तरह)। उत्तल (Convex): ऊपर की ओर उठा हुआ तल।"
+    }
+  }
+};
+
+function getTeacherInsights(topicTitle: string, isHi: boolean): TeacherInsight {
+  const lang = isHi ? 'hi' : 'en';
+  const title = (topicTitle || '').toLowerCase();
+  
+  let key = '';
+  if (title.includes('ohm') || title.includes('electr') || title.includes('poten') || title.includes('resist')) {
+    key = 'electricity';
+  } else if (title.includes('chem') || title.includes('reaction') || title.includes('equat') || title.includes('balanc')) {
+    key = 'chemical';
+  } else if (title.includes('acid') || title.includes('base') || title.includes('ph ') || title.includes('salt')) {
+    key = 'acid';
+  } else if (title.includes('trig') || title.includes('ratio') || title.includes('height') || title.includes('distance')) {
+    key = 'trigonometry';
+  } else if (title.includes('mitos') || title.includes('meios') || title.includes('cell divis') || title.includes('cell-divis')) {
+    key = 'mitosis';
+  } else if (title.includes('quadrat') || title.includes('roots') || title.includes('discrim')) {
+    key = 'quadratic';
+  } else if (title.includes('light') || title.includes('reflect') || title.includes('refract') || title.includes('mirror') || title.includes('lens')) {
+    key = 'light';
+  }
+  
+  if (key && TEACHER_INSIGHTS[lang][key]) {
+    return TEACHER_INSIGHTS[lang][key];
+  }
+  
+  return {
+    analogy: isHi
+      ? `इस अवधारणा को दैनिक जीवन के उदाहरण से समझें। जब आप इसे अपने आस-पास की चीज़ों से जोड़ते हैं, तो जटिल विज्ञान/गणित भी बिल्कुल आसान लगने लगता है।`
+      : `Think of this concept in terms of simple daily systems. Connecting abstract rules to real-world objects makes the underlying logic feel natural and easy to grasp.`,
+    examHack: isHi
+      ? `सीबीएसई बोर्ड परीक्षा टिप: परिभाषा लिखते समय मुख्य वैज्ञानिक शब्दों को जरूर शामिल करें और समीकरण/सूत्र को हमेशा बॉक्स में बंद करें। इससे परीक्षक को आपकी स्पष्टता दिखती है।`
+      : `CBSE Board Exam Tip: When writing definitions, underline the core scientific terms. Always enclose final formulas/derivations in a box; it shows the examiner you are confident.`,
+    mnemonic: isHi
+      ? `याद रखने का तरीका: अवधारणा को तीन मुख्य भागों में तोड़ें और अपने शब्दों में एक सरल नियम बनाएं।`
+      : `Memory Tip: Break this concept into three simple steps and formulate a short memory sentence in your own words.`
+  };
 }
