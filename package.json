@@ -63,7 +63,8 @@
     "remark-math": "^6.0.0",
     "swr": "^2.4.1",
     "tailwind-merge": "^2.5.2",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "prom-client": "^15.0.0"
   },
   "browserslist": [
     "Chrome >= 90",

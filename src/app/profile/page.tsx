@@ -12,6 +12,7 @@ import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { PlanBadge } from '@/components/PlanBadge';
 import { isSoundEnabled, setSoundEnabled, playSound } from '@/lib/sounds';
 import StreakBadge from '@/components/challenge/StreakBadge';
+import XPRewardShop from '@/components/xp/XPRewardShop';
 
 function SoundToggle() {
   const [on, setOn] = useState(() => isSoundEnabled());
@@ -159,7 +160,7 @@ function ConnectionsCard({ studentId, isHi }: { studentId: string; isHi: boolean
   );
 }
 
-type Tab = 'overview' | 'edit' | 'achievements' | 'stats';
+type Tab = 'overview' | 'edit' | 'achievements' | 'stats' | 'shop';
 
 const GOALS = [
   { value: '', label: 'Not set' },
@@ -194,6 +195,7 @@ export default function ProfilePage() {
   const [allAchievements, setAllAchievements] = useState<any[]>([]);
   const [quizStats, setQuizStats] = useState({ total: 0, avgScore: 0, bestScore: 0, totalXpFromQuiz: 0 });
   const [challengeStreak, setChallengeStreak] = useState<{ current: number; best: number; badges: string[] } | null>(null);
+  const [coinsBalance, setCoinsBalance] = useState(0);
 
   // Edit form state
   const [editName, setEditName] = useState('');
@@ -285,7 +287,49 @@ export default function ProfilePage() {
     } catch {
       // No streak data yet -- that is fine
     }
-  }, [student]);
+
+    // Fetch coins balance
+    try {
+      const { data: coinBal } = await supabase
+        .from('coin_balances')
+        .select('balance')
+        .eq('student_id', student.id)
+        .maybeSingle()
+      setCoinsBalance(coinBal?.balance ?? 0)
+    } catch (e) {
+      console.warn('Failed to load coin balance:', e)
+    }
+  }, [student])
+
+  const handleRedeemCoins = useCallback(async (rewardId: string) => {
+    if (!student) return false
+    try {
+      const res = await fetch('/api/student/shop/purchase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemId: rewardId, currency: 'coins' }),
+      })
+      if (res.ok) {
+        // Re-fetch coin balance
+        const { data: coinBal } = await supabase
+          .from('coin_balances')
+          .select('balance')
+          .eq('student_id', student.id)
+          .maybeSingle()
+        setCoinsBalance(coinBal?.balance ?? 0)
+        await refreshStudent()
+        await refreshSnapshot()
+        return true
+      } else {
+        const errData = await res.json()
+        toast.error(errData.error || (isHi ? 'त्रुटि हुई' : 'Redemption failed'))
+        return false
+      }
+    } catch (e) {
+      console.error('Redeem error:', e)
+      return false
+    }
+  }, [student, isHi, refreshStudent, refreshSnapshot])
 
   useEffect(() => {
     if (student) loadData();
@@ -500,6 +544,7 @@ export default function ProfilePage() {
     { id: 'edit', label: 'Edit', labelHi: 'संपादन', icon: '✏️' },
     { id: 'achievements', label: 'Badges', labelHi: 'बैज', icon: '🏅' },
     { id: 'stats', label: 'Stats', labelHi: 'आँकड़े', icon: '📊' },
+    { id: 'shop', label: 'Shop', labelHi: 'दुकान', icon: '🛒' },
   ];
 
   return (
@@ -697,6 +742,13 @@ export default function ProfilePage() {
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {/* ═══ SHOP TAB ═══ */}
+        {tab === 'shop' && (
+          <div className="space-y-4">
+            <XPRewardShop balance={coinsBalance} isHi={isHi} onRedeem={handleRedeemCoins} />
           </div>
         )}
 

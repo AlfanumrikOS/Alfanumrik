@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { XP_REWARDS } from '@/lib/xp-config';
+import { COIN_SHOP } from '@/lib/coin-rules';
 import { Card, Button, Badge, SheetModal } from '@/components/ui';
 
 /* ─── Types ──────────────────────────────────────────────── */
@@ -12,7 +12,7 @@ interface XPRewardShopProps {
   onRedeem: (rewardId: string) => Promise<boolean>;
 }
 
-type RewardItem = typeof XP_REWARDS[number];
+type RewardItem = typeof COIN_SHOP[number];
 
 /* ─── Category Colors ────────────────────────────────────── */
 
@@ -70,13 +70,13 @@ export default function XPRewardShop({ balance, isHi, onRedeem }: XPRewardShopPr
             {isHi ? '\u092A\u0941\u0930\u0938\u094D\u0915\u093E\u0930' : 'Rewards'}
           </h3>
           <Badge color="var(--orange)" size="md">
-            {balance.toLocaleString()} XP
+            {balance.toLocaleString()} {isHi ? '\u0915\u0949\u0907\u0928\u094D\u0938' : 'Coins'}
           </Badge>
         </div>
 
         {/* Rewards grid */}
         <div className="grid grid-cols-2 gap-3">
-          {XP_REWARDS.map((reward) => {
+          {COIN_SHOP.map((reward) => {
             const canAfford = balance >= reward.cost;
             const catColor = CATEGORY_COLORS[reward.category] ?? 'var(--text-3)';
 
@@ -113,7 +113,7 @@ export default function XPRewardShop({ balance, isHi, onRedeem }: XPRewardShopPr
                     className="text-xs font-bold"
                     style={{ color: canAfford ? catColor : 'var(--text-3)' }}
                   >
-                    {reward.cost} XP
+                    {reward.cost} {isHi ? '\u0915\u0949\u0907\u0928\u094D\u0938' : 'Coins'}
                   </span>
                   {!canAfford && (
                     <span className="text-xs text-[var(--text-3)]">
@@ -155,7 +155,7 @@ export default function XPRewardShop({ balance, isHi, onRedeem }: XPRewardShopPr
                 {isHi ? '\u0932\u093E\u0917\u0924' : 'Cost'}
               </span>
               <span className="text-sm font-bold" style={{ color: 'var(--orange)' }}>
-                {selectedReward.cost} XP
+                {selectedReward.cost} {isHi ? '\u0915\u0949\u0907\u0928\u094D\u0938' : 'Coins'}
               </span>
             </div>
             <div
@@ -169,7 +169,7 @@ export default function XPRewardShop({ balance, isHi, onRedeem }: XPRewardShopPr
                 className={`text-sm font-bold ${balance >= selectedReward.cost ? '' : 'text-red-600'}`}
                 style={balance >= selectedReward.cost ? { color: 'var(--green, #22C55E)' } : undefined}
               >
-                {balance.toLocaleString()} XP
+                {balance.toLocaleString()} {isHi ? '\u0915\u0949\u0907\u0928\u094D\u0938' : 'Coins'}
               </span>
             </div>
 
@@ -181,7 +181,7 @@ export default function XPRewardShop({ balance, isHi, onRedeem }: XPRewardShopPr
             )}
             {redeemResult === 'error' && (
               <p className="text-center text-sm font-bold text-red-600">
-                {isHi ? '\u0915\u0941\u091B \u0917\u0932\u0924 \u0939\u0941\u0906\u0964 \u092A\u0941\u0928\u0903 \u092A\u094D\u0930\u092F\u093E\u0938 \u0915\u0930\u0947\u0902\u0964' : 'Something went wrong. Please try again.'}
+                {isHi ? '\u0915\u0941\u091B \u0917\u0932\u0924 \u0939\u0941\u0906\u0964 \u092A\u094B\u0928\u094D\u092F\u093E\u0938 \u0915\u0930\u0947\u0902\u0964' : 'Something went wrong. Please try again.'}
               </p>
             )}
 
@@ -197,18 +197,18 @@ export default function XPRewardShop({ balance, isHi, onRedeem }: XPRewardShopPr
                   >
                     {isRedeeming
                       ? (isHi ? '\u092A\u094D\u0930\u094B\u0938\u0947\u0938 \u0939\u094B \u0930\u0939\u093E...' : 'Processing...')
-                      : (isHi ? `${selectedReward.cost} XP \u0938\u0947 \u092A\u094D\u0930\u093E\u092A\u094D\u0924 \u0915\u0930\u094B` : `Redeem for ${selectedReward.cost} XP`)}
+                      : (isHi ? `${selectedReward.cost} \u0915\u0949\u0907\u0928\u094D\u0938 \u0938\u0947 \u092A\u094D\u0930\u093E\u092A\u094D\u0924 \u0915\u0930\u094B` : `Redeem for ${selectedReward.cost} Coins`)}
                   </Button>
                 ) : (
                   <div
                     className="rounded-xl p-3 text-center text-sm font-semibold"
                     style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}
                   >
-                    {isHi ? '\u092A\u0930\u094D\u092F\u093E\u092A\u094D\u0924 XP \u0928\u0939\u0940\u0902' : 'Not enough XP'}
+                    {isHi ? '\u092A\u0930\u094D\u092F\u093E\u092A\u094D\u0924 \u0915\u0949\u0907\u0928\u094D\u0938 \u0928\u0939\u0940\u0902' : 'Not enough Coins'}
                     <span className="block text-xs mt-0.5 font-normal">
                       {isHi
-                        ? `\u0914\u0930 ${selectedReward.cost - balance} XP \u0915\u092E\u093E\u0913`
-                        : `Need ${selectedReward.cost - balance} more XP`}
+                        ? `\u0914\u0930 ${selectedReward.cost - balance} \u0915\u0949\u0907\u0928\u094D\u0938 \u0915\u092E\u093E\u0913`
+                        : `Need ${selectedReward.cost - balance} more Coins`}
                     </span>
                   </div>
                 )}

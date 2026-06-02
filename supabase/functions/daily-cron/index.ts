@@ -36,17 +36,93 @@ function todayUtcSlug(): string {
 
 async function resetMissedStreaks(supabase: ReturnType<typeof createClient>): Promise<number> {
   const y = new Date(); y.setUTCDate(y.getUTCDate()-1); y.setUTCHours(0,0,0,0)
-  // D6 fix: replace Promise.all per-row UPDATEs (N+1 against PostgREST) with a
-  // single predicate UPDATE. supabase-js applies the same WHERE the previous
-  // SELECT used (streak_days > 0 AND last_session_at < yesterday-start).
-  // At 10K+ active streaks this collapses 10K HTTP round-trips into 1.
+
+  // Step 1: Find student profiles at risk of losing their streak
+  const { data: atRiskProfiles, error: atRiskErr } = await supabase
+    .from('student_learning_profiles')
+    .select('student_id')
+    .gt('streak_days', 0)
+    .lt('last_session_at', y.toISOString())
+
+  if (atRiskErr) throw new Error(`resetMissedStreaks: failed to fetch at risk profiles: ${atRiskErr.message}`)
+
+  let freezesApplied = 0
+  if (atRiskProfiles && atRiskProfiles.length > 0) {
+    const studentIds = [...new Set(atRiskProfiles.map((p: any) => p.student_id))]
+
+    // Fetch students with freezes_available > 0
+    const { data: studentsWithFreezes, error: freezesErr } = await supabase
+      .from('students')
+      .select('id, freezes_available, freezes_used_total')
+      .in('id', studentIds)
+      .gt('freezes_available', 0)
+
+    if (freezesErr) {
+      console.warn(`resetMissedStreaks: failed to query student freezes: ${freezesErr.message}`)
+    } else if (studentsWithFreezes && studentsWithFreezes.length > 0) {
+      const yesterdayNoon = new Date(y.getTime() + 12 * 3600 * 1000).toISOString()
+      for (const student of studentsWithFreezes as Array<{ id: string; freezes_available: number; freezes_used_total: number }>) {
+        const studentId = student.id
+        const newFreezes = student.freezes_available - 1
+        const newUsed = (student.freezes_used_total ?? 0) + 1
+
+        // Consume freeze on students table
+        const { error: consumeErr } = await supabase
+          .from('students')
+          .update({
+            freezes_available: newFreezes,
+            freezes_used_total: newUsed,
+            last_freeze_used_at: new Date().toISOString(),
+            last_active: yesterdayNoon, // bump last_active so next quiz continues streak
+          })
+          .eq('id', studentId)
+
+        if (consumeErr) {
+          console.warn(`resetMissedStreaks: failed to consume freeze for student ${studentId}: ${consumeErr.message}`)
+          continue
+        }
+
+        // Bump last_session_at on profiles to exclude them from the reset
+        const { error: profileBumpErr } = await supabase
+          .from('student_learning_profiles')
+          .update({
+            last_session_at: yesterdayNoon,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('student_id', studentId)
+          .gt('streak_days', 0)
+          .lt('last_session_at', y.toISOString())
+
+        if (profileBumpErr) {
+          console.warn(`resetMissedStreaks: failed to bump profile session time for student ${studentId}: ${profileBumpErr.message}`)
+        } else {
+          freezesApplied++
+          // PostHog telemetry
+          try {
+            await posthogCapture('streak_freeze_applied', studentId, {
+              freezes_remaining: newFreezes,
+              freezes_used_total: newUsed,
+            })
+          } catch (telemetryErr) {
+            console.warn(`resetMissedStreaks: telemetry failed for student ${studentId}: ${telemetryErr}`)
+          }
+        }
+      }
+    }
+  }
+
+  if (freezesApplied > 0) {
+    console.log(`daily-cron: streaks_reset — applied ${freezesApplied} streak freezes`)
+  }
+
+  // Step 2: Bulk reset streaks for students who did not study and had no freezes
   const { data, error } = await supabase
     .from('student_learning_profiles')
     .update({ streak_days: 0, updated_at: new Date().toISOString() })
     .gt('streak_days', 0)
     .lt('last_session_at', y.toISOString())
     .select('student_id')
-  if (error) throw new Error(`resetMissedStreaks: ${error.message}`)
+  if (error) throw new Error(`resetMissedStreaks bulk update: ${error.message}`)
   if (!data?.length) return 0
   return new Set((data as { student_id: string }[]).map(p => p.student_id)).size
 }

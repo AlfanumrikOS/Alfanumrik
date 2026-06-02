@@ -397,7 +397,7 @@ export async function runCritic(args: RunCriticArgs): Promise<CriticVerdictOutpu
   if (!submission) {
     // Model emitted no tool call. Synthesize a safe default verdict.
     const synthetic = {
-      decision: 'request_changes',
+      decision: 'request_changes' as CriticDecision,
       reasoning: 'The critic did not emit a submit_verdict tool call; defaulting to request_changes for safety.',
       risk_tier_observed: Math.max(args.task.risk_tier_declared, 1),
       rubric_clauses_invoked: [] as string[],
