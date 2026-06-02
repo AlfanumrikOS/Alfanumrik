@@ -105,6 +105,8 @@ export default function ChapterConceptPage() {
   const [conceptStates, setConceptStates] = useState<Record<number, ConceptState>>({});
   const [completedCount, setCompletedCount] = useState(0);
   const [showCompletion, setShowCompletion] = useState(false);
+  const [revealedCorePoints, setRevealedCorePoints] = useState<Record<number, number>>({});
+  const [showAllCore, setShowAllCore] = useState<Record<number, boolean>>({});
 
   // ── Phase 2-B: Read mode (gated by ff_learn_read_mode_v1) ──
   // The flag controls visibility of the Practice/Read toggle. When the page
@@ -1051,16 +1053,165 @@ export default function ChapterConceptPage() {
                   </div>
                 )}
 
-                {/* Description — hidden until attempt when productive-failure is active */}
-                {(!productiveFailureActive || isAnswered) && (topic as any).explanation ? (
-                  <p className="text-sm leading-relaxed text-[var(--text-2)]" style={{ whiteSpace: 'pre-wrap' }}>
-                    {isHi && (topic as any).explanation_hi ? (topic as any).explanation_hi : (topic as any).explanation}
-                  </p>
-                ) : (!productiveFailureActive || isAnswered) && topic.description ? (
-                  <p className="text-sm leading-relaxed text-[var(--text-2)]" style={{ whiteSpace: 'pre-wrap' }}>
-                    {topic.description}
-                  </p>
-                ) : null}
+                {/* Stepped reveal content progress header */}
+                {(() => {
+                  const coreText = isHi && (topic as any).explanation_hi
+                    ? (topic as any).explanation_hi
+                    : (topic as any).explanation
+                    ? (topic as any).explanation
+                    : topic.description || '';
+
+                  const coreBlocks = parseLearningCoreText(coreText);
+                  const totalBlocks = coreBlocks.length;
+                  const currentRevealedCount = revealedCorePoints[currentIdx] || 1;
+                  const showAll = showAllCore[currentIdx] || false;
+
+                  if (totalBlocks <= 0) return null;
+
+                  const visibleBlocks = showAll ? coreBlocks : coreBlocks.slice(0, currentRevealedCount);
+
+                  return (
+                    <>
+                      {(!productiveFailureActive || isAnswered) && totalBlocks > 1 && (
+                        <div className="flex items-center justify-between mb-2 text-[10px] text-gray-400 font-bold uppercase tracking-wider bg-gray-50/50 p-2 rounded-lg border border-gray-100">
+                          <div className="flex items-center gap-1.5">
+                            <span>{isHi ? 'प्रगति' : 'Progress'}:</span>
+                            <div className="flex gap-1">
+                              {coreBlocks.map((_, bIdx) => (
+                                <span
+                                  key={bIdx}
+                                  className="w-1.5 h-1.5 rounded-full transition-all duration-300"
+                                  style={{
+                                    backgroundColor: showAll || bIdx < currentRevealedCount
+                                      ? (subMeta?.color || 'var(--orange)')
+                                      : 'var(--border)'
+                                  }}
+                                />
+                              ))}
+                            </div>
+                            <span className="ml-1 text-gray-500">
+                              {showAll ? totalBlocks : currentRevealedCount}/{totalBlocks}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowAllCore(prev => ({ ...prev, [currentIdx]: !showAll }))}
+                            className="transition-all flex items-center gap-1 uppercase tracking-wider font-bold"
+                            style={{ color: subMeta?.color || 'var(--orange)' }}
+                          >
+                            {showAll 
+                              ? (isHi ? '⚡ चरणबद्ध पढ़ें' : '⚡ Read Stepwise') 
+                              : (isHi ? '📖 सब दिखाएं' : '📖 Show All')}
+                          </button>
+                        </div>
+                      )}
+
+                      {(!productiveFailureActive || isAnswered) && (
+                        <div className="space-y-4 animate-fadeIn">
+                          {visibleBlocks.map((block, bIdx) => {
+                            if (block.type === 'heading') {
+                              return (
+                                <h3
+                                  key={bIdx}
+                                  className="text-sm font-bold text-[var(--text-1)] border-l-2 pl-2 transition-all duration-300 animate-fadeIn"
+                                  style={{ borderColor: subMeta?.color || 'var(--orange)' }}
+                                >
+                                  {block.text}
+                                </h3>
+                              );
+                            }
+
+                            if (block.type === 'highlight') {
+                              return (
+                                <div
+                                  key={bIdx}
+                                  className="p-3.5 rounded-xl border transition-all duration-300 animate-fadeIn"
+                                  style={{
+                                    background: 'rgba(232, 88, 28, 0.04)',
+                                    borderColor: 'rgba(232, 88, 28, 0.18)',
+                                    borderLeftWidth: '4px',
+                                    borderLeftColor: subMeta?.color || '#E8581C'
+                                  }}
+                                >
+                                  <div className="flex items-start gap-2">
+                                    <span className="text-sm">💡</span>
+                                    <p className="text-xs leading-relaxed text-gray-700 font-medium whitespace-pre-wrap">
+                                      {block.text}
+                                    </p>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            if (block.type === 'list' && block.items) {
+                              return (
+                                <div
+                                  key={bIdx}
+                                  className="p-3.5 rounded-xl border border-gray-100 bg-gray-50/50 transition-all duration-300 animate-fadeIn"
+                                >
+                                  <ul className="space-y-2">
+                                    {block.items.map((item, iIdx) => (
+                                      <li key={iIdx} className="flex items-start gap-2.5 text-xs text-[var(--text-2)] leading-relaxed">
+                                        <span 
+                                          className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[9px] font-bold text-white mt-0.5"
+                                          style={{ backgroundColor: subMeta?.color || 'var(--orange)' }}
+                                        >
+                                          ✓
+                                        </span>
+                                        <span className="flex-1">{item}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <p
+                                key={bIdx}
+                                className="text-sm leading-relaxed text-[var(--text-2)] transition-all duration-300 animate-fadeIn"
+                                style={{ whiteSpace: 'pre-wrap' }}
+                              >
+                                {block.text}
+                              </p>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Reveal Next Point button */}
+                      {!showAll && currentRevealedCount < totalBlocks && (!productiveFailureActive || isAnswered) && (
+                        <Button
+                          fullWidth
+                          variant="soft"
+                          color={subMeta?.color}
+                          onClick={() => setRevealedCorePoints(prev => ({ ...prev, [currentIdx]: currentRevealedCount + 1 }))}
+                          className="mt-3 text-xs font-bold py-2.5 rounded-xl transition-all active:scale-[0.97]"
+                        >
+                          👇 {isHi ? 'अगला बिंदु समझें' : 'Next Concept Point'} ({currentRevealedCount}/{totalBlocks})
+                        </Button>
+                      )}
+
+                      {/* Completion badge for core points reveal */}
+                      {(!showAll && currentRevealedCount === totalBlocks && totalBlocks > 1 && (!productiveFailureActive || isAnswered)) && (
+                        <div
+                          className="rounded-xl p-3 mt-3 flex items-center gap-2 border animate-fadeIn"
+                          style={{
+                            background: 'rgba(22, 163, 74, 0.04)',
+                            borderColor: 'rgba(22, 163, 74, 0.15)',
+                          }}
+                        >
+                          <span className="text-base">🚀</span>
+                          <span className="text-xs font-bold text-green-700">
+                            {isHi 
+                              ? 'सभी मुख्य बिंदु पढ़ लिए! नीचे के प्रश्न का उत्तर दें।' 
+                              : 'All points read! Ready to check your understanding below.'}
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
 
                 {/* Learning Objectives — hidden until attempt when productive-failure is active */}
                 {(!productiveFailureActive || isAnswered) && topic.learning_objectives && topic.learning_objectives.length > 0 && (
@@ -1444,4 +1595,74 @@ export default function ChapterConceptPage() {
       </AppShell>
     </div>
   );
+}
+
+interface CoreContentBlock {
+  type: 'heading' | 'list' | 'highlight' | 'paragraph';
+  text: string;
+  items?: string[];
+}
+
+function parseLearningCoreText(text: string): CoreContentBlock[] {
+  if (!text) return [];
+
+  // Split by double newlines to isolate paragraphs/blocks
+  const rawBlocks = text.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
+  const parsed: CoreContentBlock[] = [];
+
+  for (const block of rawBlocks) {
+    const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+    const isBulletList = lines.every(l => /^[-\*\u2022\u25E6]\s+/.test(l));
+    const isNumberedList = lines.every(l => /^\d+[\.\)]\s+/.test(l));
+
+    if (lines.length > 1 && (isBulletList || isNumberedList)) {
+      const items = lines.map(l => l.replace(/^([-\*\u2022\u25E6]|\d+[\.\)])\s+/, '').trim());
+      parsed.push({
+        type: 'list',
+        text: block,
+        items
+      });
+      continue;
+    }
+
+    if (lines.length === 1 && (/^[-\*\u2022\u25E6]\s+/.test(lines[0]) || /^\d+[\.\)]\s+/.test(lines[0]))) {
+      parsed.push({
+        type: 'list',
+        text: block,
+        items: [lines[0].replace(/^([-\*\u2022\u25E6]|\d+[\.\)])\s+/, '').trim()]
+      });
+      continue;
+    }
+
+    const cleanBlock = block.replace(/\*\*+/g, '').trim();
+    const isHeading = 
+      (cleanBlock.length < 60 && !/[\.\?\!\।]$/.test(cleanBlock)) || 
+      cleanBlock.endsWith(':') || 
+      (block.startsWith('**') && block.endsWith('**') && !block.includes('\n'));
+
+    if (isHeading) {
+      parsed.push({
+        type: 'heading',
+        text: cleanBlock
+      });
+      continue;
+    }
+
+    const isHighlight = /^(definition|note|important|key\s+concept|attention|warning|tippani|paribhasha|mahatvapurna|महत्वपूर्ण|परिभाषा|नोट|विशेष|ध्यान दें)[:\-]/i.test(cleanBlock);
+    
+    if (isHighlight) {
+      parsed.push({
+        type: 'highlight',
+        text: cleanBlock
+      });
+      continue;
+    }
+
+    parsed.push({
+      type: 'paragraph',
+      text: block
+    });
+  }
+
+  return parsed;
 }
