@@ -726,7 +726,7 @@ export default function ChapterConceptPage() {
             </div>
           }
         >
-        <main className="app-container py-6 max-w-lg mx-auto flex flex-col gap-5">
+        <main className="w-full px-4 md:px-8 py-6 max-w-2xl mx-auto flex flex-col gap-5">
           <div className="text-center py-4">
             <div className="text-6xl mb-3">{scoreGood ? '🎉' : '📊'}</div>
             <h2 className="text-2xl font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>
@@ -925,7 +925,7 @@ export default function ChapterConceptPage() {
             </div>
           }
         >
-        <main className="app-container py-12 text-center">
+        <main className="w-full px-4 md:px-8 py-12 text-center">
           <div className="text-5xl mb-4">📚</div>
           <p className="text-base font-semibold text-[var(--text-2)] mb-2">
             {isHi ? 'अभी कोई अवधारणा नहीं मिली' : 'No concepts found for this chapter yet'}
@@ -1002,7 +1002,7 @@ export default function ChapterConceptPage() {
   // bottom — so the "next concept" CTA pins above the BottomNav without
   // needing extra clearance.
   const learnHeaderContent = (
-    <div className="app-container py-3">
+    <div className="w-full px-4 md:px-8 py-3">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] mr-1">&larr;</button>
@@ -1063,7 +1063,7 @@ export default function ChapterConceptPage() {
       {/* `h-full` lets `mt-auto` on the next-concept CTA pin it to the
           bottom of AppShell's content row — preserving the pre-shell
           "primary action stays in thumb reach" behavior. */}
-      <main className="h-full app-container py-4 w-full flex flex-col md:flex-row gap-6">
+      <main className="h-full w-full px-4 md:px-8 py-4 flex flex-col md:flex-row gap-6">
         
         {/* Sidebar Index (hidden on mobile, permanent on desktop md:flex) */}
         {phase === 'explaining' && (
