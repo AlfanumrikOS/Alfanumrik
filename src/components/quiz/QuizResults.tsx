@@ -1235,7 +1235,7 @@ export default function QuizResults({
         </div>
       </main>
      </SectionErrorBoundary>
-      <BottomNav />
+      
     </div>
   );
 }

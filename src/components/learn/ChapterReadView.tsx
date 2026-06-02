@@ -144,7 +144,7 @@ function ChapterReadViewImpl({
         )}
       </main>
 
-      <BottomNav />
+      
     </div>
   );
 }

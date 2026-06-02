@@ -205,7 +205,7 @@ export default function QuizSetup({
             {isHi ? 'सेटिंग बदलो (विषय, कठिनाई...)' : 'Change settings (subject, difficulty...)'}
           </button>
         </main>
-        <BottomNav />
+        
       </div>
     );
   }
@@ -519,7 +519,7 @@ export default function QuizSetup({
 
         </>)}
       </main>
-      <BottomNav />
+      
     </div>
   );
 }

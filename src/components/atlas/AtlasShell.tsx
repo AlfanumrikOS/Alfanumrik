@@ -15,7 +15,7 @@
  *
  * NOT covered by this primitive (intentionally):
  *   - Bilingual toggles, profile pickers, plan badges — those live in the
- *     existing `<DashboardSidebar>` / `<BottomNav>` and stay there.
+ *     existing `<DashboardSidebar>` / `` and stay there.
  *   - Per-role nav links — passed in via `nav` prop.
  */
 
