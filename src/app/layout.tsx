@@ -10,8 +10,6 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import RegisterSW from '@/lib/RegisterSW';
 import JsonLd from '@/components/JsonLd';
 import LayoutDeferredChrome from '@/components/LayoutDeferredChrome';
-import DemoModeWrapper from '@/components/DemoModeWrapper';
-import StreamGate from '@/components/StreamGate';
 import { Toaster } from '@/components/ui/toast';
 import { GlobalAppLayout } from '@/components/navigation/GlobalAppLayout';
 
@@ -115,13 +113,6 @@ export default function RootLayout({
                   <GlobalAppLayout>{children}</GlobalAppLayout>
                 </div>
               </ErrorBoundary>
-              <DemoModeWrapper />
-              {/* Forces grade 11/12 students to pick a stream before any page
-                  can render meaningful subject access. Without it, students
-                  who land directly on /foxy or /learn never saw the
-                  dashboard-only picker and hit "Oops" 422s on locked
-                  subjects. See src/components/StreamGate.tsx. */}
-              <StreamGate />
               <RegisterSW />
               {/* In-app toast mount (Phase A.4). Replaces native alert() for
                   error UI so cheap school tablets don't see blocking dialogs. */}

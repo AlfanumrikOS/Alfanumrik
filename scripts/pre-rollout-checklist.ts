@@ -167,19 +167,41 @@ export function checkConfigFilesPresent(): CheckResult {
 }
 
 export function checkConfigParity(): CheckResult {
-  // Delegates to the existing shell script. On Windows we invoke via bash if
-  // available (git bash is present per repo convention).
-  const script = join(REPO_ROOT, 'scripts', 'check-config-parity.sh').replace(/\\/g, '/');
-  if (!existsSync(script)) return fail('config parity', `script missing: ${script}`);
-  try {
-    execSync('bash scripts/check-config-parity.sh', { cwd: REPO_ROOT, stdio: 'pipe' });
-    return ok('config parity', 'web + deno config constants match');
-  } catch (err) {
-    const out = err instanceof Error && 'stdout' in err
-      ? String((err as { stdout?: Buffer }).stdout ?? '')
-      : '';
-    return fail('config parity', out || 'check-config-parity.sh exited non-zero');
+  // Originally delegated to scripts/check-config-parity.sh, but shelling out to bash
+  // is flaky on Windows environments. Re-implemented in pure TS for cross-platform reliability.
+  const webPath = join(REPO_ROOT, 'src', 'lib', 'grounding-config.ts');
+  const denoPath = join(REPO_ROOT, 'supabase', 'functions', 'grounded-answer', 'config.ts');
+  
+  if (!existsSync(webPath)) return fail('config parity', `missing: ${webPath}`);
+  if (!existsSync(denoPath)) return fail('config parity', `missing: ${denoPath}`);
+  
+  const extractConstants = (src: string) => {
+    const regex = /^export const ([A-Z_]+)\s*=/gm;
+    const matches: string[] = [];
+    let match;
+    while ((match = regex.exec(src)) !== null) {
+      matches.push(match[1]);
+    }
+    return matches.sort();
+  };
+
+  const webConsts = extractConstants(readFileSync(webPath, 'utf8'));
+  const denoConsts = extractConstants(readFileSync(denoPath, 'utf8'));
+
+  const webStr = webConsts.join(',');
+  const denoStr = denoConsts.join(',');
+
+  if (webStr !== denoStr) {
+    // Find symmetric difference for helpful error message
+    const webOnly = webConsts.filter(c => !denoConsts.includes(c));
+    const denoOnly = denoConsts.filter(c => !webConsts.includes(c));
+    const diffs = [];
+    if (webOnly.length) diffs.push(`Web only: ${webOnly.join(', ')}`);
+    if (denoOnly.length) diffs.push(`Deno only: ${denoOnly.join(', ')}`);
+    return fail('config parity', `constants mismatch. ${diffs.join('; ')}`);
   }
+
+  return ok('config parity', 'web + deno config constants match');
 }
 
 export function checkEslintRulesRegistered(): CheckResult {

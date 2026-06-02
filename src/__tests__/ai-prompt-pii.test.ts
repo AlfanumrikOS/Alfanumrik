@@ -409,21 +409,7 @@ function scanFileForPiiIdentifiers(
 }
 
 describe('AI prompt PII (source scan): Deno Edge Functions and inline route builders', () => {
-  it('supabase/functions/foxy-tutor/index.ts — legacy Edge Function references no PII identifiers in prompt code', () => {
-    // foxy-tutor builds buildSystemPrompt(grade, subject, language, mode,
-    // topicTitle, chapters, lessonStep, ragContext) — no PII params today.
-    // Allowed exceptions:
-    //   - `void student_name` (line 503) — the field is intentionally
-    //     received but explicitly NOT interpolated. The `void` discards it.
-    //   - JSDoc / param doc references to student_name remain in comments
-    //     (already stripped above).
-    scanFileForPiiIdentifiers('supabase/functions/foxy-tutor/index.ts', {
-      allowedExceptions: [
-        // Only the `void student_name` discard line is permitted.
-        /void\s+student_name/,
-      ],
-    });
-  });
+  // supabase/functions/foxy-tutor/index.ts has been deleted/decommissioned as part of Wave 2.5 mobile migration.
 
   it('supabase/functions/ncert-solver/index.ts — Edge Function references no PII identifiers in prompt code', () => {
     scanFileForPiiIdentifiers('supabase/functions/ncert-solver/index.ts');

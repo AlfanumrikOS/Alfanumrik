@@ -1185,7 +1185,7 @@ export default function QuizResults({
         })()}
 
         {/* Action Buttons */}
-        <div className="space-y-2">
+        <div className="space-y-2" data-testid="bottom-nav">
           {/* Share — the growth engine. Indian parents share on WhatsApp. */}
           <Button
             fullWidth

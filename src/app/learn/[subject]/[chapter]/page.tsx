@@ -1073,20 +1073,6 @@ export default function ChapterConceptPage() {
               {topics.map((t, idx) => {
                 const isSelected = idx === currentIdx;
                 const isCompleted = completedTopics.has(t.id);
-                
-                let statusIcon = '○';
-                let statusText = isHi ? 'अपठित' : 'Not started';
-                let statusBg = 'bg-gray-100 text-gray-600';
-                
-                if (isCompleted) {
-                  statusIcon = '✓';
-                  statusText = isHi ? 'पूर्ण' : 'Understood';
-                  statusBg = 'bg-green-50 text-green-700 border border-green-200/50';
-                } else if (isSelected) {
-                  statusIcon = '📖';
-                  statusText = isHi ? 'पढ़ रहे हैं' : 'Reading';
-                  statusBg = 'bg-orange-50 text-orange-700 border border-orange-200/50';
-                }
 
                 return (
                   <button
@@ -1095,18 +1081,23 @@ export default function ChapterConceptPage() {
                       setCurrentIdx(idx);
                       setActiveTab('core');
                     }}
-                    className={`w-full text-left p-2.5 rounded-xl transition-all flex flex-col gap-1 text-xs border ${
+                    className={`w-full text-left p-3 rounded-xl transition-all duration-200 flex items-center gap-3 text-xs border ${
                       isSelected 
-                        ? 'bg-white border-orange-200 shadow-sm font-semibold' 
-                        : 'border-transparent hover:bg-white/50 text-gray-700'
+                        ? 'bg-orange-50/50 border-orange-200 shadow-sm font-semibold text-orange-950' 
+                        : 'border-transparent hover:bg-gray-50 text-gray-700'
                     }`}
                   >
-                    <span className="leading-snug truncate">
-                      {idx + 1}. {isHi && t.title_hi ? t.title_hi : t.title}
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-all ${
+                      isCompleted 
+                        ? 'bg-green-100 text-green-700 font-bold' 
+                        : isSelected 
+                          ? 'bg-orange-500 text-white shadow-sm' 
+                          : 'bg-gray-100 text-gray-400'
+                    }`}>
+                      {isCompleted ? '✓' : isSelected ? '▶' : idx + 1}
                     </span>
-                    <span className={`self-start text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide flex items-center gap-0.5 ${statusBg}`}>
-                      <span>{statusIcon}</span>
-                      <span>{statusText}</span>
+                    <span className="leading-snug font-medium line-clamp-2">
+                      {isHi && t.title_hi ? t.title_hi : t.title}
                     </span>
                   </button>
                 );
@@ -1135,20 +1126,6 @@ export default function ChapterConceptPage() {
                 {topics.map((t, idx) => {
                   const isSelected = idx === currentIdx;
                   const isCompleted = completedTopics.has(t.id);
-                  
-                  let statusIcon = '○';
-                  let statusText = isHi ? 'अपठित' : 'Not started';
-                  let statusBg = 'bg-gray-100 text-gray-600';
-                  
-                  if (isCompleted) {
-                    statusIcon = '✓';
-                    statusText = isHi ? 'पूर्ण' : 'Understood';
-                    statusBg = 'bg-green-50 text-green-700 border border-green-200/50';
-                  } else if (isSelected) {
-                    statusIcon = '📖';
-                    statusText = isHi ? 'पढ़ रहे हैं' : 'Reading';
-                    statusBg = 'bg-orange-50 text-orange-700 border border-orange-200/50';
-                  }
 
                   return (
                     <button
@@ -1158,18 +1135,23 @@ export default function ChapterConceptPage() {
                         setActiveTab('core');
                         setIsSidebarOpen(false);
                       }}
-                      className={`w-full text-left p-2.5 rounded-xl transition-all flex flex-col gap-1 text-xs border ${
+                      className={`w-full text-left p-3 rounded-xl transition-all duration-200 flex items-center gap-3 text-xs border ${
                         isSelected 
-                          ? 'bg-white border-orange-200 shadow-sm font-semibold' 
-                          : 'border-transparent hover:bg-white/50 text-gray-700'
+                          ? 'bg-orange-50/50 border-orange-200 shadow-sm font-semibold text-orange-950' 
+                          : 'border-transparent hover:bg-gray-50 text-gray-700'
                       }`}
                     >
-                      <span className="leading-snug truncate">
-                        {idx + 1}. {isHi && t.title_hi ? t.title_hi : t.title}
+                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-all ${
+                        isCompleted 
+                          ? 'bg-green-100 text-green-700 font-bold' 
+                          : isSelected 
+                            ? 'bg-orange-500 text-white shadow-sm' 
+                            : 'bg-gray-100 text-gray-400'
+                      }`}>
+                        {isCompleted ? '✓' : isSelected ? '▶' : idx + 1}
                       </span>
-                      <span className={`self-start text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide flex items-center gap-0.5 ${statusBg}`}>
-                        <span>{statusIcon}</span>
-                        <span>{statusText}</span>
+                      <span className="leading-snug font-medium line-clamp-2">
+                        {isHi && t.title_hi ? t.title_hi : t.title}
                       </span>
                     </button>
                   );
@@ -1247,33 +1229,33 @@ export default function ChapterConceptPage() {
                   )}
                 </div>
 
-                <div className="flex border-b border-gray-100 pb-px gap-4">
+                <div className="flex p-1 bg-gray-50 rounded-xl border border-gray-100 gap-1">
                   <button
                     onClick={() => setActiveTab('core')}
-                    className={`pb-2 text-xs font-semibold tracking-wider uppercase border-b-2 transition-all ${
+                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5 ${
                       activeTab === 'core'
-                        ? 'border-[var(--accent)] text-[var(--accent)]'
-                        : 'border-transparent text-[var(--text-3)] hover:text-[var(--text-2)]'
+                        ? 'bg-white text-[var(--orange)] shadow-sm'
+                        : 'text-gray-500 hover:text-gray-800'
                     }`}
                   >
                     📖 {isHi ? 'मुख्य पाठ' : 'Learning Core'}
                   </button>
                   <button
                     onClick={() => setActiveTab('example')}
-                    className={`pb-2 text-xs font-semibold tracking-wider uppercase border-b-2 transition-all ${
+                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5 ${
                       activeTab === 'example'
-                        ? 'border-[var(--accent)] text-[var(--accent)]'
-                        : 'border-transparent text-[var(--text-3)] hover:text-[var(--text-2)]'
+                        ? 'bg-white text-[var(--orange)] shadow-sm'
+                        : 'text-gray-500 hover:text-gray-800'
                     }`}
                   >
                     📝 {isHi ? 'हल किया हुआ उदाहरण' : 'Solved Example'}
                   </button>
                   <button
                     onClick={() => setActiveTab('cheat')}
-                    className={`pb-2 text-xs font-semibold tracking-wider uppercase border-b-2 transition-all ${
+                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5 ${
                       activeTab === 'cheat'
-                        ? 'border-[var(--accent)] text-[var(--accent)]'
-                        : 'border-transparent text-[var(--text-3)] hover:text-[var(--text-2)]'
+                        ? 'bg-white text-[var(--orange)] shadow-sm'
+                        : 'text-gray-500 hover:text-gray-800'
                     }`}
                   >
                     🦊 {isHi ? 'चीट शीट' : "Foxy's Notes"}
@@ -1376,22 +1358,31 @@ export default function ChapterConceptPage() {
                                   return (
                                     <div
                                       key={bIdx}
-                                      className={`p-4.5 rounded-2xl border transition-all duration-300 animate-fadeIn ${theme.bg}`}
+                                      className="p-5 rounded-2xl border transition-all duration-300 animate-fadeIn bg-white shadow-sm"
+                                      style={{
+                                        borderLeft: `4px solid ${theme.color}`,
+                                        borderColor: 'var(--border)',
+                                      }}
                                     >
-                                      <div className="flex items-center justify-between mb-2.5 pb-1.5 border-b border-current/15">
-                                        <span className="text-xs font-extrabold flex items-center gap-1.5">
+                                      <div className="flex items-center justify-between mb-3">
+                                        <span className="text-xs font-bold flex items-center gap-2" style={{ color: theme.color }}>
                                           <span>{theme.icon}</span>
-                                          <span>{isHi && block.titleHi ? block.titleHi : block.title}</span>
+                                          <span style={{ fontFamily: 'var(--font-display)' }}>
+                                            {isHi && block.titleHi ? block.titleHi : block.title}
+                                          </span>
                                         </span>
-                                        <span className="text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/70 shadow-sm border border-current/10">
+                                        <span
+                                          className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full"
+                                          style={{ backgroundColor: theme.badgeBg, color: theme.badgeFg }}
+                                        >
                                           {theme.label}
                                         </span>
                                       </div>
-                                      <p className="text-xs font-semibold leading-relaxed whitespace-pre-wrap text-gray-800">
+                                      <p className="text-xs font-medium leading-relaxed whitespace-pre-wrap text-[var(--text-2)]">
                                         {isHi && block.contentHi ? block.contentHi : block.content}
                                       </p>
                                       {block.mathExpression && (
-                                        <div className="mt-3 p-3 bg-white/80 rounded-xl font-mono text-center text-xs font-bold text-gray-900 border border-current/10 shadow-sm">
+                                        <div className="mt-3 p-3.5 bg-gray-50 rounded-xl font-mono text-center text-xs font-bold text-gray-900 border border-gray-100/80">
                                           {block.mathExpression}
                                         </div>
                                       )}
@@ -1437,47 +1428,47 @@ export default function ChapterConceptPage() {
                       {(!productiveFailureActive || isAnswered) && (() => {
                         const insights = getTeacherInsights(topic.title, isHi);
                         return (
-                          <div className="mt-5 p-4.5 rounded-2xl bg-gradient-to-br from-indigo-50/70 to-purple-50/50 border border-indigo-100/80 shadow-sm space-y-3.5 animate-fadeIn">
-                            <div className="flex items-center justify-between pb-2 border-b border-indigo-100/50">
-                              <span className="text-xs font-bold text-indigo-800 flex items-center gap-1.5" style={{ fontFamily: 'var(--font-display)' }}>
+                          <div className="mt-6 p-5 rounded-2xl bg-[#0F2A2E] text-[#F5F0EA] border border-emerald-950/40 shadow-lg space-y-4 animate-fadeIn">
+                            <div className="flex items-center justify-between pb-3 border-b border-emerald-900/30">
+                              <span className="text-sm font-bold text-white flex items-center gap-2" style={{ fontFamily: 'var(--font-serif)' }}>
                                 <span>🎓</span>
                                 <span>{isHi ? 'शिक्षक का ब्लैकबोर्ड (Tricks & Analogy)' : "Teacher's Blackboard (Tricks & Analogy)"}</span>
                               </span>
-                              <span className="text-[10px] font-extrabold uppercase tracking-wider text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full">
+                              <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-300 bg-amber-950/40 px-2.5 py-0.5 rounded-full border border-amber-500/20">
                                 CBSE Guide
                               </span>
                             </div>
 
                             {/* Analogy */}
-                            <div className="space-y-1">
-                              <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
+                            <div className="space-y-1.5">
+                              <p className="text-[10px] font-extrabold text-teal-300 uppercase tracking-widest flex items-center gap-1.5">
                                 <span>💡</span>
                                 <span>{isHi ? 'सरल दैनिक जीवन का उदाहरण (Analogy)' : 'Real-World Analogy'}</span>
                               </p>
-                              <p className="text-xs text-gray-700 leading-relaxed font-medium">
+                              <p className="text-xs text-[#F5F0EA] leading-relaxed font-medium opacity-90">
                                 {insights.analogy}
                               </p>
                             </div>
 
                             {/* Exam Hack */}
-                            <div className="space-y-1">
-                              <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
+                            <div className="space-y-1.5">
+                              <p className="text-[10px] font-extrabold text-teal-300 uppercase tracking-widest flex items-center gap-1.5">
                                 <span>🎯</span>
                                 <span>{isHi ? 'बोर्ड परीक्षा टिप (Exam Secret)' : 'Board Exam Secret'}</span>
                               </p>
-                              <p className="text-xs text-gray-700 leading-relaxed font-medium">
+                              <p className="text-xs text-[#F5F0EA] leading-relaxed font-medium opacity-90">
                                 {insights.examHack}
                               </p>
                             </div>
 
                             {/* Mnemonic */}
                             {insights.mnemonic && (
-                              <div className="space-y-1">
-                                <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
+                              <div className="space-y-1.5">
+                                <p className="text-[10px] font-extrabold text-teal-300 uppercase tracking-widest flex items-center gap-1.5">
                                   <span>🔑</span>
                                   <span>{isHi ? 'याद रखने का शॉर्टकट (Memory Trick)' : 'Memory Shortcut / Mnemonic'}</span>
                                 </p>
-                                <p className="text-xs text-gray-700 font-mono font-bold bg-indigo-50/50 p-2 rounded-lg border border-indigo-100/30">
+                                <p className="text-xs text-amber-200 font-mono font-bold bg-teal-950/30 p-3 rounded-xl border border-teal-900/50">
                                   {insights.mnemonic}
                                 </p>
                               </div>
@@ -1497,7 +1488,7 @@ export default function ChapterConceptPage() {
                                   });
                                   router.push(`/foxy?subject=${subject}&mode=doubt&topic=${topicParam}&prompt=${encodeURIComponent(promptText)}`);
                                 }}
-                                className="w-full py-2.5 px-3 rounded-xl text-[10px] font-bold bg-indigo-600 text-white hover:bg-indigo-700 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 shadow-sm shadow-indigo-600/10"
+                                className="w-full py-3 px-4 rounded-xl text-xs font-bold bg-gradient-to-r from-[var(--orange)] to-amber-500 text-white hover:opacity-95 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-md shadow-orange-950/20"
                               >
                                 💬 {isHi ? 'शिक्षक से इस विषय पर डाउट पूछें' : 'Ask Teacher a Doubt / Analogy'}
                               </button>
@@ -1677,24 +1668,31 @@ export default function ChapterConceptPage() {
                           const isSelected = conceptState?.selectedOption === idx;
                           const isCorrectOpt = idx === question.correct_answer_index;
 
-                          let bg = 'var(--surface-2)';
-                          let border = 'transparent';
+                          let bg = 'white';
+                          let border = 'rgba(26, 18, 7, 0.08)';
                           let textColor = 'var(--text-2)';
-                          let letterBg = 'var(--surface-1)';
+                          let letterBg = 'var(--surface-2)';
                           let letterColor = 'var(--text-3)';
 
                           if (isAnswered) {
                             if (isCorrectOpt) {
-                              bg = 'rgba(22,163,74,0.08)'; border = 'rgba(22,163,74,0.4)';
-                              textColor = '#16A34A'; letterBg = '#16A34A'; letterColor = '#fff';
+                              bg = 'rgba(22, 163, 74, 0.08)';
+                              border = 'rgba(22, 163, 74, 0.4)';
+                              textColor = '#16A34A';
+                              letterBg = '#16A34A';
+                              letterColor = '#fff';
                             } else if (isSelected) {
-                              bg = 'rgba(220,38,38,0.06)'; border = 'rgba(220,38,38,0.3)';
-                              textColor = '#DC2626'; letterBg = '#DC2626'; letterColor = '#fff';
+                              bg = 'rgba(220, 38, 38, 0.06)';
+                              border = 'rgba(220, 38, 38, 0.3)';
+                              textColor = '#DC2626';
+                              letterBg = '#DC2626';
+                              letterColor = '#fff';
                             }
                           } else if (isSelected) {
-                            bg = `${subMeta?.color || 'var(--orange)'}08`;
-                            border = subMeta?.color || 'var(--orange)';
-                            letterBg = subMeta?.color || 'var(--orange)';
+                            const activeColor = subMeta?.color || 'var(--orange)';
+                            bg = `${activeColor}08`;
+                            border = activeColor;
+                            letterBg = activeColor;
                             letterColor = '#fff';
                           }
 
@@ -1703,17 +1701,26 @@ export default function ChapterConceptPage() {
                               key={idx}
                               onClick={() => selectOption(idx)}
                               disabled={isAnswered}
-                              className="w-full rounded-xl py-3 px-3 flex items-center gap-3 transition-all active:scale-[0.98] text-left"
-                              style={{ background: bg, border: `1.5px solid ${border}`, minHeight: 48 }}
+                              className={`w-full rounded-xl py-3.5 px-4 flex items-center gap-3 border transition-all duration-200 text-left active:scale-[0.98] ${
+                                !isAnswered && !isSelected ? 'hover:border-gray-300 hover:bg-gray-50/50' : ''
+                              }`}
+                              style={{ 
+                                backgroundColor: bg, 
+                                border: `1.5px solid ${border}`, 
+                                minHeight: 52 
+                              }}
                             >
-                              <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all" style={{ background: letterBg, color: letterColor }}>
+                              <span 
+                                className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all" 
+                                style={{ backgroundColor: letterBg, color: letterColor }}
+                              >
                                 {letter}
                               </span>
                               <span className="text-sm font-semibold leading-snug flex-1" style={{ color: textColor }}>
                                 {optText}
                               </span>
-                              {isAnswered && isCorrectOpt && <span className="ml-auto text-base flex-shrink-0">✓</span>}
-                              {isAnswered && isSelected && !isCorrectOpt && <span className="ml-auto text-base flex-shrink-0">✗</span>}
+                              {isAnswered && isCorrectOpt && <span className="ml-auto text-base text-green-600 font-bold flex-shrink-0">✓</span>}
+                              {isAnswered && isSelected && !isCorrectOpt && <span className="ml-auto text-base text-red-600 font-bold flex-shrink-0">✗</span>}
                             </button>
                           );
                         })}
@@ -1819,30 +1826,31 @@ export default function ChapterConceptPage() {
                         const isSel = quizSelectedOption === idx;
                         const isCorrOpt = idx === q.correct_answer_index;
 
-                        let bg = 'var(--surface-2)';
-                        let border = 'transparent';
+                        let bg = 'white';
+                        let border = 'rgba(26, 18, 7, 0.08)';
                         let textColor = 'var(--text-2)';
-                        let letterBg = 'var(--surface-1)';
+                        let letterBg = 'var(--surface-2)';
                         let letterColor = 'var(--text-3)';
 
                         if (isAns) {
                           if (isCorrOpt) {
-                            bg = 'rgba(22,163,74,0.08)';
-                            border = 'rgba(22,163,74,0.4)';
+                            bg = 'rgba(22, 163, 74, 0.08)';
+                            border = 'rgba(22, 163, 74, 0.4)';
                             textColor = '#16A34A';
                             letterBg = '#16A34A';
                             letterColor = '#fff';
                           } else if (selectAns?.selectedOption === idx) {
-                            bg = 'rgba(220,38,38,0.06)';
-                            border = 'rgba(220,38,38,0.3)';
+                            bg = 'rgba(220, 38, 38, 0.06)';
+                            border = 'rgba(220, 38, 38, 0.3)';
                             textColor = '#DC2626';
                             letterBg = '#DC2626';
                             letterColor = '#fff';
                           }
                         } else if (isSel) {
-                          bg = `${subMeta?.color || 'var(--orange)'}08`;
-                          border = subMeta?.color || 'var(--orange)';
-                          letterBg = subMeta?.color || 'var(--orange)';
+                          const activeColor = subMeta?.color || 'var(--orange)';
+                          bg = `${activeColor}08`;
+                          border = activeColor;
+                          letterBg = activeColor;
                           letterColor = '#fff';
                         }
 
@@ -1853,20 +1861,26 @@ export default function ChapterConceptPage() {
                               if (!isAns) setQuizSelectedOption(idx);
                             }}
                             disabled={isAns}
-                            className="w-full rounded-xl py-3 px-3 flex items-center gap-3 transition-all active:scale-[0.98] text-left"
-                            style={{ background: bg, border: `1.5px solid ${border}`, minHeight: 48 }}
+                            className={`w-full rounded-xl py-3.5 px-4 flex items-center gap-3 transition-all duration-200 text-left active:scale-[0.98] ${
+                              !isAns && !isSel ? 'hover:border-gray-300 hover:bg-gray-50/50' : ''
+                            }`}
+                            style={{ 
+                              backgroundColor: bg, 
+                              border: `1.5px solid ${border}`, 
+                              minHeight: 52 
+                            }}
                           >
                             <span
-                              className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all"
-                              style={{ background: letterBg, color: letterColor }}
+                              className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all"
+                              style={{ backgroundColor: letterBg, color: letterColor }}
                             >
                               {letter}
                             </span>
                             <span className="text-sm font-semibold leading-snug flex-1" style={{ color: textColor }}>
                               {optText}
                             </span>
-                            {isAns && isCorrOpt && <span className="ml-auto text-base flex-shrink-0">✓</span>}
-                            {isAns && selectAns?.selectedOption === idx && !isCorrOpt && <span className="ml-auto text-base flex-shrink-0">✗</span>}
+                            {isAns && isCorrOpt && <span className="ml-auto text-base text-green-600 font-bold flex-shrink-0">✓</span>}
+                            {isAns && selectAns?.selectedOption === idx && !isCorrOpt && <span className="ml-auto text-base text-red-600 font-bold flex-shrink-0">✗</span>}
                           </button>
                         );
                       })}
@@ -2564,14 +2578,14 @@ interface CbseStep {
   listItems?: string[];
 }
 
-const STEP_THEMES: Record<string, { icon: string; badge: string; bg: string; label: string }> = {
-  story: { icon: "📖", badge: "Context / कहानी", bg: "bg-emerald-50/45 border-emerald-100/70 text-emerald-800", label: "Real-world Hook" },
-  problem: { icon: "❓", badge: "Problem / समस्या", bg: "bg-amber-50/45 border-amber-100/70 text-amber-800", label: "Core Problem" },
-  math: { icon: "📐", badge: "Math / गणना", bg: "bg-blue-50/45 border-blue-100/70 text-blue-800", label: "Calculation Step" },
-  fact: { icon: "💡", badge: "Concept / अवधारणा", bg: "bg-indigo-50/45 border-indigo-100/70 text-indigo-800", label: "Concept Breakdown" },
-  summary: { icon: "🎯", badge: "Summary / सारांश", bg: "bg-purple-50/45 border-purple-100/70 text-purple-800", label: "CBSE Exam Focus" },
-  definition: { icon: "📝", badge: "Definition / परिभाषा", bg: "bg-teal-50/45 border-teal-100/70 text-teal-800", label: "Key Definition" },
-  list: { icon: "📋", badge: "Key Points / मुख्य बिंदु", bg: "bg-rose-50/45 border-rose-100/70 text-rose-800", label: "Important Points" },
+const STEP_THEMES: Record<string, { icon: string; badge: string; bg: string; label: string; color: string; badgeBg: string; badgeFg: string }> = {
+  story: { icon: "📖", badge: "Context / कहानी", bg: "bg-white", label: "Real-world Hook", color: "#10B981", badgeBg: "rgba(16, 185, 129, 0.12)", badgeFg: "#059669" },
+  problem: { icon: "❓", badge: "Problem / समस्या", bg: "bg-white", label: "Core Problem", color: "#F59E0B", badgeBg: "rgba(245, 158, 11, 0.12)", badgeFg: "#D97706" },
+  math: { icon: "📐", badge: "Math / गणना", bg: "bg-white", label: "Calculation Step", color: "#3B82F6", badgeBg: "rgba(59, 130, 246, 0.12)", badgeFg: "#2563EB" },
+  fact: { icon: "💡", badge: "Concept / अवधारणा", bg: "bg-white", label: "Concept Breakdown", color: "#6366F1", badgeBg: "rgba(99, 102, 241, 0.12)", badgeFg: "#4F46E5" },
+  summary: { icon: "🎯", badge: "Summary / सारांश", bg: "bg-white", label: "CBSE Exam Focus", color: "#8B5CF6", badgeBg: "rgba(139, 92, 246, 0.12)", badgeFg: "#7C3AED" },
+  definition: { icon: "📝", badge: "Definition / परिभाषा", bg: "bg-white", label: "Key Definition", color: "#0891B2", badgeBg: "rgba(8, 145, 178, 0.12)", badgeFg: "#0891B2" },
+  list: { icon: "📋", badge: "Key Points / मुख्य बिंदु", bg: "bg-white", label: "Important Points", color: "#F43F5E", badgeBg: "rgba(244, 63, 94, 0.12)", badgeFg: "#E11D48" },
 };
 
 const getCbseCustomTutorCard = (text: string, title: string, isHi: boolean): CbseStep[] | null => {

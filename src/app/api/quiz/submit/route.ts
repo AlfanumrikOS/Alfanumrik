@@ -410,31 +410,6 @@ export async function POST(request: NextRequest) {
     // .catch() guards against any unhandled rejection from the IIFE (the
     // per-emit try/catches handle individual publish failures).
     void (async () => {
-      try {
-        await publishEvent(admin, {
-          kind: 'learner.quiz_completed',
-          eventId: randomUUID(),
-          occurredAt,
-          actorAuthUserId: authUserId,
-          tenantId,
-          idempotencyKey: quizCompletedIdempotencyKey(sessionIdForEvent),
-          payload: {
-            quizSessionId: sessionIdForEvent,
-            subjectCode,
-            chapterNumber: primaryChapter,
-            questionCount: gradedQuestions.length,
-            correctCount,
-            durationSec: body.totalTimeSeconds,
-            xpEarned: rpcData.xp_earned,
-          },
-        });
-      } catch (err) {
-        logger.warn('quiz.submit: publishEvent learner.quiz_completed failed', {
-          sessionId: sessionIdForEvent,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-
       let deltas: ReturnType<typeof computeMasteryDeltas> = [];
       try {
         deltas = computeMasteryDeltas(primaryChapter, gradedQuestions, priorByChapter);

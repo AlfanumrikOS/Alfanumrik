@@ -5,6 +5,8 @@ import { verifyRazorpaySignature } from '@/lib/payment-verification';
 import { logOpsEvent } from '@/lib/ops-events';
 import { logger } from '@/lib/logger';
 import { capture as posthogCapture } from '@/lib/posthog/server';
+import crypto from 'crypto';
+import { publishEvent } from '@/lib/state/events/publish';
 
 /**
  * Razorpay Webhook Handler — CANONICAL (per architect C3)
@@ -718,6 +720,46 @@ export async function POST(request: NextRequest) {
           }
         }
       }
+      // Get the student's auth_user_id if not in notes.user_id
+      let actorAuthUserId = notes.user_id;
+      if (!actorAuthUserId) {
+        const { data: student } = await admin
+          .from('students')
+          .select('auth_user_id')
+          .eq('id', resolved.student_id)
+          .maybeSingle();
+        actorAuthUserId = student?.auth_user_id;
+      }
+
+      // Retrieve payment history id
+      let invoiceId: string | undefined;
+      if (existing && existing.length > 0) {
+        invoiceId = existing[0].id;
+      } else {
+        const { data: inserted } = await admin
+          .from('payment_history')
+          .select('id')
+          .eq('razorpay_payment_id', paymentId)
+          .maybeSingle();
+        invoiceId = inserted?.id;
+      }
+
+      if (invoiceId && actorAuthUserId) {
+        await publishEvent(admin, {
+          eventId: crypto.randomUUID(),
+          occurredAt: new Date().toISOString(),
+          actorAuthUserId,
+          tenantId: null,
+          idempotencyKey: paymentId,
+          kind: 'billing.invoice_paid',
+          payload: {
+            invoiceId,
+            amountInr: payment.amount,
+            planSlug: planCode,
+          },
+        });
+      }
+
       await markEvent(admin, webhookEventRowId, 'activated');
       await emitWebhookTiming({
         eventType,
@@ -849,6 +891,51 @@ export async function POST(request: NextRequest) {
             : schoolOutcome === 'school_cancelled'
               ? 'downgraded'
               : 'ack';
+        const schoolId = typeof notes.school_id === 'string' ? notes.school_id : undefined;
+        if (schoolId && (schoolOutcome === 'school_activated' || schoolOutcome === 'school_renewed')) {
+          const { data: adminRow } = await admin
+            .from('school_admins')
+            .select('auth_user_id')
+            .eq('school_id', schoolId)
+            .eq('is_active', true)
+            .limit(1)
+            .maybeSingle();
+          const actorAuthUserId = adminRow?.auth_user_id;
+
+          const { data: schoolSub } = await admin
+            .from('school_subscriptions')
+            .select('id, plan, billing_cycle, seats_purchased, price_per_seat_monthly')
+            .eq('school_id', schoolId)
+            .maybeSingle();
+
+          const invoiceId = schoolSub?.id;
+
+          if (invoiceId && actorAuthUserId) {
+            const amountInr = paymentEntity?.amount ??
+              Math.round(
+                Number(schoolSub.seats_purchased || notes.seats || 1) *
+                Number(schoolSub.price_per_seat_monthly || 0) *
+                (schoolSub.billing_cycle === 'yearly' ? 12 : 1) * 100
+              );
+
+            const idempotencyKey = paymentEntity?.id ?? `school_sub_${rzSubId}_${Date.now()}`;
+
+            await publishEvent(admin, {
+              eventId: crypto.randomUUID(),
+              occurredAt: new Date().toISOString(),
+              actorAuthUserId,
+              tenantId: schoolId,
+              idempotencyKey,
+              kind: 'billing.invoice_paid',
+              payload: {
+                invoiceId,
+                amountInr,
+                planSlug: schoolSub.plan || 'unknown',
+              },
+            });
+          }
+        }
+
         await markEvent(admin, webhookEventRowId, ackOutcome);
         await emitWebhookTiming({
           eventType,
@@ -1070,6 +1157,44 @@ export async function POST(request: NextRequest) {
             );
           }
         }
+        if (paymentEntity?.id) {
+          // Get the student's auth_user_id if not in notes.user_id
+          let actorAuthUserId = notes.user_id;
+          if (!actorAuthUserId) {
+            const { data: student } = await admin
+              .from('students')
+              .select('auth_user_id')
+              .eq('id', resolved.student_id)
+              .maybeSingle();
+            actorAuthUserId = student?.auth_user_id;
+          }
+
+          // Retrieve payment history id
+          let invoiceId: string | undefined;
+          const { data: payHistory } = await admin
+            .from('payment_history')
+            .select('id')
+            .eq('razorpay_payment_id', paymentEntity.id)
+            .maybeSingle();
+          invoiceId = payHistory?.id;
+
+          if (invoiceId && actorAuthUserId) {
+            await publishEvent(admin, {
+              eventId: crypto.randomUUID(),
+              occurredAt: new Date().toISOString(),
+              actorAuthUserId,
+              tenantId: null,
+              idempotencyKey: paymentEntity.id,
+              kind: 'billing.invoice_paid',
+              payload: {
+                invoiceId,
+                amountInr: paymentEntity.amount,
+                planSlug: planCode || 'unknown',
+              },
+            });
+          }
+        }
+
         await markEvent(admin, webhookEventRowId, 'activated');
         await emitWebhookTiming({
           eventType,

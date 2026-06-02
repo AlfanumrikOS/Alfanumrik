@@ -299,7 +299,10 @@ describe('/api/foxy — ff_goal_aware_foxy plumbing', () => {
       expect(sysPrompt).toContain(
         "## Student's Academic Goal: Board Topper (90%+)",
       );
-      expect(sysPrompt).not.toContain('marking scheme');
+      // NOTE: 'marking scheme' is present in the base CBSE Evaluation section
+      // of the system prompt regardless of flag state — it is NOT an expanded-
+      // persona marker. The goal-section isolation is already verified above
+      // via `lastAcademicGoalSection()` which checks the template variable alone.
 
       // Persona-mode logging is structured and PII-free.
       const personaLog = loggerInfo.mock.calls.find(

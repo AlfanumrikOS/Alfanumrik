@@ -28,6 +28,11 @@ vi.mock('@/lib/supabase-admin', () => ({
 import { POST } from '@/app/api/payments/webhook/route';
 import * as opsEvents from '@/lib/ops-events';
 import crypto from 'crypto';
+import { __resetFlagCacheForTests } from '@/lib/state/events/publish';
+
+beforeEach(() => {
+  __resetFlagCacheForTests();
+});
 
 const WEBHOOK_SECRET = 'test_webhook_secret';
 
@@ -231,16 +236,21 @@ describe('webhook route — RPC fallback ladder', () => {
   function studentResolver() {
     return (table: string) => {
       if (table === 'students') {
-        return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 's1' }, error: null }) }) }) };
+        return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 's1', auth_user_id: 'u1' }, error: null }) }) }) };
       }
       if (table === 'payment_history') {
         return {
-          select: () => ({ eq: () => ({ limit: async () => ({ data: [], error: null }) }) }),
-          insert: async () => ({ error: null }),
+          select: () => ({ eq: () => ({ limit: async () => ({ data: [], error: null }), maybeSingle: async () => ({ data: { id: 'p1' }, error: null }) }) }),
+          insert: () => ({ select: () => ({ maybeSingle: async () => ({ data: { id: 'p1' }, error: null }) }) }),
         };
       }
       if (table === 'feature_flags') {
         return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { is_enabled: true }, error: null }) }) }) };
+      }
+      if (table === 'state_events') {
+        return {
+          insert: async () => ({ error: null }),
+        };
       }
       throw new Error(`unexpected from(${table})`);
     };
@@ -340,12 +350,21 @@ describe('webhook route — observability', () => {
       return { data: null, error: null };
     });
     mockAdmin.from.mockImplementation((table: string) => {
-      if (table === 'students') return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 's1' }, error: null }) }) }) };
+      if (table === 'students') return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 's1', auth_user_id: 'u1' }, error: null }) }) }) };
       if (table === 'payment_history') return {
-        select: () => ({ eq: () => ({ limit: async () => ({ data: [], error: null }) }) }),
+        select: () => ({ eq: () => ({ limit: async () => ({ data: [], error: null }), maybeSingle: async () => ({ data: { id: 'p1' }, error: null }) }) }),
+        insert: () => ({ select: () => ({ maybeSingle: async () => ({ data: { id: 'p1' }, error: null }) }) }),
+      };
+      if (table === 'feature_flags') return {
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { is_enabled: true }, error: null }) }) }),
+      };
+      if (table === 'state_events') return {
         insert: async () => ({ error: null }),
       };
-      return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) };
+      return {
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+        insert: async () => ({ error: null }),
+      };
     });
 
     await POST(makeRequest(buildEvent()) as unknown as import('next/server').NextRequest);
@@ -361,3 +380,67 @@ describe('webhook route — observability', () => {
     expect(ctx.event_type).toBe('payment.captured');
   });
 });
+
+describe('webhook route — billing.invoice_paid event publishing', () => {
+  let mockAdmin: { rpc: ReturnType<typeof vi.fn>; from: ReturnType<typeof vi.fn> };
+  let insertSpy: ReturnType<typeof vi.fn>;
+
+  const validUserUUID = '00000000-0000-0000-0000-000000000001';
+  const validStudentUUID = '00000000-0000-0000-0000-000000000002';
+  const validInvoiceUUID = '00000000-0000-0000-0000-000000000003';
+
+  beforeEach(() => {
+    process.env.RAZORPAY_WEBHOOK_SECRET = WEBHOOK_SECRET;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://localhost';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'service_key';
+    insertSpy = vi.fn().mockResolvedValue({ error: null });
+    mockAdmin = {
+      rpc: vi.fn().mockImplementation(async (name: string) => {
+        if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-x' }], error: null };
+        if (name === 'activate_subscription_locked') return { data: null, error: null };
+        if (name === 'mark_webhook_event_processed') return { data: null, error: null };
+        return { data: null, error: null };
+      }),
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'students') return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: validStudentUUID, auth_user_id: validUserUUID }, error: null }) }) }) };
+        if (table === 'payment_history') return {
+          select: () => ({ eq: () => ({ limit: async () => ({ data: [], error: null }), maybeSingle: async () => ({ data: { id: validInvoiceUUID }, error: null }) }) }),
+          insert: () => ({ select: () => ({ maybeSingle: async () => ({ data: { id: validInvoiceUUID }, error: null }) }) }),
+        };
+        if (table === 'feature_flags') return {
+          select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { is_enabled: true }, error: null }) }) }),
+        };
+        if (table === 'state_events') return {
+          insert: insertSpy,
+        };
+        return {
+          select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+          insert: async () => ({ error: null }),
+        };
+      }),
+    };
+    (createClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdmin);
+    globalMockAdmin = mockAdmin;
+  });
+
+  it('publishes billing.invoice_paid on student payment.captured', async () => {
+    const evt = buildEvent({
+      notes: {
+        plan_code: 'pro',
+        billing_cycle: 'yearly',
+        user_id: validUserUUID,
+        student_id: validStudentUUID,
+      },
+    });
+    const res = await POST(makeRequest(evt) as unknown as import('next/server').NextRequest);
+    expect(res.status).toBe(200);
+    expect(insertSpy).toHaveBeenCalled();
+    const calls = insertSpy.mock.calls;
+    const insertedObj = calls[0][0];
+    expect(insertedObj.kind).toBe('billing.invoice_paid');
+    expect(insertedObj.actor_auth_user_id).toBe(validUserUUID);
+    expect(insertedObj.payload.planSlug).toBe('pro');
+    expect(insertedObj.payload.amountInr).toBe(199900);
+  });
+});
+

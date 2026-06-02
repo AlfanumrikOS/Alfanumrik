@@ -104,22 +104,19 @@ function chatWithFoxy() {
   const start = Date.now();
   const payload = JSON.stringify({
     message: 'Explain photosynthesis in simple terms',
-    student_id: '00000000-0000-4000-8000-000000000001',
-    student_name: 'Load Test Student',
+    sessionId: '00000000-0000-4000-8000-000000000001',
     grade: '8',
     subject: 'science',
-    language: 'en',
     mode: 'learn',
   });
 
   const res = http.post(
-    `${SUPABASE_URL}/functions/v1/foxy-tutor`,
+    `${BASE_URL}/api/foxy`,
     payload,
     {
       headers: {
         ...getHeaders(),
         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'apikey': SUPABASE_ANON_KEY,
       },
       tags: { name: 'foxy_chat' },
       timeout: '30s',
@@ -129,7 +126,7 @@ function chatWithFoxy() {
   check(res, {
     'foxy response ok': (r) => r.status === 200,
     'foxy has reply': (r) => {
-      try { return JSON.parse(r.body).reply !== undefined; }
+      try { return JSON.parse(r.body).response !== undefined; }
       catch { return false; }
     },
   }) || errorRate.add(1);

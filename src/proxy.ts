@@ -734,16 +734,20 @@ export async function proxy(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
+          cookiesToSet.forEach(({ name, value }) => {
+            request.cookies.set(name, value);
+          });
           // Preserve the augmented requestHeaders (with tenant context) when
           // Supabase rewrites cookies during session refresh — otherwise the
           // recreated NextResponse drops our x-school-* headers.
           response = NextResponse.next({ request: { headers: requestHeaders } });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          );
+          cookiesToSet.forEach(({ name, value, options }) => {
+            const safeOptions: any = { ...options };
+            if (typeof safeOptions.sameSite === 'string' && safeOptions.sameSite.toLowerCase() === 'none') {
+              safeOptions.sameSite = 'lax';
+            }
+            response.cookies.set(name, value, safeOptions);
+          });
         },
       },
     });
@@ -878,6 +882,7 @@ export async function proxy(request: NextRequest) {
           // Supabase session cookies and the user appears logged out on the
           // next request. This is the bug F26 was tracking.
           response.cookies.getAll().forEach((c) => {
+            const sameSiteSafe = typeof c.sameSite === 'string' && c.sameSite.toLowerCase() === 'none' ? 'lax' : c.sameSite;
             redirect.cookies.set({
               name: c.name,
               value: c.value,
@@ -887,7 +892,7 @@ export async function proxy(request: NextRequest) {
               expires: c.expires,
               httpOnly: c.httpOnly,
               secure: c.secure,
-              sameSite: c.sameSite,
+              sameSite: sameSiteSafe,
             });
           });
 

@@ -36,6 +36,8 @@ import {
 } from './subscriber';
 import { masteryStateWriter } from './mastery-state-writer';
 import { conceptMasteryProjector } from './concept-mastery-projector';
+import { freeTierProvisioner } from './free-tier-provisioner';
+import { entitlementProjector } from './entitlement-projector';
 
 export interface DispatchOutcome {
   subscriber: string;
@@ -175,6 +177,10 @@ export const STANDARD_SUBSCRIBERS: ReadonlyArray<AnySubscriber> = [
   // ADR-004 Phase 2 / ADR-005 Path C v2 — canonical writer of concept_mastery
   // for the BKT path. Idempotent on payload.attemptId.
   toAnySubscriber(conceptMasteryProjector),
+  // W2.3 — free tier provisioner replacing students DB trigger
+  toAnySubscriber(freeTierProvisioner),
+  // W2.4 — entitlement projector subscribing to billing.invoice_paid
+  toAnySubscriber(entitlementProjector),
 ];
 
 /** The production dispatcher. Singleton per process. */

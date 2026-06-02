@@ -77,16 +77,25 @@ function makeAdminMock() {
           }),
         } as never;
       }
+      if (table === 'school_admins') {
+        const chain: Record<string, unknown> = {
+          select: () => chain,
+          eq: () => chain,
+          limit: () => chain,
+          maybeSingle: async () => ({ data: { auth_user_id: 'school_admin_auth_user_id' }, error: null }),
+        };
+        return chain as never;
+      }
       // Any other table reached during a school dispatch indicates a regression
       // (the school branch should short-circuit before resolveStudent runs).
-      return {
-        select: () => ({
-          eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }),
-          insert: async () => ({ error: null }),
-          limit: async () => ({ data: [], error: null }),
-        }),
+      const fallbackChain: Record<string, unknown> = {
+        select: () => fallbackChain,
+        eq: () => fallbackChain,
         insert: async () => ({ error: null }),
-      } as never;
+        limit: () => fallbackChain,
+        maybeSingle: async () => ({ data: null, error: null }),
+      };
+      return fallbackChain as never;
     },
   };
 }

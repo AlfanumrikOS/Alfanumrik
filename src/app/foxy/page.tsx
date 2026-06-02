@@ -19,14 +19,16 @@ import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, 
 import { checkDailyUsage, clearUsageCache, type UsageResult } from '@/lib/usage';
 import { speak, isVoiceSupported } from '@/lib/voice';
 import { usePythonVoiceEnabled } from '@/lib/voice-feature-flag';
-import { ConversationStarters } from '@/components/foxy/ConversationStarters';
+const ConversationStarters = dynamic(() => import('@/components/foxy/ConversationStarters').then(m => ({ default: m.ConversationStarters })), { ssr: false });
 import type { StarterIntent } from '@/lib/foxy/starter-intents';
-import { findSimulation, InlineSimulation } from '@/components/InlineSimulation';
-import { LoadingState } from '@/components/foxy/LoadingState';
+import { findSimulation } from '@/components/InlineSimulation';
+const InlineSimulation = dynamic(() => import('@/components/InlineSimulation').then(m => ({ default: m.InlineSimulation })), { ssr: false });
+const LoadingState = dynamic(() => import('@/components/foxy/LoadingState').then(m => ({ default: m.LoadingState })), { ssr: false });
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import type { FoxyResponse } from '@/lib/foxy/schema';
-import { ConversationManager, generateTitle, MODE_MAP, type ConversationSummary } from '@/components/foxy/ConversationManager';
-import { ConversationHeader } from '@/components/foxy/ConversationHeader';
+import { generateTitle, MODE_MAP, type ConversationSummary } from '@/components/foxy/ConversationManager.utils';
+const ConversationManager = dynamic(() => import('@/components/foxy/ConversationManager').then(m => ({ default: m.ConversationManager })), { ssr: false });
+const ConversationHeader = dynamic(() => import('@/components/foxy/ConversationHeader').then(m => ({ default: m.ConversationHeader })), { ssr: false });
 import { useSELCheckIn, type MoodState } from '@/components/SELCheckIn';
 import { track } from '@/lib/analytics';
 import {

@@ -196,7 +196,6 @@ Act as a CBSE board-paper evaluator following official marking scheme methodolog
 
 Optimize the answer for maximum board-exam scoring efficiency rather than prose elegance.
 
-
 {{pending_expectation}}
 {{academic_goal_section}}
 {{cognitive_context_section}}

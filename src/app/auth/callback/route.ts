@@ -288,10 +288,25 @@ export async function GET(request: NextRequest) {
       const vercelHost = request.headers.get('x-vercel-forwarded-host');
       const isLocalEnv = process.env.NODE_ENV === 'development';
 
+      // Validate vercelHost domain to prevent open redirect vulnerabilities
+      let isAllowedHost = false;
+      if (vercelHost) {
+        const hostLower = vercelHost.toLowerCase().trim();
+        if (
+          hostLower === 'alfanumrik.in' ||
+          hostLower.endsWith('.alfanumrik.in') ||
+          hostLower.endsWith('.vercel.app') ||
+          hostLower.startsWith('localhost:') ||
+          hostLower === 'localhost'
+        ) {
+          isAllowedHost = true;
+        }
+      }
+
       let defaultRedirectUrl: string;
       if (isLocalEnv) {
         defaultRedirectUrl = `${origin}${safeNext}`;
-      } else if (vercelHost) {
+      } else if (vercelHost && isAllowedHost) {
         defaultRedirectUrl = `https://${vercelHost}${safeNext}`;
       } else {
         defaultRedirectUrl = `${origin}${safeNext}`;

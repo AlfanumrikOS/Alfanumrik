@@ -51,16 +51,37 @@ describe('webhook concurrent fire — exactly one activation', () => {
         return { data: null, error: null };
       }),
       from: vi.fn((table: string) => {
-        if (table === 'students') {
-          return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 's1' }, error: null }) }) }) };
-        }
-        if (table === 'payment_history') {
-          return {
-            select: () => ({ eq: () => ({ limit: async () => ({ data: [], error: null }) }) }),
-            insert: async () => ({ error: null }),
-          };
-        }
-        return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) };
+        const chain: Record<string, any> = {
+          select: vi.fn(() => chain),
+          eq: vi.fn(() => chain),
+          in: vi.fn(() => chain),
+          limit: vi.fn(() => chain),
+          order: vi.fn(() => chain),
+          insert: vi.fn(async () => ({ data: null, error: null })),
+          update: vi.fn(() => chain),
+          single: vi.fn(async () => {
+            if (table === 'students') {
+              return { data: { id: 's1', auth_user_id: 'u1' }, error: null };
+            }
+            return { data: null, error: null };
+          }),
+          maybeSingle: vi.fn(async () => {
+            if (table === 'students') {
+              return { data: { id: 's1', auth_user_id: 'u1' }, error: null };
+            }
+            if (table === 'feature_flags') {
+              return { data: { is_enabled: true }, error: null };
+            }
+            if (table === 'payment_history') {
+              return { data: { id: 'ph_1' }, error: null };
+            }
+            return { data: null, error: null };
+          }),
+          then: (resolve: any) => {
+            return Promise.resolve({ data: [], error: null }).then(resolve);
+          }
+        };
+        return chain;
       }),
     };
     (createClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdmin);

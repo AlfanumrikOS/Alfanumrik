@@ -29,6 +29,8 @@ const CookieConsent = dynamic(() => import('./CookieConsent'), { ssr: false });
 const MaintenanceBanner = dynamic(() => import('./MaintenanceBanner'), { ssr: false });
 const NetworkStatus = dynamic(() => import('./NetworkStatus'), { ssr: false });
 const PostHogProvider = dynamic(() => import('./PostHogProvider'), { ssr: false });
+const DemoModeWrapper = dynamic(() => import('./DemoModeWrapper'), { ssr: false });
+const StreamGate = dynamic(() => import('./StreamGate'), { ssr: false });
 
 export default function LayoutDeferredChrome() {
   return (
@@ -38,6 +40,8 @@ export default function LayoutDeferredChrome() {
       <MaintenanceBanner />
       <CookieConsent />
       <PostHogProvider />
+      <DemoModeWrapper />
+      <StreamGate />
     </>
   );
 }
