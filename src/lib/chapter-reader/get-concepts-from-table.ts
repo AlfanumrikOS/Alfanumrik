@@ -149,5 +149,10 @@ function rowToTopic(r: ChapterConceptRow): CurriculumTopic {
     bloom_focus: r.bloom_level,
     ncert_page_range: null,
     topic_type: 'curated_concept',
-  };
+    explanation: r.explanation,
+    explanation_hi: r.explanation_hi,
+    example_content: r.example_content,
+    example_content_hi: r.example_content_hi,
+    key_formula: r.key_formula,
+  } as any;
 }

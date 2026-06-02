@@ -93,6 +93,8 @@ export default function ChapterConceptPage() {
   const [diagrams, setDiagrams] = useState<Diagram[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentIdx, setCurrentIdx] = useState(0);
+  const [activeTab, setActiveTab] = useState<'core' | 'example' | 'cheat'>('core');
+  const [visibleSteps, setVisibleSteps] = useState<Record<number, number>>({});
   // Per-concept quick-check state, keyed by topic index
   const [conceptStates, setConceptStates] = useState<Record<number, ConceptState>>({});
   const [completedCount, setCompletedCount] = useState(0);
@@ -394,7 +396,7 @@ export default function ChapterConceptPage() {
         topics[currentIdx].id,
         isCorrect,
         'practice',
-        topics[currentIdx].bloom_focus || 'remember',
+        q?.bloom_level || topics[currentIdx].bloom_focus || 'remember',
       ).catch((err: unknown) => {
         console.warn('[learn] recordLearningEvent failed:', err instanceof Error ? err.message : String(err));
       });
@@ -413,6 +415,7 @@ export default function ChapterConceptPage() {
     if (currentIdx < topics.length - 1) {
       const nextIdx = currentIdx + 1;
       setCurrentIdx(nextIdx);
+      setActiveTab('core');
       track('learn_concept_advanced', {
         ...telemetryBase,
         concept_idx: nextIdx,
@@ -427,6 +430,7 @@ export default function ChapterConceptPage() {
     if (currentIdx > 0) {
       const prevIdx = currentIdx - 1;
       setCurrentIdx(prevIdx);
+      setActiveTab('core');
       track('learn_concept_advanced', {
         ...telemetryBase,
         concept_idx: prevIdx,
@@ -525,19 +529,87 @@ export default function ChapterConceptPage() {
             )}
           </div>
 
-          {totalAnswered > 0 && (
-            <Card>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-bold text-[var(--text-2)]">
-                  {isHi ? 'त्वरित जाँच स्कोर' : 'Quick Check Score'}
-                </span>
-                <span className="text-lg font-bold" style={{ color: scoreGood ? '#16A34A' : '#DC2626' }}>
-                  {correctCount}/{totalAnswered} ({pct}%)
-                </span>
-              </div>
-              <ProgressBar value={pct} color={scoreGood ? '#16A34A' : '#DC2626'} showPercent />
-            </Card>
-          )}
+          {totalAnswered > 0 && (() => {
+            const parameterBreakdown = {
+              remember: { attempted: 0, correct: 0, label: isHi ? 'स्मरण और याद' : 'Remember & Recall', icon: '🧠', color: '#6B7280' },
+              understand: { attempted: 0, correct: 0, label: isHi ? 'समझें और समझाएं' : 'Understand & Explain', icon: '💡', color: '#2563EB' },
+              apply: { attempted: 0, correct: 0, label: isHi ? 'लागू करें और हल करें' : 'Apply & Solve', icon: '🛠️', color: '#059669' },
+              hots: { attempted: 0, correct: 0, label: isHi ? 'उच्च स्तरीय सोच (HOTS)' : 'Higher Order Thinking (HOTS)', icon: '🔥', color: '#7C3AED' },
+            };
+
+            topics.forEach((t, idx) => {
+              const q = questions[idx % Math.max(questions.length, 1)];
+              if (!q) return;
+              const state = conceptStates[idx];
+              if (!state || !state.submitted) return;
+
+              const level = q.bloom_level?.toLowerCase() || 'remember';
+              let paramKey: 'remember' | 'understand' | 'apply' | 'hots' = 'remember';
+              if (level === 'understand') paramKey = 'understand';
+              else if (level === 'apply') paramKey = 'apply';
+              else if (['analyze', 'evaluate', 'create', 'hots'].includes(level)) paramKey = 'hots';
+
+              parameterBreakdown[paramKey].attempted += 1;
+              if (state.isCorrect) {
+                parameterBreakdown[paramKey].correct += 1;
+              }
+            });
+
+            return (
+              <Card>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-bold text-[var(--text-2)]">
+                    {isHi ? 'त्वरित जाँच स्कोर' : 'Quick Check Score'}
+                  </span>
+                  <span className="text-lg font-bold" style={{ color: scoreGood ? '#16A34A' : '#DC2626' }}>
+                    {correctCount}/{totalAnswered} ({pct}%)
+                  </span>
+                </div>
+                <ProgressBar value={pct} color={scoreGood ? '#16A34A' : '#DC2626'} showPercent />
+
+                <div className="mt-5 pt-4 border-t border-gray-100 space-y-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                    {isHi ? 'CBSE पैरामीटर विश्लेषण' : 'CBSE Parameter Breakdown'}
+                  </p>
+                  <div className="grid gap-2">
+                    {Object.entries(parameterBreakdown).map(([key, stat]) => {
+                      const pPct = stat.attempted > 0 ? Math.round((stat.correct / stat.attempted) * 100) : 0;
+                      return (
+                        <div key={key} className="flex flex-col gap-1 p-2.5 rounded-xl bg-gray-50 border border-gray-100/50">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-semibold text-gray-700 flex items-center gap-1.5">
+                              <span>{stat.icon}</span>
+                              <span>{stat.label}</span>
+                            </span>
+                            {stat.attempted > 0 ? (
+                              <span className="font-bold text-gray-600">
+                                {stat.correct}/{stat.attempted} ({pPct}%)
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-gray-400 italic">
+                                {isHi ? 'अमूल्यांकित' : 'Not tested'}
+                              </span>
+                            )}
+                          </div>
+                          {stat.attempted > 0 && (
+                            <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1 overflow-hidden">
+                              <div
+                                className="h-1.5 rounded-full"
+                                style={{
+                                  width: `${pPct}%`,
+                                  backgroundColor: stat.color,
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </Card>
+            );
+          })()}
 
           {/* Weak concepts — shown when score < 60% */}
           {wrongTopics.length > 0 && (
@@ -800,87 +872,259 @@ export default function ChapterConceptPage() {
           })()}
         </div>
 
-        {/* Concept card */}
-        <Card className="!p-5">
+        {/* Concept card with tabbed layout */}
+        <Card className="!p-5 flex flex-col gap-4">
           {/* Title — always visible so the student knows what they're attempting */}
-          <h2 className="text-lg font-bold mb-3 leading-tight" style={{ fontFamily: 'var(--font-display)' }}>
-            {isHi && (topic as { title_hi?: string | null }).title_hi
-              ? (topic as { title_hi?: string | null }).title_hi
-              : topic.title}
-          </h2>
+          <div className="flex items-start justify-between gap-3">
+            <h2 className="text-lg font-bold leading-tight" style={{ fontFamily: 'var(--font-display)' }}>
+              {isHi && (topic as { title_hi?: string | null }).title_hi
+                ? (topic as { title_hi?: string | null }).title_hi
+                : topic.title}
+            </h2>
+            {(topic as any).key_formula && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 uppercase whitespace-nowrap">
+                {isHi ? '📐 सूत्र शामिल' : '📐 Formula Included'}
+              </span>
+            )}
+          </div>
 
-          {/* Productive-failure banner: shown when flag is on and the Quick Check
-              has not yet been attempted. Tutorial content (description, diagram,
-              learning objectives) is hidden until attempt — Manu Kapur's productive
-              failure: struggle first, then teach. Auto-clears after submit. */}
-          {productiveFailureActive && question && !isAnswered && (
-            <div
-              className="rounded-xl p-3 mb-3"
-              style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)' }}
-              data-testid="productive-failure-banner"
+          {/* Premium editorial-style tabs navigation */}
+          <div className="flex border-b border-gray-100 pb-px gap-4">
+            <button
+              onClick={() => setActiveTab('core')}
+              className={`pb-2 text-xs font-semibold tracking-wider uppercase border-b-2 transition-all ${
+                activeTab === 'core'
+                  ? 'border-[var(--accent)] text-[var(--accent)]'
+                  : 'border-transparent text-[var(--text-3)] hover:text-[var(--text-2)]'
+              }`}
             >
-              <p className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: '#F97316' }}>
-                {isHi ? 'पहले इसे आज़माओ' : 'Try this first'}
-              </p>
-              <p className="text-xs text-[var(--text-2)] leading-snug">
-                {isHi
-                  ? 'पाठ देखने से पहले नीचे का सवाल हल करो — सीखने का यह सबसे असरदार तरीका है।'
-                  : 'Attempt the Quick Check below before reading the explanation — research shows this is the most effective way to learn.'}
-              </p>
-            </div>
-          )}
+              📖 {isHi ? 'मुख्य पाठ' : 'Learning Core'}
+            </button>
+            <button
+              onClick={() => setActiveTab('example')}
+              className={`pb-2 text-xs font-semibold tracking-wider uppercase border-b-2 transition-all ${
+                activeTab === 'example'
+                  ? 'border-[var(--accent)] text-[var(--accent)]'
+                  : 'border-transparent text-[var(--text-3)] hover:text-[var(--text-2)]'
+              }`}
+            >
+              📝 {isHi ? 'हल किया हुआ उदाहरण' : 'Solved Example'}
+            </button>
+            <button
+              onClick={() => setActiveTab('cheat')}
+              className={`pb-2 text-xs font-semibold tracking-wider uppercase border-b-2 transition-all ${
+                activeTab === 'cheat'
+                  ? 'border-[var(--accent)] text-[var(--accent)]'
+                  : 'border-transparent text-[var(--text-3)] hover:text-[var(--text-2)]'
+              }`}
+            >
+              🦊 {isHi ? 'चीट शीट' : "Foxy's Notes"}
+            </button>
+          </div>
 
-          {/* Diagram — hidden until attempt when productive-failure is active */}
-          {(!productiveFailureActive || isAnswered) && diagram && diagram.image_url && (
-            <div className="mb-4 rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={diagram.image_url}
-                alt={diagram.alt_text || topic.title}
-                className="w-full object-contain max-h-52"
-                style={{ background: 'var(--surface-2)' }}
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-              />
-              {(diagram.caption || diagram.caption_hi) && (
-                <p className="text-[11px] text-[var(--text-3)] px-3 py-2 text-center">
-                  {isHi && diagram.caption_hi ? diagram.caption_hi : diagram.caption}
-                </p>
-              )}
-            </div>
-          )}
+          {/* Tab contents */}
+          <div className="mt-2">
+            {activeTab === 'core' && (
+              <div className="space-y-4">
+                {/* Productive-failure banner: shown when flag is on and the Quick Check
+                    has not yet been attempted. Tutorial content (description, diagram,
+                    learning objectives) is hidden until attempt — Manu Kapur's productive
+                    failure: struggle first, then teach. Auto-clears after submit. */}
+                {productiveFailureActive && question && !isAnswered && (
+                  <div
+                    className="rounded-xl p-3 mb-3"
+                    style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)' }}
+                    data-testid="productive-failure-banner"
+                  >
+                    <p className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: '#F97316' }}>
+                      {isHi ? 'पहले इसे आज़माओ' : 'Try this first'}
+                    </p>
+                    <p className="text-xs text-[var(--text-2)] leading-snug">
+                      {isHi
+                        ? 'पाठ देखने से पहले नीचे का सवाल हल करो — सीखने का यह सबसे असरदार तरीका है।'
+                        : 'Attempt the Quick Check below before reading the explanation — research shows this is the most effective way to learn.'}
+                    </p>
+                  </div>
+                )}
 
-          {/* Description — hidden until attempt when productive-failure is active */}
-          {(!productiveFailureActive || isAnswered) && topic.description && (
-            <p className="text-sm leading-relaxed text-[var(--text-2)] mb-3" style={{ whiteSpace: 'pre-wrap' }}>
-              {topic.description}
-            </p>
-          )}
+                {/* Diagram — hidden until attempt when productive-failure is active */}
+                {(!productiveFailureActive || isAnswered) && diagram && diagram.image_url && (
+                  <div className="rounded-xl overflow-hidden mb-3" style={{ border: '1px solid var(--border)' }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={diagram.image_url}
+                      alt={diagram.alt_text || topic.title}
+                      className="w-full object-contain max-h-52"
+                      style={{ background: 'var(--surface-2)' }}
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                    {(diagram.caption || diagram.caption_hi) && (
+                      <p className="text-[11px] text-[var(--text-3)] px-3 py-2 text-center">
+                        {isHi && diagram.caption_hi ? diagram.caption_hi : diagram.caption}
+                      </p>
+                    )}
+                  </div>
+                )}
 
-          {/* Learning Objectives — hidden until attempt when productive-failure is active */}
-          {(!productiveFailureActive || isAnswered) && topic.learning_objectives && topic.learning_objectives.length > 0 && (
-            <div className="rounded-xl p-3 mb-1" style={{ background: `${subMeta?.color || 'var(--orange)'}08`, border: `1px solid ${subMeta?.color || 'var(--orange)'}20` }}>
-              <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: subMeta?.color }}>
-                {isHi ? 'इस अवधारणा में सीखोगे' : 'You will learn'}
-              </p>
-              <ul className="space-y-1">
-                {topic.learning_objectives.slice(0, 4).map((obj, i) => (
-                  <li key={i} className="flex items-start gap-2 text-xs text-[var(--text-2)]">
-                    <span className="mt-0.5 flex-shrink-0" style={{ color: subMeta?.color }}>•</span>
-                    {obj}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+                {/* Description — hidden until attempt when productive-failure is active */}
+                {(!productiveFailureActive || isAnswered) && (topic as any).explanation ? (
+                  <p className="text-sm leading-relaxed text-[var(--text-2)]" style={{ whiteSpace: 'pre-wrap' }}>
+                    {isHi && (topic as any).explanation_hi ? (topic as any).explanation_hi : (topic as any).explanation}
+                  </p>
+                ) : (!productiveFailureActive || isAnswered) && topic.description ? (
+                  <p className="text-sm leading-relaxed text-[var(--text-2)]" style={{ whiteSpace: 'pre-wrap' }}>
+                    {topic.description}
+                  </p>
+                ) : null}
+
+                {/* Learning Objectives — hidden until attempt when productive-failure is active */}
+                {(!productiveFailureActive || isAnswered) && topic.learning_objectives && topic.learning_objectives.length > 0 && (
+                  <div className="rounded-xl p-3" style={{ background: `${subMeta?.color || 'var(--orange)'}08`, border: `1px solid ${subMeta?.color || 'var(--orange)'}20` }}>
+                    <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: subMeta?.color }}>
+                      {isHi ? 'इस अवधारणा में सीखोगे' : 'You will learn'}
+                    </p>
+                    <ul className="space-y-1">
+                      {topic.learning_objectives.slice(0, 4).map((obj, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs text-[var(--text-2)]">
+                          <span className="mt-0.5 flex-shrink-0" style={{ color: subMeta?.color }}>•</span>
+                          {obj}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'example' && (() => {
+              // Parse Worked Solved Example
+              const exampleRaw = isHi && (topic as any).example_content_hi
+                ? (topic as any).example_content_hi
+                : (topic as any).example_content
+                ? (topic as any).example_content
+                : isHi
+                ? `प्रश्न: ${topic.title} को समझाइए और एक उदाहरण दीजिए।\n\n[चरण 1: परिभाषा]\nसबसे पहले, ${topic.title} की मुख्य अवधारणा को समझें। यह एक महत्वपूर्ण CBSE अवधारणा है।\n\n[चरण 2: व्याख्या]\nइस नियम के अनुसार, हम चरणों में काम करते हैं।\n\n[चरण 3: बोर्ड परीक्षा टिप]\nपरीक्षा में अच्छे अंक प्राप्त करने के लिए हमेशा साफ-सुथरा आरेख बनाएं और महत्वपूर्ण शब्दों को रेखांकित करें।`
+                : `Question: Explain the core concepts of ${topic.title} and give a step-by-step solved problem.\n\n[Step 1: Definition & Formula]\nLet's state the fundamental principle of ${topic.title}. Understand the main variables and relations.\n\n[Step 2: Mathematical Derivation / Application]\nApply the formula step-by-step to compute the result. Ensure units are correct.\n\n[Step 3: Board Exam Tip]\nAlways write down the given values, state the formula used, and draw a neat diagram to score full marks in your CBSE board exams.`;
+
+              const steps = exampleRaw.split(/(?=\[Step|\[चरण|Step|चरण)/i).map((s: string) => s.trim()).filter(Boolean);
+              const maxSteps = steps.length;
+              const revealedCount = visibleSteps[currentIdx] || 1;
+
+              return (
+                <div className="space-y-4">
+                  <div className="space-y-3">
+                    {steps.slice(0, revealedCount).map((stepText: string, sIdx: number) => {
+                      return (
+                        <div
+                          key={sIdx}
+                          className={`p-3 rounded-xl transition-all duration-300 animate-fadeIn ${
+                            sIdx === 0
+                              ? 'bg-cream border border-orange-100'
+                              : 'bg-gray-50 border border-gray-100'
+                          }`}
+                        >
+                          <p className="text-sm text-[var(--text-2)] whitespace-pre-wrap leading-relaxed">
+                            {stepText}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {revealedCount < maxSteps && (
+                    <Button
+                      fullWidth
+                      variant="soft"
+                      color={subMeta?.color}
+                      onClick={() => setVisibleSteps(prev => ({ ...prev, [currentIdx]: revealedCount + 1 }))}
+                      className="mt-2 text-xs font-bold py-2 rounded-xl transition-all active:scale-[0.97]"
+                    >
+                      👇 {isHi ? 'अगला चरण देखें' : 'Reveal Next Step'} ({revealedCount}/{maxSteps})
+                    </Button>
+                  )}
+                </div>
+              );
+            })()}
+
+            {activeTab === 'cheat' && (
+              <div className="space-y-3">
+                {/* Formulas & Definitions */}
+                {((topic as any).key_formula || isHi) && (
+                  <div className="p-3.5 rounded-xl bg-orange-50/40 border border-orange-100/60">
+                    <p className="text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-1.5">
+                      📐 {isHi ? 'महत्वपूर्ण सूत्र / दृष्टिकोण' : 'Key Formula / Mnemonic'}
+                    </p>
+                    <p className="text-sm font-semibold text-gray-800 font-mono">
+                      {(topic as any).key_formula || (isHi ? 'मुख्य अवधारणाओं को याद रखें।' : 'Understand the relations and apply rules step by step.')}
+                    </p>
+                  </div>
+                )}
+
+                {/* Common Board Mistakes */}
+                <div className="p-3.5 rounded-xl bg-red-50/30 border border-red-100/50">
+                  <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-1.5">
+                    ⚠️ {isHi ? 'सीबीएसई बोर्ड परीक्षा की सामान्य गलतियाँ' : 'Common Board Exam Mistakes to Avoid'}
+                  </p>
+                  <ul className="space-y-1.5 text-xs text-red-800/80 leading-relaxed list-disc pl-4">
+                    <li>
+                      {isHi
+                        ? 'जल्दबाजी में संकेतों (+/-) की गलती न करें।'
+                        : 'Do not hurry through calculations; check the signs (+/-) at each step.'}
+                    </li>
+                    <li>
+                      {isHi
+                        ? 'हमेशा अपने उत्तर के साथ सही इकाई (SI units) लिखें।'
+                        : 'Always specify the final units in the answer; CBSE deducts marks for missing units.'}
+                    </li>
+                    <li>
+                      {isHi
+                        ? 'उत्तर लिखने से पहले दिया गया डेटा (Given data) जरूर लिखें।'
+                        : 'For maximum marks, write down the "Given parameters" before starting the calculation.'}
+                    </li>
+                  </ul>
+                </div>
+
+                {/* Foxy's Tip */}
+                <div className="p-3.5 rounded-xl bg-teal-50/30 border border-teal-100/50">
+                  <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wider mb-1">
+                    🦊 {isHi ? 'Foxy की सलाह' : "Foxy's Quick Revision Tip"}
+                  </p>
+                  <p className="text-xs text-teal-900/80 leading-relaxed">
+                    {isHi
+                      ? 'इस अवधारणा से सीधे सवाल पूछे जाते हैं। परिभाषा के साथ एक उदाहरण याद रखें!'
+                      : 'CBSE frequently asks direct theoretical or derivation questions on this concept. Memorize the basic statement along with one solved board example!'}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </Card>
 
         {/* Quick Check */}
-        {question && (
-          <div>
-            <p className="text-[11px] font-bold text-[var(--text-3)] uppercase tracking-wider mb-2">
-              {isHi ? '⚡ त्वरित जाँच' : '⚡ Quick Check'}
-            </p>
-            <Card className="!p-4">
+        {question && (() => {
+          const getQuestionParameter = (q: any) => {
+            const level = q?.bloom_level?.toLowerCase() || 'remember';
+            if (level === 'remember') return { label: isHi ? '🧠 स्मरण और याद' : '🧠 Remember & Recall', color: '#6B7280', bg: 'rgba(107, 114, 128, 0.08)' };
+            if (level === 'understand') return { label: isHi ? '💡 समझें और समझाएं' : '💡 Understand & Explain', color: '#2563EB', bg: 'rgba(37, 99, 235, 0.08)' };
+            if (level === 'apply') return { label: isHi ? '🛠️ लागू करें और हल करें' : '🛠️ Apply & Solve', color: '#059669', bg: 'rgba(5, 150, 105, 0.08)' };
+            return { label: isHi ? '🔥 उच्च स्तरीय सोच (HOTS)' : '🔥 Higher Order Thinking (HOTS)', color: '#7C3AED', bg: 'rgba(124, 58, 237, 0.08)' };
+          };
+          const param = getQuestionParameter(question);
+
+          return (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[11px] font-bold text-[var(--text-3)] uppercase tracking-wider">
+                  {isHi ? '⚡ त्वरित जाँच' : '⚡ Quick Check'}
+                </p>
+                <span
+                  className="text-[10px] font-bold px-2.5 py-0.5 rounded-full"
+                  style={{ color: param.color, background: param.bg }}
+                >
+                  {param.label}
+                </span>
+              </div>
+              <Card className="!p-4">
               <p className="text-sm font-semibold leading-relaxed mb-4" style={{ whiteSpace: 'pre-wrap' }}>
                 {isHi && question.question_hi ? question.question_hi : question.question_text}
               </p>
@@ -1010,9 +1254,12 @@ export default function ChapterConceptPage() {
                   </p>
                 </div>
               )}
-            </Card>
-          </div>
-        )}
+              </Card>
+            </div>
+          );
+        })()}
+
+
 
         {/* Navigation — Next is the primary action */}
         {currentIdx === topics.length - 1 ? (() => {

@@ -72,6 +72,7 @@ export default function AtlasDashboard() {
   >([]);
   const [last7Active, setLast7Active] = useState<boolean[]>(Array(7).fill(false));
   const [todayMastery, setTodayMastery] = useState<{ from: number; to: number } | null>(null);
+  const [syllabusProgress, setSyllabusProgress] = useState<{ completed: number; total: number; percent: number }>({ completed: 0, total: 0, percent: 0 });
 
   // ─── Auth + role redirects (same semantics as legacy dashboard) ────────
   useEffect(() => {
@@ -113,7 +114,7 @@ export default function AtlasDashboard() {
       // isolation — see src/lib/dashboard/atlas-chapters.test.ts.
       try {
         const subjectCode = student.preferred_subject ?? 'math';
-        const [ctResult, cmResult] = await Promise.all([
+        const [ctResult, cmResult, cpResult] = await Promise.all([
           supabase
             .from('curriculum_topics')
             .select('chapter_number, title, display_order, subjects!inner(code)')
@@ -125,6 +126,12 @@ export default function AtlasDashboard() {
             .from('concept_mastery')
             .select('mastery_probability, curriculum_topics!inner(chapter_number)')
             .eq('student_id', student.id),
+          supabase
+            .from('chapter_progress')
+            .select('chapter_number, is_completed')
+            .eq('student_id', student.id)
+            .eq('subject', subjectCode)
+            .eq('grade', student.grade),
         ]);
         if (cancelled) return;
         const curriculumRows = (ctResult.data as Array<{ chapter_number: number | null; title: string | null }> | null) ?? [];
@@ -136,10 +143,14 @@ export default function AtlasDashboard() {
         }));
         const built = buildAtlasChapters(curriculumRows, masteryRows);
         if (built.length > 0) setChapters(built);
-        // If `built` is empty (curriculum query returned nothing — e.g.
-        // a grade we haven't seeded yet), `resolvedChapters` takes over
-        // at render time with its synthesised 5-node placeholder window.
-        // Same fallback behaviour as the original code path.
+
+        // Compute syllabus progress
+        const completedChapters = (cpResult.data ?? []).filter((row: any) => row.is_completed).map((row: any) => row.chapter_number);
+        const uniqueChapters = Array.from(new Set(curriculumRows.map(r => r.chapter_number).filter((c): c is number => c !== null)));
+        const total = uniqueChapters.length;
+        const completed = uniqueChapters.filter(ch => completedChapters.includes(ch)).length;
+        const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+        setSyllabusProgress({ completed, total, percent });
       } catch { /* non-fatal — leave chapters empty, resolvedChapters handles it */ }
 
       // Recent wins — last 3 mastery_changed events. Reads the Phase 2
@@ -462,6 +473,74 @@ export default function AtlasDashboard() {
             </div>
           </div>
         </AtlasCard>
+
+        {/* ─── 3b. Syllabus Progress Card ─── */}
+        <AtlasCard tone="cream" style={{ padding: '18px 20px' }}>
+          <p className="atlas-eyebrow" style={{ color: 'var(--orange-deep)', marginBottom: 6 }}>
+            {isHi ? 'पाठ्यक्रम की प्रगति' : 'Syllabus Progress'}
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 18, alignItems: 'center' }}>
+            {/* Visual Progress Ring */}
+            <div style={{ position: 'relative', width: 64, height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="64" height="64" viewBox="0 0 64 64" aria-label={`${syllabusProgress.percent}% completed`}>
+                <circle cx="32" cy="32" r="28" fill="none" stroke="var(--cream-3)" strokeWidth="4" />
+                <circle
+                  cx="32"
+                  cy="32"
+                  r="28"
+                  fill="none"
+                  stroke="var(--orange)"
+                  strokeWidth="4"
+                  strokeDasharray={`${(syllabusProgress.percent / 100 * 2 * Math.PI * 28).toFixed(1)} ${(2 * Math.PI * 28).toFixed(1)}`}
+                  strokeLinecap="round"
+                  transform="rotate(-90 32 32)"
+                />
+              </svg>
+              <span
+                className="atlas-tabnum"
+                style={{
+                  position: 'absolute',
+                  fontFamily: 'var(--font-serif)',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: 'var(--orange-deep)',
+                }}
+              >
+                {syllabusProgress.percent}%
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span
+                className="atlas-tabnum"
+                style={{
+                  fontFamily: 'var(--font-serif)',
+                  fontWeight: 500,
+                  fontSize: 22,
+                  lineHeight: 1.1,
+                  color: 'var(--orange-deep)',
+                }}
+              >
+                {syllabusProgress.completed} / {syllabusProgress.total} {isHi ? 'अध्याय' : 'Chapters'}
+              </span>
+              <span
+                style={{
+                  fontFamily: 'var(--font-display)',
+                  fontSize: 10,
+                  color: 'var(--orange-deep)',
+                  opacity: 0.8,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                }}
+              >
+                {syllabusProgress.percent === 100
+                  ? (isHi ? '🎉 पाठ्यक्रम पूरा हुआ!' : '🎉 Syllabus Completed!')
+                  : (isHi ? 'परीक्षा की तैयारी शुरू' : 'On track for exam readiness')}
+              </span>
+            </div>
+          </div>
+        </AtlasCard>
+
 
         {/* ─── 4. This week's wins ───
             Always rendered (no `recentWins.length > 0 &&` gate). The old

@@ -20,7 +20,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
-import { getChaptersForSubject } from '@/lib/supabase';
+import { getChaptersForSubject, supabase } from '@/lib/supabase';
 import { BottomNav, LoadingFoxy } from '@/components/ui';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
@@ -45,6 +45,8 @@ export default function LearnPage() {
   const [chapters, setChapters] = useState<Array<{ chapter_number: number; title: string }>>([]);
   const [chaptersLoading, setChaptersLoading] = useState(false);
   const [lastStudied, setLastStudied] = useState<{ subject: string; chapter: number; chapterTitle: string; concept: number; timestamp: number } | null>(null);
+  const [progressRows, setProgressRows] = useState<Array<{ subject: string; chapter_number: number; is_completed: boolean }>>([]);
+  const [subjectTotalChapters, setSubjectTotalChapters] = useState<Record<string, number>>({});
 
   // Load last-studied position from localStorage
   useEffect(() => {
@@ -64,6 +66,38 @@ export default function LearnPage() {
     if (!isLoading && !isLoggedIn) router.replace('/login');
     if (!isLoading && isLoggedIn && student && !student.onboarding_completed) router.replace('/onboarding');
   }, [isLoading, isLoggedIn, student, router]);
+
+  useEffect(() => {
+    if (!student?.id) return;
+    supabase
+      .from('chapter_progress')
+      .select('subject, chapter_number, is_completed')
+      .eq('student_id', student.id)
+      .then(({ data }) => {
+        if (data) setProgressRows(data as any[]);
+      });
+  }, [student?.id]);
+
+  useEffect(() => {
+    if (!student?.grade) return;
+    supabase
+      .from('chapters')
+      .select('chapter_number, subject_id, subjects!inner(code)')
+      .eq('grade', student.grade)
+      .eq('is_active', true)
+      .then(({ data }) => {
+        if (data) {
+          const counts: Record<string, number> = {};
+          data.forEach((row: any) => {
+            const code = row.subjects?.code;
+            if (code) {
+              counts[code] = (counts[code] || 0) + 1;
+            }
+          });
+          setSubjectTotalChapters(counts);
+        }
+      });
+  }, [student?.grade]);
 
   useEffect(() => {
     if (!selectedSubject || !student?.grade) { setChapters([]); return; }
@@ -169,6 +203,28 @@ export default function LearnPage() {
                           ? (isHi ? '⭐ अभी पढ़ रहे हो' : '⭐ Current subject')
                           : (isHi ? 'अध्याय देखो →' : 'View chapters →')}
                       </div>
+                      {(() => {
+                        const total = subjectTotalChapters[s.code] || 0;
+                        const completed = progressRows.filter(row => row.subject === s.code && row.is_completed).length;
+                        const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+                        return (
+                          <div className="mt-3">
+                            <div className="w-full bg-gray-200/60 rounded-full h-1 mt-1 overflow-hidden">
+                              <div
+                                  className="h-1 rounded-full transition-all duration-500"
+                                  style={{
+                                    width: `${pct}%`,
+                                    backgroundColor: s.color || 'var(--orange)',
+                                  }}
+                              />
+                            </div>
+                            <div className="text-[9px] text-[var(--text-3)] mt-1 flex justify-between">
+                              <span>{pct}% {isHi ? 'पूरा' : 'Done'}</span>
+                              <span>{completed}/{total} {isHi ? 'अध्याय' : 'Ch'}</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </button>
                   );
                 })}
@@ -336,6 +392,17 @@ export default function LearnPage() {
                             <ChapterReadinessBadge
                               level={readinessByChapter.get(ch.chapter_number)?.level ?? null}
                             />
+                            {(() => {
+                              const isCompleted = progressRows.some(row => row.subject === selectedSubject && row.chapter_number === ch.chapter_number && row.is_completed);
+                              if (isCompleted) {
+                                return (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-green-50 text-green-700 border border-green-200">
+                                    {isHi ? '✓ पूरा हुआ' : '✓ Completed'}
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
                           <div className="text-[11px] text-[var(--text-3)] mt-0.5">
                             {isHi
