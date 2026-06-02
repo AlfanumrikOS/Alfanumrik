@@ -1264,7 +1264,7 @@ export default function ChapterConceptPage() {
                           ? (topic as any).explanation
                           : topic.description || '';
 
-                        const coreBlocks = parseLearningCoreText(coreText);
+                         const coreBlocks = parseCbseTeacherExplanation(coreText, topic.title, isHi);
                         const totalBlocks = coreBlocks.length;
                         const currentRevealedCount = revealedCorePoints[currentIdx] || 1;
                         const showAll = showAllCore[currentIdx] || false;
@@ -1311,72 +1311,31 @@ export default function ChapterConceptPage() {
 
                             {(!productiveFailureActive || isAnswered) && (
                               <div className="space-y-4 animate-fadeIn">
-                                {visibleBlocks.map((block, bIdx) => {
-                                  if (block.type === 'heading') {
-                                    return (
-                                      <h3
-                                        key={bIdx}
-                                        className="text-sm font-bold text-[var(--text-1)] border-l-2 pl-2 transition-all duration-300 animate-fadeIn"
-                                        style={{ borderColor: subMeta?.color || 'var(--orange)' }}
-                                      >
-                                        {block.text}
-                                      </h3>
-                                    );
-                                  }
-
-                                  if (block.type === 'highlight') {
-                                    return (
-                                      <div
-                                        key={bIdx}
-                                        className="p-3.5 rounded-xl border transition-all duration-300 animate-fadeIn"
-                                        style={{
-                                          background: 'rgba(232, 88, 28, 0.04)',
-                                          borderColor: 'rgba(232, 88, 28, 0.18)',
-                                          borderLeftWidth: '4px',
-                                          borderLeftColor: subMeta?.color || '#E8581C'
-                                        }}
-                                      >
-                                        <div className="flex items-start gap-2">
-                                          <span className="text-sm">💡</span>
-                                          <p className="text-xs leading-relaxed text-gray-700 font-medium whitespace-pre-wrap">
-                                            {block.text}
-                                          </p>
-                                        </div>
-                                      </div>
-                                    );
-                                  }
-
-                                  if (block.type === 'list' && block.items) {
-                                    return (
-                                      <div
-                                        key={bIdx}
-                                        className="p-3.5 rounded-xl border border-gray-100 bg-gray-50/50 transition-all duration-300 animate-fadeIn"
-                                      >
-                                        <ul className="space-y-2">
-                                          {block.items.map((item, iIdx) => (
-                                            <li key={iIdx} className="flex items-start gap-2.5 text-xs text-[var(--text-2)] leading-relaxed">
-                                              <span 
-                                                className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[9px] font-bold text-white mt-0.5"
-                                                style={{ backgroundColor: subMeta?.color || 'var(--orange)' }}
-                                              >
-                                                ✓
-                                              </span>
-                                              <span className="flex-1">{item}</span>
-                                            </li>
-                                          ))}
-                                        </ul>
-                                      </div>
-                                    );
-                                  }
-
+                                {visibleBlocks.map((block: any, bIdx) => {
+                                  const theme = STEP_THEMES[block.type as keyof typeof STEP_THEMES] || STEP_THEMES.fact;
                                   return (
-                                    <p
+                                    <div
                                       key={bIdx}
-                                      className="text-sm leading-relaxed text-[var(--text-2)] transition-all duration-300 animate-fadeIn"
-                                      style={{ whiteSpace: 'pre-wrap' }}
+                                      className={`p-4.5 rounded-2xl border transition-all duration-300 animate-fadeIn ${theme.bg}`}
                                     >
-                                      {block.text}
-                                    </p>
+                                      <div className="flex items-center justify-between mb-2.5 pb-1.5 border-b border-current/15">
+                                        <span className="text-xs font-extrabold flex items-center gap-1.5">
+                                          <span>{theme.icon}</span>
+                                          <span>{isHi && block.titleHi ? block.titleHi : block.title}</span>
+                                        </span>
+                                        <span className="text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/70 shadow-sm border border-current/10">
+                                          {theme.label}
+                                        </span>
+                                      </div>
+                                      <p className="text-xs font-semibold leading-relaxed whitespace-pre-wrap text-gray-800">
+                                        {isHi && block.contentHi ? block.contentHi : block.content}
+                                      </p>
+                                      {block.mathExpression && (
+                                        <div className="mt-3 p-3 bg-white/80 rounded-xl font-mono text-center text-xs font-bold text-gray-900 border border-current/10 shadow-sm">
+                                          {block.mathExpression}
+                                        </div>
+                                      )}
+                                    </div>
                                   );
                                 })}
                               </div>
@@ -2304,4 +2263,133 @@ function getTeacherInsights(topicTitle: string, isHi: boolean): TeacherInsight {
       ? `याद रखने का तरीका: अवधारणा को तीन मुख्य भागों में तोड़ें और अपने शब्दों में एक सरल नियम बनाएं।`
       : `Memory Tip: Break this concept into three simple steps and formulate a short memory sentence in your own words.`
   };
+}
+
+interface CbseStep {
+  title: string;
+  titleHi: string;
+  type: 'story' | 'problem' | 'math' | 'fact' | 'summary';
+  content: string;
+  contentHi?: string;
+  mathExpression?: string;
+}
+
+const STEP_THEMES = {
+  story: { icon: "📖", badge: "Context / कहानी", bg: "bg-emerald-50/45 border-emerald-100/70 text-emerald-800", label: "Real-world Hook" },
+  problem: { icon: "❓", badge: "Problem / समस्या", bg: "bg-amber-50/45 border-amber-100/70 text-amber-800", label: "Core Problem" },
+  math: { icon: "📐", badge: "Math / गणना", bg: "bg-blue-50/45 border-blue-100/70 text-blue-800", label: "Calculation Step" },
+  fact: { icon: "💡", badge: "Concept / अवधारणा", bg: "bg-indigo-50/45 border-indigo-100/70 text-indigo-800", label: "Concept Breakdown" },
+  summary: { icon: "🎯", badge: "Summary / सारांश", bg: "bg-purple-50/45 border-purple-100/70 text-purple-800", label: "CBSE Exam Focus" }
+};
+
+const getCbseCustomTutorCard = (text: string, title: string, isHi: boolean): CbseStep[] | null => {
+  const lowerText = (text || '').toLowerCase();
+  
+  if (lowerText.includes('eshwarappa') || lowerText.includes('lakh varieties') || lowerText.includes('chintamani') || (lowerText.includes('lakh') && lowerText.includes('varieties'))) {
+    return [
+      {
+        title: "Step 1: The Real-Life Scenario (दैनिक जीवन का संदर्भ)",
+        titleHi: "चरण 1: दैनिक जीवन का संदर्भ",
+        type: "story",
+        content: "A farmer named Eshwarappa learns that India once had about 1 Lakh (1,00,000) varieties of rice. Today, we only have a handful. Estu wonders: If we taste a new variety of rice every single day, can we taste all 1 Lakh varieties in a 100-year lifetime?",
+        contentHi: "चिंतामणि के एक किसान ईश्वरप्पा को पता चलता है कि हमारे देश में कभी लगभग 1 लाख (1,00,000) धान की किस्में थीं। एस्तु सोचता है: यदि हम हर दिन एक नई किस्म का स्वाद चखें, तो क्या हम 100 वर्ष के जीवन में सभी 1 लाख किस्मों का स्वाद चख पाएंगे?"
+      },
+      {
+        title: "Step 2: Understanding the Mathematical Problem (गणितीय समस्या की समझ)",
+        titleHi: "चरण 2: गणितीय समस्या की समझ",
+        type: "problem",
+        content: "We need to compare the total number of days in 100 years with 1 Lakh (1,00,000). Let's convert a lifetime of 100 years into days.",
+        contentHi: "हमें 100 वर्षों में कुल दिनों की संख्या की तुलना 1 लाख (1,00,000) से करनी होगी। आइए 100 वर्ष के जीवनकाल को दिनों में बदलें।"
+      },
+      {
+        title: "Step 3: The Step-by-Step Calculation (चरण-दर-चरण गणना)",
+        titleHi: "चरण 3: चरण-दर-चरण गणना",
+        type: "math",
+        content: "1. Days in 1 ordinary year = 365\n2. Days in 100 years = 100 × 365 = 36,500 days.\n(Note: Even if we account for leap years, it adds only about 25 days, making it 36,525 days).\n\nNow, let's compare: 36,500 days vs 1,00,000 rice varieties.",
+        contentHi: "1. 1 सामान्य वर्ष में दिन = 365\n2. 100 वर्षों में दिन = 100 × 365 = 36,500 दिन।\n(नोट: यदि हम लीप वर्ष भी जोड़ें, तो यह लगभग 36,525 दिन होगा)।\n\nअब तुलना करें: 36,500 दिन बनाम 1,00,000 धान की किस्में।",
+        mathExpression: "100 \\text{ Years} \\times 365 \\text{ days/year} = 36,500 \\text{ days} \\ll 1,00,000 \\text{ (1 Lakh)}"
+      },
+      {
+        title: "Step 4: The Final CBSE Board Conclusion (निष्कर्ष)",
+        titleHi: "चरण 4: बोर्ड परीक्षा का निष्कर्ष",
+        type: "summary",
+        content: "Since 36,500 is much smaller than 1,00,000, we CANNOT taste all the varieties. In fact, we would need almost 274 years to taste them all (1,00,000 ÷ 365 ≈ 274 years)!\n\nKey Concept: 1 Lakh = 1,00,000 (which is the smallest 6-digit number, written with a 1 followed by 5 zeroes). In place value: 1 Lakh = 10 Ten Thousands.",
+        contentHi: "चूंकि 36,500 दिन 1,00,000 से बहुत कम हैं, इसलिए हम सभी किस्मों का स्वाद नहीं चख पाएंगे। वास्तव में, सभी का स्वाद चखने के लिए हमें लगभग 274 वर्ष (1,00,000 ÷ 365 ≈ 274 वर्ष) लगेंगे!\n\nमुख्य अवधारणा: 1 लाख = 1,00,000 (जो कि सबसे छोटी 6-अंकीय संख्या है, जिसे 1 के बाद 5 शून्य लिखकर दर्शाया जाता है)।"
+      }
+    ];
+  }
+  
+  return null;
+};
+
+function parseCbseTeacherExplanation(text: string, title: string, isHi: boolean): CbseStep[] {
+  const custom = getCbseCustomTutorCard(text, title, isHi);
+  if (custom) return custom;
+
+  const rawParagraphs = (text || '').split(/\n\s*\n+/).map(p => p.trim()).filter(p => p.length > 10);
+  
+  if (rawParagraphs.length === 0) {
+    return [{
+      title: isHi ? "अवधारणा का परिचय" : "Concept Introduction",
+      titleHi: "अवधारणा का परिचय",
+      type: "fact",
+      content: text || ''
+    }];
+  }
+
+  const steps: CbseStep[] = [];
+  
+  if (rawParagraphs.length === 1) {
+    const sentences = rawParagraphs[0].match(/[^.!?\।]+[.!?\।]+/g) || [rawParagraphs[0]];
+    
+    if (sentences.length <= 2) {
+      steps.push({
+        title: isHi ? "अवधारणा विवरण" : "Concept Details",
+        titleHi: "अवधारणा विवरण",
+        type: "fact",
+        content: rawParagraphs[0]
+      });
+    } else {
+      const groupSize = Math.ceil(sentences.length / 3);
+      for (let i = 0; i < sentences.length; i += groupSize) {
+        const stepIdx = Math.floor(i / groupSize) + 1;
+        const content = sentences.slice(i, i + groupSize).join(' ').trim();
+        steps.push({
+          title: isHi ? `चरण ${stepIdx}: मुख्य समझ` : `Step ${stepIdx}: Key Explanation`,
+          titleHi: `चरण ${stepIdx}: मुख्य समझ`,
+          type: stepIdx === 1 ? 'story' : stepIdx === 2 ? 'fact' : 'summary',
+          content: content
+        });
+      }
+    }
+  } else {
+    rawParagraphs.forEach((p, idx) => {
+      let type: 'story' | 'problem' | 'math' | 'fact' | 'summary' = 'fact';
+      let stepTitle = '';
+      
+      const stepNum = idx + 1;
+      if (idx === 0) {
+        type = 'story';
+        stepTitle = isHi ? `चरण 1: संदर्भ और परिचय` : `Step 1: Real-life Context & Hook`;
+      } else if (idx === rawParagraphs.length - 1) {
+        type = 'summary';
+        stepTitle = isHi ? `चरण ${stepNum}: मुख्य सारांश और निष्कर्ष` : `Step ${stepNum}: CBSE Summary & Takeaway`;
+      } else {
+        const containsMath = /[\d\+\-\*\/\\=\>\<\%]+/g.test(p);
+        type = containsMath ? 'math' : 'fact';
+        stepTitle = containsMath 
+          ? (isHi ? `चरण ${stepNum}: गणितीय व्याख्या` : `Step ${stepNum}: Mathematical Breakdown`)
+          : (isHi ? `चरण ${stepNum}: विस्तृत समझ` : `Step ${stepNum}: Concept Breakdown`);
+      }
+      
+      steps.push({
+        title: stepTitle,
+        titleHi: stepTitle,
+        type,
+        content: p
+      });
+    });
+  }
+  
+  return steps;
 }
