@@ -66,39 +66,6 @@ export function applyFoxyWordCap(answer: string): {
   return { answer, truncated: false, originalWordCount: words.length };
 }
 
-  // Reconstruct the prefix containing the first FOXY_WORD_SOFT_CAP words
-  // by walking the original string so whitespace/punctuation is preserved.
-  let wordsSeen = 0;
-  let cutIndex = answer.length;
-  // Match runs of non-whitespace followed by trailing whitespace.
-  const re = /\S+\s*/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(answer)) !== null) {
-    wordsSeen += 1;
-    if (wordsSeen >= FOXY_WORD_SOFT_CAP) {
-      cutIndex = m.index + m[0].length;
-      break;
-    }
-  }
-  const prefix = answer.slice(0, cutIndex);
-
-  // Walk backwards looking for `. ` / `? ` / `! ` (or end-of-string
-  // sentence terminator). Accept a terminator if it is followed by
-  // whitespace OR is at the very end of the prefix.
-  let boundary = -1;
-  for (let i = prefix.length - 1; i >= 0; i--) {
-    const ch = prefix[i];
-    if (ch === '.' || ch === '?' || ch === '!') {
-      const next = prefix[i + 1];
-      if (next === undefined || /\s/.test(next)) {
-        boundary = i + 1;
-        break;
-      }
-    }
-  }
-  const truncated = boundary > 0 ? prefix.slice(0, boundary).trimEnd() : prefix.trimEnd();
-  return { answer: truncated, truncated: true, originalWordCount };
-}
 
 /**
  * Structured upstream_error response used as the try/catch fallback.
