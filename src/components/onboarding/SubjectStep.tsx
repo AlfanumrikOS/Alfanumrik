@@ -78,40 +78,34 @@ export default function SubjectStep({
             : 'No subjects available yet. Please contact support.'}
         </div>
       ) : (
-        <div className="grid grid-cols-1">
-          {/* Mobile-friendly horizontally scrollable subject list */}
-          <div className="subject-list-wrapper overflow-x-auto whitespace-nowrap -mx-2 py-2">
-            <div className="inline-flex gap-2 px-2">
-              {allowedSubjects.map((s) => {
-                const selected = value.includes(s.code);
-                const disabled = !selected && capReached;
-                return (
-                  <button
-                    key={s.code}
-                    onClick={() => toggle(s.code)}
-                    disabled={disabled}
-                    aria-pressed={selected}
-                    className="p-3 rounded-xl text-left flex items-center gap-2 transition-all active:scale-[0.97] disabled:opacity-40"
-                    style={{
-                      background: selected ? `${s.color}12` : 'var(--surface-2)',
-                      border: `1.5px solid ${selected ? s.color : 'var(--border)'}`,
-                      backdropFilter: selected ? 'blur(8px)' : undefined,
-                    }}
-                  >
-                    <span className="text-lg">{s.icon}</span>
-                    <span className="text-sm font-semibold" style={{ color: selected ? s.color : 'var(--text-2)' }}>
-                      {isHi ? s.nameHi || s.name : s.name}
-                    </span>
-                    {selected && (
-                      <span className="ml-auto text-xs" style={{ color: s.color }} aria-hidden="true">
-                        ✓
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+        <div className="grid grid-cols-2 gap-2">
+          {allowedSubjects.map((s) => {
+            const selected = value.includes(s.code);
+            const disabled = !selected && capReached;
+            return (
+              <button
+                key={s.code}
+                onClick={() => toggle(s.code)}
+                disabled={disabled}
+                aria-pressed={selected}
+                className="p-3 rounded-xl text-left flex items-center gap-2 transition-all active:scale-[0.97] disabled:opacity-40"
+                style={{
+                  background: selected ? `${s.color}12` : 'var(--surface-2)',
+                  border: `1.5px solid ${selected ? s.color : 'var(--border)'}`,
+                }}
+              >
+                <span className="text-lg">{s.icon}</span>
+                <span className="text-sm font-semibold" style={{ color: selected ? s.color : 'var(--text-2)' }}>
+                  {isHi ? s.nameHi || s.name : s.name}
+                </span>
+                {selected && (
+                  <span className="ml-auto text-xs" style={{ color: s.color }} aria-hidden="true">
+                    ✓
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
 
