@@ -1,5 +1,5 @@
-// Validate required env vars for production deployments (not during local dev)
-if (process.env.NODE_ENV === 'production' && process.env.VERCEL) {
+// Validate required env vars for production deployments (not during preview or local dev)
+if (process.env.NODE_ENV === 'production' && process.env.VERCEL && process.env.VERCEL_ENV === 'production') {
   const required = [
     'NEXT_PUBLIC_SUPABASE_URL',
     'NEXT_PUBLIC_SUPABASE_ANON_KEY',
