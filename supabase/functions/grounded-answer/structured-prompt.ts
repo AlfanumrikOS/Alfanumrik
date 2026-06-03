@@ -24,12 +24,6 @@
 //     user's language (English / Hindi / Hinglish) without translating
 //     technical terms.
 
-export const FOXY_STRUCTURED_OUTPUT_PROMPT = `
-# OUTPUT FORMAT (STRICT)
-
-Return ONLY valid JSON. No prose, no markdown fences, no commentary, no leading text.
-
-The JSON object MUST match this TypeScript type exactly:
 
 export const FOXY_STRUCTURED_OUTPUT_PROMPT = `
 # OUTPUT FORMAT (STRICT)
