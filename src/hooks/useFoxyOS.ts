@@ -1,8 +1,7 @@
 import { useState, useCallback } from 'react';
 
-// Use the environment variable for staging/production, otherwise fallback to localhost for local dev.
-// In Vercel staging, NEXT_PUBLIC_FOXY_API_URL should be set to the live Python backend URL.
-const API_BASE_URL = process.env.NEXT_PUBLIC_FOXY_API_URL || 'http://localhost:8000/api';
+// Automatically targets the Vercel Python Serverless function natively via Next.js rewrites
+const API_BASE_URL = '/api/py';
 
 export interface UIState {
   status: string;
