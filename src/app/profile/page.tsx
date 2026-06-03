@@ -24,10 +24,22 @@ function SoundToggle() {
         setSoundEnabled(next);
         if (next) playSound('tap');
       }}
-      className="text-xs font-semibold px-3 py-1 rounded-lg transition-all"
-      style={{ background: on ? '#16A34A20' : 'var(--surface-2)', color: on ? '#16A34A' : 'var(--text-3)' }}
+      className="flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all duration-200"
+      style={{
+        background: on ? 'rgba(22, 163, 74, 0.1)' : 'var(--surface-2)',
+        border: `1px solid ${on ? 'rgba(22,163,74,0.2)' : 'var(--border)'}`,
+      }}
     >
-      {on ? '🔔 On' : '🔕 Off'}
+      <span className="text-sm">{on ? '🔔' : '🔕'}</span>
+      <div
+        className="w-7 h-4 rounded-full transition-all duration-200 relative flex-shrink-0"
+        style={{ background: on ? '#16A34A' : 'var(--surface-3)' }}
+      >
+        <div
+          className="absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all duration-200"
+          style={{ left: on ? '14px' : '2px' }}
+        />
+      </div>
     </button>
   );
 }
@@ -41,12 +53,10 @@ function ConnectionsCard({ studentId, isHi }: { studentId: string; isHi: boolean
   const [joinResult, setJoinResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Fetch parent link code — read from students.invite_code (auto-generated at row
-  // insertion and used by the parent-portal edge function for lookups).
+  // Fetch parent link code
   const fetchLinkCode = useCallback(async () => {
     setLoadingCode(true);
     try {
-      // Primary source: the auto-generated invite_code on the students table
       const { data: studentData } = await supabase
         .from('students')
         .select('invite_code')
@@ -56,7 +66,6 @@ function ConnectionsCard({ studentId, isHi }: { studentId: string; isHi: boolean
       if (studentData?.invite_code) {
         setLinkCode(studentData.invite_code);
       } else {
-        // Fallback: check guardian_student_links for an existing code
         const { data: existing } = await supabase
           .from('guardian_student_links')
           .select('invite_code')
@@ -70,7 +79,7 @@ function ConnectionsCard({ studentId, isHi }: { studentId: string; isHi: boolean
         }
       }
     } catch {
-      // Silently fail — feature may not be available
+      // Silently fail
     }
     setLoadingCode(false);
   }, [studentId]);
@@ -101,60 +110,80 @@ function ConnectionsCard({ studentId, isHi }: { studentId: string; isHi: boolean
   };
 
   return (
-    <Card>
-      <SectionHeader>{isHi ? 'कनेक्शन' : 'Connections'}</SectionHeader>
+    <Card className="shadow-sm hover:shadow-md transition-shadow duration-300">
+      <p className="text-[11px] font-black uppercase tracking-wider mb-4 flex items-center gap-1.5" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-display)' }}>
+        <span>🔗</span>
+        <span>{isHi ? 'कनेक्शन' : 'Connections'}</span>
+      </p>
 
-      {/* Parent Link Code */}
-      <div className="mt-3 p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
-        <p className="text-xs font-semibold text-[var(--text-2)] mb-2">
-          👨‍👩‍👧 {isHi ? 'पैरेंट लिंक कोड' : 'Parent Link Code'}
-        </p>
-        <p className="text-[10px] text-[var(--text-3)] mb-2">
-          {isHi ? 'यह कोड अपने माता-पिता को दें — वे इसे पैरेंट डैशबोर्ड में दर्ज करेंगे' : 'Share this code with your parents so they can monitor your progress'}
-        </p>
-        {loadingCode ? (
-          <p className="text-xs text-[var(--text-3)]">Loading...</p>
-        ) : linkCode ? (
-          <div className="flex items-center gap-2">
-            <span className="text-lg font-bold tracking-[4px] text-[var(--orange)]">{linkCode}</span>
-            <button onClick={copyCode} className="text-xs px-2 py-1 rounded-lg" style={{ background: 'var(--surface-1)', color: copied ? 'var(--green)' : 'var(--text-2)' }}>
-              {copied ? '✓' : isHi ? 'कॉपी' : 'Copy'}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Parent Link Code */}
+        <div className="p-4 rounded-2xl border transition-all duration-300 hover:scale-[1.01]" style={{ background: 'linear-gradient(135deg, rgba(245, 166, 35, 0.07) 0%, rgba(245, 166, 35, 0.02) 100%)', borderColor: 'rgba(245, 166, 35, 0.22)' }}>
+          <p className="text-xs font-bold mb-1 flex items-center gap-1" style={{ color: '#B45309' }}>
+            <span>👨‍👩‍👧</span>
+            <span>{isHi ? 'पैरेंट लिंक कोड' : 'Parent Link Code'}</span>
+          </p>
+          <p className="text-[10px] mb-3 leading-normal" style={{ color: 'var(--text-3)' }}>
+            {isHi ? 'यह कोड अपने माता-पिता को दें — वे इसे पैरेंट डैशबोर्ड में दर्ज करेंगे' : 'Share this code with your parents so they can monitor your progress'}
+          </p>
+          {loadingCode ? (
+            <p className="text-xs" style={{ color: 'var(--text-3)' }}>Loading...</p>
+          ) : linkCode ? (
+            <div className="flex items-center gap-2">
+              <code
+                className="flex-1 text-center text-lg font-black tracking-[4px] px-3 py-2 rounded-xl"
+                style={{ fontFamily: 'monospace', background: 'rgba(245, 166, 35, 0.12)', color: 'var(--orange)', border: '1px dashed rgba(245, 166, 35, 0.4)' }}
+              >
+                {linkCode}
+              </code>
+              <button
+                onClick={copyCode}
+                className="px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 active:scale-95 shadow-sm"
+                style={{
+                  background: copied ? 'rgba(22, 163, 74, 0.1)' : 'white',
+                  color: copied ? '#16A34A' : 'var(--text-2)',
+                  border: `1px solid ${copied ? 'rgba(22, 163, 74, 0.2)' : 'var(--border)'}`,
+                }}
+              >
+                {copied ? '✓' : isHi ? 'कॉपी' : 'Copy'}
+              </button>
+            </div>
+          ) : (
+            <p className="text-xs" style={{ color: 'var(--text-3)' }}>{isHi ? 'कोड उपलब्ध नहीं' : 'Code not available'}</p>
+          )}
+        </div>
+
+        {/* Join Class */}
+        <div className="p-4 rounded-2xl border transition-all duration-300 hover:scale-[1.01]" style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}>
+          <p className="text-xs font-bold mb-2 flex items-center gap-1" style={{ color: 'var(--text-2)' }}>
+            <span>🏫</span>
+            <span>{isHi ? 'कक्षा में शामिल हों' : 'Join a Class'}</span>
+          </p>
+          <div className="flex gap-2">
+            <input
+              className="flex-1 px-3 py-2.5 rounded-xl text-sm font-semibold uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-orange-200 transition-all duration-200"
+              style={{ background: 'var(--surface-1)', border: '1.5px solid var(--border)', color: 'var(--text-1)' }}
+              placeholder={isHi ? 'क्लास कोड' : 'CLASS CODE'}
+              value={classCode}
+              onChange={e => setClassCode(e.target.value.toUpperCase())}
+              maxLength={10}
+              onKeyDown={e => e.key === 'Enter' && handleJoinClass()}
+            />
+            <button
+              onClick={handleJoinClass}
+              disabled={joinLoading || !classCode.trim()}
+              className="px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.97] shadow-sm hover:opacity-95"
+              style={{ background: 'var(--orange)', opacity: joinLoading || !classCode.trim() ? 0.5 : 1 }}
+            >
+              {joinLoading ? '...' : isHi ? 'जुड़ें' : 'Join'}
             </button>
           </div>
-        ) : (
-          <p className="text-xs text-[var(--text-3)]">{isHi ? 'कोड उपलब्ध नहीं' : 'Code not available'}</p>
-        )}
-      </div>
-
-      {/* Join Class */}
-      <div className="mt-3 p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
-        <p className="text-xs font-semibold text-[var(--text-2)] mb-2">
-          🏫 {isHi ? 'कक्षा में शामिल हों' : 'Join a Class'}
-        </p>
-        <div className="flex gap-2">
-          <input
-            className="flex-1 px-3 py-2 rounded-lg text-sm"
-            style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
-            placeholder={isHi ? 'क्लास कोड दर्ज करें' : 'Enter class code'}
-            value={classCode}
-            onChange={e => setClassCode(e.target.value.toUpperCase())}
-            maxLength={10}
-            onKeyDown={e => e.key === 'Enter' && handleJoinClass()}
-          />
-          <button
-            onClick={handleJoinClass}
-            disabled={joinLoading || !classCode.trim()}
-            className="px-4 py-2 rounded-lg text-sm font-semibold text-white"
-            style={{ background: 'var(--orange)', opacity: joinLoading || !classCode.trim() ? 0.5 : 1 }}
-          >
-            {joinLoading ? '...' : isHi ? 'जुड़ें' : 'Join'}
-          </button>
+          {joinResult && (
+            <p className={`text-xs mt-2.5 font-bold ${joinResult.ok ? 'text-green-600' : 'text-red-500'}`}>
+              {joinResult.ok ? '✓ ' : '✗ '}{joinResult.msg}
+            </p>
+          )}
         </div>
-        {joinResult && (
-          <p className={`text-xs mt-2 ${joinResult.ok ? 'text-green-600' : 'text-red-500'}`}>
-            {joinResult.msg}
-          </p>
-        )}
       </div>
     </Card>
   );
@@ -559,54 +588,122 @@ export default function ProfilePage() {
       </header>
 
       <main className="app-container py-5 space-y-4">
-        {/* Hero Card */}
-        <Card accent="var(--orange)">
-          <div className="flex items-center gap-4">
-            <Avatar name={student.name} size={64} />
-            <div className="flex-1 min-w-0">
-              <h2 className="text-xl font-bold truncate" style={{ fontFamily: 'var(--font-display)' }}>{student.name}</h2>
-              <p className="text-xs text-[var(--text-3)] mt-0.5">
-                Grade {student.grade} · {student.board ?? 'CBSE'} · {memberSince}
-              </p>
-              <div className="flex items-center gap-3 mt-2">
-                <span className="text-sm font-bold gradient-text">{totalXp.toLocaleString()} XP</span>
-                <span className="text-sm font-bold">🔥 {streak}</span>
-                <span className="text-sm font-bold" style={{ color: 'var(--teal)' }}>{mastered} mastered</span>
+
+        {/* ── Hero Banner ── */}
+        <div
+          className="relative rounded-3xl overflow-hidden p-6 sm:p-8"
+          style={{
+            background: 'linear-gradient(135deg, #FFF7F0 0%, #FFFDFB 50%, rgba(232,88,28,0.08) 100%)',
+            border: '1px solid rgba(232,88,28,0.18)',
+            boxShadow: '0 8px 32px rgba(232,88,28,0.08)',
+          }}
+        >
+          {/* Radial Glow */}
+          <div
+            className="absolute top-0 right-0 w-64 h-64 pointer-events-none opacity-60 filter blur-2xl rounded-full"
+            style={{ background: 'radial-gradient(circle, rgba(232,88,28,0.2) 0%, transparent 70%)' }}
+          />
+          <div className="relative flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-left gap-5">
+            {/* Avatar Ring */}
+            <div className="relative flex-shrink-0">
+              <div
+                className="w-20 h-20 rounded-full p-[3px] animate-[pulse_3s_infinite]"
+                style={{ background: 'linear-gradient(135deg, var(--orange) 0%, #F5A623 50%, #FF8C00 100%)' }}
+              >
+                <div className="w-full h-full rounded-full overflow-hidden bg-white flex items-center justify-center p-[2px]">
+                  <Avatar name={student.name} size={76} />
+                </div>
               </div>
-              {/* Daily Challenge Streak */}
-              {challengeStreak && challengeStreak.current > 0 && (
-                <div className="mt-3 flex items-center gap-3 flex-wrap">
-                  <StreakBadge streak={challengeStreak.current} badges={challengeStreak.badges} isHi={isHi} size="lg" />
-                  {challengeStreak.best > 0 && (
-                    <span className="text-xs text-[var(--text-3)]">
-                      {isHi ? `सबसे लंबी स्ट्रीक: ${challengeStreak.best} दिन` : `Best streak: ${challengeStreak.best} days`}
-                    </span>
+              <div className="absolute bottom-1 right-1 w-4 h-4 rounded-full bg-green-500 border-2 border-white shadow-sm" />
+            </div>
+
+            {/* Info details */}
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2 justify-center sm:justify-start">
+                <h2 className="text-2xl font-extrabold tracking-tight" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
+                  {student.name}
+                </h2>
+                <div className="flex justify-center sm:justify-start">
+                  <PlanBadge planCode={student.subscription_plan} size="sm" isHi={isHi} />
+                </div>
+              </div>
+
+              {/* Styled Pill Row */}
+              <div className="flex flex-wrap justify-center sm:justify-start gap-1.5 mb-4 text-xs font-semibold text-[var(--text-3)]">
+                <span className="px-2.5 py-0.5 rounded-full bg-[var(--surface-2)] border border-[var(--border)]">Grade {student.grade}</span>
+                <span className="px-2.5 py-0.5 rounded-full bg-[var(--surface-2)] border border-[var(--border)]">{student.board ?? 'CBSE'}</span>
+                <span className="px-2.5 py-0.5 rounded-full bg-[var(--surface-2)] border border-[var(--border)]">{isHi ? 'सदस्य' : 'Member since'} {memberSince}</span>
+              </div>
+
+              {/* Stats & StreakBadge Group */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 flex-wrap">
+                {/* Stats chips */}
+                <div className="flex items-center justify-center sm:justify-start gap-3 flex-wrap">
+                  <div className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-orange-50/50 border border-orange-100/70 shadow-sm transition-transform hover:scale-105 duration-200">
+                    <span className="text-lg">⭐</span>
+                    <div className="text-left">
+                      <span className="block text-sm font-black leading-none" style={{ color: 'var(--orange)' }}>{totalXp.toLocaleString()}</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-3)]">XP</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-red-50/50 border border-red-100/70 shadow-sm transition-transform hover:scale-105 duration-200">
+                    <span className="text-lg">🔥</span>
+                    <div className="text-left">
+                      <span className="block text-sm font-black leading-none text-red-600">{streak}</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-3)]">{isHi ? 'दिन' : 'Streak'}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-green-50/50 border border-green-100/70 shadow-sm transition-transform hover:scale-105 duration-200">
+                    <span className="text-lg">🎯</span>
+                    <div className="text-left">
+                      <span className="block text-sm font-black leading-none" style={{ color: 'var(--green)' }}>{mastered}</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-3)]">{isHi ? 'महारत' : 'Mastered'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Challenge / Streak Badge */}
+                <div className="flex justify-center sm:justify-start items-center gap-2">
+                  {challengeStreak && challengeStreak.current > 0 ? (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <StreakBadge streak={challengeStreak.current} badges={challengeStreak.badges} isHi={isHi} size="lg" />
+                      {challengeStreak.best > 0 && (
+                        <span className="text-[10px] font-bold" style={{ color: 'var(--text-3)' }}>
+                          {isHi ? `सर्वश्रेष्ठ: ${challengeStreak.best} दिन` : `Best: ${challengeStreak.best} days`}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => router.push('/dashboard')}
+                      className="text-[10px] font-bold px-3 py-1.5 rounded-xl transition-all hover:opacity-90 active:scale-[0.97] border border-orange-200/50 shadow-sm"
+                      style={{ color: 'var(--orange)', background: 'rgba(232,88,28,0.08)' }}
+                    >
+                      🔥 {isHi ? 'डेली चैलेंज शुरू करो' : 'Start Daily Challenge'}
+                    </button>
                   )}
                 </div>
-              )}
-              {(!challengeStreak || challengeStreak.current <= 0) && (
-                <p className="text-xs text-[var(--text-3)] mt-2 opacity-60">
-                  {isHi ? 'डेली चैलेंज स्ट्रीक शुरू करो!' : 'Start a daily challenge streak!'}
-                </p>
-              )}
+              </div>
+
             </div>
           </div>
-        </Card>
+        </div>
 
-        {/* Tab Switcher */}
-        <div className="flex gap-1.5 overflow-x-auto pb-1">
+        {/* ── iOS Pill Tab Bar ── */}
+        <div className="flex p-1 rounded-2xl gap-1 bg-gray-100 border border-gray-200/60 shadow-inner">
           {TABS.map(t => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className="flex-1 min-w-0 py-2.5 rounded-xl text-xs font-semibold transition-all text-center"
+              className={`flex-1 min-w-0 py-2.5 px-1.5 rounded-xl text-xs font-extrabold transition-all duration-200 flex items-center justify-center gap-1.5 ${
+                tab === t.id ? 'bg-white shadow-sm border border-gray-200/50 scale-[1.01]' : 'hover:bg-gray-50/50 active:scale-[0.98]'
+              }`}
               style={{
-                background: tab === t.id ? 'rgba(232,88,28,0.1)' : 'var(--surface-2)',
-                border: tab === t.id ? '1.5px solid var(--orange)' : '1.5px solid transparent',
-                color: tab === t.id ? 'var(--orange)' : 'var(--text-3)',
+                color: tab === t.id ? 'var(--orange)' : '#6B7280',
               }}
             >
-              {t.icon} {isHi ? t.labelHi : t.label}
+              <span className="text-sm">{t.icon}</span>
+              <span className="hidden sm:inline truncate">{isHi ? t.labelHi : t.label}</span>
             </button>
           ))}
         </div>
@@ -614,129 +711,151 @@ export default function ProfilePage() {
         {/* ═══ OVERVIEW TAB ═══ */}
         {tab === 'overview' && (
           <div className="space-y-4">
-            <Card>
-              <SectionHeader>{isHi ? 'विवरण' : 'Details'}</SectionHeader>
-              <div className="space-y-3 mt-3">
+            {/* Details Card */}
+            <Card className="shadow-sm hover:shadow-md transition-all duration-300">
+              <p className="text-[11px] font-black uppercase tracking-wider mb-4 flex items-center gap-1.5" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-display)' }}>
+                <span>📋</span>
+                <span>{isHi ? 'विवरण' : 'Details'}</span>
+              </p>
+              <div className="grid grid-cols-2 gap-3">
                 {[
-                  { l: isHi ? 'नाम' : 'Name', v: student.name },
-                  { l: isHi ? 'ईमेल' : 'Email', v: student.email ?? '—' },
-                  { l: isHi ? 'फ़ोन' : 'Phone', v: student.phone ?? '—' },
-                  { l: isHi ? 'कक्षा' : 'Grade', v: `Grade ${student.grade}` },
-                  { l: isHi ? 'बोर्ड' : 'Board', v: student.board ?? 'CBSE' },
-                  { l: isHi ? 'भाषा' : 'Language', v: LANGUAGES.find(la => la.code === student.preferred_language)?.label ?? student.preferred_language },
-                  { l: isHi ? 'पसंदीदा विषय' : 'Preferred Subject', v: allowedSubjects.find(s => s.code === student.preferred_subject)?.name ?? student.preferred_subject ?? '—' },
-                  { l: isHi ? 'स्कूल' : 'School', v: student.school_name ?? '—' },
-                  { l: isHi ? 'शहर' : 'City', v: [student.city, student.state].filter(Boolean).join(', ') || '—' },
-                  { l: isHi ? 'लक्ष्य' : 'Academic Goal', v: GOALS.find(g => g.value === student.academic_goal)?.label ?? student.academic_goal ?? '—' },
-                  { l: isHi ? 'रोज़ पढ़ाई' : 'Daily Study', v: `${student.daily_study_hours ?? 1} ${isHi ? 'घंटे' : 'hours'}` },
+                  { icon: '👤', l: isHi ? 'नाम' : 'Name', v: student.name },
+                  { icon: '📧', l: isHi ? 'ईमेल' : 'Email', v: student.email ?? '—' },
+                  { icon: '📱', l: isHi ? 'फ़ोन' : 'Phone', v: student.phone ?? '—' },
+                  { icon: '🎒', l: isHi ? 'कक्षा' : 'Grade', v: `Grade ${student.grade}` },
+                  { icon: '🏛️', l: isHi ? 'बोर्ड' : 'Board', v: student.board ?? 'CBSE' },
+                  { icon: '🌐', l: isHi ? 'भाषा' : 'Language', v: LANGUAGES.find(la => la.code === student.preferred_language)?.label ?? student.preferred_language ?? '—' },
+                  { icon: '📚', l: isHi ? 'विषय' : 'Subject', v: allowedSubjects.find(s => s.code === student.preferred_subject)?.name ?? student.preferred_subject ?? '—' },
+                  { icon: '🏫', l: isHi ? 'स्कूल' : 'School', v: student.school_name ?? '—' },
+                  { icon: '📍', l: isHi ? 'शहर' : 'City', v: [student.city, student.state].filter(Boolean).join(', ') || '—' },
+                  { icon: '🎯', l: isHi ? 'लक्ष्य' : 'Goal', v: GOALS.find(g => g.value === student.academic_goal)?.label ?? student.academic_goal ?? '—' },
                 ].map(f => (
-                  <div key={f.l} className="flex justify-between items-center text-sm">
-                    <span className="text-[var(--text-3)]">{f.l}</span>
-                    <span className="font-medium text-right max-w-[60%] truncate">{f.v}</span>
+                  <div key={f.l} className="p-3 rounded-2xl border transition-all duration-200 hover:bg-gray-50/50" style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}>
+                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text-3)' }}>{f.icon} {f.l}</p>
+                    <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-1)' }}>{f.v}</p>
                   </div>
                 ))}
               </div>
             </Card>
 
-            {/* Parent Info */}
             {(student.parent_name || student.parent_phone) && (
-              <Card>
-                <SectionHeader>{isHi ? 'अभिभावक' : 'Parent / Guardian'}</SectionHeader>
-                <div className="space-y-2 mt-3">
+              <Card className="shadow-sm hover:shadow-md transition-all duration-300">
+                <p className="text-[11px] font-black uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-display)' }}>
+                  <span>👨‍👩‍👧</span>
+                  <span>{isHi ? 'अभिभावक' : 'Parent / Guardian'}</span>
+                </p>
+                <div className="divide-y divide-[var(--border)]">
                   {student.parent_name && (
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-[var(--text-3)]">{isHi ? 'नाम' : 'Name'}</span>
-                      <span className="font-medium">{student.parent_name}</span>
+                    <div className="flex justify-between items-center text-sm py-3">
+                      <span className="font-semibold" style={{ color: 'var(--text-3)' }}>{isHi ? 'नाम' : 'Name'}</span>
+                      <span className="font-bold text-[var(--text-1)]">{student.parent_name}</span>
                     </div>
                   )}
                   {student.parent_phone && (
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-[var(--text-3)]">{isHi ? 'फ़ोन' : 'Phone'}</span>
-                      <span className="font-medium">{student.parent_phone}</span>
+                    <div className="flex justify-between items-center text-sm py-3">
+                      <span className="font-semibold" style={{ color: 'var(--text-3)' }}>{isHi ? 'फ़ोन' : 'Phone'}</span>
+                      <span className="font-bold text-[var(--text-1)]">{student.parent_phone}</span>
                     </div>
                   )}
                 </div>
               </Card>
             )}
 
-            {/* Quick Stats */}
-            <div className="grid-stats">
-              <StatCard icon="⭐" value={totalXp.toLocaleString()} label="Total XP" color="var(--orange)" />
-              <StatCard icon="🔥" value={streak} label={isHi ? 'स्ट्रीक' : 'Streak'} color="#DC2626" />
-              <StatCard icon="🎯" value={mastered} label={isHi ? 'महारत' : 'Mastered'} color="var(--green)" />
-              <StatCard icon="⚡" value={quizzesTaken} label={isHi ? 'क्विज़' : 'Quizzes'} color="var(--purple)" />
+            {/* Elevated Stats Card grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="rounded-2xl p-4 flex flex-col items-center text-center border transition-all duration-300 hover:scale-[1.02] hover:shadow-sm" style={{ background: 'linear-gradient(135deg, rgba(232,88,28,0.08) 0%, rgba(232,88,28,0.02) 100%)', borderColor: 'rgba(232,88,28,0.15)' }}>
+                <span className="text-2xl mb-1.5">⭐</span>
+                <span className="text-2xl font-black" style={{ color: 'var(--orange)' }}>{totalXp.toLocaleString()}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-[var(--text-3)]">Total XP</span>
+              </div>
+              <div className="rounded-2xl p-4 flex flex-col items-center text-center border transition-all duration-300 hover:scale-[1.02] hover:shadow-sm" style={{ background: 'linear-gradient(135deg, rgba(220,38,38,0.08) 0%, rgba(220,38,38,0.02) 100%)', borderColor: 'rgba(220,38,38,0.15)' }}>
+                <span className="text-2xl mb-1.5">🔥</span>
+                <span className="text-2xl font-black text-red-600">{streak}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-[var(--text-3)]">{isHi ? 'स्ट्रीक' : 'Streak'}</span>
+              </div>
+              <div className="rounded-2xl p-4 flex flex-col items-center text-center border transition-all duration-300 hover:scale-[1.02] hover:shadow-sm" style={{ background: 'linear-gradient(135deg, rgba(22,163,74,0.08) 0%, rgba(22,163,74,0.02) 100%)', borderColor: 'rgba(22,163,74,0.15)' }}>
+                <span className="text-2xl mb-1.5">🎯</span>
+                <span className="text-2xl font-black" style={{ color: 'var(--green)' }}>{mastered}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-[var(--text-3)]">{isHi ? 'महारत' : 'Mastered'}</span>
+              </div>
+              <div className="rounded-2xl p-4 flex flex-col items-center text-center border transition-all duration-300 hover:scale-[1.02] hover:shadow-sm" style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.08) 0%, rgba(124,58,237,0.02) 100%)', borderColor: 'rgba(124,58,237,0.15)' }}>
+                <span className="text-2xl mb-1.5">⚡</span>
+                <span className="text-2xl font-black text-purple-600">{quizzesTaken}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-[var(--text-3)]">{isHi ? 'क्विज़' : 'Quizzes'}</span>
+              </div>
             </div>
 
-            {/* Connections: Parent Link Code & Class Join */}
+            {/* Connections Card component */}
             <ConnectionsCard studentId={student.id} isHi={isHi} />
 
-            <Button fullWidth variant="ghost" onClick={() => setTab('edit')}>
-              ✏️ {isHi ? 'प्रोफ़ाइल संपादित करो' : 'Edit Profile'}
-            </Button>
-
-            <div className="pt-2 space-y-2">
-              <Button fullWidth variant="ghost" onClick={handleExportData} disabled={exporting}>
-                📥 {exporting
-                  ? (isHi ? 'एक्सपोर्ट हो रहा है...' : 'Exporting...')
-                  : (isHi ? 'मेरा डेटा डाउनलोड करो' : 'Download My Data')}
-              </Button>
-              <Button fullWidth variant="ghost" onClick={handleSignOut}>
-                {isHi ? 'लॉग आउट' : 'Sign Out'}
-              </Button>
-              {/* DPDP §17 right-to-erasure — routes to the dedicated
-                  /settings/account/delete page which implements the
-                  30-day cooling-off flow (backend D7.1). The legacy
-                  inline confirm modal below is kept as a defensive
-                  fallback only — it is never opened from this button. */}
-              <Button
-                fullWidth
-                variant="ghost"
-                onClick={() => router.push('/settings/account/delete')}
-                style={{ color: '#DC2626' }}
-                data-testid="profile-delete-account-link"
+            {/* Semantic Action Row */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={() => setTab('edit')}
+                className="flex-1 py-3.5 rounded-2xl text-sm font-bold text-white transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                style={{ background: 'linear-gradient(135deg, var(--orange) 0%, #F5A623 100%)', boxShadow: '0 4px 16px rgba(232,88,28,0.2)' }}
               >
-                🗑️ {isHi ? 'खाता हटाओ' : 'Delete Account'}
-              </Button>
+                ✏️ {isHi ? 'प्रोफ़ाइल संपादित करो' : 'Edit Profile'}
+              </button>
+              <button
+                onClick={handleExportData}
+                disabled={exporting}
+                className="flex-1 py-3.5 rounded-2xl text-sm font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                style={{
+                  background: 'var(--surface-2)',
+                  color: 'var(--text-2)',
+                  border: '1px solid var(--border)'
+                }}
+              >
+                📥 {exporting ? (isHi ? 'डाउनलोड हो रहा है...' : 'Downloading...') : (isHi ? 'मेरा डेटा डाउनलोड करो' : 'Download My Data')}
+              </button>
             </div>
 
-            {/* Delete Account Confirmation Modal */}
+            {/* Danger Zone at very bottom */}
+            <div className="rounded-2xl p-4 border" style={{ background: 'rgba(220,38,38,0.02)', borderColor: 'rgba(220,38,38,0.12)' }}>
+              <p className="text-[11px] font-black uppercase tracking-wider mb-1.5" style={{ color: '#DC2626', fontFamily: 'var(--font-display)' }}>
+                ⚠️ {isHi ? 'खतरे का क्षेत्र' : 'Danger Zone'}
+              </p>
+              <p className="text-[10px] mb-3 leading-normal" style={{ color: 'var(--text-3)' }}>
+                {isHi ? 'यह क्रिया स्थायी है और वापस नहीं होगी।' : 'This action is permanent and cannot be undone.'}
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  onClick={handleSignOut}
+                  className="flex-1 py-2.5 px-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all hover:bg-gray-100/50 active:scale-[0.98]"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
+                >
+                  <span>🚪</span>
+                  {isHi ? 'लॉग आउट' : 'Sign Out'}
+                </button>
+                <button
+                  onClick={() => router.push('/settings/account/delete')}
+                  data-testid="profile-delete-account-link"
+                  className="flex-1 py-2.5 px-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all hover:opacity-90 active:scale-[0.98]"
+                  style={{ background: 'rgba(220,38,38,0.06)', color: '#DC2626', border: '1px solid rgba(220,38,38,0.15)' }}
+                >
+                  <span>🗑️</span>
+                  {isHi ? 'खाता हटाओ' : 'Delete Account'}
+                </button>
+              </div>
+            </div>
+
+            {/* Delete confirm modal (legacy defensive fallback) */}
             {showDeleteConfirm && (
               <>
-                <div
-                  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100 }}
-                  onClick={() => setShowDeleteConfirm(false)}
-                />
-                <div
-                  style={{
-                    position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-                    zIndex: 101, background: 'var(--surface-1, #fff)', borderRadius: 16,
-                    padding: 24, maxWidth: 360, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-                  }}
-                >
-                  <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, fontFamily: 'var(--font-display)' }}>
-                    {isHi ? '⚠️ खाता हटाना' : '⚠️ Delete Account'}
-                  </h3>
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100 }} onClick={() => setShowDeleteConfirm(false)} />
+                <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 101, background: 'var(--surface-1, #fff)', borderRadius: 16, padding: 24, maxWidth: 360, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+                  <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, fontFamily: 'var(--font-display)' }}>{isHi ? '⚠️ खाता हटाना' : '⚠️ Delete Account'}</h3>
                   <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, marginBottom: 16 }}>
-                    {isHi
-                      ? 'यह आपका सारा डेटा — XP, प्रगति, बैज, और क्विज़ इतिहास — स्थायी रूप से हटा देगा। यह कार्य वापस नहीं किया जा सकता।'
-                      : 'This will permanently delete all your data — XP, progress, badges, and quiz history. This action cannot be undone.'}
+                    {isHi ? 'यह आपका सारा डेटा — XP, प्रगति, बैज, और क्विज़ इतिहास — स्थायी रूप से हटा देगा। यह कार्य वापस नहीं किया जा सकता।' : 'This will permanently delete all your data — XP, progress, badges, and quiz history. This action cannot be undone.'}
                   </p>
                   <p style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 16 }}>
                     {isHi ? 'पहले "मेरा डेटा डाउनलोड करो" से बैकअप ले लो।' : 'We recommend downloading your data first using "Download My Data".'}
                   </p>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <Button fullWidth variant="ghost" onClick={() => setShowDeleteConfirm(false)}>
-                      {isHi ? 'रद्द करो' : 'Cancel'}
-                    </Button>
-                    <Button
-                      fullWidth
-                      onClick={handleDeleteAccount}
-                      disabled={deleting}
-                      style={{ background: '#DC2626', color: '#fff' }}
-                    >
-                      {deleting
-                        ? (isHi ? 'हटा रहे हैं...' : 'Deleting...')
-                        : (isHi ? 'हाँ, हटाओ' : 'Yes, Delete')}
+                    <Button fullWidth variant="ghost" onClick={() => setShowDeleteConfirm(false)}>{isHi ? 'रद्द करो' : 'Cancel'}</Button>
+                    <Button fullWidth onClick={handleDeleteAccount} disabled={deleting} style={{ background: '#DC2626', color: '#fff' }}>
+                      {deleting ? (isHi ? 'हटा रहे हैं...' : 'Deleting...') : (isHi ? 'हाँ, हटाओ' : 'Yes, Delete')}
                     </Button>
                   </div>
                 </div>
@@ -755,159 +874,267 @@ export default function ProfilePage() {
         {/* ═══ EDIT TAB ═══ */}
         {tab === 'edit' && (
           <div className="space-y-4">
-            <Card>
-              <SectionHeader icon="📝">{isHi ? 'व्यक्तिगत जानकारी' : 'Personal Info'}</SectionHeader>
-              <div className="space-y-3 mt-3">
+            {/* Stepper Header */}
+            <div className="flex justify-between items-center px-4 py-3 bg-[var(--surface-2)] rounded-2xl border border-[var(--border)] mb-2 overflow-x-auto gap-2 scrollbar-none shadow-sm">
+              {[
+                { step: 1, label: isHi ? 'व्यक्तिगत' : 'Personal', icon: '📝' },
+                { step: 2, label: isHi ? 'शैक्षणिक' : 'Academic', icon: '🎓' },
+                { step: 3, label: isHi ? 'स्कूल' : 'School', icon: '🏫' },
+                { step: 4, label: isHi ? 'अभिभावक' : 'Parent', icon: '👨‍👩‍👧' }
+              ].map((s, idx) => (
+                <div key={s.step} className="flex items-center gap-2 flex-shrink-0">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white bg-[var(--orange)] shadow-sm">
+                    {s.step}
+                  </div>
+                  <span className="text-xs font-bold text-[var(--text-2)]">{s.label}</span>
+                  {idx < 3 && <span className="text-[var(--text-3)] text-xs font-semibold mx-1">→</span>}
+                </div>
+              ))}
+            </div>
+
+            <Card className="shadow-sm hover:shadow-md transition-all duration-300">
+              <p className="text-[11px] font-black uppercase tracking-wider mb-4 flex items-center gap-1.5" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-display)' }}>
+                <span>📝</span>
+                <span>{isHi ? 'व्यक्तिगत जानकारी' : 'Personal Info'}</span>
+              </p>
+              <div className="space-y-4">
                 <div>
+                  <label className="text-xs text-[var(--text-3)] mb-1.5 flex items-center justify-between ml-1 font-bold">
+                    <span>{isHi ? 'नाम' : 'Full Name'}</span>
+                    {!isNameEditable && (
+                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100/50 flex items-center gap-0.5 shadow-sm">
+                        🔒 {isHi ? 'लॉक किया गया' : 'Locked'}
+                      </span>
+                    )}
+                  </label>
                   <Input
-                    label={isHi ? 'नाम' : 'Full Name'}
                     value={editName}
                     onChange={e => isNameEditable ? setEditName(e.target.value) : undefined}
                     placeholder="Your name"
                     disabled={!isNameEditable}
                   />
                   {!isNameEditable && (
-                    <p className="text-[10px] text-[var(--text-3)] mt-1">
-                      🔒 {isHi ? 'नाम पहले ही बदला जा चुका है' : 'Name already changed once. Contact support to change again.'}
+                    <p className="text-[10px] mt-1.5 ml-1 text-red-500 font-semibold leading-normal">
+                      {isHi ? 'नाम पहले ही बदला जा चुका है। सहायता से संपर्क करें।' : 'Name has already been changed once. Contact support to change.'}
                     </p>
                   )}
                 </div>
-                <Input label={isHi ? 'फ़ोन' : 'Phone Number'} value={editPhone} onChange={e => setEditPhone(e.target.value)} placeholder="+91 98765 43210" type="tel" />
+                <div>
+                  <label className="text-xs text-[var(--text-3)] mb-1.5 block ml-1 font-bold">
+                    {isHi ? 'फ़ोन नंबर' : 'Phone Number'}
+                  </label>
+                  <Input value={editPhone} onChange={e => setEditPhone(e.target.value)} placeholder="+91 98765 43210" type="tel" />
+                </div>
               </div>
             </Card>
 
-            <Card>
-              <SectionHeader icon="🎓">{isHi ? 'शैक्षणिक विवरण' : 'Academic Details'}</SectionHeader>
-              <div className="space-y-3 mt-3">
+            <Card className="shadow-sm hover:shadow-md transition-all duration-300">
+              <p className="text-[11px] font-black uppercase tracking-wider mb-4 flex items-center gap-1.5" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-display)' }}>
+                <span>🎓</span>
+                <span>{isHi ? 'शैक्षणिक विवरण' : 'Academic Details'}</span>
+              </p>
+              <div className="space-y-4">
                 <div>
-                  <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-3)' }}>{isHi ? 'कक्षा' : 'Grade'}</label>
-                  <div className="p-2.5 rounded-lg text-sm" style={{ background: 'var(--surface-2)', color: 'var(--text-2)', border: '1px solid var(--border)' }}>
-                    Grade {editGrade} <span className="text-xs ml-2" style={{ color: 'var(--text-3)' }}>🔒 {isHi ? 'सिस्टम द्वारा प्रबंधित' : 'System-managed'}</span>
+                  <label className="text-xs text-[var(--text-3)] mb-1.5 flex items-center justify-between ml-1 font-bold">
+                    <span>{isHi ? 'कक्षा' : 'Grade'}</span>
+                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 border border-gray-200/50 flex items-center gap-0.5 shadow-sm">
+                      🔒 {isHi ? 'सिस्टम द्वारा' : 'System-managed'}
+                    </span>
+                  </label>
+                  <div className="p-3 rounded-xl text-sm font-semibold" style={{ background: 'var(--surface-2)', color: 'var(--text-2)', border: '1px solid var(--border)' }}>
+                    Grade {editGrade}
                   </div>
                 </div>
                 <div>
-                  <Select
-                    label={isHi ? 'बोर्ड' : 'Board'}
-                    value={editBoard}
-                    onChange={isBoardLocked ? () => {} : setEditBoard}
-                    options={BOARDS.map(b => ({ value: b, label: b }))}
-                    disabled={isBoardLocked}
-                  />
+                  <label className="text-xs text-[var(--text-3)] mb-1.5 flex items-center justify-between ml-1 font-bold">
+                    <span>{isHi ? 'बोर्ड' : 'Board'}</span>
+                    {isBoardLocked && (
+                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100/50 flex items-center gap-0.5 shadow-sm">
+                        🔒 {isHi ? 'लॉक किया गया' : 'Locked'}
+                      </span>
+                    )}
+                  </label>
+                  <Select value={editBoard} onChange={isBoardLocked ? () => {} : setEditBoard} options={BOARDS.map(b => ({ value: b, label: b }))} disabled={isBoardLocked} />
                   {isBoardLocked && (
-                    <p className="text-[10px] text-[var(--text-3)] mt-1">
-                      🔒 {isHi ? 'क्विज़ इतिहास के बाद बोर्ड बदलना बंद है' : 'Board locked after quiz history. Contact support.'}
+                    <p className="text-[10px] mt-1.5 ml-1 text-red-500 font-semibold leading-normal">
+                      {isHi ? 'क्विज़ इतिहास के बाद बोर्ड बदलना बंद है।' : 'Board locked after quiz history. Contact support to change.'}
                     </p>
                   )}
                 </div>
                 <div>
-                  <Select
-                    label={isHi ? 'पसंदीदा विषय' : 'Preferred Subject'}
-                    value={editSubject}
-                    onChange={setEditSubject}
-                    options={allowedSubjects.map(s => ({ value: s.code, label: `${s.icon} ${s.name}` }))}
-                  />
+                  <label className="text-xs text-[var(--text-3)] mb-1.5 block ml-1 font-bold">
+                    {isHi ? 'पसंदीदा विषय' : 'Preferred Subject'}
+                  </label>
+                  <Select value={editSubject} onChange={setEditSubject} options={allowedSubjects.map(s => ({ value: s.code, label: `${s.icon} ${s.name}` }))} />
                   {editSubject && allowedSubjects.length > 0 && !allowedSubjects.some(s => s.code === editSubject) && (
-                    <p className="text-[11px] mt-1" style={{ color: 'var(--danger)' }}>
-                      {isHi
-                        ? 'यह विषय अब आपकी योजना पर उपलब्ध नहीं है — कोई नया चुनें'
-                        : 'This subject is no longer available on your plan — pick a new one'}
+                    <p className="text-[11px] mt-1.5 text-red-500 font-bold">
+                      {isHi ? 'यह विषय अब आपकी योजना पर उपलब्ध नहीं है — कोई नया चुनें' : 'This subject is no longer available on your plan — pick a new one'}
                     </p>
                   )}
                 </div>
-                <Select
-                  label={isHi ? 'भाषा' : 'Language'}
-                  value={editLang}
-                  onChange={setEditLang}
-                  options={LANGUAGES.map(l => ({ value: l.code, label: `${l.labelNative} (${l.label})` }))}
-                />
-                <Select
-                  label={isHi ? 'लक्ष्य' : 'Academic Goal'}
-                  value={editGoal}
-                  onChange={setEditGoal}
-                  options={GOALS}
-                />
-                <Select
-                  label={isHi ? 'रोज़ पढ़ाई' : 'Daily Study Hours'}
-                  value={editHours}
-                  onChange={setEditHours}
-                  options={STUDY_HOURS}
-                />
-              </div>
-            </Card>
-
-            <Card>
-              <SectionHeader icon="🏫">{isHi ? 'स्कूल और शहर' : 'School & Location'}</SectionHeader>
-              <div className="space-y-3 mt-3">
-                <Input label={isHi ? 'स्कूल का नाम' : 'School Name'} value={editSchool} onChange={e => setEditSchool(e.target.value)} placeholder="e.g. DPS, KV, DAV..." />
-                <div className="grid grid-cols-2 gap-3">
-                  <Input label={isHi ? 'शहर' : 'City'} value={editCity} onChange={e => setEditCity(e.target.value)} placeholder="e.g. Delhi" />
-                  <Input label={isHi ? 'राज्य' : 'State'} value={editState} onChange={e => setEditState(e.target.value)} placeholder="e.g. Delhi" />
+                <div>
+                  <label className="text-xs text-[var(--text-3)] mb-1.5 block ml-1 font-bold">
+                    {isHi ? 'भाषा' : 'Language'}
+                  </label>
+                  <Select value={editLang} onChange={setEditLang} options={LANGUAGES.map(l => ({ value: l.code, label: `${l.labelNative} (${l.label})` }))} />
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--text-3)] mb-1.5 block ml-1 font-bold">
+                    {isHi ? 'अकादमिक लक्ष्य' : 'Academic Goal'}
+                  </label>
+                  <Select value={editGoal} onChange={setEditGoal} options={GOALS} />
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--text-3)] mb-1.5 block ml-1 font-bold">
+                    {isHi ? 'दैनिक अध्ययन के घंटे' : 'Daily Study Hours'}
+                  </label>
+                  <Select value={editHours} onChange={setEditHours} options={STUDY_HOURS} />
                 </div>
               </div>
             </Card>
 
-            <Card>
-              <SectionHeader icon="👨‍👩‍👧">{isHi ? 'अभिभावक जानकारी' : 'Parent / Guardian'}</SectionHeader>
-              <div className="space-y-3 mt-3">
-                <Input label={isHi ? 'अभिभावक का नाम' : 'Parent Name'} value={editParentName} onChange={e => setEditParentName(e.target.value)} placeholder="Parent's full name" />
-                <Input label={isHi ? 'अभिभावक फ़ोन' : 'Parent Phone'} value={editParentPhone} onChange={e => setEditParentPhone(e.target.value)} placeholder="+91 98765 43210" type="tel" />
+            <Card className="shadow-sm hover:shadow-md transition-all duration-300">
+              <p className="text-[11px] font-black uppercase tracking-wider mb-4 flex items-center gap-1.5" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-display)' }}>
+                <span>🏫</span>
+                <span>{isHi ? 'स्कूल और स्थान' : 'School & Location'}</span>
+              </p>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs text-[var(--text-3)] mb-1.5 block ml-1 font-bold">
+                    {isHi ? 'स्कूल का नाम' : 'School Name'}
+                  </label>
+                  <Input value={editSchool} onChange={e => setEditSchool(e.target.value)} placeholder="e.g. DPS, KV, DAV..." />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-[var(--text-3)] mb-1.5 block ml-1 font-bold">
+                      {isHi ? 'शहर' : 'City'}
+                    </label>
+                    <Input value={editCity} onChange={e => setEditCity(e.target.value)} placeholder="e.g. Delhi" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-[var(--text-3)] mb-1.5 block ml-1 font-bold">
+                      {isHi ? 'राज्य' : 'State'}
+                    </label>
+                    <Input value={editState} onChange={e => setEditState(e.target.value)} placeholder="e.g. Delhi" />
+                  </div>
+                </div>
               </div>
             </Card>
 
-            <div className="flex gap-3">
-              <Button fullWidth variant="ghost" onClick={() => setTab('overview')}>
+            <Card className="shadow-sm hover:shadow-md transition-all duration-300">
+              <p className="text-[11px] font-black uppercase tracking-wider mb-4 flex items-center gap-1.5" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-display)' }}>
+                <span>👨‍👩‍👧</span>
+                <span>{isHi ? 'अभिभावक जानकारी' : 'Parent / Guardian'}</span>
+              </p>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs text-[var(--text-3)] mb-1.5 block ml-1 font-bold">
+                    {isHi ? 'अभिभावक का नाम' : 'Parent Name'}
+                  </label>
+                  <Input value={editParentName} onChange={e => setEditParentName(e.target.value)} placeholder="Parent's full name" />
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--text-3)] mb-1.5 block ml-1 font-bold">
+                    {isHi ? 'अभिभावक फ़ोन' : 'Parent Phone'}
+                  </label>
+                  <Input value={editParentPhone} onChange={e => setEditParentPhone(e.target.value)} placeholder="+91 98765 43210" type="tel" />
+                </div>
+              </div>
+            </Card>
+
+            {/* Sticky Save / Cancel bar */}
+            <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] sm:static bg-white/95 backdrop-blur-md p-4 border-t border-[var(--border)] -mx-5 -mb-5 sm:mx-0 sm:mb-0 sm:p-0 sm:border-0 sm:bg-transparent z-10 flex gap-3 shadow-md sm:shadow-none rounded-t-2xl sm:rounded-none">
+              <button
+                onClick={() => setTab('overview')}
+                className="flex-1 py-3.5 rounded-xl text-sm font-bold transition-all active:scale-[0.97] hover:bg-gray-50 border border-gray-200"
+                style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}
+              >
                 {isHi ? 'रद्द करो' : 'Cancel'}
-              </Button>
-              <Button fullWidth onClick={handleSave} color="var(--orange)">
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1 py-3.5 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.97]"
+                style={{ background: saved ? '#16A34A' : 'linear-gradient(135deg, var(--orange) 0%, #F5A623 100%)', boxShadow: '0 4px 16px rgba(232,88,28,0.2)' }}
+              >
                 {saving ? (isHi ? 'सेव हो रहा...' : 'Saving...') : saved ? '✓ Saved!' : (isHi ? 'सेव करो' : 'Save Changes')}
-              </Button>
+              </button>
             </div>
           </div>
         )}
 
         {/* ═══ ACHIEVEMENTS TAB ═══ */}
         {tab === 'achievements' && (
-          <div className="space-y-4">
-            {/* Unlocked */}
-            {achievements.length > 0 && (
+          <div className="space-y-5">
+            {achievements.length > 0 ? (
               <div>
-                <SectionHeader icon="🏅">{isHi ? `अनलॉक किये (${achievements.length})` : `Unlocked (${achievements.length})`}</SectionHeader>
-                <div className="grid grid-cols-3 gap-2 mt-2">
+                <p className="text-[11px] font-black uppercase tracking-wider mb-4 flex items-center gap-1.5" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-display)' }}>
+                  <span>🏅</span>
+                  <span>{isHi ? `अनलॉक किये (${achievements.length})` : `Unlocked (${achievements.length})`}</span>
+                </p>
+                <div className="grid grid-cols-3 gap-4 justify-items-center">
                   {achievements.map(sa => (
                     <div
                       key={sa.id}
-                      className="rounded-2xl p-3 text-center"
-                      style={{ background: 'var(--surface-1)', border: '1.5px solid rgba(245,166,35,0.3)' }}
+                      className="flex flex-col items-center justify-center p-3 text-center relative overflow-hidden transition-all duration-300 hover:scale-105"
+                      style={{
+                        width: '96px',
+                        height: '128px',
+                      }}
                     >
-                      <div className="text-2xl mb-1">{sa.achievements?.icon || '🏅'}</div>
-                      <div className="text-[10px] font-bold truncate">{sa.achievements?.title}</div>
-                      <div className="text-[10px] text-[var(--text-3)]">+{sa.achievements?.xp_reward} XP</div>
+                      {/* Hexagonal Background Ring with Gold Shimmer */}
+                      <div
+                        className="w-[76px] h-[76px] rounded-[24%] flex items-center justify-center relative shadow-md border-2 mb-2"
+                        style={{
+                          background: 'linear-gradient(135deg, #FFF7ED 0%, #FEF3C7 50%, #FFFBEB 100%)',
+                          borderColor: '#F5A623',
+                          boxShadow: '0 4px 12px rgba(245,166,35,0.18), inset 0 0 8px rgba(255,255,255,0.8)',
+                        }}
+                      >
+                        {/* Shimmer Effect overlay */}
+                        <div className="absolute inset-0 opacity-20 bg-gradient-to-tr from-transparent via-white to-transparent animate-[pulse_2s_infinite]" />
+                        <span className="text-3xl relative z-10 filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.1)]">{sa.achievements?.icon || '🏅'}</span>
+                      </div>
+                      <div className="text-[10px] font-extrabold leading-tight text-[var(--text-1)] truncate w-full px-1">{sa.achievements?.title}</div>
+                      <div className="text-[8px] font-black mt-1 px-1.5 py-0.5 rounded-full inline-block bg-amber-100 text-amber-800 border border-amber-200/50 shadow-2xs">
+                        +{sa.achievements?.xp_reward} XP
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
+            ) : (
+              <div className="text-center py-10 rounded-3xl border shadow-sm" style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}>
+                <div className="text-4xl mb-2.5 animate-bounce">🏅</div>
+                <p className="text-sm font-bold text-[var(--text-2)]">{isHi ? 'अभी कोई बैज नहीं' : 'No badges yet'}</p>
+                <p className="text-xs mt-1 text-[var(--text-3)]">{isHi ? 'सीखते रहो और बैज अनलॉक करो!' : 'Keep learning to unlock badges!'}</p>
+              </div>
             )}
-
-            {/* Locked / Available */}
             <div>
-              <SectionHeader icon="🔒">{isHi ? 'उपलब्ध बैज' : 'Available Badges'}</SectionHeader>
-              <div className="space-y-2 mt-2">
+              <p className="text-[11px] font-black uppercase tracking-wider mb-4 flex items-center gap-1.5" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-display)' }}>
+                <span>🔒</span>
+                <span>{isHi ? 'उपलब्ध बैज' : 'Available Badges'}</span>
+              </p>
+              <div className="space-y-2.5">
                 {allAchievements.map(a => {
                   const unlocked = achievements.some(sa => sa.achievement_id === a.id);
                   return (
                     <div
                       key={a.id}
-                      className="rounded-xl p-3 flex items-center gap-3"
+                      className="rounded-2xl p-3 flex items-center gap-3 transition-all duration-300 border hover:shadow-xs"
                       style={{
-                        background: unlocked ? 'rgba(245,166,35,0.06)' : 'var(--surface-1)',
-                        border: `1px solid ${unlocked ? 'rgba(245,166,35,0.2)' : 'var(--border)'}`,
-                        opacity: unlocked ? 1 : 0.6,
+                        background: unlocked ? 'linear-gradient(135deg, rgba(245,166,35,0.06) 0%, rgba(245,166,35,0.02) 100%)' : 'var(--surface-1)',
+                        borderColor: unlocked ? 'rgba(245,166,35,0.22)' : 'var(--border)',
+                        opacity: unlocked ? 1 : 0.72
                       }}
                     >
-                      <span className="text-xl w-8 text-center">{unlocked ? a.icon : '🔒'}</span>
+                      <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-xl flex-shrink-0 border shadow-xs" style={{ background: unlocked ? 'rgba(245,166,35,0.12)' : 'var(--surface-2)', borderColor: unlocked ? 'rgba(245,166,35,0.2)' : 'var(--border)' }}>
+                        {unlocked ? a.icon : '🔒'}
+                      </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold truncate">{a.title}</div>
-                        <div className="text-[10px] text-[var(--text-3)]">
+                        <div className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>{a.title}</div>
+                        <div className="text-[10px] mt-0.5 font-medium leading-none" style={{ color: 'var(--text-3)' }}>
                           {a.condition_type === 'xp_total' && `Earn ${a.condition_value} XP`}
                           {a.condition_type === 'streak_days' && `${a.condition_value}-day streak`}
                           {a.condition_type === 'sessions_count' && `Complete ${a.condition_value} sessions`}
@@ -915,11 +1142,9 @@ export default function ProfilePage() {
                           {a.condition_type === 'speed_answers' && `${a.condition_value} speed answers`}
                         </div>
                       </div>
-                      <div className="text-right flex-shrink-0">
-                        <div className="text-xs font-bold" style={{ color: unlocked ? 'var(--orange)' : 'var(--text-3)' }}>
-                          {unlocked ? '✓' : `+${a.xp_reward}`}
-                        </div>
-                        <div className="text-[10px] text-[var(--text-3)]">XP</div>
+                      <div className="text-xs font-black px-2.5 py-1.5 rounded-xl flex-shrink-0 text-center border shadow-3xs" style={{ background: unlocked ? 'rgba(22,163,74,0.08)' : 'var(--surface-2)', borderColor: unlocked ? 'rgba(22,163,74,0.18)' : 'var(--border)', color: unlocked ? '#16A34A' : 'var(--text-3)', minWidth: 44 }}>
+                        {unlocked ? '✓' : `+${a.xp_reward}`}
+                        {!unlocked && <div className="text-[8px] font-bold text-[var(--text-3)]">XP</div>}
                       </div>
                     </div>
                   );
@@ -932,58 +1157,81 @@ export default function ProfilePage() {
         {/* ═══ STATS TAB ═══ */}
         {tab === 'stats' && (
           <div className="space-y-4">
-            {/* Overall Stats */}
-            <div className="grid-stats">
-              <StatCard icon="⭐" value={totalXp.toLocaleString()} label="Total XP" color="var(--orange)" />
-              <StatCard icon="🔥" value={streak} label={isHi ? 'स्ट्रीक' : 'Streak'} color="#DC2626" />
-              <StatCard icon="🎯" value={mastered} label={isHi ? 'महारत' : 'Mastered'} color="var(--green)" />
-              <StatCard icon="📊" value={`${snapshot?.avg_score ?? 0}%`} label={isHi ? 'सटीकता' : 'Accuracy'} color="var(--teal)" />
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="rounded-2xl p-4 flex flex-col items-center text-center border transition-all duration-300 hover:scale-[1.02] hover:shadow-sm" style={{ background: 'linear-gradient(135deg, rgba(232,88,28,0.08) 0%, rgba(232,88,28,0.02) 100%)', borderColor: 'rgba(232,88,28,0.15)' }}>
+                <span className="text-2xl mb-1.5">⭐</span>
+                <span className="text-3xl font-black" style={{ color: 'var(--orange)' }}>{totalXp.toLocaleString()}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-[var(--text-3)]">Total XP</span>
+              </div>
+              <div className="rounded-2xl p-4 flex flex-col items-center text-center border transition-all duration-300 hover:scale-[1.02] hover:shadow-sm" style={{ background: 'linear-gradient(135deg, rgba(220,38,38,0.08) 0%, rgba(220,38,38,0.02) 100%)', borderColor: 'rgba(220,38,38,0.15)' }}>
+                <span className="text-2xl mb-1.5">🔥</span>
+                <span className="text-3xl font-black text-red-600">{streak}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-[var(--text-3)]">{isHi ? 'स्ट्रीक' : 'Streak'}</span>
+              </div>
+              <div className="rounded-2xl p-4 flex flex-col items-center text-center border transition-all duration-300 hover:scale-[1.02] hover:shadow-sm" style={{ background: 'linear-gradient(135deg, rgba(22,163,74,0.08) 0%, rgba(22,163,74,0.02) 100%)', borderColor: 'rgba(22,163,74,0.15)' }}>
+                <span className="text-2xl mb-1.5">🎯</span>
+                <span className="text-3xl font-black" style={{ color: 'var(--green)' }}>{mastered}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-[var(--text-3)]">{isHi ? 'महारत' : 'Mastered'}</span>
+              </div>
+              <div className="rounded-2xl p-4 flex flex-col items-center text-center border transition-all duration-300 hover:scale-[1.02] hover:shadow-sm" style={{ background: 'linear-gradient(135deg, rgba(8,145,178,0.08) 0%, rgba(8,145,178,0.02) 100%)', borderColor: 'rgba(8,145,178,0.15)' }}>
+                <span className="text-2xl mb-1.5">📊</span>
+                <span className="text-3xl font-black" style={{ color: 'var(--teal)' }}>{snapshot?.avg_score ?? 0}%</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-[var(--text-3)]">{isHi ? 'सटीकता' : 'Accuracy'}</span>
+              </div>
             </div>
 
-            {/* Quiz Performance */}
-            <Card>
-              <SectionHeader icon="⚡">{isHi ? 'क्विज़ प्रदर्शन' : 'Quiz Performance'}</SectionHeader>
-              <div className="grid grid-cols-2 gap-3 mt-3">
-                <div className="rounded-xl p-3 text-center" style={{ background: 'var(--surface-2)' }}>
-                  <div className="text-2xl font-bold" style={{ color: 'var(--purple)' }}>{quizStats.total}</div>
-                  <div className="text-[10px] text-[var(--text-3)] font-medium">{isHi ? 'कुल क्विज़' : 'Total Quizzes'}</div>
+            <Card className="shadow-sm hover:shadow-md transition-all duration-300">
+              <p className="text-[11px] font-black uppercase tracking-wider mb-4 flex items-center gap-1.5" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-display)' }}>
+                <span>⚡</span>
+                <span>{isHi ? 'क्विज़ प्रदर्शन' : 'Quiz Performance'}</span>
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl p-4 text-center border bg-gray-50/40" style={{ borderColor: 'var(--border)' }}>
+                  <div className="text-3xl font-black text-purple-600">{quizStats.total}</div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider mt-1 text-[var(--text-3)]">{isHi ? 'कुल क्विज़' : 'Total Quizzes'}</div>
                 </div>
-                <div className="rounded-xl p-3 text-center" style={{ background: 'var(--surface-2)' }}>
-                  <div className="text-2xl font-bold" style={{ color: 'var(--green)' }}>{quizStats.avgScore}%</div>
-                  <div className="text-[10px] text-[var(--text-3)] font-medium">{isHi ? 'औसत स्कोर' : 'Avg Score'}</div>
+                <div className="rounded-2xl p-4 text-center border bg-gray-50/40" style={{ borderColor: 'var(--border)' }}>
+                  <div className="text-3xl font-black text-green-600">{quizStats.avgScore}%</div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider mt-1 text-[var(--text-3)]">{isHi ? 'औसत स्कोर' : 'Avg Score'}</div>
                 </div>
-                <div className="rounded-xl p-3 text-center" style={{ background: 'var(--surface-2)' }}>
-                  <div className="text-2xl font-bold" style={{ color: 'var(--orange)' }}>{quizStats.bestScore}%</div>
-                  <div className="text-[10px] text-[var(--text-3)] font-medium">{isHi ? 'सर्वश्रेष्ठ' : 'Best Score'}</div>
+                <div className="rounded-2xl p-4 text-center border bg-gray-50/40" style={{ borderColor: 'var(--border)' }}>
+                  <div className="text-3xl font-black text-orange-600">{quizStats.bestScore}%</div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider mt-1 text-[var(--text-3)]">{isHi ? 'सर्वश्रेष्ठ' : 'Best Score'}</div>
                 </div>
-                <div className="rounded-xl p-3 text-center" style={{ background: 'var(--surface-2)' }}>
-                  <div className="text-2xl font-bold gradient-text">{quizStats.totalXpFromQuiz}</div>
-                  <div className="text-[10px] text-[var(--text-3)] font-medium">{isHi ? 'क्विज़ XP' : 'Quiz XP'}</div>
+                <div className="rounded-2xl p-4 text-center border bg-gray-50/40" style={{ borderColor: 'var(--border)' }}>
+                  <div className="text-3xl font-black text-blue-600">{quizStats.totalXpFromQuiz}</div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider mt-1 text-[var(--text-3)]">{isHi ? 'क्विज़ XP' : 'Quiz XP'}</div>
                 </div>
               </div>
             </Card>
 
-            {/* Subject Breakdown */}
             {profiles.length > 0 && (
-              <Card>
-                <SectionHeader icon="📚">{isHi ? 'विषयवार प्रगति' : 'Subject Breakdown'}</SectionHeader>
-                <div className="space-y-3 mt-3">
+              <Card className="shadow-sm hover:shadow-md transition-all duration-300">
+                <p className="text-[11px] font-black uppercase tracking-wider mb-4 flex items-center gap-1.5" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-display)' }}>
+                  <span>📚</span>
+                  <span>{isHi ? 'विषयवार प्रगति' : 'Subject Breakdown'}</span>
+                </p>
+                <div className="space-y-4">
                   {profiles.map(p => {
                     const meta = subjects.find(s => s.code === p.subject);
                     const pct = p.total_questions_asked > 0
                       ? Math.round((p.total_questions_answered_correctly / p.total_questions_asked) * 100) : 0;
                     return (
-                      <div key={p.id}>
-                        <div className="flex items-center justify-between mb-1.5">
+                      <div key={p.id} className="space-y-1.5">
+                        <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm">{meta?.icon ?? '📚'}</span>
-                            <span className="text-xs font-semibold">{meta?.name ?? p.subject}</span>
+                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-2xs" style={{ backgroundColor: meta?.color || 'var(--orange)' }} />
+                            <div className="w-8 h-8 rounded-xl flex items-center justify-center text-sm flex-shrink-0" style={{ background: `${meta?.color || 'var(--orange)'}18` }}>
+                              {meta?.icon ?? '📚'}
+                            </div>
+                            <div>
+                              <div className="text-sm font-black leading-tight" style={{ color: 'var(--text-1)' }}>{meta?.name ?? p.subject}</div>
+                              <div className="text-[10px] font-bold text-[var(--text-3)]">Lv{p.level} · {p.xp} XP · {p.streak_days}🔥</div>
+                            </div>
                           </div>
-                          <div className="text-xs text-[var(--text-3)]">
-                            Lv{p.level} · {p.xp} XP · {p.streak_days}🔥
-                          </div>
+                          <span className="text-sm font-black" style={{ color: meta?.color || 'var(--orange)' }}>{pct}%</span>
                         </div>
-                        <ProgressBar value={pct} color={meta?.color} height={6} label={isHi ? 'सटीकता' : 'Accuracy'} showPercent />
+                        <ProgressBar value={pct} color={meta?.color} height={6} label={isHi ? 'सटीकता' : 'Accuracy'} showPercent={false} />
                       </div>
                     );
                   })}
@@ -991,30 +1239,34 @@ export default function ProfilePage() {
               </Card>
             )}
 
-            {/* Account Info */}
-            <Card>
-              <SectionHeader icon="🔐">{isHi ? 'खाता' : 'Account'}</SectionHeader>
-              <div className="space-y-2 mt-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-[var(--text-3)]">{isHi ? 'सदस्य बने' : 'Member since'}</span>
-                  <span className="font-medium">{memberSince}</span>
+            <Card className="shadow-sm hover:shadow-md transition-all duration-300">
+              <p className="text-[11px] font-black uppercase tracking-wider mb-4 flex items-center gap-1.5" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-display)' }}>
+                <span>🔐</span>
+                <span>{isHi ? 'खाता' : 'Account'}</span>
+              </p>
+              <div className="divide-y divide-[var(--border)] text-sm">
+                <div className="flex justify-between items-center py-3">
+                  <span className="font-semibold" style={{ color: 'var(--text-3)' }}>{isHi ? 'सदस्य बने' : 'Member since'}</span>
+                  <span className="font-bold text-[var(--text-1)]">{memberSince}</span>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[var(--text-3)]">{isHi ? 'योजना' : 'Plan'}</span>
+                <div className="flex justify-between items-center py-3">
+                  <span className="font-semibold" style={{ color: 'var(--text-3)' }}>{isHi ? 'योजना' : 'Plan'}</span>
                   <PlanBadge planCode={student.subscription_plan} size="md" showUpgrade isHi={isHi} />
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[var(--text-3)]">{isHi ? 'बिलिंग' : 'Billing'}</span>
-                  <button onClick={() => router.push('/billing')} className="text-xs font-semibold px-3 py-1 rounded-lg" style={{ color: 'var(--orange)', background: 'rgba(232,88,28,0.08)' }}>
+                <div className="flex justify-between items-center py-3">
+                  <span className="font-semibold" style={{ color: 'var(--text-3)' }}>{isHi ? 'बिलिंग' : 'Billing'}</span>
+                  <button onClick={() => router.push('/billing')} className="text-xs font-bold px-3.5 py-1.5 rounded-xl border transition-all hover:bg-orange-50/50 active:scale-95 shadow-3xs" style={{ color: 'var(--orange)', background: 'rgba(232,88,28,0.06)', borderColor: 'rgba(232,88,28,0.18)' }}>
                     {isHi ? 'प्रबंधित करें' : 'Manage'}
                   </button>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--text-3)]">{isHi ? 'स्थिति' : 'Status'}</span>
-                  <span className="font-medium" style={{ color: 'var(--green)' }}>{student.account_status ?? 'Active'}</span>
+                <div className="flex justify-between items-center py-3">
+                  <span className="font-semibold" style={{ color: 'var(--text-3)' }}>{isHi ? 'स्थिति' : 'Status'}</span>
+                  <span className="font-bold uppercase tracking-wider text-xs" style={{ color: student.account_status === 'active' || !student.account_status ? 'var(--green)' : 'var(--orange)' }}>
+                    {student.account_status ?? 'Active'}
+                  </span>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[var(--text-3)]">{isHi ? 'ध्वनि प्रतिक्रिया' : 'Sound Effects'}</span>
+                <div className="flex justify-between items-center py-3">
+                  <span className="font-semibold" style={{ color: 'var(--text-3)' }}>{isHi ? 'ध्वनि प्रतिक्रिया' : 'Sound Effects'}</span>
                   <SoundToggle />
                 </div>
               </div>
