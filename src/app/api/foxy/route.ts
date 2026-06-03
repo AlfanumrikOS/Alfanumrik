@@ -1146,25 +1146,22 @@ function composeMisconceptionDirective(
 export function buildColdStartPromptSection(): string {
   return [
     '=== FIRST-INTERACTION CONTEXT (no prior mastery data) ===',
-    'This is a new student. You have no quiz history, no mastery signals, no prior',
-    'session context for them yet. Adapt accordingly:',
+    'This is a new student. You have no quiz history, no mastery signals.',
     '',
     'BEHAVIOUR FOR THIS FIRST INTERACTION:',
     '- Answer their actual question first. Match the language they wrote in.',
-    '- Use clear, standard CBSE language at grade level. Do NOT assume strong prior',
-    '  mastery and do NOT assume struggle — you have no data either way.',
-    '- Keep the answer compact (3-5 short blocks) so a new student is not overwhelmed.',
+    '- Give a FULL, rich teacher-like explanation (6-8 blocks). Do NOT give a short answer.',
+    '- Use clear, standard CBSE language at grade level.',
     '- After answering, ask ONE light calibration follow-up that surfaces what they',
     '  already know or struggle with on this topic. Frame it warmly, not as a test.',
     '- If their question is meta (e.g. "what should I study?", "where do I start?"),',
-    '  suggest a quick 3-question diagnostic from this chapter and offer to start it.',
-    '- End with a one-line nudge to take a chapter quiz so personalisation can kick in',
-    '  from the next turn.',
+    '  suggest a quick 3-question diagnostic from this chapter.',
+    '- End with a one-line nudge to take a chapter quiz for personalised help.',
     '',
     'AVOID on cold-start:',
-    '- Assuming the student is "PROFICIENT" or "STRUGGLING" without data.',
-    '- Long worked examples that pre-empt their actual question.',
-    '- Pushing prerequisites or knowledge gaps you have not actually verified.',
+    '- Short or sparse answers — a new student deserves your BEST explanation.',
+    '- Assuming proficiency or struggle without data.',
+    '- Pushing prerequisites you have not verified.',
   ].join('\n');
 }
 
