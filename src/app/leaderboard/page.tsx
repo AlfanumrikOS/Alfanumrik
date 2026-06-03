@@ -358,7 +358,7 @@ export default function LeaderboardPage() {
           {/* Tabs */}
           <div
             className="flex gap-1.5 mt-3 overflow-x-auto pb-0.5 scrollbar-hide"
-            style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y' }}
+            style={{ WebkitOverflowScrolling: 'touch', overscrollBehaviorX: 'contain' }}
           >
             {TABS.map(t => (
               <button key={t.id} onClick={() => { setTab(t.id); setSelectedComp(null); }}
