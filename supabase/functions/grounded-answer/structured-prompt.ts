@@ -54,7 +54,9 @@ type FoxyResponse = {
 
 Constraints:
 - 1 to 50 blocks total.
-- Whole payload <= 16 KB; keep response under ~4000 chars total.
+- For simple definitions/facts: 3-5 blocks is fine.
+- For explanations, how/why questions: use 6-12 blocks to teach thoroughly. Do NOT stop at 2-3.
+- Whole payload <= 16 KB.
 - Markdown is FORBIDDEN anywhere in any field. No "**", no "#", no ">", no markdown lists.
 - LaTeX is allowed ONLY inside the "latex" field of math blocks. Never inside "text".
 - Do NOT wrap latex in "$" or "$$". The renderer adds KaTeX delimiters.
@@ -75,19 +77,23 @@ Constraints:
 
 # FEW-SHOT EXAMPLES
 
+## Science (Class 12, Solid State — rich explanation)
+{"title":"Understanding the Solid State","subject":"science","blocks":[
+  {"type":"definition","label":"What is the Solid State?","text":"The solid state is a physical state of matter in which particles (atoms, ions, or molecules) are tightly packed together in a fixed, ordered arrangement. Solids have a definite shape and volume."},
+  {"type":"paragraph","text":"Why are solids so rigid? The particles in a solid are held together by very strong intermolecular forces of attraction. Unlike liquids or gases, the particles in a solid cannot move freely — they can only vibrate about their fixed positions."},
+  {"type":"paragraph","label":"Key Properties","text":"Solids have four characteristic properties: (1) definite shape and volume, (2) high density compared to liquids and gases, (3) low compressibility, and (4) rigidity — they resist changes to their shape."},
+  {"type":"paragraph","label":"Types of Solids","text":"There are two broad categories: Crystalline solids (like salt and diamond) where particles are arranged in a repeating, long-range ordered pattern called a crystal lattice; and Amorphous solids (like glass and rubber) where particles have only short-range order without a regular repeating pattern."},
+  {"type":"example","text":"Think of a crystalline solid like a well-organised army parade where every soldier stands exactly in line. An amorphous solid is like a crowd at a bus stop — loosely arranged without a fixed pattern."},
+  {"type":"paragraph","label":"Why This Matters for CBSE","text":"In your Class 12 exams, questions often ask you to distinguish crystalline from amorphous solids, or to explain why solids are incompressible. Remember: the answer always links back to the strong intermolecular forces holding particles in fixed positions."},
+  {"type":"question","text":"Now your turn: Can you name two examples of amorphous solids from everyday life and explain why they do not have a sharp melting point like crystalline solids do?"}
+]}
+
 ## Math (Class 7, linear equations)
 {"title":"Solving 2x + 3 = 11","subject":"math","blocks":[
   {"type":"step","label":"Isolate x term","text":"Subtract 3 from both sides of the equation."},
   {"type":"math","latex":"2x = 8"},
   {"type":"step","label":"Solve for x","text":"Divide both sides by 2."},
   {"type":"answer","text":"x = 4"}
-]}
-
-## Science (Class 9, Newton's second law)
-{"title":"Newton's Second Law","subject":"science","blocks":[
-  {"type":"definition","label":"Definition","text":"Force equals mass times acceleration."},
-  {"type":"math","latex":"F = m \\\\cdot a"},
-  {"type":"example","text":"A 2 kg ball pushed at 3 m/s^2 needs 6 N of force."}
 ]}
 
 ## SST (Class 8, Constitution of India)
