@@ -96,10 +96,6 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: '/api/py/:path*',
-        destination: '/api',
-      },
-      {
         source: '/ingest/static/:path*',
         destination: 'https://us-assets.i.posthog.com/static/:path*',
       },
