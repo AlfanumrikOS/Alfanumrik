@@ -8,6 +8,7 @@ written by either runtime remain comparable.
 
 from __future__ import annotations
 
+import random
 from copy import deepcopy
 from dataclasses import dataclass, field
 
@@ -195,9 +196,12 @@ def select_provider_chain(task: TaskType, opts: RouterOptions) -> SelectedChain:
             ]
             p["chain"] = [{"provider": "openai", "model": GPT_MINI}, *others]
 
-    # Step 4: per-task weight override.
+    # Step 4: probabilistic routing (80% default to OpenAI).
     w = opts.weights.get(task)
-    if isinstance(w, int | float) and w > 0.5:
+    if not isinstance(w, (int, float)):
+        w = 0.8
+
+    if random.random() < w:
         for p in passes_raw:
             openai_target = next((t for t in p["chain"] if t["provider"] == "openai"), None)
             if openai_target is None:
@@ -205,6 +209,14 @@ def select_provider_chain(task: TaskType, opts: RouterOptions) -> SelectedChain:
             # Reorder: openai first, original-order remainder after.
             rest = [t for t in p["chain"] if t is not openai_target]
             p["chain"] = [openai_target, *rest]
+    else:
+        for p in passes_raw:
+            anthropic_target = next((t for t in p["chain"] if t["provider"] == "anthropic"), None)
+            if anthropic_target is None:
+                continue
+            # Reorder: anthropic first, original-order remainder after.
+            rest = [t for t in p["chain"] if t is not anthropic_target]
+            p["chain"] = [anthropic_target, *rest]
 
     # Step 5: compute mode.
     if task == "doubt_solving" and opts.hybrid_enabled:

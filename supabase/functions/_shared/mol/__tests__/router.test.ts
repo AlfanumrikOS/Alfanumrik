@@ -1,9 +1,16 @@
 // supabase/functions/_shared/mol/__tests__/router.test.ts
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { selectProviderChain, getMaxTokens } from '../router.ts'
 
 describe('selectProviderChain', () => {
+  beforeEach(() => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.1) // Ensures OpenAI is primary
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
   it('routes explanation to openai primary', () => {
     const chain = selectProviderChain('explanation', { hybrid_enabled: true, openai_default: false, weights: {} })
     expect(chain.passes.length).toBe(1)

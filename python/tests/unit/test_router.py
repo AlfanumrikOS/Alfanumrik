@@ -1,6 +1,7 @@
 """Router unit tests — BASE_MATRIX integrity + flag-driven reshape paths."""
 
 from __future__ import annotations
+from unittest.mock import patch
 
 from services.ai.mol.router import (
     BASE_MATRIX,
@@ -100,7 +101,8 @@ def test_select_returns_correct_task_type_field():
 # ─── openai_default flag flip ───────────────────────────────────────────────
 
 
-def test_openai_default_promotes_openai_for_teaching_tasks():
+@patch("services.ai.mol.router.random.random", return_value=0.1)
+def test_openai_default_promotes_openai_for_teaching_tasks(mock_rand):
     """When openai_default is ON, explanation/step_by_step/quiz_generation get
     gpt-4o-mini as primary."""
     for task in ("explanation", "step_by_step", "quiz_generation"):
@@ -110,14 +112,16 @@ def test_openai_default_promotes_openai_for_teaching_tasks():
         assert first.model == GPT_MINI
 
 
-def test_openai_default_does_not_affect_reasoning():
+@patch("services.ai.mol.router.random.random", return_value=0.9)
+def test_openai_default_does_not_affect_reasoning(mock_rand):
     """openai_default only flips teaching tasks; reasoning keeps Anthropic primary."""
     selected = select_provider_chain("reasoning", _opts(openai_default=True))
     first = selected.passes[0].chain[0]
     assert first.provider == "anthropic"
 
 
-def test_openai_default_no_duplicate_after_flip():
+@patch("services.ai.mol.router.random.random", return_value=0.1)
+def test_openai_default_no_duplicate_after_flip(mock_rand):
     """The flip removes existing gpt-4o-mini before prepending — no duplicates."""
     selected = select_provider_chain("explanation", _opts(openai_default=True))
     chain = selected.passes[0].chain
@@ -125,19 +129,18 @@ def test_openai_default_no_duplicate_after_flip():
     assert mini_count == 1
 
 
-# ─── Per-task weight override ───────────────────────────────────────────────
-
-
-def test_weight_above_half_promotes_openai_primary():
-    """weights[task] > 0.5 ensures the openai rung is primary."""
-    selected = select_provider_chain("reasoning", _opts(weights={"reasoning": 0.75}))
+@patch("services.ai.mol.router.random.random", return_value=0.1)
+def test_weight_above_random_promotes_openai_primary(mock_rand):
+    """w=0.8 > random(0.1) ensures the openai rung is primary."""
+    selected = select_provider_chain("reasoning", _opts(weights={"reasoning": 0.8}))
     first = selected.passes[0].chain[0]
     assert first.provider == "openai"
 
 
-def test_weight_at_or_below_half_is_a_noop():
-    """weights[task] <= 0.5 leaves the chain order untouched."""
-    selected = select_provider_chain("reasoning", _opts(weights={"reasoning": 0.5}))
+@patch("services.ai.mol.router.random.random", return_value=0.9)
+def test_weight_below_random_promotes_anthropic_primary(mock_rand):
+    """w=0.8 < random(0.9) leaves anthropic as primary."""
+    selected = select_provider_chain("reasoning", _opts(weights={"reasoning": 0.8}))
     first = selected.passes[0].chain[0]
     assert first.provider == "anthropic"
 
@@ -172,7 +175,8 @@ def test_hybrid_off_collapses_doubt_solving_to_single_pass():
     assert len(selected.passes) == 1
 
 
-def test_hybrid_off_chain_has_cost_friendly_openai_fallback():
+@patch("services.ai.mol.router.random.random", return_value=0.9)
+def test_hybrid_off_chain_has_cost_friendly_openai_fallback(mock_rand):
     """Hybrid OFF collapsed chain includes gpt-4o-mini (not gpt-4o) per cost note."""
     selected = select_provider_chain("doubt_solving", _opts(hybrid_enabled=False))
     chain = selected.passes[0].chain

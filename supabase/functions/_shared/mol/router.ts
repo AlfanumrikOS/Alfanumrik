@@ -143,13 +143,24 @@ export function selectProviderChain(task: TaskType, opts: RouterOptions): Select
         ]
       }]
 
-      // Per-task weight: weights[task] > 0.5 → ensure openai is primary
-      const w = opts.weights[task]
-      if (typeof w === 'number' && w > 0.5) {
+      // Per-task weight: probabilistic routing
+      let w = opts.weights[task]
+      if (typeof w !== 'number') {
+        w = 0.8
+      }
+      
+      if (Math.random() < w) {
         passes = passes.map((p) => {
           const openaiTarget = p.chain.find((t) => t.provider === 'openai')
           if (!openaiTarget) return p
           const reordered = [openaiTarget, ...p.chain.filter((t) => t !== openaiTarget)]
+          return { ...p, chain: reordered }
+        })
+      } else {
+        passes = passes.map((p) => {
+          const anthropicTarget = p.chain.find((t) => t.provider === 'anthropic')
+          if (!anthropicTarget) return p
+          const reordered = [anthropicTarget, ...p.chain.filter((t) => t !== anthropicTarget)]
           return { ...p, chain: reordered }
         })
       }
@@ -189,13 +200,24 @@ export function selectProviderChain(task: TaskType, opts: RouterOptions): Select
     }))
   }
 
-  // Per-task weight: weights[task] > 0.5 → ensure openai is primary
-  const w = opts.weights[task]
-  if (typeof w === 'number' && w > 0.5) {
+  // Per-task weight: probabilistic routing
+  let w = opts.weights[task]
+  if (typeof w !== 'number') {
+    w = 0.8
+  }
+  
+  if (Math.random() < w) {
     passes = passes.map((p) => {
       const openaiTarget = p.chain.find((t) => t.provider === 'openai')
       if (!openaiTarget) return p
       const reordered = [openaiTarget, ...p.chain.filter((t) => t !== openaiTarget)]
+      return { ...p, chain: reordered }
+    })
+  } else {
+    passes = passes.map((p) => {
+      const anthropicTarget = p.chain.find((t) => t.provider === 'anthropic')
+      if (!anthropicTarget) return p
+      const reordered = [anthropicTarget, ...p.chain.filter((t) => t !== anthropicTarget)]
       return { ...p, chain: reordered }
     })
   }
