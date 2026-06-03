@@ -219,6 +219,8 @@ jobs:
 
       - name: Type check
         run: npm run type-check
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
 
       - name: Run tests with coverage
         # Migration & script integration tests (~19 tests under
