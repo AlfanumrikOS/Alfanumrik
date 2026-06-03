@@ -641,7 +641,6 @@ export default function ChapterConceptPage() {
       track('learn_review_weak_concept_clicked', {
         ...telemetryBase,
         concept_idx: firstWeakIdx,
-        concept_title: topics[firstWeakIdx].title,
       });
     } else if (topics.length > 0) {
       setMode('practice');

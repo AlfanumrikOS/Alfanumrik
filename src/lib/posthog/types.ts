@@ -69,6 +69,7 @@ export type PostHogEventName =
   | 'learn_take_quiz_clicked'
   | 'learn_read_mode_opened'
   | 'learn_read_mode_fallback'
+  | 'learn_review_weak_concept_clicked'
   // School-admin self-service billing (Phase 2-C of the May 2026 upgrade).
   // All server-side, fired from src/app/api/school-admin/subscription/route.ts.
   // PII-free — only school_id (uuid), plan, billing_cycle, seats counts.
@@ -491,6 +492,11 @@ export interface LearnReadModeFallbackPayload extends LearnChapterContextBase {
   reason: 'empty' | 'error';
 }
 
+export interface LearnReviewWeakConceptClickedPayload extends LearnChapterContextBase {
+  /** 0-indexed position of the weak concept the student was navigated to. */
+  concept_idx: number;
+}
+
 // ─── School billing payloads (Phase 2-C) ────────────────────────────
 
 interface SchoolBillingContextBase {
@@ -689,6 +695,7 @@ export type EventPayloadByName = {
   learn_take_quiz_clicked: LearnTakeQuizClickedPayload;
   learn_read_mode_opened: LearnReadModeOpenedPayload;
   learn_read_mode_fallback: LearnReadModeFallbackPayload;
+  learn_review_weak_concept_clicked: LearnReviewWeakConceptClickedPayload;
   school_billing_plan_change_started: SchoolBillingPlanChangeStartedPayload;
   school_billing_plan_change_completed: SchoolBillingPlanChangeCompletedPayload;
   school_billing_plan_change_failed: SchoolBillingPlanChangeFailedPayload;

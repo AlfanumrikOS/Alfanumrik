@@ -52,6 +52,7 @@ interface ChapterConceptRow {
   difficulty: number | null;
   estimated_minutes: number | null;
   bloom_level: string | null;
+  slug?: string | null;
 }
 
 /**
