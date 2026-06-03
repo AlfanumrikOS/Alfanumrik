@@ -36,7 +36,9 @@ export type FoxyBlockType =
   | 'exam_tip'
   | 'definition'
   | 'example'
-  | 'question';
+  | 'question'
+  | 'diagram'
+  | 'code';
 
 export type FoxySubject = 'math' | 'science' | 'sst' | 'english' | 'general';
 
@@ -45,6 +47,10 @@ export interface FoxyBlock {
   text?: string;
   label?: string;
   latex?: string;
+  // diagram-only
+  search_query?: string;
+  // code-only
+  language?: string;
 }
 
 export interface FoxyResponse {
@@ -62,6 +68,8 @@ const ALLOWED_BLOCK_TYPES: ReadonlySet<FoxyBlockType> = new Set([
   'definition',
   'example',
   'question',
+  'diagram',
+  'code',
 ]);
 
 const ALLOWED_SUBJECTS: ReadonlySet<FoxySubject> = new Set([
@@ -80,6 +88,7 @@ const TEXT_BEARING_TYPES: ReadonlySet<FoxyBlockType> = new Set([
   'definition',
   'example',
   'question',
+  'code',
 ]);
 
 // ── Validator ───────────────────────────────────────────────────────────────
@@ -164,8 +173,20 @@ function validateBlock(block: any, index: number): ValidationResult {
   if (typeof type !== 'string' || !ALLOWED_BLOCK_TYPES.has(type as FoxyBlockType)) {
     return {
       ok: false,
-      reason: `blocks[${index}].type must be one of paragraph|step|math|answer|exam_tip|definition|example|question (got ${String(type)})`,
+      reason: `blocks[${index}].type must be one of paragraph|step|math|answer|exam_tip|definition|example|question|diagram|code (got ${String(type)})`,
     };
+  }
+
+  // diagram blocks: require search_query, no text/latex
+  if (type === 'diagram') {
+    const { search_query } = block as Record<string, unknown>;
+    if (typeof search_query !== 'string' || search_query.trim() === '') {
+      return {
+        ok: false,
+        reason: `blocks[${index}] of type 'diagram' requires a non-empty 'search_query' field`,
+      };
+    }
+    return { ok: true, value: undefined as unknown as FoxyResponse };
   }
 
   if (label !== undefined) {

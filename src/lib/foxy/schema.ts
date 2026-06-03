@@ -69,9 +69,11 @@ export const FoxyBlockTypeEnum = z.enum([
   'example',
   'question',
   'mcq',
+  'diagram',
+  'code',
 ]);
 
-/** Block types that require a non-empty `text` field (i.e. not math, not mcq). */
+/** Block types that require a non-empty `text` field (i.e. not math, not mcq, not diagram). */
 const TEXT_BEARING_TYPES = new Set([
   'paragraph',
   'step',
@@ -80,6 +82,7 @@ const TEXT_BEARING_TYPES = new Set([
   'definition',
   'example',
   'question',
+  'code',
 ]);
 
 /** Bloom's taxonomy levels accepted on MCQ blocks. */
@@ -136,10 +139,21 @@ const FoxyBlockBase = z.object({
     .optional(),
   bloom_level: FoxyBloomLevelEnum.optional(),
   difficulty: FoxyDifficultyEnum.optional(),
+  // ── Diagram-only field ────────────────────────────────────────────────────
+  search_query: z
+    .string()
+    .min(3, 'diagram requires at least a 3 char search query')
+    .max(200, 'search query exceeds 200 chars')
+    .optional(),
+  // ── Code-only field ───────────────────────────────────────────────────────
+  language: z
+    .string()
+    .max(50, 'language exceeds 50 chars')
+    .optional(),
 });
 
 export const FoxyBlockSchema = FoxyBlockBase.superRefine((block, ctx) => {
-  const { type, text, latex, stem, options, correct_answer_index, explanation } =
+  const { type, text, latex, stem, options, correct_answer_index, explanation, search_query } =
     block;
 
   // MCQ-only field set leaks onto non-mcq blocks would let malformed AI
@@ -255,7 +269,32 @@ export const FoxyBlockSchema = FoxyBlockBase.superRefine((block, ctx) => {
     return;
   }
 
-  // Non-math, non-mcq types: text required; latex forbidden; mcq-only
+  if (type === 'diagram') {
+    if (text !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['text'],
+        message: "blocks of type 'diagram' must not include a 'text' field",
+      });
+    }
+    if (latex !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['latex'],
+        message: "blocks of type 'diagram' must not include a 'latex' field",
+      });
+    }
+    if (search_query === undefined || search_query.trim() === '') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['search_query'],
+        message: "blocks of type 'diagram' require a non-empty 'search_query' field",
+      });
+    }
+    return;
+  }
+
+  // Non-math, non-mcq, non-diagram types: text required; latex forbidden; mcq-only
   // fields forbidden.
   if (TEXT_BEARING_TYPES.has(type)) {
     if (text === undefined || text.trim() === '') {
