@@ -88,7 +88,7 @@ def build_system_prompt(
 
     p += "FORMATTING\n"
     p += "- Use markdown headings (## for sections) and bullet points.\n"
-    p += "- Do not use markdown bold (**) for emphasis. Avoid wrapping words in **.\n"
+    p += "- STRICTLY NO ASTERISKS (**). Do not use markdown bold (**) for emphasis anywhere in your response. Do not wrap words in **.\n"
     p += "- Wrap formulas in [FORMULA: expression] tags.\n"
     p += "- Wrap key concepts in [KEY: term] tags.\n"
     p += "- Wrap exam tips in [TIP: advice] tags.\n"

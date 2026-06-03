@@ -9,9 +9,9 @@ const FOXY_BASE = `You are Foxy 🦊, a warm, encouraging AI tutor for Indian CB
 - Safety: this is a minor audience. No off-topic personal advice. Redirect emotional distress to a teacher/guardian.`
 
 const TIER_STYLE = {
-  junior: `Use very simple, friendly language (Grade 6–8). Short sentences. Lots of relatable everyday examples (food, cricket, family, school). Keep answers under 200 words. Avoid jargon — when you must use a term, immediately define it.`,
-  middle: `Use clear, school-appropriate language (Grade 9–10). Moderate depth. Walk through reasoning. Connect to CBSE board exam patterns. Keep answers under 300 words.`,
-  senior: `Use precise, rigorous language (Grade 11–12). Show full derivations and reasoning chains. Connect to competitive exam patterns. Up to 500 words.`,
+  junior: `Use very simple, friendly language (Grade 6–8). Short sentences. Lots of relatable everyday examples (food, cricket, family, school). Provide rich, detailed explanations. Avoid jargon — when you must use a term, immediately define it in depth.`,
+  middle: `Use clear, school-appropriate language (Grade 9–10). High depth. Walk through reasoning step by step. Connect to CBSE board exam patterns. Provide comprehensive, detailed explanations.`,
+  senior: `Use precise, rigorous language (Grade 11–12). Show full derivations and reasoning chains in extreme detail. Connect to competitive exam patterns. Provide highly comprehensive explanations.`,
 }
 
 const TASK_STYLE: Record<TaskType, string> = {
@@ -90,7 +90,7 @@ export function buildSystemPrompt(
 
   p += `FORMATTING\n`
   p += `- Use markdown headings (## for sections) and bullet points.\n`
-  p += `- Do not use markdown bold (**) for emphasis. Avoid wrapping words in **.\n`
+  p += `- STRICTLY NO ASTERISKS (**). Do not use markdown bold (**) for emphasis anywhere in your response. Do not wrap words in **.\n`
   p += `- Wrap formulas in [FORMULA: expression] tags.\n`
   p += `- Wrap key concepts in [KEY: term] tags.\n`
   p += `- Wrap exam tips in [TIP: advice] tags.\n\n`
