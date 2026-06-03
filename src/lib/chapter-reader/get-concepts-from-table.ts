@@ -77,7 +77,7 @@ export async function getChapterTopicsFromConcepts(
     .select(
       'id, concept_number, title, title_hi, explanation, explanation_hi, ' +
       'example_content, example_content_hi, learning_objective, learning_objective_hi, ' +
-      'key_formula, difficulty, estimated_minutes, bloom_level',
+      'key_formula, difficulty, estimated_minutes, bloom_level, slug',
     )
     .eq('subject', subject)
     .eq('grade', normalisedGrade)
@@ -154,5 +154,6 @@ function rowToTopic(r: ChapterConceptRow): CurriculumTopic {
     example_content: r.example_content,
     example_content_hi: r.example_content_hi,
     key_formula: r.key_formula,
+    slug: r.slug,
   } as any;
 }

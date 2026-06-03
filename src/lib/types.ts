@@ -92,6 +92,7 @@ export interface CurriculumTopic {
   bloom_focus: string | null;
   ncert_page_range: string | null;
   topic_type: string | null;
+  slug?: string | null;
 }
 
 export interface CmeAction {

@@ -34,6 +34,7 @@ import { track } from '@/lib/posthog/client';
 import { loadChapterContent } from './actions';
 import type { ChapterContent } from '@/lib/learn/fetchChapterContent';
 import { resolvePedagogyRule } from '@/lib/learn/pedagogy-content-rules';
+import { useChapterReadiness } from '@/lib/useChapterReadiness';
 
 // Lazy-loaded so the markdown + KaTeX bundle stays out of first paint.
 // Only pulled when the student opens Read mode.
@@ -88,6 +89,8 @@ export default function ChapterConceptPage() {
 
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
   const { subjects: allSubjects, unlocked: allowedSubjects } = useAllowedSubjects();
+  const { readiness } = useChapterReadiness(subject, chapterNum);
+  const [conceptMasteries, setConceptMasteries] = useState<Record<string, number>>({});
 
   const [topics, setTopics] = useState<CurriculumTopic[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -193,7 +196,8 @@ export default function ChapterConceptPage() {
       questionsData,
       diagramsData,
       chapterMetaResult,
-      subjectRow
+      subjectRow,
+      masteryResult
     ] = await Promise.all([
       getChapterTopics(subject, grade, chapterNum),
       chapterReaderV2FlagOn
@@ -213,7 +217,11 @@ export default function ChapterConceptPage() {
         .from('subjects')
         .select('id')
         .eq('code', subject)
-        .maybeSingle()
+        .maybeSingle(),
+      supabase
+        .from('concept_mastery_score')
+        .select('concept_code, mastery_score')
+        .eq('student_id', student.id)
     ]);
 
     if (chapterMetaResult?.data) {
@@ -221,6 +229,16 @@ export default function ChapterConceptPage() {
     } else {
       setChapterMeta(null);
     }
+
+    const masteryMap: Record<string, number> = {};
+    if (masteryResult?.data) {
+      masteryResult.data.forEach((row: any) => {
+        if (row.concept_code) {
+          masteryMap[row.concept_code] = row.mastery_score;
+        }
+      });
+    }
+    setConceptMasteries(masteryMap);
 
     const normalizedGrade = grade.replace(/^Grade\s*/i, '').trim();
     let curriculumTopics: Array<{ id: string; title: string }> = [];
@@ -607,6 +625,31 @@ export default function ChapterConceptPage() {
     });
     router.push(`/foxy?subject=${subject}&mode=doubt&topic=${topicParam}`);
   };
+
+  const handleReviewWeakConcept = useCallback(() => {
+    const firstWeakIdx = topics.findIndex((t) => {
+      if (!t.slug) return false;
+      const score = conceptMasteries[t.slug] ?? 0;
+      return score < 60;
+    });
+
+    if (firstWeakIdx !== -1) {
+      setMode('practice');
+      setPhase('explaining');
+      setCurrentIdx(firstWeakIdx);
+      setActiveTab('core');
+      track('learn_review_weak_concept_clicked', {
+        ...telemetryBase,
+        concept_idx: firstWeakIdx,
+        concept_title: topics[firstWeakIdx].title,
+      });
+    } else if (topics.length > 0) {
+      setMode('practice');
+      setPhase('explaining');
+      setCurrentIdx(0);
+      setActiveTab('core');
+    }
+  }, [topics, conceptMasteries, telemetryBase]);
 
   const switchToReadMode = () => {
     setMode('read');
@@ -1167,11 +1210,14 @@ export default function ChapterConceptPage() {
           {phase === 'explaining' && (
             <>
               {/* ── Exam-Ready 360° Phase 2: per-chapter readiness card ── */}
-              {(currentIdx > 0 || Object.values(conceptStates).some(s => s.submitted)) && (
+              {(currentIdx > 0 ||
+                Object.values(conceptStates).some(s => s.submitted) ||
+                (readiness && readiness.recent_quiz_count > 0)) && (
                 <ChapterReadinessCard
                   subjectCode={subject}
                   chapterNumber={chapterNum}
                   subjectColor={subMeta?.color}
+                  onReviewWeakConcept={handleReviewWeakConcept}
                 />
               )}
 
