@@ -1252,6 +1252,8 @@ img, video, iframe, canvas, svg {
      the header box, not the viewport. Works alongside sticky. */
   contain: layout;
   transition: height 200ms var(--ease-atlas, cubic-bezier(.22,1,.36,1));
+  width: 100%;
+  min-width: 0;
 }
 
 /* Foxy is a focused full-screen chat whose header rows are fully opaque, so
