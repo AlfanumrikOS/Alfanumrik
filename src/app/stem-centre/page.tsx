@@ -362,7 +362,10 @@ export default function STEMCentrePage() {
 
       <main className="max-w-6xl mx-auto px-4 pt-4">
         {/* Subject Tabs */}
-        <div className="flex gap-2 overflow-x-auto pb-3 scrollbar-hide">
+        <div
+          className="flex gap-2 overflow-x-auto pb-3 scrollbar-hide"
+          style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y' }}
+        >
           {tabs.map(t => (
             <button
               key={t.code}

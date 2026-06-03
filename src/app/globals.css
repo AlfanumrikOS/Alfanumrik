@@ -715,6 +715,7 @@ select.input-base option { background: var(--surface-1); color: var(--text-1); }
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  touch-action: pan-x pan-y;
   flex-shrink: 0;
 }
 .foxy-mode-bar::-webkit-scrollbar { display: none; }
@@ -825,8 +826,10 @@ img, video, iframe, canvas, svg {
 /* ─── Foxy component styles (moved from dangerouslySetInnerHTML) ─── */
 @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
 .foxy-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 12px}
-.foxy-mode-bar{display:flex;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-shrink:0}
+.foxy-mode-bar{display:flex;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;touch-action:pan-x pan-y;flex-shrink:0}
 .foxy-mode-bar::-webkit-scrollbar{display:none}
+.scrollbar-hide{-ms-overflow-style:none;scrollbar-width:none}
+.scrollbar-hide::-webkit-scrollbar{display:none}
 @media(min-width:640px){.foxy-toolbar{flex-wrap:nowrap;gap:8px;padding:8px 12px}}
 
 /* ─── Low-End Device Fallback ────────────────────────────── */
@@ -1286,9 +1289,13 @@ body:has(.foxy-shell) {
 }
 
 .foxy-subject-tabs {
+  display: flex;
+  flex-wrap: nowrap;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  touch-action: pan-x pan-y;
+  width: 100%;
 }
 .foxy-subject-tabs::-webkit-scrollbar {
   display: none;

@@ -376,6 +376,18 @@ function LegacyDashboard() {
     });
   }, [allowedSubjects]);
 
+  // Lock body scroll when subject picker modal is open
+  useEffect(() => {
+    if (showSubjectPicker) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showSubjectPicker]);
+
   // Process dashboard RPC data
   useEffect(() => {
     if (!dashData) return;
@@ -881,7 +893,10 @@ function LegacyDashboard() {
                   {isHi ? 'जो विषय पढ़ना है वो चुनो' : 'Select the subjects you want to study'}
                 </p>
               </div>
-              <div className="flex-1 overflow-y-auto px-4 pb-4">
+              <div
+                className="flex-1 overflow-y-auto px-4 pb-4"
+                style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
+              >
                 <div className="grid grid-cols-2 gap-2">
                   {allowedSubjects.map((s) => {
                     const sel = selectedSubjects.includes(s.code);
