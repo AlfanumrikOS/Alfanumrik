@@ -130,7 +130,11 @@ function Accordion({
       <summary
         className="cursor-pointer list-none flex items-center justify-between select-none"
         style={{
-          minHeight: 56,
+          /* Explicit display:flex — some Android WebView builds revert
+             <summary list-none> back to list-item, collapsing the flex
+             layout and stacking the chevron below the title. */
+          display: 'flex',
+          minHeight: 'var(--tap-comfort)',
           padding: 'var(--space-fluid-4) var(--space-fluid-5)',
         }}
       >
@@ -592,7 +596,7 @@ function LegacyDashboard() {
   void planLabel;
   const headerContent = (
     <div className="dashboard-header-row">
-      <div className="min-w-0 flex flex-col" style={{ gap: 2 }}>
+      <div className="min-w-0 flex flex-col" style={{ gap: 2, overflow: 'hidden' }}>
         <p className="dashboard-header-greeting">
           {greeting}
         </p>
@@ -693,7 +697,6 @@ function LegacyDashboard() {
     <div
       className="app-container"
       style={{
-        paddingTop: 'var(--space-fluid-4)',
         display: 'flex',
         flexDirection: 'column',
         gap: 'var(--space-fluid-4)',

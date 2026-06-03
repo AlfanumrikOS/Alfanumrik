@@ -65,11 +65,11 @@ export default function AboveFoldHero({
   const level = calculateLevel(totalXp);
 
   return (
-    <div className="space-y-4">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-fluid-4)' }}>
       {/* 1. EDITORIAL NAME + STAT STRIP — the hero's hero.
             Fraunces serif name turns "school portal" into "editorial
             product". 3-cell strip below it: streak / XP / level. */}
-      <div className="space-y-3">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-fluid-3)' }}>
         <h1 className="editorial-name" data-testid="dashboard-greeting-name">
           {student.name}
         </h1>

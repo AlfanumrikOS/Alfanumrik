@@ -1244,6 +1244,10 @@ img, video, iframe, canvas, svg {
   -webkit-backdrop-filter: blur(20px) saturate(140%);
   border-bottom: 1px solid var(--border);
   padding-top: var(--safe-top);
+  /* contain:layout creates a new formatting context so that
+     .app-shell-onehand-toggle (position:absolute) is clipped to
+     the header box, not the viewport. Works alongside sticky. */
+  contain: layout;
   transition: height 200ms var(--ease-atlas, cubic-bezier(.22,1,.36,1));
 }
 
@@ -1297,8 +1301,17 @@ body:has(.foxy-shell) {
 .app-shell-v2 > .app-shell-content {
   grid-area: content;
   min-width: 0;
-  padding: var(--space-fluid-4) var(--space-fluid-4);
-  padding-bottom: calc(var(--shell-nav-h) + var(--safe-bottom) + var(--space-fluid-4));
+  /* Horizontal padding only — vertical is handled per breakpoint.
+     Using padding-inline avoids the double-padding problem when
+     .app-container (which has its own 0 16px padding) is nested
+     inside this slot. The app-container's padding is nullified
+     below so only one padding source applies at a time. */
+  padding-inline: 0;
+  padding-top: var(--space-fluid-4);
+  /* Bottom clearance = nav height + safe-area + a little breathing
+     room so content isn't hidden behind the fixed BottomNav. The
+     BottomNav is fixed (not grid-placed) at 60px tall. */
+  padding-bottom: calc(var(--shell-nav-h-notched) + var(--space-fluid-4));
 }
 
 .app-shell-v2 > .app-shell-rail {
@@ -1350,8 +1363,9 @@ body:has(.foxy-shell) {
     height: calc(100dvh - var(--shell-header-h));
   }
   .app-shell-v2 > .app-shell-content {
-    padding: var(--space-fluid-6) var(--space-fluid-6);
-    padding-bottom: calc(var(--shell-nav-h) + var(--safe-bottom) + var(--space-fluid-6));
+    padding-inline: var(--space-fluid-6);
+    padding-top: var(--space-fluid-6);
+    padding-bottom: calc(var(--shell-nav-h-notched) + var(--space-fluid-6));
   }
   /* Bottom nav stays on tablet only when no rail is present.
      If .app-shell-v2 has a rail child, suppress the bottom nav. */
@@ -1682,7 +1696,12 @@ body:has(.foxy-shell) {
   box-shadow: var(--shadow-atlas-1);
   padding: var(--space-fluid-5);
   position: relative;
-  overflow: hidden;
+  /* overflow:clip (not hidden) so internal decorative elements
+     are clipped to the card boundary BUT the card itself can
+     still be transformed (scale/translate) by a parent — `hidden`
+     creates a stacking context that prevents transform inheritance
+     and clips the active:scale(0.99) press animation on touch. */
+  overflow: clip;
 }
 @media (min-width: 768px) {
   .editorial-card { padding: var(--space-fluid-6); }
@@ -1701,11 +1720,18 @@ body:has(.foxy-shell) {
 .editorial-name {
   font-family: var(--font-serif);
   font-weight: 500;
-  font-size: clamp(28px, 6vw, 44px);
-  line-height: 1.08;
+  /* Floor bumped down to 24px from 28px so long names (>12 chars)
+     don't cause the h1 to overflow at 320px viewport width.
+     Max of 44px stays for desktop. */
+  font-size: clamp(24px, 6.5vw, 44px);
+  line-height: 1.1;
   letter-spacing: -0.02em;
   color: var(--ink);
   margin: 0;
+  /* Prevent single-word student names wider than the container
+     from creating horizontal scroll. */
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 .editorial-h1 {
   font-family: var(--font-serif);
@@ -1749,39 +1775,64 @@ body:has(.foxy-shell) {
 
 /* ─── Hero stat strip (XP / streak / level) ──────────────────────
    3 equal cells, horizontal on mobile. Number is fluid clamp, label
-   is --text-2xs. Tight gap so all 3 fit on 360px without wrapping. */
+   is --text-2xs. Tight gap so all 3 fit on 320px without wrapping.
+
+   Key fix: use minmax(0, 1fr) so cells compress below their natural
+   content size — without this, long XP numbers (e.g. "12,450") cause
+   the third cell to overflow the strip on 320px phones. */
 .dashboard-stat-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-fluid-3);
+  gap: var(--space-fluid-2);
+  /* Never wrap — 3 cells must always sit on one line. */
+  overflow: hidden;
 }
 .dashboard-stat-cell {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  padding: var(--space-fluid-3) var(--space-fluid-4);
+  /* Tighter padding on mobile so all three cells fit at 320px.
+     Tablet+ gets the full fluid-4 horizontal padding. */
+  padding: var(--space-fluid-3) var(--space-fluid-3);
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: var(--radius-atlas);
+  min-width: 0; /* allow flex children to shrink below content size */
+}
+@media (min-width: 480px) {
+  .dashboard-stat-cell {
+    padding: var(--space-fluid-3) var(--space-fluid-4);
+  }
 }
 .dashboard-stat-cell__value {
   font-family: var(--font-serif);
   font-weight: 500;
-  font-size: clamp(20px, 4vw, 28px);
+  /* Tighter clamp floor (17px) so long numbers fit at 320px */
+  font-size: clamp(17px, 3.8vw, 28px);
   line-height: 1;
   letter-spacing: -0.02em;
   color: var(--ink);
   margin: 0;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
+  /* Truncate gracefully rather than overflow the cell */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 .dashboard-stat-cell__label {
   font-size: var(--text-2xs);
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--ink-3);
   margin-top: 4px;
+  /* Prevent label overflow on very small cells */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 /* ─── Dominant hero CTA ─────────────────────────────────────────
@@ -2163,8 +2214,18 @@ body:has(.foxy-shell) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-fluid-3);
+  gap: var(--space-fluid-2);
   padding: var(--space-fluid-3) var(--space-fluid-4);
+  /* overflow:hidden clips the absolute-positioned one-hand toggle
+     button — use clip instead so the button stays visible. */
+  min-height: 56px;
+}
+/* Left column: greeting + wordmark + plan/stream chips.
+   min-width:0 lets it shrink so action icons are never pushed
+   off-screen on 320px phones. overflow:hidden clips long names. */
+.dashboard-header-row > *:first-child {
+  min-width: 0;
+  overflow: hidden;
 }
 @media (min-width: 768px) {
   .dashboard-header-row { padding: var(--space-fluid-4) var(--space-fluid-6); }
@@ -2200,14 +2261,17 @@ body:has(.foxy-shell) {
 .dashboard-header-actions {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  /* flex-shrink:0 prevents actions from being compressed when the
+     left wordmark/greeting side is long (e.g. "Good morning" + Hindi). */
+  flex-shrink: 0;
 }
 .dashboard-header-iconbtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-atlas);
   background: var(--cream-2);
   border: 1px solid var(--line);
@@ -2215,6 +2279,15 @@ body:has(.foxy-shell) {
   cursor: pointer;
   position: relative;
   transition: background 160ms, transform 160ms;
+  /* Ensure the button doesn't shrink below its icon size
+     on very narrow viewports. */
+  flex-shrink: 0;
+}
+@media (min-width: 400px) {
+  .dashboard-header-iconbtn {
+    width: 40px;
+    height: 40px;
+  }
 }
 .dashboard-header-iconbtn:hover { background: var(--paper); }
 .dashboard-header-iconbtn:active { transform: scale(0.94); }
@@ -2238,9 +2311,9 @@ body:has(.foxy-shell) {
 .dashboard-header-langpill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 40px;
-  padding: 0 14px;
+  gap: 4px;
+  height: 36px;
+  padding: 0 10px;
   border-radius: 999px;
   background: var(--paper);
   border: 1px solid var(--line);
@@ -2251,6 +2324,28 @@ body:has(.foxy-shell) {
   letter-spacing: 0.05em;
   cursor: pointer;
   transition: background 160ms, border-color 160ms, transform 160ms;
+  /* Prevent growing and pushing icon buttons off screen */
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+@media (min-width: 400px) {
+  .dashboard-header-langpill {
+    height: 40px;
+    padding: 0 14px;
+    gap: 6px;
+  }
+}
+/* On very narrow phones hide the text label, keep just the flag/globe emoji
+   so the pill shrinks to ~32px and the icon buttons stay on screen. */
+@media (max-width: 379px) {
+  .dashboard-header-langpill {
+    padding: 0 8px;
+    gap: 0;
+  }
+  .dashboard-header-langpill span:last-child,
+  .dashboard-header-langpill .lang-label {
+    display: none;
+  }
 }
 .dashboard-header-langpill:hover { border-color: var(--line-mid); background: var(--cream-2); }
 .dashboard-header-langpill:active { transform: scale(0.97); }
