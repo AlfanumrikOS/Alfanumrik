@@ -6,6 +6,7 @@ const API_BASE_URL = '/api/py';
 export interface UIState {
   status: string;
   loop_stage: string;
+  new_stage?: string;
   ui_schema?: any;
   ui_instruction?: string;
   adaptive_difficulty?: any;
