@@ -25,10 +25,10 @@ def build_cbse_system_prompt(qtype: str, marks: int) -> str:
         "Ensure:\n"
         f"- The answer is structured for exactly {marks} marks.\n"
         f"- Use exactly {marks} visible, visually separable value points/units. Each unit should be capable of independently receiving a tick.\n"
-        "- Use strict NCERT terminology. Avoid casual wording (e.g. write 'resistance increases, current decreases according to Ohm's law' instead of 'current becomes less') and casual synonyms.\n"
+        "- Use strict NCERT terminology. Avoid casual wording (e.g. write 'resistance increases, current decreases according to Ohm's law' instead of 'current becomes less').\n"
         "- State scientific/mathematical laws and cause-and-effect chains explicitly.\n"
-        "- Prioritize evaluator readability over literary quality. Optimize the answer for maximum board-exam scoring efficiency rather than prose elegance.\n"
-        "- Avoid: abstract philosophical explanations, excessive storytelling, giant paragraphs, skipping formulas/units, implicit reasoning, and decorative introductions.\n\n"
+        "- Balance evaluator readability with a warm, teacher-like explanatory tone.\n"
+        "- Avoid: abstract philosophical explanations, skipping formulas/units, and implicit reasoning.\n\n"
     )
 
     # Add question-type specific instructions
@@ -105,7 +105,8 @@ def build_cbse_system_prompt(qtype: str, marks: int) -> str:
     # Subject-specific formatting guidelines if we can detect it, or general preferences:
     prompt += (
         "\n### Presentation & Underlining Guidelines:\n"
-        "- Highlight or underline critical NCERT keywords and key terms using HTML underline <u>keyword</u> tags or Markdown bold **keyword** tags.\n"
+        "- STRICTLY NO ASTERISKS (**). Do not use markdown bold (**) for emphasis anywhere in your response.\n"
+        "- Highlight or underline critical NCERT keywords and key terms using HTML underline <u>keyword</u> tags or [KEY: keyword] tags.\n"
         "- Use spacing between points to make the answer easy to scan.\n"
     )
 
