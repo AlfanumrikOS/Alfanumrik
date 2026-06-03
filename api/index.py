@@ -1,32 +1,37 @@
-import uvicorn
+import sys
+import os
+# Add the project root to sys.path so we can import our engine files
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 from foxy_os import FoxyOS
 
 # Initialize the global Foxy OS instance
-os = FoxyOS()
+os_engine = FoxyOS()
 
 # Initialize FastAPI
 app = FastAPI(
     title="Foxy-X Pedagogy OS API",
-    description="Backend API for the Foxy AI Tutor",
-    version="1.0.0"
+    description="Backend API for the Foxy AI Tutor running on Vercel Serverless",
+    version="1.0.0",
+    docs_url="/api/py/docs",
+    openapi_url="/api/py/openapi.json"
 )
 
-# Allow CORS for the frontend (Next.js typically runs on port 3000)
+# Allow CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "*"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # --- Pydantic Models for Input Validation ---
-
 class RegisterRequest(BaseModel):
     student_id: str
     grade: int
@@ -39,59 +44,35 @@ class EventProcessRequest(BaseModel):
     student_id: str
     action: Dict[str, Any]
 
-
 # --- API Routes ---
-
-@app.post("/api/students/register")
+@app.post("/api/py/students/register")
 def register_student(req: RegisterRequest):
-    """
-    Initializes a new student's DNA and Gamification profiles.
-    """
     try:
-        os.register_student(req.student_id, req.grade)
+        os_engine.register_student(req.student_id, req.grade)
         return {"status": "success", "message": f"Profiles initialized for student {req.student_id}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/topics/start")
+@app.post("/api/py/topics/start")
 def start_topic(req: StartTopicRequest):
-    """
-    Triggers the Curiosity Engine and the Content Rendering Engine to start a topic.
-    Returns the JSON UI schema dictating what the frontend must render.
-    """
     try:
-        # Ensure student exists
-        if req.student_id not in os.student_profiles:
-            os.register_student(req.student_id, 10) # Auto-register for robustness
-            
-        result = os.start_topic(req.student_id, req.topic_id)
+        if req.student_id not in os_engine.student_profiles:
+            os_engine.register_student(req.student_id, 10)
+        result = os_engine.start_topic(req.student_id, req.topic_id)
         return {"status": "success", "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/events/process")
+@app.post("/api/py/events/process")
 def process_event(req: EventProcessRequest):
-    """
-    The master event router. Receives all interactions and returns UI updates,
-    dopamine triggers, and adaptive difficulty changes.
-    """
     try:
-        # Ensure student exists
-        if req.student_id not in os.student_profiles:
+        if req.student_id not in os_engine.student_profiles:
             raise HTTPException(status_code=400, detail="Student not registered.")
-            
-        result = os.process_event(req.student_id, req.action)
+        result = os_engine.process_event(req.student_id, req.action)
         return {"status": "success", "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@app.get("/health")
+@app.get("/api/py/health")
 def health_check():
-    """Simple health check endpoint"""
     return {"status": "healthy", "engines": ["DNA", "Adaptive Brain", "Dopamine", "Curiosity", "Rendering", "Mastery"]}
-
-
-if __name__ == "__main__":
-    print("Starting Foxy-X OS API Server on http://0.0.0.0:8000")
-    uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=True)
