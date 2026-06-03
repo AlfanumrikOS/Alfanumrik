@@ -60,14 +60,11 @@ export function applyFoxyWordCap(answer: string): {
   truncated: boolean;
   originalWordCount: number;
 } {
-  if (typeof answer !== 'string' || answer.length === 0) {
-    return { answer, truncated: false, originalWordCount: 0 };
-  }
+  // Word cap removed to allow rich, detailed Foxy explanations.
+  // We simply return the original answer untouched.
   const words = answer.split(/\s+/).filter((w) => w.length > 0);
-  const originalWordCount = words.length;
-  if (originalWordCount <= FOXY_WORD_SOFT_CAP) {
-    return { answer, truncated: false, originalWordCount };
-  }
+  return { answer, truncated: false, originalWordCount: words.length };
+}
 
   // Reconstruct the prefix containing the first FOXY_WORD_SOFT_CAP words
   // by walking the original string so whitespace/punctuation is preserved.

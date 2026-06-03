@@ -135,7 +135,8 @@ function newMolRequestId(): string {
 // better selection set — measurable lift in NDCG@5 on the NCERT eval set.
 const RERANK_INITIAL_FETCH = 40;
 
-function rerankEnabled(): boolean {
+function rerankEnabled(mode?: 'strict' | 'soft'): boolean {
+  if (mode === 'soft') return false; // bypass heavy reranking for fast chat responses
   const raw = (Deno.env.get('FOXY_RERANK_ENABLED') ?? 'true').toLowerCase();
   return raw !== 'false' && raw !== '0' && raw !== 'off';
 }
@@ -722,7 +723,7 @@ export async function runPipeline(
   // rerankDocuments returns the original similarity order so we always
   // have a sensible result. The reranked flag is recorded on the per-query
   // retrieval trace below.
-  const overFetchCount = rerankEnabled()
+  const overFetchCount = rerankEnabled(request.mode)
     ? Math.max(RERANK_INITIAL_FETCH, request.retrieval.match_count)
     : request.retrieval.match_count;
 
@@ -737,7 +738,7 @@ export async function runPipeline(
   let chunks: RetrievedChunk[];
   let reranked = false;
   if (
-    rerankEnabled() &&
+    rerankEnabled(request.mode) &&
     voyageKey.length > 0 &&
     rawChunks.length > request.retrieval.match_count
   ) {
