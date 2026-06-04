@@ -25,12 +25,14 @@
  * at the API boundary).
  */
 
-import React, { memo, useMemo, useState, useCallback } from 'react';
+import React, { memo, useMemo, useState, useCallback, useEffect } from 'react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import type { FoxyBlock, FoxyResponse } from '@/lib/foxy/schema';
 import { useAuth } from '@/lib/AuthContext';
 import { useSubjectLookup } from '@/lib/useSubjectLookup';
+import { DiagramViewer } from '@/components/DiagramViewer';
+import { supabase } from '@/lib/supabase-client';
 // Re-exported below so existing imports of `isFoxyResponse` from this module
 // keep working. The implementation lives in `@/lib/foxy/is-foxy-response` so
 // callers can import the discriminator without pulling KaTeX into the
@@ -307,7 +309,70 @@ function CodeBlock({ block }: { block: FoxyBlock }) {
 }
 
 function DiagramBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) {
+  const [diagrams, setDiagrams] = useState<any[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!block.search_query) {
+      setLoading(false);
+      return;
+    }
+
+    let mounted = true;
+    async function search() {
+      // Create a websearch query. e.g. "Human Heart Diagram" -> "Human Heart Diagram"
+      const queryStr = block.search_query!.split(' ').slice(0, 5).join(' ');
+
+      const { data, error } = await supabase
+        .from('topic_diagrams')
+        .select('*')
+        .textSearch('caption', queryStr, { type: 'websearch' })
+        .limit(2);
+
+      if (mounted) {
+        if (data && data.length > 0) {
+          setDiagrams(data);
+        } else {
+          // fallback to ilike if websearch fails, grabbing the most significant word (usually second or first)
+          const words = block.search_query!.split(' ').filter(w => w.length > 3);
+          const keyWord = words.length > 0 ? words[0] : block.search_query!.split(' ')[0];
+          
+          const { data: fallbackData } = await supabase
+            .from('topic_diagrams')
+            .select('*')
+            .ilike('topic', `%${keyWord}%`)
+            .limit(2);
+          
+          setDiagrams(fallbackData || []);
+        }
+        setLoading(false);
+      }
+    }
+    search();
+
+    return () => { mounted = false; };
+  }, [block.search_query]);
+  
   if (!block.search_query) return null;
+  
+  if (loading) {
+    return (
+      <div className="my-3 px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3 animate-pulse">
+        <div className="text-xl" aria-hidden="true">🖼️</div>
+        <div>
+          <div className="h-2.5 bg-slate-200 rounded-full w-24 mb-2"></div>
+          <div className="h-2 bg-slate-200 rounded-full w-48"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (diagrams && diagrams.length > 0) {
+    // Pass to DiagramViewer, which accepts TopicDiagram array
+    return <DiagramViewer diagrams={diagrams} isHi={chrome.diagram === 'चित्र'} />;
+  }
+
+  // Fallback if no diagrams found in the RAG DB
   return (
     <div className="my-3 px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 flex items-center gap-3">
       <div className="text-xl" aria-hidden="true">🖼️</div>
