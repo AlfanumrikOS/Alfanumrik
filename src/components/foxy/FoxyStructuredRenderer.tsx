@@ -320,8 +320,10 @@ function DiagramBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) {
 
     let mounted = true;
     async function search() {
-      // Create a websearch query. e.g. "Human Heart Diagram" -> "Human Heart Diagram"
-      const queryStr = block.search_query!.split(' ').slice(0, 5).join(' ');
+      const rawQuery = block.search_query || '';
+      
+      // Create a websearch query as first attempt
+      const queryStr = rawQuery.split(' ').slice(0, 5).join(' ');
 
       const { data, error } = await supabase
         .from('topic_diagrams')
@@ -332,19 +334,39 @@ function DiagramBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) {
       if (mounted) {
         if (data && data.length > 0) {
           setDiagrams(data);
-        } else {
-          // fallback to ilike if websearch fails, grabbing the most significant word (usually second or first)
-          const words = block.search_query!.split(' ').filter(w => w.length > 3);
-          const keyWord = words.length > 0 ? words[0] : block.search_query!.split(' ')[0];
+          setLoading(false);
+          return;
+        }
+
+        // Fallback: robust keyword matching across topic, caption, and alt_text
+        const ignored = ['diagram', 'ncert', 'class', 'explain', 'show', 'the', 'and', 'with', 'for'];
+        // Split by spaces and hyphens to get base words (e.g. d-block -> 'd', 'block')
+        const words = rawQuery
+          .toLowerCase()
+          .replace(/[^a-z0-9\s-]/g, ' ') 
+          .split(/[\s-]+/)
+          .filter(w => w.length > 3 && !ignored.includes(w));
+          
+        if (words.length > 0) {
+          // Take the top 3 most significant words to form the OR condition
+          const searchWords = words.slice(0, 3);
+          const orConditions = searchWords.map(w => `topic.ilike.%${w}%,caption.ilike.%${w}%,alt_text.ilike.%${w}%`).join(',');
           
           const { data: fallbackData } = await supabase
             .from('topic_diagrams')
             .select('*')
-            .ilike('topic', `%${keyWord}%`)
+            .or(orConditions)
             .limit(2);
-          
-          setDiagrams(fallbackData || []);
+            
+          if (fallbackData && fallbackData.length > 0) {
+             setDiagrams(fallbackData);
+             setLoading(false);
+             return;
+          }
         }
+        
+        // Final fallback: no diagrams found
+        setDiagrams([]);
         setLoading(false);
       }
     }
