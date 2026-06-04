@@ -62,6 +62,7 @@ interface Chrome {
   practice: string;
   formulaError: string;
   reportIssue: string;
+  diagram: string;
 }
 
 const CHROME: { en: Chrome; hi: Chrome } = {
@@ -73,6 +74,7 @@ const CHROME: { en: Chrome; hi: Chrome } = {
     practice: 'Practice',
     formulaError: 'Issue with formula',
     reportIssue: 'Report issue',
+    diagram: 'Diagram',
   },
   hi: {
     answer: 'उत्तर',
@@ -86,6 +88,7 @@ const CHROME: { en: Chrome; hi: Chrome } = {
     practice: 'अभ्यास',
     formulaError: 'सूत्र में समस्या',
     reportIssue: 'समस्या रिपोर्ट करें',
+    diagram: 'चित्र',
   },
 };
 
@@ -287,6 +290,37 @@ function QuestionBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) 
   );
 }
 
+function CodeBlock({ block }: { block: FoxyBlock }) {
+  if (!block.text) return null;
+  return (
+    <div className="my-3 rounded-xl overflow-hidden bg-slate-900 border border-slate-700">
+      {block.language && (
+        <div className="px-3 py-1.5 bg-slate-800 text-slate-400 text-[10px] font-mono border-b border-slate-700 uppercase tracking-wider">
+          {block.language}
+        </div>
+      )}
+      <pre className="p-3 overflow-x-auto text-xs text-slate-50 font-mono leading-relaxed">
+        {block.text}
+      </pre>
+    </div>
+  );
+}
+
+function DiagramBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) {
+  if (!block.search_query) return null;
+  return (
+    <div className="my-3 px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 flex items-center gap-3">
+      <div className="text-xl" aria-hidden="true">🖼️</div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-0.5">
+          {chrome.diagram}
+        </div>
+        <p className="text-sm italic text-slate-700 truncate">{block.search_query}</p>
+      </div>
+    </div>
+  );
+}
+
 function BlockRouter({
   block,
   stepNumber,
@@ -320,6 +354,10 @@ function BlockRouter({
       return <ExampleBlock block={block} chrome={chrome} />;
     case 'question':
       return <QuestionBlock block={block} chrome={chrome} />;
+    case 'diagram':
+      return <DiagramBlock block={block} chrome={chrome} />;
+    case 'code':
+      return <CodeBlock block={block} />;
     default:
       // Defensive: should never hit due to schema enum, but if a future
       // block type is added without updating this switch, render the text
