@@ -1165,3 +1165,107 @@ MUST reject.
 Pre-Voice-2: 47 entries. Voice 2 adds REG-77.
 
 **Total: 48 entries.**
+
+## Cosmic Redesign — Phase 0 Foundation + Phases 1–3 dispatch (2026-06-05) — REG-78, REG-79
+
+Source: the "cosmic" dark visual-identity foundation. A flag-gated
+(`ff_cosmic_redesign_v1`, default OFF) presentational layer: cosmic theme
+runtime (`src/lib/cosmic-theme.tsx`), cosmic tokens + primitives in
+`src/app/globals.css` scoped under `html[data-design="cosmic"]`, the
+`src/components/cosmic/*` primitive shells, and a `variant` on
+`src/components/landing/FoxyMark.tsx`. Nothing in Phase 0 ships to a
+production surface — the only consumers are the flag-gated dev gallery
+(`/dev/cosmic-preview`) and FoxyMark (which still defaults to `classic`).
+
+The single load-bearing safety property of the entire redesign is the
+flag-OFF pixel-identity guarantee: the whole dark identity hinges on ONE
+attribute, `data-design="cosmic"` on `<html>`. The cosmic CSS in
+`globals.css` is scoped under that attribute, so if it is never written the
+dark theme can never paint. CosmicThemeProvider must write it ONLY when the
+flag resolves ON, and AuthContext must keep its force-light behavior when the
+flag is OFF (it owns `data-theme` in the OFF world; the cosmic provider must
+not clobber it). A regression here would silently flip production to a dark,
+half-themed surface for every user — a brand and legibility incident.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-78 | `cosmic_redesign_flag_off_pixel_identity` | Three-pronged flag-OFF contract on the cosmic foundation. (1) **No data-design when flag absent/false:** with `getFeatureFlags()` returning no `ff_cosmic_redesign_v1` row (the production truth) OR an explicit `false`, `CosmicThemeProvider` writes NO `data-design` and NO `data-role` to `<html>`, and `cosmicEnabled` resolves `false`. The cosmic CSS scope therefore never matches and the app is pixel-identical to today. (2) **AuthContext ownership preserved:** the cosmic provider does NOT clobber `data-theme` when the flag is OFF — AuthContext's force-`light` write survives untouched (the two providers must not fight). (3) **Switch is live (not a false positive):** with the flag ON, `data-design="cosmic"` IS written along with `data-role` + `data-theme="dark"`, proving the OFF result isn't a trivial no-op provider. PLUS the FoxyMark `variant` default: `<FoxyMark />` renders the legacy SVG-free classic geometric fox; the cosmic SVG renders ONLY for `variant="cosmic"`. PLUS the display-only primitives (MasteryRing / ProgressBar) clamp `percent` to [0,100] and coerce non-finite input to 0 via `Number.isFinite` — they compute NO score (P1/P2 stay in the assessment domain; these primitives only render a handed-in display number). | `src/__tests__/cosmic-flag-off-safety.test.tsx` (provider DOM contract) + `src/__tests__/cosmic-primitives.test.tsx` (FoxyMark variant default + primitive clamping) | E |
+| REG-79 | `cosmic_dispatch_flag_off_legacy` | Page-level DISPATCH contract for the full redesign (Phases 1–3). REG-78 pins that the provider writes no `data-design` when the flag is OFF; REG-79 pins the NEXT link — the `cosmicEnabled ? cosmic : legacy` selection that the student dashboard (`src/app/dashboard/page.tsx` — `<CosmicAboveFoldHero/>` vs `<AboveFoldHero/>`), the parent home (`src/app/parent/page.tsx` — `<CosmicParentHome/>` vs legacy markup), and the Phase-3 portal shells (teacher/super-admin/school-admin — Starfield + `*-portal` class) all key off. The single switch behind every branch is `useCosmicTheme().cosmicEnabled`, resolved by the REAL `<CosmicThemeProvider>` from the client flag read path. Asserts: flag ABSENT (production truth) ⇒ LEGACY branch renders + cosmic branch does NOT; flag `false` ⇒ LEGACY branch renders; flag `true` ⇒ COSMIC branch renders + legacy does NOT (proves the OFF result is a real decision, not a dead switch). Wires the exact page ternary to the live hook (mocks only `getFeatureFlags` + `useAuth`) — behavior over implementation. Guards against an inverted ternary or a switch-true-while-OFF regression silently flipping production to cosmic for every user. | `src/__tests__/cosmic-dispatch-flag-off.test.tsx` | E |
+
+### Pinned tests
+
+- `src/__tests__/cosmic-flag-off-safety.test.tsx::REG-78 — CosmicThemeProvider flag-OFF DOM safety::writes NO data-design / data-role when the cosmic flag is ABSENT`
+- `src/__tests__/cosmic-flag-off-safety.test.tsx::REG-78 — CosmicThemeProvider flag-OFF DOM safety::does NOT clobber data-theme when the flag is OFF (AuthContext owns it)`
+- `src/__tests__/cosmic-flag-off-safety.test.tsx::REG-78 — CosmicThemeProvider flag-OFF DOM safety::writes data-design="cosmic" when the flag is ON (switch is live)`
+- `src/__tests__/cosmic-primitives.test.tsx::FoxyMark — variant default (flag-OFF pixel identity)::renders the classic geometric fox by default (no variant prop)`
+- `src/__tests__/cosmic-dispatch-flag-off.test.tsx::REG-79 — cosmic dispatch flag-OFF stays legacy::renders the LEGACY branch (not cosmic) when the flag is ABSENT`
+- `src/__tests__/cosmic-dispatch-flag-off.test.tsx::REG-79 — cosmic dispatch flag-OFF stays legacy::renders the COSMIC branch when the flag is ON (switch is live, not dead)`
+
+### Invariants covered by this section
+
+- P10 (bundle / cost budget) — adjacent: the cosmic font + token layer is
+  inert when the flag is OFF; the flag-OFF tests pin that no cosmic DOM hook
+  is written so no cosmic CSS cascade is paid for by production users.
+- P7 (bilingual UI — no-coverage today) — adjacent: the cosmic primitives
+  take bilingual `label` strings from callers and never hard-code copy; the
+  HC (high-contrast) theme exists so no learner is stranded on a sunlit cheap
+  Android. (A true AAA-contrast token-pair guard is recommended below but not
+  yet enforced — see REG-81.)
+
+### Notes on test strategy
+
+REG-78 and REG-79 follow the **flag-OFF safety pattern**: the enforcing tests
+mock the client flag read path (`getFeatureFlags`) and assert on the DOM
+boundary, NOT on provider internals — behavior over implementation. JSDOM does
+not apply the `html[data-design="cosmic"]` CSS cascade, which is exactly why the
+attribute presence/absence (REG-78) and the page dispatch branch (REG-79) are
+the right things to assert: they are the only two gates the entire cosmic
+cascade keys off. The FoxyMark variant default (REG-78) is the third pillar —
+every existing call site is `variant`-less, so the default MUST stay `classic`
+or existing surfaces would flip to the cosmic SVG with the flag off.
+
+Combined flag-OFF chain pinned across the two entries: (1) provider writes no
+`data-design`/`data-role` ⇒ the `html[data-design="cosmic"]`-scoped token block
+and every selector-scoped role/theme rule in `globals.css` is inert (REG-78);
+(2) the page dispatch ternaries select the LEGACY branch ⇒ no cosmic composition
+(`CosmicAboveFoldHero`, `CosmicParentHome`, portal Starfields) ever mounts, so
+none of its `dynamic(ssr:false)` chunks enter the flag-OFF bundle and no
+`.cosmic-*` namespaced class is emitted into the DOM (REG-79); (3) FoxyMark
+stays classic ⇒ no `.cosmic-float`/SVG (REG-78). The bare `.cosmic-*` primitive
+rules in `globals.css` are name-scoped (not selector-scoped) but reference
+cosmic-only tokens that resolve to nothing without `data-design`, AND their
+classes are only ever rendered by the flag-gated compositions above — so they
+cannot paint with the flag OFF.
+
+### Recommended follow-up entries (NOT yet added — no enforcing test)
+
+These are warranted by the redesign but were intentionally NOT catalogued yet
+because a meaningful enforcing test needs infrastructure JSDOM can't provide
+(computed-style / contrast math / real CSS cascade). Proposed for a later
+installment once the supporting test harness lands:
+
+- **REG-80 — `cosmic_theme_switch_persistence`**: dark→light→hc cycle persists
+  the `CosmicThemePreference` to localStorage and re-applies `data-theme` on
+  remount; flag-OFF setter is a no-op. (Needs the provider's setter exercised
+  end-to-end with a real toggle surface.)
+- **REG-81 — `cosmic_aaa_contrast_token_pairs`**: every cosmic text-on-surface
+  token pair (`--text`/`--text-2` on `--bg`/`--bg-soft`/role palettes, plus the
+  HC theme) meets the AAA contrast ratio. This is the first concrete enforcing
+  test for the P7 "visibility" constraint that is currently `no-coverage`. Needs
+  a contrast-ratio assertion harness reading the resolved token values (e.g. a
+  build-time CSS-token parser or a Playwright computed-style probe), not JSDOM.
+- **REG-82 (recommended) — `cosmic_css_scope_lint`**: a build-time/CI guard that
+  every NON-`.cosmic-*`-prefixed selector added to the cosmic block of
+  `globals.css` is gated under `html[data-design="cosmic"]`. Today the
+  flag-OFF guarantee for the bare `.cosmic-*` primitive rules rests on a
+  convention (name-namespacing + flag-gated render sites) rather than a
+  mechanical check; a lightweight CSS-parse assertion would catch a future
+  unscoped global rule (e.g. a stray `body{}` or legacy-class override) leaking
+  into the flag-OFF cascade. Needs a CSS AST/regex harness, not JSDOM.
+
+### Catalog total
+
+Pre-cosmic: 48 entries. Cosmic Phase 0 added REG-78. Cosmic full-redesign
+(Phases 1–3) regression verification adds REG-79.
+
+**Total: 50 entries.** (REG-80, REG-81, REG-82 recommended, not yet added.)

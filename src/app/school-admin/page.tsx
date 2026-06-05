@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
+import { useCosmicTheme } from '@/lib/cosmic-theme';
 import AtlasSchoolAdmin from './AtlasSchoolAdmin';
 import {
   Card,
@@ -169,6 +170,15 @@ function LegacySchoolAdminPage() {
   const router = useRouter();
   const auth = useAuth();
   const { authUserId, isLoading: authLoading, isHi, signOut } = auth;
+  // Cosmic Phase 3: the sticky header hardcodes a cream wash inline (the token
+  // bridge can't reach inline styles), so swap it for the bridged elevated
+  // surface when cosmic is ON. OFF ⇒ cosmicEnabled false ⇒ identical cream.
+  const { cosmicEnabled } = useCosmicTheme();
+  // Frosted sticky-header background: cream in legacy, translucent cosmic-navy
+  // when the flag is on (reads as a raised glass bar over the dark canvas).
+  const stickyHeaderBg = cosmicEnabled
+    ? 'color-mix(in srgb, var(--surface-1) 92%, transparent)'
+    : 'rgba(251,248,244,0.92)';
 
   /* ── local state ── */
   const [adminRecord, setAdminRecord] = useState<SchoolAdminRecord | null>(null);
@@ -252,7 +262,7 @@ function LegacySchoolAdminPage() {
         <div
           className="sticky top-0 z-10 px-4 py-3"
           style={{
-            background: 'rgba(251,248,244,0.92)',
+            background: stickyHeaderBg,
             backdropFilter: 'blur(12px)',
             WebkitBackdropFilter: 'blur(12px)',
             borderBottom: '1px solid var(--border)',
@@ -305,7 +315,7 @@ function LegacySchoolAdminPage() {
       <header
         className="sticky top-0 z-10 px-4 py-3 flex items-center justify-between"
         style={{
-          background: 'rgba(251,248,244,0.92)',
+          background: stickyHeaderBg,
           backdropFilter: 'blur(12px)',
           WebkitBackdropFilter: 'blur(12px)',
           borderBottom: '1px solid var(--border)',

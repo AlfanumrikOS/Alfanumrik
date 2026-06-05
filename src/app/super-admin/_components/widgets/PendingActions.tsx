@@ -27,7 +27,7 @@ export default function PendingActions({ obsData, analytics, flags }: PendingAct
     <div style={{ marginBottom: 16 }}>
       <div className="rounded-lg border border-surface-3 bg-surface-1 p-3">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#111827' }}>Pending Actions</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)' }}>Pending Actions</span>
           <span style={{
             fontSize: 10, fontWeight: 700, color: '#fff', background: '#2563EB',
             borderRadius: 10, padding: '1px 7px', lineHeight: '16px',
@@ -49,7 +49,7 @@ export default function PendingActions({ obsData, analytics, flags }: PendingAct
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 14 }}>{item.icon}</span>
-                <span style={{ fontSize: 12, color: item.isAlert ? '#DC2626' : '#111827', fontWeight: item.isAlert ? 600 : 400 }}>{item.text}</span>
+                <span style={{ fontSize: 12, color: item.isAlert ? '#DC2626' : 'var(--text-1)', fontWeight: item.isAlert ? 600 : 400 }}>{item.text}</span>
               </div>
               <span style={{ fontSize: 12, color: '#9CA3AF' }}>{'→'}</span>
             </a>

@@ -52,6 +52,12 @@ import AboveFoldHero from '@/components/dashboard/sections/AboveFoldHero';
 import type { PendingLink } from '@/components/dashboard/PendingLinkApproval';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
 import AtlasDashboard from './AtlasDashboard';
+// Cosmic redesign (ff_cosmic_redesign_v1). When the flag is ON the above-fold
+// hero is replaced by the cosmic composition and a Starfield is layered behind
+// the feed. When OFF, useCosmicTheme().cosmicEnabled is false and NONE of this
+// renders — the legacy DOM below stays byte-identical to today.
+import { useCosmicTheme } from '@/lib/cosmic-theme';
+import { Starfield } from '@/components/cosmic';
 // Mobile-first responsive shell (2026-05-19). Additive — preserves the
 // existing BottomNav/header behavior, but routes layout through CSS Grid
 // with safe-area-inset support, scroll-compacting header, fluid type, and
@@ -95,6 +101,13 @@ const QuickActionsSection = dynamic(
 // non-flagged users. ssr:false keeps the bundle out of first paint.
 const DailyRhythmQueue = dynamic(
   () => import('@/components/dashboard/sections/DailyRhythmQueue'),
+  { ssr: false, loading: () => <SectionFallback /> },
+);
+
+// Cosmic above-fold hero — lazily imported so its primitives + cosmic Foxy SVG
+// never enter the flag-OFF first-paint bundle (ssr:false keeps it client-only).
+const CosmicAboveFoldHero = dynamic(
+  () => import('@/components/dashboard/sections/CosmicAboveFoldHero'),
   { ssr: false, loading: () => <SectionFallback /> },
 );
 
@@ -202,6 +215,8 @@ function LegacyDashboard() {
   } = useAuth();
   const router = useRouter();
   const { unlocked: allowedSubjects } = useAllowedSubjects();
+  // Cosmic redesign switch. False unless ff_cosmic_redesign_v1 resolves ON.
+  const { cosmicEnabled } = useCosmicTheme();
 
   // ─── Local state ───────────────────────────────────────────────────────
   const [profiles, setProfiles] = useState<StudentLearningProfile[]>([]);
@@ -731,16 +746,35 @@ function LegacyDashboard() {
                 4. XPDailyStatus (today's XP cap)             │
                 5. Continue learning card                     ┘
               ════════════════════════════════════════════════════════════ */}
-          <AboveFoldHero
-            student={student}
-            streak={streak}
-            isHi={isHi}
-            nextTopics={nextTopics}
-            allowedSubjects={allowedSubjects}
-            selectedSubjects={selectedSubjects}
-            onPickSubjects={() => setShowSubjectPicker(true)}
-            totalXp={totalXp}
-          />
+          {cosmicEnabled ? (
+            // FLAG ON — cosmic composition of the above-fold home. Wired to the
+            // SAME real data (streak, totalXp, nextTopics, allowedSubjects,
+            // bktMastery) the legacy hero uses. Display only.
+            <CosmicAboveFoldHero
+              student={student}
+              streak={streak}
+              totalXp={totalXp}
+              isHi={isHi}
+              nextTopics={nextTopics}
+              allowedSubjects={allowedSubjects}
+              bktMastery={bktMastery}
+              greeting={greeting}
+              unreadCount={unreadCount}
+              onPickSubjects={() => setShowSubjectPicker(true)}
+            />
+          ) : (
+            // FLAG OFF — legacy hero, byte-identical to today.
+            <AboveFoldHero
+              student={student}
+              streak={streak}
+              isHi={isHi}
+              nextTopics={nextTopics}
+              allowedSubjects={allowedSubjects}
+              selectedSubjects={selectedSubjects}
+              onPickSubjects={() => setShowSubjectPicker(true)}
+              totalXp={totalXp}
+            />
+          )}
 
           {/* Reselect banner — only when student has zero unlocked or zero
               selected subjects. This is a recovery affordance, not a widget. */}
@@ -975,7 +1009,11 @@ function LegacyDashboard() {
   // rendered into AppShell.nav unchanged — AppShell is purely a layout
   // primitive here, not a behavior replacement.
   return (
-    <div className="mesh-bg">
+    <div className="mesh-bg" style={cosmicEnabled ? { position: 'relative' } : undefined}>
+      {/* Cosmic-only animated starfield behind the feed. Decorative, aria-hidden,
+          pointer-events:none, and CSS-hidden in light/HC themes + reduced motion.
+          Rendered only when the flag is ON, so flag-OFF DOM is unchanged. */}
+      {cosmicEnabled && <Starfield />}
       <AppShell
         variant="mobile"
         header={headerContent}

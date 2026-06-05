@@ -14,11 +14,22 @@ Any time you flip an `is_enabled = false` feature flag to `true` for a single sc
 - `ff_school_self_service_billing_v1` — school-admin Razorpay self-service (highest risk: payments)
 - `ff_learn_chapter_v1` — chapter scaffold (already in code; risk depends on what's behind the flag in prod)
 - `ff_gst_invoicing_v1` — GST invoice PDFs (queued; do NOT roll out before P3-A code lands)
+- `ff_cosmic_redesign_v1` — Cosmic dark redesign — new visual identity, Phase 0 foundation landed (default OFF; client-gated — see "Client-gated flags" caveat below before enabling)
 
 **Do NOT use this runbook for:**
 - Broader-than-one-school rollouts (use the rollout strategy block in each flag's migration header)
 - Flags that touch P11 (payment integrity) without a staging burn-in first
 - Flags whose underlying tables/RPCs/Edge Functions haven't been verified in canonical (read the flag's migration; confirm referenced files exist; confirm the flag's call sites match the spec)
+
+### Client-gated flags — do NOT use `target_environments`
+
+Applies to ANY client-gated visual flag (e.g. `ff_cosmic_redesign_v1`), not just cosmic.
+
+- The client-side flag evaluator hardcodes `env = 'production'` in the browser (`src/lib/supabase.ts:88-90`). It does not know it's running on staging/preview.
+- `ff_cosmic_redesign_v1` is read client-side (`CosmicThemeProvider`) and applies CSS entirely client-side.
+- Therefore, when enabling it, set `is_enabled = true` with `target_environments = NULL` (global). Any `target_environments` value other than exactly `['production']` (or `NULL`) evaluates the flag OFF in every browser — including staging/preview — so the cosmic theme would silently never appear.
+- For graduated rollout, use `target_institutions` (pilot-school canary) and/or `rollout_percentage` instead of environment scoping.
+- Reversibility is unchanged: a single `is_enabled = false` UPDATE fully reverts.
 
 ---
 

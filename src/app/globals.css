@@ -2366,3 +2366,808 @@ body:has(.foxy-shell) {
   padding-block: var(--space-fluid-2);
 }
 .app-shell-v2 > .app-shell-header[data-compact="true"] .dashboard-header-greeting { display: none; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COSMIC REDESIGN — Phase 0 foundation (2026-06-05)
+
+   The entire block below is GATED behind ff_cosmic_redesign_v1. It only
+   activates when CosmicThemeProvider (src/lib/cosmic-theme.tsx) writes
+   data-design="cosmic" to <html> — which it does ONLY when the flag resolves
+   ON. When the flag is OFF there is no data-design attribute, so every rule
+   here is inert and the existing light "Atlas" theme renders pixel-identical.
+
+   Design source of truth: C:\...\alfa_design_src\__styles.css (the CEO's
+   approved prototype). Token values, role palettes, light/HC overrides, and
+   every primitive's CSS are copied faithfully from it.
+
+   Visibility (CEO directive): AAA-contrast text/surface pairs (verified in the
+   token comments below), light + high-contrast themes selectable
+   (data-theme="light" / data-theme="hc"), and all non-essential animation is
+   disabled under prefers-reduced-motion at the end of this block.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Cosmic design tokens (default = dark) ──────────────────────────────
+   Faithful copy of :root from __styles.css. Namespaced font vars resolve to
+   the next/font CSS variables set on <html> (src/lib/cosmic-fonts.ts), with
+   the same fallbacks the prototype used. */
+html[data-design="cosmic"] {
+  /* surfaces */
+  --bg: #0A1226;
+  --bg-soft: #0E1736;
+  --bg-elev: #15214A;
+  --bg-card: rgba(255,255,255,0.04);
+  --bg-card-2: rgba(139,126,255,0.10);
+  --stroke: rgba(255,255,255,0.07);
+  --stroke-strong: rgba(255,255,255,0.14);
+  --stroke-glow: rgba(139,126,255,0.4);
+
+  /* brand defaults (Student) */
+  --violet: #8B7EFF;
+  --violet-2: #6B5AE6;
+  --violet-soft: rgba(139,126,255,0.18);
+  --cyan: #5EE8FB;
+  --cyan-soft: rgba(94,232,251,0.16);
+  --pink: #F8A4C4;
+  --pink-soft: rgba(248,164,196,0.16);
+  --saffron: #FCD34D;
+  --saffron-2: #F59E0B;
+  --saffron-soft: rgba(252,211,77,0.18);
+  --mint: #6EE7B7;
+  --mint-soft: rgba(110,231,183,0.16);
+  --coral: #FDA4AF;
+
+  /* text — contrast vs --bg #0A1226 (AAA targets):
+       --text   #F4F1FF on #0A1226 ≈ 16.6:1 (AAA)
+       --text-2 #C7CAE6 on #0A1226 ≈ 11.2:1 (AAA)
+       --text-3 #939AC1 on #0A1226 ≈ 6.0:1  (AA / AAA-large) — hints only
+       --text-4 #6B7299 on #0A1226 ≈ 3.4:1  (decorative whispers only) */
+  --text: #F4F1FF;
+  --text-2: #C7CAE6;
+  --text-3: #939AC1;
+  --text-4: #6B7299;
+
+  /* radius */
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 20px;
+  --r-xl: 28px;
+
+  /* type — resolve to the next/font vars with the prototype's fallback chain */
+  --font-display: var(--font-cosmic-display, 'Space Grotesk', ui-sans-serif, system-ui, sans-serif);
+  --font-body: var(--font-cosmic-body, 'Onest', ui-sans-serif, system-ui, sans-serif);
+  --font-hi: var(--font-cosmic-hi, 'Mukta', 'Onest', ui-sans-serif, system-ui, sans-serif);
+  --font-mono: var(--font-cosmic-mono, 'JetBrains Mono', ui-monospace, monospace);
+
+  /* ── 2. COMPATIBILITY TOKEN-BRIDGE ──────────────────────────────────────
+     Re-alias the legacy semantic tokens the existing 753-file app already
+     consumes so EVERY existing component/page inherits the cosmic dark theme
+     WITHOUT being rewritten. Old token → cosmic equivalent:
+
+       LEGACY (light Atlas)        →  COSMIC (dark)            why
+       ─────────────────────────────────────────────────────────────────────
+       --bg / --bg-rgb             →  #0A1226 / 10,18,38       app background
+       --surface-1                 →  --bg-elev  #15214A       raised cards
+       --surface-2                 →  --bg-soft  #0E1736       inset panels
+       --surface-3                 →  #1B2A55                  deepest insets
+       --text-1                    →  --text   #F4F1FF (AAA)   primary text
+       --text-2                    →  --text-2 #C7CAE6 (AAA)   secondary text
+       --text-3                    →  --text-3 #939AC1 (AA)    hint text
+       --border / -mid / -strong   →  --stroke / strong scale  hairlines
+       --line / -mid / -strong     →  same as borders          Atlas hairlines
+       --paper                     →  --bg-elev                Atlas card bg
+       --cream / -2 / -3           →  bg / soft / elev          Atlas surfaces
+       --ink / -2 / -3 / -4        →  text / 2 / 3 / 4          Atlas text
+       --accent (+ soft/quiet)     →  --violet (+ soft tints)   Atlas accent
+       --orange / -light / -rgb    →  --violet / -2            primary brand
+       --purple / -light / -rgb    →  --violet / -2            secondary brand
+       --gold                      →  --saffron                gamified gold
+       --teal / --teal-deep        →  --cyan                   info/teal
+       --green                     →  --mint                   success
+       --red                       →  --coral                  danger
+       --pink                      →  --pink                   pink (same role)
+       --primary/-light/-hover     →  --violet scale           Tailwind semantic
+       --secondary                 →  --cyan
+       --success / --info          →  --mint / --cyan
+       --warning                   →  --saffron
+       --danger / -light           →  --coral / soft
+       --xp-color / --streak-color →  --saffron / --coral
+       --mastery low/mid/high      →  coral / saffron / mint
+       --level-up                  →  --violet
+       --radius-* / --space-*      →  cosmic radii / Atlas spacing kept as-is
+       --shadow-*                  →  deepened for dark surfaces
+
+     AAA confirmation: all primary/secondary text aliases resolve to
+     --text / --text-2 which are ≥11:1 on every cosmic surface (bg, bg-soft,
+     bg-elev, bg-card) — comfortably AAA. */
+
+  /* surfaces */
+  --bg-rgb: 10, 18, 38;
+  --surface-1: var(--bg-elev);
+  --surface-2: var(--bg-soft);
+  --surface-3: #1B2A55;
+
+  /* text (legacy numeric tier names) */
+  --text-1: var(--text);
+  /* --text-2 / --text-3 already defined above with identical names */
+
+  /* borders */
+  --border: var(--stroke);
+  --border-mid: var(--stroke-strong);
+  --border-strong: rgba(255,255,255,0.24);
+
+  /* Atlas hairlines */
+  --line: var(--stroke);
+  --line-mid: var(--stroke-strong);
+  --line-strong: rgba(255,255,255,0.24);
+
+  /* Atlas surfaces */
+  --paper: var(--bg-elev);
+  --cream: var(--bg);
+  --cream-2: var(--bg-soft);
+  --cream-3: var(--bg-elev);
+
+  /* Atlas text */
+  --ink: var(--text);
+  --ink-2: var(--text-2);
+  --ink-3: var(--text-3);
+  --ink-4: var(--text-4);
+
+  /* Atlas accent */
+  --accent: var(--violet);
+  --accent-soft: var(--violet-soft);
+  --accent-quiet: var(--stroke-glow);
+  --teal-deep: var(--cyan);
+  --teal-soft: var(--cyan-soft);
+  --gold-soft: var(--saffron-soft);
+  --green-soft: var(--mint-soft);
+  --red-soft: rgba(253,164,175,0.16);
+
+  /* brand */
+  --orange: var(--violet);
+  --orange-light: var(--violet-2);
+  --orange-rgb: 139, 126, 255;
+  --purple: var(--violet);
+  --purple-light: var(--violet-2);
+  --purple-rgb: 139, 126, 255;
+  --gold: var(--saffron);
+  --teal: var(--cyan);
+  --green: var(--mint);
+  --red: var(--coral);
+  /* --pink already defined above (same semantic role) */
+
+  /* Tailwind semantic tokens (were undefined in light → now resolve under cosmic) */
+  --primary: var(--violet);
+  --primary-light: var(--violet-soft);
+  --primary-hover: var(--violet-2);
+  --secondary: var(--cyan);
+  --success: var(--mint);
+  --warning: var(--saffron);
+  --danger: var(--coral);
+  --danger-light: rgba(253,164,175,0.16);
+  --info: var(--cyan);
+
+  /* gamification */
+  --xp-color: var(--saffron);
+  --streak-color: var(--coral);
+  --mastery-low: var(--coral);
+  --mastery-mid: var(--saffron);
+  --mastery-high: var(--mint);
+  --level-up: var(--violet);
+
+  /* shadows — deepened so depth reads on near-black surfaces */
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.35);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.45);
+  --shadow-lg: 0 16px 40px rgba(0,0,0,0.55);
+  --shadow-glow: 0 0 28px rgba(139,126,255,0.30);
+
+  /* Atlas shadow aliases */
+  --shadow-atlas-1: 0 1px 3px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05);
+  --shadow-atlas-2: 0 8px 28px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06);
+  --shadow-edge: inset 0 -1px 0 rgba(255,255,255,0.04);
+
+  /* paint the page in cosmic dark + ambient nebula */
+  background:
+    radial-gradient(1100px 700px at 12% -10%, rgba(139,126,255,0.18), transparent 60%),
+    radial-gradient(900px  600px at 105% 10%, rgba(94,232,251,0.18), transparent 60%),
+    radial-gradient(900px  700px at 50% 110%, rgba(252,211,77,0.10), transparent 60%),
+    radial-gradient(700px  500px at 80% 60%, rgba(248,164,196,0.10), transparent 60%),
+    var(--bg);
+  color: var(--text);
+}
+
+/* Apply the cosmic body typography + smoothing inside the scope. */
+html[data-design="cosmic"] body {
+  background: transparent; /* the gradient lives on <html> */
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+html[data-design="cosmic"] body.lang-hi,
+html[data-design="cosmic"][lang="hi"] body {
+  font-family: var(--font-hi);
+}
+html[data-design="cosmic"] h1,
+html[data-design="cosmic"] h2,
+html[data-design="cosmic"] h3,
+html[data-design="cosmic"] h4,
+html[data-design="cosmic"] h5 {
+  font-family: var(--font-display);
+}
+
+/* ── 3. Theme overrides: LIGHT (selectable for sunlight legibility) ─────────
+   data-theme="light" — copied from __styles.css .theme-light, re-bridged. */
+html[data-design="cosmic"][data-theme="light"] {
+  --bg: #F4F1EA;
+  --bg-soft: #ECE7DC;
+  --bg-elev: #FFFFFF;
+  --bg-card: rgba(11, 17, 48, 0.04);
+  --bg-card-2: rgba(124, 92, 255, 0.08);
+  --stroke: rgba(11, 17, 48, 0.08);
+  --stroke-strong: rgba(11, 17, 48, 0.18);
+  /* text — contrast vs --bg #F4F1EA (AAA targets):
+       --text   #0B1130 on #F4F1EA ≈ 16.9:1 (AAA)
+       --text-2 #2E3460 on #F4F1EA ≈ 9.7:1  (AAA)
+       --text-3 #5B6190 on #F4F1EA ≈ 4.9:1  (AA) — hints only */
+  --text: #0B1130;
+  --text-2: #2E3460;
+  --text-3: #5B6190;
+  --text-4: #8A91B5;
+
+  /* re-resolve bridged tokens that referenced dark literals */
+  --bg-rgb: 244, 241, 234;
+  --surface-3: #E4DECF;
+  --border-strong: rgba(11,17,48,0.24);
+  --line-strong: rgba(11,17,48,0.24);
+  --shadow-sm: 0 1px 4px rgba(11,17,48,0.06);
+  --shadow-md: 0 4px 16px rgba(11,17,48,0.08);
+  --shadow-lg: 0 16px 40px rgba(11,17,48,0.10);
+  --shadow-atlas-1: 0 1px 3px rgba(11,17,48,0.06), 0 0 0 1px rgba(11,17,48,0.05);
+  --shadow-atlas-2: 0 8px 28px rgba(11,17,48,0.08), 0 0 0 1px rgba(11,17,48,0.06);
+
+  background:
+    radial-gradient(900px 500px at 12% -10%, rgba(124,92,255,0.16), transparent 60%),
+    radial-gradient(700px 500px at 105% 10%, rgba(34,211,238,0.12), transparent 60%),
+    var(--bg);
+}
+
+/* ── 4. Theme overrides: HIGH CONTRAST (.theme-hc → data-theme="hc") ────────
+   Maximum legibility for low-vision users / harsh sunlight. Copied from
+   __styles.css .theme-hc. Pure-white text on near-black ⇒ ≈ 20:1 (AAA). */
+html[data-design="cosmic"][data-theme="hc"] {
+  --bg: #000000;
+  --bg-soft: #050714;
+  --bg-elev: #0B1130;
+  --stroke: rgba(255,255,255,0.22);
+  --stroke-strong: rgba(255,255,255,0.45);
+  /* text vs --bg #000000:
+       --text   #FFFFFF ≈ 21:1   (AAA)
+       --text-2 #E8EBFF ≈ 18.8:1 (AAA)
+       --text-3 #B8BEE0 ≈ 12.4:1 (AAA) */
+  --text: #FFFFFF;
+  --text-2: #E8EBFF;
+  --text-3: #B8BEE0;
+
+  --bg-rgb: 0, 0, 0;
+  --surface-3: #0B1130;
+  --border-strong: rgba(255,255,255,0.55);
+  --line-strong: rgba(255,255,255,0.55);
+  /* Flatten the ambient nebula so glows can't reduce contrast in HC mode. */
+  background: var(--bg);
+}
+
+/* ── 5. Role-scoped palettes ───────────────────────────────────────────────
+   Copied from __styles.css body[data-role="..."]. Scoped here to
+   html[data-design="cosmic"][data-role="..."] so the cosmic provider's
+   data-role attribute drives them. Each only re-tints the accent family +
+   role-specific surfaces; text tokens stay AAA from the base/theme blocks. */
+
+/* Parent — warm & nurturing (peach + mint + amber) */
+html[data-design="cosmic"][data-role="parent"] {
+  --violet: #F8A4C4; --violet-2: #E47AA0; --violet-soft: rgba(248,164,196,0.18);
+  --cyan:   #6FDDB5; --cyan-soft: rgba(111,221,181,0.18);
+  --pink:   #FDBA8C;
+  --saffron:#FFD89C; --saffron-soft: rgba(255,216,156,0.18);
+  --bg: #1C1424; --bg-soft: #261A30; --bg-elev: #2E2240;
+  --bg-card-2: rgba(248,164,196,0.10);
+  --stroke-glow: rgba(248,164,196,0.4);
+  --accent: var(--violet); --accent-soft: var(--violet-soft);
+}
+
+/* Teacher — focused & calm (sky + lavender) */
+html[data-design="cosmic"][data-role="teacher"] {
+  --violet: #A78BFA; --violet-2: #8466F0; --violet-soft: rgba(167,139,250,0.18);
+  --cyan:   #7DD3FC; --cyan-soft: rgba(125,211,252,0.18);
+  --pink:   #F0ABFC;
+  --saffron:#FCD34D; --saffron-soft: rgba(252,211,77,0.18);
+  --bg: #0E1A2B; --bg-soft: #122339; --bg-elev: #1B2D4A;
+  --bg-card-2: rgba(167,139,250,0.10);
+  --stroke-glow: rgba(167,139,250,0.4);
+  --accent: var(--violet); --accent-soft: var(--violet-soft);
+}
+
+/* School — sophisticated & executive (gold + steel) */
+html[data-design="cosmic"][data-role="school"] {
+  --violet: #FDE68A; --violet-2: #D9B66B; --violet-soft: rgba(253,230,138,0.18);
+  --cyan:   #93C5FD; --cyan-soft: rgba(147,197,253,0.18);
+  --pink:   #C4B5FD;
+  --saffron:#F5C97B; --saffron-soft: rgba(245,201,123,0.18);
+  --bg: #0C1426; --bg-soft: #131F38; --bg-elev: #1B2849;
+  --bg-card-2: rgba(253,230,138,0.10);
+  --stroke-glow: rgba(253,230,138,0.4);
+  --accent: var(--violet); --accent-soft: var(--violet-soft);
+}
+
+/* ═══ COSMIC PRIMITIVES — faithful to __styles.css ════════════════════════
+   All class names are cosmic-namespaced where they could collide with legacy
+   classes. The React primitives in src/components/cosmic/* render these. */
+
+/* Starfield (subtle, animated). Hidden in light + HC for legibility/perf. */
+.cosmic-starfield {
+  position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    radial-gradient(1px 1px at 18% 22%, rgba(255,255,255,0.55), transparent),
+    radial-gradient(1px 1px at 78% 36%, rgba(255,255,255,0.45), transparent),
+    radial-gradient(1.5px 1.5px at 42% 78%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1px 1px at 88% 82%, rgba(255,255,255,0.55), transparent),
+    radial-gradient(1px 1px at 64% 12%, rgba(255,255,255,0.35), transparent),
+    radial-gradient(1px 1px at 8% 64%, rgba(255,255,255,0.45), transparent),
+    radial-gradient(1px 1px at 30% 50%, rgba(255,255,255,0.35), transparent),
+    radial-gradient(2px 2px at 95% 5%, rgba(94,232,251,0.5), transparent),
+    radial-gradient(2px 2px at 5% 95%, rgba(139,126,255,0.4), transparent);
+  opacity: 0.8;
+  animation: cosmicStarShimmer 8s ease-in-out infinite;
+}
+@keyframes cosmicStarShimmer { 0%, 100% { opacity: 0.75 } 50% { opacity: 1 } }
+html[data-design="cosmic"][data-theme="light"] .cosmic-starfield,
+html[data-design="cosmic"][data-theme="hc"] .cosmic-starfield { display: none; }
+
+/* GlowCard (.glow-card) */
+.cosmic-glow-card {
+  position: relative;
+  background: linear-gradient(180deg, rgba(139,126,255,0.18), rgba(139,126,255,0.04));
+  border: 1px solid var(--stroke-glow);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.cosmic-glow-card::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(400px 200px at 80% -20%, rgba(94,232,251,0.35), transparent 60%);
+}
+
+/* CardElev (.card-elev) */
+.cosmic-card-elev {
+  background: var(--bg-elev);
+  border: 1px solid var(--stroke-strong);
+  border-radius: var(--r-lg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Generic Card (.card) */
+.cosmic-card {
+  background: var(--bg-card);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-md);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: border-color 0.2s, background 0.2s, transform 0.18s;
+}
+.cosmic-card:hover { border-color: var(--stroke-strong); }
+
+/* MasteryRing (.ring) — set --p (0–100), --s (px size), --c1/--c2 colors */
+.cosmic-ring {
+  --p: 0;
+  --s: 56;
+  --c1: var(--violet);
+  --c2: var(--cyan);
+  width: calc(var(--s) * 1px); height: calc(var(--s) * 1px);
+  border-radius: 50%;
+  background: conic-gradient(from -90deg, var(--c1) 0 calc(var(--p) * 1%), rgba(255,255,255,0.06) 0);
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+}
+.cosmic-ring::before {
+  content: ''; position: absolute; inset: 4px; border-radius: 50%;
+  background: var(--bg-elev);
+}
+.cosmic-ring > * { position: relative; }
+
+/* Chip (.chip + variants) */
+.cosmic-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg-card);
+  border: 1px solid var(--stroke);
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+}
+.cosmic-chip-violet  { background: var(--violet-soft); border-color: rgba(139,126,255,0.35); color: #C8B8FF; }
+.cosmic-chip-cyan    { background: var(--cyan-soft);   border-color: rgba(94,232,251,0.35);  color: #8EE6F5; }
+.cosmic-chip-saffron { background: var(--saffron-soft);border-color: rgba(252,211,77,0.4);   color: #FDD970; }
+.cosmic-chip-mint    { background: var(--mint-soft);   border-color: rgba(110,231,183,0.35); color: #7DE9C0; }
+.cosmic-chip-pink    { background: var(--pink-soft);   border-color: rgba(248,164,196,0.35); color: #F9B5D6; }
+
+/* In light/HC themes the pastel chip text tints fail AAA; pin them to --text. */
+html[data-design="cosmic"][data-theme="light"] .cosmic-chip-violet,
+html[data-design="cosmic"][data-theme="light"] .cosmic-chip-cyan,
+html[data-design="cosmic"][data-theme="light"] .cosmic-chip-saffron,
+html[data-design="cosmic"][data-theme="light"] .cosmic-chip-mint,
+html[data-design="cosmic"][data-theme="light"] .cosmic-chip-pink,
+html[data-design="cosmic"][data-theme="hc"] .cosmic-chip-violet,
+html[data-design="cosmic"][data-theme="hc"] .cosmic-chip-cyan,
+html[data-design="cosmic"][data-theme="hc"] .cosmic-chip-saffron,
+html[data-design="cosmic"][data-theme="hc"] .cosmic-chip-mint,
+html[data-design="cosmic"][data-theme="hc"] .cosmic-chip-pink { color: var(--text); }
+
+/* CosmicButton (.btn) + ghost (.btn-ghost) */
+.cosmic-btn {
+  appearance: none; border: 0;
+  background: var(--violet); color: #fff;
+  font-family: var(--font-body); font-weight: 600; font-size: 14px;
+  padding: 12px 18px; border-radius: 14px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  box-shadow: 0 8px 20px rgba(139,126,255,0.35);
+  transition: transform 0.12s cubic-bezier(0.34,1.56,0.64,1), filter 0.18s, box-shadow 0.18s;
+}
+.cosmic-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 24px rgba(139,126,255,0.45); }
+.cosmic-btn:active { transform: scale(0.96); filter: brightness(1.08); }
+.cosmic-btn:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+.cosmic-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+.cosmic-btn-ghost {
+  background: var(--bg-card); border: 1px solid var(--stroke);
+  color: var(--text); box-shadow: none;
+}
+.cosmic-btn-ghost:hover { box-shadow: none; background: var(--bg-card-2); border-color: var(--stroke-strong); transform: translateY(-1px); }
+/* When the role accent is a pale color (school gold), white-on-pale fails AAA;
+   use ink text on the solid button in those palettes. */
+html[data-design="cosmic"][data-role="school"] .cosmic-btn { color: #0B1130; }
+
+/* PillButton (.pill-btn) */
+.cosmic-pill-btn {
+  appearance: none;
+  border: 1px solid var(--stroke);
+  background: var(--bg-card);
+  color: var(--text-2);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-family: var(--font-body);
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: transform 0.12s cubic-bezier(0.34,1.56,0.64,1), color 0.18s, border-color 0.18s;
+}
+.cosmic-pill-btn:hover { color: var(--text); border-color: var(--stroke-strong); }
+.cosmic-pill-btn:active { transform: scale(0.96); }
+.cosmic-pill-btn:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+.cosmic-pill-btn[data-active="true"] { background: var(--violet-soft); border-color: var(--violet); color: var(--text); }
+
+/* IconButton (.icon-btn) */
+.cosmic-icon-btn {
+  appearance: none; border: 1px solid var(--stroke);
+  background: var(--bg-card);
+  width: 36px; height: 36px; border-radius: 12px;
+  color: var(--text-2);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: transform 0.12s cubic-bezier(0.34,1.56,0.64,1), color 0.18s, border-color 0.18s;
+}
+.cosmic-icon-btn:hover { color: var(--text); border-color: var(--stroke-strong); }
+.cosmic-icon-btn:active { transform: scale(0.96); }
+.cosmic-icon-btn:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+
+/* MascotBubble (.mascot-bubble) */
+.cosmic-mascot-bubble {
+  background: var(--bg-card-2);
+  border: 1px solid var(--stroke-glow);
+  border-radius: 18px 18px 18px 4px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+/* ProgressBar (.bar) */
+.cosmic-bar { height: 6px; background: rgba(255,255,255,0.06); border-radius: 999px; overflow: hidden; }
+.cosmic-bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--violet), var(--cyan)); border-radius: 999px; transition: width 0.6s cubic-bezier(0.4,0,0.2,1); }
+html[data-design="cosmic"][data-theme="light"] .cosmic-bar { background: rgba(11,17,48,0.08); }
+html[data-design="cosmic"][data-theme="hc"] .cosmic-bar { background: rgba(255,255,255,0.2); }
+
+/* HeatCell (.heatcell) */
+.cosmic-heatcell { width: 100%; aspect-ratio: 1; border-radius: 6px; background: rgba(255,255,255,0.05); }
+html[data-design="cosmic"][data-theme="light"] .cosmic-heatcell { background: rgba(11,17,48,0.06); }
+
+/* Type helpers (.h-display / .tab-num) */
+.cosmic-h-display { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.02em; }
+.cosmic-tab-num { font-variant-numeric: tabular-nums; }
+.cosmic-mono { font-family: var(--font-mono); }
+.cosmic-muted { color: var(--text-3); }
+
+/* Animation helpers (.fade-up / .float) */
+@keyframes cosmicFadeUp { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+.cosmic-fade-up { animation: cosmicFadeUp 0.32s ease forwards; }
+@keyframes cosmicFloat { 0%,100%{ transform: translateY(0) } 50%{ transform: translateY(-6px) } }
+.cosmic-float { animation: cosmicFloat 3.4s ease-in-out infinite; }
+@keyframes cosmicPulseSoft { 0%,100% { opacity: 0.55; } 50% { opacity: 1; } }
+.cosmic-pulse { animation: cosmicPulseSoft 2.2s ease-in-out infinite; }
+
+/* ── 5b. COSMIC STUDENT NAV ────────────────────────────────────────────────
+   Faithful to the prototype StudentNav (alfa_design_src/31_*.js): the active
+   tab gets a violet-soft rounded "pill" capsule behind its icon, a lift, and a
+   glowing dot — on top of the bridged violet --accent the nav already inherits.
+
+   IMPORTANT: every rule here is scoped under html[data-design="cosmic"], so it
+   only applies when ff_cosmic_redesign_v1 is ON. The shared MobileBottomNav
+   component (mounted globally) is otherwise byte-identical for flag-OFF users.
+   No item/route is dropped — this is purely the active-state visual treatment.
+
+   The active icon is the FIRST <span> inside each slot button (the component
+   renders the emoji span before the label span). We give that span the violet
+   pill via ::before so we don't touch the component's markup. */
+html[data-design="cosmic"] .bottom-nav-mobile__slot[data-active="true"] > span:first-of-type {
+  position: relative;
+}
+html[data-design="cosmic"] .bottom-nav-mobile__slot[data-active="true"] > span:first-of-type::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40px;
+  height: 30px;
+  transform: translate(-50%, -50%);
+  border-radius: 14px;
+  background: var(--violet-soft);
+  z-index: -1;
+}
+/* The underline ::after becomes a soft glowing dot in cosmic, matching the
+   prototype's navDot (the existing rule already paints it with --accent). */
+html[data-design="cosmic"] .bottom-nav-mobile__slot[data-active="true"]::after {
+  box-shadow: 0 0 6px var(--violet);
+}
+
+/* ── 5c. COSMIC PARENT NAV (DashboardSidebar active state) ──────────────────
+   Phase 2 — parent portal reskin. The shared DashboardSidebar paints its
+   active item with the per-portal `primaryColor` prop INLINE (#F97316 for the
+   parent portal). Inline styles win over class rules, so we retint the active
+   item to the cosmic parent accent (peach via --accent) using attribute
+   selectors with !important — ONLY inside the cosmic scope AND the
+   `.parent-portal` container, so super-admin / school-admin sidebars and the
+   flag-OFF world are byte-identical. No nav item or route is dropped — this is
+   purely the active-state color treatment + a soft glow to match the cosmic
+   identity. The active item is the <a aria-current="page"> rendered by
+   DashboardSidebar. */
+html[data-design="cosmic"] .parent-portal nav a[aria-current="page"] {
+  color: var(--accent) !important;
+  background: var(--accent-soft) !important;
+  border-left-color: var(--accent) !important;
+  box-shadow: inset 2px 0 8px -4px var(--stroke-glow);
+}
+/* Active/unread badges in the parent sidebar inherit the cosmic accent too. */
+html[data-design="cosmic"] .parent-portal nav a[aria-current="page"] [data-testid^="sidebar-badge-"],
+html[data-design="cosmic"] .parent-portal nav a [data-testid^="sidebar-badge-"] {
+  background: var(--accent) !important;
+}
+/* School-gold accent is pale — keep badge/active text legible (ink, not white). */
+html[data-design="cosmic"][data-role="school"] .parent-portal nav a[aria-current="page"] {
+  color: var(--text) !important;
+}
+
+/* ── 5d. COSMIC TEACHER / SCHOOL-ADMIN / SUPER-ADMIN SHELLS (Phase 3) ────────
+   Same approach proven for the parent portal in 5c: the shared DashboardSidebar
+   paints its active item with the per-portal `primaryColor` prop INLINE
+   (#6366F1 teacher, #7C3AED school-admin/super-admin). Inline styles win over
+   class rules, so we retint the active item to the cosmic role accent
+   (--accent: sky/lavender for teacher, gold for school) with !important —
+   ONLY inside the cosmic scope AND each portal's container class
+   (added in the shells only when cosmicEnabled). The flag-OFF world and the
+   long tail of pages are byte-identical. NO nav item or route is dropped —
+   this is purely the active-state visual treatment (glow pill) for visibility.
+
+   The portal classes are added by the shells: `.teacher-portal` (TeacherShell),
+   `.school-admin-portal` (SchoolAdminShell), `.super-admin-portal` (AdminShell).
+   The active item is the <a aria-current="page"> rendered by DashboardSidebar. */
+html[data-design="cosmic"] .teacher-portal nav a[aria-current="page"],
+html[data-design="cosmic"] .school-admin-portal nav a[aria-current="page"],
+html[data-design="cosmic"] .super-admin-portal nav a[aria-current="page"] {
+  color: var(--accent) !important;
+  background: var(--accent-soft) !important;
+  border-left-color: var(--accent) !important;
+  box-shadow: inset 2px 0 8px -4px var(--stroke-glow);
+}
+/* Active/unread badges inherit the cosmic accent too. */
+html[data-design="cosmic"] .teacher-portal nav a[aria-current="page"] [data-testid^="sidebar-badge-"],
+html[data-design="cosmic"] .teacher-portal nav a [data-testid^="sidebar-badge-"],
+html[data-design="cosmic"] .school-admin-portal nav a[aria-current="page"] [data-testid^="sidebar-badge-"],
+html[data-design="cosmic"] .super-admin-portal nav a[aria-current="page"] [data-testid^="sidebar-badge-"] {
+  background: var(--accent) !important;
+}
+/* School-gold accent is pale — keep active text legible (ink, not pale gold). */
+html[data-design="cosmic"][data-role="school"] .teacher-portal nav a[aria-current="page"],
+html[data-design="cosmic"][data-role="school"] .school-admin-portal nav a[aria-current="page"],
+html[data-design="cosmic"][data-role="school"] .super-admin-portal nav a[aria-current="page"] {
+  color: var(--text) !important;
+}
+
+/* 5d-i. Teacher overview `td-card` family. The teacher dashboard injects an
+   inline <style> with HARDCODED slate hexes (#0F172A card, #1E293B inputs,
+   #6366F1 primary button). Those are dark already, but off the cosmic navy
+   palette; retint them to the bridged cosmic tokens so the overview reads as
+   one surface with the rest of the cosmic identity. Scoped to the teacher role
+   so it can never affect another portal. The inline <style> in the component
+   has equal specificity for the bare class, so we add the role-scoped prefix
+   to win. */
+html[data-design="cosmic"][data-role="teacher"] .td-card {
+  background: var(--bg-elev) !important;
+  border-color: var(--stroke-strong) !important;
+}
+html[data-design="cosmic"][data-role="teacher"] .td-card-head h3 { color: var(--text-1) !important; }
+html[data-design="cosmic"][data-role="teacher"] .td-badge {
+  background: var(--bg-card) !important;
+  color: var(--text-3) !important;
+}
+html[data-design="cosmic"][data-role="teacher"] .td-input {
+  background: var(--bg-card) !important;
+  border-color: var(--stroke) !important;
+  color: var(--text-1) !important;
+}
+html[data-design="cosmic"][data-role="teacher"] .td-btn-primary {
+  background: var(--violet) !important;
+  color: #fff !important;
+}
+/* The KPI cards opt into the elevated cosmic surface via .td-kpi-cosmic. Give
+   them the prototype TeacherKpi corner-glow (a soft accent halo top-right). */
+html[data-design="cosmic"] .td-kpi-cosmic {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+}
+html[data-design="cosmic"] .td-kpi-cosmic::before {
+  content: '';
+  position: absolute;
+  top: -14px; right: -14px;
+  width: 64px; height: 64px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  filter: blur(20px);
+  pointer-events: none;
+}
+
+/* 5d-ii. School-admin overview cream-wash literals. The legacy school-admin
+   dashboard hardcodes a sticky header background `rgba(251,248,244,0.92)`
+   (cream) as an INLINE style the variable bridge can't reach. Under cosmic
+   that leaves a bright cream bar on the dark canvas. There is no class hook on
+   that element, so we cannot target it from CSS without touching the page;
+   instead the page passes a cosmic-aware background (handled in the page edit).
+   This block only retints the school-admin StatCard/Card surfaces that DO carry
+   classes, keeping the grid coherent on the dark canvas. (Most already consume
+   var(--surface-*)/var(--border) and bridge for free.) */
+
+/* ── 6. REDUCED MOTION (CEO visibility directive) ──────────────────────────
+   Disable every heavy cosmic animation when the user prefers reduced motion.
+   The visuals remain fully legible — only the motion stops. */
+@media (prefers-reduced-motion: reduce) {
+  .cosmic-starfield,
+  .cosmic-fade-up,
+  .cosmic-float,
+  .cosmic-pulse {
+    animation: none !important;
+  }
+  .cosmic-btn:hover,
+  .cosmic-pill-btn:hover,
+  .cosmic-icon-btn:hover,
+  .cosmic-btn-ghost:hover { transform: none; }
+  .cosmic-btn:active,
+  .cosmic-pill-btn:active,
+  .cosmic-icon-btn:active { transform: none; }
+  /* The starfield's twinkle is decorative; keep the static dots, no shimmer. */
+  .cosmic-starfield { opacity: 0.7; }
+  /* The cosmic Foxy mascot's SVG SMIL animations are disabled via the
+     prefers-reduced-motion prop the React component reads (see
+     src/components/landing/FoxyMark.tsx). */
+}
+
+/* ── 7. LITERAL-COLOR COMPATIBILITY LAYER (architect MUST-FIX, Condition 1) ──
+   ════════════════════════════════════════════════════════════════════════════
+   WHY THIS EXISTS
+   The token-bridge in section 2 re-aliases the *CSS-variable* design tokens
+   (--bg, --surface-1, --text-1, --orange, …) so every component that consumes
+   `var(--…)` inherits the cosmic dark theme for free. But the 753-file app also
+   ships hundreds of HARDCODED literal colors that the variable bridge can never
+   reach:
+
+     • Tailwind literal utilities — `bg-white`, `bg-gray-50/100`,
+       `bg-slate-50/100`, `text-gray-900`, `text-black`, `text-slate-900`, the
+       mid-gray text ramp, and arbitrary-value backgrounds like `bg-[#FFF8F0]`.
+     • A handful of component-level inline `background:'#fff'` islands that no
+       CSS utility selector can touch (patched at the component level — see
+       OnboardingWizard.tsx).
+
+   Under cosmic these literals produce white cards on a near-black page
+   (white-island breaks) and dark text on now-dark surfaces (dark-on-dark,
+   illegible). The CEO's hard constraint is "visibility shall not be
+   compromised", so this layer maps each literal back onto the bridged cosmic
+   tokens.
+
+   SCOPE / SAFETY
+   EVERY rule here is prefixed `html[data-design="cosmic"]`. CosmicThemeProvider
+   writes that attribute ONLY when ff_cosmic_redesign_v1 resolves ON. With the
+   flag OFF there is no data-design attribute, so none of these selectors match
+   and the app stays BYTE-IDENTICAL to today. These are presentational
+   overrides only — no product logic, no scores, no XP (P1-P6/P11 untouched).
+
+   NOT OVERRIDDEN (architect-confirmed legible, NOT breaks):
+     • `color:'#fff'` / `text-white` on SATURATED backgrounds (#16A34A success,
+       #DC2626 danger, #25D366 WhatsApp, #3B82F6 blue, var(--orange) which
+       bridges to --violet). White-on-saturated stays high-contrast in both
+       themes — overriding it would HURT contrast. Left untouched on purpose.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* 7a. Literal LIGHT background utilities → bridged cosmic surfaces.
+   `bg-white` and the lightest gray/slate steps are opaque card/page surfaces in
+   the legacy light theme; map them to the elevated card surface so they read as
+   raised panels on the dark canvas. The slightly-darker 100 steps map to the
+   inset surface so any visual layering the component intended is preserved. */
+html[data-design="cosmic"] .bg-white { background-color: var(--surface-1) !important; }
+html[data-design="cosmic"] .bg-gray-50,
+html[data-design="cosmic"] .bg-slate-50,
+html[data-design="cosmic"] .bg-warm-50 { background-color: var(--surface-1) !important; }
+html[data-design="cosmic"] .bg-gray-100,
+html[data-design="cosmic"] .bg-slate-100,
+html[data-design="cosmic"] .bg-warm-100 { background-color: var(--surface-2) !important; }
+
+/* Arbitrary-value page backgrounds in use on canonical learner surfaces.
+   Tailwind compiles `bg-[#FFF8F0]` → `.bg-\[\#FFF8F0\]`. These are full-page
+   cream washes (parent dashboard) — map to the app background token so the
+   whole page goes cosmic-dark instead of leaving a bright cream rectangle. */
+html[data-design="cosmic"] .bg-\[\#FFF8F0\],
+html[data-design="cosmic"] .bg-\[\#fff8f0\],
+html[data-design="cosmic"] .bg-\[\#FFFFFF\],
+html[data-design="cosmic"] .bg-\[\#ffffff\],
+html[data-design="cosmic"] .bg-\[\#fff\] { background-color: var(--bg) !important; }
+
+/* 7b. Hardcoded DARK text utilities on now-dark surfaces → light text.
+   The legacy near-black text ramp (gray/slate/black 900-800) is illegible on
+   the dark cosmic surfaces; remap to the AAA primary text token. The mid-gray
+   ramp (700/600) maps to the secondary token; the faint ramp (500/400) maps to
+   the tertiary/hint token so visual hierarchy is preserved (primary →
+   secondary → hint), just inverted for the dark canvas. */
+html[data-design="cosmic"] .text-black,
+html[data-design="cosmic"] .text-gray-900,
+html[data-design="cosmic"] .text-slate-900,
+html[data-design="cosmic"] .text-zinc-900,
+html[data-design="cosmic"] .text-neutral-900,
+html[data-design="cosmic"] .text-gray-800,
+html[data-design="cosmic"] .text-slate-800 { color: var(--text-1) !important; }
+
+html[data-design="cosmic"] .text-gray-700,
+html[data-design="cosmic"] .text-slate-700,
+html[data-design="cosmic"] .text-zinc-700,
+html[data-design="cosmic"] .text-gray-600,
+html[data-design="cosmic"] .text-slate-600,
+html[data-design="cosmic"] .text-zinc-600 { color: var(--text-2) !important; }
+
+html[data-design="cosmic"] .text-gray-500,
+html[data-design="cosmic"] .text-slate-500,
+html[data-design="cosmic"] .text-zinc-500,
+html[data-design="cosmic"] .text-gray-400,
+html[data-design="cosmic"] .text-slate-400 { color: var(--text-3) !important; }
+
+/* 7c. Recharts admin SVG strokes — LOWER severity per architect.
+   Recharts emits hardcoded light axis/gridline strokes (#ccc/#e0e0e0/#666) as
+   inline SVG attributes which the variable bridge can't reach. We provide a
+   cheap cosmic-scoped override for the cartesian grid + axis lines + tick text
+   so admin charts don't render near-invisible pale lines on the dark canvas.
+   This is intentionally narrow (axis chrome only); per-series fills are driven
+   by component props and are out of scope for this layer — see DEFERRED note in
+   the handoff. */
+html[data-design="cosmic"] .recharts-cartesian-grid line,
+html[data-design="cosmic"] .recharts-cartesian-axis-line,
+html[data-design="cosmic"] .recharts-cartesian-axis-tick-line { stroke: var(--border-mid) !important; }
+html[data-design="cosmic"] .recharts-cartesian-axis-tick-value { fill: var(--text-3) !important; }
+html[data-design="cosmic"] .recharts-text.recharts-label { fill: var(--text-2) !important; }
+/* End literal-color compatibility layer ───────────────────────────────────── */
+/* End cosmic redesign block ───────────────────────────────────────────────── */

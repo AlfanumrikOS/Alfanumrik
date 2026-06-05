@@ -48,7 +48,12 @@ interface RoleData {
 }
 
 /* ─── Theme Type ─── */
-export type ThemePreference = 'light' | 'dark' | 'system';
+//  'light' / 'dark' / 'system' are the legacy preferences. 'hc' (high-contrast)
+//  is added for the cosmic redesign's visibility requirement — see
+//  src/lib/cosmic-theme.tsx. When ff_cosmic_redesign_v1 is OFF the theme is
+//  force-light (legacy behavior); when ON, CosmicThemeProvider owns the
+//  resolved data-theme and these three cosmic values become meaningful.
+export type ThemePreference = 'light' | 'dark' | 'hc' | 'system';
 
 /* ─── Auth State ─── */
 interface AuthState {
@@ -126,13 +131,58 @@ function resolveTheme(_pref: ThemePreference): 'light' | 'dark' {
   return 'light';
 }
 
+/** Synchronously read whether the cosmic redesign flag resolved ON for this
+ *  browser, from the 1-hour localStorage cache that CosmicThemeProvider writes.
+ *  Absent/unknown ⇒ false (production truth). This lets applyThemeToDOM avoid
+ *  clobbering the cosmic data-theme when the redesign is live, WITHOUT importing
+ *  the cosmic module (keeps the auth-critical path dependency-free). */
+function cosmicFlagOnSync(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const raw = window.localStorage.getItem('alfanumrik_cosmic_flag_v1');
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as { on?: boolean; ts?: number };
+    if (!parsed || typeof parsed.ts !== 'number') return false;
+    if (Date.now() - parsed.ts > 60 * 60 * 1000) return false;
+    return Boolean(parsed.on);
+  } catch {
+    return false;
+  }
+}
+
 /** Apply theme preference to document.documentElement via data-theme attribute.
- *  Always writes 'light' (see resolveTheme rationale above). Kept as a
- *  function rather than inlined so future re-enablement of dark mode is
- *  a single-file change. */
-function applyThemeToDOM(_pref: ThemePreference) {
+ *
+ *  Cosmic redesign (2026-06-05): the behavior now forks on
+ *  `ff_cosmic_redesign_v1`:
+ *
+ *    FLAG OFF (default / production today): unconditionally write
+ *      data-theme="light" — identical to the force-light behavior shipped
+ *      2026-05-11. The app is pixel-identical to today.
+ *
+ *    FLAG ON: DO NOT write data-theme here. The cosmic theme runtime
+ *      (CosmicThemeProvider) owns data-design / data-theme / data-role and
+ *      honors the user's CosmicThemePreference ('dark' default | 'light' |
+ *      'hc'). Writing 'light' here would clobber that, so we defer entirely.
+ *
+ *  Kept as a function (not inlined) so the fork stays in one place. */
+function applyThemeToDOM(pref: ThemePreference) {
   if (typeof document === 'undefined') return;
+  if (cosmicFlagOnSync()) {
+    // Cosmic is live — CosmicThemeProvider is the authority over data-theme.
+    // If a cosmic theme is already set, leave it; otherwise seed a sane
+    // default so there's never an unstyled flash before the provider mounts.
+    const html = document.documentElement;
+    if (html.getAttribute('data-design') !== 'cosmic') {
+      html.setAttribute('data-design', 'cosmic');
+    }
+    if (!html.getAttribute('data-theme')) {
+      html.setAttribute('data-theme', 'dark');
+    }
+    return;
+  }
+  // Legacy force-light path (see resolveTheme rationale above).
   document.documentElement.setAttribute('data-theme', 'light');
+  void pref;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

@@ -627,7 +627,11 @@ function CreateClassStep({ isHi, onNext, onBack }: CreateClassStepProps) {
           </p>
           <span
             className="text-lg font-bold font-mono px-4 py-1.5 rounded-lg"
-            style={{ background: '#fff', color: '#7C3AED', border: '1px solid #A7F3D0' }}
+            // Cosmic compat: var(--surface-1) === #FFFFFF in the light scope
+            // (byte-identical to the old '#fff') and bridges to the dark card
+            // surface under html[data-design="cosmic"]. Purple accent text stays
+            // legible on both (architect-confirmed colored-accent case).
+            style={{ background: 'var(--surface-1)', color: '#7C3AED', border: '1px solid #A7F3D0' }}
           >
             {createdClassCode}
           </span>
@@ -833,7 +837,9 @@ function InviteCodesStep({ isHi, onComplete, onBack }: InviteCodesStepProps) {
             </p>
             <span
               className="text-2xl font-bold font-mono tracking-wider px-5 py-2.5 rounded-xl"
-              style={{ background: '#fff', color: '#7C3AED', border: '2px solid #7C3AED' }}
+              // Cosmic compat: var(--surface-1) === #FFFFFF under flag-OFF,
+              // bridges dark under cosmic. Purple accent kept (legible on both).
+              style={{ background: 'var(--surface-1)', color: '#7C3AED', border: '2px solid #7C3AED' }}
             >
               {generatedCode}
             </span>
@@ -841,7 +847,11 @@ function InviteCodesStep({ isHi, onComplete, onBack }: InviteCodesStepProps) {
               onClick={handleCopy}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
               style={{
-                background: copied ? '#ECFDF5' : '#fff',
+                // Cosmic compat: the non-copied state's '#fff' → var(--surface-1)
+                // (identical white under flag-OFF, bridged dark under cosmic).
+                // The copied state keeps its green success tint (colored-accent
+                // case, architect-confirmed legible in both themes).
+                background: copied ? '#ECFDF5' : 'var(--surface-1)',
                 border: copied ? '1px solid #A7F3D0' : '1px solid #DDD6FE',
                 color: copied ? '#065F46' : '#5B21B6',
                 minHeight: 44,
@@ -1041,7 +1051,11 @@ export default function OnboardingWizard({ schoolName }: OnboardingWizardProps) 
       <div
         className="w-full max-w-[600px] max-h-[90vh] overflow-y-auto rounded-2xl p-6 sm:p-8"
         style={{
-          background: '#fff',
+          // Cosmic compat: the modal card surface. var(--surface-1) is #FFFFFF
+          // under flag-OFF (byte-identical to '#fff') and bridges to the dark
+          // elevated card under html[data-design="cosmic"], so the wizard dialog
+          // is never a white island on the cosmic canvas.
+          background: 'var(--surface-1)',
           boxShadow: '0 24px 48px rgba(0,0,0,0.12)',
         }}
       >

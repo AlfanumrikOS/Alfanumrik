@@ -38,6 +38,8 @@ import { supabase } from '@/lib/supabase';
 import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
 import type { ModuleKey } from '@/lib/modules/registry';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
+import { useCosmicTheme } from '@/lib/cosmic-theme';
+import { Starfield } from '@/components/cosmic';
 
 type TeacherNavItem = {
   href: string;
@@ -90,6 +92,9 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
   const pathname = usePathname();
   const { authUserId, activeRole, isHi } = useAuth();
   const tenant = useTenant();
+  // Cosmic Phase 3: flag-gated dark reskin. When OFF, cosmicEnabled is false
+  // and the markup below is byte-identical to before this change.
+  const { cosmicEnabled } = useCosmicTheme();
 
   // null while loading or on fetch failure (fail-open: show all items).
   // Otherwise a partial map of moduleKey → enabled. Only modules that
@@ -168,7 +173,13 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
   if (atlasOn) return <>{children}</>;
 
   return (
-    <div className="flex min-h-screen" style={{ background: 'var(--bg)' }}>
+    <div
+      className={`flex min-h-screen${cosmicEnabled ? ' teacher-portal' : ''}`}
+      style={{ background: 'var(--bg)', position: cosmicEnabled ? 'relative' : undefined }}
+    >
+      {/* Cosmic dark canvas — decorative starfield behind the portal. Hidden in
+          light/HC themes and under prefers-reduced-motion via globals.css. */}
+      {cosmicEnabled && <Starfield className="!fixed inset-0 -z-0" />}
       <DashboardSidebar
         brandTitle={tenant.schoolName || 'Alfanumrik'}
         brandSubtitle={isHi ? 'शिक्षक' : 'Teacher'}
@@ -202,7 +213,7 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
           </button>
         }
       />
-      <main className="flex-1 overflow-auto">{children}</main>
+      <main className={`flex-1 overflow-auto${cosmicEnabled ? ' relative z-10' : ''}`}>{children}</main>
     </div>
   );
 }

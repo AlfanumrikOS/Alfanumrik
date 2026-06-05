@@ -38,7 +38,7 @@ export default function LiveStatus({ stats, flags, analytics, toggleFlag, lastUp
               {Object.entries(stats.last_24h).map(([k, v]) => (
                 <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12 }}>
                   <span style={{ color: '#6B7280', textTransform: 'capitalize' }}>{k.replace(/_/g, ' ')}</span>
-                  <span style={{ fontWeight: 700, color: '#111827' }}>{v >= 0 ? v : '—'}</span>
+                  <span style={{ fontWeight: 700, color: 'var(--text-1)' }}>{v >= 0 ? v : '—'}</span>
                 </div>
               ))}
             </div>
@@ -48,7 +48,7 @@ export default function LiveStatus({ stats, flags, analytics, toggleFlag, lastUp
                 {Object.entries(stats.last_7d).map(([k, v]) => (
                   <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12 }}>
                     <span style={{ color: '#6B7280', textTransform: 'capitalize' }}>{k.replace(/_/g, ' ')}</span>
-                    <span style={{ fontWeight: 700, color: '#111827' }}>{v >= 0 ? v : '—'}</span>
+                    <span style={{ fontWeight: 700, color: 'var(--text-1)' }}>{v >= 0 ? v : '—'}</span>
                   </div>
                 ))}
               </div>
@@ -70,7 +70,7 @@ export default function LiveStatus({ stats, flags, analytics, toggleFlag, lastUp
         </div>
         {flags.slice(0, 8).map(flag => (
           <div key={flag.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid #F3F4F6' }}>
-            <code style={{ fontSize: 11, color: '#111827' }}>{flag.name}</code>
+            <code style={{ fontSize: 11, color: 'var(--text-1)' }}>{flag.name}</code>
             <button onClick={() => toggleFlag(flag)} style={{
               padding: '2px 12px', borderRadius: 12, border: 'none', cursor: 'pointer',
               fontSize: 10, fontWeight: 700,
@@ -94,7 +94,7 @@ export default function LiveStatus({ stats, flags, analytics, toggleFlag, lastUp
                 <div style={{ flex: 1, height: 14, background: '#F9FAFB', borderRadius: 3, overflow: 'hidden' }}>
                   <div style={{ width: `${(r.count / maxCount) * 100}%`, height: '100%', background: '#2563EB', borderRadius: 3, opacity: 0.6, minWidth: r.count > 0 ? 3 : 0 }} />
                 </div>
-                <span style={{ fontSize: 12, fontWeight: 700, color: '#111827', width: 30, textAlign: 'right' }}>{r.count}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', width: 30, textAlign: 'right' }}>{r.count}</span>
               </div>
             );
           })}

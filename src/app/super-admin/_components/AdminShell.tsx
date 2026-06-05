@@ -5,6 +5,8 @@ import { type SupabaseClient } from '@supabase/supabase-js';
 import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase-client';
+import { useCosmicTheme } from '@/lib/cosmic-theme';
+import { Starfield } from '@/components/cosmic';
 
 interface AdminSession {
   accessToken: string;
@@ -65,6 +67,9 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   // not be wrapped in AuthProvider. Bilingual rendering activates only when
   // AuthContext is present.
   const { isHi } = useAuth();
+  // Cosmic Phase 3: flag-gated dark reskin (school/gold-steel palette via
+  // data-role="school"). OFF ⇒ cosmicEnabled false ⇒ byte-identical to before.
+  const { cosmicEnabled } = useCosmicTheme();
 
   useEffect(() => {
     setCurrentPath(window.location.pathname);
@@ -138,7 +143,13 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   return (
     <AdminCtx.Provider value={{ accessToken, adminName, supabase, headers, apiFetch }}>
-      <div className="flex min-h-screen bg-surface-1">
+      <div
+        className={`flex min-h-screen bg-surface-1${cosmicEnabled ? ' super-admin-portal' : ''}`}
+        style={cosmicEnabled ? { position: 'relative' } : undefined}
+      >
+        {/* Cosmic dark canvas — decorative starfield behind the admin chrome.
+            Hidden in light/HC + reduced-motion via globals.css. */}
+        {cosmicEnabled && <Starfield className="!fixed inset-0 -z-0" />}
         <DashboardSidebar
           brandTitle="ALFANUMRIK"
           brandSubtitle={isHi ? 'सुपर एडमिन' : 'Super Admin'}
@@ -159,7 +170,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
             </div>
           }
         />
-        <main className="flex-1">
+        <main className={`flex-1${cosmicEnabled ? ' relative z-10' : ''}`}>
           <div className="max-w-screen-2xl p-6">{children}</div>
         </main>
       </div>

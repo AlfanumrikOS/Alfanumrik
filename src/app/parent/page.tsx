@@ -9,6 +9,13 @@ import { useAtlasFlag } from '@/lib/use-atlas-flag';
 import { useRealtimeRevalidator } from '@/hooks/useRealtimeRevalidator';
 import { REALTIME_FLAGS } from '@/lib/feature-flags';
 import AtlasParent from './AtlasParent';
+// Cosmic redesign (ff_cosmic_redesign_v1). When the flag is ON the parent home
+// is reskinned to the cosmic composition + a Starfield is layered behind it.
+// When OFF, useCosmicTheme().cosmicEnabled is false and NONE of this renders —
+// the legacy DOM below stays byte-identical to today (and Atlas/legacy dispatch
+// is untouched).
+import { useCosmicTheme } from '@/lib/cosmic-theme';
+import { Starfield } from '@/components/cosmic';
 import {
   type ParentSession,
   type StudentSession,
@@ -21,6 +28,11 @@ import {
 } from './_components/parent-session';
 
 const ScoreCard = dynamic(() => import('@/components/score/ScoreCard'), { ssr: false });
+
+// Cosmic parent home — lazily imported so its cosmic primitives never enter the
+// flag-OFF first-paint bundle (ssr:false keeps it client-only). Rendered only
+// when ff_cosmic_redesign_v1 resolves ON.
+const CosmicParentHome = dynamic(() => import('./CosmicParentHome'), { ssr: false });
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -343,7 +355,9 @@ interface PerfScoreRow {
   level_name: string;
 }
 
-function Dashboard({ guardian, initialStudent, allChildren, isHi }: { guardian: ParentSession; initialStudent: StudentSession; allChildren: StudentSession[]; isHi: boolean }) {
+function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessages }: { guardian: ParentSession; initialStudent: StudentSession; allChildren: StudentSession[]; isHi: boolean; canFetchMessages: boolean }) {
+  // Cosmic redesign switch. False unless ff_cosmic_redesign_v1 resolves ON.
+  const { cosmicEnabled } = useCosmicTheme();
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [tips, setTips] = useState<ParentTip[]>([]);
   const [loading, setLoading] = useState(true);
@@ -479,6 +493,54 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi }: { guardian: 
 
   // Check if child has zero activity — show contextual empty state
   const hasNoActivity = (s.totalQuizzes || 0) === 0 && (s.xp || 0) === 0 && (s.totalChats || 0) === 0;
+
+  // ════════════════════════════════════════════════════════════════════════
+  // COSMIC BRANCH (ff_cosmic_redesign_v1 ON). Renders the reskinned parent
+  // home wired to the SAME real data (dash.stats, dash.dailyActivity,
+  // dash.weekSummary, dash.bktMastery, perfScores, labStreak) the legacy DOM
+  // below uses. Display only. The parent role auto-gets the peach/mint palette
+  // via html[data-role="parent"]. When the flag is OFF, cosmicEnabled is false
+  // and we fall through to the byte-identical legacy markup.
+  // ════════════════════════════════════════════════════════════════════════
+  if (cosmicEnabled) {
+    return (
+      <div style={{ position: 'relative', minHeight: '100vh' }}>
+        <Starfield />
+        {/* Multi-child selector — preserved (renders nothing for single child). */}
+        {children.length > 1 && (
+          <div style={{ maxWidth: 600, margin: '0 auto', padding: '8px 16px 0' }}>
+            <ChildSelectorPills
+              studentList={children}
+              selectedIdx={selectedChildIdx}
+              onSelect={(idx) => {
+                if (idx === selectedChildIdx) return;
+                setLoading(true);
+                setDash(null);
+                setPerfScores([]);
+                setLabStreak(null);
+                setSelectedChildIdx(idx);
+              }}
+            />
+          </div>
+        )}
+        <CosmicParentHome
+          student={student}
+          childName={childName}
+          grade={dash.student?.grade || student.grade}
+          isHi={isHi}
+          stats={s}
+          dailyActivity={dash.dailyActivity}
+          weekSummary={dash.weekSummary}
+          bktMastery={dash.bktMastery}
+          perfScores={perfScores}
+          labStreak={labStreak}
+          canFetchMessages={canFetchMessages}
+          onRefresh={load}
+          onLogout={logout}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
@@ -865,22 +927,54 @@ export default function ParentPage() {
     return <LoginScreen onLogin={(g, s) => { setGuardian(g); setStudent(s); fetchAllChildren(g.id, s); }} isHi={isHi} authUserId={auth.authUserId} prefillName={prefillName || undefined} />;
   }
 
-  return <AtlasParentDispatcher guardian={guardian} student={student} allChildren={allChildren} isHi={isHi} />;
+  // canFetchMessages: only guardian-mode parents (a real Supabase JWT) can hit
+  // /api/parent/messages. Link-code parents have an anonymous HMAC session and
+  // would 401 — the cosmic teacher-note card is gated off for them.
+  const canFetchMessages = !!auth.guardian;
+  return (
+    <AtlasParentDispatcher
+      guardian={guardian}
+      student={student}
+      allChildren={allChildren}
+      isHi={isHi}
+      canFetchMessages={canFetchMessages}
+    />
+  );
 }
 
 /**
- * Reads the Editorial Atlas flag and hands off to either the redesigned
- * <AtlasParent> or the legacy <Dashboard>. Uses the shared `useAtlasFlag`
- * hook so the initial render is synchronous (no flash). See
- * src/lib/use-atlas-flag.ts for the cache strategy.
+ * Reads the cosmic + Editorial Atlas flags and hands off to the right home.
+ *
+ * Dispatch priority:
+ *   1. ff_cosmic_redesign_v1 ON  → <Dashboard> (it owns the data fetch + the
+ *      internal cosmic branch). Cosmic outranks Atlas so the CEO-approved
+ *      cosmic skin always wins when enabled.
+ *   2. Editorial Atlas ON        → <AtlasParent>
+ *   3. otherwise (both OFF)      → <Dashboard> legacy DOM (byte-identical today)
+ *
+ * Uses the shared `useAtlasFlag` hook so the Atlas decision is synchronous (no
+ * flash). The cosmic flag is read inside <Dashboard> via useCosmicTheme(),
+ * which is sync-from-cache on repeat visits (mirrors the student dashboard).
  */
 function AtlasParentDispatcher(props: {
   guardian: ParentSession;
   student: StudentSession;
   allChildren: StudentSession[];
   isHi: boolean;
+  canFetchMessages: boolean;
 }) {
+  const { cosmicEnabled } = useCosmicTheme();
   const atlas = useAtlasFlag('parent');
-  if (atlas) return <AtlasParent {...props} />;
-  return <Dashboard guardian={props.guardian} initialStudent={props.student} allChildren={props.allChildren} isHi={props.isHi} />;
+  // Cosmic wins over Atlas. Route through <Dashboard> (which fetches the data
+  // the cosmic home needs and renders the cosmic branch when enabled).
+  if (!cosmicEnabled && atlas) return <AtlasParent guardian={props.guardian} student={props.student} allChildren={props.allChildren} isHi={props.isHi} />;
+  return (
+    <Dashboard
+      guardian={props.guardian}
+      initialStudent={props.student}
+      allChildren={props.allChildren}
+      isHi={props.isHi}
+      canFetchMessages={props.canFetchMessages}
+    />
+  );
 }
