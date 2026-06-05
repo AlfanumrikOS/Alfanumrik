@@ -37,6 +37,18 @@ describe('MOL integration', () => {
       SUPABASE_SERVICE_ROLE_KEY: 'srv-key',
       USD_TO_INR: '83',
     })
+    // ── Determinism pin (REG: MOL probabilistic router) ──────────────────────
+    // The router (`router.ts`) does an 80/20 probabilistic split via
+    // `Math.random() < w` (default w = 0.8): ~80% of calls keep OpenAI as the
+    // primary, ~20% reorder the chain to put Anthropic first. That split is the
+    // INTENDED production behaviour (commit f520f708 "route 80% to OpenAI") and
+    // must not change. But it makes provider-order assertions flaky: roughly
+    // 1-in-5 runs these tests would see Anthropic chosen first, failing the
+    // "routes to openai" assertion and the "openaiCalls === 2 / fallback_count
+    // >= 1" assertion (OpenAI is never called when Anthropic is primary). We
+    // pin Math.random() to 0 so the router deterministically keeps OpenAI
+    // primary, exercising the documented happy-path + 503-fallback chain.
+    vi.spyOn(Math, 'random').mockReturnValue(0)
     // Reset module caches (force re-import below)
     vi.resetModules()
   })

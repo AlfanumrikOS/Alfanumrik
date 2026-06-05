@@ -68,15 +68,25 @@ describe('buildColdStartPromptSection', () => {
 
   it('forbids assuming proficiency or struggle without data', () => {
     const out = buildColdStartPromptSection();
-    expect(out).toContain('Do NOT assume');
-    expect(out).toContain('PROFICIENT');
-    expect(out).toContain('STRUGGLING');
+    // The cold-start prompt must explicitly forbid the model from inferring
+    // proficiency OR struggle when there is no signal. The June-2026
+    // teacher-first rewrite condensed the wording from the original
+    // "Do NOT assume strong prior mastery ... PROFICIENT / STRUGGLING"
+    // to the leaner "Assuming proficiency or struggle without data" while
+    // keeping the exact same pedagogical guard. Pin the surviving phrasing.
+    expect(out).toContain('Assuming proficiency or struggle without data');
+    expect(out.toLowerCase()).toContain('proficiency');
+    expect(out.toLowerCase()).toContain('struggle');
   });
 
   it('hints at quizzes for personalisation on the next turn', () => {
     const out = buildColdStartPromptSection();
     expect(out.toLowerCase()).toContain('quiz');
-    expect(out.toLowerCase()).toContain('personalisation');
+    // The nudge must tie taking a quiz to unlocking personalisation. The
+    // rewrite shortened "so personalisation can kick in from the next turn"
+    // to "for personalised help" — both encode the same intent, so match the
+    // spelling-robust "personalis" prefix (personalise / personalisation).
+    expect(out.toLowerCase()).toContain('personalis');
   });
 
   it('handles meta questions (where to start) by offering a diagnostic', () => {
