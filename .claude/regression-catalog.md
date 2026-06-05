@@ -1173,30 +1173,60 @@ Source: the "cosmic" dark visual-identity foundation. A flag-gated
 runtime (`src/lib/cosmic-theme.tsx`), cosmic tokens + primitives in
 `src/app/globals.css` scoped under `html[data-design="cosmic"]`, the
 `src/components/cosmic/*` primitive shells, and a `variant` on
-`src/components/landing/FoxyMark.tsx`. Nothing in Phase 0 ships to a
-production surface — the only consumers are the flag-gated dev gallery
-(`/dev/cosmic-preview`) and FoxyMark (which still defaults to `classic`).
+`src/components/landing/FoxyMark.tsx`.
 
-The single load-bearing safety property of the entire redesign is the
-flag-OFF pixel-identity guarantee: the whole dark identity hinges on ONE
-attribute, `data-design="cosmic"` on `<html>`. The cosmic CSS in
-`globals.css` is scoped under that attribute, so if it is never written the
-dark theme can never paint. CosmicThemeProvider must write it ONLY when the
-flag resolves ON, and AuthContext must keep its force-light behavior when the
-flag is OFF (it owns `data-theme` in the OFF world; the cosmic provider must
-not clobber it). A regression here would silently flip production to a dark,
-half-themed surface for every user — a brand and legibility incident.
+**Gating broadened (Wave G, 2026-06-05):** the cosmic skin now activates on a
+4-input OR with a force-off escape hatch, resolved by `computeCosmicEnabled`
+in `src/lib/cosmic-theme.tsx` and mirrored by the anti-FOUC pre-hydration
+script in `src/app/layout.tsx`:
+
+```
+cosmicEnabled = forceOff ? false
+                         : ( dbFlag                              // ff_cosmic_redesign_v1 ON in DB
+                             || NEXT_PUBLIC_VERCEL_ENV==='preview' // Vercel PR preview deploy
+                             || urlForce(?cosmic=1/preview)        // manual enable (any env)
+                             || localStorage 'alfanumrik_cosmic_force'==='1' )
+forceOff = (?cosmic=0) || (localStorage 'alfanumrik_cosmic_force'==='0')
+```
+
+This means **PR previews auto-show cosmic** (so the CEO sees the redesign on
+the Vercel preview URL with zero DB seeding) while **production stays strictly
+OFF** by default: on prod, `NEXT_PUBLIC_VERCEL_ENV==='production'` (not
+`'preview'`), the seed migration `20260611000000_seed_ff_cosmic_redesign_v1.sql`
+ships the DB row `is_enabled=false`, and there is no url/localStorage force —
+so all four enable signals are false and no `data-design` is written. `next.config.js`
+exposes `NEXT_PUBLIC_VERCEL_ENV = process.env.VERCEL_ENV ?? ''` (empty/undefined
+in local + tests ⇒ not-preview ⇒ OFF-contributing). A `?cosmic=0` (or stored
+'0') hard-disables EVERYTHING, including a DB-ON flag and a preview deploy, so
+a tester can pin the legacy look for an A/B comparison.
+
+The single load-bearing safety property of the entire redesign is unchanged
+and is the production-OFF / flag-OFF pixel-identity guarantee: the whole dark
+identity hinges on ONE attribute, `data-design="cosmic"` on `<html>`. The
+cosmic CSS in `globals.css` is scoped under that attribute, so if it is never
+written the dark theme can never paint. CosmicThemeProvider must write it ONLY
+when `computeCosmicEnabled` resolves ON, and AuthContext must keep its
+force-light behavior when cosmic is OFF (it owns `data-theme` in the OFF world;
+the cosmic provider must not clobber it). A regression here — most dangerously
+a preview signal leaking into production, or the force-off escape hatch
+failing to beat an enable signal — would silently flip production to a dark,
+half-themed surface for every user, a brand and legibility incident.
 
 | # | Test name | Asserts | Location | Status |
 |---|---|---|---|---|
-| REG-78 | `cosmic_redesign_flag_off_pixel_identity` | Three-pronged flag-OFF contract on the cosmic foundation. (1) **No data-design when flag absent/false:** with `getFeatureFlags()` returning no `ff_cosmic_redesign_v1` row (the production truth) OR an explicit `false`, `CosmicThemeProvider` writes NO `data-design` and NO `data-role` to `<html>`, and `cosmicEnabled` resolves `false`. The cosmic CSS scope therefore never matches and the app is pixel-identical to today. (2) **AuthContext ownership preserved:** the cosmic provider does NOT clobber `data-theme` when the flag is OFF — AuthContext's force-`light` write survives untouched (the two providers must not fight). (3) **Switch is live (not a false positive):** with the flag ON, `data-design="cosmic"` IS written along with `data-role` + `data-theme="dark"`, proving the OFF result isn't a trivial no-op provider. PLUS the FoxyMark `variant` default: `<FoxyMark />` renders the legacy SVG-free classic geometric fox; the cosmic SVG renders ONLY for `variant="cosmic"`. PLUS the display-only primitives (MasteryRing / ProgressBar) clamp `percent` to [0,100] and coerce non-finite input to 0 via `Number.isFinite` — they compute NO score (P1/P2 stay in the assessment domain; these primitives only render a handed-in display number). | `src/__tests__/cosmic-flag-off-safety.test.tsx` (provider DOM contract) + `src/__tests__/cosmic-primitives.test.tsx` (FoxyMark variant default + primitive clamping) | E |
+| REG-78 | `cosmic_redesign_flag_off_pixel_identity` | Full gating-MATRIX contract on the cosmic foundation (broadened Wave G: production-OFF + preview-auto-enable + manual override). The enable decision is `forceOff ? false : (dbFlag \|\| isPreviewEnv \|\| urlForce \|\| localStorageForce)`. Pinned at the `<html>` DOM boundary: **(a) production:** `NEXT_PUBLIC_VERCEL_ENV='production'` + DB flag OFF + no force ⇒ `cosmicEnabled` false, NO `data-design`/`data-role` written (production byte-identical to today). **(b) preview:** `NEXT_PUBLIC_VERCEL_ENV='preview'` ⇒ cosmic AUTO-enables even with the DB flag OFF (`data-design="cosmic"` + `data-role="student"` + `data-theme="dark"` written) — the whole point: PR previews show the redesign with zero DB seeding. **(c) manual enable:** `?cosmic=1` (and case-insensitive `?cosmic=preview`) ⇒ cosmic ON in ANY env (proven in production), and is persisted to `localStorage 'alfanumrik_cosmic_force'='1'` so it survives client navigation; a pre-set localStorage '1' (no URL param) also enables. **(d) force-off beats everything:** `?cosmic=0` ⇒ OFF even on a preview deploy AND even when the DB flag is ON, persisting force='0'; a pre-set localStorage '0' force-disables on a preview too. **(e) absent flag + undefined env + no force ⇒ OFF** (REG-78 core intact: no `ff_cosmic_redesign_v1` row, JSDOM env undefined ⇒ not-preview ⇒ `cosmicEnabled` false, no `data-design`). PLUS **AuthContext ownership preserved:** the cosmic provider does NOT clobber `data-theme` when OFF — AuthContext's force-`light` write survives untouched. PLUS **switch is live:** with the flag ON, `data-design="cosmic"` IS written, proving the OFF result isn't a trivial no-op provider. PLUS the FoxyMark `variant` default: `<FoxyMark />` renders the legacy SVG-free classic geometric fox; the cosmic SVG renders ONLY for `variant="cosmic"`. PLUS the display-only primitives (MasteryRing / ProgressBar) clamp `percent` to [0,100] and coerce non-finite input to 0 via `Number.isFinite` — they compute NO score (P1/P2 stay in the assessment domain; these primitives only render a handed-in display number). | `src/__tests__/cosmic-flag-off-safety.test.tsx` (provider DOM gating-matrix contract) + `src/__tests__/cosmic-primitives.test.tsx` (FoxyMark variant default + primitive clamping) | E |
 | REG-79 | `cosmic_dispatch_flag_off_legacy` | Page-level DISPATCH contract for the full redesign (Phases 1–3). REG-78 pins that the provider writes no `data-design` when the flag is OFF; REG-79 pins the NEXT link — the `cosmicEnabled ? cosmic : legacy` selection that the student dashboard (`src/app/dashboard/page.tsx` — `<CosmicAboveFoldHero/>` vs `<AboveFoldHero/>`), the parent home (`src/app/parent/page.tsx` — `<CosmicParentHome/>` vs legacy markup), and the Phase-3 portal shells (teacher/super-admin/school-admin — Starfield + `*-portal` class) all key off. The single switch behind every branch is `useCosmicTheme().cosmicEnabled`, resolved by the REAL `<CosmicThemeProvider>` from the client flag read path. Asserts: flag ABSENT (production truth) ⇒ LEGACY branch renders + cosmic branch does NOT; flag `false` ⇒ LEGACY branch renders; flag `true` ⇒ COSMIC branch renders + legacy does NOT (proves the OFF result is a real decision, not a dead switch). Wires the exact page ternary to the live hook (mocks only `getFeatureFlags` + `useAuth`) — behavior over implementation. Guards against an inverted ternary or a switch-true-while-OFF regression silently flipping production to cosmic for every user. | `src/__tests__/cosmic-dispatch-flag-off.test.tsx` | E |
 
 ### Pinned tests
 
-- `src/__tests__/cosmic-flag-off-safety.test.tsx::REG-78 — CosmicThemeProvider flag-OFF DOM safety::writes NO data-design / data-role when the cosmic flag is ABSENT`
-- `src/__tests__/cosmic-flag-off-safety.test.tsx::REG-78 — CosmicThemeProvider flag-OFF DOM safety::does NOT clobber data-theme when the flag is OFF (AuthContext owns it)`
-- `src/__tests__/cosmic-flag-off-safety.test.tsx::REG-78 — CosmicThemeProvider flag-OFF DOM safety::writes data-design="cosmic" when the flag is ON (switch is live)`
+- `src/__tests__/cosmic-flag-off-safety.test.tsx::REG-78 — CosmicThemeProvider flag-OFF / production DOM safety::writes NO data-design / data-role when the cosmic flag is ABSENT`
+- `src/__tests__/cosmic-flag-off-safety.test.tsx::REG-78 — CosmicThemeProvider flag-OFF / production DOM safety::does NOT clobber data-theme when the flag is OFF (AuthContext owns it)`
+- `src/__tests__/cosmic-flag-off-safety.test.tsx::REG-78 — CosmicThemeProvider flag-OFF / production DOM safety::writes data-design="cosmic" when the flag is ON (switch is live)`
+- `src/__tests__/cosmic-flag-off-safety.test.tsx::REG-78 — CosmicThemeProvider flag-OFF / production DOM safety::stays OFF in PRODUCTION env with the flag OFF and no force (byte-identical)`
+- `src/__tests__/cosmic-flag-off-safety.test.tsx::REG-78 — CosmicThemeProvider flag-OFF / production DOM safety::auto-enables cosmic on a PREVIEW deploy even with the flag OFF`
+- `src/__tests__/cosmic-flag-off-safety.test.tsx::REG-78 — CosmicThemeProvider flag-OFF / production DOM safety::enables cosmic via ?cosmic=1 even in production with the flag OFF`
+- `src/__tests__/cosmic-flag-off-safety.test.tsx::REG-78 — CosmicThemeProvider flag-OFF / production DOM safety::force-disables via ?cosmic=0 even on a PREVIEW deploy`
+- `src/__tests__/cosmic-flag-off-safety.test.tsx::REG-78 — CosmicThemeProvider flag-OFF / production DOM safety::force-disables via ?cosmic=0 even when the DB flag is ON`
 - `src/__tests__/cosmic-primitives.test.tsx::FoxyMark — variant default (flag-OFF pixel identity)::renders the classic geometric fox by default (no variant prop)`
 - `src/__tests__/cosmic-dispatch-flag-off.test.tsx::REG-79 — cosmic dispatch flag-OFF stays legacy::renders the LEGACY branch (not cosmic) when the flag is ABSENT`
 - `src/__tests__/cosmic-dispatch-flag-off.test.tsx::REG-79 — cosmic dispatch flag-OFF stays legacy::renders the COSMIC branch when the flag is ON (switch is live, not dead)`
