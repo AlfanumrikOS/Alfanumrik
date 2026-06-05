@@ -91,11 +91,23 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json'],
-      include: ['src/lib/**'],
+      // Restrict to TypeScript source only. A bare `src/lib/**` glob made the
+      // v8 provider's getCoverageMapForUncoveredFiles() feed non-source files
+      // (e.g. src/lib/state/README.md) into rolldown's parseAstAsync(), which
+      // throws `RolldownError: Parse failed: Invalid Character` on markdown and
+      // crashed the entire `vitest run --coverage` job in CI. Markdown has no
+      // coverable code, so scoping the include to *.{ts,tsx} cannot change the
+      // coverage numbers — it only stops the parser from choking on docs.
+      include: ['src/lib/**/*.{ts,tsx}'],
       exclude: [
         'src/__tests__/**',
         'node_modules/**',
         'src/app/**/page.tsx',
+        // Defense-in-depth against the markdown-parse crash above: never let a
+        // README.md / *.json (or any non-source doc) reach the coverage parser,
+        // regardless of where it lives under an `include` glob.
+        '**/*.md',
+        '**/*.json',
         // Server / integration territory: tests live in src/__tests__/migrations
         // and src/__tests__/scripts (the integration-only suite gated on real
         // STAGING_SUPABASE_* secrets in CI). They are NOT exercised by the unit
