@@ -33,6 +33,17 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
+  // Expose Vercel's deployment environment to client code as
+  // NEXT_PUBLIC_VERCEL_ENV. VERCEL_ENV is a Vercel-injected build var that is
+  // 'production' on the production deploy, 'preview' on PR preview deploys, and
+  // 'development' on `vercel dev`. It is NOT secret (it carries no token, key,
+  // or PII — only the deploy tier string). The frontend uses this to
+  // auto-enable the cosmic redesign on previews only, while production
+  // visibility stays gated by the ff_cosmic_redesign_v1 feature flag (default
+  // OFF). Falls back to '' for local `npm run dev` where VERCEL_ENV is unset.
+  env: {
+    NEXT_PUBLIC_VERCEL_ENV: process.env.VERCEL_ENV ?? '',
+  },
   // PostHog reverse-proxy (Phase 0 of marking-authenticity remediation):
   // recommended PostHog deployment pattern for ad-blocker resilience. Mirrors
   // the Sentry `/monitoring` tunnel approach. The proxy is path-based, NOT a

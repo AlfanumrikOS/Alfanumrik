@@ -4,9 +4,12 @@
  * Dev-only visual QA surface for the cosmic redesign (Phase 0).
  *
  * Renders every cosmic primitive + cosmic Foxy in one place so the look can be
- * verified end-to-end. It is GATED on ff_cosmic_redesign_v1:
- *   - Flag OFF → shows a plain "flag is off" notice (no cosmic chrome leaks).
- *   - Flag ON  → shows the gallery, with controls to flip theme
+ * verified end-to-end. It is gated on the SAME `useCosmicTheme().cosmicEnabled`
+ * switch every other cosmic surface uses, which is ON when ANY of: the DB flag
+ * ff_cosmic_redesign_v1, a Vercel preview deploy (NEXT_PUBLIC_VERCEL_ENV==
+ * 'preview'), or a manual `?cosmic=1` override (sticky via localStorage):
+ *   - cosmic OFF → shows a plain "off" notice + how to enable (no cosmic leaks).
+ *   - cosmic ON  → shows the gallery, with controls to flip theme
  *     (dark / light / hc) and to preview role palettes via <html data-role>.
  *
  * Bilingual (P7): all visible copy goes through the local `t()` helper keyed on
@@ -39,8 +42,8 @@ type CosmicRole = 'student' | 'parent' | 'teacher' | 'school';
 const STRINGS = {
   title: { en: 'Cosmic Preview', hi: 'कॉस्मिक पूर्वावलोकन' },
   flagOff: {
-    en: 'The cosmic redesign flag (ff_cosmic_redesign_v1) is OFF. Enable it to preview.',
-    hi: 'कॉस्मिक रीडिज़ाइन फ़्लैग (ff_cosmic_redesign_v1) बंद है। पूर्वावलोकन हेतु इसे चालू करें।',
+    en: 'The cosmic redesign is OFF here. Open this page on a Vercel preview deploy, or add ?cosmic=1 to the URL, to preview it.',
+    hi: 'कॉस्मिक रीडिज़ाइन यहाँ बंद है। पूर्वावलोकन हेतु इसे Vercel प्रीव्यू डिप्लॉय पर खोलें, या URL में ?cosmic=1 जोड़ें।',
   },
   theme: { en: 'Theme', hi: 'थीम' },
   role: { en: 'Role palette', hi: 'भूमिका रंग' },
