@@ -27,7 +27,7 @@ export default function PlatformHealth({ stats, obsData, analytics, lastUpdated 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         {/* Parent-Student Linkage */}
         <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid #2563EB' }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#111827', marginBottom: 8 }}>{'👨‍👧'} Parent-Student Linkage</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', marginBottom: 8 }}>{'👨‍👧'} Parent-Student Linkage</div>
           <div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
               <span style={{ fontSize: 28, fontWeight: 800, color: linkColor }}>{linkageRate}%</span>
@@ -44,10 +44,10 @@ export default function PlatformHealth({ stats, obsData, analytics, lastUpdated 
 
         {/* Teacher-Class Coverage */}
         <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid #D97706' }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#111827', marginBottom: 8 }}>{'👩‍🏫'} Teacher Coverage</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', marginBottom: 8 }}>{'👩‍🏫'} Teacher Coverage</div>
           <div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <span style={{ fontSize: 28, fontWeight: 800, color: '#111827' }}>{totalTeachers}</span>
+              <span style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-1)' }}>{totalTeachers}</span>
               <span style={{ fontSize: 11, color: '#9CA3AF' }}>teachers</span>
             </div>
             <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>
@@ -63,7 +63,7 @@ export default function PlatformHealth({ stats, obsData, analytics, lastUpdated 
         {analytics && (
           <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid #16A34A' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#111827' }}>{'📚'} Content Coverage</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)' }}>{'📚'} Content Coverage</div>
               <StatusBadge
                 label={analytics.content_stats.questions > 1000 ? 'Strong' : analytics.content_stats.questions > 500 ? 'Growing' : 'Needs Content'}
                 variant={analytics.content_stats.questions > 1000 ? 'success' : analytics.content_stats.questions > 500 ? 'warning' : 'danger'}
@@ -71,15 +71,15 @@ export default function PlatformHealth({ stats, obsData, analytics, lastUpdated 
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, textAlign: 'center' }}>
               <div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: '#111827' }}>{analytics.content_stats.chapters}</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-1)' }}>{analytics.content_stats.chapters}</div>
                 <div style={{ fontSize: 10, color: '#9CA3AF' }}>Chapters</div>
               </div>
               <div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: '#111827' }}>{analytics.content_stats.topics}</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-1)' }}>{analytics.content_stats.topics}</div>
                 <div style={{ fontSize: 10, color: '#9CA3AF' }}>Topics</div>
               </div>
               <div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: '#111827' }}>{analytics.content_stats.questions}</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-1)' }}>{analytics.content_stats.questions}</div>
                 <div style={{ fontSize: 10, color: '#9CA3AF' }}>Questions</div>
               </div>
             </div>
@@ -89,7 +89,7 @@ export default function PlatformHealth({ stats, obsData, analytics, lastUpdated 
         {/* Simulation Health — live from stats route (Phase F.6 fix 2026-05-17) */}
         <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid #8B5CF6' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#111827' }}>{'🔬'} Simulation Lab</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)' }}>{'🔬'} Simulation Lab</div>
             <StatusBadge
               label={(stats.totals?.simulations || 0) > 0 ? 'Active' : 'Empty'}
               variant={(stats.totals?.simulations || 0) > 0 ? 'success' : 'warning'}

@@ -8,6 +8,8 @@ import { supabase } from '@/lib/supabase';
 import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
 import type { ModuleKey } from '@/lib/modules/registry';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
+import { useCosmicTheme } from '@/lib/cosmic-theme';
+import { Starfield } from '@/components/cosmic';
 
 /* ─── P7: Bilingual labels ───────────────────────────────────────────
  *
@@ -67,6 +69,9 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
   const pathname = usePathname();
   const { authUserId, isHi } = useAuth();
   const tenant = useTenant();
+  // Cosmic Phase 3: flag-gated dark reskin (gold/steel via data-role="school").
+  // OFF ⇒ cosmicEnabled false ⇒ byte-identical to before this change.
+  const { cosmicEnabled } = useCosmicTheme();
   const [schoolName, setSchoolName] = useState<string>(tenant.schoolName || '');
   const [logoUrl, setLogoUrl] = useState<string | null>(tenant.branding.logoUrl);
 
@@ -138,7 +143,13 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
   if (atlasOn) return <>{children}</>;
 
   return (
-    <div className="flex min-h-screen bg-surface-2">
+    <div
+      className={`flex min-h-screen bg-surface-2${cosmicEnabled ? ' school-admin-portal' : ''}`}
+      style={cosmicEnabled ? { position: 'relative' } : undefined}
+    >
+      {/* Cosmic dark canvas — decorative starfield behind the portal. Hidden in
+          light/HC + reduced-motion via globals.css. */}
+      {cosmicEnabled && <Starfield className="!fixed inset-0 -z-0" />}
       <DashboardSidebar
         brandTitle={schoolName || (isHi ? 'स्कूल प्रशासन' : 'School Admin')}
         brandSubtitle={isHi ? 'स्कूल प्रशासन' : 'School Administration'}
@@ -159,7 +170,7 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
           ) : null
         }
       />
-      <main className="flex-1 max-w-screen-xl overflow-auto p-6">{children}</main>
+      <main className={`flex-1 max-w-screen-xl overflow-auto p-6${cosmicEnabled ? ' relative z-10' : ''}`}>{children}</main>
     </div>
   );
 }

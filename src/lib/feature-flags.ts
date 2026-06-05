@@ -364,6 +364,33 @@ export const REALTIME_FLAGS = {
 } as const;
 
 /**
+ * Cosmic redesign flags (Phase 0 foundation, 2026-06-05).
+ *
+ *  ff_cosmic_redesign_v1
+ *    Master switch for the "cosmic" dark-theme visual identity. Gates the
+ *    new client-side CSS/theme layer. When ON, the cosmic theme tokens and
+ *    surfaces render; when OFF, the existing visual identity renders
+ *    unchanged. Default: false (off) so production is completely unaffected
+ *    until explicitly enabled.
+ *
+ *    The redesign is gated client-side (CSS/theme), so read this flag from a
+ *    client component via the existing client read path — see the
+ *    "Client read API" note below.
+ *
+ *    Not yet seeded by any migration. While the flag is absent from the
+ *    `feature_flags` table, both read paths resolve it to OFF
+ *    (`isFeatureEnabled()` returns false for unknown flags;
+ *    `getFeatureFlags()` omits absent rows so the lookup is undefined/falsy).
+ *    A seeding migration with `is_enabled = false` would only be needed to
+ *    make the flag visible/toggleable in the super-admin Flags console; it is
+ *    NOT required for the default-OFF behavior.
+ */
+export const COSMIC_REDESIGN_FLAGS = {
+  /** Cosmic dark redesign — new visual identity (Phase 0 foundation). Default off. */
+  V1: 'ff_cosmic_redesign_v1',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -389,6 +416,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [EDITORIAL_ATLAS_FLAGS.TEACHER]: false,
   [EDITORIAL_ATLAS_FLAGS.SCHOOL]:  false,
   [REALTIME_FLAGS.SUBSCRIPTIONS_V1]: false,
+  [COSMIC_REDESIGN_FLAGS.V1]: false,
 } as const;
 
 /**

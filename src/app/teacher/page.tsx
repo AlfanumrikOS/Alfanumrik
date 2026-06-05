@@ -9,6 +9,7 @@ import { SUBJECT_ROTATION } from '@/lib/challenge-config';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
 import { useRealtimeRevalidator } from '@/hooks/useRealtimeRevalidator';
 import { REALTIME_FLAGS } from '@/lib/feature-flags';
+import { useCosmicTheme } from '@/lib/cosmic-theme';
 import AtlasTeacher from './AtlasTeacher';
 
 // ============================================================
@@ -583,6 +584,8 @@ export default function TeacherPage() {
 
 function LegacyTeacherPage() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
+  // Cosmic Phase 3: flag-gated dark reskin. OFF ⇒ false ⇒ markup is identical.
+  const { cosmicEnabled } = useCosmicTheme();
   const router = useRouter();
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [heatmap, setHeatmap] = useState<HeatmapData | null>(null);
@@ -818,7 +821,14 @@ function LegacyTeacherPage() {
           { label: tt(isHi, 'Alerts', 'अलर्ट'), val: dash?.stats?.active_alerts || 0, color: (dash?.stats?.critical_alerts || 0) > 0 ? 'text-red-600' : 'text-amber-600' },
           { label: tt(isHi, 'Assignments', 'असाइनमेंट'), val: dash?.stats?.active_assignments || 0, color: 'text-emerald-600' },
         ].map((s,i) => (
-          <div key={i} className="bg-slate-900 rounded-xl py-3.5 px-4 border border-slate-800">
+          <div
+            key={i}
+            className={
+              cosmicEnabled
+                ? 'cosmic-card-elev td-kpi-cosmic py-3.5 px-4'
+                : 'bg-slate-900 rounded-xl py-3.5 px-4 border border-slate-800'
+            }
+          >
             <p className="text-slate-500 text-[11px] m-0 uppercase tracking-wide">{s.label}</p>
             <p className={`${s.color} text-[26px] font-bold mt-1`}>{s.val}</p>
           </div>

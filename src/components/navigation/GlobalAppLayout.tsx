@@ -1,9 +1,27 @@
 'use client';
 
-import { DesktopSidebar } from './DesktopSidebar';
-import { MobileBottomNav } from './MobileBottomNav';
+import dynamic from 'next/dynamic';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+
+// Lazy-load the student navigation chrome off the always-on shared layout
+// chunk (P10 shared-JS budget). These two components only render for a
+// logged-in student on non-excluded, non-Foxy routes (`showNav` below), so
+// their module code — plus the transitive nav-config + dashboard/feature-flag
+// SWR wiring they pull — must not sit in the root-layout entry chunk that
+// EVERY page (including public marketing + auth pages) downloads at first
+// paint. ssr:false is correct here: nav depends on client-resolved auth
+// state (useAuth) and renders nothing meaningful during SSR anyway, so there
+// is no hydration markup to mismatch. Auth/session/onboarding paths are
+// untouched — they never mount these components.
+const DesktopSidebar = dynamic(
+  () => import('./DesktopSidebar').then((m) => m.DesktopSidebar),
+  { ssr: false },
+);
+const MobileBottomNav = dynamic(
+  () => import('./MobileBottomNav').then((m) => m.MobileBottomNav),
+  { ssr: false },
+);
 
 export function GlobalAppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

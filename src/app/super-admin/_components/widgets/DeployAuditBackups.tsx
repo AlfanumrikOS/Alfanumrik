@@ -30,7 +30,7 @@ export default function DeployAuditBackups({ deployInfo, recentLogs, backups, la
           ].map(item => (
             <div key={item.l} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 12 }}>
               <span style={{ color: '#9CA3AF' }}>{item.l}</span>
-              <span style={{ color: '#111827', fontWeight: 500, fontFamily: item.l === 'Commit' ? 'monospace' : 'inherit' }}>{item.v}</span>
+              <span style={{ color: 'var(--text-1)', fontWeight: 500, fontFamily: item.l === 'Commit' ? 'monospace' : 'inherit' }}>{item.v}</span>
             </div>
           ))}
           {deployInfo.deployment.commit_message !== 'unknown' && (

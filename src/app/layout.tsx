@@ -4,6 +4,8 @@ import './globals.css';
 import 'katex/dist/katex.min.css';
 import type { Metadata, Viewport } from 'next';
 import { AuthProvider } from '@/lib/AuthContext';
+import { CosmicThemeProvider } from '@/lib/cosmic-theme';
+import { cosmicFontVars } from '@/lib/cosmic-fonts';
 import { SchoolProvider } from '@/lib/SchoolContext';
 import { TenantConfigProvider } from '@/lib/tenant-domain/client';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -70,7 +72,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    // cosmicFontVars only DEFINES the --font-cosmic-* CSS variables on <html>.
+    // They are consumed exclusively inside the html[data-design="cosmic"] scope
+    // in globals.css, so when ff_cosmic_redesign_v1 is OFF (no data-design
+    // attribute) they have zero visual effect — the app stays pixel-identical.
+    <html lang="en" className={cosmicFontVars} suppressHydrationWarning>
       <head>
         {/*
           color-scheme: REVERSED 2026-05-11 — dark mode (#705/#706) caused
@@ -82,6 +88,49 @@ export default function RootLayout({
           value tolerated. See src/lib/AuthContext.tsx::resolveTheme.
         */}
         <meta name="color-scheme" content="light" />
+        {/*
+          Cosmic anti-FOUC pre-hydration script (architect Condition 2).
+
+          Runs synchronously in <head> BEFORE first paint. For a returning user
+          who already has ff_cosmic_redesign_v1 ON, it sets data-design /
+          data-theme / data-role on <html> from the SAME localStorage keys
+          CosmicThemeProvider uses, so they don't see a light→dark flash before
+          React hydrates.
+
+          INERT WHEN FLAG-OFF: it reads the cached flag exactly like
+          getCosmicFlagSync() (cache key alfanumrik_cosmic_flag_v1, shape
+          { on, ts }, 1-hour TTL) and returns early when the value is absent,
+          expired, malformed, or false. In that case it writes NOTHING — first
+          paint is byte-identical to today and AuthContext's force-light path
+          remains the sole owner of data-theme. The whole body is wrapped in
+          try/catch and is dependency-free. <html> has suppressHydrationWarning,
+          and the attributes written here match CosmicThemeProvider's
+          applyCosmicToDOM exactly, so there is no post-hydration attribute
+          thrash. Keep this logic in lock-step with src/lib/cosmic-theme.tsx.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{" +
+              "var FT=36e5;" + // 1-hour TTL — mirrors FLAG_CACHE_TTL_MS
+              "var raw=localStorage.getItem('alfanumrik_cosmic_flag_v1');" +
+              "if(!raw)return;" +
+              "var c=JSON.parse(raw);" +
+              "if(!c||typeof c.ts!=='number')return;" +
+              "if(Date.now()-c.ts>FT)return;" +
+              "if(!c.on)return;" + // flag OFF/absent ⇒ no-op, flag-OFF first paint unchanged
+              "var V={dark:1,light:1,hc:1};" +
+              "var t=localStorage.getItem('alfanumrik_cosmic_theme');" +
+              "if(!V[t])t='dark';" + // DEFAULT_THEME
+              "var r=localStorage.getItem('alfanumrik_active_role');" +
+              "var role=r==='guardian'?'parent':r==='teacher'?'teacher':r==='institution_admin'?'school':'student';" +
+              "var h=document.documentElement;" +
+              "h.setAttribute('data-design','cosmic');" +
+              "h.setAttribute('data-theme',t);" +
+              "h.setAttribute('data-role',role);" +
+              "}catch(e){}})();",
+          }}
+        />
         <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
         <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -108,19 +157,28 @@ export default function RootLayout({
         <TenantConfigProvider>
           <SchoolProvider>
             <AuthProvider>
-              <ErrorBoundary>
-                <div id="main-content" className="app-shell">
-                  <GlobalAppLayout>{children}</GlobalAppLayout>
-                </div>
-              </ErrorBoundary>
-              <RegisterSW />
-              {/* In-app toast mount (Phase A.4). Replaces native alert() for
-                  error UI so cheap school tablets don't see blocking dialogs. */}
-              <Toaster />
-              {/* Non-critical client-only chrome (consent banner, maintenance
-                  banner, offline indicator, PostHog SDK init). Lazy-loaded
-                  to keep shared JS under the P10 budget. */}
-              <LayoutDeferredChrome />
+              {/* CosmicThemeProvider — Phase 0 of the cosmic redesign. Reads
+                  ff_cosmic_redesign_v1 client-side and, only when ON, writes
+                  data-design="cosmic" + data-theme + data-role to <html> to
+                  activate the cosmic token scope. When OFF it removes those
+                  attributes, so the legacy light theme renders unchanged.
+                  Mounted inside AuthProvider so it can read activeRole for the
+                  role-scoped palettes. Renders no markup itself. */}
+              <CosmicThemeProvider>
+                <ErrorBoundary>
+                  <div id="main-content" className="app-shell">
+                    <GlobalAppLayout>{children}</GlobalAppLayout>
+                  </div>
+                </ErrorBoundary>
+                <RegisterSW />
+                {/* In-app toast mount (Phase A.4). Replaces native alert() for
+                    error UI so cheap school tablets don't see blocking dialogs. */}
+                <Toaster />
+                {/* Non-critical client-only chrome (consent banner, maintenance
+                    banner, offline indicator, PostHog SDK init). Lazy-loaded
+                    to keep shared JS under the P10 budget. */}
+                <LayoutDeferredChrome />
+              </CosmicThemeProvider>
             </AuthProvider>
           </SchoolProvider>
         </TenantConfigProvider>

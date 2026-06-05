@@ -58,7 +58,7 @@ export default function QuickOperations({ apiFetch }: QuickOperationsProps) {
 
       {/* Create Test Account */}
       <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid #2563EB' }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: '#111827', marginBottom: 8 }}>Create Test Account</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', marginBottom: 8 }}>Create Test Account</div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <select value={testRole} onChange={e => setTestRole(e.target.value)} className={inputCls} style={{ cursor: 'pointer' }}>
             <option value="student">Student</option>
@@ -74,7 +74,7 @@ export default function QuickOperations({ apiFetch }: QuickOperationsProps) {
 
       {/* User Lookup */}
       <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid #D97706' }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: '#111827', marginBottom: 8 }}>User Lookup</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', marginBottom: 8 }}>User Lookup</div>
         <div style={{ display: 'flex', gap: 6 }}>
           <input
             value={lookupSearch}
@@ -91,7 +91,7 @@ export default function QuickOperations({ apiFetch }: QuickOperationsProps) {
             {lookupResults.map((u, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #F3F4F6', fontSize: 12 }}>
                 <div>
-                  <strong style={{ color: '#111827' }}>{String(u.name || '—')}</strong>
+                  <strong style={{ color: 'var(--text-1)' }}>{String(u.name || '—')}</strong>
                   <span style={{ color: '#9CA3AF', marginLeft: 6 }}>{String(u.email || '')}</span>
                 </div>
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -106,7 +106,7 @@ export default function QuickOperations({ apiFetch }: QuickOperationsProps) {
 
       {/* Password Reset */}
       <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid #DC2626' }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: '#111827', marginBottom: 8 }}>Password Reset</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', marginBottom: 8 }}>Password Reset</div>
         <div style={{ display: 'flex', gap: 6 }}>
           <input value={supportEmail} onChange={e => setSupportEmail(e.target.value)} placeholder="User email" className={inputCls} style={{ flex: 1 }} />
           <button
@@ -122,7 +122,7 @@ export default function QuickOperations({ apiFetch }: QuickOperationsProps) {
 
       {/* Navigation Commands */}
       <div className="rounded-lg border border-surface-3 bg-surface-1 p-4">
-        <div style={{ fontSize: 12, fontWeight: 700, color: '#111827', marginBottom: 8 }}>Go To</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', marginBottom: 8 }}>Go To</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
           {[
             { href: '/super-admin/users', label: 'Users & Roles' },

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import AdminShell, { useAdmin } from './_components/AdminShell';
+import { useCosmicTheme } from '@/lib/cosmic-theme';
 import {
   SystemStatusBar,
   QuickOperations,
@@ -26,6 +27,10 @@ import type {
 
 function ControlRoom() {
   const { apiFetch } = useAdmin();
+  // Cosmic Phase 3: the version-code chip hardcodes a light bg the token bridge
+  // can't reach; swap it for a bridged surface when cosmic is ON. OFF ⇒ false ⇒
+  // byte-identical light chip.
+  const { cosmicEnabled } = useCosmicTheme();
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [obsData, setObsData] = useState<ObsData | null>(null);
   const [deployInfo, setDeployInfo] = useState<DeployInfo | null>(null);
@@ -99,7 +104,7 @@ function ControlRoom() {
           <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>Platform operations, system status, and quick interventions</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {deployInfo && <code style={{ fontSize: 11, color: '#9CA3AF', background: '#F9FAFB', padding: '4px 8px', borderRadius: 4 }}>v{deployInfo.app_version}</code>}
+          {deployInfo && <code style={{ fontSize: 11, color: '#9CA3AF', background: cosmicEnabled ? 'var(--surface-2)' : '#F9FAFB', padding: '4px 8px', borderRadius: 4 }}>v{deployInfo.app_version}</code>}
           <button onClick={fetchAll} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Refresh All</button>
         </div>
       </div>
