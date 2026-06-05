@@ -1,6 +1,6 @@
 // supabase/functions/_shared/mol/__tests__/integration.test.ts
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 function mockDeno(env: Record<string, string>) {
   // @ts-ignore
@@ -51,6 +51,16 @@ describe('MOL integration', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0)
     // Reset module caches (force re-import below)
     vi.resetModules()
+  })
+
+  // Restore the global `Math.random` spy after EVERY test (not just at the
+  // start of the next `beforeEach`). Without this, the spy installed above
+  // outlives this file's final test and leaks into sibling MOL test files that
+  // share the same vitest worker under the parallel `--coverage` pool —
+  // intermittently forcing their unmocked provider-order assertions down the
+  // pinned branch. `restoreAllMocks` also clears the fetch/Deno stubs.
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('routes explanation → openai gpt-4o-mini and computes cost', async () => {

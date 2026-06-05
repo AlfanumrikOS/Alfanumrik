@@ -1,6 +1,6 @@
 // supabase/functions/_shared/mol/__tests__/use-cases.test.ts
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { selectProviderChain } from '../router.ts'
 import { determineUseCase } from '../use-cases.ts'
 import type { StudentContext } from '../types.ts'
@@ -79,6 +79,25 @@ describe('determineUseCase', () => {
 })
 
 describe('selectProviderChain with custom use cases', () => {
+  // ── Determinism pin (REG: MOL probabilistic router test-isolation) ─────────
+  // `selectProviderChain` applies the INTENDED 80/20 probabilistic split via
+  // `Math.random() < w` (default w = 0.8) even on the use-cases routing path
+  // (`router.ts`): ~80% of calls keep OpenAI primary, ~20% reorder the chain to
+  // put Anthropic first. That production behaviour must NOT change. But these
+  // provider-ORDER assertions are flaky against the real `Math.random()` —
+  // roughly 1-in-5 runs the chain is reordered to Anthropic-first and the
+  // "primary === openai" assertions fail. We pin `Math.random()` < 0.8 so the
+  // router deterministically keeps OpenAI primary (same convention as
+  // router.test.ts). `restoreAllMocks` in afterEach guarantees the spy cannot
+  // leak to sibling MOL test files under the parallel `--coverage` pool.
+  beforeEach(() => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.1)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('routes Hard IIT Math to o3-mini as primary, with o1 and gpt-4o fallbacks', () => {
     const context: StudentContext = {
       student_id: 'student-123',
