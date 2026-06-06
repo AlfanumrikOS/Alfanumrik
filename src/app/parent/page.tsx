@@ -7,7 +7,8 @@ import { supabase, getFeatureFlags } from '@/lib/supabase';
 import { getLevelFromScore } from '@/lib/score-config';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
 import { useRealtimeRevalidator } from '@/hooks/useRealtimeRevalidator';
-import { REALTIME_FLAGS } from '@/lib/feature-flags';
+import { useFeatureFlags } from '@/lib/swr';
+import { REALTIME_FLAGS, CONSUMER_MINIMALISM_FLAGS } from '@/lib/feature-flags';
 import AtlasParent from './AtlasParent';
 // Cosmic redesign (ff_cosmic_redesign_v1). When the flag is ON the parent home
 // is reskinned to the cosmic composition + a Starfield is layered behind it.
@@ -33,6 +34,12 @@ const ScoreCard = dynamic(() => import('@/components/score/ScoreCard'), { ssr: f
 // flag-OFF first-paint bundle (ssr:false keeps it client-only). Rendered only
 // when ff_cosmic_redesign_v1 resolves ON.
 const CosmicParentHome = dynamic(() => import('./CosmicParentHome'), { ssr: false });
+
+// Parent "glance" home (Consumer Minimalism Wave C, ff_parent_glance_v1).
+// Lazy-loaded so its code never enters the flag-OFF first-paint bundle — when
+// the flag is OFF this import is never resolved and the legacy 8-tab DOM below
+// renders byte-identically. Read-only reorg; reuses the SAME fetched data.
+const ParentGlanceHome = dynamic(() => import('@/components/parent/ParentGlanceHome'), { ssr: false });
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -358,6 +365,14 @@ interface PerfScoreRow {
 function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessages }: { guardian: ParentSession; initialStudent: StudentSession; allChildren: StudentSession[]; isHi: boolean; canFetchMessages: boolean }) {
   // Cosmic redesign switch. False unless ff_cosmic_redesign_v1 resolves ON.
   const { cosmicEnabled } = useCosmicTheme();
+  // Parent glance home (Wave C). Read the flag via the shared SWR hook — the
+  // same client flag-read pattern Wave A used for ff_today_home_v1. When the
+  // flag is OFF (the default) glanceEnabled is false and the legacy render
+  // path below is reached unchanged. `showClassic` lets the parent reveal the
+  // existing 8-tab dashboard from the glance home so nothing is lost.
+  const { data: flags } = useFeatureFlags();
+  const glanceEnabled = flags?.[CONSUMER_MINIMALISM_FLAGS.PARENT_GLANCE_V1] === true;
+  const [showClassic, setShowClassic] = useState(false);
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [tips, setTips] = useState<ParentTip[]>([]);
   const [loading, setLoading] = useState(true);
@@ -537,6 +552,60 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
           canFetchMessages={canFetchMessages}
           onRefresh={load}
           onLogout={logout}
+        />
+      </div>
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // GLANCE BRANCH (ff_parent_glance_v1 ON, cosmic OFF, classic not revealed).
+  // Push-first one-scroll reorg of the SAME already-fetched data (dash.stats,
+  // dash.dailyActivity, dash.weekSummary, dash.bktMastery, dash.insights,
+  // perfScores, labStreak). Read-only — no refetch, no new endpoint, no POST.
+  // The multi-child selector is preserved (same pattern as the cosmic branch).
+  // "View classic dashboard" sets showClassic → falls through to the legacy
+  // markup below, which stays byte-identical when the flag is OFF.
+  // ════════════════════════════════════════════════════════════════════════
+  if (glanceEnabled && !showClassic) {
+    return (
+      <div className="bg-[#FFF8F0] min-h-screen">
+        {children.length > 1 && (
+          <div className="max-w-[600px] mx-auto px-4 pt-2">
+            <ChildSelectorPills
+              studentList={children}
+              selectedIdx={selectedChildIdx}
+              onSelect={(idx) => {
+                if (idx === selectedChildIdx) return;
+                setLoading(true);
+                setDash(null);
+                setPerfScores([]);
+                setLabStreak(null);
+                setSelectedChildIdx(idx);
+              }}
+            />
+          </div>
+        )}
+        <ParentGlanceHome
+          stats={s}
+          childName={childName}
+          grade={dash.student?.grade || student.grade}
+          subject={dash.subject}
+          dailyActivity={dash.dailyActivity}
+          weekSummary={dash.weekSummary}
+          bktMastery={dash.bktMastery}
+          insights={dash.insights}
+          perfScores={perfScores}
+          labStreak={labStreak}
+          student={student}
+          guardianId={guardian.id}
+          canFetchReport={canFetchMessages}
+          loading={loading}
+          error={dash.error ?? null}
+          onShowClassic={() => setShowClassic(true)}
+          onRefresh={load}
+          onLogout={logout}
+          isHi={isHi}
+          t={t}
         />
       </div>
     );
