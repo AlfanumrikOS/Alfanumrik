@@ -1561,3 +1561,88 @@ Consumer Minimalism Wave D adds REG-85 (parent → child Encourage preset-only +
 PII-free + flag-OFF parity).
 
 **Total: 53 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+
+## Consumer Minimalism — Wave D parent auth unification (2026-06-06) — REG-86
+
+Source: parent auth unification ("D-authunify", Finding #5 / Exception E2 closure),
+flag-gated by `ff_parent_unified_auth_v1` (default OFF —
+`FLAG_DEFAULTS[CONSUMER_MINIMALISM_FLAGS.PARENT_UNIFIED_AUTH_V1] === false`). ONE
+file changed: `src/app/parent/page.tsx`. The page's session-resolution effect
+(`src/app/parent/page.tsx:991-1034`) gained a flag branch: when ON, the parent
+session is resolved SOLELY from the Supabase guardian-JWT (`auth.guardian`) via a
+`resolveGuardianFromJwt()` → `get_children` Edge-function call, and the HMAC
+`loadParentSession()` sessionStorage fallback is NEVER consulted; when OFF
+(default) the existing dual path is unchanged (byte-identical). `parent-session.ts`
+(the HMAC store + brute-force-lockout helpers) is untouched and still used on the
+flag-OFF path. The real auth boundary is already server-side (the `parent-portal`
+Edge Function requires a Bearer JWT on every action; `/api/parent/report` uses
+`authorizeRequest`), so the HMAC payload was only ever a client cache.
+
+Two load-bearing safety properties hold this change together (same family as the
+REG-78 / REG-79 / REG-83 / REG-84 / REG-85 flag-OFF safety tests):
+
+1. **Flag-OFF parity (byte-identical current product).** With
+   `ff_parent_unified_auth_v1` OFF (production truth), the existing dual path
+   runs unchanged: `auth.guardian` present → seed the student from the HMAC
+   `loadParentSession()`; `auth.guardian` absent → STILL fall back to
+   `loadParentSession()` (the link-code session reachable today). A regression
+   that defaulted the flag ON, or inverted the branch, would silently change
+   how every guardian's session resolves.
+
+2. **Flag-ON JWT-only resolution + no stale-cache revival (P15-adjacent auth
+   integrity).** With the flag ON and `auth.guardian` present, the guardian-JWT
+   is the SOLE source of truth — the student is seeded from `get_children`
+   (Bearer-JWT-gated server-side) and `loadParentSession()` is never called. With
+   the flag ON and NO `auth.guardian`, the page renders the unauthenticated
+   LoginScreen and must NOT silently revive a stale HMAC sessionStorage cache.
+
+**P15 boundary (NON-NEGOTIABLE):** D-authunify touches ONLY the parent portal's
+client-side session-resolution branch. It does NOT touch any onboarding-funnel
+file — `send-auth-email`, `auth/callback`, `auth/confirm`, `api/auth/bootstrap`,
+`AuthContext`, `onboarding/page`, the `bootstrap_user_profile` RPC, or `SITE_URL`.
+Verified by `git diff --name-only`: `src/app/parent/page.tsx` is the only changed
+file. The signup→verify→profile→dashboard funnel for all three roles is unaffected
+(the existing P15 suites — `auth-onboarding`, `auth-callback-role-redirect`,
+`auth-bootstrap`, `identity-onboarding`, `onboarding-*` — stay green).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-86 | `parent_unified_auth_flag_off_parity_and_jwt_only_resolution` | Flag-gated parent session-resolution pin. A faithful replica of the page's resolution effect (`src/app/parent/page.tsx:991-1034`), wired to a mocked `useFeatureFlags()` (the same SWR hook the page reads) and a mocked `useAuth()`, with two spy seams — `loadParentSession` (HMAC sessionStorage) and `getChildren` (the page's `api('get_children', …)` Edge call). Asserts: **(a) Flag-OFF parity:** flag ABSENT (prod truth) or explicitly `false`, guardian present → student seeded from the HMAC `loadParentSession` (`getChildren` NOT called); flag OFF + NO guardian → the link-code HMAC session is reachable (revives guardian + student from sessionStorage). **(b) Flag-ON JWT-only:** flag `true` + `auth.guardian` present → student seeded from `getChildren(guardian.id)`, the HMAC `loadParentSession` is NEVER consulted (proven even with a stale HMAC cache present); JWT guardian with NO linked children → unauthenticated LoginScreen, still no HMAC read. **(c) Flag-ON no-guardian (no stale revival):** flag `true` + NO `auth.guardian` → renders the unauthenticated LoginScreen and NEVER calls `loadParentSession` even when a stale HMAC session exists (no silent revive); stays in the checking state while `auth.isLoading` (no resolution attempted). A standalone assertion pins `FLAG_DEFAULTS[PARENT_UNIFIED_AUTH_V1] === false` against a default-flip regression. | `src/__tests__/components/parent/parent-unified-auth.test.tsx` (8 tests: 1 default-flip + 3 flag-OFF dual-path + 2 flag-ON JWT-only + 2 flag-ON no-guardian) | E (unit — runs in CI, no fixture needed) |
+
+### Pinned tests
+
+- `src/__tests__/components/parent/parent-unified-auth.test.tsx::D-authunify — flag OFF: existing dual path (byte-identical)::guardian present + flag ABSENT → seeds student from the HMAC loadParentSession (dual path intact)`
+- `src/__tests__/components/parent/parent-unified-auth.test.tsx::D-authunify — flag OFF: existing dual path (byte-identical)::NO guardian + flag OFF → the link-code HMAC session is reachable (revives from sessionStorage)`
+- `src/__tests__/components/parent/parent-unified-auth.test.tsx::D-authunify — flag ON + auth.guardian: JWT-only resolution::seeds the student from the guardian-JWT get_children call — never consults the HMAC fallback`
+- `src/__tests__/components/parent/parent-unified-auth.test.tsx::D-authunify — flag ON + no auth.guardian: no stale HMAC revival::renders the unauthenticated LoginScreen and never calls loadParentSession (no silent HMAC revive)`
+
+### Invariants covered by this section
+
+- Flag-OFF safety (same family as REG-78/REG-79/REG-83/REG-84/REG-85): the entire
+  D-authunify change is inert with `ff_parent_unified_auth_v1` OFF — the existing
+  dual HMAC/JWT path runs byte-identically.
+- P15 boundary (onboarding integrity): the change touches NO onboarding-funnel
+  file — the signup→verify→profile→dashboard path for all three roles is untouched.
+  The HMAC store (`parent-session.ts`) and the server-side auth boundary
+  (`parent-portal` Bearer-JWT gate, `/api/parent/report` `authorizeRequest`) are
+  unchanged.
+
+### Notes on test strategy
+
+REG-86 follows the **flag-OFF safety pattern** (REG-78/REG-79/REG-83/REG-84/REG-85):
+the enforcing test renders a faithful replica of the page's resolution effect wired
+to the REAL flag-read hook (`useFeatureFlags`) and a mocked `useAuth`, and asserts
+on WHICH seam each branch consults (`loadParentSession` HMAC vs `getChildren` JWT) —
+never on page internals (cosmic theme / atlas / dynamic imports). A full page mount
+was avoided for the same reason REG-84 used a dispatch replica: the page pulls in
+the cosmic provider, atlas flag, and several `dynamic(ssr:false)` chunks that are
+irrelevant to the resolution decision. The two seams (`loadParentSession`,
+`getChildren`) are the only ones the branch differs on, so they are exactly what the
+assertion targets. The suite needs no Supabase fixture and runs green in CI today.
+
+### Catalog total
+
+Consumer Minimalism Wave D (auth unification) adds REG-86 (parent unified-auth
+flag-OFF parity + JWT-only resolution + P15 boundary).
+
+**Total: 54 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
