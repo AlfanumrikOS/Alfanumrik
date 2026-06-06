@@ -44,6 +44,16 @@ vi.mock('@/components/parent/WeeklyReport', () => ({
   ),
 }));
 
+// ─── EncourageButton (Wave D) owns a Supabase-session read + POST to
+//     /api/v2/parent/encourage. Stub it so the gate tests assert purely on
+//     whether ParentGlanceHome MOUNTS it (the flag × guardian gate), not on its
+//     own behaviour (covered by encourage-button.test.tsx). ───
+vi.mock('@/components/parent/EncourageButton', () => ({
+  default: ({ studentId, childName }: { studentId: string; childName: string }) => (
+    <div data-testid="encourage-button-stub" data-student={studentId} data-child={childName} />
+  ),
+}));
+
 import ParentGlanceHome, {
   type ParentGlanceHomeProps,
 } from '@/components/parent/ParentGlanceHome';
@@ -103,6 +113,14 @@ afterEach(() => cleanup());
 // PART 1 — <ParentGlanceHome> read-only render contract.
 // ═══════════════════════════════════════════════════════════════════════════
 describe('ParentGlanceHome — Snapshot + Moments + Actions (read-only)', () => {
+  // Flag-OFF baseline: these contract tests assert the Wave C surface, so the
+  // Wave D Encourage gate must be inert. Reset to "no flags" before each test so
+  // the read-only contract is independent of test ordering (PART 3 sets the flag
+  // ON; this guard ensures none of that leaks into the read-only assertions).
+  beforeEach(() => {
+    flagState.value = undefined;
+  });
+
   it('renders all three sections for a child with activity', () => {
     render(<ParentGlanceHome {...makeProps()} />);
 
@@ -197,6 +215,10 @@ describe('ParentGlanceHome — Snapshot + Moments + Actions (read-only)', () => 
 });
 
 describe('ParentGlanceHome — loading / empty / error states (from props, no fetch)', () => {
+  beforeEach(() => {
+    flagState.value = undefined;
+  });
+
   it('renders the loading skeleton and NONE of the three sections', () => {
     render(<ParentGlanceHome {...makeProps({ loading: true })} />);
     expect(screen.queryByRole('region', { name: 'Weekly snapshot' })).not.toBeInTheDocument();
@@ -321,5 +343,102 @@ describe('Parent page — ff_parent_glance_v1 flag-branch dispatch', () => {
     render(<ParentGlanceDispatcher showClassic />);
     expect(screen.getByTestId('branch-classic')).toBeInTheDocument();
     expect(screen.queryByTestId('branch-glance')).not.toBeInTheDocument();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PART 3 — Wave D "Encourage" affordance gate (REG-85).
+//
+// ParentGlanceHome reads ff_parent_encourage_v1 via the SAME useFeatureFlags
+// hook mocked above (flagState), and mounts <EncourageButton> ONLY when:
+//     flags?.[PARENT_ENCOURAGE_V1] === true  AND  canFetchReport === true.
+// Two conditions, both required. We assert the full truth table — flag OFF (any
+// canFetchReport) hides it; flag ON + link-code parent (canFetchReport=false)
+// hides it; flag ON + guardian (canFetchReport=true) shows it. The button is
+// stubbed (see top of file) so this is purely a mount / no-mount gate test,
+// matching the WeeklyReport-gate assertions above.
+//
+// This is the enforcing test for REG-85's flag-OFF-parity half. Because the
+// glance home only mounts inside the Wave C glance branch (REG-84), an OFF
+// ff_parent_encourage_v1 means the parent surface is byte-identical to Wave C —
+// no new write affordance appears. Weakening these assertions requires user
+// approval.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('ParentGlanceHome — Encourage affordance gate (ff_parent_encourage_v1 × guardian)', () => {
+  beforeEach(() => {
+    // Each test sets flagState explicitly; default to "no flags" so a forgotten
+    // set can never silently leak an ON value from a prior test.
+    flagState.value = undefined;
+  });
+
+  it('production default keeps ff_parent_encourage_v1 OFF', () => {
+    // Guards against a regression that flips the default ON.
+    expect(FLAG_DEFAULTS[CONSUMER_MINIMALISM_FLAGS.PARENT_ENCOURAGE_V1]).toBe(false);
+  });
+
+  it('HIDES Encourage when the flag is ABSENT, even for a guardian-mode parent', async () => {
+    flagState.value = { some_other_flag: true };
+    render(<ParentGlanceHome {...makeProps({ canFetchReport: true })} />);
+    // Give the lazy dynamic() import a window to (not) resolve.
+    await new Promise((r) => setTimeout(r, 10));
+    expect(screen.queryByTestId('encourage-button-stub')).not.toBeInTheDocument();
+  });
+
+  it('HIDES Encourage when the flag is explicitly false (guardian-mode parent)', async () => {
+    flagState.value = { [CONSUMER_MINIMALISM_FLAGS.PARENT_ENCOURAGE_V1]: false };
+    render(<ParentGlanceHome {...makeProps({ canFetchReport: true })} />);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(screen.queryByTestId('encourage-button-stub')).not.toBeInTheDocument();
+  });
+
+  it('HIDES Encourage while flags are still loading (data undefined)', async () => {
+    flagState.value = undefined;
+    render(<ParentGlanceHome {...makeProps({ canFetchReport: true })} />);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(screen.queryByTestId('encourage-button-stub')).not.toBeInTheDocument();
+  });
+
+  it('HIDES Encourage when the flag is ON but the parent is NOT guardian-JWT (canFetchReport=false)', async () => {
+    // Link-code parents would 403 the guardian-only route, so the affordance is
+    // never offered to them even with the flag ON.
+    flagState.value = { [CONSUMER_MINIMALISM_FLAGS.PARENT_ENCOURAGE_V1]: true };
+    render(<ParentGlanceHome {...makeProps({ canFetchReport: false })} />);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(screen.queryByTestId('encourage-button-stub')).not.toBeInTheDocument();
+  });
+
+  it('SHOWS Encourage ONLY when the flag is ON AND the parent is guardian-JWT', async () => {
+    flagState.value = { [CONSUMER_MINIMALISM_FLAGS.PARENT_ENCOURAGE_V1]: true };
+    render(<ParentGlanceHome {...makeProps({ canFetchReport: true })} />);
+    // The button is lazy-loaded via next/dynamic — await its resolution.
+    const stub = await screen.findByTestId('encourage-button-stub');
+    expect(stub).toBeInTheDocument();
+    // It is wired to the selected child (studentId + name pass-through).
+    expect(stub).toHaveAttribute('data-student', 'stu-1');
+    expect(stub).toHaveAttribute('data-child', 'Asha');
+    // It lives inside the Quick actions section (not loose in the tree).
+    const actions = screen.getByRole('region', { name: 'Quick actions' });
+    expect(within(actions).getByTestId('encourage-button-stub')).toBeInTheDocument();
+  });
+
+  it('does NOT mount Encourage in the zero-activity empty state (no Actions section)', async () => {
+    // Even flag ON + guardian: the empty state renders no Actions section, so the
+    // Encourage button has nowhere to mount — parity with the no-affordance path.
+    flagState.value = { [CONSUMER_MINIMALISM_FLAGS.PARENT_ENCOURAGE_V1]: true };
+    render(
+      <ParentGlanceHome
+        {...makeProps({
+          canFetchReport: true,
+          stats: { xp: 0, streak: 0, accuracy: 0, totalQuizzes: 0, minutes: 0, totalChats: 0, avgScore: 0 },
+          weekSummary: { quizzes: 0, avgScore: 0, activeDays: 0 },
+          bktMastery: { levels: {}, total: 0 },
+          insights: [],
+          perfScores: [],
+          labStreak: 0,
+        })}
+      />,
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    expect(screen.queryByTestId('encourage-button-stub')).not.toBeInTheDocument();
   });
 });

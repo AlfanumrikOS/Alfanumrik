@@ -627,6 +627,7 @@ export const PERMISSIONS = {
   CHILD_DOWNLOAD_REPORT: 'child.download_report',
   CHILD_VIEW_EXAMS: 'child.view_exams',
   CHILD_RECEIVE_ALERTS: 'child.receive_alerts',
+  CHILD_ENCOURAGE: 'child.encourage',
 
   // ── Teacher ──────────────────────────────────────────────────
   CLASS_MANAGE: 'class.manage',

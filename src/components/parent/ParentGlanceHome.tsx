@@ -29,6 +29,8 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Skeleton } from '@/components/ui';
+import { useFeatureFlags } from '@/lib/swr';
+import { CONSUMER_MINIMALISM_FLAGS } from '@/lib/feature-flags';
 
 // Reuse the AI weekly report for the richer "Moments" read. It owns its own
 // fetch to /api/parent/report (Bearer-authed) + loading/error/skeleton states,
@@ -42,6 +44,20 @@ const WeeklyReport = dynamic(() => import('./WeeklyReport'), {
       <div className="h-5 bg-orange-100 rounded w-2/3 mb-3" />
       <div className="h-4 bg-orange-50 rounded w-full mb-1.5" />
       <div className="h-4 bg-orange-50 rounded w-5/6" />
+    </div>
+  ),
+});
+
+// "Encourage" action (Wave D, ff_parent_encourage_v1). Lazy-loaded so its picker
+// markup + the cheer-catalog data module never enter the flag-OFF first-paint
+// bundle (P10). Mounted ONLY when the flag is ON AND the parent is in
+// guardian-JWT mode (the route requires the guardian JWT). When the flag is OFF
+// this import is never resolved and the glance home renders byte-identically.
+const EncourageButton = dynamic(() => import('./EncourageButton'), {
+  ssr: false,
+  loading: () => (
+    <div className="min-h-[44px] px-4 py-3 bg-white border border-orange-200 rounded-[12px] animate-pulse">
+      <div className="h-4 bg-orange-50 rounded w-1/2" />
     </div>
   ),
 });
@@ -207,6 +223,19 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
     isHi,
     t,
   } = props;
+
+  // ── "Encourage" action gate (Wave D). Two conditions, both required:
+  //    1. ff_parent_encourage_v1 ON — read via the SAME shared SWR flag hook the
+  //       parent page uses for ff_parent_glance_v1 (client read, no context).
+  //    2. canFetchReport — the parent is in guardian-JWT mode. The encourage
+  //       route requires the guardian's Supabase JWT (same gate WeeklyReport
+  //       uses); link-code parents would 403, so the button is hidden for them.
+  //    When either is false we render NOTHING new — the flag-OFF glance home is
+  //    byte-identical to the Wave C surface. Hooks must run unconditionally, so
+  //    the call sits above all early returns.
+  const { data: flags } = useFeatureFlags();
+  const encourageEnabled =
+    flags?.[CONSUMER_MINIMALISM_FLAGS.PARENT_ENCOURAGE_V1] === true && canFetchReport;
 
   // ── Loading state (Skeleton) ──
   if (loading) {
@@ -443,6 +472,13 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
               {t(isHi, 'Actions', 'क्रियाएँ')}
             </h2>
             <div className="flex flex-col gap-2.5">
+              {/* Encourage {child} — Wave D (ff_parent_encourage_v1). Rendered
+                  ONLY when the flag is ON AND the parent is guardian-JWT mode.
+                  Lazy-loaded; flag-OFF path stays byte-identical (nothing new). */}
+              {encourageEnabled && (
+                <EncourageButton studentId={student.id} childName={childName} isHi={isHi} />
+              )}
+
               {/* View full report — opens the existing detailed reports page. */}
               <Link
                 href="/parent/reports"
