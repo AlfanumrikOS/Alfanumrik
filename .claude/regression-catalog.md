@@ -1382,4 +1382,83 @@ primary enforcement that the BRANCHES refactor stayed behaviour-preserving.
 Pre-Wave-A: 50 entries (REG-80/81/82 reserved). Consumer Minimalism Wave A adds
 REG-83.
 
-**Total: 51 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+**Total (through Wave A): 51 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+
+## Consumer Minimalism — Wave C parent "glance" home (2026-06-06) — REG-84
+
+Source: the parent "glance" home (`src/components/parent/ParentGlanceHome.tsx`)
+flag-gated by `ff_parent_glance_v1` (default OFF —
+`FLAG_DEFAULTS[CONSUMER_MINIMALISM_FLAGS.PARENT_GLANCE_V1] === false`, seeded by
+`supabase/migrations/20260612000000_seed_phase1_consumer_minimalism_flags.sql`).
+The parent page (`src/app/parent/page.tsx`) gained a flag branch
+(`glanceEnabled && !showClassic`) that renders `<ParentGlanceHome>` — a
+push-first, one-scroll reorg of the SAME already-fetched `get_child_dashboard`
+payload (+ `perfScores` + `labStreak`) into three stacked sections (Snapshot /
+Moments / Actions). `ParentGlanceHome` is `dynamic(ssr:false)`, fetches nothing
+of its own, and exposes a "View classic dashboard" escape hatch.
+
+Two load-bearing safety properties hold this wave together (same family as the
+REG-78 / REG-79 cosmic flag-OFF safety tests and REG-83's Wave-A flag-OFF
+parity):
+
+1. **Flag-OFF parity (byte-identical current product).** With
+   `ff_parent_glance_v1` OFF (production truth), the parent page renders the
+   EXISTING 8-tab dashboard and `<ParentGlanceHome>` is never mounted — its
+   lazy `dynamic()` import is never even resolved into the flag-OFF first-paint
+   bundle. The branch is `glanceEnabled && !showClassic`, so the "View classic
+   dashboard" reveal also falls back to the legacy tree even with the flag ON —
+   nothing is ever lost. A regression that defaulted the flag ON, or inverted
+   the ternary, would silently reshape the parent home for every guardian.
+
+2. **Read-only contract (no new write surface).** `<ParentGlanceHome>` is a
+   presentation reorg of props — it adds NO endpoint, NO POST, and NO
+   "Encourage"/write affordance. Its Actions are NAVIGATION only: `<Link>`s to
+   EXISTING routes (`/parent/reports`, `/parent/billing`,
+   `/parent/messages` for guardian-mode | `/parent/support` for link-code) plus
+   local-UI buttons (reveal classic, refresh, logout — all reusing the page's
+   existing handlers). Its loading / empty / error states are derived from props
+   alone. A regression that introduced a form/submit/new-endpoint affordance
+   here would breach the Wave C "read-only glance" guarantee.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-84 | `parent_glance_flag_off_parity_and_read_only_contract` | Two-layer pin on Wave C. **(a) Flag-OFF parity (unit, page-branch replica):** a faithful replica of the page's `glanceEnabled && !showClassic` ternary, wired to a mocked `useFeatureFlags()` (the same SWR hook the page reads), selects the CLASSIC 8-tab branch when the flag is ABSENT (prod truth), explicitly `false`, or still loading (`data === undefined`); selects the GLANCE branch ONLY when the flag is `true` (proves the switch is live, not a dead no-op); and falls back to CLASSIC with the flag ON once `showClassic` is set (the reveal escape hatch). A standalone assertion pins `FLAG_DEFAULTS[PARENT_GLANCE_V1] === false` against a default-flip regression. **(b) Read-only render contract (unit, direct mount):** `<ParentGlanceHome>` renders the Snapshot, Moments, and Actions regions for a child with activity (stat values read straight off props — no recompute); the Actions are navigation `<Link>`s to `/parent/reports`, `/parent/billing`, and `/parent/messages` (guardian) / `/parent/support` (link-code); there is NO `<form>` / `<input>` / `<textarea>` / `button[type=submit]` anywhere and EVERY `<a href>` is an internal `/parent/*` route; the lazy `WeeklyReport` (Bearer-authed fetch) mounts only for `canFetchReport` parents; loading → skeleton (none of the three sections), `error` → Try-Again wired to `onRefresh`, and zero-activity → contextual empty state (with the classic-reveal footer still present); and the Hindi headline + Arabic-numeral stats render under `isHi` (P7). | `src/__tests__/components/parent/parent-glance-home.test.tsx` (15 tests: 6 page-branch dispatch + 9 component read-only/state) | E (unit — runs in CI, no fixture needed) |
+
+### Pinned tests
+
+- `src/__tests__/components/parent/parent-glance-home.test.tsx::Parent page — ff_parent_glance_v1 flag-branch dispatch::renders the CLASSIC 8-tab dashboard when the flag is ABSENT (prod truth)`
+- `src/__tests__/components/parent/parent-glance-home.test.tsx::Parent page — ff_parent_glance_v1 flag-branch dispatch::renders the GLANCE home when the flag is ON (switch is live, not dead)`
+- `src/__tests__/components/parent/parent-glance-home.test.tsx::Parent page — ff_parent_glance_v1 flag-branch dispatch::falls back to the CLASSIC dashboard with the flag ON once classic is revealed`
+- `src/__tests__/components/parent/parent-glance-home.test.tsx::ParentGlanceHome — Snapshot + Moments + Actions (read-only)::renders Actions as navigation links to EXISTING routes — no POST / write`
+
+### Invariants covered by this section
+
+- Flag-OFF safety (same family as REG-78/REG-79/REG-83): the entire Wave C
+  surface is inert with `ff_parent_glance_v1` OFF — classic 8-tab dashboard
+  renders, the glance home is never mounted, its `dynamic()` import never enters
+  the flag-OFF bundle.
+- Read-only / no-new-write-surface contract: the parent glance home is a
+  presentation reorg; its Actions are navigation to existing routes only.
+- P7 (bilingual UI — no-coverage today) — adjacent: the Hindi-headline +
+  Arabic-numeral-stats assertion is a component-level Hi/En check on the new
+  parent surface.
+
+### Notes on test strategy
+
+REG-84 follows the **flag-OFF safety pattern** (REG-78/REG-79/REG-83): the
+page-branch half renders a faithful replica of the page's dispatch ternary wired
+to the REAL flag-read hook (`useFeatureFlags`) and asserts on which branch is
+selected, never on component internals. The read-only half mounts the real
+`<ParentGlanceHome>` with representative already-fetched props and asserts on
+user-visible structure (the three section regions, the Action hrefs, the absence
+of any write affordance, the prop-driven loading/empty/error states). Only the
+flag-read hook and the lazily-imported `WeeklyReport` (which owns its own
+Bearer-authed fetch) are mocked — both are seams, not business logic. The suite
+needs no Supabase fixture and runs green in CI today.
+
+### Catalog total
+
+Consumer Minimalism Wave C adds REG-84 (parent glance flag-OFF parity +
+read-only contract).
+
+**Total: 52 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
