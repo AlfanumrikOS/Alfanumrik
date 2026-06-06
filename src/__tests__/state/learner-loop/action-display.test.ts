@@ -185,6 +185,11 @@ describe('actionDisplay — coverage', () => {
           return { kind, url: '/dive', suggestedPrompt: 'x', reason: 'sunday_default' };
         case 'monthly_synthesis':
           return { kind, url: '/progress?view=synthesis', reason: 'month_end_default' };
+        case 'resume_in_progress':
+          return {
+            kind, url: '/learn/x/1', liveKind: 'in_lesson',
+            subjectCode: 'x', chapterNumber: 1, reason: 'live_session',
+          };
       }
     };
     for (const kind of ALL_ACTION_KINDS) {

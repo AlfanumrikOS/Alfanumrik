@@ -30,6 +30,25 @@ export interface ColdStartDiagnosticAction {
   reason: 'no_signals_yet';
 }
 
+/**
+ * Resume an activity the learner is mid-way through RIGHT NOW
+ * (`state.live.kind !== 'idle'`). Synthetic — it is NOT a resolver branch;
+ * it is prepended by `resolveTodayQueue()` so a live session always wins
+ * the CTA. The `url` reuses the live state's existing target derivation
+ * (in_quiz → /quiz, in_foxy → /foxy, in_lesson → /learn/{subject}/{chapter}).
+ * `liveKind` carries the source so the UI can label it without re-reading
+ * `state.live`.
+ */
+export interface ResumeInProgressAction {
+  kind: 'resume_in_progress';
+  url: string;
+  liveKind: 'in_quiz' | 'in_foxy' | 'in_lesson';
+  /** Present only for in_quiz / in_lesson (chapter-anchored sessions). */
+  subjectCode?: string;
+  chapterNumber?: number;
+  reason: 'live_session';
+}
+
 /** Today's flashcard reviews are stacking — surface them first. */
 export interface ReviewDueCardsAction {
   kind: 'review_due_cards';
@@ -92,7 +111,8 @@ export type LearnerAction =
   | StartQuizAction
   | ContinueLessonAction
   | WeeklyDiveAction
-  | MonthlySynthesisAction;
+  | MonthlySynthesisAction
+  | ResumeInProgressAction;
 
 /** Frozen list of all action kinds — used by tests + telemetry. */
 export const ALL_ACTION_KINDS = [
@@ -103,9 +123,20 @@ export const ALL_ACTION_KINDS = [
   'continue_lesson',
   'weekly_dive',
   'monthly_synthesis',
+  'resume_in_progress',
 ] as const satisfies ReadonlyArray<LearnerAction['kind']>;
 
 export type LearnerActionKind = LearnerAction['kind'];
+
+/**
+ * The subset of actions `resolveNextLearnerAction()` can return — i.e. the
+ * 8 ordered resolver branches, EXCLUDING the synthetic `resume_in_progress`
+ * (which only `resolveTodayQueue()` ever emits, as the live-resume CTA).
+ * Keeping the resolver's return narrowed preserves the closed-set
+ * telemetry contract (`LearnerNextResolvedPayload.branch`) without a cast.
+ */
+export type ResolverAction = Exclude<LearnerAction, ResumeInProgressAction>;
+export type ResolverActionKind = ResolverAction['kind'];
 
 // ── Resolver envelope ────────────────────────────────────────────────
 
@@ -124,6 +155,39 @@ export interface ResolveNextResponse {
     /** Was the response served from the in-process resolver cache? */
     cached: boolean;
   };
+}
+
+// ── Today queue (Wave A) ─────────────────────────────────────────────
+//
+// `resolveTodayQueue()` returns this. It is NOT a new decision tree — it
+// runs the SAME ordered branch predicates as `resolveNextLearnerAction()`
+// and collects EVERY eligible branch (truncated to MAX_TODAY_QUEUE_ITEMS)
+// instead of stopping at the first. The single-source-of-truth invariant:
+// `result.primary` equals `resolveNextLearnerAction(...)` in every case
+// EXCEPT the live-resume exception (see ResumeInProgressAction), where a
+// mid-session activity is prepended as the CTA.
+//
+// The queue element type is `LearnerAction` (the contract's discriminated
+// union). The render-facing TodayQueueItem mapping is the backend's job —
+// this module deliberately stays pure and presentation-free.
+
+/** Hard cap on Today-queue length — the queue is a short, finite list of
+ *  "what you could do today", not a backlog. The UI shows ≤ this many
+ *  cards. NOT a tunable learner-state threshold; it's a presentation cap. */
+export const MAX_TODAY_QUEUE_ITEMS = 6;
+
+export interface TodayQueueResult {
+  /** The single action the primary CTA should dispatch. Equals the raw
+   *  first-match branch EXCEPT under the live-resume exception, where the
+   *  synthetic resume action wins. */
+  primary: LearnerAction;
+  /** Ordered list of eligible actions, in branch order, ≤ MAX_TODAY_QUEUE_ITEMS.
+   *  `queue[0]` === `primary`. */
+  queue: LearnerAction[];
+  /** Which branch the *raw resolver* chose (i.e. what `resolveNextLearnerAction`
+   *  returns). Equals `primary.kind` unless live-resume overrode the CTA —
+   *  telemetry uses this to see what the learner "would" have been routed to. */
+  branch: LearnerActionKind;
 }
 
 // ── Tuning constants (deliberate, named, testable) ───────────────────

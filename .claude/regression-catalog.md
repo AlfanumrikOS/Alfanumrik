@@ -1299,3 +1299,87 @@ Pre-cosmic: 48 entries. Cosmic Phase 0 added REG-78. Cosmic full-redesign
 (Phases 1–3) regression verification adds REG-79.
 
 **Total: 50 entries.** (REG-80, REG-81, REG-82 recommended, not yet added.)
+
+## Consumer Minimalism — Wave A "Today" home (2026-06-06) — REG-83
+
+Source: the adaptive "Today" home (`/today`) + the 4-tab student nav, both
+flag-gated by `ff_today_home_v1` (default OFF, seeded by
+`supabase/migrations/20260612000000_seed_phase1_consumer_minimalism_flags.sql`).
+The Learner Loop resolver was refactored into an ordered `BRANCHES` array
+(`src/lib/state/learner-loop/resolve-next-action.ts`) and grew a new
+`resolveTodayQueue()` plus a `resume_in_progress` action kind. A thin BFF
+(`src/app/api/v2/today/route.ts`) projects the resolved queue into render DTOs
+via `src/lib/today/map-action.ts`; the page is `src/app/today/page.tsx` with
+`src/components/today/*`.
+
+Two load-bearing safety properties hold the whole wave together:
+
+1. **Flag-OFF parity (byte-identical current product).** With
+   `ff_today_home_v1` OFF, `/today` is invisible: the page client-redirects to
+   `/dashboard` (authenticated) / `/login` (unauthenticated) and never renders,
+   the BFF returns 404, and the student bottom nav keeps the legacy
+   `CORE_TABS` (Home / Practice / Foxy / Progress) — the Wave-A `TODAY_CORE_TABS`
+   (Today / Learn / Foxy / Me) are gated entirely at the call site
+   (`MobileBottomNav.tsx` / `DesktopSidebar.tsx`), so current users see exactly
+   today's product. A regression that defaulted the flag ON, or that selected
+   `TODAY_CORE_TABS` regardless of flag, would silently reshape navigation for
+   every student.
+
+2. **Resolver parity (the refactor's single highest blast radius).**
+   `resolveNextLearnerAction` is widely imported across the learner loop; the
+   if-ladder → ordered-`BRANCHES` refactor must be behaviour-preserving.
+   `resolveTodayQueue` re-uses the SAME ordered `BRANCHES` (one source of truth)
+   and its `primary`/`queue[0]` MUST equal the raw first-match branch that
+   `resolveNextLearnerAction` returns (except under the documented live-resume
+   exception, where a `resume_in_progress` action prepends). A drift between the
+   two — a reordered branch, a changed predicate, or a queue whose head no
+   longer mirrors the resolver — would route students to the wrong next action.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-83 | `today_home_flag_off_parity_and_resolver_mirror` | Two-layer pin on Wave A. **(a) Flag-OFF parity (E2E):** with `ff_today_home_v1` OFF (client `feature_flags` read stubbed), visiting `/today` redirects AWAY from `/today` (never a reachable standalone page) and the student bottom nav renders the legacy `CORE_TABS` with NO "Today"/"Learn"/"Me" tab. The always-green half (`/today` leaves itself for an auth gate) runs unconditionally in CI; the rendered-nav + flag-ON render/Continue-navigation/Hindi-heading halves are `test.fixme(!hasRealStudentCreds(), …)` — catalogued, green once the shared test-student fixture (REG-45/REG-69) lands — with the flag + `/api/v2/today` envelope + subjects all network-mocked so they pass the moment creds exist. **(b) Resolver mirror (unit):** `resolveTodayQueue(...).primary` and `.queue[0]` deep-equal `resolveNextLearnerAction(...)` across every non-live branch (cold-start, stacking reviews, today's ZPD, continue-lesson, Sunday dive, weakest fallback), `.branch === raw.kind`, and the `queue[0] === primary` invariant holds for idle/Sunday/cold-start; the live-resume exception is the ONLY case `primary` diverges from the raw first-match. Together: the flag-off layer proves current users are untouched; the resolver-mirror layer proves the BRANCHES refactor did not change what "next" the loop picks. | `e2e/today-home.spec.ts` (flag-OFF redirect + nav parity + flag-ON render/Continue/bilingual) + `src/__tests__/state/learner-loop/today-queue.test.ts` (resolveTodayQueue ↔ resolveNextLearnerAction primary/branch/queue[0] parity) + `src/__tests__/lib/today/map-action.test.ts` (LearnerAction → TodayQueueItem projection) | E (unit), P (E2E — flag-OFF redirect runs in CI; authenticated-render halves fixme'd until the shared student fixture lands) |
+
+### Pinned tests
+
+- `e2e/today-home.spec.ts::Today home — flag OFF (parity)::visiting /today redirects away (never stays on /today)` (runs in CI)
+- `e2e/today-home.spec.ts::Today home — flag OFF (parity)::student bottom nav shows the EXISTING tabs, no "Today" tab` (fixme until fixture)
+- `e2e/today-home.spec.ts::Today home — flag ON::renders greeting strip + Today's Focus card with a Continue CTA` (fixme until fixture)
+- `e2e/today-home.spec.ts::Today home — flag ON::clicking Continue navigates to the resolver deep-link target` (fixme until fixture)
+- `e2e/today-home.spec.ts::Today home — flag ON::renders the Hindi heading "आज" when language is Hindi` (fixme until fixture)
+- `src/__tests__/state/learner-loop/today-queue.test.ts::resolveTodayQueue — primary mirrors resolveNextLearnerAction (non-live)::$name → primary deep-equals resolveNextLearnerAction`
+- `src/__tests__/state/learner-loop/today-queue.test.ts::resolveTodayQueue — queue[0] === primary invariant`
+
+### Invariants covered by this section
+
+- Flag-OFF safety (same family as REG-78/REG-79): the entire Wave A surface is
+  inert with `ff_today_home_v1` OFF — no `/today` render, BFF 404, legacy nav.
+- P7 (bilingual UI — no-coverage today) — adjacent: the Hindi-heading "आज"
+  assertion is the first browser-level Hi/En check on this surface (gated on the
+  auth fixture, not skipped for lack of a language toggle — the harness supports
+  one via `localStorage['alfanumrik_language']`).
+- Learner-loop routing correctness (P22 domain — assessment-owned rules): the
+  resolver-mirror unit layer guards the ordered-`BRANCHES` refactor against a
+  behaviour change in "what next".
+
+### Notes on test strategy
+
+REG-83 follows the **flag-OFF safety pattern** (REG-78/REG-79) for the
+presentational half and the **contract/parity pattern** (REG-50/REG-51/REG-71)
+for the resolver half. The E2E spec mocks the client flag read path
+(`feature_flags` REST) + `/api/v2/today` envelope + `/api/student/subjects`, and
+asserts on user-visible behaviour (redirect target, rendered tab labels,
+Continue navigation URL), never on component internals. The authenticated-render
+assertions are `test.fixme(!hasRealStudentCreds(), …)` for the SAME reason as
+REG-45 (quiz happy-path) and REG-69 (/refresh): the mocked Supabase session
+resolves a real `isLoggedIn` gate only against a real Supabase URL, so a
+test-student fixture (TEST_STUDENT_EMAIL/PASSWORD) is required to drive a gated
+page in CI — tracked in the TODO at the foot of `e2e/today-home.spec.ts`. The
+resolver-mirror unit suite needs no fixture and runs green today; it is the
+primary enforcement that the BRANCHES refactor stayed behaviour-preserving.
+
+### Catalog total
+
+Pre-Wave-A: 50 entries (REG-80/81/82 reserved). Consumer Minimalism Wave A adds
+REG-83.
+
+**Total: 51 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)

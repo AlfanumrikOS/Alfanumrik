@@ -24,14 +24,24 @@ export function DesktopSidebar() {
   const passesExamGate = (item: any): boolean =>
     !(item?.requiresUpcomingExam === true && !hasUpcomingExam);
 
+  // Consumer Minimalism Wave A — surface the adaptive "Today" home in the
+  // sidebar's first section when ff_today_home_v1 is ON (student only). When
+  // OFF this branch is skipped and the sidebar is byte-identical to today.
+  const todayHomeOn = navFlags?.ff_today_home_v1 === true;
+
   const sidebarSections = getSidebarSections(activeRole)
     .filter(s => {
       const gMin = (s as any).gradeMin;
       return gMin == null || studentGrade >= gMin;
     })
-    .map(section => ({
+    .map((section, idx) => ({
       ...section,
-      items: section.items
+      items: [
+        ...(todayHomeOn && activeRole === 'student' && idx === 0
+          ? [{ href: '/today', icon: '☀️', label: 'Today', labelHi: 'आज' }]
+          : []),
+        ...section.items,
+      ]
         .filter(item => isItemVisibleForFlags(item as NavFlagGatedItem, navFlags))
         .filter(passesExamGate),
     }));

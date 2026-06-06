@@ -391,6 +391,27 @@ export const COSMIC_REDESIGN_FLAGS = {
 } as const;
 
 /**
+ * Consumer Minimalism flags (Phase 1, 2026-06-06).
+ *
+ *  ff_today_home_v1         — adaptive "Today" home + 4-tab student nav (Wave A).
+ *                             When OFF, /api/v2/today returns 404 and the legacy
+ *                             /dashboard + 5-tab nav render unchanged.
+ *  ff_unified_quiz_v1       — single parameterized quiz runtime (Wave B, not yet built).
+ *  ff_parent_glance_v1      — push-first parent glance home (Wave C, not yet built).
+ *  ff_parent_unified_auth_v1 — guardian-role parent auth, E2 closure (Wave D, not yet built).
+ *
+ * All default false. Seeded by migration
+ * 20260612000000_seed_phase1_consumer_minimalism_flags.sql.
+ * See docs/superpowers/plans/2026-06-06-phase-1-consumer-minimalism.md.
+ */
+export const CONSUMER_MINIMALISM_FLAGS = {
+  TODAY_HOME_V1:          'ff_today_home_v1',
+  UNIFIED_QUIZ_V1:        'ff_unified_quiz_v1',
+  PARENT_GLANCE_V1:       'ff_parent_glance_v1',
+  PARENT_UNIFIED_AUTH_V1: 'ff_parent_unified_auth_v1',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -417,6 +438,10 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [EDITORIAL_ATLAS_FLAGS.SCHOOL]:  false,
   [REALTIME_FLAGS.SUBSCRIPTIONS_V1]: false,
   [COSMIC_REDESIGN_FLAGS.V1]: false,
+  [CONSUMER_MINIMALISM_FLAGS.TODAY_HOME_V1]: false,
+  [CONSUMER_MINIMALISM_FLAGS.UNIFIED_QUIZ_V1]: false,
+  [CONSUMER_MINIMALISM_FLAGS.PARENT_GLANCE_V1]: false,
+  [CONSUMER_MINIMALISM_FLAGS.PARENT_UNIFIED_AUTH_V1]: false,
 } as const;
 
 /**

@@ -125,6 +125,18 @@ export function actionDisplay(action: LearnerAction): ActionDisplay {
         subHi: 'देखो इस महीने कितना सीखा',
         tint: '#D97706',
       };
+
+    case 'resume_in_progress':
+      return {
+        icon: '▶️',
+        eyebrowEn: 'Right now',
+        eyebrowHi: 'अभी',
+        titleEn: 'Resume where you left off',
+        titleHi: 'जहाँ छोड़ा था वहाँ से जारी रखो',
+        subEn: 'You have an activity in progress',
+        subHi: 'तुम्हारी एक गतिविधि चल रही है',
+        tint: 'var(--orange, #E8581C)',
+      };
   }
 }
 
@@ -177,6 +189,9 @@ export function actionPrimaryCta(action: LearnerAction): ActionPrimaryCta {
 
     case 'monthly_synthesis':
       return { en: 'See monthly synthesis', hi: 'महीने का सारांश देखो' };
+
+    case 'resume_in_progress':
+      return { en: 'Resume', hi: 'जारी रखो' };
   }
 }
 

@@ -35,7 +35,11 @@ import type { StudentState } from '../student-state';
 import { weakestChapter } from '../student-state';
 import {
   LEARNER_LOOP_CONFIG,
+  MAX_TODAY_QUEUE_ITEMS,
   type LearnerAction,
+  type LearnerActionKind,
+  type ResolverAction,
+  type TodayQueueResult,
 } from './types';
 
 // ── The augmentation: small, cheap, derived from existing tables ────
@@ -206,8 +210,51 @@ export interface ResolveOptions {
 }
 
 /**
- * Pure resolver. Branch order is the contract — keep it stable, pin
- * with tests, do not reorder without an ADR.
+ * Per-resolution context. Built ONCE per call and threaded through every
+ * branch predicate + builder so a branch never recomputes a derived value
+ * differently than the resolver used to. This is what makes the ordered
+ * BRANCHES array byte-for-byte equivalent to the old if-ladder:
+ *   - `attempts`, `decayed`, `weakest` are computed exactly once, exactly
+ *     as the old function computed them (and in the same order).
+ */
+interface BranchCtx {
+  now: Date;
+  attempts: number;
+  /** decayedChapters(state, now) — most-stale first. */
+  decayed: ReturnType<typeof decayedChapters>;
+  /** weakestChapter(state) — single weakest with signal, or null. */
+  weakest: ReturnType<typeof weakestChapter>;
+}
+
+function buildBranchCtx(state: StudentState, now: Date): BranchCtx {
+  return {
+    now,
+    attempts: totalAttempts(state),
+    decayed: decayedChapters(state, now),
+    weakest: weakestChapter(state),
+  };
+}
+
+/**
+ * A single resolver branch. `predicate` decides eligibility; `build`
+ * produces the action. `build` is ONLY ever called when `predicate`
+ * returned true for the same (state, augmentation, ctx), so it may assume
+ * the predicate's guarantees (e.g. branch 3's builder assumes
+ * `ctx.decayed.length > 0`).
+ */
+interface ResolverBranch {
+  kind: ResolverAction['kind'];
+  predicate(state: StudentState, aug: LoopAugmentation, ctx: BranchCtx): boolean;
+  build(state: StudentState, aug: LoopAugmentation, ctx: BranchCtx): ResolverAction;
+}
+
+/**
+ * THE single source of truth for "what next". Ordered branch array —
+ * order IS the contract. `resolveNextLearnerAction` returns the FIRST
+ * entry whose predicate is true; `resolveTodayQueue` returns ALL of them.
+ * Every predicate / builder below is lifted VERBATIM from the previous
+ * if-ladder — no threshold, comparison, URL shape, or reason string was
+ * changed. Pin with tests; do not reorder without an ADR.
  *
  *   1. cold_start_diagnostic — no mastery signal yet
  *   2. review_due_cards     — at least REVIEW_STACKING_THRESHOLD due today
@@ -219,124 +266,372 @@ export interface ResolveOptions {
  *   8. start_quiz (default) — weakest chapter as the catch-all
  *
  * Branch 1 takes precedence over everything because a cold-start learner
- * with zero signal has nothing for the other branches to act on. Branch
+ * with zero signal has nothing for the other branches to act on. Branches
  * 6 and 7 sit below the daily branches deliberately — Sunday and
  * month-end are *defaults*, not overrides. A student with 30 stacking
  * reviews on a Sunday gets reviews, not a dive.
+ */
+const BRANCHES: ResolverBranch[] = [
+  // Branch 1 — cold start
+  {
+    kind: 'cold_start_diagnostic',
+    predicate: (state, _aug, ctx) =>
+      state.mastery.length === 0 ||
+      ctx.attempts < LEARNER_LOOP_CONFIG.COLD_START_MAX_ATTEMPTS,
+    build: () => ({
+      kind: 'cold_start_diagnostic',
+      url: '/diagnostic',
+      reason: 'no_signals_yet',
+    }),
+  },
+
+  // Branch 2 — due reviews stacking
+  {
+    kind: 'review_due_cards',
+    predicate: (_state, aug) =>
+      aug.dueReviewCount >= LEARNER_LOOP_CONFIG.REVIEW_STACKING_THRESHOLD,
+    build: (_state, aug) => ({
+      kind: 'review_due_cards',
+      url: '/review',
+      dueCount: aug.dueReviewCount,
+      reason: 'reviews_stacking',
+    }),
+  },
+
+  // Branch 3 — decayed topic needs a re-encounter with the source
+  {
+    kind: 'revise_decayed_topic',
+    predicate: (_state, _aug, ctx) => ctx.decayed.length > 0,
+    build: (_state, _aug, ctx) => {
+      const top = ctx.decayed[0];
+      return {
+        kind: 'revise_decayed_topic',
+        url: `/learn/${encodeURIComponent(top.subjectCode)}/${top.chapterNumber}?mode=read&from=revise`,
+        subjectCode: top.subjectCode,
+        chapterNumber: top.chapterNumber,
+        daysSinceLastTouch: Math.round(top.daysSince),
+        recommendedModality: modalityForMastery(top.mastery),
+        reason: 'decay_above_threshold',
+      };
+    },
+  },
+
+  // Branch 4 — today's ZPD (only if not yet attempted today and there's a
+  // weakest chapter to point at)
+  {
+    kind: 'start_quiz',
+    predicate: (_state, aug, ctx) => !aug.attemptedQuizToday && ctx.weakest !== null,
+    build: (_state, _aug, ctx) => {
+      const weakest = ctx.weakest!;
+      return {
+        kind: 'start_quiz',
+        url: `/quiz?subject=${encodeURIComponent(weakest.subjectCode)}&chapter=${weakest.chapterNumber}`,
+        subjectCode: weakest.subjectCode,
+        chapterNumber: weakest.chapterNumber,
+        zpdBin: LEARNER_LOOP_CONFIG.ZPD_BIN_FOR_MASTERY(weakest.mastery),
+        reason: 'todays_zpd',
+      };
+    },
+  },
+
+  // Branch 5 — continue an in-progress lesson
+  {
+    kind: 'continue_lesson',
+    predicate: (_state, aug) => aug.inProgressLessons.length > 0,
+    build: (_state, aug) => {
+      const top = aug.inProgressLessons[0];
+      return {
+        kind: 'continue_lesson',
+        url: `/learn/${encodeURIComponent(top.subjectCode)}/${top.chapterNumber}`,
+        subjectCode: top.subjectCode,
+        chapterNumber: top.chapterNumber,
+        progressPct: top.progressPct,
+        reason: 'in_progress_lesson',
+      };
+    },
+  },
+
+  // Branch 6 — Sunday weekly dive default
+  {
+    kind: 'weekly_dive',
+    predicate: (_state, _aug, ctx) => isSundayIst(ctx.now),
+    build: (state, _aug, ctx) => {
+      const weakSubject =
+        ctx.weakest?.subjectCode ?? state.mastery[0]?.subjectCode ?? 'science';
+      return {
+        kind: 'weekly_dive',
+        url: '/dive',
+        suggestedPrompt: `Pick a phenomenon from ${weakSubject} you're curious about`,
+        reason: 'sunday_default',
+      };
+    },
+  },
+
+  // Branch 7 — month-end synthesis default
+  {
+    kind: 'monthly_synthesis',
+    predicate: (_state, _aug, ctx) => isMonthEndDayIst(ctx.now),
+    build: () => ({
+      kind: 'monthly_synthesis',
+      url: '/progress?view=synthesis',
+      reason: 'month_end_default',
+    }),
+  },
+
+  // Branch 8 — catch-all: weakest-topic quiz. weakest is guaranteed
+  // non-null here because branch 1 caught the empty-mastery case.
+  {
+    kind: 'start_quiz',
+    predicate: (_state, _aug, ctx) => ctx.weakest !== null,
+    build: (_state, _aug, ctx) => {
+      const weakest = ctx.weakest!;
+      return {
+        kind: 'start_quiz',
+        url: `/quiz?subject=${encodeURIComponent(weakest.subjectCode)}&chapter=${weakest.chapterNumber}`,
+        subjectCode: weakest.subjectCode,
+        chapterNumber: weakest.chapterNumber,
+        zpdBin: LEARNER_LOOP_CONFIG.ZPD_BIN_FOR_MASTERY(weakest.mastery),
+        reason: 'weakest_topic_practice',
+      };
+    },
+  },
+];
+
+/**
+ * Pure resolver. Returns the FIRST eligible branch's action — identical
+ * behaviour to the historical if-ladder, now driven by the ordered
+ * BRANCHES array (the single source of truth shared with
+ * `resolveTodayQueue`).
  */
 export function resolveNextLearnerAction(
   state: StudentState,
   augmentation: LoopAugmentation,
   options: ResolveOptions = {},
-): LearnerAction {
+): ResolverAction {
   const now = options.now ?? new Date();
+  const ctx = buildBranchCtx(state, now);
 
-  // Branch 1 — cold start
-  const attempts = totalAttempts(state);
-  if (
-    state.mastery.length === 0 ||
-    attempts < LEARNER_LOOP_CONFIG.COLD_START_MAX_ATTEMPTS
-  ) {
-    return {
-      kind: 'cold_start_diagnostic',
-      url: '/diagnostic',
-      reason: 'no_signals_yet',
-    };
+  for (const branch of BRANCHES) {
+    if (branch.predicate(state, augmentation, ctx)) {
+      return branch.build(state, augmentation, ctx);
+    }
   }
 
-  // Branch 2 — due reviews stacking
-  if (
-    augmentation.dueReviewCount >= LEARNER_LOOP_CONFIG.REVIEW_STACKING_THRESHOLD
-  ) {
-    return {
-      kind: 'review_due_cards',
-      url: '/review',
-      dueCount: augmentation.dueReviewCount,
-      reason: 'reviews_stacking',
-    };
-  }
-
-  // Branch 3 — decayed topic needs a re-encounter with the source
-  const decayed = decayedChapters(state, now);
-  if (decayed.length > 0) {
-    const top = decayed[0];
-    return {
-      kind: 'revise_decayed_topic',
-      url: `/learn/${encodeURIComponent(top.subjectCode)}/${top.chapterNumber}?mode=read&from=revise`,
-      subjectCode: top.subjectCode,
-      chapterNumber: top.chapterNumber,
-      daysSinceLastTouch: Math.round(top.daysSince),
-      recommendedModality: modalityForMastery(top.mastery),
-      reason: 'decay_above_threshold',
-    };
-  }
-
-  const weakest = weakestChapter(state);
-
-  // Branch 4 — today's ZPD (only if not yet attempted today and there's a
-  // weakest chapter to point at)
-  if (!augmentation.attemptedQuizToday && weakest !== null) {
-    return {
-      kind: 'start_quiz',
-      url: `/quiz?subject=${encodeURIComponent(weakest.subjectCode)}&chapter=${weakest.chapterNumber}`,
-      subjectCode: weakest.subjectCode,
-      chapterNumber: weakest.chapterNumber,
-      zpdBin: LEARNER_LOOP_CONFIG.ZPD_BIN_FOR_MASTERY(weakest.mastery),
-      reason: 'todays_zpd',
-    };
-  }
-
-  // Branch 5 — continue an in-progress lesson
-  if (augmentation.inProgressLessons.length > 0) {
-    const top = augmentation.inProgressLessons[0];
-    return {
-      kind: 'continue_lesson',
-      url: `/learn/${encodeURIComponent(top.subjectCode)}/${top.chapterNumber}`,
-      subjectCode: top.subjectCode,
-      chapterNumber: top.chapterNumber,
-      progressPct: top.progressPct,
-      reason: 'in_progress_lesson',
-    };
-  }
-
-  // Branch 6 — Sunday weekly dive default
-  if (isSundayIst(now)) {
-    const weakSubject = weakest?.subjectCode ?? state.mastery[0]?.subjectCode ?? 'science';
-    return {
-      kind: 'weekly_dive',
-      url: '/dive',
-      suggestedPrompt: `Pick a phenomenon from ${weakSubject} you're curious about`,
-      reason: 'sunday_default',
-    };
-  }
-
-  // Branch 7 — month-end synthesis default
-  if (isMonthEndDayIst(now)) {
-    return {
-      kind: 'monthly_synthesis',
-      url: '/progress?view=synthesis',
-      reason: 'month_end_default',
-    };
-  }
-
-  // Branch 8 — catch-all: weakest-topic quiz. weakest is guaranteed
-  // non-null here because branch 1 caught the empty-mastery case.
-  // Fallback to first subject if for some reason it is null.
-  if (weakest !== null) {
-    return {
-      kind: 'start_quiz',
-      url: `/quiz?subject=${encodeURIComponent(weakest.subjectCode)}&chapter=${weakest.chapterNumber}`,
-      subjectCode: weakest.subjectCode,
-      chapterNumber: weakest.chapterNumber,
-      zpdBin: LEARNER_LOOP_CONFIG.ZPD_BIN_FOR_MASTERY(weakest.mastery),
-      reason: 'weakest_topic_practice',
-    };
-  }
-
-  // Defensive — shouldn't be reachable given branch 1, but typesafe.
+  // Defensive — unreachable given branch 1 catches empty mastery and
+  // branch 8 fires whenever a weakest chapter exists. Typesafe fallback.
   return {
     kind: 'cold_start_diagnostic',
     url: '/diagnostic',
     reason: 'no_signals_yet',
+  };
+}
+
+// ── The Today queue (Wave A) ─────────────────────────────────────────
+
+/**
+ * Derive the live-session resume action from `state.live`. Returns null
+ * when the learner is idle. The URL reuses the live state's existing
+ * target derivation — no new routes are invented here:
+ *   - in_quiz   → /quiz   (the runtime resumes from the open session)
+ *   - in_foxy   → /foxy   (the chat resumes the open thread)
+ *   - in_lesson → /learn/{subjectCode}/{chapterNumber}  (same shape the
+ *                 continue_lesson branch already builds)
+ */
+function resumeActionFromLive(state: StudentState): LearnerAction | null {
+  const live = state.live;
+  switch (live.kind) {
+    case 'in_quiz':
+      return {
+        kind: 'resume_in_progress',
+        url: '/quiz',
+        liveKind: 'in_quiz',
+        subjectCode: live.subjectCode,
+        chapterNumber: live.chapterNumber,
+        reason: 'live_session',
+      };
+    case 'in_foxy':
+      return {
+        kind: 'resume_in_progress',
+        url: '/foxy',
+        liveKind: 'in_foxy',
+        // foxy live state may have a null subject; omit chapter (no anchor).
+        ...(live.subjectCode ? { subjectCode: live.subjectCode } : {}),
+        reason: 'live_session',
+      };
+    case 'in_lesson':
+      return {
+        kind: 'resume_in_progress',
+        url: `/learn/${encodeURIComponent(live.subjectCode)}/${live.chapterNumber}`,
+        liveKind: 'in_lesson',
+        subjectCode: live.subjectCode,
+        chapterNumber: live.chapterNumber,
+        reason: 'live_session',
+      };
+    case 'idle':
+      return null;
+  }
+}
+
+/**
+ * Wave A — the ordered "Today queue".
+ *
+ * Runs the SAME ordered BRANCHES predicates as `resolveNextLearnerAction`
+ * (one source of truth — no duplicated branch logic) and collects EVERY
+ * eligible branch, in order, instead of stopping at the first. Layered on
+ * top, per the approved assessment contract:
+ *
+ *   - LIVE-RESUME EXCEPTION: if `state.live.kind !== 'idle'`, a synthetic
+ *     `resume_in_progress` action is prepended as `primary` and `queue[0]`
+ *     (a live activity always wins the CTA). This is the ONLY case where
+ *     `primary` differs from the raw first-match branch. `branch` still
+ *     reports what the raw resolver chose.
+ *
+ *   - COLD-START SHORT-CIRCUIT: if branch 1 (cold_start_diagnostic) is
+ *     eligible, the queue is ONLY `[resume?, cold_start_diagnostic]` —
+ *     ranks 2-8 are suppressed (a learner with no signal has nothing for
+ *     them to act on).
+ *
+ *   - SRS SOFT VARIANT: branch 2 fires at dueReviewCount >= threshold. The
+ *     queue MAY additionally surface a softer review item when
+ *     `1 <= dueReviewCount < threshold`, reusing the already-declared
+ *     `reviews_due_today` reason (no new constant). It is inserted in
+ *     branch-2 order but CLAMPED to after the primary — the soft review is
+ *     supplementary and must never displace the CTA (preserving the
+ *     `queue[0] === primary === raw first-match` invariant).
+ *
+ *   - DE-DUP: when the resume action came from an in-progress lesson, the
+ *     rank-5 continue_lesson for the SAME chapter is suppressed (don't show
+ *     the same chapter twice).
+ *
+ *   - TRUNCATION: the final queue is capped at MAX_TODAY_QUEUE_ITEMS.
+ *
+ * Read-only. Pure over (state, augmentation, now). No DB writes, no
+ * mutation, no scoring / XP / mastery math.
+ */
+export function resolveTodayQueue(
+  state: StudentState,
+  augmentation: LoopAugmentation,
+  opts: { now: Date },
+): TodayQueueResult {
+  const now = opts.now;
+  const ctx = buildBranchCtx(state, now);
+
+  // The raw first-match branch — what resolveNextLearnerAction returns.
+  // We re-derive it from the SAME ordered array (no duplicated predicate).
+  let firstMatchIndex = -1;
+  for (let i = 0; i < BRANCHES.length; i++) {
+    if (BRANCHES[i].predicate(state, augmentation, ctx)) {
+      firstMatchIndex = i;
+      break;
+    }
+  }
+  const rawFirst: LearnerAction =
+    firstMatchIndex >= 0
+      ? BRANCHES[firstMatchIndex].build(state, augmentation, ctx)
+      : // Defensive parity with resolveNextLearnerAction's fallback.
+        { kind: 'cold_start_diagnostic', url: '/diagnostic', reason: 'no_signals_yet' };
+  const branch: LearnerActionKind = rawFirst.kind;
+
+  // Live-resume exception — a mid-session activity always wins the CTA.
+  const resume = resumeActionFromLive(state);
+
+  // COLD-START SHORT-CIRCUIT — branch 1 eligible ⇒ queue is only
+  // [resume?, cold_start_diagnostic]; suppress ranks 2-8 entirely.
+  const coldStartEligible = BRANCHES[0].predicate(state, augmentation, ctx);
+  if (coldStartEligible) {
+    const cold = BRANCHES[0].build(state, augmentation, ctx);
+    const queue: LearnerAction[] = resume ? [resume, cold] : [cold];
+    const truncated = queue.slice(0, MAX_TODAY_QUEUE_ITEMS);
+    return {
+      primary: truncated[0],
+      queue: truncated,
+      branch,
+    };
+  }
+
+  // Build the ordered queue of EVERY eligible branch, in branch order.
+  // `rawFirst` (the genuine primary) is always the FIRST element — the
+  // SRS soft variant is supplementary and must never displace the CTA, so
+  // it is inserted in branch order but clamped to AFTER `rawFirst`. (The
+  // soft variant only ever applies when branch-2's HARD predicate is false;
+  // if it were true, branch 2 would itself be `rawFirst`.)
+  const queue: LearnerAction[] = [];
+  // Holds a soft-review item whose branch-2 ordinal sorts BEFORE the primary,
+  // until the primary is emitted (so it never leads the queue).
+  let pendingSoftReview: LearnerAction | null = null;
+
+  for (let i = 0; i < BRANCHES.length; i++) {
+    const b = BRANCHES[i];
+
+    // SRS soft variant — sits at branch-2's position, but never before the
+    // primary. Only when the hard branch-2 predicate is NOT met but at least
+    // one review is due, and the primary itself is not already the review
+    // branch.
+    if (
+      b.kind === 'review_due_cards' &&
+      !b.predicate(state, augmentation, ctx) &&
+      rawFirst.kind !== 'review_due_cards'
+    ) {
+      const due = augmentation.dueReviewCount;
+      if (due >= 1 && due < LEARNER_LOOP_CONFIG.REVIEW_STACKING_THRESHOLD) {
+        const soft: LearnerAction = {
+          kind: 'review_due_cards',
+          url: '/review',
+          dueCount: due,
+          reason: 'reviews_due_today',
+        };
+        // If the primary hasn't been emitted yet (its branch sorts after
+        // branch 2), the soft item would land before it — defer it so the
+        // queue stays led by `rawFirst`. We push it now only when the queue
+        // already contains the primary.
+        if (queue.length > 0) {
+          queue.push(soft);
+        } else {
+          pendingSoftReview = soft;
+        }
+      }
+    }
+
+    if (b.predicate(state, augmentation, ctx)) {
+      queue.push(b.build(state, augmentation, ctx));
+      // Flush a deferred soft-review immediately AFTER the primary so it
+      // keeps its branch-2 adjacency without ever leading the queue.
+      if (pendingSoftReview !== null) {
+        queue.push(pendingSoftReview);
+        pendingSoftReview = null;
+      }
+    }
+  }
+  // Edge case: a deferred soft review with no eligible hard branch after it
+  // (shouldn't happen — branch 8 fires whenever a weakest chapter exists —
+  // but stay defensive so the item is never silently dropped).
+  if (pendingSoftReview !== null) {
+    queue.push(pendingSoftReview);
+    pendingSoftReview = null;
+  }
+
+  // DE-DUP — if the resume action is an in-progress lesson, drop the
+  // rank-5 continue_lesson for the SAME chapter (same card twice).
+  let deduped = queue;
+  if (resume && resume.kind === 'resume_in_progress' && resume.liveKind === 'in_lesson') {
+    deduped = queue.filter(
+      a =>
+        !(
+          a.kind === 'continue_lesson' &&
+          a.subjectCode === resume.subjectCode &&
+          a.chapterNumber === resume.chapterNumber
+        ),
+    );
+  }
+
+  // Prepend the live-resume action (wins the CTA), then truncate.
+  const withResume: LearnerAction[] = resume ? [resume, ...deduped] : deduped;
+  const finalQueue = withResume.slice(0, MAX_TODAY_QUEUE_ITEMS);
+
+  return {
+    // primary === resume when live, else the raw first-match branch.
+    primary: finalQueue[0] ?? rawFirst,
+    queue: finalQueue,
+    branch,
   };
 }
