@@ -51,7 +51,7 @@ class AppShell extends StatelessWidget {
     return Scaffold(
       body: child,
       bottomNavigationBar: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           color: AppColors.surface,
           border: Border(
             top: BorderSide(color: AppColors.borderLight, width: 0.5),

@@ -36,7 +36,7 @@ class DailyPlanRepository {
     } on AppException catch (e) {
       return ApiFailure(e.message);
     } catch (e) {
-      return ApiFailure('Daily plan fetch failed: ' + e.toString());
+      return ApiFailure('Daily plan fetch failed: ${e.toString()}');
     }
   }
 }

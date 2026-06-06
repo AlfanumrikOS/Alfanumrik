@@ -13,7 +13,6 @@ library;
 
 import 'package:flutter/material.dart';
 
-import '../../core/network/api_result.dart';
 import '../../data/models/daily_plan.dart';
 import '../../data/models/goal_profile.dart';
 import '../../data/repositories/daily_plan_repository.dart';

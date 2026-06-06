@@ -66,7 +66,7 @@ class _StemLabScreenState extends ConsumerState<StemLabScreen> {
   /// `ApiConstants.apiBase` so prod / staging / localhost all flow
   /// through the same env switch the rest of the app already uses.
   static String get _webOrigin {
-    final base = ApiConstants.apiBase;
+    const base = ApiConstants.apiBase;
     // apiBase is `https://alfanumrik.com/api` — strip the `/api` suffix
     // to get the page origin.
     if (base.endsWith('/api')) {
@@ -83,7 +83,7 @@ class _StemLabScreenState extends ConsumerState<StemLabScreen> {
   /// Supabase localStorage key. Project ref is the first segment of the
   /// Supabase URL host (e.g. `abcd1234.supabase.co` → `abcd1234`).
   static String get _supabaseStorageKey {
-    final url = ApiConstants.supabaseUrl;
+    const url = ApiConstants.supabaseUrl;
     try {
       final host = Uri.parse(url).host;
       final ref = host.split('.').first;

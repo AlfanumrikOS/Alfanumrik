@@ -4,7 +4,7 @@ description: Generated Dart client for the Alfanumrik /v2 API. DO NOT EDIT BY HA
 homepage: homepage
 
 environment:
-  sdk: '>=2.15.0 <4.0.0'
+  sdk: '>=3.2.0 <4.0.0'
 
 dependencies:
   dio: '^5.2.0'

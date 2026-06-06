@@ -1,6 +1,11 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../core/errors/app_exception.dart';
+// NOTE: `app_exception.dart` is intentionally NOT imported here. It declares an
+// app-domain `AuthException` that collides with gotrue's `AuthException` (via
+// supabase_flutter). This repository only ever catches the gotrue one thrown by
+// `auth.signUp` / `auth.signInWithPassword`, and uses no other app-exception
+// type, so leaving the import out resolves the ambiguity with zero behaviour
+// change.
 import '../../core/network/api_result.dart';
 import '../../core/cache/cache_manager.dart';
 import '../models/student.dart';
@@ -127,7 +132,7 @@ class AuthRepository {
     } on AuthException catch (e) {
       return ApiFailure(e.message);
     } catch (e) {
-      return ApiFailure('Sign in failed. Please try again.');
+      return const ApiFailure('Sign in failed. Please try again.');
     }
   }
 

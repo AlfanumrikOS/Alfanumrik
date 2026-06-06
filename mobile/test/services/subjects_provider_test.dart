@@ -23,7 +23,7 @@ class _FakeSubjectsService implements SubjectsService {
 void main() {
   group('Subject.fromJson', () {
     test('parses the /api/student/subjects shape', () {
-      final subject = Subject.fromJson({
+      final subject = Subject.fromJson(const {
         'code': 'math',
         'name': 'Mathematics',
         'nameHi': 'गणित',
@@ -45,7 +45,7 @@ void main() {
     });
 
     test('falls back to name when nameHi is missing', () {
-      final s = Subject.fromJson({
+      final s = Subject.fromJson(const {
         'code': 'english',
         'name': 'English',
         'icon': 'Aa',

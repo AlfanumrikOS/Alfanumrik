@@ -1,4 +1,5 @@
 /// Tests for daily_plan.dart (Phase 6 mobile).
+library;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:alfanumrik/data/models/daily_plan.dart';
 import 'package:alfanumrik/data/models/goal_profile.dart';

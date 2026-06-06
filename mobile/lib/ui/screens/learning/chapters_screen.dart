@@ -27,8 +27,8 @@ class ChaptersScreen extends ConsumerWidget {
         ),
       ),
       body: chaptersAsync.when(
-        loading: () => Padding(
-          padding: const EdgeInsets.all(16),
+        loading: () => const Padding(
+          padding: EdgeInsets.all(16),
           child: ShimmerList(count: 6, itemHeight: 72),
         ),
         error: (e, _) => AppErrorWidget(
@@ -115,7 +115,7 @@ class ChaptersScreen extends ConsumerWidget {
                           ),
                         ),
                       const SizedBox(width: 6),
-                      Icon(Icons.arrow_forward_ios_rounded,
+                      const Icon(Icons.arrow_forward_ios_rounded,
                           size: 12, color: AppColors.textTertiary),
                     ],
                   ),

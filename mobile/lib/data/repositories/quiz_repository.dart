@@ -226,7 +226,7 @@ class QuizRepository {
         // re-score against legacy unshuffled data — wrong).
         final msg = e.toString();
         if (msg.contains('session_not_started')) {
-          return ApiFailure('session_not_started: Quiz session expired.');
+          return const ApiFailure('session_not_started: Quiz session expired.');
         }
         // Fall through to v1 for any other error.
       }
