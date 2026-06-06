@@ -1737,3 +1737,104 @@ Phase 2 Wave 2.2 (mobile parity via one contract) adds REG-87 (`/v2/quiz/submit`
 server-authoritative parity + `/v2` route↔contract drift-check).
 
 **Total: 55 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+
+## Mobile parity — /v2 post-submit side-effect parity (Phase 2 Wave 2.3) — REG-88
+
+Source: Phase 2 "mobile-parity-via-one-contract" — Wave 2.3. Wave 2.2 (REG-87)
+proved `/v2/quiz/submit` is a server-authoritative THIN PASS-THROUGH that returns
+the RPC's score/XP VERBATIM. But at Wave 2.2 the `/v2` route stopped at the RPC:
+it did NOT run the post-submit side-effects the canonical `/api/quiz/submit`
+route fires after a fresh grade — PostHog telemetry (`quiz_graded` + `xp_awarded`,
+plus conditional `quiz_anti_cheat_flagged` / `daily_xp_cap_hit`), the ADR-005
+spine emit (`publishEvent(learner.mastery_changed)`, one per chapter touched),
+and the orchestrator bridge (`maybeDispatchQuizCompletion`). That left a
+**telemetry/spine parity gap**: a mobile client hitting `/v2` would be graded
+identically but would be INVISIBLE to PostHog funnels, the projector subscribers
+(mastery-state-writer, concept-mastery-projector), and the orchestrator —
+analytics and learner-state would silently undercount mobile activity.
+
+Wave 2.3 closes it by extracting the canonical route's inline side-effect block
+into a SINGLE shared module, `src/lib/quiz/submit-side-effects.ts`
+(`runQuizSubmitSideEffects(admin, authUserId, input, result)`). BOTH routes now
+call the SAME function after the RPC returns success:
+
+1. **Single-source extraction (no-drift refactor of `/api/quiz/submit`).** The
+   canonical route's PostHog/spine/bridge sections were moved verbatim into the
+   shared module; the route re-exports the pure helpers
+   (`computeMasteryDeltas`, `masteryChangedIdempotencyKey`,
+   `quizCompletedIdempotencyKey`) from their new home so existing importers (the
+   spine-emit contract test) keep resolving them. Behavior of `/api/quiz/submit`
+   MUST be unchanged — its existing REG-62 idempotency tests still assert
+   `quiz_graded` fires once on a fresh submit and ZERO times on an idempotent
+   replay, exercising the REAL shared module end-to-end (they mock only the
+   `@/lib/posthog/server` leaf, not the side-effects module).
+
+2. **`/v2/quiz/submit` full side-effect parity.** On a fresh (non-replay) submit
+   the `/v2` route now fires the SAME side-effects with the SAME args the web
+   route uses: `quiz_graded` once (`$insert_id = quiz_graded:<session>`,
+   `marking_authenticity_path: 'oracle_v2'`), `xp_awarded` once
+   (`$insert_id = xp_awarded:quiz:<session>`), `publishEvent(learner.mastery_changed)`
+   on the ADR-005 spine (`idempotencyKey = mastery-changed:<session>:<chapter>`,
+   matching the orchestrator's key verbatim so the bus de-dupes), and the
+   orchestrator bridge with the same session id.
+
+3. **Idempotent-replay guard (both routes).** `runQuizSubmitSideEffects`
+   short-circuits the moment `result.idempotent_replay === true` — so on a
+   cached replay NEITHER route fires PostHog, the spine emit, OR the bridge. No
+   funnel double-count, no double-publish on the bus, no duplicate orchestrator
+   dispatch.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-88 | `v2_quiz_submit_post_submit_side_effect_parity_via_shared_helper` | `/v2/quiz/submit` now runs FULL post-submit side-effect parity with `/api/quiz/submit` via the shared `runQuizSubmitSideEffects()` (`src/lib/quiz/submit-side-effects.ts`), idempotent-replay-guarded. On a FRESH submit the `/v2` route emits PostHog `quiz_graded` EXACTLY ONCE (distinctId = studentId, payload `{ session_id, score_percent, xp_earned, correct, total, marking_authenticity_path: 'oracle_v2', anti_cheat_flagged: false, idempotent_replay: false }`, `$insert_id = quiz_graded:<session>`) AND `xp_awarded` EXACTLY ONCE (payload `{ xp_delta, source: 'quiz', daily_total_after, capped }`, `$insert_id = xp_awarded:quiz:<session>`) AND `publishEvent(learner.mastery_changed)` on the ADR-005 spine EXACTLY ONCE for the primary chapter (`actorAuthUserId` = JWT user, `idempotencyKey = mastery-changed:<session>:<chapter>` — verbatim match to the orchestrator key so the bus UNIQUE constraint de-dupes, payload `{ subjectCode, chapterNumber, trigger: 'quiz' }`) AND dispatches the orchestrator bridge (`maybeDispatchQuizCompletion`) once with the same `legacySessionId` / `subjectCode` / `chapterNumber` — all with the SAME args the web route uses (both call the single shared helper). On an IDEMPOTENT REPLAY (unique-violation → cached row, `idempotent_replay: true`) NEITHER `quiz_graded`, `xp_awarded`, `publishEvent`, NOR the bridge fires (guard short-circuits → no funnel double-count, no double-publish on the bus, no duplicate dispatch). The canonical `/api/quiz/submit` refactor is non-weakening: REG-62's existing idempotency tests still assert `quiz_graded` fires once on a fresh submit and zero on replay through the REAL shared module (only `@/lib/posthog/server` is mocked). | `src/__tests__/api/v2/quiz-submit.test.ts` (Wave 2.3 section: 5 tests — `quiz_graded` parity, `xp_awarded` parity, `learner.mastery_changed` spine-emit parity, orchestrator-bridge parity, replay-fires-nothing — on top of the prior contract tests in the same file); web side via `src/__tests__/api/quiz-submit-idempotency.test.ts` (REG-62 — `quiz_graded` fires-once / not-on-replay through the shared helper) + `src/__tests__/state/learner-loop/quiz-submit-spine-emit.test.ts` (re-exported pure helpers + spine event-shape) | E (unit — runs in CI) |
+
+### Pinned tests
+
+- `src/__tests__/api/v2/quiz-submit.test.ts::POST /api/v2/quiz/submit — post-submit side-effect parity (Wave 2.3)::emits PostHog quiz_graded once with the SAME payload the web route uses`
+- `src/__tests__/api/v2/quiz-submit.test.ts::POST /api/v2/quiz/submit — post-submit side-effect parity (Wave 2.3)::emits publishEvent(learner.mastery_changed) on the ADR-005 spine with the SAME envelope`
+- `src/__tests__/api/v2/quiz-submit.test.ts::POST /api/v2/quiz/submit — post-submit side-effect parity (Wave 2.3)::does NOT fire PostHog, publishEvent, or the bridge on an idempotent replay`
+- `src/__tests__/api/quiz-submit-idempotency.test.ts::POST /api/quiz/submit — fresh submission (REG-62)::returns 200 with idempotent_replay=false and emits quiz_graded once` (web-side proof the shared helper still fires on the canonical route)
+- `src/__tests__/api/quiz-submit-idempotency.test.ts::POST /api/quiz/submit — idempotent replay (REG-62)::returns 200 with idempotent_replay=true and DOES NOT emit quiz_graded on a unique-violation race` (web-side proof the replay guard still holds post-refactor)
+
+### Invariants covered by this section
+
+- Mobile-parity telemetry/spine integrity: a mobile client hitting `/v2/quiz/submit`
+  is now equally visible to PostHog funnels, the ADR-005 projector subscribers
+  (mastery-state-writer, concept-mastery-projector), and the orchestrator as a web
+  client hitting `/api/quiz/submit` — the SAME shared helper fires for both, so
+  the two paths cannot drift on side-effects (extends REG-87's grading parity to
+  the post-grade side-effects).
+- ADR-005 spine de-dup: the `/v2` route's `learner.mastery_changed` idempotency
+  key matches the orchestrator key verbatim, so when both the route-level publish
+  and the orchestrator bridge fire the bus's `UNIQUE(idempotency_key)` constraint
+  yields exactly one row per (kind, session, chapter).
+- No double-count on replay: the `idempotent_replay` guard ensures cached replays
+  on EITHER route fire no telemetry, no bus publish, and no orchestrator dispatch
+  (consistent with REG-62's funnel-double-count guard, now extended to the spine
+  and bridge).
+
+### Notes on test strategy
+
+REG-88 follows the same **contract/parity pattern** as REG-87: both routes' tests
+mock only the leaf side-effect modules (`@/lib/posthog/server`,
+`@/lib/state/events/publish`, `@/lib/state/quiz-orchestrator-bridge`) so the REAL
+`runQuizSubmitSideEffects()` orchestration runs, and assert on the captured calls
+(which event, which payload, which `$insert_id` / idempotency key, how many times).
+Because BOTH routes call the same shared function, the v2 tests prove the v2 wiring
+and the existing REG-62 web tests prove the canonical wiring still fires through
+the extracted module — so the shared-helper extraction is covered on BOTH sides
+with no coverage gap on the canonical route. A `flushAsync()` (setTimeout 0) flushes
+the deferred spine-emit IIFE's microtasks before the publish assertions run. NOTE:
+there is no standalone unit test for the pure side-effect IIFE wiring of
+`src/lib/quiz/submit-side-effects.ts` in isolation; it is covered transitively
+through the two route test suites (the pure helpers `computeMasteryDeltas` /
+`*IdempotencyKey` ARE unit-tested directly in the spine-emit test).
+
+### Catalog total
+
+Phase 2 Wave 2.3 (mobile parity via one contract — post-submit side-effects) adds
+REG-88 (`/v2/quiz/submit` full PostHog + spine + bridge side-effect parity with
+`/api/quiz/submit` via the shared `runQuizSubmitSideEffects()` helper,
+idempotent-replay-guarded).
+
+**Total: 56 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)

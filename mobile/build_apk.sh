@@ -26,6 +26,19 @@ echo ""
 echo "📦 Getting dependencies..."
 flutter pub get
 
+# Generate built_value serializers for the /v2 dart-dio client.
+# IMPORTANT: build_runner only generates for the package it is invoked in;
+# path-dependency packages are NOT built from the app root. The /v2 client
+# (lib/api/v2) is its own package, so codegen runs INSIDE it. Its DTOs declare
+# `part '*.g.dart';` — without this step the analyzer + compiler fail with
+# "missing part" errors. Idempotent (build_runner 3.x deletes conflicting
+# outputs by default). The app package itself uses no build_runner-generated
+# files.
+echo ""
+echo "🧬 Generating /v2 client serializers (build_runner in lib/api/v2)..."
+( cd lib/api/v2 && dart pub get && dart run build_runner build )
+echo "✅ Codegen complete"
+
 # Run analysis
 echo ""
 echo "🔍 Running analysis..."
@@ -67,12 +80,17 @@ echo "🚀 Building release APKs (split by ABI)..."
 # matches the surface web has been on. To roll back a build, set
 # FOXY_ENDPOINT=edge before running this script.
 # See mobile/docs/foxy-migration.md for the deprecation timeline.
+# USE_V2 gates the /v2 contract surface (adaptive Today home + 4-tab nav).
+# Default OFF: production builds behave exactly as today (5-tab nav, legacy
+# repos, Dashboard landing). Set USE_V2=true to opt a build into the new
+# server-driven Today home. No secret — a plain boolean build flag.
 flutter build apk --release --split-per-abi \
     --dart-define=SUPABASE_URL="${SUPABASE_URL}" \
     --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}" \
     --dart-define=RAZORPAY_KEY_ID="${RAZORPAY_KEY_ID:-}" \
     --dart-define=API_BASE_URL="${API_BASE_URL:-https://alfanumrik.com/api}" \
-    --dart-define=FOXY_ENDPOINT="${FOXY_ENDPOINT:-api}"
+    --dart-define=FOXY_ENDPOINT="${FOXY_ENDPOINT:-api}" \
+    --dart-define=USE_V2="${USE_V2:-false}"
 
 echo ""
 echo "================================"
