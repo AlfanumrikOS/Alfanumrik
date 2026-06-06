@@ -625,42 +625,123 @@ jobs:
         run: sleep 60
 
       - name: Health check
+        # Production is served from the canonical alfanumrik.com domain.
+        # The .vercel.app subdomain is not aliased to this project and 404s —
+        # was a past source of false health-check failures in CI.
+        #
+        # Vercel deployment protection (and the Security Checkpoint) blocks
+        # anonymous requests from datacenter IPs (GitHub Actions runners) with
+        # a protection challenge — typically HTTP 401/403, sometimes 429. Real
+        # browser users pass automatically; CI cannot. Two tiers of handling,
+        # mirroring deploy-production.yml's health-check job:
+        #
+        #   1. PROPER FIX — Protection Bypass for Automation. If the repo secret
+        #      VERCEL_AUTOMATION_BYPASS_SECRET is set (and the matching value is
+        #      configured in Vercel → Settings → Deployment Protection →
+        #      Protection Bypass for Automation), we send the
+        #      `x-vercel-protection-bypass` header so the probe reaches the real
+        #      app and does TRUE verification (hard-fail on non-200).
+        #      Docs: https://vercel.com/docs/security/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation
+        #
+        #   2. SOFT-PASS — only for the deployment-protection case. If the secret
+        #      is NOT set, OR every attempt comes back as a clear protection
+        #      challenge (401/403/429 from the protection layer), we can't verify
+        #      health but that does NOT mean prod is down (Vercel deploys
+        #      independently of this job; real users are unaffected). We emit a
+        #      ::warning:: pointing at the bypass secret as the real fix and
+        #      exit 0 so CI stays green.
+        #
+        # GENUINE OUTAGES STILL HARD-FAIL: HTTP 5xx from the app, connection
+        # refused, DNS failure, or curl timeout after all retries → exit 1.
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
-          # Production is served from the canonical alfanumrik.com domain.
-          # The .vercel.app subdomain is not aliased to this project and
-          # 404s — was the source of false health-check failures in CI.
-          #
-          # Vercel's Security Checkpoint also rate-limits/JS-challenges
-          # anonymous requests from datacenter IPs (GitHub Actions runners),
-          # so we send a monitoring-style User-Agent + Accept: application/json
-          # to look like a known health probe, and treat all-429 results as a
-          # CI-side false positive (warning) rather than a hard failure.
-          ALL_429=1
+          TARGET_URL="https://alfanumrik.com/api/v1/health"
+          echo "Checking: $TARGET_URL"
+
+          BYPASS_HEADER=()
+          if [ -n "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
+            BYPASS_HEADER=(-H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET")
+            echo "Using Vercel automation bypass secret — performing TRUE verification."
+          else
+            echo "::notice::VERCEL_AUTOMATION_BYPASS_SECRET not set — health check will soft-pass on deployment-protection challenges (401/403/429). Configure the bypass secret in Vercel + GitHub repo secrets to get real health verification."
+          fi
+
+          # ALL_PROTECTION starts true; cleared the moment we see ANY response
+          # that is not a deployment-protection challenge (i.e. a real signal).
+          ALL_PROTECTION=1
+          REAL_FAIL=0
+          LAST_STATUS=""
           for i in 1 2 3 4 5; do
-            RESPONSE=$(curl -s -w "\n%{http_code}" \
+            # Capture body and status WITHOUT piping into head/tail. Writing into
+            # a `head` that exits early closes the pipe and produces the
+            # "echo: write error: Broken pipe" seen in the old loop. Use a
+            # plain temp file + curl's own %{http_code} instead.
+            BODY=$(curl -s -m 20 -o /tmp/health-body.txt -w "%{http_code}" \
               -A "Alfanumrik-CI-HealthCheck/1.0 (+https://alfanumrik.com; vercel-monitoring)" \
               -H "Accept: application/json" \
               -H "x-health-probe: github-actions" \
-              https://alfanumrik.com/api/v1/health 2>/dev/null)
-            STATUS=$(echo "$RESPONSE" | tail -1)
-            BODY=$(echo "$RESPONSE" | head -1)
+              "${BYPASS_HEADER[@]}" \
+              "$TARGET_URL" 2>/dev/null)
+            CURL_EXIT=$?
+            STATUS="$BODY"
+            LAST_STATUS="$STATUS"
+
+            # curl-level failure: connection refused / DNS failure / timeout.
+            # This is a genuine outage signal — never soft-pass it.
+            if [ "$CURL_EXIT" != "0" ]; then
+              echo "Attempt $i/5: curl failed (exit $CURL_EXIT) — connection/DNS/timeout"
+              ALL_PROTECTION=0
+              REAL_FAIL=1
+              LAST_STATUS="curl-exit-$CURL_EXIT"
+              sleep 15
+              continue
+            fi
+
             if [ "$STATUS" = "200" ]; then
               echo "Health check passed (attempt $i)"
-              echo "$BODY" | head -c 500
+              head -c 500 /tmp/health-body.txt || true
+              echo ""
               exit 0
             fi
-            if [ "$STATUS" != "429" ]; then
-              ALL_429=0
-            fi
-            echo "Attempt $i/5 returned HTTP $STATUS"
+
+            # Deployment-protection challenge: 401/403 from the protection layer,
+            # or 429 from the Security Checkpoint. These are the ONLY statuses
+            # eligible for soft-pass.
+            case "$STATUS" in
+              401|403|429)
+                echo "Attempt $i/5 returned HTTP $STATUS (deployment-protection challenge)"
+                ;;
+              5*)
+                # App-level 5xx — a genuine outage. Hard-fail signal.
+                echo "Attempt $i/5 returned HTTP $STATUS (app error — real failure)"
+                ALL_PROTECTION=0
+                REAL_FAIL=1
+                ;;
+              *)
+                # Any other non-200 (e.g. 404, 400) is also a real signal,
+                # not a protection challenge — do not blanket soft-pass.
+                echo "Attempt $i/5 returned HTTP $STATUS (unexpected — real failure)"
+                ALL_PROTECTION=0
+                REAL_FAIL=1
+                ;;
+            esac
+
+            # Longer backoff on 429 so the checkpoint can clear; quick otherwise.
             if [ "$STATUS" = "429" ]; then
               sleep 30
             else
               sleep 15
             fi
           done
-          if [ "$ALL_429" = "1" ]; then
-            echo "::warning::All 5 attempts returned HTTP 429 — Vercel Security Checkpoint engaged for CI runner. Real users are unaffected."
+
+          # Soft-pass ONLY when every attempt was a deployment-protection
+          # challenge and no real-failure signal was ever seen. The proper fix
+          # is to configure VERCEL_AUTOMATION_BYPASS_SECRET (see header comment).
+          if [ "$ALL_PROTECTION" = "1" ] && [ "$REAL_FAIL" = "0" ]; then
+            echo "::warning::All 5 attempts were blocked by Vercel deployment protection (last status: $LAST_STATUS). Could not verify health from the CI runner IP, but production is reachable by real users (Vercel deploys independently). Soft-passing. Configure VERCEL_AUTOMATION_BYPASS_SECRET in Vercel + GitHub repo secrets for real verification."
+            exit 0
           fi
-          echo "Health check failed after 5 attempts"
+
+          echo "Health check failed after 5 attempts (last status: $LAST_STATUS)"
           exit 1
