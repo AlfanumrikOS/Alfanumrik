@@ -87,6 +87,3 @@ lib/src/model/today_response.dart
 lib/src/model/today_response_meta.dart
 lib/src/serializers.dart
 pubspec.yaml
-test/learn_api_test.dart
-test/quiz_api_test.dart
-test/student_api_test.dart
