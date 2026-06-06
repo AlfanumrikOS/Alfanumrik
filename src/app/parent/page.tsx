@@ -928,6 +928,17 @@ export default function ParentPage() {
   const [allChildren, setAllChildren] = useState<StudentSession[]>([]);
   const [checking, setChecking] = useState(true);
 
+  // D-authunify (ff_parent_unified_auth_v1, Wave D, Finding #5). When ON, the
+  // Supabase guardian-JWT (auth.guardian) is the SINGLE source of truth for the
+  // parent session — the HMAC sessionStorage cache (loadParentSession) is never
+  // consulted. The real auth boundary is already server-side: the parent-portal
+  // Edge Function requires a Bearer JWT on every action and /api/parent/report
+  // uses authorizeRequest, so the HMAC payload was only ever a client cache.
+  // When OFF (default), the existing dual path below is byte-identical.
+  // Read via the same useFeatureFlags() SWR hook used for ff_parent_glance_v1.
+  const { data: flags } = useFeatureFlags();
+  const unifiedAuth = flags?.[CONSUMER_MINIMALISM_FLAGS.PARENT_UNIFIED_AUTH_V1] === true;
+
   // Fetch all children for this guardian so the multi-child selector works
   const fetchAllChildren = useCallback(async (guardianId: string, primaryStudent: StudentSession) => {
     try {
@@ -954,9 +965,49 @@ export default function ParentPage() {
     }
   }, []);
 
+  // D-authunify (flag ON only): resolve the parent session purely from the
+  // guardian-JWT. The primary student is seeded from get_children (served by
+  // the parent-portal Edge Function, which requires the Bearer JWT) instead of
+  // the HMAC sessionStorage cache. No loadParentSession() call on this path.
+  const resolveGuardianFromJwt = useCallback(async (g: ParentSession) => {
+    try {
+      const res = await api('get_children', { guardian_id: g.id });
+      const raw = (res?.children ?? res?.students);
+      const normalized: StudentSession[] = Array.isArray(raw)
+        ? raw.map((c: Record<string, unknown>) => ({
+            id: String(c.id || ''),
+            name: String(c.name || 'Child'),
+            grade: String(c.grade || ''),
+          }))
+        : [];
+      setAllChildren(normalized);
+      setStudent(normalized.length > 0 ? normalized[0] : null);
+    } catch {
+      setAllChildren([]);
+      setStudent(null);
+    }
+  }, []);
+
   useEffect(() => {
     if (auth.isLoading) return;
 
+    // ── D-authunify ON: guardian-JWT is the single source of truth ──────────
+    // No HMAC sessionStorage fallback. If there's no auth.guardian, leave
+    // guardian/student null so the normal LoginScreen (unauthenticated state)
+    // renders — we never silently revive a stale HMAC cache.
+    if (unifiedAuth) {
+      if (auth.guardian) {
+        setGuardian(auth.guardian);
+        resolveGuardianFromJwt(auth.guardian).then(() => setChecking(false));
+      } else {
+        setGuardian(null);
+        setStudent(null);
+        setChecking(false);
+      }
+      return;
+    }
+
+    // ── Flag OFF (default): existing dual path, byte-identical to today ──────
     // First check if user is logged in via Supabase with guardian role
     if (auth.guardian) {
       setGuardian(auth.guardian);
@@ -980,7 +1031,7 @@ export default function ParentPage() {
       }
       setChecking(false);
     });
-  }, [auth.isLoading, auth.guardian, fetchAllChildren]);
+  }, [auth.isLoading, auth.guardian, fetchAllChildren, unifiedAuth, resolveGuardianFromJwt]);
 
   if (checking || auth.isLoading) return (
     <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
