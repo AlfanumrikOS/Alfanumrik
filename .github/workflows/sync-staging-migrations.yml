@@ -21,7 +21,13 @@
 #   2. workflow_dispatch: manual, for ops re-runs after env-var rotation
 #
 # Safety:
-#   - Uses STAGING credentials only (separate from production)
+#   - Uses STAGING credentials only (separate from production). The staging
+#     Supabase project lives in a DIFFERENT Supabase org than prod, so it
+#     authenticates with the dedicated `SUPABASE_STAGING_ACCESS_TOKEN`
+#     (sourced into the CLI's `SUPABASE_ACCESS_TOKEN` env var), paired with
+#     `SUPABASE_STAGING_DB_PASSWORD` + `SUPABASE_STAGING_PROJECT_REF`. The
+#     prod `SUPABASE_ACCESS_TOKEN` is never used here (it cannot authorize
+#     against the staging org and previously caused `Unauthorized`).
 #   - --include-all is safe because all migrations in this repo are
 #     idempotent per CLAUDE.md product invariants
 #   - Failure does NOT block production deploy (this workflow is staging-only)
@@ -53,7 +59,10 @@ jobs:
 
       - name: Push migrations to staging Supabase
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          # Staging lives in a different Supabase org than prod, so the CLI's
+          # SUPABASE_ACCESS_TOKEN env var must be sourced from the dedicated
+          # staging token — the prod token returns Unauthorized here.
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_STAGING_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_STAGING_DB_PASSWORD }}
         run: |
           supabase link --project-ref ${{ secrets.SUPABASE_STAGING_PROJECT_REF }} --password "$SUPABASE_DB_PASSWORD"
