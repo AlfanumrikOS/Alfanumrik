@@ -101,7 +101,7 @@
     "eslint-config-next": "^14.2.35",
     "eslint-plugin-alfanumrik": "file:./eslint-plugin-alfanumrik",
     "jsdom": "^29.1.1",
-    "postcss": "^8.4.38",
+    "postcss": "^8.5.15",
     "puppeteer": "^25.0.4",
     "tailwindcss": "^3.4.4",
     "tsx": "^4.22.4",
