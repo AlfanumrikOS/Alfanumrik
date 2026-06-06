@@ -399,6 +399,9 @@ export const COSMIC_REDESIGN_FLAGS = {
  *  ff_unified_quiz_v1       — single parameterized quiz runtime (Wave B, not yet built).
  *  ff_parent_glance_v1      — push-first parent glance home (Wave C, not yet built).
  *  ff_parent_unified_auth_v1 — guardian-role parent auth, E2 closure (Wave D, not yet built).
+ *  ff_parent_encourage_v1   — parent→child 'Encourage' cheer button on the glance home
+ *                             (Wave D, D-encourage). When OFF, the Encourage button is hidden
+ *                             and POST /api/v2/parent/encourage is not surfaced.
  *
  * All default false. Seeded by migration
  * 20260612000000_seed_phase1_consumer_minimalism_flags.sql.
@@ -409,6 +412,7 @@ export const CONSUMER_MINIMALISM_FLAGS = {
   UNIFIED_QUIZ_V1:        'ff_unified_quiz_v1',
   PARENT_GLANCE_V1:       'ff_parent_glance_v1',
   PARENT_UNIFIED_AUTH_V1: 'ff_parent_unified_auth_v1',
+  PARENT_ENCOURAGE_V1:    'ff_parent_encourage_v1',
 } as const;
 
 /**
@@ -442,6 +446,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [CONSUMER_MINIMALISM_FLAGS.UNIFIED_QUIZ_V1]: false,
   [CONSUMER_MINIMALISM_FLAGS.PARENT_GLANCE_V1]: false,
   [CONSUMER_MINIMALISM_FLAGS.PARENT_UNIFIED_AUTH_V1]: false,
+  [CONSUMER_MINIMALISM_FLAGS.PARENT_ENCOURAGE_V1]: false,
 } as const;
 
 /**

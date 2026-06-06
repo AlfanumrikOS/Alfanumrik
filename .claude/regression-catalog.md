@@ -1462,3 +1462,102 @@ Consumer Minimalism Wave C adds REG-84 (parent glance flag-OFF parity +
 read-only contract).
 
 **Total: 52 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+
+## Consumer Minimalism — Wave D parent → child "Encourage" (2026-06-13) — REG-85
+
+Source: the parent → child "Encourage" (a.k.a. "D-encourage") feature, flag-gated
+by `ff_parent_encourage_v1` (default OFF —
+`FLAG_DEFAULTS[CONSUMER_MINIMALISM_FLAGS.PARENT_ENCOURAGE_V1] === false`, seeded by
+`supabase/migrations/20260613000002_ff_parent_encourage_v1.sql`). This is the FIRST
+parent→child WRITE affordance added to the otherwise read-only Wave C glance home.
+A parent picks one of a curated set of **preset** cheers (`src/lib/parent/cheer-catalog.ts`,
+8 presets) and the route (`src/app/api/v2/parent/encourage/route.ts`,
+permission `child.encourage`, migrations `20260613000000`/`20260613000003`) fans it
+out to the linked child's notifications feed (`parent_cheer` type) and records a
+`parent_cheers` row (`20260613000001`). The button surface is
+`src/components/parent/EncourageButton.tsx`, mounted by
+`src/components/parent/ParentGlanceHome.tsx`.
+
+Because this introduces a write affordance that did not exist in Wave C, three
+load-bearing safety properties hold it together (same family as the REG-78 /
+REG-79 / REG-83 / REG-84 flag-OFF safety tests, plus the AlfaBot P12/P13
+content-safety entries REG-66 / REG-68):
+
+1. **Preset-only messages (P12 — no free text to a child).** The parent can only
+   choose a fixed, curated, bilingual, PII-free preset by its `message_key`. There
+   is NO free-text input/textarea anywhere in the picker; the component imports
+   `CHEER_PRESETS` and never duplicates the strings. The route hard-rejects a
+   present-but-unknown `message_key` with 400, applies `DEFAULT_MESSAGE_KEY` only
+   when absent, and re-derives the rendered title/body server-side from the catalog.
+   A regression that added a text field, or accepted an arbitrary string as the
+   message, would breach the P12 boundary (no unfiltered, parent-authored text ever
+   reaches a child).
+
+2. **PII-free notification `data` + audit (P13).** The `send_notification` `p_data`
+   jsonb and the `audit_logs` row (`parent.child_encouraged`) carry ONLY UUIDs
+   (guardian_id / student_id), enums (cheer_type), the preset `message_key`, and the
+   catalog-derived bilingual strings — never the guardian's name / email / phone.
+   The client component logs nothing. A regression that spread the guardian profile
+   into the notification payload or the audit details would breach P13.
+
+3. **Flag-OFF parity (Encourage hidden).** With `ff_parent_encourage_v1` OFF
+   (production truth), `<ParentGlanceHome>` mounts NO Encourage affordance and its
+   lazy `EncourageButton` `dynamic()` import never resolves into the flag-OFF
+   bundle — the parent surface is byte-identical to the Wave C glance home (REG-84).
+   The gate is TWO conditions, both required: `flags[PARENT_ENCOURAGE_V1] === true`
+   AND `canFetchReport` (guardian-JWT mode). Link-code parents (who would 403 the
+   guardian-only route) never see it even with the flag ON. A regression that
+   defaulted the flag ON, dropped the guardian condition, or flipped the gate would
+   silently expose a new write surface to every guardian (or to unauthorized
+   link-code parents).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-85 | `parent_encourage_preset_only_pii_free_flag_off_parity` | Three-layer pin on Wave D. **(a) Preset-only (P12):** opening `<EncourageButton>` reveals exactly one button per `CHEER_PRESETS` entry, each label sourced from the SAME catalog module the backend reads (fails if the strings fork), and there is NO `<input>` / `<textarea>` / `<form>` anywhere; the route returns 400 for a present-but-unknown `message_key`, applies the DEFAULT only when absent, and never accepts free text. **(b) PII-free `data`/audit (P13):** selecting a preset POSTs EXACTLY `{ student_id, message_key }` (the preset's catalog key) with the parent's Supabase Bearer JWT, omitting the header when there's no session; on the server the `send_notification` `p_data` and the `parent.child_encouraged` audit row carry only UUIDs / enums / preset keys / catalog strings — no guardian name / email; the component maps 200 → success, 429 → "already cheered recently", 403 / other non-OK / network throw → a friendly generic error WITHOUT surfacing the raw server text. **(c) Flag-OFF parity:** `<ParentGlanceHome>` HIDES the Encourage button when the flag is ABSENT (prod truth), explicitly `false`, or still loading (`data === undefined`) — even for a guardian-mode parent — and when the flag is ON but the parent is NOT guardian-JWT (`canFetchReport === false`); it SHOWS the button (inside the Quick actions region, wired to the selected child) ONLY when the flag is `true` AND `canFetchReport` is `true`; the empty state mounts no Encourage affordance; and a standalone assertion pins `FLAG_DEFAULTS[PARENT_ENCOURAGE_V1] === false` against a default-flip regression. All copy is bilingual via `isHi` (P7). | `src/__tests__/components/parent/encourage-button.test.tsx` (10 tests: preset-only render + POST contract + response mapping + bilingual), `src/__tests__/components/parent/parent-glance-home.test.tsx` (PART 3 — 7 tests: the flag × guardian gate truth table), `src/__tests__/api/v2/parent/encourage/route.test.ts` (route contract — auth gate, ownership isolation, message_key validation, rate limit, PII-free notify/audit happy path, notify failure), `src/__tests__/api/v2/parent/encourage/cheer-catalog.test.ts` (catalog content-safety + bilingual) | E (unit — runs in CI, no fixture needed) |
+
+### Pinned tests
+
+- `src/__tests__/components/parent/encourage-button.test.tsx::EncourageButton — preset-only picker (P12)::reveals every CHEER_PRESETS title (English) when opened — no duplicated strings`
+- `src/__tests__/components/parent/encourage-button.test.tsx::EncourageButton — POST contract::POSTs { student_id, message_key } with the parent Bearer token on preset select`
+- `src/__tests__/components/parent/encourage-button.test.tsx::EncourageButton — response mapping::maps 403 → a friendly generic error (no raw server detail surfaced, P13)`
+- `src/__tests__/components/parent/parent-glance-home.test.tsx::ParentGlanceHome — Encourage affordance gate (ff_parent_encourage_v1 × guardian)::SHOWS Encourage ONLY when the flag is ON AND the parent is guardian-JWT`
+- `src/__tests__/components/parent/parent-glance-home.test.tsx::ParentGlanceHome — Encourage affordance gate (ff_parent_encourage_v1 × guardian)::HIDES Encourage when the flag is ON but the parent is NOT guardian-JWT (canFetchReport=false)`
+- `src/__tests__/api/v2/parent/encourage/route.test.ts::POST /api/v2/parent/encourage — happy path::sends a notification with correct args and records the cheer (200)`
+
+### Invariants covered by this section
+
+- P12 (AI / content safety): preset-only cheers — no free, parent-authored text
+  ever reaches a child; unknown `message_key` rejected at the route.
+- P13 (data privacy): notification `data` jsonb + `audit_logs.details` for
+  `parent.child_encouraged` carry UUIDs / enums / preset keys only — no PII; client
+  surfaces friendly errors, never raw server text.
+- P9 (RBAC) — adjacent: route gated by the `child.encourage` permission and a
+  guardian↔student link check (cross-guardian isolation; link-code 403).
+- Flag-OFF safety (same family as REG-78/REG-79/REG-83/REG-84): the entire Wave D
+  write surface is inert with `ff_parent_encourage_v1` OFF — the Encourage button
+  is never mounted and its `dynamic()` import never enters the flag-OFF bundle, so
+  the parent surface is byte-identical to Wave C.
+- P7 (bilingual UI) — adjacent: trigger / picker / success / rate-limit / error
+  copy all switch on `isHi`; the catalog ships En + Hi for every preset.
+
+### Notes on test strategy
+
+REG-85 follows the **flag-OFF safety pattern** (REG-78/REG-79/REG-83/REG-84) for
+the gate half and the **content-safety contract pattern** (REG-66/REG-68) for the
+preset-only / PII-free halves. The component tests mock only two seams — the
+Supabase session helper (Bearer token) and global `fetch` (network) — and assert
+on user-visible structure (preset labels, the absence of any free-text affordance,
+the exact POST body, the mapped success/rate-limit/error copy), never on internals.
+The gate tests stub the lazy `EncourageButton` (as the existing suite stubs
+`WeeklyReport`) and assert purely on whether `<ParentGlanceHome>` MOUNTS it across
+the full flag × `canFetchReport` truth table, with each test resetting the mocked
+flag state so the assertions are independent of ordering. The route + catalog tests
+(already present) pin the server-side P12/P13 boundary. The whole set needs no
+Supabase fixture and runs green in CI today.
+
+### Catalog total
+
+Consumer Minimalism Wave D adds REG-85 (parent → child Encourage preset-only +
+PII-free + flag-OFF parity).
+
+**Total: 53 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)

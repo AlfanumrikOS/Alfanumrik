@@ -17,6 +17,10 @@ const TYPE_CONFIG: Record<string, { icon: string; color: string; label: string; 
   foxy_motivation: { icon: '🦊', color: '#E8581C', label: 'Foxy', labelHi: 'फॉक्सी' },
   xp_milestone: { icon: '⭐', color: '#F5A623', label: 'Milestone', labelHi: 'उपलब्धि' },
   parent_daily_report: { icon: '👨‍👩‍👧', color: '#16A34A', label: 'Parent', labelHi: 'अभिभावक' },
+  // Parent → child "cheer" (Wave D, ff_parent_encourage_v1). The per-cheer emoji
+  // comes from data.icon (cheer-catalog preset); this is just the type label +
+  // accent color. Both render fine through the generic feed item below.
+  parent_cheer: { icon: '👏', color: '#EC4899', label: 'From Family', labelHi: 'परिवार से' },
   achievement: { icon: '🏅', color: '#F5A623', label: 'Achievement', labelHi: 'उपलब्धि' },
   quiz_result: { icon: '⚡', color: '#D97706', label: 'Quiz', labelHi: 'क्विज़' },
 };
@@ -161,6 +165,10 @@ export default function NotificationsPage() {
               <div className="space-y-2">
                 {group.items.map(n => {
                   const cfg = TYPE_CONFIG[n.type] || { icon: '📌', color: 'var(--text-3)', label: 'Update', labelHi: 'अपडेट' };
+                  // Prefer a per-notification emoji from data.icon when supplied
+                  // (e.g. parent_cheer carries the chosen cheer-catalog icon);
+                  // otherwise fall back to the type's default icon.
+                  const displayIcon = typeof n.data?.icon === 'string' && n.data.icon ? n.data.icon : cfg.icon;
                   const isShareable = n.data?.shareable;
 
                   return (
@@ -184,7 +192,7 @@ export default function NotificationsPage() {
                           className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
                           style={{ background: `${cfg.color}12` }}
                         >
-                          {cfg.icon}
+                          {displayIcon}
                         </div>
 
                         <div className="flex-1 min-w-0">
