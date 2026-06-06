@@ -49,7 +49,7 @@ class DailyPlanItem {
     final kindStr = json['kind'] as String?;
     final kind = DailyPlanItemKind.fromString(kindStr);
     if (kind == null) {
-      throw ArgumentError('Unknown DailyPlanItemKind: ' + (kindStr ?? 'null'));
+      throw ArgumentError('Unknown DailyPlanItemKind: ${kindStr ?? 'null'}');
     }
     return DailyPlanItem(
       kind: kind,

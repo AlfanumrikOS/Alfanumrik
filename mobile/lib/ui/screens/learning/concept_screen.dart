@@ -102,11 +102,11 @@ class ConceptScreen extends ConsumerWidget {
                           children: [
                             const Text('🦊', style: TextStyle(fontSize: 20)),
                             const SizedBox(width: 10),
-                            Expanded(
+                            const Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
+                                  Text(
                                     'Didn\'t understand something?',
                                     style: TextStyle(
                                       fontSize: 13,
@@ -114,7 +114,7 @@ class ConceptScreen extends ConsumerWidget {
                                       color: AppColors.textPrimary,
                                     ),
                                   ),
-                                  const Text(
+                                  Text(
                                     'Ask Foxy to explain it differently',
                                     style: TextStyle(
                                       fontSize: 11,
@@ -139,7 +139,7 @@ class ConceptScreen extends ConsumerWidget {
               // Bottom action bar
               Container(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   color: AppColors.surface,
                   border: Border(
                     top: BorderSide(color: AppColors.borderLight),
@@ -164,7 +164,7 @@ class ConceptScreen extends ConsumerWidget {
 
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
+                                const SnackBar(
                                   content: Text('Topic completed! +${CoinRewards.studyTaskComplete} Foxy Coins'),
                                   duration: Duration(seconds: 2),
                                 ),

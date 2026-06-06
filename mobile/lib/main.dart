@@ -18,14 +18,21 @@ Future<void> main() async {
   // when we use its `appRunner` parameter, so this is the canonical entry.
   await SentryFlutter.init(
     (options) {
+      // Disable the SDK entirely when DSN is missing (local/dev/test builds).
+      // sentry_flutter 8.x removed the explicit `options.enabled` setter, but
+      // an EMPTY-string DSN now self-disables the SDK: Sentry's
+      // `_setDefaultConfiguration` closes the hub when `dsn.isEmpty`, so no
+      // envelopes are shipped and logcat stays clean. (A NULL dsn would throw
+      // 'DSN is required.', so we keep the empty string from ApiConstants.)
       options.dsn = ApiConstants.sentryDsn;
-      // Disable the SDK entirely when DSN is missing (local/dev/test
-      // builds). Without this, the SDK still tries to ship envelopes to
-      // localhost and floods logcat.
-      options.enabled = ApiConstants.sentryDsn.isNotEmpty;
       options.environment = ApiConstants.sentryEnvironment;
       options.tracesSampleRate = ApiConstants.sentryTracesSampleRate;
       options.attachScreenshot = false; // P13 — student PII may be on screen
+      // `attachViewHierarchy` is marked experimental in sentry_flutter 8.x but
+      // is the documented privacy control; we MUST keep it false (P13 — the
+      // view hierarchy can leak on-screen student data). Suppress only the
+      // stability lint, not the setting.
+      // ignore: experimental_member_use
       options.attachViewHierarchy = false; // same reason as screenshots
       options.sendDefaultPii = false; // never auto-send IP / username
 

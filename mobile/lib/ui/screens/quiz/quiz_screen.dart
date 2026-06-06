@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/subjects_provider.dart';
+import '../../../data/models/quiz_question.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/quiz_provider.dart';
 import '../../widgets/loading_widget.dart';
@@ -259,7 +260,7 @@ class _QuizInProgress extends ConsumerWidget {
           // Navigation buttons
           Container(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: AppColors.surface,
               border: Border(top: BorderSide(color: AppColors.borderLight)),
             ),

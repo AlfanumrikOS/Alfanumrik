@@ -1,5 +1,11 @@
 # See https://dart.dev/guides/libraries/private-files
 
+# build_runner output — the built_value serializers for this generated client.
+# These are NOT committed: CI regenerates them via `dart run build_runner build`
+# (see README.md) before the Flutter app compiles. Committing them risks drift
+# between the OpenAPI spec, the hand-written model source, and stale serializers.
+*.g.dart
+
 # Files and directories created by pub
 .dart_tool/
 .buildlog

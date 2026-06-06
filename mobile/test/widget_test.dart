@@ -1,30 +1,33 @@
-// This is a basic Flutter widget test.
+// Smoke test for the Alfanumrik app shell.
 //
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+// The previous contents were the unmodified `flutter create` counter
+// template (referencing a non-existent `MyApp` + counter widget), which no
+// longer compiled. The real root widget is `AlfanumrikApp`, but pumping it
+// directly requires a live `Supabase.initialize()` (the GoRouter redirect
+// reads `Supabase.instance.client`), which a bare widget test cannot provide.
+//
+// So this smoke test exercises the app's Material theme through a minimal
+// MaterialApp — enough to prove the theme builds and a frame pumps without
+// touching Supabase/Hive. Behaviour-only assertions on real screens live in
+// the screen/provider tests under test/ui and test/data.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:alfanumrik/main.dart';
+import 'package:alfanumrik/core/theme/app_theme.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('App theme builds and a frame renders', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        home: const Scaffold(
+          body: Center(child: Text('Alfanumrik')),
+        ),
+      ),
+    );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('Alfanumrik'), findsOneWidget);
   });
 }

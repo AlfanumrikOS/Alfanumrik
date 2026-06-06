@@ -191,10 +191,10 @@ class _MessageBubble extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: AppColors.borderLight),
           ),
-          child: Row(
+          child: const Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const SizedBox(
+              SizedBox(
                 width: 14,
                 height: 14,
                 child: CircularProgressIndicator(
@@ -202,7 +202,7 @@ class _MessageBubble extends StatelessWidget {
                   color: AppColors.accent,
                 ),
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: 10),
               Text(
                 'Foxy is thinking...',
                 style: TextStyle(
@@ -322,7 +322,7 @@ class _ChatInputBar extends StatelessWidget {
         12, 8, 12,
         MediaQuery.of(context).padding.bottom + 8,
       ),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: AppColors.surface,
         border: Border(top: BorderSide(color: AppColors.borderLight)),
       ),

@@ -250,7 +250,7 @@ void main() {
       //               flagged }
       // No `questions` array — review[] should be empty.
       final result = QuizResult.fromRpc(
-        {
+        const {
           'total': 10,
           'correct': 7,
           'score_percent': 70,
@@ -272,7 +272,7 @@ void main() {
       //                       correct_original_index, selected_displayed_index,
       //                       selected_original_index, shuffle_map}]`
       final result = QuizResult.fromRpc(
-        {
+        const {
           'total': 2,
           'correct': 1,
           'score_percent': 50,
@@ -355,7 +355,7 @@ void main() {
       // fires. The mobile model must surface flagged as-is so the result
       // screen can show a hint message.
       final result = QuizResult.fromRpc(
-        {
+        const {
           'total': 5,
           'correct': 5,
           'score_percent': 100,
@@ -379,7 +379,7 @@ void main() {
       // this at the model level — any code that tries to use it as an
       // index would crash visibly.
       final q = QuizQuestion.fromServerSession(
-        {
+        const {
           'question_id': 'qid-9',
           'question_text': 'Q?',
           'options_displayed': ['o1', 'o2', 'o3', 'o4'],
@@ -398,7 +398,7 @@ void main() {
 
     test('handles malformed options_displayed by yielding an empty list', () {
       final q = QuizQuestion.fromServerSession(
-        {
+        const {
           'question_id': 'qid-bad',
           'question_text': 'Q?',
           'options_displayed': 'not-a-list',

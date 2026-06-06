@@ -21,3 +21,17 @@
 #docs/*.md
 # Then explicitly reverse the ignore rule for a single file:
 #!docs/README.md
+
+# --- Alfanumrik: preserve the SDK floor in pubspec.yaml -----------------------
+# The dart-dio generator (openapi-generator 7.x) hardcodes `sdk: '>=2.15.0'` in
+# its pubspec template. That language version (2.15) differs from the version
+# build_runner emits the built_value `.g.dart` parts under (Dart 3.x), so the
+# Flutter app fails to compile the client with:
+#   "The language version override has to be the same in the library and its
+#    part(s)."
+# We hand-bump the floor to `>=3.2.0 <4.0.0` (matching mobile/pubspec.yaml) and
+# protect pubspec.yaml from regeneration so the fix survives `npm run gen:dart`.
+# TODO(codegen-owner / Wave 2.x): move this SDK floor into the codegen config
+#   (openapitools.json / a dart-dio template override) and remove this ignore so
+#   dependency bumps in the generated pubspec are no longer frozen.
+pubspec.yaml

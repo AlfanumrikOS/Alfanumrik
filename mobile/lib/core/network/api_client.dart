@@ -60,7 +60,11 @@ class ApiClient {
     return switch (code) {
       401 => NetworkException.unauthorized(),
       429 => const UsageLimitException('api', 0),
-      >= 500 => NetworkException.server(code),
+      // `int() && >= 500` narrows the nullable `code` to non-null before the
+      // relational match (Dart's stricter null-flow analysis now rejects a
+      // bare `>= 500` on an int?). Behaviour is unchanged: any 5xx maps to a
+      // server error.
+      int() && >= 500 => NetworkException.server(code),
       _ => NetworkException('Request failed', code),
     };
   }

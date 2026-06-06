@@ -51,7 +51,8 @@ class TopicsScreen extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.topic_outlined,
-                        size: 48, color: AppColors.textTertiary.withOpacity(0.5)),
+                        size: 48,
+                        color: AppColors.textTertiary.withValues(alpha: 0.5)),
                     const SizedBox(height: 12),
                     const Text(
                       'No topics available yet.',
@@ -106,8 +107,8 @@ class TopicsScreen extends ConsumerWidget {
                         height: 32,
                         decoration: BoxDecoration(
                           color: topic.isCompleted
-                              ? AppColors.success.withOpacity(0.1)
-                              : color.withOpacity(0.1),
+                              ? AppColors.success.withValues(alpha: 0.1)
+                              : color.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         alignment: Alignment.center,
@@ -149,7 +150,7 @@ class TopicsScreen extends ConsumerWidget {
                           ],
                         ),
                       ),
-                      Icon(
+                      const Icon(
                         Icons.arrow_forward_ios_rounded,
                         size: 12,
                         color: AppColors.textTertiary,
