@@ -9,7 +9,10 @@ import 'package:alfanumrik_api_v2/src/auth/api_key_auth.dart';
 import 'package:alfanumrik_api_v2/src/auth/basic_auth.dart';
 import 'package:alfanumrik_api_v2/src/auth/bearer_auth.dart';
 import 'package:alfanumrik_api_v2/src/auth/oauth.dart';
+import 'package:alfanumrik_api_v2/src/api/learn_api.dart';
 import 'package:alfanumrik_api_v2/src/api/parent_api.dart';
+import 'package:alfanumrik_api_v2/src/api/quiz_api.dart';
+import 'package:alfanumrik_api_v2/src/api/student_api.dart';
 import 'package:alfanumrik_api_v2/src/api/today_api.dart';
 
 class AlfanumrikApiV2 {
@@ -66,10 +69,28 @@ class AlfanumrikApiV2 {
     }
   }
 
+  /// Get LearnApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  LearnApi getLearnApi() {
+    return LearnApi(dio, serializers);
+  }
+
   /// Get ParentApi instance, base route and serializer can be overridden by a given but be careful,
   /// by doing that all interceptors will not be executed
   ParentApi getParentApi() {
     return ParentApi(dio, serializers);
+  }
+
+  /// Get QuizApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  QuizApi getQuizApi() {
+    return QuizApi(dio, serializers);
+  }
+
+  /// Get StudentApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  StudentApi getStudentApi() {
+    return StudentApi(dio, serializers);
   }
 
   /// Get TodayApi instance, base route and serializer can be overridden by a given but be careful,

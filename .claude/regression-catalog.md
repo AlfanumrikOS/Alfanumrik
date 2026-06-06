@@ -1646,3 +1646,94 @@ Consumer Minimalism Wave D (auth unification) adds REG-86 (parent unified-auth
 flag-OFF parity + JWT-only resolution + P15 boundary).
 
 **Total: 54 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+
+## Mobile parity — /v2 contract (Phase 2 Wave 2.2) — REG-87
+
+Source: Phase 2 "mobile-parity-via-one-contract" — Wave 2.1 landed the `/v2`
+standard + the Zod→OpenAPI→Dart codegen pipeline (`src/lib/api/v2/contract.ts`
+single source of truth → `openapi/v2.json` → `mobile/lib/api/v2/**`); Wave 2.2
+added 8 student-facing `/v2` consumer endpoints
+(`/v2/quiz/{questions,start,submit}`, `/v2/student/{profile,progress,leaderboard}`,
+`/v2/learn/{curriculum,concept}`). The web and Flutter clients consume the SAME
+contract, so two distinct failure modes must be pinned:
+
+1. **`/v2/quiz/submit` server-authoritative parity (P1/P2/P3/P4).** The `/v2`
+   submit route is an assessment-approved THIN PASS-THROUGH that MIRRORS the
+   existing `/api/quiz/submit` wrapper: it calls the SAME RPC
+   (`submit_quiz_results_v2`) with the SAME rename-only mapped args
+   (`responses[].selected_option → selected_displayed_index`,
+   `time_taken_seconds → time_spent`, `totalTimeSeconds → p_time`,
+   `Idempotency-Key → p_idempotency_key`) and returns the RPC's score / XP /
+   correct / total / flagged VERBATIM — the route does NO scoring (P1), NO XP
+   math (P2), NO anti-cheat checks (P3); the RPC owns all of it atomically (P4).
+   A mobile client hitting `/v2` MUST get byte-identical grading to a web client
+   hitting `/api/quiz/submit`. The pin proves "verbatim" by feeding the RPC mock
+   DELIBERATELY non-formula values (8/10 → `score_percent: 73`, `xp_earned: 137`)
+   and asserting they pass through untouched — a route that recomputed
+   `Math.round((8/10)*100)=80` would fail. It also pins the Idempotency-Key
+   requirement (400 when missing/non-UUID) and the error-translation table
+   (P0001 → 409, unique-violation → cached idempotent replay 200, anything else
+   → 503 for safe retry).
+
+2. **`/v2` route ↔ contract drift-check (mobile-parity integrity).** Wave 2.1's
+   OpenAPI drift-check (`npm run gen:openapi:check`) only proves
+   `openapi/v2.json` matches the Zod source — NOT that the ROUTE HANDLERS emit
+   what the contract describes. Quality flagged this latent gap in Wave 2.1: a
+   route could ship a response shape the Dart client can't deserialize and CI
+   would stay green. The conformance suite closes it by parsing a representative
+   shaped output of EVERY `/v2` endpoint through its exported Zod schema and
+   asserting it passes, honoring the three distinct envelopes
+   (`/v2/today` → bare `TodayResponse`; `/v2/parent/encourage` → `SuccessAck`;
+   Wave 2.2 routes → `{ success, data: <payload> }`). It also pins drift guards:
+   the schema REJECTS the legacy bare `{ error }` v1 envelope, an integer grade
+   (P5), fewer-than-4 options (P6), and a `QuizSubmitResult` missing
+   `marking_authenticity_path`.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-87 | `v2_quiz_submit_server_authoritative_parity_and_v2_contract_drift_check` | Two-part pin on the `/v2` mobile-parity surface. **(a) `/v2/quiz/submit` parity (P1/P2/P3/P4):** the route calls `submit_quiz_results_v2` EXACTLY ONCE with the SAME rename-only mapped args as `/api/quiz/submit` (`p_responses[].selected_displayed_index` / `time_spent`, `p_time`, `p_idempotency_key`, plus the same `unknown`/`'0'`/`null` subject/grade/topic/chapter fallbacks) — asserted via `.toEqual` on the full arg object, not a partial match; the RPC's `score_percent` / `xp_earned` / `correct` / `total` / `flagged` are returned VERBATIM in the `/v2` envelope (proven with deliberately non-formula RPC values 8/10 → 73% / 137 XP so any client-side recompute would fail); the `Idempotency-Key` header is REQUIRED (400 + `IDEMPOTENCY_KEY_REQUIRED` when missing or non-UUID); JWT↔body `studentId` mismatch is 403; and the error-translation table holds (P0001 → 409 `SESSION_NOT_STARTED`, unique-violation → cached idempotent replay 200 with verbatim cached score/XP, any other RPC error → 503 `RPC_FAILED`, empty RPC result → 503 `EMPTY_RESPONSE`). **(b) `/v2` route↔contract conformance (drift-check):** a representative shaped output of every `/v2` endpoint parses cleanly through its exported Zod schema from `src/lib/api/v2/contract.ts`, honoring the three envelopes (`/v2/today` bare `TodayResponse`, `/v2/parent/encourage` `SuccessAck`, Wave 2.2 routes `{ success, data }`); every `v2Error` code parses against `ErrorResponse`; and the schema REJECTS the legacy bare `{ error }` v1 envelope, an integer grade (P5), a 3-option question (P6), and a `QuizSubmitResult` missing `marking_authenticity_path` — closing the latent drift the OpenAPI artifact check (`gen:openapi:check`) does not catch. | `src/__tests__/api/v2/quiz-submit.test.ts` (13 tests: 7 auth/idempotency/validation + 3 RPC parity + 3 error-translation), `src/__tests__/api/v2/contract-conformance.test.ts` (31 tests: 15 success-envelope conformance + 12 error-envelope conformance + 1 v1-envelope-drift reject + 3 malformed-output drift guards) | E (unit — runs in CI; `gen:openapi:check` guards the artifact half) |
+
+### Pinned tests
+
+- `src/__tests__/api/v2/quiz-submit.test.ts::POST /api/v2/quiz/submit — RPC parity (mirrors /api/quiz/submit)::calls submit_quiz_results_v2 with the SAME mapped args as /api/quiz/submit`
+- `src/__tests__/api/v2/quiz-submit.test.ts::POST /api/v2/quiz/submit — RPC parity (mirrors /api/quiz/submit)::returns RPC score/xp VERBATIM (no recompute) in the /v2 envelope`
+- `src/__tests__/api/v2/quiz-submit.test.ts::POST /api/v2/quiz/submit — error translation::translates a unique-violation into a cached idempotent replay (200)`
+- `src/__tests__/api/v2/contract-conformance.test.ts::/v2 contract conformance — success envelopes parse against contract schemas::POST /v2/quiz/submit envelope conforms (server-authoritative, verbatim RPC values)`
+- `src/__tests__/api/v2/contract-conformance.test.ts::/v2 contract conformance — error envelopes parse against ErrorResponse::ErrorResponse REJECTS a bare {error} (legacy v1 envelope drift guard)`
+
+### Invariants covered by this section
+
+- P1 Score accuracy / P2 XP economy: the `/v2/quiz/submit` route never recomputes
+  score or XP — it returns the `submit_quiz_results_v2` RPC values verbatim, so a
+  mobile client and a web client get identical grading (the RPC is the single
+  re-deriver, consistent with REG-51/REG-52).
+- P3 Anti-cheat / P4 Atomicity: all three anti-cheat checks and atomicity live in
+  the RPC; the route forwards inputs only — `flagged` is passed through, never
+  computed in the route.
+- P5 Grade format / P6 Question quality: the contract schemas enforce string
+  grades and exactly-4-option questions; the conformance drift guards prove a
+  regression to integer grade or a 3-option question fails the schema.
+- Mobile-parity contract integrity: the conformance suite proves the route output
+  matches the Zod source the Dart client is generated from — closing the gap
+  `gen:openapi:check` (artifact ↔ Zod) leaves open (route ↔ Zod).
+
+### Notes on test strategy
+
+REG-87 follows the **contract/parity pattern** (REG-50/REG-51/REG-71): the
+enforcing tests assert on the route's observable contract (which RPC, which args,
+which verbatim values, which envelope) rather than on internals. Part (a) mocks
+only the seams (`authorizeRequest`, `supabase-admin`, `supabase-server.rpc`) and
+asserts on the captured RPC call + the JSON envelope, proving "verbatim" with
+deliberately wrong RPC math so a recompute can't slip through. Part (b) is a pure
+schema-parse suite over representative fixtures that mirror each route's
+projection (`projectQuestion`, `shapeResult`, the student/learn projections), so
+it needs no Supabase fixture and runs green in CI today. The two halves together
+with the artifact check (`gen:openapi:check`, REG-adjacent CI gate) give a
+three-link chain: Zod source → OpenAPI artifact → route output, all pinned.
+
+### Catalog total
+
+Phase 2 Wave 2.2 (mobile parity via one contract) adds REG-87 (`/v2/quiz/submit`
+server-authoritative parity + `/v2` route↔contract drift-check).
+
+**Total: 55 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)

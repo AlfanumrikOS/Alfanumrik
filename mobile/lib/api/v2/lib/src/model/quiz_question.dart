@@ -1,0 +1,273 @@
+//
+// AUTO-GENERATED FILE, DO NOT MODIFY!
+//
+
+// ignore_for_file: unused_element
+import 'package:built_collection/built_collection.dart';
+import 'package:built_value/built_value.dart';
+import 'package:built_value/serializer.dart';
+
+part 'quiz_question.g.dart';
+
+/// QuizQuestion
+///
+/// Properties:
+/// * [bloomLevel] 
+/// * [chapterNumber] 
+/// * [difficulty] 
+/// * [explanation] 
+/// * [explanationHi] 
+/// * [hint] 
+/// * [options] 
+/// * [questionHi] 
+/// * [questionId] 
+/// * [questionText] 
+/// * [questionType] 
+@BuiltValue()
+abstract class QuizQuestion implements Built<QuizQuestion, QuizQuestionBuilder> {
+  @BuiltValueField(wireName: r'bloom_level')
+  String? get bloomLevel;
+
+  @BuiltValueField(wireName: r'chapter_number')
+  int? get chapterNumber;
+
+  @BuiltValueField(wireName: r'difficulty')
+  num get difficulty;
+
+  @BuiltValueField(wireName: r'explanation')
+  String? get explanation;
+
+  @BuiltValueField(wireName: r'explanation_hi')
+  String? get explanationHi;
+
+  @BuiltValueField(wireName: r'hint')
+  String? get hint;
+
+  @BuiltValueField(wireName: r'options')
+  BuiltList<String> get options;
+
+  @BuiltValueField(wireName: r'question_hi')
+  String? get questionHi;
+
+  @BuiltValueField(wireName: r'question_id')
+  String get questionId;
+
+  @BuiltValueField(wireName: r'question_text')
+  String get questionText;
+
+  @BuiltValueField(wireName: r'question_type')
+  String get questionType;
+
+  QuizQuestion._();
+
+  factory QuizQuestion([void updates(QuizQuestionBuilder b)]) = _$QuizQuestion;
+
+  @BuiltValueHook(initializeBuilder: true)
+  static void _defaults(QuizQuestionBuilder b) => b;
+
+  @BuiltValueSerializer(custom: true)
+  static Serializer<QuizQuestion> get serializer => _$QuizQuestionSerializer();
+}
+
+class _$QuizQuestionSerializer implements PrimitiveSerializer<QuizQuestion> {
+  @override
+  final Iterable<Type> types = const [QuizQuestion, _$QuizQuestion];
+
+  @override
+  final String wireName = r'QuizQuestion';
+
+  Iterable<Object?> _serializeProperties(
+    Serializers serializers,
+    QuizQuestion object, {
+    FullType specifiedType = FullType.unspecified,
+  }) sync* {
+    yield r'bloom_level';
+    yield object.bloomLevel == null ? null : serializers.serialize(
+      object.bloomLevel,
+      specifiedType: const FullType.nullable(String),
+    );
+    yield r'chapter_number';
+    yield object.chapterNumber == null ? null : serializers.serialize(
+      object.chapterNumber,
+      specifiedType: const FullType.nullable(int),
+    );
+    yield r'difficulty';
+    yield serializers.serialize(
+      object.difficulty,
+      specifiedType: const FullType(num),
+    );
+    yield r'explanation';
+    yield object.explanation == null ? null : serializers.serialize(
+      object.explanation,
+      specifiedType: const FullType.nullable(String),
+    );
+    yield r'explanation_hi';
+    yield object.explanationHi == null ? null : serializers.serialize(
+      object.explanationHi,
+      specifiedType: const FullType.nullable(String),
+    );
+    yield r'hint';
+    yield object.hint == null ? null : serializers.serialize(
+      object.hint,
+      specifiedType: const FullType.nullable(String),
+    );
+    yield r'options';
+    yield serializers.serialize(
+      object.options,
+      specifiedType: const FullType(BuiltList, [FullType(String)]),
+    );
+    yield r'question_hi';
+    yield object.questionHi == null ? null : serializers.serialize(
+      object.questionHi,
+      specifiedType: const FullType.nullable(String),
+    );
+    yield r'question_id';
+    yield serializers.serialize(
+      object.questionId,
+      specifiedType: const FullType(String),
+    );
+    yield r'question_text';
+    yield serializers.serialize(
+      object.questionText,
+      specifiedType: const FullType(String),
+    );
+    yield r'question_type';
+    yield serializers.serialize(
+      object.questionType,
+      specifiedType: const FullType(String),
+    );
+  }
+
+  @override
+  Object serialize(
+    Serializers serializers,
+    QuizQuestion object, {
+    FullType specifiedType = FullType.unspecified,
+  }) {
+    return _serializeProperties(serializers, object, specifiedType: specifiedType).toList();
+  }
+
+  void _deserializeProperties(
+    Serializers serializers,
+    Object serialized, {
+    FullType specifiedType = FullType.unspecified,
+    required List<Object?> serializedList,
+    required QuizQuestionBuilder result,
+    required List<Object?> unhandled,
+  }) {
+    for (var i = 0; i < serializedList.length; i += 2) {
+      final key = serializedList[i] as String;
+      final value = serializedList[i + 1];
+      switch (key) {
+        case r'bloom_level':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.bloomLevel = valueDes;
+          break;
+        case r'chapter_number':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.chapterNumber = valueDes;
+          break;
+        case r'difficulty':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(num),
+          ) as num;
+          result.difficulty = valueDes;
+          break;
+        case r'explanation':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.explanation = valueDes;
+          break;
+        case r'explanation_hi':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.explanationHi = valueDes;
+          break;
+        case r'hint':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.hint = valueDes;
+          break;
+        case r'options':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(BuiltList, [FullType(String)]),
+          ) as BuiltList<String>;
+          result.options.replace(valueDes);
+          break;
+        case r'question_hi':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.questionHi = valueDes;
+          break;
+        case r'question_id':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(String),
+          ) as String;
+          result.questionId = valueDes;
+          break;
+        case r'question_text':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(String),
+          ) as String;
+          result.questionText = valueDes;
+          break;
+        case r'question_type':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(String),
+          ) as String;
+          result.questionType = valueDes;
+          break;
+        default:
+          unhandled.add(key);
+          unhandled.add(value);
+          break;
+      }
+    }
+  }
+
+  @override
+  QuizQuestion deserialize(
+    Serializers serializers,
+    Object serialized, {
+    FullType specifiedType = FullType.unspecified,
+  }) {
+    final result = QuizQuestionBuilder();
+    final serializedList = (serialized as Iterable<Object?>).toList();
+    final unhandled = <Object?>[];
+    _deserializeProperties(
+      serializers,
+      serialized,
+      specifiedType: specifiedType,
+      serializedList: serializedList,
+      unhandled: unhandled,
+      result: result,
+    );
+    return result.build();
+  }
+}
+

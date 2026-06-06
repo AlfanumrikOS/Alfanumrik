@@ -34,6 +34,19 @@ import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 // Teach Zod the `.openapi()` method. Idempotent — safe to call once at module load.
 extendZodWithOpenApi(z);
 
+// ── Shared primitives ────────────────────────────────────────────────────────
+// Defined locally (NOT imported from @/lib/validation) so the OpenAPI codegen
+// tsx loader, which does not resolve the `@/*` path alias, can load this module.
+// These MUST stay in sync with `zUuid` / `zGrade` in src/lib/validation.ts.
+
+/** Zod: valid UUID string. Mirrors `zUuid` in src/lib/validation.ts. */
+const zUuid = z.string().uuid();
+
+/** Zod: grade string "6" through "12" (P5). Mirrors `zGrade` in src/lib/validation.ts. */
+const zGrade = z
+  .string()
+  .regex(/^(6|7|8|9|10|11|12)$/, 'Grade must be a string from "6" through "12"');
+
 /**
  * The shared registry. Schemas + path definitions are appended below, then
  * consumed by `scripts/gen-openapi.mjs` via `OpenApiGeneratorV31`.
@@ -257,9 +270,491 @@ registry.registerPath({
   },
 });
 
+// ════════════════════════════════════════════════════════════════════════
+// Wave 2.2 — student-facing consumer endpoints.
+//
+// All shapes MIRROR existing domain reads / RPCs (see each route handler's
+// header for the exact reuse source). The `/v2` routes are thin pass-throughs:
+// no scoring / XP / anti-cheat math in any route (P1-P6 owned by the RPCs).
+// ════════════════════════════════════════════════════════════════════════
+
+// ── A) QUIZ ────────────────────────────────────────────────────────────────
+
+/**
+ * One quiz question as served by GET /v2/quiz/questions.
+ * MIRRORS the `select_quiz_questions_rag` row shape used by /api/quiz GET,
+ * minus `correct_answer_index` — that field MUST NOT cross the wire (P6).
+ */
+export const QuizQuestion = z
+  .object({
+    question_id: zUuid.openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+    question_text: z.string().openapi({ example: 'What is 2 + 2?' }),
+    question_hi: z.string().nullable().openapi({ example: '2 + 2 क्या है?' }),
+    question_type: z.string().openapi({ example: 'mcq' }),
+    options: z.array(z.string()).length(4).openapi({ example: ['3', '4', '5', '6'] }),
+    explanation: z.string().nullable().openapi({ example: '2 + 2 = 4.' }),
+    explanation_hi: z.string().nullable().openapi({ example: '2 + 2 = 4 होता है।' }),
+    hint: z.string().nullable().openapi({ example: 'Count on your fingers.' }),
+    difficulty: z.number().openapi({ example: 2 }),
+    bloom_level: z.string().nullable().openapi({ example: 'remember' }),
+    chapter_number: z.number().int().nullable().openapi({ example: 3 }),
+  })
+  .openapi('QuizQuestion');
+
+/** Response for GET /v2/quiz/questions. NEVER carries correct_answer_index (P6). */
+export const QuizQuestionsResponse = z
+  .object({
+    schemaVersion: z.literal(1),
+    questions: z.array(QuizQuestion),
+  })
+  .openapi('QuizQuestionsResponse');
+
+/** Request body for POST /v2/quiz/start. */
+export const QuizStartRequest = z
+  .object({
+    studentId: zUuid.openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+    questionIds: z
+      .array(zUuid)
+      .min(1)
+      .max(50)
+      .openapi({ example: ['550e8400-e29b-41d4-a716-446655440000'] }),
+  })
+  .openapi('QuizStartRequest');
+
+/**
+ * A server-shuffled question returned by POST /v2/quiz/start.
+ * `options_displayed` is the per-session shuffled order; the shuffle_map and
+ * correct index stay server-side (P6).
+ */
+export const QuizStartQuestion = z
+  .object({
+    question_id: zUuid,
+    question_text: z.string(),
+    question_hi: z.string().nullable(),
+    question_type: z.string(),
+    options_displayed: z.array(z.string()).length(4),
+    explanation: z.string().nullable(),
+    explanation_hi: z.string().nullable(),
+    hint: z.string().nullable(),
+    difficulty: z.number(),
+    bloom_level: z.string().nullable(),
+    chapter_number: z.number().int().nullable(),
+  })
+  .openapi('QuizStartQuestion');
+
+/** Response for POST /v2/quiz/start. */
+export const QuizStartResponse = z
+  .object({
+    schemaVersion: z.literal(1),
+    session_id: zUuid,
+    questions: z.array(QuizStartQuestion),
+  })
+  .openapi('QuizStartResponse');
+
+/** One response in a quiz submission. MIRRORS /api/quiz/submit's responseSchema. */
+export const QuizSubmitResponseItem = z
+  .object({
+    question_id: zUuid,
+    selected_option: z.number().int().min(0).max(3).openapi({ example: 1 }),
+    time_taken_seconds: z.number().int().min(0).max(3600).openapi({ example: 12 }),
+  })
+  .openapi('QuizSubmitResponseItem');
+
+/** Request body for POST /v2/quiz/submit. MIRRORS /api/quiz/submit's submitBodySchema. */
+export const QuizSubmitRequest = z
+  .object({
+    sessionId: zUuid,
+    studentId: zUuid,
+    responses: z.array(QuizSubmitResponseItem).min(1).max(50),
+    totalTimeSeconds: z.number().int().min(0).max(7200).openapi({ example: 120 }),
+    subject: z.string().optional().openapi({ example: 'math' }),
+    grade: zGrade.optional(),
+    topic: z.string().nullable().optional(),
+    chapter: z.number().int().nullable().optional(),
+  })
+  .openapi('QuizSubmitRequest');
+
+/**
+ * Response for POST /v2/quiz/submit. EVERY field is server-authoritative —
+ * lifted verbatim from `submit_quiz_results_v2`. The route does NO score / XP /
+ * anti-cheat math (P1-P4 owned by the RPC).
+ */
+export const QuizSubmitResult = z
+  .object({
+    schemaVersion: z.literal(1),
+    session_id: zUuid.nullable(),
+    score_percent: z.number().openapi({ example: 80 }),
+    xp_earned: z.number().openapi({ example: 100 }),
+    correct: z.number().int().openapi({ example: 8 }),
+    total: z.number().int().openapi({ example: 10 }),
+    flagged: z.boolean().openapi({ example: false }),
+    idempotent_replay: z.boolean().openapi({ example: false }),
+    marking_authenticity_path: z.string().openapi({ example: 'oracle_v2' }),
+    xp_capped: z.boolean().optional().openapi({ example: false }),
+    questions: z.array(z.record(z.string(), z.unknown())).openapi({ example: [] }),
+  })
+  .openapi('QuizSubmitResult');
+
+// ── B) STUDENT ───────────────────────────────────────────────────────────────
+
+/** Response for GET /v2/student/profile. P5: grade is a string. */
+export const StudentProfileResponse = z
+  .object({
+    schemaVersion: z.literal(1),
+    student_id: zUuid,
+    name: z.string().nullable().openapi({ example: 'Asha' }),
+    grade: z.string().nullable().openapi({ example: '9' }),
+    board: z.string().nullable().openapi({ example: 'CBSE' }),
+    stream: z.string().nullable().openapi({ example: 'science' }),
+    plan: z.string().nullable().openapi({ example: 'free' }),
+    language: z.string().nullable().openapi({ example: 'en' }),
+  })
+  .openapi('StudentProfileResponse');
+
+/** A single performance-score row in the progress payload. */
+export const ProgressPerformanceScore = z
+  .object({
+    subject: z.string().openapi({ example: 'math' }),
+    overall_score: z.number().openapi({ example: 72 }),
+    level_name: z.string().nullable().openapi({ example: 'Rising Star' }),
+    updated_at: z.string().nullable(),
+  })
+  .openapi('ProgressPerformanceScore');
+
+/** A topic-mastery row. */
+export const ProgressTopicMastery = z
+  .object({
+    topic_id: z.string().nullable(),
+    mastery_probability: z.number().openapi({ example: 0.62 }),
+    consecutive_correct: z.number().int().nullable(),
+    updated_at: z.string().nullable(),
+  })
+  .openapi('ProgressTopicMastery');
+
+/** A knowledge-gap row. */
+export const ProgressKnowledgeGap = z
+  .object({
+    subject: z.string().nullable(),
+    topic: z.string().nullable(),
+    severity: z.string().nullable().openapi({ example: 'high' }),
+    mastery_probability: z.number().nullable(),
+  })
+  .openapi('ProgressKnowledgeGap');
+
+/** A learning-velocity row. */
+export const ProgressLearningVelocity = z
+  .object({
+    subject: z.string().openapi({ example: 'science' }),
+    weekly_mastery_rate: z.number().nullable(),
+    acceleration: z.number().nullable(),
+    predicted_mastery_date: z.string().nullable(),
+  })
+  .openapi('ProgressLearningVelocity');
+
+/** A decayed-topic row (mastery fading, review due). */
+export const ProgressDecayTopic = z
+  .object({
+    topic_id: z.string().nullable(),
+    subject: z.string().nullable(),
+    mastery_probability: z.number().nullable(),
+    next_review_at: z.string().nullable(),
+  })
+  .openapi('ProgressDecayTopic');
+
+/** Response for GET /v2/student/progress. */
+export const StudentProgressResponse = z
+  .object({
+    schemaVersion: z.literal(1),
+    student_id: zUuid,
+    performance_scores: z.array(ProgressPerformanceScore),
+    topic_mastery: z.array(ProgressTopicMastery),
+    knowledge_gaps: z.array(ProgressKnowledgeGap),
+    learning_velocity: z.array(ProgressLearningVelocity),
+    decay_topics: z.array(ProgressDecayTopic),
+  })
+  .openapi('StudentProgressResponse');
+
+/** One ranked leaderboard entry. No PII beyond the existing leaderboard (P13). */
+export const LeaderboardEntry = z
+  .object({
+    rank: z.number().int().openapi({ example: 1 }),
+    student_id: zUuid,
+    name: z.string().nullable().openapi({ example: 'Asha' }),
+    total_xp: z.number().int().openapi({ example: 1450 }),
+    streak: z.number().int().openapi({ example: 7 }),
+    avatar_url: z.string().nullable(),
+    grade: z.string().nullable().openapi({ example: '9' }),
+    school: z.string().nullable(),
+    city: z.string().nullable(),
+  })
+  .openapi('LeaderboardEntry');
+
+/** Response for GET /v2/student/leaderboard. */
+export const LeaderboardResponse = z
+  .object({
+    schemaVersion: z.literal(1),
+    period: z.enum(['weekly', 'monthly', 'all']).openapi({ example: 'weekly' }),
+    scope: z.enum(['school', 'global']).openapi({ example: 'global' }),
+    entries: z.array(LeaderboardEntry),
+  })
+  .openapi('LeaderboardResponse');
+
+// ── B) LEARN ─────────────────────────────────────────────────────────────────
+
+/** A topic leaf (from curriculum_topics). */
+export const CurriculumTopic = z
+  .object({
+    id: zUuid,
+    title: z.string().nullable(),
+    title_hi: z.string().nullable(),
+  })
+  .openapi('CurriculumTopic');
+
+/** A chapter node, carrying its topics (from curriculum_topics). */
+export const CurriculumChapter = z
+  .object({
+    chapter_number: z.number().int().nullable().openapi({ example: 1 }),
+    title: z.string().nullable().openapi({ example: 'Number Systems' }),
+    title_hi: z.string().nullable(),
+    topics: z.array(CurriculumTopic),
+  })
+  .openapi('CurriculumChapter');
+
+/** A subject node in the curriculum tree (from get_available_subjects). */
+export const CurriculumSubject = z
+  .object({
+    code: z.string().openapi({ example: 'math' }),
+    name: z.string().openapi({ example: 'Mathematics' }),
+    name_hi: z.string().nullable().openapi({ example: 'गणित' }),
+    is_locked: z.boolean().openapi({ example: false }),
+    chapters: z.array(CurriculumChapter),
+  })
+  .openapi('CurriculumSubject');
+
+/** Response for GET /v2/learn/curriculum. */
+export const CurriculumResponse = z
+  .object({
+    schemaVersion: z.literal(1),
+    grade: z.string().nullable().openapi({ example: '9' }),
+    subjects: z.array(CurriculumSubject),
+  })
+  .openapi('CurriculumResponse');
+
+/** Per-chunk source attribution for a concept read. */
+export const ConceptSource = z
+  .object({
+    chunk_id: z.string(),
+    chapter_title: z.string().nullable(),
+    chunk_index: z.number().int().nullable(),
+    page_number: z.number().int().nullable(),
+  })
+  .openapi('ConceptSource');
+
+/** Response for GET /v2/learn/concept. Concept markdown from rag_content_chunks. */
+export const ConceptResponse = z
+  .object({
+    schemaVersion: z.literal(1),
+    subject: z.string().openapi({ example: 'science' }),
+    grade: z.string().openapi({ example: '9' }),
+    chapter_number: z.number().int().openapi({ example: 3 }),
+    markdown: z.string().openapi({ example: '# Atoms and Molecules\n...' }),
+    sources: z.array(ConceptSource),
+    truncated: z.boolean().openapi({ example: false }),
+    language: z.enum(['en', 'hi']).openapi({ example: 'en' }),
+    fell_back_from_hindi: z.boolean().openapi({ example: false }),
+  })
+  .openapi('ConceptResponse');
+
+// ════════════════════════════════════════════════════════════════════════
+// Wave 2.2 path registrations
+// ════════════════════════════════════════════════════════════════════════
+
+const SECURITY: Array<Record<string, string[]>> = [
+  { bearerAuth: [] },
+  { cookieAuth: [] },
+];
+
+registry.registerPath({
+  method: 'get',
+  path: '/v2/quiz/questions',
+  operationId: 'getQuizQuestions',
+  summary: 'Fetch quiz questions in academic scope',
+  description:
+    'Returns in-scope quiz questions for the authenticated student. Reuses the select_quiz_questions_rag path with subject-governance + academic-scope checks. correct_answer_index is NEVER returned (P6). 422 with { available, requested, scope } when a chapter is set and fewer than `count` in-scope questions exist. Requires quiz.attempt.',
+  tags: ['quiz'],
+  security: SECURITY,
+  request: {
+    query: z.object({
+      subject: z.string().openapi({ example: 'math' }),
+      grade: zGrade,
+      chapter: z.number().int().positive().optional(),
+      // Allowed values are 5 | 10 | 15 | 20 (validated in the route). Declared as
+      // a plain bounded int here so the dart-dio generator doesn't choke on a
+      // composed (oneOf) query-parameter schema.
+      count: z.number().int().min(5).max(20).openapi({ example: 10 }),
+      difficulty: z.enum(['easy', 'medium', 'hard', 'mixed', 'progressive']).optional(),
+      mode: z.enum(['practice', 'cognitive', 'exam']).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'In-scope quiz questions (no correct_answer_index).',
+      content: { 'application/json': { schema: QuizQuestionsResponse } },
+    },
+    400: { description: 'Invalid query params.', content: { 'application/json': { schema: ErrorResponse } } },
+    403: { description: 'Missing quiz.attempt, grade mismatch, or subject not allowed.', content: { 'application/json': { schema: ErrorResponse } } },
+    422: { description: 'Insufficient questions in scope.', content: { 'application/json': { schema: ErrorResponse } } },
+    500: { description: 'Unexpected server error.', content: { 'application/json': { schema: ErrorResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/v2/quiz/start',
+  operationId: 'postQuizStart',
+  summary: 'Start a server-shuffled quiz session',
+  description:
+    'Creates a quiz session via the start_quiz_session RPC (server-owned shuffle authority). Returns the per-session shuffled options; the shuffle_map and correct index stay server-side (P6). studentId is cross-checked against the JWT (403 on mismatch). Requires quiz.attempt.',
+  tags: ['quiz'],
+  security: SECURITY,
+  request: { body: { content: { 'application/json': { schema: QuizStartRequest } } } },
+  responses: {
+    200: { description: 'Quiz session created.', content: { 'application/json': { schema: QuizStartResponse } } },
+    400: { description: 'Invalid body.', content: { 'application/json': { schema: ErrorResponse } } },
+    403: { description: 'Missing quiz.attempt or studentId mismatch.', content: { 'application/json': { schema: ErrorResponse } } },
+    503: { description: 'start_quiz_session RPC failed.', content: { 'application/json': { schema: ErrorResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/v2/quiz/submit',
+  operationId: 'postQuizSubmit',
+  summary: 'Submit a quiz for server-authoritative grading',
+  description:
+    'Thin pass-through to the submit_quiz_results_v2 RPC, which owns P1 scoring, P2 XP + 200/day cap, all 3 P3 anti-cheat checks, and P4 atomicity. The route does NO score / XP / anti-cheat math — it forwards inputs and returns the RPC result verbatim. Requires an Idempotency-Key (UUID) header and quiz.attempt. studentId is cross-checked against the JWT (403 on mismatch).',
+  tags: ['quiz'],
+  security: SECURITY,
+  request: { body: { content: { 'application/json': { schema: QuizSubmitRequest } } } },
+  responses: {
+    200: { description: 'Graded result (server-authoritative).', content: { 'application/json': { schema: QuizSubmitResult } } },
+    400: { description: 'Missing/invalid Idempotency-Key or body.', content: { 'application/json': { schema: ErrorResponse } } },
+    403: { description: 'Missing quiz.attempt or studentId mismatch.', content: { 'application/json': { schema: ErrorResponse } } },
+    409: { description: 'session_not_started — client should restart the quiz.', content: { 'application/json': { schema: ErrorResponse } } },
+    503: { description: 'Transient scoring failure — retry with same Idempotency-Key.', content: { 'application/json': { schema: ErrorResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/v2/student/profile',
+  operationId: 'getStudentProfile',
+  summary: 'Authenticated student profile',
+  description:
+    'Returns the authenticated student\'s profile (name, grade(string,P5), board, stream, plan, language). Reuses the identity profile read. Requires profile.view_own.',
+  tags: ['student'],
+  security: SECURITY,
+  responses: {
+    200: { description: 'Student profile.', content: { 'application/json': { schema: StudentProfileResponse } } },
+    404: { description: 'No student profile for this account.', content: { 'application/json': { schema: ErrorResponse } } },
+    500: { description: 'Unexpected server error.', content: { 'application/json': { schema: ErrorResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/v2/student/progress',
+  operationId: 'getStudentProgress',
+  summary: 'Authenticated student progress',
+  description:
+    'Returns the structured progress payload (performance_scores, topic_mastery, knowledge_gaps, learning_velocity, decay_topics) the web /progress page reads. RLS-safe. Requires progress.view_own.',
+  tags: ['student'],
+  security: SECURITY,
+  responses: {
+    200: { description: 'Progress payload.', content: { 'application/json': { schema: StudentProgressResponse } } },
+    404: { description: 'No student profile for this account.', content: { 'application/json': { schema: ErrorResponse } } },
+    500: { description: 'Unexpected server error.', content: { 'application/json': { schema: ErrorResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/v2/student/leaderboard',
+  operationId: 'getStudentLeaderboard',
+  summary: 'XP leaderboard',
+  description:
+    'Returns ranked leaderboard entries via the get_leaderboard RPC the web /leaderboard page uses. No PII beyond what the existing leaderboard exposes (P13). Requires progress.view_own.',
+  tags: ['student'],
+  security: SECURITY,
+  request: {
+    query: z.object({
+      period: z.enum(['weekly', 'monthly', 'all']).optional(),
+      scope: z.enum(['school', 'global']).optional(),
+    }),
+  },
+  responses: {
+    200: { description: 'Ranked leaderboard.', content: { 'application/json': { schema: LeaderboardResponse } } },
+    500: { description: 'Unexpected server error.', content: { 'application/json': { schema: ErrorResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/v2/learn/curriculum',
+  operationId: 'getLearnCurriculum',
+  summary: 'Curriculum tree (subjects → chapters → topics)',
+  description:
+    'Returns the plan-gated curriculum tree the mobile Learn screen needs. Reuses get_available_subjects (plan/grade/stream gating) + curriculum_topics. Requires study_plan.view.',
+  tags: ['learn'],
+  security: SECURITY,
+  request: { query: z.object({ subject: z.string().optional() }) },
+  responses: {
+    200: { description: 'Curriculum tree.', content: { 'application/json': { schema: CurriculumResponse } } },
+    404: { description: 'No student profile for this account.', content: { 'application/json': { schema: ErrorResponse } } },
+    500: { description: 'Unexpected server error.', content: { 'application/json': { schema: ErrorResponse } } },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/v2/learn/concept',
+  operationId: 'getLearnConcept',
+  summary: 'Concept content for a subject + chapter',
+  description:
+    'Returns the ordered NCERT chapter prose (markdown + source attribution) for a subject + chapter. Reuses fetchChapterContent (rag_content_chunks read used by /learn). Requires study_plan.view.',
+  tags: ['learn'],
+  security: SECURITY,
+  request: {
+    query: z.object({
+      subject: z.string().openapi({ example: 'science' }),
+      grade: zGrade,
+      chapter: z.number().int().positive().openapi({ example: 3 }),
+    }),
+  },
+  responses: {
+    200: { description: 'Concept content.', content: { 'application/json': { schema: ConceptResponse } } },
+    400: { description: 'Invalid query params.', content: { 'application/json': { schema: ErrorResponse } } },
+    404: { description: 'No content for this chapter.', content: { 'application/json': { schema: ErrorResponse } } },
+    500: { description: 'Unexpected server error.', content: { 'application/json': { schema: ErrorResponse } } },
+  },
+});
+
 // ── Inferred TS types (convenient for route handlers to import) ─────────────
 export type TErrorResponse = z.infer<typeof ErrorResponse>;
 export type TSuccessAck = z.infer<typeof SuccessAck>;
 export type TTodayResponse = z.infer<typeof TodayResponse>;
 export type TTodayQueueItem = z.infer<typeof TodayQueueItem>;
 export type TEncourageRequest = z.infer<typeof EncourageRequest>;
+
+// Wave 2.2 inferred types.
+export type TQuizQuestion = z.infer<typeof QuizQuestion>;
+export type TQuizQuestionsResponse = z.infer<typeof QuizQuestionsResponse>;
+export type TQuizStartRequest = z.infer<typeof QuizStartRequest>;
+export type TQuizStartResponse = z.infer<typeof QuizStartResponse>;
+export type TQuizSubmitRequest = z.infer<typeof QuizSubmitRequest>;
+export type TQuizSubmitResult = z.infer<typeof QuizSubmitResult>;
+export type TStudentProfileResponse = z.infer<typeof StudentProfileResponse>;
+export type TStudentProgressResponse = z.infer<typeof StudentProgressResponse>;
+export type TLeaderboardResponse = z.infer<typeof LeaderboardResponse>;
+export type TCurriculumResponse = z.infer<typeof CurriculumResponse>;
+export type TConceptResponse = z.infer<typeof ConceptResponse>;
