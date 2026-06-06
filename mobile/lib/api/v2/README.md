@@ -47,14 +47,16 @@ Please follow the [installation procedure](#installation--usage) and then run th
 import 'package:alfanumrik_api_v2/alfanumrik_api_v2.dart';
 
 
-final api = AlfanumrikApiV2().getParentApi();
-final EncourageRequest encourageRequest = ; // EncourageRequest | 
+final api = AlfanumrikApiV2().getLearnApi();
+final String subject = science; // String | 
+final String grade = grade_example; // String | 
+final int chapter = 3; // int | 
 
 try {
-    final response = await api.postParentEncourage(encourageRequest);
+    final response = await api.getLearnConcept(subject, grade, chapter);
     print(response);
 } catch on DioException (e) {
-    print("Exception when calling ParentApi->postParentEncourage: $e\n");
+    print("Exception when calling LearnApi->getLearnConcept: $e\n");
 }
 
 ```
@@ -65,14 +67,45 @@ All URIs are relative to */api*
 
 Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
+[*LearnApi*](doc/LearnApi.md) | [**getLearnConcept**](doc/LearnApi.md#getlearnconcept) | **GET** /v2/learn/concept | Concept content for a subject + chapter
+[*LearnApi*](doc/LearnApi.md) | [**getLearnCurriculum**](doc/LearnApi.md#getlearncurriculum) | **GET** /v2/learn/curriculum | Curriculum tree (subjects → chapters → topics)
 [*ParentApi*](doc/ParentApi.md) | [**postParentEncourage**](doc/ParentApi.md#postparentencourage) | **POST** /v2/parent/encourage | Send a preset cheer to a linked child
+[*QuizApi*](doc/QuizApi.md) | [**getQuizQuestions**](doc/QuizApi.md#getquizquestions) | **GET** /v2/quiz/questions | Fetch quiz questions in academic scope
+[*QuizApi*](doc/QuizApi.md) | [**postQuizStart**](doc/QuizApi.md#postquizstart) | **POST** /v2/quiz/start | Start a server-shuffled quiz session
+[*QuizApi*](doc/QuizApi.md) | [**postQuizSubmit**](doc/QuizApi.md#postquizsubmit) | **POST** /v2/quiz/submit | Submit a quiz for server-authoritative grading
+[*StudentApi*](doc/StudentApi.md) | [**getStudentLeaderboard**](doc/StudentApi.md#getstudentleaderboard) | **GET** /v2/student/leaderboard | XP leaderboard
+[*StudentApi*](doc/StudentApi.md) | [**getStudentProfile**](doc/StudentApi.md#getstudentprofile) | **GET** /v2/student/profile | Authenticated student profile
+[*StudentApi*](doc/StudentApi.md) | [**getStudentProgress**](doc/StudentApi.md#getstudentprogress) | **GET** /v2/student/progress | Authenticated student progress
 [*TodayApi*](doc/TodayApi.md) | [**getToday**](doc/TodayApi.md#gettoday) | **GET** /v2/today | Today home queue
 
 
 ## Documentation For Models
 
+ - [ConceptResponse](doc/ConceptResponse.md)
+ - [ConceptSource](doc/ConceptSource.md)
+ - [CurriculumChapter](doc/CurriculumChapter.md)
+ - [CurriculumResponse](doc/CurriculumResponse.md)
+ - [CurriculumSubject](doc/CurriculumSubject.md)
+ - [CurriculumTopic](doc/CurriculumTopic.md)
  - [EncourageRequest](doc/EncourageRequest.md)
  - [ErrorResponse](doc/ErrorResponse.md)
+ - [LeaderboardEntry](doc/LeaderboardEntry.md)
+ - [LeaderboardResponse](doc/LeaderboardResponse.md)
+ - [ProgressDecayTopic](doc/ProgressDecayTopic.md)
+ - [ProgressKnowledgeGap](doc/ProgressKnowledgeGap.md)
+ - [ProgressLearningVelocity](doc/ProgressLearningVelocity.md)
+ - [ProgressPerformanceScore](doc/ProgressPerformanceScore.md)
+ - [ProgressTopicMastery](doc/ProgressTopicMastery.md)
+ - [QuizQuestion](doc/QuizQuestion.md)
+ - [QuizQuestionsResponse](doc/QuizQuestionsResponse.md)
+ - [QuizStartQuestion](doc/QuizStartQuestion.md)
+ - [QuizStartRequest](doc/QuizStartRequest.md)
+ - [QuizStartResponse](doc/QuizStartResponse.md)
+ - [QuizSubmitRequest](doc/QuizSubmitRequest.md)
+ - [QuizSubmitResponseItem](doc/QuizSubmitResponseItem.md)
+ - [QuizSubmitResult](doc/QuizSubmitResult.md)
+ - [StudentProfileResponse](doc/StudentProfileResponse.md)
+ - [StudentProgressResponse](doc/StudentProgressResponse.md)
  - [SuccessAck](doc/SuccessAck.md)
  - [TodayDeepLink](doc/TodayDeepLink.md)
  - [TodayDeepLinkParamsValue](doc/TodayDeepLinkParamsValue.md)

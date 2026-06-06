@@ -2,6 +2,227 @@
   "components": {
     "parameters": {},
     "schemas": {
+      "ConceptResponse": {
+        "properties": {
+          "chapter_number": {
+            "example": 3,
+            "type": "integer"
+          },
+          "fell_back_from_hindi": {
+            "example": false,
+            "type": "boolean"
+          },
+          "grade": {
+            "example": "9",
+            "type": "string"
+          },
+          "language": {
+            "enum": [
+              "en",
+              "hi"
+            ],
+            "example": "en",
+            "type": "string"
+          },
+          "markdown": {
+            "example": "# Atoms and Molecules\n...",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "enum": [
+              1
+            ],
+            "type": "number"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ConceptSource"
+            },
+            "type": "array"
+          },
+          "subject": {
+            "example": "science",
+            "type": "string"
+          },
+          "truncated": {
+            "example": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "subject",
+          "grade",
+          "chapter_number",
+          "markdown",
+          "sources",
+          "truncated",
+          "language",
+          "fell_back_from_hindi"
+        ],
+        "type": "object"
+      },
+      "ConceptSource": {
+        "properties": {
+          "chapter_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chunk_id": {
+            "type": "string"
+          },
+          "chunk_index": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "page_number": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "chunk_id",
+          "chapter_title",
+          "chunk_index",
+          "page_number"
+        ],
+        "type": "object"
+      },
+      "CurriculumChapter": {
+        "properties": {
+          "chapter_number": {
+            "example": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "title": {
+            "example": "Number Systems",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title_hi": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/CurriculumTopic"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "chapter_number",
+          "title",
+          "title_hi",
+          "topics"
+        ],
+        "type": "object"
+      },
+      "CurriculumResponse": {
+        "properties": {
+          "grade": {
+            "example": "9",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schemaVersion": {
+            "enum": [
+              1
+            ],
+            "type": "number"
+          },
+          "subjects": {
+            "items": {
+              "$ref": "#/components/schemas/CurriculumSubject"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "grade",
+          "subjects"
+        ],
+        "type": "object"
+      },
+      "CurriculumSubject": {
+        "properties": {
+          "chapters": {
+            "items": {
+              "$ref": "#/components/schemas/CurriculumChapter"
+            },
+            "type": "array"
+          },
+          "code": {
+            "example": "math",
+            "type": "string"
+          },
+          "is_locked": {
+            "example": false,
+            "type": "boolean"
+          },
+          "name": {
+            "example": "Mathematics",
+            "type": "string"
+          },
+          "name_hi": {
+            "example": "गणित",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "name_hi",
+          "is_locked",
+          "chapters"
+        ],
+        "type": "object"
+      },
+      "CurriculumTopic": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title_hi": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "title_hi"
+        ],
+        "type": "object"
+      },
       "EncourageRequest": {
         "properties": {
           "message_key": {
@@ -39,6 +260,784 @@
         "required": [
           "success",
           "error"
+        ],
+        "type": "object"
+      },
+      "LeaderboardEntry": {
+        "properties": {
+          "avatar_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "city": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "grade": {
+            "example": "9",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "example": "Asha",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rank": {
+            "example": 1,
+            "type": "integer"
+          },
+          "school": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "streak": {
+            "example": 7,
+            "type": "integer"
+          },
+          "student_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "total_xp": {
+            "example": 1450,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rank",
+          "student_id",
+          "name",
+          "total_xp",
+          "streak",
+          "avatar_url",
+          "grade",
+          "school",
+          "city"
+        ],
+        "type": "object"
+      },
+      "LeaderboardResponse": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/LeaderboardEntry"
+            },
+            "type": "array"
+          },
+          "period": {
+            "enum": [
+              "weekly",
+              "monthly",
+              "all"
+            ],
+            "example": "weekly",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "enum": [
+              1
+            ],
+            "type": "number"
+          },
+          "scope": {
+            "enum": [
+              "school",
+              "global"
+            ],
+            "example": "global",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "period",
+          "scope",
+          "entries"
+        ],
+        "type": "object"
+      },
+      "ProgressDecayTopic": {
+        "properties": {
+          "mastery_probability": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "next_review_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "topic_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "topic_id",
+          "subject",
+          "mastery_probability",
+          "next_review_at"
+        ],
+        "type": "object"
+      },
+      "ProgressKnowledgeGap": {
+        "properties": {
+          "mastery_probability": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "severity": {
+            "example": "high",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "topic": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "subject",
+          "topic",
+          "severity",
+          "mastery_probability"
+        ],
+        "type": "object"
+      },
+      "ProgressLearningVelocity": {
+        "properties": {
+          "acceleration": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "predicted_mastery_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject": {
+            "example": "science",
+            "type": "string"
+          },
+          "weekly_mastery_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "subject",
+          "weekly_mastery_rate",
+          "acceleration",
+          "predicted_mastery_date"
+        ],
+        "type": "object"
+      },
+      "ProgressPerformanceScore": {
+        "properties": {
+          "level_name": {
+            "example": "Rising Star",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "overall_score": {
+            "example": 72,
+            "type": "number"
+          },
+          "subject": {
+            "example": "math",
+            "type": "string"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "subject",
+          "overall_score",
+          "level_name",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "ProgressTopicMastery": {
+        "properties": {
+          "consecutive_correct": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "mastery_probability": {
+            "example": 0.62,
+            "type": "number"
+          },
+          "topic_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "topic_id",
+          "mastery_probability",
+          "consecutive_correct",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "QuizQuestion": {
+        "properties": {
+          "bloom_level": {
+            "example": "remember",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chapter_number": {
+            "example": 3,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "difficulty": {
+            "example": 2,
+            "type": "number"
+          },
+          "explanation": {
+            "example": "2 + 2 = 4.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "explanation_hi": {
+            "example": "2 + 2 = 4 होता है।",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hint": {
+            "example": "Count on your fingers.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "options": {
+            "example": [
+              "3",
+              "4",
+              "5",
+              "6"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "question_hi": {
+            "example": "2 + 2 क्या है?",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "question_id": {
+            "example": "550e8400-e29b-41d4-a716-446655440000",
+            "format": "uuid",
+            "type": "string"
+          },
+          "question_text": {
+            "example": "What is 2 + 2?",
+            "type": "string"
+          },
+          "question_type": {
+            "example": "mcq",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question_id",
+          "question_text",
+          "question_hi",
+          "question_type",
+          "options",
+          "explanation",
+          "explanation_hi",
+          "hint",
+          "difficulty",
+          "bloom_level",
+          "chapter_number"
+        ],
+        "type": "object"
+      },
+      "QuizQuestionsResponse": {
+        "properties": {
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/QuizQuestion"
+            },
+            "type": "array"
+          },
+          "schemaVersion": {
+            "enum": [
+              1
+            ],
+            "type": "number"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "questions"
+        ],
+        "type": "object"
+      },
+      "QuizStartQuestion": {
+        "properties": {
+          "bloom_level": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chapter_number": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "difficulty": {
+            "type": "number"
+          },
+          "explanation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "explanation_hi": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "options_displayed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "question_hi": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "question_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "question_text": {
+            "type": "string"
+          },
+          "question_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "question_id",
+          "question_text",
+          "question_hi",
+          "question_type",
+          "options_displayed",
+          "explanation",
+          "explanation_hi",
+          "hint",
+          "difficulty",
+          "bloom_level",
+          "chapter_number"
+        ],
+        "type": "object"
+      },
+      "QuizStartRequest": {
+        "properties": {
+          "questionIds": {
+            "example": [
+              "550e8400-e29b-41d4-a716-446655440000"
+            ],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          },
+          "studentId": {
+            "example": "550e8400-e29b-41d4-a716-446655440000",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "studentId",
+          "questionIds"
+        ],
+        "type": "object"
+      },
+      "QuizStartResponse": {
+        "properties": {
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/QuizStartQuestion"
+            },
+            "type": "array"
+          },
+          "schemaVersion": {
+            "enum": [
+              1
+            ],
+            "type": "number"
+          },
+          "session_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "session_id",
+          "questions"
+        ],
+        "type": "object"
+      },
+      "QuizSubmitRequest": {
+        "properties": {
+          "chapter": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "grade": {
+            "pattern": "^(6|7|8|9|10|11|12)$",
+            "type": "string"
+          },
+          "responses": {
+            "items": {
+              "$ref": "#/components/schemas/QuizSubmitResponseItem"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "studentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "subject": {
+            "example": "math",
+            "type": "string"
+          },
+          "topic": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "totalTimeSeconds": {
+            "example": 120,
+            "maximum": 7200,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sessionId",
+          "studentId",
+          "responses",
+          "totalTimeSeconds"
+        ],
+        "type": "object"
+      },
+      "QuizSubmitResponseItem": {
+        "properties": {
+          "question_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "selected_option": {
+            "example": 1,
+            "maximum": 3,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "time_taken_seconds": {
+            "example": 12,
+            "maximum": 3600,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "question_id",
+          "selected_option",
+          "time_taken_seconds"
+        ],
+        "type": "object"
+      },
+      "QuizSubmitResult": {
+        "properties": {
+          "correct": {
+            "example": 8,
+            "type": "integer"
+          },
+          "flagged": {
+            "example": false,
+            "type": "boolean"
+          },
+          "idempotent_replay": {
+            "example": false,
+            "type": "boolean"
+          },
+          "marking_authenticity_path": {
+            "example": "oracle_v2",
+            "type": "string"
+          },
+          "questions": {
+            "example": [],
+            "items": {
+              "additionalProperties": {},
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "schemaVersion": {
+            "enum": [
+              1
+            ],
+            "type": "number"
+          },
+          "score_percent": {
+            "example": 80,
+            "type": "number"
+          },
+          "session_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total": {
+            "example": 10,
+            "type": "integer"
+          },
+          "xp_capped": {
+            "example": false,
+            "type": "boolean"
+          },
+          "xp_earned": {
+            "example": 100,
+            "type": "number"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "session_id",
+          "score_percent",
+          "xp_earned",
+          "correct",
+          "total",
+          "flagged",
+          "idempotent_replay",
+          "marking_authenticity_path",
+          "questions"
+        ],
+        "type": "object"
+      },
+      "StudentProfileResponse": {
+        "properties": {
+          "board": {
+            "example": "CBSE",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "grade": {
+            "example": "9",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "example": "en",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "example": "Asha",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plan": {
+            "example": "free",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schemaVersion": {
+            "enum": [
+              1
+            ],
+            "type": "number"
+          },
+          "stream": {
+            "example": "science",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "student_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "student_id",
+          "name",
+          "grade",
+          "board",
+          "stream",
+          "plan",
+          "language"
+        ],
+        "type": "object"
+      },
+      "StudentProgressResponse": {
+        "properties": {
+          "decay_topics": {
+            "items": {
+              "$ref": "#/components/schemas/ProgressDecayTopic"
+            },
+            "type": "array"
+          },
+          "knowledge_gaps": {
+            "items": {
+              "$ref": "#/components/schemas/ProgressKnowledgeGap"
+            },
+            "type": "array"
+          },
+          "learning_velocity": {
+            "items": {
+              "$ref": "#/components/schemas/ProgressLearningVelocity"
+            },
+            "type": "array"
+          },
+          "performance_scores": {
+            "items": {
+              "$ref": "#/components/schemas/ProgressPerformanceScore"
+            },
+            "type": "array"
+          },
+          "schemaVersion": {
+            "enum": [
+              1
+            ],
+            "type": "number"
+          },
+          "student_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "topic_mastery": {
+            "items": {
+              "$ref": "#/components/schemas/ProgressTopicMastery"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "student_id",
+          "performance_scores",
+          "topic_mastery",
+          "knowledge_gaps",
+          "learning_velocity",
+          "decay_topics"
         ],
         "type": "object"
       },
@@ -227,6 +1226,156 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v2/learn/concept": {
+      "get": {
+        "description": "Returns the ordered NCERT chapter prose (markdown + source attribution) for a subject + chapter. Reuses fetchChapterContent (rag_content_chunks read used by /learn). Requires study_plan.view.",
+        "operationId": "getLearnConcept",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "subject",
+            "required": true,
+            "schema": {
+              "example": "science",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "grade",
+            "required": true,
+            "schema": {
+              "pattern": "^(6|7|8|9|10|11|12)$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "chapter",
+            "required": true,
+            "schema": {
+              "example": 3,
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConceptResponse"
+                }
+              }
+            },
+            "description": "Concept content."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid query params."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No content for this chapter."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected server error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Concept content for a subject + chapter",
+        "tags": [
+          "learn"
+        ]
+      }
+    },
+    "/v2/learn/curriculum": {
+      "get": {
+        "description": "Returns the plan-gated curriculum tree the mobile Learn screen needs. Reuses get_available_subjects (plan/grade/stream gating) + curriculum_topics. Requires study_plan.view.",
+        "operationId": "getLearnCurriculum",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "subject",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurriculumResponse"
+                }
+              }
+            },
+            "description": "Curriculum tree."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No student profile for this account."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected server error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Curriculum tree (subjects → chapters → topics)",
+        "tags": [
+          "learn"
+        ]
+      }
+    },
     "/v2/parent/encourage": {
       "post": {
         "description": "Parent sends a curated, preset-keyed encouragement to a linked child. Requires child.encourage and an approved guardian↔student link. Rate-limited to one cheer per (guardian, student) per 6 hours.",
@@ -313,6 +1462,459 @@
         "summary": "Send a preset cheer to a linked child",
         "tags": [
           "parent"
+        ]
+      }
+    },
+    "/v2/quiz/questions": {
+      "get": {
+        "description": "Returns in-scope quiz questions for the authenticated student. Reuses the select_quiz_questions_rag path with subject-governance + academic-scope checks. correct_answer_index is NEVER returned (P6). 422 with { available, requested, scope } when a chapter is set and fewer than `count` in-scope questions exist. Requires quiz.attempt.",
+        "operationId": "getQuizQuestions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "subject",
+            "required": true,
+            "schema": {
+              "example": "math",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "grade",
+            "required": true,
+            "schema": {
+              "pattern": "^(6|7|8|9|10|11|12)$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "chapter",
+            "required": false,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "count",
+            "required": true,
+            "schema": {
+              "example": 10,
+              "maximum": 20,
+              "minimum": 5,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "difficulty",
+            "required": false,
+            "schema": {
+              "enum": [
+                "easy",
+                "medium",
+                "hard",
+                "mixed",
+                "progressive"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "enum": [
+                "practice",
+                "cognitive",
+                "exam"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuizQuestionsResponse"
+                }
+              }
+            },
+            "description": "In-scope quiz questions (no correct_answer_index)."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid query params."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing quiz.attempt, grade mismatch, or subject not allowed."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Insufficient questions in scope."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected server error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Fetch quiz questions in academic scope",
+        "tags": [
+          "quiz"
+        ]
+      }
+    },
+    "/v2/quiz/start": {
+      "post": {
+        "description": "Creates a quiz session via the start_quiz_session RPC (server-owned shuffle authority). Returns the per-session shuffled options; the shuffle_map and correct index stay server-side (P6). studentId is cross-checked against the JWT (403 on mismatch). Requires quiz.attempt.",
+        "operationId": "postQuizStart",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuizStartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuizStartResponse"
+                }
+              }
+            },
+            "description": "Quiz session created."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid body."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing quiz.attempt or studentId mismatch."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "start_quiz_session RPC failed."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Start a server-shuffled quiz session",
+        "tags": [
+          "quiz"
+        ]
+      }
+    },
+    "/v2/quiz/submit": {
+      "post": {
+        "description": "Thin pass-through to the submit_quiz_results_v2 RPC, which owns P1 scoring, P2 XP + 200/day cap, all 3 P3 anti-cheat checks, and P4 atomicity. The route does NO score / XP / anti-cheat math — it forwards inputs and returns the RPC result verbatim. Requires an Idempotency-Key (UUID) header and quiz.attempt. studentId is cross-checked against the JWT (403 on mismatch).",
+        "operationId": "postQuizSubmit",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuizSubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuizSubmitResult"
+                }
+              }
+            },
+            "description": "Graded result (server-authoritative)."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing/invalid Idempotency-Key or body."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing quiz.attempt or studentId mismatch."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "session_not_started — client should restart the quiz."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Transient scoring failure — retry with same Idempotency-Key."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Submit a quiz for server-authoritative grading",
+        "tags": [
+          "quiz"
+        ]
+      }
+    },
+    "/v2/student/leaderboard": {
+      "get": {
+        "description": "Returns ranked leaderboard entries via the get_leaderboard RPC the web /leaderboard page uses. No PII beyond what the existing leaderboard exposes (P13). Requires progress.view_own.",
+        "operationId": "getStudentLeaderboard",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "enum": [
+                "weekly",
+                "monthly",
+                "all"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "enum": [
+                "school",
+                "global"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaderboardResponse"
+                }
+              }
+            },
+            "description": "Ranked leaderboard."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected server error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "XP leaderboard",
+        "tags": [
+          "student"
+        ]
+      }
+    },
+    "/v2/student/profile": {
+      "get": {
+        "description": "Returns the authenticated student's profile (name, grade(string,P5), board, stream, plan, language). Reuses the identity profile read. Requires profile.view_own.",
+        "operationId": "getStudentProfile",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentProfileResponse"
+                }
+              }
+            },
+            "description": "Student profile."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No student profile for this account."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected server error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Authenticated student profile",
+        "tags": [
+          "student"
+        ]
+      }
+    },
+    "/v2/student/progress": {
+      "get": {
+        "description": "Returns the structured progress payload (performance_scores, topic_mastery, knowledge_gaps, learning_velocity, decay_topics) the web /progress page reads. RLS-safe. Requires progress.view_own.",
+        "operationId": "getStudentProgress",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentProgressResponse"
+                }
+              }
+            },
+            "description": "Progress payload."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No student profile for this account."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected server error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Authenticated student progress",
+        "tags": [
+          "student"
         ]
       }
     },
