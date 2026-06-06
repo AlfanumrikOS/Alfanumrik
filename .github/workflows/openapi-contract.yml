@@ -1,0 +1,67 @@
+name: OpenAPI Contract Drift Check
+
+# Wave 2.1 (Phase 2 foundation): the /v2 contract is generated from a single Zod
+# source (src/lib/api/v2/contract.ts). The committed artifact openapi/v2.json
+# MUST stay in lockstep with that source. This workflow regenerates the spec and
+# fails if the committed file is stale, so the contract can't silently drift
+# (which would desync the mobile Dart client).
+#
+# Fast + cheap: only runs when the contract source, the generator, the spec
+# artifact, or the codegen config change. No Java / no Dart here — this checks
+# ONLY the TS → OpenAPI half. The Dart client is regenerated in mobile CI
+# (Wave 2.6).
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - 'src/lib/api/v2/contract.ts'
+      - 'scripts/gen-openapi.mjs'
+      - 'scripts/gen-openapi.build.mts'
+      - 'openapi/v2.json'
+      - 'openapitools.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/openapi-contract.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'src/lib/api/v2/contract.ts'
+      - 'scripts/gen-openapi.mjs'
+      - 'scripts/gen-openapi.build.mts'
+      - 'openapi/v2.json'
+      - 'openapitools.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/openapi-contract.yml'
+
+concurrency:
+  group: openapi-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract-drift:
+    name: OpenAPI contract is in sync with Zod source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Regenerate + verify openapi/v2.json is committed & current
+        run: |
+          echo "## OpenAPI Contract Drift Check" >> $GITHUB_STEP_SUMMARY
+          if npm run gen:openapi:check; then
+            echo "| Status | openapi/v2.json is in sync with the Zod contract |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Status | DRIFT — openapi/v2.json is stale |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Run \`npm run gen:openapi\` locally and commit the updated openapi/v2.json." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi

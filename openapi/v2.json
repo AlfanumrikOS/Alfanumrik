@@ -1,0 +1,377 @@
+{
+  "components": {
+    "parameters": {},
+    "schemas": {
+      "EncourageRequest": {
+        "properties": {
+          "message_key": {
+            "example": "great_work",
+            "type": "string"
+          },
+          "student_id": {
+            "example": "550e8400-e29b-41d4-a716-446655440000",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "student_id"
+        ],
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "code": {
+            "example": "VALIDATION_ERROR",
+            "type": "string"
+          },
+          "error": {
+            "example": "Validation failed",
+            "type": "string"
+          },
+          "success": {
+            "enum": [
+              false
+            ],
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "error"
+        ],
+        "type": "object"
+      },
+      "SuccessAck": {
+        "properties": {
+          "success": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success"
+        ],
+        "type": "object"
+      },
+      "TodayDeepLink": {
+        "properties": {
+          "params": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "type": "object"
+          },
+          "route": {
+            "example": "/quiz",
+            "type": "string"
+          }
+        },
+        "required": [
+          "route"
+        ],
+        "type": "object"
+      },
+      "TodayItemType": {
+        "enum": [
+          "resume_in_progress",
+          "cold_start_diagnostic",
+          "srs_due",
+          "revise_decayed_topic",
+          "weak_topic_zpd",
+          "continue_lesson",
+          "weekly_dive_due",
+          "monthly_synthesis_due",
+          "practice_weakest"
+        ],
+        "type": "string"
+      },
+      "TodayQueueItem": {
+        "properties": {
+          "deepLink": {
+            "$ref": "#/components/schemas/TodayDeepLink"
+          },
+          "estMinutes": {
+            "example": 5,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "iconHint": {
+            "example": "flame",
+            "type": "string"
+          },
+          "labelKey": {
+            "example": "today.item.srs_due.label",
+            "type": "string"
+          },
+          "meta": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "rank": {
+            "example": 1,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "reason": {
+            "example": "review_due_cards",
+            "type": "string"
+          },
+          "subtitleKey": {
+            "example": "today.item.srs_due.subtitle",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/TodayItemType"
+          }
+        },
+        "required": [
+          "type",
+          "rank",
+          "labelKey",
+          "subtitleKey",
+          "estMinutes",
+          "deepLink",
+          "iconHint",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "TodayResponse": {
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/TodayResponseMeta"
+          },
+          "primary": {
+            "$ref": "#/components/schemas/TodayQueueItem"
+          },
+          "queue": {
+            "items": {
+              "$ref": "#/components/schemas/TodayQueueItem"
+            },
+            "type": "array"
+          },
+          "resolvedAt": {
+            "example": "2026-06-06T09:00:00.000Z",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "enum": [
+              1
+            ],
+            "type": "number"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "resolvedAt",
+          "primary",
+          "queue",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "TodayResponseMeta": {
+        "properties": {
+          "branch": {
+            "example": "review_due_cards",
+            "type": "string"
+          },
+          "dueReviewCount": {
+            "example": 7,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterySubjectCount": {
+            "example": 3,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "branch",
+          "masterySubjectCount",
+          "dueReviewCount"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "bearerFormat": "JWT",
+        "description": "Supabase access-token JWT (mobile clients).",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "cookieAuth": {
+        "description": "Supabase session cookie (web clients).",
+        "in": "cookie",
+        "name": "sb-access-token",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "The Alfanumrik /v2 contract. Single source of truth: src/lib/api/v2/contract.ts (Zod). This document is generated by `npm run gen:openapi` and consumed by the Dart client codegen (`npm run gen:dart`). Do not edit by hand.",
+    "title": "Alfanumrik /v2 API",
+    "version": "2.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v2/parent/encourage": {
+      "post": {
+        "description": "Parent sends a curated, preset-keyed encouragement to a linked child. Requires child.encourage and an approved guardian↔student link. Rate-limited to one cheer per (guardian, student) per 6 hours.",
+        "operationId": "postParentEncourage",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EncourageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessAck"
+                }
+              }
+            },
+            "description": "Cheer sent."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid body (bad student_id or unknown message_key)."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No parent profile, or not linked to this student."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limited — already cheered within the last 6 hours."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected server error."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Notification fan-out failed."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Send a preset cheer to a linked child",
+        "tags": [
+          "parent"
+        ]
+      }
+    },
+    "/v2/today": {
+      "get": {
+        "description": "Returns the ordered \"what could I do today?\" queue for the authenticated student as render-ready DTOs. Requires study_plan.view. 404 when ff_today_home_v1 is off.",
+        "operationId": "getToday",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodayResponse"
+                }
+              }
+            },
+            "description": "The resolved Today queue."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Feature flag off, or the caller has no student profile. Callers fall back to /dashboard."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected server error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Today home queue",
+        "tags": [
+          "today"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "description": "Alfanumrik API base path",
+      "url": "/api"
+    }
+  ],
+  "webhooks": {}
+}
