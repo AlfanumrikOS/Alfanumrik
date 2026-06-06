@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   VALID_ROLES,
   VALID_GRADES,
@@ -680,11 +680,33 @@ describe('GET /api/auth/onboarding-status', () => {
 describe('Auth callback bootstrap integration', () => {
   let GET: (request: import('next/server').NextRequest) => Promise<Response>;
 
+  // The signup branch of the callback route fires a best-effort,
+  // unawaited `fetch()` to the send-welcome-email Edge Function
+  // (auth/callback/route.ts lines ~244-251). NEXT_PUBLIC_SUPABASE_URL is set
+  // to a placeholder host in setup.ts, so an UNMOCKED fetch issues a real
+  // network call that rejects asynchronously — and its `.catch()` handler
+  // runs `console.warn(...)` AFTER the test body returns. Under the worker's
+  // teardown this surfaces as the flaky
+  // `EnvironmentTeardownError: Closing rpc while "onUserConsoleLog" was
+  // pending`. Stub fetch so the welcome-email call resolves synchronously
+  // inside the test (no real network, no post-teardown console log). The
+  // route never reads the response, so a bare ok-Response is sufficient.
+  const fetchSpy = vi.fn().mockResolvedValue(
+    new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  );
+
   beforeEach(async () => {
     vi.clearAllMocks();
     studentMockData = null;
     teacherMockData = null;
     guardianMockData = null;
+
+    // Stub global fetch (see block comment above) so the fire-and-forget
+    // welcome-email call resolves in-test instead of after teardown.
+    vi.stubGlobal('fetch', fetchSpy);
 
     // Default: successful code exchange
     mockExchangeCodeForSession.mockResolvedValue({ error: null });
@@ -709,6 +731,16 @@ describe('Auth callback bootstrap integration', () => {
 
     const mod = await import('@/app/auth/callback/route');
     GET = mod.GET;
+  });
+
+  afterEach(async () => {
+    // Drain the microtask/promise queue so the fire-and-forget welcome-email
+    // `.then()/.catch()` chain settles inside the test (fetchSpy resolves
+    // synchronously, so a single tick is enough) before the worker tears
+    // down. Then restore the real global fetch so the stub never leaks into
+    // sibling describe blocks.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    vi.unstubAllGlobals();
   });
 
   function createCallbackRequest(params: Record<string, string>): import('next/server').NextRequest {
