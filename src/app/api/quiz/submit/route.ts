@@ -42,7 +42,6 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { authorizeRequest } from '@/lib/rbac';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
@@ -52,9 +51,17 @@ import { logger } from '@/lib/logger';
 import { logOpsEvent } from '@/lib/ops-events';
 import { capture as posthogCapture } from '@/lib/posthog/server';
 import { validateBody } from '@/lib/validation';
-import { maybeDispatchQuizCompletion } from '@/lib/state/quiz-orchestrator-bridge';
-import { publishEvent } from '@/lib/state/events/publish';
-import { bktUpdate } from '@/lib/state/services/quiz-completion-service';
+import { runQuizSubmitSideEffects } from '@/lib/quiz/submit-side-effects';
+
+// Re-export the spine-emit pure helpers from their new shared home so existing
+// importers (src/__tests__/state/learner-loop/quiz-submit-spine-emit.test.ts)
+// keep resolving them from this route module. The logic now lives in
+// src/lib/quiz/submit-side-effects.ts so both quiz-submit routes share it.
+export {
+  computeMasteryDeltas,
+  masteryChangedIdempotencyKey,
+  quizCompletedIdempotencyKey,
+} from '@/lib/quiz/submit-side-effects';
 
 // ─── Body schema ────────────────────────────────────────────────────────────
 
@@ -302,208 +309,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── 9. PostHog events (server-side) ───────────────────────────────────
-  // Only emit when this is a fresh grading event. Replays must not double-count.
-  if (!rpcData.idempotent_replay) {
-    // quiz_graded — primary funnel event.
-    void posthogCapture(
-      'quiz_graded',
-      body.studentId,
-      {
-        session_id: rpcData.session_id ?? body.sessionId,
-        score_percent: rpcData.score_percent,
-        xp_earned: rpcData.xp_earned,
-        correct: rpcData.correct,
-        total: rpcData.total,
-        marking_authenticity_path: 'oracle_v2',
-        anti_cheat_flagged: !!rpcData.flagged,
-        idempotent_replay: false,
-      },
-      // $insert_id keyed by session — second emission for same session is dropped.
-      `quiz_graded:${rpcData.session_id ?? body.sessionId}`,
-    ).catch(() => { /* swallow */ });
-
-    // xp_awarded — even when flagged (xp_earned will be 0). Useful for funnel parity.
-    void posthogCapture(
-      'xp_awarded',
-      body.studentId,
-      {
-        xp_delta: rpcData.xp_earned,
-        source: 'quiz',
-        // daily_total_after is approximate without re-reading; use xp_earned as
-        // a lower bound. The dashboard can sum across rows to get the true total.
-        daily_total_after: rpcData.xp_earned,
-        capped: !!rpcData.xp_capped,
-      },
-      `xp_awarded:quiz:${rpcData.session_id ?? body.sessionId}`,
-    ).catch(() => { /* swallow */ });
-
-    if (rpcData.flagged) {
-      void posthogCapture(
-        'quiz_anti_cheat_flagged',
-        body.studentId,
-        {
-          session_id: rpcData.session_id ?? body.sessionId,
-          // The RPC doesn't surface a granular reason — derive from data.
-          reason: deriveAntiCheatReason(rpcData, body.totalTimeSeconds, body.responses.length),
-        },
-        `anti_cheat:${rpcData.session_id ?? body.sessionId}`,
-      ).catch(() => { /* swallow */ });
-    }
-
-    if (rpcData.xp_capped) {
-      void posthogCapture(
-        'daily_xp_cap_hit',
-        body.studentId,
-        {
-          source: 'quiz',
-          cap: 200, // matches XP_RULES.quiz_daily_cap; surfaced for dashboard parity
-          attempted_xp: rpcData.xp_earned,
-        },
-        `daily_xp_cap_hit:quiz:${new Date().toISOString().slice(0, 10)}:${body.studentId}`,
-      ).catch(() => { /* swallow */ });
-    }
-  }
-
-  // ── 10a. ADR-005 spine emit — learner.quiz_completed + learner.mastery_changed ─
-  //
-  // Route-level publishEvent. Gated ONLY by ff_event_bus_v1 inside
-  // publishEvent() — independent of ff_orchestrator_v1 (10b). This lets
-  // operators flip the bus ON for projector subscribers (mastery-state-
-  // writer, concept-mastery-projector) without also turning on the
-  // orchestrator's StudentState build path.
-  //
-  // Idempotency keys mirror the orchestrator's keys verbatim, so when
-  // BOTH paths fire (operator ramps ff_event_bus_v1 AND ff_orchestrator_v1
-  // on for the same tenant) the bus's UNIQUE(idempotency_key) constraint
-  // dedupes — exactly one row per (kind, session, chapter).
-  //
-  // Best-effort: never blocks the response. Failures log and continue.
-  // Skipped on idempotent replays — replays must not double-publish.
-  if (!rpcData.idempotent_replay) {
-    const sessionIdForEvent = rpcData.session_id ?? body.sessionId;
-    const subjectCode = (body.subject ?? 'unknown').toLowerCase();
-    const primaryChapter = body.chapter ?? 1;
-    const occurredAt = new Date().toISOString();
-    const tenantId = await resolveTenantIdForStudent(admin, body.studentId);
-    // Capture into a local so the async closure below doesn't depend on
-    // TS narrowing through the closure boundary.
-    const authUserId = auth.userId;
-
-    // Best-effort prior read for mastery deltas. topic_mastery is keyed
-    // by (student_id, subject, topic_tag); we don't have topic_tag at
-    // the route, so we fall back to null priors. That's accepted by the
-    // registry schema — fromMastery is nullable for first-attempt events.
-    const priorByChapter: Record<number, number | null> = {};
-
-    const gradedQuestions = body.responses.map((r) => {
-      const graded = rpcData.questions?.find(
-        (q): q is { question_id?: string; is_correct?: boolean } =>
-          !!q && typeof q === 'object' && (q as { question_id?: string }).question_id === r.question_id,
-      );
-      return { correct: graded?.is_correct === true };
-    });
-    const correctCount = gradedQuestions.filter((q) => q.correct).length;
-
-    // Fire-and-forget — never throws into the response. publishEvent
-    // short-circuits internally when ff_event_bus_v1 is OFF. The trailing
-    // .catch() guards against any unhandled rejection from the IIFE (the
-    // per-emit try/catches handle individual publish failures).
-    void (async () => {
-      let deltas: ReturnType<typeof computeMasteryDeltas> = [];
-      try {
-        deltas = computeMasteryDeltas(primaryChapter, gradedQuestions, priorByChapter);
-      } catch (err) {
-        logger.warn('quiz.submit: computeMasteryDeltas failed', {
-          sessionId: sessionIdForEvent,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-      for (const d of deltas) {
-        try {
-          await publishEvent(admin, {
-            kind: 'learner.mastery_changed',
-            eventId: randomUUID(),
-            occurredAt,
-            actorAuthUserId: authUserId,
-            tenantId,
-            idempotencyKey: masteryChangedIdempotencyKey(sessionIdForEvent, d.chapterNumber),
-            payload: {
-              subjectCode,
-              chapterNumber: d.chapterNumber,
-              fromMastery: d.fromMastery,
-              toMastery: d.toMastery,
-              trigger: 'quiz',
-            },
-          });
-        } catch (err) {
-          logger.warn('quiz.submit: publishEvent learner.mastery_changed failed', {
-            sessionId: sessionIdForEvent,
-            chapterNumber: d.chapterNumber,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-    })().catch((err) => {
-      // Last-ditch swallow: never let the spine-emit IIFE propagate an
-      // unhandled rejection to the runtime (it shouldn't — every awaited
-      // call above is try-caught — but defense-in-depth is cheap here).
-      logger.warn('quiz.submit: spine-emit IIFE rejected', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
-  }
-
-  // ── 10b. Orchestrator bridge — additive, flag-gated, never throws ──────
-  // While ff_orchestrator_v1 is OFF (the steady state during Phase 2's
-  // first weeks), this is a no-op. When the flag flips on for a tenant
-  // we get learner.quiz_completed + learner.mastery_changed events on
-  // the bus. Subscribers run in parity-check / dry-run mode until we
-  // verify their projections match the legacy RPC's writes.
-  //
-  // Idempotency keys match 10a above — when both fire, the UNIQUE
-  // constraint on state_events.idempotency_key dedupes naturally.
-  if (!rpcData.idempotent_replay) {
-    void maybeDispatchQuizCompletion({
-      authUserId: auth.userId,
-      legacySessionId: rpcData.session_id ?? body.sessionId,
-      input: {
-        quizSessionId: rpcData.session_id ?? body.sessionId,
-        subjectCode: (body.subject ?? 'unknown').toLowerCase(),
-        chapterNumber: body.chapter ?? 1,
-        questions: body.responses.map((r) => {
-          const graded = rpcData?.questions?.find(
-            (q): q is { question_id?: string; is_correct?: boolean } =>
-              !!q && typeof q === 'object' && (q as { question_id?: string }).question_id === r.question_id,
-          );
-          return {
-            correct: graded?.is_correct === true,
-            timeSpentSec: r.time_taken_seconds,
-          };
-        }),
-        startedAt: new Date(Date.now() - body.totalTimeSeconds * 1000).toISOString(),
-        endedAt: new Date().toISOString(),
-      },
-    }).then((bridgeResult) => {
-      if (bridgeResult.ranOrchestrator) {
-        void logOpsEvent({
-          category: 'state-architecture',
-          severity: 'info',
-          source: 'api/quiz/submit/route.ts',
-          message: 'orchestrator_bridge_dispatched',
-          context: {
-            session_id: rpcData?.session_id ?? body.sessionId,
-            published_event_count: bridgeResult.publishedEventCount,
-          },
-        });
-      } else if (bridgeResult.error) {
-        logger.warn('quiz.submit: orchestrator bridge errored (legacy path unaffected)', {
-          error: new Error(bridgeResult.error),
-          sessionId: rpcData?.session_id ?? body.sessionId,
-        });
-      }
-    }).catch(() => { /* never throw from bridge */ });
-  }
+  // ── 9-10. Post-RPC side-effects (PostHog + ADR-005 spine + orchestrator) ─
+  // Shared, fire-and-forget, never blocks the response. Internally guarded by
+  // `idempotent_replay` so replays don't double-count / double-publish. This
+  // is the EXACT same code path /api/v2/quiz/submit runs — see
+  // src/lib/quiz/submit-side-effects.ts (single source, no drift).
+  runQuizSubmitSideEffects(
+    admin,
+    auth.userId,
+    {
+      studentId: body.studentId,
+      sessionId: body.sessionId,
+      subject: body.subject,
+      topic: body.topic,
+      chapter: body.chapter,
+      totalTimeSeconds: body.totalTimeSeconds,
+      responses: body.responses,
+    },
+    rpcData,
+  );
 
   // ── 11. Return canonical shape ────────────────────────────────────────
   return NextResponse.json({
@@ -527,120 +351,4 @@ function shapeResponse(r: QuizV2Result) {
     // review screen without a second round-trip. Stable schema set by the RPC.
     questions: r.questions ?? [],
   };
-}
-
-/** Best-effort reason derivation for anti-cheat events. RPC does not return one. */
-function deriveAntiCheatReason(
-  r: QuizV2Result,
-  totalTimeSeconds: number,
-  responseCount: number,
-): string {
-  const avg = r.total > 0 ? totalTimeSeconds / r.total : 0;
-  if (avg < 3) return 'avg_time_below_3s';
-  if (responseCount !== r.total) return 'response_count_mismatch';
-  return 'all_same_answer_or_other';
-}
-
-// ─── ADR-005 spine emit helpers ──────────────────────────────────────────
-//
-// Pure helpers used by the route-level publishEvent calls for
-// learner.quiz_completed and learner.mastery_changed. Exported for unit
-// tests so the event-shape contract is locked even though the route
-// itself has too many auth + RPC dependencies for a full integration test.
-//
-// Idempotency keys MUST match the ones the orchestrator path uses in
-// src/lib/state/services/quiz-completion-service.ts so that when both
-// paths fire (legacy route + orchestrator bridge after ff_orchestrator_v1
-// flips ON) the bus's UNIQUE(idempotency_key) constraint dedupes — exactly
-// one row per (kind, session, chapter).
-
-/**
- * Resolve the tenant scope for a learner — read once from students.school_id.
- * Returns null on B2C learners or any read failure (logged + treated as
- * B2C). Used by the route-level spine emits to populate the event envelope's
- * tenantId.
- */
-async function resolveTenantIdForStudent(
-  sb: ReturnType<typeof getSupabaseAdmin>,
-  studentId: string,
-): Promise<string | null> {
-  try {
-    const { data } = await sb
-      .from('students')
-      .select('school_id')
-      .eq('id', studentId)
-      .maybeSingle();
-    const schoolId = (data as { school_id?: string | null } | null)?.school_id ?? null;
-    return schoolId;
-  } catch (err) {
-    logger.warn('quiz.submit: resolveTenantIdForStudent failed', {
-      studentId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return null;
-  }
-}
-
-/** Stable idempotency key for learner.quiz_completed. */
-export function quizCompletedIdempotencyKey(quizSessionId: string): string {
-  return `quiz-completed:${quizSessionId}`;
-}
-
-/** Stable idempotency key for learner.mastery_changed (one per chapter per session). */
-export function masteryChangedIdempotencyKey(
-  quizSessionId: string,
-  chapterNumber: number,
-): string {
-  return `mastery-changed:${quizSessionId}:${chapterNumber}`;
-}
-
-/**
- * Compute per-chapter mastery deltas from the RPC's per-question grades.
- * Mirrors quiz-completion-service.ts's BKT chain (same priors, same
- * bktUpdate). Returns one entry per chapter that appeared in this
- * quiz session.
- *
- * Pure and exported for unit tests. fromMastery is null when we have no
- * prior reading for that chapter (first-ever attempt); the registry
- * schema allows null fromMastery.
- *
- * @param chapterNumber Primary chapter of the quiz session (default
- *   bucket for any question that didn't carry its own chapter override).
- * @param gradedQuestions Per-question correctness from the RPC.
- * @param priorByChapter Optional per-chapter prior mastery reading
- *   (e.g. from `adaptive_mastery.mastery_prob`). When absent for a
- *   chapter, we use the BKT_PRIOR_INIT (0.3) as the prior but emit
- *   fromMastery=null on the event so subscribers can distinguish
- *   "we don't know" from "we know it's 0.3".
- */
-export function computeMasteryDeltas(
-  chapterNumber: number,
-  gradedQuestions: Array<{ correct: boolean; chapterNumberOverride?: number | null }>,
-  priorByChapter: Record<number, number | null> = {},
-): Array<{ chapterNumber: number; fromMastery: number | null; toMastery: number }> {
-  // Same constant as quiz-completion-service.ts. Keep these in lockstep —
-  // if BKT_PRIOR_INIT changes there, mirror it here.
-  const BKT_PRIOR_INIT = 0.3;
-
-  const byChapter = new Map<number, boolean[]>();
-  for (const q of gradedQuestions) {
-    const ch = q.chapterNumberOverride ?? chapterNumber;
-    if (!byChapter.has(ch)) byChapter.set(ch, []);
-    byChapter.get(ch)!.push(q.correct);
-  }
-
-  const out: Array<{ chapterNumber: number; fromMastery: number | null; toMastery: number }> = [];
-  for (const [ch, outcomes] of byChapter) {
-    const priorRaw = priorByChapter[ch];
-    const fromMastery = (typeof priorRaw === 'number' && Number.isFinite(priorRaw))
-      ? priorRaw
-      : null;
-    let m = fromMastery ?? BKT_PRIOR_INIT;
-    for (const ok of outcomes) {
-      m = bktUpdate(m, ok);
-    }
-    const toMastery = Math.max(0, Math.min(1, m));
-    out.push({ chapterNumber: ch, fromMastery, toMastery });
-  }
-  return out;
 }

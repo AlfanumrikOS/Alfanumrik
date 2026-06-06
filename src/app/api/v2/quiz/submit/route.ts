@@ -38,6 +38,7 @@ import { logOpsEvent } from '@/lib/ops-events';
 import { validateBody } from '@/lib/validation';
 import { v2Success, v2Error } from '@/lib/api/v2/envelope';
 import { QuizSubmitRequest } from '@/lib/api/v2/contract';
+import { runQuizSubmitSideEffects } from '@/lib/quiz/submit-side-effects';
 
 // Shape returned by submit_quiz_results_v2 + cached idempotent rows.
 // IDENTICAL to /api/quiz/submit's QuizV2Result.
@@ -222,6 +223,27 @@ export async function POST(request: NextRequest) {
     return v2Error('Empty response from scoring engine', 503, 'EMPTY_RESPONSE');
   }
 
-  // 8. Return the RPC result VERBATIM (server-authoritative; never recomputed).
+  // 8. Post-RPC side-effects — FULL PARITY with /api/quiz/submit. The SAME
+  //    shared function runs PostHog telemetry + the ADR-005 spine emit +
+  //    the orchestrator bridge. Fire-and-forget, never blocks the response,
+  //    internally guarded by `idempotent_replay` so cached replays don't
+  //    double-count. NO scoring / XP / anti-cheat math — see
+  //    src/lib/quiz/submit-side-effects.ts (single source, no drift with /api/quiz/submit).
+  runQuizSubmitSideEffects(
+    admin,
+    auth.userId,
+    {
+      studentId: body.studentId,
+      sessionId: body.sessionId,
+      subject: body.subject,
+      topic: body.topic,
+      chapter: body.chapter,
+      totalTimeSeconds: body.totalTimeSeconds,
+      responses: body.responses,
+    },
+    rpcData,
+  );
+
+  // 9. Return the RPC result VERBATIM (server-authoritative; never recomputed).
   return v2Success(shapeResult(rpcData));
 }

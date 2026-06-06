@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/constants/api_constants.dart';
 import '../../core/constants/app_colors.dart';
 
 /// Bottom navigation shell — wraps all main screens.
@@ -10,7 +11,9 @@ class AppShell extends StatelessWidget {
 
   const AppShell({super.key, required this.child});
 
-  static const _tabs = [
+  /// Legacy 5-tab nav (flag OFF). Byte-for-byte the navigation users have
+  /// today — Home / Learn / Foxy / Quiz / Settings.
+  static const _legacyTabs = [
     _Tab('/', 'Home', Icons.home_rounded, Icons.home_outlined),
     _Tab('/learn', 'Learn', Icons.menu_book_rounded, Icons.menu_book_outlined),
     _Tab('/chat', 'Foxy', Icons.chat_bubble_rounded, Icons.chat_bubble_outline_rounded),
@@ -18,15 +21,30 @@ class AppShell extends StatelessWidget {
     _Tab('/settings', 'Settings', Icons.settings_rounded, Icons.settings_outlined),
   ];
 
+  /// `/v2` 4-tab nav (flag ON) — Today / Learn / Foxy / Me. "Me" reuses the
+  /// existing Settings/profile screen for now. The adaptive Today home replaces
+  /// the legacy Dashboard as the default authed landing.
+  static const _v2Tabs = [
+    _Tab('/today', 'Today', Icons.wb_sunny_rounded, Icons.wb_sunny_outlined),
+    _Tab('/learn', 'Learn', Icons.menu_book_rounded, Icons.menu_book_outlined),
+    _Tab('/chat', 'Foxy', Icons.chat_bubble_rounded, Icons.chat_bubble_outline_rounded),
+    _Tab('/settings', 'Me', Icons.person_rounded, Icons.person_outline_rounded),
+  ];
+
+  static List<_Tab> get _tabs =>
+      ApiConstants.useV2 ? _v2Tabs : _legacyTabs;
+
   int _currentIndex(String location) {
-    for (int i = _tabs.length - 1; i >= 0; i--) {
-      if (location.startsWith(_tabs[i].path)) return i;
+    final tabs = _tabs;
+    for (int i = tabs.length - 1; i >= 0; i--) {
+      if (location.startsWith(tabs[i].path)) return i;
     }
     return 0;
   }
 
   @override
   Widget build(BuildContext context) {
+    final tabs = _tabs;
     final location = GoRouterState.of(context).matchedLocation;
     final currentIndex = _currentIndex(location);
 
@@ -44,8 +62,8 @@ class AppShell extends StatelessWidget {
           child: SizedBox(
             height: 56,
             child: Row(
-              children: List.generate(_tabs.length, (i) {
-                final tab = _tabs[i];
+              children: List.generate(tabs.length, (i) {
+                final tab = tabs[i];
                 final isActive = i == currentIndex;
                 return Expanded(
                   child: GestureDetector(

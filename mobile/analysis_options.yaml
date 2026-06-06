@@ -17,3 +17,7 @@ analyzer:
   exclude:
     - "**/*.g.dart"
     - "**/*.freezed.dart"
+    # Generated /v2 dart-dio client package (own pubspec + analysis_options).
+    # Excluded from the app analyzer so its OpenAPI-generated source isn't held
+    # to the app's stricter lints. The package is analyzed on its own terms.
+    - "lib/api/v2/**"
