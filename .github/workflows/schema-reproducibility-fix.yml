@@ -818,7 +818,9 @@ jobs:
 
       - name: Pre-flight check (idempotency) and pre-mark
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          # Staging lives in a different Supabase org than prod — use the
+          # dedicated staging access token (prod token returns Unauthorized).
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_STAGING_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_STAGING_DB_PASSWORD }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
         run: |
@@ -981,7 +983,9 @@ jobs:
 
       - name: Clear pre-mark + apply baseline + post-baseline to staging
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          # Staging lives in a different Supabase org than prod — use the
+          # dedicated staging access token (prod token returns Unauthorized).
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_STAGING_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_STAGING_DB_PASSWORD }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
         run: |
@@ -1039,7 +1043,9 @@ jobs:
       - name: Verify staging
         id: staging
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          # Staging lives in a different Supabase org than prod — use the
+          # dedicated staging access token (prod token returns Unauthorized).
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_STAGING_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_STAGING_DB_PASSWORD }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
         run: |
