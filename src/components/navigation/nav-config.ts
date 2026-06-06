@@ -8,6 +8,18 @@ export const CORE_TABS = [
   { href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति' },
 ];
 
+// Consumer Minimalism Wave A — the 4-tab student model rendered when
+// ff_today_home_v1 is ON. Same row shape as CORE_TABS. Today is the home tab
+// (carries the streak badge); Me routes to /progress for this PR. Foxy stays
+// the center FAB. Gated entirely at the call site so the flag-OFF nav is
+// untouched.
+export const TODAY_CORE_TABS = [
+  { href: '/today', icon: '☀️', activeIcon: '☀️', label: 'Today', labelHi: 'आज' },
+  { href: '/learn', icon: '📚', activeIcon: '📚', label: 'Learn', labelHi: 'सीखें' },
+  { href: '/foxy', icon: '🦊', activeIcon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी', isFab: true },
+  { href: '/progress', icon: '🙂', activeIcon: '🙂', label: 'Me', labelHi: 'मैं' },
+];
+
 export const MORE_ITEMS = [
   { href: '/simulations', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
   { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },

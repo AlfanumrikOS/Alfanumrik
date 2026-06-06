@@ -362,6 +362,7 @@ describe('LearnerAction kinds', () => {
       'continue_lesson',
       'weekly_dive',
       'monthly_synthesis',
+      'resume_in_progress',
     ]);
   });
 });

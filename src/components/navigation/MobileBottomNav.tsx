@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { ROLE_CONFIG } from '@/lib/constants';
 import { useDashboardData, useFeatureFlags } from '@/lib/swr';
-import { getCoreTabs, getMoreItems, getItemLockForGrade, isItemVisibleForFlags, type NavFlagGatedItem } from './nav-config';
+import { getCoreTabs, getMoreItems, getItemLockForGrade, isItemVisibleForFlags, TODAY_CORE_TABS, type NavFlagGatedItem } from './nav-config';
 
 export function MobileBottomNav() {
   const pathname = usePathname();
@@ -60,7 +60,14 @@ export function MobileBottomNav() {
   const { data: navFlags } = useFeatureFlags();
   const [hasUpcomingExam] = useState(true);
 
-  const tabs = getCoreTabs(activeRole);
+  // Consumer Minimalism Wave A — 4-tab student nav behind ff_today_home_v1.
+  // When ON (student role only), replace the legacy core tabs with
+  // Today / Learn / Foxy (center) / Me. When OFF, getCoreTabs returns the
+  // existing CORE_TABS unchanged — flag-OFF nav is byte-identical to today.
+  const todayHomeOn = navFlags?.ff_today_home_v1 === true;
+  const tabs = (todayHomeOn && activeRole === 'student')
+    ? TODAY_CORE_TABS
+    : getCoreTabs(activeRole);
   const studentGrade = parseInt((auth as any)?.student?.grade ?? '6', 10);
   const getItemLock = (item: any) => getItemLockForGrade(item, studentGrade);
   const subscriptionPlan = ((auth as any)?.student?.subscription_plan as string | null | undefined) ?? null;
@@ -320,7 +327,7 @@ export function MobileBottomNav() {
                   aria-hidden="true"
                 >
                   {active ? item.activeIcon : item.icon}
-                  {item.href === '/dashboard' && streakCount > 0 && activeRole === 'student' && (
+                  {item.href === (todayHomeOn ? '/today' : '/dashboard') && streakCount > 0 && activeRole === 'student' && (
                     <span
                       className="absolute -top-1.5 -right-2.5 min-w-[18px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-bold px-0.5"
                       style={{

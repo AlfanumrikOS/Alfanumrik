@@ -158,7 +158,8 @@ export interface LearnerNextResponse {
       | 'start_quiz'
       | 'continue_lesson'
       | 'weekly_dive'
-      | 'monthly_synthesis';
+      | 'monthly_synthesis'
+      | 'resume_in_progress';
     url: string;
     reason: string;
     [key: string]: unknown;
