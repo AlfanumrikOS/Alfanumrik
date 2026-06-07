@@ -67,15 +67,10 @@ android {
         }
     }
 
-    // Split APKs by ABI for smaller download size
-    splits {
-        abi {
-            enable true
-            reset()
-            include "armeabi-v7a", "arm64-v8a", "x86_64"
-            universalApk false
-        }
-    }
+    // ABI splitting is driven by the Flutter CLI, not a manual splits block:
+    // use `flutter build apk --split-per-abi` for per-ABI APKs, or `flutter build appbundle`
+    // (AAB) for Play Store releases where Google Play does per-device ABI delivery server-side.
+    // A manual splits.abi block conflicts with Flutter-injected ndk.abiFilters (AGP forbids both).
 
     // Optimize APK size
     packagingOptions {
