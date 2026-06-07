@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../core/constants/api_constants.dart';
+import '../core/network/v2_api_client.dart';
 import '../data/models/quiz_question.dart';
 import '../data/repositories/quiz_repository.dart';
 import 'auth_provider.dart';
@@ -9,7 +11,12 @@ import 'dashboard_provider.dart';
 const _uuidGen = Uuid();
 
 final quizRepositoryProvider = Provider<QuizRepository>((ref) {
-  return QuizRepository();
+  // Inject the generated /v2 client ONLY when the flag is on. Flag-OFF builds
+  // pass null so the legacy Supabase-RPC/table path is byte-identical to today
+  // and the dart-dio client is never even constructed.
+  return QuizRepository(
+    v2Client: ApiConstants.useV2 ? ref.read(v2ApiClientProvider) : null,
+  );
 });
 
 /// Quiz state — manages questions, answers, scoring.

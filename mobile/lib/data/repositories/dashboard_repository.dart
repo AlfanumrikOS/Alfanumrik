@@ -1,27 +1,45 @@
+import 'package:dio/dio.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/cache/cache_manager.dart';
+import '../../core/constants/api_constants.dart';
 import '../../core/network/api_result.dart';
+import '../../core/network/v2_api_client.dart';
 import '../models/dashboard_data.dart';
 
 class DashboardRepository {
   final SupabaseClient _client;
   final CacheManager _cache;
 
+  /// Generated `/v2` client. Null on the flag-OFF path so the legacy build
+  /// never constructs the dart-dio client.
+  final V2ApiClient? _v2;
+
   DashboardRepository({
     SupabaseClient? client,
     CacheManager? cache,
+    V2ApiClient? v2Client,
   })  : _client = client ?? Supabase.instance.client,
-        _cache = cache ?? CacheManager();
+        _cache = cache ?? CacheManager(),
+        _v2 = v2Client;
 
   /// Fetch all dashboard data in a single RPC call.
   /// Falls back to parallel queries if RPC not available.
+  ///
+  /// When [ApiConstants.useV2] is ON the profile is sourced from
+  /// `GET /v2/student/profile` (plan → usage limits) and the daily queue from
+  /// `GET /v2/today`; see [_getDashboardDataV2]. When OFF this is the
+  /// byte-identical legacy RPC/table path.
   ///
   /// TODO(mobile-sync): When the backend migrates `get_dashboard_data` to
   /// return Performance Score (0-100) instead of unbounded XP, update
   /// [DashboardData.fromJson] to parse `performance_score` and
   /// `foxy_coins` fields. See web `score-config.ts` and `coin-rules.ts`.
   Future<ApiResult<DashboardData>> getDashboardData(String studentId) async {
+    if (ApiConstants.useV2 && _v2 != null) {
+      return _getDashboardDataV2(studentId);
+    }
+
     try {
       // Try cache first
       final cached =
@@ -104,6 +122,66 @@ class DashboardRepository {
   /// Invalidate dashboard cache (e.g., after earning coins or completing quiz)
   Future<void> invalidate(String studentId) async {
     await _cache.remove('dashboard_$studentId');
+  }
+
+  /// `useV2`-ON dashboard assembly.
+  ///
+  /// Sources the student profile from `GET /v2/student/profile` (the `plan`
+  /// drives the per-plan usage LIMITS, kept in sync with web `usage.ts`) and
+  /// the daily queue from `GET /v2/today` (a connectivity/scope probe — the
+  /// adaptive Today home, not this legacy dashboard, is the real consumer of
+  /// the queue under `useV2`, so the items aren't re-rendered here). Counters
+  /// the `/v2` profile + today surfaces don't expose (XP total, quizzes taken,
+  /// usage USED counts) stay at their model defaults.
+  Future<ApiResult<DashboardData>> _getDashboardDataV2(String studentId) async {
+    try {
+      final cached =
+          _cache.get<DashboardData>('dashboard_$studentId', DashboardData.fromJson);
+      if (cached != null) return ApiSuccess(cached);
+
+      // Profile drives plan-based usage limits (P-parity with web usage.ts).
+      final profileResp = await _v2!.studentApi.getStudentProfile();
+      final profile = profileResp.data;
+      final plan = profile?.plan;
+
+      // Daily queue (best-effort). Fetched so the dashboard reflects the same
+      // server-driven session as the Today home; a hiccup must not break the
+      // profile-driven dashboard, so it's swallowed.
+      try {
+        await _v2.todayApi.getToday();
+      } catch (_) {
+        // Today is best-effort here.
+      }
+
+      final dashData = <String, dynamic>{
+        'usage': {
+          'foxy_chat_used': 0,
+          'foxy_chat_limit': _chatLimit(plan),
+          'quiz_used': 0,
+          'quiz_limit': _quizLimit(plan),
+        },
+      };
+
+      await _cache.put('dashboard_$studentId', dashData);
+      return ApiSuccess(DashboardData.fromJson(dashData));
+    } catch (e) {
+      return ApiFailure('Failed to load dashboard: ${_describe(e)}');
+    }
+  }
+
+  /// Extract a useful message from a thrown error. DioException server bodies
+  /// carry `{ error: ... }`; everything else falls back to `toString`. Message
+  /// text only — never PII (P13).
+  static String _describe(Object e) {
+    if (e is DioException) {
+      final data = e.response?.data;
+      if (data is Map && data['error'] != null) {
+        return data['error'].toString();
+      }
+      if (data is String && data.isNotEmpty) return data;
+      return e.message ?? e.toString();
+    }
+    return e.toString();
   }
 
   // Must match web src/lib/usage.ts PLAN_LIMITS + PLAN_ALIAS.

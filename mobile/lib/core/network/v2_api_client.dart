@@ -65,6 +65,18 @@ class V2ApiClient {
 
   /// Convenience accessor for the Today surface (Wave 2.3 scope).
   TodayApi get todayApi => api.getTodayApi();
+
+  /// Quiz surface (Wave 2.3b): `GET /v2/quiz/questions`,
+  /// `POST /v2/quiz/start`, `POST /v2/quiz/submit`.
+  QuizApi get quizApi => api.getQuizApi();
+
+  /// Learn surface (Wave 2.3b): `GET /v2/learn/curriculum`,
+  /// `GET /v2/learn/concept`.
+  LearnApi get learnApi => api.getLearnApi();
+
+  /// Student surface (Wave 2.3b): `GET /v2/student/profile`,
+  /// `GET /v2/student/progress`, `GET /v2/student/leaderboard`.
+  StudentApi get studentApi => api.getStudentApi();
 }
 
 /// Singleton provider for the generated `/v2` client. Kept app-scoped (no
