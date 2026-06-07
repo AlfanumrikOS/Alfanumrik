@@ -69,6 +69,8 @@ Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
 [*LearnApi*](doc/LearnApi.md) | [**getLearnConcept**](doc/LearnApi.md#getlearnconcept) | **GET** /v2/learn/concept | Concept content for a subject + chapter
 [*LearnApi*](doc/LearnApi.md) | [**getLearnCurriculum**](doc/LearnApi.md#getlearncurriculum) | **GET** /v2/learn/curriculum | Curriculum tree (subjects → chapters → topics)
+[*ParentApi*](doc/ParentApi.md) | [**getParentChildren**](doc/ParentApi.md#getparentchildren) | **GET** /v2/parent/children | List the authenticated guardian&#39;s linked children
+[*ParentApi*](doc/ParentApi.md) | [**getParentGlance**](doc/ParentApi.md#getparentglance) | **GET** /v2/parent/glance | At-a-glance view for one linked child
 [*ParentApi*](doc/ParentApi.md) | [**postParentEncourage**](doc/ParentApi.md#postparentencourage) | **POST** /v2/parent/encourage | Send a preset cheer to a linked child
 [*QuizApi*](doc/QuizApi.md) | [**getQuizQuestions**](doc/QuizApi.md#getquizquestions) | **GET** /v2/quiz/questions | Fetch quiz questions in academic scope
 [*QuizApi*](doc/QuizApi.md) | [**postQuizStart**](doc/QuizApi.md#postquizstart) | **POST** /v2/quiz/start | Start a server-shuffled quiz session
@@ -91,6 +93,13 @@ Class | Method | HTTP request | Description
  - [ErrorResponse](doc/ErrorResponse.md)
  - [LeaderboardEntry](doc/LeaderboardEntry.md)
  - [LeaderboardResponse](doc/LeaderboardResponse.md)
+ - [ParentChild](doc/ParentChild.md)
+ - [ParentChildrenResponse](doc/ParentChildrenResponse.md)
+ - [ParentGlanceChild](doc/ParentGlanceChild.md)
+ - [ParentGlanceMoments](doc/ParentGlanceMoments.md)
+ - [ParentGlanceResponse](doc/ParentGlanceResponse.md)
+ - [ParentGlanceSnapshot](doc/ParentGlanceSnapshot.md)
+ - [ParentGlanceWeeklyDay](doc/ParentGlanceWeeklyDay.md)
  - [ProgressDecayTopic](doc/ProgressDecayTopic.md)
  - [ProgressKnowledgeGap](doc/ProgressKnowledgeGap.md)
  - [ProgressLearningVelocity](doc/ProgressLearningVelocity.md)

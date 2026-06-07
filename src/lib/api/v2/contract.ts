@@ -739,6 +739,169 @@ registry.registerPath({
   },
 });
 
+// ════════════════════════════════════════════════════════════════════════
+// Wave 2.4 — parent-facing consumer endpoints (mobile parent screen parity).
+//
+// Both reuse EXISTING parent data sources (no new aggregation):
+//   - GET /v2/parent/children → relationship domain listChildrenForGuardian()
+//     (the same guardian_student_links ∩ students read the web child-selector
+//     uses, status IN active/approved).
+//   - GET /v2/parent/glance   → the parent-portal Edge Function `get_child_dashboard`
+//     action (the SAME payload ParentGlanceHome consumes). The route shapes the
+//     Edge Function output into Snapshot + Moments + weeklyActivity.
+//
+// P5: grade is a string. P13: only parent-entitled child fields (name/grade) —
+// no email / phone / other PII.
+// ════════════════════════════════════════════════════════════════════════
+
+/** One linked child in GET /v2/parent/children. P13: name + grade only — no PII. */
+export const ParentChild = z
+  .object({
+    student_id: zUuid.openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+    name: z.string().nullable().openapi({ example: 'Asha' }),
+    // P5: grade is a string "6"–"12" (nullable when the profile has no grade yet).
+    grade: z.string().nullable().openapi({ example: '9' }),
+    board: z.string().nullable().optional().openapi({ example: 'CBSE' }),
+    last_active_at: z.string().nullable().optional().openapi({ example: '2026-06-06T09:00:00.000Z' }),
+  })
+  .openapi('ParentChild');
+
+/** Response for GET /v2/parent/children — the guardian's linked children. */
+export const ParentChildrenResponse = z
+  .object({
+    schemaVersion: z.literal(1),
+    children: z.array(ParentChild),
+  })
+  .openapi('ParentChildrenResponse');
+
+/** The selected child's identity header in the glance payload. P5: grade string. */
+export const ParentGlanceChild = z
+  .object({
+    student_id: zUuid,
+    name: z.string().nullable().openapi({ example: 'Asha' }),
+    grade: z.string().nullable().openapi({ example: '9' }),
+  })
+  .openapi('ParentGlanceChild');
+
+/**
+ * The weekly snapshot block. MIRRORS the `get_child_dashboard` stats the web
+ * ParentGlanceHome reads (xp/streak/accuracy/quizzes/minutes/avg_score) plus the
+ * derived weekly session count. All numbers come verbatim from the Edge Function.
+ */
+export const ParentGlanceSnapshot = z
+  .object({
+    sessions_this_week: z.number().int().min(0).openapi({ example: 4 }),
+    streak_days: z.number().int().min(0).openapi({ example: 7 }),
+    accuracy: z.number().nullable().optional().openapi({ example: 72 }),
+    avg_score: z.number().nullable().optional().openapi({ example: 68 }),
+    time_minutes: z.number().nullable().optional().openapi({ example: 120 }),
+    xp: z.number().nullable().optional().openapi({ example: 1450 }),
+    total_quizzes: z.number().nullable().optional().openapi({ example: 23 }),
+    total_chats: z.number().nullable().optional().openapi({ example: 11 }),
+  })
+  .openapi('ParentGlanceSnapshot');
+
+/**
+ * The Moments block — short parent-readable feed derived from the SAME existing
+ * `get_child_dashboard` fields (weekSummary / streak / bktMastery / insights)
+ * the web ParentGlanceHome derives its moments from. Plain strings; bilingual
+ * rendering is the client's job (P7) — the server sends English source lines.
+ */
+export const ParentGlanceMoments = z
+  .object({
+    highlights: z.array(z.string()).openapi({ example: ['Completed 4 quizzes this week.'] }),
+    concerns: z.array(z.string()).openapi({ example: [] }),
+    suggestion: z.string().nullable().optional().openapi({ example: 'A short daily session keeps the streak alive.' }),
+  })
+  .openapi('ParentGlanceMoments');
+
+/** One day in the weekly activity strip (from the Edge Function `dailyActivity`). */
+export const ParentGlanceWeeklyDay = z
+  .object({
+    label: z.string().openapi({ example: 'Mon' }),
+    active: z.boolean().openapi({ example: true }),
+    quizzes: z.number().int().min(0).openapi({ example: 2 }),
+  })
+  .openapi('ParentGlanceWeeklyDay');
+
+/** Response for GET /v2/parent/glance — one linked child's at-a-glance view. */
+export const ParentGlanceResponse = z
+  .object({
+    schemaVersion: z.literal(1),
+    child: ParentGlanceChild,
+    snapshot: ParentGlanceSnapshot,
+    moments: ParentGlanceMoments,
+    weeklyActivity: z.array(ParentGlanceWeeklyDay).optional(),
+  })
+  .openapi('ParentGlanceResponse');
+
+registry.registerPath({
+  method: 'get',
+  path: '/v2/parent/children',
+  operationId: 'getParentChildren',
+  summary: "List the authenticated guardian's linked children",
+  description:
+    "Returns the children linked to the authenticated guardian (guardian_student_links status IN active/approved, joined to students). Reuses the relationship domain listChildrenForGuardian read. P13: only name + grade(string,P5) are returned — no email/phone. Requires child.view_progress.",
+  tags: ['parent'],
+  security: SECURITY,
+  responses: {
+    200: {
+      description: 'The linked children.',
+      content: { 'application/json': { schema: ParentChildrenResponse } },
+    },
+    403: {
+      description: 'No guardian profile for this account.',
+      content: { 'application/json': { schema: ErrorResponse } },
+    },
+    500: {
+      description: 'Unexpected server error.',
+      content: { 'application/json': { schema: ErrorResponse } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/v2/parent/glance',
+  operationId: 'getParentGlance',
+  summary: 'At-a-glance view for one linked child',
+  description:
+    "Returns the Snapshot + Moments glance for one linked child (mirrors the web ParentGlanceHome). Reuses the parent-portal Edge Function `get_child_dashboard` payload — no new aggregation. Requires child.view_progress AND an approved guardian↔student link (403 otherwise). P13: only the parent-entitled child data.",
+  tags: ['parent'],
+  security: SECURITY,
+  request: {
+    query: z.object({
+      student_id: zUuid.openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'The child glance payload.',
+      content: { 'application/json': { schema: ParentGlanceResponse } },
+    },
+    400: {
+      description: 'Missing or invalid student_id.',
+      content: { 'application/json': { schema: ErrorResponse } },
+    },
+    403: {
+      description: 'No guardian profile, or not linked to this student.',
+      content: { 'application/json': { schema: ErrorResponse } },
+    },
+    404: {
+      description: 'No data available for this child.',
+      content: { 'application/json': { schema: ErrorResponse } },
+    },
+    502: {
+      description: 'The parent-portal data source failed.',
+      content: { 'application/json': { schema: ErrorResponse } },
+    },
+    500: {
+      description: 'Unexpected server error.',
+      content: { 'application/json': { schema: ErrorResponse } },
+    },
+  },
+});
+
 // ── Inferred TS types (convenient for route handlers to import) ─────────────
 export type TErrorResponse = z.infer<typeof ErrorResponse>;
 export type TSuccessAck = z.infer<typeof SuccessAck>;
@@ -758,3 +921,8 @@ export type TStudentProgressResponse = z.infer<typeof StudentProgressResponse>;
 export type TLeaderboardResponse = z.infer<typeof LeaderboardResponse>;
 export type TCurriculumResponse = z.infer<typeof CurriculumResponse>;
 export type TConceptResponse = z.infer<typeof ConceptResponse>;
+
+// Wave 2.4 inferred types.
+export type TParentChild = z.infer<typeof ParentChild>;
+export type TParentChildrenResponse = z.infer<typeof ParentChildrenResponse>;
+export type TParentGlanceResponse = z.infer<typeof ParentGlanceResponse>;

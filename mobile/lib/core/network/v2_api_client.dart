@@ -77,6 +77,15 @@ class V2ApiClient {
   /// Student surface (Wave 2.3b): `GET /v2/student/profile`,
   /// `GET /v2/student/progress`, `GET /v2/student/leaderboard`.
   StudentApi get studentApi => api.getStudentApi();
+
+  /// Parent surface (Wave 2.4): `GET /v2/parent/children`,
+  /// `GET /v2/parent/glance?student_id=`, `POST /v2/parent/encourage`.
+  /// Reached ONLY when `ApiConstants.useV2` is on AND the authenticated user is
+  /// a guardian (see [roleProvider] / the role-aware router fork). The same
+  /// Supabase Bearer token a student uses authenticates the guardian — the
+  /// server's RBAC (`child.view_progress` / `child.encourage`) + the
+  /// guardian↔student link gate every read.
+  ParentApi get parentApi => api.getParentApi();
 }
 
 /// Singleton provider for the generated `/v2` client. Kept app-scoped (no
