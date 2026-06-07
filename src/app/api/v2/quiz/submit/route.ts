@@ -38,7 +38,22 @@ import { logOpsEvent } from '@/lib/ops-events';
 import { validateBody } from '@/lib/validation';
 import { v2Success, v2Error } from '@/lib/api/v2/envelope';
 import { QuizSubmitRequest } from '@/lib/api/v2/contract';
-import { runQuizSubmitSideEffects } from '@/lib/quiz/submit-side-effects';
+import {
+  runQuizSubmitSideEffects,
+  type QuizSubmitOfflineMeta,
+} from '@/lib/quiz/submit-side-effects';
+
+/**
+ * Max age (hours) of an OFFLINE-captured attempt the server will still replay.
+ * Beyond this the drain is rejected 422 REPLAY_TOO_STALE. Named constant
+ * (feature-flaggable later if needed); 168h = 7 days. Assessment/architect
+ * approved. This gate uses capturedAt for AGE only — it NEVER derives attempt
+ * duration (P3 stays driven by totalTimeSeconds).
+ */
+const OFFLINE_REPLAY_MAX_STALENESS_HOURS = 168;
+
+/** Clock-skew tolerance: capturedAt may be at most this far in the future. */
+const OFFLINE_REPLAY_CLOCK_SKEW_MS = 5 * 60 * 1000; // 5 minutes
 
 // Shape returned by submit_quiz_results_v2 + cached idempotent rows.
 // IDENTICAL to /api/quiz/submit's QuizV2Result.
@@ -121,6 +136,121 @@ export async function POST(request: NextRequest) {
     return v2Error('Student ID mismatch', 403, 'STUDENT_ID_MISMATCH');
   }
 
+  // 4b. OFFLINE-REPLAY GATES (Wave 2.5.1). These run ONLY when the submit was
+  //     captured offline (attemptMode === 'offline_replay') and ALL run BEFORE
+  //     the RPC call. When online, none of this executes — the path below is
+  //     byte-identical to today. The RPC stays the sole grading authority: these
+  //     gates VERIFY the replay's freshness + shuffle integrity, they never grade
+  //     and never derive attempt duration (P3 uses totalTimeSeconds only).
+  let offlineMeta: QuizSubmitOfflineMeta | undefined;
+  if (body.attemptMode === 'offline_replay') {
+    const drainedAt = new Date();
+
+    // (1) capturedAt is REQUIRED for an offline replay.
+    if (!body.capturedAt) {
+      return v2Error(
+        'capturedAt is required for an offline replay',
+        400,
+        'OFFLINE_CAPTURED_AT_REQUIRED',
+      );
+    }
+    const capturedAt = new Date(body.capturedAt);
+
+    // (2) Clock-skew: capturedAt must not be implausibly in the future.
+    if (capturedAt.getTime() > drainedAt.getTime() + OFFLINE_REPLAY_CLOCK_SKEW_MS) {
+      return v2Error(
+        'capturedAt is in the future beyond the allowed skew',
+        422,
+        'REPLAY_CLOCK_INVALID',
+      );
+    }
+    // Clamp to now so a small forward skew does not produce a negative latency.
+    const effectiveCapturedAt = new Date(
+      Math.min(capturedAt.getTime(), drainedAt.getTime()),
+    );
+
+    // (3) Staleness: drained too long after capture → reject.
+    const ageHours =
+      (drainedAt.getTime() - effectiveCapturedAt.getTime()) / (1000 * 60 * 60);
+    if (ageHours > OFFLINE_REPLAY_MAX_STALENESS_HOURS) {
+      return v2Error(
+        'Offline attempt is too stale to replay',
+        422,
+        'REPLAY_TOO_STALE',
+      );
+    }
+
+    // (4) Device-summed duration consistency. totalTimeSeconds remains the SOLE
+    //     P3 timing source forwarded to the RPC — this is a cross-check only.
+    if (
+      body.clientCapturedTotalSeconds !== undefined &&
+      body.clientCapturedTotalSeconds !== body.totalTimeSeconds
+    ) {
+      return v2Error(
+        'clientCapturedTotalSeconds does not match totalTimeSeconds',
+        400,
+        'OFFLINE_TIME_INCONSISTENT',
+      );
+    }
+
+    // (5) Shuffle-map verification. The server NEVER grades against the client
+    //     map — it only asserts the client map equals the server-stored
+    //     quiz_session_shuffles snapshot element-for-element. Any mismatch fails
+    //     closed (422). A MISSING snapshot row is left to the existing RPC
+    //     session_not_started → 409 path (do not invent a new code here).
+    if (body.shuffleMapsClientGradedAgainst) {
+      const { data: shuffleRows } = await admin
+        .from('quiz_session_shuffles')
+        .select('question_id, shuffle_map')
+        .eq('session_id', body.sessionId);
+
+      // No snapshot at all → defer to the RPC's session_not_started path.
+      if (shuffleRows && shuffleRows.length > 0) {
+        const serverMapByQuestion = new Map<string, number[]>();
+        for (const row of shuffleRows as Array<{ question_id: string; shuffle_map: unknown }>) {
+          if (Array.isArray(row.shuffle_map)) {
+            serverMapByQuestion.set(row.question_id, row.shuffle_map as number[]);
+          }
+        }
+
+        for (const [questionId, clientMap] of Object.entries(
+          body.shuffleMapsClientGradedAgainst,
+        )) {
+          const serverMap = serverMapByQuestion.get(questionId);
+          // Missing the row for THIS question, or any element diverges → fail closed.
+          if (
+            !serverMap ||
+            serverMap.length !== clientMap.length ||
+            !clientMap.every((v, i) => v === serverMap[i])
+          ) {
+            logger.warn('v2.quiz.submit: offline shuffle-map mismatch', {
+              sessionId: body.sessionId,
+              questionId,
+            });
+            return v2Error(
+              'Client shuffle map does not match the server snapshot',
+              422,
+              'SHUFFLE_MAP_MISMATCH',
+            );
+          }
+        }
+      }
+    }
+
+    // Gates passed. Build the telemetry metadata threaded into the side-effects.
+    const queueLatencySeconds = Math.max(
+      0,
+      Math.round((drainedAt.getTime() - effectiveCapturedAt.getTime()) / 1000),
+    );
+    offlineMeta = {
+      attemptMode: 'offline_replay',
+      capturedAt: body.capturedAt,
+      drainedAt: drainedAt.toISOString(),
+      queueLatencySeconds,
+      ...(body.drainAttempt !== undefined ? { drainAttempt: body.drainAttempt } : {}),
+    };
+  }
+
   // 5. Map body.responses → RPC's expected jsonb shape (rename ONLY).
   //    IDENTICAL mapping to /api/quiz/submit.
   const rpcResponses = body.responses.map((r) => ({
@@ -189,6 +319,27 @@ export async function POST(request: NextRequest) {
           flagged: false,
           idempotent_replay: true,
         };
+        // Offline-sync telemetry MUST fire once per drain — including this
+        // idempotent replay (it measures replays). runQuizSubmitSideEffects'
+        // own idempotent_replay guard short-circuits ALL other side-effects
+        // (PostHog / spine / orchestrator), so a cached replay emits ONLY the
+        // offline-sync ops-event — never double-counting the funnels. When
+        // online (offlineMeta undefined) this is a no-op.
+        runQuizSubmitSideEffects(
+          admin,
+          auth.userId,
+          {
+            studentId: body.studentId,
+            sessionId: body.sessionId,
+            subject: body.subject,
+            topic: body.topic,
+            chapter: body.chapter,
+            totalTimeSeconds: body.totalTimeSeconds,
+            responses: body.responses,
+            offlineMeta,
+          },
+          replay,
+        );
         return v2Success(shapeResult(replay));
       }
       // else fall through to 503 — the cached row is on its way.
@@ -240,6 +391,9 @@ export async function POST(request: NextRequest) {
       chapter: body.chapter,
       totalTimeSeconds: body.totalTimeSeconds,
       responses: body.responses,
+      // Offline-sync telemetry (Wave 2.5.3). Undefined on the online path →
+      // no new ops-event, byte-identical online behavior.
+      offlineMeta,
     },
     rpcData,
   );

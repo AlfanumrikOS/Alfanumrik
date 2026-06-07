@@ -360,7 +360,31 @@ export const QuizSubmitResponseItem = z
   })
   .openapi('QuizSubmitResponseItem');
 
-/** Request body for POST /v2/quiz/submit. MIRRORS /api/quiz/submit's submitBodySchema. */
+/**
+ * A per-question displayed→canonical permutation. Each value is the canonical
+ * (question_bank) option index that the displayed slot maps to. It MUST be a
+ * true 4-permutation of {0,1,2,3} — exactly the four indices, no repeats. This
+ * is the client's record of the shuffle it graded against; the server VERIFIES
+ * it equals the server-stored `quiz_session_shuffles` snapshot (it never grades
+ * against it — P1/P3). Reject non-permutations at the Zod layer (defence in
+ * depth; the route also re-checks element-for-element against the server map).
+ */
+export const ShuffleMapEntry = z
+  .array(z.number().int().min(0).max(3))
+  .length(4)
+  .refine(
+    (arr) => new Set(arr).size === 4,
+    { message: 'shuffle map entry must be a permutation of {0,1,2,3} (no repeats)' },
+  )
+  .openapi('ShuffleMapEntry', { example: [2, 0, 3, 1] });
+
+/**
+ * Request body for POST /v2/quiz/submit. MIRRORS /api/quiz/submit's
+ * submitBodySchema, plus 5 OPTIONAL backward-compatible offline-replay fields
+ * (Wave 2.5.1). When `attemptMode` is absent or `'online'`, the route behaves
+ * BYTE-IDENTICALLY to today (no offline field gates fire). The RPC remains the
+ * sole grading authority — NO score/correct/XP field is ever accepted here.
+ */
 export const QuizSubmitRequest = z
   .object({
     sessionId: zUuid,
@@ -371,6 +395,61 @@ export const QuizSubmitRequest = z
     grade: zGrade.optional(),
     topic: z.string().nullable().optional(),
     chapter: z.number().int().nullable().optional(),
+
+    // ── Wave 2.5.1 offline-replay fields (ALL optional, backward-compatible) ──
+
+    /**
+     * Branch selector. Absent → `'online'` (today's path, byte-identical). When
+     * `'offline_replay'` the route runs the offline gates BEFORE the RPC call.
+     */
+    attemptMode: z
+      .enum(['online', 'offline_replay'])
+      .default('online')
+      .openapi({ example: 'online' }),
+
+    /**
+     * Device completion time (ISO-8601 with offset). REQUIRED when
+     * attemptMode === 'offline_replay' (the route returns 400 if missing then).
+     * Used ONLY for clock-skew + staleness gates and telemetry — NEVER to
+     * derive attempt duration (P3 stays driven by totalTimeSeconds).
+     */
+    capturedAt: z
+      .string()
+      .datetime({ offset: true })
+      .optional()
+      .openapi({ example: '2026-06-06T09:00:00.000+05:30' }),
+
+    /**
+     * Device-summed attempt duration as the client recorded it. If present and
+     * !== totalTimeSeconds the route returns 400 OFFLINE_TIME_INCONSISTENT.
+     * This is a consistency check only — totalTimeSeconds remains the single
+     * P3 timing source forwarded to the RPC.
+     */
+    clientCapturedTotalSeconds: z
+      .number()
+      .int()
+      .min(0)
+      .max(7200)
+      .optional()
+      .openapi({ example: 120 }),
+
+    /**
+     * Per-question displayed→canonical permutation the client graded against.
+     * Keyed by question_id (UUID). The server VERIFIES each entry equals the
+     * server-stored quiz_session_shuffles snapshot element-for-element; any
+     * mismatch fails closed (422 SHUFFLE_MAP_MISMATCH). The server NEVER grades
+     * against this map.
+     */
+    shuffleMapsClientGradedAgainst: z
+      .record(zUuid, ShuffleMapEntry)
+      .optional()
+      .openapi({ example: { '550e8400-e29b-41d4-a716-446655440000': [2, 0, 3, 1] } }),
+
+    /**
+     * Telemetry retry counter — which drain attempt this submission is (1-based).
+     * Rides ops_events for offline-sync observability; never affects grading.
+     */
+    drainAttempt: z.number().int().min(1).optional().openapi({ example: 1 }),
   })
   .openapi('QuizSubmitRequest');
 
@@ -632,15 +711,16 @@ registry.registerPath({
   operationId: 'postQuizSubmit',
   summary: 'Submit a quiz for server-authoritative grading',
   description:
-    'Thin pass-through to the submit_quiz_results_v2 RPC, which owns P1 scoring, P2 XP + 200/day cap, all 3 P3 anti-cheat checks, and P4 atomicity. The route does NO score / XP / anti-cheat math — it forwards inputs and returns the RPC result verbatim. Requires an Idempotency-Key (UUID) header and quiz.attempt. studentId is cross-checked against the JWT (403 on mismatch).',
+    'Thin pass-through to the submit_quiz_results_v2 RPC, which owns P1 scoring, P2 XP + 200/day cap, all 3 P3 anti-cheat checks, and P4 atomicity. The route does NO score / XP / anti-cheat math — it forwards inputs and returns the RPC result verbatim. Requires an Idempotency-Key (UUID) header and quiz.attempt. studentId is cross-checked against the JWT (403 on mismatch). When attemptMode === offline_replay the route runs offline gates BEFORE the RPC: capturedAt required (400 OFFLINE_CAPTURED_AT_REQUIRED), clock-skew (422 REPLAY_CLOCK_INVALID), staleness >168h (422 REPLAY_TOO_STALE), clientCapturedTotalSeconds mismatch (400 OFFLINE_TIME_INCONSISTENT), and shuffle-map verification against the server snapshot (422 SHUFFLE_MAP_MISMATCH). Online submissions are byte-identical to today — no offline gate fires.',
   tags: ['quiz'],
   security: SECURITY,
   request: { body: { content: { 'application/json': { schema: QuizSubmitRequest } } } },
   responses: {
     200: { description: 'Graded result (server-authoritative).', content: { 'application/json': { schema: QuizSubmitResult } } },
-    400: { description: 'Missing/invalid Idempotency-Key or body.', content: { 'application/json': { schema: ErrorResponse } } },
+    400: { description: 'Missing/invalid Idempotency-Key or body; missing capturedAt or clientCapturedTotalSeconds mismatch on an offline replay.', content: { 'application/json': { schema: ErrorResponse } } },
     403: { description: 'Missing quiz.attempt or studentId mismatch.', content: { 'application/json': { schema: ErrorResponse } } },
     409: { description: 'session_not_started — client should restart the quiz.', content: { 'application/json': { schema: ErrorResponse } } },
+    422: { description: 'Offline replay rejected: REPLAY_CLOCK_INVALID, REPLAY_TOO_STALE, or SHUFFLE_MAP_MISMATCH.', content: { 'application/json': { schema: ErrorResponse } } },
     503: { description: 'Transient scoring failure — retry with same Idempotency-Key.', content: { 'application/json': { schema: ErrorResponse } } },
   },
 });

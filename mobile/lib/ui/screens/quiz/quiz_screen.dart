@@ -16,6 +16,12 @@ class QuizScreen extends ConsumerWidget {
     final quiz = ref.watch(quizProvider);
     final student = ref.watch(studentProvider).valueOrNull;
 
+    // Wave 2.5.2: attempt was completed offline and queued — show the
+    // "saved offline, will sync" state instead of a score.
+    if (quiz.savedOffline) {
+      return _SavedOfflineScreen(quiz: quiz);
+    }
+
     // Show result screen
     if (quiz.result != null) {
       return _ResultScreen(quiz: quiz);
@@ -562,6 +568,68 @@ class _SessionExpiredScreen extends ConsumerWidget {
                     backgroundColor: AppColors.warning,
                     foregroundColor: Colors.white,
                   ),
+                  child: Text(cta),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Wave 2.5.2: shown when a quiz attempt was completed OFFLINE and queued for
+/// later drain. No score is shown — grading is server-authoritative and happens
+/// when connectivity returns and the queue drains. Bilingual (P7).
+class _SavedOfflineScreen extends ConsumerWidget {
+  final QuizState quiz;
+
+  const _SavedOfflineScreen({required this.quiz});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isHi = _isHindi(context);
+
+    final title = isHi ? 'ऑफ़लाइन सहेजा गया' : 'Saved Offline';
+    final body = isHi
+        ? 'इंटरनेट न होने पर आपकी क्विज़ सहेज ली गई है। ऑनलाइन होते ही यह अपने-आप सिंक हो जाएगी और आपका स्कोर दिखेगा।'
+        : "Saved offline — we'll sync this quiz and show your score when you're back online.";
+    final cta = isHi ? 'एक और क्विज़ आज़माएँ' : 'Try Another Quiz';
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('📡', style: TextStyle(fontSize: 52)),
+                const SizedBox(height: 16),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  body,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textSecondary,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                ElevatedButton(
+                  onPressed: () => ref.read(quizProvider.notifier).reset(),
                   child: Text(cta),
                 ),
               ],

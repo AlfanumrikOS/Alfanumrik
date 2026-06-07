@@ -1013,11 +1013,36 @@
       },
       "QuizSubmitRequest": {
         "properties": {
+          "attemptMode": {
+            "default": "online",
+            "enum": [
+              "online",
+              "offline_replay"
+            ],
+            "example": "online",
+            "type": "string"
+          },
+          "capturedAt": {
+            "example": "2026-06-06T09:00:00.000+05:30",
+            "format": "date-time",
+            "type": "string"
+          },
           "chapter": {
             "type": [
               "integer",
               "null"
             ]
+          },
+          "clientCapturedTotalSeconds": {
+            "example": 120,
+            "maximum": 7200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "drainAttempt": {
+            "example": 1,
+            "minimum": 1,
+            "type": "integer"
           },
           "grade": {
             "pattern": "^(6|7|8|9|10|11|12)$",
@@ -1034,6 +1059,20 @@
           "sessionId": {
             "format": "uuid",
             "type": "string"
+          },
+          "shuffleMapsClientGradedAgainst": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ShuffleMapEntry"
+            },
+            "example": {
+              "550e8400-e29b-41d4-a716-446655440000": [
+                2,
+                0,
+                3,
+                1
+              ]
+            },
+            "type": "object"
           },
           "studentId": {
             "format": "uuid",
@@ -1159,6 +1198,20 @@
           "questions"
         ],
         "type": "object"
+      },
+      "ShuffleMapEntry": {
+        "example": [
+          2,
+          0,
+          3,
+          1
+        ],
+        "items": {
+          "maximum": 3,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": "array"
       },
       "StudentProfileResponse": {
         "properties": {
@@ -2056,7 +2109,7 @@
     },
     "/v2/quiz/submit": {
       "post": {
-        "description": "Thin pass-through to the submit_quiz_results_v2 RPC, which owns P1 scoring, P2 XP + 200/day cap, all 3 P3 anti-cheat checks, and P4 atomicity. The route does NO score / XP / anti-cheat math — it forwards inputs and returns the RPC result verbatim. Requires an Idempotency-Key (UUID) header and quiz.attempt. studentId is cross-checked against the JWT (403 on mismatch).",
+        "description": "Thin pass-through to the submit_quiz_results_v2 RPC, which owns P1 scoring, P2 XP + 200/day cap, all 3 P3 anti-cheat checks, and P4 atomicity. The route does NO score / XP / anti-cheat math — it forwards inputs and returns the RPC result verbatim. Requires an Idempotency-Key (UUID) header and quiz.attempt. studentId is cross-checked against the JWT (403 on mismatch). When attemptMode === offline_replay the route runs offline gates BEFORE the RPC: capturedAt required (400 OFFLINE_CAPTURED_AT_REQUIRED), clock-skew (422 REPLAY_CLOCK_INVALID), staleness >168h (422 REPLAY_TOO_STALE), clientCapturedTotalSeconds mismatch (400 OFFLINE_TIME_INCONSISTENT), and shuffle-map verification against the server snapshot (422 SHUFFLE_MAP_MISMATCH). Online submissions are byte-identical to today — no offline gate fires.",
         "operationId": "postQuizSubmit",
         "requestBody": {
           "content": {
@@ -2086,7 +2139,7 @@
                 }
               }
             },
-            "description": "Missing/invalid Idempotency-Key or body."
+            "description": "Missing/invalid Idempotency-Key or body; missing capturedAt or clientCapturedTotalSeconds mismatch on an offline replay."
           },
           "403": {
             "content": {
@@ -2107,6 +2160,16 @@
               }
             },
             "description": "session_not_started — client should restart the quiz."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Offline replay rejected: REPLAY_CLOCK_INVALID, REPLAY_TOO_STALE, or SHUFFLE_MAP_MISMATCH."
           },
           "503": {
             "content": {

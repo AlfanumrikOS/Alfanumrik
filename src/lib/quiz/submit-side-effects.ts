@@ -53,6 +53,26 @@ export interface QuizSubmitSideEffectResult {
   xp_capped?: boolean;
 }
 
+/**
+ * Offline-replay telemetry metadata (Wave 2.5.3). Present ONLY when the submit
+ * arrived via attemptMode === 'offline_replay'. When absent (online path) NO
+ * new ops-event is emitted — the online side-effects path stays byte-identical.
+ *
+ * METADATA ONLY (P13): no answer/question text, no PII.
+ */
+export interface QuizSubmitOfflineMeta {
+  /** Branch selector — only 'offline_replay' rows carry this metadata block. */
+  attemptMode: 'offline_replay';
+  /** Device completion time (ISO-8601). NOT used for any duration math (P3). */
+  capturedAt: string;
+  /** Server-side drain timestamp (ISO-8601), set at route entry. */
+  drainedAt: string;
+  /** max(0, round((drainedAt - capturedAt)/1000)) — computed server-side. */
+  queueLatencySeconds: number;
+  /** Telemetry retry counter (1-based), if the client sent one. */
+  drainAttempt?: number;
+}
+
 /** Normalized request facts the side-effects read (same for both routes). */
 export interface QuizSubmitSideEffectInput {
   studentId: string;
@@ -62,6 +82,12 @@ export interface QuizSubmitSideEffectInput {
   chapter?: number | null;
   totalTimeSeconds: number;
   responses: Array<{ question_id: string; time_taken_seconds: number }>;
+  /**
+   * Offline-replay telemetry metadata. Absent on the online path. When present,
+   * an `offline-sync` ops-event fires for EVERY drain — including idempotent
+   * replays (it measures them), BEFORE the idempotent_replay early-return.
+   */
+  offlineMeta?: QuizSubmitOfflineMeta;
 }
 
 /**
@@ -84,12 +110,50 @@ export function runQuizSubmitSideEffects(
   input: QuizSubmitSideEffectInput,
   result: QuizSubmitSideEffectResult,
 ): void {
+  // OFFLINE-SYNC TELEMETRY (Wave 2.5.3) — MUST fire BEFORE the idempotent-replay
+  // early-return: the whole point is to measure replays (queue latency,
+  // staleness, drain attempts), so it has to run on cached replays too. Only
+  // fires when offline metadata is present; the online path emits nothing new
+  // here, preserving its byte-identical behavior. METADATA ONLY (P13).
+  if (input.offlineMeta) {
+    emitOfflineSyncEvent(input, result, input.offlineMeta);
+  }
+
   // GUARD: replays must not double-count / double-publish / double-dispatch.
   if (result.idempotent_replay) return;
 
   emitPostHogEvents(input, result);
   emitSpineEvents(admin, authUserId, input, result);
   dispatchOrchestratorBridge(authUserId, input, result);
+}
+
+// ─── 0. Offline-sync telemetry (Wave 2.5.3) ──────────────────────────────────
+// Rides ops_events (NOT the ADR-005 spine — architect condition). One
+// 'learner_offline_sync_replay' event per drain, metadata only. Fires for
+// fresh grades AND idempotent replays (it measures both).
+
+function emitOfflineSyncEvent(
+  input: QuizSubmitSideEffectInput,
+  result: QuizSubmitSideEffectResult,
+  meta: QuizSubmitOfflineMeta,
+): void {
+  void logOpsEvent({
+    category: 'offline-sync',
+    severity: 'info',
+    source: 'lib/quiz/submit-side-effects.ts',
+    message: 'learner_offline_sync_replay',
+    subjectType: 'student',
+    subjectId: input.studentId,
+    context: {
+      schemaVersion: 1,
+      sessionId: result.session_id ?? input.sessionId,
+      capturedAt: meta.capturedAt,
+      drainedAt: meta.drainedAt,
+      queueLatencySeconds: meta.queueLatencySeconds,
+      wasIdempotentReplay: result.idempotent_replay,
+      drainAttempt: meta.drainAttempt ?? null,
+    },
+  });
 }
 
 // ─── 1. PostHog events (server-side) ─────────────────────────────────────────

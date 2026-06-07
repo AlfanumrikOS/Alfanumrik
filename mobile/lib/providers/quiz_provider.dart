@@ -2,11 +2,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/constants/api_constants.dart';
+import '../core/network/network_info.dart';
 import '../core/network/v2_api_client.dart';
+import '../data/models/offline_quiz_models.dart';
 import '../data/models/quiz_question.dart';
 import '../data/repositories/quiz_repository.dart';
 import 'auth_provider.dart';
 import 'dashboard_provider.dart';
+import 'offline_quiz_provider.dart';
 
 const _uuidGen = Uuid();
 
@@ -65,6 +68,12 @@ class QuizState {
   /// for a "Quiz session expired — please restart" CTA.
   final bool sessionExpired;
 
+  /// Wave 2.5.2: set to true when the attempt was completed OFFLINE and queued
+  /// for later drain instead of submitted immediately. The screen shows a
+  /// bilingual "Saved offline — will sync when you're back online" state
+  /// instead of a score. Only reachable on the `useV2`-ON path.
+  final bool savedOffline;
+
   const QuizState({
     this.questions = const [],
     this.currentIndex = 0,
@@ -80,6 +89,7 @@ class QuizState {
     this.serverSessionId,
     this.idempotencyKey,
     this.sessionExpired = false,
+    this.savedOffline = false,
   });
 
   QuizState copyWith({
@@ -97,6 +107,7 @@ class QuizState {
     String? serverSessionId,
     String? idempotencyKey,
     bool? sessionExpired,
+    bool? savedOffline,
   }) {
     return QuizState(
       questions: questions ?? this.questions,
@@ -114,6 +125,7 @@ class QuizState {
       serverSessionId: serverSessionId ?? this.serverSessionId,
       idempotencyKey: idempotencyKey ?? this.idempotencyKey,
       sessionExpired: sessionExpired ?? this.sessionExpired,
+      savedOffline: savedOffline ?? this.savedOffline,
     );
   }
 
@@ -269,7 +281,7 @@ class QuizNotifier extends Notifier<QuizState> {
   /// is set. Score, XP, anti-cheat, atomicity (P1-P4) are all enforced
   /// server-side.
   Future<void> submitQuiz() async {
-    if (state.isSubmitting || state.result != null) return;
+    if (state.isSubmitting || state.result != null || state.savedOffline) return;
 
     final student = ref.read(studentProvider).valueOrNull;
     if (student == null) return;
@@ -292,6 +304,58 @@ class QuizNotifier extends Notifier<QuizState> {
         'selected_displayed_index': state.answers[i] ?? -1,
         'time_spent': finalTimes[i] ?? 0,
       });
+    }
+
+    // ── Wave 2.5.2 OFFLINE branch ─────────────────────────────────────────
+    // When the device is OFFLINE at completion AND we're on the useV2 path
+    // AND we have a server session id (required for server-authoritative
+    // grading), queue the attempt instead of submitting. The coordinator
+    // drains it when connectivity returns. When ONLINE — or when useV2 is OFF —
+    // this whole block is skipped and submission is byte-identical to today.
+    final coordinator =
+        ApiConstants.useV2 ? ref.read(offlineQuizCoordinatorProvider) : null;
+    final sessionId = state.serverSessionId;
+    if (coordinator != null &&
+        sessionId != null &&
+        sessionId.isNotEmpty &&
+        !await hasConnection()) {
+      // capturedAt: device wall-clock at COMPLETION, captured ONCE here and
+      // stored immutably (P-obligation 2). The idempotencyKey was generated
+      // ONCE in startQuiz() and is reused verbatim — NEVER regenerated.
+      final capturedAt = DateTime.now().toUtc().toIso8601String();
+      final attempt = QueuedQuizAttempt(
+        localId: _uuidGen.v4(),
+        sessionId: sessionId,
+        studentId: student.id,
+        subject: state.subject ?? '',
+        grade: student.grade,
+        responses: responses
+            .map((r) => OfflineResponse(
+                  questionId: r['question_id'] as String,
+                  selectedDisplayedIndex:
+                      (r['selected_displayed_index'] as num?)?.toInt() ?? -1,
+                  timeSpent: (r['time_spent'] as num?)?.toInt() ?? 0,
+                ))
+            .toList(growable: false),
+        // Same device-summed total used as totalTimeSeconds AND
+        // clientCapturedTotalSeconds (server cross-checks equality — P3).
+        totalTimeSeconds: timeTaken.inSeconds,
+        capturedAt: capturedAt,
+        // IMMUTABLE grading token — generated once at startQuiz, reused on
+        // every drain. Fallback to a fresh v4 ONLY if startQuiz somehow left it
+        // null (should never happen on the v2 path).
+        idempotencyKey: state.idempotencyKey ?? _uuidGen.v4(),
+        // Shuffle maps stay server-side (P6); the bundle never carries them, so
+        // none are sent and the server verifies via its own snapshot.
+        shuffleMaps: const {},
+        drainAttempt: 0,
+      );
+
+      await coordinator.enqueueCompletedAttempt(attempt);
+
+      // Show the "saved offline" state — NOT a score (grading is deferred).
+      state = state.copyWith(isSubmitting: false, savedOffline: true);
+      return;
     }
 
     final repo = ref.read(quizRepositoryProvider);

@@ -1966,3 +1966,100 @@ Pre-REG-90: 57 entries. CI-hardening mobile RCA adds REG-90 (mobile APK-compile 
 Android toolchain-drift gate).
 
 **Total: 58 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+
+## Offline quiz replay invariant safety (Phase 2 Wave 2.5) — REG-91
+
+Source: Phase 2 Wave 2.5 "offline-first quiz" — 2.5.1 server-side offline-replay
+gates + 2.5.3 offline-sync telemetry (`src/app/api/v2/quiz/submit/route.ts`,
+`src/lib/quiz/submit-side-effects.ts`, the 5 offline fields on `QuizSubmitRequest`
+in `src/lib/api/v2/contract.ts`) and 2.5.2 the Flutter offline capture → queue →
+reconnect-drain (`mobile/lib/data/repositories/offline_drain_service.dart`,
+`offline_quiz_store.dart`, `quiz_repository.dart:buildOfflineSubmitRequest`,
+`mobile/lib/data/models/offline_quiz_models.dart`).
+
+A quiz captured while OFFLINE and drained later MUST yield the SAME
+server-authoritative result as if it were submitted online — same score (P1),
+same XP including the 200/day cap (P2), same anti-cheat verdict (P3), graded
+against the SAME server snapshot, never a client shuffle map (P6) — and MUST NOT
+double-count on a re-drain (P2). The load-bearing safety properties:
+
+  - **Grading is unchanged across the offline gap.** The offline branch is a thin
+    pre-check in front of the SAME `submit_quiz_results_v2` RPC. It forwards the
+    device-summed `totalTimeSeconds` as `p_time` and sends NO `score`/`correct`/`xp`
+    field — the RPC stays the sole grading authority. `capturedAt` is used ONLY for
+    clock-skew + staleness gating and queue-latency telemetry; it is NEVER used to
+    derive the P3 attempt duration (no wall-clock derivation from capturedAt/drainedAt).
+  - **Immutable Idempotency-Key per attempt ⇒ no double-count (P2).** The key is
+    minted ONCE at capture and reused VERBATIM on every drain/retry; the server's
+    unique-violation replay path returns the cached row (`idempotent_replay: true`)
+    with ZERO additional XP, ZERO daily-cap consumption, and fires none of the
+    PostHog / spine / orchestrator side-effects. A regenerated key would re-grant XP.
+  - **Fail-closed shuffle integrity (P6).** When the client sends the maps it graded
+    its preview against, the server only ASSERTS they equal the server-stored
+    `quiz_session_shuffles` snapshot element-for-element — it never grades against the
+    client map. Any divergence → 422 `SHUFFLE_MAP_MISMATCH` and the RPC is NEVER
+    called; a missing snapshot defers to the RPC's `session_not_started` → 409.
+  - **Telemetry is metadata-only (P13).** `learner_offline_sync_replay` fires exactly
+    once per drain (fresh grades AND idempotent replays, BEFORE the replay
+    early-return) carrying IDs + timestamps + queue latency only — never answer or
+    question text.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-91 | `offline_quiz_replay_invariant_safety` | **(a) Same score/XP/anti-cheat (P1/P2/P3) — no wall-clock derivation:** an `attemptMode: 'offline_replay'` submit calls `submit_quiz_results_v2` with `p_time === totalTimeSeconds` and forwards NO `p_correct`/`p_score`/`p_xp`/`p_captured_at`/`p_attempt_mode` — grading is the identical RPC, so score/XP/verdict match online byte-for-byte; the online path (no `attemptMode`) is byte-identical and emits no offline-sync event. **(b) No double-count on re-drain (P2):** a unique-violation replay with the SAME Idempotency-Key returns the cached row (`idempotent_replay: true`) and fires ZERO `quiz_graded` / `xp_awarded` / `publishEvent` / orchestrator dispatch (no added XP, no daily-cap consumption); the mobile drain reuses the key VERBATIM across a 503-retain → success sequence (`{immutable-key-a}` on both drains) and `withDrainAttempt` bumps ONLY the telemetry counter, never the key/capturedAt/timings. **(c) Fail-closed shuffle integrity (P6):** a client map diverging from the server `quiz_session_shuffles` snapshot → 422 `SHUFFLE_MAP_MISMATCH` with the RPC NEVER called; a matching map grades normally; a missing snapshot defers to the RPC `session_not_started` → 409; the mobile bundle re-pins `correctIndex` to -1 on read-back and omits the map when none was captured (no fabricated `SHUFFLE_MAP_MISMATCH`). **(d) capturedAt gates only (P3 boundary):** capturedAt missing → 400 `OFFLINE_CAPTURED_AT_REQUIRED`, >5min future → 422 `REPLAY_CLOCK_INVALID`, >168h old → 422 `REPLAY_TOO_STALE`, `clientCapturedTotalSeconds !== totalTimeSeconds` → 400 `OFFLINE_TIME_INCONSISTENT` — every gate runs BEFORE the RPC. **(e) Telemetry metadata-only (P13):** `learner_offline_sync_replay` fires exactly once per drain with `wasIdempotentReplay` true AND false, BEFORE the replay early-return, carrying schemaVersion/sessionId/capturedAt/drainedAt/queueLatencySeconds/drainAttempt only — a `JSON.stringify` negative match proves no `time_taken_seconds` / `selected_option` leaks. | `src/__tests__/api/v2/quiz-submit.test.ts` (offline-replay gates + offline-sync telemetry describe blocks: P3 `p_time` source, 6 gate codes, shuffle match/mismatch/missing-snapshot, replay no-double-count, `wasIdempotentReplay` true/false, P13 negative match) + `src/__tests__/lib/quiz/submit-side-effects-offline.test.ts` (offline-sync event fires before the replay early-return; online emits none; metadata-only envelope) + `mobile/test/data/repositories/offline_drain_service_test.dart` (503-retain keeps the key UNCHANGED across drains; 409/422 discard; FIFO + serialization) + `mobile/test/data/repositories/offline_submit_request_test.dart` (`p_time`/`clientCapturedTotalSeconds` parity; omits/populates shuffle maps) + `mobile/test/data/models/offline_quiz_models_test.dart` (`withDrainAttempt` immutable key — P2; correctIndex re-pinned to -1 — P6) | E |
+
+### Pinned tests
+
+- `src/__tests__/api/v2/quiz-submit.test.ts::POST /api/v2/quiz/submit — offline-replay gates (Wave 2.5.1)::happy path forwards the SAME RPC args (P3 source = totalTimeSeconds, no wall-clock)`
+- `src/__tests__/api/v2/quiz-submit.test.ts::POST /api/v2/quiz/submit — offline-replay gates (Wave 2.5.1)::client shuffle map diverging from the server snapshot → 422 SHUFFLE_MAP_MISMATCH (no grading)`
+- `src/__tests__/api/v2/quiz-submit.test.ts::POST /api/v2/quiz/submit — offline-sync telemetry (Wave 2.5.3)::emits learner_offline_sync_replay with wasIdempotentReplay=true on a cached replay`
+- `src/__tests__/lib/quiz/submit-side-effects-offline.test.ts::runQuizSubmitSideEffects — offline-sync telemetry::offline idempotent replay STILL emits the event (fires BEFORE the early-return)`
+- `mobile/test/data/repositories/offline_drain_service_test.dart::drain::503 RETAINS the attempt and the idempotency key is UNCHANGED across drains (P2 — never regenerate the key)`
+- `mobile/test/data/models/offline_quiz_models_test.dart::QueuedQuizAttempt::withDrainAttempt bumps ONLY the counter — key + capturedAt + timings unchanged (P2 immutable idempotency key)`
+
+### Invariants covered by this section
+
+- P1 (score accuracy) — the offline path forwards inputs to the SAME
+  `submit_quiz_results_v2` RPC; the route does no score math, so an offline replay
+  scores identically to an online submit. Extends REG-45/REG-51/REG-52/REG-53.
+- P2 (XP economy / no double-count) — the immutable Idempotency-Key per attempt
+  guarantees a re-drain returns the cached row with zero additional XP and zero
+  daily-cap consumption; the mobile key-immutability tests prove the client never
+  regenerates the key on retry. Extends REG-48/REG-62.
+- P3 (anti-cheat) — `totalTimeSeconds` remains the SOLE timing source forwarded to
+  the RPC across the offline gap; `capturedAt` is used only for skew/staleness gating
+  and telemetry, NEVER to derive attempt duration. The 3-rule verdict is the RPC's.
+- P6 (question quality / grading integrity) — the server never grades against a
+  client shuffle map; it fails closed (422) on any snapshot divergence and the
+  offline bundle never carries a correct index (re-pinned to -1). Extends
+  REG-39/REG-51/REG-53.
+- P13 (data privacy) — `learner_offline_sync_replay` is metadata-only; no answer or
+  question text crosses into ops_events. Extends REG-64/REG-68.
+
+### Notes on test strategy
+
+REG-91 spans the full offline round-trip with the **contract/parity pattern** used by
+REG-87/REG-88/REG-89: the web route tests mock only the seams (`authorizeRequest`,
+`supabase-admin`, the JWT-bound RPC client, and the leaf side-effect modules
+`posthog/server` + `state/events/publish` + the orchestrator bridge) so the REAL
+gate logic and the REAL `runQuizSubmitSideEffects` orchestration run, then assert on
+the observable contract — the exact RPC args, the status/code per gate, which
+side-effects fired, and a `JSON.stringify` negative match for the P13 boundary. The
+mobile side uses a real Hive-backed store on a temp dir plus a fake submitter that
+records every `(localId, key, drainAttempt)` it sees, so the immutable-key invariant
+(the single most important P2 rule) is proven end-to-end against the actual FIFO
+queue + drain loop rather than a stub. The two halves meet at the wire shape:
+`buildOfflineSubmitRequest` produces exactly the body the route's gates consume.
+
+No live Supabase or device is needed; the whole entry runs green in CI today
+(web Vitest + Dart `flutter test`). If a future change derives attempt duration from
+`capturedAt`, accepts a client-supplied score/xp field, grades against the client
+shuffle map, regenerates the Idempotency-Key on retry, or leaks answer text into the
+offline-sync event, the suite fails and quality MUST reject.
+
+### Catalog total
+
+Pre-Wave-2.5: 58 entries. Phase 2 Wave 2.5 (offline-first quiz) adds REG-91
+(offline quiz replay invariant safety — P1/P2/P3/P6/P13).
+
+**Total: 59 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)

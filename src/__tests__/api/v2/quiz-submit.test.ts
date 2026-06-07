@@ -29,7 +29,8 @@ vi.mock('@/lib/rbac', () => ({ authorizeRequest: (...a: unknown[]) => _authorize
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
-vi.mock('@/lib/ops-events', () => ({ logOpsEvent: vi.fn().mockResolvedValue(undefined) }));
+const logOpsEventMock = vi.fn().mockResolvedValue(undefined);
+vi.mock('@/lib/ops-events', () => ({ logOpsEvent: (...a: unknown[]) => logOpsEventMock(...a) }));
 
 // ── Side-effect dependency mocks (mirror /api/quiz/submit's tests) ──────────
 // runQuizSubmitSideEffects() (the SHARED post-submit code path) fans out to
@@ -64,6 +65,10 @@ const IDEMPOTENCY_KEY = '55555555-5555-4555-8555-555555555555';
 
 let _studentLookup: { data: { id: string } | null } = { data: { id: STUDENT_A } };
 let _cachedRow: { data: Record<string, unknown> | null } = { data: null };
+// Server-stored quiz_session_shuffles snapshot rows (Wave 2.5.1 offline gate).
+let _shuffleRows: { data: Array<{ question_id: string; shuffle_map: number[] }> | null } = {
+  data: null,
+};
 
 function adminFromMock(table: string) {
   const chain: Record<string, unknown> = {};
@@ -73,6 +78,16 @@ function adminFromMock(table: string) {
   chain.maybeSingle = () =>
     Promise.resolve(table === 'quiz_sessions' ? _cachedRow : _studentLookup);
   chain.single = () => Promise.resolve(_studentLookup);
+  // The quiz_session_shuffles read terminates on `.eq()` (no maybeSingle), so
+  // the chain itself must be awaitable → make it a thenable resolving to the
+  // snapshot rows for that table.
+  chain.then = (
+    resolve: (v: unknown) => unknown,
+    reject?: (e: unknown) => unknown,
+  ) => {
+    const value = table === 'quiz_session_shuffles' ? _shuffleRows : { data: null };
+    return Promise.resolve(value).then(resolve, reject);
+  };
   return chain;
 }
 
@@ -133,6 +148,7 @@ beforeEach(async () => {
   setAuthorized();
   _studentLookup = { data: { id: STUDENT_A } };
   _cachedRow = { data: null };
+  _shuffleRows = { data: null };
   _rpcResult = { data: null, error: null };
   posthogCaptureMock.mockResolvedValue(undefined);
   publishEventMock.mockResolvedValue({ published: false, reason: 'flag_off' });
@@ -447,5 +463,240 @@ describe('POST /api/v2/quiz/submit — post-submit side-effect parity (Wave 2.3)
     expect(posthogCaptureMock.mock.calls.filter((c) => c[0] === 'xp_awarded')).toHaveLength(0);
     expect(publishEventMock).not.toHaveBeenCalled();
     expect(maybeDispatchMock).not.toHaveBeenCalled();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Wave 2.5.1 + 2.5.3 — OFFLINE-REPLAY gates + offline-sync telemetry.
+//
+// The offline branch fires ONLY when attemptMode === 'offline_replay'. All
+// gates run BEFORE the RPC. The RPC remains the sole grading authority — no
+// score/correct/XP field is ever accepted; the P3 source stays totalTimeSeconds
+// (NEVER a wall-clock derivation). Online submissions are byte-identical.
+// ════════════════════════════════════════════════════════════════════════════
+
+const FRESH = {
+  session_id: SESSION_ID,
+  score_percent: 80,
+  xp_earned: 100,
+  correct: 8,
+  total: 10,
+  flagged: false,
+  idempotent_replay: false,
+};
+
+/** A valid offline_replay body. Overrides merge over the offline defaults. */
+function offlineBody(overrides: Record<string, unknown> = {}) {
+  return {
+    sessionId: SESSION_ID,
+    studentId: STUDENT_A,
+    responses: [{ question_id: QUESTION_ID, selected_option: 2, time_taken_seconds: 7 }],
+    totalTimeSeconds: 42,
+    subject: 'math',
+    grade: '9',
+    topic: 'algebra',
+    chapter: 3,
+    attemptMode: 'offline_replay',
+    capturedAt: new Date(Date.now() - 60_000).toISOString(), // 1 min ago
+    ...overrides,
+  };
+}
+
+describe('POST /api/v2/quiz/submit — offline-replay gates (Wave 2.5.1)', () => {
+  it('ONLINE path: no offline gate fires and no offline-sync event is emitted', async () => {
+    _rpcResult = { data: FRESH, error: null };
+    // Default makeRequest() has attemptMode absent → online.
+    const res = await POST(makeRequest());
+    expect(res.status).toBe(200);
+    await flushAsync();
+    // RPC still called with the same args; no new offline-sync ops-event.
+    expect(rpcSpy).toHaveBeenCalledTimes(1);
+    expect(
+      logOpsEventMock.mock.calls.filter(
+        (c) => (c[0] as { category?: string })?.category === 'offline-sync',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('happy path forwards the SAME RPC args (P3 source = totalTimeSeconds, no wall-clock)', async () => {
+    _rpcResult = { data: FRESH, error: null };
+    const res = await POST(makeRequest({ body: offlineBody() }));
+    expect(res.status).toBe(200);
+
+    expect(rpcSpy).toHaveBeenCalledTimes(1);
+    const [rpcName, args] = rpcSpy.mock.calls[0];
+    expect(rpcName).toBe('submit_quiz_results_v2');
+    // p_time MUST equal the device-summed totalTimeSeconds — never a derived
+    // wall-clock duration from capturedAt / drainedAt.
+    expect(args.p_time).toBe(42);
+    // No score/correct/xp field is forwarded to the RPC by the route.
+    expect(args).not.toHaveProperty('p_correct');
+    expect(args).not.toHaveProperty('p_score');
+    expect(args).not.toHaveProperty('p_xp');
+    // Offline-only fields are NOT passed to the grading RPC.
+    expect(args).not.toHaveProperty('p_captured_at');
+    expect(args).not.toHaveProperty('p_attempt_mode');
+  });
+
+  it('missing capturedAt on an offline replay → 400 OFFLINE_CAPTURED_AT_REQUIRED', async () => {
+    _rpcResult = { data: FRESH, error: null };
+    const res = await POST(makeRequest({ body: offlineBody({ capturedAt: undefined }) }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('OFFLINE_CAPTURED_AT_REQUIRED');
+    // Gate runs BEFORE the RPC.
+    expect(rpcSpy).not.toHaveBeenCalled();
+  });
+
+  it('capturedAt too far in the future → 422 REPLAY_CLOCK_INVALID', async () => {
+    _rpcResult = { data: FRESH, error: null };
+    const future = new Date(Date.now() + 10 * 60_000).toISOString(); // +10 min
+    const res = await POST(makeRequest({ body: offlineBody({ capturedAt: future }) }));
+    expect(res.status).toBe(422);
+    expect((await res.json()).code).toBe('REPLAY_CLOCK_INVALID');
+    expect(rpcSpy).not.toHaveBeenCalled();
+  });
+
+  it('capturedAt older than 168h → 422 REPLAY_TOO_STALE', async () => {
+    _rpcResult = { data: FRESH, error: null };
+    const stale = new Date(Date.now() - 169 * 60 * 60 * 1000).toISOString(); // 169h ago
+    const res = await POST(makeRequest({ body: offlineBody({ capturedAt: stale }) }));
+    expect(res.status).toBe(422);
+    expect((await res.json()).code).toBe('REPLAY_TOO_STALE');
+    expect(rpcSpy).not.toHaveBeenCalled();
+  });
+
+  it('clientCapturedTotalSeconds !== totalTimeSeconds → 400 OFFLINE_TIME_INCONSISTENT', async () => {
+    _rpcResult = { data: FRESH, error: null };
+    const res = await POST(
+      makeRequest({ body: offlineBody({ clientCapturedTotalSeconds: 99 }) }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('OFFLINE_TIME_INCONSISTENT');
+    expect(rpcSpy).not.toHaveBeenCalled();
+  });
+
+  it('clientCapturedTotalSeconds === totalTimeSeconds → passes the gate', async () => {
+    _rpcResult = { data: FRESH, error: null };
+    const res = await POST(
+      makeRequest({ body: offlineBody({ clientCapturedTotalSeconds: 42 }) }),
+    );
+    expect(res.status).toBe(200);
+    expect(rpcSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('client shuffle map matching the server snapshot → grades normally', async () => {
+    _rpcResult = { data: FRESH, error: null };
+    _shuffleRows = { data: [{ question_id: QUESTION_ID, shuffle_map: [2, 0, 3, 1] }] };
+    const res = await POST(
+      makeRequest({
+        body: offlineBody({ shuffleMapsClientGradedAgainst: { [QUESTION_ID]: [2, 0, 3, 1] } }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(rpcSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('client shuffle map diverging from the server snapshot → 422 SHUFFLE_MAP_MISMATCH (no grading)', async () => {
+    _rpcResult = { data: FRESH, error: null };
+    _shuffleRows = { data: [{ question_id: QUESTION_ID, shuffle_map: [0, 1, 2, 3] }] };
+    const res = await POST(
+      makeRequest({
+        body: offlineBody({ shuffleMapsClientGradedAgainst: { [QUESTION_ID]: [2, 0, 3, 1] } }),
+      }),
+    );
+    expect(res.status).toBe(422);
+    expect((await res.json()).code).toBe('SHUFFLE_MAP_MISMATCH');
+    // Fail closed: the RPC is NEVER called.
+    expect(rpcSpy).not.toHaveBeenCalled();
+  });
+
+  it('missing server snapshot row → defers to the RPC session_not_started → 409', async () => {
+    // No snapshot at all → route does NOT invent a new code; lets the RPC
+    // session_not_started path handle it.
+    _shuffleRows = { data: [] };
+    _rpcResult = { data: null, error: { message: 'session_not_started: x', code: 'P0001' } };
+    const res = await POST(
+      makeRequest({
+        body: offlineBody({ shuffleMapsClientGradedAgainst: { [QUESTION_ID]: [2, 0, 3, 1] } }),
+      }),
+    );
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('SESSION_NOT_STARTED');
+    // The RPC WAS reached (shuffle gate skipped on empty snapshot).
+    expect(rpcSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('POST /api/v2/quiz/submit — offline-sync telemetry (Wave 2.5.3)', () => {
+  function offlineSyncEvents() {
+    return logOpsEventMock.mock.calls
+      .map((c) => c[0] as Record<string, unknown>)
+      .filter((e) => e?.category === 'offline-sync');
+  }
+
+  it('emits learner_offline_sync_replay with wasIdempotentReplay=false on a fresh grade', async () => {
+    _rpcResult = { data: FRESH, error: null };
+    const capturedAt = new Date(Date.now() - 30_000).toISOString();
+    const res = await POST(
+      makeRequest({ body: offlineBody({ capturedAt, drainAttempt: 2 }) }),
+    );
+    expect(res.status).toBe(200);
+    await flushAsync();
+
+    const events = offlineSyncEvents();
+    expect(events).toHaveLength(1);
+    const ev = events[0];
+    expect(ev.severity).toBe('info');
+    expect(ev.message).toBe('learner_offline_sync_replay');
+    expect(ev.subjectType).toBe('student');
+    expect(ev.subjectId).toBe(STUDENT_A);
+    const ctx = ev.context as Record<string, unknown>;
+    expect(ctx.schemaVersion).toBe(1);
+    expect(ctx.sessionId).toBe(SESSION_ID);
+    expect(ctx.capturedAt).toBe(capturedAt);
+    expect(typeof ctx.drainedAt).toBe('string');
+    expect(typeof ctx.queueLatencySeconds).toBe('number');
+    expect(ctx.queueLatencySeconds as number).toBeGreaterThanOrEqual(0);
+    expect(ctx.wasIdempotentReplay).toBe(false);
+    expect(ctx.drainAttempt).toBe(2);
+    // METADATA ONLY (P13): no answer/question text leaks into context.
+    expect(JSON.stringify(ctx)).not.toContain('time_taken_seconds');
+    expect(JSON.stringify(ctx)).not.toContain('selected_option');
+  });
+
+  it('emits learner_offline_sync_replay with wasIdempotentReplay=true on a cached replay', async () => {
+    // Unique-violation race → cached idempotent replay.
+    _rpcResult = { data: null, error: { message: 'duplicate key value', code: '23505' } };
+    _cachedRow = {
+      data: { id: SESSION_ID, total_questions: 10, correct_answers: 8, score_percent: 80, score: 100 },
+    };
+    const res = await POST(makeRequest({ body: offlineBody({ drainAttempt: 5 }) }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.idempotent_replay).toBe(true);
+    await flushAsync();
+
+    const events = offlineSyncEvents();
+    expect(events).toHaveLength(1);
+    const ctx = events[0].context as Record<string, unknown>;
+    expect(ctx.wasIdempotentReplay).toBe(true);
+    expect(ctx.drainAttempt).toBe(5);
+    // The replay must NOT double-count the funnels — only the offline-sync event fires.
+    expect(posthogCaptureMock.mock.calls.filter((c) => c[0] === 'quiz_graded')).toHaveLength(0);
+    expect(publishEventMock).not.toHaveBeenCalled();
+    expect(maybeDispatchMock).not.toHaveBeenCalled();
+  });
+
+  it('emits the offline-sync event exactly once per drain (fresh grade)', async () => {
+    _rpcResult = { data: FRESH, error: null };
+    await POST(makeRequest({ body: offlineBody() }));
+    await flushAsync();
+    expect(offlineSyncEvents()).toHaveLength(1);
+  });
+
+  it('online path emits NO offline-sync event (byte-identical)', async () => {
+    _rpcResult = { data: FRESH, error: null };
+    await POST(makeRequest());
+    await flushAsync();
+    expect(offlineSyncEvents()).toHaveLength(0);
   });
 });
