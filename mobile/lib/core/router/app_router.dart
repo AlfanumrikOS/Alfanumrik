@@ -11,6 +11,8 @@ import '../../ui/screens/learning/chapters_screen.dart';
 import '../../ui/screens/learning/concept_screen.dart';
 import '../../ui/screens/chat/chat_screen.dart';
 import '../../ui/screens/quiz/quiz_screen.dart';
+import '../../ui/screens/progress/progress_screen.dart';
+import '../../ui/screens/leaderboard/leaderboard_screen.dart';
 import '../../ui/screens/stem/stem_lab_screen.dart';
 import '../../ui/screens/subscription/plans_screen.dart';
 import '../../ui/screens/settings/settings_screen.dart';
@@ -104,6 +106,22 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/quiz',
             pageBuilder: (context, state) => const NoTransitionPage(
               child: QuizScreen(),
+            ),
+          ),
+          // /v2 student-parity surfaces (Wave 2.3b). Registered
+          // unconditionally so the routes always resolve; flag-OFF builds
+          // never navigate to them (no nav/entry point shows them). Kept in
+          // the shell so they keep the bottom nav.
+          GoRoute(
+            path: '/progress',
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: ProgressScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/leaderboard',
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: LeaderboardScreen(),
             ),
           ),
           GoRoute(

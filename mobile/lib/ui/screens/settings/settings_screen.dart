@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/constants/api_constants.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/subscription_provider.dart';
@@ -13,6 +14,9 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final student = ref.watch(studentProvider).valueOrNull;
     final subscription = ref.watch(subscriptionProvider).valueOrNull;
+    // Device-locale Hindi detection — matches today_screen / quiz_screen until
+    // an app-wide toggle ships.
+    final isHi = Localizations.localeOf(context).languageCode == 'hi';
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -81,6 +85,32 @@ class SettingsScreen extends ConsumerWidget {
             ),
 
           const SizedBox(height: 16),
+
+          // /v2 student-parity surfaces (Wave 2.3b). Shown ONLY when the flag
+          // is on — flag-OFF builds render the exact same Settings screen as
+          // today (this group is absent).
+          if (ApiConstants.useV2) ...[
+            _SettingsGroup(
+              title: isHi ? 'मेरी सीख' : 'My Learning',
+              children: [
+                _SettingsTile(
+                  icon: Icons.insights_rounded,
+                  title: isHi ? 'प्रगति' : 'Progress',
+                  subtitle: isHi
+                      ? 'स्कोर, महारत और ज्ञान अंतराल'
+                      : 'Scores, mastery & knowledge gaps',
+                  onTap: () => context.go('/progress'),
+                ),
+                _SettingsTile(
+                  icon: Icons.leaderboard_rounded,
+                  title: isHi ? 'लीडरबोर्ड' : 'Leaderboard',
+                  subtitle: isHi ? 'देखें आप कहाँ हैं' : 'See where you rank',
+                  onTap: () => context.go('/leaderboard'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
 
           // Plan section
           _SettingsGroup(

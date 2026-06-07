@@ -1,3 +1,4 @@
+import 'package:alfanumrik_api_v2/alfanumrik_api_v2.dart' as v2;
 import 'package:equatable/equatable.dart';
 
 class QuizQuestion extends Equatable {
@@ -96,6 +97,59 @@ class QuizQuestion extends Equatable {
       chapterTitle: null,
       difficulty: (json['difficulty'] as num?)?.toInt() ?? 1,
       bloomLevel: json['bloom_level'] as String? ?? 'remember',
+    );
+  }
+
+  /// Build from the generated `/v2` [v2.QuizQuestion] DTO returned by
+  /// `GET /v2/quiz/questions` (Wave 2.3b). The route NEVER returns
+  /// `correct_answer_index` (P6), so `correctIndex` is set to the `-1`
+  /// sentinel — identical to the [fromServerSession] contract. Subject +
+  /// grade are not echoed by this DTO so the caller threads them through.
+  factory QuizQuestion.fromV2Question(
+    v2.QuizQuestion q, {
+    required String subject,
+    required String grade,
+  }) {
+    return QuizQuestion(
+      id: q.questionId,
+      questionText: q.questionText,
+      questionTextHi: q.questionHi,
+      options: q.options.toList(growable: false),
+      // Sentinel — server-side authority, never reveal the correct index.
+      correctIndex: -1,
+      explanation: q.explanation,
+      explanationHi: q.explanationHi,
+      subject: subject,
+      grade: grade,
+      chapterTitle: null,
+      difficulty: q.difficulty.toInt(),
+      bloomLevel: q.bloomLevel ?? 'remember',
+    );
+  }
+
+  /// Build from the generated `/v2` [v2.QuizStartQuestion] DTO returned by
+  /// `POST /v2/quiz/start` (Wave 2.3b). Carries the SERVER-SHUFFLED
+  /// `options_displayed`; the correct index + shuffle map stay server-side
+  /// (P1+P6). `correctIndex` is the `-1` sentinel.
+  factory QuizQuestion.fromV2StartQuestion(
+    v2.QuizStartQuestion q, {
+    required String subject,
+    required String grade,
+  }) {
+    return QuizQuestion(
+      id: q.questionId,
+      questionText: q.questionText,
+      questionTextHi: q.questionHi,
+      options: q.optionsDisplayed.toList(growable: false),
+      // Sentinel — server owns correctness under the v2 shuffle.
+      correctIndex: -1,
+      explanation: q.explanation,
+      explanationHi: q.explanationHi,
+      subject: subject,
+      grade: grade,
+      chapterTitle: null,
+      difficulty: q.difficulty.toInt(),
+      bloomLevel: q.bloomLevel ?? 'remember',
     );
   }
 
@@ -278,6 +332,50 @@ class QuizResult extends Equatable {
       xpUncapped: xpUncapped,
       effectiveXp: effectiveXp,
       idempotentReplay: idempotentReplay,
+    );
+  }
+
+  /// Build from the generated `/v2` [v2.QuizSubmitResult] DTO returned by
+  /// `POST /v2/quiz/submit` (Wave 2.3b).
+  ///
+  /// SERVER-AUTHORITATIVE (P1/P2): every displayed value is read VERBATIM
+  /// from the server response — `score_percent`, `xp_earned`, `correct`,
+  /// `total`, `flagged`, and the per-question review. The device computes
+  /// NONE of these. The review rows arrive as a generic JSON map
+  /// (`BuiltMap<String, JsonObject?>`); we read them through [QuestionReview]
+  /// exactly as the RPC path does, so the result screen behaves identically.
+  factory QuizResult.fromV2(
+    v2.QuizSubmitResult res,
+    Duration timeTaken,
+  ) {
+    final review = <QuestionReview>[];
+    for (final row in res.questions) {
+      final map = <String, dynamic>{};
+      for (final entry in row.entries) {
+        map[entry.key] = entry.value?.value;
+      }
+      review.add(QuestionReview.fromJson(map));
+    }
+
+    return QuizResult(
+      totalQuestions: res.total,
+      correctAnswers: res.correct,
+      scorePercent: res.scorePercent.toInt(),
+      xpEarned: res.xpEarned.toInt(),
+      // The /v2 submit contract surfaces XP, not Foxy Coins — leave coins 0
+      // (matches the RPC path until the server returns coins_earned).
+      coinsEarned: 0,
+      timeTaken: timeTaken,
+      sessionId: res.sessionId,
+      flagged: res.flagged,
+      review: review,
+      // `xp_capped` is the only cap field in the typed v2 contract; the
+      // effective/uncapped values are not exposed there, so the banner falls
+      // back to xpEarned (the widget already tolerates nulls).
+      xpCapped: res.xpCapped ?? false,
+      xpUncapped: null,
+      effectiveXp: null,
+      idempotentReplay: res.idempotentReplay,
     );
   }
 

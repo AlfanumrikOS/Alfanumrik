@@ -1,11 +1,18 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/constants/api_constants.dart';
+import '../core/network/v2_api_client.dart';
 import '../data/models/dashboard_data.dart';
 import '../data/repositories/dashboard_repository.dart';
 import 'auth_provider.dart';
 
 final dashboardRepositoryProvider = Provider<DashboardRepository>((ref) {
-  return DashboardRepository();
+  // Inject the generated /v2 client ONLY when the flag is on. Flag-OFF builds
+  // pass null so the legacy RPC/table path is byte-identical and the dart-dio
+  // client is never constructed.
+  return DashboardRepository(
+    v2Client: ApiConstants.useV2 ? ref.read(v2ApiClientProvider) : null,
+  );
 });
 
 /// Dashboard data — auto-fetches when student is available

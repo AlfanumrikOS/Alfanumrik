@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/constants/api_constants.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/coin_rules.dart';
 import '../../../providers/learning_provider.dart';
@@ -21,7 +22,13 @@ class ConceptScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final topicAsync = ref.watch(topicContentProvider(topicId));
+    // Flag-gated source: ON → `GET /v2/learn/concept` (keyed by subject +
+    // chapter); OFF → the byte-identical legacy `topics`-table provider.
+    const useV2 = ApiConstants.useV2;
+    final conceptArgs = (subjectCode: subjectCode, chapterId: topicId);
+    final topicAsync = useV2
+        ? ref.watch(conceptV2Provider(conceptArgs))
+        : ref.watch(topicContentProvider(topicId));
     final color = AppColors.subjectColor(subjectCode);
 
     return Scaffold(
@@ -44,7 +51,9 @@ class ConceptScreen extends ConsumerWidget {
         loading: () => const LoadingScreen(message: 'Loading concept...'),
         error: (e, _) => AppErrorWidget(
           message: e.toString(),
-          onRetry: () => ref.invalidate(topicContentProvider(topicId)),
+          onRetry: () => useV2
+              ? ref.invalidate(conceptV2Provider(conceptArgs))
+              : ref.invalidate(topicContentProvider(topicId)),
         ),
         data: (topic) {
           if (topic == null) {

@@ -1,14 +1,34 @@
+import 'package:alfanumrik_api_v2/alfanumrik_api_v2.dart' as v2;
+import 'package:built_collection/built_collection.dart';
+import 'package:dio/dio.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/cache/cache_manager.dart';
+import '../../core/constants/api_constants.dart';
 import '../../core/network/api_result.dart';
+import '../../core/network/v2_api_client.dart';
 import '../models/quiz_question.dart';
 
 /// Quiz repository — bridges the Flutter UI to the server-authoritative
 /// scoring path defined by `submit_quiz_results_v2` (migration
 /// `20260428160000_quiz_session_shuffles.sql`).
 ///
-/// Two server contracts are wired here:
+/// ## Two surfaces, gated by [ApiConstants.useV2]
+///
+/// * **`useV2` OFF (default)** — BYTE-IDENTICAL to the historical app:
+///   questions come straight from the `question_bank` table, the
+///   server-shuffle session comes from the `start_quiz_session` RPC, and
+///   submission goes through `submit_quiz_results_v2` / `submit_quiz_results`
+///   RPCs. The generated `/v2` client is never constructed or called on this
+///   path. This is the long-lived path for old builds in the wild.
+///
+/// * **`useV2` ON** — the same three operations route through the GENERATED
+///   `/v2` dart-dio [v2.QuizApi] (Wave 2.3b): `GET /v2/quiz/questions`,
+///   `POST /v2/quiz/start`, `POST /v2/quiz/submit`. Those routes are thin
+///   pass-throughs to the SAME RPCs, so scoring/XP/anti-cheat semantics are
+///   identical — the only difference is the transport.
+///
+/// ## Server contracts (both paths terminate at these RPCs)
 ///
 ///   1. `start_quiz_session(p_student_id, p_question_ids)` — generates a
 ///      per-question shuffle, snapshots `options` + `correct_answer_index`
@@ -29,33 +49,55 @@ import '../models/quiz_question.dart';
 /// via the legacy v1 RPC `submit_quiz_results`. The v1 RPC is preserved
 /// indefinitely for old mobile builds in the wild.
 ///
-/// **P1/P6 invariant**: under v2, mobile MUST NOT compute `is_correct`
-/// locally. `selected_displayed_index` is the position the student tapped
-/// (0..3). The server is the single source of truth for correctness and
-/// for the "what was the right answer" review text.
+/// **P1/P6 invariant** (BOTH paths): mobile MUST NOT compute `is_correct`,
+/// `score_percent`, or `xp_earned` locally. `selected_displayed_index` is the
+/// position the student tapped (0..3). The server is the single source of
+/// truth for correctness, score, XP, and the "what was the right answer"
+/// review text — the device displays the server's values VERBATIM.
 class QuizRepository {
   final SupabaseClient _client;
   // ignore: unused_field
   final CacheManager _cache;
 
+  /// Generated `/v2` client. Null on the `useV2`-OFF path so the legacy build
+  /// never constructs the dart-dio client. Injected by the provider only when
+  /// the flag is on.
+  final V2ApiClient? _v2;
+
   QuizRepository({
     SupabaseClient? client,
     CacheManager? cache,
+    V2ApiClient? v2Client,
   })  : _client = client ?? Supabase.instance.client,
-        _cache = cache ?? CacheManager();
+        _cache = cache ?? CacheManager(),
+        _v2 = v2Client;
 
   /// Fetch quiz questions for a subject + grade.
   ///
   /// Returns questions in their CANONICAL (un-shuffled) form. Callers that
-  /// want the v2 server-authoritative path should follow this with
+  /// want the server-authoritative path should follow this with
   /// [startSessionForQuestions]; the resulting [ServerQuizSession.questions]
   /// is what the UI should render.
+  ///
+  /// When [ApiConstants.useV2] is ON this calls `GET /v2/quiz/questions` via
+  /// the generated [v2.QuizApi]; the route already enforces subject-governance
+  /// + academic-scope and NEVER returns `correct_answer_index` (P6). When OFF
+  /// it reads the `question_bank` table directly (byte-identical legacy path).
   Future<ApiResult<List<QuizQuestion>>> getQuestions({
     required String subject,
     required String grade,
     int count = 10,
     String? chapterTitle,
   }) async {
+    if (ApiConstants.useV2 && _v2 != null) {
+      return _getQuestionsV2(
+        subject: subject,
+        grade: grade,
+        count: count,
+        chapterTitle: chapterTitle,
+      );
+    }
+
     try {
       var query = _client
           .from('question_bank')
@@ -85,6 +127,46 @@ class QuizRepository {
     }
   }
 
+  /// `useV2`-ON questions fetch via `GET /v2/quiz/questions`.
+  ///
+  /// The generated [v2.QuizQuestion] DTO carries `options` (in-scope, no
+  /// correct index) — we map it onto the mobile [QuizQuestion] with
+  /// `correctIndex = -1` (sentinel: server-owned, do not consult). The
+  /// server already scopes + randomises, so no client shuffle is applied.
+  Future<ApiResult<List<QuizQuestion>>> _getQuestionsV2({
+    required String subject,
+    required String grade,
+    required int count,
+    String? chapterTitle,
+  }) async {
+    try {
+      // The /v2 contract takes an integer `chapter`; mobile callers pass a
+      // chapter TITLE. Only forward when it parses to an int, otherwise omit
+      // and let the route return the subject+grade scope.
+      final chapterNum =
+          chapterTitle == null ? null : int.tryParse(chapterTitle.trim());
+
+      final resp = await _v2!.quizApi.getQuizQuestions(
+        subject: subject,
+        grade: grade,
+        count: count,
+        chapter: chapterNum,
+      );
+      final body = resp.data;
+      if (body == null) {
+        return const ApiFailure('Failed to load questions: empty response');
+      }
+
+      final selected = body.questions
+          .map((q) => QuizQuestion.fromV2Question(q, subject: subject, grade: grade))
+          .toList(growable: false);
+
+      return ApiSuccess(selected);
+    } catch (e) {
+      return ApiFailure('Failed to load questions: ${_describe(e)}');
+    }
+  }
+
   /// Call `start_quiz_session` to obtain a server-shuffled session for the
   /// given question IDs.
   ///
@@ -104,6 +186,15 @@ class QuizRepository {
   }) async {
     if (questionIds.isEmpty) return null;
 
+    if (ApiConstants.useV2 && _v2 != null) {
+      return _startSessionV2(
+        studentId: studentId,
+        questionIds: questionIds,
+        subject: subject,
+        grade: grade,
+      );
+    }
+
     try {
       final dynamic raw = await _client.rpc('start_quiz_session', params: {
         'p_student_id': studentId,
@@ -117,6 +208,42 @@ class QuizRepository {
       );
     } catch (_) {
       // Soft failure: caller falls back to v1.
+      return null;
+    }
+  }
+
+  /// `useV2`-ON session start via `POST /v2/quiz/start`.
+  ///
+  /// Returns the server-shuffled questions + `session_id`. The shuffle map
+  /// and correct index stay server-side (P6). On any failure we return null
+  /// so the caller behaves exactly as the legacy soft-fail: render the
+  /// already-fetched questions and submit without a session id.
+  Future<ServerQuizSession?> _startSessionV2({
+    required String studentId,
+    required List<String> questionIds,
+    required String subject,
+    required String grade,
+  }) async {
+    try {
+      final req = v2.QuizStartRequest((b) => b
+        ..studentId = studentId
+        ..questionIds.replace(questionIds));
+
+      final resp = await _v2!.quizApi.postQuizStart(quizStartRequest: req);
+      final body = resp.data;
+      if (body == null || body.sessionId.isEmpty) return null;
+
+      // Server-shuffled order = display order. Map each v2 start-question
+      // (carrying `options_displayed`, no correct index) onto the mobile
+      // model with the -1 sentinel.
+      final questions = body.questions
+          .map((q) =>
+              QuizQuestion.fromV2StartQuestion(q, subject: subject, grade: grade))
+          .toList(growable: false);
+
+      return ServerQuizSession(sessionId: body.sessionId, questions: questions);
+    } catch (_) {
+      // Soft failure: caller falls back to the no-session path.
       return null;
     }
   }
@@ -186,7 +313,21 @@ class QuizRepository {
     String? sessionId,
     String? idempotencyKey,
   }) async {
-    // ── Layer 1: v2 (server-shuffle authority) ────────────────────────────
+    if (ApiConstants.useV2 && _v2 != null) {
+      return _submitAttemptV2(
+        studentId: studentId,
+        subject: subject,
+        grade: grade,
+        responses: responses,
+        timeTakenSeconds: timeTakenSeconds,
+        topicTitle: topicTitle,
+        chapterNumber: chapterNumber,
+        sessionId: sessionId,
+        idempotencyKey: idempotencyKey,
+      );
+    }
+
+    // ── Layer 1: v2 RPC (server-shuffle authority) ────────────────────────
     if (sessionId != null && sessionId.isNotEmpty) {
       try {
         // Phase 2.8: per-attempt idempotency token. Generated once by the
@@ -254,6 +395,121 @@ class QuizRepository {
     } catch (e) {
       return ApiFailure('Failed to submit quiz: ${e.toString()}');
     }
+  }
+
+  /// `useV2`-ON submission via `POST /v2/quiz/submit`.
+  ///
+  /// SERVER-AUTHORITATIVE (P1/P2/P3/P4): this is a thin pass-through to the
+  /// `submit_quiz_results_v2` RPC (the route does NO math). We forward:
+  ///   * one item per question with the REAL `time_taken_seconds` (no clamp /
+  ///     transform — server anti-cheat P3 needs the true per-question timings),
+  ///   * `totalTimeSeconds` = the real wall-clock attempt duration,
+  ///   * an `Idempotency-Key` header (the per-attempt UUID) so transient-5xx
+  ///     retries never double-count XP or rows.
+  ///
+  /// The returned [v2.QuizSubmitResult] is mapped onto [QuizResult] VERBATIM:
+  /// `score_percent`, `xp_earned`, `correct`, `total`, `flagged`, and the
+  /// per-question review come straight from the server. The device never
+  /// derives correctness, score, or XP.
+  ///
+  /// `session_not_started` is surfaced as a structured failure (matching the
+  /// RPC path) so the UI shows "session expired, please restart" rather than
+  /// re-scoring against stale data.
+  Future<ApiResult<QuizResult>> _submitAttemptV2({
+    required String studentId,
+    required String subject,
+    required String grade,
+    required List<Map<String, dynamic>> responses,
+    required int timeTakenSeconds,
+    String? topicTitle,
+    int? chapterNumber,
+    String? sessionId,
+    String? idempotencyKey,
+  }) async {
+    // The /v2 submit route requires a session id (server-shuffle authority).
+    // If session start soft-failed, surface a structured error rather than
+    // silently scoring against an absent snapshot.
+    if (sessionId == null || sessionId.isEmpty) {
+      return const ApiFailure(
+          'session_not_started: Quiz session expired.');
+    }
+
+    try {
+      final req = v2.QuizSubmitRequest((b) => b
+        ..studentId = studentId
+        ..sessionId = sessionId
+        ..subject = subject
+        ..grade = grade
+        ..topic = topicTitle
+        ..chapter = chapterNumber
+        ..totalTimeSeconds = timeTakenSeconds
+        ..responses.replace(buildV2SubmitItems(responses)));
+
+      // Idempotency-Key (UUID) header — required by the route contract.
+      final headers = <String, dynamic>{
+        if (idempotencyKey != null && idempotencyKey.isNotEmpty)
+          'Idempotency-Key': idempotencyKey,
+      };
+
+      final resp = await _v2!.quizApi.postQuizSubmit(
+        quizSubmitRequest: req,
+        headers: headers.isEmpty ? null : headers,
+      );
+      final body = resp.data;
+      if (body == null) {
+        return const ApiFailure('Failed to submit quiz: empty response');
+      }
+
+      return ApiSuccess(
+        QuizResult.fromV2(body, Duration(seconds: timeTakenSeconds)),
+      );
+    } catch (e) {
+      final msg = _describe(e);
+      if (msg.contains('session_not_started')) {
+        return const ApiFailure('session_not_started: Quiz session expired.');
+      }
+      return ApiFailure('Failed to submit quiz: $msg');
+    }
+  }
+
+  /// Build the generated `/v2` per-question submit items from the unified
+  /// `[{question_id, selected_displayed_index, time_spent}]` response list.
+  ///
+  /// The wire field for the tapped position on `/v2/quiz/submit` is
+  /// `selected_option` (the route forwards it to the RPC as
+  /// `selected_displayed_index`). The REAL `time_spent` flows straight into
+  /// `time_taken_seconds` with NO clamping/transform (P3). Exposed static for
+  /// unit tests.
+  static BuiltList<v2.QuizSubmitResponseItem> buildV2SubmitItems(
+    List<Map<String, dynamic>> responses,
+  ) {
+    return BuiltList<v2.QuizSubmitResponseItem>(
+      responses.map((r) {
+        final selected = (r['selected_displayed_index'] ??
+                r['selected_option'] ??
+                -1) as int;
+        final time = (r['time_spent'] ?? 0) as int;
+        return v2.QuizSubmitResponseItem((b) => b
+          ..questionId = (r['question_id'] ?? '') as String
+          ..selectedOption = selected
+          ..timeTakenSeconds = time);
+      }),
+    );
+  }
+
+  /// Extract a useful message from a thrown error (DioException server bodies
+  /// carry the structured `{ error: ... }` payload; everything else falls
+  /// back to `toString`). Never logs PII (P13) — message text only.
+  static String _describe(Object e) {
+    if (e is DioException) {
+      final data = e.response?.data;
+      if (data is Map && data['error'] != null) {
+        return data['error'].toString();
+      }
+      if (data is String && data.isNotEmpty) return data;
+      return e.message ?? e.toString();
+    }
+    return e.toString();
   }
 
   // ── Pure helpers (testable without a network) ───────────────────────────
