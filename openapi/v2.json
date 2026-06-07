@@ -367,6 +367,246 @@
         ],
         "type": "object"
       },
+      "ParentChild": {
+        "properties": {
+          "board": {
+            "example": "CBSE",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "grade": {
+            "example": "9",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_active_at": {
+            "example": "2026-06-06T09:00:00.000Z",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "example": "Asha",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "student_id": {
+            "example": "550e8400-e29b-41d4-a716-446655440000",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "student_id",
+          "name",
+          "grade"
+        ],
+        "type": "object"
+      },
+      "ParentChildrenResponse": {
+        "properties": {
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/ParentChild"
+            },
+            "type": "array"
+          },
+          "schemaVersion": {
+            "enum": [
+              1
+            ],
+            "type": "number"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "children"
+        ],
+        "type": "object"
+      },
+      "ParentGlanceChild": {
+        "properties": {
+          "grade": {
+            "example": "9",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "example": "Asha",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "student_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "student_id",
+          "name",
+          "grade"
+        ],
+        "type": "object"
+      },
+      "ParentGlanceMoments": {
+        "properties": {
+          "concerns": {
+            "example": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "highlights": {
+            "example": [
+              "Completed 4 quizzes this week."
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "suggestion": {
+            "example": "A short daily session keeps the streak alive.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "highlights",
+          "concerns"
+        ],
+        "type": "object"
+      },
+      "ParentGlanceResponse": {
+        "properties": {
+          "child": {
+            "$ref": "#/components/schemas/ParentGlanceChild"
+          },
+          "moments": {
+            "$ref": "#/components/schemas/ParentGlanceMoments"
+          },
+          "schemaVersion": {
+            "enum": [
+              1
+            ],
+            "type": "number"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/ParentGlanceSnapshot"
+          },
+          "weeklyActivity": {
+            "items": {
+              "$ref": "#/components/schemas/ParentGlanceWeeklyDay"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "child",
+          "snapshot",
+          "moments"
+        ],
+        "type": "object"
+      },
+      "ParentGlanceSnapshot": {
+        "properties": {
+          "accuracy": {
+            "example": 72,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "avg_score": {
+            "example": 68,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "sessions_this_week": {
+            "example": 4,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "streak_days": {
+            "example": 7,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "time_minutes": {
+            "example": 120,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_chats": {
+            "example": 11,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_quizzes": {
+            "example": 23,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "xp": {
+            "example": 1450,
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "sessions_this_week",
+          "streak_days"
+        ],
+        "type": "object"
+      },
+      "ParentGlanceWeeklyDay": {
+        "properties": {
+          "active": {
+            "example": true,
+            "type": "boolean"
+          },
+          "label": {
+            "example": "Mon",
+            "type": "string"
+          },
+          "quizzes": {
+            "example": 2,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "label",
+          "active",
+          "quizzes"
+        ],
+        "type": "object"
+      },
       "ProgressDecayTopic": {
         "properties": {
           "mastery_probability": {
@@ -1376,6 +1616,56 @@
         ]
       }
     },
+    "/v2/parent/children": {
+      "get": {
+        "description": "Returns the children linked to the authenticated guardian (guardian_student_links status IN active/approved, joined to students). Reuses the relationship domain listChildrenForGuardian read. P13: only name + grade(string,P5) are returned — no email/phone. Requires child.view_progress.",
+        "operationId": "getParentChildren",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParentChildrenResponse"
+                }
+              }
+            },
+            "description": "The linked children."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No guardian profile for this account."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected server error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "List the authenticated guardian's linked children",
+        "tags": [
+          "parent"
+        ]
+      }
+    },
     "/v2/parent/encourage": {
       "post": {
         "description": "Parent sends a curated, preset-keyed encouragement to a linked child. Requires child.encourage and an approved guardian↔student link. Rate-limited to one cheer per (guardian, student) per 6 hours.",
@@ -1460,6 +1750,98 @@
           }
         ],
         "summary": "Send a preset cheer to a linked child",
+        "tags": [
+          "parent"
+        ]
+      }
+    },
+    "/v2/parent/glance": {
+      "get": {
+        "description": "Returns the Snapshot + Moments glance for one linked child (mirrors the web ParentGlanceHome). Reuses the parent-portal Edge Function `get_child_dashboard` payload — no new aggregation. Requires child.view_progress AND an approved guardian↔student link (403 otherwise). P13: only the parent-entitled child data.",
+        "operationId": "getParentGlance",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "student_id",
+            "required": true,
+            "schema": {
+              "example": "550e8400-e29b-41d4-a716-446655440000",
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParentGlanceResponse"
+                }
+              }
+            },
+            "description": "The child glance payload."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid student_id."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No guardian profile, or not linked to this student."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No data available for this child."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected server error."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The parent-portal data source failed."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "At-a-glance view for one linked child",
         "tags": [
           "parent"
         ]

@@ -13,7 +13,7 @@
  * REAL resolveTodayQueue runs over a hand-built StudentState so the envelope
  * reflects genuine resolver output.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockAuthorizeRequest = vi.fn();
 const mockIsFeatureEnabled = vi.fn();
@@ -88,6 +88,17 @@ function buildRequest(): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // DETERMINISM: the route calls `new Date()` and passes it into
+  // resolveTodayQueue, whose branches 6/7 (weekly_dive on Sunday IST,
+  // monthly_synthesis on the last calendar day of the month IST) fire on
+  // calendar-dependent days. Without a pinned clock these tests pass on a
+  // weekday and FAIL on a Sunday / month-end (e.g. 2026-06-07 is a Sunday),
+  // because the asserted catch-all `start_quiz` branch is shadowed by
+  // weekly_dive. Pin the system clock to a known weekday, non-month-end
+  // instant so the asserted branch is stable on every real calendar date.
+  //   2026-06-10T09:00+05:30 = Wednesday, 10 June (well clear of month-end),
+  //   09:00 IST → 03:30 UTC, isSundayIst=false, isMonthEndDayIst=false.
+  vi.setSystemTime(new Date('2026-06-10T09:00:00+05:30'));
   mockAuthorizeRequest.mockResolvedValue(AUTH_OK);
   mockIsFeatureEnabled.mockResolvedValue(true);
   mockBuildState.mockResolvedValue(buildState());
@@ -96,6 +107,10 @@ beforeEach(() => {
     attemptedQuizToday: true, // suppress branch 4 so branch 8 (catch-all) wins
     inProgressLessons: [],
   });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('GET /api/v2/today — auth', () => {

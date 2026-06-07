@@ -24,6 +24,13 @@ import 'package:alfanumrik_api_v2/src/model/encourage_request.dart';
 import 'package:alfanumrik_api_v2/src/model/error_response.dart';
 import 'package:alfanumrik_api_v2/src/model/leaderboard_entry.dart';
 import 'package:alfanumrik_api_v2/src/model/leaderboard_response.dart';
+import 'package:alfanumrik_api_v2/src/model/parent_child.dart';
+import 'package:alfanumrik_api_v2/src/model/parent_children_response.dart';
+import 'package:alfanumrik_api_v2/src/model/parent_glance_child.dart';
+import 'package:alfanumrik_api_v2/src/model/parent_glance_moments.dart';
+import 'package:alfanumrik_api_v2/src/model/parent_glance_response.dart';
+import 'package:alfanumrik_api_v2/src/model/parent_glance_snapshot.dart';
+import 'package:alfanumrik_api_v2/src/model/parent_glance_weekly_day.dart';
 import 'package:alfanumrik_api_v2/src/model/progress_decay_topic.dart';
 import 'package:alfanumrik_api_v2/src/model/progress_knowledge_gap.dart';
 import 'package:alfanumrik_api_v2/src/model/progress_learning_velocity.dart';
@@ -60,6 +67,13 @@ part 'serializers.g.dart';
   ErrorResponse,
   LeaderboardEntry,
   LeaderboardResponse,
+  ParentChild,
+  ParentChildrenResponse,
+  ParentGlanceChild,
+  ParentGlanceMoments,
+  ParentGlanceResponse,
+  ParentGlanceSnapshot,
+  ParentGlanceWeeklyDay,
   ProgressDecayTopic,
   ProgressKnowledgeGap,
   ProgressLearningVelocity,

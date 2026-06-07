@@ -1838,3 +1838,74 @@ REG-88 (`/v2/quiz/submit` full PostHog + spine + bridge side-effect parity with
 idempotent-replay-guarded).
 
 **Total: 56 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+
+## Mobile parity — /v2 parent endpoints (Phase 2 Wave 2.4) — REG-89
+
+Source: Phase 2 "mobile-parity-via-one-contract" — Wave 2.4. Wave 2.2/2.3
+(REG-87/REG-88) covered the STUDENT-facing `/v2` surface. Wave 2.4 adds the first
+two PARENT-facing `/v2` BFF endpoints so the Flutter parent screens consume the
+SAME contract as the web parent portal:
+
+  - `GET /v2/parent/children` (`src/app/api/v2/parent/children/route.ts`) — the
+    guardian's linked children, reusing `listChildrenForGuardian`.
+  - `GET /v2/parent/glance?student_id=<uuid>` (`src/app/api/v2/parent/glance/route.ts`)
+    — at-a-glance view for one linked child, reusing the `parent-portal` Edge
+    Function `get_child_dashboard` action (the SAME payload the web
+    `ParentGlanceHome` consumes; no aggregation duplicated).
+
+Both are THIN reads — no new aggregation, no learner-state write. The load-bearing
+property is the **P13 guardian-link boundary**: a parent must see ONLY children
+they are linked to, with name + grade (P5 string) + the child's own learning stats
+and NOTHING else (no guardian email/phone, no `schoolId`, no raw upstream error
+text). The boundary is enforced twice on `glance` (defense-in-depth): the route's
+own `getGuardianByAuthUserId` → `isGuardianLinkedToStudent(guardian.id, student_id)`
+check (403 + NO upstream fetch when unlinked), AND the forwarded Bearer JWT re-runs
+the Edge Function's own JWT-bound guardian+link guard. `children` projects the
+relationship-domain rows down to `{ student_id, name, grade }` — the `schoolId` /
+`linkId` / `linkStatus` fields the domain returns never cross the wire.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-89 | `v2_parent_children_glance_guardian_link_boundary_and_envelope` | Two-route pin on the Wave 2.4 parent `/v2` surface. **(a) RBAC + ownership (P9):** both routes call `authorizeRequest(_, 'child.view_progress')` and return its `errorResponse` verbatim (401/403) BEFORE any guardian/domain read; a caller with no guardian profile is 403 (`NO_GUARDIAN_PROFILE`), and `glance` validates `student_id` is a UUID (400 `VALIDATION_ERROR`) before resolving the guardian. **(b) Guardian-link boundary (P13 cross-guardian isolation):** `glance` returns 403 `NOT_LINKED` and performs NO upstream `fetch` when `isGuardianLinkedToStudent` is false (proven with a fetch spy asserted never-called); an Edge-Function 403 maps to 403 `NOT_LINKED`; `children` reuses `listChildrenForGuardian(authUserId)` so a guardian only ever sees their own links. **(c) P5/P13 projection:** `children` items are EXACTLY `{ student_id, name, grade }` with `grade` a string — the payload carries no `email` / `phone` / `schoolId`; `glance` returns `child: { student_id, name, grade:string }` + snapshot/moments/weeklyActivity derived from the EXISTING Edge fields, with no guardian PII anywhere; both responses round-trip through the registered `ParentChildrenResponse` / `ParentGlanceResponse` Zod schemas (`{ success, data }` envelope, `schemaVersion: 1`). **(d) No raw error text (P13):** a domain-read failure → 500 and an upstream Edge failure / unreachable fetch → 502, with the raw upstream/DB message never surfaced to the client; an Edge error-payload → 404 `NO_DATA`. | `src/__tests__/api/v2/parent/children/route.test.ts` (8 tests: auth gate + permission code, no-guardian 403, happy-path name+grade-only P13, empty links, Zod round-trip, 500 no-raw-text), `src/__tests__/api/v2/parent/glance/route.test.ts` (15 tests: auth gate + permission code, UUID validation 400, no-guardian 403, NOT_LINKED 403 + no-fetch, happy-path shaping + P5 grade + P13 no-PII, struggling-child concerns, Zod round-trip, 502/404/403 upstream-failure mapping no-raw-text) | E (unit — runs in CI, no fixture needed) |
+
+### Pinned tests
+
+- `src/__tests__/api/v2/parent/glance/route.test.ts::GET /api/v2/parent/glance — ownership::returns 403 when the guardian is NOT linked to the student (no data fetched)`
+- `src/__tests__/api/v2/parent/glance/route.test.ts::GET /api/v2/parent/glance — happy path::shapes the get_child_dashboard payload into snapshot + moments + weeklyActivity`
+- `src/__tests__/api/v2/parent/children/route.test.ts::GET /api/v2/parent/children — happy path::returns the linked children in the /v2 envelope, name+grade only (P13)`
+- `src/__tests__/api/v2/parent/children/route.test.ts::GET /api/v2/parent/children — failure::returns 500 with no raw error text when the domain read fails`
+
+### Invariants covered by this section
+
+- P13 (data privacy — guardian-link boundary): a parent sees ONLY linked children;
+  `glance` enforces the link at the route AND re-enforces via the forwarded-JWT Edge
+  Function; the children list is scoped to the caller's own guardian links. No
+  guardian PII (email/phone) and no `schoolId` / link metadata crosses the wire; no
+  raw upstream/DB error text reaches the client.
+- P9 (RBAC enforcement): both routes gated by `child.view_progress`; the auth
+  `errorResponse` is returned verbatim before any domain read.
+- P5 (grade format): `grade` is a string in both payloads.
+- Mobile-parity contract integrity (extends REG-87/REG-88): both responses
+  round-trip through the registered `ParentChildrenResponse` / `ParentGlanceResponse`
+  Zod schemas the Dart client is generated from — the parent `/v2` surface is now
+  covered by the same contract-conformance discipline as the student surface.
+
+### Notes on test strategy
+
+REG-89 follows the same **contract/parity pattern** as REG-87/REG-88 and the
+encourage-route test (REG-85): the route tests mock only the seams
+(`authorizeRequest`, the identity/relationship domain helpers, and — for `glance` —
+global `fetch`) so the REAL projection and link-boundary logic run, and assert on
+the observable contract (status, envelope, the EXACT projected fields, the absence
+of PII via a `JSON.stringify` negative match, and which seam fired). The unlinked
+case is proven by a `fetch` spy asserted never-called, so a regression that fetched
+child data before the link check would fail. No Supabase fixture is needed; the
+suite runs green in CI today.
+
+### Catalog total
+
+Phase 2 Wave 2.4 (mobile parity via one contract — parent endpoints) adds REG-89
+(`/v2/parent/children` + `/v2/parent/glance` guardian-link boundary (P13) +
+RBAC (P9) + P5 grade string + `{ success, data }` contract conformance).
+
+**Total: 57 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
