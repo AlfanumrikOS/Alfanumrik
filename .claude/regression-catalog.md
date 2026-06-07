@@ -1909,3 +1909,60 @@ Phase 2 Wave 2.4 (mobile parity via one contract — parent endpoints) adds REG-
 RBAC (P9) + P5 grade string + `{ success, data }` contract conformance).
 
 **Total: 57 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+
+## Mobile APK must actually compile — Android toolchain-drift gate (2026-06-07) — REG-90
+
+Source: CI-hardening RCA after two latent Android-build bugs reached `main`
+undetected. This is a build/release-integrity gate (the mobile half of the release
+pipeline), not a P1-P15 scoring invariant — so it has no P-tag; like REG-72
+(service-availability operational invariant) it pins a pipeline gate rather than a
+product formula.
+
+`flutter analyze` and `flutter test` do NOT compile the native Android/Kotlin
+layer (Gradle, AGP, the Kotlin Gradle Plugin, NDK abiFilters) — they validate Dart
+only. Therefore neither can prove the app actually BUILDS to a shippable APK; only
+the `flutter build apk --debug` step does, because it drives the real Android
+toolchain end-to-end. Two latent bugs reached `main` precisely because that
+compile path had no enforcement: the `Mobile CI` workflow existed but had never
+actually run (an Actions billing block left it skipped — a 0-step / ~2s job), and
+the dev sandbox cannot run Gradle locally. The bugs: **(A1)** a manual `splits.abi`
+block in `mobile/android/app/build.gradle` conflicting with Flutter-injected
+`ndk.abiFilters` (AGP forbids declaring both); **(A2)** Kotlin Gradle Plugin 1.9.22
+too old to compile `package_info_plus 9.x` (pulled transitively via `sentry_flutter`,
+which needs Kotlin 2.x). Both fixed in PR #957; this entry pins the gate so a future
+toolchain drift fails CI instead of silently shipping.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-90 | `mobile_apk_must_compile_android_toolchain_gate` | The `Mobile CI` workflow's `flutter build apk --debug` step is the enforcing gate that proves the Flutter app compiles to an Android APK — it drives the real Android toolchain (Gradle + AGP + Kotlin Gradle Plugin + NDK abiFilters) end-to-end, which `flutter analyze` and `flutter test` (Dart-only) CANNOT do. Any PR touching `mobile/**` MUST have the `Flutter analyze + test + build` check (workflow `Mobile CI`, `.github/workflows/mobile-ci.yml`) GREEN before merge; a 0-step / ~2s job is "never ran" (Actions billing-block), NOT "passed", and does not satisfy the gate. The step guards two toolchain-drift regressions fixed in PR #957: (A1) no manual `splits.abi` block coexisting with Flutter-injected `ndk.abiFilters` in `mobile/android/app/build.gradle` (AGP forbids both), and (A2) Kotlin Gradle Plugin must stay new enough (Kotlin 2.x) to compile `package_info_plus 9.x` (transitive via `sentry_flutter`). Full RCA + remediation in [docs/runbooks/mobile-ci-and-android-toolchain.md](../docs/runbooks/mobile-ci-and-android-toolchain.md). | `.github/workflows/mobile-ci.yml` (job `Flutter analyze + test + build` → step `flutter build apk --debug`; PR-triggered on `mobile/**` / `openapi/v2.json` / the workflow itself) + `docs/runbooks/mobile-ci-and-android-toolchain.md` (RCA + toolchain-pin runbook) | R (resolved in PR #957 — `splits.abi` block removed + Kotlin Gradle Plugin bumped to 2.x; mobile-ci now runs the APK-compile gate on every `mobile/**` PR) |
+
+### Invariants covered by this section
+
+- Build/release integrity (operational invariant — mobile pipeline) — the
+  `flutter build apk --debug` step is the only signal that proves the Android app
+  actually compiles. `flutter analyze` + `flutter test` are Dart-only and cannot
+  detect Gradle/AGP/Kotlin/NDK toolchain drift, so a green analyze+test does NOT
+  imply a buildable APK. REG-90 pins the compile step as the merge gate for any
+  `mobile/**` change and records that a 0-step/~2s job means "never ran", not
+  "passed".
+- Mobile parity (adjacent to REG-87/REG-88/REG-89) — the `/v2` contract parity
+  entries assume a Flutter app that compiles and ships; REG-90 guards the half of
+  the release pipeline that proves the mobile binary builds at all.
+
+### Notes on test strategy
+
+REG-90 is enforced by a CI workflow step, not a Vitest/Playwright assertion — the
+"test" is the green `flutter build apk --debug` run on every `mobile/**` PR. It is
+catalogued in the `R` (resolved) state because the two toolchain-drift bugs it
+guards were fixed in PR #957 and the workflow now exercises the compile path. The
+RCA, the two root causes (A1 `splits.abi`/`ndk.abiFilters` conflict, A2 Kotlin
+Gradle Plugin version), and the toolchain version pins live in the runbook
+`docs/runbooks/mobile-ci-and-android-toolchain.md` — this entry deliberately does
+not restate them.
+
+### Catalog total
+
+Pre-REG-90: 57 entries. CI-hardening mobile RCA adds REG-90 (mobile APK-compile /
+Android toolchain-drift gate).
+
+**Total: 58 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
