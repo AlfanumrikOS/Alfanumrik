@@ -7,7 +7,9 @@ import '../../core/cache/cache_manager.dart';
 import '../../core/constants/api_constants.dart';
 import '../../core/network/api_result.dart';
 import '../../core/network/v2_api_client.dart';
+import '../models/offline_quiz_models.dart';
 import '../models/quiz_question.dart';
+import 'offline_drain_service.dart';
 
 /// Quiz repository — bridges the Flutter UI to the server-authoritative
 /// scoring path defined by `submit_quiz_results_v2` (migration
@@ -495,6 +497,153 @@ class QuizRepository {
           ..timeTakenSeconds = time);
       }),
     );
+  }
+
+  /// Drain ONE offline-captured attempt to `POST /v2/quiz/submit` with
+  /// `attemptMode: offline_replay` (Wave 2.5.2). This is the offline twin of
+  /// [_submitAttemptV2]; it is the ONLY method that sends the offline replay
+  /// fields. Always requires the generated `/v2` client (offline replay is a
+  /// `useV2`-ON-only feature) — when `useV2` is OFF the offline path does not
+  /// exist and this is never called.
+  ///
+  /// IMMUTABLE IDEMPOTENCY KEY (P2): [attempt.idempotencyKey] is stamped on the
+  /// `Idempotency-Key` header VERBATIM. The drain bumps [attempt.drainAttempt]
+  /// before calling this, but NEVER regenerates the key — so a re-drain after a
+  /// server-side commit is short-circuited as an idempotent replay rather than
+  /// double-granting XP.
+  ///
+  /// P3 timing: [attempt.totalTimeSeconds] flows as BOTH `totalTimeSeconds`
+  /// (the sole RPC timing source) and `clientCapturedTotalSeconds` (the server
+  /// cross-check); per-question `time_spent` are the on-device measured values
+  /// carried verbatim from the live attempt — never recomputed at drain time.
+  ///
+  /// Returns a [DrainOutcome] so the drain service can apply the
+  /// discard-vs-retain matrix using the HTTP status the server returned:
+  ///   * 200 / idempotent replay        → success (store result, remove)
+  ///   * 4xx (409/422/400/...)          → discard (un-replayable)
+  ///   * 5xx / network / timeout        → retain (retry, key unchanged)
+  Future<DrainOutcome> submitOfflineReplay(QueuedQuizAttempt attempt) async {
+    final v2Client = _v2;
+    if (v2Client == null) {
+      // Defensive: offline replay requires the /v2 client. Treat as transient
+      // so the attempt is retained rather than silently dropped.
+      return const DrainOutcome(DrainOutcomeKind.retain,
+          reasonCode: 'v2_client_unavailable');
+    }
+
+    try {
+      final req = buildOfflineSubmitRequest(attempt);
+
+      final headers = <String, dynamic>{
+        'Idempotency-Key': attempt.idempotencyKey,
+      };
+
+      final resp = await v2Client.quizApi.postQuizSubmit(
+        quizSubmitRequest: req,
+        headers: headers,
+      );
+      final body = resp.data;
+      if (body == null) {
+        // 2xx with empty body is unexpected — treat as transient.
+        return const DrainOutcome(DrainOutcomeKind.retain,
+            reasonCode: 'empty_response');
+      }
+
+      final result = QuizResult.fromV2(
+        body,
+        Duration(seconds: attempt.totalTimeSeconds),
+      );
+      return OfflineDrainService.classify(
+        ApiSuccess(result),
+        statusCode: resp.statusCode ?? 200,
+      );
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      // Surface the server's structured error code (e.g. SHUFFLE_MAP_MISMATCH)
+      // as the reason — NEVER any answer text / PII (P13).
+      final reason = _errorCode(e) ?? 'http_${status ?? 'unknown'}';
+      return OfflineDrainService.classify(
+        ApiFailure('offline replay failed: $reason', status),
+        statusCode: status,
+        reasonCode: reason,
+      );
+    } catch (e) {
+      // Non-Dio error (serialization, etc.) — no HTTP status → retain.
+      return DrainOutcome(DrainOutcomeKind.retain, reasonCode: _describe(e));
+    }
+  }
+
+  /// Build the generated `/v2` offline-replay submit request from a queued
+  /// attempt. Static + pure so the offline wire shape is directly unit-testable
+  /// (without Dio). Encodes the Wave 2.5.2 offline obligations:
+  ///   * `attemptMode = offline_replay`
+  ///   * `capturedAt` parsed from the stored ISO-8601 (captured ONCE at
+  ///     completion — never recomputed here)
+  ///   * `clientCapturedTotalSeconds == totalTimeSeconds` (server cross-check)
+  ///   * per-question times forwarded verbatim (P3)
+  ///   * `shuffleMapsClientGradedAgainst` sent ONLY when the bundle carried a
+  ///     map (it usually does not — P6 keeps the shuffle server-side)
+  ///   * `drainAttempt` telemetry counter
+  ///
+  /// The `Idempotency-Key` header is NOT part of the body — it is stamped by
+  /// [submitOfflineReplay] from [attempt.idempotencyKey] verbatim (never here).
+  static v2.QuizSubmitRequest buildOfflineSubmitRequest(
+    QueuedQuizAttempt attempt,
+  ) {
+    final responses = attempt.responses
+        .map((r) => <String, dynamic>{
+              'question_id': r.questionId,
+              'selected_displayed_index': r.selectedDisplayedIndex,
+              'time_spent': r.timeSpent,
+            })
+        .toList(growable: false);
+
+    final builder = v2.QuizSubmitRequestBuilder()
+      ..studentId = attempt.studentId
+      ..sessionId = attempt.sessionId
+      ..subject = attempt.subject
+      ..grade = attempt.grade
+      ..topic = attempt.topic
+      ..chapter = attempt.chapter
+      ..totalTimeSeconds = attempt.totalTimeSeconds
+      ..attemptMode = v2.QuizSubmitRequestAttemptModeEnum.offlineReplay
+      // capturedAt: device wall-clock at COMPLETION, captured once. The
+      // generated DTO parses the stored ISO-8601 string into DateTime.
+      ..capturedAt = DateTime.parse(attempt.capturedAt)
+      // Must equal totalTimeSeconds (server: 400 OFFLINE_TIME_INCONSISTENT).
+      ..clientCapturedTotalSeconds = attempt.totalTimeSeconds
+      ..drainAttempt = attempt.drainAttempt
+      ..responses.replace(buildV2SubmitItems(responses));
+
+    // Shuffle maps are sent ONLY when the cached bundle actually carried them
+    // (usually it does NOT — the server keeps the shuffle map server-side per
+    // P6, so /v2/quiz/start never reveals it). When omitted, the server
+    // verifies session integrity via its own snapshot (defers to the RPC's
+    // session_not_started → 409 for a missing snapshot). Sending a fabricated
+    // map would risk a false SHUFFLE_MAP_MISMATCH 422 — so we only send a map
+    // we genuinely rendered against.
+    if (attempt.shuffleMaps.isNotEmpty) {
+      builder.shuffleMapsClientGradedAgainst.replace(
+        attempt.shuffleMaps.map(
+          (k, v) => MapEntry(k, BuiltList<int>(v)),
+        ),
+      );
+    }
+
+    return builder.build();
+  }
+
+  /// Pull the server's structured error `code` (e.g. `REPLAY_TOO_STALE`) from a
+  /// DioException body, if present. Code strings only — no PII (P13).
+  static String? _errorCode(DioException e) {
+    final data = e.response?.data;
+    if (data is Map) {
+      final code = data['code'] ?? data['error_code'];
+      if (code != null) return code.toString();
+      final err = data['error'];
+      if (err is Map && err['code'] != null) return err['code'].toString();
+    }
+    return null;
   }
 
   /// Extract a useful message from a thrown error (DioException server bodies
