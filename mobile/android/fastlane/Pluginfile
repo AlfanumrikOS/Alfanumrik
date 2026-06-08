@@ -1,0 +1,7 @@
+# Fastlane plugins for Alfanumrik Android.
+#
+# No third-party plugins are required: upload_to_play_store ships with core
+# fastlane (the `supply` action). This file exists so `bundle exec fastlane`
+# resolves a Pluginfile without warning and so future plugins have a home.
+#
+# To add a plugin: `bundle exec fastlane add_plugin <name>` (it will append here).

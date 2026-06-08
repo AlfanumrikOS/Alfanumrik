@@ -1,0 +1,47 @@
+# Fastlane Fastfile — Alfanumrik Android (Play Store publishing).
+#
+# Pipeline (run from mobile/android/, or via the release CI workflow):
+#   1. CI writes key.properties + upload-keystore.jks from secrets.
+#   2. CI writes the Play service-account JSON and exports
+#      PLAY_SERVICE_ACCOUNT_JSON_PATH (consumed by Appfile).
+#   3. `flutter build appbundle --release` produces the signed AAB at
+#      build/app/outputs/bundle/release/app-release.aab (Flutter writes it to
+#      mobile/build/..., i.e. ../build/... relative to mobile/android/).
+#   4. `bundle exec fastlane internal` uploads that AAB here.
+#
+# Fastlane only UPLOADS — it never builds. Keep the Flutter build a separate CI
+# step so signing config (key.properties) and minification stay owned by Gradle.
+
+default_platform(:android)
+
+# Path to the AAB Flutter emits, relative to mobile/android/ (this dir).
+AAB_PATH = "../build/app/outputs/bundle/release/app-release.aab"
+
+platform :android do
+  desc "Upload the already-built signed AAB to the Play Store INTERNAL track (draft)."
+  desc "Prereq: `flutter build appbundle --release` has already produced the AAB."
+  lane :internal do
+    upload_to_play_store(
+      track: "internal",
+      aab: AAB_PATH,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      release_status: "draft"
+    )
+  end
+
+  desc "Promote the latest INTERNAL-track release to PRODUCTION as a draft."
+  desc "Manual review + staged rollout is finished in the Play Console UI."
+  lane :promote_to_production do
+    upload_to_play_store(
+      track: "internal",
+      track_promote_to: "production",
+      skip_upload_aab: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      release_status: "draft"
+    )
+  end
+end
