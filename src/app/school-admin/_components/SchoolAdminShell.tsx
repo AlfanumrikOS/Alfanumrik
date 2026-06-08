@@ -8,8 +8,10 @@ import { supabase } from '@/lib/supabase';
 import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
 import type { ModuleKey } from '@/lib/modules/registry';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
+import { useSchoolCommandCenter } from '@/lib/use-school-command-center';
 import { useCosmicTheme } from '@/lib/cosmic-theme';
 import { Starfield } from '@/components/cosmic';
+import ConsolidatedSchoolNav from './ConsolidatedSchoolNav';
 
 /* ─── P7: Bilingual labels ───────────────────────────────────────────
  *
@@ -82,6 +84,11 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
 
   // Editorial Atlas pass-through. Sync read from cache — no flash.
   const atlasOn = useAtlasFlag('school');
+  // Phase 3B — consolidated 5-section nav. Sync-paints DEFAULT_OFF (1h cache),
+  // so for every current (flag-absent) user this is false on the first paint and
+  // the existing flat DashboardSidebar renders byte-identically. ON ⇒ the
+  // grouped ConsolidatedSchoolNav renders instead.
+  const commandCenterOn = useSchoolCommandCenter();
 
   const primaryColor = tenant.branding.primaryColor || '#7C3AED';
 
@@ -150,26 +157,52 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
       {/* Cosmic dark canvas — decorative starfield behind the portal. Hidden in
           light/HC + reduced-motion via globals.css. */}
       {cosmicEnabled && <Starfield className="!fixed inset-0 -z-0" />}
-      <DashboardSidebar
-        brandTitle={schoolName || (isHi ? 'स्कूल प्रशासन' : 'School Admin')}
-        brandSubtitle={isHi ? 'स्कूल प्रशासन' : 'School Administration'}
-        logoUrl={logoUrl}
-        primaryColor={primaryColor}
-        items={NAV_ITEMS as unknown as SidebarNavItem[]}
-        currentPath={pathname || ''}
-        isHi={isHi}
-        moduleEnablement={moduleEnablement}
-        footer={
-          (tenant.branding.showPoweredBy || tenant.schoolId) ? (
-            <div>
-              Powered by{' '}
-              <a href="https://alfanumrik.com" className="text-primary no-underline">
-                Alfanumrik
-              </a>
-            </div>
-          ) : null
-        }
-      />
+      {/* Phase 3B nav dispatch: ON ⇒ consolidated 5-section nav; OFF ⇒ the
+          existing flat DashboardSidebar (byte-identical). Both receive the same
+          branding, current path, and module-enablement so behaviour parity is
+          preserved (module gating, active highlight, mobile drawer). */}
+      {commandCenterOn ? (
+        <ConsolidatedSchoolNav
+          brandTitle={schoolName || (isHi ? 'स्कूल प्रशासन' : 'School Admin')}
+          brandSubtitle={isHi ? 'स्कूल प्रशासन' : 'School Administration'}
+          logoUrl={logoUrl}
+          primaryColor={primaryColor}
+          currentPath={pathname || ''}
+          isHi={isHi}
+          moduleEnablement={moduleEnablement}
+          footer={
+            (tenant.branding.showPoweredBy || tenant.schoolId) ? (
+              <div>
+                Powered by{' '}
+                <a href="https://alfanumrik.com" className="text-primary no-underline">
+                  Alfanumrik
+                </a>
+              </div>
+            ) : null
+          }
+        />
+      ) : (
+        <DashboardSidebar
+          brandTitle={schoolName || (isHi ? 'स्कूल प्रशासन' : 'School Admin')}
+          brandSubtitle={isHi ? 'स्कूल प्रशासन' : 'School Administration'}
+          logoUrl={logoUrl}
+          primaryColor={primaryColor}
+          items={NAV_ITEMS as unknown as SidebarNavItem[]}
+          currentPath={pathname || ''}
+          isHi={isHi}
+          moduleEnablement={moduleEnablement}
+          footer={
+            (tenant.branding.showPoweredBy || tenant.schoolId) ? (
+              <div>
+                Powered by{' '}
+                <a href="https://alfanumrik.com" className="text-primary no-underline">
+                  Alfanumrik
+                </a>
+              </div>
+            ) : null
+          }
+        />
+      )}
       <main className={`flex-1 max-w-screen-xl overflow-auto p-6${cosmicEnabled ? ' relative z-10' : ''}`}>{children}</main>
     </div>
   );

@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
+import { useSchoolCommandCenter } from '@/lib/use-school-command-center';
 import { useCosmicTheme } from '@/lib/cosmic-theme';
 import AtlasSchoolAdmin from './AtlasSchoolAdmin';
+import CommandCenter from './CommandCenter';
 import {
   Card,
   Button,
@@ -159,9 +161,22 @@ function ActionTile({ icon, label, color, onClick }: ActionTileProps) {
    MAIN PAGE
 ───────────────────────────────────────────────────────────── */
 export default function SchoolAdminPage() {
-  // Synchronous Atlas dispatch via cached flag — no spinner, no flash.
+  // Both flag hooks are called unconditionally (Rules of Hooks) before any
+  // branch. Each sync-paints from its own localStorage cache — no spinner, no
+  // flash.
+  //
+  // Phase 3B dispatch (highest priority): when ff_school_command_center is ON,
+  // render the read-only School Command Center. The hook sync-paints DEFAULT_OFF
+  // with a 1h cache, so for every current (flag-absent) user it resolves to
+  // false on the very first paint — the OFF path below is reached
+  // byte-identically (no flash, no behaviour change). See
+  // src/lib/use-school-command-center.ts.
+  const commandCenter = useSchoolCommandCenter();
+  // OFF path — UNCHANGED. Synchronous Atlas dispatch via cached flag.
   // See src/lib/use-atlas-flag.ts for the cache + default-true strategy.
   const atlas = useAtlasFlag('school');
+
+  if (commandCenter) return <CommandCenter />;
   if (atlas) return <AtlasSchoolAdmin />;
   return <LegacySchoolAdminPage />;
 }

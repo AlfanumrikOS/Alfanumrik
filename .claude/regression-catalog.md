@@ -2458,3 +2458,106 @@ scoring/XP P1/P2 with migration-free inline-summary attachment; flag-OFF
 byte-identical Command Center).
 
 **Total: 63 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+
+## School Command Center read-model rollup (Phase 3B Wave A) — REG-96
+
+Source: Phase 3B Wave A "School Command Center" (read-only principal/admin
+overview, behind `ff_school_command_center`; default OFF). Adds ONE migration
+(`supabase/migrations/20260614000000_phase3b_school_command_center_read_models.sql`)
+with three SECURITY DEFINER read-model RPCs (`get_school_overview`,
+`get_classes_at_risk`, `get_teacher_engagement`) + covering indexes, three thin
+GET routes (`src/app/api/school-admin/{overview,classes-at-risk,teacher-engagement}/route.ts`)
+that gate on the EXISTING `institution.view_analytics` permission and call the
+RPCs through a USER-CONTEXT client, a server-side school-resolution guard
+(`src/lib/school-admin/command-center-context.ts`), shared types
+(`src/lib/school-admin/command-center-types.ts`), the flag hook
+(`src/lib/use-school-command-center.ts` + `SCHOOL_COMMAND_CENTER_FLAGS`), and the
+read-only UI (`src/app/school-admin/CommandCenter.tsx` + the two command-center
+panels). NO new table, NO new RBAC permission, NO scoring/XP — 100% read-only.
+Mastery is read verbatim from `concept_mastery.p_know` (assessment owns the value;
+the read models never recompute it).
+
+Three things are blocking defects if they regress: (a) **rollup correctness +
+the 0.4 at-risk boundary** — `get_classes_at_risk` counts a student as at-risk
+ONLY when their avg `p_know < 0.4` (a student at exactly 0.40 is NOT at-risk —
+the boundary excludes equality), orders most-at-risk first, and clamps `p_limit`
+to 1..100; `get_school_overview` flips `data_state` to `'no_data'` for an empty
+school and `'live'` otherwise, and returns NULL `avg_mastery` /
+`seat_utilization_pct` rather than a fake `0` when there is no mastery / seat
+signal; (b) **cross-school 403 scope guard (P8/P9 cross-tenant safety)** — each
+SECURITY DEFINER RPC RAISES 42501 unless `auth.uid()` is an ACTIVE
+`school_admins` member of exactly `p_school_id`, so a non-admin AND a wrong-school
+admin both get the permission error (mapped to HTTP 403 by the route); the
+route-layer resolver is defence-in-depth in front of it (no membership → 403;
+multi-school + no `?school_id` → 400 with `{ school_ids }`; a `?school_id` outside
+the caller's memberships → 403; the P9 `authorizeRequest` 401/403 propagates
+unchanged) and never leaks SQL/PII on a generic RPC failure (→ 500); (c)
+**flag-OFF byte-identical** — `ff_school_command_center` defaults OFF and is
+unseeded ⇒ `useSchoolCommandCenter()` resolves false on the synchronous first
+paint and stays false (no first-paint flash), so both the `/school-admin` page
+and the consolidated nav stay byte-identical to the legacy stat-tile surface
+until rollout.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-96 | `school_command_center_rollup_at_risk_boundary_cross_school_403_flag_off` | **(a) Rollup correctness + 0.4 boundary.** Live-DB: `get_classes_at_risk` over a seeded 4-student class with `p_know` of {0.39, 0.40, 0.10, 0.80} returns `at_risk_count = 2` — the 0.40 boundary student is EXCLUDED (strict `< 0.4`); the all-above class returns `at_risk_count = 0`; ordering is most-at-risk-first; `get_school_overview.data_state` is `'no_data'` for an empty school and `'live'` for one with a roster; `avg_mastery` and `seat_utilization_pct` are NULL (never fake `0`) for a roster with no `concept_mastery` / no seat snapshot; `get_teacher_engagement` counts distinct active class assignments per teacher (TA1=2, TA2=0) ordered assigned-DESC. **(b) Cross-school 403 scope guard.** Live-DB: an authenticated NON-admin AND a WRONG-SCHOOL admin (admin of B querying A) both get Postgres `42501` from all three SECURITY DEFINER RPCs; an ACTIVE admin of the school succeeds. Unit: the route maps RPC `42501` → HTTP 403 and a generic RPC error → HTTP 500 with no SQL/PII leak; `resolveCommandCenterContext` gates on `institution.view_analytics` (P9, no new permission), returns the `authorizeRequest` 401/403 UNCHANGED, 403s a caller with no active membership, 400s a multi-school caller with `{ school_ids }`, 403s a `?school_id` outside the caller's memberships, resolves a single membership without a param, and de-dupes repeated rows; `parsePagination` clamps limit to 1..100 (500→100, 0/neg→default-or-1) and offset to ≥0 (non-numeric→default). **(c) Flag-OFF byte-identical.** `useSchoolCommandCenter()` initial SYNCHRONOUS value is `false` (DEFAULT_OFF) before any async resolution, stays false when the flag is absent / explicitly false / on a `getFeatureFlags` rejection, flips ON only after the async confirm when the flag resolves true, and requests flags scoped to `role: 'school_admin'`. | `src/__tests__/migrations/school-command-center-read-models.test.ts` (14 live-DB tests: scope guard 42501 for non-admin + wrong-school across all 3 RPCs + active-admin success; 0.4 at-risk boundary incl. the 0.40-excluded student + most-at-risk-first ordering; pagination clamp 500→≤100 / 0→≥1 / negative→≥1; `data_state` no_data↔live; null `avg_mastery` + null `seat_utilization_pct`; teacher class_count rollup) + `src/__tests__/api/school-admin/command-center-routes.test.ts` (41 unit tests: per-route 401/403/400 passthrough no-RPC-call, 42501→403, generic→500 no-leak, correct-RPC-with-school-id, cache header; overview live/no_data/null-result snapshot + no-pagination-params; list empty/null→200 empty array + count=rows.length + limit/offset clamp echo + RPC param pin) + `src/__tests__/lib/school-admin/command-center-context.test.ts` (24 unit tests: P9 gate passthrough + `institution.view_analytics`; no-membership 403; single resolve; multi-school 400 `{ school_ids }`; cross-school `?school_id` 403; matched `?school_id` resolve; row de-dupe; lookup-error 500 no-leak; `parsePagination` clamp matrix; `rpcErrorResponse` 42501→403 / generic→500-no-leak; constants) + `src/__tests__/school-admin/command-center-flag-gate.test.tsx` (5 tests: sync DEFAULT_OFF + stays-OFF-absent / stays-OFF-false / flips-ON-true / stays-OFF-on-reject / role-scoped fetch) | E |
+
+### Pinned tests
+
+- `src/__tests__/migrations/school-command-center-read-models.test.ts::scope guard (cross-tenant safety — RAISE 42501)::rejects a WRONG-SCHOOL admin (admin of B querying A)`
+- `src/__tests__/migrations/school-command-center-read-models.test.ts::at-risk boundary (p_know < 0.4 is at-risk; exactly 0.4 is NOT)::counts students strictly below 0.4 — the 0.40 student is excluded`
+- `src/__tests__/migrations/school-command-center-read-models.test.ts::data_state hint::flips to 'no_data' for an empty school (no classes/roster/mastery)`
+- `src/__tests__/migrations/school-command-center-read-models.test.ts::null numerics when there is no signal::avg_mastery is null for a roster with no concept_mastery rows`
+- `src/__tests__/api/school-admin/command-center-routes.test.ts::GET /api/school-admin/classes-at-risk — resolution + error mapping::maps a Postgres 42501 RPC error to HTTP 403 (scope guard)`
+- `src/__tests__/lib/school-admin/command-center-context.test.ts::resolveCommandCenterContext — membership resolution::403 when ?school_id is NOT one of the caller active memberships (cross-school)`
+- `src/__tests__/school-admin/command-center-flag-gate.test.tsx::useSchoolCommandCenter — default OFF (no first-paint flash)::initialises OFF synchronously and stays OFF when the flag is absent`
+
+### Invariants covered by this section
+
+- P8/P9 (cross-tenant scope) — the SECURITY DEFINER RPCs RAISE 42501 unless
+  `auth.uid()` is an active `school_admins` member of `p_school_id`; the routes
+  gate on the EXISTING `institution.view_analytics` permission (no new code) and
+  resolve the school server-side, never trusting a client-supplied id.
+- P5 (grade format) — `get_classes_at_risk` returns `grade` as a text column;
+  the shared type is `string | null`.
+- P13 (data privacy) — neither the route nor the resolver leaks SQL/policy text
+  on an RPC or membership-lookup error (generic 500 message; raw error logged
+  server-side via the redacting logger only).
+- No scoring/XP (read-only) — mastery is read verbatim from
+  `concept_mastery.p_know`; the read models never recompute a score and contain
+  no XP constant.
+- Flag-OFF byte-identity (rollout safety) — `ff_school_command_center` default-OFF
+  keeps both school-admin surfaces byte-identical to the legacy stat-tile
+  dashboard until rollout, with a deterministic synchronous OFF first paint.
+
+### Notes on test strategy
+
+REG-96 uses the repo's **live-DB-integration + route-unit + flag-hook pattern**.
+The live-DB RPC tests live under `src/__tests__/migrations/**` (gated by
+`hasSupabaseIntegrationEnv()` → `describe.skip` under placeholder env, and by the
+`RUN_INTEGRATION_TESTS=1` include split in `vitest.config.ts`), matching the
+existing migration integration suite (`cbse-syllabus.test.ts:5`,
+`question-bank-verification.test.ts:5`, `state-runtime/bkt-sql-parity.test.ts:43`
+`await sb.rpc(...)`). They add the user-context-JWT seam those tests did not need:
+because the read models are SECURITY DEFINER and guard on `auth.uid()`, each admin
+fixture is a REAL auth user (`supabaseAdmin.auth.admin.createUser` →
+`signInWithPassword` → anon client bearing the JWT), so the in-RPC scope guard is
+exercised for real rather than bypassed by the service-role client. These run only
+in the "Integration Tests (live DB)" CI job (currently billing-blocked; will run
+when CI billing is restored). The route + resolver + flag-hook tests run under the
+normal Vitest unit job with no DB: the route tests mock ONLY
+`resolveCommandCenterContext` (keeping `parsePagination` / `rpcErrorResponse` /
+the cache constant REAL via `importActual`) so the real clamp + 42501→403 mapping
+run; the resolver test mocks `authorizeRequest` + `@supabase/ssr` + the logger and
+drives the real function; the flag-hook test mocks only `getFeatureFlags` and
+asserts the synchronous DEFAULT_OFF paint (mirrors the Phase 3A
+`teacher/command-center-flag-gate.test.tsx`).
+
+### Catalog total
+
+Pre-Phase-3B-Wave-A: 63 entries. Phase 3B Wave A (read-only School Command Center,
+behind `ff_school_command_center`) adds REG-96 (rollup correctness + 0.4 at-risk
+boundary; cross-school 403 scope guard P8/P9; flag-OFF byte-identical with a
+deterministic synchronous-OFF first paint).
+
+**Total: 64 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
