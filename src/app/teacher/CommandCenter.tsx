@@ -40,6 +40,7 @@ import {
 import { authHeader } from '@/lib/api/auth-header';
 import { useTeacherAssignmentLifecycle } from '@/lib/use-teacher-assignment-lifecycle';
 import { useTeacherGradebookDepth } from '@/lib/use-teacher-gradebook-depth';
+import { useTeacherParentComms } from '@/lib/use-teacher-parent-comms';
 import type {
   HeatmapData,
   HeatmapCell,
@@ -228,16 +229,30 @@ function RosterHeatmap({
 }
 
 // ─── At-risk alert row with assign-remediation ──────────────────────────────
+// Wave D: `parentCommsEnabled` (ff_teacher_parent_comms) layers a one-tap "Tell
+// the parent 🎉" button onto a RESOLVED alert. When the flag is OFF the button is
+// never rendered and `onTellParent` is never wired — flag-OFF stays byte-identical
+// to Wave A–C. `parentNotifyDone` reflects an already-sent notification for this
+// student (idempotent-safe: the button disables to a "Parent notified ✓" chip
+// after a successful POST so it can't be double-fired).
 function AlertRow({
   alert,
   isHi,
   onAssign,
   busy,
+  parentCommsEnabled,
+  onTellParent,
+  parentNotifyBusy,
+  parentNotifyDone,
 }: {
   alert: RiskAlert;
   isHi: boolean;
   onAssign: (alert: RiskAlert) => void;
   busy: boolean;
+  parentCommsEnabled: boolean;
+  onTellParent: (alert: RiskAlert) => void;
+  parentNotifyBusy: boolean;
+  parentNotifyDone: boolean;
 }) {
   const s = SEV[alert.severity] || SEV.medium;
   const status: RemediationStatus = alert.remediation_status ?? 'none';
@@ -252,7 +267,7 @@ function AlertRow({
           <span className="ml-2 font-semibold text-slate-100 text-sm">{alert.title}</span>
         </div>
         {/* Remediation control — server owns the state; the button only POSTs. */}
-        <div className="shrink-0">
+        <div className="shrink-0 flex items-center gap-2">
           {status === 'none' && (
             <button
               type="button"
@@ -290,6 +305,29 @@ function AlertRow({
               ✓ {tt(isHi, 'Resolved', 'हल हो गया')}
             </span>
           )}
+          {/* Wave D — one-tap "Tell the parent" on a RESOLVED alert (flag-gated).
+              Server owns thread/message creation; this button only POSTs. */}
+          {parentCommsEnabled && status === 'resolved' &&
+            (parentNotifyDone ? (
+              <span
+                data-testid="parent-notified-chip"
+                className="inline-flex items-center gap-1 py-1 px-2.5 rounded-md text-[11px] font-semibold bg-sky-500/15 text-sky-400 border border-sky-500/30"
+              >
+                ✓ {tt(isHi, 'Parent notified', 'अभिभावक को सूचित किया')}
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onTellParent(alert)}
+                disabled={parentNotifyBusy}
+                data-testid="tell-parent-btn"
+                className="py-1 px-2.5 bg-sky-600 text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+              >
+                {parentNotifyBusy
+                  ? tt(isHi, 'Sending…', 'भेजा जा रहा है…')
+                  : tt(isHi, 'Tell the parent 🎉', 'अभिभावक को बताएं 🎉')}
+              </button>
+            ))}
         </div>
       </div>
       <p className="text-slate-400 text-[13px] my-1.5">{alert.description}</p>
@@ -408,6 +446,11 @@ export default function CommandCenter() {
   // OFF ⇒ heatmap cells stay plain navigate-to-student links (byte-identical).
   const gradebookDepthEnabled = useTeacherGradebookDepth();
 
+  // Wave D — additional gate for the one-tap "Tell the parent" affordance.
+  // Default OFF ⇒ NO parent-comms button anywhere and NO parent-notify fetch is
+  // ever issued (byte-identical to Wave A–C).
+  const parentCommsEnabled = useTeacherParentComms();
+
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [activeClassId, setActiveClassId] = useState<string>('');
   const [heatmap, setHeatmap] = useState<HeatmapData | null>(null);
@@ -433,6 +476,15 @@ export default function CommandCenter() {
   const [reportExporting, setReportExporting] = useState(false);
   // The student currently being reported on (id + name) — re-used by retry/export.
   const [reportStudent, setReportStudent] = useState<{ id: string; name: string } | null>(null);
+
+  // Wave D — parent-comms state. `parentNotifyBusy` is keyed by student_id (a
+  // student can surface on multiple alerts; we disable every "Tell the parent"
+  // affordance for that student while one POST is in flight). `parentNotifyDone`
+  // is the set of student_ids already notified this session — once notified the
+  // button collapses to a "Parent notified ✓" chip so it can't be double-fired
+  // (idempotent-safe). Both surfaces (alert + report panel) read this state.
+  const [parentNotifyBusy, setParentNotifyBusy] = useState<Record<string, boolean>>({});
+  const [parentNotifyDone, setParentNotifyDone] = useState<Record<string, boolean>>({});
 
   const teacherId = teacher?.id || '';
 
@@ -707,6 +759,99 @@ export default function CommandCenter() {
     }
   }, [reportStudent, teacherId, isHi, showToast]);
 
+  // Wave D — "Tell the parent". One shared POST helper for BOTH entry points:
+  //   1. a RESOLVED at-risk alert → context 'remediation_resolved' (+ remediation
+  //      hint when resolvable) → templated good-news message;
+  //   2. the Student Mastery Report panel → context 'general'.
+  // The server find-or-creates the teacher↔parent thread and sends the message;
+  // include_report:true appends an inline progress summary. Outcomes:
+  //   200 → "Parent notified ✓" (with a deep-link to /teacher/messages);
+  //   409 no_guardian → informational "No parent linked" toast (NOT an error);
+  //   other → friendly error toast.
+  // Optimistic disable + spinner via parentNotifyBusy; on success we mark the
+  // student done so the button collapses to a chip (idempotent-safe — a second
+  // tap can't fire). P13: no PII in client logs.
+  const notifyParent = useCallback(
+    async (opts: {
+      studentId: string;
+      context: 'remediation_resolved' | 'general';
+      remediationId?: string;
+    }) => {
+      const { studentId, context, remediationId } = opts;
+      if (!studentId || parentNotifyBusy[studentId] || parentNotifyDone[studentId]) return;
+      setParentNotifyBusy((m) => ({ ...m, [studentId]: true }));
+      try {
+        const res = await fetch('/api/teacher/parent-notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+          body: JSON.stringify({
+            student_id: studentId,
+            context,
+            include_report: true,
+            ...(remediationId ? { remediation_id: remediationId } : {}),
+          }),
+        });
+
+        if (res.ok) {
+          // Mark done so the affordance collapses to a "Parent notified ✓" chip.
+          setParentNotifyDone((m) => ({ ...m, [studentId]: true }));
+          showToast(tt(isHi, 'Parent notified ✓', 'अभिभावक को सूचित किया ✓'), 'success');
+          return;
+        }
+
+        if (res.status === 409) {
+          // No linked guardian — informational, NOT an error. The student simply
+          // has no parent on the platform yet.
+          showToast(
+            tt(isHi, 'No parent linked for this student', 'इस छात्र के लिए कोई अभिभावक लिंक नहीं है'),
+            'success',
+          );
+          return;
+        }
+
+        // Any other status — friendly, retryable error.
+        showToast(
+          tt(isHi, "Couldn't notify the parent — please retry", 'अभिभावक को सूचित नहीं कर सके — पुनः प्रयास करें'),
+          'error',
+        );
+      } catch {
+        // Network/transport failure — generic toast (P13: no PII in logs).
+        showToast(
+          tt(isHi, "Couldn't notify the parent — please retry", 'अभिभावक को सूचित नहीं कर सके — पुनः प्रयास करें'),
+          'error',
+        );
+      } finally {
+        setParentNotifyBusy((m) => {
+          const next = { ...m };
+          delete next[studentId];
+          return next;
+        });
+      }
+    },
+    [parentNotifyBusy, parentNotifyDone, isHi, showToast],
+  );
+
+  // Entry point 1 — resolved at-risk alert. We pass the alert's remediation id as
+  // a hint when present so the templated message can name the resolved concept;
+  // derived alerts carry no remediation id, which the server tolerates.
+  const tellParentFromAlert = useCallback(
+    (alert: RiskAlert) => {
+      const remediationId = (alert as RiskAlert & { remediation_id?: string }).remediation_id;
+      void notifyParent({
+        studentId: alert.student_id,
+        context: 'remediation_resolved',
+        remediationId,
+      });
+    },
+    [notifyParent],
+  );
+
+  // Entry point 2 — Student Mastery Report panel "Share with parent".
+  const shareReportWithParent = useCallback(() => {
+    if (!reportStudent) return;
+    void notifyParent({ studentId: reportStudent.id, context: 'general' });
+  }, [notifyParent, reportStudent]);
+
   const classes = useMemo(() => dash?.classes ?? [], [dash?.classes]);
   const activeClass = useMemo(
     () => classes.find((c) => c.id === activeClassId) ?? classes[0],
@@ -933,6 +1078,12 @@ export default function CommandCenter() {
             onExport={exportReport}
             onRetry={() => reportStudent && fetchReport(reportStudent.id, reportStudent.name)}
             onClose={() => setReportOpen(false)}
+            /* Wave D — "Share with parent" (flag-gated). When OFF the button is
+               not rendered and shareReportWithParent is never invoked. */
+            parentCommsEnabled={parentCommsEnabled}
+            onShareWithParent={shareReportWithParent}
+            shareWithParentBusy={!!(reportStudent && parentNotifyBusy[reportStudent.id])}
+            shareWithParentDone={!!(reportStudent && parentNotifyDone[reportStudent.id])}
           />
         </div>
       )}
@@ -1001,6 +1152,10 @@ export default function CommandCenter() {
                   isHi={isHi}
                   onAssign={assignRemediation}
                   busy={!!assigning[a.id]}
+                  parentCommsEnabled={parentCommsEnabled}
+                  onTellParent={tellParentFromAlert}
+                  parentNotifyBusy={!!parentNotifyBusy[a.student_id]}
+                  parentNotifyDone={!!parentNotifyDone[a.student_id]}
                 />
               ))
             )}

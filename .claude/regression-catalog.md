@@ -2363,3 +2363,98 @@ guard; Bloom aggregation correctness + roster scope P8/P13; flag-OFF
 byte-identical gradebook + heatmap).
 
 **Total: 62 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+
+## Teacher → parent one-tap notify (Phase 3A Wave D) — REG-95
+
+Source: Phase 3A Wave D "Parent comms / Tell the parent" (behind
+`ff_teacher_parent_comms`, layered ON TOP of `ff_teacher_command_center`; both
+default OFF). Adds one Next.js API route (`POST /api/teacher/parent-notify`,
+`src/app/api/teacher/parent-notify/route.ts`) and two Command Center entry
+points: a one-tap "Tell the parent 🎉" button on a RESOLVED at-risk alert and a
+"Share with parent" button inside the Wave C Student Mastery Report panel
+(`src/app/teacher/CommandCenter.tsx`,
+`src/app/teacher/StudentMasteryReport.tsx`, `src/lib/use-teacher-parent-comms.ts`,
+`TEACHER_PARENT_COMMS_FLAGS` in `src/lib/feature-flags.ts`). The route REUSES the
+existing teacher↔parent messaging infra (`teacher_parent_threads` +
+`teacher_parent_messages`) and the existing `class.manage` permission — NO new
+migration, NO new table/column, NO new permission, NO scoring/XP. The
+`include_report` "attachment" is an inline progress-summary line (overall BKT
+mastery + recent quiz avg, both read verbatim), never a file — migration-free by
+construction.
+
+Three things are blocking defects if they regress: (a) **roster boundary (P8) +
+no-guardian safety** — a teacher may notify ONLY the parent of a student on their
+own roster (`class_teachers × class_students`); a non-roster student (or a caller
+with no `teachers` row) → 403 with NO thread and NO message written; a roster
+student with no approved/active `guardian_student_links` row → a clean 409
+`{ no_guardian: true }` (informational, NOT an error) with NO message sent; (b)
+**RBAC reuse (P9) + insert contract** — the route gates on the EXISTING
+`class.manage` permission (no new permission code) and writes through the
+existing find-or-create-thread + message-insert path with `sender_role='teacher'`
+pinned, reusing rather than duplicating the messaging schema; (c) **no scoring/XP
+(P1/P2) + flag-OFF byte-identity** — the route never touches the score formula,
+XP constants, or `atomic_quiz_profile_update`, and the `include_report` summary
+reads BKT `p_know`/`quiz_sessions.score_percent` verbatim (display-only, no
+re-derivation); with `ff_teacher_parent_comms` OFF NO "Tell the parent" /
+"Share with parent" affordance renders anywhere and NO parent-notify fetch is
+ever issued — the Command Center and report panel stay byte-identical to
+Waves A–C.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-95 | `teacher_parent_notify_roster_boundary_no_guardian_class_manage_sender_teacher_flag_off` | **(a) Roster boundary (P8) + no-guardian safety.** A student NOT on the caller-teacher roster → 403 with `threads` and `messages` both empty (no write); a caller with no `teachers` row → 403; a roster student with no linked guardian → 409 `{ no_guardian: true }` with `threads`/`messages` empty (NOT an error, no message sent). **(b) RBAC reuse (P9) + insert contract.** The route calls `authorizeRequest(_, 'class.manage')` (asserted verbatim — the SAME existing permission, NOT a new code) and a 401/403 from the gate propagates with no write; the happy path find-or-creates the `(teacher, guardian, student)` thread, REUSES an existing thread instead of duplicating it, and appends a message with `sender_role === 'teacher'`; the custom `message` is used verbatim (trimmed) and an empty/whitespace custom message → 400. **(c) No scoring/XP (P1/P2) + flag-OFF byte-identity.** `include_report:true` appends an inline progress-summary line (mastery mean `round((80+60)/2)=70%`, recent avg `round((80+90)/2)=85%`) read verbatim from BKT/`quiz_sessions` — no score formula, no XP constant, no `atomic_quiz_profile_update` in the route; the scoring/XP path (`src/lib/xp-rules.ts`, `score-config.ts`, `supabase.ts`, `quiz/submit-side-effects.ts`) is byte-identical to origin/main. Frontend (real `<CommandCenter>` + real `useTeacherParentComms`, only `getFeatureFlags` stubbed): flag ON + a RESOLVED alert renders `tell-parent-btn`, click POSTs `{ student_id, context:'remediation_resolved', include_report:true }`, 200 → `role=status` "Parent notified ✓" + collapse to `parent-notified-chip` (idempotent-safe: button gone, second tap can't re-fire); a 409 `no_guardian` renders the informational "No parent linked" toast (no error toast, button stays available); flag OFF → the resolved alert still renders but NO `tell-parent-btn` and NO `/api/teacher/parent-notify` fetch is ever issued (byte-identical to Wave A–C). | `src/__tests__/api/teacher/parent-notify/route.test.ts` (15 tests: auth gate 401/403 + `class.manage` verbatim + NOT-a-new-permission; 400 missing student_id / unknown context / empty custom message; roster 403 no-write + no-teacher-row 403; no-guardian 409 `{ no_guardian:true }` no-write; templated happy path thread-create + `sender_role='teacher'` + names student/concept; existing-thread reuse no-duplicate; generic-template fallback; custom-message verbatim-trimmed; include_report inline summary 70%/85% + omitted-when-false) + `src/__tests__/teacher/parent-comms.test.tsx` (3 tests: flag-ON resolved-alert button + exact POST body + 200 "Parent notified ✓" + chip collapse + idempotent; flag-ON 409 informational "No parent linked" not-an-error button-stays; flag-OFF no button + no fetch) | U |
+
+### Pinned tests
+
+- `src/__tests__/api/teacher/parent-notify/route.test.ts::POST /api/teacher/parent-notify — roster boundary::403 when the student is not on the caller-teacher roster (no write)`
+- `src/__tests__/api/teacher/parent-notify/route.test.ts::POST /api/teacher/parent-notify — no linked guardian::returns 409 { no_guardian: true } and sends NO message (not an error)`
+- `src/__tests__/api/teacher/parent-notify/route.test.ts::POST /api/teacher/parent-notify — auth::checks the class.manage permission (NOT a new permission)`
+- `src/__tests__/api/teacher/parent-notify/route.test.ts::POST /api/teacher/parent-notify — templated happy path::creates the thread + appends a templated remediation_resolved message (sender_role=teacher)`
+- `src/__tests__/api/teacher/parent-notify/route.test.ts::POST /api/teacher/parent-notify — templated happy path::reuses an existing (teacher,guardian,student) thread instead of creating a duplicate`
+- `src/__tests__/api/teacher/parent-notify/route.test.ts::POST /api/teacher/parent-notify — include_report::appends an inline progress summary line (mastery / recent avg) to the message body`
+- `src/__tests__/teacher/parent-comms.test.tsx::CommandCenter — Tell the parent (Wave D)::flag OFF: no "Tell the parent" button is rendered on a resolved alert and no parent-notify fetch is issued`
+
+### Invariants covered by this section
+
+- P8 (roster boundary) — the route re-resolves the caller roster via
+  `class_teachers × class_students` and 403s a non-roster student with no write;
+  no-guardian degrades to a clean 409 (no message). Extends REG-92/REG-93/REG-94.
+- P9 (RBAC reuse) — gates on the EXISTING `class.manage` permission (no new
+  permission code) and reuses the existing thread/message insert path with
+  `sender_role='teacher'`.
+- P1/P2 (no-bypass) — the notify route never touches the score formula, XP
+  constants, or `atomic_quiz_profile_update`; the `include_report` summary reads
+  BKT `p_know` / `quiz_sessions.score_percent` verbatim (display-only). The
+  scoring/XP path is byte-identical to origin/main.
+- Migration-free attachment — `include_report` is an inline text progress summary
+  (+ a deep-link reference in the notification payload), never a file; no schema
+  change.
+- Flag-OFF byte-identity (rollout safety) — `ff_teacher_parent_comms` default-OFF
+  keeps the Command Center and the report panel byte-identical to Waves A–C; no
+  affordance renders and no parent-notify fetch is issued until rollout.
+
+### Notes on test strategy
+
+REG-95 exercises the REAL Next.js route (imported under Vitest after mocking
+`@/lib/rbac`, `@/lib/logger`, and `@/lib/supabase-admin`) against a tiny
+in-memory store that mirrors only the columns the route touches — the same
+approach as the existing `teacher-parent-messaging.test.ts`. The frontend tests
+render the REAL `<CommandCenter>` and exercise the REAL `useTeacherParentComms`
+hook (the only seam stubbed is `getFeatureFlags` so the flag hook loads under
+jsdom; `global.fetch` is stubbed to branch the teacher-dashboard Edge fixtures
+vs. the `/api/teacher/parent-notify` POST), asserting the observable contract:
+the exact POST body, the 200/409/flag-OFF outcomes, the idempotent chip collapse,
+and the no-fetch-when-OFF guarantee. The honest gap left to integration is the
+live DB round-trip (a real `guardian_student_links` resolve + a real
+find-or-create against `teacher_parent_threads`/`teacher_parent_messages` and a
+real off-roster 403), sharing the live-fixture limitation of REG-92/REG-93/REG-94.
+
+### Catalog total
+
+Pre-Phase-3A-Wave-D: 62 entries. Phase 3A Wave D (teacher → parent one-tap
+notify, behind `ff_teacher_parent_comms`) adds REG-95 (roster boundary P8 +
+no-guardian 409; `class.manage` reuse P9 + `sender_role='teacher'` insert; no
+scoring/XP P1/P2 with migration-free inline-summary attachment; flag-OFF
+byte-identical Command Center).
+
+**Total: 63 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
