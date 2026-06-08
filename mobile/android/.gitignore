@@ -8,6 +8,18 @@ GeneratedPluginRegistrant.java
 
 # Remember to never publicly share your keystore.
 # See https://flutter.dev/to/reference-keystore
+# CI writes key.properties + the .jks from secrets at build time — never commit them.
 key.properties
+*.jks
+*.keystore
 **/*.keystore
 **/*.jks
+**/upload-keystore.jks
+
+# Fastlane / Play Store publishing secrets — never commit the service-account JSON.
+play-service-account.json
+**/play-service-account.json
+fastlane/play-service-account.json
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output

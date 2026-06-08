@@ -22,6 +22,20 @@ if (flutterVersionName == null) {
     flutterVersionName = '1.0'
 }
 
+// Release signing: load key.properties ONLY if present.
+// In CI (mobile-ci.yml `flutter build apk --debug`) and local dev this file is
+// ABSENT, so keystoreProperties stays empty and the release buildType falls back
+// to the debug signing config below. The Play Store release workflow writes
+// key.properties + the .jks from CI secrets before `flutter build appbundle --release`.
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('key.properties')
+def hasReleaseKeystore = keystorePropertiesFile.exists()
+if (hasReleaseKeystore) {
+    keystorePropertiesFile.withReader('UTF-8') { reader ->
+        keystoreProperties.load(reader)
+    }
+}
+
 android {
     namespace "com.alfanumrik.app"
     compileSdk flutter.compileSdkVersion
@@ -51,6 +65,22 @@ android {
         multiDexEnabled true
     }
 
+    signingConfigs {
+        // Populated only when key.properties exists. The block is always declared
+        // so `signingConfigs.release` resolves at configuration time, but it points
+        // at real credentials only on the release machine (CI with secrets, or a
+        // developer who copied key.properties). With no key.properties present the
+        // values are null and this config is never referenced (see buildTypes.release).
+        release {
+            if (hasReleaseKeystore) {
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+                storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
+                storePassword keystoreProperties['storePassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
             // Enable code shrinking + obfuscation
@@ -58,7 +88,10 @@ android {
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
 
-            signingConfig signingConfigs.debug // Replace with release keystore
+            // Sign with the real upload key when key.properties is present;
+            // otherwise fall back to debug signing so unsigned CI/local release
+            // builds (and the debug build) still succeed without a keystore.
+            signingConfig hasReleaseKeystore ? signingConfigs.release : signingConfigs.debug
         }
 
         debug {

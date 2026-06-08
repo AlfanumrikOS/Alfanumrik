@@ -1,0 +1,164 @@
+name: Mobile Release (Play Store)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Owner: architect agent. Wave 2.6.2 — Play Store release pipeline.
+#
+# Builds a SIGNED Android App Bundle (.aab) and uploads it to the Play Store
+# INTERNAL track via fastlane. This is a PUBLISH pipeline, NOT a check — it does
+# NOT run on branch pushes or PRs (those are mobile-ci.yml's job). It fires only
+# on a manual dispatch or a `mobile-v*` tag push, and never on untrusted PR code.
+#
+# Triggers:
+#   - workflow_dispatch → manual publish (optional `track` input, default internal)
+#   - push: tags ['mobile-v*'] → tagged release publish
+#
+# Secrets required (add under repo Settings → Secrets, ideally scoped to the
+# `production` environment so the protected-environment review gate applies):
+#   ANDROID_KEYSTORE_BASE64          — base64 of the upload keystore .jks
+#   ANDROID_KEYSTORE_STORE_PASSWORD  — keystore (store) password
+#   ANDROID_KEY_PASSWORD             — signing key password
+#   ANDROID_KEY_ALIAS                — signing key alias (e.g. alfanumrik)
+#   PLAY_SERVICE_ACCOUNT_JSON        — Google Play Developer API service-account JSON
+#
+# Security posture (P13-adjacent):
+#   - No secret is committed. The keystore + service-account JSON are written to
+#     disk only at runtime (and .gitignored anyway) and removed by an
+#     `if: always()` cleanup step. The runner is ephemeral.
+#   - Secrets reach steps only via `env:` mapping; no secret value is ever echoed.
+#   - A guard step fails fast with a clear message if release secrets are absent,
+#     so an unconfigured repo gets an actionable error instead of a cryptic
+#     Gradle/fastlane failure.
+#   - tag/dispatch-only triggers mean untrusted PR code can never run this and
+#     `environment: production` gates the secrets behind any configured reviewers.
+#
+# Runbook: docs/runbooks/mobile-release.md (added by ops after this workflow).
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: 'Play Store track / fastlane lane to run'
+        type: string
+        default: internal
+        required: false
+  push:
+    tags:
+      - 'mobile-v*'
+
+concurrency:
+  group: mobile-release
+  cancel-in-progress: false  # never cancel a publish mid-flight
+
+jobs:
+  release:
+    name: Build signed AAB + upload to Play Store
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: production
+    steps:
+      # ── Guard: fail fast if release secrets are not configured ─────────────
+      # Secrets cannot be referenced in `if:`, so map them to env and test in run.
+      # We only test for presence/emptiness — we never print the values.
+      - name: Verify release secrets are configured
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
+            echo "::error::Release secrets not configured — see docs/runbooks/mobile-release.md"
+            echo "Required: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_STORE_PASSWORD, ANDROID_KEY_PASSWORD, ANDROID_KEY_ALIAS, PLAY_SERVICE_ACCOUNT_JSON"
+            exit 1
+          fi
+          echo "Release secrets present."
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Same Flutter version mobile-ci.yml is pinned to (3.41.9 / stable).
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.9'
+          channel: 'stable'
+          cache: true
+
+      # The /v2 Dart client is a path-dependency package whose *.g.dart `part`
+      # files are gitignored. A clean checkout will NOT compile until build_runner
+      # regenerates them. This mirrors mobile-ci.yml exactly: codegen MUST run
+      # INSIDE lib/api/v2, then `flutter pub get` at the app root.
+      - name: Regenerate /v2 Dart client (build_runner)
+        working-directory: mobile/lib/api/v2
+        run: |
+          dart pub get
+          dart run build_runner build --delete-conflicting-outputs
+
+      - name: flutter pub get
+        working-directory: mobile
+        run: flutter pub get
+
+      # ── Write signing material from secrets (runtime only, .gitignored) ─────
+      # storeFile=upload-keystore.jks matches key.properties.example and the
+      # Gradle release signingConfig (mobile/android/app/build.gradle).
+      - name: Write key.properties
+        env:
+          ANDROID_KEYSTORE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_STORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          {
+            echo "storePassword=${ANDROID_KEYSTORE_STORE_PASSWORD}"
+            echo "keyPassword=${ANDROID_KEY_PASSWORD}"
+            echo "keyAlias=${ANDROID_KEY_ALIAS}"
+            echo "storeFile=upload-keystore.jks"
+          } > mobile/android/key.properties
+
+      - name: Decode upload keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > mobile/android/upload-keystore.jks
+
+      # Gradle reads key.properties + upload-keystore.jks and produces the signed
+      # AAB at mobile/build/app/outputs/bundle/release/app-release.aab.
+      - name: Build signed App Bundle
+        working-directory: mobile
+        run: flutter build appbundle --release
+
+      - name: Set up Ruby + bundler (fastlane)
+        uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+          working-directory: mobile/android
+
+      # ── Write Play service-account JSON + upload via fastlane ──────────────
+      # The Appfile reads PLAY_SERVICE_ACCOUNT_JSON_PATH. fastlane lane is the
+      # dispatch `track` input (default `internal` for tag pushes). The lane
+      # uploads ../build/app/outputs/bundle/release/app-release.aab.
+      - name: Upload to Play Store via fastlane
+        working-directory: mobile/android
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          FASTLANE_LANE: ${{ github.event.inputs.track || 'internal' }}
+        run: |
+          printf '%s' "$PLAY_SERVICE_ACCOUNT_JSON" > play-service-account.json
+          export PLAY_SERVICE_ACCOUNT_JSON_PATH="$PWD/play-service-account.json"
+          bundle exec fastlane "$FASTLANE_LANE"
+
+      # Keep the exact bytes we uploaded for traceability / audit.
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab
+          path: mobile/build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 30
+
+      # Defense-in-depth: remove signing material even though the runner is
+      # ephemeral and these paths are .gitignored. Runs on success or failure.
+      - name: Clean up signing material
+        if: always()
+        run: |
+          rm -f mobile/android/key.properties
+          rm -f mobile/android/upload-keystore.jks
+          rm -f mobile/android/play-service-account.json

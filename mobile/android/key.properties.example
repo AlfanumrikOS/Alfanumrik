@@ -1,8 +1,17 @@
-## Release signing config for Alfanumrik Android app
-## Copy this to key.properties and fill in your values.
-## NEVER commit key.properties to git.
+# Release signing config for the Alfanumrik Android app.
+#
+# Copy to key.properties (gitignored); CI writes this from secrets — never commit
+# the real file or the .jks. In CI and local dev key.properties is ABSENT and the
+# release build falls back to debug signing (see android/app/build.gradle).
+#
+# The 4 keys:
+#   storePassword  — password for the keystore file (CI secret)
+#   keyPassword    — password for the signing key inside the keystore (CI secret)
+#   keyAlias       — alias of the upload key inside the keystore
+#   storeFile      — path to the .jks, relative to mobile/android/ (the rootProject dir).
+#                    CI decodes the base64 keystore secret to this path before building.
 
-storePassword=YOUR_KEYSTORE_PASSWORD
-keyPassword=YOUR_KEY_PASSWORD
+storePassword=
+keyPassword=
 keyAlias=alfanumrik
-storeFile=D:\\keystore\\alfanumrik-release.jks
+storeFile=upload-keystore.jks
