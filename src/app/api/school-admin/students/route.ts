@@ -4,6 +4,15 @@ import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { capture as posthogCapture } from '@/lib/posthog/server';
 import { logSchoolAudit } from '@/lib/audit';
+import {
+  isSeatEnforcementEnabled,
+  enrollWithSeatCheck,
+  refreshSeatUsage,
+  seatCapViolationResponse,
+  flagGraceWarn,
+  previewSeatPolicy,
+  type SeatVerdict,
+} from '@/lib/school-admin/seat-enforcement';
 
 // ── Constants (mirror super-admin/bulk-upload) ──────────────────
 const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
@@ -211,6 +220,15 @@ export async function PATCH(request: NextRequest) {
         { success: false, error: 'Failed to update student' },
         { status: 500 }
       );
+    }
+
+    // ── Seat-usage refresh after a deactivation (Phase 3B Wave B) ──────
+    // Deactivating a student frees a seat + may reset the grace clock. When
+    // ff_school_provisioning is ON, refresh the canonical snapshot + grace
+    // state immediately so the freed seat is reflected for the next add.
+    // Flag OFF → this is skipped entirely (byte-identical to today).
+    if (body.is_active === false && (await isSeatEnforcementEnabled())) {
+      await refreshSeatUsage(schoolId);
     }
 
     // is_active=false uses the existing 'student.deactivated' action so the
@@ -503,29 +521,86 @@ async function handleSingle(
     }
   }
 
-  // ── Seat-cap pre-check ────────────────────────────────────
-  const { seatsUsed, seatsPurchased } = await readSeatStatus(supabase, schoolId);
-  if (seatsPurchased !== null && seatsUsed + 1 > seatsPurchased) {
-    await posthogCapture('school_seat_cap_hit', actorId, {
-      school_id: schoolId,
-      // Reuse the existing 'student_add' source — same as PATCH activation
-      // (typed in src/lib/posthog/types.ts: SchoolSeatCapHitPayload).
-      source: 'student_add',
-      seats_purchased: seatsPurchased,
-      seats_used: seatsUsed,
+  // ── Seat-policy gate (Phase 3B Wave B) ─────────────────────────────
+  // When ff_school_provisioning is ON, the canonical roster-based hybrid
+  // policy is the authoritative gate and replaces the legacy seats_purchased
+  // soft-check below. The roster-based RPC only consumes a seat when the
+  // student is placed on a class roster, so enforcement is meaningful only
+  // when class_id is provided; a student created with no class_id holds no
+  // roster row and consumes no seat (documented). Flag OFF → the legacy
+  // pre-check runs unchanged (byte-identical to today).
+  const seatEnforced = await isSeatEnforcementEnabled();
+
+  if (!seatEnforced) {
+    // ── Legacy seat-cap pre-check (unchanged OFF path) ────────────
+    const { seatsUsed, seatsPurchased } = await readSeatStatus(supabase, schoolId);
+    if (seatsPurchased !== null && seatsUsed + 1 > seatsPurchased) {
+      await posthogCapture('school_seat_cap_hit', actorId, {
+        school_id: schoolId,
+        // Reuse the existing 'student_add' source — same as PATCH activation
+        // (typed in src/lib/posthog/types.ts: SchoolSeatCapHitPayload).
+        source: 'student_add',
+        seats_purchased: seatsPurchased,
+        seats_used: seatsUsed,
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'seat_cap_violation',
+          error: `Cannot add student. School has used ${seatsUsed} of ${seatsPurchased} seats. Upgrade the subscription to add more.`,
+          seats_used: seatsUsed,
+          seats_purchased: seatsPurchased,
+        },
+        { status: 409 },
+      );
+    }
+
+    const result = await createOneStudent(supabase, schoolId, validation.row);
+    if (!result.ok) {
+      return NextResponse.json(
+        { success: false, error: result.message },
+        { status: 400 },
+      );
+    }
+
+    // Attach to class if provided (and it passed the cross-tenant gate above).
+    if (input.class_id) {
+      await supabase.from('class_students').insert({
+        class_id: input.class_id,
+        student_id: result.studentId,
+      });
+    }
+
+    void logSchoolAudit({
+      schoolId,
+      actorId,
+      action: 'student.invited',
+      resourceType: 'student',
+      resourceId: result.studentId,
+      metadata: { source: 'school_admin_post_single' },
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
     });
+
     return NextResponse.json(
       {
-        success: false,
-        code: 'seat_cap_violation',
-        error: `Cannot add student. School has used ${seatsUsed} of ${seatsPurchased} seats. Upgrade the subscription to add more.`,
-        seats_used: seatsUsed,
-        seats_purchased: seatsPurchased,
+        success: true,
+        data: {
+          student_id: result.studentId,
+          remaining_seats:
+            seatsPurchased === null ? null : seatsPurchased - (seatsUsed + 1),
+        },
       },
-      { status: 409 },
+      { status: 201 },
     );
   }
 
+  // ── ENFORCED path (ff_school_provisioning ON) ──────────────────────
+  // Create the auth user + students row first (these do not consume a seat
+  // under the canonical roster definition), then — if a class_id is given —
+  // place the student on the roster through the ATOMIC seat-checked RPC. If
+  // the seat policy hard-blocks the roster placement, the student row still
+  // exists (it consumes no seat without a roster row) and the admin gets a
+  // clear 409 to act on (upgrade / deactivate / pick a class later).
   const result = await createOneStudent(supabase, schoolId, validation.row);
   if (!result.ok) {
     return NextResponse.json(
@@ -534,12 +609,35 @@ async function handleSingle(
     );
   }
 
-  // Attach to class if provided (and it passed the cross-tenant gate above).
+  let enrolledVerdict: SeatVerdict | null = null;
   if (input.class_id) {
-    await supabase.from('class_students').insert({
-      class_id: input.class_id,
-      student_id: result.studentId,
-    });
+    const enroll = await enrollWithSeatCheck(schoolId, [
+      { student_id: result.studentId, class_id: input.class_id },
+    ]);
+
+    if (enroll.kind === 'blocked') {
+      await posthogCapture('school_seat_cap_hit', actorId, {
+        school_id: schoolId,
+        source: 'student_add',
+        seats_purchased: enroll.verdict?.seats_purchased ?? 0,
+        seats_used: enroll.verdict?.current_active ?? 0,
+      });
+      return seatCapViolationResponse(enroll.verdict, enroll.status);
+    }
+    if (enroll.kind === 'error') {
+      // RPC failure (not a policy block) → 503 so the caller can retry; never
+      // leak SQL (already logged server-side by the helper).
+      return NextResponse.json(
+        { success: false, error: 'Seat check temporarily unavailable. Please retry.' },
+        { status: 503 },
+      );
+    }
+
+    enrolledVerdict = enroll.verdict;
+    // Soft-allow: flag school admin + super-admin on grace_warn.
+    if (enroll.verdict.status === 'grace_warn') {
+      await flagGraceWarn(schoolId, enroll.verdict);
+    }
   }
 
   void logSchoolAudit({
@@ -548,21 +646,29 @@ async function handleSingle(
     action: 'student.invited',
     resourceType: 'student',
     resourceId: result.studentId,
-    metadata: { source: 'school_admin_post_single' },
+    metadata: { source: 'school_admin_post_single', seat_enforced: true },
     ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
   });
 
-  return NextResponse.json(
-    {
-      success: true,
-      data: {
-        student_id: result.studentId,
-        remaining_seats:
-          seatsPurchased === null ? null : seatsPurchased - (seatsUsed + 1),
-      },
+  const responseBody: Record<string, unknown> = {
+    success: true,
+    data: {
+      student_id: result.studentId,
+      remaining_seats:
+        enrolledVerdict === null
+          ? null
+          : Math.max(enrolledVerdict.grace_ceiling - enrolledVerdict.current_active, 0),
     },
-    { status: 201 },
-  );
+  };
+  if (enrolledVerdict?.status === 'grace_warn') {
+    responseBody.warning = {
+      status: 'grace_warn',
+      grace_expires_at: enrolledVerdict.grace_expires_at,
+      grace_ceiling: enrolledVerdict.grace_ceiling,
+    };
+  }
+
+  return NextResponse.json(responseBody, { status: 201 });
 }
 
 async function handleBulkJson(
@@ -658,37 +764,109 @@ async function processBulkRows(
   actorId: string,
   request: NextRequest,
 ): Promise<NextResponse> {
-  // ── Seat-cap pre-check on the full batch ──────────────────
-  const { seatsUsed, seatsPurchased } = await readSeatStatus(supabase, schoolId);
-  if (seatsPurchased !== null && seatsUsed + rows.length > seatsPurchased) {
-    await posthogCapture('school_seat_cap_hit', actorId, {
-      school_id: schoolId,
-      // Reuse 'bulk_upload' — same source the super-admin bulk-upload route
-      // uses (typed in src/lib/posthog/types.ts).
-      source: 'bulk_upload',
-      seats_purchased: seatsPurchased,
-      seats_used: seatsUsed,
-      attempted_to_add: rows.length,
-    });
-    return NextResponse.json(
-      {
-        success: false,
-        code: 'seat_cap_violation',
-        error: `Cannot add ${rows.length} students. School has used ${seatsUsed} of ${seatsPurchased} seats. Upgrade the subscription before uploading.`,
-        seats_used: seatsUsed,
+  const seatEnforced = await isSeatEnforcementEnabled();
+
+  // ── Legacy whole-batch seat-cap pre-check (unchanged OFF path) ────────
+  // Flag OFF → behaves byte-identically to today: reject the WHOLE batch if it
+  // would exceed seats_purchased (no partial accept).
+  if (!seatEnforced) {
+    const { seatsUsed, seatsPurchased } = await readSeatStatus(supabase, schoolId);
+    if (seatsPurchased !== null && seatsUsed + rows.length > seatsPurchased) {
+      await posthogCapture('school_seat_cap_hit', actorId, {
+        school_id: schoolId,
+        // Reuse 'bulk_upload' — same source the super-admin bulk-upload route
+        // uses (typed in src/lib/posthog/types.ts).
+        source: 'bulk_upload',
         seats_purchased: seatsPurchased,
+        seats_used: seatsUsed,
         attempted_to_add: rows.length,
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'seat_cap_violation',
+          error: `Cannot add ${rows.length} students. School has used ${seatsUsed} of ${seatsPurchased} seats. Upgrade the subscription before uploading.`,
+          seats_used: seatsUsed,
+          seats_purchased: seatsPurchased,
+          attempted_to_add: rows.length,
+        },
+        { status: 409 },
+      );
+    }
+
+    const errors: RowError[] = [];
+    const seenEmails = new Set<string>();
+    let created = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+      const rowNum = i + 2; // CSV-style: row 1 is header, data starts at row 2
+      const raw = rows[i];
+      const validation = validateRow({
+        name: typeof raw.name === 'string' ? raw.name : undefined,
+        email: typeof raw.email === 'string' ? raw.email : undefined,
+        grade: raw.grade != null ? String(raw.grade) : undefined,
+        phone: typeof raw.phone === 'string' ? raw.phone : undefined,
+      });
+      if (!validation.ok) {
+        errors.push({ row: rowNum, message: validation.message });
+        continue;
+      }
+      if (seenEmails.has(validation.row.email)) {
+        errors.push({ row: rowNum, message: 'Duplicate email in this upload' });
+        continue;
+      }
+      seenEmails.add(validation.row.email);
+
+      const result = await createOneStudent(supabase, schoolId, validation.row);
+      if (!result.ok) {
+        errors.push({ row: rowNum, message: result.message });
+        continue;
+      }
+      created++;
+    }
+
+    void logSchoolAudit({
+      schoolId,
+      actorId,
+      action: 'student.invited',
+      resourceType: 'student',
+      resourceId: 'bulk',
+      metadata: {
+        source: 'school_admin_post_bulk',
+        total_rows: rows.length,
+        created,
+        error_count: errors.length,
       },
-      { status: 409 },
-    );
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+    });
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        created,
+        total_rows: rows.length,
+        errors: errors.slice(0, 50), // cap response payload
+        error_count: errors.length,
+      },
+    });
   }
 
+  // ── ENFORCED bulk path (ff_school_provisioning ON) ────────────────────
+  // "Accept the rows that fit, reject the overflow with a per-row reason."
+  //  1. Validate every row first (validation errors are reported per-row and
+  //     do NOT count against capacity).
+  //  2. Preview remaining capacity via a SINGLE policy read (no N+1).
+  //  3. Accept up to capacity, reject overflow rows with `seat_limit_reached`.
+  //  4. Create the accepted students (this bulk route does not place students
+  //     on class rosters, so no seat is consumed at create time — the preview
+  //     is the authoritative cap here; roster placement + the atomic RPC gate
+  //     happen on the enroll surface that supplies class_id).
+  const validated: Array<{ rowNum: number; row: ReturnType<typeof validateRow> }> = [];
   const errors: RowError[] = [];
   const seenEmails = new Set<string>();
-  let created = 0;
 
   for (let i = 0; i < rows.length; i++) {
-    const rowNum = i + 2; // CSV-style: row 1 is header, data starts at row 2
+    const rowNum = i + 2; // CSV row 1 = header
     const raw = rows[i];
     const validation = validateRow({
       name: typeof raw.name === 'string' ? raw.name : undefined,
@@ -705,13 +883,70 @@ async function processBulkRows(
       continue;
     }
     seenEmails.add(validation.row.email);
+    validated.push({ rowNum, row: validation });
+  }
 
-    const result = await createOneStudent(supabase, schoolId, validation.row);
+  const validCount = validated.length;
+
+  // SINGLE preview read for the whole batch (no per-row RPC).
+  const preview = await previewSeatPolicy(schoolId, validCount);
+  if (!preview.ok) {
+    return NextResponse.json(
+      { success: false, error: 'Seat check temporarily unavailable. Please retry.' },
+      { status: 503 },
+    );
+  }
+
+  const { grace_ceiling, current_active } = preview.verdict;
+  const remaining = Math.max(grace_ceiling - current_active, 0);
+  const acceptCount = Math.min(validCount, remaining);
+
+  // Whether the accepted batch tips the school into the grace band.
+  const willEnterGrace =
+    current_active + acceptCount > preview.verdict.seats_purchased;
+
+  const acceptedRowNums: number[] = [];
+  let created = 0;
+
+  for (let idx = 0; idx < validated.length; idx++) {
+    const { rowNum, row } = validated[idx];
+    if (!row.ok) continue; // type guard (already filtered)
+
+    if (idx >= acceptCount) {
+      // Overflow beyond remaining capacity → reject with a clear reason.
+      errors.push({ row: rowNum, message: 'seat_limit_reached' });
+      continue;
+    }
+
+    const result = await createOneStudent(supabase, schoolId, row.row);
     if (!result.ok) {
       errors.push({ row: rowNum, message: result.message });
       continue;
     }
     created++;
+    acceptedRowNums.push(rowNum);
+  }
+
+  const overflowRejected = validCount - acceptCount;
+  if (overflowRejected > 0) {
+    await posthogCapture('school_seat_cap_hit', actorId, {
+      school_id: schoolId,
+      source: 'bulk_upload',
+      seats_purchased: preview.verdict.seats_purchased,
+      seats_used: current_active,
+      attempted_to_add: validCount,
+    });
+  }
+
+  // Soft-allow grace flag if the accepted rows pushed into the grace band.
+  if (willEnterGrace && created > 0) {
+    // Re-read so grace_started_at/expires reflect the just-created state.
+    const post = await previewSeatPolicy(schoolId, 0);
+    if (post.ok && post.verdict.status === 'grace_warn') {
+      await flagGraceWarn(schoolId, post.verdict);
+    } else if (preview.verdict.status === 'grace_warn') {
+      await flagGraceWarn(schoolId, preview.verdict);
+    }
   }
 
   void logSchoolAudit({
@@ -722,6 +957,7 @@ async function processBulkRows(
     resourceId: 'bulk',
     metadata: {
       source: 'school_admin_post_bulk',
+      seat_enforced: true,
       total_rows: rows.length,
       created,
       error_count: errors.length,
@@ -734,7 +970,9 @@ async function processBulkRows(
     data: {
       created,
       total_rows: rows.length,
-      errors: errors.slice(0, 50), // cap response payload
+      accepted: acceptedRowNums,
+      rejected: errors.slice(0, 100), // per-row { row, reason } report (cap payload)
+      errors: errors.slice(0, 50), // legacy field retained for back-compat
       error_count: errors.length,
     },
   });

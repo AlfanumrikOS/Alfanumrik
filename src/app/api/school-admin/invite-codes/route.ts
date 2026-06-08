@@ -8,6 +8,10 @@ import {
   pickLocaleFromAcceptLanguage,
   truncateInviteCode,
 } from '@/lib/email-delivery';
+import {
+  isSeatEnforcementEnabled,
+  remainingCapacity,
+} from '@/lib/school-admin/seat-enforcement';
 
 /**
  * GET /api/school-admin/invite-codes
@@ -105,9 +109,43 @@ export async function POST(request: NextRequest) {
 
     // Validate max_uses (default 50 for students, 1 for teachers)
     const defaultMaxUses = body.role === 'teacher' ? 1 : 50;
-    const maxUses = typeof body.max_uses === 'number'
+    let maxUses = typeof body.max_uses === 'number'
       ? Math.min(100, Math.max(1, body.max_uses))
       : defaultMaxUses;
+
+    // ── Seat-bounded issuance (Phase 3B Wave B) ─────────────────────────
+    // When ff_school_provisioning is ON, a STUDENT invite code can grant at
+    // most the school's remaining seat capacity (within the grace ceiling).
+    // We cap the effective max_uses so issuing a code can never authorize more
+    // student joins than there are seats to fill. Teacher codes are not seat-
+    // bounded (teachers are not seats). If capacity is exhausted, refuse with a
+    // 409 seat_cap_violation rather than minting a 0-use code. Redemption is
+    // handled by the PUBLIC /api/schools/join route (outside the school-admin
+    // portal) and is NOT modified in Wave B — documented as a follow-up.
+    // Flag OFF → max_uses is unchanged (byte-identical to today).
+    let seatCapInfo: { remaining: number } | null = null;
+    if (body.role === 'student' && (await isSeatEnforcementEnabled())) {
+      const remaining = await remainingCapacity(schoolId);
+      if (remaining === null) {
+        return NextResponse.json(
+          { success: false, error: 'Seat check temporarily unavailable. Please retry.' },
+          { status: 503 }
+        );
+      }
+      if (remaining <= 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'seat_cap_violation',
+            status: 'over_ceiling',
+            remaining_seats: 0,
+          },
+          { status: 409 }
+        );
+      }
+      maxUses = Math.min(maxUses, remaining);
+      seatCapInfo = { remaining };
+    }
 
     // Validate expires_in_days (default 30, min 1, max 365)
     const expiresInDays = typeof body.expires_in_days === 'number'
@@ -196,7 +234,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ success: true, data: inviteCode }, { status: 201 });
+    return NextResponse.json(
+      {
+        success: true,
+        data: seatCapInfo
+          ? { ...inviteCode, max_uses_capped_to_seats: maxUses, remaining_seats: seatCapInfo.remaining }
+          : inviteCode,
+      },
+      { status: 201 }
+    );
   } catch (err) {
     logger.error('school_admin_invite_codes_post_failed', {
       error: err instanceof Error ? err : new Error(String(err)),

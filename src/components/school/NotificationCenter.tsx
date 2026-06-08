@@ -24,6 +24,9 @@ const TYPE_CONFIG: Record<string, { icon: string; color: string }> = {
   renewal_reminder_14: { icon: '🔔', color: '#EAB308' },
   renewal_reminder_7: { icon: '⚠️', color: '#EF4444' },
   seat_approaching_limit: { icon: '⚠️', color: '#EAB308' },
+  // Phase 3B Wave B: soft-allow grace flag inserted by the seat-enforcement path
+  // (recipient_type school + super_admin). Amber = action-needed-but-not-blocked.
+  seat_grace_warn: { icon: '⏳', color: '#F59E0B' },
   score_notification: { icon: '🎯', color: '#22C55E' },
   streak_warning: { icon: '🔥', color: '#F97316' },
   default: { icon: '💬', color: '#6B7280' },

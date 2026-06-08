@@ -34,6 +34,7 @@ import { useCallback, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
+import { useSchoolProvisioning } from '@/lib/use-school-provisioning';
 import { NoDataState } from '@/components/admin-ui';
 import {
   DEFAULT_PAGE_LIMIT,
@@ -82,8 +83,44 @@ async function ccFetcher<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-// ── Seat-utilization gauge (DISPLAY ONLY — no enforcement implied) ───────────
-function SeatGauge({ pct, isHi }: { pct: number | null; isHi: boolean }) {
+// ── Seat band derived purely from the overview data ──────────────────────────
+// IMPORTANT: get_school_overview does NOT expose grace state (no grace clock /
+// expiry — see command-center-types.ts). So when ff_school_provisioning is ON we
+// DO NOT add a new fetch (per the Wave B brief). We instead derive the seat BAND
+// from the counts the overview already carries — within plan, in the grace band
+// (active > seats, up to floor(seats*1.10)), or over the ceiling. We deliberately
+// do NOT claim "N days left" here (that requires the grace clock, which only the
+// enroll/invite responses carry); the gauge only reflects the seat position.
+type SeatBand = 'within_plan' | 'grace' | 'over';
+
+function deriveSeatBand(
+  seatsPurchased: number,
+  activeStudents: number,
+): SeatBand | null {
+  if (!seatsPurchased || seatsPurchased <= 0) return null; // uncapped / no signal
+  if (activeStudents <= seatsPurchased) return 'within_plan';
+  const ceiling = Math.floor(seatsPurchased * 1.1);
+  return activeStudents <= ceiling ? 'grace' : 'over';
+}
+
+// ── Seat-utilization gauge ────────────────────────────────────────────────────
+// Wave A: DISPLAY ONLY (enforced=false) — utilization % only, no enforcement.
+// Wave B (enforced=true, flag ON): the SAME gauge, augmented with the enforcement
+// BAND colour + label (within plan / in grace / over). Still display-only data —
+// no new fetch, no mutation; the band is derived from the overview counts.
+function SeatGauge({
+  pct,
+  isHi,
+  enforced = false,
+  seatsPurchased,
+  activeStudents,
+}: {
+  pct: number | null;
+  isHi: boolean;
+  enforced?: boolean;
+  seatsPurchased?: number;
+  activeStudents?: number;
+}) {
   // null → no seat cap / no signal → render a neutral dash, never 0% or NaN.
   if (pct == null || Number.isNaN(pct)) {
     return (
@@ -96,11 +133,51 @@ function SeatGauge({ pct, isHi }: { pct: number | null; isHi: boolean }) {
     );
   }
   const clamped = Math.max(0, Math.min(100, Math.round(pct)));
-  const bar =
-    clamped >= 90 ? 'bg-amber-500' : clamped >= 60 ? 'bg-[var(--purple,#7C3AED)]' : 'bg-emerald-500';
+
+  // Enforcement band (ON path only). When OFF, `band` stays null and the gauge is
+  // byte-identical to Wave A's utilization-only colour ramp.
+  const band =
+    enforced && seatsPurchased != null && activeStudents != null
+      ? deriveSeatBand(seatsPurchased, activeStudents)
+      : null;
+
+  // Colour: when we have an enforcement band, colour BY THE BAND (amber=grace,
+  // red=over, emerald=within). Otherwise fall back to the Wave A utilization ramp.
+  const bar = band
+    ? band === 'over'
+      ? 'bg-red-500'
+      : band === 'grace'
+        ? 'bg-amber-500'
+        : 'bg-emerald-500'
+    : clamped >= 90
+      ? 'bg-amber-500'
+      : clamped >= 60
+        ? 'bg-[var(--purple,#7C3AED)]'
+        : 'bg-emerald-500';
+
+  const bandLabel =
+    band === 'grace'
+      ? tt(isHi, 'In grace', 'छूट में')
+      : band === 'over'
+        ? tt(isHi, 'Over plan', 'योजना से अधिक')
+        : null;
+
+  const bandColor = band === 'over' ? '#DC2626' : band === 'grace' ? '#92400E' : undefined;
+
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-2xl font-bold text-[var(--text-1)] tabular-nums">{clamped}%</span>
+      {/* When a band label is present (ON path) wrap the % + label in a row;
+          otherwise render the % span exactly as Wave A did (byte-identical OFF). */}
+      {bandLabel ? (
+        <div className="flex items-baseline gap-1.5 flex-wrap">
+          <span className="text-2xl font-bold text-[var(--text-1)] tabular-nums">{clamped}%</span>
+          <span className="text-[11px] font-semibold" style={{ color: bandColor }}>
+            {bandLabel}
+          </span>
+        </div>
+      ) : (
+        <span className="text-2xl font-bold text-[var(--text-1)] tabular-nums">{clamped}%</span>
+      )}
       <span className="text-[11px] text-[var(--text-3)]">
         {tt(isHi, 'Seat use', 'सीट उपयोग')}
       </span>
@@ -149,9 +226,12 @@ function PanelSkeleton() {
 function OverviewStrip({
   overview,
   isHi,
+  seatEnforced = false,
 }: {
   overview: SchoolOverview;
   isHi: boolean;
+  /** ff_school_provisioning ON → augment the seat gauge with the enforcement band. */
+  seatEnforced?: boolean;
 }) {
   if (overview.data_state === 'no_data') {
     return (
@@ -177,9 +257,18 @@ function OverviewStrip({
         value={overview.active_students}
         color="#16A34A"
       />
-      {/* Seat utilization — DISPLAY ONLY (Wave A). No blocking is implied. */}
+      {/* Seat utilization. Wave A: display-only. Wave B (flag ON): the same
+          gauge augmented with the enforcement band (within plan / grace / over),
+          derived from the overview counts — NO new fetch (get_school_overview
+          does not expose grace state). */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-1)] px-4 py-3.5">
-        <SeatGauge pct={overview.seat_utilization_pct} isHi={isHi} />
+        <SeatGauge
+          pct={overview.seat_utilization_pct}
+          isHi={isHi}
+          enforced={seatEnforced}
+          seatsPurchased={overview.seats_purchased}
+          activeStudents={overview.active_students}
+        />
       </div>
       <Kpi
         label={tt(isHi, 'Avg mastery', 'औसत महारत')}
@@ -233,6 +322,11 @@ function SchoolPicker({
 export default function CommandCenter() {
   const auth = useAuth();
   const { isHi, signOut } = auth;
+
+  // Seat-enforcement UI gate (Phase 3B Wave B). OFF ⇒ the seat gauge stays the
+  // Wave A display-only gauge (byte-identical). ON ⇒ the gauge is augmented with
+  // the enforcement band derived from the overview counts (no new fetch).
+  const seatEnforced = useSchoolProvisioning();
 
   // The selected school for a multi-school caller. null = no explicit selection
   // (single-school callers never set this; the API resolves their one school).
@@ -369,7 +463,7 @@ export default function CommandCenter() {
                   </button>
                 </div>
               ) : overview ? (
-                <OverviewStrip overview={overview} isHi={isHi} />
+                <OverviewStrip overview={overview} isHi={isHi} seatEnforced={seatEnforced} />
               ) : null}
             </section>
 

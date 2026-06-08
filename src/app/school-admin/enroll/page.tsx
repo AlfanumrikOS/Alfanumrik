@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { useSchoolProvisioning } from '@/lib/use-school-provisioning';
+import { GraceWarningBanner, SeatCapBlockBanner } from '@/components/school/SeatPolicyBanners';
+import type { SeatPolicyStatus } from '@/lib/school-admin/seat-enforcement';
 import {
   Card,
   Button,
@@ -44,6 +47,17 @@ interface ImportResult {
   success_count: number;
   error_count: number;
   errors: Array<{ row: number; field: string; message: string }>;
+  /* ── Additive (present only when ff_school_provisioning is ON) ──────── */
+  /** 1-based row numbers that were accepted. */
+  accepted?: number[];
+  /** Per-row capacity rejections. `reason` is 'seat_limit_reached'. */
+  rejected?: Array<{ row: number; reason: string }>;
+  /** Soft-allow grace details when the accepted batch tipped into the grace band. */
+  warning?: {
+    status: 'grace_warn';
+    grace_expires_at: string | null;
+    grace_ceiling: number | null;
+  };
 }
 
 type Step = 'upload' | 'preview' | 'importing' | 'results';
@@ -123,6 +137,10 @@ export default function SchoolAdminEnrollPage() {
   const { authUserId, isLoading: authLoading, isHi } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Seat-enforcement UI gate (Phase 3B Wave B). OFF ⇒ this page is byte-identical
+  // to today: no per-row report, no grace banner, no seat-block message render.
+  const seatUiEnabled = useSchoolProvisioning();
+
   /* ── state ── */
   const [schoolId, setSchoolId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -135,6 +153,8 @@ export default function SchoolAdminEnrollPage() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importing, setImporting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  // 409 seat_cap_violation status from a hard-blocked import (ON path only).
+  const [seatBlockStatus, setSeatBlockStatus] = useState<string | null>(null);
 
   /* ── auth guard ── */
   useEffect(() => {
@@ -251,6 +271,8 @@ export default function SchoolAdminEnrollPage() {
           parent_email: parentIdx >= 0 ? row[parentIdx]?.trim() : undefined,
         }));
 
+      setSeatBlockStatus(null);
+
       const res = await fetch('/api/schools/enroll', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -258,6 +280,16 @@ export default function SchoolAdminEnrollPage() {
       });
 
       const result = await res.json();
+
+      // Hard block (ON path only): the whole import was refused because the
+      // school is at/over its seat ceiling. The OFF path of this route never
+      // returns this error code, so this branch is inert when the flag is OFF.
+      if (res.status === 409 && result?.error === 'seat_cap_violation') {
+        setSeatBlockStatus(typeof result.status === 'string' ? result.status : 'over_ceiling');
+        setStep('preview');
+        setImporting(false);
+        return;
+      }
 
       if (!result.success && !result.data) {
         setError(result.error || 'Import failed');
@@ -284,6 +316,7 @@ export default function SchoolAdminEnrollPage() {
     setValidationResults([]);
     setImportResult(null);
     setError(null);
+    setSeatBlockStatus(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
@@ -477,6 +510,16 @@ export default function SchoolAdminEnrollPage() {
         {/* ═══ STEP: PREVIEW ═══ */}
         {step === 'preview' && (
           <div className="space-y-4">
+            {/* Seat hard-block (ON path only): the last import was refused for
+                capacity. OFF path never sets seatBlockStatus, so this is inert. */}
+            {seatUiEnabled && seatBlockStatus && (
+              <SeatCapBlockBanner
+                status={seatBlockStatus as SeatPolicyStatus}
+                isHi={isHi}
+                onDismiss={() => setSeatBlockStatus(null)}
+              />
+            )}
+
             {/* Summary stats */}
             <div className="grid grid-cols-3 gap-2">
               <div className="rounded-xl py-2.5 px-3 text-center" style={{ background: 'var(--surface-2)' }}>
@@ -612,6 +655,59 @@ export default function SchoolAdminEnrollPage() {
                 </h2>
               </div>
             </Card>
+
+            {/* ── Seat-enforcement surfaces (ON path only) ──────────────────
+                When ff_school_provisioning is OFF the API never returns
+                `accepted` / `rejected` / `warning`, so none of this renders and
+                the results screen is byte-identical to today. */}
+            {seatUiEnabled && (() => {
+              const seatRejected = importResult.rejected
+                ?? importResult.errors
+                  .filter((e) => e.field === 'seat')
+                  .map((e) => ({ row: e.row, reason: e.message }));
+              const acceptedCount =
+                importResult.accepted?.length ?? importResult.success_count;
+              const hasSeatReport =
+                (importResult.accepted !== undefined || importResult.rejected !== undefined) &&
+                seatRejected !== undefined;
+              return (
+                <>
+                  {hasSeatReport && (
+                    <Card>
+                      <p className="text-sm font-bold text-[var(--text-1)] mb-2">
+                        {t(
+                          isHi,
+                          `${acceptedCount} enrolled, ${seatRejected!.length} rejected (seat limit reached)`,
+                          `${acceptedCount} नामांकित, ${seatRejected!.length} अस्वीकृत (सीट सीमा पूरी)`,
+                        )}
+                      </p>
+                      {seatRejected!.length > 0 && (
+                        <div className="mt-1.5">
+                          <p className="text-xs text-[var(--text-3)] mb-1">
+                            {t(isHi, 'Rejected rows:', 'अस्वीकृत पंक्तियाँ:')}
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {seatRejected!.map((r) => (
+                              <Badge key={r.row} color="#DC2626">
+                                {t(isHi, `Row ${r.row}`, `पंक्ति ${r.row}`)}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </Card>
+                  )}
+
+                  {importResult.warning?.status === 'grace_warn' && (
+                    <GraceWarningBanner
+                      graceExpiresAt={importResult.warning.grace_expires_at}
+                      graceCeiling={importResult.warning.grace_ceiling}
+                      isHi={isHi}
+                    />
+                  )}
+                </>
+              );
+            })()}
 
             <div className="grid grid-cols-3 gap-2">
               <div className="rounded-xl py-3 px-3 text-center" style={{ background: 'var(--surface-2)' }}>

@@ -79,9 +79,14 @@ async function loadFlags(): Promise<FeatureFlagRow[]> {
     );
 
     if (!res.ok) return _flagCache || [];
-    _flagCache = await res.json();
+    // Coerce ANY non-array / malformed flags payload to a safe empty list so a
+    // bad response can never make `_flagCache` a non-array (which would throw
+    // out of the `.find()` / `for...of` consumers below). On a malformed body
+    // every flag then falls back to its default (OFF for all ff_* flags).
+    const parsed: unknown = await res.json();
+    _flagCache = Array.isArray(parsed) ? (parsed as FeatureFlagRow[]) : [];
     _flagCacheExpiry = now + CACHE_TTL.STATIC; // 5 min
-    return _flagCache || [];
+    return _flagCache;
   } catch {
     return _flagCache || [];
   }
@@ -98,7 +103,10 @@ export async function isFeatureEnabled(
   context: FlagContext = {}
 ): Promise<boolean> {
   const flags = await loadFlags();
-  const flag = flags.find(f => f.flag_name === flagName);
+  // Defensive: never let a non-array flags payload throw out of this function.
+  // A malformed/unexpected response must fall back to the flag's default
+  // (OFF for all ff_* flags) rather than crash the caller.
+  const flag = Array.isArray(flags) ? flags.find(f => f.flag_name === flagName) : undefined;
 
   if (!flag) return false; // Flag doesn't exist → disabled
   if (!flag.is_enabled) return false; // Globally disabled
@@ -570,6 +578,45 @@ export const SCHOOL_COMMAND_CENTER_FLAGS = {
 } as const;
 
 /**
+ * Phase 3B — Wave B (Seat-aware provisioning ENFORCEMENT) flag (2026-06-08).
+ *
+ *  ff_school_provisioning — master switch for server-authoritative SEAT
+ *    ENFORCEMENT on the school-admin provisioning surfaces. This is the
+ *    PAYMENT-ADJACENT (P11) gate: every active student on a school roster is a
+ *    billable seat, so the CEO-approved HYBRID SEAT POLICY is enforced through
+ *    the race-safe SQL primitives in migration 20260614000001
+ *    (evaluate_seat_policy / enroll_students_with_seat_check /
+ *    refresh_school_seat_usage). When ON, the school-admin enroll/create,
+ *    bulk-CSV import, deactivation, and invite-code issuance paths route through
+ *    those RPCs and apply the policy:
+ *      - within_plan  (N <= seats)            → allow
+ *      - grace_warn   (seats < N <= floor(seats*1.10), 14-day window OPEN)
+ *                                              → SOFT ALLOW + flag school admin
+ *                                                + super-admin, surface
+ *                                                grace_expires_at to the UI
+ *      - grace_expired / over_ceiling          → HARD BLOCK (HTTP 409
+ *                                                seat_cap_violation)
+ *    When OFF, NONE of the enforcement runs and the provisioning routes behave
+ *    BYTE-IDENTICALLY to today (the legacy `seats_purchased`-based soft checks
+ *    that already exist on those routes are the unchanged fallback — Wave B does
+ *    not invoke the Wave B RPCs at all while the flag is off). Default: false.
+ *
+ *    Master switch only — there is no per-school canary in Wave B; per-school
+ *    rollout is achieved via the standard target_institutions scoping on the
+ *    feature_flags row.
+ *
+ *    Not yet seeded by any migration; while absent from `feature_flags` the
+ *    server read path (isFeatureEnabled) resolves it to OFF, so the provisioning
+ *    routes stay byte-identical-OFF until the flag is explicitly seeded + enabled.
+ *
+ *  Spec/plan: docs/superpowers/plans/2026-06-08-phase-3b-school-professional-depth.md (Wave B)
+ */
+export const SCHOOL_PROVISIONING_FLAGS = {
+  /** Seat-enforcement on school-admin provisioning (enroll/bulk/deactivate/invite). Default off. */
+  V1: 'ff_school_provisioning',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -606,6 +653,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [TEACHER_GRADEBOOK_DEPTH_FLAGS.V1]: false,
   [TEACHER_PARENT_COMMS_FLAGS.V1]: false,
   [SCHOOL_COMMAND_CENTER_FLAGS.V1]: false,
+  [SCHOOL_PROVISIONING_FLAGS.V1]: false,
 } as const;
 
 /**

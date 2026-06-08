@@ -2561,3 +2561,133 @@ boundary; cross-school 403 scope guard P8/P9; flag-OFF byte-identical with a
 deterministic synchronous-OFF first paint).
 
 **Total: 64 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+
+## Seat-aware provisioning enforcement — hybrid seat policy (Phase 3B Wave B) — REG-97
+
+Source: Phase 3B Wave B "Seat-aware provisioning ENFORCEMENT" (PAYMENT-ADJACENT,
+P11 — every active student on a school roster is a billable seat), behind
+`ff_school_provisioning`; default OFF. Adds ONE migration
+(`supabase/migrations/20260614000001_phase3b_seat_enforcement.sql`) with the
+race-safe SQL primitives — `evaluate_seat_policy` (READ-ONLY jsonb verdict,
+SECURITY DEFINER + active-school_admin scope guard, EXECUTE to `authenticated`),
+the two ATOMIC advisory-locked enroll guards `enroll_students_with_seat_check`
+(class_students) and `enroll_section_students_with_seat_check` (class_enrollments,
+SAME `'school_seat:'||school_id` lock namespace), `refresh_school_seat_usage`
+(snapshot UPSERT + grace-clock state machine), and the unified-count helpers
+`_school_active_student_ids` / `_count_active_school_students` (the Wave A
+`get_school_overview` / `get_classes_at_risk` were `CREATE OR REPLACE`'d to derive
+"active students" from the same unified set so the read models and the enforcement
+count cannot drift) — plus the app layer (`src/lib/school-admin/seat-enforcement.ts`),
+the three wired routes (`src/app/api/school-admin/students/route.ts`,
+`src/app/api/schools/enroll/route.ts`, `src/app/api/school-admin/invite-codes/route.ts`),
+the flag (`SCHOOL_PROVISIONING_FLAGS.V1`), and the UI flag hook
+(`src/lib/use-school-provisioning.ts`).
+
+Four things are blocking defects if they regress: (a) **the CEO-approved HYBRID
+SEAT POLICY** — `S = active school_subscriptions.seats_purchased`,
+`grace_ceiling = floor(S*1.10)`, a 14-day grace window from the first overage;
+the 4 statuses are `within_plan` (N≤S → ALLOW), `grace_warn` (S<N≤ceiling, window
+OPEN → SOFT ALLOW), `grace_expired` (S<N≤ceiling, window ELAPSED → BLOCK), and
+`over_ceiling` (N>ceiling → BLOCK always); the grace clock is SET on first overage
+and RESET to null when active returns to ≤S; students are NEVER auto-deactivated;
+(b) **the unified both-table count** — "active students" is the DISTINCT UNION of
+`class_students` + `class_enrollments` (active rows, active non-deleted classes of
+the school, active students), so a student in BOTH counts ONCE and a roster
+written by `/api/schools/enroll` (class_enrollments) is no longer invisible to the
+cap; (c) **dual atomic race-safe enroll paths** — both guards re-evaluate the
+policy UNDER a per-school advisory lock against the LIVE count and, on a hard
+block, RAISE SQLSTATE `P3B01` (verdict jsonb in DETAIL) WITHOUT inserting anything
+(all-or-nothing), and the shared lock namespace serialises concurrent imports so
+two batches can never both pass the check at the same count; (d) **flag-OFF
+byte-identical** — `ff_school_provisioning` defaults OFF and is unseeded ⇒ none of
+the enforcement helpers run and every route returns its legacy response
+shape/status unchanged, while `useSchoolProvisioning()` resolves false on the
+synchronous first paint (no first-paint flash). P13: the grace_warn flag carries
+metadata only (school id + seat counts + timestamps), never email/phone/name; the
+P3B01 path never leaks SQL to the client (generic 503; raw error logged
+server-side via the redacting logger only).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-97 | `seat_provisioning_hybrid_policy_unified_count_atomic_race_flag_off` | **(a) Hybrid policy state machine.** Live-DB (S=10, ceiling=11): `evaluate_seat_policy` returns `within_plan` (add 10 → projected 10), `grace_warn` (add 11 → projected 11, SOFT ALLOW), `over_ceiling` (add 12, BLOCK) and never mutates the grace clock; the atomic guard SETS the clock on the 11th add (grace_warn) and, with the clock back-dated >14d, BLOCKS an in-ceiling add as `grace_expired` (while in-window it was allowed); deactivating back to ≤S + `refresh_school_seat_usage` RESETS the clock to null. **(b) Unified both-table count.** Live-DB: seed one student via `class_students`, one via `class_enrollments`, one in BOTH → `_count_active_school_students` = 3 (DISTINCT UNION; the both-table student counts once) and equals `get_school_overview.student_count`. **(c) Dual atomic race-safe enroll.** Live-DB: `enroll_students_with_seat_check` (class_students) AND `enroll_section_students_with_seat_check` (class_enrollments) both RAISE `P3B01` with the verdict in DETAIL and insert NOTHING when over ceiling, and succeed within plan; `refresh_school_seat_usage` is idempotent (twice → same snapshot, one row per (school, day)); two concurrent enrolls (one per path, 7+7 vs ceiling 11) → exactly one wins, exactly one is `P3B01`, total never exceeds the ceiling (advisory lock serialises). Unit (`seat-enforcement.ts`, no DB): P3B01 detection + verdict parse from DETAIL with a status-only message fallback; `seatCapViolationResponse` is 409 with status/projected/grace_ceiling/seats_purchased and `grace_expires_at` ONLY on `grace_expired`; `remainingCapacity` = max(ceiling − active, 0); `flagGraceWarn` inserts ONE de-duped school row + one super-admin row per ACTIVE `admin_users(super_admin)` `auth_user_id` (fan-out N→N+1; capture the actual `notifications` insert payloads), where EVERY inserted row carries a non-empty string `message` (`notifications.message` text NOT NULL — bug-1 insert-shape guard) and a valid-uuid `recipient_id` (`notifications.recipient_id` uuid NOT NULL — the school row uses the school uuid, each super-admin row uses a resolved `admin_users.auth_user_id` uuid, and NO row carries the old `recipient_id === 'super_admin'` string — bug-2 insert-shape guard), the payload `data` carries ids/counts/grace_expires_at only (no PII — P13), and it never throws on failure (insert error / admin_users-lookup error → school row still persists, super-admin fan-out skipped); a negative case proves the message+uuid guards FAIL against the old buggy shape (omitted `message` / `'super_admin'` recipient_id) — real regression guard, not a tautology. Route unit (mocked): students route single 409-on-block / grace_warn soft-allow + `warning` field + `flagGraceWarn` called / within_plan 201 / RPC-error 503; bulk capacity-split (created up to remaining, overflow `seat_limit_reached`); deactivation → `refreshSeatUsage`; `/api/schools/enroll` capacity-trim BEFORE student create (no orphans) + atomic section commit + P3B01→409 + preview-fail 503; invite-codes `max_uses_capped_to_seats` + `remaining_seats` / 409 when exhausted / 503 unavailable / teacher codes NOT seat-bounded. **(d) Flag-OFF byte-identical.** With `ff_school_provisioning` OFF every route returns its LEGACY status/shape (students single 201 + legacy 409 `code:'seat_cap_violation'`; deactivate 200; `/api/schools/enroll` legacy 403; invite raw row, no cap fields) and NONE of the enforcement helpers run; `useSchoolProvisioning()` is synchronously `false` (DEFAULT_OFF), stays false absent / explicitly-false / on `getFeatureFlags` rejection, flips ON only after the async confirm when the flag resolves true, and fetches scoped to `role: 'school_admin'`. | `src/__tests__/migrations/seat-enforcement.test.ts` (live-DB: 4-status evaluate + read-only no-mutation; cross-school 42501 on `evaluate_seat_policy`; unified DISTINCT-union count + read-model parity; class_students + class_enrollments P3B01-nothing-inserted + within-plan success; grace_warn clock SET; grace_expired via back-dated clock; grace RESET after deactivate+refresh; refresh idempotency one-row-per-day; concurrent-enroll race exactly-one-wins) + `src/__tests__/lib/school-admin/seat-enforcement.test.ts` (23 unit tests: flag gate; P3B01 parse + message fallback; non-P3B01→error no-throw; allowed verdict; empty-payload guard; both RPC names; `seatCapViolationResponse` 409 shape + grace_expires_at conditionality; `remainingCapacity` clamp + null; `flagGraceWarn` de-dupe + no-PII + never-throws + INSERT-SHAPE GUARDS: every row has a non-empty `message` (NOT NULL bug-1), every `recipient_id` is a valid uuid — school uuid + per-super-admin `admin_users.auth_user_id`, never `'super_admin'` (uuid NOT NULL bug-2) — fan-out N→N+1, zero/error super-admin lookup still persists the school row, plus a negative case that FAILS on the old buggy shape) + `src/__tests__/api/school-admin/seat-enforcement-routes.test.ts` (15 unit tests: students single block/grace/within/503 + deactivate refresh + bulk split/503; enroll trim-before-create/P3B01→409/503; invite cap/409/503/teacher-not-bounded) + `src/__tests__/api/school-admin/seat-enforcement-flag-off.test.ts` (6 unit tests: legacy 201/409/200/403/201 shapes + no-enforcement-helper-called across all three routes) + `src/__tests__/school-admin/provisioning-flag-gate.test.tsx` (5 tests: sync DEFAULT_OFF + stays-OFF-absent / stays-OFF-false / flips-ON-true / stays-OFF-on-reject / role-scoped fetch) | E |
+
+### Pinned tests
+
+- `src/__tests__/migrations/seat-enforcement.test.ts::enroll_students_with_seat_check (class_students path)::over_ceiling (12th, N=12 > ceiling 11) RAISES P3B01 and inserts NOTHING`
+- `src/__tests__/migrations/seat-enforcement.test.ts::enroll_students_with_seat_check (class_students path)::grace_expired: back-date the grace clock > 14d ⇒ the 11th-equivalent add is BLOCKED`
+- `src/__tests__/migrations/seat-enforcement.test.ts::unified active count (class_students UNION class_enrollments)::counts the DISTINCT union; a student in BOTH roster tables counts once`
+- `src/__tests__/migrations/seat-enforcement.test.ts::grace clock reset + refresh idempotency::SETS the clock on overage then RESETS to null when active <= S after refresh`
+- `src/__tests__/migrations/seat-enforcement.test.ts::race-safety (advisory lock serialises concurrent enrolls)::two concurrent enrolls that would jointly exceed the ceiling never both succeed`
+- `src/__tests__/lib/school-admin/seat-enforcement.test.ts::seatCapViolationResponse — 409 body shape::INCLUDES grace_expires_at only when the verdict carries it (grace_expired)`
+- `src/__tests__/lib/school-admin/seat-enforcement.test.ts::flagGraceWarn — de-duped, no-PII, never-throws, NOT-NULL+uuid insert shape::inserts the school row (school uuid) + one row per super-admin (admin_users uuids) — fan-out N→N+1` (insert-shape regression guard: every row has a non-empty `message` (bug 1) + a valid-uuid `recipient_id`, never `'super_admin'` (bug 2))
+- `src/__tests__/lib/school-admin/seat-enforcement.test.ts::flagGraceWarn — de-duped, no-PII, never-throws, NOT-NULL+uuid insert shape::FAILS against the OLD buggy insert shape (omitted message / recipient_id "super_admin")` (proves the guards are real, not tautologies)
+- `src/__tests__/api/school-admin/seat-enforcement-routes.test.ts::POST /api/schools/enroll (enforcement ON)::trims overflow BEFORE creating students (no orphans) — overflow reported as seat_limit_reached`
+- `src/__tests__/api/school-admin/seat-enforcement-flag-off.test.ts::FLAG OFF — POST /api/schools/enroll (legacy path)::legacy over-cap returns 403 (legacy status) and never calls enforcement helpers`
+- `src/__tests__/school-admin/provisioning-flag-gate.test.tsx::useSchoolProvisioning — default OFF (no first-paint flash)::initialises OFF synchronously and stays OFF when the flag is absent`
+
+### Invariants covered by this section
+
+- P11 (payment integrity, ADJACENT) — seats are monetisable; the enrollment
+  guards mirror the P11 locking discipline (per-school `pg_advisory_xact_lock`
+  taken BEFORE the policy is re-evaluated and BEFORE any insert) so concurrent
+  imports serialise and can never double-allocate seats; the block path is
+  all-or-nothing (P3B01 rolls the txn back, nothing inserted) and never grants a
+  seat past the grace ceiling.
+- P8/P9 (cross-tenant scope) — `evaluate_seat_policy` is SECURITY DEFINER and
+  RAISES 42501 unless `auth.uid()` is an active `school_admins` member of
+  `p_school_id`; the mutating RPCs are service_role-only and run behind
+  `authorizeSchoolAdmin` (the routes resolve the school server-side, never from
+  the request body).
+- P13 (data privacy) — the grace_warn flag carries metadata only (school id +
+  seat counts + timestamps), never email/phone/name; the P3B01 path never leaks
+  SQL to the client (generic 503; raw error logged server-side via the redacting
+  logger only).
+- No scoring/XP (provisioning only) — the seat count is a roster count; no XP
+  constant or scoring formula is touched.
+- Flag-OFF byte-identity (rollout safety) — `ff_school_provisioning` default-OFF
+  keeps all three provisioning routes byte-identical to today (enforcement
+  helpers never invoked) and `useSchoolProvisioning()` paints OFF synchronously.
+
+### Notes on test strategy
+
+REG-97 uses the repo's **live-DB-integration + helper-unit + route-unit +
+flag-hook pattern**, matching REG-96 (Wave A) seam-for-seam. The live-DB SQL tests
+live under `src/__tests__/migrations/**` (gated by `hasSupabaseIntegrationEnv()` →
+`describe.skip` under placeholder env, and by the `RUN_INTEGRATION_TESTS=1` include
+split in `vitest.config.ts`) and add the same user-context-JWT seam Wave A uses:
+`evaluate_seat_policy` is SECURITY DEFINER + scope-guarded on `auth.uid()`, so the
+admin fixture is a REAL auth user (`supabaseAdmin.auth.admin.createUser` →
+`signInWithPassword` → anon client bearing the JWT) and the 42501 guard is
+exercised for real; the service-role-only mutating RPCs are driven through the
+service-role client (their backend credential). These run only in the "Integration
+Tests (live DB)" CI job (currently billing-blocked; will run when CI billing is
+restored). The helper / route / flag-hook tests run under the normal Vitest unit
+job with NO DB: the helper test mocks `supabase-admin` + `feature-flags` +
+`logger` and drives the REAL P3B01 parser / 409 builder / capacity math /
+flagGraceWarn. For `flagGraceWarn` the mocked admin client now ROUTES by table
+(`notifications` vs `admin_users`) and CAPTURES the actual insert payloads
+(flattening both the single-object school insert and the bulk super-admin array
+insert), so the strengthened test asserts the live-DB NOT-NULL contract WITHOUT a
+DB: every captured row has a non-empty `message` (`notifications.message` text
+NOT NULL — bug 1) and a valid-uuid `recipient_id` (`notifications.recipient_id`
+uuid NOT NULL; the school uuid + per-super-admin `admin_users.auth_user_id`, never
+the old `'super_admin'` string — bug 2), the super-admin fan-out is N→N+1, and a
+negative case proves the guards FAIL on the old buggy shape (these two bugs were
+fixed and would otherwise only surface against a live DB). The route tests mock
+ONLY the seat-enforcement HELPER module
+(keeping `seatCapViolationResponse` REAL via `importActual`) plus the auth + db
+seams, so the routes' real branching + response shapes run; the flag-off file
+asserts the enforcement helpers are NEVER called with the flag OFF and each route
+returns its legacy status/shape; the flag-hook test mocks only `getFeatureFlags`
+and asserts the synchronous DEFAULT_OFF paint (mirrors the Wave A
+`school-admin/command-center-flag-gate.test.tsx`).
+
+### Catalog total
+
+Pre-Phase-3B-Wave-B: 64 entries. Phase 3B Wave B (seat-aware provisioning
+ENFORCEMENT, P11-adjacent, behind `ff_school_provisioning`) adds REG-97 (CEO-approved
+hybrid seat policy — 4 statuses + 14-day grace + reset; unified both-table count;
+dual atomic race-safe enroll paths with P3B01-nothing-inserted-on-block; flag-OFF
+byte-identical).
+
+**Total: 65 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
