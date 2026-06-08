@@ -290,6 +290,99 @@ export interface RiskAlert {
   remediation_status?: RemediationStatus;
 }
 
+/* ── Phase 3A Wave C — Mastery + Bloom's reporting depth ──────────────────────
+ *
+ * Shapes for the teacher-dashboard Edge actions surfaced by the gradebook-depth
+ * flag (`ff_teacher_gradebook_depth`). The frontend renders these values
+ * VERBATIM — mastery_pct / accuracy_pct are display figures the assessment layer
+ * owns; no scoring/XP math lives in the UI (P1/P2 untouched). Bloom's level names
+ * are technical terms and are never translated (P7 exception).
+ */
+
+/** Canonical CBSE Bloom's taxonomy order (low → high cognitive demand).
+ *  Bloom level NAMES are technical terms — never translated (P7 exception). */
+export const BLOOM_LEVEL_ORDER = [
+  'remember',
+  'understand',
+  'apply',
+  'analyze',
+  'evaluate',
+  'create',
+] as const;
+export type BloomLevelName = (typeof BLOOM_LEVEL_ORDER)[number];
+
+/** One Bloom's level's correct/total rollup. `accuracy_pct` is display-only. */
+export interface BloomLevelRow {
+  bloom_level: string;
+  correct: number;
+  total: number;
+  accuracy_pct: number;
+}
+
+/** A student's (or class's) per-level Bloom's distribution. `weakest_level` is
+ *  the answered level with the lowest accuracy (null when nothing answered). */
+export interface BloomDistribution {
+  by_level: BloomLevelRow[];
+  weakest_level: string | null;
+}
+
+/** One concept's mastery for the per-student report. `mastery_pct` is the BKT
+ *  p_know surfaced as a percent — read verbatim, never re-derived. */
+export interface ConceptMasteryReportRow {
+  topic_id: string;
+  concept: string;
+  mastery_pct: number;
+  attempts: number;
+}
+
+export interface StudentMasterySummary {
+  by_concept: ConceptMasteryReportRow[];
+  overall_pct: number;
+}
+
+export interface StudentRecentActivity {
+  quizzes: number;
+  avg_score: number;
+  streak: number;
+}
+
+/** Response of `get_student_mastery_report`. */
+export interface StudentMasteryReport {
+  student_id: string;
+  student_name: string;
+  grade: string; // P5: grade is a string
+  mastery: StudentMasterySummary;
+  bloom: BloomDistribution;
+  recent: StudentRecentActivity;
+}
+
+/** One concept's class-average mastery (weakest-first in the response). */
+export interface ClassConceptMasteryRow {
+  topic_id: string;
+  concept: string;
+  avg_mastery_pct: number;
+  student_count: number;
+}
+
+/** Response of `get_class_mastery_bloom_summary`. */
+export interface ClassMasteryBloomSummary {
+  class_id?: string;
+  student_count: number;
+  mastery: {
+    by_concept: ClassConceptMasteryRow[];
+    overall_pct: number;
+  };
+  bloom: BloomDistribution;
+}
+
+/** Response of `export_student_report`. */
+export interface StudentReportExport {
+  filename: string;
+  csv_content: string;
+  student_name: string;
+  student_id?: string;
+}
+
 /* ── Parent ── */
 export interface ParentGuardian {
   id: string;

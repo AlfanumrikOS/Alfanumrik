@@ -2254,3 +2254,112 @@ aggregation / no double-grading, `needs_review_reason` signal-only — P1/P2
 untouched, flag-OFF byte-identical Command Center).
 
 **Total: 61 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+
+## Teacher gradebook mastery + Bloom depth (Phase 3A Wave C) — REG-94
+
+Source: Phase 3A Wave C "Gradebook + reporting depth" (behind
+`ff_teacher_gradebook_depth`, layered ON TOP of `ff_teacher_command_center`;
+both default OFF). Adds three READ-ONLY teacher-dashboard Edge actions
+(`supabase/functions/teacher-dashboard/index.ts` —
+`handleGetStudentMasteryReport`, `handleGetClassMasteryBloomSummary`,
+`handleExportStudentReport`, plus the pure `aggregateBloomDistribution` /
+`shapeMasterySummary` helpers and the `readStudent*` reads) and the
+drill-through report panel / class-depth gradebook view / parent CSV export
+(`src/app/teacher/StudentMasteryReport.tsx`,
+`src/app/teacher/CommandCenter.tsx`, `src/app/teacher/grade-book/page.tsx`,
+`src/lib/use-teacher-gradebook-depth.ts`, `BLOOM_LEVEL_ORDER` +
+report/summary types in `src/lib/types.ts`). No migration, no new permission,
+no scoring/XP math — mastery is the BKT `p_know` read VERBATIM and Bloom
+accuracy is a display-only correct/total readout over the questions the student
+actually answered.
+
+The depth layer surfaces two NEW reporting dimensions over the existing
+gradebook. Three things are blocking defects if they regress: (a) mastery must
+stay the BKT value read verbatim (round(p_know·100)) and accuracy must stay a
+pure correct/total display figure — NEITHER may ever feed or perturb the score
+(P1) or the XP economy (P2), and the three Wave C handlers must remain
+READ-ONLY (no `.insert`/`.update`/`.upsert`, no `atomic_quiz_profile_update`,
+no XP constants); (b) the Bloom aggregation must be correct — per-level
+correct/total, canonical CBSE order (remember→understand→apply→analyze→
+evaluate→create), weakest-answered-level selection with the tie-break going to
+the lower canonical order, never fabricating a 0% for an unattempted level —
+and the per-student report must be roster-scoped (P8/P13: a non-roster student
+→ 403, no report; the class summary requires class ownership); (c) with the
+Wave C flag OFF the gradebook + heatmap must be byte-identical — the depth hook
+resolves false, the heatmap cell stays the legacy navigate-to-student link
+(no drill-through), the lazy report panel never mounts (P10), and the gradebook
+is the score matrix only.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-94 | `teacher_gradebook_mastery_bloom_depth_readonly_roster_scoped_flag_off` | **(a) Mastery = BKT verbatim + accuracy display-only — P1/P2 never perturbed.** `shapeMasterySummary` surfaces `mastery_pct = Math.round(p_know·100)` per concept passed through untouched (a `p_know` of 0.999 → 100, never clamped/bonused/recomputed) with `overall_pct` the simple mean; `aggregateBloomDistribution` emits `accuracy_pct = Math.round(correct/total·100)` as a pure readout that the weakest-level tie-break can never mutate. A source-level guard pins ALL THREE Wave C handlers + their read helpers as READ-ONLY: no `.insert`/`.update`/`.upsert`/`.delete`, no `atomic_quiz_profile_update`, and none of the XP constants (`xp_earned`/`xp_total`/`quiz_per_correct`/`quiz_high_score_bonus`/`quiz_perfect_bonus`) appears in any handler body — a future refactor that tried to write back or re-derive a score inside the report path trips the guard. The frontend renders `mastery_pct`/`accuracy_pct` VERBATIM (no client re-scoring). The scoring/XP path (`src/lib/xp-rules.ts`, `score-config.ts`, `supabase.ts`, `quiz/submit-side-effects.ts`) is byte-identical to origin/main. **(b) Bloom aggregation correctness + roster scope (P8/P13).** `by_level` is per-level correct/total in canonical CBSE order (remember→understand→apply→analyze→evaluate→create), normalising casing/whitespace and SKIPPING null/empty bloom rows; unattempted levels are NOT fabricated as 0% in the Edge response (the panel projects the full 6-level ladder, rendering unanswered levels as a muted "—"); `weakest_level` is the lowest-accuracy answered level with ties broken toward the lower canonical order (remember beats apply at equal 0%). Bloom is sourced from `quiz_responses.bloom_level` (`select('bloom_level, is_correct')`) and mastery from `bkt_mastery_state` (`select('topic_id, p_know, attempts')`) — both source reads pinned. `handleGetStudentMasteryReport` re-resolves the caller roster via `resolveStudentsForTeacher` and 403s `Student not owned by caller` for an off-roster student; `export_student_report` reuses that pipeline and inherits the same 403 (`if (!inner.ok) return inner`); the class summary requires `assertTeacherOwnsClass`. Grade is a string end-to-end (P5). **(c) Flag-OFF byte-identical.** `ff_teacher_gradebook_depth` defaults OFF and is unseeded ⇒ `useTeacherGradebookDepth()` resolves false on the synchronous first paint and stays false; the Command Center heatmap cell stays the legacy navigate-to-student link (drill-through branch off), the lazy `StudentMasteryReport` chunk never mounts (P10), and the gradebook is the score matrix only. With the flag ON the cell drills through to the report panel. Bloom's level NAMES render untranslated even when `isHi` (P7 exception). | `src/__tests__/functions/teacher-dashboard-mastery-report.test.ts` (34 tests: per-level correct/total + canonical order + weakest selection + tie-break + no-fabrication + casing/whitespace normalisation + empty degrade; `shapeMasterySummary` p_know-verbatim incl. 0.999→100; full report shape + P5 grade-string; class rollup weakest-first + pooled Bloom; parent CSV sectioning + escape + P7 untranslated; dispatcher `case` + handler presence; `quiz_responses`/`bkt_mastery_state` source pins; `resolveStudentsForTeacher` + `Student not owned by caller` 403; export reuses pipeline + inherits 403; READ-ONLY guard over all 3 handlers + 5 helpers — no write/XP token) + `src/__tests__/teacher/student-mastery-report.test.tsx` (7 tests: mastery-by-concept verbatim percents; ALL 6 canonical Bloom levels in order, unattempted → muted "—", weakest badge on exactly one row; untranslated names when isHi; export callback; loading/error states; `useTeacherGradebookDepth` default-OFF sync + stays-OFF-when-false + flips-ON-when-true) | U |
+
+### Pinned tests
+
+- `src/__tests__/functions/teacher-dashboard-mastery-report.test.ts::shapeMasterySummary — BKT mastery surfaced verbatim::REGRESSION: does NOT re-derive mastery — p_know passes through untouched (no scoring math)`
+- `src/__tests__/functions/teacher-dashboard-mastery-report.test.ts::aggregateBloomDistribution — per-level correct/total::REGRESSION: accuracy_pct is display-only — same correct/total never changes regardless of weakest selection`
+- `src/__tests__/functions/teacher-dashboard-mastery-report.test.ts::teacher-dashboard dispatcher — Phase 3A Wave C actions present::REGRESSION: all 3 Wave C handlers are READ-ONLY — no write/XP/score perturbation (P1/P2/P4)`
+- `src/__tests__/functions/teacher-dashboard-mastery-report.test.ts::aggregateBloomDistribution — per-level correct/total::emits by_level in canonical CBSE Bloom order (remember→create)`
+- `src/__tests__/functions/teacher-dashboard-mastery-report.test.ts::aggregateBloomDistribution — per-level correct/total::breaks weakest_level ties toward the lower canonical Bloom order`
+- `src/__tests__/functions/teacher-dashboard-mastery-report.test.ts::get_student_mastery_report — roster scoping (P13)::REGRESSION: rejects a non-roster student (cross-tenant 403)`
+- `src/__tests__/functions/teacher-dashboard-mastery-report.test.ts::teacher-dashboard dispatcher — Phase 3A Wave C actions present::REGRESSION: the per-student report is roster-scoped via resolveStudentsForTeacher (P13)`
+- `src/__tests__/teacher/student-mastery-report.test.tsx::useTeacherGradebookDepth — default OFF (byte-identical heatmap)::initialises OFF (sync) and stays OFF when the flag is absent`
+
+### Invariants covered by this section
+
+- P1/P2 (no-bypass) — mastery is the BKT `p_know` read verbatim and Bloom
+  accuracy is a pure correct/total display figure; a source-level guard pins all
+  three Wave C handlers + read helpers as READ-ONLY (no DB write, no XP
+  constants, no `atomic_quiz_profile_update`), and the frontend renders both
+  verbatim with no client re-scoring. The scoring/XP path (`src/lib/xp-rules.ts`,
+  `score-config.ts`, `supabase.ts`, `quiz/submit-side-effects.ts`) is
+  byte-identical to origin/main. Extends REG-45/REG-48/REG-51/REG-93.
+- P8/P13 (roster boundary + data privacy) — `get_student_mastery_report`
+  re-resolves the caller roster and 403s an off-roster student;
+  `export_student_report` inherits that gate; `get_class_mastery_bloom_summary`
+  requires class ownership. A teacher sees only their own roster student's
+  mastery/Bloom data.
+- P5 (grade format) — the report payload coerces grade to a string end-to-end.
+- P7 (bilingual UI exception) — Bloom's level names are technical terms rendered
+  untranslated even when `isHi`.
+- Bloom-aggregation correctness (pedagogy invariant) — per-level correct/total in
+  canonical CBSE order, weakest-answered-level with lower-canonical tie-break, no
+  fabricated 0% for unattempted levels.
+- Flag-OFF byte-identity (rollout safety) — `ff_teacher_gradebook_depth`
+  default-OFF keeps the heatmap the legacy navigate surface and the gradebook the
+  score matrix only; the lazy report chunk never loads (P10) until rollout.
+
+### Notes on test strategy
+
+REG-94 uses the repo's **frozen-reference + source-pin pattern** (mirrors
+REG-93 / `teacher-dashboard-grading-queue-action.test.ts`): the Deno/esm.sh Edge
+Function cannot be imported under Vitest, so the Bloom aggregation, mastery
+shaping, roster gate, class rollup and parent-CSV logic are re-implemented as
+frozen pure references and exercised directly, while the dispatcher wiring, the
+`quiz_responses`/`bkt_mastery_state` source reads, the `resolveStudentsForTeacher`
+403 gate, and a new READ-ONLY guard (no write/XP token inside any Wave C handler
+or helper body) are pinned by reading the handler source — so a refactor that
+swapped the Bloom source, dropped the roster scope, unwired an action, or tried
+to write back / re-score inside the report path fails the suite. The frontend
+tests render the REAL pure `<StudentMasteryReport>` and exercise the REAL
+`useTeacherGradebookDepth` hook (the only seam stubbed is `getFeatureFlags` so
+the hook loads under jsdom), asserting the observable contract: mastery percents
+verbatim, the full canonical 6-level Bloom ladder with unattempted → "—" and
+exactly one weakest badge, untranslated level names under isHi, the export
+callback, and the default-OFF synchronous first paint.
+
+The honest gap left to integration is the live Edge round-trip (a real
+`bkt_mastery_state` + `quiz_responses` fetch through Supabase returning the
+scoped report, and a real off-roster 403); its pure shaping + source pins +
+flag-gating are unit-covered today, sharing the same live-fixture limitation as
+REG-92/REG-93.
+
+### Catalog total
+
+Pre-Phase-3A-Wave-C: 61 entries. Phase 3A Wave C (teacher gradebook mastery +
+Bloom depth, behind `ff_teacher_gradebook_depth`) adds REG-94 (mastery = BKT
+verbatim + accuracy display-only — P1/P2 never perturbed via a READ-ONLY handler
+guard; Bloom aggregation correctness + roster scope P8/P13; flag-OFF
+byte-identical gradebook + heatmap).
+
+**Total: 62 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)

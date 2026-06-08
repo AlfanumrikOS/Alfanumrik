@@ -24,6 +24,13 @@
  *   - get_grade_book:             Phase C.2 / matrix of students × columns
  *   - set_grade_book_cell:        Phase C.2 / set one (student, column) cell
  *   - export_grade_book_csv:      Phase C.2 / export grade book matrix as CSV
+ *   - get_student_mastery_report: Phase 3A Wave C / one roster student's mastery
+ *                                 (BKT verbatim) + Bloom's (correct/total over
+ *                                 answered quiz_responses) deep dive
+ *   - get_class_mastery_bloom_summary: Phase 3A Wave C / class-level avg mastery
+ *                                 per concept + Bloom's distribution rollup
+ *   - export_student_report:      Phase 3A Wave C / per-student mastery+Bloom
+ *                                 report as a parent-readable CSV
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -2321,6 +2328,498 @@ async function handleExportGradeBookCsv(
   }, 200, {}, origin)
 }
 
+// ─── Phase 3A Wave C — Mastery + Bloom's report actions ─────────────────
+//
+// Wave C deepens the gradebook with two reporting dimensions the raw-score
+// matrix lacks: MASTERY (the existing BKT signal, read verbatim) and BLOOM'S
+// (the student's accuracy per CBSE Bloom's level, derived from the questions
+// they actually answered). Two reads + a parent-ready export:
+//
+//   - get_student_mastery_report      — one roster student's mastery+Bloom deep dive
+//   - get_class_mastery_bloom_summary — class-level rollup for the heatmap drill-through
+//   - export_student_report           — the per-student report in a parent-readable shape
+//
+// REUSE, don't rebuild:
+//   * Mastery reuses the get_heatmap BKT path verbatim — bkt_mastery_state
+//     (p_know / attempts / mastery_level) keyed by (student_id, topic_id). The
+//     p_know value is the existing BKT probability; we surface it as a percent
+//     for display only. NO new mastery math.
+//   * Bloom's is sourced from quiz_responses.bloom_level — the bloom_level is
+//     denormalised onto each answered-question row alongside is_correct and
+//     student_id, so a per-level correct/total rollup needs no join to
+//     question_bank. (The marking-audit view + get_submission_detail read the
+//     same canonical table.) accuracy_pct = round(correct/total*100) is a
+//     DISPLAY figure only — it is NOT a score and never feeds XP (P1/P2
+//     untouched).
+//   * Roster scoping reuses resolveStudentsForTeacher (P13): a student must be
+//     on the caller-teacher's roster or the report is refused.
+//
+// CBSE Bloom's levels are technical terms (P7) — never translated.
+
+/** Canonical CBSE Bloom's taxonomy order (low → high cognitive demand). */
+const BLOOM_LEVELS = [
+  'remember',
+  'understand',
+  'apply',
+  'analyze',
+  'evaluate',
+  'create',
+] as const
+type BloomLevel = (typeof BLOOM_LEVELS)[number]
+
+interface BloomLevelRow {
+  bloom_level: string
+  correct: number
+  total: number
+  accuracy_pct: number
+}
+
+interface BloomDistribution {
+  by_level: BloomLevelRow[]
+  weakest_level: string | null
+}
+
+/**
+ * Aggregate a student's answered questions into a per-Bloom-level correct/total
+ * rollup. Pure shaping — no scoring/XP math. `accuracy_pct` is a display figure
+ * (round(correct/total*100)); `weakest_level` is the answered level with the
+ * lowest accuracy (ties broken by canonical Bloom order, i.e. the lower-order
+ * level wins). Levels the student never answered are omitted from `by_level`
+ * and ignored for `weakest_level` — we never fabricate a 0% for an unattempted
+ * level. Unknown/legacy bloom_level strings are normalised to lowercase and
+ * passed through (so non-canonical labels still aggregate) but only canonical
+ * levels participate in the tie-break ordering.
+ */
+function aggregateBloomDistribution(
+  responses: Array<{ bloom_level: string | null; is_correct: boolean | null }>,
+): BloomDistribution {
+  const tally = new Map<string, { correct: number; total: number }>()
+  for (const r of responses) {
+    const level = typeof r.bloom_level === 'string' ? r.bloom_level.trim().toLowerCase() : ''
+    if (!level) continue // skip rows with no recorded Bloom level
+    const bucket = tally.get(level) ?? { correct: 0, total: 0 }
+    bucket.total += 1
+    if (r.is_correct === true) bucket.correct += 1
+    tally.set(level, bucket)
+  }
+
+  // Emit by_level in canonical Bloom order first, then any non-canonical
+  // levels alphabetically, so the UI renders a stable, pedagogically-ordered list.
+  const canonicalOrder = (lvl: string): number => {
+    const idx = (BLOOM_LEVELS as readonly string[]).indexOf(lvl)
+    return idx === -1 ? Number.MAX_SAFE_INTEGER : idx
+  }
+  const levels = [...tally.keys()].sort((a, b) => {
+    const ca = canonicalOrder(a)
+    const cb = canonicalOrder(b)
+    if (ca !== cb) return ca - cb
+    return a.localeCompare(b)
+  })
+
+  const by_level: BloomLevelRow[] = levels.map((level) => {
+    const { correct, total } = tally.get(level)!
+    return {
+      bloom_level: level,
+      correct,
+      total,
+      accuracy_pct: total > 0 ? Math.round((correct / total) * 100) : 0,
+    }
+  })
+
+  // weakest_level: lowest accuracy among answered levels; ties go to the
+  // lower canonical Bloom order (already the sort order of by_level), so a
+  // simple stable min-scan picks the earlier-ordered level on a tie.
+  let weakest: string | null = null
+  let weakestPct = Number.POSITIVE_INFINITY
+  for (const row of by_level) {
+    if (row.accuracy_pct < weakestPct) {
+      weakestPct = row.accuracy_pct
+      weakest = row.bloom_level
+    }
+  }
+
+  return { by_level, weakest_level: weakest }
+}
+
+interface ConceptMasteryRow {
+  topic_id: string
+  concept: string
+  mastery_pct: number
+  attempts: number
+}
+
+interface MasterySummary {
+  by_concept: ConceptMasteryRow[]
+  overall_pct: number
+}
+
+/**
+ * Shape the BKT mastery read (one row per concept the student has a
+ * bkt_mastery_state row for) into the report's mastery block. `mastery_pct` is
+ * the existing BKT p_know surfaced as a percent (round(p_know*100)) — read
+ * VERBATIM, no re-derivation. `overall_pct` is the simple mean of the
+ * per-concept mastery percents (display rollup only). Concepts with no BKT row
+ * are omitted upstream (we only pass rows that exist).
+ */
+function shapeMasterySummary(
+  rows: Array<{ topic_id: string; concept: string; p_know: number; attempts: number }>,
+): MasterySummary {
+  const by_concept: ConceptMasteryRow[] = rows.map((r) => ({
+    topic_id: r.topic_id,
+    concept: r.concept,
+    mastery_pct: Math.round((Number(r.p_know) || 0) * 100),
+    attempts: Number(r.attempts) || 0,
+  }))
+  const overall_pct =
+    by_concept.length > 0
+      ? Math.round(by_concept.reduce((acc, c) => acc + c.mastery_pct, 0) / by_concept.length)
+      : 0
+  return { by_concept, overall_pct }
+}
+
+/**
+ * Read a single student's BKT mastery rows joined to their concept titles.
+ * Reuses the same bkt_mastery_state shape get_heatmap reads (p_know, attempts,
+ * mastery_level) — but here we list every concept the student has a row for
+ * rather than intersecting with a fixed concept grid. Fails soft to [] when the
+ * table is absent (older env), mirroring get_heatmap's defensive try/catch.
+ */
+async function readStudentConceptMastery(
+  supabase: ReturnType<typeof getServiceClient>,
+  studentId: string,
+): Promise<Array<{ topic_id: string; concept: string; p_know: number; attempts: number }>> {
+  const out: Array<{ topic_id: string; concept: string; p_know: number; attempts: number }> = []
+  try {
+    const { data: bktRows } = await supabase
+      .from('bkt_mastery_state')
+      .select('topic_id, p_know, attempts')
+      .eq('student_id', studentId)
+      .limit(500)
+    if (!bktRows || bktRows.length === 0) return out
+
+    // Resolve concept titles for the topic ids in one batch.
+    const topicIds = Array.from(
+      new Set(bktRows.map((r) => String((r as { topic_id?: string }).topic_id)).filter(Boolean)),
+    )
+    const titleById = new Map<string, string>()
+    if (topicIds.length > 0) {
+      try {
+        const { data: topics } = await supabase
+          .from('curriculum_topics')
+          .select('id, title')
+          .in('id', topicIds)
+        for (const t of topics || []) {
+          titleById.set(String((t as { id: string }).id), String((t as { title?: string }).title || ''))
+        }
+      } catch { /* topics table absent — fall back to topic id as label */ }
+    }
+
+    for (const r of bktRows) {
+      const topicId = String((r as { topic_id?: string }).topic_id || '')
+      if (!topicId) continue
+      out.push({
+        topic_id: topicId,
+        concept: titleById.get(topicId) || topicId,
+        p_know: Number((r as { p_know?: number }).p_know) || 0,
+        attempts: Number((r as { attempts?: number }).attempts) || 0,
+      })
+    }
+  } catch { /* bkt_mastery_state absent on this env — empty mastery block */ }
+  return out
+}
+
+/**
+ * Read a single student's answered-question Bloom rows from quiz_responses.
+ * bloom_level + is_correct are denormalised onto the row, so this is a single
+ * table read with no join. Fails soft to [] when the table is absent.
+ */
+async function readStudentBloomResponses(
+  supabase: ReturnType<typeof getServiceClient>,
+  studentId: string,
+): Promise<Array<{ bloom_level: string | null; is_correct: boolean | null }>> {
+  try {
+    const { data } = await supabase
+      .from('quiz_responses')
+      .select('bloom_level, is_correct')
+      .eq('student_id', studentId)
+      .not('bloom_level', 'is', null)
+      .limit(5000)
+    return (data || []) as Array<{ bloom_level: string | null; is_correct: boolean | null }>
+  } catch {
+    return []
+  }
+}
+
+interface RecentActivity {
+  quizzes: number
+  avg_score: number
+  streak: number
+}
+
+/**
+ * Lightweight recent-activity rollup for the report header: number of completed
+ * quizzes, their average score_percent (display only — read from the canonical
+ * quiz_sessions, NOT recomputed), and the student's best streak from learning
+ * profiles. All best-effort; degrades to zeros.
+ */
+async function readStudentRecentActivity(
+  supabase: ReturnType<typeof getServiceClient>,
+  studentId: string,
+): Promise<RecentActivity> {
+  let quizzes = 0
+  let scoreSum = 0
+  let scoreCount = 0
+  try {
+    const { data: sessions } = await supabase
+      .from('quiz_sessions')
+      .select('score_percent, completed_at')
+      .eq('student_id', studentId)
+      .not('completed_at', 'is', null)
+      .limit(5000)
+    for (const s of sessions || []) {
+      quizzes += 1
+      const sp = (s as { score_percent?: number | null }).score_percent
+      if (sp != null) {
+        scoreSum += Number(sp)
+        scoreCount += 1
+      }
+    }
+  } catch { /* quiz_sessions absent — zeros */ }
+
+  let streak = 0
+  try {
+    const { data: profiles } = await supabase
+      .from('student_learning_profiles')
+      .select('streak_days')
+      .eq('student_id', studentId)
+    for (const p of profiles || []) {
+      const s = Number((p as { streak_days?: number }).streak_days || 0)
+      if (s > streak) streak = s
+    }
+  } catch { /* profiles absent — streak 0 */ }
+
+  return {
+    quizzes,
+    avg_score: scoreCount > 0 ? Math.round(scoreSum / scoreCount) : 0,
+    streak,
+  }
+}
+
+// ─── get_student_mastery_report ─────────────────────────────
+// Per-student mastery + Bloom's deep dive. Roster-scoped (P13): the student
+// must be on the caller-teacher's resolved set or we 403. NO scoring/XP — the
+// mastery block is the BKT value read verbatim; the Bloom block is correct/total
+// accuracy over the questions the student actually answered.
+async function handleGetStudentMasteryReport(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const studentId = String(body.student_id || '')
+  const teacherId = String(body.teacher_id || '')
+  if (!studentId) return errorResponse('student_id required', 400, origin)
+
+  const supabase = getServiceClient()
+
+  // P13: per-resource ownership — re-resolve the teacher's roster and confirm
+  // the target student is on it. We never trust body.student_id alone.
+  const owned = await resolveStudentsForTeacher(supabase, teacherId)
+  const target = owned.find((s) => s.id === studentId)
+  if (!target) {
+    return errorResponse('Student not owned by caller', 403, origin)
+  }
+
+  const [masteryRows, bloomRows, recent] = await Promise.all([
+    readStudentConceptMastery(supabase, studentId),
+    readStudentBloomResponses(supabase, studentId),
+    readStudentRecentActivity(supabase, studentId),
+  ])
+
+  const mastery = shapeMasterySummary(masteryRows)
+  const bloom = aggregateBloomDistribution(bloomRows)
+
+  return jsonResponse({
+    student_id: studentId,
+    student_name: target.name,
+    grade: String(target.grade || ''), // P5: grade is a string
+    mastery,
+    bloom,
+    recent,
+  }, 200, {}, origin)
+}
+
+// ─── get_class_mastery_bloom_summary ────────────────────────
+// Class-level rollup: average mastery per concept across the class + the
+// class's Bloom's distribution (which levels the class is weakest at). For the
+// Command Center heatmap drill-through + the class report. Reuses the same BKT
+// + quiz_responses reads, aggregated across the class roster. Roster-scoped:
+// the caller must own the class (assertTeacherOwnsClass).
+async function handleGetClassMasteryBloomSummary(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const classId = String(body.class_id || '')
+  const teacherId = String(body.teacher_id || '')
+  if (!classId) return errorResponse('class_id required', 400, origin)
+
+  const supabase = getServiceClient()
+
+  // P13: caller must own the class they're rolling up.
+  if (!(await assertTeacherOwnsClass(supabase, teacherId, classId))) {
+    return errorResponse('Class not owned by caller', 403, origin)
+  }
+
+  const students = await resolveStudentsForClass(supabase, classId)
+  if (students.length === 0) {
+    return jsonResponse({
+      class_id: classId,
+      student_count: 0,
+      mastery: { by_concept: [], overall_pct: 0 },
+      bloom: { by_level: [], weakest_level: null },
+    }, 200, {}, origin)
+  }
+  const studentIds = students.map((s) => s.id)
+
+  // ── Class mastery rollup: average p_know per concept across the class. ──
+  // Single batched read of every roster student's BKT rows; we average per
+  // topic. Same bkt_mastery_state shape get_heatmap reads — values verbatim.
+  const conceptAgg = new Map<string, { masterySum: number; attemptsSum: number; n: number }>()
+  try {
+    const { data: bktRows } = await supabase
+      .from('bkt_mastery_state')
+      .select('topic_id, p_know, attempts')
+      .in('student_id', studentIds)
+      .limit(20000)
+    for (const r of bktRows || []) {
+      const topicId = String((r as { topic_id?: string }).topic_id || '')
+      if (!topicId) continue
+      const a = conceptAgg.get(topicId) ?? { masterySum: 0, attemptsSum: 0, n: 0 }
+      a.masterySum += Math.round((Number((r as { p_know?: number }).p_know) || 0) * 100)
+      a.attemptsSum += Number((r as { attempts?: number }).attempts) || 0
+      a.n += 1
+      conceptAgg.set(topicId, a)
+    }
+  } catch { /* bkt_mastery_state absent — empty mastery rollup */ }
+
+  // Resolve concept titles for the aggregated topic ids.
+  const topicIds = [...conceptAgg.keys()]
+  const titleById = new Map<string, string>()
+  if (topicIds.length > 0) {
+    try {
+      const { data: topics } = await supabase
+        .from('curriculum_topics')
+        .select('id, title')
+        .in('id', topicIds)
+      for (const t of topics || []) {
+        titleById.set(String((t as { id: string }).id), String((t as { title?: string }).title || ''))
+      }
+    } catch { /* topics absent — fall back to id as label */ }
+  }
+
+  const byConcept: Array<{ topic_id: string; concept: string; avg_mastery_pct: number; student_count: number }> = []
+  for (const [topicId, a] of conceptAgg) {
+    byConcept.push({
+      topic_id: topicId,
+      concept: titleById.get(topicId) || topicId,
+      avg_mastery_pct: a.n > 0 ? Math.round(a.masterySum / a.n) : 0,
+      student_count: a.n,
+    })
+  }
+  // Weakest concepts first so the drill-through highlights where to intervene.
+  byConcept.sort((x, y) => x.avg_mastery_pct - y.avg_mastery_pct)
+  const overallMastery =
+    byConcept.length > 0
+      ? Math.round(byConcept.reduce((acc, c) => acc + c.avg_mastery_pct, 0) / byConcept.length)
+      : 0
+
+  // ── Class Bloom's distribution: pool every roster student's answered
+  // questions and aggregate per Bloom level. Same denormalised
+  // quiz_responses.bloom_level read — pooled across the class. ──
+  let bloomRows: Array<{ bloom_level: string | null; is_correct: boolean | null }> = []
+  try {
+    const { data } = await supabase
+      .from('quiz_responses')
+      .select('bloom_level, is_correct')
+      .in('student_id', studentIds)
+      .not('bloom_level', 'is', null)
+      .limit(50000)
+    bloomRows = (data || []) as Array<{ bloom_level: string | null; is_correct: boolean | null }>
+  } catch { /* quiz_responses absent — empty bloom rollup */ }
+  const bloom = aggregateBloomDistribution(bloomRows)
+
+  return jsonResponse({
+    class_id: classId,
+    student_count: students.length,
+    mastery: { by_concept: byConcept, overall_pct: overallMastery },
+    bloom,
+  }, 200, {}, origin)
+}
+
+// ─── export_student_report ──────────────────────────────────
+// Parent-ready export of the per-student mastery+Bloom report. Reuses the
+// get_student_mastery_report pipeline (so the two surfaces never disagree),
+// then serialises to a clean, parent-readable CSV using the SAME csvEscape
+// helper as export_grade_book_csv. P13: only the teacher's own roster student's
+// data — the inner handler's 403 gate is inherited. No other-student PII.
+async function handleExportStudentReport(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const studentId = String(body.student_id || '')
+  if (!studentId) return errorResponse('student_id required', 400, origin)
+
+  // Re-use the report pipeline (and its roster 403 gate) to build the data.
+  const inner = await handleGetStudentMasteryReport(body, origin)
+  if (!inner.ok) return inner
+  const report = (await inner.json()) as {
+    student_id: string
+    student_name: string
+    grade: string
+    mastery: MasterySummary
+    bloom: BloomDistribution
+    recent: RecentActivity
+  }
+
+  // Build a sectioned, parent-readable CSV. Section headers are bare rows so
+  // the file opens cleanly in Excel/Sheets and reads top-to-bottom. CBSE
+  // Bloom's level names are technical terms (P7) — left untranslated.
+  const lines: string[] = []
+  lines.push(['Student Report', report.student_name].map(csvEscape).join(','))
+  lines.push(['Grade', report.grade].map(csvEscape).join(','))
+  lines.push(['Overall Mastery (%)', report.mastery.overall_pct].map(csvEscape).join(','))
+  lines.push(['Quizzes Completed', report.recent.quizzes].map(csvEscape).join(','))
+  lines.push(['Average Score (%)', report.recent.avg_score].map(csvEscape).join(','))
+  lines.push(['Best Streak (days)', report.recent.streak].map(csvEscape).join(','))
+  lines.push('')
+
+  lines.push(['Concept Mastery', '', ''].map(csvEscape).join(','))
+  lines.push(['Concept', 'Mastery (%)', 'Attempts'].map(csvEscape).join(','))
+  for (const c of report.mastery.by_concept) {
+    lines.push([c.concept, c.mastery_pct, c.attempts].map(csvEscape).join(','))
+  }
+  lines.push('')
+
+  lines.push(["Bloom's Level Performance", '', '', ''].map(csvEscape).join(','))
+  lines.push(["Bloom's Level", 'Correct', 'Total', 'Accuracy (%)'].map(csvEscape).join(','))
+  for (const b of report.bloom.by_level) {
+    lines.push([b.bloom_level, b.correct, b.total, b.accuracy_pct].map(csvEscape).join(','))
+  }
+  if (report.bloom.weakest_level) {
+    lines.push('')
+    lines.push(['Weakest Bloom Level', report.bloom.weakest_level].map(csvEscape).join(','))
+  }
+
+  const datePart = new Date().toISOString().slice(0, 10)
+  const safeName = (report.student_name || 'student').replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 40)
+  const filename = `student_report_${safeName}_${datePart}.csv`
+
+  return jsonResponse({
+    filename,
+    csv_content: lines.join('\n'),
+    student_id: report.student_id,
+    student_name: report.student_name,
+  }, 200, {}, origin)
+}
+
 // ─── get_lesson_plans ──────────────────────────────────────
 async function handleGetLessonPlans(
   body: Record<string, unknown>,
@@ -2809,6 +3308,12 @@ Deno.serve(async (req: Request) => {
         return await handleSetGradeBookCell(body, origin)
       case 'export_grade_book_csv':
         return await handleExportGradeBookCsv(body, origin)
+      case 'get_student_mastery_report':
+        return await handleGetStudentMasteryReport(body, origin)
+      case 'get_class_mastery_bloom_summary':
+        return await handleGetClassMasteryBloomSummary(body, origin)
+      case 'export_student_report':
+        return await handleExportStudentReport(body, origin)
       case 'get_lesson_plans':
         return await handleGetLessonPlans(body, origin)
       case 'set_lesson_plan':
