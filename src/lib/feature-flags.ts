@@ -537,6 +537,39 @@ export const TEACHER_PARENT_COMMS_FLAGS = {
 } as const;
 
 /**
+ * Phase 3B — School Command Center flags (2026-06-08).
+ *
+ *  ff_school_command_center — master switch for the dense, read-only
+ *    "School Command Center" home (the principal/admin overview). Gates BOTH
+ *    surfaces together (mirrors Phase 3A's ff_teacher_command_center):
+ *      1. `/school-admin` renders the Command Center (overview KPI strip with
+ *         seat-utilization gauge + avg mastery, a classes-at-risk rail, and a
+ *         teacher-engagement table — all read-only, fed by the three Wave A
+ *         read-model RPCs via /api/school-admin/{overview,classes-at-risk,
+ *         teacher-engagement}) instead of the legacy stat-tile dashboard.
+ *      2. The school-admin primary nav (SchoolAdminShell) is consolidated from
+ *         ~24 flat entries into FIVE grouped sections (Overview · People ·
+ *         Academics · Billing · Settings); every existing route stays reachable
+ *         (no dead links).
+ *    When OFF, BOTH surfaces are byte-identical to today: `/school-admin` renders
+ *    the existing dashboard (or AtlasSchoolAdmin when the Atlas flag is on) and
+ *    SchoolAdminShell shows the existing flat nav. Default: false. Read
+ *    client-side via the existing client flag read path (getFeatureFlags).
+ *
+ *    Seat-utilization is DISPLAY-ONLY in Wave A (enforcement is Wave B); the UI
+ *    never implies any blocking.
+ *
+ *    Not yet seeded by any migration; while absent from `feature_flags` both
+ *    read paths resolve it to OFF (and both surfaces stay byte-identical-OFF).
+ *
+ *  Spec/plan: docs/superpowers/plans/2026-06-08-phase-3b-school-professional-depth.md
+ */
+export const SCHOOL_COMMAND_CENTER_FLAGS = {
+  /** Read-only School Command Center home + consolidated 5-section nav. Default off. */
+  V1: 'ff_school_command_center',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -572,6 +605,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [TEACHER_ASSIGNMENT_LIFECYCLE_FLAGS.V1]: false,
   [TEACHER_GRADEBOOK_DEPTH_FLAGS.V1]: false,
   [TEACHER_PARENT_COMMS_FLAGS.V1]: false,
+  [SCHOOL_COMMAND_CENTER_FLAGS.V1]: false,
 } as const;
 
 /**
