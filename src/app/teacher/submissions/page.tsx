@@ -14,9 +14,9 @@
  * another teacher's assignments by passing a foreign id.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/AuthContext';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
@@ -559,6 +559,13 @@ function SubmissionDetailView({
 export default function TeacherSubmissionsPage() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
   const router = useRouter();
+  // Phase 3A Wave B — deep-link target. The Command Center's grading queue
+  // links here as /teacher/submissions?assignment=<id>&submission=<id> to drop
+  // the teacher straight into the per-question review + feedback form. Absent
+  // params ⇒ the legacy assignment-list landing renders unchanged.
+  const searchParams = useSearchParams();
+  const deepAssignmentId = searchParams.get('assignment') || '';
+  const deepSubmissionId = searchParams.get('submission') || '';
 
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -569,6 +576,8 @@ export default function TeacherSubmissionsPage() {
   const [activeSub, setActiveSub] = useState<SubmissionRow | null>(null);
   const [detail, setDetail] = useState<SubmissionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  // Fire the deep-link drill-in exactly once so backing out doesn't re-trigger.
+  const deepLinkConsumed = useRef(false);
 
   const teacherId = teacher?.id || '';
 
@@ -604,8 +613,9 @@ export default function TeacherSubmissionsPage() {
 
   useEffect(() => { loadAssignments(); }, [loadAssignments]);
 
-  // Drill-in: open an assignment → fetch submissions list.
-  const openAssignment = useCallback(async (a: AssignmentRow) => {
+  // Drill-in: open an assignment → fetch submissions list. Returns the loaded
+  // rows so the deep-link path can chain straight into a submission.
+  const openAssignment = useCallback(async (a: AssignmentRow): Promise<SubmissionRow[]> => {
     setSelected(a);
     setActiveSub(null);
     setDetail(null);
@@ -613,18 +623,24 @@ export default function TeacherSubmissionsPage() {
     setSubsLoading(true);
     try {
       const data = await api('get_assignment_submissions', { teacher_id: teacherId, assignment_id: a.id });
-      setSubRows(data?.submissions || []);
+      const rows: SubmissionRow[] = data?.submissions || [];
+      setSubRows(rows);
+      return rows;
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : tt(isHi, 'Failed to load submissions', 'सबमिशन लोड करने में विफल'));
+      return [];
     } finally {
       setSubsLoading(false);
     }
   }, [teacherId, isHi]);
 
-  // Drill-in deeper: open a single submission.
-  const openSubmission = useCallback(async (row: SubmissionRow) => {
+  // Drill-in deeper: open a single submission. Accepts the full roster row when
+  // clicked from the list, or a minimal { submission_id } when arriving via a
+  // deep-link (the detail call only needs the id; get_submission_detail returns
+  // the student + assignment context the header renders).
+  const openSubmission = useCallback(async (row: Pick<SubmissionRow, 'submission_id'> & Partial<SubmissionRow>) => {
     if (!row.submission_id) return;
-    setActiveSub(row);
+    setActiveSub(row as SubmissionRow);
     setDetail(null);
     setDetailLoading(true);
     try {
@@ -636,6 +652,39 @@ export default function TeacherSubmissionsPage() {
       setDetailLoading(false);
     }
   }, [teacherId, isHi]);
+
+  // Deep-link drill-in (Wave B). Once assignments have loaded and both query
+  // params are present, open the assignment then the submission automatically —
+  // dropping the teacher into the existing review UI without rebuilding it.
+  // Guarded by a ref so it runs once; the teacher can Back out normally after.
+  useEffect(() => {
+    if (deepLinkConsumed.current) return;
+    if (!deepAssignmentId || !deepSubmissionId) return;
+    if (loading || assignments.length === 0) return;
+
+    const target = assignments.find((a) => a.id === deepAssignmentId);
+    if (!target) {
+      // The teacher may not own (or no longer have) this assignment — land them
+      // on the list rather than a dead deep-link. Mark consumed so we don't loop.
+      deepLinkConsumed.current = true;
+      return;
+    }
+    deepLinkConsumed.current = true;
+    (async () => {
+      const rows = await openAssignment(target);
+      const match = rows.find((r) => r.submission_id === deepSubmissionId);
+      // Prefer the real roster row (carries name/status); fall back to the id
+      // alone so a queue row still opens even if the roster row isn't present.
+      await openSubmission(match ?? { submission_id: deepSubmissionId });
+    })();
+  }, [
+    deepAssignmentId,
+    deepSubmissionId,
+    loading,
+    assignments,
+    openAssignment,
+    openSubmission,
+  ]);
 
   // After saving feedback: refresh both the list and the detail.
   const handleSaved = useCallback(async () => {

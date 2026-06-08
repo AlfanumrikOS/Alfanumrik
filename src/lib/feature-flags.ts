@@ -442,6 +442,35 @@ export const TEACHER_COMMAND_CENTER_FLAGS = {
 } as const;
 
 /**
+ * Phase 3A — Wave B (Assignment lifecycle) flag (2026-06-08).
+ *
+ *  ff_teacher_assignment_lifecycle — ADDITIONAL gate, layered ON TOP of
+ *    `ff_teacher_command_center`, for the cross-assignment GRADING QUEUE inside
+ *    the Command Center. When ON (and the Command Center is already rendering):
+ *      1. The Command Center fetches the `get_grading_queue` teacher-dashboard
+ *         Edge action and surfaces its `count` as a badge on the today-summary
+ *         "N awaiting grading" tile.
+ *      2. The action-bar "Grading queue" button becomes ENABLED (it is a
+ *         disabled placeholder otherwise). Clicking it opens the dense,
+ *         oldest-first grading queue surface (lazy-loaded — P10).
+ *      3. A queue row one-taps through to the EXISTING /teacher/submissions
+ *         review flow (get_submission_detail + mark_submission_reviewed); no
+ *         new grading/scoring UI is built (P1/P2 untouched).
+ *    When OFF, BOTH the queue surface and the enabled button are suppressed:
+ *    the "Grading queue" button stays the disabled placeholder and the today
+ *    summary behaves exactly as in Wave A. Default: false.
+ *
+ *    Not yet seeded by any migration; while absent from `feature_flags` both
+ *    read paths resolve it to OFF (and the queue is byte-identical-OFF).
+ *
+ *  Spec/plan: docs/superpowers/{specs,plans}/2026-06-08-phase-3a-wave-b-*
+ */
+export const TEACHER_ASSIGNMENT_LIFECYCLE_FLAGS = {
+  /** Cross-assignment grading queue surface inside the Command Center. Default off. */
+  V1: 'ff_teacher_assignment_lifecycle',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -474,6 +503,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [CONSUMER_MINIMALISM_FLAGS.PARENT_UNIFIED_AUTH_V1]: false,
   [CONSUMER_MINIMALISM_FLAGS.PARENT_ENCOURAGE_V1]: false,
   [TEACHER_COMMAND_CENTER_FLAGS.V1]: false,
+  [TEACHER_ASSIGNMENT_LIFECYCLE_FLAGS.V1]: false,
 } as const;
 
 /**
