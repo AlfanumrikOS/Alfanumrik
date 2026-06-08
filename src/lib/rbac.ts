@@ -673,6 +673,21 @@ export const PERMISSIONS = {
   INSTITUTION_MANAGE: 'institution.manage',
   INSTITUTION_VIEW_ANALYTICS: 'institution.view_analytics',
   INSTITUTION_MANAGE_TEACHERS: 'institution.manage_teachers',
+  // Phase 3B Wave C (CEO-approved 2026-06-08). The per-school-admin-role
+  // narrowing of these codes (principal / vice_principal /
+  // academic_coordinator / institution_admin) is enforced in
+  // src/lib/school-admin-auth.ts (SCHOOL_ADMIN_ROLE_CAPABILITIES), gated by
+  // ff_school_admin_rbac. All five codes are granted to the single
+  // institution_admin RBAC role by migration
+  // 20260614000002_phase3b_school_admin_rbac.sql.
+  //   manage_students — FORMALIZED: used by Wave B routes; predates Wave C as a
+  //                     prod row via the legacy RBAC seed, re-asserted in the
+  //                     Wave C migration for fresh-DB self-containment.
+  INSTITUTION_MANAGE_STUDENTS: 'institution.manage_students',
+  INSTITUTION_EXPORT_REPORTS: 'institution.export_reports',
+  INSTITUTION_MANAGE_BILLING: 'institution.manage_billing',
+  INSTITUTION_VIEW_BILLING: 'institution.view_billing',
+  INSTITUTION_MANAGE_STAFF: 'institution.manage_staff',
 
   // ── Tutor ──────────────────────────────────────────────
   TUTOR_VIEW_STUDENT: 'tutor.view_student',

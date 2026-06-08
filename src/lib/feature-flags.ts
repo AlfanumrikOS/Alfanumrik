@@ -617,6 +617,35 @@ export const SCHOOL_PROVISIONING_FLAGS = {
 } as const;
 
 /**
+ * Phase 3B — Wave C (School-admin RBAC depth) flag (2026-06-08).
+ *
+ *  ff_school_admin_rbac — master switch for ROLE-AWARE school-admin capability.
+ *    The `school_admins.role` enum (principal / vice_principal /
+ *    academic_coordinator / institution_admin) is decorative today: all four
+ *    values resolve to the single `institution_admin` RBAC role, so every school
+ *    admin currently gets identical access. When ON, authorizeSchoolAdmin()
+ *    ALSO enforces the CEO-approved role→permission matrix
+ *    (SCHOOL_ADMIN_ROLE_CAPABILITIES in src/lib/school-admin-auth.ts) AFTER the
+ *    existing RBAC check + school_admins lookup: a caller whose
+ *    `school_admins.role` does not grant the requested permission code gets 403.
+ *    When OFF, authorizeSchoolAdmin() applies NO role-narrowing and behaves
+ *    BYTE-IDENTICALLY to before Wave C — the matrix check is skipped entirely and
+ *    the auth decision depends only on the RBAC check + active-school lookup.
+ *    Default: false.
+ *
+ *    Server-only gate (read via isFeatureEnabled in school-admin-auth). Not yet
+ *    seeded by any migration; while absent from `feature_flags` the server read
+ *    path resolves it to OFF, so role-narrowing stays OFF until the flag is
+ *    explicitly seeded + enabled.
+ *
+ *  Spec/plan: docs/superpowers/plans/2026-06-08-phase-3b-school-professional-depth.md (Wave C)
+ */
+export const SCHOOL_ADMIN_RBAC_FLAGS = {
+  /** Role-aware school-admin capability (enforce the role→permission matrix). Default off. */
+  V1: 'ff_school_admin_rbac',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -654,6 +683,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [TEACHER_PARENT_COMMS_FLAGS.V1]: false,
   [SCHOOL_COMMAND_CENTER_FLAGS.V1]: false,
   [SCHOOL_PROVISIONING_FLAGS.V1]: false,
+  [SCHOOL_ADMIN_RBAC_FLAGS.V1]: false,
 } as const;
 
 /**

@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { schoolAdminPermissionCode } from '@/lib/school-admin/permission-code';
 
-// GET — flexible academic report endpoint
+// GET — flexible academic report endpoint.
+// Permission (Wave C matrix): flag OFF → `institution.view_reports` (original);
+// flag ON → `institution.export_reports` (report export matrix code).
 export async function GET(request: NextRequest) {
-  const auth = await authorizeSchoolAdmin(request, 'institution.view_reports');
+  const auth = await authorizeSchoolAdmin(
+    request,
+    await schoolAdminPermissionCode({ off: 'institution.view_reports', on: 'institution.export_reports' }),
+  );
   if (!auth.authorized) return auth.errorResponse!;
 
   const params = new URL(request.url).searchParams;

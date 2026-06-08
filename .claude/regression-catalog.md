@@ -2691,3 +2691,126 @@ dual atomic race-safe enroll paths with P3B01-nothing-inserted-on-block; flag-OF
 byte-identical).
 
 **Total: 65 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+
+## School-admin RBAC depth — role→permission matrix + staff management (Phase 3B Wave C) — REG-98
+
+Source: Phase 3B Wave C "School-admin RBAC depth" (CEO-approved 2026-06-08 role→
+permission matrix; RBAC additions gate), behind `ff_school_admin_rbac`; default
+OFF. Adds ONE idempotent grants migration
+(`supabase/migrations/20260614000002_phase3b_school_admin_rbac.sql`: seeds 4 new
+`institution.*` permission codes — export_reports / manage_billing / view_billing /
+manage_staff — re-asserts `institution.manage_students`, and grants the Wave-C
+SUPERSET to the SINGLE `institution_admin` RBAC role so `authorizeRequest()` passes
+for every code a school admin can possibly hold). The PER-ROLE narrowing lives IN
+CODE: `SCHOOL_ADMIN_ROLE_CAPABILITIES` + `schoolAdminRoleAllows()` in
+`src/lib/school-admin-auth.ts`, applied as Step-4 of `authorizeSchoolAdmin` ONLY
+when `ff_school_admin_rbac` is ON (the trigger `sync_school_admin_role()` maps all
+four `school_admins.role` values to the one `institution_admin` RBAC role, so RBAC
+alone cannot distinguish them — the matrix narrows on the `school_admins.role`
+field already fetched, O(1), no extra round-trip, the 6 platform roles untouched).
+Plus the flag-conditional deploy-safety selector
+(`src/lib/school-admin/permission-code.ts`), the staff-management route
+(`src/app/api/school-admin/staff/route.ts`, GET/POST/PATCH/DELETE on
+`institution.manage_staff`), the UI flag hook (`src/lib/use-school-admin-rbac.ts` +
+`SCHOOL_ADMIN_RBAC_FLAGS`), and the caller-role hook
+(`src/lib/use-school-admin-role.ts`).
+
+Four things are blocking defects if they regress: (a) **the CEO-approved
+role→permission matrix** — principal AND institution_admin allow ALL 10 matrix
+codes; vice_principal denies EXACTLY `institution.manage_billing` +
+`institution.manage_staff` (keeps the other 8, incl. `institution.view_billing` +
+`institution.manage`); academic_coordinator allows ONLY the 6 shared codes
+(view_analytics, report.view_class, export_reports, manage_students,
+manage_teachers, class.manage) and denies `institution.manage` + both billing +
+staff; a code OUTSIDE the matrix union DEFERS (returns allowed) for every valid
+role (Wave C only ever NARROWS the RBAC superset, never grants beyond it), and an
+impossible role value fails CLOSED (denies everything); (b) **server narrowing
+under the flag** — with `ff_school_admin_rbac` ON, `authorizeSchoolAdmin` returns
+403 `SCHOOL_ADMIN_ROLE_DENIED` when the caller's `school_admins.role` does not
+grant the requested code (vice_principal→manage_billing/manage_staff,
+academic_coordinator→manage/view_billing) and authorizes when it does
+(principal/institution_admin→any; vice_principal→view_billing;
+academic_coordinator→shared; any role→non-matrix code); (c) **flag-OFF
+byte-identical** — with the flag OFF the Step-4 narrowing block is SKIPPED
+entirely, so the SAME (role, code) pair that 403s under ON is `authorized:true`
+under OFF with the identical schoolId/userId/schoolAdminId, NO role is ever
+`SCHOOL_ADMIN_ROLE_DENIED` on the OFF path for any matrix code, the permission-code
+selector returns the route's ORIGINAL pre-Wave-C code, the staff endpoint 404s on
+ALL verbs (gate BEFORE auth — `authorizeSchoolAdmin` is never even consulted), and
+`useSchoolAdminRbac()` paints OFF synchronously (no first-paint flash); (d) **staff
+safety guards** — the LAST active principal cannot be demoted (PATCH→409
+LAST_PRINCIPAL_LOCKOUT) or revoked (DELETE→409), a cross-school target id resolves
+to 404 (the caller's school is taken from their school_admins record, never the
+body), POST is idempotent (no-op on an active member WITHOUT silently changing
+role; reactivate a revoked member with the requested role; create-new returns 201),
+an invalid role enum is 4xx, and audit metadata / logs carry id+role only — never
+email / name / phone (P13).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-98 | `school_admin_rbac_matrix_scoping_flag_off_byte_identical_staff_lockout` | **(a) Role→permission matrix (pure, no DB).** The full 4-role × 10-code grid matches the CEO contract cell-for-cell: principal=10/10, institution_admin=10/10, vice_principal=8/10 (denies ONLY manage_billing + manage_staff; keeps view_billing + manage), academic_coordinator=6/10 (the shared 6; denies manage + both billing + staff); a non-matrix code (`school.manage_settings` + others) DEFERS (allowed) for every valid role; an impossible role denies BOTH matrix and non-matrix codes (fail-closed). A second independent EXPECTED literal asserts each cell so a drift in either copy fails. **(b) Server narrowing under flag ON (mocked).** `authorizeSchoolAdmin` 403s `SCHOOL_ADMIN_ROLE_DENIED` for vice_principal+manage_billing, vice_principal+manage_staff, academic_coordinator+manage, academic_coordinator+view_billing; authorizes principal+manage_staff, principal+manage_billing, institution_admin+manage_staff, vice_principal+view_billing, academic_coordinator+manage_students, any-role+non-matrix; the resolved school context (schoolId/role) is returned even on the narrowing denial. **(c) Flag-OFF byte-identical.** With the flag OFF, vice_principal+manage_billing AND academic_coordinator+manage are `authorized:true` (the pairs that 403 under ON) with identical schoolId/userId/schoolAdminId; NO role is ever `SCHOOL_ADMIN_ROLE_DENIED` across every (4 roles × 4 carve-out codes) pair; the flag is read with `ff_school_admin_rbac`; `schoolAdminPermissionCode` returns the OFF (original) code when OFF and the matrix code when ON (reads `ff_school_admin_rbac` with an environment scope); the staff endpoint returns 404 on GET/POST/PATCH/DELETE when OFF and NEVER calls `authorizeSchoolAdmin` (gate before auth); `useSchoolAdminRbac()` initial SYNCHRONOUS value is `false` (DEFAULT_OFF), stays false absent / explicitly-false / on `getFeatureFlags` rejection, flips ON only after the async confirm when true, and fetches scoped to `role:'school_admin'`. **(d) Staff API (mocked, flag ON).** authorize denial returned unchanged (403, gated on `institution.manage_staff`); GET lists school-scoped active staff (empty→200 empty array; list error→500); POST invite-new→201 + idempotent no-op on an active member (200, role UNCHANGED, no insert/createUser) + reactivate a revoked member (200, is_active→true with requested role) + invalid email/role→400; PATCH role change→200 + unchanged→no-op + invalid enum→400 + cross-school→404 + last-principal demote→409 LAST_PRINCIPAL_LOCKOUT (nothing updated) + demote-allowed when count=2; DELETE revoke→200 (is_active→false) + idempotent on already-revoked (200) + cross-school→404 + last-principal revoke→409 + allowed when count=2 + missing id→400; P13: invite audit row + 500-path log carry NO email/name. | `src/__tests__/lib/school-admin/role-capabilities.test.ts` (62 unit tests: full 40-cell role×code grid + per-role allowed-count summary (principal/institution_admin=10, vice_principal=8, academic_coordinator=6) + non-matrix defer for every role + unknown-role fail-closed) + `src/__tests__/school-admin-auth-rbac-narrowing.test.ts` (14 unit tests, mocked: flag-ON denials VP→billing/staff + AC→manage/view_billing, flag-ON allows principal/institution_admin/VP-view_billing/AC-shared/non-matrix, flag-OFF byte-identical authorized for the same pairs + no-denial-across-the-grid + flag-name read) + `src/__tests__/lib/school-admin/permission-code.test.ts` (5 unit tests, mocked: OFF→off code, ON→on code, reads ff_school_admin_rbac, environment scope, pure round-trip) + `src/__tests__/api/school-admin/staff-routes.test.ts` (27 unit tests, mocked: flag-OFF 404 all 4 verbs no-auth-call; authorize-denial passthrough; GET list/empty/500; POST 201/no-op/reactivate/400×2; PATCH change/no-op/400/cross-school-404/last-principal-409/allowed-count2; DELETE revoke/idempotent/cross-school-404/last-principal-409/allowed-count2/missing-id-400; P13 no-PII audit + log) + `src/__tests__/school-admin/rbac-flag-gate.test.tsx` (5 tests: sync DEFAULT_OFF + stays-OFF-absent / stays-OFF-false / flips-ON-true / stays-OFF-on-reject / role-scoped fetch) | E |
+
+### Pinned tests
+
+- `src/__tests__/lib/school-admin/role-capabilities.test.ts::schoolAdminRoleAllows — per-role coarse summary (count of allowed matrix codes)::vice_principal allows exactly 8 (denies manage_billing + manage_staff only)`
+- `src/__tests__/lib/school-admin/role-capabilities.test.ts::schoolAdminRoleAllows — per-role coarse summary (count of allowed matrix codes)::academic_coordinator allows exactly the 6 shared codes (no manage, no billing, no staff)`
+- `src/__tests__/lib/school-admin/role-capabilities.test.ts::schoolAdminRoleAllows — non-matrix codes DEFER (allowed) for every role::academic_coordinator defers (allows) non-matrix code school.manage_settings`
+- `src/__tests__/school-admin-auth-rbac-narrowing.test.ts::authorizeSchoolAdmin — flag ON narrowing (denials)::vice_principal calling institution.manage_billing → 403 SCHOOL_ADMIN_ROLE_DENIED`
+- `src/__tests__/school-admin-auth-rbac-narrowing.test.ts::authorizeSchoolAdmin — flag OFF is byte-identical (no narrowing)::vice_principal + institution.manage_billing is AUTHORIZED when the flag is OFF (would be 403 ON)`
+- `src/__tests__/school-admin-auth-rbac-narrowing.test.ts::authorizeSchoolAdmin — flag OFF is byte-identical (no narrowing)::NO role is ever 403 SCHOOL_ADMIN_ROLE_DENIED on the OFF path, for any matrix code`
+- `src/__tests__/api/school-admin/staff-routes.test.ts::FLAG OFF — endpoint behaves as not-present (404 before auth)::POST → 404 and never calls authorizeSchoolAdmin`
+- `src/__tests__/api/school-admin/staff-routes.test.ts::PATCH — role change::returns 409 LAST_PRINCIPAL_LOCKOUT when demoting the ONLY active principal`
+- `src/__tests__/api/school-admin/staff-routes.test.ts::DELETE — revoke (deactivate)::returns 409 LAST_PRINCIPAL_LOCKOUT when revoking the ONLY active principal`
+- `src/__tests__/api/school-admin/staff-routes.test.ts::DELETE — revoke (deactivate)::returns 404 for a CROSS-SCHOOL target`
+- `src/__tests__/school-admin/rbac-flag-gate.test.tsx::useSchoolAdminRbac — default OFF (no first-paint flash)::initialises OFF synchronously and stays OFF when the flag is absent`
+
+### Invariants covered by this section
+
+- P9 (RBAC enforcement) — the per-school-admin-role capability matrix is the
+  authoritative server-side narrowing (`authorizeSchoolAdmin` Step 4), applied on
+  top of the existing `authorizeRequest` permission check; the client hooks
+  (`useSchoolAdminRbac`, `useSchoolAdminRole`) are UI convenience only, never a
+  security boundary.
+- P8/P9 (cross-tenant scope) — the staff route takes the caller's school from
+  their `school_admins` record (never the request body) and 404s any target whose
+  `school_id` differs; the LAST-principal lockout prevents a school from locking
+  itself out of billing/staff management.
+- P13 (data privacy) — staff audit metadata + error logs carry `school_admins.id`
+  + role only, never email / name / phone; the new permission descriptions and
+  audit actions contain no PII.
+- No scoring/XP (RBAC only) — Wave C touches permissions + grants + a staff route;
+  no XP constant or scoring formula is read or written.
+- Flag-OFF byte-identity (rollout safety) — `ff_school_admin_rbac` default-OFF
+  skips the entire narrowing block (server auth decision byte-identical to
+  pre-Wave-C), keeps the permission-code selector on each route's original code,
+  404s the staff endpoint, and paints the RBAC UI gate OFF synchronously.
+
+### Notes on test strategy
+
+REG-98 is a **pure-unit + mocked-seam** entry (no live-DB tier — the only DB
+artifact is an additive idempotent grants migration whose effect is asserted
+indirectly: the matrix superset is granted at the RBAC layer, and the per-role
+narrowing it enables is exercised in code). The matrix test imports the REAL
+exported `schoolAdminRoleAllows` / `SCHOOL_ADMIN_ROLE_CAPABILITIES` and asserts
+every cell against a SECOND independent EXPECTED literal so a drift in either copy
+fails (it is NOT a tautology against the source map). The narrowing test mirrors
+the sibling `school-admin-auth.test.ts` seam (RBAC + supabase-admin + logger +
+feature-flags mocked) and toggles the flag to prove the ON denials AND the OFF
+byte-identity for the SAME (role, code) pairs. The staff-route test mirrors the
+Wave B `seat-enforcement-routes.test.ts` handler-keyed chainable stub (extended to
+support the `{ count }` principal lookup the lockout guard uses) and stubs the flag
++ auth seams so the route's real branching + status codes + lockout guards run; the
+flag-OFF block proves the 404-before-auth gate by asserting `authorizeSchoolAdmin`
+is never called. The flag-hook test mocks only `getFeatureFlags` and asserts the
+synchronous DEFAULT_OFF paint (mirrors the Wave A/B flag-gate tests).
+
+### Catalog total
+
+Pre-Phase-3B-Wave-C: 65 entries. Phase 3B Wave C (school-admin RBAC depth —
+CEO-approved role→permission matrix + staff management, behind
+`ff_school_admin_rbac`) adds REG-98 (role→permission matrix scoping incl. the
+negative coordinator∌billing / vice_principal∌staff carve-outs; flag-OFF
+byte-identical with NO narrowing; staff-API last-principal lockout + cross-school
+isolation + flag-OFF 404).
+
+**Total: 66 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)

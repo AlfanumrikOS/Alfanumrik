@@ -3,6 +3,7 @@ import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { logSchoolAudit } from '@/lib/audit';
+import { schoolAdminPermissionCode } from '@/lib/school-admin/permission-code';
 import {
   MODULE_REGISTRY,
   defaultsForTenantType,
@@ -61,7 +62,12 @@ interface ModuleViewRow {
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await authorizeSchoolAdmin(request, 'school.manage_modules');
+    // Settings (Wave C matrix): flag OFF → `school.manage_modules` (original);
+    // flag ON → `institution.manage`.
+    const auth = await authorizeSchoolAdmin(
+      request,
+      await schoolAdminPermissionCode({ off: 'school.manage_modules', on: 'institution.manage' }),
+    );
     if (!auth.authorized) return auth.errorResponse!;
 
     const schoolId = auth.schoolId!;
@@ -148,7 +154,10 @@ const VALID_MODULE_KEYS = new Set<string>(MODULE_REGISTRY.map(m => m.key));
 
 export async function PUT(request: NextRequest) {
   try {
-    const auth = await authorizeSchoolAdmin(request, 'school.manage_modules');
+    const auth = await authorizeSchoolAdmin(
+      request,
+      await schoolAdminPermissionCode({ off: 'school.manage_modules', on: 'institution.manage' }),
+    );
     if (!auth.authorized) return auth.errorResponse!;
 
     const schoolId = auth.schoolId!;

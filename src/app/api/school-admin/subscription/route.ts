@@ -3,6 +3,7 @@ import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { isFeatureEnabled } from '@/lib/feature-flags';
+import { schoolAdminPermissionCode } from '@/lib/school-admin/permission-code';
 import { capture } from '@/lib/posthog/server';
 import { logSchoolAudit } from '@/lib/audit';
 import {
@@ -75,11 +76,15 @@ async function countActiveSeats(schoolId: string): Promise<number> {
 /**
  * GET /api/school-admin/subscription — viewer (existing behaviour, unchanged).
  *
- * Permission: school.manage_billing
+ * Permission (Wave C matrix): flag OFF → `school.manage_billing` (original);
+ * flag ON → `institution.view_billing` (READ-side matrix code).
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await authorizeSchoolAdmin(request, 'school.manage_billing');
+    const auth = await authorizeSchoolAdmin(
+      request,
+      await schoolAdminPermissionCode({ off: 'school.manage_billing', on: 'institution.view_billing' }),
+    );
     if (!auth.authorized) return auth.errorResponse!;
 
     const schoolId = auth.schoolId!;
@@ -151,11 +156,15 @@ export async function GET(request: NextRequest) {
  * student-side webhook (existing) flips status to 'active' once the first
  * charge succeeds.
  *
- * Gated by `ff_school_self_service_billing_v1`. Permission: school.manage_billing.
+ * Gated by `ff_school_self_service_billing_v1`. Permission (Wave C matrix):
+ * flag OFF → `school.manage_billing` (original); flag ON → `institution.manage_billing` (WRITE).
  */
 export async function POST(request: NextRequest) {
   try {
-    const auth = await authorizeSchoolAdmin(request, 'school.manage_billing');
+    const auth = await authorizeSchoolAdmin(
+      request,
+      await schoolAdminPermissionCode({ off: 'school.manage_billing', on: 'institution.manage_billing' }),
+    );
     if (!auth.authorized) return auth.errorResponse!;
 
     const schoolId = auth.schoolId!;
@@ -347,7 +356,10 @@ export async function POST(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
-    const auth = await authorizeSchoolAdmin(request, 'school.manage_billing');
+    const auth = await authorizeSchoolAdmin(
+      request,
+      await schoolAdminPermissionCode({ off: 'school.manage_billing', on: 'institution.manage_billing' }),
+    );
     if (!auth.authorized) return auth.errorResponse!;
 
     const schoolId = auth.schoolId!;
@@ -541,7 +553,10 @@ export async function PATCH(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const auth = await authorizeSchoolAdmin(request, 'school.manage_billing');
+    const auth = await authorizeSchoolAdmin(
+      request,
+      await schoolAdminPermissionCode({ off: 'school.manage_billing', on: 'institution.manage_billing' }),
+    );
     if (!auth.authorized) return auth.errorResponse!;
 
     const schoolId = auth.schoolId!;

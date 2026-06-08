@@ -24,6 +24,7 @@
 import { useMemo, useState } from 'react';
 import { twMerge } from 'tailwind-merge';
 import type { ModuleKey } from '@/lib/modules/registry';
+import type { SchoolAdminRole } from '@/lib/school-admin-auth';
 
 export interface ConsolidatedNavItem {
   href: string;
@@ -32,6 +33,45 @@ export interface ConsolidatedNavItem {
   icon: string;
   /** When set: hide this item if moduleEnablement[moduleKey] === false. */
   moduleKey?: ModuleKey;
+  /**
+   * Phase 3B Wave C: when set AND `ff_school_admin_rbac` is ON, hide this item if
+   * the caller's `school_admins.role` is not permitted the listed capability.
+   * Has NO effect when `rbacEnabled` is false (byte-identical-OFF). Mirrors the
+   * server-side SCHOOL_ADMIN_ROLE_CAPABILITIES matrix — UI polish only (P9).
+   */
+  capability?: SchoolAdminCapability;
+  /**
+   * Phase 3B Wave C: when true this item only renders while `ff_school_admin_rbac`
+   * is ON. Used for the NEW Staff-management entry which has no flag-OFF home.
+   */
+  rbacOnly?: boolean;
+}
+
+/**
+ * The subset of the server role→permission matrix that the nav cares about.
+ * Source of truth for the SERVER decision is SCHOOL_ADMIN_ROLE_CAPABILITIES in
+ * src/lib/school-admin-auth.ts; this client mirror is UI-only (it never grants
+ * access — the server still enforces). Kept here (not imported) because the
+ * server set is keyed by raw permission codes; the nav groups them by surface.
+ */
+export type SchoolAdminCapability = 'view_billing' | 'manage_billing' | 'manage' | 'manage_staff';
+
+/**
+ * Which capabilities each school_admins.role holds, per the CEO-approved Wave C
+ * matrix (see school-admin-auth.ts). Only the nav-relevant capabilities appear.
+ */
+const ROLE_NAV_CAPABILITIES: Readonly<Record<SchoolAdminRole, ReadonlySet<SchoolAdminCapability>>> = {
+  principal: new Set<SchoolAdminCapability>(['view_billing', 'manage_billing', 'manage', 'manage_staff']),
+  // Vice principal: no billing WRITE, no staff management; CAN view billing + manage settings.
+  vice_principal: new Set<SchoolAdminCapability>(['view_billing', 'manage']),
+  // Academic coordinator: no billing at all, no settings-manage, no staff.
+  academic_coordinator: new Set<SchoolAdminCapability>([]),
+  institution_admin: new Set<SchoolAdminCapability>(['view_billing', 'manage_billing', 'manage', 'manage_staff']),
+};
+
+function roleAllowsCapability(role: SchoolAdminRole | null, cap: SchoolAdminCapability): boolean {
+  if (!role) return true; // fail-open: unknown role shows everything (UI polish only)
+  return ROLE_NAV_CAPABILITIES[role]?.has(cap) ?? true;
 }
 
 export interface ConsolidatedNavSection {
@@ -66,6 +106,16 @@ export const SCHOOL_NAV_SECTIONS: ReadonlyArray<ConsolidatedNavSection> = [
       { href: '/school-admin/parents', label: 'Parents', labelHi: 'अभिभावक', icon: '⊗' },
       { href: '/school-admin/enroll', label: 'Enrollment', labelHi: 'नामांकन', icon: '◉' },
       { href: '/school-admin/invite-codes', label: 'Invite Codes', labelHi: 'आमंत्रण कोड', icon: '⊡' },
+      // Phase 3B Wave C — NEW staff-management surface. rbacOnly: only renders when
+      // ff_school_admin_rbac is ON; capability: hidden for roles lacking manage_staff.
+      {
+        href: '/school-admin/staff',
+        label: 'Staff',
+        labelHi: 'स्टाफ',
+        icon: '⊛',
+        rbacOnly: true,
+        capability: 'manage_staff',
+      },
       { href: '/school-admin/rbac', label: 'Roles & Access', labelHi: 'भूमिकाएँ और पहुँच', icon: '⊚' },
     ],
   },
@@ -84,19 +134,25 @@ export const SCHOOL_NAV_SECTIONS: ReadonlyArray<ConsolidatedNavSection> = [
     title: 'Billing',
     titleHi: 'बिलिंग',
     items: [
-      { href: '/school-admin/billing', label: 'Billing', labelHi: 'बिलिंग', icon: '$' },
+      // Billing view requires view_billing; academic_coordinator lacks it (hidden
+      // when ff_school_admin_rbac is ON). vice_principal keeps VIEW (write is
+      // gated server-side inside the billing page).
+      { href: '/school-admin/billing', label: 'Billing', labelHi: 'बिलिंग', icon: '$', capability: 'view_billing' },
     ],
   },
   {
     title: 'Settings',
     titleHi: 'सेटिंग्स',
     items: [
-      { href: '/school-admin/branding', label: 'Branding', labelHi: 'ब्रांडिंग', icon: '◐' },
-      { href: '/school-admin/modules', label: 'Modules', labelHi: 'मॉड्यूल', icon: '◍' },
-      { href: '/school-admin/ai-config', label: 'AI Config', labelHi: 'AI कॉन्फ़िग', icon: '◈', moduleKey: 'ai_tutor' },
-      { href: '/school-admin/api-keys', label: 'API Keys', labelHi: 'API कुंजियाँ', icon: '@' },
+      // The configuration surfaces require institution.manage; academic_coordinator
+      // lacks it (hidden when ff_school_admin_rbac is ON). Audit Log is a view-level
+      // surface (view_analytics, held by every role) so it stays ungated.
+      { href: '/school-admin/branding', label: 'Branding', labelHi: 'ब्रांडिंग', icon: '◐', capability: 'manage' },
+      { href: '/school-admin/modules', label: 'Modules', labelHi: 'मॉड्यूल', icon: '◍', capability: 'manage' },
+      { href: '/school-admin/ai-config', label: 'AI Config', labelHi: 'AI कॉन्फ़िग', icon: '◈', moduleKey: 'ai_tutor', capability: 'manage' },
+      { href: '/school-admin/api-keys', label: 'API Keys', labelHi: 'API कुंजियाँ', icon: '@', capability: 'manage' },
       { href: '/school-admin/audit-log', label: 'Audit Log', labelHi: 'ऑडिट लॉग', icon: '*' },
-      { href: '/school-admin/setup', label: 'Setup', labelHi: 'सेटअप', icon: '◎' },
+      { href: '/school-admin/setup', label: 'Setup', labelHi: 'सेटअप', icon: '◎', capability: 'manage' },
     ],
   },
 ];
@@ -114,6 +170,17 @@ export interface ConsolidatedSchoolNavProps {
   /** null/undefined → fail-open (show all). Otherwise filter by module key. */
   moduleEnablement?: Record<string, boolean> | null;
   footer?: React.ReactNode;
+  /**
+   * Phase 3B Wave C. When false/undefined (the default + flag-OFF), the nav is
+   * BYTE-IDENTICAL to Wave A: rbacOnly items (Staff) are hidden and capability
+   * filtering is skipped entirely. When true (`ff_school_admin_rbac` ON), the
+   * Staff entry appears and capability-tagged items hide for roles that lack
+   * the capability per the CEO-approved matrix. UI polish only — the server
+   * enforces regardless (P9).
+   */
+  rbacEnabled?: boolean;
+  /** The caller's school_admins.role (for rbac gating). null ⇒ fail-open. */
+  adminRole?: SchoolAdminRole | null;
 }
 
 export default function ConsolidatedSchoolNav({
@@ -125,21 +192,31 @@ export default function ConsolidatedSchoolNav({
   isHi,
   moduleEnablement,
   footer,
+  rbacEnabled = false,
+  adminRole = null,
 }: ConsolidatedSchoolNavProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Apply module gating per section; drop empty sections so we never render a
-  // heading with no items beneath it.
+  // Apply module gating + (Wave C) rbac gating per section; drop empty sections
+  // so we never render a heading with no items beneath it.
   const visibleSections = useMemo(() => {
     return SCHOOL_NAV_SECTIONS.map((section) => ({
       ...section,
       items: section.items.filter((item) => {
-        if (!item.moduleKey) return true;
-        if (moduleEnablement == null) return true;
-        return moduleEnablement[item.moduleKey] !== false;
+        // Module gating (Wave A — unchanged).
+        if (item.moduleKey && moduleEnablement != null && moduleEnablement[item.moduleKey] === false) {
+          return false;
+        }
+        // Wave C rbac gating. When the flag is OFF, rbacOnly items are hidden and
+        // capability filtering is skipped → byte-identical to Wave A.
+        if (item.rbacOnly && !rbacEnabled) return false;
+        if (rbacEnabled && item.capability && !roleAllowsCapability(adminRole, item.capability)) {
+          return false;
+        }
+        return true;
       }),
     })).filter((section) => section.items.length > 0);
-  }, [moduleEnablement]);
+  }, [moduleEnablement, rbacEnabled, adminRole]);
 
   // Active = longest matching href across ALL visible items (root-vs-subroute).
   const activeHref = useMemo(() => {
