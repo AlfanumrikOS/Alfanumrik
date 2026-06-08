@@ -15,6 +15,7 @@ import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { isFeatureEnabled } from '@/lib/feature-flags';
+import { schoolAdminPermissionCode } from '@/lib/school-admin/permission-code';
 
 export const runtime = 'nodejs';
 
@@ -28,7 +29,12 @@ function err(message: string, status = 400) {
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await authorizeSchoolAdmin(request, 'institution.manage');
+    // Contracts are READ-only for school admins (view + download; mutation is
+    // super-admin-only). Treated as billing READ in the Wave C matrix.
+    const auth = await authorizeSchoolAdmin(
+      request,
+      await schoolAdminPermissionCode({ off: 'institution.manage', on: 'institution.view_billing' }),
+    );
     if (!auth.authorized) return auth.errorResponse;
 
     if (!(await isFeatureEnabled(FLAG, {

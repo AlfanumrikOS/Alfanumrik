@@ -4,16 +4,21 @@ import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { getSchoolById } from '@/lib/domains/tenant';
 import { logger } from '@/lib/logger';
 import { logSchoolAudit } from '@/lib/audit';
+import { schoolAdminPermissionCode } from '@/lib/school-admin/permission-code';
 
 /**
  * GET /api/school-admin/branding
  *
  * Return school branding fields for the admin's school.
- * Permission: school.manage_branding
+ * Permission (Wave C matrix): flag OFF → `school.manage_branding` (original);
+ * flag ON → `institution.manage` (settings matrix code).
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await authorizeSchoolAdmin(request, 'school.manage_branding');
+    const auth = await authorizeSchoolAdmin(
+      request,
+      await schoolAdminPermissionCode({ off: 'school.manage_branding', on: 'institution.manage' }),
+    );
     if (!auth.authorized) return auth.errorResponse!;
 
     const schoolId = auth.schoolId!;
@@ -102,7 +107,10 @@ export async function GET(request: NextRequest) {
  */
 export async function PUT(request: NextRequest) {
   try {
-    const auth = await authorizeSchoolAdmin(request, 'school.manage_branding');
+    const auth = await authorizeSchoolAdmin(
+      request,
+      await schoolAdminPermissionCode({ off: 'school.manage_branding', on: 'institution.manage' }),
+    );
     if (!auth.authorized) return auth.errorResponse!;
 
     const schoolId = auth.schoolId!;

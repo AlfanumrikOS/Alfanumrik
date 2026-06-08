@@ -56,6 +56,16 @@ vi.mock('@/lib/logger', () => ({
   },
 }));
 
+// Mock feature-flags so the Wave C ff_school_admin_rbac gate is deterministic and
+// never performs a real fetch. Default OFF: role-narrowing is skipped, so these
+// existing tests exercise the byte-identical flag-OFF path. Flip via
+// mockSchoolAdminRbacFlag(true) inside a test to exercise the matrix.
+const mockIsFeatureEnabled = vi.fn().mockResolvedValue(false);
+vi.mock('@/lib/feature-flags', () => ({
+  isFeatureEnabled: (...args: unknown[]) => mockIsFeatureEnabled(...args),
+  SCHOOL_ADMIN_RBAC_FLAGS: { V1: 'ff_school_admin_rbac' },
+}));
+
 // Import after mocks are set up
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import type { SchoolAdminAuthResult } from '@/lib/school-admin-auth';
@@ -93,6 +103,8 @@ function mockUnauthorized(status = 401) {
 describe('authorizeSchoolAdmin', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Re-establish the flag-OFF default after clearAllMocks (which resets impls).
+    mockIsFeatureEnabled.mockResolvedValue(false);
     // Default: no records found
     schoolAdminsChain = createChainableMock({ data: null, error: null });
     schoolsChain = createChainableMock({ data: { id: 'school-abc', is_active: true }, error: null });
@@ -258,7 +270,9 @@ describe('authorizeSchoolAdmin', () => {
       await authorizeSchoolAdmin(makeRequest(), 'class.manage');
 
       expect(mockFrom).toHaveBeenCalledWith('school_admins');
-      expect(schoolAdminsChain.select).toHaveBeenCalledWith('id, school_id, is_active');
+      // Wave C: `role` is now fetched in the same query (no extra round-trip) to
+      // drive the SCHOOL_ADMIN_ROLE_CAPABILITIES narrowing + returned schoolAdminRole.
+      expect(schoolAdminsChain.select).toHaveBeenCalledWith('id, school_id, role, is_active');
       expect(schoolAdminsChain.eq).toHaveBeenCalledWith('auth_user_id', 'user-verify-query');
       expect(schoolAdminsChain.eq).toHaveBeenCalledWith('is_active', true);
     });

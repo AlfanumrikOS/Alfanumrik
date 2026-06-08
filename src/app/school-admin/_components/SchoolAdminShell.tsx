@@ -9,6 +9,8 @@ import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/Das
 import type { ModuleKey } from '@/lib/modules/registry';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
 import { useSchoolCommandCenter } from '@/lib/use-school-command-center';
+import { useSchoolAdminRbac } from '@/lib/use-school-admin-rbac';
+import { useSchoolAdminRole } from '@/lib/use-school-admin-role';
 import { useCosmicTheme } from '@/lib/cosmic-theme';
 import { Starfield } from '@/components/cosmic';
 import ConsolidatedSchoolNav from './ConsolidatedSchoolNav';
@@ -90,6 +92,18 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
   // grouped ConsolidatedSchoolNav renders instead.
   const commandCenterOn = useSchoolCommandCenter();
 
+  // Phase 3B Wave C — role-aware nav gating. Sync-paints DEFAULT_OFF (1h cache),
+  // so for every current (flag-absent) user this is false on the first paint and
+  // the consolidated nav renders Wave A byte-identically (no Staff entry, no
+  // capability filtering). When ON, the Staff entry appears and capability-tagged
+  // items hide for roles that lack the capability. The caller's role comes from an
+  // RLS-bounded self-read (UI polish only — server enforces regardless, P9).
+  const rbacOn = useSchoolAdminRbac();
+  // Only resolve the caller's role when the flag is ON — passing null while OFF
+  // suppresses the self-read entirely, so the OFF portal is byte-identical
+  // (no extra network request) to before Wave C.
+  const { role: adminRole } = useSchoolAdminRole(rbacOn ? authUserId : null);
+
   const primaryColor = tenant.branding.primaryColor || '#7C3AED';
 
   useEffect(() => {
@@ -170,6 +184,8 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
           currentPath={pathname || ''}
           isHi={isHi}
           moduleEnablement={moduleEnablement}
+          rbacEnabled={rbacOn}
+          adminRole={adminRole}
           footer={
             (tenant.branding.showPoweredBy || tenant.schoolId) ? (
               <div>

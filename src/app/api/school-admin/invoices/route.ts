@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { schoolAdminPermissionCode } from '@/lib/school-admin/permission-code';
 
 /**
  * GET /api/school-admin/invoices — List invoices for the authenticated school
  *
- * Permission: institution.manage
+ * Permission (Wave C matrix): flag OFF → `institution.manage` (original);
+ * flag ON → `institution.view_billing` (billing READ-side matrix code).
  * Scoped to auth.schoolId (school admin can only see their own invoices).
  *
  * Query params:
@@ -18,7 +20,10 @@ import { logger } from '@/lib/logger';
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await authorizeSchoolAdmin(request, 'institution.manage');
+    const auth = await authorizeSchoolAdmin(
+      request,
+      await schoolAdminPermissionCode({ off: 'institution.manage', on: 'institution.view_billing' }),
+    );
     if (!auth.authorized) return auth.errorResponse;
 
     const { searchParams } = new URL(request.url);

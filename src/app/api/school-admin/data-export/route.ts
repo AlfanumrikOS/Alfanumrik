@@ -3,6 +3,7 @@ import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { logSchoolAudit } from '@/lib/audit';
+import { schoolAdminPermissionCode } from '@/lib/school-admin/permission-code';
 
 const VALID_EXPORT_TYPES = ['students', 'quiz_results', 'progress', 'full'] as const;
 type ExportType = typeof VALID_EXPORT_TYPES[number];
@@ -185,7 +186,12 @@ async function exportFull(schoolId: string): Promise<string> {
  */
 export async function POST(request: NextRequest) {
   try {
-    const auth = await authorizeSchoolAdmin(request, 'school.export_data');
+    // Permission (Wave C matrix): flag OFF → `school.export_data` (original);
+    // flag ON → `institution.export_reports` (report/data export matrix code).
+    const auth = await authorizeSchoolAdmin(
+      request,
+      await schoolAdminPermissionCode({ off: 'school.export_data', on: 'institution.export_reports' }),
+    );
     if (!auth.authorized) return auth.errorResponse;
 
     let body: Record<string, unknown>;

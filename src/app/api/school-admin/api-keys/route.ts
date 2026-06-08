@@ -3,17 +3,22 @@ import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { logSchoolAudit } from '@/lib/audit';
+import { schoolAdminPermissionCode } from '@/lib/school-admin/permission-code';
 
 /**
  * GET /api/school-admin/api-keys — List API keys for this school
- * Permission: school.manage_api_keys
+ * Permission (Wave C matrix): flag OFF → `school.manage_api_keys` (original);
+ * flag ON → `institution.manage` (settings matrix code).
  *
  * Returns: id, name, key_prefix (NOT key_hash), permissions,
  *          last_used_at, expires_at, is_active, created_at
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await authorizeSchoolAdmin(request, 'school.manage_api_keys');
+    const auth = await authorizeSchoolAdmin(
+      request,
+      await schoolAdminPermissionCode({ off: 'school.manage_api_keys', on: 'institution.manage' }),
+    );
     if (!auth.authorized) return auth.errorResponse;
 
     const supabase = getSupabaseAdmin();
@@ -63,7 +68,10 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const auth = await authorizeSchoolAdmin(request, 'school.manage_api_keys');
+    const auth = await authorizeSchoolAdmin(
+      request,
+      await schoolAdminPermissionCode({ off: 'school.manage_api_keys', on: 'institution.manage' }),
+    );
     if (!auth.authorized) return auth.errorResponse;
 
     let body: Record<string, unknown>;
@@ -230,14 +238,18 @@ export async function POST(request: NextRequest) {
 
 /**
  * DELETE /api/school-admin/api-keys — Revoke an API key
- * Permission: school.manage_api_keys
+ * Permission (Wave C matrix): flag OFF → `school.manage_api_keys` (original);
+ * flag ON → `institution.manage` (settings matrix code).
  *
  * Body: { id: string }
  * Soft-deletes by setting is_active = false (audit trail preserved).
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const auth = await authorizeSchoolAdmin(request, 'school.manage_api_keys');
+    const auth = await authorizeSchoolAdmin(
+      request,
+      await schoolAdminPermissionCode({ off: 'school.manage_api_keys', on: 'institution.manage' }),
+    );
     if (!auth.authorized) return auth.errorResponse;
 
     let body: Record<string, unknown>;

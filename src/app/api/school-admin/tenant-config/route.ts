@@ -10,6 +10,7 @@ import {
   type ConfigKey,
 } from '@/lib/tenant-config';
 import { coerceTenantType } from '@/lib/tenant-domain';
+import { schoolAdminPermissionCode } from '@/lib/school-admin/permission-code';
 
 /**
  * GET /api/school-admin/tenant-config
@@ -21,9 +22,11 @@ import { coerceTenantType } from '@/lib/tenant-domain';
  * `/school-admin/locale-settings` (future), etc. — each rendering the
  * subset of keys it owns.
  *
- * Permission: school.manage_settings (re-used from
- * 20260416200100_school_admin_extra_permissions; already bound to
- * institution_admin, no new migration needed).
+ * Permission (Wave C matrix): flag OFF → `school.manage_settings` (original,
+ * re-used from 20260416200100_school_admin_extra_permissions; already bound to
+ * institution_admin); flag ON → `institution.manage` (settings matrix code; this
+ * serves the ai-config / setup settings surface, which academic_coordinator is
+ * NOT permitted per the CEO matrix).
  *
  * GET response shape:
  * {
@@ -81,7 +84,10 @@ function defaultFor<K extends ConfigKey>(key: K, tenantType: 'school' | 'coachin
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await authorizeSchoolAdmin(request, 'school.manage_settings');
+    const auth = await authorizeSchoolAdmin(
+      request,
+      await schoolAdminPermissionCode({ off: 'school.manage_settings', on: 'institution.manage' }),
+    );
     if (!auth.authorized) return auth.errorResponse!;
 
     const schoolId = auth.schoolId!;
@@ -151,7 +157,10 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const auth = await authorizeSchoolAdmin(request, 'school.manage_settings');
+    const auth = await authorizeSchoolAdmin(
+      request,
+      await schoolAdminPermissionCode({ off: 'school.manage_settings', on: 'institution.manage' }),
+    );
     if (!auth.authorized) return auth.errorResponse!;
 
     const schoolId = auth.schoolId!;
