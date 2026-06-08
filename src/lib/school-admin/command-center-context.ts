@@ -37,6 +37,15 @@ export const COMMAND_CENTER_PERMISSION = 'institution.view_analytics';
 export const COMMAND_CENTER_CACHE_CONTROL =
   'private, max-age=30, stale-while-revalidate=60';
 
+/**
+ * Cache header for the Wave D reporting read routes. Reports change slowly (they
+ * aggregate across a whole school's roster), so a longer TTL than the live
+ * Command Center surfaces is appropriate. Stays `private` (per-caller, never a
+ * shared/CDN cache) so no cross-tenant data is ever cached publicly (P13).
+ */
+export const COMMAND_CENTER_REPORTS_CACHE_CONTROL =
+  'private, max-age=60, stale-while-revalidate=120';
+
 export interface CommandCenterContext {
   /** User-context Supabase client (carries caller JWT → auth.uid() resolves). */
   supabase: SupabaseClient;

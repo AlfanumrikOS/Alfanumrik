@@ -45,6 +45,14 @@ export interface ConsolidatedNavItem {
    * is ON. Used for the NEW Staff-management entry which has no flag-OFF home.
    */
   rbacOnly?: boolean;
+  /**
+   * Phase 3B Wave D: when true this item only renders while
+   * `ff_school_reports_depth` is ON. Used for the NEW deep school-wide reporting
+   * entry which has no flag-OFF home (the route is additive). Has NO effect when
+   * `reportsDepthEnabled` is false (byte-identical-OFF — the item is filtered out
+   * exactly like an rbacOnly item is when its flag is off).
+   */
+  reportsDepthOnly?: boolean;
 }
 
 /**
@@ -127,6 +135,17 @@ export const SCHOOL_NAV_SECTIONS: ReadonlyArray<ConsolidatedNavSection> = [
       { href: '/school-admin/exams', label: 'Exams', labelHi: 'परीक्षा', icon: '⊙', moduleKey: 'testing_engine' },
       { href: '/school-admin/content', label: 'Content', labelHi: 'सामग्री', icon: '⊠', moduleKey: 'lms' },
       { href: '/school-admin/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘', moduleKey: 'analytics' },
+      // Phase 3B Wave D — NEW deep school-wide reporting surface (board/parent-ready
+      // mastery + Bloom's + export). reportsDepthOnly: only renders while
+      // ff_school_reports_depth is ON; analytics module gating still applies.
+      {
+        href: '/school-admin/reports-depth',
+        label: 'School Report',
+        labelHi: 'स्कूल रिपोर्ट',
+        icon: '⊟',
+        moduleKey: 'analytics',
+        reportsDepthOnly: true,
+      },
       { href: '/school-admin/announcements', label: 'Announcements', labelHi: 'घोषणाएँ', icon: '⊜', moduleKey: 'communication' },
     ],
   },
@@ -181,6 +200,14 @@ export interface ConsolidatedSchoolNavProps {
   rbacEnabled?: boolean;
   /** The caller's school_admins.role (for rbac gating). null ⇒ fail-open. */
   adminRole?: SchoolAdminRole | null;
+  /**
+   * Phase 3B Wave D. When false/undefined (the default + flag-OFF), the nav is
+   * BYTE-IDENTICAL to before Wave D: reportsDepthOnly items (the deep School
+   * Report entry) are hidden entirely. When true (`ff_school_reports_depth` ON),
+   * the School Report entry appears in the Academics section. UI polish only —
+   * the read routes 404 server-side when the flag is off regardless (P9).
+   */
+  reportsDepthEnabled?: boolean;
 }
 
 export default function ConsolidatedSchoolNav({
@@ -194,6 +221,7 @@ export default function ConsolidatedSchoolNav({
   footer,
   rbacEnabled = false,
   adminRole = null,
+  reportsDepthEnabled = false,
 }: ConsolidatedSchoolNavProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -213,10 +241,14 @@ export default function ConsolidatedSchoolNav({
         if (rbacEnabled && item.capability && !roleAllowsCapability(adminRole, item.capability)) {
           return false;
         }
+        // Wave D reporting-depth gating. When the flag is OFF, reportsDepthOnly
+        // items (the deep School Report entry) are hidden → byte-identical to
+        // before Wave D.
+        if (item.reportsDepthOnly && !reportsDepthEnabled) return false;
         return true;
       }),
     })).filter((section) => section.items.length > 0);
-  }, [moduleEnablement, rbacEnabled, adminRole]);
+  }, [moduleEnablement, rbacEnabled, adminRole, reportsDepthEnabled]);
 
   // Active = longest matching href across ALL visible items (root-vs-subroute).
   const activeHref = useMemo(() => {

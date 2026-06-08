@@ -646,6 +646,35 @@ export const SCHOOL_ADMIN_RBAC_FLAGS = {
 } as const;
 
 /**
+ * Phase 3B — Wave D (School-wide academic reporting DEPTH) flag (2026-06-08).
+ *
+ *  ff_school_reports_depth — master switch for the read-only school-wide academic
+ *    REPORTING surfaces (board/parent-ready mastery + Bloom's reports + export).
+ *    Gates BOTH the UI and the three NEW read routes together:
+ *      1. GET /api/school-admin/reports/mastery  (get_school_mastery_rollup)
+ *      2. GET /api/school-admin/reports/bloom     (get_school_bloom_summary)
+ *      3. GET /api/school-admin/reports/export    (export_school_report; json|csv)
+ *    These are NEW endpoints — no route exists at these subpaths today. When OFF,
+ *    all three return 404 BEFORE auth (behave as not-present) so the flag-OFF
+ *    portal is byte-identical to today. When ON, they authorize via
+ *    authorizeSchoolAdmin(institution.view_analytics) — a stable, already-granted
+ *    read code so the routes work regardless of the independent
+ *    ff_school_admin_rbac flag — call the SECURITY DEFINER read models through the
+ *    user-context client (so auth.uid() resolves), and return PII-safe aggregates.
+ *    Default: false.
+ *
+ *    Read server-side via isFeatureEnabled. While absent from `feature_flags` the
+ *    server read path resolves it to OFF, so the routes stay 404 (byte-identical)
+ *    until the flag is explicitly seeded + enabled.
+ *
+ *  Spec/plan: docs/superpowers/plans/2026-06-08-phase-3b-school-professional-depth.md (Wave D)
+ */
+export const SCHOOL_REPORTS_DEPTH_FLAGS = {
+  /** Read-only school-wide academic reporting depth (mastery + Bloom's + export). Default off. */
+  V1: 'ff_school_reports_depth',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -684,6 +713,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [SCHOOL_COMMAND_CENTER_FLAGS.V1]: false,
   [SCHOOL_PROVISIONING_FLAGS.V1]: false,
   [SCHOOL_ADMIN_RBAC_FLAGS.V1]: false,
+  [SCHOOL_REPORTS_DEPTH_FLAGS.V1]: false,
 } as const;
 
 /**

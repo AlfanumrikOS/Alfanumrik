@@ -2814,3 +2814,137 @@ byte-identical with NO narrowing; staff-API last-principal lockout + cross-schoo
 isolation + flag-OFF 404).
 
 **Total: 66 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+
+## School-wide academic reporting depth — mastery + Bloom's + PII-safe export (Phase 3B Wave D) — REG-99
+
+Source: Phase 3B Wave D "School-wide academic REPORTING depth" (autonomous,
+read-only board/parent-ready reporting), behind `ff_school_reports_depth`; default
+OFF. Adds ONE migration
+(`supabase/migrations/20260614000003_phase3b_school_reporting.sql`) with three
+read-only SECURITY DEFINER read-model RPCs (`get_school_mastery_rollup`,
+`get_school_bloom_summary`, `export_school_report`) + ONE covering index
+(`idx_quiz_responses_student_bloom`), three thin GET routes
+(`src/app/api/school-admin/reports/{mastery,bloom,export}/route.ts`) gated by
+`ff_school_reports_depth` (404 BEFORE auth when OFF) that authorize via the
+EXISTING `institution.view_analytics` permission through a USER-CONTEXT client
+(`resolveCommandCenterContext`), shared types
+(`src/lib/school-admin/reporting-types.ts`: `DEFAULT_MASTERY_GROUP_BY` /
+`VALID_MASTERY_GROUP_BY` / `reportingRpcErrorResponse` + row/response types), and
+the flag hook (`src/lib/use-school-reports-depth.ts` + `SCHOOL_REPORTS_DEPTH_FLAGS`).
+NO new table, NO new RBAC permission, NO scoring/XP — 100% read-only. Mastery is
+read VERBATIM from `concept_mastery.p_know` and Bloom from
+`quiz_responses.bloom_level` — the SAME sources Wave A/C use; the read models never
+recompute a value. The "active students" roster is the SAME unified set Wave A/B
+converged on (`_school_active_student_ids` = DISTINCT UNION of class_students +
+class_enrollments), so reporting numbers can never drift from the seat count or the
+Command Center overview.
+
+Five things are blocking defects if they regress: (a) **school-wide mastery rollup
+correctness** — `get_school_mastery_rollup` groups by `grade` | `subject` |
+`teacher` (validated; default `grade`; unknown → RAISE `22023`); `group_key` is
+TEXT in every mode (grade is a STRING per P5; teacher is the teacher uuid as text);
+`avg_mastery` is the AVG of per-student AVG(`p_know`) (PRE-aggregated per student
+FIRST, so a high-volume student cannot dominate); `student_count` is DISTINCT within
+a group; `at_risk_count` counts a student ONLY when their per-student avg
+`p_know < 0.4` (a student at exactly 0.40 is NOT at-risk — the boundary excludes
+equality, SAME constant + pre-aggregation as Wave A `get_classes_at_risk`); the
+roster is the unified union, so a student reachable ONLY via `class_enrollments`
+(no `class_students` row) still counts; (b) **Bloom distribution** —
+`get_school_bloom_summary` buckets the school's active students' `quiz_responses` by
+`bloom_level` with `accuracy = round(correct/total, 2)` (correct derived from
+`is_correct`; the baseline has no `correct_count` column), and a NULL/empty
+`bloom_level` buckets as `'unspecified'` so the distribution is exhaustive (no rows
+silently dropped); (c) **PII-safe aggregate export** — `export_school_report`
+returns ONE jsonb `{ school_id, overview, mastery_by_grade[], bloom_summary[],
+data_state, generated_at }` that is AGGREGATES ONLY — group-level rows, never an
+individual student name/email/id; the CSV serialization on the route serializes
+exactly those bounded aggregate arrays server-side (Content-Type `text/csv` +
+Content-Disposition `attachment`), so it is PII-safe by construction (P13);
+`data_state` flips `'no_data'` for a school with no classes/roster/signal; (d)
+**flag-OFF 404-before-auth** — `ff_school_reports_depth` defaults OFF and is
+unseeded ⇒ all three routes return 404 and NEVER consult
+`resolveCommandCenterContext` or the RPC (the flag gate is evaluated BEFORE any
+auth work — byte-identical "feature absent" portal), while
+`useSchoolReportsDepth()` paints OFF synchronously (no first-paint flash); (e)
+**cross-school scope guard (P8/P9)** — each SECURITY DEFINER RPC RAISES `42501`
+unless `auth.uid()` is an ACTIVE `school_admins` member of exactly `p_school_id`,
+so a non-admin AND a wrong-school admin both get the permission error on all three
+RPCs (mapped to HTTP 403 by the route); the route never leaks SQL/PII on a generic
+RPC failure (→ 500), maps `22023` → 400 and `42501` → 403, and validates
+`group_by` / `format` BEFORE the RPC (bad → 400 with no RPC call).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-99 | `school_reporting_mastery_rollup_bloom_pii_safe_export_flag_off_404_cross_school_403` | **(a) Mastery rollup correctness.** Live-DB: `get_school_mastery_rollup` over a seeded school (Grade 7/Science: 3 students incl. one reachable ONLY via `class_enrollments`, `p_know` {0.20, 0.40, 0.30}; Grade 8/Maths: 2 students {0.70, 0.90}) returns — group_by `grade` → keys `"7"`/`"8"` (STRINGS, P5), G7 student_count=3 (the class_enrollments-ONLY student counts → unified roster), at_risk_count=2 (the 0.40 boundary student EXCLUDED, strict `<0.4`), avg_mastery≈0.30 (mean of per-student averages), label `"Grade 7"`; group_by `subject` → Science student_count=3 / Maths=2; group_by `teacher` → group_key is the teacher uuid as text, label is the teacher name, one row per teacher; omitted group_by defaults to `grade`; an unknown group_by RAISES `22023`. **(b) Bloom distribution.** Live-DB: `get_school_bloom_summary` over seeded responses ('remember' 3/2-correct, 'apply' 2/1-correct, one NULL-bloom) returns accuracy `round(correct/total,2)` (remember 0.67, apply 0.50), buckets the NULL row as `'unspecified'` (1/0 → 0.00), and the 'remember' count=3 INCLUDES the class_enrollments-only student's response (proves the unified roster, not class_students-only=2). **(c) PII-safe export.** Live-DB: `export_school_report` returns `{ school_id, overview, mastery_by_grade[], bloom_summary[], data_state:'live', generated_at }`, `mastery_by_grade` keyed by `grade` string {"7","8"}, overview.student_count=5 (unified); the FULL jsonb serialized to string contains NONE of the seeded student names, NONE of the seeded student uuids, the class_enrollments-only student's name+id, nor any teacher email (`@rpt.test`); `data_state` is `'no_data'` for an empty school. Route unit (mocked): export format=json returns the verbatim snapshot (Content-Type application/json), format=csv returns Content-Type `text/csv` + Content-Disposition `attachment` `.csv`, invalid format=`pdf` → 400 BEFORE the RPC, the CSV body contains the aggregate section labels/fields (overview, mastery_by_grade, bloom_summary, student_count, at_risk_count, "Grade 7") and NONE of the PII column tokens (email / student_name / student_id / phone / `@`). **(d) Flag-OFF 404-before-auth.** Route unit: with `ff_school_reports_depth` OFF every route returns 404 and NEVER calls `resolveCommandCenterContext` or the RPC, and the gate reads the `ff_school_reports_depth` flag; `useSchoolReportsDepth()` initial SYNCHRONOUS value is `false` (DEFAULT_OFF), stays false absent / explicitly-false / on `getFeatureFlags` rejection, flips ON only after the async confirm when true, and fetches scoped to `role:'school_admin'`. **(e) Cross-school 403 scope guard.** Live-DB: an authenticated NON-admin AND a WRONG-SCHOOL admin (admin of B querying A) both get Postgres `42501` from all three SECURITY DEFINER RPCs; an ACTIVE admin of the school succeeds on all three. Route unit: 42501 → HTTP 403, 22023 → HTTP 400, generic RPC error → HTTP 500 with no SQL/PII leak, resolution 401/403 propagated UNCHANGED with no RPC call, mastery default/valid (grade/subject/teacher)/invalid(400-before-RPC)/empty(200)/cache header, bloom rows/empty/cache header. | `src/__tests__/migrations/school-reporting.test.ts` (14 live-DB tests: scope-guard 42501 for non-admin + wrong-school across all 3 RPCs + active-admin success; group_by validation 22023 + default-grade; mastery rollup by grade incl. unified roster + 0.4 boundary + per-student-pre-agg avg; by subject; by teacher uuid/label; bloom grouping + accuracy + 'unspecified' bucket + unified-roster response count; export shape + PII-safety no-name/no-id/no-email + no_data) + `src/__tests__/api/school-admin/reports-depth-routes.test.ts` (28 unit tests: per-route flag-OFF 404-before-auth no-resolve-call + flag-name; resolution 401/403 passthrough no-RPC; 42501→403; generic→500 no-leak; correct-RPC-with-school-id; mastery default-grade echo + valid grade/subject/teacher + invalid-400-before-RPC + empty-200 + rows + cache header + 22023→400; bloom rows + empty + cache header; export json/csv + format-400-before-RPC + CSV PII-safe aggregate-only + null-degrades-no-500 + 42501→403) + `src/__tests__/school-admin/reports-depth-flag-gate.test.tsx` (5 tests: sync DEFAULT_OFF + stays-OFF-absent / stays-OFF-false / flips-ON-true / stays-OFF-on-reject / role-scoped fetch) | E |
+
+### Pinned tests
+
+- `src/__tests__/migrations/school-reporting.test.ts::get_school_mastery_rollup — group_by grade::groups by grade string with correct student_count, avg_mastery, at_risk_count`
+- `src/__tests__/migrations/school-reporting.test.ts::get_school_mastery_rollup — group_by validation::RAISES 22023 for an unknown group_by (never silently guesses)`
+- `src/__tests__/migrations/school-reporting.test.ts::get_school_bloom_summary::buckets by bloom_level with response/correct counts + 2dp accuracy`
+- `src/__tests__/migrations/school-reporting.test.ts::get_school_bloom_summary::counts the class_enrollments-only student responses (unified roster)`
+- `src/__tests__/migrations/school-reporting.test.ts::export_school_report::contains NO individual student name / email / id anywhere in the jsonb (P13)`
+- `src/__tests__/migrations/school-reporting.test.ts::scope guard (cross-tenant safety — RAISE 42501)::rejects a WRONG-SCHOOL admin on all three RPCs (admin of B querying A)`
+- `src/__tests__/api/school-admin/reports-depth-routes.test.ts::FLAG OFF — GET /api/school-admin/reports/mastery (404 before auth)::returns 404 and NEVER consults resolveCommandCenterContext or the RPC`
+- `src/__tests__/api/school-admin/reports-depth-routes.test.ts::FLAG ON — GET /api/school-admin/reports/export::CSV body contains ONLY aggregate fields — NO student name / email / id (P13)`
+- `src/__tests__/api/school-admin/reports-depth-routes.test.ts::FLAG ON — GET /api/school-admin/reports/mastery::returns 400 for an invalid group_by BEFORE calling the RPC`
+- `src/__tests__/school-admin/reports-depth-flag-gate.test.tsx::useSchoolReportsDepth — default OFF (no first-paint flash)::initialises OFF synchronously and stays OFF when the flag is absent`
+
+### Invariants covered by this section
+
+- P8/P9 (cross-tenant scope) — the three SECURITY DEFINER RPCs RAISE 42501 unless
+  `auth.uid()` is an active `school_admins` member of `p_school_id`; the routes
+  gate on the EXISTING `institution.view_analytics` permission (no new code) and
+  resolve the school server-side, never trusting a client-supplied id.
+- P5 (grade format) — `get_school_mastery_rollup` returns `group_key` as TEXT in
+  every mode; grade keys are the strings "7"/"8" and `mastery_by_grade[].grade` is
+  a string.
+- P13 (data privacy) — `export_school_report` is AGGREGATES ONLY (group-level rows,
+  never an individual student name/email/id); the CSV serializes exactly those
+  bounded aggregate arrays; neither the route nor the resolver leaks SQL/policy
+  text on an RPC error (generic 500; raw error logged server-side via the
+  redacting logger only).
+- No scoring/XP (read-only) — mastery is read verbatim from `concept_mastery.p_know`
+  and Bloom from `quiz_responses.bloom_level`; the read models never recompute a
+  score and contain no XP constant.
+- Flag-OFF byte-identity (rollout safety) — `ff_school_reports_depth` default-OFF
+  404s all three reporting routes BEFORE auth (the resolution seam is never even
+  consulted) and paints the reporting-depth UI gate OFF synchronously, so the
+  flag-OFF portal is byte-identical until rollout.
+
+### Notes on test strategy
+
+REG-99 uses the repo's **live-DB-integration + route-unit + flag-hook pattern**,
+matching REG-96 (Wave A) and REG-97 (Wave B) seam-for-seam. The live-DB RPC tests
+live under `src/__tests__/migrations/**` (gated by `hasSupabaseIntegrationEnv()` →
+`describe.skip` under placeholder env, and by the `RUN_INTEGRATION_TESTS=1` include
+split in `vitest.config.ts`) and add the same user-context-JWT seam: because the
+three read models are SECURITY DEFINER and guard on `auth.uid()`, each admin fixture
+is a REAL auth user (`supabaseAdmin.auth.admin.createUser` → `signInWithPassword` →
+anon client bearing the JWT), so the in-RPC scope guard is exercised for real rather
+than bypassed by the service-role client. The seeded school deliberately MIXES
+`class_students` and `class_enrollments` (one student is class_enrollments-ONLY) so
+the unified-roster claim is proven in BOTH the mastery rollup and the bloom summary,
+and the PII-safety assertion captures every seeded student name + uuid up front and
+asserts NONE of them appears in the exported jsonb string. These run only in the
+"Integration Tests (live DB)" CI job (currently billing-blocked; will run when CI
+billing is restored). The route + flag-hook tests run under the normal Vitest unit
+job with NO DB: the route tests mock the flag gate (`isFeatureEnabled`) and ONLY
+`resolveCommandCenterContext` (keeping `reportingRpcErrorResponse` /
+`VALID_MASTERY_GROUP_BY` / `DEFAULT_MASTERY_GROUP_BY` / the cache constant REAL via
+`importActual`) so the real group_by/format validation + 22023→400 / 42501→403
+mapping + CSV serialization run, and a dedicated FLAG-OFF block asserts the
+404-before-auth gate by proving `resolveCommandCenterContext` is never consulted;
+the flag-hook test mocks only `getFeatureFlags` and asserts the synchronous
+DEFAULT_OFF paint (mirrors the Wave A/B/C flag-gate tests).
+
+### Catalog total
+
+Pre-Phase-3B-Wave-D: 66 entries. Phase 3B Wave D (school-wide academic reporting
+depth — mastery rollup + Bloom's summary + PII-safe aggregate export, read-only,
+behind `ff_school_reports_depth`) adds REG-99 (school-wide mastery rollup with
+group-by + verbatim mastery + 0.4 at-risk boundary + unified roster; Bloom
+distribution with 'unspecified' bucket; PII-safe aggregate export; flag-OFF
+404-before-auth; cross-school 42501 scope guard).
+
+**Total: 67 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
