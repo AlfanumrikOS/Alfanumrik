@@ -21,6 +21,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { useTeacherGradebookDepth } from '@/lib/use-teacher-gradebook-depth';
+import { BLOOM_LEVEL_ORDER } from '@/lib/types';
+import type { ClassMasteryBloomSummary } from '@/lib/types';
 
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -337,10 +340,178 @@ function MatrixView({
   );
 }
 
+/* ─── Phase 3A Wave C — class mastery + Bloom's depth view ─── */
+// Renders get_class_mastery_bloom_summary above the score matrix when the
+// ff_teacher_gradebook_depth flag is ON. Weakest concepts first + the class's
+// weakest Bloom's level. mastery_pct / accuracy_pct are display figures the
+// assessment layer owns — rendered VERBATIM (no scoring math here). Bloom's
+// level NAMES are technical terms — never translated (P7 exception).
+function heatColorPct(pct: number): string {
+  if (pct >= 95) return '#059669';
+  if (pct >= 80) return '#7C3AED';
+  if (pct >= 60) return '#2563EB';
+  if (pct >= 30) return '#D97706';
+  if (pct > 10) return '#FBBF24';
+  return '#334155';
+}
+
+function ClassDepthView({
+  summary,
+  loading,
+  error,
+  isHi,
+  onRetry,
+}: {
+  summary: ClassMasteryBloomSummary | null;
+  loading: boolean;
+  error: boolean;
+  isHi: boolean;
+  onRetry: () => void;
+}) {
+  if (loading) {
+    return (
+      <div style={{ ...cardStyle }} data-testid="class-depth-loading">
+        <div style={{ height: 120, borderRadius: 10, background: 'rgba(30,41,59,0.5)' }} />
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div style={{ ...cardStyle, textAlign: 'center' }} data-testid="class-depth-error">
+        <p style={{ color: '#94A3B8', fontSize: 13, margin: '0 0 12px' }}>
+          {tt(isHi, "Couldn't load the mastery summary", 'मास्टरी सारांश लोड नहीं हो सका')}
+        </p>
+        <button
+          onClick={onRetry}
+          style={{
+            padding: '8px 16px', background: '#2563EB', color: '#fff', border: 'none',
+            borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+          }}
+        >
+          {tt(isHi, 'Retry', 'पुनः प्रयास करें')}
+        </button>
+      </div>
+    );
+  }
+  if (!summary) return null;
+
+  // Project the Bloom rollup onto the canonical 6-level ladder so the picture is
+  // complete + stable; unattempted levels render muted.
+  const byLevel = new Map(
+    (summary.bloom.by_level || []).map((r) => [r.bloom_level.trim().toLowerCase(), r]),
+  );
+  const ladder = BLOOM_LEVEL_ORDER.map((level) => {
+    const row = byLevel.get(level);
+    return {
+      level,
+      attempted: !!row && row.total > 0,
+      accuracy_pct: row?.accuracy_pct ?? 0,
+      correct: row?.correct ?? 0,
+      total: row?.total ?? 0,
+    };
+  });
+  const weakest = summary.bloom.weakest_level
+    ? summary.bloom.weakest_level.trim().toLowerCase()
+    : null;
+  // Weakest concepts first (already weakest-first from the Edge); show top 6.
+  const weakestConcepts = (summary.mastery.by_concept || []).slice(0, 6);
+
+  return (
+    <div style={{ ...cardStyle }} data-testid="class-depth-view">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#F1F5F9' }}>
+          {tt(isHi, 'Mastery & Bloom depth', 'मास्टरी और Bloom गहराई')}
+        </h2>
+        <span style={{ fontSize: 11, color: '#94A3B8' }}>
+          {summary.student_count} {tt(isHi, 'students', 'छात्र')}
+          {' · '}
+          {tt(isHi, 'Overall', 'कुल')} {summary.mastery.overall_pct}%
+        </span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 18, marginTop: 16 }}>
+        {/* Weakest concepts */}
+        <div data-testid="class-depth-concepts">
+          <h3 style={{ fontSize: 12, fontWeight: 600, color: '#CBD5E1', textTransform: 'uppercase', letterSpacing: 0.4, margin: '0 0 10px' }}>
+            {tt(isHi, 'Weakest concepts', 'सबसे कमज़ोर अवधारणाएं')}
+          </h3>
+          {weakestConcepts.length === 0 ? (
+            <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>
+              {tt(isHi, 'No mastery data yet.', 'अभी कोई मास्टरी डेटा नहीं।')}
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {weakestConcepts.map((c) => (
+                <div key={c.topic_id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 12, color: '#CBD5E1', width: '46%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.concept}>
+                    {c.concept}
+                  </span>
+                  <div style={{ flex: 1, height: 16, borderRadius: 4, background: '#1E293B', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.max(0, Math.min(100, c.avg_mastery_pct))}%`, background: heatColorPct(c.avg_mastery_pct) }} />
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#E2E8F0', width: 40, textAlign: 'right' }}>
+                    {c.avg_mastery_pct}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Bloom's distribution — canonical 6 levels; weakest highlighted.
+            Bloom's level NAMES are technical terms — NOT translated (P7). */}
+        <div data-testid="class-depth-bloom">
+          <h3 style={{ fontSize: 12, fontWeight: 600, color: '#CBD5E1', textTransform: 'uppercase', letterSpacing: 0.4, margin: '0 0 10px' }}>
+            {/* "Bloom's" is a technical term — kept verbatim (P7 exception). */}
+            {tt(isHi, "Bloom's distribution", "Bloom's वितरण")}
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {ladder.map((b) => {
+              const isWeakest = weakest === b.level && b.attempted;
+              return (
+                <div
+                  key={b.level}
+                  data-testid={`class-bloom-row-${b.level}`}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '3px 6px', borderRadius: 6,
+                    background: isWeakest ? 'rgba(239,68,68,0.10)' : 'transparent',
+                    border: isWeakest ? '1px solid rgba(239,68,68,0.4)' : '1px solid transparent',
+                  }}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 500, color: '#E2E8F0', width: 84, textTransform: 'capitalize' }}>
+                    {b.level}
+                  </span>
+                  <div style={{ flex: 1, height: 14, borderRadius: 4, background: '#1E293B', overflow: 'hidden' }}>
+                    {b.attempted && (
+                      <div style={{ height: '100%', width: `${Math.max(0, Math.min(100, b.accuracy_pct))}%`, background: heatColorPct(b.accuracy_pct) }} />
+                    )}
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: b.attempted ? '#E2E8F0' : '#475569', width: 40, textAlign: 'right' }}>
+                    {b.attempted ? `${b.accuracy_pct}%` : '—'}
+                  </span>
+                  {isWeakest && (
+                    <span data-testid="class-bloom-weakest" style={{ fontSize: 9, fontWeight: 700, color: '#F87171', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                      {tt(isHi, 'Weakest', 'सबसे कमज़ोर')}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Main page ─── */
 export default function TeacherGradeBookPage() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
   const router = useRouter();
+
+  // Wave C — gate the mastery/Bloom depth view. Default OFF ⇒ the page is the
+  // existing score matrix only (byte-identical).
+  const gradebookDepthEnabled = useTeacherGradebookDepth();
 
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [classesLoading, setClassesLoading] = useState(true);
@@ -349,6 +520,11 @@ export default function TeacherGradeBookPage() {
   const [data, setData] = useState<GradeBookData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Wave C — class mastery + Bloom's summary state.
+  const [depth, setDepth] = useState<ClassMasteryBloomSummary | null>(null);
+  const [depthLoading, setDepthLoading] = useState(false);
+  const [depthError, setDepthError] = useState(false);
 
   const [editCell, setEditCell] = useState<{
     studentId: string;
@@ -404,6 +580,29 @@ export default function TeacherGradeBookPage() {
   }, [teacherId, selectedClassId, term, isHi]);
 
   useEffect(() => { loadGradeBook(); }, [loadGradeBook]);
+
+  // Wave C — load the class mastery/Bloom depth summary. Only fetched when the
+  // flag is ON, so flag-OFF makes zero extra requests (byte-identical behaviour).
+  const loadDepth = useCallback(async () => {
+    if (!gradebookDepthEnabled || !teacherId || !selectedClassId) return;
+    setDepthLoading(true);
+    setDepthError(false);
+    try {
+      const body = await api('get_class_mastery_bloom_summary', {
+        teacher_id: teacherId,
+        class_id: selectedClassId,
+      });
+      setDepth(body as ClassMasteryBloomSummary);
+    } catch {
+      // P13: no PII in logs — surface a retryable error in the depth view only.
+      setDepth(null);
+      setDepthError(true);
+    } finally {
+      setDepthLoading(false);
+    }
+  }, [gradebookDepthEnabled, teacherId, selectedClassId]);
+
+  useEffect(() => { loadDepth(); }, [loadDepth]);
 
   const handleSaveCell = async (score: number, maxScore: number, notes: string) => {
     if (!editCell || !selectedClassId) return;
@@ -581,6 +780,17 @@ export default function TeacherGradeBookPage() {
         <div style={{ ...cardStyle, borderColor: '#EF4444', color: '#FCA5A5', textAlign: 'center', fontSize: 14 }}>
           {error}
         </div>
+      )}
+
+      {/* Wave C — mastery + Bloom's depth view (flag-gated; above the matrix). */}
+      {gradebookDepthEnabled && (
+        <ClassDepthView
+          summary={depth}
+          loading={depthLoading}
+          error={depthError}
+          isHi={isHi}
+          onRetry={loadDepth}
+        />
       )}
 
       {loading ? (

@@ -39,12 +39,14 @@ import {
 } from '@/lib/supabase';
 import { authHeader } from '@/lib/api/auth-header';
 import { useTeacherAssignmentLifecycle } from '@/lib/use-teacher-assignment-lifecycle';
+import { useTeacherGradebookDepth } from '@/lib/use-teacher-gradebook-depth';
 import type {
   HeatmapData,
   HeatmapCell,
   HeatmapRow,
   RiskAlert,
   RemediationStatus,
+  StudentMasteryReport as StudentMasteryReportData,
 } from '@/lib/types';
 import type { GradingQueueItem } from './GradingQueue';
 
@@ -52,6 +54,12 @@ import type { GradingQueueItem } from './GradingQueue';
 // loads when a teacher actually opens the queue (P10). The Wave B flag defaults
 // OFF and is unseeded, so production never loads this chunk until rollout.
 const GradingQueue = dynamic(() => import('./GradingQueue'), { ssr: false });
+
+// Phase 3A Wave C — the Student Mastery Report panel is code-split so its chunk
+// only loads when a teacher actually drills into a heatmap cell/row (P10). The
+// Wave C flag defaults OFF and is unseeded, so production never loads this chunk
+// until rollout (flag-OFF stays byte-identical).
+const StudentMasteryReport = dynamic(() => import('./StudentMasteryReport'), { ssr: false });
 
 // ── Bilingual helper (P7) ───────────────────────────────────────────────────
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
@@ -128,6 +136,12 @@ const CHAPTER_NAMES: Record<number, string> = {
   11: 'Weather', 12: 'Matter',
 };
 
+// The Edge heatmap row carries `student_name`; some deploys additionally stamp
+// `student_id` (the students page reads it defensively too). We widen the type
+// locally so the drill-through can use the id when present without a contract
+// change.
+type HeatmapRowWithId = HeatmapRow & { student_id?: string };
+
 // ─── Roster mastery heatmap ─────────────────────────────────────────────────
 function RosterHeatmap({
   data,
@@ -136,7 +150,7 @@ function RosterHeatmap({
 }: {
   data: HeatmapData;
   isHi: boolean;
-  onCellStudent: (studentName: string) => void;
+  onCellStudent: (row: HeatmapRowWithId) => void;
 }) {
   if (!data?.matrix?.length) {
     return (
@@ -179,7 +193,7 @@ function RosterHeatmap({
               <td className="px-2 py-1.5 text-slate-200 font-medium text-[13px] whitespace-nowrap sticky left-0 bg-[#0F172A]">
                 <button
                   type="button"
-                  onClick={() => onCellStudent(row.student_name)}
+                  onClick={() => onCellStudent(row as HeatmapRowWithId)}
                   className="text-left text-slate-200 hover:text-indigo-400 bg-transparent border-none cursor-pointer p-0"
                   title={tt(isHi, 'View student detail', 'छात्र विवरण देखें')}
                 >
@@ -193,7 +207,7 @@ function RosterHeatmap({
                 <td key={ci} className="py-[5px] px-[3px] text-center">
                   <button
                     type="button"
-                    onClick={() => onCellStudent(row.student_name)}
+                    onClick={() => onCellStudent(row as HeatmapRowWithId)}
                     title={`${row.student_name} · ${concepts[ci]?.title ?? ''}: ${
                       cell.attempts > 0 ? Math.round(cell.p_know * 100) + '%' : '—'
                     }`}
@@ -390,6 +404,10 @@ export default function CommandCenter() {
   // the cross-assignment grading queue. Default OFF ⇒ Wave A behaviour.
   const gradingQueueEnabled = useTeacherAssignmentLifecycle();
 
+  // Wave C — additional gate for the mastery + Bloom's reporting depth. Default
+  // OFF ⇒ heatmap cells stay plain navigate-to-student links (byte-identical).
+  const gradebookDepthEnabled = useTeacherGradebookDepth();
+
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [activeClassId, setActiveClassId] = useState<string>('');
   const [heatmap, setHeatmap] = useState<HeatmapData | null>(null);
@@ -406,6 +424,15 @@ export default function CommandCenter() {
   const [queueCount, setQueueCount] = useState(0);
   const [queueLoading, setQueueLoading] = useState(false);
   const [queueError, setQueueError] = useState(false);
+
+  // Wave C — student mastery report drill-through state.
+  const [reportOpen, setReportOpen] = useState(false);
+  const [report, setReport] = useState<StudentMasteryReportData | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState(false);
+  const [reportExporting, setReportExporting] = useState(false);
+  // The student currently being reported on (id + name) — re-used by retry/export.
+  const [reportStudent, setReportStudent] = useState<{ id: string; name: string } | null>(null);
 
   const teacherId = teacher?.id || '';
 
@@ -575,6 +602,110 @@ export default function CommandCenter() {
     },
     [router],
   );
+
+  // Wave C — resolve a student_name → student_id map. The heatmap matrix carries
+  // only the name; the alerts carry both, so we use them as the lookup. (When
+  // the Edge additionally stamps student_id on a heatmap row we read it directly
+  // in the drill handler and skip this map.) Lowercased keys for a tolerant
+  // match against the heatmap's display name.
+  const studentIdByName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of alerts) {
+      if (a.student_id && a.student_name) m.set(a.student_name.trim().toLowerCase(), a.student_id);
+    }
+    return m;
+  }, [alerts]);
+
+  // Wave C — fetch the per-student mastery report and open the panel. Roster
+  // scoping + all mastery/Bloom math live server-side; the client only fetches
+  // and renders verbatim. P13: no PII in logs (we surface a generic error).
+  const fetchReport = useCallback(
+    async (studentId: string, studentName: string) => {
+      setReportLoading(true);
+      setReportError(false);
+      try {
+        const res = await api('get_student_mastery_report', {
+          teacher_id: teacherId,
+          student_id: studentId,
+        });
+        setReport(res as StudentMasteryReportData);
+      } catch {
+        setReport(null);
+        setReportError(true);
+      } finally {
+        setReportLoading(false);
+      }
+      // keep the target for retry/export even on error
+      setReportStudent({ id: studentId, name: studentName });
+    },
+    [teacherId],
+  );
+
+  // Wave C — drill-through entry from a heatmap cell/row. When the depth flag is
+  // OFF this is never invoked (the heatmap calls goToStudent instead), so
+  // flag-OFF stays byte-identical. Resolves the id from the row (if stamped) or
+  // the alerts map; falls back to the legacy navigate when no id is resolvable.
+  const openReport = useCallback(
+    (row: HeatmapRowWithId) => {
+      const name = row.student_name || '';
+      const resolvedId = row.student_id || studentIdByName.get(name.trim().toLowerCase()) || '';
+      if (!resolvedId) {
+        // No id available (e.g. a heatmap-only student with no alert) — fall back
+        // to the existing students page so the click is never a dead end.
+        goToStudent(name);
+        return;
+      }
+      setReportOpen(true);
+      setReport(null);
+      setReportStudent({ id: resolvedId, name });
+      fetchReport(resolvedId, name);
+    },
+    [studentIdByName, fetchReport, goToStudent],
+  );
+
+  // Heatmap cell handler: drill into the report when the depth flag is ON,
+  // otherwise keep the existing navigate-to-student behaviour (byte-identical).
+  const onHeatmapStudent = useCallback(
+    (row: HeatmapRowWithId) => {
+      if (gradebookDepthEnabled) openReport(row);
+      else goToStudent(row.student_name);
+    },
+    [gradebookDepthEnabled, openReport, goToStudent],
+  );
+
+  // Wave C — parent-ready CSV export. Reuses the SAME blob-download pattern as
+  // the gradebook export. The server builds the CSV (single source of truth);
+  // the client only triggers the download.
+  const exportReport = useCallback(async () => {
+    if (!reportStudent) return;
+    setReportExporting(true);
+    try {
+      const res = await api('export_student_report', {
+        teacher_id: teacherId,
+        student_id: reportStudent.id,
+      });
+      const filename = String(res?.filename || 'student_report.csv');
+      const content = String(res?.csv_content || '');
+      const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast(tt(isHi, 'Report downloaded', 'रिपोर्ट डाउनलोड हुई'), 'success');
+    } catch {
+      // P13: no PII in logs — generic toast only.
+      showToast(
+        tt(isHi, "Couldn't download — please retry", 'डाउनलोड नहीं हो सका — पुनः प्रयास करें'),
+        'error',
+      );
+    } finally {
+      setReportExporting(false);
+    }
+  }, [reportStudent, teacherId, isHi, showToast]);
 
   const classes = useMemo(() => dash?.classes ?? [], [dash?.classes]);
   const activeClass = useMemo(
@@ -789,6 +920,23 @@ export default function CommandCenter() {
         </div>
       )}
 
+      {/* Wave C — student mastery report panel (lazy-loaded; mounts only when a
+          teacher drills into a heatmap cell/row with the depth flag ON). */}
+      {gradebookDepthEnabled && reportOpen && (
+        <div className="mb-5">
+          <StudentMasteryReport
+            report={report}
+            loading={reportLoading}
+            error={reportError}
+            exporting={reportExporting}
+            isHi={isHi}
+            onExport={exportReport}
+            onRetry={() => reportStudent && fetchReport(reportStudent.id, reportStudent.name)}
+            onClose={() => setReportOpen(false)}
+          />
+        </div>
+      )}
+
       {/* Dense two-column body: heatmap (wide) + alerts rail */}
       <div className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-4 items-start">
         {/* Roster mastery heatmap */}
@@ -806,7 +954,7 @@ export default function CommandCenter() {
             {loadingClass ? (
               <div className="h-40 rounded-lg bg-slate-800/50 animate-pulse" aria-hidden="true" />
             ) : heatmap ? (
-              <RosterHeatmap data={heatmap} isHi={isHi} onCellStudent={goToStudent} />
+              <RosterHeatmap data={heatmap} isHi={isHi} onCellStudent={onHeatmapStudent} />
             ) : (
               <div className="text-center py-8 text-slate-500">
                 <div className="text-3xl mb-3">&#x1F4CA;</div>

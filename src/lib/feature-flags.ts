@@ -471,6 +471,38 @@ export const TEACHER_ASSIGNMENT_LIFECYCLE_FLAGS = {
 } as const;
 
 /**
+ * Phase 3A — Wave C (Gradebook + reporting depth) flag (2026-06-08).
+ *
+ *  ff_teacher_gradebook_depth — ADDITIONAL gate for the MASTERY + BLOOM'S
+ *    reporting depth layered onto two existing teacher surfaces. When ON:
+ *      1. Command Center heatmap cells / student rows become a DRILL-THROUGH:
+ *         clicking one opens a lazy-loaded Student Mastery Report panel
+ *         (`get_student_mastery_report`) — mastery by concept, the 6 Bloom's
+ *         levels with per-level accuracy (weakest highlighted), and recent
+ *         performance. The panel offers a "Download report" action that calls
+ *         `export_student_report` and saves the parent-ready CSV.
+ *      2. `/teacher/grade-book` surfaces a class mastery/Bloom depth view
+ *         (`get_class_mastery_bloom_summary`) — weakest concepts first + the
+ *         class's weakest Bloom's level — above the existing score matrix.
+ *    When OFF, BOTH surfaces are byte-identical to today: the heatmap cell is a
+ *    plain navigate-to-student link (no panel), and the gradebook is the score
+ *    matrix only (no depth view, no Bloom). Default: false. Read client-side via
+ *    the existing client flag read path (getFeatureFlags).
+ *
+ *    Bloom's level names (remember→understand→apply→analyze→evaluate→create) are
+ *    technical terms — NOT translated even when isHi (P7 exception).
+ *
+ *    Not yet seeded by any migration; while absent from `feature_flags` both
+ *    read paths resolve it to OFF (and both surfaces stay byte-identical-OFF).
+ *
+ *  Spec/plan: docs/superpowers/{specs,plans}/2026-06-08-phase-3a-wave-c-*
+ */
+export const TEACHER_GRADEBOOK_DEPTH_FLAGS = {
+  /** Mastery + Bloom's reporting depth (drill-through + class summary + export). Default off. */
+  V1: 'ff_teacher_gradebook_depth',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -504,6 +536,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [CONSUMER_MINIMALISM_FLAGS.PARENT_ENCOURAGE_V1]: false,
   [TEACHER_COMMAND_CENTER_FLAGS.V1]: false,
   [TEACHER_ASSIGNMENT_LIFECYCLE_FLAGS.V1]: false,
+  [TEACHER_GRADEBOOK_DEPTH_FLAGS.V1]: false,
 } as const;
 
 /**
