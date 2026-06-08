@@ -28,6 +28,13 @@ vi.mock('@/lib/feature-flags', () => ({
 vi.mock('@/lib/supabase-server', () => ({
   createSupabaseServerClient: vi.fn().mockResolvedValue({ __sb: true }),
 }));
+// Phase 3A Wave A / A3 — the route now resolves an admin client for the
+// teacher-remediation read + status flip. The flip only runs for an `assigned`
+// pendingTeacherRemediation (none in these fixtures), so the client is unused
+// beyond being constructed; a stub object is sufficient.
+vi.mock('@/lib/supabase-admin', () => ({
+  getSupabaseAdmin: vi.fn(() => ({ __admin: true })),
+}));
 vi.mock('@/lib/state/student-state-builder', () => ({
   createStudentStateBuilder: vi.fn(() => mockBuildState),
 }));

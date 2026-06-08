@@ -15,7 +15,7 @@ import type { Subject } from '@/lib/subjects.types';
 import type { TodayQueueItem as TodayQueueItemDTO } from '@/lib/today/types';
 import { deepLinkToHref } from '@/lib/today/copy';
 import { todayIcon } from '@/lib/today/icon-map';
-import { resolveItemCopy } from '@/lib/today/render';
+import { resolveItemCopy, isTeacherAssigned, fromTeacherLabel } from '@/lib/today/render';
 
 interface TodayQueueItemProps {
   item: TodayQueueItemDTO;
@@ -27,6 +27,8 @@ export default function TodayQueueItem({ item, subjects, isHi }: TodayQueueItemP
   const router = useRouter();
   const { label, subtitle, minutesBadge } = resolveItemCopy(item, subjects, isHi);
   const href = deepLinkToHref(item.deepLink);
+  // Phase 3A Wave A — compact "from your teacher" tag above the label.
+  const teacherAssigned = isTeacherAssigned(item);
 
   return (
     <Card
@@ -40,7 +42,9 @@ export default function TodayQueueItem({ item, subjects, isHi }: TodayQueueItemP
           style={{
             width: 44,
             height: 44,
-            background: 'var(--surface-2)',
+            background: teacherAssigned
+              ? 'rgb(var(--purple-rgb, 124 58 237) / 0.10)'
+              : 'var(--surface-2)',
             fontSize: 20,
             lineHeight: 1,
           }}
@@ -49,6 +53,15 @@ export default function TodayQueueItem({ item, subjects, isHi }: TodayQueueItemP
           {todayIcon(item.iconHint)}
         </div>
         <div className="flex-1 min-w-0">
+          {teacherAssigned && (
+            <span
+              data-testid="today-from-teacher-tag"
+              className="inline-block text-[10px] font-bold uppercase tracking-wider mb-0.5"
+              style={{ color: 'var(--purple, #7C3AED)' }}
+            >
+              {fromTeacherLabel(isHi)}
+            </span>
+          )}
           <p
             className="text-sm font-semibold truncate"
             style={{ color: 'var(--text-1)' }}

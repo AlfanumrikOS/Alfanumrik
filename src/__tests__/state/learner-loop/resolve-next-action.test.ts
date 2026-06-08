@@ -356,6 +356,7 @@ describe('LearnerAction kinds', () => {
     // addition / removal forces an explicit decision.
     expect(ALL_ACTION_KINDS).toEqual([
       'cold_start_diagnostic',
+      'teacher_remediation', // Phase 3A Wave A / A3 — highest-priority branch
       'review_due_cards',
       'revise_decayed_topic',
       'start_quiz',

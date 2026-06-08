@@ -1,16 +1,23 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase, supabaseUrl as SUPABASE_URL, supabaseAnonKey as SUPABASE_ANON, getFeatureFlags } from '@/lib/supabase';
 import type { HeatmapData, HeatmapCell, HeatmapRow, RiskAlert } from '@/lib/types';
 import { SUBJECT_ROTATION } from '@/lib/challenge-config';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
+import { useTeacherCommandCenter } from '@/lib/use-teacher-command-center';
 import { useRealtimeRevalidator } from '@/hooks/useRealtimeRevalidator';
 import { REALTIME_FLAGS } from '@/lib/feature-flags';
 import { useCosmicTheme } from '@/lib/cosmic-theme';
 import AtlasTeacher from './AtlasTeacher';
+
+// Phase 3A — the Command Center is code-split so the legacy/Atlas dispatch
+// keeps its bundle when the flag is OFF (P10). The flag defaults OFF and is
+// unseeded, so production never loads this chunk until rollout.
+const CommandCenter = dynamic(() => import('./CommandCenter'), { ssr: false });
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -576,8 +583,13 @@ function PollTab({ classId, teacherId, isHi, realtimeEnabled }: { classId: strin
 }
 
 export default function TeacherPage() {
+  // Phase 3A — Command Center wins when its flag is ON (the dense desktop home).
+  // Synchronous read (sync cache, default OFF) so flag-OFF is byte-identical to
+  // the prior dispatch on first paint — see use-teacher-command-center.ts.
+  const commandCenter = useTeacherCommandCenter();
   // Synchronous Atlas dispatch — see src/lib/use-atlas-flag.ts.
   const atlas = useAtlasFlag('teacher');
+  if (commandCenter) return <CommandCenter />;
   if (atlas) return <AtlasTeacher />;
   return <LegacyTeacherPage />;
 }

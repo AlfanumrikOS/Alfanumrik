@@ -38,6 +38,7 @@ import { supabase } from '@/lib/supabase';
 import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
 import type { ModuleKey } from '@/lib/modules/registry';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
+import { useTeacherCommandCenter } from '@/lib/use-teacher-command-center';
 import { useCosmicTheme } from '@/lib/cosmic-theme';
 import { Starfield } from '@/components/cosmic';
 
@@ -87,6 +88,29 @@ const NAV_ITEMS: ReadonlyArray<TeacherNavItem> = [
   { href: '/teacher/profile', label: 'Profile', labelHi: 'प्रोफ़ाइल', icon: '◎' },
 ];
 
+// ─── Phase 3A — slimmed primary nav (gated on ff_teacher_command_center) ─────
+// FIVE primary items. The remaining legacy pages move to an account/overflow
+// menu (TEACHER_OVERFLOW_ITEMS) rendered in the sidebar footer so every route
+// stays reachable — no dead links. The "Command Center" entry is the existing
+// /teacher route (the page swaps to the Command Center under the same flag).
+const TEACHER_PRIMARY_SLIM: ReadonlyArray<TeacherNavItem> = [
+  { href: '/teacher', label: 'Command Center', labelHi: 'कमांड सेंटर', icon: '▦' },
+  { href: '/teacher/grade-book', label: 'Gradebook', labelHi: 'ग्रेड बुक', icon: '⊟', moduleKey: 'assignments' },
+  { href: '/teacher/assignments', label: 'Assignments', labelHi: 'असाइनमेंट', icon: '⊠', moduleKey: 'assignments' },
+  { href: '/teacher/messages', label: 'Messages', labelHi: 'संदेश', icon: '✉' },
+  { href: '/teacher/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘', moduleKey: 'analytics' },
+];
+
+// Overflow / account menu — kept reachable in the footer when the slim nav is on.
+const TEACHER_OVERFLOW_ITEMS: ReadonlyArray<TeacherNavItem> = [
+  { href: '/teacher/classes', label: 'Classes', labelHi: 'कक्षाएं', icon: '⊞' },
+  { href: '/teacher/students', label: 'Students', labelHi: 'छात्र', icon: '⊕' },
+  { href: '/teacher/submissions', label: 'Submissions', labelHi: 'सबमिशन', icon: '⊞', moduleKey: 'assignments' },
+  { href: '/teacher/worksheets', label: 'Worksheets', labelHi: 'वर्कशीट', icon: '⊡', moduleKey: 'lms' },
+  { href: '/teacher/lab-leaderboard', label: 'Lab Leaderboard', labelHi: 'लैब लीडरबोर्ड', icon: '⊙' },
+  { href: '/teacher/profile', label: 'Profile', labelHi: 'प्रोफ़ाइल', icon: '◎' },
+];
+
 export default function TeacherShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -105,6 +129,10 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
   // useAtlasFlag initialises synchronously from cache → no first-render
   // flash from legacy chrome to pass-through.
   const atlasOn = useAtlasFlag('teacher');
+
+  // Phase 3A — slim the primary nav to FIVE when the Command Center flag is on.
+  // Default OFF + sync cache read ⇒ flag-OFF nav is byte-identical to today.
+  const commandCenterOn = useTeacherCommandCenter();
 
   // Messages tab unread badge — only fetch when authed as a teacher.
   const { data: messagesBadge } = useSWR<TeacherThreadsResponse>(
@@ -172,6 +200,72 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
   // Atlas on → AtlasTeacher provides its own chrome.
   if (atlasOn) return <>{children}</>;
 
+  // Phase 3A — choose the primary nav set. Slim 5-item nav when the Command
+  // Center flag is on; the full legacy nav otherwise (byte-identical when off).
+  const primaryNav = commandCenterOn ? TEACHER_PRIMARY_SLIM : NAV_ITEMS;
+
+  // Logout button (shared by both footer variants).
+  const logoutButton = (
+    <button
+      type="button"
+      onClick={async () => {
+        await supabase.auth.signOut();
+        router.replace('/login');
+      }}
+      className="w-full rounded-md py-1.5 text-[11px] font-medium"
+      style={{
+        background: 'var(--surface-1)',
+        border: '1px solid var(--border)',
+        color: 'var(--text-3)',
+      }}
+    >
+      {isHi ? 'लॉगआउट' : 'Logout'}
+    </button>
+  );
+
+  // When slim, render the moved pages as an account/overflow menu in the footer
+  // so every route stays reachable. Module-gating mirrors the sidebar's own
+  // fail-open rule (null enablement ⇒ show all).
+  const overflowItems = TEACHER_OVERFLOW_ITEMS.filter((item) => {
+    if (!item.moduleKey) return true;
+    if (moduleEnablement === null || moduleEnablement === undefined) return true;
+    return moduleEnablement[item.moduleKey] !== false;
+  });
+
+  const footerContent = commandCenterOn ? (
+    <div className="flex flex-col gap-2">
+      <details className="group" data-testid="teacher-nav-overflow">
+        <summary
+          className="cursor-pointer list-none rounded-md py-1.5 px-2 text-[11px] font-semibold"
+          style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', color: 'var(--text-2)' }}
+        >
+          {isHi ? 'अधिक' : 'More'}
+        </summary>
+        <nav className="mt-1.5 flex flex-col">
+          {overflowItems.map((item) => {
+            const active =
+              pathname === item.href || (pathname || '').startsWith(item.href + '/');
+            return (
+              <a
+                key={item.href}
+                href={item.href}
+                aria-current={active ? 'page' : undefined}
+                className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px] no-underline"
+                style={{ color: active ? 'var(--text-1)' : 'var(--text-3)' }}
+              >
+                <span aria-hidden="true">{item.icon}</span>
+                <span className="truncate">{isHi ? item.labelHi : item.label}</span>
+              </a>
+            );
+          })}
+        </nav>
+      </details>
+      {logoutButton}
+    </div>
+  ) : (
+    logoutButton
+  );
+
   return (
     <div
       className={`flex min-h-screen${cosmicEnabled ? ' teacher-portal' : ''}`}
@@ -186,7 +280,7 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
         logoUrl={tenant.branding.logoUrl}
         primaryColor={tenant.branding.primaryColor || '#6366F1'}
         items={
-          (NAV_ITEMS as ReadonlyArray<TeacherNavItem>).map((item) =>
+          (primaryNav as ReadonlyArray<TeacherNavItem>).map((item) =>
             item.href === '/teacher/messages'
               ? ({ ...item, badge: messagesUnread } as unknown as SidebarNavItem)
               : (item as unknown as SidebarNavItem),
@@ -195,23 +289,7 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
         currentPath={pathname || ''}
         isHi={isHi}
         moduleEnablement={moduleEnablement}
-        footer={
-          <button
-            type="button"
-            onClick={async () => {
-              await supabase.auth.signOut();
-              router.replace('/login');
-            }}
-            className="w-full rounded-md py-1.5 text-[11px] font-medium"
-            style={{
-              background: 'var(--surface-1)',
-              border: '1px solid var(--border)',
-              color: 'var(--text-3)',
-            }}
-          >
-            {isHi ? 'लॉगआउट' : 'Logout'}
-          </button>
-        }
+        footer={footerContent}
       />
       <main className={`flex-1 overflow-auto${cosmicEnabled ? ' relative z-10' : ''}`}>{children}</main>
     </div>

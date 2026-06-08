@@ -68,6 +68,7 @@ const TYPE_PRESENTATION: Record<
 > = {
   resume_in_progress:     { estMinutes: 5,  iconHint: 'play-resume' },
   cold_start_diagnostic:  { estMinutes: 10, iconHint: 'compass' },
+  teacher_remediation:    { estMinutes: 8,  iconHint: 'teacher-badge' },
   srs_due:                { estMinutes: 5,  iconHint: 'cards-stack' },
   revise_decayed_topic:   { estMinutes: 8,  iconHint: 'refresh-book' },
   weak_topic_zpd:         { estMinutes: 7,  iconHint: 'target' },
@@ -87,6 +88,8 @@ function itemTypeFor(action: LearnerAction): TodayItemType {
       return 'resume_in_progress';
     case 'cold_start_diagnostic':
       return 'cold_start_diagnostic';
+    case 'teacher_remediation':
+      return 'teacher_remediation';
     case 'review_due_cards':
       return 'srs_due';
     case 'revise_decayed_topic':
@@ -119,6 +122,21 @@ function metaFor(action: LearnerAction): Record<string, unknown> | undefined {
     }
     case 'cold_start_diagnostic':
       return undefined; // contract: meta {}
+
+    case 'teacher_remediation': {
+      // Surface the provenance marker + tracking id verbatim. `source:'teacher'`
+      // is the "from your teacher" marker (assessment rule 1); `assignmentId`
+      // lets the Today completion flow flip the assignment to resolved. Optional
+      // anchor (subjectCode/chapterNumber) surfaced only when resolved.
+      const m: Record<string, unknown> = {
+        source: action.source,
+        assignmentId: action.assignmentId,
+        chapterId: action.chapterId,
+      };
+      if (action.subjectCode !== undefined) m.subjectCode = action.subjectCode;
+      if (action.chapterNumber !== undefined) m.chapterNumber = action.chapterNumber;
+      return m;
+    }
 
     case 'review_due_cards':
       return { dueCount: action.dueCount };

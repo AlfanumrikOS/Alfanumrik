@@ -23,11 +23,13 @@
  */
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { authorizeRequest } from '@/lib/rbac';
 import { isFeatureEnabled, CONSUMER_MINIMALISM_FLAGS } from '@/lib/feature-flags';
 import { createStudentStateBuilder } from '@/lib/state/student-state-builder';
 import {
   buildLoopAugmentation,
+  markTeacherRemediationInProgress,
   resolveTodayQueue,
 } from '@/lib/state/learner-loop/resolve-next-action';
 import { mapActionToTodayItem } from '@/lib/today/map-action';
@@ -76,11 +78,20 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'no_student_profile' }, { status: 404 });
     }
 
+    // Service-role client for the teacher-remediation read (Phase 3A Wave A /
+    // A3). The teacher_remediation_assignments row is student-keyed and read
+    // through the admin client per the A1 contract. The student-state read +
+    // routine augmentation reads stay on the RLS-respecting `supabase` client.
+    const admin = getSupabaseAdmin();
+
     // Build the small augmentation (due reviews, today's quiz, in-progress
-    // lessons). Defensive — failures degrade to "empty", never a 500.
+    // lessons, pending teacher remediation). Defensive — failures degrade to
+    // "empty", never a 500.
     let augmentation;
     try {
-      augmentation = await buildLoopAugmentation(supabase, userId, state.studentId);
+      augmentation = await buildLoopAugmentation(supabase, userId, state.studentId, {
+        adminClient: admin,
+      });
     } catch (err) {
       logger.warn('v2/today: augmentation failed; using safe defaults', {
         userId,
@@ -90,12 +101,24 @@ export async function GET(request: Request) {
         dueReviewCount: 0,
         attemptedQuizToday: false,
         inProgressLessons: [],
+        pendingTeacherRemediation: null,
       };
     }
 
     // 4. Resolve the Today queue — all "what next" logic stays here.
     const now = new Date();
     const result = resolveTodayQueue(state, augmentation, { now });
+
+    // STATUS FLIP — surfacing the assigned task moves it `assigned → in_progress`
+    // (assessment rule 4). Fire-and-forget service-role write keyed by the
+    // assignment id; never blocks the response, never throws. Only flips when an
+    // `assigned` row was actually surfaced (no churn for already in_progress).
+    const surfaced = augmentation.pendingTeacherRemediation;
+    if (surfaced && surfaced.status === 'assigned') {
+      void markTeacherRemediationInProgress(admin, surfaced.assignmentId).catch(() => {
+        /* best-effort; the next /today read re-attempts. */
+      });
+    }
 
     // 5. Project primary + queue into render DTOs (1-based rank).
     const queue = result.queue.map((action, i) => mapActionToTodayItem(action, i + 1));

@@ -263,6 +263,55 @@ describe('mapActionToTodayItem — meta extraction (verbatim, no fabrication)', 
     expect(item.meta).not.toHaveProperty('subjectCode');
     expect(item.meta).not.toHaveProperty('chapterNumber');
   });
+
+  it('teacher_remediation surfaces source/assignmentId/chapterId + anchor (Phase 3A A3)', () => {
+    const item = mapActionToTodayItem(
+      {
+        kind: 'teacher_remediation',
+        url: '/quiz?subject=science&chapter=2&remediationId=99999999-9999-9999-9999-999999999999&from=teacher',
+        source: 'teacher',
+        assignmentId: '99999999-9999-9999-9999-999999999999',
+        chapterId: '88888888-8888-8888-8888-888888888888',
+        subjectCode: 'science',
+        chapterNumber: 2,
+        reason: 'teacher_assigned',
+      },
+      1,
+    );
+    expect(item.type).toBe('teacher_remediation');
+    expect(item.deepLink.route).toBe('/quiz');
+    expect(item.deepLink.params).toMatchObject({
+      subject: 'science',
+      chapter: 2,
+      remediationId: '99999999-9999-9999-9999-999999999999',
+      from: 'teacher',
+    });
+    expect(item.meta).toEqual({
+      source: 'teacher',
+      assignmentId: '99999999-9999-9999-9999-999999999999',
+      chapterId: '88888888-8888-8888-8888-888888888888',
+      subjectCode: 'science',
+      chapterNumber: 2,
+    });
+    expect(item.reason).toBe('teacher_assigned');
+  });
+
+  it('teacher_remediation (general, chapter_id null) omits the anchor fields', () => {
+    const item = mapActionToTodayItem(
+      {
+        kind: 'teacher_remediation',
+        url: '/quiz?subject=science&chapter=3&remediationId=99999999-9999-9999-9999-999999999999&from=teacher',
+        source: 'teacher',
+        assignmentId: '99999999-9999-9999-9999-999999999999',
+        chapterId: null,
+        subjectCode: 'science',
+        chapterNumber: 3,
+        reason: 'teacher_assigned',
+      },
+      1,
+    );
+    expect(item.meta).toMatchObject({ source: 'teacher', chapterId: null });
+  });
 });
 
 describe('mapActionToTodayItem — rank + i18n keys', () => {

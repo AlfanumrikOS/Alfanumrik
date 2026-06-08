@@ -52,6 +52,28 @@ export function actionDisplay(action: LearnerAction): ActionDisplay {
         tint: 'var(--purple, #7C3AED)',
       };
 
+    case 'teacher_remediation': {
+      // Phase 3A Wave A / A3 — the "from your teacher" card. Chapter-anchored
+      // when the assignment resolved a (subject, chapter); else a general
+      // teacher-assigned practice. Bilingual (P7).
+      const hasAnchor =
+        action.subjectCode !== undefined && action.chapterNumber !== undefined;
+      return {
+        icon: '👩‍🏫',
+        eyebrowEn: 'From your teacher',
+        eyebrowHi: 'तुम्हारे शिक्षक से',
+        titleEn: hasAnchor
+          ? `${capitalize(action.subjectCode!)} · Chapter ${action.chapterNumber}`
+          : 'Practice your teacher assigned',
+        titleHi: hasAnchor
+          ? `${subjectHi(action.subjectCode!)} · अध्याय ${action.chapterNumber}`
+          : 'शिक्षक का दिया अभ्यास',
+        subEn: 'Your teacher picked this for you — let’s clear it up',
+        subHi: 'तुम्हारे शिक्षक ने यह चुना है — इसे पक्का करते हैं',
+        tint: 'var(--purple, #7C3AED)',
+      };
+    }
+
     case 'review_due_cards': {
       const n = action.dueCount;
       return {
@@ -158,6 +180,10 @@ export function actionPrimaryCta(action: LearnerAction): ActionPrimaryCta {
   switch (action.kind) {
     case 'cold_start_diagnostic':
       return { en: 'Take the diagnostic', hi: 'डायग्नोस्टिक लो' };
+
+    case 'teacher_remediation':
+      // Phase 3A Wave A / A3 — verb-led, button-fit, bilingual (P7).
+      return { en: 'Start teacher task', hi: 'शिक्षक का काम शुरू करो' };
 
     case 'review_due_cards': {
       const n = action.dueCount;

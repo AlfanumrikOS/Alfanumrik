@@ -163,6 +163,15 @@ describe('actionDisplay — coverage', () => {
       switch (kind) {
         case 'cold_start_diagnostic':
           return { kind, url: '/diagnostic', reason: 'no_signals_yet' };
+        case 'teacher_remediation':
+          return {
+            kind,
+            url: '/quiz?subject=x&chapter=1&remediationId=99999999-9999-9999-9999-999999999999&from=teacher',
+            source: 'teacher',
+            assignmentId: '99999999-9999-9999-9999-999999999999',
+            chapterId: '88888888-8888-8888-8888-888888888888',
+            subjectCode: 'x', chapterNumber: 1, reason: 'teacher_assigned',
+          };
         case 'review_due_cards':
           return { kind, url: '/review', dueCount: 3, reason: 'reviews_stacking' };
         case 'revise_decayed_topic':

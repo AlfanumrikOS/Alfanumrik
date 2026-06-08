@@ -7,7 +7,8 @@
  * Actions:
  *   - get_dashboard:       Teacher info, classes, aggregate stats
  *   - get_heatmap:         Student × concept mastery matrix
- *   - get_alerts:          At-risk student detection
+ *   - get_alerts:          At-risk student detection (each alert additively
+ *                          carries `remediation_status` — Phase 3A Wave A / A2)
  *   - resolve_alert:       Mark alert as resolved
  *   - launch_poll:         Create classroom poll
  *   - close_poll:          Close poll and return results
@@ -453,7 +454,64 @@ async function handleGetAlerts(
   const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
   alerts.sort((a, b) => (severityOrder[a.severity] ?? 9) - (severityOrder[b.severity] ?? 9))
 
-  return jsonResponse(alerts, 200, {}, origin)
+  // Phase 3A Wave A / A2 — surface remediation status on each alert (additive,
+  // backward-compatible). These derived alerts have synthetic ids and no
+  // at_risk_alerts row, so we join teacher_remediation_assignments by
+  // (teacher_id, student_id). A student carries the "most-open" status among
+  // the caller-teacher's remediation rows for them: in_progress > assigned >
+  // resolved > (none). dismissed rows are ignored (treated as none).
+  const remediationByStudent = await resolveRemediationStatusByStudent(
+    supabase,
+    teacherId,
+    studentIds,
+  )
+  const alertsWithRemediation = alerts.map((a) => ({
+    ...a,
+    remediation_status: remediationByStudent.get(a.student_id) ?? 'none',
+  }))
+
+  return jsonResponse(alertsWithRemediation, 200, {}, origin)
+}
+
+// ─── Remediation-status join (Phase 3A Wave A / A2) ─────────────────────
+// Resolves the open remediation status per student for a teacher. Returns a
+// Map<student_id, 'assigned' | 'in_progress' | 'resolved'>. Students with no
+// remediation row (or only dismissed rows) are absent — callers default to
+// 'none'. The table may be absent on older envs; we fail soft to an empty map
+// so the alerts payload still renders.
+type RemediationStatus = 'assigned' | 'in_progress' | 'resolved'
+
+async function resolveRemediationStatusByStudent(
+  supabase: ReturnType<typeof getServiceClient>,
+  teacherId: string,
+  studentIds: string[],
+): Promise<Map<string, RemediationStatus>> {
+  const out = new Map<string, RemediationStatus>()
+  if (!teacherId || studentIds.length === 0) return out
+
+  // Precedence: in_progress (2) beats assigned (1) beats resolved (0).
+  const rank: Record<RemediationStatus, number> = { resolved: 0, assigned: 1, in_progress: 2 }
+
+  try {
+    const { data: rows } = await supabase
+      .from('teacher_remediation_assignments')
+      .select('student_id, status')
+      .eq('teacher_id', teacherId)
+      .in('student_id', studentIds)
+      .in('status', ['assigned', 'in_progress', 'resolved'])
+
+    for (const r of rows || []) {
+      const sid = (r as { student_id?: string }).student_id
+      const status = (r as { status?: string }).status as RemediationStatus | undefined
+      if (!sid || !status || !(status in rank)) continue
+      const current = out.get(sid)
+      if (!current || rank[status] > rank[current]) out.set(sid, status)
+    }
+  } catch {
+    // Table absent on this env — fail soft; alerts render with 'none'.
+  }
+
+  return out
 }
 
 // ─── resolve_alert ──────────────────────────────────────────

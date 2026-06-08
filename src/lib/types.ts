@@ -269,6 +269,14 @@ export interface HeatmapData {
   matrix: HeatmapRow[];
 }
 
+/**
+ * Per-student remediation status surfaced on at-risk alerts (Phase 3A Wave A /
+ * A2). The teacher-dashboard Edge `get_alerts` joins
+ * `teacher_remediation_assignments` and stamps each alert with the most-open
+ * status for that student: `in_progress > assigned > resolved > none`.
+ */
+export type RemediationStatus = 'none' | 'assigned' | 'in_progress' | 'resolved';
+
 export interface RiskAlert {
   id: string;
   student_id: string;
@@ -277,6 +285,9 @@ export interface RiskAlert {
   title: string;
   description: string;
   recommended_action?: string;
+  /** Phase 3A Wave A / A2 — additive. Absent on older Edge deploys; the UI
+   *  defaults to 'none'. */
+  remediation_status?: RemediationStatus;
 }
 
 /* ── Parent ── */

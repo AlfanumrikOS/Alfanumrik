@@ -78,3 +78,25 @@ export function resolveItemCopy(
     minutesBadge: todayCopy('today.minutesBadge', isHi, { n: item.estMinutes }),
   };
 }
+
+/**
+ * Phase 3A Wave A — is this item a teacher-assigned remediation? True when the
+ * resolver tagged it `source:'teacher'` (carried verbatim in `item.meta`). The
+ * UI renders a visible "from your teacher" tag for these. Robust to absence:
+ * any item without the marker returns false.
+ */
+export function isTeacherAssigned(item: TodayQueueItem): boolean {
+  return item.type === 'teacher_remediation' || item.meta?.source === 'teacher';
+}
+
+/** The `teacher_remediation_assignments.id` a teacher-assigned item carries
+ *  (for the completion `resolve` call), or null when absent. */
+export function teacherAssignmentId(item: TodayQueueItem): string | null {
+  const id = item.meta?.assignmentId;
+  return typeof id === 'string' && id.length > 0 ? id : null;
+}
+
+/** Bilingual "from your teacher" tag text. */
+export function fromTeacherLabel(isHi: boolean): string {
+  return todayCopy('today.item.teacher_remediation.fromTeacher', isHi);
+}
