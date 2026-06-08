@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { useSchoolProvisioning } from '@/lib/use-school-provisioning';
+import { InviteCapNotice, SeatCapBlockBanner } from '@/components/school/SeatPolicyBanners';
+import type { SeatPolicyStatus } from '@/lib/school-admin/seat-enforcement';
 import {
   Card,
   Button,
@@ -321,9 +324,22 @@ interface GenerateFormProps {
   }) => Promise<void>;
   submitting: boolean;
   newCode: string | null;
+  /* ── Seat-enforcement surfaces (rendered only when the flag is ON) ──── */
+  /** remaining_seats the code was capped to (ON path; null = no cap applied). */
+  capNoticeSeats: number | null;
+  /** 409 seat_cap_violation status from a blocked issuance (ON path; null = none). */
+  seatBlockStatus: SeatPolicyStatus | null;
 }
 
-function GenerateForm({ classes, isHi, onSubmit, submitting, newCode }: GenerateFormProps) {
+function GenerateForm({
+  classes,
+  isHi,
+  onSubmit,
+  submitting,
+  newCode,
+  capNoticeSeats,
+  seatBlockStatus,
+}: GenerateFormProps) {
   const [roleType, setRoleType] = useState<RoleType>('student');
   const [classId, setClassId] = useState<string>('');
   const [maxUses, setMaxUses] = useState<number>(50);
@@ -373,8 +389,16 @@ function GenerateForm({ classes, isHi, onSubmit, submitting, newCode }: Generate
 
   return (
     <div className="space-y-4 pb-2">
+      {/* Seat hard-block (ON path only): issuance refused — capacity exhausted. */}
+      {seatBlockStatus && <SeatCapBlockBanner status={seatBlockStatus} isHi={isHi} />}
+
       {/* Show the newly generated code at top when present */}
       {newCode && <NewCodeDisplay code={newCode} isHi={isHi} />}
+
+      {/* Seat-cap notice (ON path only): the code's uses were trimmed to seats. */}
+      {newCode && capNoticeSeats !== null && (
+        <InviteCapNotice remainingSeats={capNoticeSeats} isHi={isHi} />
+      )}
 
       <Select
         label={t(isHi, 'Role / भूमिका', 'Role / भूमिका')}
@@ -482,6 +506,10 @@ export default function InviteCodesPage() {
   const router = useRouter();
   const { authUserId, isLoading: authLoading, isHi, setLanguage } = useAuth();
 
+  // Seat-enforcement UI gate (Phase 3B Wave B). OFF ⇒ code generation uses the
+  // existing direct-insert path and renders no seat surfaces (byte-identical).
+  const seatUiEnabled = useSchoolProvisioning();
+
   /* ── state ── */
   const [schoolId, setSchoolId] = useState<string | null>(null);
   const [codes, setCodes] = useState<InviteCode[]>([]);
@@ -493,6 +521,9 @@ export default function InviteCodesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [newCode, setNewCode] = useState<string | null>(null);
+  // Seat surfaces (ON path only): cap notice + hard-block status for the modal.
+  const [capNoticeSeats, setCapNoticeSeats] = useState<number | null>(null);
+  const [seatBlockStatus, setSeatBlockStatus] = useState<SeatPolicyStatus | null>(null);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
@@ -577,7 +608,63 @@ export default function InviteCodesPage() {
 
     setSubmitting(true);
     setNewCode(null);
+    setCapNoticeSeats(null);
+    setSeatBlockStatus(null);
 
+    // ── ENFORCED student-code issuance (ff_school_provisioning ON) ──────────
+    // Seat enforcement only bounds STUDENT codes (teachers are not seats), and
+    // the seat-bounded API route does not bind a class, so we route through it
+    // only for non-class-bound student codes. Every other case (teacher codes,
+    // class-bound student codes, or the flag OFF) falls through to the existing
+    // direct-insert path below — byte-identical to today. The API caps max_uses
+    // to remaining seats (returning `max_uses_capped_to_seats` + `remaining_seats`)
+    // or hard-blocks with a 409 `seat_cap_violation` when capacity is exhausted.
+    if (seatUiEnabled && values.roleType === 'student' && !values.classId) {
+      try {
+        const res = await fetch('/api/school-admin/invite-codes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: 'student',
+            max_uses: values.maxUses,
+            expires_in_days: values.expiryDays,
+          }),
+        });
+        const result = await res.json();
+        setSubmitting(false);
+
+        if (res.status === 409 && result?.error === 'seat_cap_violation') {
+          setSeatBlockStatus(
+            typeof result.status === 'string' ? (result.status as SeatPolicyStatus) : 'over_ceiling',
+          );
+          return;
+        }
+        if (!res.ok || !result?.success || !result?.data?.code) {
+          setPageError(
+            typeof result?.error === 'string' && result.error !== 'seat_cap_violation'
+              ? result.error
+              : 'Failed to generate code',
+          );
+          return;
+        }
+
+        setNewCode(result.data.code as string);
+        // When the API trimmed the code's uses to remaining seats, surface it.
+        if (result.data.max_uses_capped_to_seats !== undefined) {
+          setCapNoticeSeats(
+            typeof result.data.remaining_seats === 'number' ? result.data.remaining_seats : null,
+          );
+        }
+        if (schoolId) await loadData(schoolId);
+        return;
+      } catch {
+        setSubmitting(false);
+        setPageError(t(isHi, 'Network error. Please try again.', 'नेटवर्क त्रुटि। कृपया पुनः प्रयास करें।'));
+        return;
+      }
+    }
+
+    // ── Legacy direct-insert path (unchanged OFF path) ──────────────────────
     const { data, error: insertErr } = await supabase
       .from('school_invite_codes')
       .insert({
@@ -772,6 +859,8 @@ export default function InviteCodesPage() {
         <button
           onClick={() => {
             setNewCode(null);
+            setCapNoticeSeats(null);
+            setSeatBlockStatus(null);
             setModalOpen(true);
           }}
           className="btn-primary rounded-xl px-3 py-2 text-xs font-semibold transition-all active:scale-95 flex items-center gap-1.5"
@@ -813,6 +902,8 @@ export default function InviteCodesPage() {
                 variant="primary"
                 onClick={() => {
                   setNewCode(null);
+                  setCapNoticeSeats(null);
+                  setSeatBlockStatus(null);
                   setModalOpen(true);
                 }}
               >
@@ -852,6 +943,8 @@ export default function InviteCodesPage() {
           onSubmit={handleGenerate}
           submitting={submitting}
           newCode={newCode}
+          capNoticeSeats={seatUiEnabled ? capNoticeSeats : null}
+          seatBlockStatus={seatUiEnabled ? seatBlockStatus : null}
         />
       </SheetModal>
 
