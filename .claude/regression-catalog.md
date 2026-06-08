@@ -2157,3 +2157,100 @@ Alert→Remediation spine) adds REG-92 (teacher detect→act→verify remediatio
 spine — P8 RLS roster boundary, P1/P2/P3 no-bypass, idempotent lifecycle).
 
 **Total: 60 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+
+## Teacher cross-assignment grading queue (Phase 3A Wave B) — REG-93
+
+Source: Phase 3A Wave B "Cross-assignment grading queue" (behind
+`ff_teacher_assignment_lifecycle`, layered ON TOP of `ff_teacher_command_center`;
+both default OFF). Adds the `get_grading_queue` teacher-dashboard Edge action
+(`supabase/functions/teacher-dashboard/index.ts` — `handleGetGradingQueue` +
+the pure `buildGradingQueue` / `deriveNeedsReviewReason` helpers) and the Command
+Center surface/badge/button wiring (`src/app/teacher/CommandCenter.tsx`,
+`src/app/teacher/GradingQueue.tsx`, `src/lib/use-teacher-assignment-lifecycle.ts`,
+`src/app/teacher/submissions/page.tsx` deep-link). No migration, no new
+permission, no scoring/XP math — the queue is a READ that REUSES the existing
+`get_submission_detail` + `mark_submission_reviewed` grading path.
+
+The queue is the single "N submissions awaiting grading" surface that spans every
+assignment a teacher owns. Three things are blocking defects if they regress:
+(a) the queue must NEVER surface an already-graded/reviewed submission, and a
+submission must LEAVE the queue the moment a teacher grades it — a re-surfaced
+graded item would invite double-grading and a score-override race; (b)
+`needs_review_reason` is additive exception metadata derived from EXISTING
+anti-cheat signals (P3 all-same-answer / too-fast) and must NEVER alter the
+score or XP a teacher sees — `auto_score` is rendered verbatim from the Edge
+response with no client re-scoring (P1/P2 untouched); (c) with the Wave B flag
+OFF the Command Center must be byte-identical to Wave A — the queue is never
+fetched, the surface never mounts (lazy chunk never loads — P10), and the
+"Grading queue" button stays the disabled Wave A placeholder.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-93 | `teacher_grading_queue_ungraded_only_signal_only_flag_off` | **(a) Ungraded-only aggregation — no double-grading.** `buildGradingQueue` emits ONLY submissions whose derived ui-status is `submitted` (turned in, not graded): graded / reviewed / pending rows are excluded, and the SAME submission that appears while `submitted` DISAPPEARS once `mark_submission_reviewed` stamps `graded_at` + flips status to `graded` (the unchanged write) — a `graded_at` stamp alone is enough to drop it even if status lags. The server query is pinned to `.is('graded_at', null)` + `.in('status', ['submitted','completed'])` so a refactor cannot silently widen the queue to graded rows. The queue spans MULTIPLE assignments (each item stamped with its assignment title), is oldest-first FIFO by `submitted_at`, and is `teacher_id`-scoped (P8 roster boundary). **(b) `needs_review_reason` is signal-only — P1/P2 untouched.** The flag is derived purely from EXISTING signals — `all_same_answer` (>3 answered, all same option index — the P3 rule, with a uniform 3-Q quiz NOT flagged) and `too_fast` (avg < 3 s/question — the P3 floor, with exactly-3 s NOT flagged), all_same_answer winning when both fire, null when no usable signal (no fabrication). It NEVER moves the number: `auto_score` is byte-identical whether or not the flag fires (same score/total → same 70 regardless of recorded time; same canonical 100 regardless of answer pattern), preferring the canonical `score` column and falling back to `Math.round((correct/total)*100)` — rendered verbatim by `<GradingQueue>` with no client re-scoring, and grading still flows ONLY through the unchanged `mark_submission_reviewed`. **(c) Flag-OFF byte-identical.** `ff_teacher_assignment_lifecycle` defaults OFF and is unseeded ⇒ `useTeacherAssignmentLifecycle()` resolves false; the Command Center never fetches `get_grading_queue`, the lazy `GradingQueue` chunk never mounts, the "Awaiting grading" tile is absent, and `<ActionBar gradingQueueEnabled={false}>` keeps the "Grading queue" button DISABLED (no badge, click is a no-op) — the Wave A 4-tile layout. With the flag ON the button enables, badges the count, and opens the queue. | `src/__tests__/functions/teacher-dashboard-grading-queue-action.test.ts` (24 tests: ungraded-only filter incl. graded/reviewed/pending exclusion + the submitted→graded transition + graded_at-alone drop; multi-assignment span; oldest-first FIFO; auto_score canonical-then-ratio + score-neutral vs too_fast / all_same_answer; needs_review_reason derivation incl. >3-only, 3s-floor, precedence, no-fabrication, historical-key normalisation; dispatcher `case 'get_grading_queue'` + handler/helper presence; SQL `.is('graded_at', null)` + `'submitted','completed'` filter pin; `.eq('teacher_id', teacherId)` P8 scope) + `src/__tests__/components/teacher/grading-queue.test.tsx` (9 tests: one row per item with auto_score verbatim; exception chips bilingual + flagged-row hoist; row click → onOpenRow reuses the review flow; empty/loading/error states; Hindi P7; ActionBar flag-OFF disabled placeholder vs flag-ON enabled+badged+opens) | U |
+
+### Pinned tests
+
+- `src/__tests__/functions/teacher-dashboard-grading-queue-action.test.ts::buildGradingQueue — aggregation::returns ONLY submitted-but-ungraded rows; excludes graded and pending`
+- `src/__tests__/functions/teacher-dashboard-grading-queue-action.test.ts::buildGradingQueue — graded items leave the queue (no double-grading)::the same submission appears while submitted, then disappears once graded`
+- `src/__tests__/functions/teacher-dashboard-grading-queue-action.test.ts::buildGradingQueue — graded items leave the queue (no double-grading)::a graded_at stamp alone (status unchanged) is enough to drop the row`
+- `src/__tests__/functions/teacher-dashboard-grading-queue-action.test.ts::needs_review_reason is score-neutral (P1/P2 untouched)::auto_score is identical whether or not the too_fast flag fires`
+- `src/__tests__/functions/teacher-dashboard-grading-queue-action.test.ts::needs_review_reason is score-neutral (P1/P2 untouched)::auto_score is identical whether or not the all_same_answer flag fires`
+- `src/__tests__/functions/teacher-dashboard-grading-queue-action.test.ts::teacher-dashboard dispatcher — get_grading_queue wired::REGRESSION: filters the query to ungraded submitted/completed rows (no double-grading)`
+- `src/__tests__/components/teacher/grading-queue.test.tsx::GradingQueue::renders one row per item with auto_score verbatim`
+- `src/__tests__/components/teacher/grading-queue.test.tsx::ActionBar — Wave B flag gating::keeps the "Grading queue" button DISABLED when the flag is OFF`
+
+### Invariants covered by this section
+
+- P1/P2 (no-bypass) — `needs_review_reason` is derived exception metadata only;
+  `auto_score` is byte-identical with vs without the flag and rendered verbatim
+  (no client re-scoring), and grading flows solely through the unchanged
+  `mark_submission_reviewed`. The scoring/XP path
+  (`src/lib/xp-rules.ts`, `score-config.ts`, `supabase.ts`,
+  `quiz/submit-side-effects.ts`) is byte-identical to origin/main. Extends
+  REG-45/REG-48/REG-51/REG-92.
+- P3 (anti-cheat, reuse) — the queue's exception flags reuse the SAME 3 s/question
+  floor and >3-question all-same-answer rule as the canonical anti-cheat; they
+  surface (never enforce/re-score) anomalies for teacher triage.
+- P8 (roster boundary) — `get_grading_queue` scopes assignments to the caller
+  `teacher_id`; the queue inherits the same teacher/roster scoping as
+  `get_assignment_submissions`.
+- No-double-grade (operational invariant) — the queue is ungraded-only at both
+  the SQL filter (`.is('graded_at', null)`) and the JS re-derivation
+  (`uiStatusForSubmission`), so a graded submission leaves the queue and can
+  never be re-surfaced for a second grade.
+- Flag-OFF byte-identity (rollout safety) — `ff_teacher_assignment_lifecycle`
+  default-OFF keeps the Command Center the Wave A surface; the lazy queue chunk
+  never loads (P10) until rollout.
+
+### Notes on test strategy
+
+REG-93 uses the repo's **frozen-reference + source-pin pattern** (mirrors
+`teacher-dashboard-submissions-actions.test.ts`): the Deno/esm.sh Edge Function
+cannot be imported under Vitest, so the aggregation/exception-signal logic is
+re-implemented as a frozen pure reference and exercised directly, while the
+dispatcher wiring and the no-double-grade SQL filter are pinned by reading the
+handler source (so a refactor that widened the queue to graded rows, dropped the
+`teacher_id` scope, or unwired the action fails the suite). The
+submitted→graded transition test models the `mark_submission_reviewed` patch
+(graded_at + status) against the SAME row to prove the dynamic no-double-grade
+invariant, not just static exclusion. The frontend tests render the REAL pure
+`<GradingQueue>` and the exported `<ActionBar>` (the only seams stubbed are the
+client supabase helpers + the Wave B flag hook so the module loads under jsdom),
+asserting on the observable contract: rows rendered, auto_score verbatim, chips +
+hoist, the onOpenRow reuse callback, the bilingual labels, and the flag-OFF
+disabled placeholder vs flag-ON enabled+badged button.
+
+The honest gap left to integration is the live Edge round-trip (a real
+`assignment_submissions` fetch through Supabase returning the scoped, ungraded
+queue, and a real `mark_submission_reviewed` removing a row on the next fetch);
+its pure shaping + SQL filter + flag-gating are unit-covered today, and it shares
+the same live-fixture limitation as REG-92.
+
+### Catalog total
+
+Pre-Phase-3A-Wave-B: 60 entries. Phase 3A Wave B (teacher cross-assignment
+grading queue, behind `ff_teacher_assignment_lifecycle`) adds REG-93 (ungraded-only
+aggregation / no double-grading, `needs_review_reason` signal-only — P1/P2
+untouched, flag-OFF byte-identical Command Center).
+
+**Total: 61 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)

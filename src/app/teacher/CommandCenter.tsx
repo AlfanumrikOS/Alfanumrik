@@ -29,6 +29,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -37,6 +38,7 @@ import {
   supabaseAnonKey as SUPABASE_ANON,
 } from '@/lib/supabase';
 import { authHeader } from '@/lib/api/auth-header';
+import { useTeacherAssignmentLifecycle } from '@/lib/use-teacher-assignment-lifecycle';
 import type {
   HeatmapData,
   HeatmapCell,
@@ -44,6 +46,12 @@ import type {
   RiskAlert,
   RemediationStatus,
 } from '@/lib/types';
+import type { GradingQueueItem } from './GradingQueue';
+
+// Phase 3A Wave B — the grading-queue surface is code-split so its chunk only
+// loads when a teacher actually opens the queue (P10). The Wave B flag defaults
+// OFF and is unseeded, so production never loads this chunk until rollout.
+const GradingQueue = dynamic(() => import('./GradingQueue'), { ssr: false });
 
 // ── Bilingual helper (P7) ───────────────────────────────────────────────────
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
@@ -281,8 +289,33 @@ function AlertRow({
 }
 
 // ─── Action bar ─────────────────────────────────────────────────────────────
-function ActionBar({ isHi, router }: { isHi: boolean; router: ReturnType<typeof useRouter> }) {
-  const actions: { label: string; labelHi: string; onClick: () => void; disabled?: boolean }[] = [
+// `gradingQueueEnabled` is the Wave B flag (ff_teacher_assignment_lifecycle).
+// When OFF the "Grading queue" button stays the disabled placeholder (Wave A
+// behaviour, byte-identical). When ON it is enabled and opens the queue; the
+// `gradingQueueCount` decorates it with the awaiting-grading backlog size.
+// Exported so the Wave B flag-gating of this button is unit-testable in
+// isolation (see grading-queue.test.tsx) without mounting the whole CC.
+export function ActionBar({
+  isHi,
+  router,
+  gradingQueueEnabled,
+  gradingQueueCount,
+  onOpenGradingQueue,
+}: {
+  isHi: boolean;
+  router: ReturnType<typeof useRouter>;
+  gradingQueueEnabled: boolean;
+  gradingQueueCount: number;
+  onOpenGradingQueue: () => void;
+}) {
+  const actions: {
+    label: string;
+    labelHi: string;
+    onClick: () => void;
+    disabled?: boolean;
+    testid?: string;
+    badge?: number;
+  }[] = [
     {
       label: 'Open gradebook',
       labelHi: 'ग्रेड बुक खोलें',
@@ -298,13 +331,23 @@ function ActionBar({ isHi, router }: { isHi: boolean; router: ReturnType<typeof 
       labelHi: 'असाइनमेंट',
       onClick: () => router.push('/teacher/assignments'),
     },
-    // Wave B — grading queue placeholder (disabled, no route yet).
-    {
-      label: 'Grading queue',
-      labelHi: 'ग्रेडिंग कतार',
-      onClick: () => {},
-      disabled: true,
-    },
+    // Wave B — grading queue. Enabled only when ff_teacher_assignment_lifecycle
+    // is ON; otherwise it stays the disabled placeholder from Wave A / A4.
+    gradingQueueEnabled
+      ? {
+          label: 'Grading queue',
+          labelHi: 'ग्रेडिंग कतार',
+          onClick: onOpenGradingQueue,
+          testid: 'grading-queue-action',
+          badge: gradingQueueCount > 0 ? gradingQueueCount : undefined,
+        }
+      : {
+          label: 'Grading queue',
+          labelHi: 'ग्रेडिंग कतार',
+          onClick: () => {},
+          disabled: true,
+          testid: 'grading-queue-action',
+        },
   ];
   return (
     <div className="flex flex-wrap gap-2">
@@ -314,6 +357,7 @@ function ActionBar({ isHi, router }: { isHi: boolean; router: ReturnType<typeof 
           type="button"
           onClick={a.onClick}
           disabled={a.disabled}
+          data-testid={a.testid}
           title={a.disabled ? tt(isHi, 'Coming soon', 'जल्द आ रहा है') : undefined}
           className="py-2 px-3.5 bg-slate-800 text-slate-200 border border-slate-700 rounded-lg text-[13px] font-medium cursor-pointer hover:border-indigo-500 disabled:opacity-40 disabled:cursor-default"
         >
@@ -321,6 +365,14 @@ function ActionBar({ isHi, router }: { isHi: boolean; router: ReturnType<typeof 
           {a.disabled && (
             <span className="ml-1.5 text-[10px] text-slate-500">
               {tt(isHi, 'soon', 'जल्द')}
+            </span>
+          )}
+          {a.badge != null && (
+            <span
+              data-testid="grading-queue-action-badge"
+              className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold align-middle"
+            >
+              {a.badge}
             </span>
           )}
         </button>
@@ -334,6 +386,10 @@ export default function CommandCenter() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
   const router = useRouter();
 
+  // Wave B — additional gate (layered on top of ff_teacher_command_center) for
+  // the cross-assignment grading queue. Default OFF ⇒ Wave A behaviour.
+  const gradingQueueEnabled = useTeacherAssignmentLifecycle();
+
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [activeClassId, setActiveClassId] = useState<string>('');
   const [heatmap, setHeatmap] = useState<HeatmapData | null>(null);
@@ -343,6 +399,13 @@ export default function CommandCenter() {
   const [error, setError] = useState<string | null>(null);
   const [assigning, setAssigning] = useState<Record<string, boolean>>({});
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+
+  // Wave B — grading queue state.
+  const [queueOpen, setQueueOpen] = useState(false);
+  const [queueItems, setQueueItems] = useState<GradingQueueItem[]>([]);
+  const [queueCount, setQueueCount] = useState(0);
+  const [queueLoading, setQueueLoading] = useState(false);
+  const [queueError, setQueueError] = useState(false);
 
   const teacherId = teacher?.id || '';
 
@@ -407,6 +470,56 @@ export default function CommandCenter() {
   useEffect(() => {
     loadClassData();
   }, [loadClassData]);
+
+  // 3. (Wave B) Cross-assignment grading queue. Fetched only when the Wave B
+  //    flag is ON — when OFF this is a no-op and the queue surface never mounts,
+  //    so flag-OFF stays byte-identical to Wave A. Scoped to the active class so
+  //    the count tracks what the teacher is currently looking at; the Edge
+  //    action defends teacher/roster scoping server-side regardless.
+  const loadGradingQueue = useCallback(async () => {
+    if (!gradingQueueEnabled || !teacherId) return;
+    setQueueLoading(true);
+    setQueueError(false);
+    try {
+      const params: Record<string, unknown> = { teacher_id: teacherId };
+      if (activeClassId) params.class_id = activeClassId;
+      const res = await api('get_grading_queue', params);
+      const items: GradingQueueItem[] = Array.isArray(res?.items) ? res.items : [];
+      setQueueItems(items);
+      setQueueCount(typeof res?.count === 'number' ? res.count : items.length);
+    } catch {
+      // No PII in logs (P13). Surface a retryable error in the queue surface;
+      // the badge falls back to 0 rather than a stale count.
+      setQueueError(true);
+      setQueueItems([]);
+      setQueueCount(0);
+    } finally {
+      setQueueLoading(false);
+    }
+  }, [gradingQueueEnabled, teacherId, activeClassId]);
+
+  useEffect(() => {
+    loadGradingQueue();
+  }, [loadGradingQueue]);
+
+  // Open a queue row → navigate to the EXISTING /teacher/submissions review for
+  // that submission/assignment (reuse, not rebuild). The submissions page
+  // deep-links straight into its per-question breakdown + feedback form via the
+  // query params. We optimistically remove the row so it leaves the queue the
+  // moment the teacher starts grading it; loadGradingQueue() reconciles on
+  // return (and after mark_submission_reviewed lands graded_at).
+  const openQueueRow = useCallback(
+    (item: GradingQueueItem) => {
+      setQueueItems((list) => list.filter((x) => x.submission_id !== item.submission_id));
+      setQueueCount((c) => Math.max(0, c - 1));
+      router.push(
+        `/teacher/submissions?assignment=${encodeURIComponent(
+          item.assignment_id,
+        )}&submission=${encodeURIComponent(item.submission_id)}`,
+      );
+    },
+    [router],
+  );
 
   // Assign remediation — optimistic update + rollback on error. The alert id is
   // the key; derived alerts have no chapter, so we POST general remediation
@@ -591,7 +704,10 @@ export default function CommandCenter() {
         </div>
       </header>
 
-      {/* Today summary — stat tiles from the existing dashboard counts */}
+      {/* Today summary — stat tiles from the existing dashboard counts.
+          The "Awaiting grading" tile is Wave B: it appears only when
+          ff_teacher_assignment_lifecycle is ON (otherwise the grid is the
+          byte-identical Wave A 4-tile layout). One-tap it to open the queue. */}
       <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3 mb-4">
         {[
           {
@@ -620,12 +736,58 @@ export default function CommandCenter() {
             <p className={`${s.color} text-[26px] font-bold mt-1`}>{s.val}</p>
           </div>
         ))}
+
+        {gradingQueueEnabled && (
+          <button
+            type="button"
+            onClick={() => setQueueOpen(true)}
+            data-testid="awaiting-grading-tile"
+            className="text-left bg-slate-900 rounded-xl py-3.5 px-4 border border-slate-800 cursor-pointer hover:border-indigo-500 transition-colors"
+          >
+            <p className="text-slate-500 text-[11px] m-0 uppercase tracking-wide">
+              {tt(isHi, 'Awaiting grading', 'ग्रेडिंग लंबित')}
+            </p>
+            <p className="text-sky-400 text-[26px] font-bold mt-1 flex items-center gap-2">
+              {queueLoading ? '…' : queueCount}
+              {!queueLoading && queueCount > 0 && (
+                <span
+                  data-testid="awaiting-grading-badge"
+                  className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-sky-500 text-white text-[12px] font-bold"
+                >
+                  {queueCount}
+                </span>
+              )}
+            </p>
+          </button>
+        )}
       </div>
 
       {/* Action bar */}
       <div className="mb-5">
-        <ActionBar isHi={isHi} router={router} />
+        <ActionBar
+          isHi={isHi}
+          router={router}
+          gradingQueueEnabled={gradingQueueEnabled}
+          gradingQueueCount={queueCount}
+          onOpenGradingQueue={() => setQueueOpen(true)}
+        />
       </div>
+
+      {/* Wave B — grading queue surface (lazy-loaded; mounts only when opened) */}
+      {gradingQueueEnabled && queueOpen && (
+        <div className="mb-5">
+          <GradingQueue
+            items={queueItems}
+            count={queueCount}
+            loading={queueLoading}
+            error={queueError}
+            isHi={isHi}
+            onOpenRow={openQueueRow}
+            onRetry={loadGradingQueue}
+            onClose={() => setQueueOpen(false)}
+          />
+        </div>
+      )}
 
       {/* Dense two-column body: heatmap (wide) + alerts rail */}
       <div className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-4 items-start">

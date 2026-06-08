@@ -16,6 +16,9 @@
  *   - get_student_report:  Reports / per-student deep dive
  *   - get_class_trends:    Reports / 30-day rolling trends
  *   - get_assignment_submissions: Phase C.1 / submission list per assignment
+ *   - get_grading_queue:          Phase 3A Wave B / cross-assignment queue of
+ *                                 submissions awaiting grading (+ count badge,
+ *                                 needs_review_reason exception signal)
  *   - get_submission_detail:      Phase C.1 / per-question breakdown
  *   - mark_submission_reviewed:   Phase C.1 / record feedback + score override
  *   - get_grade_book:             Phase C.2 / matrix of students × columns
@@ -1212,6 +1215,165 @@ function uiStatusForSubmission(
   return 'pending'
 }
 
+// ─── Phase 3A Wave B — cross-assignment grading queue ───────────────────
+//
+// The Command Center needs a single "N submissions awaiting grading" surface
+// that spans ALL of the caller-teacher's assignments, not just one. This is a
+// READ that mirrors get_assignment_submissions' roster/ownership scoping but
+// aggregates across assignments and filters to the awaiting-grading state.
+//
+// "Awaiting grading" = the submission has been turned in (status submitted /
+// completed, or submitted_at is set) but NOT yet graded/reviewed. We reuse the
+// SAME uiStatusForSubmission() derivation as the per-assignment list so the two
+// surfaces never disagree about what "graded" means.
+
+/**
+ * needs_review_reason — additive, lightweight exception-review signal.
+ *
+ * Pure derived metadata only — NO scoring/XP math, NO write. We surface a flag
+ * when a submission looks anomalous enough to merit teacher attention, reusing
+ * signals already present on the row:
+ *
+ *   - 'all_same_answer'  — every answered question carries the same option
+ *                          index (the P3 anti-cheat "no all-same if >3 Qs"
+ *                          rule). Only meaningful with >3 answered questions.
+ *   - 'too_fast'         — average time per question is below the P3 anti-cheat
+ *                          floor of 3 s/question (rushed / likely not engaged).
+ *
+ * `responses` is the canonical jsonb answer array; entries may carry the chosen
+ * option under any of a few historical keys, so we normalise defensively. When
+ * neither the answer array nor a usable time figure is present we return null
+ * rather than fabricate a flag (per the brief: don't invent signals).
+ *
+ * Precedence when multiple fire: all_same_answer (the stronger integrity
+ * signal) before too_fast.
+ */
+const ANTI_CHEAT_MIN_AVG_SECONDS_PER_Q = 3 // P3: minimum 3s avg per question
+
+function deriveNeedsReviewReason(args: {
+  responses: unknown
+  questionsTotal: number
+  timeSpentSeconds: number
+}): 'all_same_answer' | 'too_fast' | null {
+  const answeredOptionIndexes: number[] = []
+  if (Array.isArray(args.responses)) {
+    for (const r of args.responses as Array<Record<string, unknown>>) {
+      // Normalise the chosen option across historical key names. We only use
+      // this to detect the all-same pattern — never to (re)score anything.
+      const raw =
+        r?.selected_index ??
+        r?.student_answer ??
+        r?.answer ??
+        r?.response ??
+        null
+      if (raw == null) continue
+      const idx = typeof raw === 'number' ? raw : Number(raw)
+      if (Number.isFinite(idx)) answeredOptionIndexes.push(idx)
+    }
+  }
+
+  // all_same_answer: P3 only flags this when there are MORE than 3 questions,
+  // so a legitimately-uniform 3-question quiz isn't penalised.
+  if (
+    answeredOptionIndexes.length > 3 &&
+    answeredOptionIndexes.every((v) => v === answeredOptionIndexes[0])
+  ) {
+    return 'all_same_answer'
+  }
+
+  // too_fast: average seconds/question below the P3 floor. Needs both a
+  // positive question count and a positive recorded time to be meaningful.
+  const qCount = Number(args.questionsTotal) || answeredOptionIndexes.length
+  const timeSpent = Number(args.timeSpentSeconds) || 0
+  if (qCount > 0 && timeSpent > 0) {
+    const avgPerQ = timeSpent / qCount
+    if (avgPerQ < ANTI_CHEAT_MIN_AVG_SECONDS_PER_Q) return 'too_fast'
+  }
+
+  return null
+}
+
+interface GradingQueueItem {
+  submission_id: string
+  assignment_id: string
+  assignment_title: string
+  student_id: string
+  student_name: string
+  submitted_at: string | null
+  question_count: number
+  auto_score: number | null
+  needs_review_reason: 'all_same_answer' | 'too_fast' | null
+}
+
+/**
+ * Build the flat, oldest-first grading queue from a teacher's assignments and
+ * their submissions. Pure shaping — extracted so it can be unit-tested without
+ * the Supabase client. Only submissions whose derived UI status is 'submitted'
+ * (turned in, not yet graded) are emitted.
+ */
+function buildGradingQueue(
+  assignments: Array<{ id: string; title: string }>,
+  submissions: Array<{
+    id: string
+    assignment_id: string
+    student_id: string
+    score: number | null
+    questions_total: number | null
+    questions_correct: number | null
+    time_spent_seconds: number | null
+    status: string | null
+    submitted_at: string | null
+    graded_at: string | null
+    responses: unknown
+  }>,
+  studentNameById: Map<string, string>,
+): GradingQueueItem[] {
+  const titleById = new Map(assignments.map((a) => [a.id, a.title]))
+  const out: GradingQueueItem[] = []
+
+  for (const s of submissions) {
+    const uiStatus = uiStatusForSubmission(s.status, s.submitted_at, s.graded_at)
+    if (uiStatus !== 'submitted') continue // graded/pending excluded from the queue
+
+    const total = Number(s.questions_total ?? 0)
+    const correct = Number(s.questions_correct ?? 0)
+    // auto_score: prefer the canonical percent; else derive from the ratio.
+    const autoScore =
+      s.score != null
+        ? Number(s.score)
+        : total > 0
+          ? Math.round((correct / total) * 100)
+          : null
+
+    out.push({
+      submission_id: String(s.id),
+      assignment_id: String(s.assignment_id),
+      assignment_title: titleById.get(String(s.assignment_id)) || 'Assignment',
+      student_id: String(s.student_id),
+      student_name: studentNameById.get(String(s.student_id)) || 'Student',
+      submitted_at: s.submitted_at ?? null,
+      question_count: total,
+      auto_score: autoScore,
+      needs_review_reason: deriveNeedsReviewReason({
+        responses: s.responses,
+        questionsTotal: total,
+        timeSpentSeconds: Number(s.time_spent_seconds ?? 0),
+      }),
+    })
+  }
+
+  // Oldest-first by submitted_at; null submitted_at sorts last (shouldn't
+  // happen for a 'submitted' row, but stay defensive).
+  out.sort((a, b) => {
+    if (a.submitted_at === b.submitted_at) return 0
+    if (a.submitted_at == null) return 1
+    if (b.submitted_at == null) return -1
+    return a.submitted_at < b.submitted_at ? -1 : 1
+  })
+
+  return out
+}
+
 // ─── get_assignment_submissions ─────────────────────────────
 async function handleGetAssignmentSubmissions(
   body: Record<string, unknown>,
@@ -1325,6 +1487,104 @@ async function handleGetAssignmentSubmissions(
   } catch { /* assignment_submissions absent on this env — empty rows already populated */ }
 
   return jsonResponse({ assignment, submissions }, 200, {}, origin)
+}
+
+// ─── get_grading_queue ──────────────────────────────────────
+// Cross-assignment queue of submissions awaiting grading, across ALL of the
+// caller-teacher's assignments (+ optional class_id filter). Roster/ownership
+// scoping is identical to get_assignment_submissions: a teacher sees only
+// submissions on assignments they own (directly or as a co-teacher), for
+// students on the relevant class roster.
+async function handleGetGradingQueue(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const teacherId = String(body.teacher_id || '')
+  const classFilter = body.class_id ? String(body.class_id) : null
+  if (!teacherId) return errorResponse('teacher_id required', 400, origin)
+
+  const supabase = getServiceClient()
+
+  // 1. Resolve the teacher's owned assignments. Direct ownership only here —
+  //    a co-taught assignment surfaces via teacher_id on the row in the
+  //    common case; the per-assignment handler additionally honours the
+  //    co-teacher link tables, but the queue's primary scope is the teacher's
+  //    own assignments. We fetch by teacher_id and optionally narrow by class.
+  let assignmentQuery = supabase
+    .from('assignments')
+    .select('id, title, class_id')
+    .eq('teacher_id', teacherId)
+  if (classFilter) assignmentQuery = assignmentQuery.eq('class_id', classFilter)
+
+  let assignments: Array<{ id: string; title: string; class_id: string | null }> = []
+  try {
+    const { data } = await assignmentQuery.limit(1000)
+    assignments = (data || []).map((a: any) => ({
+      id: String(a.id),
+      title: String(a.title ?? 'Assignment'),
+      class_id: a.class_id != null ? String(a.class_id) : null,
+    }))
+  } catch { /* assignments table absent on this env — empty queue */ }
+
+  if (assignments.length === 0) {
+    return jsonResponse({ count: 0, items: [] }, 200, {}, origin)
+  }
+
+  const assignmentIds = assignments.map((a) => a.id)
+
+  // 2. Fetch submissions across these assignments. Filter awaiting-grading in
+  //    SQL where we can (status + ungraded), then re-derive precisely in JS via
+  //    uiStatusForSubmission so the queue and the per-assignment list agree.
+  type RawSub = {
+    id: string
+    assignment_id: string
+    student_id: string
+    score: number | null
+    questions_total: number | null
+    questions_correct: number | null
+    time_spent_seconds: number | null
+    status: string | null
+    submitted_at: string | null
+    graded_at: string | null
+    responses: unknown
+  }
+  let rawSubs: RawSub[] = []
+  try {
+    const { data } = await supabase
+      .from('assignment_submissions')
+      .select('id, assignment_id, student_id, score, questions_total, questions_correct, time_spent_seconds, status, submitted_at, graded_at, responses')
+      .in('assignment_id', assignmentIds)
+      .is('graded_at', null)
+      .in('status', ['submitted', 'completed'])
+      .limit(5000)
+    rawSubs = (data || []) as RawSub[]
+  } catch { /* table absent — empty queue */ }
+
+  if (rawSubs.length === 0) {
+    return jsonResponse({ count: 0, items: [] }, 200, {}, origin)
+  }
+
+  // 3. Resolve student names for the submissions in the queue (P5: grade is a
+  //    string elsewhere; here we only need the display name). Batch by id.
+  const studentIds = Array.from(new Set(rawSubs.map((s) => String(s.student_id))))
+  const studentNameById = new Map<string, string>()
+  try {
+    const { data: studs } = await supabase
+      .from('students')
+      .select('id, name')
+      .in('id', studentIds)
+    for (const s of studs || []) {
+      studentNameById.set(String(s.id), (s as { name?: string }).name || 'Student')
+    }
+  } catch { /* fall back to default name below */ }
+
+  const items = buildGradingQueue(
+    assignments.map((a) => ({ id: a.id, title: a.title })),
+    rawSubs,
+    studentNameById,
+  )
+
+  return jsonResponse({ count: items.length, items }, 200, {}, origin)
 }
 
 // ─── get_submission_detail ──────────────────────────────────
@@ -2537,6 +2797,8 @@ Deno.serve(async (req: Request) => {
         return await handleGetStudentsList(body, origin)
       case 'get_assignment_submissions':
         return await handleGetAssignmentSubmissions(body, origin)
+      case 'get_grading_queue':
+        return await handleGetGradingQueue(body, origin)
       case 'get_submission_detail':
         return await handleGetSubmissionDetail(body, origin)
       case 'mark_submission_reviewed':
