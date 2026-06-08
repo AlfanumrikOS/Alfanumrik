@@ -9,6 +9,7 @@ import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/Das
 import type { ModuleKey } from '@/lib/modules/registry';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
 import { useSchoolCommandCenter } from '@/lib/use-school-command-center';
+import { useSchoolReportsDepth } from '@/lib/use-school-reports-depth';
 import { useSchoolAdminRbac } from '@/lib/use-school-admin-rbac';
 import { useSchoolAdminRole } from '@/lib/use-school-admin-role';
 import { useCosmicTheme } from '@/lib/cosmic-theme';
@@ -91,6 +92,14 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
   // the existing flat DashboardSidebar renders byte-identically. ON ⇒ the
   // grouped ConsolidatedSchoolNav renders instead.
   const commandCenterOn = useSchoolCommandCenter();
+
+  // Phase 3B Wave D — deep school-wide reporting nav entry. Sync-paints
+  // DEFAULT_OFF (1h cache), so for every current (flag-absent) user this is false
+  // on the first paint and the Academics section omits the School Report entry
+  // byte-identically. When ON, the entry appears (the route + read APIs are
+  // themselves flag-gated server-side). The consolidated nav only renders when
+  // commandCenterOn is true, so this entry is naturally scoped to that surface.
+  const reportsDepthOn = useSchoolReportsDepth();
 
   // Phase 3B Wave C — role-aware nav gating. Sync-paints DEFAULT_OFF (1h cache),
   // so for every current (flag-absent) user this is false on the first paint and
@@ -186,6 +195,7 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
           moduleEnablement={moduleEnablement}
           rbacEnabled={rbacOn}
           adminRole={adminRole}
+          reportsDepthEnabled={reportsDepthOn}
           footer={
             (tenant.branding.showPoweredBy || tenant.schoolId) ? (
               <div>
