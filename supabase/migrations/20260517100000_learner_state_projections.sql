@@ -86,15 +86,27 @@ CREATE POLICY learner_mastery_self_read
 -- ── 3. Updated_at maintenance trigger ───────────────────────────────
 -- The subscriber writes last_updated_at directly from the event's
 -- occurredAt, but we also want a safety net for any direct admin writes.
+-- ORDER-INDEPENDENT SECURITY HARDENING: search_path is locked here in the
+-- CREATE OR REPLACE so a fresh from-scratch replay ends up with the same
+-- function definition prod has. The earlier migration
+-- 20260515000002_security_hardening_secdef_anon_searchpath_rls_view.sql also
+-- locks search_path on this function via ALTER FUNCTION, but that ALTER is now
+-- guarded to no-op on a fresh replay (the function doesn't exist yet on May 15).
+-- Baking SET search_path in here makes the end-state identical regardless of
+-- replay order. On prod this is a no-op (the function already has the lock from
+-- the May-15 ALTER; this migration is marked applied and won't re-run there).
 CREATE OR REPLACE FUNCTION public.tg_learner_mastery_touch()
-RETURNS trigger AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
 BEGIN
   IF NEW.last_updated_at IS NULL OR NEW.last_updated_at < OLD.last_updated_at THEN
     NEW.last_updated_at := now();
   END IF;
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 DROP TRIGGER IF EXISTS learner_mastery_touch ON public.learner_mastery;
 CREATE TRIGGER learner_mastery_touch

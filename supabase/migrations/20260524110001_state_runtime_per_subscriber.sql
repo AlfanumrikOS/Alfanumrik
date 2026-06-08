@@ -70,7 +70,19 @@ CREATE POLICY        subscriber_dead_letters_service_all ON public.subscriber_de
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- Per-subscriber lag view.
-CREATE OR REPLACE VIEW public.subscriber_lag AS
+--
+-- ORDER-INDEPENDENT SECURITY HARDENING: created WITH (security_invoker = on) so
+-- the view enforces the querier's RLS on state_events / subscriber_offsets /
+-- subscriber_retry_state. The earlier migration
+-- 20260515000002_security_hardening_secdef_anon_searchpath_rls_view.sql also
+-- hardens this view via ALTER VIEW, but that ALTER is now guarded to no-op on a
+-- fresh replay (the view doesn't exist yet on May 15). Baking the invoker
+-- setting in here makes the end-state identical on every environment regardless
+-- of replay order. On prod this is a no-op: the view already exists and is
+-- already security_invoker=on from the May-15 ALTER (this migration is marked
+-- applied and won't re-run there).
+CREATE OR REPLACE VIEW public.subscriber_lag
+WITH (security_invoker = on) AS
 SELECT
   so.subscriber_name,
   so.kind_filter,

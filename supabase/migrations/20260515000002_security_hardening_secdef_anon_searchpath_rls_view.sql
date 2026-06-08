@@ -25,7 +25,25 @@
 -- Switch from creator-rights (default in older PG) to caller-rights so the
 -- view enforces the querier's RLS on state_events / subscriber_offsets /
 -- subscriber_retry_state. The view body is unchanged.
-ALTER VIEW public.subscriber_lag SET (security_invoker = on);
+--
+-- FRESH-REPLAY SAFETY: public.subscriber_lag is first CREATED by the LATER
+-- migration 20260524110001_state_runtime_per_subscriber.sql (May 24) and is
+-- NOT in the pg_dump baseline (00000000000000_baseline_from_prod.sql). On a
+-- from-scratch replay (baseline + migrations in timestamp order) this view does
+-- not exist yet when this May-15 migration runs, so an unguarded ALTER VIEW
+-- would raise 42P01 ("relation does not exist"). Guard it so it no-ops on fresh
+-- replay; the order-independent hardening lives in 20260524110001 (the view is
+-- now created WITH (security_invoker = on)), so the end-state is identical on
+-- every environment. On prod (where the legacy chain created the view before
+-- May 15) this guard simply finds the view and applies the ALTER as before.
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.views
+    WHERE table_schema = 'public' AND table_name = 'subscriber_lag'
+  ) THEN
+    EXECUTE 'ALTER VIEW public.subscriber_lag SET (security_invoker = on)';
+  END IF;
+END $$;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -34,10 +52,30 @@ ALTER VIEW public.subscriber_lag SET (security_invoker = on);
 -- Lock search_path so a session-level `SET search_path = ...` can't redirect
 -- references to malicious objects. Matches the pattern set by
 -- 20260408000003_fix_search_path_on_secdef_functions.sql.
-ALTER FUNCTION public.notify_state_event()
-  SET search_path = pg_catalog, public;
-ALTER FUNCTION public.tg_learner_mastery_touch()
-  SET search_path = pg_catalog, public;
+--
+-- FRESH-REPLAY SAFETY: both functions are first CREATED by LATER migrations and
+-- are NOT in the baseline — public.tg_learner_mastery_touch() by
+-- 20260517100000_learner_state_projections.sql (May 17), and
+-- public.notify_state_event() by 20260521100000_state_events_bus_rename.sql
+-- (May 21). On a from-scratch replay they do not exist yet when this May-15
+-- migration runs, so unguarded ALTER FUNCTION would raise 42883 / "function does
+-- not exist". Guard each via to_regprocedure() so it no-ops on fresh replay; on
+-- prod (where the legacy chain created them before May 15) the guard finds the
+-- function and applies the search_path lock as before. To keep the hardening
+-- order-independent, those two creating migrations now emit the function with
+-- `SET search_path = pg_catalog, public` baked into the CREATE OR REPLACE, so a
+-- fresh replay ends up with the lock regardless of whether this guarded ALTER
+-- ran (matches prod, which had the lock applied here on May 15).
+DO $$ BEGIN
+  IF to_regprocedure('public.notify_state_event()') IS NOT NULL THEN
+    EXECUTE 'ALTER FUNCTION public.notify_state_event() SET search_path = pg_catalog, public';
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF to_regprocedure('public.tg_learner_mastery_touch()') IS NOT NULL THEN
+    EXECUTE 'ALTER FUNCTION public.tg_learner_mastery_touch() SET search_path = pg_catalog, public';
+  END IF;
+END $$;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -150,5 +188,19 @@ REVOKE EXECUTE ON FUNCTION public.submit_challenge_attempt(p_student_id uuid, p_
 REVOKE EXECUTE ON FUNCTION public.submit_quiz_results(p_student_id uuid, p_subject text, p_grade text, p_topic text, p_chapter integer, p_responses jsonb, p_time integer) FROM anon;
 REVOKE EXECUTE ON FUNCTION public.submit_quiz_results_v2(p_session_id uuid, p_student_id uuid, p_subject text, p_grade text, p_topic text, p_chapter integer, p_responses jsonb, p_time integer, p_idempotency_key uuid) FROM anon;
 REVOKE EXECUTE ON FUNCTION public.track_ai_quality(p_subject text, p_is_thumbs_up boolean, p_is_report boolean) FROM anon;
-REVOKE EXECUTE ON FUNCTION public.tutor_commit_attempt(p_attempt_id uuid, p_student_id uuid, p_concept_id uuid, p_correct boolean, p_chosen_index integer, p_response_time_ms integer, p_question_id text, p_subject_code text, p_chapter_number integer, p_occurred_at timestamp with time zone, p_event_id uuid, p_idempotency_key text) FROM anon;
+-- FRESH-REPLAY SAFETY: public.tutor_commit_attempt(...) is first CREATED by the
+-- LATER migration 20260525100001_adr_004_phase_2_bkt_rpc.sql (May 25) and is NOT
+-- in the baseline. On a from-scratch replay it does not exist yet when this
+-- May-15 migration runs, so an unguarded REVOKE would raise 42883 / "function
+-- does not exist". Guard via to_regprocedure() so it no-ops on fresh replay; on
+-- prod (where the legacy chain created it before May 15) the guard finds the
+-- function and applies the REVOKE as before. The May-25 creating migration does
+-- REVOKE ALL ... FROM PUBLIC then GRANT EXECUTE ... TO service_role (anon is
+-- never granted), so a fresh replay reaches the same anon-denied end-state
+-- regardless of whether this guarded REVOKE ran.
+DO $$ BEGIN
+  IF to_regprocedure('public.tutor_commit_attempt(uuid, uuid, uuid, boolean, integer, integer, text, text, integer, timestamp with time zone, uuid, text)') IS NOT NULL THEN
+    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.tutor_commit_attempt(p_attempt_id uuid, p_student_id uuid, p_concept_id uuid, p_correct boolean, p_chosen_index integer, p_response_time_ms integer, p_question_id text, p_subject_code text, p_chapter_number integer, p_occurred_at timestamp with time zone, p_event_id uuid, p_idempotency_key text) FROM anon';
+  END IF;
+END $$;
 REVOKE EXECUTE ON FUNCTION public.update_chapter_progress(p_student_id uuid, p_subject text, p_grade text, p_chapter_number integer) FROM anon;

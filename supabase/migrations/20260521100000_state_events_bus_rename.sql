@@ -105,9 +105,19 @@ CREATE INDEX IF NOT EXISTS idx_state_events_actor_kind
   ON public.state_events (actor_auth_user_id, kind, occurred_at DESC);
 
 -- ── 3. pg_notify trigger on the new table ───────────────────────────
+-- ORDER-INDEPENDENT SECURITY HARDENING: search_path is locked here in the
+-- CREATE OR REPLACE so a fresh from-scratch replay ends up with the same
+-- function definition prod has. The earlier migration
+-- 20260515000002_security_hardening_secdef_anon_searchpath_rls_view.sql also
+-- locks search_path on this function via ALTER FUNCTION, but that ALTER is now
+-- guarded to no-op on a fresh replay (the function doesn't exist yet on May 15).
+-- Baking SET search_path in here makes the end-state identical regardless of
+-- replay order. On prod this is a no-op (the function already has the lock from
+-- the May-15 ALTER; this migration is marked applied and won't re-run there).
 CREATE OR REPLACE FUNCTION public.notify_state_event()
 RETURNS trigger
 LANGUAGE plpgsql
+SET search_path = pg_catalog, public
 AS $$
 BEGIN
   PERFORM pg_notify('state_events_new', NEW.event_id::text);

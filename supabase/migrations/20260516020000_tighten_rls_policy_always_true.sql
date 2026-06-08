@@ -77,8 +77,24 @@ COMMENT ON POLICY "audit_logs_insert" ON public.audit_logs
 -- by rag_audit_read but writes happen only from edge functions / scripts
 -- running with service_role.
 
-COMMENT ON POLICY "rag_audit_write" ON public.rag_content_audit
-  IS 'Intentional: write-only RAG audit append. All writers use service_role. Audited 2026-05-09 — ack rls_policy_always_true.';
+-- FRESH-REPLAY SAFETY: this policy is DROPPED (not recreated) by the earlier
+-- migration 20260515000002 section 3b. On a from-scratch replay (baseline +
+-- migrations in timestamp order) the policy therefore does not exist when this
+-- COMMENT runs, and COMMENT ON POLICY has no IF EXISTS, so it would raise 42704
+-- ("policy does not exist"). Guard via pg_policies so it no-ops on fresh replay.
+-- On prod this migration is already applied (won't re-run); when it did run, the
+-- policy still existed (it is present in the prod baseline), so the comment was
+-- applied. The comment is a documentary advisor-acknowledgment only — skipping
+-- it on fresh replay has zero functional effect.
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'rag_content_audit' AND policyname = 'rag_audit_write'
+  ) THEN
+    EXECUTE $c$COMMENT ON POLICY "rag_audit_write" ON public.rag_content_audit
+      IS 'Intentional: write-only RAG audit append. All writers use service_role. Audited 2026-05-09 — ack rls_policy_always_true.'$c$;
+  END IF;
+END $$;
 
 -- =====================================================================
 -- 4. rag_content_chunks — TIGHTEN
@@ -130,15 +146,37 @@ COMMENT ON POLICY "rag_sources_write" ON public.rag_content_sources
 -- beyond a query string. Tightening to service_role would block client-side
 -- foxy/quiz logging paths that are intentionally permissive.
 
-COMMENT ON POLICY "rag_query_write" ON public.rag_query_logs
-  IS 'Intentional: write-only retrieval-metrics append. Audited 2026-05-09 — ack rls_policy_always_true.';
+-- FRESH-REPLAY SAFETY: dropped (not recreated) by 20260515000002 section 3b;
+-- guard the COMMENT so it no-ops on fresh replay. See the rag_audit_write block
+-- above for the full rationale. No-op on prod (already applied; policy present
+-- in the baseline when it ran).
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'rag_query_logs' AND policyname = 'rag_query_write'
+  ) THEN
+    EXECUTE $c$COMMENT ON POLICY "rag_query_write" ON public.rag_query_logs
+      IS 'Intentional: write-only retrieval-metrics append. Audited 2026-05-09 — ack rls_policy_always_true.'$c$;
+  END IF;
+END $$;
 
 -- =====================================================================
 -- 8. rag_retrieval_logs — DOCUMENT INTENTIONAL
 -- =====================================================================
 
-COMMENT ON POLICY "rag_retrieval_write" ON public.rag_retrieval_logs
-  IS 'Intentional: write-only retrieval-metrics append. Audited 2026-05-09 — ack rls_policy_always_true.';
+-- FRESH-REPLAY SAFETY: dropped (not recreated) by 20260515000002 section 3b;
+-- guard the COMMENT so it no-ops on fresh replay. See the rag_audit_write block
+-- above for the full rationale. No-op on prod (already applied; policy present
+-- in the baseline when it ran).
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'rag_retrieval_logs' AND policyname = 'rag_retrieval_write'
+  ) THEN
+    EXECUTE $c$COMMENT ON POLICY "rag_retrieval_write" ON public.rag_retrieval_logs
+      IS 'Intentional: write-only retrieval-metrics append. Audited 2026-05-09 — ack rls_policy_always_true.'$c$;
+  END IF;
+END $$;
 
 -- =====================================================================
 -- 9. student_moments — DOCUMENT INTENTIONAL
