@@ -30,3 +30,7 @@ coverage/
 # RAG eval run artefacts — per-run JSON reports written by
 # scripts/rag-eval.mjs. Uploaded as CI artifacts; do not track in git.
 eval/rag/reports/
+
+# stray build logs
+build-out.txt
+build-tmp.txt
