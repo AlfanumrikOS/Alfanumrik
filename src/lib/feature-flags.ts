@@ -503,6 +503,40 @@ export const TEACHER_GRADEBOOK_DEPTH_FLAGS = {
 } as const;
 
 /**
+ * Phase 3A — Wave D (Parent comms) flag (2026-06-08).
+ *
+ *  ff_teacher_parent_comms — ADDITIONAL gate, layered ON TOP of
+ *    `ff_teacher_command_center`, for the one-tap "Tell the parent" affordance.
+ *    When ON (and the Command Center is already rendering):
+ *      1. An at-risk alert whose `remediation_status === 'resolved'` gains a
+ *         one-tap "Tell the parent 🎉" button → POST /api/teacher/parent-notify
+ *         { student_id, context:'remediation_resolved', remediation_id?,
+ *         include_report:true }. It find-or-creates the teacher↔parent thread and
+ *         sends a templated good-news message with an inline progress summary.
+ *      2. The Wave C Student Mastery Report panel gains a "Share with parent"
+ *         button → POST /api/teacher/parent-notify { student_id, context:'general',
+ *         include_report:true }.
+ *    Outcomes (bilingual toasts): 200 → "Parent notified ✓"; 409 `no_guardian` →
+ *    "No parent linked for this student" (informational, not an error); other →
+ *    friendly error. The button optimistically disables + shows a spinner and
+ *    stays disabled after success (idempotent-safe). P13: no PII in client logs.
+ *
+ *    When OFF, NO "Tell the parent" / "Share with parent" affordance is rendered
+ *    anywhere and NO parent-notify fetch is ever issued — the Command Center and
+ *    the report panel stay byte-identical to Waves A–C. Default: false. Read
+ *    client-side via the existing client flag read path (getFeatureFlags).
+ *
+ *    Not yet seeded by any migration; while absent from `feature_flags` both read
+ *    paths resolve it to OFF (and both surfaces stay byte-identical-OFF).
+ *
+ *  Spec/plan: docs/superpowers/{specs,plans}/2026-06-08-phase-3a-wave-d-*
+ */
+export const TEACHER_PARENT_COMMS_FLAGS = {
+  /** One-tap "Tell the parent" / "Share with parent" affordance. Default off. */
+  V1: 'ff_teacher_parent_comms',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -537,6 +571,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [TEACHER_COMMAND_CENTER_FLAGS.V1]: false,
   [TEACHER_ASSIGNMENT_LIFECYCLE_FLAGS.V1]: false,
   [TEACHER_GRADEBOOK_DEPTH_FLAGS.V1]: false,
+  [TEACHER_PARENT_COMMS_FLAGS.V1]: false,
 } as const;
 
 /**

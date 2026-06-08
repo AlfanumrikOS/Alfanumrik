@@ -62,6 +62,15 @@ export default function StudentMasteryReport({
   onExport,
   onRetry,
   onClose,
+  // Wave D — "Share with parent" (flag-gated by the parent CommandCenter). When
+  // `parentCommsEnabled` is false the button is NOT rendered and
+  // `onShareWithParent` is never wired, so flag-OFF stays byte-identical to
+  // Wave C. The button optimistically disables (spinner) via `shareWithParentBusy`
+  // and collapses to a "Shared ✓" chip via `shareWithParentDone` (idempotent-safe).
+  parentCommsEnabled = false,
+  onShareWithParent,
+  shareWithParentBusy = false,
+  shareWithParentDone = false,
 }: {
   report: StudentMasteryReportData | null;
   loading: boolean;
@@ -71,6 +80,10 @@ export default function StudentMasteryReport({
   onExport: () => void;
   onRetry: () => void;
   onClose: () => void;
+  parentCommsEnabled?: boolean;
+  onShareWithParent?: () => void;
+  shareWithParentBusy?: boolean;
+  shareWithParentDone?: boolean;
 }) {
   // Always render the canonical 6-level Bloom's ladder. The Edge omits levels a
   // student never answered; we project its `by_level` onto the canonical order
@@ -100,6 +113,30 @@ export default function StudentMasteryReport({
       <div className="td-card-head">
         <h3>{tt(isHi, 'Student mastery report', 'छात्र मास्टरी रिपोर्ट')}</h3>
         <div className="flex items-center gap-2">
+          {/* Wave D — "Share with parent" (flag-gated). Only when a report is
+              loaded and the parent-comms flag is ON. Server owns thread/message
+              creation; this button only triggers the parent CommandCenter's POST. */}
+          {parentCommsEnabled && report && !loading && !error &&
+            (shareWithParentDone ? (
+              <span
+                data-testid="report-share-parent-done"
+                className="inline-flex items-center gap-1 py-1 px-2.5 rounded-md text-[11px] font-semibold bg-sky-500/15 text-sky-400 border border-sky-500/30"
+              >
+                ✓ {tt(isHi, 'Shared with parent', 'अभिभावक के साथ साझा किया')}
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={onShareWithParent}
+                disabled={shareWithParentBusy}
+                data-testid="report-share-parent-btn"
+                className="py-1 px-2.5 bg-sky-600 text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+              >
+                {shareWithParentBusy
+                  ? tt(isHi, 'Sending…', 'भेजा जा रहा है…')
+                  : tt(isHi, 'Share with parent', 'अभिभावक के साथ साझा करें')}
+              </button>
+            ))}
           {report && !loading && !error && (
             <button
               type="button"
