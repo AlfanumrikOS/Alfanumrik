@@ -65,6 +65,22 @@ export function invalidateFlagCache(): void {
  * Cached for 5 minutes.
  */
 async function loadFlags(): Promise<FeatureFlagRow[]> {
+  try {
+    const res = await fetch('/api/feature-flags', { cache: 'no-store' });
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    const flags = Array.isArray(data)
+      ? data
+      : Array.isArray((data as any)?.flags)
+        ? (data as any).flags
+        : [];
+
+    return flags as FeatureFlagRow[];
+  } catch {
+    return [];
+  }
+} {
   const now = Date.now();
   if (_flagCache && now < _flagCacheExpiry) return _flagCache;
 
