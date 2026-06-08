@@ -639,6 +639,7 @@ export interface LearnerNextResolvedPayload {
   /** Which branch fired. Closed set — see ALL_ACTION_KINDS. */
   branch:
     | 'cold_start_diagnostic'
+    | 'teacher_remediation' // Phase 3A Wave A / A3 — highest-priority branch
     | 'review_due_cards'
     | 'revise_decayed_topic'
     | 'start_quiz'

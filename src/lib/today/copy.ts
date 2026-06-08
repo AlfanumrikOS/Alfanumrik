@@ -64,6 +64,23 @@ const COPY: Record<string, CopyEntry> = {
     hi: 'आपकी राह तय करने के लिए एक छोटा डायग्नॉस्टिक',
   },
 
+  // ── Item: teacher_remediation (Phase 3A Wave A) ────────────────
+  // Tagged "from your teacher" by the card chrome; this copy is the title +
+  // subtitle below the tag. Subtitle interpolates {subject} when an anchor
+  // resolved (general remediation falls back to the generic subject word).
+  'today.item.teacher_remediation.label': {
+    en: 'Your teacher assigned this',
+    hi: 'तुम्हारे शिक्षक ने यह दिया है',
+  },
+  'today.item.teacher_remediation.subtitle': {
+    en: 'Practice {subject} — your teacher picked this for you',
+    hi: '{subject} का अभ्यास — तुम्हारे शिक्षक ने यह चुना है',
+  },
+  'today.item.teacher_remediation.fromTeacher': {
+    en: 'From your teacher',
+    hi: 'तुम्हारे शिक्षक से',
+  },
+
   // ── Item: srs_due ──────────────────────────────────────────────
   'today.item.srs_due.label': {
     en: 'Reviews due',

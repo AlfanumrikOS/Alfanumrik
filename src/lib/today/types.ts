@@ -42,6 +42,7 @@
 export type TodayItemType =
   | 'resume_in_progress'
   | 'cold_start_diagnostic'
+  | 'teacher_remediation'
   | 'srs_due'
   | 'revise_decayed_topic'
   | 'weak_topic_zpd'

@@ -10,6 +10,7 @@ import { assembleQuiz } from '@/lib/quiz-assembler';
 import { XP_RULES } from '@/lib/xp-config';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
+import { authHeader } from '@/lib/api/auth-header';
 import QuizSetup from '@/components/quiz/QuizSetup';
 import FeedbackOverlay from '@/components/quiz/FeedbackOverlay';
 import WrittenAnswerInput from '@/components/quiz/ncert/WrittenAnswerInput';
@@ -268,6 +269,15 @@ export default function QuizPage() {
   const [networkError, setNetworkError] = useState<string | null>(null);
   const pendingSubmissionRef = useRef<Response[] | null>(null);
 
+  // Phase 3A Wave A — teacher-assigned remediation completion seam. When the
+  // quiz was launched from a "from your teacher" Today item, the deep link
+  // carries ?from=teacher&remediationId=<assignmentId>. On COMPLETION (results
+  // screen with a real result) we fire POST /api/rhythm/remediation/[id]/resolve
+  // ONCE to flip the assignment to resolved. This touches NONE of the
+  // scoring/XP/anti-cheat/submit path (P1/P2/P3/P4 untouched) — the resolve
+  // route owns the status flip; the quiz graded as a normal student quiz.
+  const remediationResolvedRef = useRef(false);
+
   // JEE/NEET tag mode — grades 11-12 only, persisted to localStorage
   const [jeeNeetMode, setJeeNeetMode] = useState(false);
   useEffect(() => {
@@ -360,6 +370,38 @@ export default function QuizPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only fire on timer reaching 0
   }, [timer, screen, quizMode, examTimerActive]);
+
+  // Phase 3A Wave A — teacher-remediation completion flip. Fires ONCE when the
+  // results screen renders WITH a real result AND the quiz was launched from a
+  // teacher-assigned Today item (deep link carried ?from=teacher&remediationId).
+  // The resolve route is idempotent + student-scoped server-side, so a retry or
+  // double-render is harmless. Fire-and-forget — never blocks the results UI,
+  // never logs PII (P13). No scoring/XP/submit coupling (P1/P2/P3/P4 untouched).
+  useEffect(() => {
+    if (screen !== 'results' || !results) return;
+    if (remediationResolvedRef.current) return;
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('from') !== 'teacher') return;
+    const assignmentId = params.get('remediationId');
+    const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    if (!assignmentId || !UUID_RE.test(assignmentId)) return;
+
+    remediationResolvedRef.current = true;
+    (async () => {
+      try {
+        await fetch(`/api/rhythm/remediation/${assignmentId}/resolve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+        });
+        // Best-effort: the assignment owns its lifecycle. A failure simply means
+        // the next /today read re-surfaces it and a re-attempt will resolve it.
+      } catch {
+        /* swallow — no PII, no user-facing error for this background flip */
+      }
+    })();
+  }, [screen, results]);
 
   // Per-question timer
   useEffect(() => {

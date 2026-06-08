@@ -31,6 +31,44 @@ export interface ColdStartDiagnosticAction {
 }
 
 /**
+ * Teacher-assigned remediation (Phase 3A Wave A / A3). The HIGHEST-priority
+ * action: when a teacher has flagged this student × concept for follow-up
+ * (`teacher_remediation_assignments.status ∈ {assigned, in_progress}`), the
+ * assigned remediation jumps ahead of every routine SRS/ZPD/reflection slot.
+ *
+ * `source: 'teacher'` is the queue marker the UI renders as "from your
+ * teacher". `assignmentId` is the `teacher_remediation_assignments.id` the
+ * Today completion flow uses to flip the assignment to `resolved` (see the
+ * /api/rhythm/remediation/[id]/resolve seam).
+ *
+ * The action REUSES the existing student remediation / targeted-practice for
+ * that chapter — no new quiz type is invented. `url` points at the SAME quiz
+ * route the `start_quiz` branches use:
+ *   - chapter-anchored : `/quiz?subject=…&chapter=…&remediationId=…&from=teacher`
+ *   - general (chapter_id null) : falls back to the student's WEAKEST chapter
+ *     (existing `weakestChapter` logic), still tagged source:'teacher'.
+ *
+ * NO scoring / XP / anti-cheat semantics live here (P1/P2/P3 untouched) — the
+ * assigned task runs as a normal student quiz; this only changes WHICH item is
+ * surfaced and carries the tracking id.
+ */
+export interface TeacherRemediationAction {
+  kind: 'teacher_remediation';
+  url: string;
+  /** Always 'teacher' — the queue marker the UI renders as "from your teacher". */
+  source: 'teacher';
+  /** teacher_remediation_assignments.id — used to flip status on completion. */
+  assignmentId: string;
+  /** curriculum_topics.id the teacher assigned (null = general remediation). */
+  chapterId: string | null;
+  /** Present only when the assignment resolved to a concrete chapter (or the
+   *  weakest-chapter fallback) — lets the UI label/deep-link without re-reading. */
+  subjectCode?: string;
+  chapterNumber?: number;
+  reason: 'teacher_assigned';
+}
+
+/**
  * Resume an activity the learner is mid-way through RIGHT NOW
  * (`state.live.kind !== 'idle'`). Synthetic — it is NOT a resolver branch;
  * it is prepended by `resolveTodayQueue()` so a live session always wins
@@ -106,6 +144,7 @@ export interface MonthlySynthesisAction {
 /** The discriminated union returned by the resolver. */
 export type LearnerAction =
   | ColdStartDiagnosticAction
+  | TeacherRemediationAction
   | ReviewDueCardsAction
   | ReviseDecayedTopicAction
   | StartQuizAction
@@ -117,6 +156,7 @@ export type LearnerAction =
 /** Frozen list of all action kinds — used by tests + telemetry. */
 export const ALL_ACTION_KINDS = [
   'cold_start_diagnostic',
+  'teacher_remediation',
   'review_due_cards',
   'revise_decayed_topic',
   'start_quiz',

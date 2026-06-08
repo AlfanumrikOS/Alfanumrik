@@ -416,6 +416,32 @@ export const CONSUMER_MINIMALISM_FLAGS = {
 } as const;
 
 /**
+ * Phase 3A — Teacher Command Center flags (2026-06-08).
+ *
+ *  ff_teacher_command_center  — master switch for the dense, desktop-first
+ *    teacher home (the "Class Command Center"). Gates BOTH surfaces together:
+ *      1. `/teacher` renders the Command Center (class switcher + roster mastery
+ *         heatmap + at-risk alerts rail with one-tap "Assign remediation" +
+ *         today summary + action bar) instead of the legacy tabbed dashboard.
+ *      2. The teacher primary nav (TeacherShell) is slimmed to FIVE items
+ *         (Command Center · Gradebook · Assignments · Messages · Reports);
+ *         the remaining pages move to an account/overflow menu (routes stay
+ *         reachable — no dead links).
+ *    When OFF, BOTH surfaces are byte-identical to today: `/teacher` renders the
+ *    existing dashboard and TeacherShell shows the existing full nav. Default:
+ *    false. Read client-side via the existing client flag read path.
+ *
+ *    Not yet seeded by any migration; while absent from `feature_flags` both
+ *    read paths resolve it to OFF.
+ *
+ *  Spec/plan: docs/superpowers/{specs,plans}/2026-06-08-phase-3a-teacher-command-center*
+ */
+export const TEACHER_COMMAND_CENTER_FLAGS = {
+  /** Dense desktop-first teacher home + slimmed 5-item nav. Default off. */
+  V1: 'ff_teacher_command_center',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -447,6 +473,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [CONSUMER_MINIMALISM_FLAGS.PARENT_GLANCE_V1]: false,
   [CONSUMER_MINIMALISM_FLAGS.PARENT_UNIFIED_AUTH_V1]: false,
   [CONSUMER_MINIMALISM_FLAGS.PARENT_ENCOURAGE_V1]: false,
+  [TEACHER_COMMAND_CENTER_FLAGS.V1]: false,
 } as const;
 
 /**

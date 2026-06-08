@@ -2063,3 +2063,97 @@ Pre-Wave-2.5: 58 entries. Phase 2 Wave 2.5 (offline-first quiz) adds REG-91
 (offline quiz replay invariant safety — P1/P2/P3/P6/P13).
 
 **Total: 59 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+
+## Teacher detect→act→verify remediation spine (Phase 3A Wave A) — REG-92
+
+Source: Phase 3A Wave A "Class Command Center + Alert→Remediation spine"
+(behind `ff_teacher_command_center`). A1 ships the data layer + RLS + RBAC
+(`supabase/migrations/20260613000004_teacher_remediation_assignments.sql`,
+new `class.assign_remediation` permission — flagged for CEO sign-off at merge);
+A2 the assign/list route (`src/app/api/teacher/remediation/route.ts`); A3 the
+Today-resolver branch + status-flip helpers + the student-side resolve endpoint
+(`src/lib/state/learner-loop/resolve-next-action.ts`,
+`src/app/api/rhythm/remediation/[id]/resolve/route.ts`); A4 the Command Center
+UI (`src/app/teacher/CommandCenter.tsx`) + the student "from your teacher"
+surfacing (`src/lib/today/*`, `src/components/today/TodayFocusCard.tsx`,
+`TodayQueueItem.tsx`) + the quiz-completion resolve seam (`src/app/quiz/page.tsx`).
+
+The headline loop — teacher spots an at-risk student → assigns remediation →
+the student sees it at the TOP of Today tagged "from your teacher" → completes
+it as a NORMAL quiz → the teacher's alert shows resolved — crosses three trust
+boundaries. Each is a blocking defect if it regresses: (a) a teacher must NOT
+read or assign remediation for a student off their roster, and a student must
+NOT read another student's assignment (P8); (b) a teacher-assigned quiz must
+score/award XP/anti-cheat EXACTLY like any other student quiz — the assignment
+must carry no score/XP fields and the completion flip must be decoupled from the
+submit path (P1/P2/P3/P4 untouched); (c) the lifecycle (assigned→in_progress→
+resolved) must be idempotent so a re-drain / double-render / re-surface never
+double-resolves or double-grants.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-92 | `teacher_detect_act_verify_remediation_spine` | **(a) P8 RLS roster boundary.** The `teacher_remediation_assignments` policies gate a teacher to rows where teacher_id resolves to their own `teachers.id` (auth.uid()) AND student_id is on their roster via the canonical `class_students × class_teachers` join — enforced on SELECT (USING), INSERT (WITH CHECK), and UPDATE (BOTH USING and WITH CHECK, so an owned row cannot be re-pointed at an off-roster student). A forged off-roster student_id fails the predicate. A student SELECT policy scopes to `students.auth_user_id = auth.uid()` ONLY (no `class_teachers`, no open `USING (true)`) so a student reads only their own rows; students get NO insert/update/delete policy. Service role keeps `FOR ALL` for the Today-resolver join. The same roster gate is enforced a second time in application code at the route layer (defense in depth): a POST for an off-roster student → 403, no insert. **(b) P2/P3 no-bypass.** A teacher-assigned remediation REUSES the existing `/quiz` route (no new quiz type) carrying `from=teacher&remediationId=<id>`; the assignment row carries NO score/XP/correct fields (only ids + status + timestamps), and the quiz-page completion seam fires `POST /api/rhythm/remediation/[id]/resolve` ONCE — fire-and-forget, decoupled from `submitQuizResults`/the atomic RPC — so score (P1), the XP formula + 200/day cap (P2), and the 3-rule anti-cheat verdict (P3) are computed by the SAME server authority as any normal quiz; the resolve route threads the INTERNAL `students.id` (never auth.uid()). **(c) Idempotent lifecycle.** `markTeacherRemediationInProgress` is guarded by `status='assigned'` (no-op for non-assigned); `resolveTeacherRemediation` flips assigned|in_progress → resolved (+resolved_at) and returns `alreadyResolved:true` with NO second write when already resolved; the assign POST is idempotent on an open (assigned|in_progress) row for the same (teacher,student,chapter) — returns the existing row, no duplicate insert; status column is CHECK-constrained to the four lifecycle states. Re-drain/re-render/re-surface safe. | `src/__tests__/teacher/remediation-rls-policies.test.ts` (A5 — P8 roster join on teacher SELECT/INSERT/UPDATE, student self-scope, no open predicate, service-role FOR ALL, idempotent migration, status CHECK) + `src/__tests__/api/teacher/remediation/route.test.ts` (A2 — `class.assign_remediation` gate, off-roster 403 no-insert, roster-verified insert uses internal teacher_id, open-row idempotency) + `src/__tests__/state/learner-loop/teacher-remediation.test.ts` (A3 — teacher item wins the queue + reuses `/quiz` + carries from=teacher/remediationId; absent ⇒ queue unchanged; status-flip helpers idempotent, no scoring/XP touched) + `src/__tests__/api/rhythm/remediation-resolve.test.ts` (A3 — resolve route threads INTERNAL studentId, idempotent 200, notFound 404) + `e2e/teacher-remediation-spine.spec.ts` (browser net for the assign action + alert status transition + student surfacing; one live cross-session round-trip left to integration, fixme-gated on the shared test fixture) | E |
+
+### Pinned tests
+
+- `src/__tests__/teacher/remediation-rls-policies.test.ts::REG-92 / A5 — P8: teacher can only read/write rows for students on their roster::teacher INSERT policy WITH CHECK gates on ownership + roster + class-taught`
+- `src/__tests__/teacher/remediation-rls-policies.test.ts::REG-92 / A5 — P8: a student can only read their OWN rows (never another student's)::student SELECT policy scopes to student_id via students.auth_user_id`
+- `src/__tests__/api/teacher/remediation/route.test.ts::POST /api/teacher/remediation — roster scope (P8)::returns 403 (no insert) when the student is not on the caller roster`
+- `src/__tests__/api/teacher/remediation/route.test.ts::POST /api/teacher/remediation — idempotency::returns the existing OPEN assignment without inserting a duplicate (200)`
+- `src/__tests__/state/learner-loop/teacher-remediation.test.ts::teacher_remediation — highest-priority branch::chapter-anchored assignment → top item, source:teacher, assignmentId, reused quiz route`
+- `src/__tests__/state/learner-loop/teacher-remediation.test.ts::resolveTeacherRemediation — completion → resolved::already-resolved → idempotent success (no second write)`
+- `src/__tests__/api/rhythm/remediation-resolve.test.ts::POST /api/rhythm/remediation/[id]/resolve::happy path: threads the INTERNAL studentId (not auth.uid()) and returns 200`
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) — the roster join (`class_students × class_teachers`) gates
+  every teacher read/write, the student policy self-scopes via
+  `students.auth_user_id`, and the same gate is re-enforced at the route layer.
+  Promotes the previously tested-only teacher-roster boundary into the catalog.
+- P9 (RBAC enforcement) — the assign/list route is gated by
+  `authorizeRequest(request, 'class.assign_remediation')`; the resolve route by
+  `quiz.attempt` + `requireStudentId`. The new permission is flagged for CEO
+  sign-off (RBAC permission addition).
+- P1/P2/P3/P4 (no-bypass) — a teacher-assigned quiz runs as a normal student
+  quiz: the assignment carries no score/XP fields, the completion flip is
+  decoupled from `submitQuizResults`/the atomic RPC, and the server stays the
+  sole grading + XP + anti-cheat authority. No scoring/XP/anti-cheat code is
+  touched by Wave A. Extends REG-45/REG-48/REG-51.
+- Idempotent lifecycle (operational invariant) — assigned→in_progress→resolved
+  is replay-safe end to end: open-row idempotent assign, status-guarded flip,
+  already-resolved no-op, and a fire-and-forget completion seam tolerant of
+  double-render / re-surface.
+
+### Notes on test strategy
+
+REG-92 uses the repo's **source-level RLS pattern** (mirrors
+`rls-student-id-policies.test.ts`): the A5 test asserts the migration SQL
+enforces the roster join clause-by-clause rather than running Postgres from
+Vitest — sufficient to catch a relaxed predicate, a dropped WITH CHECK, or an
+`USING (true)` footgun during a refactor, with a negative assertion guarding the
+open-predicate case. The live behavior (an actual off-roster INSERT returning
+403) is additionally covered at the route layer, so the boundary is defended
+twice. The route/resolver/resolve tests (A2/A3) mock only the seams
+(`authorizeRequest`, `supabase-admin`, the status-flip helper) so the REAL gate
++ ownership + idempotency logic runs and is asserted on the observable contract
+(status codes, the exact insert payload, which helper args were threaded).
+
+The E2E spec nets the headline loop at the browser layer in three mocked halves
+(teacher assign action → alert flips to Assigned; resolved status → ✓ pill;
+student-side "from your teacher" surfacing + the reused-`/quiz` deep link).
+Rendered-page assertions are `test.fixme(!hasRealStudentCreds(), …)`-gated
+because the mocked Supabase session only clears the auth wall against a real
+Supabase URL (the CI placeholder bounces to /login) — the same fixture
+limitation as REG-45/REG-69. The ONE honest gap left to integration is a single
+LIVE cross-session round-trip (one real assignment row written by a teacher's
+POST, surfaced by the real resolver to the assigned student, flipped to resolved
+by the real completion POST, with RLS enforced); its pieces are unit/route-
+covered today, and closing it is tracked alongside the shared test fixture.
+
+### Catalog total
+
+Pre-Phase-3A-Wave-A: 59 entries. Phase 3A Wave A (teacher Command Center +
+Alert→Remediation spine) adds REG-92 (teacher detect→act→verify remediation
+spine — P8 RLS roster boundary, P1/P2/P3 no-bypass, idempotent lifecycle).
+
+**Total: 60 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)

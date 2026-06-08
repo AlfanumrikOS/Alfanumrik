@@ -19,6 +19,8 @@ const ICON_BY_HINT: Record<string, string> = {
   'book-open':    '📖',
   'telescope':    '🔭',
   'scroll':       '📜',
+  // Phase 3A Wave A — teacher-assigned remediation ("from your teacher").
+  'teacher-badge': '👩‍🏫',
 };
 
 /** Resolve an `iconHint` to its emoji glyph; neutral fallback for unknowns. */
