@@ -24,6 +24,7 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { constantTimeEqual } from '../_shared/auth.ts'
 // MoL (Model Orchestration Layer) — Phase 1A migration (2026-05-24).
@@ -855,6 +856,20 @@ async function handlePost(req: Request, origin: string | null): Promise<Response
 // ---------------------------------------------------------------------------
 
 Deno.serve(async (req: Request) => {
+  try {
+    const request_id = req.headers.get('x-request-id') ?? crypto.randomUUID()
+    const decision = await shouldProxyToPython({
+      flag_name: 'ff_python_extract_ncert_questions_v1',
+      endpoint_path: '/v1/extract-ncert-questions',
+      request_id,
+    })
+    if (decision.should_proxy && decision.target_url) {
+      return await forwardToPython({ target_url: decision.target_url, request: req })
+    }
+  } catch (err) {
+    console.warn('[extract-ncert-questions] python proxy fell through:', err instanceof Error ? err.message : String(err))
+  }
+
   const origin = req.headers.get('origin')
 
   // Handle CORS preflight
