@@ -1,0 +1,160 @@
+-- scripts/recovery/10_rollback_repair_migrations.sql
+-- Date: 2026-06-14
+--
+-- WHY THIS FILE EXISTS
+-- Instructions and SQL for rolling back the 3 repair migrations introduced
+-- on 2026-06-14. DO NOT RUN unless a repair migration caused a demonstrable
+-- problem. Each section is independent.
+--
+-- RISKS:
+--   - Section A (RESET search_path): returns functions to runtime search_path
+--     resolution. Re-opens the schema-poisoning attack vector for those functions.
+--     Only revert if a specific function stopped working due to the pin.
+--   - Section B (DROP indexes): removes additive indexes. No data loss, but
+--     query performance may regress on recently-added tables.
+--   - Section C (bootstrap harness): the harness has no schema objects.
+--     "Rolling back" means reverting the file content in git.
+--
+-- EXECUTION ORDER: Emergency only. Run sections independently as needed.
+-- DEPENDENCIES: service_role access to run ALTER FUNCTION and DROP INDEX.
+-- IDEMPOTENCY: RESET search_path and DROP INDEX IF EXISTS are both idempotent.
+--
+-- HOW TO RUN:
+-- In Supabase SQL editor, paste only the relevant section.
+-- Then run 09_validate_edge_function_rpcs.sql to confirm the system is healthy.
+
+-- ============================================================================
+-- SECTION A: Rollback 20260614200000 (search_path pins)
+--
+-- WHAT THIS DOES: Resets each function's search_path to the PostgreSQL default
+-- (session/database-level setting). The function body is unchanged. The function
+-- will again be flagged by the Supabase security advisor.
+--
+-- WHEN TO RUN: Only if a specific function errors after the pin with a message
+-- like "function X does not exist" or "relation Y not found" — which would
+-- indicate the function relies on an implicit schema resolution we missed.
+--
+-- For each affected function, uncomment and run the appropriate line:
+-- ============================================================================
+
+-- -- Section A: RESET search_path on search-path-pinned functions
+-- -- Uncomment the lines for the specific functions causing problems only.
+-- -- DO NOT uncomment all lines unless you are fully reverting the migration.
+--
+-- ALTER FUNCTION public.tg_learner_mastery_touch()                                  RESET search_path;
+-- ALTER FUNCTION public.exam_papers_set_updated_at()                                RESET search_path;
+-- ALTER FUNCTION public.mock_test_attempts_set_updated_at()                         RESET search_path;
+-- ALTER FUNCTION public.submit_mock_test_attempt(uuid, uuid, jsonb, integer, jsonb) RESET search_path;
+-- ALTER FUNCTION public.notify_state_event()                                        RESET search_path;
+-- ALTER FUNCTION public.bkt_update(uuid, uuid, boolean)                             RESET search_path;
+-- ALTER FUNCTION public.tutor_commit_attempt(uuid, uuid, boolean, integer)          RESET search_path;
+-- ALTER FUNCTION public.set_foxy_chat_school_id()                                   RESET search_path;
+-- ALTER FUNCTION public.set_audit_log_school_id()                                   RESET search_path;
+-- ALTER FUNCTION public.tp_messages_bump_thread()                                   RESET search_path;
+-- ALTER FUNCTION public.set_data_erasure_requests_updated_at()                      RESET search_path;
+-- ALTER FUNCTION public.get_available_subjects_v2(uuid)                             RESET search_path;
+-- ALTER FUNCTION public.expire_stale_foxy_expectations()                            RESET search_path;
+-- ALTER FUNCTION public.match_alfabot_kb_chunks(vector, double precision, integer)  RESET search_path;
+-- ALTER FUNCTION public.sync_school_admin_role()                                    RESET search_path;
+-- ALTER FUNCTION public.sync_user_roles_on_insert()                                 RESET search_path;
+-- ALTER FUNCTION public.sync_admin_user_role()                                      RESET search_path;
+-- ALTER FUNCTION public.get_available_subjects(uuid)                                RESET search_path;
+-- ALTER FUNCTION public.available_chapters_for_student_subject_v2(uuid, text)       RESET search_path;
+-- ALTER FUNCTION public.get_adaptive_questions(uuid, text, integer, integer)        RESET search_path;
+-- ALTER FUNCTION public.purchase_streak_freeze(uuid, integer, text)                 RESET search_path;
+-- ALTER FUNCTION public.atomic_quiz_profile_update(uuid, text, integer, integer, integer, integer, uuid)       RESET search_path;
+-- ALTER FUNCTION public.atomic_quiz_profile_update(uuid, text, integer, integer, integer, integer, uuid, text) RESET search_path;
+-- ALTER FUNCTION public.bootstrap_user_profile(uuid, text, text, text, text, text, text) RESET search_path;
+-- ALTER FUNCTION public.activate_free_subscription(uuid)                            RESET search_path;
+-- ALTER FUNCTION public.get_school_overview(uuid)                                   RESET search_path;
+-- ALTER FUNCTION public.get_classes_at_risk(uuid, integer)                          RESET search_path;
+-- ALTER FUNCTION public.get_teacher_engagement(uuid, integer)                       RESET search_path;
+-- ALTER FUNCTION public._school_active_student_ids(uuid)                            RESET search_path;
+-- ALTER FUNCTION public._count_active_school_students(uuid)                         RESET search_path;
+-- ALTER FUNCTION public._eval_seat_policy_unchecked(uuid, integer)                  RESET search_path;
+-- ALTER FUNCTION public.evaluate_seat_policy(uuid)                                  RESET search_path;
+-- ALTER FUNCTION public.refresh_school_seat_usage(uuid)                             RESET search_path;
+-- ALTER FUNCTION public.enroll_students_with_seat_check(uuid, uuid[])               RESET search_path;
+-- ALTER FUNCTION public.enroll_section_students_with_seat_check(uuid, uuid)         RESET search_path;
+-- ALTER FUNCTION public.get_school_mastery_rollup(uuid, text)                       RESET search_path;
+-- ALTER FUNCTION public.get_school_bloom_summary(uuid, text)                        RESET search_path;
+-- ALTER FUNCTION public.export_school_report(uuid, text, text)                      RESET search_path;
+
+-- ============================================================================
+-- SECTION B: Rollback 20260614200001 (API query-path indexes)
+--
+-- WHAT THIS DOES: Drops all 15 indexes added by the repair migration.
+-- These are purely additive indexes; dropping them restores pre-repair
+-- query-plan behavior but does NOT cause any data loss.
+--
+-- WHEN TO RUN: Only if the index creation caused unexpected table locks or
+-- performance regression during a maintenance window.
+--
+-- Note: DO NOT use DROP INDEX CONCURRENTLY inside a migration transaction.
+-- These DROP statements are plain (blocking) drops, safe for emergency use
+-- when the affected tables have minimal traffic.
+-- ============================================================================
+
+-- -- Section B: Remove repair indexes
+-- -- Uncomment the entire block or individual lines.
+--
+-- DROP INDEX IF EXISTS public.idx_tp_threads_student_id;
+-- DROP INDEX IF EXISTS public.idx_tp_messages_sender;
+-- DROP INDEX IF EXISTS public.idx_parental_consent_version;
+-- DROP INDEX IF EXISTS public.idx_data_erasure_requests_student;
+-- DROP INDEX IF EXISTS public.idx_data_erasure_requests_status_created;
+-- DROP INDEX IF EXISTS public.idx_synthetic_monitor_results_name_checked;
+-- DROP INDEX IF EXISTS public.idx_synthetic_monitor_results_status;
+-- DROP INDEX IF EXISTS public.idx_school_slo_log_school_evaluated;
+-- DROP INDEX IF EXISTS public.idx_grounding_circuit_state_name;
+-- DROP INDEX IF EXISTS public.idx_admin_login_attempts_user_attempted;
+-- DROP INDEX IF EXISTS public.idx_parent_cheers_notification_id;
+-- DROP INDEX IF EXISTS public.idx_teacher_remediation_teacher_id;
+-- DROP INDEX IF EXISTS public.idx_teacher_remediation_student_id;
+-- DROP INDEX IF EXISTS public.idx_teacher_remediation_status_assigned;
+-- DROP INDEX IF EXISTS public.idx_at_risk_alerts_school_status;
+
+-- ============================================================================
+-- SECTION C: Rollback 20260614200002 (bootstrap idempotency harness)
+--
+-- WHAT THIS DOES: This migration creates no schema objects (no tables,
+-- functions, indexes, triggers, or policies). It is a verification-only
+-- migration. There is nothing to roll back in SQL.
+--
+-- TO "ROLL BACK" THE FILE:
+--   git revert HEAD  -- or use git revert <commit-hash>
+--
+-- Note: Reverting the file content has NO effect on production (the version
+-- is already recorded as applied). It only affects fresh environments.
+-- Recommendation: DO NOT revert the bootstrap idempotency audit findings.
+-- ============================================================================
+
+-- No SQL needed for Section C.
+
+-- ============================================================================
+-- SECTION D: Remove schema_migrations entries (LAST RESORT only)
+--
+-- WHAT THIS DOES: Removes the repair migration records from schema_migrations
+-- so that `supabase db push` will try to apply them again on the next deploy.
+--
+-- WHEN TO RUN: ONLY if you have:
+--   1. Completed all Section A/B rollbacks above
+--   2. Deleted the corresponding .sql files from the repository
+--   3. Confirmed there are no dependent objects
+--
+-- WARNING: Running this without deleting the .sql files will cause the
+-- migration to be re-applied on the next `supabase db push`, potentially
+-- recreating the objects you just dropped. Always coordinate with the
+-- deploy pipeline.
+-- ============================================================================
+
+-- -- Section D: Remove repair migration version records
+-- -- Only run AFTER completing A/B rollbacks AND deleting the .sql files.
+--
+-- DELETE FROM supabase_migrations.schema_migrations
+-- WHERE version IN ('20260614200000', '20260614200001', '20260614200002');
+--
+-- -- Verify removal:
+-- SELECT version FROM supabase_migrations.schema_migrations
+-- WHERE version IN ('20260614200000', '20260614200001', '20260614200002');
+-- -- Expected: 0 rows.
