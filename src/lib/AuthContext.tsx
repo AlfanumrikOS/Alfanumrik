@@ -265,7 +265,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const work = (async () => {
       let hasUser = false;
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        // getSession() reads from localStorage without a network call (~0 ms).
+        // getUser() always makes an HTTP round-trip to /auth/v1/user to validate
+        // the JWT (500–2 000 ms, can stall entirely on flaky connections) — this
+        // was the primary contributor to the 12 s timeout. Security is unaffected:
+        // every subsequent PostgREST / RPC call validates the JWT server-side via
+        // Supabase RLS. The Supabase client also auto-refreshes expired tokens
+        // before any outgoing request, so a slightly-stale session here is safe.
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user ?? null;
         if (!user) {
           setAuthUserId(null);
           setStudent(null);
@@ -282,9 +290,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Detect all roles using RPC
         let rolesResolved = false;
         try {
-          const { data: roleData } = await supabase.rpc('get_user_role', {
-            p_auth_user_id: user.id,
-          });
+          // Hard 5 s abort on the RPC. If the Supabase connection stalls, the
+          // AbortError falls to catch(rpcErr) → rolesResolved stays false →
+          // the parallel fallback block fires instead of blocking until the
+          // outer 12 s timer fires and logs the user out entirely.
+          const rpcAC = new AbortController();
+          const rpcAbortTimer = setTimeout(() => rpcAC.abort(), 5_000);
+          let roleData: unknown = null;
+          try {
+            const result = await supabase
+              .rpc('get_user_role', { p_auth_user_id: user.id })
+              .abortSignal(rpcAC.signal);
+            roleData = result.data;
+          } finally {
+            clearTimeout(rpcAbortTimer);
+          }
 
           if (roleData) {
             const rd = roleData as RoleData;
