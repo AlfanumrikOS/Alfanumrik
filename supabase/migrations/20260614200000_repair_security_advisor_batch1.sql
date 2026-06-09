@@ -1,32 +1,37 @@
 -- Migration: 20260614200000_repair_security_advisor_batch1.sql
 -- Date: 2026-06-14
+-- Fixed: 2026-06-09 -- replaced hardcoded function signatures with dynamic
+--        pg_proc lookup. Original bare ALTER FUNCTION calls used incorrect
+--        signatures (e.g. bkt_update(uuid,uuid,boolean) vs actual
+--        bkt_update(numeric,boolean,numeric,numeric,numeric,numeric)), causing
+--        SQLSTATE 42883 undefined_function on first deploy attempt.
 --
 -- WHY THIS FILE EXISTS
 -- --------------------
 -- Migration 20260525130001_security_and_performance_advisor_batch1.sql was
--- applied directly to production as a no-op (empty `statements = []` in
+-- applied directly to production as a no-op (empty statements = [] in
 -- supabase_migrations.schema_migrations). It was a reconciliation placeholder;
 -- the DDL it should have contained was NEVER executed on any environment.
 -- This migration recovers the security advisor work that 130001 was meant to do:
--- pinning `search_path` on every function added by migrations AFTER the original
+-- pinning search_path on every function added by migrations AFTER the original
 -- 40-function batch in 20260516010000_fix_function_search_path_mutable.sql.
 --
--- Functions without an explicit `search_path` are vulnerable to schema-poisoning
+-- Functions without an explicit search_path are vulnerable to schema-poisoning
 -- attacks. An attacker who can create objects in any schema on the runtime
--- search path could shadow the function's table/type/operator references and
--- inject malicious behavior. Pinning to `public, pg_catalog` (or
--- `public, auth, pg_catalog` for functions that reference auth.uid() or
+-- search path could shadow the function table/type/operator references and
+-- inject malicious behavior. Pinning to public, pg_catalog (or
+-- public, auth, pg_catalog for functions that reference auth.uid() or
 -- auth.users) closes this vector.
 --
 -- RISKS
 -- -----
---   - LOW: ALTER FUNCTION SET search_path is a metadata-only change; it does not
---     alter the function body, call convention, or return type.
---   - Any function that relied on implicit schema resolution picking up an object
---     NOT in public or pg_catalog will now fail to resolve. None of the functions
---     pinned here access objects outside public/auth/pg_catalog.
---   - Re-running this migration on prod (already applied) is a no-op — ALTER
---     FUNCTION is idempotent.
+--   - LOW: ALTER FUNCTION SET search_path is a metadata-only change; it does
+--     not alter the function body, call convention, or return type.
+--   - Any function that relied on implicit schema resolution picking up an
+--     object NOT in public or pg_catalog will now fail to resolve. None of
+--     the functions pinned here access objects outside public/auth/pg_catalog.
+--   - Re-running this migration on prod (already applied) is a no-op --
+--     ALTER FUNCTION is idempotent.
 --
 -- EXECUTION ORDER
 -- ---------------
@@ -34,215 +39,128 @@
 -- Depends on: all migrations through 20260614000003 being applied.
 --
 -- IDEMPOTENCY: YES
--- ALTER FUNCTION ... SET search_path is idempotent — re-running always converges
--- to the same configuration parameter state. Safe to apply multiple times.
+-- ALTER FUNCTION ... SET search_path is idempotent -- re-running always
+-- converges to the same configuration parameter state.
 
 -- ============================================================================
--- Section A: Functions from migrations 20260517 - 20260520
+-- Dynamic search_path pin
+-- ============================================================================
+-- Discovers every target function by NAME from pg_proc (not by hardcoded
+-- signature), so the migration is resilient to signature changes, overloads,
+-- and functions that may not exist on a given environment.
+--
+-- pg_get_function_identity_arguments(oid) returns the canonical argument-type
+-- string PostgreSQL requires for ALTER FUNCTION, e.g.:
+--   uuid, uuid, uuid, boolean, integer, integer, text, text, integer,
+--   timestamp with time zone, uuid, text
+-- This string is used directly in the EXECUTE format call.
+--
+-- Functions that reference auth.uid() / auth.users get:
+--   search_path = public, auth, pg_catalog
+-- All others get:
+--   search_path = public, pg_catalog
+--
+-- If a function does not exist on the target environment the EXCEPTION
+-- handler logs a NOTICE and continues -- the migration never fails.
 -- ============================================================================
 
--- tg_learner_mastery_touch() — added by 20260517100000_learner_state_projections.sql
--- No auth schema reference.
-ALTER FUNCTION public.tg_learner_mastery_touch()
-  SET search_path = public, pg_catalog;
+DO $pin_search_paths$
+DECLARE
+  r         RECORD;
+  v_pinned  integer := 0;
+  v_skipped integer := 0;
+BEGIN
+  FOR r IN
+    SELECT
+      p.oid,
+      n.nspname
+        || '.'
+        || quote_ident(p.proname)
+        || '('
+        || pg_get_function_identity_arguments(p.oid)
+        || ')' AS fn_sig,
+      CASE p.proname
+        WHEN 'submit_mock_test_attempt'                  THEN 'public, auth, pg_catalog'
+        WHEN 'tutor_commit_attempt'                      THEN 'public, auth, pg_catalog'
+        WHEN 'get_available_subjects_v2'                 THEN 'public, auth, pg_catalog'
+        WHEN 'get_available_subjects'                    THEN 'public, auth, pg_catalog'
+        WHEN 'available_chapters_for_student_subject_v2' THEN 'public, auth, pg_catalog'
+        WHEN 'get_adaptive_questions'                    THEN 'public, auth, pg_catalog'
+        WHEN 'purchase_streak_freeze'                    THEN 'public, auth, pg_catalog'
+        WHEN 'bootstrap_user_profile'                    THEN 'public, auth, pg_catalog'
+        ELSE 'public, pg_catalog'
+      END AS target_path
+    FROM pg_proc    p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname IN (
+        'tg_learner_mastery_touch',
+        'exam_papers_set_updated_at',
+        'mock_test_attempts_set_updated_at',
+        'submit_mock_test_attempt',
+        'notify_state_event',
+        'bkt_update',
+        'tutor_commit_attempt',
+        'set_foxy_chat_school_id',
+        'set_audit_log_school_id',
+        'tp_messages_bump_thread',
+        'set_data_erasure_requests_updated_at',
+        'get_available_subjects_v2',
+        'expire_stale_foxy_expectations',
+        'match_alfabot_kb_chunks',
+        'sync_school_admin_role',
+        'sync_user_roles_on_insert',
+        'sync_admin_user_role',
+        'get_available_subjects',
+        'available_chapters_for_student_subject_v2',
+        'get_adaptive_questions',
+        'purchase_streak_freeze',
+        'atomic_quiz_profile_update',
+        'bootstrap_user_profile',
+        'activate_free_subscription',
+        'get_school_overview',
+        'get_classes_at_risk',
+        'get_teacher_engagement',
+        '_school_active_student_ids',
+        '_count_active_school_students',
+        '_eval_seat_policy_unchecked',
+        'evaluate_seat_policy',
+        'refresh_school_seat_usage',
+        'enroll_students_with_seat_check',
+        'enroll_section_students_with_seat_check',
+        'get_school_mastery_rollup',
+        'get_school_bloom_summary',
+        'export_school_report'
+      )
+    ORDER BY p.proname, p.oid
+  LOOP
+    BEGIN
+      EXECUTE format(
+        'ALTER FUNCTION %s SET search_path = %s',
+        r.fn_sig,
+        r.target_path
+      );
+      RAISE NOTICE '[20260614200000] Pinned: % -> %', r.fn_sig, r.target_path;
+      v_pinned := v_pinned + 1;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE '[20260614200000] Skipped: % (SQLSTATE % -- %)',
+        r.fn_sig, SQLSTATE, SQLERRM;
+      v_skipped := v_skipped + 1;
+    END;
+  END LOOP;
 
--- exam_papers_set_updated_at() — added by 20260520000005_exam_papers_and_pyq_import.sql
-ALTER FUNCTION public.exam_papers_set_updated_at()
-  SET search_path = public, pg_catalog;
-
--- mock_test_attempts_set_updated_at() — added by 20260520000008_mock_test_attempts.sql
-ALTER FUNCTION public.mock_test_attempts_set_updated_at()
-  SET search_path = public, pg_catalog;
-
--- submit_mock_test_attempt(...) — added by 20260520000008_mock_test_attempts.sql
--- References auth.uid() and auth.jwt() so needs auth in search_path.
-ALTER FUNCTION public.submit_mock_test_attempt(uuid, uuid, jsonb, integer, jsonb)
-  SET search_path = public, auth, pg_catalog;
-
--- ============================================================================
--- Section B: Functions from migrations 20260521 - 20260524
--- ============================================================================
-
--- notify_state_event() — added by 20260521100000_state_events_bus_rename.sql
-ALTER FUNCTION public.notify_state_event()
-  SET search_path = public, pg_catalog;
-
--- ============================================================================
--- Section C: Functions from migrations 20260525 - 20260526
--- ============================================================================
-
--- bkt_update(...) — added by 20260525100001_adr_004_phase_2_bkt_rpc.sql
-ALTER FUNCTION public.bkt_update(uuid, uuid, boolean)
-  SET search_path = public, pg_catalog;
-
--- tutor_commit_attempt(...) — added by 20260525100001_adr_004_phase_2_bkt_rpc.sql
--- References auth.uid() so needs auth in search_path.
-ALTER FUNCTION public.tutor_commit_attempt(uuid, uuid, boolean, integer)
-  SET search_path = public, auth, pg_catalog;
-
--- ============================================================================
--- Section D: Functions from migrations 20260527 - 20260528
--- ============================================================================
-
--- set_foxy_chat_school_id() — added by 20260527000000_add_school_id_foxy_chat_messages.sql
-ALTER FUNCTION public.set_foxy_chat_school_id()
-  SET search_path = public, pg_catalog;
-
--- set_audit_log_school_id() — added by 20260527000001_add_school_id_audit_logs.sql
-ALTER FUNCTION public.set_audit_log_school_id()
-  SET search_path = public, pg_catalog;
-
--- tp_messages_bump_thread() — added by 20260527000003_teacher_parent_threads.sql
--- SECURITY DEFINER function; must pin search_path.
-ALTER FUNCTION public.tp_messages_bump_thread()
-  SET search_path = public, pg_catalog;
-
--- set_data_erasure_requests_updated_at() — added by 20260527000006_data_erasure_requests.sql
-ALTER FUNCTION public.set_data_erasure_requests_updated_at()
-  SET search_path = public, pg_catalog;
-
--- get_available_subjects_v2(...) — added by 20260528000009_subjects_rpc_stream_aware.sql
--- References auth.uid() via RLS evaluation.
-ALTER FUNCTION public.get_available_subjects_v2(uuid)
-  SET search_path = public, auth, pg_catalog;
-
--- expire_stale_foxy_expectations() — added by 20260528000013_foxy_pending_expectations.sql
-ALTER FUNCTION public.expire_stale_foxy_expectations()
-  SET search_path = public, pg_catalog;
-
--- ============================================================================
--- Section E: Functions from migrations 20260529 (AlfaBot v1)
--- ============================================================================
-
--- match_alfabot_kb_chunks(...) — added by 20260529000000_alfabot_v1.sql
-ALTER FUNCTION public.match_alfabot_kb_chunks(vector, double precision, integer)
-  SET search_path = public, pg_catalog;
-
--- ============================================================================
--- Section F: Functions from migrations 20260603 - 20260610
--- ============================================================================
-
--- sync_school_admin_role() — rewritten by 20260603140000_fix_sync_school_admin_role_trigger.sql
--- SECURITY DEFINER trigger function; pinning is critical.
-ALTER FUNCTION public.sync_school_admin_role()
-  SET search_path = public, pg_catalog;
-
--- sync_user_roles_on_insert() — rewritten by 20260603150000_demo_account_authority_completeness.sql
--- SECURITY DEFINER; references roles + user_roles tables in public.
-ALTER FUNCTION public.sync_user_roles_on_insert()
-  SET search_path = public, pg_catalog;
-
--- sync_admin_user_role() — added by 20260603150000_demo_account_authority_completeness.sql
--- SECURITY DEFINER trigger; pinning critical.
-ALTER FUNCTION public.sync_admin_user_role()
-  SET search_path = public, pg_catalog;
-
--- get_available_subjects(...) — rewritten by 20260605000000_fix_board_subject_chapter_gaps.sql
--- References auth schema (auth.uid()) per existing pinning convention.
-ALTER FUNCTION public.get_available_subjects(uuid)
-  SET search_path = public, auth, pg_catalog;
-
--- available_chapters_for_student_subject_v2(...) — added by 20260605000000
-ALTER FUNCTION public.available_chapters_for_student_subject_v2(uuid, text)
-  SET search_path = public, auth, pg_catalog;
-
--- get_adaptive_questions(...) — added by 20260605000000_fix_board_subject_chapter_gaps.sql
-ALTER FUNCTION public.get_adaptive_questions(uuid, text, integer, integer)
-  SET search_path = public, auth, pg_catalog;
-
--- purchase_streak_freeze(...) — added by 20260608000000_streak_freeze_and_curriculum.sql
--- References students table (auth.uid() comparison pattern).
-ALTER FUNCTION public.purchase_streak_freeze(uuid, integer, text)
-  SET search_path = public, auth, pg_catalog;
-
--- atomic_quiz_profile_update (7-arg variant) — rewritten by 20260610000000_publish_quiz_completed_event.sql
-ALTER FUNCTION public.atomic_quiz_profile_update(uuid, text, integer, integer, integer, integer, uuid)
-  SET search_path = public, pg_catalog;
-
--- atomic_quiz_profile_update (8-arg variant with event_kind) — added by 20260610000000
-ALTER FUNCTION public.atomic_quiz_profile_update(uuid, text, integer, integer, integer, integer, uuid, text)
-  SET search_path = public, pg_catalog;
-
--- bootstrap_user_profile(...) — rewritten by 20260610000000_publish_quiz_completed_event.sql
--- References auth schema.
-ALTER FUNCTION public.bootstrap_user_profile(uuid, text, text, text, text, text, text)
-  SET search_path = public, auth, pg_catalog;
-
--- activate_free_subscription(...) — added by 20260610000000_publish_quiz_completed_event.sql
-ALTER FUNCTION public.activate_free_subscription(uuid)
-  SET search_path = public, pg_catalog;
+  RAISE NOTICE '[20260614200000] Loop complete -- pinned: %, skipped: %',
+    v_pinned, v_skipped;
+END $pin_search_paths$;
 
 -- ============================================================================
--- Section G: Functions from migrations 20260614 (Phase 3B school command center)
--- ============================================================================
-
--- get_school_overview(...) — added by 20260614000000_phase3b_school_command_center_read_models.sql
---   (later superseded by 20260614000001 which also defines it — final version
---    is in 20260614000001; ALTER FUNCTION operates on the live body).
-ALTER FUNCTION public.get_school_overview(uuid)
-  SET search_path = public, pg_catalog;
-
--- get_classes_at_risk(...) — added by 20260614000000 / superseded in 20260614000001
-ALTER FUNCTION public.get_classes_at_risk(uuid, integer)
-  SET search_path = public, pg_catalog;
-
--- get_teacher_engagement(...) — added by 20260614000000_phase3b_school_command_center_read_models.sql
-ALTER FUNCTION public.get_teacher_engagement(uuid, integer)
-  SET search_path = public, pg_catalog;
-
--- _school_active_student_ids(...) — added by 20260614000001_phase3b_seat_enforcement.sql
-ALTER FUNCTION public._school_active_student_ids(uuid)
-  SET search_path = public, pg_catalog;
-
--- _count_active_school_students(...) — added by 20260614000001
-ALTER FUNCTION public._count_active_school_students(uuid)
-  SET search_path = public, pg_catalog;
-
--- _eval_seat_policy_unchecked(...) — added by 20260614000001
-ALTER FUNCTION public._eval_seat_policy_unchecked(uuid, integer)
-  SET search_path = public, pg_catalog;
-
--- evaluate_seat_policy(...) — added by 20260614000001
-ALTER FUNCTION public.evaluate_seat_policy(uuid)
-  SET search_path = public, pg_catalog;
-
--- refresh_school_seat_usage(...) — added by 20260614000001
-ALTER FUNCTION public.refresh_school_seat_usage(uuid)
-  SET search_path = public, pg_catalog;
-
--- enroll_students_with_seat_check(...) — added by 20260614000001
-ALTER FUNCTION public.enroll_students_with_seat_check(uuid, uuid[])
-  SET search_path = public, pg_catalog;
-
--- enroll_section_students_with_seat_check(...) — added by 20260614000001
-ALTER FUNCTION public.enroll_section_students_with_seat_check(uuid, uuid)
-  SET search_path = public, pg_catalog;
-
--- get_school_mastery_rollup(...) — added by 20260614000003_phase3b_school_reporting.sql
-ALTER FUNCTION public.get_school_mastery_rollup(uuid, text)
-  SET search_path = public, pg_catalog;
-
--- get_school_bloom_summary(...) — added by 20260614000003
-ALTER FUNCTION public.get_school_bloom_summary(uuid, text)
-  SET search_path = public, pg_catalog;
-
--- export_school_report(...) — added by 20260614000003
-ALTER FUNCTION public.export_school_report(uuid, text, text)
-  SET search_path = public, pg_catalog;
-
--- ============================================================================
--- Verification block — confirms the pin landed on a representative sample
+-- Verification block
 -- ============================================================================
 
 DO $verify$
 DECLARE
-  v_count        integer;
-  v_sample_paths text[];
-  fn             text;
+  v_count integer;
 BEGIN
-  -- Spot-check 5 critical functions for search_path pinning.
-  -- We look for proconfig entry matching 'search_path=public,pg_catalog' or
-  -- 'search_path=public,auth,pg_catalog'.
   SELECT count(*) INTO v_count
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -258,8 +176,8 @@ BEGIN
   RAISE NOTICE '[20260614200000] search_path pin spot-check: %/5 sample functions have proconfig set', v_count;
 
   IF v_count < 5 THEN
-    RAISE WARNING '[20260614200000] search_path pinning may be incomplete — % of 5 sample functions confirmed. Some function signatures may have changed; inspect pg_proc manually.', v_count;
+    RAISE WARNING '[20260614200000] Pinning may be incomplete -- % of 5 confirmed. Check NOTICE log above for skipped functions.', v_count;
   ELSE
-    RAISE NOTICE '[20260614200000] REPAIR COMPLETE — security_advisor_batch1 search_path pins applied';
+    RAISE NOTICE '[20260614200000] REPAIR COMPLETE -- security_advisor_batch1 search_path pins applied';
   END IF;
 END $verify$;
