@@ -19,6 +19,7 @@ import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, 
 import { checkDailyUsage, clearUsageCache, type UsageResult } from '@/lib/usage';
 import { speak, isVoiceSupported } from '@/lib/voice';
 import { usePythonVoiceEnabled } from '@/lib/voice-feature-flag';
+import { adoptVoiceReplyLanguage } from '@/lib/voice-reply-language';
 const ConversationStarters = dynamic(() => import('@/components/foxy/ConversationStarters').then(m => ({ default: m.ConversationStarters })), { ssr: false });
 import type { StarterIntent } from '@/lib/foxy/starter-intents';
 import { findSimulation } from '@/components/InlineSimulation';
@@ -1674,6 +1675,12 @@ export default function FoxyPage() {
             activeSubject={activeSubject}
             onSend={sendMessage}
             onNewConversation={handleNewConversation}
+            onDetectedLanguage={(detected) => {
+              // Voice 3: adapt Foxy's spoken reply to the language the student
+              // actually spoke. Helper guards against 'unknown' so we never feed
+              // an unsynthesizable language to the Azure TTS endpoint.
+              voiceLangRef.current = adoptVoiceReplyLanguage(detected, voiceLangRef.current);
+            }}
           />
         </div>
       </div>

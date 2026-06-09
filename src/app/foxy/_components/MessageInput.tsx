@@ -27,6 +27,8 @@ export interface MessageInputProps {
   activeSubject: string;
   onSend: (text: string, image?: File | null) => void;
   onNewConversation: () => void;
+  /** Voice 3: forwarded to ChatInput; fires with the STT-detected language. */
+  onDetectedLanguage?: (lang: string) => void;
 }
 
 export function MessageInput({
@@ -38,6 +40,7 @@ export function MessageInput({
   activeSubject,
   onSend,
   onNewConversation,
+  onDetectedLanguage,
 }: MessageInputProps) {
   const studentTurnCount = messages.filter((m) => m.role === 'student').length;
 
@@ -69,6 +72,7 @@ export function MessageInput({
         disabled={loading}
         language={language}
         onVoiceSend={voiceMode ? onSend : undefined}
+        onDetectedLanguage={onDetectedLanguage}
       />
     </>
   );

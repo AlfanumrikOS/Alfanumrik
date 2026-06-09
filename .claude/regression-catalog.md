@@ -3129,3 +3129,38 @@ is stubbed (Phase 2.5 follow-up). Default OFF.
 Pre-Phase-2-bulk-non-mcq-gen: 73 entries. Adds REG-106.
 
 **Total: 74 entries.**
+
+## Voice 3 — adaptive-language spoken-reply resolver (2026-06-09) - REG-107
+
+Closes the Python AI Voice loop (Voice 1a STT → Voice 1b TTS): when a student
+SPEAKS, Foxy's spoken reply adapts to the language they actually used. The
+Whisper STT call already returns `detected_language`
+('en' | 'hi' | 'hinglish' | 'unknown') and `voice.ts` already emits it via the
+`onPythonResult` hook; Voice 3 wires that signal up through
+`ChatInput` → `MessageInput` → `foxy/page.tsx`, where it updates `voiceLangRef`
+(the ref `speak()` reads for the TTS language). Activates only on the Python STT
+path — no new flag, no behaviour change when `ff_python_voice_*` is OFF.
+
+Pure resolver `adoptVoiceReplyLanguage(detected, current)` is the single decision
+point; it MUST drop 'unknown' (the Azure TTS catalog has no 'unknown' voice and
+would HTTP 400) and keep the current language instead.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-107 | `voice_3_adaptive_language_reply_resolver` | (1) Synthesizable set is exactly ['en','hi','hinglish']. (2) `isSynthesizableVoiceLanguage` rejects 'unknown'/''/unexpected and is case-sensitive. (3) `adoptVoiceReplyLanguage` adopts a concrete detected language over current. (4) 'unknown'/empty/garbage detected → current kept (never forwarded to TTS). (5) Idempotent when detected==current. | `src/__tests__/lib/voice-reply-language.test.ts` | E |
+
+### Invariants covered by this section
+
+- P7 (bilingual UI) - the spoken-reply language tracks the language the student
+  actually spoke (en/hi/hinglish), reinforcing the Hindi/English parity contract
+  on the voice surface.
+- P12 (AI safety) - 'unknown' is never forwarded to the TTS synthesize endpoint;
+  only catalog-valid languages reach the provider.
+- P13 (data privacy) - resolver is pure over a language enum; no transcript /
+  student text flows through it.
+
+### Catalog total
+
+Pre-Voice-3: 74 entries. Adds REG-107.
+
+**Total: 75 entries.**
