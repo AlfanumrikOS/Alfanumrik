@@ -21,6 +21,7 @@
 // Idempotency: the claim RPC + TTL make concurrent/repeated runs safe.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts';
 import { corsHeaders } from '../_shared/cors.ts';
 import { callGroundedAnswer } from '../_shared/grounded-client.ts';
 import { constantTimeEqual } from '../_shared/auth.ts';
@@ -264,6 +265,20 @@ async function processBatch(
 }
 
 Deno.serve(async (req: Request) => {
+  try {
+    const request_id = req.headers.get('x-request-id') ?? crypto.randomUUID();
+    const decision = await shouldProxyToPython({
+      flag_name: 'ff_python_verify_question_bank_v1',
+      endpoint_path: '/v1/verify-question-bank',
+      request_id,
+    });
+    if (decision.should_proxy && decision.target_url) {
+      return await forwardToPython({ target_url: decision.target_url, request: req });
+    }
+  } catch (err) {
+    console.warn('[verify-question-bank] python proxy fell through:', err instanceof Error ? err.message : String(err));
+  }
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }

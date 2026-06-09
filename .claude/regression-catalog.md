@@ -3070,3 +3070,26 @@ Tier 3 R10 experiment-conclusion grader. Phase 2 uses rule-based scoring
 Pre-Phase-2-grade-experiment-conclusion: 70 entries. Adds REG-103.
 
 **Total: 71 entries.**
+
+## Phase 2 verify-question-bank Python port (stub) (2026-06-09) - REG-104
+
+Structural port of `supabase/functions/verify-question-bank/index.ts`. Phase 2
+covers claim/release infrastructure + scheduling helpers; the verifier call is
+STUBBED (Phase 2.5 will wire grounded-answer). Default OFF.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-104 | `phase_2_verify_question_bank_python_port_scheduling_parity` | (1) IST peak window 14:00-22:00 (end exclusive). (2) Batch size 1000 off-peak / 250 peak. (3) Throttle threshold > 2400 RPM (boundary exclusive). (4) Throttled batch halves base size. A regression on any of these changes the verifier cron throughput model and either over-runs Claude (no throttle) or under-runs (too aggressive throttle). | `python/tests/unit/test_verify_question_bank_scheduling.py::test_constants_match_ts`, `python/tests/unit/test_verify_question_bank_scheduling.py::test_is_peak_at_ist_2200_is_off_peak`, `python/tests/unit/test_verify_question_bank_scheduling.py::test_batch_size_peak_throttled_halves`, `python/tests/unit/test_verify_question_bank_scheduling.py::test_should_throttle_threshold` | E |
+
+### Invariants covered by this section
+
+- P12 (AI safety) - Phase 2 STUB does not call the verifier. The TS path remains
+  the verifier-of-record until Phase 2.5. Flag default OFF means production
+  traffic still hits the TS verifier; no AI-safety regression.
+- P13 (data privacy) - logs only counters + claim/release metadata.
+
+### Catalog total
+
+Pre-Phase-2-verify-question-bank: 71 entries. Adds REG-104.
+
+**Total: 72 entries.**
