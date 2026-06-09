@@ -92,6 +92,11 @@ SELECT
   NOW() - COALESCE(so.last_processed_occurred_at, NOW()) AS age_behind
 FROM public.subscriber_offsets so;
 
+-- Belt-and-suspenders: ensure security_invoker is on regardless of whether
+-- migration 20260515000002 ran before us (which it does in prod) or got
+-- skipped because the view didn't exist yet (fresh dev / preview branches).
+ALTER VIEW public.subscriber_lag SET (security_invoker = on);
+
 -- Seed offsets at NOW so this migration doesn't replay history.
 INSERT INTO public.subscriber_offsets (subscriber_name, kind_filter, last_processed_occurred_at)
 VALUES ('mastery-state-writer', 'learner.mastery_changed', NOW())

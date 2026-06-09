@@ -25,7 +25,20 @@
 -- Switch from creator-rights (default in older PG) to caller-rights so the
 -- view enforces the querier's RLS on state_events / subscriber_offsets /
 -- subscriber_retry_state. The view body is unchanged.
-ALTER VIEW public.subscriber_lag SET (security_invoker = on);
+DO $migration_guard$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.relname = 'subscriber_lag' AND n.nspname = 'public' AND c.relkind = 'v'
+  ) THEN
+    ALTER VIEW public.subscriber_lag SET (security_invoker = on);
+    RAISE NOTICE 'subscriber_lag: security_invoker set';
+  ELSE
+    RAISE NOTICE 'subscriber_lag: view not present yet (created by later migration 20260524110001); skipping ALTER VIEW';
+  END IF;
+END
+$migration_guard$;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
