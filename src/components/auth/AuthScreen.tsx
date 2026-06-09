@@ -385,16 +385,16 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             )}
 
             {mode === 'signup' && (
-              <input type="text" placeholder="Your Name" value={name} onChange={e => setName(e.target.value)} style={inputStyle} required aria-label="Your name" autoComplete="name" />
+              <input id="auth-name" name="name" type="text" placeholder="Your Name" value={name} onChange={e => setName(e.target.value)} style={inputStyle} required aria-label="Your name" autoComplete="name" />
             )}
 
             {mode !== 'check-email' && (
-              <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} required aria-label="Email address" autoComplete="email" />
+              <input id="auth-email" name="email" type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} required aria-label="Email address" autoComplete="email" />
             )}
 
             {mode !== 'forgot' && mode !== 'check-email' && (
               <div className="relative">
-                <input type={showPassword ? 'text' : 'password'} placeholder="Password (min 8 chars, A-z, 0-9)" value={password} onChange={e => setPassword(e.target.value)} style={{ ...inputStyle, paddingRight: 44 }} required minLength={8} aria-label="Password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} />
+                <input id="auth-password" name="password" type={showPassword ? 'text' : 'password'} placeholder="Password (min 8 chars, A-z, 0-9)" value={password} onChange={e => setPassword(e.target.value)} style={{ ...inputStyle, paddingRight: 44 }} required minLength={8} aria-label="Password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} />
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--text-3)' }} aria-label={showPassword ? 'Hide password' : 'Show password'}>
                   {showPassword ? '🙈' : '👁️'}
                 </button>
@@ -405,17 +405,17 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             {mode === 'signup' && roleTab === 'student' && (
               <>
                 <div className="flex gap-2">
-                  <select value={grade} onChange={e => setGrade(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }} aria-label="Select your grade">
+                  <select id="auth-grade" name="grade" value={grade} onChange={e => setGrade(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }} aria-label="Select your grade">
                     {AUTH_GRADES.map(g => <option key={g} value={g}>Grade {g}</option>)}
                   </select>
-                  <select value={board} onChange={e => setBoard(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }} aria-label="Select your board">
+                  <select id="auth-board" name="board" value={board} onChange={e => setBoard(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }} aria-label="Select your board">
                     {AUTH_BOARDS.map(b => <option key={b} value={b}>{b}</option>)}
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold mb-1.5" htmlFor="age-range" style={{ color: 'var(--text-2)' }}>Age Range</label>
-                  <select id="age-range" value={studentAgeRange} onChange={e => { setStudentAgeRange(e.target.value as '13-18' | '10-12'); if (e.target.value === '13-18') { setParentEmail(''); setParentConsent(false); } }} style={{ ...inputStyle, cursor: 'pointer' }}>
+                  <select id="age-range" name="age-range" value={studentAgeRange} onChange={e => { setStudentAgeRange(e.target.value as '13-18' | '10-12'); if (e.target.value === '13-18') { setParentEmail(''); setParentConsent(false); } }} style={{ ...inputStyle, cursor: 'pointer' }}>
                     <option value="13-18">13 &ndash; 18 years</option>
                     <option value="10-12">10 &ndash; 12 years</option>
                   </select>
@@ -424,9 +424,9 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
                 {studentAgeRange === '10-12' && (
                   <div className="space-y-2 p-3 rounded-xl" style={{ background: 'var(--surface-2)', border: '1.5px solid var(--border)' }}>
                     <p className="text-xs font-semibold" style={{ color: '#F59E0B' }}>Parental consent required for students under 13</p>
-                    <input type="email" placeholder="Parent/Guardian Email" value={parentEmail} onChange={e => setParentEmail(e.target.value)} style={inputStyle} required aria-label="Parent or guardian email" autoComplete="email" />
+                    <input id="auth-parent-email" name="parent-email" type="email" placeholder="Parent/Guardian Email" value={parentEmail} onChange={e => setParentEmail(e.target.value)} style={inputStyle} required aria-label="Parent or guardian email" autoComplete="email" />
                     <label className="flex items-start gap-2 cursor-pointer">
-                      <input type="checkbox" checked={parentConsent} onChange={e => setParentConsent(e.target.checked)} className="mt-0.5" style={{ accentColor: '#E8590C' }} />
+                      <input id="auth-parent-consent" name="parent-consent" type="checkbox" checked={parentConsent} onChange={e => setParentConsent(e.target.checked)} className="mt-0.5" style={{ accentColor: '#E8590C' }} />
                       <span className="text-xs" style={{ color: 'var(--text-2)' }}>
                         I confirm that my parent/guardian has given consent for me to use this platform
                       </span>
@@ -439,7 +439,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             {/* Teacher signup fields */}
             {mode === 'signup' && roleTab === 'teacher' && (
               <>
-                <input type="text" placeholder="School Name" value={schoolName} onChange={e => setSchoolName(e.target.value)} style={inputStyle} required aria-label="School name" autoComplete="organization" />
+                <input id="auth-school-name" name="school-name" type="text" placeholder="School Name" value={schoolName} onChange={e => setSchoolName(e.target.value)} style={inputStyle} required aria-label="School name" autoComplete="organization" />
                 <fieldset>
                   <legend className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>Subjects You Teach</legend>
                   <div className="flex flex-wrap gap-1.5" role="group">
@@ -466,9 +466,9 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             {/* Parent signup fields */}
             {mode === 'signup' && roleTab === 'parent' && (
               <>
-                <input type="tel" placeholder="Phone Number (optional)" value={phone} onChange={e => setPhone(e.target.value)} style={inputStyle} aria-label="Phone number" autoComplete="tel" />
+                <input id="auth-phone" name="phone" type="tel" placeholder="Phone Number (optional)" value={phone} onChange={e => setPhone(e.target.value)} style={inputStyle} aria-label="Phone number" autoComplete="tel" />
                 <div>
-                  <input type="text" placeholder="Child Link Code (optional)" value={linkCode} onChange={e => setLinkCode(e.target.value)} style={inputStyle} maxLength={8} aria-label="Child link code" />
+                  <input id="auth-link-code" name="link-code" type="text" placeholder="Child Link Code (optional)" value={linkCode} onChange={e => setLinkCode(e.target.value)} style={inputStyle} maxLength={8} aria-label="Child link code" />
                   <p className="text-[10px] mt-1 px-1" style={{ color: 'var(--text-3)' }}>
                     Have a link code from your child&apos;s school? Enter it to connect!
                   </p>
@@ -479,19 +479,19 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             {/* Institution admin signup fields */}
             {mode === 'signup' && roleTab === 'institution_admin' && (
               <>
-                <input type="text" placeholder="School Name *" value={instSchoolName} onChange={e => setInstSchoolName(e.target.value)} style={inputStyle} required aria-label="School name" autoComplete="organization" />
+                <input id="auth-inst-school" name="school-name" type="text" placeholder="School Name *" value={instSchoolName} onChange={e => setInstSchoolName(e.target.value)} style={inputStyle} required aria-label="School name" autoComplete="organization" />
                 <div className="flex gap-2">
-                  <input type="text" placeholder="City *" value={instCity} onChange={e => setInstCity(e.target.value)} style={{ ...inputStyle, flex: 1 }} required aria-label="City" autoComplete="address-level2" />
-                  <select value={instState} onChange={e => setInstState(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }} aria-label="State" required>
+                  <input id="auth-inst-city" name="city" type="text" placeholder="City *" value={instCity} onChange={e => setInstCity(e.target.value)} style={{ ...inputStyle, flex: 1 }} required aria-label="City" autoComplete="address-level2" />
+                  <select id="auth-inst-state" name="state" value={instState} onChange={e => setInstState(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }} aria-label="State" required>
                     <option value="">State *</option>
                     {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
-                <select value={instBoard} onChange={e => setInstBoard(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }} aria-label="Board affiliation">
+                <select id="auth-inst-board" name="board-affiliation" value={instBoard} onChange={e => setInstBoard(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }} aria-label="Board affiliation">
                   {SCHOOL_BOARDS.map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
-                <input type="text" placeholder="Principal Name (optional)" value={principalName} onChange={e => setPrincipalName(e.target.value)} style={inputStyle} aria-label="Principal name" autoComplete="name" />
-                <input type="tel" placeholder="School Phone (optional)" value={instPhone} onChange={e => setInstPhone(e.target.value)} style={inputStyle} aria-label="School phone" autoComplete="tel" />
+                <input id="auth-principal-name" name="principal-name" type="text" placeholder="Principal Name (optional)" value={principalName} onChange={e => setPrincipalName(e.target.value)} style={inputStyle} aria-label="Principal name" autoComplete="name" />
+                <input id="auth-school-phone" name="school-phone" type="tel" placeholder="School Phone (optional)" value={instPhone} onChange={e => setInstPhone(e.target.value)} style={inputStyle} aria-label="School phone" autoComplete="tel" />
               </>
             )}
 
@@ -499,7 +499,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             {mode === 'signup' && (
               <div className="space-y-2">
                 <label className="flex items-start gap-2 cursor-pointer" style={{ fontSize: 12, color: 'var(--text-2)' }}>
-                  <input type="checkbox" checked={consentData} onChange={e => setConsentData(e.target.checked)} className="mt-0.5 shrink-0" style={{ accentColor: activeRoleColor, width: 16, height: 16 }} />
+                  <input id="auth-consent-data" name="consent-data" type="checkbox" checked={consentData} onChange={e => setConsentData(e.target.checked)} className="mt-0.5 shrink-0" style={{ accentColor: activeRoleColor, width: 16, height: 16 }} />
                   <span>
                     I consent to the collection and processing of my data as described in the{' '}
                     <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline font-semibold" style={{ color: activeRoleColor }}>Privacy Policy</a>
@@ -507,7 +507,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
                   </span>
                 </label>
                 <label className="flex items-start gap-2 cursor-pointer" style={{ fontSize: 12, color: 'var(--text-2)' }}>
-                  <input type="checkbox" checked={consentAnalytics} onChange={e => setConsentAnalytics(e.target.checked)} className="mt-0.5 shrink-0" style={{ accentColor: activeRoleColor, width: 16, height: 16 }} />
+                  <input id="auth-consent-analytics" name="consent-analytics" type="checkbox" checked={consentAnalytics} onChange={e => setConsentAnalytics(e.target.checked)} className="mt-0.5 shrink-0" style={{ accentColor: activeRoleColor, width: 16, height: 16 }} />
                   <span>I consent to analytics tracking to improve the platform</span>
                 </label>
               </div>
