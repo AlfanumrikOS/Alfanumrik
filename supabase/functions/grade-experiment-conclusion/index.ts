@@ -40,6 +40,7 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
@@ -332,6 +333,20 @@ async function gradingsToday(
 
 // ─── Main handler ────────────────────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
+  try {
+    const request_id = req.headers.get('x-request-id') ?? crypto.randomUUID()
+    const decision = await shouldProxyToPython({
+      flag_name: 'ff_python_grade_experiment_conclusion_v1',
+      endpoint_path: '/v1/grade-experiment-conclusion',
+      request_id,
+    })
+    if (decision.should_proxy && decision.target_url) {
+      return await forwardToPython({ target_url: decision.target_url, request: req })
+    }
+  } catch (err) {
+    console.warn('[grade-experiment-conclusion] python proxy fell through:', err instanceof Error ? err.message : String(err))
+  }
+
   const origin = req.headers.get('origin')
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: getCorsHeaders(origin) })
   if (req.method !== 'POST') return errorResponse('Method not allowed', 405, origin)
