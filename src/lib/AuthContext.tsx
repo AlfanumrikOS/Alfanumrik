@@ -357,7 +357,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .from('students')
             .select('*')
             .eq('auth_user_id', user.id)
-            .single();
+            .maybeSingle(); // .single() returns HTTP 406 when no row exists; .maybeSingle() returns null
           if (studentData) {
             setStudent(studentData as Student);
             detectedRoles.push('student');
@@ -370,7 +370,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .from('teachers')
             .select('id, name, school_name, subjects_taught, grades_taught, email, phone')
             .eq('auth_user_id', user.id)
-            .single();
+            .maybeSingle(); // .single() returns HTTP 406 when no row exists; .maybeSingle() returns null
           if (teacherData) {
             setTeacher(teacherData as TeacherProfile);
             detectedRoles.push('teacher');
@@ -382,7 +382,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .from('guardians')
             .select('id, name, email, phone')
             .eq('auth_user_id', user.id)
-            .single();
+            .maybeSingle(); // .single() returns HTTP 406 when no row exists; .maybeSingle() returns null
           if (guardianData) {
             setGuardian(guardianData as GuardianProfile);
             detectedRoles.push('guardian');
