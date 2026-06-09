@@ -1,5 +1,8 @@
 -- Migration: 20260614200001_repair_api_query_path_indexes.sql
 -- Date: 2026-06-14
+-- Fixed: 2026-06-14 v5 -- remove Section K:
+--   at_risk_alerts has no school_id/status columns. Table already has
+--   5 indexes from the baseline. Section K removed.
 -- Fixed: 2026-06-14 v4 -- remove Sections I+J:
 --   Section I: parent_cheers (20260613000001) may be hollow tombstone
 --              (peer 20260613000004 is confirmed hollow). Removed.
@@ -145,14 +148,17 @@ COMMENT ON INDEX idx_synthetic_monitor_results_host_checked IS
 -- (No statements -- table confirmed absent from production.)
 
 -- ============================================================================
--- Section K: at_risk_alerts (20260614000000 phase3b)
+-- Section K: at_risk_alerts -- REMOVED (v5 fix)
+-- Original index used school_id + status which do not exist on this table.
+-- Actual columns are class_id, student_id, teacher_id, is_active, created_at.
+-- The table already has 5 indexes from the baseline:
+--   idx_at_risk_alerts_class, idx_at_risk_alerts_student,
+--   idx_at_risk_alerts_teacher, idx_at_risk_student (partial is_active=true),
+--   idx_at_risk_teacher (partial is_active=true).
+-- No additional index needed.
 -- ============================================================================
 
-CREATE INDEX IF NOT EXISTS idx_at_risk_alerts_school_status
-  ON public.at_risk_alerts (school_id, status, created_at DESC);
-
-COMMENT ON INDEX idx_at_risk_alerts_school_status IS
-  'repair_api_query_path_indexes (2026-06-14): school_id + status index for school command center at-risk alerts.';
+-- (No statements -- at_risk_alerts already well-indexed by baseline.)
 
 -- ============================================================================
 -- Verification block
