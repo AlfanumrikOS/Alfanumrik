@@ -161,3 +161,6 @@ CREATE POLICY bus_cursor_service_all
 INSERT INTO public.bus_cursor (cursor_key, cursor_value)
 VALUES ('state_events_watermark', '1970-01-01T00:00:00Z')
 ON CONFLICT (cursor_key) DO NOTHING;
+
+-- Belt-and-suspenders: lock search_path (in case 20260515000002 skipped it on fresh deploy).
+ALTER FUNCTION public.tg_learner_mastery_touch() SET search_path = pg_catalog, public;

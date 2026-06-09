@@ -47,10 +47,29 @@ $migration_guard$;
 -- Lock search_path so a session-level `SET search_path = ...` can't redirect
 -- references to malicious objects. Matches the pattern set by
 -- 20260408000003_fix_search_path_on_secdef_functions.sql.
-ALTER FUNCTION public.notify_state_event()
-  SET search_path = pg_catalog, public;
-ALTER FUNCTION public.tg_learner_mastery_touch()
-  SET search_path = pg_catalog, public;
+DO $migration_guard_fns$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE p.proname = 'notify_state_event' AND n.nspname = 'public'
+  ) THEN
+    ALTER FUNCTION public.notify_state_event() SET search_path = pg_catalog, public;
+    RAISE NOTICE 'notify_state_event: search_path locked';
+  ELSE
+    RAISE NOTICE 'notify_state_event: function not yet exists (created by later migration 20260517100000); skipping';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE p.proname = 'tg_learner_mastery_touch' AND n.nspname = 'public'
+  ) THEN
+    ALTER FUNCTION public.tg_learner_mastery_touch() SET search_path = pg_catalog, public;
+    RAISE NOTICE 'tg_learner_mastery_touch: search_path locked';
+  ELSE
+    RAISE NOTICE 'tg_learner_mastery_touch: function not yet exists (created by later migration); skipping';
+  END IF;
+END
+$migration_guard_fns$;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
