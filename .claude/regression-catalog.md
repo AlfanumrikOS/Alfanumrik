@@ -3093,3 +3093,24 @@ STUBBED (Phase 2.5 will wire grounded-answer). Default OFF.
 Pre-Phase-2-verify-question-bank: 71 entries. Adds REG-104.
 
 **Total: 72 entries.**
+## Phase 2 extract-ncert-questions Python port (stub) (2026-06-09) - REG-105
+
+Structural port of `supabase/functions/extract-ncert-questions/index.ts`.
+Phase 2 covers chapter-discovery + coverage stats; the MoL extraction call is
+STUBBED. Phase 2.5 will wire MoL routing. Default OFF.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-105 | `phase_2_extract_ncert_questions_python_port_model_contract` | (1) P5 grade-as-string: ExtractRequest.grade is str-or-None; ExtractedChapter.grade is str. (2) Batch size clamped to [1,10] default 3. (3) Response defaults phase_2_stub=True. (4) Status response coverage_percent bounded [0,100]. (5) Extra fields forbidden on Request (Pydantic extra=forbid). | `python/tests/unit/test_extract_ncert_questions_models.py::test_request_grade_coerced_to_string`, `python/tests/unit/test_extract_ncert_questions_models.py::test_request_batch_size_clamp`, `python/tests/unit/test_extract_ncert_questions_models.py::test_response_default_phase_2_stub_true`, `python/tests/unit/test_extract_ncert_questions_models.py::test_status_response_coverage_bounds`, `python/tests/unit/test_extract_ncert_questions_models.py::test_request_extra_fields_forbidden` | E |
+
+### Invariants covered by this section
+
+- P5 (grade format) - ExtractRequest + ExtractedChapter both pin grade to str.
+- P12 (AI safety) - Phase 2 STUB does not call LLM; TS path is extractor-of-record.
+- P13 (data privacy) - logs only counters + chapter metadata; no RAG content logged.
+
+### Catalog total
+
+Pre-Phase-2-extract-ncert-questions: 72 entries. Adds REG-105.
+
+**Total: 73 entries.**

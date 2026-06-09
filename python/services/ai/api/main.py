@@ -39,6 +39,7 @@ from .v1.foxy_tutor import router as foxy_tutor_router
 from .v1.monthly_synthesis_builder import router as monthly_synthesis_builder_router
 from .v1.parent_report_generator import router as parent_report_generator_router
 from .v1.verify_question_bank import router as verify_question_bank_router
+from .v1.extract_ncert_questions import router as extract_ncert_questions_router
 from .v1.grade_experiment_conclusion import router as grade_experiment_conclusion_router
 from ..business.cme_engine.router import router as cme_router
 from ..business.ncert_solver.router import router as ncert_solver_router
@@ -152,6 +153,7 @@ def create_app() -> FastAPI:
     app.include_router(monthly_synthesis_builder_router)
     app.include_router(parent_report_generator_router)
     app.include_router(verify_question_bank_router)
+    app.include_router(extract_ncert_questions_router)
     app.include_router(grade_experiment_conclusion_router)
     # opentelemetry integration
     FastAPIInstrumentor.instrument_app(app)
