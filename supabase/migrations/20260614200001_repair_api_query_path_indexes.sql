@@ -1,5 +1,12 @@
 -- Migration: 20260614200001_repair_api_query_path_indexes.sql
 -- Date: 2026-06-14
+-- Fixed: 2026-06-14 v4 -- remove Sections I+J:
+--   Section I: parent_cheers (20260613000001) may be hollow tombstone
+--              (peer 20260613000004 is confirmed hollow). Removed.
+--   Section J: teacher_remediation_assignments (20260613000004) is a
+--              CONFIRMED hollow tombstone (SQLSTATE 42P01 on apply).
+--              Removed.
+--   Expected index count: 10 -> 6.
 -- Fixed: 2026-06-14 v3 -- additional wrong-column/wrong-table fixes:
 --   Section G: grounding_circuit_state table does not exist (20260528000003
 --              added columns to grounded_ai_traces instead). Section removed.
@@ -118,38 +125,24 @@ COMMENT ON INDEX idx_synthetic_monitor_results_host_checked IS
 -- (No statements -- admin_login_attempts already covered.)
 
 -- ============================================================================
--- Section I: parent_cheers (20260613000001)
--- notification_id FK unindexed (ON DELETE SET NULL) -- adding it.
+-- Section I: parent_cheers (20260613000001) -- REMOVED (v4 fix)
+-- Migration 20260613000001 may be a hollow tombstone (applied in
+-- schema_migrations but CREATE TABLE never executed). Confirmed peer
+-- 20260613000004 is hollow. Indexes deferred to a future migration once
+-- tables are confirmed present.
 -- ============================================================================
 
-CREATE INDEX IF NOT EXISTS idx_parent_cheers_notification_id
-  ON public.parent_cheers (notification_id)
-  WHERE notification_id IS NOT NULL;
-
-COMMENT ON INDEX idx_parent_cheers_notification_id IS
-  'repair_api_query_path_indexes (2026-06-14): partial index on notification_id FK for ON DELETE SET NULL reverse lookup.';
+-- (No statements -- table presence unconfirmed.)
 
 -- ============================================================================
--- Section J: teacher_remediation_assignments (20260613000004)
+-- Section J: teacher_remediation_assignments (20260613000004) -- REMOVED (v4 fix)
+-- CONFIRMED hollow tombstone: migration 20260613000004 shows as applied in
+-- schema_migrations but CREATE TABLE was never executed (SQLSTATE 42P01 on
+-- apply attempt). Indexes deferred to a future migration once table is
+-- confirmed present.
 -- ============================================================================
 
-CREATE INDEX IF NOT EXISTS idx_teacher_remediation_teacher_id
-  ON public.teacher_remediation_assignments (teacher_id);
-
-COMMENT ON INDEX idx_teacher_remediation_teacher_id IS
-  'repair_api_query_path_indexes (2026-06-14): teacher_id FK index for assignments-I-created query.';
-
-CREATE INDEX IF NOT EXISTS idx_teacher_remediation_student_id
-  ON public.teacher_remediation_assignments (student_id);
-
-COMMENT ON INDEX idx_teacher_remediation_student_id IS
-  'repair_api_query_path_indexes (2026-06-14): student_id FK index for my-remediation-tasks query.';
-
-CREATE INDEX IF NOT EXISTS idx_teacher_remediation_status_assigned
-  ON public.teacher_remediation_assignments (status, created_at DESC);
-
-COMMENT ON INDEX idx_teacher_remediation_status_assigned IS
-  'repair_api_query_path_indexes (2026-06-14 v3): status + created_at index for teacher pending-assignments queue view (assigned_at does not exist; column is created_at).';
+-- (No statements -- table confirmed absent from production.)
 
 -- ============================================================================
 -- Section K: at_risk_alerts (20260614000000 phase3b)
@@ -168,7 +161,7 @@ COMMENT ON INDEX idx_at_risk_alerts_school_status IS
 DO $verify$
 DECLARE
   v_idx_count   integer;
-  v_expected    integer := 10;  -- Section G removed (grounding_circuit_state does not exist)
+  v_expected    integer := 6;  -- v4: Sections I+J removed (hollow tombstone tables)
 BEGIN
   SELECT count(*) INTO v_idx_count
     FROM pg_indexes
@@ -179,12 +172,10 @@ BEGIN
        'idx_parental_consent_version',
        'idx_data_erasure_requests_student',
        'idx_data_erasure_requests_status_created',
-       'idx_synthetic_monitor_results_host_checked',
-       -- idx_grounding_circuit_state_name removed (table does not exist)
-       'idx_parent_cheers_notification_id',
-       'idx_teacher_remediation_teacher_id',
-       'idx_teacher_remediation_student_id',
-       'idx_teacher_remediation_status_assigned'
+       'idx_synthetic_monitor_results_host_checked'
+       -- idx_grounding_circuit_state_name removed v3 (table does not exist)
+       -- idx_parent_cheers_notification_id removed v4 (hollow tombstone)
+       -- idx_teacher_remediation_* removed v4 (confirmed hollow tombstone)
      );
 
   -- idx_at_risk_alerts_school_status also expected but depends on phase3b.
