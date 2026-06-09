@@ -37,6 +37,9 @@ export interface ChatInputProps {
   language?: string;
   /** When provided, final speech result auto-sends instead of requiring manual send */
   onVoiceSend?: (text: string) => void;
+  /** Voice 3: fires with the STT-detected language (en/hi/hinglish) so the page
+   *  can adapt Foxy's spoken reply to the language the student actually spoke. */
+  onDetectedLanguage?: (lang: string) => void;
 }
 
 export const ChatInput = memo(function ChatInput({
@@ -46,6 +49,7 @@ export const ChatInput = memo(function ChatInput({
   subjectConfig,
   language = 'en',
   onVoiceSend,
+  onDetectedLanguage,
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const [showSymbols, setShowSymbols] = useState(false);
@@ -149,6 +153,11 @@ export const ChatInput = memo(function ChatInput({
       // legacy Web Speech path runs immediately and these are no-ops.
       pythonEnabled: pythonVoiceEnabled,
       getJwt,
+      // Voice 3: Python STT reports the language the student actually spoke;
+      // bubble it up so Foxy's spoken reply can match it.
+      onPythonResult: (detected) => {
+        onDetectedLanguage?.(detected);
+      },
       onResult: (transcript, isFinal) => {
         setText(transcript);
         setIsInterim(!isFinal);
