@@ -265,15 +265,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const work = (async () => {
       let hasUser = false;
       try {
-        // getSession() reads from localStorage without a network call (~0 ms).
-        // getUser() always makes an HTTP round-trip to /auth/v1/user to validate
-        // the JWT (500–2 000 ms, can stall entirely on flaky connections) — this
-        // was the primary contributor to the 12 s timeout. Security is unaffected:
-        // every subsequent PostgREST / RPC call validates the JWT server-side via
-        // Supabase RLS. The Supabase client also auto-refreshes expired tokens
-        // before any outgoing request, so a slightly-stale session here is safe.
-        const { data: { session } } = await supabase.auth.getSession();
-        const user = session?.user ?? null;
+        // getSession() is fast when the token is fresh (localStorage read, ~0 ms).
+        // When the token is expired it makes a network call for refresh which can
+        // stall. We race it against a 4 s timeout as a safety net: if it hasn't
+        // returned in 4 s, we treat the user as not logged in and return early —
+        // the auth event system (SIGNED_IN / TOKEN_REFRESHED) will re-trigger
+        // fetchUser once the session resolves, recovering automatically.
+        const sessionUser = await Promise.race([
+          supabase.auth.getSession().then((r) => r.data.session?.user ?? null),
+          new Promise<null>((resolve) => { setTimeout(() => resolve(null), 4_000); }),
+        ]);
+        const user = sessionUser;
         if (!user) {
           setAuthUserId(null);
           setStudent(null);
@@ -633,7 +635,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     init();
 
     // Listen for auth state changes (token refresh, sign-out from another tab)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         setAuthUserId(null);
         setStudent(null);
@@ -663,18 +665,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // polluted browser consoles with 3+ entries per session. The server
         // now returns 200/no_session_yet if both cookie and Bearer paths fail.
         // 2026-05-20 — see api/auth/session/route.ts resolveAuthUser().
-        void supabase.auth.getSession().then(({ data: { session: authSession } }) => {
-          const token = authSession?.access_token;
+        // Use the session provided by the SIGNED_IN event directly.
+        // Previously this called supabase.auth.getSession() which acquires the
+        // Supabase auth lock (_acquireLock) concurrently with fetchUser()'s own
+        // getSession() call. If a token refresh was in-progress, the lock was
+        // held until the refresh completed or timed out — blocking fetchUser()
+        // for 12+ seconds. Using the event session eliminates the second lock
+        // acquisition entirely.
+        void (async () => {
+          const token = session?.access_token;
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (token) headers['Authorization'] = `Bearer ${token}`;
-          return fetch('/api/auth/session', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ device_label: navigator.userAgent }),
-          });
-        }).catch((err: unknown) => {
-          console.warn('[auth-session] session POST failed:', err instanceof Error ? err.message : String(err));
-        }); // Best-effort, non-blocking
+          try {
+            await fetch('/api/auth/session', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ device_label: navigator.userAgent }),
+            });
+          } catch (err: unknown) {
+            console.warn('[auth-session] session POST failed:', err instanceof Error ? err.message : String(err));
+          }
+        })();
         fetchUser();
       }
     });
