@@ -445,7 +445,22 @@ export async function GET(request: NextRequest) {
           profile = Array.isArray(profiles) && profiles.length > 0 ? profiles[0] : null;
         }
 
-        return { ...account, profile };
+        // Normalise DB column names to the shape the frontend DemoAccount
+        // interface expects. These three mismatches made the entire demo
+        // accounts table render blank — name was undefined, status badge was
+        // blank, Last Reset always showed "—".
+        //
+        // DB column → Frontend interface field
+        //   display_name   → name          (TEXT NOT NULL)
+        //   is_active      → status        (boolean → 'active' | 'inactive')
+        //   last_reset_at  → last_reset    (TIMESTAMPTZ → string | null)
+        return {
+          ...account,
+          name: account.display_name as string,
+          status: (account.is_active as boolean) ? 'active' : 'inactive',
+          last_reset: (account.last_reset_at as string | null) ?? null,
+          profile,
+        };
       }),
     );
 

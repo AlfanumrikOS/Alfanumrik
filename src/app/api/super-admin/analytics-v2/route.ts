@@ -59,8 +59,12 @@ export async function GET(request: NextRequest) {
       quizWeekRes,
     ] = await Promise.all([
       // Active users
-      supabaseRest('student_daily_usage', `select=student_id&usage_date=eq.${today}&limit=20000`),
-      supabaseRest('student_daily_usage', `select=student_id&usage_date=gte.${since7dDate}&limit=50000`),
+      // Filter out demo students from active user counts.
+      // PostgREST !inner join: only returns rows where the FK'd student
+      // exists AND is_demo=false. Shape of each row: { student_id, students: { id } }.
+      // The downstream Set() dedup still works since student_id is top-level.
+      supabaseRest('student_daily_usage', `select=student_id,students!inner(id)&students.is_demo=eq.false&usage_date=eq.${today}&limit=20000`),
+      supabaseRest('student_daily_usage', `select=student_id,students!inner(id)&students.is_demo=eq.false&usage_date=gte.${since7dDate}&limit=50000`),
       // Foxy (new table)
       countRows('foxy_sessions', `created_at=gte.${todayStart}`),
       countRows('foxy_sessions', `created_at=gte.${since7d}`),

@@ -49,8 +49,13 @@ export default function DemoPage() {
         .from('demo_requests')
         .insert(payload);
       if (dbError) throw dbError;
-    } catch {
-      // Table may not exist — still show success to the user
+    } catch (err) {
+      // Surface DB errors so ops can detect a missing demo_requests table
+      // or RLS policy issue instead of silently losing leads.
+      const msg = err instanceof Error ? err.message : 'Failed to submit request. Please email us directly.';
+      setError(msg);
+      setSending(false);
+      return;
     }
 
     setSending(false);
