@@ -29,7 +29,13 @@ import { authorizeAdmin } from '@/lib/admin-auth';
 import { logger } from '@/lib/logger';
 
 export const runtime = 'nodejs';
-export const revalidate = 300;
+// Auth-gated (authorizeAdmin) → must be per-request dynamic, never ISR-prerendered.
+// `revalidate = 300` made Next probe-execute GET at build with no env/session,
+// emitting a spurious `admin_auth_config_missing` error (which escalates to a
+// Sentry event via logger.error) on every deploy. ISR cannot carry an admin's
+// session anyway. The intended 5-min caching is provided by the in-process LRU
+// below (TIME_WINDOW_BUCKET_MS) — the only cache layer that can sit behind admin auth.
+export const dynamic = 'force-dynamic';
 
 const POSTHOG_PROJECT_ID = '159341';
 const TIME_WINDOW_BUCKET_MS = 5 * 60 * 1000;

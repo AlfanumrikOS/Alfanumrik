@@ -126,7 +126,7 @@ export default function NuclearDecay() {
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(`N=${remaining}  t=${elapsedRef.current.toFixed(1)}s`, gX + gW / 2, H - 5);
-  }, [col]);
+  }, [col, halfLife]);
 
   useEffect(() => {
     const loop = (ts: number) => {

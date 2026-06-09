@@ -42,31 +42,7 @@ export default function MagneticFieldElectric() {
     return () => obs.disconnect();
   }, []);
 
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    ctx.scale(dpr, dpr);
-
-    // Background
-    ctx.fillStyle = '#f8fafc';
-    ctx.fillRect(0, 0, w, h);
-
-    if (mode === 'wire') {
-      drawStraightWire(ctx, w, h);
-    } else {
-      drawSolenoid(ctx, w, h);
-    }
-  }, [mode, currentDirection, currentStrength, showRule]);
-
-  function drawStraightWire(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const drawStraightWire = useCallback((ctx: CanvasRenderingContext2D, w: number, h: number) => {
     const midX = w * 0.45;
     const midY = h / 2;
     const isUp = currentDirection === 'up';
@@ -218,9 +194,9 @@ export default function MagneticFieldElectric() {
     ctx.font = 'bold 10px system-ui';
     ctx.textAlign = 'right';
     ctx.fillText(`Field: ${clockwise ? 'Clockwise' : 'Anti-clockwise'}`, w - 8, 15);
-  }
+  }, [currentDirection, currentStrength]);
 
-  function drawSolenoid(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const drawSolenoid = useCallback((ctx: CanvasRenderingContext2D, w: number, h: number) => {
     const midY = h / 2;
     const solLeft = w * 0.2;
     const solRight = w * 0.8;
@@ -335,7 +311,31 @@ export default function MagneticFieldElectric() {
     ctx.fillStyle = '#f59e0b';
     ctx.font = 'bold 10px system-ui';
     ctx.fillText(`Current: ${isUp ? 'Upward (front)' : 'Downward (front)'}`, w / 2, h - 10);
-  }
+  }, [currentDirection, currentStrength]);
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.scale(dpr, dpr);
+
+    // Background
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, w, h);
+
+    if (mode === 'wire') {
+      drawStraightWire(ctx, w, h);
+    } else {
+      drawSolenoid(ctx, w, h);
+    }
+  }, [mode, drawStraightWire, drawSolenoid]);
 
   // Animate compass rotation gently
   useEffect(() => {

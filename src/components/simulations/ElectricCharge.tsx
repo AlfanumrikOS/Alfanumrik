@@ -45,7 +45,7 @@ export default function ElectricCharge() {
 
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
-      <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Electric Charges — Coulomb's Law</h3>
+      <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Electric Charges — Coulomb&#39;s Law</h3>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
         {(['+', '-'] as const).map(s => (

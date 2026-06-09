@@ -15,7 +15,7 @@ export function FoxyRenderEngine({ uiState }: FoxyRenderEngineProps) {
     return (
       <div className="p-6 bg-slate-900 rounded-xl border border-slate-700 text-white shadow-2xl">
         <h2 className="text-2xl font-bold mb-4 text-foxy-orange">Foxy-X Render: {instruction.component}</h2>
-        <p className="text-lg text-slate-300 italic mb-6">"{schema.original_text}"</p>
+        <p className="text-lg text-slate-300 italic mb-6">&quot;{schema.original_text}&quot;</p>
         
         {/* Mocking the actual components based on schema intent */}
         {instruction.component === 'interactive_canvas' && (
@@ -60,7 +60,7 @@ export function FoxyRenderEngine({ uiState }: FoxyRenderEngineProps) {
         <div className="mb-4 p-4 bg-purple-900/30 border border-purple-800 rounded-lg">
           <p className="font-semibold text-purple-300">Adaptive Brain Output:</p>
           <p>Decision: {uiState.adaptive_difficulty.decision}</p>
-          <p>Message: "{uiState.adaptive_difficulty.message}"</p>
+          <p>Message: &quot;{uiState.adaptive_difficulty.message}&quot;</p>
           <p>Format: {uiState.adaptive_difficulty.format} (Challenge: {uiState.adaptive_difficulty.new_challenge_level})</p>
         </div>
       )}

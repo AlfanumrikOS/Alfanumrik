@@ -111,7 +111,7 @@ export default function YoungDoubleSlitLab() {
 
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
-      <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Young's Double Slit Lab</h3>
+      <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Young&#39;s Double Slit Lab</h3>
       <div ref={containerRef} className="w-full" style={{ aspectRatio: '2/1' }}>
         <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
       </div>

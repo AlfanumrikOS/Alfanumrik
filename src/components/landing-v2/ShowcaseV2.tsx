@@ -48,7 +48,7 @@ export default function ShowcaseV2() {
               <div className="bubble you">why does a leaf look green?</div>
               <div className="bubble foxy">
                 good question — what part of the leaf do you think is doing the work?{' '}
-                <em>(let's start there)</em>
+                <em>(let&#39;s start there)</em>
               </div>
               <div className="bubble you">chlorophyll?</div>
               <div className="bubble foxy">

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 
 /* ─── Trait definitions (CBSE pea plant examples) ─── */
 interface Trait {
@@ -122,19 +122,22 @@ export default function PunnettSquareLab() {
   // Monohybrid data
   const p1Genotype = getGenotype(parent1, trait);
   const p2Genotype = getGenotype(parent2, trait);
-  const p1Gametes = getGametes(p1Genotype);
-  const p2Gametes = getGametes(p2Genotype);
+  const p1Gametes = useMemo(() => getGametes(p1Genotype), [p1Genotype]);
+  const p2Gametes = useMemo(() => getGametes(p2Genotype), [p2Genotype]);
 
-  const monoOffspring: string[][] = [];
-  for (const g1 of p1Gametes) {
-    const row: string[] = [];
-    for (const g2 of p2Gametes) {
-      // Normalize: dominant letter first
-      const alleles = [g1, g2].sort((a2, b) => (a2 === a2.toUpperCase() ? -1 : 1));
-      row.push(alleles.join(''));
+  const monoOffspring = useMemo<string[][]>(() => {
+    const grid: string[][] = [];
+    for (const g1 of p1Gametes) {
+      const row: string[] = [];
+      for (const g2 of p2Gametes) {
+        // Normalize: dominant letter first
+        const alleles = [g1, g2].sort((a2, b) => (a2 === a2.toUpperCase() ? -1 : 1));
+        row.push(alleles.join(''));
+      }
+      grid.push(row);
     }
-    monoOffspring.push(row);
-  }
+    return grid;
+  }, [p1Gametes, p2Gametes]);
 
   // Dihybrid data
   const p1Geno1 = getGenotype(parent1, trait);
@@ -142,20 +145,23 @@ export default function PunnettSquareLab() {
   const p2Geno1 = getGenotype(parent2, trait);
   const p2Geno2 = getGenotype(parent2b, trait2);
 
-  const diGametes1 = getDihybridGametes(p1Geno1, p1Geno2);
-  const diGametes2 = getDihybridGametes(p2Geno1, p2Geno2);
+  const diGametes1 = useMemo(() => getDihybridGametes(p1Geno1, p1Geno2), [p1Geno1, p1Geno2]);
+  const diGametes2 = useMemo(() => getDihybridGametes(p2Geno1, p2Geno2), [p2Geno1, p2Geno2]);
 
-  const diOffspring: string[][] = [];
-  for (const g1 of diGametes1) {
-    const row: string[] = [];
-    for (const g2 of diGametes2) {
-      // Combine: first allele pair from each, then second
-      const a1 = [g1[0], g2[0]].sort((a, b) => (a === a.toUpperCase() ? -1 : 1)).join('');
-      const a2 = [g1[1], g2[1]].sort((a, b) => (a === a.toUpperCase() ? -1 : 1)).join('');
-      row.push(a1 + a2);
+  const diOffspring = useMemo<string[][]>(() => {
+    const grid: string[][] = [];
+    for (const g1 of diGametes1) {
+      const row: string[] = [];
+      for (const g2 of diGametes2) {
+        // Combine: first allele pair from each, then second
+        const a1 = [g1[0], g2[0]].sort((a, b) => (a === a.toUpperCase() ? -1 : 1)).join('');
+        const a2 = [g1[1], g2[1]].sort((a, b) => (a === a.toUpperCase() ? -1 : 1)).join('');
+        row.push(a1 + a2);
+      }
+      grid.push(row);
     }
-    diOffspring.push(row);
-  }
+    return grid;
+  }, [diGametes1, diGametes2]);
 
   // Calculate ratios
   const calculateRatios = useCallback(() => {

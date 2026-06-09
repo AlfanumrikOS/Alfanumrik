@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 
 export const metadata = {
   id: 'acid-base-titration',
@@ -57,10 +57,13 @@ export default function AcidBaseTitration() {
   const indicatorName = pHToIndicatorName(pH);
 
   // Build curve points up to current volume
-  const curvePoints: CurvePoint[] = [];
-  for (let v = 0; v <= 50; v += 0.5) {
-    curvePoints.push({ vol: v, ph: calcPH(v) });
-  }
+  const curvePoints = useMemo<CurvePoint[]>(() => {
+    const points: CurvePoint[] = [];
+    for (let v = 0; v <= 50; v += 0.5) {
+      points.push({ vol: v, ph: calcPH(v) });
+    }
+    return points;
+  }, []);
 
   const drawCurve = useCallback(() => {
     const canvas = canvasRef.current;

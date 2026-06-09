@@ -308,7 +308,7 @@ function ChannelsContent() {
       {/* Empty */}
       {!isLoading && !error && channels.length === 0 && (
         <div style={{ padding: 32, textAlign: 'center', color: colors.text3, fontSize: 13, border: `1px solid ${colors.border}`, borderRadius: 8 }}>
-          No notification channels configured yet. Click "+ New Channel" to create one.
+          No notification channels configured yet. Click &quot;+ New Channel&quot; to create one.
         </div>
       )}
 

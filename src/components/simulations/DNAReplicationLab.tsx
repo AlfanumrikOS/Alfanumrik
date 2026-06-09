@@ -488,7 +488,7 @@ export default function DNAReplicationLab() {
       ctx.textBaseline = 'top';
       ctx.fillText(`Step ${step + 1}/${STEPS.length}`, w - 10, 10);
     },
-    [currentStep]
+    []
   );
 
   /* ─── Animation loop ─── */

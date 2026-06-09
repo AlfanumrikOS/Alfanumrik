@@ -117,7 +117,7 @@ export default function PhotoelectricEffect() {
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(`f₀(threshold) = ${threshold.toFixed(2)} × 10¹⁴ Hz`, W / 2, H - 8);
-  }, [freq, intensity, aboveThreshold, KE, metal, phi, photonColor, threshold, size, canvasRef]);
+  }, [intensity, aboveThreshold, KE, metal, phi, photonColor, threshold, size, canvasRef]);
 
   useEffect(() => {
     const loop = () => {

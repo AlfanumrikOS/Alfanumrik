@@ -79,13 +79,13 @@ export default function LightRefraction() {
       ctx.fillStyle = 'var(--purple)'; ctx.font = '12px sans-serif';
       ctx.fillText(`θ₂=${rDeg}°`, cx + 30, midY + 55);
     }
-  }, [n2, incidentDeg, tir, rRad, rDeg, size, canvasRef]);
+  }, [n2, label, incidentDeg, tir, rRad, rDeg, size, canvasRef]);
 
   const n2Steps = [100, 133, 150, 242];
 
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
-      <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Light Refraction — Snell's Law</h3>
+      <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Light Refraction — Snell&#39;s Law</h3>
       <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
         {n2Steps.map(v => (
           <button key={v} onClick={() => setN2Raw(v)} style={{ padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, background: n2Raw === v ? 'var(--purple)' : 'var(--surface-2)', color: n2Raw === v ? '#fff' : 'var(--text-1)' }}>

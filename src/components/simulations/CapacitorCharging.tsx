@@ -128,7 +128,7 @@ export default function CapacitorCharging() {
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'right';
     ctx.fillText(`I(t)=${(I_now * 1000).toFixed(3)}mA`, gRight - 2, gBot - 5);
-  }, [R, C, V0, tau, tSlider]);
+  }, [R, V0, tau, tSlider]);
 
   useEffect(() => { draw(); }, [draw]);
 

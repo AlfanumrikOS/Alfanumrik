@@ -220,7 +220,7 @@ export default function HeroV2() {
                     <div className="psMono">{t('Mastery · last 7 days', 'महारत · पिछले 7 दिन')}</div>
                     <strong className="psStrongLg">72%</strong>
                     <div className="psMetaLine">
-                      {t('+8 from last week · ', 'पिछले सप्ताह से +8 · ')}Bloom's: Apply
+                      {t('+8 from last week · ', 'पिछले सप्ताह से +8 · ')}Bloom&#39;s: Apply
                     </div>
                   </div>
                   <div className="psFoxy">
