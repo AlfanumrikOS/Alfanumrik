@@ -1,0 +1,5 @@
+# Deploy script runtime logs — contain timing/SHA metadata, never credentials,
+# but should not be committed to source control.
+.last_deploy.log
+.last_functions_deploy.log
+.rollback.log
