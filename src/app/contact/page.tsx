@@ -80,8 +80,10 @@ function ContactForm() {
   return (
     <form onSubmit={handleSubmit} style={card}>
       <div style={{ marginBottom: 16 }}>
-        <label style={labelStyle}>Name</label>
+        <label htmlFor="contact-name" style={labelStyle}>Name</label>
         <input
+          id="contact-name"
+          name="name"
           type="text"
           required
           value={form.name}
@@ -91,8 +93,10 @@ function ContactForm() {
         />
       </div>
       <div style={{ marginBottom: 16 }}>
-        <label style={labelStyle}>Email</label>
+        <label htmlFor="contact-email" style={labelStyle}>Email</label>
         <input
+          id="contact-email"
+          name="email"
           type="email"
           required
           value={form.email}
@@ -102,8 +106,10 @@ function ContactForm() {
         />
       </div>
       <div style={{ marginBottom: 16 }}>
-        <label style={labelStyle}>I am a...</label>
+        <label htmlFor="contact-role" style={labelStyle}>I am a...</label>
         <select
+          id="contact-role"
+          name="role"
           required
           value={form.role}
           onChange={e => setForm({ ...form, role: e.target.value })}
@@ -118,8 +124,10 @@ function ContactForm() {
         </select>
       </div>
       <div style={{ marginBottom: 20 }}>
-        <label style={labelStyle}>Message</label>
+        <label htmlFor="contact-message" style={labelStyle}>Message</label>
         <textarea
+          id="contact-message"
+          name="message"
           required
           value={form.message}
           onChange={e => setForm({ ...form, message: e.target.value })}
