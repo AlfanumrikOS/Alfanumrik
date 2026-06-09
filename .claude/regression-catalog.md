@@ -2948,3 +2948,52 @@ distribution with 'unspecified' bucket; PII-safe aggregate export; flag-OFF
 404-before-auth; cross-school 42501 scope guard).
 
 **Total: 67 entries.** (REG-80, REG-81, REG-82 still recommended, not yet added.)
+
+## Phase 2 monthly-synthesis-builder Python port (2026-06-09) — REG-100
+
+Source: Phase 2 continued — port of `supabase/functions/monthly-synthesis-builder/index.ts`
+to Python on Cloud Run. The Python module
+(`python/services/ai/business/monthly_synthesis_builder/`) reproduces the TS
+six-step pipeline (auth → idempotency lookup → aggregate → bundle build →
+idempotent insert → response). The TS Edge function gains a proxy block at
+the top of `Deno.serve` that forwards to Cloud Run when
+`ff_python_monthly_synthesis_builder_v1` enabled + bucket < rollout_pct.
+On any proxy failure → falls through to the legacy TS bundle-builder. Default
+OFF (rollout_pct=0).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-100 | `phase_2_monthly_synthesis_builder_python_port_constants_and_wire_parity` | Three-pronged contract on the Python port. (1) **Pure-transformation constants match TS byte-for-byte:** TARGET_DIFFICULTY_V1=0.55, MOCK_QUESTIONS_PER_CHAPTER=2, MOCK_QUESTIONS_CAP=20, MASTERY_IMPROVED_THRESHOLD=0.5, CHAPTERS_TOUCHED_SOFT_CAP=12, CHAPTERS_IN_MOCK_SUMMARY_CAP=6. A regression on any constant ships a wrong-shape bundle to monthly_synthesis_runs. (2) **Wire-shape parity:** SynthesisBundle uses camelCase keys (monthLabel, weeklyArtifactIds, masteryDelta, chapterMockSummary) so the Next.js /api/synthesis/state consumer keeps working byte-for-byte across the cutover. Pydantic extra=forbid enforces no field drift. (3) **Pure logic parity:** month_boundaries_of returns ISO with trailing Z (TS toISOString shape), derive_chapters_touched preserves insertion-order dedup (TS Set semantics), derive_chapter_mock_summary returns null when no chapters touched (TS null path), compute_mastery_counters reports topicsRegressed=0 always (TS v1 simplification — historical snapshots not yet implemented). | `python/tests/unit/test_monthly_synthesis_builder_bundle.py::test_constants_match_ts_verbatim`, `python/tests/unit/test_monthly_synthesis_builder_bundle.py::test_month_boundaries_returns_iso_with_Z_suffix`, `python/tests/unit/test_monthly_synthesis_builder_bundle.py::test_compute_mastery_counters_regressed_always_zero_v1`, `python/tests/unit/test_monthly_synthesis_builder_models.py::test_bundle_wire_shape_camelCase_keys`, `python/tests/unit/test_monthly_synthesis_builder_models.py::test_request_rejects_bad_month_format` | E |
+
+### Invariants covered by this section
+
+- **P5 (grade format)** — N/A here (no grade fields in monthly_synthesis_runs).
+- **P12 (AI safety)** — N/A; this port carries no LLM call. The bilingual
+  summary is generated lazily by the Next.js side at `/api/synthesis/state`.
+- **P13 (data privacy)** — response carries no PII; only UUIDs, counters, and
+  chapter titles. The handler binds `student_id` into structlog contextvars
+  for log correlation but never logs the full request body.
+
+### Notes on test strategy
+
+REG-100 follows the same multi-file unit pattern as REG-76 (Phase 2
+generate-concepts). The TS path is the source of truth for the bundle shape
+and the bundle is consumed by `/api/synthesis/state` on the Next.js side, so
+any wire drift would surface as a parse error on the synthesis viewer rather
+than at the Edge proxy. The pinned tests cover the contract surface; the
+broader test files (15 bundle tests + 10 models tests) exercise every
+rejection branch in the validators.
+
+The proxy block in `supabase/functions/monthly-synthesis-builder/index.ts`
+follows the canonical pattern used by generate-concepts, generate-answers,
+and bulk-question-gen: read flag envelope → hash-bucket → forward or fall
+through. The Cloud Run forward preserves the `x-cron-secret` header so the
+Python service performs its own cron-secret verification — auth posture is
+identical on both sides.
+
+### Catalog total
+
+Pre-Phase-2-monthly-synthesis-builder: 67 entries. Phase 2
+monthly-synthesis-builder adds REG-100.
+
+**Total: 68 entries.**

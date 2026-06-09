@@ -27,6 +27,7 @@
 //        target difficulty 0.55 fixed for v1).
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
 
 const ALLOWED_ORIGINS = [
   'https://alfanumrik.com',
@@ -191,6 +192,31 @@ async function buildBundle(
 // ─── HTTP handler ──────────────────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get('origin')
+
+  // ── Phase 2 continued — Python AI Cloud Run proxy gate ─────────────────
+  //
+  // When ff_python_monthly_synthesis_builder_v1 is enabled AND the per-request
+  // hash bucket lands inside the rollout window AND kill_switch is false,
+  // forward the entire request (body + headers including x-cron-secret) to
+  // the Python service. On ANY proxy failure (network, 4xx, 5xx, timeout)
+  // we fall through to the legacy TS handler below — never 5xx the caller
+  // because Cloud Run is degraded. Default OFF (rollout_pct=0) so this is
+  // a no-op until ops bumps the flag.
+  try {
+    const request_id = req.headers.get('x-request-id') ?? crypto.randomUUID()
+    const decision = await shouldProxyToPython({
+      flag_name: 'ff_python_monthly_synthesis_builder_v1',
+      endpoint_path: '/v1/monthly-synthesis-builder',
+      request_id,
+    })
+    if (decision.should_proxy && decision.target_url) {
+      return await forwardToPython({ target_url: decision.target_url, request: req })
+    }
+  } catch (err) {
+    // Fall through to the legacy TS path — never let proxy errors surface.
+    console.warn('[monthly-synthesis-builder] python proxy fell through:', err instanceof Error ? err.message : String(err))
+  }
+
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(origin) })
   if (req.method !== 'POST') return jsonResponse({ error: 'method_not_allowed' }, 405, origin)
 
