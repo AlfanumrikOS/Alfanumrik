@@ -34,6 +34,7 @@ from .v1.generate import router as generate_router
 from .v1.generate_answers import router as generate_answers_router
 from .v1.generate_concepts import router as generate_concepts_router
 from .v1.voice import router as voice_router
+from .v1.nep_compliance import router as nep_compliance_router
 from .v1.foxy_tutor import router as foxy_tutor_router
 from .v1.monthly_synthesis_builder import router as monthly_synthesis_builder_router
 from ..business.cme_engine.router import router as cme_router
@@ -140,6 +141,7 @@ def create_app() -> FastAPI:
     app.include_router(generate_answers_router)
     app.include_router(generate_concepts_router)
     app.include_router(voice_router)
+    app.include_router(nep_compliance_router)
     app.include_router(foxy_tutor_router)
     app.include_router(cme_router)
     app.include_router(ncert_solver_router)

@@ -16,6 +16,7 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -418,6 +419,23 @@ async function generateHPC(
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
+  // Phase 2 continued - Python AI Cloud Run proxy gate.
+  // ff_python_nep_compliance_v1 + hash-bucket; fall through to legacy TS
+  // on ANY proxy failure. Default OFF.
+  try {
+    const request_id = req.headers.get('x-request-id') ?? crypto.randomUUID()
+    const decision = await shouldProxyToPython({
+      flag_name: 'ff_python_nep_compliance_v1',
+      endpoint_path: '/v1/nep-compliance',
+      request_id,
+    })
+    if (decision.should_proxy && decision.target_url) {
+      return await forwardToPython({ target_url: decision.target_url, request: req })
+    }
+  } catch (err) {
+    console.warn('[nep-compliance] python proxy fell through:', err instanceof Error ? err.message : String(err))
+  }
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
