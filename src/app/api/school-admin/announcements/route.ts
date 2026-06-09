@@ -3,11 +3,18 @@ import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { logSchoolAudit } from '@/lib/audit';
+import { assertModuleEnabledForSchool } from '@/lib/modules/route-guard';
 
 // ─── GET — List announcements for this school ────────────────────────────────
 export async function GET(request: NextRequest) {
   const auth = await authorizeSchoolAdmin(request, 'school.manage_settings');
   if (!auth.authorized) return auth.errorResponse!;
+
+  // Module gate: announcements belong to the `communication` module (a
+  // cross-cutting module, registry routePrefix `null`). Disabled → 404;
+  // flag OFF / unresolved / error → allowed.
+  const moduleGate = await assertModuleEnabledForSchool(auth.schoolId, 'communication');
+  if (!moduleGate.allowed) return moduleGate.response;
 
   const supabase = getSupabaseAdmin();
   const params = new URL(request.url).searchParams;
@@ -55,6 +62,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await authorizeSchoolAdmin(request, 'school.manage_settings');
   if (!auth.authorized) return auth.errorResponse!;
+
+  // Module gate: announcements belong to the `communication` module (a
+  // cross-cutting module, registry routePrefix `null`). Disabled → 404;
+  // flag OFF / unresolved / error → allowed.
+  const moduleGate = await assertModuleEnabledForSchool(auth.schoolId, 'communication');
+  if (!moduleGate.allowed) return moduleGate.response;
 
   let body: Record<string, unknown>;
   try {
@@ -159,6 +172,12 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const auth = await authorizeSchoolAdmin(request, 'school.manage_settings');
   if (!auth.authorized) return auth.errorResponse!;
+
+  // Module gate: announcements belong to the `communication` module (a
+  // cross-cutting module, registry routePrefix `null`). Disabled → 404;
+  // flag OFF / unresolved / error → allowed.
+  const moduleGate = await assertModuleEnabledForSchool(auth.schoolId, 'communication');
+  if (!moduleGate.allowed) return moduleGate.response;
 
   let body: Record<string, unknown>;
   try {
@@ -299,6 +318,12 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const auth = await authorizeSchoolAdmin(request, 'school.manage_settings');
   if (!auth.authorized) return auth.errorResponse!;
+
+  // Module gate: announcements belong to the `communication` module (a
+  // cross-cutting module, registry routePrefix `null`). Disabled → 404;
+  // flag OFF / unresolved / error → allowed.
+  const moduleGate = await assertModuleEnabledForSchool(auth.schoolId, 'communication');
+  if (!moduleGate.allowed) return moduleGate.response;
 
   let body: Record<string, unknown>;
   try {

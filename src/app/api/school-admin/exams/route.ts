@@ -3,6 +3,7 @@ import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { logSchoolAudit } from '@/lib/audit';
+import { assertModuleEnabledForSchool } from '@/lib/modules/route-guard';
 
 // ── Constants ────────────────────────────────────────────────
 
@@ -38,6 +39,11 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await authorizeSchoolAdmin(request, 'school.manage_exams');
     if (!auth.authorized) return auth.errorResponse;
+
+    // Module gate: exams belong to `testing_engine` (registry routePrefix
+    // `/quiz`). Disabled → 404; flag OFF / unresolved / error → allowed.
+    const gate = await assertModuleEnabledForSchool(auth.schoolId, 'testing_engine');
+    if (!gate.allowed) return gate.response;
 
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
@@ -152,6 +158,11 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await authorizeSchoolAdmin(request, 'school.manage_exams');
     if (!auth.authorized) return auth.errorResponse;
+
+    // Module gate: exams belong to `testing_engine` (registry routePrefix
+    // `/quiz`). Disabled → 404; flag OFF / unresolved / error → allowed.
+    const gate = await assertModuleEnabledForSchool(auth.schoolId, 'testing_engine');
+    if (!gate.allowed) return gate.response;
 
     let body: Record<string, unknown>;
     try {
@@ -350,6 +361,11 @@ export async function PATCH(request: NextRequest) {
   try {
     const auth = await authorizeSchoolAdmin(request, 'school.manage_exams');
     if (!auth.authorized) return auth.errorResponse;
+
+    // Module gate: exams belong to `testing_engine` (registry routePrefix
+    // `/quiz`). Disabled → 404; flag OFF / unresolved / error → allowed.
+    const gate = await assertModuleEnabledForSchool(auth.schoolId, 'testing_engine');
+    if (!gate.allowed) return gate.response;
 
     let body: Record<string, unknown>;
     try {
@@ -638,6 +654,11 @@ export async function DELETE(request: NextRequest) {
   try {
     const auth = await authorizeSchoolAdmin(request, 'school.manage_exams');
     if (!auth.authorized) return auth.errorResponse;
+
+    // Module gate: exams belong to `testing_engine` (registry routePrefix
+    // `/quiz`). Disabled → 404; flag OFF / unresolved / error → allowed.
+    const gate = await assertModuleEnabledForSchool(auth.schoolId, 'testing_engine');
+    if (!gate.allowed) return gate.response;
 
     let body: Record<string, unknown>;
     try {

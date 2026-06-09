@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { assertModuleEnabledForSchool } from '@/lib/modules/route-guard';
 
 /**
  * GET /api/school-admin/analytics
@@ -23,6 +24,11 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await authorizeSchoolAdmin(request, 'institution.view_analytics');
     if (!auth.authorized) return auth.errorResponse!;
+
+    // Module gate: analytics belongs to the `analytics` module (registry
+    // routePrefix `/reports`). Disabled → 404; flag OFF / unresolved → allowed.
+    const gate = await assertModuleEnabledForSchool(auth.schoolId, 'analytics');
+    if (!gate.allowed) return gate.response;
 
     const schoolId = auth.schoolId!;
     const supabase = getSupabaseAdmin();
