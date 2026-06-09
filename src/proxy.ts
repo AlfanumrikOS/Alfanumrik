@@ -562,6 +562,18 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(redirectUrl, { status: 308 });
   }
 
+  // ── /school → /school-admin permanent redirect ──────────────────────
+  // Common typo / short URL: users type /school when the portal is at
+  // /school-admin. 308 preserves the request method so any POST/PUT
+  // (e.g. from old bookmarks or forwarded links) replays cleanly.
+  if (pathname === '/school' || pathname.startsWith('/school/')) {
+    const target = pathname === '/school'
+      ? '/school-admin'
+      : '/school-admin' + pathname.slice('/school'.length);
+    const redirectUrl = new URL(target + request.nextUrl.search, request.url);
+    return NextResponse.redirect(redirectUrl, { status: 308 });
+  }
+
   // ── CORS: Allowed origins (not wildcard) ──
   const ALLOWED_ORIGINS = [
     'https://alfanumrik.com',

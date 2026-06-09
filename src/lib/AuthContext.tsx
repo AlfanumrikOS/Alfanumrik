@@ -352,58 +352,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const detectedRoles: UserRole[] = [];
           let detectedPrimary: UserRole = 'none';
 
-          // Check student
-          const { data: studentData } = await supabase
-            .from('students')
-            .select('*')
-            .eq('auth_user_id', user.id)
-            .maybeSingle(); // .single() returns HTTP 406 when no row exists; .maybeSingle() returns null
+          // Run all four role-table lookups in parallel instead of sequentially.
+          // On Indian 4G each PostgREST round-trip is ~500 ms; 4 sequential
+          // awaits was ~2 000 ms minimum, which — combined with getUser(),
+          // rpc(), and any bootstrap path — easily exceeded the 12 s hard
+          // timeout. One Promise.all batch collapses to a single ~500 ms
+          // window, keeping the total well within the timeout budget.
+          const [
+            { data: studentData },
+            { data: teacherData },
+            { data: guardianData },
+            { data: schoolAdminData },
+          ] = await Promise.all([
+            supabase
+              .from('students')
+              .select('*')
+              .eq('auth_user_id', user.id)
+              .maybeSingle(),
+            supabase
+              .from('teachers')
+              .select('id, name, school_name, subjects_taught, grades_taught, email, phone')
+              .eq('auth_user_id', user.id)
+              .maybeSingle(),
+            supabase
+              .from('guardians')
+              .select('id, name, email, phone')
+              .eq('auth_user_id', user.id)
+              .maybeSingle(),
+            // get_user_role RPC (extended 2026-06-09) now covers school_admins,
+            // so this branch fires only when the RPC errored or for brand-new
+            // accounts racing their first login before the RPC sees the row.
+            supabase
+              .from('school_admins')
+              .select('id, school_id')
+              .eq('auth_user_id', user.id)
+              .eq('is_active', true)
+              .maybeSingle(),
+          ]);
+
           if (studentData) {
             setStudent(studentData as Student);
             detectedRoles.push('student');
             detectedPrimary = 'student';
             setLanguageState(studentData.preferred_language ?? 'en');
           }
-
-          // Check teacher
-          const { data: teacherData } = await supabase
-            .from('teachers')
-            .select('id, name, school_name, subjects_taught, grades_taught, email, phone')
-            .eq('auth_user_id', user.id)
-            .maybeSingle(); // .single() returns HTTP 406 when no row exists; .maybeSingle() returns null
           if (teacherData) {
             setTeacher(teacherData as TeacherProfile);
             detectedRoles.push('teacher');
             detectedPrimary = 'teacher'; // teacher takes priority
           }
-
-          // Check guardian
-          const { data: guardianData } = await supabase
-            .from('guardians')
-            .select('id, name, email, phone')
-            .eq('auth_user_id', user.id)
-            .maybeSingle(); // .single() returns HTTP 406 when no row exists; .maybeSingle() returns null
           if (guardianData) {
             setGuardian(guardianData as GuardianProfile);
             detectedRoles.push('guardian');
             if (detectedPrimary === 'none') detectedPrimary = 'guardian';
           }
-
-          // Check school_admin (institution_admin role).
-          // The baseline `get_user_role` RPC only inspects students/teachers/
-          // guardians — school_admins are invisible to it. So a school admin
-          // whose RPC call succeeded with `roles: []` falls through to this
-          // fallback block, and without this check would end up with
-          // activeRole='none' and hang on /dashboard. We don't expose a
-          // separate schoolAdmin profile in AuthContext — the school-admin
-          // page (src/app/school-admin/page.tsx) re-queries the row itself.
-          // All we need from here is the role so routing works.
-          const { data: schoolAdminData } = await supabase
-            .from('school_admins')
-            .select('id, school_id')
-            .eq('auth_user_id', user.id)
-            .eq('is_active', true)
-            .maybeSingle();
           if (schoolAdminData) {
             detectedRoles.push('institution_admin');
             if (detectedPrimary === 'none') detectedPrimary = 'institution_admin';
