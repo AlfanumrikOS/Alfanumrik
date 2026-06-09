@@ -3114,3 +3114,18 @@ STUBBED. Phase 2.5 will wire MoL routing. Default OFF.
 Pre-Phase-2-extract-ncert-questions: 72 entries. Adds REG-105.
 
 **Total: 73 entries.**
+
+## Phase 2 bulk-non-mcq-gen Python port (stub) (2026-06-09) - REG-106
+
+Structural stub port. Auth + request validation are functional; MoL generation
+is stubbed (Phase 2.5 follow-up). Default OFF.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-106 | `phase_2_bulk_non_mcq_gen_python_port_model_contract` | (1) P5 grade-as-string. (2) question_type Literal in {short_answer, long_answer, fill_blank} - MCQ excluded. (3) batch_size in [1,20] default 5. (4) Response phase_2_stub=True default. (5) extra=forbid on both request and response. | `python/tests/unit/test_bulk_non_mcq_gen_models.py::test_request_grade_string`, `python/tests/unit/test_bulk_non_mcq_gen_models.py::test_request_invalid_question_type`, `python/tests/unit/test_bulk_non_mcq_gen_models.py::test_request_batch_size_clamp`, `python/tests/unit/test_bulk_non_mcq_gen_models.py::test_response_phase_2_stub_default_true` | E |
+
+### Catalog total
+
+Pre-Phase-2-bulk-non-mcq-gen: 73 entries. Adds REG-106.
+
+**Total: 74 entries.**

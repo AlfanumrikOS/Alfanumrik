@@ -52,6 +52,7 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
 // MoL (Model Orchestration Layer) — Phase 1A migration (2026-05-24).
 // Routes SA/LA generation through the shared orchestrator (OpenAI gpt-4o-mini
 // primary, Claude Haiku fallback). The per-type validator in isValidQuestion
@@ -641,6 +642,20 @@ async function insertQuestions(
 // ─── Main handler ────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
+  try {
+    const request_id = req.headers.get('x-request-id') ?? crypto.randomUUID()
+    const decision = await shouldProxyToPython({
+      flag_name: 'ff_python_bulk_non_mcq_gen_v1',
+      endpoint_path: '/v1/bulk-non-mcq-gen',
+      request_id,
+    })
+    if (decision.should_proxy && decision.target_url) {
+      return await forwardToPython({ target_url: decision.target_url, request: req })
+    }
+  } catch (err) {
+    console.warn('[bulk-non-mcq-gen] python proxy fell through:', err instanceof Error ? err.message : String(err))
+  }
+
   const origin = req.headers.get('origin')
 
   if (req.method === 'OPTIONS') {
