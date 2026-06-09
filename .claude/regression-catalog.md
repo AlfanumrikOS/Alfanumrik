@@ -2997,3 +2997,27 @@ Pre-Phase-2-monthly-synthesis-builder: 67 entries. Phase 2
 monthly-synthesis-builder adds REG-100.
 
 **Total: 68 entries.**
+## Phase 2 nep-compliance Python port (2026-06-09) - REG-101
+
+Port of `supabase/functions/nep-compliance/index.ts` to Python on Cloud Run.
+NEP 2020 Holistic Progress Card generator/retriever. Pure data aggregation,
+no LLM call. Edge proxy gates traffic via `ff_python_nep_compliance_v1`;
+falls through to legacy TS on any failure. Default OFF.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-101 | `phase_2_nep_compliance_python_port_nep_thresholds_and_term_boundaries` | (1) NEP 2020 competency thresholds match TS byte-for-byte (85/65/40 boundaries map to advanced/proficient/developing/beginning). (2) Behavior-rating math: returns None when benchmark<=0; caps at 5; minimum 1; zero value returns 1 (not 0). (3) Indian academic year boundary: April starts new year string; March returns previous. (4) Term boundary: months 4-9 are Term 1, months 10-3 are Term 2. A regression on any of these mismaps student level / report card data. | `python/tests/unit/test_nep_compliance_mapping.py::test_thresholds_match_ts_verbatim`, `python/tests/unit/test_nep_compliance_mapping.py::test_mastery_to_competency_advanced`, `python/tests/unit/test_nep_compliance_mapping.py::test_behavior_rating_zero_max_returns_none`, `python/tests/unit/test_nep_compliance_mapping.py::test_academic_year_april_to_march_boundary`, `python/tests/unit/test_nep_compliance_mapping.py::test_current_term_april_to_september_is_term_1` | E |
+
+### Invariants covered by this section
+
+- P5 (grade format) - HPCReport.student.grade is `str` (Pydantic-typed).
+- P12 (AI safety) - N/A; no LLM call.
+- P13 (data privacy) - response carries student name+grade by necessity
+  (HPC is parent-visible by design). Logs only request_id + student_id UUID,
+  never report contents.
+
+### Catalog total
+
+Pre-Phase-2-nep-compliance: 68 entries. Phase 2 nep-compliance adds REG-101.
+
+**Total: 69 entries.**
