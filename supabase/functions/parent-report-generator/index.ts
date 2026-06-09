@@ -27,6 +27,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
+import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
 // MoL (Model Orchestration Layer) — Phase 1A migration (2026-05-24).
 // parent-report-generator emits weekly summary text for parents. P13: PII
 // (student name) IS sent to the LLM by design — parents see the report
@@ -589,6 +590,20 @@ async function callLlmLegacy(prompt: string): Promise<string> {
 // ─── Main handler ──────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
+  try {
+    const request_id = req.headers.get('x-request-id') ?? crypto.randomUUID()
+    const decision = await shouldProxyToPython({
+      flag_name: 'ff_python_parent_report_generator_v1',
+      endpoint_path: '/v1/parent-report-generator',
+      request_id,
+    })
+    if (decision.should_proxy && decision.target_url) {
+      return await forwardToPython({ target_url: decision.target_url, request: req })
+    }
+  } catch (err) {
+    console.warn('[parent-report-generator] python proxy fell through:', err instanceof Error ? err.message : String(err))
+  }
+
   const origin = req.headers.get('origin')
   const cors = getCorsHeaders(origin)
 
