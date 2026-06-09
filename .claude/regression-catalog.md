@@ -3044,3 +3044,29 @@ Cloud Run. Bilingual weekly parent report (en/hi). Template path only
 Pre-Phase-2-parent-report-generator: 69 entries. Adds REG-102.
 
 **Total: 70 entries.**
+
+## Phase 2 grade-experiment-conclusion Python port (2026-06-09) - REG-103
+
+Port of `supabase/functions/grade-experiment-conclusion/index.ts` to Python.
+Tier 3 R10 experiment-conclusion grader. Phase 2 uses rule-based scoring
+(Phase 2.5 will swap to MoL). Default OFF.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-103 | `phase_2_grade_experiment_conclusion_python_port_coin_tier_parity` | (1) Tier boundaries match TS byte-for-byte: weak 0-4, developing 5-7, proficient 8-10, strong 11-12. (2) Coin rewards match TS: +0/+5/+15/+30. (3) Rule-based scoring covers tier mapping correctly (short -> weak, long+rich -> proficient/strong). (4) All criteria clamped to 0..3. (5) Bilingual feedback (en+hi) populated for every tier. A regression on tier boundaries or coin rewards changes the in-app economy. | `python/tests/unit/test_grade_experiment_conclusion_scoring.py::test_tier_boundaries_match_ts`, `python/tests/unit/test_grade_experiment_conclusion_scoring.py::test_coin_rewards_match_ts`, `python/tests/unit/test_grade_experiment_conclusion_scoring.py::test_total_to_tier_boundaries`, `python/tests/unit/test_grade_experiment_conclusion_scoring.py::test_short_text_scores_weak`, `python/tests/unit/test_grade_experiment_conclusion_scoring.py::test_long_rich_text_scores_strong`, `python/tests/unit/test_grade_experiment_conclusion_scoring.py::test_all_criteria_in_0_3_range` | E |
+
+### Invariants covered by this section
+
+- P2 (XP economy) - coin tier amounts are part of the gamification
+  economy; REG-103 pins +0/+5/+15/+30 verbatim.
+- P12 (AI safety) - this Phase 2 port uses deterministic heuristics; no
+  LLM output reaches DB or student. Phase 2.5 follow-up will introduce
+  MoL routing with the existing safety chain.
+- P13 (data privacy) - logs {observation_id, tier, total, coins,
+  latency_ms} only; conclusion text NEVER logged.
+
+### Catalog total
+
+Pre-Phase-2-grade-experiment-conclusion: 70 entries. Adds REG-103.
+
+**Total: 71 entries.**
