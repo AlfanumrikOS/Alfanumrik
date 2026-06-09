@@ -107,3 +107,6 @@ CREATE TRIGGER learner_mastery_touch
 -- renamed the bus table to avoid a collision with the legacy outbox).
 -- That migration creates bus_cursor and seeds the `state_events_watermark`
 -- key. Nothing to do here.
+
+-- Belt-and-suspenders: lock search_path (in case 20260515000002 skipped it on fresh deploy).
+ALTER FUNCTION public.notify_state_event() SET search_path = pg_catalog, public;
