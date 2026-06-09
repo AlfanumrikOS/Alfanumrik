@@ -1,6 +1,11 @@
 -- Migration: 20260614200001_repair_api_query_path_indexes.sql
 -- Date: 2026-06-14
--- Fixed: 2026-06-14 v2 -- removed wrong-column/wrong-table index statements
+-- Fixed: 2026-06-14 v3 -- additional wrong-column/wrong-table fixes:
+--   Section G: grounding_circuit_state table does not exist (20260528000003
+--              added columns to grounded_ai_traces instead). Section removed.
+--   Section J: assigned_at does not exist on teacher_remediation_assignments;
+--              column is created_at. Fixed.
+-- Fixed: 2026-06-14 v2 -- first round of wrong-column/wrong-table fixes
 --   Section E: monitor_name/status do not exist on synthetic_monitor_results
 --              (actual columns: host, ok). Replaced with host-based index.
 --              Failure partial index NOT recreated (already exists as
@@ -98,11 +103,10 @@ COMMENT ON INDEX idx_synthetic_monitor_results_host_checked IS
 -- Section G: grounding_circuit_state (20260528000003)
 -- ============================================================================
 
-CREATE INDEX IF NOT EXISTS idx_grounding_circuit_state_name
-  ON public.grounding_circuit_state (circuit_name);
-
-COMMENT ON INDEX idx_grounding_circuit_state_name IS
-  'repair_api_query_path_indexes (2026-06-14): circuit_name lookup for foxy-tutor circuit-breaker read path.';
+-- CREATE INDEX idx_grounding_circuit_state_name removed (v3 fix):
+-- grounding_circuit_state table does not exist on production.
+-- Migration 20260528000003 added columns to grounded_ai_traces instead
+-- of creating a separate grounding_circuit_state table.
 
 -- ============================================================================
 -- Section H: admin_login_attempts (20260528000007)
@@ -142,10 +146,10 @@ COMMENT ON INDEX idx_teacher_remediation_student_id IS
   'repair_api_query_path_indexes (2026-06-14): student_id FK index for my-remediation-tasks query.';
 
 CREATE INDEX IF NOT EXISTS idx_teacher_remediation_status_assigned
-  ON public.teacher_remediation_assignments (status, assigned_at DESC);
+  ON public.teacher_remediation_assignments (status, created_at DESC);
 
 COMMENT ON INDEX idx_teacher_remediation_status_assigned IS
-  'repair_api_query_path_indexes (2026-06-14): status index for teacher pending-assignments queue view.';
+  'repair_api_query_path_indexes (2026-06-14 v3): status + created_at index for teacher pending-assignments queue view (assigned_at does not exist; column is created_at).';
 
 -- ============================================================================
 -- Section K: at_risk_alerts (20260614000000 phase3b)
@@ -164,7 +168,7 @@ COMMENT ON INDEX idx_at_risk_alerts_school_status IS
 DO $verify$
 DECLARE
   v_idx_count   integer;
-  v_expected    integer := 11;
+  v_expected    integer := 10;  -- Section G removed (grounding_circuit_state does not exist)
 BEGIN
   SELECT count(*) INTO v_idx_count
     FROM pg_indexes
@@ -176,7 +180,7 @@ BEGIN
        'idx_data_erasure_requests_student',
        'idx_data_erasure_requests_status_created',
        'idx_synthetic_monitor_results_host_checked',
-       'idx_grounding_circuit_state_name',
+       -- idx_grounding_circuit_state_name removed (table does not exist)
        'idx_parent_cheers_notification_id',
        'idx_teacher_remediation_teacher_id',
        'idx_teacher_remediation_student_id',
