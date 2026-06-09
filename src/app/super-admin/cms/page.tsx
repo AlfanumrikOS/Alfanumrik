@@ -784,7 +784,7 @@ function CmsContent() {
             )}
 
             {assets.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#9CA3AF' }}>No assets attached. Click "+ Attach Asset" to add one.</div>
+              <div style={{ fontSize: 12, color: '#9CA3AF' }}>No assets attached. Click &quot;+ Attach Asset&quot; to add one.</div>
             ) : (
               <table style={tableStyle}>
                 <thead>

@@ -29,13 +29,13 @@ export default function TrustV2() {
               {isHi ? (
                 <>
                   हमने अल्फ़ान्यूमरिक इसलिए बनाया क्योंकि हमारी अपनी बेटी का रिपोर्ट कार्ड बार-बार
-                  <em> "औसत"</em> कहता था — एक शब्द जो सब कुछ छुपाता है, कुछ नहीं समझाता। हम जानना
+                  <em> &quot;औसत&quot;</em> कहता था — एक शब्द जो सब कुछ छुपाता है, कुछ नहीं समझाता। हम जानना
                   चाहते थे कि वह क्या जानती है और क्या नहीं। अब वह भी जानती है।
                 </>
               ) : (
                 <>
-                  We built Alfanumrik because our own daughter's report card kept saying{' '}
-                  <em>"average"</em> — a word that hides everything and explains nothing. We
+                  We built Alfanumrik because our own daughter&#39;s report card kept saying{' '}
+                  <em>&quot;average&quot;</em> — a word that hides everything and explains nothing. We
                   wanted to know exactly what she knew and exactly what she did not. Now she does too.
                 </>
               )}
@@ -63,7 +63,7 @@ export default function TrustV2() {
               ) : (
                 <>
                   For the first time my Class 9 children walk into the lesson having{' '}
-                  <em>actually</em> read the previous chapter. The Bloom's-level dashboard
+                  <em>actually</em> read the previous chapter. The Bloom&#39;s-level dashboard
                   tells me who needs me on Monday morning — I do not waste a single minute.
                 </>
               )}

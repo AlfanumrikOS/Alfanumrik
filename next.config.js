@@ -33,6 +33,14 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
+  // Pin the Turbopack workspace root to this project directory. The repo lives
+  // inside nested git worktrees (.claude/worktrees/**) and a stray
+  // package-lock.json exists in the user's home dir, so Next would otherwise
+  // infer the wrong root and warn "inferred your workspace root, but it may not
+  // be correct". __dirname is this config file's directory = the project root.
+  turbopack: {
+    root: __dirname,
+  },
   // Expose Vercel's deployment environment to client code as
   // NEXT_PUBLIC_VERCEL_ENV. VERCEL_ENV is a Vercel-injected build var that is
   // 'production' on the production deploy, 'preview' on PR preview deploys, and

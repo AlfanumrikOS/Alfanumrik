@@ -23,7 +23,7 @@ export default function FinalCtaV2() {
             </>
           ) : (
             <>
-              Tonight's homework can be <em>different</em>.<br />
+              Tonight&#39;s homework can be <em>different</em>.<br />
               Start in the next ten minutes.
             </>
           )}

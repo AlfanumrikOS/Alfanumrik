@@ -392,7 +392,7 @@ function RulesContent() {
       {/* Empty */}
       {!isLoading && !error && rules.length === 0 && (
         <div style={{ padding: 32, textAlign: 'center', color: colors.text3, fontSize: 13, border: `1px solid ${colors.border}`, borderRadius: 8 }}>
-          No alert rules configured yet. Click "+ New Rule" to create one.
+          No alert rules configured yet. Click &quot;+ New Rule&quot; to create one.
         </div>
       )}
 

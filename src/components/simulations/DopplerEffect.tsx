@@ -127,7 +127,7 @@ export default function DopplerEffect() {
         </div>
       </div>
       <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 13, color: 'var(--text-1)', textAlign: 'center' }}>
-        f' = f₀·v/(v ± v_s) &nbsp;|&nbsp; Ahead: <b style={{ color: '#10b981' }}>{fAhead} Hz</b> &nbsp; Behind: <b style={{ color: '#a78bfa' }}>{fBehind} Hz</b>
+        f&#39; = f₀·v/(v ± v_s) &nbsp;|&nbsp; Ahead: <b style={{ color: '#10b981' }}>{fAhead} Hz</b> &nbsp; Behind: <b style={{ color: '#a78bfa' }}>{fBehind} Hz</b>
       </div>
     </div>
   );

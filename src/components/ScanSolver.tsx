@@ -104,7 +104,7 @@ export default function ScanSolver({ studentId, grade, subject, isHi, onSolveCom
       }
       setState('error');
     }
-  }, [isHi, cameraStream]);
+  }, [isHi]);
 
   // ── Capture photo from camera ──
   const capturePhoto = useCallback(() => {

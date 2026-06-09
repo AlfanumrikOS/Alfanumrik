@@ -47,22 +47,22 @@ export default function ConvexLensLab() {
   const imageAtInfinity = isAtFocus;
 
   // Image characteristics
-  const getImageNature = (): string => {
+  const getImageNature = useCallback((): string => {
     if (imageAtInfinity) return 'At infinity';
     return isReal ? 'Real' : 'Virtual';
-  };
+  }, [imageAtInfinity, isReal]);
 
-  const getImageSize = (): string => {
+  const getImageSize = useCallback((): string => {
     if (imageAtInfinity) return '-';
     const m = Math.abs(magnification);
     if (Math.abs(m - 1) < 0.05) return 'Same size';
     return m > 1 ? 'Magnified' : 'Diminished';
-  };
+  }, [imageAtInfinity, magnification]);
 
-  const getImageOrientation = (): string => {
+  const getImageOrientation = useCallback((): string => {
     if (imageAtInfinity) return '-';
     return magnification > 0 ? 'Erect' : 'Inverted';
-  };
+  }, [imageAtInfinity, magnification]);
 
   const recordReading = useCallback(() => {
     const row: DataRow = {
@@ -75,7 +75,7 @@ export default function ConvexLensLab() {
       orientation: getImageOrientation(),
     };
     setDataTable(prev => [...prev, row]);
-  }, [u, v, magnification, imageAtInfinity, f]);
+  }, [u, v, magnification, imageAtInfinity, f, getImageNature, getImageSize, getImageOrientation]);
 
   const drawScene = useCallback((ctx: CanvasRenderingContext2D, w: number, h: number, time: number) => {
     const dpr = window.devicePixelRatio || 1;
@@ -385,7 +385,7 @@ export default function ConvexLensLab() {
     ctx.textBaseline = 'bottom';
     ctx.fillText(`Scale: 1 cm = ${scale.toFixed(1)} px`, 20, ch - 4);
 
-  }, [objectDist, u, v, magnification, imageAtInfinity, isReal, isDragging, showRays, f]);
+  }, [u, v, magnification, imageAtInfinity, isReal, isDragging, showRays, f, getImageNature, getImageSize, getImageOrientation]);
 
   // Canvas setup and animation
   useEffect(() => {

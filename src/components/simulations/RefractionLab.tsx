@@ -48,31 +48,21 @@ export default function RefractionLab() {
     return () => obs.disconnect();
   }, []);
 
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+  const drawArrow = useCallback((ctx: CanvasRenderingContext2D, fromX: number, fromY: number, toX: number, toY: number, color: string) => {
+    const angle = Math.atan2(toY - fromY, toX - fromX);
+    const midX = (fromX + toX) / 2;
+    const midY = (fromY + toY) / 2;
+    const size = 8;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(midX + size * Math.cos(angle), midY + size * Math.sin(angle));
+    ctx.lineTo(midX - size * Math.cos(angle - 0.5), midY - size * Math.sin(angle - 0.5));
+    ctx.lineTo(midX - size * Math.cos(angle + 0.5), midY - size * Math.sin(angle + 0.5));
+    ctx.closePath();
+    ctx.fill();
+  }, []);
 
-    const dpr = window.devicePixelRatio || 1;
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    ctx.scale(dpr, dpr);
-
-    // Clear
-    ctx.fillStyle = '#f8fafc';
-    ctx.fillRect(0, 0, w, h);
-
-    if (mode === 'slab') {
-      drawGlassSlab(ctx, w, h);
-    } else {
-      drawPrism(ctx, w, h);
-    }
-  }, [incidentAngle, mode, showMeasurements]);
-
-  function drawGlassSlab(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const drawGlassSlab = useCallback((ctx: CanvasRenderingContext2D, w: number, h: number) => {
     const midY = h / 2;
     const slabLeft = w * 0.3;
     const slabRight = w * 0.7;
@@ -247,9 +237,9 @@ export default function RefractionLab() {
     ctx.fillStyle = '#f59e0b'; ctx.fillText('\u25CF Incident Ray', lx, 15);
     ctx.fillStyle = '#3b82f6'; ctx.fillText('\u25CF Refracted Ray', lx, 28);
     ctx.fillStyle = '#22c55e'; ctx.fillText('\u25CF Emergent Ray', lx, 41);
-  }
+  }, [incidentAngle, showMeasurements, drawArrow]);
 
-  function drawPrism(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const drawPrism = useCallback((ctx: CanvasRenderingContext2D, w: number, h: number) => {
     const midX = w * 0.45;
     const prismSize = Math.min(w, h) * 0.35;
     const prismAngle = 60; // equilateral prism
@@ -389,21 +379,31 @@ export default function RefractionLab() {
     ctx.fillText('\u25CF White (incident)', w - 8, 15);
     ctx.fillStyle = '#FF0000';
     ctx.fillText('\u25CF VIBGYOR (dispersed)', w - 8, 28);
-  }
+  }, [incidentAngle, drawArrow]);
 
-  function drawArrow(ctx: CanvasRenderingContext2D, fromX: number, fromY: number, toX: number, toY: number, color: string) {
-    const angle = Math.atan2(toY - fromY, toX - fromX);
-    const midX = (fromX + toX) / 2;
-    const midY = (fromY + toY) / 2;
-    const size = 8;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(midX + size * Math.cos(angle), midY + size * Math.sin(angle));
-    ctx.lineTo(midX - size * Math.cos(angle - 0.5), midY - size * Math.sin(angle - 0.5));
-    ctx.lineTo(midX - size * Math.cos(angle + 0.5), midY - size * Math.sin(angle + 0.5));
-    ctx.closePath();
-    ctx.fill();
-  }
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.scale(dpr, dpr);
+
+    // Clear
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, w, h);
+
+    if (mode === 'slab') {
+      drawGlassSlab(ctx, w, h);
+    } else {
+      drawPrism(ctx, w, h);
+    }
+  }, [mode, drawGlassSlab, drawPrism]);
 
   useEffect(() => { draw(); }, [draw, canvasSize]);
 

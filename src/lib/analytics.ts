@@ -26,6 +26,7 @@ import { posthogCapture, posthogIdentify, posthogReset, hashUserIdForAnalytics, 
 import { track as posthogTypedTrack } from './posthog/client';
 import type { PostHogEventName } from './posthog/types';
 import { redactPII } from './ops-events-redactor';
+import { logger } from './logger';
 
 /**
  * Architect's allowlist of canonical PostHog event names. Only events that
@@ -140,10 +141,10 @@ export function track<K extends keyof AnalyticsEvent>(
   event: K,
   properties: AnalyticsEvent[K]
 ) {
-  // Development logging
-  if (process.env.NODE_ENV === 'development') {
-    console.info(`[Analytics] ${event}`, properties);
-  }
+  // Development logging. logger.debug self-gates (emits only when MIN_LEVEL
+  // allows, i.e. non-production) and redacts PII before output, so it replaces
+  // the raw dev-only console.info without leaking properties in production.
+  logger.debug(`[Analytics] ${event}`, properties as Record<string, unknown>);
 
   // P13 defense-in-depth: scrub PII from event properties BEFORE either
   // backend sees them. The server-side ingestion has its own redactor; this

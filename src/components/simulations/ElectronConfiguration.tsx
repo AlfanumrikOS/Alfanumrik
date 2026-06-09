@@ -203,7 +203,7 @@ export default function ElectronConfiguration() {
       {/* Header */}
       <div style={{ textAlign: 'center', marginBottom: 10 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: '#7c3aed' }}>Electron Configuration</div>
-        <div style={{ fontSize: 11, color: '#64748b' }}>Aufbau Principle + Hund's Rule — CBSE Class 11-12</div>
+        <div style={{ fontSize: 11, color: '#64748b' }}>Aufbau Principle + Hund&#39;s Rule — CBSE Class 11-12</div>
       </div>
 
       {/* Element Card */}

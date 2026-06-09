@@ -133,7 +133,7 @@ export default function ArchimedesPrinciple() {
 
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
-      <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Archimedes' Principle</h3>
+      <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Archimedes&#39; Principle</h3>
       <div ref={containerRef} className="w-full" style={{ aspectRatio: '500/300' }}>
         <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
       </div>

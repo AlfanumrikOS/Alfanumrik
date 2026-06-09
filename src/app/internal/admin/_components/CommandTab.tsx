@@ -91,7 +91,7 @@ export default function CommandTab({ secret, onNavigate }: CommandTabProps) {
           </div>
 
           {/* KPI Row 2 — Activity */}
-          <div style={S.h2}>Today's Activity</div>
+          <div style={S.h2}>Today&#39;s Activity</div>
           <div style={{ ...S.gridAuto, marginBottom: 20 }}>
             <StatCard label="DAU" value={command.activity.dau} accentColor="#E8581C" />
             <StatCard label="WAU" value={command.activity.wau} accentColor="#3b82f6" />

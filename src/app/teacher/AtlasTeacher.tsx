@@ -118,7 +118,7 @@ export default function AtlasTeacher() {
     } catch (err) {
       console.error("Error fetching today's lesson:", err);
     }
-  }, [isHi]);
+  }, []);
 
   const fetchTopicsForClass = useCallback(async (classId: string) => {
     try {

@@ -11,8 +11,8 @@ export default function CoordinateGeometry() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const W=520; const H=300; const pad=30; const cells=20;
   const cw=(W-pad*2)/cells; const ch=(H-pad*2)/cells;
-  const toCanvas=(p:Pt)=>({x:pad+(p.x+10)*cw, y:pad+(10-p.y)*ch});
-  const toGrid=(cx:number,cy:number)=>({x:Math.round((cx-pad)/cw-10), y:Math.round(10-(cy-pad)/ch)});
+  const toCanvas=useCallback((p:Pt)=>({x:pad+(p.x+10)*cw, y:pad+(10-p.y)*ch}),[cw,ch]);
+  const toGrid=useCallback((cx:number,cy:number)=>({x:Math.round((cx-pad)/cw-10), y:Math.round(10-(cy-pad)/ch)}),[cw,ch]);
 
   const dist=(a:Pt,b:Pt)=>Math.sqrt((b.x-a.x)**2+(b.y-a.y)**2);
   const midPt=(a:Pt,b:Pt)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2});
@@ -64,7 +64,7 @@ export default function CoordinateGeometry() {
       ctx.fillText(LABELS[i],c.x,c.y-11);
       ctx.fillText('('+p.x+','+p.y+')',c.x,c.y+18);
     });
-  },[pts]);
+  },[pts,cw,ch,toCanvas]);
 
   const getPos=(e:React.MouseEvent<HTMLCanvasElement>)=>{
     const rect=canvasRef.current!.getBoundingClientRect();
@@ -80,13 +80,13 @@ export default function CoordinateGeometry() {
       const clamped={x:Math.max(-10,Math.min(10,g.x)),y:Math.max(-10,Math.min(10,g.y))};
       setPts(prev=>[...prev,clamped]);
     }
-  },[pts]);
+  },[pts,toCanvas,toGrid]);
   const onMouseMove=useCallback((e:React.MouseEvent<HTMLCanvasElement>)=>{
     if(dragging===null) return;
     const {cx,cy}=getPos(e); const g=toGrid(cx,cy);
     const clamped={x:Math.max(-10,Math.min(10,g.x)),y:Math.max(-10,Math.min(10,g.y))};
     setPts(prev=>{const n=[...prev]; n[dragging]=clamped; return n;});
-  },[dragging]);
+  },[dragging,toGrid]);
   const onMouseUp=useCallback(()=>setDragging(null),[]);
 
   const [A,B,C]=[pts[0],pts[1],pts[2]];

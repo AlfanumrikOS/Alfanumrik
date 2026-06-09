@@ -56,7 +56,7 @@ export default function EchoAndSound() {
     ctx.setLineDash([]);
     ctx.fillStyle = 'var(--text-2)'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
     ctx.fillText(`${dist} m`, (sx + 20 + wx) / 2, sy + 70);
-  }, [dist, soundSpeed]);
+  }, [dist]);
 
   useEffect(() => {
     rafRef.current = requestAnimationFrame(function loop() {

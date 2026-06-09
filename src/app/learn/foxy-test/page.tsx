@@ -74,7 +74,7 @@ export default function FoxyTestPage() {
         
         {!uiState && !loading && (
           <div className="text-center p-12 border-2 border-dashed border-slate-800 rounded-xl text-slate-600">
-            Click "Start Topic" to initialize the Learning Loop.
+            Click &quot;Start Topic&quot; to initialize the Learning Loop.
           </div>
         )}
       </div>

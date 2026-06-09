@@ -189,7 +189,7 @@ export default function ProjectileMotion() {
     activeIndexRef.current = projectilesRef.current.length - 1;
     setLandedStats(null);
     setIsFlying(true);
-  }, [angle, velocity, compareMode]);
+  }, [angle, velocity, compareMode, canvasRef]);
 
   const startChallenge = useCallback(() => {
     const canvas = canvasRef.current;
@@ -209,7 +209,7 @@ export default function ProjectileMotion() {
     activeIndexRef.current = -1;
     setLandedStats(null);
     setChallengeMsg(`Hit the target at ${targetRange.toFixed(1)} m! Find the right angle.`);
-  }, [velocity]);
+  }, [velocity, canvasRef]);
 
   // Animation loop
   useEffect(() => {

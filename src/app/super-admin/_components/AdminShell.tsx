@@ -105,7 +105,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     });
 
     return () => subscription.unsubscribe();
-  }, [supabase]);
+  }, []);
 
   // Fetch admin name once token is available
   useEffect(() => {
@@ -120,7 +120,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
       if (user?.user_metadata?.name) setAdminName(user.user_metadata.name);
       else if (user?.email) setAdminName(user.email.split('@')[0]);
     });
-  }, [accessToken, supabase]);
+  }, [accessToken]);
 
   const headers = useCallback(() => ({
     'Content-Type': 'application/json',

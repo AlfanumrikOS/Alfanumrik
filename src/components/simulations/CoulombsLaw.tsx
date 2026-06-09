@@ -155,7 +155,7 @@ export default function CoulombsLaw() {
 
   return (
     <div style={{ background: '#1a1a2e', borderRadius: 12, padding: 16, maxWidth: '100%', fontFamily: 'sans-serif' }}>
-      <h2 style={{ color: '#F97316', margin: '0 0 12px', fontSize: 18, fontWeight: 700 }}>Coulomb's Law</h2>
+      <h2 style={{ color: '#F97316', margin: '0 0 12px', fontSize: 18, fontWeight: 700 }}>Coulomb&#39;s Law</h2>
       <div ref={containerRef} className="w-full" style={{ aspectRatio: '2/1' }}>
         <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
       </div>

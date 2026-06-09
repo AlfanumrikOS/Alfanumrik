@@ -116,7 +116,7 @@ export default function WeatherCycle() {
       </svg>
 
       <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 13, color: 'var(--text-1)', textAlign: 'center' }}>
-        Step <b style={{ color: 'var(--orange)' }}>{stepIdx + 1}/4</b>: <b>{step}</b> — Water cycle drives Earth's fresh water supply
+        Step <b style={{ color: 'var(--orange)' }}>{stepIdx + 1}/4</b>: <b>{step}</b> — Water cycle drives Earth&#39;s fresh water supply
       </div>
     </div>
   );

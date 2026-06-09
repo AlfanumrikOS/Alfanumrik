@@ -100,7 +100,7 @@ export default function SolarSystem() {
 
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
-      <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Solar System — Kepler's Third Law</h3>
+      <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Solar System — Kepler&#39;s Third Law</h3>
       <canvas ref={canvasRef} width={560} height={320} onClick={handleClick}
         style={{ width: '100%', borderRadius: 8, background: '#0f172a', display: 'block', cursor: 'crosshair' }} />
       <div style={{ marginTop: 8, display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -115,7 +115,7 @@ export default function SolarSystem() {
         {!selPlanet && <span style={{ color: 'var(--text-2)', fontSize: 12 }}>Click a planet to inspect</span>}
       </div>
       <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 13, color: 'var(--text-1)', textAlign: 'center' }}>
-        T² ∝ r³ &nbsp;(Kepler's Third Law — orbital period² ∝ orbital radius³)
+        T² ∝ r³ &nbsp;(Kepler&#39;s Third Law — orbital period² ∝ orbital radius³)
       </div>
     </div>
   );

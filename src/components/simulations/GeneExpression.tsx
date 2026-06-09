@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 
 export default function GeneExpression() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -8,26 +8,7 @@ export default function GeneExpression() {
   const [hasLactose, setHasLactose] = useState(false);
   const [animating, setAnimating] = useState(false);
 
-  useEffect(() => {
-    setAnimating(true);
-    tRef.current = 0;
-  }, [hasLactose]);
-
-  useEffect(() => {
-    if (!animating) return;
-    const loop = () => {
-      tRef.current++;
-      draw();
-      if (tRef.current < 120) animRef.current = requestAnimationFrame(loop);
-      else setAnimating(false);
-    };
-    animRef.current = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(animRef.current);
-  }, [animating, hasLactose]);
-
-  useEffect(() => { draw(); }, [hasLactose]);
-
-  const draw = () => {
+  const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
@@ -95,7 +76,26 @@ export default function GeneExpression() {
     }
 
     ctx.fillStyle = '#1565C0'; ctx.font = '10px sans-serif'; ctx.textAlign = 'left'; ctx.fillText(hasLactose ? 'Lactose present: repressor inactivated' : 'No lactose: repressor bound to operator', 14, 260);
-  };
+  }, [hasLactose]);
+
+  useEffect(() => {
+    setAnimating(true);
+    tRef.current = 0;
+  }, [hasLactose]);
+
+  useEffect(() => {
+    if (!animating) return;
+    const loop = () => {
+      tRef.current++;
+      draw();
+      if (tRef.current < 120) animRef.current = requestAnimationFrame(loop);
+      else setAnimating(false);
+    };
+    animRef.current = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(animRef.current);
+  }, [animating, draw]);
+
+  useEffect(() => { draw(); }, [draw]);
 
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
