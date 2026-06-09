@@ -680,18 +680,6 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // ── Layer 0.7: School admin portal — require Supabase session ──
-  // Role verification (institution_admin check) is performed client-side via
-  // school_admins table query (RLS-enforced). Middleware only blocks unauthenticated access.
-  if (path.startsWith('/school-admin')) {
-    const hasSession = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
-    if (!hasSession) {
-      const loginUrl = new URL('/login', request.url);
-      loginUrl.searchParams.set('next', path);
-      return NextResponse.redirect(loginUrl);
-    }
-  }
-
   // ── Build forwarded request headers (includes tenant x-school-* if resolved) ──
   // CRITICAL: /api/school-config, /api/tenant/config, /api/school-config/manifest,
   // and lib/tenant.ts → tenantFromHeaders() all read x-school-* off the INCOMING
