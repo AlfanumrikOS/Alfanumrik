@@ -3021,3 +3021,26 @@ falls through to legacy TS on any failure. Default OFF.
 Pre-Phase-2-nep-compliance: 68 entries. Phase 2 nep-compliance adds REG-101.
 
 **Total: 69 entries.**
+## Phase 2 parent-report-generator Python port (2026-06-09) - REG-102
+
+Port of `supabase/functions/parent-report-generator/index.ts` to Python on
+Cloud Run. Bilingual weekly parent report (en/hi). Template path only
+(Phase 2.5 will add LLM-narrative variant via MoL). Default OFF.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-102 | `phase_2_parent_report_generator_python_port_stats_and_bilingual_template` | (1) **Wire-shape parity:** WeeklyStats has exactly the 9 TS-defined fields (quizzes_completed, avg_score, xp_earned, time_spent_minutes, topics_mastered, streak, foxy_sessions, subjects_studied, chapters_covered). (2) **Stats math parity:** avg_score rounds; time = (quiz_seconds + foxy_seconds) / 60; topics_mastered threshold is mastery_level >= 0.8 inclusive; chapters dedup via topics.title; missing learning_profile yields 0 xp_earned and 0 streak. (3) **Bilingual template integrity:** period_label is "This week" / "इस सप्ताह"; highlights for high-performer mention quiz count + avg_score + streak in both languages; zero-state highlights returns single placeholder; concerns lists low-score + low-time + zero-streak triggers; suggestion uses student name when provided and falls back to "your child" / "आपके बच्चे" when blank. A regression on any of these ships either malformed wire shape (parent portal can't render) or wrong-language copy (P7 bilingual violation). | `python/tests/unit/test_parent_report_generator_stats.py::test_compute_stats_empty_inputs_returns_zero_counters`, `python/tests/unit/test_parent_report_generator_stats.py::test_compute_stats_topics_mastered_threshold_at_0_8`, `python/tests/unit/test_parent_report_generator_stats.py::test_period_label_en_hi`, `python/tests/unit/test_parent_report_generator_stats.py::test_highlights_zero_state_returns_placeholder`, `python/tests/unit/test_parent_report_generator_stats.py::test_suggestion_uses_fallback_name_when_blank` | E |
+
+### Invariants covered by this section
+
+- P7 (bilingual UI) - REG-102 pins en/hi parity on template copy.
+- P12 (AI safety) - N/A; no LLM call in Phase 2 port (template only).
+- P13 (data privacy) - Logs only structural counters; never logs the
+  report body, student name, or parent identity. JWT-bound guardian
+  lookup prevents body.parent_id spoofing (TS line 605 fix preserved).
+
+### Catalog total
+
+Pre-Phase-2-parent-report-generator: 69 entries. Adds REG-102.
+
+**Total: 70 entries.**
