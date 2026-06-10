@@ -16,7 +16,25 @@
  *   - feature_flags table exists in your Supabase instance
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+
+/** Minimal DB type so createClient is fully typed without a generated schema file. */
+type FlagsDB = {
+  public: {
+    Tables: {
+      feature_flags: {
+        Row:    { flag_name: string; is_enabled: boolean; target_environments: string[] | null; rollout_percentage: number | null; metadata: unknown };
+        Insert: { flag_name: string; is_enabled: boolean; target_environments?: string[] | null; rollout_percentage?: number | null; metadata?: unknown };
+        Update: { flag_name?: string; is_enabled?: boolean; target_environments?: string[] | null; rollout_percentage?: number | null; metadata?: unknown };
+      };
+    };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+  };
+};
+
+type TypedClient = SupabaseClient<FlagsDB>;
 
 interface FlagConfig {
   name: string;
@@ -95,14 +113,15 @@ function formatFlag(flag: FlagConfig, isEnabled?: boolean): string {
 // MAIN OPERATIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function checkStatus(supabase: ReturnType<typeof createClient>): Promise<void> {
+async function checkStatus(supabase: TypedClient): Promise<void> {
   console.log('\n📊 Current Feature Flag Status\n');
 
   const flagNames = PRODUCTION_FLAGS.map((f) => f.name);
   const { data, error } = await supabase
     .from('feature_flags')
     .select('flag_name, is_enabled')
-    .in('flag_name', flagNames);
+    .in('flag_name', flagNames)
+    ;
 
   if (error) {
     console.error('❌ Query failed:', error.message);
@@ -135,7 +154,7 @@ async function checkStatus(supabase: ReturnType<typeof createClient>): Promise<v
   );
 }
 
-async function applyFlags(supabase: ReturnType<typeof createClient>): Promise<void> {
+async function applyFlags(supabase: TypedClient): Promise<void> {
   console.log('\n🚀 Enabling Production-Ready Flags\n');
 
   for (const flag of PRODUCTION_FLAGS) {
@@ -166,7 +185,7 @@ async function applyFlags(supabase: ReturnType<typeof createClient>): Promise<vo
   console.log('   - http://localhost:3000/today                  (Adaptive Today home)\n');
 }
 
-async function resetFlags(supabase: ReturnType<typeof createClient>): Promise<void> {
+async function resetFlags(supabase: TypedClient): Promise<void> {
   console.log('\n🔄 Resetting to Default (OFF) State\n');
 
   for (const flag of PRODUCTION_FLAGS) {
@@ -202,7 +221,7 @@ async function main() {
   }
 
   // Initialize Supabase client
-  const supabase = createClient(getEnvUrl(), getServiceRoleKey());
+  const supabase = createClient<FlagsDB>(getEnvUrl(), getServiceRoleKey());
 
   try {
     if (isCheck) {
