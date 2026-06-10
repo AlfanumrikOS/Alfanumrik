@@ -195,28 +195,17 @@ export const MAINTENANCE_FLAGS = {
 /**
  * Marketing/landing-page flags.
  *
- * `ff_welcome_v2` gates the mobile-first editorial redesign of the `/welcome`
- * landing page (Indian Editorial Tutor aesthetic). Default OFF.
- *
- * Routing approach (recommended for the upcoming frontend port):
- *   The `/welcome` server component reads this flag and renders either
- *   <WelcomeV1 /> or <WelcomeV2 />. The URL stays `/welcome` — no SEO split,
- *   no link breakage, no marketing redirect. The `?v=2` query-string param
- *   should force v2 even when the flag is off (QA preview escape hatch);
- *   `?v=1` should force v1 when the flag is on (rollback escape hatch).
- *
- *   Pseudocode for src/app/welcome/page.tsx:
- *     const force = searchParams.v;
- *     const flagOn = await isFeatureEnabled('ff_welcome_v2', { userId, environment });
- *     const showV2 = force === '2' || (flagOn && force !== '1');
- *     return showV2 ? <WelcomeV2 /> : <WelcomeV1 />;
+ * `ff_welcome_v2` — the mobile-first editorial redesign of `/welcome` is now
+ * the permanent unconditional render. WelcomeV2 is always returned from
+ * src/app/welcome/page.tsx; WelcomeV1 and the flag-routing logic have been
+ * removed (2026-06-10). This flag constant is kept for reference / DB hygiene
+ * but is no longer evaluated at runtime.
  *
  * Seeded by migration 20260426150000_add_ff_welcome_v2.sql.
- * Operator runbook for staged rollout / rollback lives in that migration's header.
  */
 export const WELCOME_FLAGS = {
-  /** Mobile-first editorial redesign of /welcome. Default: false (off).
-   *  When true, /welcome renders WelcomeV2 instead of WelcomeV1. */
+  /** Mobile-first editorial redesign of /welcome. Permanently ON — no longer
+   *  evaluated at runtime (WelcomeV2 is the unconditional default). */
   WELCOME_V2: 'ff_welcome_v2',
 } as const;
 

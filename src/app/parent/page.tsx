@@ -5,7 +5,6 @@ import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getFeatureFlags } from '@/lib/supabase';
 import { getLevelFromScore } from '@/lib/score-config';
-import { useAtlasFlag } from '@/lib/use-atlas-flag';
 import { useRealtimeRevalidator } from '@/hooks/useRealtimeRevalidator';
 import { useFeatureFlags } from '@/lib/swr';
 import { REALTIME_FLAGS, CONSUMER_MINIMALISM_FLAGS } from '@/lib/feature-flags';
@@ -1063,18 +1062,13 @@ export default function ParentPage() {
 }
 
 /**
- * Reads the cosmic + Editorial Atlas flags and hands off to the right home.
+ * Hands off to the right parent home.
  *
  * Dispatch priority:
  *   1. ff_cosmic_redesign_v1 ON  → <Dashboard> (it owns the data fetch + the
  *      internal cosmic branch). Cosmic outranks Atlas so the CEO-approved
  *      cosmic skin always wins when enabled.
- *   2. Editorial Atlas ON        → <AtlasParent>
- *   3. otherwise (both OFF)      → <Dashboard> legacy DOM (byte-identical today)
- *
- * Uses the shared `useAtlasFlag` hook so the Atlas decision is synchronous (no
- * flash). The cosmic flag is read inside <Dashboard> via useCosmicTheme(),
- * which is sync-from-cache on repeat visits (mirrors the student dashboard).
+ *   2. otherwise                 → <AtlasParent> (permanent modern default)
  */
 function AtlasParentDispatcher(props: {
   guardian: ParentSession;
@@ -1084,10 +1078,8 @@ function AtlasParentDispatcher(props: {
   canFetchMessages: boolean;
 }) {
   const { cosmicEnabled } = useCosmicTheme();
-  const atlas = useAtlasFlag('parent');
-  // Cosmic wins over Atlas. Route through <Dashboard> (which fetches the data
-  // the cosmic home needs and renders the cosmic branch when enabled).
-  if (!cosmicEnabled && atlas) return <AtlasParent guardian={props.guardian} student={props.student} allChildren={props.allChildren} isHi={props.isHi} />;
+  // AtlasParent is now the unconditional default; cosmic falls through to Dashboard.
+  if (!cosmicEnabled) return <AtlasParent guardian={props.guardian} student={props.student} allChildren={props.allChildren} isHi={props.isHi} />;
   return (
     <Dashboard
       guardian={props.guardian}
