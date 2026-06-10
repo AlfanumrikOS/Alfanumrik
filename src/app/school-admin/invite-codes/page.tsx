@@ -514,6 +514,8 @@ export default function InviteCodesPage() {
   const [schoolId, setSchoolId] = useState<string | null>(null);
   const [codes, setCodes] = useState<InviteCode[]>([]);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
+  /** Non-fatal: invite codes still render when the class list fails to load. */
+  const [classesLoadFailed, setClassesLoadFailed] = useState(false);
   const [loadingPage, setLoadingPage] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
 
@@ -546,17 +548,29 @@ export default function InviteCodesPage() {
           )
           .eq('school_id', sid)
           .order('created_at', { ascending: false }),
+        // Real table is `classes` (school-admin SELECT permitted by RLS);
+        // `school_classes` never existed in prod. `grade` is text per P5.
         supabase
-          .from('school_classes')
+          .from('classes')
           .select('id, name, grade')
-          .eq('school_id', sid),
+          .eq('school_id', sid)
+          .is('deleted_at', null),
       ]);
 
       if (codesRes.error) throw new Error(codesRes.error.message);
-      if (classesRes.error) throw new Error(classesRes.error.message);
 
       setCodes((codesRes.data ?? []) as InviteCode[]);
-      setClasses((classesRes.data ?? []) as SchoolClass[]);
+
+      // Class-list failure is NON-FATAL: the page still renders invite codes;
+      // only class binding in the generate form is unavailable.
+      if (classesRes.error) {
+        console.error('[invite-codes] class list load failed:', classesRes.error.message);
+        setClasses([]);
+        setClassesLoadFailed(true);
+      } else {
+        setClasses((classesRes.data ?? []) as SchoolClass[]);
+        setClassesLoadFailed(false);
+      }
     },
     []
   );
@@ -876,6 +890,25 @@ export default function InviteCodesPage() {
           PAGE BODY
       ══════════════════════════════════════ */}
       <main className="max-w-2xl mx-auto px-4 pt-4 pb-24">
+        {/* Non-fatal class-list failure notice */}
+        {classesLoadFailed && (
+          <div
+            role="alert"
+            className="rounded-xl px-4 py-3 mb-4 text-xs font-medium"
+            style={{
+              background: 'rgba(220,38,38,0.06)',
+              border: '1px solid rgba(220,38,38,0.2)',
+              color: '#DC2626',
+            }}
+          >
+            {t(
+              isHi,
+              'Class list could not be loaded. You can still generate codes, but they cannot be bound to a specific class right now.',
+              'कक्षा सूची लोड नहीं हो सकी। आप अभी भी कोड बना सकते हैं, लेकिन उन्हें अभी किसी विशेष कक्षा से नहीं जोड़ा जा सकता।'
+            )}
+          </div>
+        )}
+
         {/* Tab switcher */}
         <TabSwitcher active={tab} onChange={setTab} isHi={isHi} />
 

@@ -6,7 +6,8 @@ import { NextRequest } from 'next/server';
  *
  * Covers:
  *   POST /api/diagnostic/start  — auth, grade validation, subject validation
- *   POST /api/diagnostic/complete — auth, session_id validation, RPC fallback
+ *   POST /api/diagnostic/complete — auth, session_id validation, server-side
+ *     P1 scoring (full contract pinned in api/diagnostic-complete-contract.test.ts)
  *
  * P5: diagnostic grades are strings "6"-"10" (grade "11" is invalid for diagnostic)
  * P9: both routes require authorizeRequest('diagnostic.attempt' / 'diagnostic.complete')
@@ -297,7 +298,10 @@ describe('POST /api/diagnostic/start — full success path', () => {
       ],
       error: null,
     });
-    setFromResult('diagnostic_sessions', { data: { id: 'session-uuid-1' }, error: null });
+    // P0 cross-layer fix (2026-06-10): the route now writes to
+    // diagnostic_assessments (the table /api/diagnostic/complete reads),
+    // not the orphaned diagnostic_sessions table.
+    setFromResult('diagnostic_assessments', { data: { id: 'session-uuid-1' }, error: null });
   });
 
   it('returns 200 with session_id and questions on valid request', async () => {
@@ -389,17 +393,21 @@ describe('POST /api/diagnostic/complete — input validation', () => {
   });
 });
 
-describe('POST /api/diagnostic/complete — RPC fallback (P1 score accuracy)', () => {
+describe('POST /api/diagnostic/complete — server-side scoring (P1 score accuracy)', () => {
+  // P0 cross-layer fix (2026-06-10): the route no longer calls an RPC. It
+  // verifies the diagnostic_assessments row, replaces diagnostic_responses
+  // (delete-then-insert), and computes the summary in-process with the P1
+  // formula. Full contract (409, thresholds, ordering) is pinned in
+  // src/__tests__/api/diagnostic-complete-contract.test.ts.
   beforeEach(() => {
     setAuthorized();
     setFromResult('students', { data: { id: 'student-1' }, error: null });
-    setFromResult('diagnostic_sessions', { data: { id: 'session-1', status: 'in_progress' }, error: null });
+    setFromResult('diagnostic_assessments', { data: { id: 'session-1', is_completed: false }, error: null });
     setFromResult('diagnostic_responses', { data: null, error: null });
+    setFromResult('question_bank', { data: [], error: null });
   });
 
-  it('falls back to in-process score calculation when RPC fails, using P1 formula', async () => {
-    // RPC fails — route falls back to Math.round((correct / total) * 100)
-    setRpcResult({ data: null, error: { message: 'RPC unavailable' } });
+  it('computes the summary server-side with the P1 formula (no RPC involved)', async () => {
     const { POST } = await import('@/app/api/diagnostic/complete/route');
 
     const responses = [
@@ -410,7 +418,6 @@ describe('POST /api/diagnostic/complete — RPC fallback (P1 score accuracy)', (
     ];
 
     const res = await POST(makeCompleteRequest({ session_id: 'session-1', responses }));
-    // Fallback returns 200 even when RPC fails
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -418,6 +425,7 @@ describe('POST /api/diagnostic/complete — RPC fallback (P1 score accuracy)', (
     expect(body.data.score_percent).toBe(50);
     expect(body.data.correct_answers).toBe(2);
     expect(body.data.total_questions).toBe(4);
-    expect(body.data.rpc_failed).toBe(true);
+    // The completion path is direct table writes — no RPC may be invoked
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 });

@@ -852,7 +852,9 @@ export default function SchoolAdminContentPage() {
     setApiError(null);
 
     try {
-      const res = await fetch('/api/school-admin/content', {
+      // limit=100 is the route's max page size; this page filters/paginates
+      // client-side, so fetch the largest page the API allows.
+      const res = await fetch('/api/school-admin/content?limit=100', {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -863,7 +865,15 @@ export default function SchoolAdminContentPage() {
 
       const json = await res.json();
       if (!json.success) throw new Error(json.error || 'Unknown error');
-      setQuestions((json.data ?? []) as Question[]);
+      // GET returns { data: { questions, pagination } } with an `approved`
+      // boolean column — map it to the `status` field this page renders.
+      const rows: any[] = Array.isArray(json.data?.questions) ? json.data.questions : [];
+      setQuestions(
+        rows.map((row) => ({
+          ...row,
+          status: row.approved ? 'approved' : 'pending',
+        })) as Question[]
+      );
     } catch (err: any) {
       setApiError(err.message || t(isHi, 'Failed to load questions', 'प्रश्न लोड करने में विफल'));
     } finally {
@@ -876,14 +886,31 @@ export default function SchoolAdminContentPage() {
     const token = await getToken();
     if (!token) throw new Error('Not authenticated');
 
-    const method = payload.id ? 'PUT' : 'POST';
+    // The route exposes POST (create) and PATCH (update) — there is no PUT.
+    // PATCH expects { id, updates } and only whitelists content fields
+    // (subject/grade/topic are immutable server-side).
+    const isUpdate = Boolean(payload.id);
     const res = await fetch('/api/school-admin/content', {
-      method,
+      method: isUpdate ? 'PATCH' : 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(
+        isUpdate
+          ? {
+              id: payload.id,
+              updates: {
+                question_text: payload.question_text,
+                options: payload.options,
+                correct_answer_index: payload.correct_answer_index,
+                explanation: payload.explanation,
+                difficulty: payload.difficulty,
+                bloom_level: payload.bloom_level,
+              },
+            }
+          : payload
+      ),
     });
 
     if (!res.ok) {
@@ -952,9 +979,11 @@ export default function SchoolAdminContentPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
+        // PATCH expects { id, updates } and the table stores `approved` as a
+        // boolean — not the `status` string this page renders.
         body: JSON.stringify({
           id: question.id,
-          status: question.status === 'approved' ? 'pending' : 'approved',
+          updates: { approved: question.status !== 'approved' },
         }),
       });
 

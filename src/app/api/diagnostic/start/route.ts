@@ -1,11 +1,15 @@
 /**
  * POST /api/diagnostic/start
  *
- * Creates a diagnostic_sessions row and returns the session ID + 15 questions.
- * Questions are included in the response to avoid a second round-trip (P10).
+ * Creates a diagnostic_assessments row and returns the assessment ID + 15
+ * questions. Questions are included in the response to avoid a second
+ * round-trip (P10).
+ *
+ * The response field is named `session_id` for backward compatibility with
+ * the /diagnostic page contract — it is the diagnostic_assessments.id UUID.
  *
  * Request body: { grade: string, subject: string }
- * Response: { success: true, session_id: string, questions: Question[] }
+ * Response: { success: true, data: { session_id: string, questions: Question[] } }
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -134,15 +138,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 7. Create diagnostic_sessions row
+    // 7. Create diagnostic_assessments row (is_completed defaults to false,
+    //    started_at defaults to now())
     const { data: session, error: sessionError } = await admin
-      .from('diagnostic_sessions')
+      .from('diagnostic_assessments')
       .insert({
         student_id: student.id,
-        grade,
+        assessment_type: 'subject_diagnostic',
+        grade, // P5: string "6"-"10"
         subject: subject.toLowerCase(),
         total_questions: questions.length,
-        status: 'in_progress',
+        layer_tested: 1,
       })
       .select('id')
       .single();

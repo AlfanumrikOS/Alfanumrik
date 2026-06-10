@@ -239,6 +239,8 @@ export const SCHOOL_AUDIT_ACTIONS = [
   'parent_message.sent',
   // Phase 3B Wave C — school-admin staff management (invite/role-change/revoke).
   'school_admin.invited', 'school_admin.role_changed', 'school_admin.revoked',
+  // Bulk CSV content upload — written by /api/school-admin/content/bulk.
+  'content.bulk_uploaded',
 ] as const;
 
 export type SchoolAuditAction = (typeof SCHOOL_AUDIT_ACTIONS)[number];

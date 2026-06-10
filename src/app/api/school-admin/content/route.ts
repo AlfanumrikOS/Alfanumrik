@@ -129,7 +129,7 @@ function validateQuestion(q: QuestionInput, index: number): ValidationError[] {
 export async function GET(request: NextRequest) {
   try {
     const auth = await authorizeSchoolAdmin(request, 'school.manage_content');
-    if (!auth.authorized) return auth.errorResponse;
+    if (!auth.authorized) return auth.errorResponse!;
 
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
@@ -231,7 +231,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const auth = await authorizeSchoolAdmin(request, 'school.manage_content');
-    if (!auth.authorized) return auth.errorResponse;
+    if (!auth.authorized) return auth.errorResponse!;
 
     let body: Record<string, unknown>;
     try {
@@ -289,7 +289,8 @@ export async function POST(request: NextRequest) {
       school_id: auth.schoolId,
       subject: (q.subject as string).trim(),
       grade: q.grade as string, // string per P5
-      topic: q.topic && typeof q.topic === 'string' ? q.topic.trim() : null,
+      // topic is NOT NULL in school_questions — coerce missing topic to ''
+      topic: typeof q.topic === 'string' ? q.topic.trim() : '',
       question_text: (q.question_text as string).trim(),
       options: (q.options as string[]).map((o: string) => o.trim()),
       correct_answer_index: Number(q.correct_answer_index),
@@ -359,7 +360,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const auth = await authorizeSchoolAdmin(request, 'school.manage_content');
-    if (!auth.authorized) return auth.errorResponse;
+    if (!auth.authorized) return auth.errorResponse!;
 
     let body: Record<string, unknown>;
     try {
@@ -548,7 +549,7 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const auth = await authorizeSchoolAdmin(request, 'school.manage_content');
-    if (!auth.authorized) return auth.errorResponse;
+    if (!auth.authorized) return auth.errorResponse!;
 
     let body: Record<string, unknown>;
     try {

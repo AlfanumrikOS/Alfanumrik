@@ -1,8 +1,12 @@
 /**
  * POST /api/diagnostic/complete
  *
- * Records all diagnostic responses and calls the complete_diagnostic_session RPC
- * to compute weak/strong topics and recommended difficulty.
+ * Records all diagnostic responses into diagnostic_responses and marks the
+ * diagnostic_assessments row complete, computing the summary server-side.
+ *
+ * Note: `session_id` in the request/response is the diagnostic_assessments.id
+ * UUID — the name is kept for backward compatibility with the /diagnostic
+ * page contract.
  *
  * Request body:
  * {
@@ -18,7 +22,13 @@
  *   }>
  * }
  *
- * Response: { success: true, data: { session summary from RPC } }
+ * Response: {
+ *   success: true,
+ *   data: {
+ *     session_id, score_percent, correct_answers, total_questions,
+ *     weak_topics, strong_topics, recommended_difficulty
+ *   }
+ * }
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -74,7 +84,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4. Resolve student and verify session ownership via admin client
+    // 4. Resolve student and verify assessment ownership via admin client
     const admin = getSupabaseAdmin();
 
     const { data: student, error: studentError } = await admin
@@ -90,10 +100,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 5. Verify the session belongs to this student
+    // 5. Verify the assessment belongs to this student
     const { data: session, error: sessionError } = await admin
-      .from('diagnostic_sessions')
-      .select('id, status')
+      .from('diagnostic_assessments')
+      .select('id, is_completed')
       .eq('id', session_id)
       .eq('student_id', student.id)
       .single();
@@ -105,25 +115,91 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (session.status === 'completed') {
+    if (session.is_completed === true) {
       return NextResponse.json(
         { success: false, error: 'This diagnostic session is already completed.', code: 'ALREADY_COMPLETED' },
         { status: 409 }
       );
     }
 
-    // 6. Insert all responses into diagnostic_responses
-    const responseRows = responses.map((r) => ({
-      session_id,
-      student_id: student.id,
-      question_id: r.question_id,
-      selected_answer_index: r.selected_answer_index,
-      is_correct: r.is_correct,
-      time_taken_seconds: r.time_taken_seconds,
-      topic: r.topic ?? null,
-      difficulty: r.difficulty,
-      bloom_level: r.bloom_level,
-    }));
+    // 6. Best-effort lookup of question content from question_bank so the
+    //    NOT NULL diagnostic_responses.question_text column can be filled.
+    //    Failure here must not block the student's results — fall back to ''.
+    const questionIds = Array.from(
+      new Set(
+        responses
+          .map((r) => r.question_id)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0)
+      )
+    );
+
+    type BankRow = {
+      id: string;
+      question_text: string;
+      options: unknown;
+      correct_answer_index: number | null;
+    };
+    const bankById = new Map<string, BankRow>();
+
+    if (questionIds.length > 0) {
+      const { data: bankRows, error: bankError } = await admin
+        .from('question_bank')
+        .select('id, question_text, options, correct_answer_index')
+        .in('id', questionIds);
+
+      if (bankError) {
+        logger.warn('diagnostic_question_lookup_failed', {
+          route: '/api/diagnostic/complete',
+          studentId: student.id,
+          session_id,
+          error: bankError.message,
+        });
+      } else {
+        for (const row of (bankRows ?? []) as BankRow[]) {
+          bankById.set(row.id, row);
+        }
+      }
+    }
+
+    // 7. Replace any prior responses for this assessment (makes a retry after
+    //    a partial failure safe — there is no unique constraint to upsert on),
+    //    then insert all responses into diagnostic_responses.
+    const { error: deleteError } = await admin
+      .from('diagnostic_responses')
+      .delete()
+      .eq('assessment_id', session_id);
+
+    if (deleteError) {
+      logger.warn('diagnostic_responses_cleanup_failed', {
+        route: '/api/diagnostic/complete',
+        studentId: student.id,
+        session_id,
+        error: deleteError.message,
+      });
+      // Continue — on a first attempt there is nothing to delete anyway.
+    }
+
+    const responseRows = responses.map((r, idx) => {
+      const bank = bankById.get(r.question_id);
+      const timeSeconds = Number(r.time_taken_seconds);
+      return {
+        assessment_id: session_id,
+        student_id: student.id,
+        question_number: idx + 1,
+        concept_code: typeof r.topic === 'string' && r.topic ? r.topic : 'unknown',
+        layer: 1,
+        question_text: bank?.question_text ?? '',
+        options: bank?.options ?? null,
+        correct_index: bank?.correct_answer_index ?? null,
+        student_index: Number.isInteger(r.selected_answer_index)
+          ? r.selected_answer_index
+          : null,
+        is_correct: r.is_correct === true,
+        response_time_ms: Number.isFinite(timeSeconds)
+          ? Math.max(0, Math.round(timeSeconds * 1000))
+          : null,
+      };
+    });
 
     const { error: insertError } = await admin
       .from('diagnostic_responses')
@@ -142,39 +218,65 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 7. Call RPC to compute summary and mark session complete
-    const { data: summary, error: rpcError } = await admin.rpc(
-      'complete_diagnostic_session',
-      { p_session_id: session_id }
+    // 8. Compute summary server-side and mark the assessment complete.
+    //    P1: score_percent = Math.round((correct / total) * 100)
+    const totalQuestions = responses.length;
+    const correctCount = responses.filter((r) => r.is_correct === true).length;
+    const scorePercent = Math.round((correctCount / totalQuestions) * 100);
+    const actualTimeSeconds = Math.max(
+      0,
+      Math.round(
+        responses.reduce((sum, r) => {
+          const t = Number(r.time_taken_seconds);
+          return sum + (Number.isFinite(t) ? t : 0);
+        }, 0)
+      )
     );
+    const recommendedDifficulty =
+      scorePercent < 40 ? 'easy' : scorePercent < 70 ? 'medium' : 'hard';
 
-    if (rpcError) {
-      logger.error('diagnostic_complete_rpc_failed', {
-        error: new Error(rpcError.message),
+    const { error: updateError } = await admin
+      .from('diagnostic_assessments')
+      .update({
+        is_completed: true,
+        completed_at: new Date().toISOString(),
+        total_questions: totalQuestions,
+        correct_answers: correctCount,
+        raw_score_pct: scorePercent,
+        actual_time_seconds: actualTimeSeconds,
+        next_path: { recommended_difficulty: recommendedDifficulty },
+      })
+      .eq('id', session_id)
+      .eq('student_id', student.id);
+
+    if (updateError) {
+      // Responses are saved; do not fail the student's submission over the
+      // summary write. The assessment stays incomplete, and step 7's
+      // delete-then-insert makes a later retry safe.
+      logger.error('diagnostic_complete_update_failed', {
+        error: new Error(updateError.message),
         route: '/api/diagnostic/complete',
         studentId: student.id,
         session_id,
       });
-      // Fallback: return a basic summary computed from the responses we have
-      const correctCount = responses.filter((r) => r.is_correct).length;
-      const total = responses.length;
-      const scorePercent = Math.round((correctCount / total) * 100);
-      return NextResponse.json({
-        success: true,
-        data: {
-          session_id,
-          score_percent: scorePercent,
-          correct_answers: correctCount,
-          total_questions: total,
-          weak_topics: [],
-          strong_topics: [],
-          recommended_difficulty: scorePercent < 40 ? 'easy' : scorePercent < 70 ? 'medium' : 'hard',
-          rpc_failed: true,
-        },
-      });
     }
 
-    return NextResponse.json({ success: true, data: summary });
+    // Topic-level weak/strong analysis is intentionally empty for now: the
+    // client sends topic_id UUIDs (not display names), and the previous
+    // implementation's live behavior was the empty-array fallback. The page
+    // renders its "analysis not available" empty state for empty arrays.
+    return NextResponse.json({
+      success: true,
+      data: {
+        session_id,
+        score_percent: scorePercent,
+        correct_answers: correctCount,
+        total_questions: totalQuestions,
+        weak_topics: [],
+        strong_topics: [],
+        recommended_difficulty: recommendedDifficulty,
+      },
+    });
   } catch (err) {
     logger.error('diagnostic_complete_unexpected', {
       error: err instanceof Error ? err : new Error(String(err)),

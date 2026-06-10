@@ -212,30 +212,33 @@ function ClassCard({ cls, isHi, onOpenDetail }: ClassCardProps) {
    CREATE CLASS FORM (inside SheetModal)
 ───────────────────────────────────────────────────────────── */
 interface CreateClassFormProps {
-  schoolId: string;
   isHi: boolean;
   onSuccess: () => void;
   onClose: () => void;
 }
 
-function CreateClassForm({ schoolId, isHi, onSuccess, onClose }: CreateClassFormProps) {
+function CreateClassForm({ isHi, onSuccess, onClose }: CreateClassFormProps) {
   const [className, setClassName] = useState('');
   const [grade, setGrade] = useState('6');
   const [section, setSection] = useState('');
   const [subject, setSubject] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<{ name?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; section?: string }>({});
 
   const gradeOptions = isHi ? GRADE_SELECT_OPTIONS_HI : GRADE_SELECT_OPTIONS_EN;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Client-side validation
-    const errors: { name?: string } = {};
+    // Client-side validation — POST /api/school-admin/classes requires
+    // name, grade AND section.
+    const errors: { name?: string; section?: string } = {};
     if (!className.trim()) {
       errors.name = t(isHi, 'Class name is required', 'कक्षा का नाम आवश्यक है');
+    }
+    if (!section.trim()) {
+      errors.section = t(isHi, 'Section is required', 'सेक्शन आवश्यक है');
     }
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
@@ -246,27 +249,53 @@ function CreateClassForm({ schoolId, isHi, onSuccess, onClose }: CreateClassForm
     setFormError(null);
     setSubmitting(true);
 
-    const { error } = await supabase
-      .from('school_classes')
-      .insert({
-        school_id: schoolId,
-        name: className.trim(),
-        grade: grade, // string "6"–"12" per P5 — never integer
-        section: section.trim() || null,
-        subject: subject.trim() || null,
-      })
-      .select()
-      .single();
+    try {
+      // School admins have SELECT-only RLS on `classes` — a client-side insert
+      // is silently blocked. Creation must go through the server route
+      // (service role + audit log). school_id is derived server-side from the
+      // authenticated admin.
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) {
+        throw new Error(
+          t(isHi, 'Session expired. Please log in again.', 'सत्र समाप्त हो गया। कृपया फिर से लॉगिन करें।')
+        );
+      }
 
-    setSubmitting(false);
+      const res = await fetch('/api/school-admin/classes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: className.trim(),
+          grade, // string "6"–"12" per P5 — never integer
+          section: section.trim(),
+          subject: subject.trim() || null,
+        }),
+      });
 
-    if (error) {
-      setFormError(error.message);
-      return;
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.success) {
+        throw new Error(
+          typeof json?.error === 'string' && json.error
+            ? json.error
+            : t(isHi, 'Failed to create class', 'कक्षा बनाने में विफल')
+        );
+      }
+
+      onSuccess();
+      onClose();
+    } catch (err) {
+      setFormError(
+        err instanceof Error
+          ? err.message
+          : t(isHi, 'Failed to create class', 'कक्षा बनाने में विफल')
+      );
+    } finally {
+      setSubmitting(false);
     }
-
-    onSuccess();
-    onClose();
   };
 
   return (
@@ -293,13 +322,17 @@ function CreateClassForm({ schoolId, isHi, onSuccess, onClose }: CreateClassForm
         options={gradeOptions}
       />
 
-      {/* Section */}
+      {/* Section (required by the API) */}
       <Input
         label={t(isHi, 'Section', 'सेक्शन')}
         value={section}
-        onChange={(e) => setSection(e.target.value)}
+        onChange={(e) => {
+          setSection(e.target.value);
+          if (fieldErrors.section) setFieldErrors((prev) => ({ ...prev, section: undefined }));
+        }}
         placeholder={t(isHi, 'e.g. A, B, C', 'उदा. A, B, C')}
         maxLength={10}
+        error={fieldErrors.section}
         style={{ minHeight: 48 }}
       />
 
@@ -548,14 +581,36 @@ export default function SchoolAdminClassesPage() {
     setLoadingClasses(true);
     setRpcError(null);
 
+    // get_school_classes(p_school_id uuid) is SECURITY DEFINER over the real
+    // `classes` table (with an is_school_admin_of guard). The previous call
+    // passed the wrong argument name (`school_id`), which PostgREST rejects as
+    // a missing function — the list never loaded.
     const { data, error } = await supabase.rpc('get_school_classes', {
-      school_id: sid,
+      p_school_id: sid,
     });
 
     if (error) {
       setRpcError(error.message);
     } else {
-      setClasses((data as SchoolClass[]) ?? []);
+      // RPC row shape: id, name, grade, section, subject, class_code,
+      // is_active, created_at, student_count, teachers[]. It does not return
+      // teacher_count (derived) or avg_mastery (no source yet — defaults to 0).
+      const rows = Array.isArray(data) ? data : [];
+      setClasses(
+        rows.map((row: any): SchoolClass => ({
+          id: row.id,
+          name: row.name,
+          grade: String(row.grade), // P5: string "6"–"12"
+          section: row.section ?? null,
+          subject: row.subject ?? null,
+          student_count: typeof row.student_count === 'number' ? row.student_count : 0,
+          teacher_count: Array.isArray(row.teachers) ? row.teachers.length : 0,
+          avg_mastery: typeof row.avg_mastery === 'number' ? row.avg_mastery : 0,
+          teachers: Array.isArray(row.teachers) ? row.teachers : [],
+          class_code: row.class_code ?? null,
+          created_at: row.created_at,
+        }))
+      );
     }
 
     setLoadingClasses(false);
@@ -802,7 +857,6 @@ export default function SchoolAdminClassesPage() {
       >
         {schoolId && (
           <CreateClassForm
-            schoolId={schoolId}
             isHi={isHi}
             onSuccess={handleClassCreated}
             onClose={() => setCreateModalOpen(false)}
