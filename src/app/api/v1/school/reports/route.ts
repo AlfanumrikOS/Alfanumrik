@@ -118,7 +118,7 @@ async function handleOverviewReport(
 
     if (activeErr) throw activeErr;
 
-    // Get student IDs for this school, then query quiz_results
+    // Get student IDs for this school, then query quiz_sessions
     const firstOfMonth = new Date();
     firstOfMonth.setDate(1);
     firstOfMonth.setHours(0, 0, 0, 0);
@@ -132,20 +132,30 @@ async function handleOverviewReport(
       .select('id')
       .eq('school_id', schoolId);
 
-    if (!studentIdsErr && schoolStudents && schoolStudents.length > 0) {
+    // Do NOT swallow this error — a silent failure here would report 0 quizzes
+    // for paying schools. Throw so the catch logs (school_id/key_id only) and
+    // returns an explicit 500.
+    if (studentIdsErr) throw studentIdsErr;
+
+    if (schoolStudents && schoolStudents.length > 0) {
       const studentIds = schoolStudents.map((s: { id: string }) => s.id);
 
+      // Completed quiz sessions this month. quiz_sessions.score_percent is
+      // double precision — values may be floats, so round the final average.
       const { data: quizStats, error: quizErr } = await supabase
-        .from('quiz_results')
+        .from('quiz_sessions')
         .select('score_percent, student_id')
         .in('student_id', studentIds)
+        .eq('is_completed', true)
         .gte('created_at', firstOfMonth.toISOString());
 
-      if (!quizErr && quizStats) {
+      if (quizErr) throw quizErr;
+
+      if (quizStats) {
         quizzesThisMonth = quizStats.length;
         if (quizzesThisMonth > 0) {
           const totalScore = quizStats.reduce(
-            (sum: number, r: { score_percent: number }) => sum + (r.score_percent ?? 0),
+            (sum: number, r: { score_percent: number | null }) => sum + (r.score_percent ?? 0),
             0
           );
           avgScore = Math.round(totalScore / quizzesThisMonth);
@@ -218,17 +228,24 @@ async function handleStudentSummaryReport(
       });
     }
 
-    // Get quiz result aggregates for these students
+    // Get quiz session aggregates for these students (completed sessions only)
     const studentIds = students.map((s: { id: string }) => s.id);
 
     const { data: quizAggs, error: quizErr } = await supabase
-      .from('quiz_results')
+      .from('quiz_sessions')
       .select('student_id, score_percent')
-      .in('student_id', studentIds);
+      .in('student_id', studentIds)
+      .eq('is_completed', true);
 
-    // Build per-student aggregate map
+    // Do NOT swallow this error — a silent failure here would report 0 avg
+    // score / 0 quizzes for every student. Throw so the catch logs
+    // (school_id/key_id only) and returns an explicit 500.
+    if (quizErr) throw quizErr;
+
+    // Build per-student aggregate map. score_percent is double precision —
+    // values may be floats, so round only the final per-student average.
     const studentQuizMap = new Map<string, { totalScore: number; count: number }>();
-    if (!quizErr && quizAggs) {
+    if (quizAggs) {
       for (const r of quizAggs) {
         const existing = studentQuizMap.get(r.student_id);
         if (existing) {

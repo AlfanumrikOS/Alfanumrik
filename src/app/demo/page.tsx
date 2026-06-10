@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/AuthContext';
 
 const ROLES = [
   'School Principal',
@@ -22,43 +23,93 @@ const STUDENT_COUNTS = [
 ];
 
 export default function DemoPage() {
+  const { isHi } = useAuth();
   const [submitted, setSubmitted] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  /** True only when the insert itself failed — shows the contact-us fallback. */
+  const [showContactEmail, setShowContactEmail] = useState(false);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setSending(true);
     setError('');
+    setShowContactEmail(false);
 
     const form = e.currentTarget;
     const formData = new FormData(form);
 
+    // demo_requests NOT NULL columns: name, email, role, school_name.
+    // The browser enforces `required`, but whitespace-only values pass it —
+    // trim and re-check so we never send empty NOT NULL values.
+    const name = ((formData.get('name') as string) || '').trim();
+    const email = ((formData.get('email') as string) || '').trim();
+    const role = ((formData.get('role') as string) || '').trim();
+    const schoolName = ((formData.get('school_name') as string) || '').trim();
+
+    if (!name || !email || !role || !schoolName) {
+      setError(
+        isHi
+          ? 'कृपया सभी आवश्यक फ़ील्ड भरें।'
+          : 'Please fill in all required fields.'
+      );
+      return;
+    }
+
+    setSending(true);
+
     const payload = {
-      name: formData.get('name') as string,
-      email: formData.get('email') as string,
-      phone: (formData.get('phone') as string) || null,
-      role: formData.get('role') as string,
-      school_name: formData.get('school_name') as string,
-      student_count: (formData.get('student_count') as string) || null,
-      message: (formData.get('message') as string) || null,
+      name,
+      email,
+      phone: ((formData.get('phone') as string) || '').trim() || null,
+      role,
+      school_name: schoolName,
+      student_count: ((formData.get('student_count') as string) || '').trim() || null,
+      message: ((formData.get('message') as string) || '').trim() || null,
     };
 
+    let dbErrorMessage: string | null = null;
     try {
       const { error: dbError } = await supabase
         .from('demo_requests')
         .insert(payload);
-      if (dbError) throw dbError;
+      if (dbError) dbErrorMessage = dbError.message;
     } catch (err) {
-      // Surface DB errors so ops can detect a missing demo_requests table
-      // or RLS policy issue instead of silently losing leads.
-      const msg = err instanceof Error ? err.message : 'Failed to submit request. Please email us directly.';
-      setError(msg);
-      setSending(false);
-      return;
+      dbErrorMessage = err instanceof Error ? err.message : 'network error';
     }
 
     setSending(false);
+
+    if (dbErrorMessage) {
+      // Lead-capture failures must never be silent: the original version of
+      // this page swallowed every insert error and showed a fake success
+      // screen, so leads were lost with zero visibility. Report through the
+      // observability path (no PII — error message only) and show an honest
+      // failure state instead.
+      console.error('[demo] demo_requests insert failed:', dbErrorMessage);
+      try {
+        fetch('/api/client-error', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: `[demo-form] demo_requests insert failed: ${dbErrorMessage}`,
+            url: '/demo',
+          }),
+        }).catch(() => {
+          /* reporting failure is non-fatal */
+        });
+      } catch {
+        // Reporting failure is itself non-fatal
+      }
+
+      setError(
+        isHi
+          ? 'कुछ गलत हो गया — आपका अनुरोध सबमिट नहीं हुआ। कृपया हमें सीधे ईमेल करें:'
+          : 'Something went wrong — your request was not submitted. Please email us directly at:'
+      );
+      setShowContactEmail(true);
+      return;
+    }
+
     setSubmitted(true);
   }
 
@@ -254,7 +305,27 @@ export default function DemoPage() {
                 </div>
 
                 {error && (
-                  <p className="text-sm" style={{ color: '#dc2626' }}>{error}</p>
+                  <div
+                    role="alert"
+                    className="rounded-xl px-4 py-3 text-sm"
+                    style={{
+                      background: 'rgba(220,38,38,0.06)',
+                      border: '1px solid rgba(220,38,38,0.2)',
+                      color: '#dc2626',
+                    }}
+                  >
+                    <p>{error}</p>
+                    {showContactEmail && (
+                      <p className="mt-1">
+                        <a
+                          href="mailto:schools@alfanumrik.com"
+                          style={{ fontWeight: 600, color: '#dc2626', textDecoration: 'underline' }}
+                        >
+                          schools@alfanumrik.com
+                        </a>
+                      </p>
+                    )}
+                  </div>
                 )}
 
                 {/* Submit */}
