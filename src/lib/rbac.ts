@@ -689,6 +689,15 @@ export const PERMISSIONS = {
   INSTITUTION_VIEW_BILLING: 'institution.view_billing',
   INSTITUTION_MANAGE_STAFF: 'institution.manage_staff',
 
+  // ── School-scoped content management ──────────────────────
+  // school.manage_content — institution_admin manages school-scoped question
+  // content (create, edit, approve, bulk upload). Enforced by
+  // authorizeSchoolAdmin(request, 'school.manage_content') in
+  // /api/school-admin/content and /api/school-admin/content/bulk.
+  // Seed migration: 20260610110000_seed_content_and_diagnostic_permissions.sql
+  // (CEO-approved 2026-06-10; closes the cross-layer prod-403 gap).
+  SCHOOL_MANAGE_CONTENT: 'school.manage_content',
+
   // ── Tutor ──────────────────────────────────────────────
   TUTOR_VIEW_STUDENT: 'tutor.view_student',
   TUTOR_PROVIDE_FEEDBACK: 'tutor.provide_feedback',
