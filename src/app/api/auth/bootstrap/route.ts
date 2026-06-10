@@ -43,16 +43,55 @@ import { acquireIdempotencyLock, releaseIdempotencyLock } from '@/lib/redis';
 // so duplicate calls await the existing promise instead of firing a new RPC.
 const pendingBootstraps = new Map<string, Promise<NextResponse>>();
 
+/**
+ * Resolve the authenticated user from either:
+ *   1. The cookie-based server client (works when SSR/middleware has hydrated
+ *      the session into cookies), OR
+ *   2. An `Authorization: Bearer <access_token>` header (works when the
+ *      browser holds the session in localStorage — the default for
+ *      `signInWithPassword` — and explicitly forwards the token).
+ *
+ * Cookies win when both are present (preserves existing behaviour). Returns
+ * null if neither path produces a user. Never throws. The token itself is
+ * never logged (P13).
+ *
+ * 2026-06-10 (audit finding M3): mirrors resolveAuthUser in
+ * src/app/api/auth/session/route.ts. Password-login users have no sb-*
+ * cookies, so the cookie-only path 401'd the P15 profile-creation failsafe
+ * for the majority login path.
+ */
+async function resolveAuthUser(
+  request: NextRequest,
+): Promise<{ id: string; email?: string } | null> {
+  // Path 1: cookie-based (preferred — cookies still win if both present).
+  try {
+    const supabase = await createSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) return { id: user.id, email: user.email };
+  } catch { /* fall through to Bearer */ }
+
+  // Path 2: Authorization: Bearer <jwt>
+  const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
+  if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+    const token = authHeader.slice(7).trim();
+    if (token) {
+      try {
+        const admin = getSupabaseAdmin();
+        const { data: { user } } = await admin.auth.getUser(token);
+        if (user) return { id: user.id, email: user.email };
+      } catch { /* token invalid/expired/network */ }
+    }
+  }
+
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    // 1. Authenticate: get the current user from the session
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
+    // 1. Authenticate: cookie session first, Bearer-token fallback (M3)
+    const user = await resolveAuthUser(request);
 
-    if (authError || !user) {
+    if (!user) {
       return NextResponse.json(
         { success: false, error: 'Authentication required', code: 'AUTH_REQUIRED' },
         { status: 401 }

@@ -33,6 +33,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { getRoleDestination, validateRedirectTarget } from '@/lib/identity';
+import { profileParamsFromMetadata } from '@/lib/identity/bootstrap-profile';
+import { bootstrapSchoolAdminProfile } from '@/lib/identity/school-admin-bootstrap';
 
 // ── Session registration (2-device limit) ────────────────────────
 const SESSION_COOKIE = 'alfanumrik_sid';
@@ -146,9 +148,14 @@ export async function GET(request: NextRequest) {
           if (user) {
             signupUserId = user.id;
             const meta = user.user_metadata || {};
-            const email = user.email || '';
-            const name = meta.name || email.split('@')[0];
-            redirectRole = meta.role || 'student';
+            // R2 (2026-06-10): single canonical metadata→params derivation.
+            // Fixes teacher subjects_taught/grades_taught previously dropped
+            // (passed null) on this route, and the per-site grade default
+            // drift (now normalizeGrade — P5).
+            const params = profileParamsFromMetadata(user);
+            const email = params.email;
+            const name = params.name;
+            redirectRole = params.role;
 
             // Check if profile already exists (bootstrap may have run during signup)
             const { data: existingStudent } = await supabase.from('students').select('id').eq('auth_user_id', user.id).single();
@@ -160,36 +167,23 @@ export async function GET(request: NextRequest) {
 
             if (!hasProfile) {
               if (redirectRole === 'institution_admin') {
-                // Create school + school_admin rows using admin client.
+                // Create school + school_admin rows using admin client
+                // (shared helper — also used by /auth/confirm so token_hash
+                // confirmations no longer land without a profile).
                 // The sync_school_admin_role trigger auto-assigns the institution_admin role.
-                try {
-                  const { getSupabaseAdmin } = await import('@/lib/supabase-admin');
-                  const admin = getSupabaseAdmin();
-                  const { data: newSchool, error: schoolErr } = await admin
-                    .from('schools')
-                    .insert({
-                      name: meta.school_name || 'My School',
-                      city: meta.city || null,
-                      state: meta.state || null,
-                      board: meta.board || 'CBSE',
-                    })
-                    .select('id')
-                    .single();
-                  if (!schoolErr && newSchool) {
-                    await admin.from('school_admins').insert({
-                      auth_user_id: user.id,
-                      school_id: newSchool.id,
-                      name,
-                      email,
-                      phone: meta.phone || null,
-                    });
-                  } else if (schoolErr) {
-                    console.error('[Auth Callback] School insert failed:', schoolErr.message);
-                  }
-                } catch (schoolBootstrapErr) {
-                  console.error('[Auth Callback] School admin bootstrap failed:', schoolBootstrapErr);
-                  // Non-fatal — admin can be set up manually
-                }
+                await bootstrapSchoolAdminProfile(
+                  {
+                    authUserId: user.id,
+                    name,
+                    email,
+                    schoolName: params.school_name,
+                    city: params.school_city,
+                    state: params.school_state,
+                    board: params.board,
+                    phone: params.phone,
+                  },
+                  '[Auth Callback]'
+                );
               } else {
                 // No profile exists — run server bootstrap via admin client
                 try {
@@ -200,13 +194,13 @@ export async function GET(request: NextRequest) {
                     p_role: redirectRole,
                     p_name: name,
                     p_email: email,
-                    p_grade: meta.grade || '9',
-                    p_board: meta.board || 'CBSE',
-                    p_school_name: meta.school_name || null,
-                    p_subjects_taught: null,
-                    p_grades_taught: null,
-                    p_phone: meta.phone || null,
-                    p_link_code: meta.link_code || null,
+                    p_grade: params.grade,
+                    p_board: params.board,
+                    p_school_name: params.school_name,
+                    p_subjects_taught: params.subjects,
+                    p_grades_taught: params.grades_taught,
+                    p_phone: params.phone,
+                    p_link_code: params.link_code,
                   });
                   // Re-query after bootstrap to confirm actual role from the DB.
                   // This handles the case where user_metadata.role is missing
