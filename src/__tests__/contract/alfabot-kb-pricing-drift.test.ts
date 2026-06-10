@@ -11,7 +11,7 @@
  *      canonical context. The Edge Function's post-processor refuses
  *      replies that mention "₹" / "INR" / "rupees" without quoting the
  *      KB literal.
- *   2. `src/components/landing-v2/FAQV2.tsx` — the visible pricing FAQ
+ *   2. `src/components/landing/FAQV2.tsx` — the visible pricing FAQ
  *      shown to every visitor on `/welcome?v=2`.
  *
  * Why P11-adjacent (not strictly payment integrity):
@@ -74,12 +74,12 @@ describe('REG-65 — AlfaBot pricing-verbatim drift', () => {
   });
 
   it('FAQV2 component contains the canonical pricing literal verbatim', () => {
-    const faq = readSource('src/components/landing-v2/FAQV2.tsx');
+    const faq = readSource('src/components/landing/FAQV2.tsx');
     expect(faq).toContain(CANONICAL_PRICE_LITERAL);
   });
 
   it('FAQV2 pricing question references both the literal and the per-month framing', () => {
-    const faq = readSource('src/components/landing-v2/FAQV2.tsx');
+    const faq = readSource('src/components/landing/FAQV2.tsx');
     // The pricing FAQ row uses the qEn/qHi keys; we look for at least one
     // occurrence that combines the literal with "month" (English) or
     // "माह" (Hindi).
@@ -93,7 +93,7 @@ describe('REG-65 — AlfaBot pricing-verbatim drift', () => {
     // this test fails. We extract the first ₹ followed by digits and
     // compare.
     const kb = readSource('docs/alfabot/knowledge-base.md');
-    const faq = readSource('src/components/landing-v2/FAQV2.tsx');
+    const faq = readSource('src/components/landing/FAQV2.tsx');
     const re = /₹\s*(\d{2,5})/;
     const kbMatch = kb.match(re);
     const faqMatch = faq.match(re);

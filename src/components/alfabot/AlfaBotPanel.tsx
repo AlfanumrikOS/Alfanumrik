@@ -17,7 +17,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useAlfaBot } from './AlfaBotProvider';
-import { useWelcomeV2 } from '@/components/landing-v2/WelcomeV2Context';
+import { useWelcomeV2 } from '@/components/landing/WelcomeV2Context';
 import AlfaBotMessage from './AlfaBotMessage';
 import AlfaBotStarterChips from './AlfaBotStarterChips';
 import AlfaBotInput from './AlfaBotInput';

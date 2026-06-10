@@ -422,8 +422,8 @@ class _ResultScreen extends ConsumerWidget {
                     ),
                     // Show Foxy Coins when the server returns them,
                     // otherwise fall back to legacy XP display.
-                    // TODO(mobile-sync): Remove XP fallback once
-                    // server fully migrates to Foxy Coins.
+                    // Remove XP fallback once server fully migrates to
+                    // Foxy Coins.
                     _ResultStat(
                       label: result.coinsEarned > 0
                           ? 'Coins Earned'

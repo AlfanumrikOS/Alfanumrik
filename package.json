@@ -35,7 +35,10 @@
     "mesh:tick": "npx tsx agents/runtime/tick.ts",
     "forensic:quiz": "npx tsx scripts/forensic-quiz-lookup.ts",
     "retroactive-scan": "npx tsx scripts/retroactive-oracle-scan.ts",
-    "smoke:agent": "npx tsx scripts/smoke-agent.ts"
+    "smoke:agent": "npx tsx scripts/smoke-agent.ts",
+    "flags:check": "npx tsx scripts/sync-production-flags.ts --check",
+    "flags:sync": "npx tsx scripts/sync-production-flags.ts --apply",
+    "flags:reset": "npx tsx scripts/sync-production-flags.ts --reset --force"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
@@ -106,6 +109,6 @@
     "tailwindcss": "^3.4.4",
     "tsx": "^4.22.4",
     "typescript": "^5.4.5",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.8"
   }
 }

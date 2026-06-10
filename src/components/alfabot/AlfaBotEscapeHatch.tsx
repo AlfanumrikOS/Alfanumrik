@@ -15,7 +15,7 @@
  */
 
 import { useAlfaBot } from './AlfaBotProvider';
-import { useWelcomeV2 } from '@/components/landing-v2/WelcomeV2Context';
+import { useWelcomeV2 } from '@/components/landing/WelcomeV2Context';
 import { track } from '@/lib/posthog/client';
 import s from './alfabot.module.css';
 

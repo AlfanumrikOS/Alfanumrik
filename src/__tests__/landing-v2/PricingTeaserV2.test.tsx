@@ -22,8 +22,8 @@ import React from 'react';
  * Owning agent: testing.
  */
 
-import PricingTeaserV2 from '@/components/landing-v2/PricingTeaserV2';
-import { WelcomeV2Provider } from '@/components/landing-v2/WelcomeV2Context';
+import PricingTeaserV2 from '@/components/landing/PricingTeaserV2';
+import { WelcomeV2Provider } from '@/components/landing/WelcomeV2Context';
 
 function stubMatchMedia(matches: boolean) {
   Object.defineProperty(window, 'matchMedia', {

@@ -110,12 +110,12 @@ class DashboardScreen extends ConsumerWidget {
                         child: Column(
                           children: [
                             // Stats row: Performance Score / Coins / Streak
-                            // TODO(mobile-sync): Once the backend returns
-                            // `performance_score` and `foxy_coins`, replace
-                            // the XP stat with Performance Score and add a
-                            // Foxy Coins balance card. The data model already
-                            // supports both via DashboardData.performanceScore
-                            // and DashboardData.foxyCoins.
+                            // Once the backend returns `performance_score` and
+                            // `foxy_coins`, replace the XP stat with Performance
+                            // Score and add a Foxy Coins balance card. The data
+                            // model already supports both via
+                            // DashboardData.performanceScore and
+                            // DashboardData.foxyCoins.
                             Row(
                               children: [
                                 // Show Performance Score when available,

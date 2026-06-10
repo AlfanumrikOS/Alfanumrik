@@ -37,7 +37,7 @@ vi.mock('@/lib/alfabot/client', () => ({
 import { useEffect } from 'react';
 import { AlfaBotProvider, useAlfaBot } from '@/components/alfabot/AlfaBotProvider';
 import AlfaBotPanel from '@/components/alfabot/AlfaBotPanel';
-import { WelcomeV2Provider } from '@/components/landing-v2/WelcomeV2Context';
+import { WelcomeV2Provider } from '@/components/landing/WelcomeV2Context';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

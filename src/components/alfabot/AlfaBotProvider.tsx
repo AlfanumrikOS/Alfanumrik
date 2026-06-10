@@ -49,7 +49,7 @@ import type {
 } from '@/lib/alfabot/types';
 import { askAlfabot } from '@/lib/alfabot/client';
 import { track } from '@/lib/posthog/client';
-import { useWelcomeV2, type Role } from '@/components/landing-v2/WelcomeV2Context';
+import { useWelcomeV2, type Role } from '@/components/landing/WelcomeV2Context';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

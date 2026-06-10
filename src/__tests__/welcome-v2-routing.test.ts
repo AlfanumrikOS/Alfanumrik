@@ -13,7 +13,7 @@ import { describe, it, expect, vi } from 'vitest';
 function FakeV2() { return null; }
 FakeV2.displayName = 'FakeV2';
 
-vi.mock('@/components/landing-v2/WelcomeV2', () => ({ default: FakeV2 }));
+vi.mock('@/components/landing/WelcomeV2', () => ({ default: FakeV2 }));
 
 const importPage = async () => {
   const mod = await import('@/app/welcome/page');

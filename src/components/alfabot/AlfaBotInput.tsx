@@ -15,7 +15,7 @@
 
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useAlfaBot } from './AlfaBotProvider';
-import { useWelcomeV2 } from '@/components/landing-v2/WelcomeV2Context';
+import { useWelcomeV2 } from '@/components/landing/WelcomeV2Context';
 import s from './alfabot.module.css';
 
 const MAX_CHARS = 1000;

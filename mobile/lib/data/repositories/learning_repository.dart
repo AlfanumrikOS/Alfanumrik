@@ -221,8 +221,8 @@ class LearningRepository {
   /// on the server version. The amount matches web `coin-rules.ts`
   /// `study_task_complete = 5`.
   ///
-  /// TODO(mobile-sync): Rename RPC call from `add_xp` to `award_coins`
-  /// when the backend migrates.
+  /// Legacy RPC name: keep using `add_xp` until the backend migrates the
+  /// route to `award_coins`.
   Future<ApiResult<void>> markCompleted({
     required String studentId,
     required String topicId,

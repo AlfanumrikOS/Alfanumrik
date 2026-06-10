@@ -31,8 +31,8 @@ class DashboardRepository {
   /// `GET /v2/today`; see [_getDashboardDataV2]. When OFF this is the
   /// byte-identical legacy RPC/table path.
   ///
-  /// TODO(mobile-sync): When the backend migrates `get_dashboard_data` to
-  /// return Performance Score (0-100) instead of unbounded XP, update
+  /// Future backend migration: when `get_dashboard_data` returns
+  /// Performance Score (0-100) instead of unbounded XP, update
   /// [DashboardData.fromJson] to parse `performance_score` and
   /// `foxy_coins` fields. See web `score-config.ts` and `coin-rules.ts`.
   Future<ApiResult<DashboardData>> getDashboardData(String studentId) async {
@@ -62,9 +62,8 @@ class DashboardRepository {
       }
 
       // Fallback: parallel queries
-      // TODO(mobile-sync): When Performance Score is live, query
-      // `student_subject_scores` table for per-subject scores, and
-      // `students.foxy_coins` for coin balance.
+      // Future backend migration: query `student_subject_scores` for
+      // per-subject scores and `students.foxy_coins` for coin balance.
       final results = await Future.wait([
         _client
             .from('students')

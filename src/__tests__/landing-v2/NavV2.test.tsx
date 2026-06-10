@@ -20,8 +20,8 @@ import React from 'react';
 
 // next/link is fine to use directly — JSDOM handles the anchor.
 
-import NavV2 from '@/components/landing-v2/NavV2';
-import { WelcomeV2Provider } from '@/components/landing-v2/WelcomeV2Context';
+import NavV2 from '@/components/landing/NavV2';
+import { WelcomeV2Provider } from '@/components/landing/WelcomeV2Context';
 
 // ── matchMedia mock helper ───────────────────────────────────────────────────
 function stubMatchMedia(prefersDark: boolean) {
