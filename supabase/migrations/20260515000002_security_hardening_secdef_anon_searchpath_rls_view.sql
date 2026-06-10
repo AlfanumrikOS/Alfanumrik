@@ -18,6 +18,48 @@
 --   - All policy rewrites use DROP POLICY IF EXISTS + CREATE, so re-running
 --     is idempotent.
 --   - View change is reversible via `ALTER VIEW … RESET (security_invoker);`.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 2026-06-10 chain-reproducibility repair (fresh-replay forward reference)
+-- ─────────────────────────────────────────────────────────────────────────────
+-- WHY THIS EDIT IS SAFE: this migration is ALREADY APPLIED on prod and
+-- main-staging and recorded in supabase_migrations.schema_migrations, so this
+-- file will NEVER re-run on those environments. The edit below only changes
+-- behavior on FRESH chain replays: Supabase preview-branch DBs, CI live-DB
+-- runs, and DR restores that rebuild from the baseline + chain.
+--
+-- FAILURE BEING FIXED: a 2026-06-10 preview-branch replay died at the
+--   REVOKE EXECUTE ON FUNCTION public.tutor_commit_attempt(...) FROM anon;
+-- statement (statement ~71). tutor_commit_attempt is created by
+-- 20260525100001_adr_004_phase_2_bkt_rpc.sql — TEN DAYS LATER in chain
+-- order. It pre-existed on prod (applied out-of-band ahead of its chain
+-- position), which is why this file applied cleanly there but fails on any
+-- fresh replay with "function ... does not exist".
+--
+-- FIX: that REVOKE is wrapped in a to_regprocedure() existence guard. On any
+-- DB where the function already exists (prod-shaped restores), the REVOKE
+-- still executes exactly as before; on a fresh chain replay it is skipped
+-- with a NOTICE.
+--
+-- COMPENSATION (why skipping leaves no anon-execute hole on fresh DBs):
+-- 20260525100001 itself runs `REVOKE ALL ... FROM PUBLIC` and
+-- `GRANT EXECUTE ... TO service_role` immediately after CREATE, so a fresh
+-- replay never leaves tutor_commit_attempt executable by anon (or any
+-- non-service role). No edit to the creating migration was required.
+--
+-- AUDIT SCOPE (2026-06-10): every object referenced by this file was checked
+-- against chain position 20260515000002 (baseline 00000000000000 + root
+-- migrations with version < 20260515000002):
+--   * tutor_commit_attempt — ONLY forward reference; guarded below.
+--   * complete_experiment(13-arg) — created pre-chain by 20260504200000; OK.
+--   * remaining 58 REVOKE targets (incl. all 4 atomic_quiz_profile_update
+--     overloads and the final update_chapter_progress statement, which had
+--     never been reached on a fresh replay) — present in the baseline; OK.
+--   * all 6 RLS-policy tables (audit_logs, rag_content_audit, rag_query_logs,
+--     rag_retrieval_logs, student_moments, waitlist) — present in the
+--     baseline; OK.
+--   * subscriber_lag view / notify_state_event / tg_learner_mastery_touch —
+--     already self-guarded by the DO blocks below (prior hardening pass).
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 1. security_definer_view: public.subscriber_lag
@@ -182,5 +224,23 @@ REVOKE EXECUTE ON FUNCTION public.submit_challenge_attempt(p_student_id uuid, p_
 REVOKE EXECUTE ON FUNCTION public.submit_quiz_results(p_student_id uuid, p_subject text, p_grade text, p_topic text, p_chapter integer, p_responses jsonb, p_time integer) FROM anon;
 REVOKE EXECUTE ON FUNCTION public.submit_quiz_results_v2(p_session_id uuid, p_student_id uuid, p_subject text, p_grade text, p_topic text, p_chapter integer, p_responses jsonb, p_time integer, p_idempotency_key uuid) FROM anon;
 REVOKE EXECUTE ON FUNCTION public.track_ai_quality(p_subject text, p_is_thumbs_up boolean, p_is_report boolean) FROM anon;
-REVOKE EXECUTE ON FUNCTION public.tutor_commit_attempt(p_attempt_id uuid, p_student_id uuid, p_concept_id uuid, p_correct boolean, p_chosen_index integer, p_response_time_ms integer, p_question_id text, p_subject_code text, p_chapter_number integer, p_occurred_at timestamp with time zone, p_event_id uuid, p_idempotency_key text) FROM anon;
+
+-- Forward-reference guard (2026-06-10, see header): tutor_commit_attempt is
+-- created by 20260525100001_adr_004_phase_2_bkt_rpc.sql, AFTER this file in
+-- chain order. It pre-existed on prod (out-of-band apply), so the bare REVOKE
+-- worked there but breaks every fresh replay. Guarded so the REVOKE still
+-- executes wherever the function exists and is skipped on fresh chains —
+-- where 20260525100001's own `REVOKE ALL ... FROM PUBLIC` + service_role-only
+-- GRANT closes the anon-execute gap at creation time.
+DO $tutor_commit_attempt_guard$
+BEGIN
+  IF to_regprocedure('public.tutor_commit_attempt(uuid,uuid,uuid,boolean,integer,integer,text,text,integer,timestamptz,uuid,text)') IS NOT NULL THEN
+    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.tutor_commit_attempt(p_attempt_id uuid, p_student_id uuid, p_concept_id uuid, p_correct boolean, p_chosen_index integer, p_response_time_ms integer, p_question_id text, p_subject_code text, p_chapter_number integer, p_occurred_at timestamp with time zone, p_event_id uuid, p_idempotency_key text) FROM anon';
+    RAISE NOTICE 'tutor_commit_attempt: anon EXECUTE revoked';
+  ELSE
+    RAISE NOTICE 'tutor_commit_attempt: not yet created at this chain position (arrives in 20260525100001, which revokes PUBLIC itself); skipping REVOKE';
+  END IF;
+END
+$tutor_commit_attempt_guard$;
+
 REVOKE EXECUTE ON FUNCTION public.update_chapter_progress(p_student_id uuid, p_subject text, p_grade text, p_chapter_number integer) FROM anon;
