@@ -3164,3 +3164,44 @@ would HTTP 400) and keep the current language instead.
 Pre-Voice-3: 74 entries. Adds REG-107.
 
 **Total: 75 entries.**
+
+## Auth-module security & onboarding fixes (2026-06-10) - REG-108..REG-111
+
+Source: 2026-06-10 auth-module audit. Five fixes landed together: H1
+(get_user_role PII enumeration), M1 (open redirect on /login), M3
+(bootstrap Bearer fallback, server + client), M5 (bootstrap_user_profile
+link_code accepted but never used), R2 (canonical metadata→bootstrap-params
+derivation — teacher subjects/grades_taught were dropped as null by both
+server confirmation routes, and the grade default had drifted per-site).
+These entries pin the four security/funnel-critical contracts; R2's pure
+derivation module is covered inside REG-110's location set.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-108 | `get_user_role_self_binding_guard` | Static canary on `supabase/migrations/20260610090000_secure_get_user_role.sql` (REG-47-style contract pin): (1) `CREATE OR REPLACE FUNCTION public.get_user_role(p_auth_user_id uuid)` + `SECURITY DEFINER` + pinned `search_path`. (2) Service-role bypass check `coalesce(auth.role(), '') <> 'service_role'` present. (3) Self-identity binding `p_auth_user_id IS DISTINCT FROM auth.uid()` present, with `RAISE EXCEPTION` on cross-user lookup. (4) The guard appears BEFORE the first role-table read (`FROM students`) so no PII is touched pre-guard. (5) anon EXECUTE revoke re-asserted (20260515000002 parity). Any later `CREATE OR REPLACE` of get_user_role that copies an older body forward and drops the guard fails this canary. | `src/__tests__/contract/auth-module-migration-canaries.test.ts` (H1 describe block) | E |
+| REG-109 | `login_open_redirect_guard` | Both redirect call sites in `src/app/login/page.tsx` (already-logged-in useEffect + handleSuccess) route `?redirect=` through the REAL `validateRedirectTarget` with the role destination as fallback. Asserted by RENDERING the real page (next/navigation + AuthContext + AuthScreen mocked; `@/lib/identity` NOT mocked): (1) `?redirect=//evil.com` → role destination, never evil.com — for student AND teacher (fallback is role-aware, not hardcoded /dashboard). (2) `?redirect=/foxy` preserved on both call sites. (3) `javascript:` and backslash vectors blocked. (4) handleSuccess still calls router.refresh() and redirects immediately (the #892 stuck-button contract). Underlying validator vectors (`//`, `%2f`, `javascript:`, `data:`, backslash) are separately pinned in `src/__tests__/identity-constants.test.ts`. | `src/__tests__/login-redirect-guard.test.tsx` | E |
+| REG-110 | `bootstrap_bearer_fallback_p15_layer2` | P15 layer-2 restoration (M3, server + client). Server (`src/app/api/auth/bootstrap/route.ts` resolveAuthUser): (1) no cookie + valid `Authorization: Bearer <jwt>` → user resolved via `getSupabaseAdmin().auth.getUser(token)`, bootstrap RPC runs for the Bearer identity; (2) no cookie + invalid Bearer → exact existing `401 {success:false, error:'Authentication required', code:'AUTH_REQUIRED'}` envelope, RPC never called; (3) cookie + Bearer both present → cookie wins and admin.auth.getUser is never called; (4) empty Bearer token → 401 without an admin call; (5) cookie client throwing falls through to Bearer. Client (`src/lib/AuthContext.tsx` bootstrap-fallback fetch, real AuthProvider mounted): attaches `Authorization: Bearer <access_token>` when getSession yields a token; omits the header (pre-M3 request shape) when the session has no token or the 3s-raced re-read throws; payload grade defaults to '9' as a STRING via normalizeGrade (R2 — was a hand-rolled `\|\| '6'`). R2's pure derivation (roleFromMetadata guardian→parent alias + garbage→student, teacher subjects/grades_taught surviving JSON-string AND array forms, P5 grade filtering, link_code trim-or-null) is pinned in the identity-bootstrap-profile suite. | `src/__tests__/auth-bootstrap.test.ts` (Bearer-token fallback describe) + `src/__tests__/auth-context-bootstrap-bearer.test.tsx` + `src/__tests__/identity-bootstrap-profile.test.ts` | E |
+| REG-111 | `bootstrap_link_status_fail_soft` | P15 rule-5 contract on `supabase/migrations/20260610090100_bootstrap_link_code.sql` (static canary): (1) bootstrap_user_profile keeps the unchanged 11-param signature incl. `p_link_code` and calls the existing `public.link_guardian_via_invite_code` RPC (not an inlined copy). (2) Link attempted only for `p_role IN ('parent','guardian')` with a non-empty trimmed code, at BOTH attempt sites (main path + already_completed retry-heal, so the 3-layer failsafe converges to linked on re-invocation). (3) Every link attempt wrapped in `EXCEPTION WHEN OTHERS → v_link_status := 'invalid_code'` — an invalid/expired code can NEVER abort profile creation. (4) ADDITIVE `link_status` key ('linked'\|'invalid_code'\|'not_attempted') present on EVERY `RETURN jsonb_build_object` path and in the bootstrap_success audit metadata. (5) All ON CONFLICT idempotency markers preserved (onboarding_state, students/teachers/guardians auth_user_id constraints, state_events idempotency_key — P15 rule 4). (6) anon EXECUTE revoke re-asserted. | `src/__tests__/contract/auth-module-migration-canaries.test.ts` (M5 describe block) | E |
+
+### Invariants covered by this section
+
+- P13 (data privacy - REG-108) - get_user_role returned role/name/grade/
+  school_id for ANY uuid to ANY authenticated caller; the self-binding guard
+  closes the enumeration vector while the service_role bypass keeps
+  middleware/admin/export-report callers working.
+- P15 (onboarding integrity - REG-110, REG-111) - layer-2 of the 3-layer
+  profile-creation failsafe 401'd for password-login users (localStorage
+  session, no sb-* cookies); the Bearer fallback restores it. The link_code
+  wiring is fail-soft: a bad code degrades to link_status='invalid_code',
+  never a failed signup.
+- P5 (grade format - REG-110) - bootstrap payload grade is always a bare
+  string '6'..'12' with canonical default '9' via normalizeGrade, unified
+  across AuthContext, callback/confirm, and the bootstrap route.
+- Open-redirect prevention (REG-109, security-adjacent) - /login can no
+  longer be used as a phishing trampoline via `?redirect=//evil.com`.
+
+### Catalog total
+
+Pre-auth-module-fixes: 75 entries. Adds REG-108..REG-111.
+
+**Total: 79 entries.**

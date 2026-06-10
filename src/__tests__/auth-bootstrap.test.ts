@@ -66,11 +66,19 @@ vi.mock('@/lib/supabase-server', () => ({
   }),
 }));
 
+// Admin-client auth.getUser(token) stub — used by the M3 Bearer fallback in
+// resolveAuthUser(). Validates the Authorization: Bearer <jwt> path when no
+// cookie session is present.
+const mockAdminAuthGetUser = vi.fn();
+
 // Mock getSupabaseAdmin (service role, bypasses RLS)
 vi.mock('@/lib/supabase-admin', () => ({
   getSupabaseAdmin: vi.fn(() => ({
     rpc: mockRpc,
     from: mockFrom,
+    auth: {
+      getUser: (token: string) => mockAdminAuthGetUser(token),
+    },
   })),
 }));
 
@@ -84,6 +92,21 @@ function createBootstrapRequest(body: Record<string, unknown>): NextRequest {
   return new NextRequest('http://localhost:3000/api/auth/bootstrap', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+// Helper to create a NextRequest carrying an Authorization header (M3 Bearer path)
+function createBearerBootstrapRequest(
+  body: Record<string, unknown>,
+  authorization: string,
+): NextRequest {
+  return new NextRequest('http://localhost:3000/api/auth/bootstrap', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: authorization,
+    },
     body: JSON.stringify(body),
   });
 }
@@ -120,6 +143,12 @@ describe('POST /api/auth/bootstrap', () => {
     });
     // Default: audit log insert succeeds
     mockInsert.mockReturnValue({ catch: vi.fn() });
+    // Default: Bearer-token validation fails (cookie path is the default in
+    // these tests; Bearer tests override this explicitly)
+    mockAdminAuthGetUser.mockResolvedValue({
+      data: { user: null },
+      error: { message: 'invalid token' },
+    });
     // Reset from() handler to the default (supports insert + subjects lookup)
     const defaultHandler = makeFromHandler();
     mockFrom.mockImplementation(defaultHandler as any);
@@ -159,6 +188,141 @@ describe('POST /api/auth/bootstrap', () => {
       expect(response.status).toBe(401);
       expect(json.success).toBe(false);
       expect(json.code).toBe('AUTH_REQUIRED');
+    });
+  });
+
+  // ── Bearer-token fallback (M3, 2026-06-10 audit) ──
+  //
+  // resolveAuthUser(): cookie session first; when absent, an
+  // `Authorization: Bearer <jwt>` header is validated via
+  // getSupabaseAdmin().auth.getUser(token). Password-login users hold the
+  // session in localStorage (no sb-* cookies), so without this fallback the
+  // P15 layer-2 profile-creation failsafe 401'd for the majority login path.
+
+  describe('Bearer-token fallback (M3)', () => {
+    const BEARER_USER = {
+      id: 'bearer-user-uuid-9999',
+      email: 'bearer-student@example.com',
+    };
+
+    beforeEach(() => {
+      // No cookie session by default in this block
+      mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+    });
+
+    it('resolves the user via admin.auth.getUser(token) and bootstraps when no cookie session but a valid Bearer token is present', async () => {
+      mockAdminAuthGetUser.mockResolvedValue({
+        data: { user: BEARER_USER },
+        error: null,
+      });
+
+      const request = createBearerBootstrapRequest(
+        { role: 'student', name: 'Bearer Student', grade: '9' },
+        'Bearer valid-jwt-token-abc',
+      );
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.success).toBe(true);
+      // Token (without the "Bearer " prefix) was validated via the admin client
+      expect(mockAdminAuthGetUser).toHaveBeenCalledWith('valid-jwt-token-abc');
+      // Bootstrap ran for the Bearer-resolved identity
+      expect(mockRpc).toHaveBeenCalledWith('bootstrap_user_profile', expect.objectContaining({
+        p_auth_user_id: BEARER_USER.id,
+        p_email: BEARER_USER.email,
+        p_role: 'student',
+      }));
+    });
+
+    it('returns 401 AUTH_REQUIRED (existing shape) when no cookie session and the Bearer token is invalid', async () => {
+      mockAdminAuthGetUser.mockResolvedValue({
+        data: { user: null },
+        error: { message: 'JWT expired' },
+      });
+
+      const request = createBearerBootstrapRequest(
+        { role: 'student', name: 'Bearer Student' },
+        'Bearer expired-or-tampered-token',
+      );
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(401);
+      // Exact existing error envelope — clients depend on this shape
+      expect(json).toEqual({
+        success: false,
+        error: 'Authentication required',
+        code: 'AUTH_REQUIRED',
+      });
+      // No bootstrap attempted for an unauthenticated request
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it('returns 401 without calling admin.auth.getUser when the Bearer token is empty', async () => {
+      const request = createBearerBootstrapRequest(
+        { role: 'student', name: 'Bearer Student' },
+        'Bearer    ',
+      );
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(401);
+      expect(json.code).toBe('AUTH_REQUIRED');
+      expect(mockAdminAuthGetUser).not.toHaveBeenCalled();
+    });
+
+    it('cookie session wins when both cookie and Bearer are present', async () => {
+      const COOKIE_USER = {
+        id: 'cookie-user-uuid-0001',
+        email: 'cookie-student@example.com',
+      };
+      // Cookie path resolves a user…
+      mockGetUser.mockResolvedValue({ data: { user: COOKIE_USER }, error: null });
+      // …and a (different) Bearer identity is also attached to the request
+      mockAdminAuthGetUser.mockResolvedValue({
+        data: { user: BEARER_USER },
+        error: null,
+      });
+
+      const request = createBearerBootstrapRequest(
+        { role: 'student', name: 'Cookie Student', grade: '10' },
+        'Bearer some-other-users-token',
+      );
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.success).toBe(true);
+      // Bootstrap used the COOKIE identity, not the Bearer one
+      expect(mockRpc).toHaveBeenCalledWith('bootstrap_user_profile', expect.objectContaining({
+        p_auth_user_id: COOKIE_USER.id,
+        p_email: COOKIE_USER.email,
+      }));
+      // Bearer validation is never even attempted when the cookie wins
+      expect(mockAdminAuthGetUser).not.toHaveBeenCalled();
+    });
+
+    it('falls through to the Bearer path when the cookie client throws', async () => {
+      mockGetUser.mockRejectedValue(new Error('cookie store unavailable'));
+      mockAdminAuthGetUser.mockResolvedValue({
+        data: { user: BEARER_USER },
+        error: null,
+      });
+
+      const request = createBearerBootstrapRequest(
+        { role: 'student', name: 'Bearer Student', grade: '9' },
+        'Bearer valid-jwt-token-xyz',
+      );
+      const response = await POST(request);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.success).toBe(true);
+      expect(mockAdminAuthGetUser).toHaveBeenCalledWith('valid-jwt-token-xyz');
+      expect(mockRpc).toHaveBeenCalledWith('bootstrap_user_profile', expect.objectContaining({
+        p_auth_user_id: BEARER_USER.id,
+      }));
     });
   });
 

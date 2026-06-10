@@ -27,6 +27,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { getRoleDestination, validateRedirectTarget } from '@/lib/identity';
+import { profileParamsFromMetadata } from '@/lib/identity/bootstrap-profile';
+import { bootstrapSchoolAdminProfile } from '@/lib/identity/school-admin-bootstrap';
 
 // ── Session registration (2-device limit) ────────────────────────
 const SESSION_COOKIE = 'alfanumrik_sid';
@@ -143,38 +145,65 @@ export async function GET(request: NextRequest) {
           const { data: { user } } = await supabase.auth.getUser();
           if (user) {
             signupUserId = user.id;
-            const meta = user.user_metadata || {};
-            const email = user.email || '';
-            const name = meta.name || email.split('@')[0];
-            redirectRole = meta.role || 'student';
+            // R2 (2026-06-10): single canonical metadata→params derivation
+            // (shared with /auth/callback). Fixes teacher subjects_taught/
+            // grades_taught previously dropped (passed null) on this route,
+            // and the per-site grade default drift (now normalizeGrade — P5).
+            const params = profileParamsFromMetadata(user);
+            const email = params.email;
+            const name = params.name;
+            redirectRole = params.role;
 
             const { data: existingStudent } = await supabase.from('students').select('id').eq('auth_user_id', user.id).single();
             const { data: existingTeacher } = await supabase.from('teachers').select('id').eq('auth_user_id', user.id).single();
             const { data: existingGuardian } = await supabase.from('guardians').select('id').eq('auth_user_id', user.id).single();
-            const hasProfile = !!(existingStudent || existingTeacher || existingGuardian);
+            const { data: existingSchoolAdmin } = await supabase.from('school_admins').select('id').eq('auth_user_id', user.id).single();
+            const hasProfile = !!(existingStudent || existingTeacher || existingGuardian || existingSchoolAdmin);
 
             if (!hasProfile) {
-              try {
-                const { getSupabaseAdmin } = await import('@/lib/supabase-admin');
-                const admin = getSupabaseAdmin();
-                await admin.rpc('bootstrap_user_profile', {
-                  p_auth_user_id: user.id,
-                  p_role: redirectRole,
-                  p_name: name,
-                  p_email: email,
-                  p_grade: meta.grade || '9',
-                  p_board: meta.board || 'CBSE',
-                  p_school_name: meta.school_name || null,
-                  p_subjects_taught: null,
-                  p_grades_taught: null,
-                  p_phone: meta.phone || null,
-                  p_link_code: meta.link_code || null,
-                });
-              } catch (bootstrapErr) {
-                console.error('[Auth Confirm] Bootstrap failed:', bootstrapErr);
+              if (redirectRole === 'institution_admin') {
+                // R2 (2026-06-10): token_hash-confirmed school-admin signups
+                // previously landed WITHOUT a profile — this branch existed
+                // only in /auth/callback. Shared helper creates the school +
+                // school_admins rows; the sync_school_admin_role trigger
+                // auto-assigns the institution_admin RBAC role.
+                await bootstrapSchoolAdminProfile(
+                  {
+                    authUserId: user.id,
+                    name,
+                    email,
+                    schoolName: params.school_name,
+                    city: params.school_city,
+                    state: params.school_state,
+                    board: params.board,
+                    phone: params.phone,
+                  },
+                  '[Auth Confirm]'
+                );
+              } else {
+                try {
+                  const { getSupabaseAdmin } = await import('@/lib/supabase-admin');
+                  const admin = getSupabaseAdmin();
+                  await admin.rpc('bootstrap_user_profile', {
+                    p_auth_user_id: user.id,
+                    p_role: redirectRole,
+                    p_name: name,
+                    p_email: email,
+                    p_grade: params.grade,
+                    p_board: params.board,
+                    p_school_name: params.school_name,
+                    p_subjects_taught: params.subjects,
+                    p_grades_taught: params.grades_taught,
+                    p_phone: params.phone,
+                    p_link_code: params.link_code,
+                  });
+                } catch (bootstrapErr) {
+                  console.error('[Auth Confirm] Bootstrap failed:', bootstrapErr);
+                }
               }
             } else {
-              if (existingTeacher) redirectRole = 'teacher';
+              if (existingSchoolAdmin) redirectRole = 'institution_admin';
+              else if (existingTeacher) redirectRole = 'teacher';
               else if (existingGuardian) redirectRole = 'parent';
               else redirectRole = 'student';
             }

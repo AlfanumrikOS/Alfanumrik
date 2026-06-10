@@ -4,7 +4,7 @@ import { useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { AuthScreen } from '@/components/auth/AuthScreen';
-import { getRoleDestination } from '@/lib/identity';
+import { getRoleDestination, validateRedirectTarget } from '@/lib/identity';
 
 export default function LoginPage() {
   const { isLoggedIn, isLoading, activeRole, isHi } = useAuth();
@@ -25,12 +25,14 @@ export default function LoginPage() {
     if (params.get('switch') === 'true') return;
 
     if (!isLoading && isLoggedIn && activeRole !== 'none') {
-      // If there's a redirect param, use it (for deep-link returns)
-      if (redirectTo && redirectTo.startsWith('/')) {
-        router.replace(redirectTo);
-      } else {
-        router.replace(getRoleDestination(activeRole));
-      }
+      // If there's a redirect param, use it (for deep-link returns).
+      // M1: validateRedirectTarget blocks open redirects (`//evil.com`,
+      // backslashes, encoded slashes) — invalid targets fall back to the
+      // role-based destination.
+      const roleDestination = getRoleDestination(activeRole);
+      router.replace(
+        redirectTo ? validateRedirectTarget(redirectTo, roleDestination) : roleDestination
+      );
     }
   }, [isLoggedIn, isLoading, activeRole, router, redirectTo]);
 
@@ -40,9 +42,11 @@ export default function LoginPage() {
     // After successful auth, trigger a client-side refresh then navigate.
     // AuthContext's onAuthStateChange will detect the new session.
     router.refresh();
-    const destination = redirectTo && redirectTo.startsWith('/')
-      ? redirectTo
-      : getRoleDestination(roleParam || 'student');
+    // M1: same open-redirect guard as the already-logged-in effect above.
+    const roleDestination = getRoleDestination(roleParam || 'student');
+    const destination = redirectTo
+      ? validateRedirectTarget(redirectTo, roleDestination)
+      : roleDestination;
     router.replace(destination);
   }, [router, roleParam, redirectTo]);
 

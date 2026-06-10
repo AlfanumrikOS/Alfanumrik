@@ -15,6 +15,7 @@
  */
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { supabase, getStudentSnapshot } from './supabase';
+import { normalizeGrade } from './identity/constants';
 import { clearAllCache } from './swr';
 import { clearAtlasFlagCache } from './use-atlas-flag';
 import { track } from './analytics';
@@ -446,7 +447,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             bootstrapAttemptedRef.current = true;
             const metaRole = user.user_metadata?.role as string | undefined;
             const metaName = user.user_metadata?.name as string || user.email?.split('@')[0] || 'Student';
-            const metaGrade = user.user_metadata?.grade as string || '6';
+            // R2: normalizeGrade is the canonical grade coercion (defaults to '9',
+            // matching the callback/confirm/bootstrap-route failsafe layers).
+            // Grades stay strings per P5.
+            const metaGrade = normalizeGrade(user.user_metadata?.grade);
             const metaBoard = user.user_metadata?.board as string || 'CBSE';
 
             let bootstrapSucceeded = false;
@@ -470,9 +474,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 payload.grades_taught = parsedGrades;
               }
 
+              // M3: attach the session access token as a Bearer header so
+              // localStorage-session users (password logins, no auth cookie)
+              // don't 401 — the bootstrap route accepts `Authorization: Bearer`
+              // as a fallback when no cookie session is present. Cookie
+              // behavior is unchanged (same-origin fetch still sends cookies).
+              // The session was already resolved by the getSession() call at
+              // the top of fetchUser, so this re-read hits the in-memory cache;
+              // the 3s race is a safety net so a stalled refresh can't burn
+              // the outer 12s budget. If no token is available, send the
+              // request exactly as before (graceful degradation).
+              let bootstrapToken: string | null = null;
+              try {
+                bootstrapToken = await Promise.race([
+                  supabase.auth.getSession().then((r) => r.data.session?.access_token ?? null),
+                  new Promise<null>((resolve) => { setTimeout(() => resolve(null), 3_000); }),
+                ]);
+              } catch { /* degrade gracefully — request goes out without Authorization */ }
+
               const res = await fetch('/api/auth/bootstrap', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(bootstrapToken ? { Authorization: `Bearer ${bootstrapToken}` } : {}),
+                },
                 body: JSON.stringify(payload),
               });
               if (res.ok) {
