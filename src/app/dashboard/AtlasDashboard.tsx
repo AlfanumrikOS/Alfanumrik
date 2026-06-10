@@ -78,6 +78,7 @@ export default function AtlasDashboard() {
     if (!isLoading && !isLoggedIn) router.replace('/login');
     if (!isLoading && isLoggedIn && activeRole === 'teacher')  router.replace('/teacher');
     if (!isLoading && isLoggedIn && activeRole === 'guardian') router.replace('/parent');
+    if (!isLoading && isLoggedIn && activeRole === 'institution_admin') router.replace('/school-admin');
     if (!isLoading && isLoggedIn && activeRole === 'student' && student && !student.onboarding_completed) {
       router.replace('/onboarding');
     }
