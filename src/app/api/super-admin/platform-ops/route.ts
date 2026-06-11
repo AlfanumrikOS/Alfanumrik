@@ -17,7 +17,7 @@ async function supabaseGet(table: string, params: string) {
 
 // GET
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   const params = new URL(request.url).searchParams;
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
 
 // POST
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   const params = new URL(request.url).searchParams;

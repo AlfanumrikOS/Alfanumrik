@@ -42,7 +42,7 @@ async function safeRpc<T>(name: string): Promise<T[]> {
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   const [slowFunctionsResult, connectionStatsResult, tableSizesResult] = await Promise.all([

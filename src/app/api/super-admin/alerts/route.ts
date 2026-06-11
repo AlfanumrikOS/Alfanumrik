@@ -22,7 +22,7 @@ function isValidUUID(str: string): boolean {
 // ── GET /api/super-admin/alerts — list all rules ──
 
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
 // ── POST /api/super-admin/alerts — create rule ──
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -167,7 +167,7 @@ export async function POST(request: NextRequest) {
 // ── PATCH /api/super-admin/alerts — update rule ──
 
 export async function PATCH(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -220,7 +220,7 @@ export async function PATCH(request: NextRequest) {
 // ── DELETE /api/super-admin/alerts — delete rule ──
 
 export async function DELETE(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {

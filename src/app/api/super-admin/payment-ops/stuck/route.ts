@@ -11,7 +11,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
  * This mirrors the logic in supabase/reconcile_stuck_payments.sql.
  */
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {

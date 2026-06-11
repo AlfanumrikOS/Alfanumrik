@@ -66,7 +66,7 @@ function setCachedResults(results: MonitorResult[]): CachedResults {
 // ── GET — Get latest monitor results ────────────────────────────
 
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
 // ── POST — Run monitors on demand ───────────────────────────────
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   const ip = getIp(request);

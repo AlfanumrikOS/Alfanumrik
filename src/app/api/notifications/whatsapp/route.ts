@@ -28,7 +28,7 @@ const VALID_TYPES: WhatsAppTemplateType[] = [
 
 export async function POST(request: NextRequest) {
   // Auth: admin or system only
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) {
     return auth.response;
   }

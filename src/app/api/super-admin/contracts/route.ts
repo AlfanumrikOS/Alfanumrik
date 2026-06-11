@@ -55,7 +55,7 @@ async function flagOn(userId: string): Promise<boolean> {
 // ─── GET ────────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   if (!(await flagOn(auth.userId))) return err('School contracts are not enabled.', 403);

@@ -18,7 +18,7 @@ import { getSupabaseAdmin } from '@/lib/supabase-admin';
  *   user_id (required) — the auth_user_id to look up
  */
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   const userId = request.nextUrl.searchParams.get('user_id');
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
  * Also calls Supabase admin signOut to invalidate refresh tokens.
  */
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   let targetUserId: string;

@@ -311,7 +311,7 @@ describe('authorizeAdmin', () => {
     delete process.env.NEXT_PUBLIC_SUPABASE_URL;
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
 
-    const r = await authorizeAdmin(reqWith({}));
+    const r = await authorizeAdmin(reqWith({}), 'support');
     expect(r.authorized).toBe(false);
     if (!r.authorized) {
       expect(r.response.status).toBe(500);
@@ -322,7 +322,7 @@ describe('authorizeAdmin', () => {
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    const r = await authorizeAdmin(reqWith({}));
+    const r = await authorizeAdmin(reqWith({}), 'support');
     expect(r.authorized).toBe(false);
     if (!r.authorized) {
       expect(r.response.status).toBe(500);
@@ -333,7 +333,7 @@ describe('authorizeAdmin', () => {
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
 
-    const r = await authorizeAdmin(reqWith({}));
+    const r = await authorizeAdmin(reqWith({}), 'support');
     expect(r.authorized).toBe(false);
     if (!r.authorized) {
       expect(r.response.status).toBe(401);
@@ -350,7 +350,7 @@ describe('authorizeAdmin', () => {
       new Response('expired', { status: 401 }),
     );
 
-    const r = await authorizeAdmin(reqWith({ Authorization: 'Bearer bad-token' }));
+    const r = await authorizeAdmin(reqWith({ Authorization: 'Bearer bad-token' }), 'support');
     expect(r.authorized).toBe(false);
     if (!r.authorized) {
       expect(r.response.status).toBe(401);
@@ -367,7 +367,7 @@ describe('authorizeAdmin', () => {
       new Response(JSON.stringify({ /* no id */ }), { status: 200 }),
     );
 
-    const r = await authorizeAdmin(reqWith({ Authorization: 'Bearer fake' }));
+    const r = await authorizeAdmin(reqWith({ Authorization: 'Bearer fake' }), 'support');
     expect(r.authorized).toBe(false);
     if (!r.authorized) {
       const body = await r.response.json();
@@ -383,7 +383,7 @@ describe('authorizeAdmin', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'u-1', email: 'a@x.com' }), { status: 200 }))
       .mockResolvedValueOnce(new Response('boom', { status: 500 }));
 
-    const r = await authorizeAdmin(reqWith({ Authorization: 'Bearer good' }));
+    const r = await authorizeAdmin(reqWith({ Authorization: 'Bearer good' }), 'support');
     expect(r.authorized).toBe(false);
     if (!r.authorized) {
       expect(r.response.status).toBe(500);
@@ -404,7 +404,7 @@ describe('authorizeAdmin', () => {
       // Fallback retry with user token → also empty
       .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
 
-    const r = await authorizeAdmin(reqWith({ Authorization: 'Bearer good' }));
+    const r = await authorizeAdmin(reqWith({ Authorization: 'Bearer good' }), 'support');
     expect(r.authorized).toBe(false);
     if (!r.authorized) {
       expect(r.response.status).toBe(403);
@@ -423,7 +423,7 @@ describe('authorizeAdmin', () => {
         id: 'admin-id-1', name: 'Alice', email: 'admin@x.com', admin_level: 'super_admin',
       }]), { status: 200 }));
 
-    const r = await authorizeAdmin(reqWith({ Authorization: 'Bearer good' }));
+    const r = await authorizeAdmin(reqWith({ Authorization: 'Bearer good' }), 'support');
     expect(r.authorized).toBe(true);
     if (r.authorized) {
       expect(r.userId).toBe('u-1');
@@ -446,7 +446,7 @@ describe('authorizeAdmin', () => {
       // Service role admin lookup: empty
       .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
 
-    const r = await authorizeAdmin(reqWith({ Authorization: 'Bearer good' }));
+    const r = await authorizeAdmin(reqWith({ Authorization: 'Bearer good' }), 'support');
     expect(r.authorized).toBe(false);
     if (!r.authorized) {
       expect(r.response.status).toBe(403);
@@ -463,7 +463,7 @@ describe('authorizeAdmin', () => {
 
     vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('network gone'));
 
-    const r = await authorizeAdmin(reqWith({ Authorization: 'Bearer good' }));
+    const r = await authorizeAdmin(reqWith({ Authorization: 'Bearer good' }), 'support');
     expect(r.authorized).toBe(false);
     if (!r.authorized) {
       expect(r.response.status).toBe(500);
@@ -487,7 +487,7 @@ describe('authorizeAdmin', () => {
         id: 'admin-3', name: 'Cam', email: 'c@x.com', admin_level: 'super_admin',
       }]), { status: 200 }));
 
-    const r = await authorizeAdmin(reqWith({ Cookie: cookie }));
+    const r = await authorizeAdmin(reqWith({ Cookie: cookie }), 'support');
     expect(r.authorized).toBe(true);
   });
 });

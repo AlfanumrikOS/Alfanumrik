@@ -42,7 +42,7 @@ function sanitiseFields(type: ContentType, data: Record<string, unknown>): Recor
 
 // GET  — list content with filtering & pagination
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
 
 // POST — create new content
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
 
 // PATCH — update existing content
 export async function PATCH(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -190,7 +190,7 @@ export async function PATCH(request: NextRequest) {
 
 // DELETE — soft delete (set is_active = false)
 export async function DELETE(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {

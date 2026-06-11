@@ -67,7 +67,7 @@ interface OverrideViewRow {
 const VALID_MODULE_KEYS = new Set<string>(MODULE_REGISTRY.map(m => m.key));
 
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {

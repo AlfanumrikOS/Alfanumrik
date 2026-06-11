@@ -39,7 +39,7 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   let parsedBody: unknown;
