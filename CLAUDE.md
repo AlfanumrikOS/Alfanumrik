@@ -74,7 +74,7 @@ supabase migration new <name>                            # Create new migration
 
 **State management**: SWR for remote data. `AuthContext` (React Context) for auth state and `isHi` language toggle. No Redux/Zustand.
 
-**Middleware** (`src/middleware.ts`): Auth validation, rate limiting (Upstash Redis with in-memory fallback), bot detection, request ID tracing, feature flags. Runs on every request.
+**Middleware** (`src/proxy.ts`) (renamed from middleware.ts for Next.js 16; build-enforced by scripts/auth-guard.js): Auth validation, rate limiting (Upstash Redis with in-memory fallback), bot detection, request ID tracing, feature flags. Runs on every request.
 
 **RBAC**: Server-side enforcement via `authorizeRequest(request, 'permission.code')` in API routes. Client-side `usePermissions()` hook is UI convenience only, not a security boundary.
 
@@ -174,7 +174,7 @@ See `.claude/CLAUDE.md` for the full product constitution:
 | Auth context | `src/lib/AuthContext.tsx` |
 | RBAC | `src/lib/rbac.ts`, `src/lib/usePermissions.ts` |
 | Supabase clients | `src/lib/supabase.ts`, `supabase-server.ts`, `supabase-admin.ts` |
-| Middleware | `src/middleware.ts` |
+| Middleware | `src/proxy.ts` (renamed from middleware.ts for Next.js 16; build-enforced by scripts/auth-guard.js) |
 | Payments | `src/lib/razorpay.ts`, `src/app/api/payments/` |
 | AI Edge Functions | `supabase/functions/foxy-tutor/`, `ncert-solver/`, `quiz-generator/`, `cme-engine/` (no `quiz-generator-v2/` — archived). Foxy modes: `learn`, `explain`, `practice`, `revise`, `doubt`, `homework`, `explorer` (Pedagogy v2 Wave 2). |
 | Marking-authenticity forensic view | `supabase/migrations/20260504100400_marking_audit_view.sql` → `public.marking_audit_last_30d`. Service-role-only forensic read model for the super-admin Marking Integrity dashboard. Runbook: `docs/runbooks/forensic-quiz-investigation.md` |

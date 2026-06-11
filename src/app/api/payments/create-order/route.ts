@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr';
 import { supabase as globalSupabase } from '@/lib/supabase-client';
 import { capture as posthogCapture } from '@/lib/posthog/server';
 import { paymentSubscribeSchema, validateBody } from '@/lib/validation';
+import { authorizeRequest } from '@/lib/rbac';
 
 // P11: payment endpoints are the highest-blast-radius write surface.
 // We share validateBody / paymentSubscribeSchema with the
@@ -36,6 +37,15 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Gap 2 defense-in-depth (P11): RBAC permission gate on top of getUser().
+    // authorizeRequest() resolves identity from the SAME Bearer header / Supabase
+    // session cookie sources used above, so a legitimately logged-in student with
+    // the 'payments.subscribe' grant passes; super_admin/admin bypass automatically.
+    // The getUser() block above is retained — it supplies order metadata (user.id,
+    // user.email). This guard is ADDED before any Razorpay order creation.
+    const auth = await authorizeRequest(request, 'payments.subscribe');
+    if (!auth.authorized) return auth.errorResponse!;
 
     let rawBody: unknown;
     try {

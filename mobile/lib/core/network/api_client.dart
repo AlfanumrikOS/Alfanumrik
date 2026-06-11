@@ -59,6 +59,10 @@ class ApiClient {
   AppException _mapStatusCode(int? code) {
     return switch (code) {
       401 => NetworkException.unauthorized(),
+      // The web payment routes return 403 { code: 'PERMISSION_DENIED' } when
+      // the caller lacks the 'payments.subscribe' permission. Surface a clear,
+      // user-actionable message instead of leaking the raw exception string.
+      403 => PaymentException.permissionDenied(),
       429 => const UsageLimitException('api', 0),
       // `int() && >= 500` narrows the nullable `code` to non-null before the
       // relational match (Dart's stricter null-flow analysis now rejects a

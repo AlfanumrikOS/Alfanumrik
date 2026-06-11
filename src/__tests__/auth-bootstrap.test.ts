@@ -131,6 +131,12 @@ describe('POST /api/auth/bootstrap', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    // Hermetic guard (2026-06-11 flaky-suite fix): clear any `vi.stubGlobal`
+    // mutation (e.g. a leaked `fetch` stub) inherited from a sibling suite that
+    // ran earlier in the SAME reused worker process. vi.clearAllMocks() resets
+    // mock call state but does NOT restore stubbed globals — so without this the
+    // outcome of this suite depended on worker shard ordering.
+    vi.unstubAllGlobals();
     // Default: authenticated user
     mockGetUser.mockResolvedValue({
       data: { user: MOCK_USER },

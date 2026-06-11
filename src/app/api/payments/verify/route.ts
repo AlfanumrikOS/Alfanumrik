@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { logger } from '@/lib/logger';
 import { logOpsEvent } from '@/lib/ops-events';
 import { paymentVerifySchema, validateBody } from '@/lib/validation';
+import { authorizeRequest } from '@/lib/rbac';
 
 /**
  * Payment Verification Route
@@ -49,6 +50,15 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Gap 2 defense-in-depth (P11): RBAC permission gate on top of getUser().
+    // authorizeRequest() resolves identity from the SAME Supabase session cookie /
+    // Bearer header sources used above, so a legitimately logged-in student with the
+    // 'payments.subscribe' grant passes; super_admin/admin bypass automatically.
+    // This guard is ADDED before the Razorpay HMAC verification, idempotency check,
+    // kill-switch, and atomic activation RPC — it removes none of them.
+    const auth = await authorizeRequest(request, 'payments.subscribe');
+    if (!auth.authorized) return auth.errorResponse!;
 
     const rawBody = await request.json();
     const validation = validateBody(paymentVerifySchema, rawBody);

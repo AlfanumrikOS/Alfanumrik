@@ -622,10 +622,12 @@ export const SCHOOL_PROVISIONING_FLAGS = {
  *    the auth decision depends only on the RBAC check + active-school lookup.
  *    Default: false.
  *
- *    Server-only gate (read via isFeatureEnabled in school-admin-auth). Not yet
- *    seeded by any migration; while absent from `feature_flags` the server read
- *    path resolves it to OFF, so role-narrowing stays OFF until the flag is
- *    explicitly seeded + enabled.
+ *    Server-only gate (read via isFeatureEnabled in school-admin-auth). Seeded
+ *    OFF (is_enabled=false, rollout=0) by migration
+ *    20260611000100_seed_ff_school_admin_rbac_flag.sql so the row is auditable
+ *    and flippable from the super-admin console; role-narrowing stays OFF until
+ *    an operator explicitly enables the flag (production enablement held pending
+ *    comms).
  *
  *  Spec/plan: docs/superpowers/plans/2026-06-08-phase-3b-school-professional-depth.md (Wave C)
  */
@@ -701,7 +703,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [TEACHER_PARENT_COMMS_FLAGS.V1]: false,
   [SCHOOL_COMMAND_CENTER_FLAGS.V1]: false,
   [SCHOOL_PROVISIONING_FLAGS.V1]: false,
-  [SCHOOL_ADMIN_RBAC_FLAGS.V1]: false,
+  [SCHOOL_ADMIN_RBAC_FLAGS.V1]: false, // seeded OFF by 20260611000100_seed_ff_school_admin_rbac_flag.sql
   [SCHOOL_REPORTS_DEPTH_FLAGS.V1]: false,
 } as const;
 

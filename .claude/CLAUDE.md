@@ -59,7 +59,7 @@ Round 2 audit promotions (atomic_plan_change atomicity, daily XP cap, Sentry cli
 | Supabase clients | `src/lib/supabase.ts`, `supabase-server.ts`, `supabase-admin.ts` |
 | Admin auth | `src/lib/admin-auth.ts` |
 | Feature flags | `src/lib/feature-flags.ts` |
-| Middleware | `src/middleware.ts` |
+| Middleware | `src/proxy.ts` (renamed from middleware.ts for Next.js 16; build-enforced by scripts/auth-guard.js) |
 | Payments | `src/lib/razorpay.ts`, `src/app/api/payments/` |
 | AI Edge Functions | `supabase/functions/foxy-tutor/` (active prod), `ncert-solver/`, `quiz-generator/`, `cme-engine/`. (No `quiz-generator-v2/` — never existed on disk; constitution corrected 2026-05-04.) |
 | Marking-authenticity forensic view | `supabase/migrations/20260504100400_marking_audit_view.sql` → `public.marking_audit_last_30d` (SECURITY INVOKER, service_role-only). Surfaces every `quiz_responses` row in the last 30 days where recorded `is_correct` disagrees with the per-session `quiz_session_shuffles` snapshot, OR where the snapshot is missing (Phase 1.2 silent-zero footprint). UUIDs only, no PII. Powers the super-admin Marking Integrity dashboard (frontend follow-up) and the nightly drift canary. Runbook: `docs/runbooks/forensic-quiz-investigation.md`. |

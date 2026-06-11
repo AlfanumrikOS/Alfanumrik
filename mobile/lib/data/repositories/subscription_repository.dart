@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/errors/app_exception.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_result.dart';
 import '../models/subscription.dart';
@@ -51,6 +52,11 @@ class SubscriptionRepository {
 
       final data = response.data as Map<String, dynamic>;
       return ApiSuccess(data);
+    } on AppException catch (e) {
+      // ApiClient already mapped this to a user-facing message (e.g. the
+      // 403 permission-denied case). Surface it verbatim rather than wrapping
+      // it in a raw toString() that leaks the exception type.
+      return ApiFailure(e.message);
     } catch (e) {
       return ApiFailure('Failed to create order: ${e.toString()}');
     }
@@ -80,6 +86,8 @@ class SubscriptionRepository {
       final success = data['success'] as bool? ?? false;
 
       return ApiSuccess(success);
+    } on AppException catch (e) {
+      return ApiFailure(e.message);
     } catch (e) {
       return ApiFailure('Payment verification failed: ${e.toString()}');
     }

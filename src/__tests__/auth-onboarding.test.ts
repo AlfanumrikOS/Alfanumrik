@@ -285,6 +285,11 @@ describe('POST /api/auth/bootstrap — Validation', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    // Hermetic guard (2026-06-11 flaky-suite fix): drop any leaked global stub
+    // (e.g. a `fetch` stub) inherited from a sibling suite scheduled earlier in
+    // the same reused worker. vi.clearAllMocks() does not restore stubbed
+    // globals, so bootstrap validation outcomes were shard-ordering dependent.
+    vi.unstubAllGlobals();
     studentMockData = null;
     teacherMockData = null;
     guardianMockData = null;
