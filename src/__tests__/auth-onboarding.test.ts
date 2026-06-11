@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
 import {
   VALID_ROLES,
   VALID_GRADES,
@@ -283,8 +283,37 @@ function createBootstrapRequest(body: Record<string, unknown>) {
 describe('POST /api/auth/bootstrap — Validation', () => {
   let POST: (request: import('next/server').NextRequest) => Promise<Response>;
 
+  // CROSS-FILE ISOLATION (2026-06-11): this file and `auth-bootstrap.test.ts`
+  // BOTH dynamically import the same '@/app/api/auth/bootstrap/route' while each
+  // defines its OWN file-scoped `vi.mock('@/lib/supabase-server')`. Vitest's
+  // default `isolate: true` gives each test FILE its own module registry, so
+  // this file's cached route binds to THIS file's hoisted vi.mock factories —
+  // no cross-file contamination. The route reads dependencies at CALL time:
+  // POST() invokes createSupabaseServerClient() (mock factory calls
+  // mockGetUser() dynamically) and getSupabaseAdmin() (returns stable
+  // mockAdminRpc/mockAdminFrom vi.fn refs). Per-test vi.clearAllMocks() +
+  // .mockResolvedValue() below mutate those SAME objects, so per-test
+  // reconfiguration still applies to the once-imported route.
+  //
+  // NO vi.resetModules() (2026-06-11): resetModules() forced a full
+  // re-evaluation of the heavy route module graph on `await import(...)`, which
+  // intermittently exceeded the 15s hook timeout under full-suite parallel load.
+  // isolate:true already guarantees cross-file isolation, so resetModules was
+  // never needed — it only added cost. The explicit 30000ms hook timeout is a
+  // safety margin so the one-time heavy import cannot trip the 15s default on a
+  // slow/loaded box.
+  beforeAll(async () => {
+    const mod = await import('@/app/api/auth/bootstrap/route');
+    POST = mod.POST;
+  }, 30000);
+
   beforeEach(async () => {
     vi.clearAllMocks();
+    // Hermetic guard (2026-06-11 flaky-suite fix): drop any leaked global stub
+    // (e.g. a `fetch` stub) inherited from a sibling suite scheduled earlier in
+    // the same reused worker. vi.clearAllMocks() does not restore stubbed
+    // globals, so bootstrap validation outcomes were shard-ordering dependent.
+    vi.unstubAllGlobals();
     studentMockData = null;
     teacherMockData = null;
     guardianMockData = null;
@@ -300,9 +329,8 @@ describe('POST /api/auth/bootstrap — Validation', () => {
     });
     mockAdminInsert.mockReturnValue({ catch: vi.fn() });
     mockAdminFrom.mockReturnValue({ insert: mockAdminInsert });
-
-    const mod = await import('@/app/api/auth/bootstrap/route');
-    POST = mod.POST;
+    // NOTE: the route import lives in the per-describe beforeAll above —
+    // imported once (no resetModules), mocks read at call time.
   });
 
   it('returns 400 INVALID_ROLE when role is missing', async () => {
@@ -510,6 +538,24 @@ describe('RBAC Constants — Route Classification', () => {
 describe('GET /api/auth/onboarding-status', () => {
   let GET: () => Promise<Response>;
 
+  // CROSS-FILE ISOLATION (2026-06-11): the onboarding-status route is imported
+  // once per describe and binds to THIS file's hoisted vi.mock factories.
+  // Vitest's default `isolate: true` gives each test FILE its own module
+  // registry, so no sibling file importing the same route with different mocks
+  // can contaminate this registry. GET() reads mockGetUser at call time via the
+  // supabase-server mock factory, so per-test mockGetUser reconfiguration still
+  // applies to the once-imported route. See the section-2 beforeAll for the
+  // full rationale.
+  //
+  // NO vi.resetModules() (2026-06-11): resetModules() forced a heavy module
+  // graph re-evaluation that intermittently blew the 15s hook timeout under
+  // parallel load; isolate:true already provides cross-file isolation. The
+  // explicit 30000ms hook timeout is a safety margin for the one-time import.
+  beforeAll(async () => {
+    const mod = await import('@/app/api/auth/onboarding-status/route');
+    GET = mod.GET;
+  }, 30000);
+
   beforeEach(async () => {
     vi.clearAllMocks();
     studentMockData = null;
@@ -522,9 +568,8 @@ describe('GET /api/auth/onboarding-status', () => {
       data: { user: MOCK_USER },
       error: null,
     });
-
-    const mod = await import('@/app/api/auth/onboarding-status/route');
-    GET = mod.GET;
+    // NOTE: the route import lives in the per-describe beforeAll above (no
+    // resetModules); mocks are read at call time.
   });
 
   it('returns unauthenticated when no session', async () => {
@@ -698,6 +743,26 @@ describe('Auth callback bootstrap integration', () => {
     })
   );
 
+  // CROSS-FILE ISOLATION (2026-06-11): the auth/callback route is imported once
+  // per describe and binds to THIS file's hoisted vi.mock factories. Vitest's
+  // default `isolate: true` gives each test FILE its own module registry, so no
+  // sibling file can contaminate this registry. See section-2 beforeAll for the
+  // full rationale. The route reads
+  // mockGetUser/mockGetSession/mockExchangeCodeForSession/mockAdminRpc at call
+  // time, so per-test reconfiguration of those vi.fn refs still applies to the
+  // once-imported route. The per-test `vi.stubGlobal('fetch', fetchSpy)` +
+  // afterEach `vi.unstubAllGlobals()` MUST stay per-test (global stub lifecycle,
+  // not module lifecycle).
+  //
+  // NO vi.resetModules() (2026-06-11): resetModules() forced a heavy module
+  // graph re-evaluation that intermittently blew the 15s hook timeout under
+  // parallel load; isolate:true already provides cross-file isolation. The
+  // explicit 30000ms hook timeout is a safety margin for the one-time import.
+  beforeAll(async () => {
+    const mod = await import('@/app/auth/callback/route');
+    GET = mod.GET;
+  }, 30000);
+
   beforeEach(async () => {
     vi.clearAllMocks();
     studentMockData = null;
@@ -728,9 +793,8 @@ describe('Auth callback bootstrap integration', () => {
       data: { status: 'success', profile_id: 'new-profile' },
       error: null,
     });
-
-    const mod = await import('@/app/auth/callback/route');
-    GET = mod.GET;
+    // NOTE: the route import lives in the per-describe beforeAll above (no
+    // resetModules); mocks are read at call time.
   });
 
   afterEach(async () => {

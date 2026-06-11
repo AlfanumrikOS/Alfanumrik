@@ -99,7 +99,7 @@ Foxy is the brain; the cognitive engine + RAG is the substrate; CME (Concept Mas
 
 ### 2.1 Stack & Dependencies Verified
 
-**Frontend:** Next.js 16.2.1 (App Router) + React 18.3.1 + Tailwind 3.4 + SWR 2.4 + Vercel Analytics + Vercel Speed Insights + Sentry 10.45 (client + server + edge) + Upstash Redis + Upstash Ratelimit + PostHog.
+**Frontend:** Next.js 16.2.6 (App Router) + React 18.3.1 + Tailwind 3.4 + SWR 2.4 + Vercel Analytics + Vercel Speed Insights + Sentry 10.45 (client + server + edge) + Upstash Redis + Upstash Ratelimit + PostHog.
 
 **Backend:** Supabase (Postgres 15 + Auth + Storage + Edge Functions) + Voyage embeddings (voyage-large-2) + Anthropic API.
 

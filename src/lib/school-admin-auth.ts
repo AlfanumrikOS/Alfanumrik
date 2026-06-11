@@ -73,6 +73,13 @@ export interface SchoolAdminAuthResult {
 //   institution.manage_billing     |    ✓      |       ✗        |          ✗           |        ✓
 //   institution.view_billing       |    ✓      |       ✓        |          ✗           |        ✓
 //   institution.manage_staff       |    ✓      |       ✗        |          ✗           |        ✓
+//   institution.use_principal_ai    |    ✓      |       ✗        |          ✗           |        ✗   (CEO-approved 2026-06-11; principal-only v1)
+//
+// Track 2 "Principal AI Assistant" v1: 'institution.use_principal_ai' is granted
+// to the PRINCIPAL role ONLY (NOT vice_principal / academic_coordinator) per the
+// CEO-approved Track 2 design. institution_admin intentionally does NOT receive
+// it in v1 — the assistant is a single-school principal surface; multi-school
+// institution_admin access is a deliberate follow-up decision, not a default.
 //
 // Scope note: principal / vice_principal / academic_coordinator are single-school
 // (their one school_admins.school_id, resolved below). institution_admin is the
@@ -91,6 +98,8 @@ const SCHOOL_ADMIN_ROLE_CAPABILITIES: Readonly<Record<SchoolAdminRole, ReadonlyS
     'institution.manage_billing',
     'institution.view_billing',
     'institution.manage_staff',
+    // Track 2 Principal AI Assistant v1 — principal-only (CEO-approved 2026-06-11).
+    'institution.use_principal_ai',
   ]),
   vice_principal: new Set<string>([
     'institution.view_analytics',

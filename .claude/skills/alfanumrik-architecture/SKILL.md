@@ -11,7 +11,7 @@ Reference for system structure, data flows, and the checklist for adding new fea
 ## System Layers
 ```
 ┌─────────────────────────────────────────────────────┐
-│  FRONTEND (Next.js 14 App Router)                   │
+│  FRONTEND (Next.js 16 App Router)                   │
 │  src/app/*/page.tsx → src/components/ → src/lib/    │
 │  State: AuthContext + SWR                           │
 │  Styling: Tailwind 3.4                              │

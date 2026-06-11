@@ -24,9 +24,15 @@ import { getRoleDestination } from '@/lib/identity';
  * Fix: three changes in three files. This test pins the contract by
  * verifying:
  *   1. getRoleDestination('institution_admin') === '/school-admin'
- *   2. dashboard/page.tsx contains a redirect branch for institution_admin
- *   3. dashboard/page.tsx renders DashboardSkeleton (not /login bounce)
- *      while institution_admin redirect is in flight
+ *   2. dashboard/AtlasDashboard.tsx contains a redirect branch for
+ *      institution_admin (the redirect logic was refactored out of
+ *      dashboard/page.tsx — now a thin `return <AtlasDashboard />` wrapper —
+ *      and into AtlasDashboard.tsx).
+ *   3. dashboard/AtlasDashboard.tsx renders DashboardSkeleton (not /login
+ *      bounce) while institution_admin redirect is in flight. The
+ *      skeleton-guard intent is satisfied by the `if (!student) return
+ *      <DashboardSkeleton/>` early-return, since institution_admin has no
+ *      student profile.
  *   4. login/page.tsx handleSuccess does an immediate redirect (commit
  *      #892 stuck-button fix) — it must not block login on activeRole.
  *      The school_admin protection is no longer enforced login-side; it is
@@ -57,9 +63,9 @@ describe('post-login redirect chain — institution_admin', () => {
 });
 
 describe('post-login redirect chain — source structure', () => {
-  it('dashboard/page.tsx redirects institution_admin to /school-admin', () => {
+  it('dashboard/AtlasDashboard.tsx redirects institution_admin to /school-admin', () => {
     const file = readFileSync(
-      path.resolve(process.cwd(), 'src/app/dashboard/page.tsx'),
+      path.resolve(process.cwd(), 'src/app/dashboard/AtlasDashboard.tsx'),
       'utf-8'
     );
     // The useEffect must contain a branch that catches institution_admin
@@ -71,14 +77,17 @@ describe('post-login redirect chain — source structure', () => {
     );
   });
 
-  it('dashboard/page.tsx renders skeleton (not /login bounce) for institution_admin without student profile', () => {
+  it('dashboard/AtlasDashboard.tsx orders teacher/guardian/institution_admin redirects before the no-student skeleton early-return', () => {
     const file = readFileSync(
-      path.resolve(process.cwd(), 'src/app/dashboard/page.tsx'),
+      path.resolve(process.cwd(), 'src/app/dashboard/AtlasDashboard.tsx'),
       'utf-8'
     );
-    // The no-student guard must include institution_admin alongside
-    // teacher/guardian so that the redirect-in-flight state doesn't
-    // bounce the user back to /login.
+    // The role-redirect useEffect must handle teacher, guardian, and
+    // institution_admin (in that order) so that non-student roles are
+    // routed to their portals. The redirect-in-flight state never bounces
+    // the user back to /login because the `if (!student) return
+    // <DashboardSkeleton/>` early-return covers institution_admin (which
+    // has no student profile) while the router.replace settles.
     expect(file).toMatch(
       /activeRole === 'teacher'[\s\S]*?activeRole === 'guardian'[\s\S]*?activeRole === 'institution_admin'/,
     );

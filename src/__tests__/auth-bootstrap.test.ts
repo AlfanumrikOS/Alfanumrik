@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { NextRequest } from 'next/server';
 
 /**
@@ -129,8 +129,41 @@ const MOCK_USER = {
 describe('POST /api/auth/bootstrap', () => {
   let POST: (request: NextRequest) => Promise<Response>;
 
+  // CROSS-FILE ISOLATION (2026-06-11): the bootstrap route is imported
+  // dynamically once per describe below. `auth-onboarding.test.ts` ALSO
+  // dynamically imports the SAME '@/app/api/auth/bootstrap/route' but defines
+  // its OWN file-scoped `vi.mock('@/lib/supabase-server')`. Cross-file
+  // isolation is guaranteed by Vitest's default `isolate: true`, which gives
+  // each test FILE its own module registry — so this file's cached route binds
+  // to THIS file's hoisted vi.mock factories. The route reads its dependencies
+  // at CALL time: POST() invokes createSupabaseServerClient() (whose mock
+  // factory calls mockGetUser() dynamically) and getSupabaseAdmin() (returning
+  // the stable mockRpc/mockFrom/mockInsert vi.fn references). Per-test
+  // vi.clearAllMocks() + .mockResolvedValue()/.mockImplementation() below mutate
+  // those SAME function objects, so per-test mock reconfiguration takes full
+  // effect against the once-imported route.
+  //
+  // NO vi.resetModules() (2026-06-11): resetModules() forced a full
+  // re-evaluation of the heavy route module graph on `await import(...)`, which
+  // intermittently exceeded the 15s hook timeout under full-suite parallel CPU
+  // load. It was never needed for cross-file isolation (isolate:true already
+  // provides that) — it only added cost. Without it the single import stays
+  // cached and fast across this describe's tests. The explicit 30000ms hook
+  // timeout is a safety margin so the one-time heavy import cannot trip the 15s
+  // default even on a slow/loaded box.
+  beforeAll(async () => {
+    const mod = await import('@/app/api/auth/bootstrap/route');
+    POST = mod.POST;
+  }, 30000);
+
   beforeEach(async () => {
     vi.clearAllMocks();
+    // Hermetic guard (2026-06-11 flaky-suite fix): clear any `vi.stubGlobal`
+    // mutation (e.g. a leaked `fetch` stub) inherited from a sibling suite that
+    // ran earlier in the SAME reused worker process. vi.clearAllMocks() resets
+    // mock call state but does NOT restore stubbed globals — so without this the
+    // outcome of this suite depended on worker shard ordering.
+    vi.unstubAllGlobals();
     // Default: authenticated user
     mockGetUser.mockResolvedValue({
       data: { user: MOCK_USER },
@@ -152,9 +185,9 @@ describe('POST /api/auth/bootstrap', () => {
     // Reset from() handler to the default (supports insert + subjects lookup)
     const defaultHandler = makeFromHandler();
     mockFrom.mockImplementation(defaultHandler as any);
-
-    const mod = await import('@/app/api/auth/bootstrap/route');
-    POST = mod.POST;
+    // NOTE: the route import lives in the per-describe beforeAll above — the
+    // route is imported once (no resetModules) and reads these mocks at call
+    // time, so per-test reconfiguration here still applies.
   });
 
   // ── Authentication ──

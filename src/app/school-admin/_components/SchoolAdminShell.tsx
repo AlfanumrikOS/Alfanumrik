@@ -12,6 +12,7 @@ import { useSchoolCommandCenter } from '@/lib/use-school-command-center';
 import { useSchoolReportsDepth } from '@/lib/use-school-reports-depth';
 import { useSchoolAdminRbac } from '@/lib/use-school-admin-rbac';
 import { useSchoolAdminRole } from '@/lib/use-school-admin-role';
+import { usePrincipalAi } from '@/lib/use-principal-ai';
 import { useCosmicTheme } from '@/lib/cosmic-theme';
 import { Starfield } from '@/components/cosmic';
 import ConsolidatedSchoolNav from './ConsolidatedSchoolNav';
@@ -108,12 +109,36 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
   // items hide for roles that lack the capability. The caller's role comes from an
   // RLS-bounded self-read (UI polish only — server enforces regardless, P9).
   const rbacOn = useSchoolAdminRbac();
-  // Only resolve the caller's role when the flag is ON — passing null while OFF
-  // suppresses the self-read entirely, so the OFF portal is byte-identical
-  // (no extra network request) to before Wave C.
-  const { role: adminRole } = useSchoolAdminRole(rbacOn ? authUserId : null);
+  // Track 2 — Principal AI Assistant nav entry. Sync-paints DEFAULT_OFF (1h cache),
+  // so for every current (flag-absent) user this is false on the first paint and
+  // the Academics section omits the Principal Assistant entry byte-identically.
+  // When ON, the entry appears ONLY for a principal (the route 404s/403s
+  // server-side regardless — P9).
+  const principalAiOn = usePrincipalAi();
+  // Resolve the caller's role when EITHER the RBAC flag OR the Principal-AI flag is
+  // ON — both gate nav entries by role. Passing null while both are OFF suppresses
+  // the self-read entirely, so the OFF portal is byte-identical (no extra network
+  // request) to before these features.
+  const { role: adminRole } = useSchoolAdminRole(rbacOn || principalAiOn ? authUserId : null);
 
   const primaryColor = tenant.branding.primaryColor || '#7C3AED';
+
+  // Track 2 — additively append the Principal Assistant entry to the FLAT legacy
+  // sidebar ONLY when `ff_principal_ai_v1` is ON AND the caller is a principal
+  // (mirrors the principal-only capability; fail-CLOSED so non-principals never
+  // see it). When the flag is OFF this is byte-identical to the legacy NAV_ITEMS.
+  const flatNavItems: ReadonlyArray<SchoolAdminNavItem> =
+    principalAiOn && adminRole === 'principal'
+      ? [
+          ...NAV_ITEMS,
+          {
+            href: '/school-admin/ai-assistant',
+            label: 'Principal Assistant',
+            labelHi: 'Principal सहायक',
+            icon: '◈',
+          },
+        ]
+      : NAV_ITEMS;
 
   useEffect(() => {
     if (!authUserId) {
@@ -196,6 +221,7 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
           rbacEnabled={rbacOn}
           adminRole={adminRole}
           reportsDepthEnabled={reportsDepthOn}
+          principalAiEnabled={principalAiOn}
           footer={
             (tenant.branding.showPoweredBy || tenant.schoolId) ? (
               <div>
@@ -213,7 +239,7 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
           brandSubtitle={isHi ? 'स्कूल प्रशासन' : 'School Administration'}
           logoUrl={logoUrl}
           primaryColor={primaryColor}
-          items={NAV_ITEMS as unknown as SidebarNavItem[]}
+          items={flatNavItems as unknown as SidebarNavItem[]}
           currentPath={pathname || ''}
           isHi={isHi}
           moduleEnablement={moduleEnablement}

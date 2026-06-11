@@ -25,7 +25,7 @@ function toCsv(data: Record<string, unknown>[]): string {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {

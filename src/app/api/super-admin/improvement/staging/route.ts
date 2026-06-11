@@ -34,7 +34,7 @@ function getIp(request: NextRequest): string {
 // ── GET — Staging status ────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   const supabase = getSupabaseAdmin();
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
 // ── POST — Stage a recommendation ──────────────────────────────
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   const supabase = getSupabaseAdmin();

@@ -31,14 +31,14 @@ function elementType(el: unknown): RenderedType | undefined {
 describe('welcome page — always renders WelcomeV2', () => {
   it('returns WelcomeV2 unconditionally', async () => {
     const Page = await importPage();
-    const result = Page({});
+    const result = Page();
     expect(elementType(result)).toBe(FakeV2);
   });
 
   it('is a synchronous server component (no async)', async () => {
     const Page = await importPage();
     // The simplified page is not async — calling it returns an element, not a Promise.
-    const result = Page({});
+    const result = Page();
     expect(result).not.toBeInstanceOf(Promise);
     expect(elementType(result)).toBe(FakeV2);
   });

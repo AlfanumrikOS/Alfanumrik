@@ -50,10 +50,18 @@ function loadRazorpayScript(): Promise<boolean> {
 }
 
 export function useCheckout() {
-  const { student, refreshStudent } = useAuth();
+  const { student, refreshStudent, isHi } = useAuth();
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<CheckoutStatus>('idle');
   const [error, setError] = useState<string | null>(null);
+
+  // Defensive: payment routes enforce `payments.subscribe` RBAC and return
+  // 403/401 with code 'PERMISSION_DENIED' if a non-student reaches checkout
+  // or a deploy slips (migration not yet applied). Surface a clear bilingual
+  // message instead of the raw "Access denied" string from the API body.
+  const permissionDeniedMsg = isHi
+    ? 'इस खाते से अभी प्लान नहीं खरीदा जा सकता। कृपया सहायता टीम से संपर्क करें।'
+    : "This account can't purchase a plan right now — please contact support.";
 
   const checkout = useCallback(async ({ planCode, billingCycle, onSuccess, onError }: CheckoutOptions) => {
     setLoading(true);
@@ -89,6 +97,10 @@ export function useCheckout() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: 'Payment initialization failed' }));
+        if (isPermissionDenied(res, data)) {
+          fail(permissionDeniedMsg, onError);
+          return;
+        }
         fail(data.error || 'Payment initialization failed. Please try again.', onError);
         return;
       }
@@ -216,6 +228,9 @@ export function useCheckout() {
               });
             } catch { /* analytics is non-critical */ }
             params.onSuccess?.(params.planCode);
+          } else if (isPermissionDenied(verifyRes, data)) {
+            setError(permissionDeniedMsg);
+            setStatus('failed');
           } else {
             setError(data.error || 'Verification failed. Your payment is safe — plan will activate shortly.');
             setStatus('failed');
@@ -324,6 +339,9 @@ export function useCheckout() {
               });
             } catch { /* analytics is non-critical */ }
             params.onSuccess?.(params.planCode);
+          } else if (isPermissionDenied(verifyRes, data)) {
+            setError(permissionDeniedMsg);
+            setStatus('failed');
           } else {
             setError(data.error || 'Payment verification failed. Please contact support.');
             setStatus('failed');
@@ -358,4 +376,13 @@ export function useCheckout() {
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Detects a payments RBAC denial. Payment routes enforce `payments.subscribe`
+ * and return 403/401 with body `{ code: 'PERMISSION_DENIED' }` when a non-student
+ * reaches checkout or a deploy ordering slip leaves the migration unapplied.
+ */
+function isPermissionDenied(res: Response, body: { code?: string }): boolean {
+  return res.status === 403 || res.status === 401 || body?.code === 'PERMISSION_DENIED';
 }

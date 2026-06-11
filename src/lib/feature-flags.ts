@@ -622,10 +622,12 @@ export const SCHOOL_PROVISIONING_FLAGS = {
  *    the auth decision depends only on the RBAC check + active-school lookup.
  *    Default: false.
  *
- *    Server-only gate (read via isFeatureEnabled in school-admin-auth). Not yet
- *    seeded by any migration; while absent from `feature_flags` the server read
- *    path resolves it to OFF, so role-narrowing stays OFF until the flag is
- *    explicitly seeded + enabled.
+ *    Server-only gate (read via isFeatureEnabled in school-admin-auth). Seeded
+ *    OFF (is_enabled=false, rollout=0) by migration
+ *    20260611000100_seed_ff_school_admin_rbac_flag.sql so the row is auditable
+ *    and flippable from the super-admin console; role-narrowing stays OFF until
+ *    an operator explicitly enables the flag (production enablement held pending
+ *    comms).
  *
  *  Spec/plan: docs/superpowers/plans/2026-06-08-phase-3b-school-professional-depth.md (Wave C)
  */
@@ -661,6 +663,165 @@ export const SCHOOL_ADMIN_RBAC_FLAGS = {
 export const SCHOOL_REPORTS_DEPTH_FLAGS = {
   /** Read-only school-wide academic reporting depth (mastery + Bloom's + export). Default off. */
   V1: 'ff_school_reports_depth',
+} as const;
+
+/**
+ * Alfa OS flagship redesign flags (2026-06-11).
+ *
+ *  ff_student_os_v1
+ *    Master switch for the "Alfa OS" flagship redesign of the STUDENT
+ *    DASHBOARD and the FOXY AI WORKSPACE. This is a PRESENTATION-LAYER
+ *    redesign over the unchanged learning engines — it re-presents the
+ *    outputs of the existing scoring/XP/anti-cheat/quiz pipelines without
+ *    touching them (P1/P2/P3/P4 untouched) and does not change the Foxy
+ *    structured-render envelope, modes, daily limits, or scope-lock
+ *    (P12/REG-55 untouched).
+ *
+ *    When ON:
+ *      1. /dashboard renders <StudentOSDashboard> — a decision-first,
+ *         mastery-centric layout (Today's Mission hero wrapping the existing
+ *         DailyRhythmQueue, a Mastery Snapshot, a Revision Rail reusing
+ *         ReviewsDueCard/useReviewCards, and per-subject Subject Roadmaps).
+ *      2. /foxy renders a 3-pane workspace (Conversations rail | Conversation |
+ *         Context panel with mastery-aware nudges) — the chat column, renderer,
+ *         and 7 modes are byte-identical to today; the redesign only adds an
+ *         aside ContextPanel whose suggestions route through the existing
+ *         mode/prompt mechanisms (no new AI calls).
+ *
+ *    Rendered exclusively under Cosmic-LIGHT + HC (data-design="cosmic"
+ *    data-theme="light" data-role="student"); dark mode is intentionally not
+ *    requested.
+ *
+ *    When OFF, BOTH surfaces are BYTE-IDENTICAL to today: /dashboard renders
+ *    AtlasDashboard (or the legacy dashboard) unchanged and /foxy renders its
+ *    existing single-shell layout unchanged. Default: false. Read client-side
+ *    via the existing client flag read path (getFeatureFlags).
+ *
+ *    Not yet seeded by any migration; while absent from `feature_flags` both
+ *    read paths resolve it to OFF (and both surfaces stay byte-identical-OFF).
+ */
+export const STUDENT_OS_FLAGS = {
+  /** Alfa OS flagship redesign of the student dashboard + Foxy workspace. Default off. */
+  V1: 'ff_student_os_v1',
+} as const;
+
+/**
+ * SUBJECTS_OS_FLAGS — gates the "Alfa OS" Subjects experience (Tier 1,
+ * presentation-only) inside /learn. When a subject is selected and the flag is
+ * ON, the new per-subject SubjectsOSHub renders in place of the legacy chapter
+ * list. Default OFF; OFF path is byte-identical to today.
+ *
+ * Not yet seeded by any migration; while absent from `feature_flags` the
+ * client read path resolves it to OFF, so the legacy chapter list renders.
+ */
+export const SUBJECTS_OS_FLAGS = {
+  /** Alfa OS per-subject hub inside /learn. Default off. */
+  V1: 'ff_subjects_os_v1',
+} as const;
+
+/**
+ * REVISION_OS_FLAGS — gates the "Alfa OS" Revision Center (Tier 1,
+ * presentation-only) mounted at the NEW route /revision. When ON, /revision
+ * renders the spaced-repetition Revision Center (overdue / due-today / upcoming
+ * buckets, 7-day schedule, per-subject load) over the existing
+ * GET /api/revision/overview endpoint. When OFF the route does not exist —
+ * /revision calls notFound() (additive; no existing surface changes).
+ *
+ * Not yet seeded by any migration; while absent from `feature_flags` the
+ * client read path resolves it to OFF, so /revision 404s exactly as today.
+ */
+export const REVISION_OS_FLAGS = {
+  /** Alfa OS Revision Center at /revision. Default off. */
+  V1: 'ff_revision_os_v1',
+} as const;
+
+/**
+ * PRACTICE_OS_FLAGS — gates the "Alfa OS" Practice Center (Tier 1+,
+ * presentation-only) mounted at the NEW route /practice. When ON, /practice
+ * renders the Practice Center (streak + sessions-this-week header, a single
+ * Quick-Start CTA into the EXISTING /quiz engine, weak-topic launchers, a
+ * due-for-practice card, recent quiz-session history, and avg-score / error /
+ * Bloom insights) over the existing GET /api/practice/history endpoint plus the
+ * existing useMasteryOverview / useStudentSnapshot readers. When OFF the route
+ * does not exist — /practice calls notFound() (additive; no existing surface
+ * changes). No scoring/XP/anti-cheat/schema change — presentation only.
+ *
+ * Not yet seeded by any migration; while absent from `feature_flags` the
+ * client read path resolves it to OFF, so /practice 404s exactly as today.
+ */
+export const PRACTICE_OS_FLAGS = {
+  /** Alfa OS Practice Center at /practice. Default off. */
+  V1: 'ff_practice_os_v1',
+} as const;
+
+/**
+ * TEST_OS_FLAGS — gates the "Alfa OS" pre-test BRIEFING hub (Tier 1,
+ * presentation-only) mounted at the NEW route /exam-briefing. When ON,
+ * /exam-briefing renders the briefing hub (upcoming exams, per-exam readiness
+ * briefing, a DISPLAY-ONLY predicted-score estimate over exam_chapters
+ * weightage, weak-chapter focus, a time/pace estimate, and a Start CTA into the
+ * EXISTING exam runtime) over the existing client read of exam_configs +
+ * exam_chapters plus the existing subject/chapter readiness readers. When OFF
+ * the route does not exist — /exam-briefing calls notFound() (additive; no
+ * existing exam/quiz/results surface changes). No scoring/XP/anti-cheat/exam-
+ * timing/schema change — presentation only.
+ *
+ * NOTE: distinct from the LIVE /exam-prep surface (Study Menu v2 "Exam Sprint",
+ * REG-69) — this is a NEW, separate route and does not touch it.
+ *
+ * Not yet seeded by any migration; while absent from `feature_flags` the
+ * client read path resolves it to OFF, so /exam-briefing 404s exactly as today.
+ */
+export const TEST_OS_FLAGS = {
+  /** Alfa OS pre-test briefing hub at /exam-briefing. Default off. */
+  V1: 'ff_test_os_v1',
+} as const;
+
+/**
+ * Education Intelligence Cloud (EIC) flag (2026-06-16).
+ *
+ *  ff_education_intelligence
+ *    Master switch for the super-admin "Education Intelligence" dashboards
+ *    (Overview, Schools, Revenue, Geography + per-school drilldown). Gates
+ *    BOTH the sidebar nav group and the page render. When OFF, the nav group
+ *    is hidden and the pages render a not-found surface; the read API
+ *    (/api/super-admin/intelligence/*) stays behind super-admin auth
+ *    regardless. Default: false. Read client-side via the existing client
+ *    flag read path (getFeatureFlags).
+ *
+ *    The dashboards consume the EIC rollup tables (mrr_snapshots,
+ *    school_health_daily, school_churn_signals, school_mrr_daily,
+ *    geographic_metrics). Those tables degrade to empty (HTTP 200) until the
+ *    EIC migrations are applied + the nightly rollup job runs, so the pages
+ *    render NoDataState until data lands.
+ *
+ *    Not yet seeded by any migration; while absent from `feature_flags` the
+ *    client read path resolves it to OFF, so the nav group stays hidden and
+ *    the pages stay not-found.
+ */
+export const EDUCATION_INTELLIGENCE_FLAGS = {
+  /** Super-admin Education Intelligence Cloud dashboards. Default off. */
+  V1: 'ff_education_intelligence',
+} as const;
+
+/**
+ * Track 2 — Principal AI Assistant flag (2026-06-16).
+ *
+ *  ff_principal_ai_v1 — master switch for the school-scoped natural-language
+ *    assistant for school leadership (POST /api/school-admin/ai-assistant chat +
+ *    GET history). Principal-only capability ('institution.use_principal_ai',
+ *    CEO-approved 2026-06-11). When OFF, the POST/GET routes return 404 (behave
+ *    as not-present) BEFORE doing any work — byte-identical to the flag-absent
+ *    portal — so neither the assistant nor its persistence tables are exercised.
+ *    The backing migration (20260616010000_principal_ai_assistant_v1.sql) is
+ *    DRAFTED-not-applied; the route degrades gracefully to a clean abstain when
+ *    the context RPC / tables are missing, so flipping the flag ON before the
+ *    migration applies never 500s.
+ *    Default: false.
+ */
+export const PRINCIPAL_AI_FLAGS = {
+  /** Principal AI Assistant v1 (school-scoped leadership assistant). Default off. */
+  V1: 'ff_principal_ai_v1',
 } as const;
 
 /**
@@ -701,8 +862,15 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [TEACHER_PARENT_COMMS_FLAGS.V1]: false,
   [SCHOOL_COMMAND_CENTER_FLAGS.V1]: false,
   [SCHOOL_PROVISIONING_FLAGS.V1]: false,
-  [SCHOOL_ADMIN_RBAC_FLAGS.V1]: false,
+  [SCHOOL_ADMIN_RBAC_FLAGS.V1]: false, // seeded OFF by 20260611000100_seed_ff_school_admin_rbac_flag.sql
   [SCHOOL_REPORTS_DEPTH_FLAGS.V1]: false,
+  [STUDENT_OS_FLAGS.V1]: false,
+  [SUBJECTS_OS_FLAGS.V1]: false,
+  [REVISION_OS_FLAGS.V1]: false,
+  [PRACTICE_OS_FLAGS.V1]: false,
+  [TEST_OS_FLAGS.V1]: false,
+  [EDUCATION_INTELLIGENCE_FLAGS.V1]: false,
+  [PRINCIPAL_AI_FLAGS.V1]: false,
 } as const;
 
 /**

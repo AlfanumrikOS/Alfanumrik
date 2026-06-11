@@ -22,6 +22,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/toast';
+import { ResponsiveTable, type ResponsiveColumn } from '@/components/ui';
 
 const t = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -224,6 +225,56 @@ export default function ParentBillingPage() {
   if (!payload) return null;
 
   const { children, payment_history, summary } = payload;
+
+  // Headers passed already-localized (P7). One invoice per row → ResponsiveTable
+  // stacks each row into a label:value card on phones instead of x-scrolling.
+  const paymentHistoryColumns: ResponsiveColumn<PaymentInvoice>[] = [
+    {
+      key: 'date',
+      header: t(isHi, 'Date', 'तारीख'),
+      render: (p) => <span className="text-slate-700">{formatDate(p.created_at, isHi)}</span>,
+    },
+    {
+      key: 'child',
+      header: t(isHi, 'Child', 'बच्चा'),
+      render: (p) => <span className="text-slate-700">{p.student_name || t(isHi, '—', '—')}</span>,
+    },
+    {
+      key: 'plan',
+      header: t(isHi, 'Plan', 'योजना'),
+      render: (p) => (
+        <span className="text-slate-700">
+          {p.plan_code || t(isHi, '—', '—')}
+          {p.billing_cycle && (
+            <span className="ml-1 text-xs text-slate-400">({p.billing_cycle})</span>
+          )}
+        </span>
+      ),
+    },
+    {
+      key: 'amount',
+      header: t(isHi, 'Amount', 'राशि'),
+      render: (p) => <span className="font-medium text-slate-900">{formatInr(p.amount_inr)}</span>,
+      align: 'right',
+    },
+    {
+      key: 'status',
+      header: t(isHi, 'Status', 'स्थिति'),
+      render: (p) => (
+        <span
+          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+            p.status === 'captured' || p.status === 'paid' || p.status === 'success'
+              ? 'bg-emerald-100 text-emerald-800'
+              : p.status === 'failed'
+                ? 'bg-red-100 text-red-800'
+                : 'bg-slate-100 text-slate-700'
+          }`}
+        >
+          {p.status}
+        </span>
+      ),
+    },
+  ];
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8" data-testid="parent-billing-page">
@@ -452,73 +503,17 @@ export default function ParentBillingPage() {
           {t(isHi, 'Payment History', 'भुगतान इतिहास')}
         </h2>
 
-        {payment_history.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center">
-            <p className="text-sm text-slate-500">
-              {t(
-                isHi,
-                'No payments yet. Past invoices will appear here.',
-                'अभी तक कोई भुगतान नहीं। पिछले इनवॉइस यहाँ दिखाई देंगे।'
-              )}
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto rounded-2xl border border-orange-100 bg-white">
-            <table className="min-w-full divide-y divide-orange-100 text-sm">
-              <thead className="bg-orange-50 text-left">
-                <tr>
-                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    {t(isHi, 'Date', 'तारीख')}
-                  </th>
-                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    {t(isHi, 'Child', 'बच्चा')}
-                  </th>
-                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    {t(isHi, 'Plan', 'योजना')}
-                  </th>
-                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    {t(isHi, 'Amount', 'राशि')}
-                  </th>
-                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    {t(isHi, 'Status', 'स्थिति')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-orange-50">
-                {payment_history.map((p) => (
-                  <tr key={p.id}>
-                    <td className="px-4 py-3 text-slate-700">{formatDate(p.created_at, isHi)}</td>
-                    <td className="px-4 py-3 text-slate-700">
-                      {p.student_name || t(isHi, '—', '—')}
-                    </td>
-                    <td className="px-4 py-3 text-slate-700">
-                      {p.plan_code || t(isHi, '—', '—')}
-                      {p.billing_cycle && (
-                        <span className="ml-1 text-xs text-slate-400">({p.billing_cycle})</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-slate-900">
-                      {formatInr(p.amount_inr)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          p.status === 'captured' || p.status === 'paid' || p.status === 'success'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : p.status === 'failed'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        {p.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <ResponsiveTable<PaymentInvoice>
+          caption={t(isHi, 'Payment History', 'भुगतान इतिहास')}
+          rowKey={(p) => p.id}
+          rows={payment_history}
+          emptyMessage={t(
+            isHi,
+            'No payments yet. Past invoices will appear here.',
+            'अभी तक कोई भुगतान नहीं। पिछले इनवॉइस यहाँ दिखाई देंगे।'
+          )}
+          columns={paymentHistoryColumns}
+        />
       </section>
     </main>
   );

@@ -1096,5 +1096,173 @@ export function Skeleton({ className = '', width, height, rounded = 'rounded-lg'
   );
 }
 
+/* ─── Responsive Table ───────────────────────────────────── */
+/** Adaptive data table for the Indian-4G / low-end-Android audience.
+ *
+ *  - On >= md (tablets/desktop) it renders a real semantic <table> so
+ *    screen readers and keyboard users get native table navigation.
+ *  - On < md (phones, 320–414px) it renders each row as a stacked
+ *    label:value "card" instead of forcing a horizontal scroll — every
+ *    cell stays readable at 320px and tap targets stay >= 44px.
+ *
+ *  Bilingual by contract: the CALLER passes already-localized strings for
+ *  every `header` (and any rendered cell content). This component never
+ *  hardcodes English — keep your `isHi ? '…' : '…'` at the call site.
+ *
+ *  Generic over the row type so `render` / `key` stay type-safe.
+ */
+export interface ResponsiveColumn<T> {
+  /** Stable key. If `accessor`/`render` are absent, used to index the row. */
+  key: string;
+  /** Already-localized column header (caller does isHi). */
+  header: ReactNode;
+  /** Custom cell renderer. Receives the whole row. */
+  render?: (row: T, rowIndex: number) => ReactNode;
+  /** Plain value accessor when no custom render is needed. */
+  accessor?: (row: T) => ReactNode;
+  /** Desktop text alignment. Mobile cards are always label-left / value-right. */
+  align?: 'left' | 'center' | 'right';
+  /** Hide this column's label on the mobile card (e.g. an actions column). */
+  hideLabelOnMobile?: boolean;
+}
+
+interface ResponsiveTableProps<T> {
+  columns: ResponsiveColumn<T>[];
+  rows: T[];
+  /** Stable React key per row. */
+  rowKey: (row: T, rowIndex: number) => string | number;
+  /** Optional accessible caption / aria-label (caller localizes). */
+  caption?: ReactNode;
+  /** Shown (centered) when `rows` is empty. Caller localizes. */
+  emptyMessage?: ReactNode;
+  /** Optional per-row click (whole row becomes a button on both layouts). */
+  onRowClick?: (row: T, rowIndex: number) => void;
+  className?: string;
+}
+
+function renderCell<T>(col: ResponsiveColumn<T>, row: T, rowIndex: number): ReactNode {
+  if (col.render) return col.render(row, rowIndex);
+  if (col.accessor) return col.accessor(row);
+  // Fall back to indexing the row by `key`.
+  return (row as Record<string, ReactNode>)[col.key];
+}
+
+export function ResponsiveTable<T>({
+  columns,
+  rows,
+  rowKey,
+  caption,
+  emptyMessage,
+  onRowClick,
+  className = '',
+}: ResponsiveTableProps<T>) {
+  if (rows.length === 0 && emptyMessage) {
+    return (
+      <div
+        className={`rounded-2xl py-8 px-5 text-center text-sm text-[var(--text-3)] ${className}`}
+        style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+      >
+        {emptyMessage}
+      </div>
+    );
+  }
+
+  const alignClass = (a?: 'left' | 'center' | 'right') =>
+    a === 'right' ? 'text-right' : a === 'center' ? 'text-center' : 'text-left';
+
+  return (
+    <div className={className}>
+      {/* ── Desktop / tablet: semantic table (>= md) ── */}
+      <div
+        className="hidden md:block rounded-2xl overflow-hidden"
+        style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+      >
+        <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
+          {caption && <caption className="sr-only">{caption}</caption>}
+          <thead>
+            <tr style={{ background: 'var(--surface-2)' }}>
+              {columns.map((col) => (
+                <th
+                  key={col.key}
+                  scope="col"
+                  className={`px-4 py-3 font-bold text-xs uppercase tracking-wide text-[var(--text-3)] ${alignClass(col.align)}`}
+                >
+                  {col.header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, rowIndex) => (
+              <tr
+                key={rowKey(row, rowIndex)}
+                onClick={onRowClick ? () => onRowClick(row, rowIndex) : undefined}
+                className={onRowClick ? 'cursor-pointer transition-colors hover:bg-[var(--surface-2)]' : ''}
+                style={{ borderTop: '1px solid var(--border)' }}
+              >
+                {columns.map((col) => (
+                  <td
+                    key={col.key}
+                    className={`px-4 py-3 text-[var(--text-1)] align-middle ${alignClass(col.align)}`}
+                  >
+                    {renderCell(col, row, rowIndex)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Mobile: stacked label:value cards (< md) ── */}
+      <div className="md:hidden space-y-3">
+        {rows.map((row, rowIndex) => {
+          const cardInner = (
+            <dl className="space-y-1.5">
+              {columns.map((col) => (
+                <div key={col.key} className="flex items-start justify-between gap-3">
+                  {!col.hideLabelOnMobile && (
+                    <dt className="text-xs font-semibold text-[var(--text-3)] shrink-0">
+                      {col.header}
+                    </dt>
+                  )}
+                  <dd
+                    className={`text-sm text-[var(--text-1)] min-w-0 ${col.hideLabelOnMobile ? 'w-full' : 'text-right'}`}
+                  >
+                    {renderCell(col, row, rowIndex)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          );
+
+          const cardStyle = {
+            background: 'var(--surface-1)',
+            border: '1px solid var(--border)',
+            boxShadow: 'var(--shadow-sm)',
+            minHeight: 44, /* tap target on budget phones */
+          } as const;
+
+          return onRowClick ? (
+            <button
+              key={rowKey(row, rowIndex)}
+              type="button"
+              onClick={() => onRowClick(row, rowIndex)}
+              className="w-full text-left rounded-2xl p-4 transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
+              style={cardStyle}
+            >
+              {cardInner}
+            </button>
+          ) : (
+            <div key={rowKey(row, rowIndex)} className="rounded-2xl p-4" style={cardStyle}>
+              {cardInner}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Bottom Nav ──────────────────────────────────────────── */
 

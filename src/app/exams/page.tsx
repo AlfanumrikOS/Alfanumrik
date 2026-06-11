@@ -295,7 +295,7 @@ export default function ExamsPage() {
               <p className="text-xs text-[var(--text-3)] mb-2 font-medium">
                 {isHi ? 'परीक्षा प्रकार' : 'Exam Type'}
               </p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {EXAM_TYPES.map(t => (
                   <button
                     key={t.id}
@@ -334,7 +334,7 @@ export default function ExamsPage() {
               <p className="text-xs text-[var(--text-3)] mb-2 font-medium">
                 {isHi ? 'विषय चुनें' : 'Select Subject'}
               </p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {allowedSubjects.map(s => (
                   <button
                     key={s.code}

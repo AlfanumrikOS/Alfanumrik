@@ -167,7 +167,7 @@ async function findStuckPayments(): Promise<StuckPayment[]> {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {

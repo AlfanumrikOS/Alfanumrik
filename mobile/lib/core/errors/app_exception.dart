@@ -47,6 +47,13 @@ class CacheException extends AppException {
 
 class PaymentException extends AppException {
   const PaymentException(super.message, [super.detail]);
+
+  /// Raised when the web payment routes reject the caller with HTTP 403
+  /// (code: 'PERMISSION_DENIED') — the account lacks the 'payments.subscribe'
+  /// permission and cannot purchase a plan.
+  factory PaymentException.permissionDenied() => const PaymentException(
+        "This account can't purchase a plan. Please contact support.",
+      );
 }
 
 class UsageLimitException extends AppException {

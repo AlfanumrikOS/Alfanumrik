@@ -42,7 +42,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
   if (!(await isFeatureEnabled(FLAG, { userId: auth.userId, environment: process.env.VERCEL_ENV || process.env.NODE_ENV }))) {
     return err('School contracts are not enabled.', 403);
@@ -72,7 +72,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
   if (!(await isFeatureEnabled(FLAG, { userId: auth.userId, environment: process.env.VERCEL_ENV || process.env.NODE_ENV }))) {
     return err('School contracts are not enabled.', 403);

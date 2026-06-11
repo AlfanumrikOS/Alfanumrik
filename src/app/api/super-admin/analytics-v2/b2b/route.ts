@@ -165,7 +165,7 @@ async function getCachedB2BMetrics(): Promise<NextResponse | null> {
 // ── GET /api/super-admin/analytics-v2/b2b ─────────────────────────
 
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {

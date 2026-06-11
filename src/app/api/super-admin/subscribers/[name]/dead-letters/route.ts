@@ -28,7 +28,7 @@ export async function GET(
   request: NextRequest,
   context: { params: Promise<{ name: string }> },
 ) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   const { name: rawName } = await context.params;

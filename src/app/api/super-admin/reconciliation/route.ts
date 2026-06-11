@@ -7,7 +7,7 @@
  * Phase 3-B of the May 2026 upgrade. Gated by
  * `ff_offline_payment_reconciliation_v1` (default OFF).
  *
- * Auth: super-admin via `authorizeAdmin(request)`. service-role used for
+ * Auth: super-admin via `authorizeAdmin(request, 'support')`. service-role used for
  *       all DB calls (RLS bypass) since the queue is service-role-only by
  *       design (school admins must NOT see this surface).
  *
@@ -55,7 +55,7 @@ async function flagEnabled(authUserId: string): Promise<boolean> {
 // ─── GET ────────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   if (!(await flagEnabled(auth.userId))) {
@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
 // ─── POST — submit a new offline payment ────────────────────────────────
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   if (!(await flagEnabled(auth.userId))) {

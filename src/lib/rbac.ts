@@ -568,6 +568,16 @@ export async function authorizeRequest(
 //   super_admin — all permissions (wildcard insert in migration) + bypass in hasPermission()
 
 export const PERMISSIONS = {
+  // ── Payments (student-facing subscription purchase) ─────────
+  // payments.subscribe — student initiates AND verifies their own
+  // subscription purchase. Enforced via authorizeRequest() in
+  // /api/payments/create-order and /api/payments/verify as a
+  // defense-in-depth layer on top of Supabase getUser() auth.
+  // DB source of truth: migration
+  // 20260611000000_seed_payments_subscribe_permission.sql (grants to student;
+  // admin via wildcard, super_admin via hasPermission() bypass).
+  PAYMENTS_SUBSCRIBE: 'payments.subscribe',
+
   // ── Study plan ──────────────────────────────────────────────
   STUDY_PLAN_VIEW: 'study_plan.view',
   STUDY_PLAN_CREATE: 'study_plan.create',

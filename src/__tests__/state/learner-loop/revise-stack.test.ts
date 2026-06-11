@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { modalityForMastery } from '../../../app/api/learner/revise-stack/route';
+import { modalityForMastery } from '@/lib/state/learner-loop/revise-stack-modality';
 import { isItemVisibleForFlags } from '../../../components/navigation/nav-config';
 
 // ─── modalityForMastery ──────────────────────────────────────────────

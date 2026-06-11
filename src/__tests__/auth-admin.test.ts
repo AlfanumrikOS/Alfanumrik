@@ -126,7 +126,11 @@ describe('Admin Panel: admin_secret_required', () => {
         new Request('http://localhost/api/super-admin/test', {
           method: 'GET',
           // No x-admin-secret header
-        }) as unknown as import('next/server').NextRequest
+        }) as unknown as import('next/server').NextRequest,
+        // requiredLevel is now a required parameter (architect, 2026-06-11).
+        // 'support' is the lowest tier (old silent default) — preserves this
+        // test's intent of asserting rejection happens before any level gate.
+        'support'
       );
       // If it returns a response, it should indicate auth failure (not success data)
       if (result && typeof result === 'object') {

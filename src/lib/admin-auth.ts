@@ -79,13 +79,18 @@ function getSupabaseConfig() {
 /**
  * Verify that the request comes from an authenticated admin user.
  *
- * Phase G.1 (2026-05-17): now accepts an optional `requiredLevel` argument.
- * When provided, the caller's `admin_level` must satisfy `hasMinimumLevel`,
- * else 403 with code ADMIN_INSUFFICIENT_LEVEL. Default is `'support'` (the
- * floor — any active admin_users row passes), preserving today's behaviour
- * for routes that haven't yet declared their required level. Routes that
- * mutate sensitive state (impersonation, RBAC, feature flags, provisioning,
- * bulk-actions, demo) should pass `'super_admin'`.
+ * Phase G.1 (2026-05-17): accepts a `requiredLevel` argument. The caller's
+ * `admin_level` must satisfy `hasMinimumLevel`, else 403 with code
+ * ADMIN_INSUFFICIENT_LEVEL. Routes that mutate sensitive state (impersonation,
+ * RBAC, feature flags, provisioning, bulk-actions, demo) should pass
+ * `'super_admin'`.
+ *
+ * 2026-06-11 (money-route under-gating prevention): `requiredLevel` is now a
+ * REQUIRED parameter — the `= 'support'` default was removed so that no call
+ * site can silently inherit the lowest tier. Every route must declare its
+ * floor explicitly; `tsc` enforces completeness. `'support'` (the floor — any
+ * active admin_users row passes) must be passed explicitly where that level
+ * is intended.
  *
  * Phase G.2 (2026-05-17): removed the silent JWT-fallback that retried the
  * admin_users query with the caller's own token if the service-role query
@@ -94,7 +99,7 @@ function getSupabaseConfig() {
  */
 export async function authorizeAdmin(
   request: NextRequest,
-  requiredLevel: AdminLevel = 'support',
+  requiredLevel: AdminLevel,
 ): Promise<AdminAuthResult> {
   const { url, key } = getSupabaseConfig();
 

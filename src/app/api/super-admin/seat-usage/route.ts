@@ -13,7 +13,7 @@ import { logger } from '@/lib/logger';
  * plus current active student count vs seats_purchased.
  */
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
  * calculates utilization_pct, upserts into school_seat_usage (unique on school_id + snapshot_date).
  */
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {

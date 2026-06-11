@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import { useState, useEffect, useCallback, useMemo, createContext, useContext } from 'react';
 import { type SupabaseClient } from '@supabase/supabase-js';
 import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase-client';
+import { getFeatureFlags } from '@/lib/supabase';
+import { EDUCATION_INTELLIGENCE_FLAGS } from '@/lib/feature-flags';
 import { useCosmicTheme } from '@/lib/cosmic-theme';
 import { Starfield } from '@/components/cosmic';
 
@@ -54,6 +56,16 @@ const NAV_ITEMS: SidebarNavItem[] = [
   { href: '/super-admin/alfabot', label: 'AlfaBot', labelHi: 'AlfaBot', icon: '◓' },
 ];
 
+// Education Intelligence Cloud nav group — appended only when the
+// `ff_education_intelligence` flag resolves ON. Additive: never alters the
+// base NAV_ITEMS above. Pages stay behind super-admin auth regardless.
+const EDUCATION_INTELLIGENCE_NAV: SidebarNavItem[] = [
+  { href: '/super-admin/intelligence', label: 'EI · Overview', labelHi: 'EI · अवलोकन', icon: '◆' },
+  { href: '/super-admin/intelligence/schools', label: 'EI · Schools', labelHi: 'EI · स्कूल', icon: '◇' },
+  { href: '/super-admin/intelligence/revenue', label: 'EI · Revenue', labelHi: 'EI · राजस्व', icon: '◈' },
+  { href: '/super-admin/intelligence/geography', label: 'EI · Geography', labelHi: 'EI · भूगोल', icon: '◊' },
+];
+
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [adminName, setAdminName] = useState('');
@@ -71,9 +83,29 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   // data-role="school"). OFF ⇒ cosmicEnabled false ⇒ byte-identical to before.
   const { cosmicEnabled } = useCosmicTheme();
 
+  // Education Intelligence Cloud nav group — gated by ff_education_intelligence.
+  // Defaults OFF so the group is hidden for every current user until the flag
+  // is seeded + enabled. Additive only.
+  const [eiEnabled, setEiEnabled] = useState(false);
+
   useEffect(() => {
     setCurrentPath(window.location.pathname);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getFeatureFlags()
+      .then((flags) => {
+        if (!cancelled) setEiEnabled(Boolean(flags[EDUCATION_INTELLIGENCE_FLAGS.V1]));
+      })
+      .catch(() => { /* flag fetch failed — keep group hidden (default OFF) */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const navItems = useMemo(
+    () => (eiEnabled ? [...NAV_ITEMS, ...EDUCATION_INTELLIGENCE_NAV] : NAV_ITEMS),
+    [eiEnabled],
+  );
 
   useEffect(() => {
     const getSession = async () => {
@@ -153,7 +185,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
         <DashboardSidebar
           brandTitle="ALFANUMRIK"
           brandSubtitle={isHi ? 'सुपर एडमिन' : 'Super Admin'}
-          items={NAV_ITEMS}
+          items={navItems}
           currentPath={currentPath}
           isHi={isHi}
           footer={

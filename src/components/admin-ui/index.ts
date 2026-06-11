@@ -10,6 +10,7 @@
 // Primitives
 export { StatCard, type StatCardProps } from './StatCard';
 export { StatusBadge, type StatusBadgeProps, type StatusBadgeVariant } from './StatusBadge';
+export { ScoreBar, scoreBand, type ScoreBarProps, type ScoreBand } from './ScoreBar';
 export { StalenessTag } from './StalenessTag';
 export { NoDataState, type NoDataStateProps, type NoDataStateReason } from './NoDataState';
 export { default as DetailDrawer } from './DetailDrawer';

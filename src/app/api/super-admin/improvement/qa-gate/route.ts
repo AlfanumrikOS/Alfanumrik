@@ -41,7 +41,7 @@ function getIp(request: NextRequest): string {
 const ELIGIBLE_STATUSES = ['staging', 'pending'] as const;
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   const supabase = getSupabaseAdmin();

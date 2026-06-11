@@ -14,6 +14,7 @@
  */
 
 import type { TeacherEngagementRow } from '@/lib/school-admin/command-center-types';
+import { ResponsiveTable, type ResponsiveColumn } from '@/components/ui';
 
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -103,44 +104,44 @@ export default function TeacherEngagementTable({
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="text-left">
-                <th className="py-2 pr-3 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-3)] border-b border-[var(--border)]">
-                  {tt(isHi, 'Teacher', 'शिक्षक')}
-                </th>
-                <th className="py-2 px-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-3)] border-b border-[var(--border)] text-center">
-                  {tt(isHi, 'Classes', 'कक्षाएँ')}
-                </th>
-                <th className="py-2 px-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-3)] border-b border-[var(--border)] text-center">
-                  {tt(isHi, 'Assigned', 'सौंपा')}
-                </th>
-                <th className="py-2 pl-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-3)] border-b border-[var(--border)] text-center">
-                  {tt(isHi, 'Resolved', 'हल')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.teacher_id} className="border-b border-[var(--border)] last:border-0">
-                  <td className="py-2.5 pr-3 font-semibold text-[var(--text-1)]">
-                    {row.teacher_name}
-                  </td>
-                  <td className="py-2.5 px-2 text-center text-[var(--text-2)] tabular-nums">
-                    {row.class_count}
-                  </td>
-                  <td className="py-2.5 px-2 text-center text-[var(--text-2)] tabular-nums">
-                    {row.remediation_assigned_count}
-                  </td>
-                  <td className="py-2.5 pl-2 text-center font-semibold tabular-nums text-emerald-600">
-                    {row.remediation_resolved_count}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ResponsiveTable<TeacherEngagementRow>
+          caption={tt(isHi, 'Teacher engagement', 'शिक्षक सहभागिता')}
+          rowKey={(row) => row.teacher_id}
+          rows={rows}
+          columns={[
+            {
+              key: 'teacher_name',
+              header: tt(isHi, 'Teacher', 'शिक्षक'),
+              render: (row) => (
+                <span className="font-semibold text-[var(--text-1)]">{row.teacher_name}</span>
+              ),
+            },
+            {
+              key: 'class_count',
+              header: tt(isHi, 'Classes', 'कक्षाएँ'),
+              align: 'center',
+              render: (row) => (
+                <span className="text-[var(--text-2)] tabular-nums">{row.class_count}</span>
+              ),
+            },
+            {
+              key: 'remediation_assigned_count',
+              header: tt(isHi, 'Assigned', 'सौंपा'),
+              align: 'center',
+              render: (row) => (
+                <span className="text-[var(--text-2)] tabular-nums">{row.remediation_assigned_count}</span>
+              ),
+            },
+            {
+              key: 'remediation_resolved_count',
+              header: tt(isHi, 'Resolved', 'हल'),
+              align: 'center',
+              render: (row) => (
+                <span className="font-semibold tabular-nums text-emerald-600">{row.remediation_resolved_count}</span>
+              ),
+            },
+          ] satisfies ResponsiveColumn<TeacherEngagementRow>[]}
+        />
       )}
 
       {!loading && !error && rows.length > 0 && (canPrev || canNext) && (

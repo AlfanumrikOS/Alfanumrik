@@ -46,7 +46,7 @@ async function supabasePatch(table: string, filter: string, body: Record<string,
 
 // ─── GET ─────────────────────────────────────────────────────────────────────
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   const params = new URL(request.url).searchParams;
@@ -179,7 +179,7 @@ export async function GET(request: NextRequest) {
 
 // ─── POST ────────────────────────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   const params = new URL(request.url).searchParams;
@@ -435,7 +435,7 @@ export async function POST(request: NextRequest) {
 
 // ─── PATCH ───────────────────────────────────────────────────────────────────
 export async function PATCH(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   const params = new URL(request.url).searchParams;
