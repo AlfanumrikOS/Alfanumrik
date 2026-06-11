@@ -13,6 +13,8 @@ import {
   Skeleton,
   EmptyState,
   SheetModal,
+  ResponsiveTable,
+  type ResponsiveColumn,
 } from '@/components/ui';
 
 /* ─────────────────────────────────────────────────────────────
@@ -1358,117 +1360,112 @@ export default function SchoolAdminContentPage() {
 
         {/* ── Question table ── */}
         {!loadingQuestions && paginatedQuestions.length > 0 && (
-          <Card className="p-0 overflow-hidden">
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ background: 'var(--surface-2)' }}>
-                    <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-3)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
-                      {t(isHi, 'Question', 'प्रश्न')}
-                    </th>
-                    <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-3)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
-                      {t(isHi, 'Subject', 'विषय')}
-                    </th>
-                    <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-3)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
-                      {t(isHi, 'Grade', 'कक्षा')}
-                    </th>
-                    <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-3)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
-                      {t(isHi, 'Difficulty', 'कठिनाई')}
-                    </th>
-                    <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-3)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
-                      Bloom&apos;s
-                    </th>
-                    <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-3)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
-                      {t(isHi, 'Status', 'स्थिति')}
-                    </th>
-                    <th style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--text-3)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
-                      {t(isHi, 'Actions', 'कार्रवाई')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedQuestions.map(q => (
-                    <tr key={q.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '10px 12px', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-1)' }}>
-                        {q.question_text.length > 70 ? q.question_text.slice(0, 70) + '...' : q.question_text}
-                      </td>
-                      <td style={{ padding: '10px 12px', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-                        {q.subject}
-                      </td>
-                      <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
-                        <Badge color="var(--purple)" size="sm">
-                          {t(isHi, `Grade ${q.grade}`, `कक्षा ${q.grade}`)}
-                        </Badge>
-                      </td>
-                      <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
-                        <Badge
-                          color={q.difficulty === 'easy' ? '#22C55E' : q.difficulty === 'medium' ? '#EAB308' : '#EF4444'}
-                          size="sm"
-                        >
-                          {q.difficulty}
-                        </Badge>
-                      </td>
-                      <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', color: 'var(--text-2)', fontSize: 12 }}>
-                        {q.bloom_level}
-                      </td>
-                      <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
-                        <Badge
-                          color={q.status === 'approved' ? '#22C55E' : '#EAB308'}
-                          size="sm"
-                        >
-                          {q.status === 'approved'
-                            ? t(isHi, 'Approved', 'स्वीकृत')
-                            : t(isHi, 'Pending', 'लंबित')}
-                        </Badge>
-                      </td>
-                      <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', textAlign: 'right' }}>
-                        <div className="flex items-center gap-1.5 justify-end">
-                          <button
-                            onClick={() => openEdit(q)}
-                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
-                            style={{
-                              background: 'var(--surface-2)',
-                              border: '1px solid var(--border)',
-                              color: 'var(--text-2)',
-                              minHeight: 30,
-                            }}
-                          >
-                            {t(isHi, 'Edit', 'संपादित')}
-                          </button>
-                          <button
-                            onClick={() => handleToggleApproval(q)}
-                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
-                            style={{
-                              background: q.status === 'approved' ? 'rgba(234,179,8,0.06)' : 'rgba(22,163,74,0.06)',
-                              border: `1px solid ${q.status === 'approved' ? 'rgba(234,179,8,0.2)' : 'rgba(22,163,74,0.2)'}`,
-                              color: q.status === 'approved' ? '#EAB308' : '#16A34A',
-                              minHeight: 30,
-                            }}
-                          >
-                            {q.status === 'approved'
-                              ? t(isHi, 'Reject', 'अस्वीकार')
-                              : t(isHi, 'Approve', 'स्वीकृत करें')}
-                          </button>
-                          <button
-                            onClick={() => setDeleteTarget(q)}
-                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
-                            style={{
-                              background: 'rgba(220,38,38,0.06)',
-                              border: '1px solid rgba(220,38,38,0.2)',
-                              color: '#DC2626',
-                              minHeight: 30,
-                            }}
-                          >
-                            {t(isHi, 'Delete', 'हटाएं')}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+          <ResponsiveTable<Question>
+            caption={t(isHi, 'Question Bank', 'प्रश्न बैंक')}
+            rowKey={(q) => q.id}
+            rows={paginatedQuestions}
+            columns={[
+              {
+                key: 'question',
+                header: t(isHi, 'Question', 'प्रश्न'),
+                render: (q) => (
+                  <span style={{ color: 'var(--text-1)' }}>
+                    {q.question_text.length > 70 ? q.question_text.slice(0, 70) + '...' : q.question_text}
+                  </span>
+                ),
+              },
+              {
+                key: 'subject',
+                header: t(isHi, 'Subject', 'विषय'),
+                render: (q) => <span style={{ color: 'var(--text-2)' }}>{q.subject}</span>,
+              },
+              {
+                key: 'grade',
+                header: t(isHi, 'Grade', 'कक्षा'),
+                render: (q) => (
+                  <Badge color="var(--purple)" size="sm">
+                    {t(isHi, `Grade ${q.grade}`, `कक्षा ${q.grade}`)}
+                  </Badge>
+                ),
+              },
+              {
+                key: 'difficulty',
+                header: t(isHi, 'Difficulty', 'कठिनाई'),
+                render: (q) => (
+                  <Badge
+                    color={q.difficulty === 'easy' ? '#22C55E' : q.difficulty === 'medium' ? '#EAB308' : '#EF4444'}
+                    size="sm"
+                  >
+                    {q.difficulty}
+                  </Badge>
+                ),
+              },
+              {
+                key: 'bloom',
+                header: "Bloom's",
+                render: (q) => <span style={{ color: 'var(--text-2)', fontSize: 12 }}>{q.bloom_level}</span>,
+              },
+              {
+                key: 'status',
+                header: t(isHi, 'Status', 'स्थिति'),
+                render: (q) => (
+                  <Badge color={q.status === 'approved' ? '#22C55E' : '#EAB308'} size="sm">
+                    {q.status === 'approved'
+                      ? t(isHi, 'Approved', 'स्वीकृत')
+                      : t(isHi, 'Pending', 'लंबित')}
+                  </Badge>
+                ),
+              },
+              {
+                key: 'actions',
+                header: t(isHi, 'Actions', 'कार्रवाई'),
+                align: 'right',
+                hideLabelOnMobile: true,
+                render: (q) => (
+                  <div className="flex items-center gap-1.5 justify-end">
+                    <button
+                      onClick={() => openEdit(q)}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                      style={{
+                        background: 'var(--surface-2)',
+                        border: '1px solid var(--border)',
+                        color: 'var(--text-2)',
+                        minHeight: 30,
+                      }}
+                    >
+                      {t(isHi, 'Edit', 'संपादित')}
+                    </button>
+                    <button
+                      onClick={() => handleToggleApproval(q)}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                      style={{
+                        background: q.status === 'approved' ? 'rgba(234,179,8,0.06)' : 'rgba(22,163,74,0.06)',
+                        border: `1px solid ${q.status === 'approved' ? 'rgba(234,179,8,0.2)' : 'rgba(22,163,74,0.2)'}`,
+                        color: q.status === 'approved' ? '#EAB308' : '#16A34A',
+                        minHeight: 30,
+                      }}
+                    >
+                      {q.status === 'approved'
+                        ? t(isHi, 'Reject', 'अस्वीकार')
+                        : t(isHi, 'Approve', 'स्वीकृत करें')}
+                    </button>
+                    <button
+                      onClick={() => setDeleteTarget(q)}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                      style={{
+                        background: 'rgba(220,38,38,0.06)',
+                        border: '1px solid rgba(220,38,38,0.2)',
+                        color: '#DC2626',
+                        minHeight: 30,
+                      }}
+                    >
+                      {t(isHi, 'Delete', 'हटाएं')}
+                    </button>
+                  </div>
+                ),
+              },
+            ] satisfies ResponsiveColumn<Question>[]}
+          />
         )}
 
         {/* ── Pagination ── */}

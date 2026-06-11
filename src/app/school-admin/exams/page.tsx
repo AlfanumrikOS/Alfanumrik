@@ -13,6 +13,8 @@ import {
   Skeleton,
   EmptyState,
   SheetModal,
+  ResponsiveTable,
+  type ResponsiveColumn,
 } from '@/components/ui';
 
 /* ─────────────────────────────────────────────────────────────
@@ -1204,131 +1206,132 @@ export default function SchoolAdminExamsPage() {
 
             {/* Exam table */}
             {paginatedExams.length > 0 && (
-              <Card className="p-0 overflow-hidden">
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ background: 'var(--surface-2)' }}>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-3)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
-                          {t(isHi, 'Title', 'शीर्षक')}
-                        </th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-3)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
-                          {t(isHi, 'Subject', 'विषय')}
-                        </th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-3)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
-                          {t(isHi, 'Grade', 'कक्षा')}
-                        </th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-3)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
-                          {t(isHi, 'Date', 'तिथि')}
-                        </th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-3)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
-                          {t(isHi, 'Duration', 'अवधि')}
-                        </th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-3)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
-                          {t(isHi, 'Questions', 'प्रश्न')}
-                        </th>
-                        <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-3)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
-                          {t(isHi, 'Status', 'स्थिति')}
-                        </th>
-                        <th style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--text-3)', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
-                          {t(isHi, 'Actions', 'कार्रवाई')}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedExams.map(exam => (
-                        <tr key={exam.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                          <td style={{ padding: '10px 12px', color: 'var(--text-1)', fontWeight: 500, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {exam.title}
-                          </td>
-                          <td style={{ padding: '10px 12px', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-                            {exam.subject}
-                          </td>
-                          <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
-                            <Badge color="var(--purple)" size="sm">
-                              {t(isHi, `Grade ${exam.grade}`, `कक्षा ${exam.grade}`)}
-                            </Badge>
-                          </td>
-                          <td style={{ padding: '10px 12px', color: 'var(--text-2)', whiteSpace: 'nowrap', fontSize: 12 }}>
-                            {formatDateTime(exam.start_time)}
-                          </td>
-                          <td style={{ padding: '10px 12px', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-                            {exam.duration_minutes} {t(isHi, 'min', 'मिनट')}
-                          </td>
-                          <td style={{ padding: '10px 12px', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-                            {exam.question_count}
-                          </td>
-                          <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
-                            <Badge color={statusColor(exam.status)} size="sm">
-                              {statusLabel(exam.status, isHi)}
-                            </Badge>
-                          </td>
-                          <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', textAlign: 'right' }}>
-                            <div className="flex items-center gap-1.5 justify-end">
-                              {(exam.status === 'draft' || exam.status === 'scheduled') && (
-                                <button
-                                  onClick={() => openEdit(exam)}
-                                  className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
-                                  style={{
-                                    background: 'var(--surface-2)',
-                                    border: '1px solid var(--border)',
-                                    color: 'var(--text-2)',
-                                    minHeight: 30,
-                                  }}
-                                >
-                                  {t(isHi, 'Edit', 'संपादित')}
-                                </button>
-                              )}
-                              {exam.status === 'draft' && (
-                                <button
-                                  onClick={() => requestStatusChange(exam, 'scheduled')}
-                                  className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
-                                  style={{
-                                    background: 'rgba(59,130,246,0.06)',
-                                    border: '1px solid rgba(59,130,246,0.2)',
-                                    color: '#3B82F6',
-                                    minHeight: 30,
-                                  }}
-                                >
-                                  {t(isHi, 'Schedule', 'निर्धारित')}
-                                </button>
-                              )}
-                              {(exam.status === 'scheduled' || exam.status === 'active') && (
-                                <button
-                                  onClick={() => requestStatusChange(exam, 'cancelled')}
-                                  className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
-                                  style={{
-                                    background: 'rgba(220,38,38,0.06)',
-                                    border: '1px solid rgba(220,38,38,0.2)',
-                                    color: '#DC2626',
-                                    minHeight: 30,
-                                  }}
-                                >
-                                  {t(isHi, 'Cancel', 'रद्द')}
-                                </button>
-                              )}
-                              {exam.status === 'completed' && (
-                                <button
-                                  onClick={() => router.push(`/school-admin/reports?type=exam&examId=${exam.id}`)}
-                                  className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
-                                  style={{
-                                    background: 'var(--surface-2)',
-                                    border: '1px solid var(--border)',
-                                    color: 'var(--text-2)',
-                                    minHeight: 30,
-                                  }}
-                                >
-                                  {t(isHi, 'Results', 'परिणाम')}
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
+              <ResponsiveTable<Exam>
+                caption={t(isHi, 'All Exams', 'सभी परीक्षाएं')}
+                rowKey={(exam) => exam.id}
+                rows={paginatedExams}
+                columns={[
+                  {
+                    key: 'title',
+                    header: t(isHi, 'Title', 'शीर्षक'),
+                    render: (exam) => (
+                      <span style={{ color: 'var(--text-1)', fontWeight: 500 }}>{exam.title}</span>
+                    ),
+                  },
+                  {
+                    key: 'subject',
+                    header: t(isHi, 'Subject', 'विषय'),
+                    render: (exam) => <span style={{ color: 'var(--text-2)' }}>{exam.subject}</span>,
+                  },
+                  {
+                    key: 'grade',
+                    header: t(isHi, 'Grade', 'कक्षा'),
+                    render: (exam) => (
+                      <Badge color="var(--purple)" size="sm">
+                        {t(isHi, `Grade ${exam.grade}`, `कक्षा ${exam.grade}`)}
+                      </Badge>
+                    ),
+                  },
+                  {
+                    key: 'date',
+                    header: t(isHi, 'Date', 'तिथि'),
+                    render: (exam) => (
+                      <span style={{ color: 'var(--text-2)', fontSize: 12 }}>
+                        {formatDateTime(exam.start_time)}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'duration',
+                    header: t(isHi, 'Duration', 'अवधि'),
+                    render: (exam) => (
+                      <span style={{ color: 'var(--text-2)' }}>
+                        {exam.duration_minutes} {t(isHi, 'min', 'मिनट')}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'questions',
+                    header: t(isHi, 'Questions', 'प्रश्न'),
+                    render: (exam) => <span style={{ color: 'var(--text-2)' }}>{exam.question_count}</span>,
+                  },
+                  {
+                    key: 'status',
+                    header: t(isHi, 'Status', 'स्थिति'),
+                    render: (exam) => (
+                      <Badge color={statusColor(exam.status)} size="sm">
+                        {statusLabel(exam.status, isHi)}
+                      </Badge>
+                    ),
+                  },
+                  {
+                    key: 'actions',
+                    header: t(isHi, 'Actions', 'कार्रवाई'),
+                    align: 'right',
+                    hideLabelOnMobile: true,
+                    render: (exam) => (
+                      <div className="flex items-center gap-1.5 justify-end">
+                        {(exam.status === 'draft' || exam.status === 'scheduled') && (
+                          <button
+                            onClick={() => openEdit(exam)}
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                            style={{
+                              background: 'var(--surface-2)',
+                              border: '1px solid var(--border)',
+                              color: 'var(--text-2)',
+                              minHeight: 30,
+                            }}
+                          >
+                            {t(isHi, 'Edit', 'संपादित')}
+                          </button>
+                        )}
+                        {exam.status === 'draft' && (
+                          <button
+                            onClick={() => requestStatusChange(exam, 'scheduled')}
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                            style={{
+                              background: 'rgba(59,130,246,0.06)',
+                              border: '1px solid rgba(59,130,246,0.2)',
+                              color: '#3B82F6',
+                              minHeight: 30,
+                            }}
+                          >
+                            {t(isHi, 'Schedule', 'निर्धारित')}
+                          </button>
+                        )}
+                        {(exam.status === 'scheduled' || exam.status === 'active') && (
+                          <button
+                            onClick={() => requestStatusChange(exam, 'cancelled')}
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                            style={{
+                              background: 'rgba(220,38,38,0.06)',
+                              border: '1px solid rgba(220,38,38,0.2)',
+                              color: '#DC2626',
+                              minHeight: 30,
+                            }}
+                          >
+                            {t(isHi, 'Cancel', 'रद्द')}
+                          </button>
+                        )}
+                        {exam.status === 'completed' && (
+                          <button
+                            onClick={() => router.push(`/school-admin/reports?type=exam&examId=${exam.id}`)}
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                            style={{
+                              background: 'var(--surface-2)',
+                              border: '1px solid var(--border)',
+                              color: 'var(--text-2)',
+                              minHeight: 30,
+                            }}
+                          >
+                            {t(isHi, 'Results', 'परिणाम')}
+                          </button>
+                        )}
+                      </div>
+                    ),
+                  },
+                ] satisfies ResponsiveColumn<Exam>[]}
+              />
             )}
 
             {/* Pagination */}
