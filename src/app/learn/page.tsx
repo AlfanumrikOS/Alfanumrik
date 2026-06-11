@@ -27,6 +27,7 @@ import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { getPlanConfig } from '@/lib/plans';
 import { useSubjectReadiness } from '@/lib/useSubjectReadiness';
 import { ChapterReadinessBadge } from '@/components/learn/ChapterReadinessBadge';
+import { useSubjectsOsFlag } from '@/lib/use-subjects-os-flag';
 
 // Phase 3 of Exam-Ready 360°. Lazy-loaded — the summary banner hides itself
 // while the API is in-flight, so deferring its bundle keeps the chapter-list
@@ -36,10 +37,23 @@ const SubjectReadinessSummary = dynamic(
   { ssr: false, loading: () => null },
 );
 
+// "Alfa OS" Subjects experience (ff_subjects_os_v1, Tier 1 / presentation-only).
+// Lazy-loaded so the flag-OFF path NEVER fetches this bundle — the OFF path
+// stays byte-identical to today.
+const SubjectsOSHub = dynamic(
+  () => import('@/components/learn/os/SubjectsOSHub'),
+  { ssr: false, loading: () => null },
+);
+
 export default function LearnPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
   const { subjects: allSubjects, unlocked: allowedSubjects, locked: lockedSubjects } = useAllowedSubjects();
   const router = useRouter();
+
+  // "Alfa OS" Subjects experience flag. Default OFF → legacy chapter list
+  // renders unchanged (byte-identical). When ON, selecting a subject renders
+  // the new SubjectsOSHub instead of the chapter list.
+  const subjectsOsOn = useSubjectsOsFlag();
 
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Array<{ chapter_number: number; title: string }>>([]);
@@ -284,6 +298,18 @@ export default function LearnPage() {
                 </button>
               )}
             </div>
+
+          ) : subjectsOsOn ? (
+            /* ── Alfa OS Subjects experience (ff_subjects_os_v1, flag ON) ──
+               Renders the per-subject hub in place of the legacy chapter list.
+               OFF path skips this branch entirely and is byte-identical. */
+            <SubjectsOSHub
+              studentId={student.id}
+              subjectCode={selectedSubject}
+              grade={student.grade}
+              subjectMeta={selectedMeta}
+              isHi={isHi}
+            />
 
           ) : (
             /* ── Chapter List ── */

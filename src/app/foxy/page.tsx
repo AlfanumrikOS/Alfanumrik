@@ -40,6 +40,17 @@ import {
 } from './_lib/foxy-constants';
 import type { SubjectConfig, ChatMessage } from './_lib/foxy-types';
 import { useFoxyChat } from './_hooks/useFoxyChat';
+import { useStudentOsFlag } from '@/lib/use-student-os-flag';
+import { useCosmicLightSurface } from '@/lib/use-cosmic-light-surface';
+import type { MasterySuggestion } from '@/components/foxy/MasteryAwareness';
+
+// Alfa OS flagship redesign — the Foxy ContextPanel third pane (ff_student_os_v1).
+// Lazy-loaded so it is fetched ONLY when the flag resolves ON; when OFF the
+// chunk is never requested and the layout is byte-identical to today (P10).
+const ContextPanel = dynamic(
+  () => import('@/components/foxy/ContextPanel'),
+  { ssr: false, loading: () => null },
+);
 
 // P10 bundle hardening: lazy-load components rendered behind a flag/modal/conditional.
 // Cuts /foxy First Load JS by ~70 kB on cold paint.
@@ -293,6 +304,16 @@ export default function FoxyPage() {
   const [studentSubs, setStudentSubs] = useState<string[]>([]);
   const [showTopicSheet, setShowTopicSheet] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false); // Collapsed by default (Hick's Law — reduce initial choices)
+
+  // Alfa OS flagship redesign (ff_student_os_v1) — when ON, render the 3-pane
+  // workspace (conversations rail | chat | ContextPanel). Defaults OFF → the
+  // layout is byte-identical to today. The mobile sheet state controls the
+  // ContextPanel bottom-sheet on phones.
+  const osEnabled = useStudentOsFlag();
+  const [contextSheetOpen, setContextSheetOpen] = useState(false);
+  // Activate Cosmic-LIGHT + student palette only while the OS workspace is on.
+  // Passing `false` makes this a no-op so the OFF path is unaffected.
+  useCosmicLightSurface(osEnabled);
 
   // Error reporting
   const [reportModal, setReportModal] = useState<{ msgId: number; studentMsg: string; foxyMsg: string } | null>(null);
@@ -1012,6 +1033,23 @@ export default function FoxyPage() {
     if (prompt) sendMessage(prompt);
   }, [activeTopic, language, sendMessage]);
 
+  // Alfa OS — apply a mastery-aware suggestion from the ContextPanel.
+  // This routes ENTIRELY through the existing mode/prompt mechanism: it sets
+  // the session mode and dispatches the mode's standard autoPrompt/autoPromptHi
+  // via sendMessage. No new AI call, no new prompt path, no change to the
+  // structured-render envelope or scope-lock (P12 / REG-55 preserved).
+  const applyMasterySuggestion = useCallback((s: MasterySuggestion) => {
+    const backendMode = MODE_MAP[s.kind] || s.kind; // 'practice' | 'revise'
+    setSessionMode(backendMode);
+    const mode = MODES.find((m) => m.id === backendMode);
+    const topicName = s.topicTitle || activeTopic?.title || '';
+    const prompt = mode
+      ? (language === 'hi' ? mode.autoPromptHi(topicName) : mode.autoPrompt(topicName))
+      : '';
+    if (prompt) sendMessage(prompt);
+    setContextSheetOpen(false);
+  }, [activeTopic, language, sendMessage]);
+
   // Advance lesson step
   const advanceLessonStep = useCallback(() => {
     const state: LessonState = {
@@ -1114,6 +1152,20 @@ export default function FoxyPage() {
           {/* Language pills — extracted to ./_components/FoxySettings.tsx */}
           <LanguagePicker language={language} isLocked={isLangLocked} onLanguageChange={setLanguage} />
           {chatUsage && <span className="hidden sm:inline text-[8px] opacity-40 ml-1" title={language === 'hi' ? 'बचे हुए संदेश' : 'Chat messages remaining'}>💬{chatUsage.remaining}/{chatUsage.limit}</span>}
+          {/* Alfa OS — open the mobile ContextPanel bottom sheet. Mobile-only
+              (lg:hidden), and rendered only when ff_student_os_v1 is ON so the
+              OFF header is byte-identical. */}
+          {osEnabled && (
+            <button
+              onClick={() => setContextSheetOpen(true)}
+              className="lg:hidden w-7 h-7 rounded-lg flex items-center justify-center text-sm transition-all active:scale-90"
+              style={{ background: 'rgba(255,255,255,0.08)', border: '1.5px solid rgba(255,255,255,0.1)' }}
+              aria-label={isHi ? 'संदर्भ पैनल खोलें' : 'Open context panel'}
+              title={isHi ? 'तुम्हारा संदर्भ' : 'Your context'}
+            >
+              🧭
+            </button>
+          )}
           {/* Voice mode toggle — hidden on browsers without TTS */}
           {ttsSupported && (
             <button
@@ -1683,6 +1735,22 @@ export default function FoxyPage() {
             }}
           />
         </div>
+
+        {/* Alfa OS — third pane (ContextPanel). Desktop: a right rail flanking
+            the chat column. Mobile: a bottom sheet (controlled by
+            contextSheetOpen). Rendered ONLY when ff_student_os_v1 is ON, so the
+            OFF layout is byte-identical. The chat column above is untouched. */}
+        {osEnabled && (
+          <ContextPanel
+            isHi={isHi}
+            studentId={student?.id}
+            activeSubjectName={cfg.name}
+            activeSubjectIcon={cfg.icon}
+            onSuggest={applyMasterySuggestion}
+            sheetOpen={contextSheetOpen}
+            onSheetClose={() => setContextSheetOpen(false)}
+          />
+        )}
       </div>
 
       {/* Mobile topics sheet */}

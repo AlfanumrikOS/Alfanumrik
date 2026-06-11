@@ -3171,3 +3171,28 @@ html[data-design="cosmic"] .recharts-cartesian-axis-tick-value { fill: var(--tex
 html[data-design="cosmic"] .recharts-text.recharts-label { fill: var(--text-2) !important; }
 /* End literal-color compatibility layer ───────────────────────────────────── */
 /* End cosmic redesign block ───────────────────────────────────────────────── */
+
+/* ─── Alfa OS flagship redesign (ff_student_os_v1) ──────────────────────────
+   CSS-only motion for the OS dashboard + Foxy workspace. Uses the existing
+   --ease-atlas curve and a per-node --stagger-i index (set inline by SkillTree
+   / RoadmapNode) — no animation library, no framer-motion (protects P10).
+   prefers-reduced-motion fully disables the reveal. */
+@keyframes osReveal {
+  0%   { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.os-skill-tree .os-roadmap-node {
+  animation: osReveal 0.42s var(--ease-atlas, cubic-bezier(.22,1,.36,1)) both;
+  /* Stagger each node by its index. Capped so a long tree never feels laggy. */
+  animation-delay: calc(min(var(--stagger-i, 0), 8) * 0.05s);
+}
+.os-mission { animation: osReveal 0.4s var(--ease-atlas, cubic-bezier(.22,1,.36,1)) both; }
+@media (prefers-reduced-motion: reduce) {
+  .os-skill-tree .os-roadmap-node,
+  .os-mission {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+/* End Alfa OS flagship block ───────────────────────────────────────────────── */

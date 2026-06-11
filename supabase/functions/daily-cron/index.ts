@@ -191,6 +191,32 @@ async function recordHealthSnapshot(supabase: ReturnType<typeof createClient>): 
   return 1
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Education Intelligence Cloud v1 (Track 1) — nightly rollup populator.
+// Calls the SQL orchestrator compute_education_intelligence_rollup() (migration
+// 20260616000100), which runs, IN ORDER: school health → mrr snapshot +
+// per-school mrr → churn signals → geographic metrics, each idempotent
+// (ON CONFLICT DO UPDATE) so a re-run is safe. The orchestrator returns a
+// keys-only JSONB row-count summary (no PII, P13). Any RPC failure throws so
+// this single step is reported as failed in the 207 response WITHOUT aborting
+// the other Promise.allSettled-isolated cron steps. Returns the total rows
+// written across the five rollup tables for the cron telemetry value.
+// ──────────────────────────────────────────────────────────────────────────
+async function computeEducationIntelligenceRollup(supabase: ReturnType<typeof createClient>): Promise<number> {
+  const {data,error}=await supabase.rpc('compute_education_intelligence_rollup')
+  if(error) throw new Error(`computeEducationIntelligenceRollup: ${error.message}`)
+  const summary=(data ?? {}) as Record<string, unknown>
+  const total=
+    (Number(summary.school_health_rows) || 0)+
+    (Number(summary.school_mrr_rows) || 0)+
+    (Number(summary.mrr_snapshot_rows) || 0)+
+    (Number(summary.churn_signal_rows) || 0)+
+    (Number(summary.geographic_rows) || 0)
+  // Keys-only log — the summary object carries no PII (school_id/geo counts only).
+  console.log(`daily-cron: education_intelligence_rollup — ${JSON.stringify(summary)}`)
+  return total
+}
+
 // Phase 3 of Foxy continuity (2026-05-18). Sweeps OPEN
 // foxy_pending_expectations rows whose expires_at < now() into 'expired'.
 // Defined in migration 20260528000013_foxy_pending_expectations.sql.
@@ -1277,6 +1303,56 @@ async function gradeMolShadowPairs(supabase: ReturnType<typeof createClient>): P
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Track 2 — Principal AI Assistant transcript retention purge (pre-GA follow-up).
+// Deletes principal_ai_sessions older than 90 days; principal_ai_messages rows
+// are removed automatically via the FK ON DELETE CASCADE
+// (principal_ai_messages.session_id REFERENCES principal_ai_sessions(id)
+//  ON DELETE CASCADE — migration 20260616010000, line 64). We therefore delete
+// only the parent sessions and let the database cascade the child messages.
+//
+// GRACEFUL PRE-MIGRATION: migration 20260616010000 is DRAFTED, NOT APPLIED. If
+// the table does not exist yet, Postgres returns undefined_table (42P01) /
+// PGRST205 (PostgREST schema-cache miss). Both are treated as a NO-OP (return 0)
+// rather than thrown, so this step never aborts the cron or the other
+// Promise.allSettled-isolated steps before the migration lands.
+//
+// P13: keys-only logging — only the purged session COUNT + status are logged.
+// No session ids, school ids, auth user ids, or message content ever touch logs.
+// Idempotent: a second same-day run simply finds fewer/zero rows past the cutoff.
+// ──────────────────────────────────────────────────────────────────────────
+function isMissingRelationError(err: { code?: string; message?: string } | null): boolean {
+  if (!err) return false
+  // 42P01 = undefined_table (Postgres); PGRST205 = PostgREST cannot find the
+  // table/view in the schema cache (table not yet created). Message-substring
+  // fallback covers client variants that don't surface a structured code.
+  const code = err.code ?? ''
+  if (code === '42P01' || code === 'PGRST205') return true
+  const msg = (err.message ?? '').toLowerCase()
+  return msg.includes('does not exist') || msg.includes('could not find the table')
+}
+
+async function purgePrincipalAiTranscripts(supabase: ReturnType<typeof createClient>): Promise<number> {
+  const cutoff = new Date(Date.now() - 90 * 86_400_000).toISOString()
+  const { data, error } = await supabase
+    .from('principal_ai_sessions')
+    .delete({ count: 'exact' })
+    .lt('created_at', cutoff)
+    .select('id')
+  if (error) {
+    if (isMissingRelationError(error as { code?: string; message?: string })) {
+      // Pre-migration no-op: table not created yet. Keys-only log, no PII.
+      console.log('daily-cron: purge_principal_ai — table absent (pre-migration), no-op')
+      return 0
+    }
+    throw new Error(`purgePrincipalAiTranscripts: ${error.message}`)
+  }
+  const purged = (data as { id: string }[] | null)?.length ?? 0
+  // Keys-only log: count + status only. Messages cascade-delete via FK.
+  console.log(`daily-cron: purge_principal_ai — purged=${purged} sessions (>90d), status=ok`)
+  return purged
+}
+
 Deno.serve(async (req) => {
   if (req.method==='OPTIONS') return new Response('ok',{headers:corsHeaders})
   const t0=Date.now()
@@ -1294,6 +1370,11 @@ Deno.serve(async (req) => {
       ['parent_digests_sent',()=>generateParentDigests(sb)],
       ['task_queue_rows_deleted',()=>cleanupTaskQueue(sb)],
       ['health_snapshot',()=>recordHealthSnapshot(sb)],
+      // Track 1 — Education Intelligence Cloud nightly rollup populator. Calls
+      // the SQL orchestrator (school health → mrr → churn → geo, in order).
+      // Idempotent end-to-end; failure here is isolated by Promise.allSettled
+      // and does not abort the other steps. See migration 20260616000100.
+      ['education_intelligence_rollup',()=>computeEducationIntelligenceRollup(sb)],
       ['ml_retrain_new_responses',()=>triggerModelRetrainIfNeeded(sb)],
       ['performance_scores_recalculated',()=>recalculatePerformanceScores(sb)],
       ['challenges_generated',()=>generateDailyChallenges(sb)],
@@ -1313,6 +1394,12 @@ Deno.serve(async (req) => {
       // sampling + cost-cap + kill-switch paths are live regardless.
       // See supabase/functions/_shared/mol/grader-cron.ts.
       ['mol_shadow_pairs_graded',()=>gradeMolShadowPairs(sb)],
+      // Track 2 — Principal AI Assistant transcript retention. Deletes
+      // principal_ai_sessions older than 90 days; principal_ai_messages
+      // cascade-delete via FK ON DELETE CASCADE (migration 20260616010000).
+      // GRACEFUL pre-migration: no-op (returns 0) if the table is absent.
+      // P13: keys-only logging (count + status). Isolated by Promise.allSettled.
+      ['purge_principal_ai',()=>purgePrincipalAiTranscripts(sb)],
     ]
     const settled=await Promise.allSettled(steps.map(([,fn])=>fn()))
     const results:Record<string,number>={};const errors:Record<string,string>={}

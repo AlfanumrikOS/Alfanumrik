@@ -53,6 +53,15 @@ export interface ConsolidatedNavItem {
    * exactly like an rbacOnly item is when its flag is off).
    */
   reportsDepthOnly?: boolean;
+  /**
+   * Track 2 (Principal AI Assistant v1): when true this item only renders while
+   * `ff_principal_ai_v1` is ON AND the caller's role is `principal` (the
+   * principal-only `institution.use_principal_ai` capability). Used for the NEW
+   * Principal Assistant entry which has no flag-OFF home. Has NO effect when
+   * `principalAiEnabled` is false (byte-identical-OFF). UI polish only — the
+   * route 404s (flag off) / 403s (non-principal) regardless (P9).
+   */
+  principalAiOnly?: boolean;
 }
 
 /**
@@ -131,6 +140,16 @@ export const SCHOOL_NAV_SECTIONS: ReadonlyArray<ConsolidatedNavSection> = [
     title: 'Academics',
     titleHi: 'शैक्षणिक',
     items: [
+      // Track 2 — NEW Principal AI Assistant. principalAiOnly: only renders while
+      // ff_principal_ai_v1 is ON AND the caller is a principal (principal-only
+      // capability). The route 404s/403s server-side regardless (P9).
+      {
+        href: '/school-admin/ai-assistant',
+        label: 'Principal Assistant',
+        labelHi: 'Principal सहायक',
+        icon: '◈',
+        principalAiOnly: true,
+      },
       { href: '/school-admin/classes', label: 'Classes', labelHi: 'कक्षाएँ', icon: '⊞' },
       { href: '/school-admin/exams', label: 'Exams', labelHi: 'परीक्षा', icon: '⊙', moduleKey: 'testing_engine' },
       { href: '/school-admin/content', label: 'Content', labelHi: 'सामग्री', icon: '⊠', moduleKey: 'lms' },
@@ -208,6 +227,15 @@ export interface ConsolidatedSchoolNavProps {
    * the read routes 404 server-side when the flag is off regardless (P9).
    */
   reportsDepthEnabled?: boolean;
+  /**
+   * Track 2 (Principal AI Assistant v1). When false/undefined (the default +
+   * flag-OFF), the nav is BYTE-IDENTICAL to before Track 2: principalAiOnly items
+   * (the Principal Assistant entry) are hidden entirely. When true
+   * (`ff_principal_ai_v1` ON), the entry appears ONLY for a caller whose
+   * `adminRole` is `principal` (mirrors the principal-only capability). UI polish
+   * only — the route 404s/403s server-side regardless (P9).
+   */
+  principalAiEnabled?: boolean;
 }
 
 export default function ConsolidatedSchoolNav({
@@ -222,6 +250,7 @@ export default function ConsolidatedSchoolNav({
   rbacEnabled = false,
   adminRole = null,
   reportsDepthEnabled = false,
+  principalAiEnabled = false,
 }: ConsolidatedSchoolNavProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -245,10 +274,17 @@ export default function ConsolidatedSchoolNav({
         // items (the deep School Report entry) are hidden → byte-identical to
         // before Wave D.
         if (item.reportsDepthOnly && !reportsDepthEnabled) return false;
+        // Track 2 Principal-AI gating. When the flag is OFF, principalAiOnly items
+        // are hidden → byte-identical to before Track 2. When ON, the entry shows
+        // ONLY for a principal (mirrors the principal-only capability; fail-CLOSED
+        // for null/non-principal roles so non-principals never see the entry).
+        if (item.principalAiOnly && (!principalAiEnabled || adminRole !== 'principal')) {
+          return false;
+        }
         return true;
       }),
     })).filter((section) => section.items.length > 0);
-  }, [moduleEnablement, rbacEnabled, adminRole, reportsDepthEnabled]);
+  }, [moduleEnablement, rbacEnabled, adminRole, reportsDepthEnabled, principalAiEnabled]);
 
   // Active = longest matching href across ALL visible items (root-vs-subroute).
   const activeHref = useMemo(() => {

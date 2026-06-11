@@ -3205,3 +3205,63 @@ derivation module is covered inside REG-110's location set.
 Pre-auth-module-fixes: 75 entries. Adds REG-108..REG-111.
 
 **Total: 79 entries.**
+
+## Learning-OS flagship redesign + Track-2 (EIC + Principal AI) (2026-06-11) - REG-112..REG-114
+
+Source: 2026-06-11 Learning-OS session. Three flagged-OFF redesign tracks shipped
+together as PRESENTATION-ONLY surfaces over the unchanged learning engines:
+(1) the "Alfa OS" student/subjects/revision/practice/exam-briefing surfaces, each
+behind its own DEFAULT-OFF flag whose OFF path is byte-identical to today;
+(2) the super-admin Education Intelligence Cloud (EIC) read-API; (3) the Track-2
+Principal AI Assistant. These entries pin the UNIT-testable safety contracts; the
+runtime-client + DB-applied behaviors are deferred to integration/E2E (noted
+inline).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-112 | `learning_os_off_path_flag_identity` | Flag-OFF = byte-identical (P1/P2/P3/P7 preserved — these are PRESENTATION-only surfaces over the unchanged scoring/XP/anti-cheat engines). For every Alfa OS flag hook (`use-student-os-flag`, `use-subjects-os-flag`, `use-revision-os-flag`, `use-practice-os-flag`, `use-test-os-flag`, `use-principal-ai`): (1) the synchronous reader / DEFAULT_OFF resolves FALSE with no cache + no localStorage (production first-paint truth); a fresh `{on:false}` cache reads FALSE, an EXPIRED `{on:true}` cache is ignored → FALSE, a fresh `{on:true}` reads TRUE (post-rollout repeat visit). (2) `devForcedOn()` is a STRICT prod no-op — the localStorage force-key '1' is ignored when `NODE_ENV==='production'` and forces TRUE only when `NODE_ENV!=='production'` AND the key is exactly '1' (not 'true'/'0'). (3) `FLAG_DEFAULTS` contains every new flag (`ff_student_os_v1`, `ff_subjects_os_v1`, `ff_revision_os_v1`, `ff_practice_os_v1`, `ff_test_os_v1`, `ff_education_intelligence`, `ff_principal_ai_v1`) = false, with the registry constant matching the literal. (4) Pure presentation helpers re-present (never re-compute) engine output: mastery-buckets (due_for_review precedence, mastered/learning/locked, masteryPercent 0..1→0..100 clamp, weakestStartedTopic), readiness-map (level→node-status), revision-labels (0.5/0.8 display-only impact bucketing), briefing-helpers, and ScoreBar (80/60/40 bands, null→neutral). | `src/__tests__/lib/learning-os-flag-off-identity.test.ts`, `src/__tests__/lib/use-principal-ai-flag.test.ts`, `src/__tests__/lib/dashboard-mastery-buckets.test.ts`, `src/__tests__/components/learn-os-readiness-map.test.ts`, `src/__tests__/components/review-os-revision-labels.test.ts`, `src/__tests__/components/exam-briefing-helpers.test.ts`, `src/__tests__/admin-ui/score-bar.test.tsx` | E |
+| REG-113 | `exam_briefing_predicted_score_parity` | The Alfa OS pre-test briefing hub's `getPredictedScoreEstimate` (display-only weighted-mastery estimate over exam_chapters) is a VERBATIM COPY of `getPredictedScore` in `src/app/exams/page.tsx` and MUST stay byte-equivalent (assessment-requested drift guard — P1/P2/P3 untouched, this is presentation-only). Asserts byte-equivalence vs an inline reference replica of the exams-page formula across 7 edge fixtures (empty / zero-weight-averages-mastery / weighted-sum / rounding / mixed) + 200 deterministic randomized inputs. If `exams/page.tsx` diverges, this guard fails and the briefing copy must be re-synced. Also pins EIC `super-admin/intelligence` pure coercers: `dedupLatest` keeps the newest row per key (PostgREST DISTINCT-ON substitute), and num/numOrNull/int/strArray/isUuid normalize Postgres-string rollup columns defensively. | `src/__tests__/components/exam-briefing-helpers.test.ts`, `src/__tests__/lib/super-admin-intelligence.test.ts` | E |
+| REG-114 | `principal_ai_scope_lock_and_honest_pacing` | Principal AI Assistant prompt safety (P12 + REG-67 provenance). `PRINCIPAL_AI_SAFETY_RAILS` asserts presence of: the scope-lock refusal categories (other-school/benchmark/"average school"; individual-student PII → aggregates-only; out-of-scope/non-academic); DATA-ONLY grounding ("never invent"); the HONEST SYLLABUS-PACING decline (content-readiness ≠ teaching pace, "cannot predict … finish on time", no fabricated date/percentage); and the NEW POINT-IN-TIME / no-trends rail (single snapshot, no history, refuse change-over-time / "vs last week/month" / period-over-period). `buildContextSection` renders `avg_mastery` (0..1 read-model scale) through `fmtPct` as a PERCENT — the raw decimal must NOT leak — while `seat_utilization_pct` (already 0-100) is not rescaled; emits a "Data as of <generated_at>" line when present and omits it otherwise; returns null (caller abstains) on empty context. `buildPrincipalAiSystemPrompt` always carries the rails + a defensive placeholder for null context. REG-67 model-provenance stamping (`PrincipalAiHistoryMessage.model`) is part of the wire contract; the RPC-credential model (context RPC MUST be called via the USER-CONTEXT client so `auth.uid()` resolves the principal-only guard) is a RUNTIME-CLIENT behavior — deferred to integration/E2E (see notes). EIC read-API graceful-empty (HTTP 200 on missing table/no rows) + RLS service-role-only intent are likewise route-level — deferred to integration/E2E. | `src/__tests__/lib/ai/principal-ai-prompt.test.ts` | E |
+
+### Invariants covered by this section
+
+- P1 (score accuracy - REG-112/REG-113) - the Alfa OS surfaces re-present scoring
+  outputs; the OFF path is byte-identical, and the briefing predicted-score is a
+  display-only estimate kept byte-equivalent to the assessment-owned formula. No
+  scoring formula is duplicated or forked.
+- P2 (XP economy - REG-112) - presentation-only; no XP is computed in any new
+  helper (mastery-buckets / readiness-map / revision-labels / briefing-helpers).
+- P3 (anti-cheat - REG-112) - untouched; the OS surfaces sit over the unchanged
+  quiz pipeline.
+- P7 (bilingual UI - REG-112) - the new label helpers return non-empty Hi/En
+  strings that differ, and technical figures stay numeric.
+- P12 (AI safety - REG-114) - the Principal AI prompt is the sole guard between
+  the principal and the model; scope-lock + honest-pacing + no-trends rails and
+  the aggregates-only/PII boundary are pinned. avg_mastery 0..1→% presentation fix
+  prevents a misleading raw-decimal leak.
+- P13 (data privacy - REG-114) - EIC rollups are aggregates-only and the Principal
+  AI context is PII-safe (group-level aggregates only). The RLS service-role-only
+  read intent and the user-context-client RPC-credential model are runtime/DB
+  behaviors deferred to integration/E2E.
+
+### Deferred to integration / E2E (this session, unit-untestable)
+
+- **Principal AI RPC-credential model**: `get_principal_ai_context(p_school_id)`
+  MUST be called via the USER-CONTEXT Supabase client (not service-role) so the
+  RPC's `auth.uid()` guard resolves the calling principal and scopes to their
+  school. This is a runtime-client wiring behavior — covered by route integration
+  + E2E, not a pure unit test.
+- **EIC read-API graceful-empty + RLS service-role-only**: `safeSelect`/
+  `fetchSchoolMeta` degrade to empty/HTTP-200 when the rollup tables are absent
+  (migration not yet applied) or empty; the routes stay behind super-admin auth
+  regardless of the `ff_education_intelligence` flag. These touch fetch + admin-auth
+  env and the live PostgREST error shape — covered by route integration + E2E.
+- **Flag async-reconcile + 404 route gating**: the hooks' `getFeatureFlags()`
+  confirm/correct path and the additive `notFound()` routes (/revision, /practice,
+  /exam-briefing) returning 404 while OFF are E2E concerns.
+
+### Catalog total
+
+Pre-Learning-OS: 79 entries. Adds REG-112..REG-114.
+
+**Total: 82 entries.**
