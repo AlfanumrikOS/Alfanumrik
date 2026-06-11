@@ -175,7 +175,7 @@ export default function LearnPage() {
                   ? `कक्षा ${student.grade} · कौन सा विषय पढ़ना है?`
                   : `Grade ${student.grade} · Choose a subject to study`}
               </p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
 
                 {/* ── Unlocked subjects ── */}
                 {allowedSubjects.map(s => {
