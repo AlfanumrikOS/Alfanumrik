@@ -27,12 +27,15 @@
  * — chainable getSupabaseAdmin() boundary mock, swap canned result per test,
  * authorizeAdmin / logAdminAudit / isFeatureEnabled stubbed at the module seam.
  *
- * NOTE (security finding, reported separately): both routes call
- * `authorizeAdmin(request)` with NO required-level argument, so the gate
- * defaults to the 'support' floor. We assert the DENIAL path is honored, but
- * we deliberately DO NOT assert that 'support' is the intended level — locking
- * in the weak contract would be wrong. See the test-run report for the
- * file:line finding handed to backend/architect/ops.
+ * AUTH LEVEL (HIGH finding fixed 2026-06-11): both routes now call
+ * `authorizeAdmin(request, 'super_admin')` — the required level is pinned, not
+ * defaulted. These are money-movement mutations (invoice marked paid + school
+ * subscription extended), so anything below the super_admin floor is a
+ * privilege-escalation gap. The previous version of this file deliberately did
+ * NOT assert the level because the routes defaulted to the weak 'support' floor;
+ * that gap is now closed by backend (approve/route.ts + reject/route.ts) and is
+ * locked in here via explicit `toHaveBeenCalledWith(..., 'super_admin')`
+ * assertions on both handlers' happy paths.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -218,6 +221,10 @@ describe('PATCH reconciliation/[id]/approve — happy path', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
 
+    // Auth contract pinned (HIGH finding fixed 2026-06-11): money-movement
+    // route requires the super_admin level, not the defaulted 'support' floor.
+    expect(authorizeAdmin).toHaveBeenCalledWith(expect.anything(), 'super_admin');
+
     // State transition: status flipped to 'approved'.
     const flip = updateCalls.find((c) => c.table === 'payment_reconciliation_queue');
     expect(flip).toBeDefined();
@@ -371,6 +378,10 @@ describe('PATCH reconciliation/[id]/reject — happy path', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
+
+    // Auth contract pinned (HIGH finding fixed 2026-06-11): money-movement
+    // route requires the super_admin level, not the defaulted 'support' floor.
+    expect(authorizeAdmin).toHaveBeenCalledWith(expect.anything(), 'super_admin');
 
     const flip = updateCalls.find((c) => c.table === 'payment_reconciliation_queue');
     expect(flip).toBeDefined();
