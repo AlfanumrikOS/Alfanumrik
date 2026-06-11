@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
 // ─── POST — create draft contract ───────────────────────────────────────
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   if (!(await flagOn(auth.userId))) return err('School contracts are not enabled.', 403);
