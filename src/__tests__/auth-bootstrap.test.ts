@@ -137,6 +137,21 @@ describe('POST /api/auth/bootstrap', () => {
     // mock call state but does NOT restore stubbed globals — so without this the
     // outcome of this suite depended on worker shard ordering.
     vi.unstubAllGlobals();
+    // ROOT-CAUSE FIX (2026-06-11, order-dependent flake): the bootstrap route is
+    // imported dynamically below. `auth-onboarding.test.ts` ALSO dynamically
+    // imports the SAME '@/app/api/auth/bootstrap/route' but defines its OWN
+    // file-scoped `vi.mock('@/lib/supabase-server')` whose getUser() reads a
+    // DIFFERENT mockGetUser. Vitest caches the route module per WORKER, not per
+    // file — so whichever auth file ran first in a reused worker won the cache,
+    // and the route stayed bound to the OTHER file's supabase-server mock (and
+    // its `mockGetUser`, which returns an authenticated MOCK_USER). That made the
+    // "returns 401 when no session exists" test fail intermittently: the route
+    // resolved a user it shouldn't. vi.resetModules() drops the module registry
+    // so the route re-evaluates against THIS file's hoisted vi.mock factories on
+    // every test (vi.mock re-applies after reset), immune to cross-file cache
+    // contamination. This is the real fix; the unstubAllGlobals/fetch guard above
+    // was only a partial mitigation.
+    vi.resetModules();
     // Default: authenticated user
     mockGetUser.mockResolvedValue({
       data: { user: MOCK_USER },

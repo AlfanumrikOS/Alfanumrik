@@ -290,6 +290,15 @@ describe('POST /api/auth/bootstrap — Validation', () => {
     // the same reused worker. vi.clearAllMocks() does not restore stubbed
     // globals, so bootstrap validation outcomes were shard-ordering dependent.
     vi.unstubAllGlobals();
+    // ROOT-CAUSE FIX (2026-06-11, order-dependent flake): this file and
+    // `auth-bootstrap.test.ts` BOTH dynamically import the same
+    // '@/app/api/auth/bootstrap/route' while each defines its OWN file-scoped
+    // `vi.mock('@/lib/supabase-server')`. Vitest caches the route module per
+    // WORKER, so whichever file imported it first bound the route to its mocks;
+    // the other file then received a stale route wired to the wrong getUser mock.
+    // vi.resetModules() forces a fresh route evaluation against THIS file's
+    // hoisted vi.mock factories on every test (vi.mock re-applies after reset).
+    vi.resetModules();
     studentMockData = null;
     teacherMockData = null;
     guardianMockData = null;
@@ -517,6 +526,11 @@ describe('GET /api/auth/onboarding-status', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    // ROOT-CAUSE FIX (2026-06-11): re-evaluate the dynamically imported route
+    // against THIS file's hoisted vi.mock factories, immune to per-worker module
+    // cache contamination from any sibling file that imports the same route with
+    // different mocks. See the section-2 beforeEach for the full rationale.
+    vi.resetModules();
     studentMockData = null;
     teacherMockData = null;
     guardianMockData = null;
@@ -705,6 +719,12 @@ describe('Auth callback bootstrap integration', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    // ROOT-CAUSE FIX (2026-06-11): re-evaluate the dynamically imported
+    // auth/callback route against THIS file's hoisted vi.mock factories, immune
+    // to per-worker module cache contamination. See section-2 beforeEach for the
+    // full rationale. resetModules() does not touch globals, so the fetch stub
+    // below is unaffected.
+    vi.resetModules();
     studentMockData = null;
     teacherMockData = null;
     guardianMockData = null;
