@@ -271,6 +271,62 @@ jobs:
             echo "Coverage report not generated (install @vitest/coverage-v8 for coverage)." >> $GITHUB_STEP_SUMMARY
           fi
 
+  # ── Step 1a: Edge Function Deno Tests ──
+  # Runs the deterministic, offline-safe Deno test suite for Supabase Edge
+  # Functions. Previously these tests existed on disk but were NEVER invoked by
+  # CI — they only ran on-demand locally. This job wires them into every PR.
+  #
+  # SCOPE (deliberately narrow — only hermetic, network-free tests):
+  #   - parent-portal/__tests__/      (contract.test.ts: reads index.ts as text,
+  #                                     asserts the auth-before-dispatch contract)
+  #   - teacher-dashboard/__tests__/  (contract.test.ts: same static-source canary)
+  #   - bulk-jee-neet-curated-import/__tests__/validate.test.ts
+  #                                     (pure validation helpers — no I/O)
+  #   - grounded-answer/__tests__/*   (12 unit files of pure helpers)
+  #
+  # EXCLUDED ON PURPOSE:
+  #   - grounded-answer/__tests__/{e2e,pipeline}.test.ts — import index.ts which
+  #     calls Deno.serve() (binds a socket → requires --allow-net + has a server
+  #     side-effect). Flaky/non-deterministic in CI.
+  #   - alfabot-answer, bulk-jee-neet-import/index.test.ts, _shared/__tests__/*,
+  #     _shared/mol/__tests__/* — these are VITEST tests (import from 'vitest'),
+  #     already covered by the `quality` job's `npm test`, not `deno test`.
+  #
+  # Permissions are limited to --allow-read (readTextFileSync of index.ts) and
+  # --allow-env (some helpers read Deno.env). No --allow-net is granted, which
+  # guarantees no test can reach the network. `--no-lock` decouples CI from the
+  # repo's deno.lock (left untouched). Same BLOCKING posture as the unit-test
+  # `quality` job: a failure here fails CI.
+  edge-function-tests:
+    name: Edge Function Deno Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.7.14
+
+      - name: Run Edge Function Deno tests (deterministic, offline)
+        run: |
+          deno test --no-lock --allow-read --allow-env \
+            supabase/functions/parent-portal/__tests__/ \
+            supabase/functions/teacher-dashboard/__tests__/ \
+            supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts \
+            supabase/functions/grounded-answer/__tests__/cache.test.ts \
+            supabase/functions/grounded-answer/__tests__/circuit.test.ts \
+            supabase/functions/grounded-answer/__tests__/citations.test.ts \
+            supabase/functions/grounded-answer/__tests__/claude.test.ts \
+            supabase/functions/grounded-answer/__tests__/confidence.test.ts \
+            supabase/functions/grounded-answer/__tests__/coverage.test.ts \
+            supabase/functions/grounded-answer/__tests__/embedding.test.ts \
+            supabase/functions/grounded-answer/__tests__/grounding-check.test.ts \
+            supabase/functions/grounded-answer/__tests__/retrieval.test.ts \
+            supabase/functions/grounded-answer/__tests__/trace.test.ts \
+            supabase/functions/grounded-answer/__tests__/validation.test.ts \
+            supabase/functions/grounded-answer/__tests__/wrap-as-paragraph.test.ts
+
   # ── Step 1b: Integration Tests (live Supabase) ──
   # Runs migration/trigger/view/CHECK-constraint tests that require a real
   # Postgres backend. Gated on the presence of repository secrets, so PRs from
