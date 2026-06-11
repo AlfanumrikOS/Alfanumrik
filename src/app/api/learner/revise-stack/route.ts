@@ -40,6 +40,11 @@ import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { isFeatureEnabled } from '@/lib/feature-flags';
 import { createStudentStateBuilder } from '@/lib/state/student-state-builder';
 import { decayedChapters } from '@/lib/state/learner-loop/resolve-next-action';
+import {
+  modalityForMastery,
+  type ReviseStackItem,
+  type ReviseStackResponse,
+} from '@/lib/state/learner-loop/revise-stack-modality';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -49,31 +54,6 @@ const FLAG_NAME = 'ff_revise_route_v1';
 /** Cap on stack size — past this is too much choice (Hick's law) and
  *  also too much to render on a mobile screen. */
 const MAX_ITEMS = 12;
-
-export interface ReviseStackItem {
-  subjectCode: string;
-  chapterNumber: number;
-  mastery: number;
-  daysSinceLastTouch: number;
-  recommendedModality: 'read' | 'explainer' | 'worked-example';
-  url: string;
-}
-
-export interface ReviseStackResponse {
-  schemaVersion: 1;
-  resolvedAt: string;
-  items: ReviseStackItem[];
-}
-
-/** Modality picker — same thresholds as the resolver's single-action
- *  decision in resolve-next-action.ts. Exported for tests. */
-export function modalityForMastery(
-  mastery: number,
-): 'read' | 'explainer' | 'worked-example' {
-  if (mastery >= 0.85) return 'worked-example';
-  if (mastery >= 0.7) return 'explainer';
-  return 'read';
-}
 
 export async function GET(_request: Request) {
   const supabase = await createSupabaseServerClient();
