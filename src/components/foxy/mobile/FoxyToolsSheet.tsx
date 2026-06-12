@@ -104,23 +104,31 @@ export function FoxyToolsSheet({
   // focus to it on close (SheetModal does not do this for us). Mirrors the
   // focus-trap added to FoxyStudySheet in Phase 1.
   const triggerRef = useRef<HTMLElement | null>(null);
+  // Cached focusable list, computed once per open (Phase 4 optimization — the
+  // Tab handler no longer re-queries the DOM on every keydown). Mirrors
+  // FoxyStudySheet.
+  const focusablesRef = useRef<HTMLElement[]>([]);
 
   useEffect(() => {
     if (!open) return;
     triggerRef.current = (document.activeElement as HTMLElement) ?? null;
+    const FOCUSABLE_SELECTOR =
+      'button:not([disabled]), [href], input, [tabindex]:not([tabindex="-1"])';
+    // Compute the focusable list once per open and cache it.
+    const refreshFocusables = () => {
+      focusablesRef.current = sheetRef.current
+        ? Array.from(sheetRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+        : [];
+    };
     const id = window.requestAnimationFrame(() => {
-      const first = sheetRef.current?.querySelector<HTMLElement>(
-        'button:not([disabled]), [href], input, [tabindex]:not([tabindex="-1"])',
-      );
-      first?.focus();
+      refreshFocusables();
+      focusablesRef.current[0]?.focus();
     });
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Tab') return;
-      const focusables = sheetRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input, [tabindex]:not([tabindex="-1"])',
-      );
-      if (!focusables || focusables.length === 0) return;
+      const focusables = focusablesRef.current;
+      if (focusables.length === 0) return;
       const first = focusables[0];
       const last = focusables[focusables.length - 1];
       if (e.shiftKey && document.activeElement === first) {
@@ -136,6 +144,7 @@ export function FoxyToolsSheet({
     return () => {
       window.cancelAnimationFrame(id);
       document.removeEventListener('keydown', onKeyDown);
+      focusablesRef.current = [];
       triggerRef.current?.focus?.();
     };
   }, [open]);
