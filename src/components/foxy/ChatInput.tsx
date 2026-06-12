@@ -365,7 +365,12 @@ export const ChatInput = memo(function ChatInput({
         </div>
       )}
 
-      <div className="px-3 py-2 flex items-end gap-2" style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 8px), 8px)' }}>
+      {/* `foxy-composer-row` is an inert CSS hook: no rule targets it outside
+          the `.foxy-os` scope, so the OFF path (and desktop) keep the inline
+          `paddingBottom` below byte-for-byte. Under `.foxy-os` a globals.css
+          rule overrides padding-bottom to ride above the soft keyboard via
+          `--kb-inset` (Phase 2 keyboard-aware composer). */}
+      <div className="foxy-composer-row px-3 py-2 flex items-end gap-2" style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 8px), 8px)' }}>
         <textarea
           ref={taRef}
           value={text}
