@@ -3487,9 +3487,25 @@ policy review — this entry pins behavior, it does not alter it:
 - `super-admin/projectors/replay` POST performs a destructive single-student
   projection rebuild; `support` may be under-leveled for a destructive op.
 
+## Foxy AI Tutor Mobile Redesign — Phase 0+1 (2026-06-12)
+
+Source: Foxy mobile-first redesign (compact top bar + Study sheet), flag-gated
+behind `ff_foxy_os_v1` (default OFF, `<lg` only). `/foxy` is the highest-traffic
+AI surface and sits near the P10 bundle ceiling, so the OFF-path-byte-identity
+property is load-bearing.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-120 | `foxy_os_flag_default_off_and_header_gating_identity` | `ff_foxy_os_v1` resolves DEFAULT-OFF (no cache/override → false; `FLAG_DEFAULTS` false); `devForcedOn` localStorage override (`alfanumrik_force_foxy_os`) is a strict no-op in production NODE_ENV; cache TTL honored under `alfanumrik_foxy_os_flag_v1`. Header-gating predicate selects the new mobile surface in EXACTLY 1 of 4 states (flag ON and viewport `<lg`); all other states render the legacy 5-row header verbatim (OFF-path byte-identity). | `src/__tests__/lib/foxy-os-flag-off-identity.test.ts`, `src/__tests__/lib/foxy-os-header-gate.test.ts` | E |
+
+### Invariants covered by this section
+
+- P10 (bundle budget — new components `dynamic()`-lazy-loaded; OFF path adds 0 bytes to the near-ceiling `/foxy` page)
+- OFF-path safety — the redesign cannot leak onto prod/desktop until an operator flips the DB flag
+
 ### Catalog total
 
-Pre-mutation-gate-pins: 86 entries. Adds REG-119 (high-blast-radius mutation-route
-gate pins — P9 + P13).
+Pre-foxy-os: 87 entries. Adds REG-120 (Foxy-OS flag DEFAULT-OFF + header gating
+identity — P10 + OFF-path safety).
 
-**Total: 87 entries.**
+**Total: 88 entries.**

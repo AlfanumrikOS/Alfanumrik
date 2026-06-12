@@ -825,6 +825,27 @@ export const PRINCIPAL_AI_FLAGS = {
 } as const;
 
 /**
+ * Foxy AI Tutor mobile redesign flags (2026-06-11).
+ *
+ *  ff_foxy_os_v1
+ *    Master switch for the "Foxy OS" mobile-first redesign of the /foxy AI
+ *    tutor workspace (compact top bar + Study bottom sheet on phones, <lg
+ *    only). PRESENTATION-LAYER only over the unchanged Foxy engines — it
+ *    re-presents the existing modes/subjects/chapters without touching the
+ *    structured-render envelope, /api/foxy, scope-lock, or daily limits
+ *    (P12/REG-55 untouched). When OFF, /foxy is BYTE-IDENTICAL to today on
+ *    every viewport; when ON, only the <lg surface changes (>=lg unchanged).
+ *    Default: false. Read client-side via use-foxy-os-flag.
+ *
+ *    Not yet seeded by any migration; while absent from `feature_flags` both
+ *    read paths resolve it to OFF (and the surface stays byte-identical-OFF).
+ */
+export const FOXY_OS_FLAGS = {
+  /** Foxy OS mobile redesign (compact top bar + Study sheet, <lg only). Default off. */
+  V1: 'ff_foxy_os_v1',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -871,6 +892,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [TEST_OS_FLAGS.V1]: false,
   [EDUCATION_INTELLIGENCE_FLAGS.V1]: false,
   [PRINCIPAL_AI_FLAGS.V1]: false,
+  [FOXY_OS_FLAGS.V1]: false,
 } as const;
 
 /**

@@ -41,14 +41,29 @@ import {
 import type { SubjectConfig, ChatMessage } from './_lib/foxy-types';
 import { useFoxyChat } from './_hooks/useFoxyChat';
 import { useStudentOsFlag } from '@/lib/use-student-os-flag';
+import { useFoxyOsFlag } from '@/lib/use-foxy-os-flag';
 import { useCosmicLightSurface } from '@/lib/use-cosmic-light-surface';
 import type { MasterySuggestion } from '@/components/foxy/MasteryAwareness';
+import { SIMPLIFIED_MODES } from '@/components/foxy/ConversationManager';
 
 // Alfa OS flagship redesign — the Foxy ContextPanel third pane (ff_student_os_v1).
 // Lazy-loaded so it is fetched ONLY when the flag resolves ON; when OFF the
 // chunk is never requested and the layout is byte-identical to today (P10).
 const ContextPanel = dynamic(
   () => import('@/components/foxy/ContextPanel'),
+  { ssr: false, loading: () => null },
+);
+
+// Foxy OS mobile redesign (ff_foxy_os_v1) — compact top bar + Study sheet,
+// rendered ONLY when the flag resolves ON *and* viewport is <lg. Lazy-loaded
+// so the OFF path (and every >=lg viewport) fetches zero new chunks (P10);
+// when OFF the legacy 5-row header is byte-identical to today.
+const FoxyTopBar = dynamic(
+  () => import('@/components/foxy/mobile/FoxyTopBar').then((m) => ({ default: m.FoxyTopBar })),
+  { ssr: false, loading: () => null },
+);
+const FoxyStudySheet = dynamic(
+  () => import('@/components/foxy/mobile/FoxyStudySheet').then((m) => ({ default: m.FoxyStudySheet })),
   { ssr: false, loading: () => null },
 );
 
@@ -314,6 +329,26 @@ export default function FoxyPage() {
   // Activate Cosmic-LIGHT + student palette only while the OS workspace is on.
   // Passing `false` makes this a no-op so the OFF path is unaffected.
   useCosmicLightSurface(osEnabled);
+
+  // Foxy OS mobile redesign (ff_foxy_os_v1) — when ON *and* viewport is <lg,
+  // the legacy 5-row header is replaced by FoxyTopBar + FoxyStudySheet.
+  // Defaults OFF → byte-identical to today on every viewport. The >=lg
+  // experience is never touched (the new surface is mobile-only).
+  const foxyOsEnabled = useFoxyOsFlag();
+  const [foxyOsMobile, setFoxyOsMobile] = useState(false);
+  const [studySheetOpen, setStudySheetOpen] = useState(false);
+  // Track the <lg breakpoint with matchMedia so the new surface is rendered
+  // ONLY on phones. The OFF path never enters this effect's render branch.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(max-width: 1023px)'); // < Tailwind lg (1024px)
+    const apply = () => setFoxyOsMobile(mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
+  // The new mobile surface renders only when the flag is ON and we are <lg.
+  const useFoxyOsHeader = foxyOsEnabled && foxyOsMobile;
 
   // Error reporting
   const [reportModal, setReportModal] = useState<{ msgId: number; studentMsg: string; foxyMsg: string } | null>(null);
@@ -1408,6 +1443,46 @@ export default function FoxyPage() {
     </>
   );
 
+  // ─── Foxy OS mobile header (ff_foxy_os_v1, <lg only) ──────────────────
+  // Replaces the 5-row legacy header with a single compact bar + Study sheet.
+  // Built entirely from existing state/handlers — no logic is duplicated.
+  // Rendered ONLY when `useFoxyOsHeader` (flag ON && <lg); the OFF path and
+  // every >=lg viewport keep `foxyHeaderContent` byte-identical.
+  const foxyOsChapterLabel = activeTopic
+    ? `${language === 'hi' ? 'अध्याय' : 'Ch'} ${activeTopic.chapter_number}: ${activeTopic.title?.length > 18 ? activeTopic.title.substring(0, 17) + '…' : activeTopic.title}`
+    : null;
+
+  const foxyOsSubjects = (studentSubs.length > 0 ? studentSubs : allowedSubjects.map((s) => s.code))
+    .map((code) => ALL_SUBJECTS_BY_CODE[code])
+    .filter(Boolean)
+    .map((sub) => ({ code: sub.code, name: sub.name, icon: sub.icon, color: sub.color, isLocked: sub.isLocked }));
+
+  const foxyOsTopics = topics.map((topic: any) => {
+    const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
+    const lvl = mastery?.mastery_level || 'not_started';
+    return {
+      id: topic.id,
+      title: topic.title,
+      chapter_number: topic.chapter_number,
+      masteryPercent: mastery?.mastery_percent ?? 0,
+      masteryColor: MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started,
+    };
+  });
+
+  const foxyOsHeaderContent = (
+    <FoxyTopBar
+      isHi={isHi}
+      foxyFace={FOXY_FACES[foxyState]}
+      thinking={foxyState === 'thinking'}
+      subjectName={cfg.name}
+      subjectColor={cfg.color}
+      subjectIcon={cfg.icon}
+      chapterLabel={foxyOsChapterLabel}
+      onBack={() => router.push('/dashboard')}
+      onOpenStudy={() => setStudySheetOpen(true)}
+    />
+  );
+
   // ─── Main content — chat + ChatInput + modals ─────────────────────────
   // The chat column needs `h-full flex flex-col min-h-0` so the scroll
   // area can flex within AppShell's content grid row (which is `1fr`
@@ -1788,6 +1863,72 @@ export default function FoxyPage() {
       )}
 
 
+      {/* ═══ FOXY OS — Study bottom sheet (ff_foxy_os_v1, <lg only) ═══ */}
+      {/* Rendered ONLY when the flag is ON and viewport is <lg, so the OFF
+          path / >=lg are byte-identical. All actions call existing handlers. */}
+      {useFoxyOsHeader && (
+        <FoxyStudySheet
+          open={studySheetOpen}
+          onClose={() => setStudySheetOpen(false)}
+          isHi={isHi}
+          subjects={foxyOsSubjects}
+          activeSubjectCode={activeSubject}
+          onSelectSubject={(code) => { switchSubject(code); setStudySheetOpen(false); }}
+          onLockedSubject={(code) => {
+            const sub = ALL_SUBJECTS_BY_CODE[code];
+            if (sub) setLockedTapped(sub);
+            setStudySheetOpen(false);
+          }}
+          topics={foxyOsTopics}
+          activeTopicId={activeTopic?.id ?? null}
+          onSelectTopic={(topicId) => {
+            const topic = topics.find((t: any) => t.id === topicId);
+            if (topic) {
+              setActiveTopic(topic);
+              setSelectedChapters([topic.id]);
+              setMessages([]);
+              setChatSessionId(null);
+              setCollapsedAbove(null);
+            }
+            setStudySheetOpen(false);
+          }}
+          modes={SIMPLIFIED_MODES.map((m) => ({ id: m.id, label: m.label, labelHi: m.labelHi, icon: m.icon }))}
+          sessionMode={sessionMode}
+          resolveBackendMode={(id) => MODE_MAP[id] || id}
+          subjectColor={cfg.color}
+          onSelectMode={(id) => { switchMode(id); setStudySheetOpen(false); }}
+          onStartQuiz={() => {
+            // Preserve P4 quiz routing — route to /quiz with the active topic.
+            if (activeTopic?.id) {
+              router.push(`/quiz?topic=${activeTopic.id}&source=foxy`);
+            } else {
+              sendMessage(
+                isHi
+                  ? 'क्विज़ शुरू करने से पहले एक अध्याय चुनें।'
+                  : 'Pick a chapter first, then I can quiz you on it.',
+              );
+            }
+            setStudySheetOpen(false);
+          }}
+          lesson={
+            sessionMode === 'lesson'
+              ? {
+                  stepLabels: LESSON_STEPS.map((step) => {
+                    const stepLabels: Record<string, string> = language === 'hi'
+                      ? { hook: 'शुरुआत', visualization: 'दृश्य', guided_examples: 'उदाहरण', active_recall: 'याद', application: 'प्रयोग', spaced_revision: 'रिवीज़न' }
+                      : { hook: 'Hook', visualization: 'Visual', guided_examples: 'Examples', active_recall: 'Recall', application: 'Apply', spaced_revision: 'Revise' };
+                    return stepLabels[step] || step;
+                  }),
+                  currentIndex: Math.max(0, LESSON_STEPS.indexOf(lessonStep)),
+                  canAdvance: !loading && messages.length > 0,
+                  isFinalStep: lessonStep === 'spaced_revision',
+                  onNext: () => { advanceLessonStep(); },
+                }
+              : null
+          }
+        />
+      )}
+
       {/* ═══ UPGRADE MODAL (replaces old limit modal) ═══ */}
       <UpgradeModal
         isOpen={showLimitModal}
@@ -1808,9 +1949,9 @@ export default function FoxyPage() {
 
   return (
     <AppShell
-      className="foxy-shell"
+      className={`foxy-shell${useFoxyOsHeader ? ' foxy-os' : ''}`}
       variant="mobile"
-      header={foxyHeaderContent}
+      header={useFoxyOsHeader ? foxyOsHeaderContent : foxyHeaderContent}
       
       // One-handed mode toggle stays off on Foxy — the chat composer needs
       // the full viewport vertical reach, and pulling content down would

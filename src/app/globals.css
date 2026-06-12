@@ -1303,6 +1303,102 @@ body:has(.foxy-shell) {
   display: none;
 }
 
+/* ─────────────────────────────────────────────────────────────────────
+   Foxy OS (ff_foxy_os_v1) — mobile-only (<lg) compact bar + Study sheet.
+   Additive + scoped under `.foxy-os` so nothing renders unless the flag is
+   ON and the page adds that class. Does NOT touch the `.foxy-shell`
+   viewport-lock rules above (Phase 2 handles keyboard-inset). Cosmic light
+   tokens only; CSS-only motion; respects reduced-motion at the end.
+   ───────────────────────────────────────────────────────────────────── */
+
+/* Compact ~56px sticky top bar. The bar itself lives in AppShell.header
+   (already position:sticky); these rules just size it + its controls. */
+.foxy-os .foxy-os-topbar {
+  min-height: 56px;
+  height: 56px;
+  padding-top: env(safe-area-inset-top, 0px);
+  box-sizing: content-box;
+}
+
+/* >=44x44 touch targets for the back/overflow controls. */
+.foxy-os .foxy-os-tap {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px 14px;
+}
+
+/* Foxy avatar in the bar. */
+.foxy-os .foxy-os-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* Subject · chapter chip keeps a >=44px tap height. */
+.foxy-os .foxy-os-chip {
+  min-height: 44px;
+}
+
+/* Study sheet — section labels. */
+.foxy-os-study-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  margin-bottom: 8px;
+}
+
+/* >=44px tap targets for subject chips + mode tiles in the sheet. */
+.foxy-os-study .foxy-os-tap-chip {
+  min-height: 44px;
+  padding: 8px 12px;
+}
+.foxy-os-study .foxy-os-mode {
+  min-height: 56px;
+  padding: 8px 4px;
+}
+.foxy-os-study .foxy-os-chapter {
+  min-height: 48px;
+  padding: 8px 10px;
+}
+
+/* Mastery ring — conic-gradient donut with a numeric center. */
+.foxy-os-study .foxy-os-ring {
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.foxy-os-study .foxy-os-ring-inner {
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  background: var(--surface-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foxy-os .foxy-os-avatar {
+    animation: none !important;
+  }
+  .foxy-os .foxy-os-tap,
+  .foxy-os .foxy-os-chip,
+  .foxy-os-study .foxy-os-tap-chip,
+  .foxy-os-study .foxy-os-mode,
+  .foxy-os-study .foxy-os-chapter {
+    transition: none !important;
+  }
+}
+
 .app-shell-v2 > .app-shell-header[data-compact="true"] {
   height: var(--shell-header-h-compact);
 }
