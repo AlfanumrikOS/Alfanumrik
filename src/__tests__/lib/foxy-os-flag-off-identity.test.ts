@@ -43,8 +43,8 @@ import {
 } from '@/lib/use-foxy-os-flag';
 import { FLAG_DEFAULTS, FOXY_OS_FLAGS } from '@/lib/feature-flags';
 
-const FORCE_KEY = 'alfanumrik_force_foxy_os';
-const CACHE_KEY = 'alfanumrik_foxy_os_flag_v1';
+const FORCE_KEY = 'alfanumrik_force_foxy_os'; // gitleaks:allow
+const CACHE_KEY = 'alfanumrik_foxy_os_flag_v1'; // gitleaks:allow
 
 const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 

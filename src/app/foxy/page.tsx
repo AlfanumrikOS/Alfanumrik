@@ -42,6 +42,7 @@ import type { SubjectConfig, ChatMessage } from './_lib/foxy-types';
 import { useFoxyChat } from './_hooks/useFoxyChat';
 import { useStudentOsFlag } from '@/lib/use-student-os-flag';
 import { useFoxyOsFlag } from '@/lib/use-foxy-os-flag';
+import { useKeyboardInset } from '@/lib/foxy/use-keyboard-inset';
 import { useCosmicLightSurface } from '@/lib/use-cosmic-light-surface';
 import type { MasterySuggestion } from '@/components/foxy/MasteryAwareness';
 import { SIMPLIFIED_MODES } from '@/components/foxy/ConversationManager';
@@ -349,6 +350,14 @@ export default function FoxyPage() {
   }, []);
   // The new mobile surface renders only when the flag is ON and we are <lg.
   const useFoxyOsHeader = foxyOsEnabled && foxyOsMobile;
+
+  // Phase 2 — keyboard-aware composer. Publishes the soft-keyboard inset to the
+  // `--kb-inset` CSS var so the `.foxy-os` composer rides above the keyboard
+  // and the message thread shrinks. Gated by `useFoxyOsHeader` so the hook is
+  // inert (keeps `--kb-inset` at 0px) on the OFF path and on every >=lg
+  // viewport — those render exactly as today. `keyboardOpen` re-fires the
+  // existing auto-scroll-to-bottom effect so the latest message stays visible.
+  const keyboardOpen = useKeyboardInset({ enabled: useFoxyOsHeader });
 
   // Error reporting
   const [reportModal, setReportModal] = useState<{ msgId: number; studentMsg: string; foxyMsg: string } | null>(null);
@@ -683,7 +692,18 @@ export default function FoxyPage() {
     const lastMessage = messages[len - 1];
     const lastIsStudent = lastMessage?.role === 'student';
 
-    const shouldScroll = lastIsStudent || isNearBottomRef.current || (prevLen === 0 && len > 0);
+    // Phase 2: when the soft keyboard opens (keyboardOpen flips true) the
+    // viewport shrinks, so re-pin to the bottom if the user was already near it
+    // — keeps the latest message above the composer. `len === prevLen` here
+    // (the effect re-ran from the keyboardOpen dep, not a new message), so we
+    // reuse the same scroll mechanism without duplicating it.
+    const keyboardJustOpened = keyboardOpen && len === prevLen;
+
+    const shouldScroll =
+      lastIsStudent ||
+      isNearBottomRef.current ||
+      (prevLen === 0 && len > 0) ||
+      keyboardJustOpened;
 
     if (shouldScroll) {
       requestAnimationFrame(() => {
@@ -693,7 +713,7 @@ export default function FoxyPage() {
         });
       });
     }
-  }, [messages, loading]);
+  }, [messages, loading, keyboardOpen]);
 
   // Send message — thin wrapper over the streaming-aware sendMessage from
   // useFoxyChat. Owns the page-side cross-cutting concerns (foxy face,
@@ -1612,8 +1632,11 @@ export default function FoxyPage() {
         </div>
         {!sidebarOpen && <button onClick={() => setSidebarOpen(true)} className="hidden xl:flex shrink-0 w-8 items-center justify-center border-r cursor-pointer transition-all hover:bg-[var(--surface-2)]" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }} title={language === 'hi' ? 'अध्याय दिखाओ' : 'Show chapters'}><span className="text-[10px]" style={{ color: 'var(--text-3)' }}>»</span></button>}
 
-        {/* Chat column */}
-        <div className="flex-1 flex flex-col min-w-0">
+        {/* Chat column — `foxy-chat-column` is an inert CSS hook (no rule
+            targets it outside `.foxy-os`); under `.foxy-os` it gets
+            `min-height:0` so the scroll area shrinks when the keyboard opens
+            and the composer stays visible (Phase 2). */}
+        <div className="foxy-chat-column flex-1 flex flex-col min-w-0">
           {/* `pb-32` removed — AppShell.app-shell-content already reserves
               --shell-nav-h + safe-area-inset bottom space for the fixed
               BottomNav. Adding pb-32 here would overpad the scroll area

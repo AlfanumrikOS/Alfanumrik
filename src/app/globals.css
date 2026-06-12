@@ -1386,6 +1386,37 @@ body:has(.foxy-shell) {
   font-weight: 700;
 }
 
+/* ─── Phase 2 — keyboard-aware composer (ff_foxy_os_v1, <lg only) ─────────
+   `--kb-inset` is published by useKeyboardInset() on :root ONLY while the
+   flag-ON mobile path is mounted (the hook keeps it at 0px otherwise). All
+   rules below are scoped under `.foxy-os`, so the OFF path / desktop never
+   match them and keep ChatInput's inline `paddingBottom` byte-for-byte.
+
+   `--kb-inset` defaults to 0px (var fallback) so even before the hook seeds
+   the property the composer sits exactly where it does today. When the
+   keyboard opens, --kb-inset grows and the composer lifts above it. */
+.foxy-os {
+  --kb-inset: 0px;
+}
+
+/* Composer rides above the soft keyboard. When the keyboard is closed
+   (--kb-inset: 0px) this collapses to the existing safe-area padding, so it is
+   visually identical to ChatInput's inline default. !important is required to
+   win over that inline `paddingBottom`. */
+.foxy-os .foxy-composer-row {
+  padding-bottom: max(env(safe-area-inset-bottom, 8px), var(--kb-inset, 0px)) !important;
+}
+
+/* Let the chat column shrink so the composer stays visible and the thread
+   scrolls (rather than the keyboard overlaying the composer). The viewport is
+   height-locked by `.foxy-shell` (100dvh); `min-height:0` lets the flex
+   children actually shrink. `.foxy-chat-column` is an inert hook class on the
+   chat column — no rule targets it outside `.foxy-os`, so the OFF path keeps
+   today's layout. */
+.foxy-os .foxy-chat-column {
+  min-height: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .foxy-os .foxy-os-avatar {
     animation: none !important;
