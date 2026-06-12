@@ -230,7 +230,7 @@ describe('POST /api/school-admin/rbac — institution.manage gate (tenant role e
         durationHours: 1,
       }),
     );
-    expect(res.status).toBe(403);
+    expect(res?.status).toBe(403);
     // EXACT permission code.
     expect((authorizeSchoolAdmin.mock.calls[0] as unknown[])[1]).toBe('institution.manage');
     expect(fetchCallCount()).toBe(0);
@@ -241,7 +241,7 @@ describe('POST /api/school-admin/rbac — institution.manage gate (tenant role e
     const { POST } = await import('@/app/api/school-admin/rbac/route');
     // Unknown action → 400 AFTER the gate + school-context check.
     const res = await POST(req('/api/school-admin/rbac', 'POST', { action: '__none__' }));
-    expect(res.status).toBe(400);
+    expect(res?.status).toBe(400);
     expect((authorizeSchoolAdmin.mock.calls[0] as unknown[])[1]).toBe('institution.manage');
   });
 });
@@ -327,7 +327,7 @@ describe('POST /api/school-admin/data-export — export-data gate (bulk student 
     const res = await POST(
       req('/api/school-admin/data-export', 'POST', { type: 'students' }),
     );
-    expect(res.status).toBe(403);
+    expect(res?.status).toBe(403);
     // The route authorizes against the EXACT code the resolver returned.
     expect((authorizeSchoolAdmin.mock.calls[0] as unknown[])[1]).toBe('school.export_data');
     // No export generator ran → supabase never queried.
@@ -347,7 +347,7 @@ describe('POST /api/school-admin/data-export — export-data gate (bulk student 
     // Past the gate → export generator ran → supabase queried `students`.
     expect(getSupabaseAdminFn).toHaveBeenCalled();
     expect(supabaseFrom).toHaveBeenCalledWith('students');
-    expect(res.status).not.toBe(403);
+    expect(res?.status).not.toBe(403);
   });
 });
 
