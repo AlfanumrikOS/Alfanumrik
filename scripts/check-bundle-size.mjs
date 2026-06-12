@@ -3,7 +3,7 @@
  * Bundle size checker — Turbopack-compatible.
  *
  * Enforces P10 budget from .claude/CLAUDE.md:
- *   - Shared JS gzip:   270 kB (interim, see CAP_SHARED_KB note below)
+ *   - Shared JS gzip:   280 kB (interim, see CAP_SHARED_KB note below)
  *   - Per-page gzip:    260 kB
  *   - Middleware gzip:  120 kB
  *
@@ -56,19 +56,32 @@ import { gzipSync } from 'node:zlib';
 import { join, relative, sep } from 'node:path';
 
 // Caps (P10 in .claude/CLAUDE.md)
-// CAP_SHARED_KB is INTERIM at 275 (2026-05-08). The P10 baseline is 160 kB.
-// The current honest measurement is ~270 kB because the root layout pulls
-// `@supabase/*` (~55 kB) on every page. The previous CI cap of 175 kB was
-// based on an under-counting `measureShared()` (only 6 of ~15 truly-shared
-// chunks). This file is now honest.
+// CAP_SHARED_KB is INTERIM at 280 (2026-06-12). The P10 baseline is 160 kB.
+// The current honest measurement is ~270+ kB because the root layout pulls
+// `@supabase/*` (~57 kB) on every page via AuthContext. The previous CI cap of
+// 175 kB was based on an under-counting `measureShared()` (only 6 of ~15
+// truly-shared chunks). This file is now honest.
 //
 // Bumped 270 → 275 on 2026-05-08 to absorb the routine drift from minor
 // dependency bumps (Tier A+B Dependabot batch — Sentry / OpenTelemetry /
 // Supabase / Next-React groups) which pushed the measured shared JS to
-// 270.3 kB. 5 kB headroom is consistent with the upward trajectory and
-// avoids CI-thrash on every dep-bump PR until the Supabase lazy-load TODO
-// (#1 above) lands and lets us reset to the 160 kB P10 baseline.
-const CAP_SHARED_KB = 275;
+// 270.3 kB.
+//
+// Bumped 275 → 280 on 2026-06-12 (CEO-approved). The overage is 1.8 kB of
+// FRAMEWORK BASELINE drift — React + react-dom (~71 kB) + `@supabase/*`
+// (~57 kB, pulled into first-load by src/lib/AuthContext.tsx in the root
+// layout) + the Next runtime. Confirmed NOT application bloat (verified twice:
+// the load-readiness audit + the bundle-composition analysis). It passes
+// locally (274.1 < 275) but CI measures 276.8 kB due to a ~2.7 kB OS/gzip
+// environment delta; 280 gives honest headroom for that variance without
+// gutting the guardrail. PostHog is ALREADY lazy-loaded (PR #534) — that lever
+// is spent. The DURABLE fix — splitting `@supabase/*` out of first paint via an
+// AuthContext client-only boundary (~57 kB) — is a substantial P15-touching
+// refactor tracked as a separate follow-up (TODO #1 above); restore toward the
+// 160 kB P10 baseline once it lands. NOTE: this is CAP_SHARED_KB (authoritative
+// first-load total, layout-chunk-inclusive); it is distinct from the 160 kB
+// single-largest-shared-chunk metric, which is unchanged and passes.
+const CAP_SHARED_KB = 280;
 const CAP_PAGE_KB = 260;
 const CAP_MIDDLEWARE_KB = 120;
 // A chunk counts as "shared first-paint" if it appears in at least this many
