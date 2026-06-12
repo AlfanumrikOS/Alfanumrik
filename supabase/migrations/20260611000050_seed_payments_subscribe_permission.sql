@@ -1,4 +1,4 @@
--- Migration: 20260611000000_seed_payments_subscribe_permission.sql
+-- Migration: 20260611000050_seed_payments_subscribe_permission.sql
 -- Purpose: CEO-approved (Phase 1 FOUNDATION) seed of ONE RBAC permission code
 --          ('payments.subscribe') that the payment-initiation / verification API
 --          routes enforce via authorizeRequest() but which has NO row in

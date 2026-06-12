@@ -225,19 +225,47 @@ WHERE flag_name IN ('leaderboard_global', 'wave1_leaderboard');
 | P3 | Non-critical feature broken | Next business day |
 
 ### P0 Rollback Procedure
+
+> Alfanumrik deploys across TWO INDEPENDENT planes with SEPARATE rollback mechanisms:
+> - **Web plane (Vercel)** — the Next.js app. Reverted by `vercel rollback`.
+> - **Edge-function plane (Supabase)** — deployed independently. `vercel rollback` does NOT
+>   touch it. Triage first, then roll back the correct plane.
+
+**Triage note:** If the incident traces to an AI/edge path (`foxy-tutor`, `ncert-solver`,
+`quiz-generator`, `cme-engine`, `daily-cron`, or any webhook-adjacent function),
+`vercel rollback` will NOT fix it — roll back the edge-function plane (step 3).
+
 ```bash
 # 1. Identify failing deployment
 vercel list --scope alfanumrik
 
-# 2. Rollback to previous Vercel deployment
+# 2. WEB PLANE — roll back to previous Vercel deployment (promote previous build)
 vercel rollback --scope alfanumrik
+#    Why this is safe: the forward migration chain is additive-only (verified: no executable
+#    DROP COLUMN/TABLE/TRUNCATE in supabase/migrations/*.sql, excluding _legacy/). The DB does
+#    NOT roll back with the web build, so the previous build stays schema-compatible after a
+#    migration lands. A migration needing a destructive change requires CEO approval per
+#    CLAUDE.md precisely because it would break this rollback path.
 
-# 3. If DB migration caused issue — migrations are forward-only on Supabase
-#    Use feature flag to disable affected feature:
+# 3. EDGE-FUNCTION PLANE — only if the incident traces to an edge/AI path.
+#    Supabase Edge Functions have NO built-in version pinning, so roll back by redeploying
+#    the previous known-good version from git:
+git checkout <last-good-sha> -- supabase/functions/<name>
+supabase functions deploy <name>
+git checkout HEAD -- supabase/functions/<name>   # restore working tree
+
+# 4. If a DB migration caused the issue — migrations are forward-only on Supabase.
+#    Do NOT hand-write a destructive rollback. Disable the affected feature via flag:
 #    UPDATE feature_flags SET is_enabled=false WHERE flag_name='<affected_flag>';
 
-# 4. Notify students via WhatsApp (whatsapp-notify edge function)
-# 5. Post incident summary within 24h
+# 5. VERIFY before declaring resolved — health endpoint must be green:
+curl -s https://<prod-host>/api/v1/health
+#    Expect: {"ok":true,"status":"healthy"} with every checks/dependencies entry
+#    (database, auth, edge_functions, redis, razorpay) reporting ok. Do NOT close the
+#    incident until this passes.
+
+# 6. Notify students via WhatsApp (whatsapp-notify edge function)
+# 7. Post incident summary within 24h
 ```
 
 ---

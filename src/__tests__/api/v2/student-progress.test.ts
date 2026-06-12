@@ -57,6 +57,11 @@ beforeEach(async () => {
   vi.clearAllMocks();
   _conceptCalls = 0;
   setAuthorized();
+  // The route now memoizes the aggregate read in a 30s per-student server cache
+  // (Phase 5 perf). The store is module-level and survives between cases, so
+  // clear the route's cache prefix to keep each case isolated.
+  const { cacheInvalidatePrefix } = await import('@/lib/cache');
+  cacheInvalidatePrefix('v2:student:progress:');
   fromResults['performance_scores'] = {
     data: [{ subject: 'math', overall_score: 72, level_name: 'Rising', updated_at: '2026-06-01' }],
   };

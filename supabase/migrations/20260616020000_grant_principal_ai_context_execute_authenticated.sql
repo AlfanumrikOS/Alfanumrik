@@ -1,0 +1,81 @@
+-- Migration: 20260616020000_grant_principal_ai_context_execute_authenticated.sql
+-- Purpose: Restore the AUTHENTICATED EXECUTE grant on
+--          public.get_principal_ai_context(uuid) that the Principal AI Assistant
+--          route depends on. Without it the feature is dead (silent abstain).
+--
+-- ─── Background (why this exists) ─────────────────────────────────────────────
+--   The parent migration 20260616010000_principal_ai_assistant_v1.sql creates
+--   the SECURITY DEFINER function public.get_principal_ai_context(uuid) and at
+--   its lines 313-316 does:
+--
+--       REVOKE EXECUTE ... FROM PUBLIC;
+--       REVOKE EXECUTE ... FROM anon;
+--       REVOKE EXECUTE ... FROM authenticated;
+--       GRANT  EXECUTE ... TO service_role;
+--
+--   Its header (lines 31-34, 309-311) asserts "EXECUTE = service_role ONLY" on
+--   the premise that the Next.js route would invoke the RPC through the
+--   service-role admin client.
+--
+--   That premise is wrong for THIS function. The route
+--   (src/app/api/school-admin/ai-assistant/route.ts:434) deliberately invokes
+--   the RPC through a USER-CONTEXT client (anon key + the caller's JWT, Postgres
+--   role = `authenticated`) — NOT the service-role client. It must, because the
+--   function self-gates IN ITS BODY (20260616010000 lines 195-202):
+--
+--       IF NOT EXISTS (
+--         SELECT 1 FROM public.school_admins sa
+--         WHERE sa.auth_user_id = auth.uid()       -- the REAL caller
+--           AND sa.school_id    = p_school_id
+--           AND sa.is_active
+--       ) THEN RAISE EXCEPTION ... ERRCODE '42501'; END IF;
+--
+--   `auth.uid()` only resolves to the principal when the call is made by an
+--   authenticated client carrying that principal's JWT. Under a service-role
+--   call, auth.uid() is NULL and the guard can never match the principal — so
+--   the route correctly uses the authenticated client instead.
+--
+--   RESULT of the REVOKE: every real call hits 42501 "permission denied for
+--   function get_principal_ai_context" at the GRANT layer — BEFORE the in-body
+--   guard ever runs. The route collapses that error to a null context
+--   (route.ts:437-444) and the assistant silently abstains. Principal AI is
+--   non-functional the moment its feature flag is enabled.
+--
+-- ─── Why this is SAFE (does NOT widen data access) ───────────────────────────
+--   Granting `authenticated` EXECUTE does NOT broaden what any caller can read.
+--   The function is SECURITY DEFINER and self-enforces tenant isolation on
+--   `school_admins.auth_user_id = auth.uid() AND school_id = p_school_id AND
+--   is_active`. A non-admin authenticated user (or an admin of a DIFFERENT
+--   school) still gets 42501 from the in-body guard. The grant merely makes that
+--   existing guard REACHABLE. Today the guard is never reached because the call
+--   is rejected one layer earlier; restoring the grant moves the rejection from
+--   "everyone, always" to "only callers who fail the legitimate tenant check".
+--   The function remains read-only (composes read-model RPCs + one scoped SELECT,
+--   no dynamic SQL, AGGREGATES ONLY — no per-student PII).
+--
+-- ─── Supersedes the "service_role ONLY" intent in 20260616010000 ─────────────
+--   This migration intentionally SUPERSEDES the "EXECUTE = service_role ONLY"
+--   statement in 20260616010000's header/grant block (lines 31-34, 309-316).
+--   That header is INCONSISTENT with the route it was written to serve: the
+--   route uses an authenticated user-context client, not the service-role
+--   client, precisely so that auth.uid() is populated for the in-body guard.
+--   service_role retains EXECUTE (granted by the parent migration); this only
+--   ADDS authenticated back. anon and PUBLIC remain REVOKEd (they were revoked
+--   by the parent and we do not re-grant them).
+--
+-- ─── Idempotency ─────────────────────────────────────────────────────────────
+--   GRANT is naturally idempotent — re-running it is a no-op (the privilege is
+--   simply re-asserted). Safe to apply against any environment, including those
+--   where the parent migration already ran with the service_role-only grant.
+--
+-- ─── Function signature (verified against 20260616010000) ────────────────────
+--   public.get_principal_ai_context(p_school_id uuid)  -- single uuid arg.
+--   This is the ONLY overload; the route calls it with { p_school_id }. The
+--   GRANT below targets that exact signature, so there is no ambiguity.
+--
+-- DOWN (manual, ops-only — reversible note; never run automatically):
+--   To revert to the original service_role-only posture (which re-breaks the
+--   feature), run:
+--     REVOKE EXECUTE ON FUNCTION public.get_principal_ai_context(uuid) FROM authenticated;
+
+GRANT EXECUTE ON FUNCTION public.get_principal_ai_context(uuid) TO authenticated;

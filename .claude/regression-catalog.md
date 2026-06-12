@@ -3265,3 +3265,231 @@ inline).
 Pre-Learning-OS: 79 entries. Adds REG-112..REG-114.
 
 **Total: 82 entries.**
+
+## Per-student aggregate cache — no cross-user leak / no auth bypass (Phase 5 perf) — REG-115
+
+Source: Phase 5 perf finding #6 — six read-only per-student GET routes wrap their
+expensive Supabase read in `cacheFetchAsync` (`src/lib/cache.ts`, `CACHE_TTL.USER`
+= 30s) keyed by the AUTHENTICATED `student_id`/`userId`:
+`src/app/api/v2/student/progress/route.ts`, `src/app/api/dashboard/reviews-due/route.ts`,
+`src/app/api/rhythm/today/route.ts`, `src/app/api/dive/state/route.ts`,
+`src/app/api/learner/weak-topics/route.ts`, `src/app/api/learner/scheduled/route.ts`.
+
+The cache store is a module-level in-memory `Map` that survives across requests.
+The load-bearing safety property (P13): a server-side cache that is NOT keyed by
+the authenticated id, or that is read BEFORE auth, would serve one student's
+mastery/XP/review-state to another. Four invariants are pinned:
+
+  - **No cross-user leak.** Two different authenticated students hitting the same
+    route inside the same 30s window each get THEIR OWN payload — the key embeds
+    their id, so student B never receives A's cached body. A `JSON.stringify`
+    negative match proves A's distinctive values never appear in B's response.
+  - **No auth bypass.** The `cacheFetchAsync` read is reached only AFTER
+    `authorizeRequest` (or `supabase.auth.getUser`) resolves the id; a denied
+    request short-circuits at auth and returns the auth error — it can never reach
+    the cache and is asserted to carry none of a prior authorized student's data.
+  - **TTL coalesces.** A repeat call for the SAME student within the window is
+    served from cache and does NOT re-hit the Supabase read (read spy stays at 1).
+  - **Errors not pinned.** A transient DB error / no-profile branch throws inside
+    (or short-circuits before) the fetcher so nothing is cached; a subsequent
+    success returns fresh data.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-115 | `per_student_aggregate_cache_no_cross_user_leak` | For the heaviest route (`/api/v2/student/progress`) AND one more (`/api/dashboard/reviews-due`): (a) student A primes the cache, then student B — same 30s window — gets their OWN distinct DB rows, with a `JSON.stringify` negative match proving A's values never leak into B (key embeds the authenticated id — P13); (b) a denied (`authorized:false`) request returns the auth error (`403`/code), NOT a prior student's cached body — the cache read is keyed off the id derived AFTER `authorizeRequest`; (c) a repeat same-student call within the TTL is served from cache (read spy count stays 1 — the 30s window collapses to a single DB fetch); (d) a transient DB error / no-profile branch is NOT cached — a later success returns fresh data. | `src/__tests__/api/dashboard-cache-isolation.test.ts` | E |
+
+### Invariants covered by this section
+
+- P13 (data privacy) — per-student data is never shared across students; the
+  server cache is keyed by the authenticated id and read only after auth, so a
+  denied caller cannot retrieve another student's cached payload. Extends
+  REG-46/REG-49/REG-68.
+
+### Catalog total
+
+Pre-Phase-5-cache: 82 entries. Adds REG-115 (per-student aggregate cache —
+no cross-user leak / no auth bypass — P13).
+
+**Total: 83 entries.**
+
+## Internal-admin secret gate — all routes enforce requireAdminSecret before service-role work (Phase 4 route-coverage) — REG-116
+
+Source: Phase 4 route-coverage — the 13 route handlers under
+`src/app/api/internal/admin/**` each gate on `requireAdminSecret(request)` (from
+`@/lib/admin-auth`) as the FIRST line of every handler. That gate validates the
+`x-admin-secret` request header in constant time against
+`process.env.SUPER_ADMIN_SECRET` and returns a 401 `NextResponse` (or 503 when
+the secret env var is unset) BEFORE any service-role DB work runs.
+
+The load-bearing safety property (P9): the internal-admin API surface is
+service-role-backed (bypasses RLS), so the `x-admin-secret` header is the ONLY
+boundary standing between an unauthenticated caller and full admin mutation
+power. A handler that reached its `getSupabaseAdmin()` seam before checking the
+secret — or that returned 200 on a missing/wrong secret — would be a complete
+admin takeover. The test drives the REAL gate (no mock of `requireAdminSecret`)
+by toggling the header + env var, and mocks ONLY the service-role data seam so a
+removed gate would flip `dbAccess.touched` on the deny path. Pinned across 11
+representative routes spanning the distinct route shapes (mutation routes
+prioritized over reads).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-116 | `internal_admin_secret_gate_enforced` | For 11 representative `src/app/api/internal/admin/**` handlers (bulk-action POST, users GET+PATCH, users/[id] PATCH, content POST+DELETE, feature-flags POST, schools POST, support PATCH, stats GET, command-center GET): (a) NO `x-admin-secret` header → 401 short-circuit AND the service-role DB seam is never touched; (b) WRONG `x-admin-secret` → 401 AND the DB seam is never touched; (c) `SUPER_ADMIN_SECRET` unset entirely → 503 fail-closed AND the DB seam is never touched; (d) VALID header → the handler proceeds PAST the gate (does NOT return 401/503; reaches the DB seam — proving the deny assertions aren't vacuous). The gate (`requireAdminSecret`) is the REAL code, not mocked. | `src/__tests__/api/internal-admin-secret-gate.test.ts` | E |
+
+### Invariants covered by this section
+
+- P9 (RBAC / admin-secret enforcement) — every service-role-backed internal-admin
+  route validates the `x-admin-secret` header before any DB work; a missing/wrong
+  secret short-circuits to 401 and an unset `SUPER_ADMIN_SECRET` fails closed to
+  503. Extends SG-3..SG-5.
+
+### Catalog total
+
+Pre-Phase-4-route-coverage: 83 entries. Adds REG-116 (internal-admin secret gate —
+all routes enforce `requireAdminSecret` before service-role work — P9).
+
+**Total: 84 entries.**
+
+## Parent↔child link boundary + auth-callback funnel resilience (Phase 4 route-coverage) — REG-117
+
+Source: Phase 4 route-coverage — the OAuth / parent-link cluster. Two launch-critical
+boundaries get a behavioral GET/POST-handler pin (prior coverage was structural
+source-text only or absent):
+
+1. **Parent↔child boundary (P8/P13).** `POST /api/parent/approve-link` lets a
+   SIGNED-IN STUDENT approve/reject a PENDING parent-link request addressed to them.
+   The ownership check — `link.studentId !== resolvedStudent.id → 404` — is the only
+   thing stopping a student from approving (and thereby granting a stranger guardian
+   access to) a DIFFERENT student's link by passing that link's id. A removed/relaxed
+   check would let an attacker self-approve a guardian link onto another child.
+
+2. **Auth-callback funnel resilience (P15 rule 3 + no-500).** `/auth/callback` (PKCE
+   `code`) and `/auth/confirm` (`token_hash` + `type`) are the email-verification
+   funnel. They MUST handle BOTH flows and MUST NEVER throw/500 — every branch
+   (success, exchange/verify failure, missing param, thrown getUser on the signup
+   branch) returns a 3xx redirect. Existing tests were structural (`export GET`
+   present) + helper-unit; these are the first to INVOKE the handlers.
+
+Other routes in the cluster (`/api/v2/parent/{children,glance,encourage}`,
+`/api/parent/report`, `/api/parent/children/[id]/export`, `/api/parent/link-code/redeem`)
+already have route-level boundary tests (cross-guardian isolation → 403, link-code+OTP
+gate). No BLOCKER found in the audit: every parent data-access path scopes to the
+JWT-resolved guardian/student id, never to an arbitrary id from the request; link
+establishment requires a valid link code + emailed OTP.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-117 | `parent_link_boundary_and_auth_callback_resilience` | **(a) Cross-student link boundary (P8/P13):** `POST /api/parent/approve-link` — 401 with no session (no DB touched); 400 on non-UUID linkId / invalid action / malformed JSON (no write); 403 when the session has no student profile (findLinkById never called); when a pending link belongs to ANOTHER student → 404 with a GENERIC message (does not confirm the link exists for someone else) AND the `guardian_student_links` status UPDATE is NEVER issued (zero writes across the boundary); 404 when the link is null/not-pending; happy path — a student acting on THEIR OWN pending link flips status to approved/rejected via exactly one admin write keyed by that link id. The real handler runs; only the cookie session, students lookup, and `findLinkById` are mocked. **(b) Auth-callback funnel resilience (P15 rule 3 + no-500):** `/auth/callback` exchanges a valid PKCE `code` (calls `exchangeCodeForSession`) and redirects 3xx; a failed exchange redirects to `/login?error=…` (not 500); a MISSING code redirects to `/login` without calling exchange; a thrown `getUser` on the `type=signup` branch still redirects 3xx (try/catch funnel guard). `/auth/confirm` verifies `token_hash`+`type` (calls `verifyOtp`) and redirects 3xx; a failed verify redirects to `/login?error=verification_failed`; a missing `type` (guard false) redirects to `/login` without calling verifyOtp; a confirmed teacher signup routes to the `/teacher` role destination. Every branch asserts 300≤status<400 — the funnel never 500s. | `src/__tests__/api/parent/approve-link/route.test.ts`, `src/__tests__/auth-callback-resilience.test.ts` | E |
+
+### Invariants covered by this section
+
+- P8/P13 (parent↔child boundary) — a student cannot approve a link addressed to a
+  different student; the cross-student status write is proven to never fire.
+- P15 (onboarding integrity, rule 3 + no-funnel-break) — both PKCE and token_hash
+  email-verification flows are handled and neither handler can 500 the funnel;
+  promotes the previously tested-only P15 callback coverage to a behavioral pin.
+
+### Catalog total
+
+Pre-Phase-4-oauth-cluster: 84 entries. Adds REG-117 (parent↔child link boundary +
+auth-callback funnel resilience — P8/P13/P15).
+
+**Total: 85 entries.**
+
+## daily-cron static-source contract canary — fail-closed auth gate + step/helper integrity + per-step error isolation + flag-gated revenue-adjacent steps — REG-118
+
+Source: daily-cron contract-coverage. The `daily-cron` Edge Function is the single
+nightly orchestrator behind several revenue-adjacent and operational-integrity
+flows — the school-contract lifecycle (`ff_school_contracts_v1`), the monthly-synthesis
+trigger (`ff_pedagogy_v2_monthly_synthesis`), and the principal-AI transcript purge.
+A silent regression here (a deleted step, a flipped auth check, a swallowed 5xx that
+masks partial failure) does not surface in any UI and would only be caught in
+production. A static-source canary pins the function's load-bearing invariants so
+that deleting or renaming any of them turns the build red.
+
+The canary asserts four classes of invariant:
+
+1. **Fail-closed CRON_SECRET auth gate.** The handler performs a constant-time
+   `x-cron-secret` compare BEFORE any work begins; a missing/wrong secret short-circuits
+   (no step runs). Removing or moving the gate after the first step turns it red.
+
+2. **Step-name → helper integrity (14 critical pairs).** Each load-bearing step name
+   is wired to its implementing helper; deleting or renaming either half breaks the
+   pin. This is the guard against a step silently vanishing from the nightly run.
+
+3. **`Promise.allSettled` per-step error isolation.** Steps run under `allSettled`, so
+   a single step's rejection is isolated (partial failure → HTTP 207, never a 5xx
+   collapse that aborts every other step). A switch to `Promise.all` or a thrown-not-caught
+   path turns it red.
+
+4. **Flag-gating of revenue-adjacent steps.** The monthly-synthesis step is gated on
+   `ff_pedagogy_v2_monthly_synthesis` and the school-contract step on
+   `ff_school_contracts_v1`; the canary pins that both gates are present so neither
+   step can run unflagged.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-118 | `daily_cron_contract_canary` | Static-source canary (22 Deno tests) pinning daily-cron's load-bearing invariants: fail-closed CRON_SECRET auth gate (constant-time `x-cron-secret` compare) before any work; 14 critical step-name→helper pairs present (deleting/renaming any turns it red); `Promise.allSettled` per-step error isolation (partial failure → 207, never a 5xx collapse); and flag-gating of the monthly-synthesis (`ff_pedagogy_v2_monthly_synthesis`) and school-contract (`ff_school_contracts_v1`) steps. Runs in the CI `edge-function-tests` Deno job. | `supabase/functions/daily-cron/__tests__/contract.test.ts` | E |
+
+### Invariants covered by this section
+
+- P11-adjacent — the school-contract lifecycle and monthly-synthesis trigger are
+  revenue-adjacent flows; the canary proves they stay behind their feature flags and
+  cannot run unflagged or be silently dropped from the nightly run.
+- Operational-integrity — fail-closed auth on the cron entrypoint, step/helper
+  integrity, and per-step `allSettled` isolation (partial failure → 207, never a 5xx
+  collapse) keep the nightly orchestrator's load-bearing steps from regressing silently.
+
+### Catalog total
+
+Pre-daily-cron-contract-canary: 85 entries. Adds REG-118 (daily-cron static-source
+contract canary — P11-adjacent + operational-integrity).
+
+**Total: 86 entries.**
+
+## High-blast-radius mutation-route gate pins (Phase 4 final cluster) — REG-119
+
+Source: Phase 4 coverage close-out. Seven of the highest-blast-radius mutation
+routes (privilege elevation, tenant role elevation, abuse-blocklist mutation,
+OAuth client-secret issuance, bulk student-PII export, destructive event replay,
+dead-letter replay) each ALREADY ship a working auth gate — the coverage scan
+confirmed no security hole. The gap was a COVERAGE gap: nothing pinned the gate,
+so a future refactor could silently downgrade the tier, drop the level/permission
+argument, or move the gate after DB I/O and not turn a single test red.
+
+This entry pins each gate by mocking the auth seam and asserting two things per
+route: (a) DENY — the gate's unauthorized response is returned AND the first
+DB/service seam is never touched (short-circuit before any I/O), with an
+assertion on the EXACT level/permission string the source passes (a downgrade
+to a lower tier flips the test); (b) ALLOW — an authorized gate lets the route
+proceed PAST the gate to the DB/service seam, proving the deny assertion is
+non-vacuous.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-119 | `mutation_gate_pins` | Gate pins for 7 high-blast-radius mutation routes. Each pins the EXACT gate + level/permission per SOURCE and that DENY short-circuits before any DB/service I/O: (1) `POST /api/super-admin/rbac` → `authorizeAdmin('super_admin')` (privilege elevation); (2) `POST /api/school-admin/rbac` → `authorizeSchoolAdmin('institution.manage')` (tenant role elevation); (3) `POST` + `DELETE /api/super-admin/alfabot/denylist` → `authorizeAdmin('super_admin')` (abuse-blocklist mutation); (4) `POST /api/super-admin/oauth-apps` → `authorizeAdmin('support')` (issues OAuth client secrets — see under-leveled-tier observation); (5) `POST /api/school-admin/data-export` → `authorizeSchoolAdmin(<resolved code>)` where the route forwards whatever `schoolAdminPermissionCode({off:'school.export_data', on:'institution.export_reports'})` returns, with NO export/DB work on denial (bulk student PII, P13); (6) `POST /api/super-admin/projectors/replay` → `authorizeAdmin('support')` (destructive event replay — see observation); (7) `POST /api/super-admin/subscribers/[name]/dead-letters/[event_id]/retry` → `authorizeAdmin('support')` (dead-letter replay re-triggers side effects). 15 unit tests. | `src/__tests__/api/super-admin/mutation-gate-pins.test.ts` | U |
+
+### Invariants covered by this section
+
+- P9 RBAC enforcement — pins the exact level/permission tier on seven mutation
+  surfaces so a silent tier downgrade or dropped gate argument turns the build red.
+- P13 Data privacy — the `school-admin/data-export` pin asserts a denied caller
+  triggers zero export/DB work (no bulk student-PII read across the boundary).
+
+### Under-leveled-tier observations (NOT changed here — RBAC policy items for CEO/architect)
+
+These two routes are PINNED AT THEIR CURRENT `support` tier (the pin would flip
+red if the tier later changes). They are flagged as possible under-leveling for a
+policy review — this entry pins behavior, it does not alter it:
+
+- `super-admin/oauth-apps` POST issues/approves OAuth apps (credential issuance);
+  `support` may be under-leveled for a credential-issuing surface.
+- `super-admin/projectors/replay` POST performs a destructive single-student
+  projection rebuild; `support` may be under-leveled for a destructive op.
+
+### Catalog total
+
+Pre-mutation-gate-pins: 86 entries. Adds REG-119 (high-blast-radius mutation-route
+gate pins — P9 + P13).
+
+**Total: 87 entries.**

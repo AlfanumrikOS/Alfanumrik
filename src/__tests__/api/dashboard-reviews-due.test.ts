@@ -91,6 +91,11 @@ let GET: any;
 beforeEach(async () => {
   vi.clearAllMocks();
   _queryResult = { data: [], error: null };
+  // The route now memoizes the read in a 30s per-student server cache (Phase 5
+  // perf). The in-memory store is module-level and survives between test cases,
+  // so clear the route's cache prefix to keep each case isolated.
+  const { cacheInvalidatePrefix } = await import('@/lib/cache');
+  cacheInvalidatePrefix('dashboard:reviews-due:');
   const mod = await import('@/app/api/dashboard/reviews-due/route');
   GET = mod.GET;
 });

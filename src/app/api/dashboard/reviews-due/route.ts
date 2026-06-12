@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { authorizeRequest } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { cacheFetchAsync, CACHE_TTL } from '@/lib/cache';
 
 /**
  * GET /api/dashboard/reviews-due — Spaced-repetition prompt counts for the
@@ -41,60 +42,65 @@ export async function GET(request: Request) {
     // Today's date in YYYY-MM-DD (concept_mastery.next_review_date is DATE).
     const today = new Date().toISOString().slice(0, 10);
 
-    // Current academic year window. Indian CBSE academic year runs
-    // April → March. We compute the start-of-year date and use it to bound
-    // the query so older, archived mastery rows aren't surfaced.
-    const now = new Date();
-    const currentMonth = now.getUTCMonth(); // 0 = Jan, 3 = Apr
-    const currentYear = now.getUTCFullYear();
-    const academicYearStart = currentMonth >= 3
-      ? `${currentYear}-04-01`
-      : `${currentYear - 1}-04-01`;
+    // Phase 5 perf: this read-only count fires on dashboard mount (alongside the
+    // other aggregate calls) and on every SWR refocus. Collapse repeat reads
+    // within a 30s window with a SERVER-SIDE cache keyed by student_id + `today`
+    // (the date bounds the query, so it belongs in the key). The key includes
+    // student_id so students NEVER collide (P13: per-student data must never be
+    // shared). This is a server cache, NOT a CDN/`s-maxage` header — Vercel's
+    // edge does not vary by auth, so a public cache would leak one student's
+    // review state to another. The existing `private` browser cache is retained.
+    const result = await cacheFetchAsync(
+      `dashboard:reviews-due:${studentId}:${today}`,
+      CACHE_TTL.USER,
+      async () => {
+        // Current academic year window. Indian CBSE academic year runs
+        // April → March. We compute the start-of-year date and use it to bound
+        // the query so older, archived mastery rows aren't surfaced.
+        const now = new Date();
+        const currentMonth = now.getUTCMonth(); // 0 = Jan, 3 = Apr
+        const currentYear = now.getUTCFullYear();
+        const academicYearStart = currentMonth >= 3
+          ? `${currentYear}-04-01`
+          : `${currentYear - 1}-04-01`;
 
-    // Pull due rows. We deliberately select only the columns we need
-    // (no topic IDs returned to the client) and order by next_review_date
-    // ascending so we can read the oldest from the head of the result.
-    const { data, error } = await supabaseAdmin
-      .from('concept_mastery')
-      .select('next_review_date, mastery_probability')
-      .eq('student_id', studentId)
-      .lte('next_review_date', today)
-      .lt('mastery_probability', 0.95)
-      .gte('next_review_date', academicYearStart)
-      .order('next_review_date', { ascending: true });
+        // Pull due rows. We deliberately select only the columns we need
+        // (no topic IDs returned to the client) and order by next_review_date
+        // ascending so we can read the oldest from the head of the result.
+        const { data, error } = await supabaseAdmin
+          .from('concept_mastery')
+          .select('next_review_date, mastery_probability')
+          .eq('student_id', studentId)
+          .lte('next_review_date', today)
+          .lt('mastery_probability', 0.95)
+          .gte('next_review_date', academicYearStart)
+          .order('next_review_date', { ascending: true });
 
-    if (error) {
-      logger.error('reviews_due_query_failed', {
-        error: new Error(error.message),
-        route: '/api/dashboard/reviews-due',
-      });
-      return NextResponse.json(
-        { success: false, error: 'Failed to load reviews' },
-        { status: 500 }
-      );
-    }
+        if (error) {
+          // Throw so the failure is NOT cached — the catch below maps to a 500.
+          throw new Error(error.message);
+        }
 
-    const rows = data ?? [];
-    const dueCount = rows.length;
-    const oldestDueDate = dueCount > 0 ? (rows[0].next_review_date as string | null) : null;
-    // 30s per review item, floor 2 min.
-    const estimatedMinutes = Math.max(2, Math.ceil(dueCount * 0.5));
+        const rows = data ?? [];
+        const dueCount = rows.length;
+        const oldestDueDate = dueCount > 0 ? (rows[0].next_review_date as string | null) : null;
+        // 30s per review item, floor 2 min.
+        const estimatedMinutes = Math.max(2, Math.ceil(dueCount * 0.5));
+        return { dueCount, oldestDueDate, estimatedMinutes };
+      },
+    );
 
     // P13: log only counts. Never log topic IDs, titles, or mastery values.
     logger.info('reviews_due_served', {
       route: '/api/dashboard/reviews-due',
-      dueCount,
-      estimatedMinutes,
+      dueCount: result.dueCount,
+      estimatedMinutes: result.estimatedMinutes,
     });
 
     return NextResponse.json(
       {
         success: true,
-        data: {
-          dueCount,
-          oldestDueDate,
-          estimatedMinutes,
-        },
+        data: result,
       },
       {
         headers: {

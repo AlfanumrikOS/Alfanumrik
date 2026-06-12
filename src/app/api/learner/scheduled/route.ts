@@ -49,6 +49,7 @@ import {
 } from '@/lib/state/learner-loop/scheduled-actions';
 import type { LearnerAction } from '@/lib/state/learner-loop/types';
 import { logger } from '@/lib/logger';
+import { cacheFetchAsync, CACHE_TTL } from '@/lib/cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -133,19 +134,41 @@ export async function GET(request: Request) {
   const now = new Date();
   const dayBucket = bucketForHorizon(horizon, now);
 
-  // Read slots ordered by rank ASC. Overrides surface ahead of scheduler
-  // rows when multiple sources exist at the same rank — though the
-  // UNIQUE constraint prevents that today. Order here is a future-proof.
-  const { data: rowsRaw, error: readErr } = await supabase
-    .from('scheduled_actions')
-    .select('rank, action_kind, action_payload, source, generated_at, expires_at, completed_at')
-    .eq('student_id', studentId)
-    .eq('horizon', horizon)
-    .eq('day_bucket', dayBucket)
-    .order('rank', { ascending: true });
-  if (readErr) {
+  // Phase 5 perf: this read-only projection fires on dashboard mount. Collapse
+  // repeat reads within a 30s window with a SERVER-SIDE cache keyed by
+  // studentId + horizon + dayBucket (both params change the response, so both
+  // belong in the key). The key includes studentId so students NEVER collide
+  // (P13: per-student data must never be shared). This is a server cache, NOT a
+  // CDN/`s-maxage` header — Vercel's edge does not vary by auth, so a public
+  // cache would leak one student's scheduled slots to another. The empty→404
+  // path stays OUTSIDE the cache so a brief "no slots yet" right after the
+  // /api/learner/next write-through is never pinned.
+  let rowsRaw: ScheduledRow[] | null;
+  try {
+    rowsRaw = await cacheFetchAsync(
+      `learner:scheduled:${studentId}:${horizon}:${dayBucket}`,
+      CACHE_TTL.USER,
+      async () => {
+        // Read slots ordered by rank ASC. Overrides surface ahead of scheduler
+        // rows when multiple sources exist at the same rank — though the
+        // UNIQUE constraint prevents that today. Order here is a future-proof.
+        const { data, error } = await supabase
+          .from('scheduled_actions')
+          .select('rank, action_kind, action_payload, source, generated_at, expires_at, completed_at')
+          .eq('student_id', studentId)
+          .eq('horizon', horizon)
+          .eq('day_bucket', dayBucket)
+          .order('rank', { ascending: true });
+        if (error) throw new Error(error.message); // do NOT cache failures
+        const fetched = (data ?? []) as ScheduledRow[];
+        // Don't cache the empty result — a slot may be written moments later by
+        // the /api/learner/next write-through; return null to skip caching.
+        return fetched.length === 0 ? null : fetched;
+      },
+    );
+  } catch (readErr) {
     logger.warn('learner/scheduled: scheduled_actions read failed', {
-      userId, studentId, error: readErr.message,
+      userId, studentId, error: (readErr as Error).message,
     });
     return NextResponse.json({ error: 'read_failed' }, { status: 500 });
   }
