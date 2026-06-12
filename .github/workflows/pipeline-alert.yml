@@ -1,0 +1,217 @@
+# Pipeline Alert — make a red main-branch pipeline impossible to miss.
+#
+# Why this exists (incident, 2026-06-12):
+#   "Deploy Production — Alfanumrik" was red for 26 days (broken
+#   SUPABASE_ACCESS_TOKEN) and nobody was alerted. Downstream jobs silently
+#   skipped, so prod DB migrations, Edge Function deploys, the post-deploy
+#   health check, AND auto-rollback were all dead — while the synthetic
+#   monitor stayed green because the previously-deployed prod build kept
+#   serving traffic. A failed pipeline is invisible unless something watches
+#   the pipeline itself. This workflow is that watcher.
+#
+# How it works:
+#   workflow_run fires whenever one of the watched workflows completes.
+#   On conclusion == 'failure' for branch main it alerts through TWO channels:
+#
+#   1. GitHub issue (GUARANTEED — zero secrets needed):
+#      Opens an issue labeled `pipeline-failure`, titled per workflow.
+#      Deduped: if an open issue for the same workflow already exists,
+#      a comment is added instead of spamming a new issue. The issue
+#      auto-closes on the next green main run of that workflow, so an
+#      open `pipeline-failure` issue ALWAYS means "currently broken".
+#
+#   2. Slack (best-effort): posts to the same channel the synthetic
+#      monitor uses. No-op if the secret is unset.
+#
+# Required repo secrets: NONE. Optional:
+#   PIPELINE_ALERT_SLACK_WEBHOOK     Dedicated channel for pipeline alerts.
+#   SYNTHETIC_MONITOR_SLACK_WEBHOOK  Fallback — reuses the synthetic-monitor
+#                                    alert channel if no dedicated one is set.
+#
+# Notes:
+#   - workflow_run only triggers from this file's version on the DEFAULT
+#     branch, so this protection is live only after merge to main.
+#   - `branches: [main]` filters on the head branch of the TRIGGERING run,
+#     so CI runs on PR branches never alert. Cancelled runs never alert
+#     (jobs match conclusion 'failure' / 'success' explicitly).
+#   - Watched workflow names must match their `name:` field EXACTLY
+#     (em-dashes included). If a workflow is renamed, update the list here.
+
+name: Pipeline Alert — red main pipelines
+
+on:
+  workflow_run:
+    workflows:
+      - "Deploy Production — Alfanumrik"
+      - "Sync Migrations to Staging"
+      - "CI — Alfanumrik"
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read    # read the failed run's job list
+  issues: write    # open/update/close the pipeline-failure issue
+  contents: read
+
+# Serialize per watched workflow so a rapid fail→fail or fail→pass sequence
+# can't race the issue create/comment/close logic.
+concurrency:
+  group: pipeline-alert-${{ github.event.workflow_run.workflow_id }}
+  cancel-in-progress: false
+
+jobs:
+  # ── Red: alert loudly ──
+  alert:
+    name: Alert on red main pipeline
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Collect failure context
+        id: ctx
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WF_NAME: ${{ github.event.workflow_run.name }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Which jobs actually failed (vs silently skipped downstream).
+          FAILED_JOBS=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join(", ")' \
+            2>/dev/null || true)
+          if [ -z "$FAILED_JOBS" ]; then
+            FAILED_JOBS="(no job-level failure recorded — open the run logs)"
+          fi
+
+          # One-line "what this blocks" hint per workflow.
+          case "$WF_NAME" in
+            "Deploy Production — Alfanumrik")
+              HINT="Prod deploy pipeline is DEAD: DB migrations, Edge Function deploys, post-deploy health check, and auto-rollback all stop running until this is green. Prod keeps serving the LAST successful deploy — the synthetic monitor will NOT catch this." ;;
+            "Sync Migrations to Staging")
+              HINT="Staging schema is drifting from main — PR integration tests now validate against a stale schema and will fail or, worse, pass against the wrong schema." ;;
+            "CI — Alfanumrik")
+              HINT="Main is red: the merge quality gate is broken and Deploy Production will not get a green build to ship." ;;
+            *)
+              HINT="Main-branch pipeline failure — investigate before the next deploy." ;;
+          esac
+
+          {
+            echo "failed_jobs=$FAILED_JOBS"
+            echo "hint=$HINT"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open or update pipeline-failure issue (guaranteed channel)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          WF_NAME: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          FAILED_JOBS: ${{ steps.ctx.outputs.failed_jobs }}
+          HINT: ${{ steps.ctx.outputs.hint }}
+        run: |
+          # Ensure the label exists (idempotent; errors if it already does).
+          gh label create pipeline-failure \
+            --repo "$REPO" \
+            --color B60205 \
+            --description "A main-branch CI/CD workflow is red — fix before relying on deploys" \
+            2>/dev/null || true
+
+          TITLE="[pipeline-failure] ${WF_NAME} is red on main"
+
+          BODY_FILE=$(mktemp)
+          cat > "$BODY_FILE" <<EOF
+          ## Red main-branch pipeline
+
+          | | |
+          |---|---|
+          | **Workflow** | ${WF_NAME} |
+          | **Run** | ${RUN_URL} (#${RUN_NUMBER}) |
+          | **Failing job(s)** | ${FAILED_JOBS} |
+          | **Commit** | \`${HEAD_SHA}\` |
+          | **Detected** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |
+
+          **What this blocks:** ${HINT}
+
+          ---
+          _Opened automatically by \`pipeline-alert.yml\`. This issue auto-closes
+          when the next main-branch run of this workflow succeeds. Repeated
+          failures add comments here instead of opening new issues._
+          EOF
+
+          # Dedupe: one open issue per workflow. Comment if it already exists.
+          EXISTING=$(gh issue list --repo "$REPO" \
+            --label pipeline-failure --state open \
+            --json number,title \
+            | jq -r --arg t "$TITLE" '.[] | select(.title == $t) | .number' \
+            | head -1)
+
+          if [ -n "$EXISTING" ]; then
+            echo "Open issue #$EXISTING exists for this workflow — adding comment."
+            gh issue comment "$EXISTING" --repo "$REPO" --body-file "$BODY_FILE"
+          else
+            echo "Opening new pipeline-failure issue."
+            gh issue create --repo "$REPO" \
+              --title "$TITLE" \
+              --label pipeline-failure \
+              --body-file "$BODY_FILE"
+          fi
+
+      - name: Slack alert (best-effort, reuses existing channel)
+        if: env.SLACK_WEBHOOK != ''
+        env:
+          SLACK_WEBHOOK: ${{ secrets.PIPELINE_ALERT_SLACK_WEBHOOK || secrets.SYNTHETIC_MONITOR_SLACK_WEBHOOK }}
+          WF_NAME: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          FAILED_JOBS: ${{ steps.ctx.outputs.failed_jobs }}
+          HINT: ${{ steps.ctx.outputs.hint }}
+        run: |
+          # Same minimal no-jq POST pattern as synthetic-monitor.yml. Slack is
+          # secondary — the GitHub issue above is the guaranteed channel, so a
+          # webhook failure must not fail this workflow (|| true).
+          SHORT_SHA=$(printf '%s' "$HEAD_SHA" | cut -c1-7)
+          TEXT=":rotating_light: *${WF_NAME}* is RED on main — <${RUN_URL}|run #${RUN_NUMBER}> at \`${SHORT_SHA}\`. Failing: ${FAILED_JOBS}. ${HINT}"
+          # JSON-escape via python3 (preinstalled on ubuntu runners).
+          PAYLOAD=$(printf '%s' "$TEXT" | python3 -c 'import json,sys; print(json.dumps({"text": sys.stdin.read()}))')
+          curl -fsS -X POST -H 'Content-Type: application/json' \
+            --data "$PAYLOAD" \
+            "$SLACK_WEBHOOK" || true
+
+  # ── Green: self-heal the signal ──
+  # Close the open pipeline-failure issue for this workflow once a main run
+  # succeeds, so an open issue ALWAYS means "currently broken" — no stale
+  # red flags eroding trust in the alert.
+  resolve:
+    name: Auto-close on green main pipeline
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Close matching pipeline-failure issue if open
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          WF_NAME: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+        run: |
+          TITLE="[pipeline-failure] ${WF_NAME} is red on main"
+          EXISTING=$(gh issue list --repo "$REPO" \
+            --label pipeline-failure --state open \
+            --json number,title \
+            | jq -r --arg t "$TITLE" '.[] | select(.title == $t) | .number' \
+            | head -1)
+          if [ -n "$EXISTING" ]; then
+            gh issue close "$EXISTING" --repo "$REPO" \
+              --comment "Resolved: ${WF_NAME} is green again on main — ${RUN_URL} (#${RUN_NUMBER}). Auto-closed by pipeline-alert.yml."
+            echo "Closed issue #$EXISTING."
+          else
+            echo "No open pipeline-failure issue for this workflow — nothing to close."
+          fi
