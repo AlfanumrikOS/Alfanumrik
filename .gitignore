@@ -35,3 +35,8 @@ eval/rag/reports/
 build-out.txt
 build-tmp.txt
 Alfanumrik/
+
+# Claude Code per-agent worktrees — created on the fly under .claude/worktrees/.
+# Previously committed as orphan gitlinks (mode 160000) with no .gitmodules
+# entry, which broke `git submodule` cleanup in CI (exit 128). Never track.
+.claude/worktrees/
