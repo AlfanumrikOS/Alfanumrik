@@ -8,7 +8,8 @@
  *
  * Auth: `class.manage` permission AND `canAccessStudent(authUserId, studentId)`
  * — the student must be in one of the teacher's active classes (verified
- * via the `is_teacher_of_student` RPC inside the RBAC helper).
+ * via the teachers → class_teachers ⋈ class_students joins inside the RBAC
+ * helper).
  *
  * Body: { note?: string, customGoal?: string }
  */

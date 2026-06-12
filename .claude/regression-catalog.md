@@ -3494,9 +3494,17 @@ behind `ff_foxy_os_v1` (default OFF, `<lg` only). `/foxy` is the highest-traffic
 AI surface and sits near the P10 bundle ceiling, so the OFF-path-byte-identity
 property is load-bearing.
 
+> **ID note (2026-06-12):** this entry was originally drafted as REG-120 but
+> collided with the RBAC/Pulse FOUNDATION spec
+> (`docs/superpowers/specs/2026-06-12-rbac-conformance-and-student-pulse-design.md`
+> §7/§12), which reserved **REG-120 for RBAC matrix conformance**. The RBAC
+> reservation predates this entry and is anchored in the design doc, so this
+> Foxy-OS entry was renumbered to **REG-123**. No test code referenced the REG
+> number (test files are named `foxy_os_*`), so the renumber is catalog-only.
+
 | # | Test name | Asserts | Location | Status |
 |---|---|---|---|---|
-| REG-120 | `foxy_os_flag_default_off_and_header_gating_identity` | `ff_foxy_os_v1` resolves DEFAULT-OFF (no cache/override → false; `FLAG_DEFAULTS` false); `devForcedOn` localStorage override (`alfanumrik_force_foxy_os`) is a strict no-op in production NODE_ENV; cache TTL honored under `alfanumrik_foxy_os_flag_v1`. Header-gating predicate selects the new mobile surface in EXACTLY 1 of 4 states (flag ON and viewport `<lg`); all other states render the legacy 5-row header verbatim (OFF-path byte-identity). | `src/__tests__/lib/foxy-os-flag-off-identity.test.ts`, `src/__tests__/lib/foxy-os-header-gate.test.ts` | E |
+| REG-123 | `foxy_os_flag_default_off_and_header_gating_identity` | `ff_foxy_os_v1` resolves DEFAULT-OFF (no cache/override → false; `FLAG_DEFAULTS` false); `devForcedOn` localStorage override (`alfanumrik_force_foxy_os`) is a strict no-op in production NODE_ENV; cache TTL honored under `alfanumrik_foxy_os_flag_v1`. Header-gating predicate selects the new mobile surface in EXACTLY 1 of 4 states (flag ON and viewport `<lg`); all other states render the legacy 5-row header verbatim (OFF-path byte-identity). | `src/__tests__/lib/foxy-os-flag-off-identity.test.ts`, `src/__tests__/lib/foxy-os-header-gate.test.ts` | E |
 
 ### Invariants covered by this section
 
@@ -3505,7 +3513,127 @@ property is load-bearing.
 
 ### Catalog total
 
-Pre-foxy-os: 87 entries. Adds REG-120 (Foxy-OS flag DEFAULT-OFF + header gating
-identity — P10 + OFF-path safety).
+Pre-foxy-os: 87 entries. Adds REG-123 (Foxy-OS flag DEFAULT-OFF + header gating
+identity — P10 + OFF-path safety). Running total after Foxy-OS: 88 entries.
 
-**Total: 88 entries.**
+## RBAC matrix conformance + Student Pulse cross-role boundary (2026-06-12) — REG-120..REG-122
+
+Source: the RBAC-Conformance + Student-Pulse work
+(`docs/superpowers/specs/2026-06-12-rbac-conformance-and-student-pulse-design.md`).
+Two deliverables land here: (1) the additive/idempotent RBAC matrix conformance
+guard + its offline test (FOUNDATION step), and (2) the Student Pulse feature —
+four role-scoped lenses (`/api/pulse/{me,student/[id],class/[classId],school}`)
+that surface derived learner signals. Pulse reads existing learner state and
+MUST enforce the same ownership boundaries the RBAC matrix encodes; the highest-
+severity failure mode (spec §10) is a Pulse lens leaking ANOTHER student's
+derived signals (P8/P13). These three entries pin that boundary, the matrix
+floor it rests on, and the signal-derivation math.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-120 | `rbac_matrix_conformance` | The full RBAC matrix is reproducible from a single ADDITIVE, IDEMPOTENT root migration (`20260612123200_rbac_matrix_conformance.sql`). The offline test statically pins the migration covers every one of the 11 roles, every matrix permission code, every role→permission grant, the `institution_admin → teacher` inheritance grant, and all 15 `resource_access_rules` across the 4 ownership patterns (own/linked/assigned/any) — resolved BY name/code never UUID. It also pins the additive guards: `roles` ON CONFLICT (name), `permissions` ON CONFLICT (code), `role_permissions` ON CONFLICT (role_id, permission_id), `resource_access_rules` WHERE NOT EXISTS, and NO DROP/DELETE/TRUNCATE/UPDATE (the conformance artifact is the matrix FLOOR, never a reset; prod's ~84-code superset is left untouched). 254 assertions, deterministic, no DB. Closes the reproducibility gap on fresh DBs (CI live-DB, new staging, DR) where `_legacy/` is skipped. | `src/__tests__/lib/rbac/matrix-conformance.test.ts` | U |
+| REG-121 | `pulse_cross_role_boundary` | Student Pulse cross-role data boundary (P8/P13). `canAccessStudent(callerId, studentId)` is THE single data boundary on `/api/pulse/student/[id]` (it encodes own/linked/assigned/institution/admin EXACTLY per the matrix), backed by a defense-in-depth viewing-permission gate. The DENY paths are pinned explicitly: a parent NOT linked to the student → 403 (canAccessStudent false); a teacher NOT assigned → 403; a caller WITH a relationship but WITHOUT any viewing permission → 403; unauthenticated → 401; invalid (non-UUID) id → 400. `/api/pulse/class/[classId]`: a teacher who does not own the class (class_teachers) → 403; a caller who is not an active teacher → 403. `/api/pulse/me`: missing `progress.view_own` → blocked verbatim. EVERY deny is audit-logged via `logAudit(..., status:'denied')` with the precise reason (`no_relationship` / `no_view_permission` / `not_class_owner` / `not_a_teacher`), and — the P13 invariant — NO student payload is returned on ANY deny path (the pulse builder is never invoked; the body carries only `{success:false,error}`, no status/timeline/masterySummary/signals/data). Allow-path controls prove the deny assertions are non-vacuous (and that the single-student builder keys off the TARGET's auth_user_id, the self builder off the CALLER's). E2E mirror confirms the live route returns 401/403 + no payload unauthenticated, and that a 403 surfaces as a SAFE denied/empty UI (no crash, no leaked data). | `src/__tests__/api/pulse/pulse-authorization.test.ts`, `e2e/pulse-rls.spec.ts` | U + E |
+| REG-122 | `pulse_signal_derivation` | Student Pulse signal-derivation correctness (P-learner-state). The three pure signals in `signals.ts` are anchored to the EXISTING platform conventions so they cannot silently drift: inactivity verdicts (`ok`/`at_risk`/`broken`/`never`/`unknown`) computed against the UTC-calendar-day streak-reset window (matching daily-cron `resetMissedStreaks`), with freeze-softening and exact day-count boundaries; mastery-cliff (`none`/`flagged`/`unknown`) off the canonical `mastery_changed` payload shape (`{fromMastery, toMastery}`) including the cross-below-0.4 path; at-risk concentration bands (`none`/`low`/`medium`/`high`) on the 0.4 platform at-risk mastery line with exact band boundaries, worst-first ordering, and the `worstBand` rollup. 47 tests, deterministic, no DB. | `src/__tests__/lib/pulse/signals.test.ts` | U |
+
+> **REG-121 Round 2 annotation (2026-06-12, post CEO-approved remediation):**
+> the `canAccessStudent()` boundary REG-121 pins was REPAIRED, not relaxed, by
+> remediation F1 (architect): the teacher branch now enforces the matrix's
+> `assigned` ownership via an inline `teachers → class_teachers ⋈ class_students`
+> join (the previously-called `is_teacher_of_student` RPC does not exist in the
+> prod baseline, so the old teacher allow-path could never return true), and the
+> institution_admin branch now reads `school_admins(auth_user_id, school_id,
+> is_active)` (the previously-read `school_memberships` table also does not
+> exist). Fail-closed behavior is preserved on every error/absent-row path.
+> Matrix-conformance fix pinned by 7 new/updated unit tests in
+> `src/__tests__/lib/rbac.test.ts` (`canAccessStudent` describe block: teacher
+> assigned via the join / not-assigned / not-an-active-teacher /
+> class_teachers-query-error fail-closed; institution_admin matching-school /
+> different-school / no-school). Round 2 re-run from the canonical-cased root:
+> 358/358 unit tests across the 4-file verification set + 4/4 `e2e/pulse-rls.spec.ts`.
+>
+> **REG-121 UI addendum (Round 2):** the multi-school 400 from
+> `/api/pulse/school` (caller administers >1 school, no `?school_id`) is now
+> pinned at the component layer — `src/__tests__/components/pulse/SchoolPulsePanel.test.tsx`
+> asserts the no-retry "select a school" state (`role=status`, NO retry button —
+> retrying without a school id re-issues the identical 400 forever, the ops-review
+> "dead retry loop"), that the non-400 error branch KEEPS its Retry button wired
+> to `onRetry` (non-vacuity control), the Hindi copy (P7), and the
+> stale-data fall-through (`keepPreviousData`: 400 + cached school ⇒ live summary,
+> not the picker prompt).
+
+### Invariants covered by this section
+
+- P8 RLS boundary — Pulse never bypasses RLS from client code; every read goes
+  through a server route that uses `supabase-admin` ONLY after `authorizeRequest()`
+  + `canAccessStudent()` (REG-121). REG-120 guarantees the matrix those checks
+  resolve against is fully present on any fresh DB.
+- P9 RBAC enforcement — every Pulse route calls `authorizeRequest(...)` with its
+  lens permission; REG-120 pins the full role→permission matrix; REG-121 pins the
+  per-route gate + the relationship-without-permission denial.
+- P13 Data privacy — REG-121's load-bearing assertion: NO derived student signal
+  leaks on any deny path (no payload built, no payload returned), and every denial
+  is audited with non-PII metadata only.
+- P-learner-state (signal correctness) — REG-122 anchors the signal thresholds to
+  the UTC streak-reset window, the 0.4 at-risk line, and the canonical
+  `mastery_changed` payload so the derivation cannot drift from the cognitive
+  engine / daily-cron conventions.
+
+### RCA (E2E happy-path render assertion)
+
+During E2E authoring the `/progress` "My Pulse" header assertion failed once.
+ROOT CAUSE: in the offline/CI environment there is no real Supabase backend, so
+the mocked `**/auth/v1/token**` route is never exercised on a cold page load and
+AuthContext stays in `isLoading`, rendering `<LoadingFoxy />` on `/progress`
+(NOT a redirect, NOT a crash). This is the SAME documented environment limitation
+as `e2e/auth-onboarding-p15.spec.ts`, not a product defect. FIX (test-only): the
+header-visible assertion is now gated on the page having left the loading state
+(`role=status[name=Loading]` not visible); the hard, environment-independent
+guarantees (no crash, non-empty body, no leaked payload, and the live-route
+401/403-with-no-payload wire check) always run. No production code was changed.
+
+### Catalog total
+
+Pre-Pulse cluster: 88 entries (87 prior + REG-123 Foxy-OS). Adds REG-120 (RBAC
+matrix conformance — P8/P9 floor), REG-121 (Pulse cross-role boundary — P8/P13),
+REG-122 (Pulse signal derivation — learner-state correctness). **Total catalog:
+91 entries (target: 35 — TARGET EXCEEDED).**
+
+## RBAC Conformance + Student Pulse — Round 2 flag-gate pin (2026-06-12) — REG-124
+
+Source: Round 2 verification of the four CEO-approved remediation fixes for the
+RBAC-Conformance + Student-Pulse feature (F1 `canAccessStudent` repair — see the
+REG-121 Round 2 annotation above; F2+F3-UI SchoolPulsePanel slim-down + flag
+gate via `useSchoolPulseFlag`; F3 ops `ff_school_pulse_v1` definition + seed;
+F4 `pulse-server.ts` importing `PULSE_THRESHOLDS.at_risk_mastery` from
+`signals.ts` — local 0.4 literal removed, already covered by REG-122's
+threshold anchoring). This entry pins the F2/F3 kill-switch contract.
+
+> **ID note:** REG-124 is the next free id — REG-123 was taken by the
+> renumbered Foxy-OS entry (see its ID note above).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-124 | `school_pulse_flag_gate_default_off` | `ff_school_pulse_v1` gates the School Pulse section of the school-admin Command Center and DEFAULTS OFF at every layer. Hook: `useSchoolPulseFlag()` paints OFF synchronously (no first-paint flash), stays OFF when the flag is absent / explicitly false / `getFeatureFlags` rejects, flips ON only after the async confirm, and requests `school_admin`-scoped flags (mirrors the `useSchoolCommandCenter` flag-gate precedent test-for-test). Behavioral: the REAL `<CommandCenter />` rendered with FULL permissions (`can()` → true, so ONLY the flag gates) — flag OFF/unresolved ⇒ the "School Pulse" section is NOT mounted and ZERO fetches hit `/api/pulse/school`, while the host's own `/api/school-admin/overview` fetch fires (alive-control proving suppression is the flag's doing); flag ON ⇒ the section mounts and `/api/pulse/school` IS fetched (non-vacuity control). Static: `FLAG_DEFAULTS['ff_school_pulse_v1'] === false` under the exact flag name; seed migration `20260619000100_seed_ff_school_pulse_v1.sql` inserts `(is_enabled=false, rollout_percentage=0)` with the column order pinned and `ON CONFLICT (flag_name) DO NOTHING` (idempotent, seeded-visible-but-never-live); CommandCenter source keeps the `pulseEnabled && can('institution.view_analytics')` guard around `<SchoolPulseSection>` with the ONLY `useSchoolPulse(` call site inside the gated section (structural fetch suppression: no mount ⇒ no hook ⇒ no SWR key ⇒ no request, and the code-split SchoolPulsePanel chunk stays off the wire). | `src/__tests__/school-admin/pulse-flag-gate.test.tsx` | U |
+
+### Invariants covered by this section
+
+- OFF-path safety / kill switch — School Pulse cannot reach a school admin (no
+  UI, no network, no chunk) until an operator flips the DB flag; the default is
+  pinned in code (`FLAG_DEFAULTS`), data (seed migration), and the render guard.
+- P10 (bundle, adjacent) — the gate keeps the code-split SchoolPulsePanel chunk
+  off the wire while OFF.
+- P9 (clarified, NOT covered here) — the flag + `usePermissions` gate is UX
+  only; `/api/pulse/school` enforces `institution.view_analytics` + school
+  membership server-side regardless (REG-121).
+
+### Catalog total
+
+Pre-Round-2: 91 entries. Adds REG-124 (`ff_school_pulse_v1` flag gate —
+OFF-path safety). REG-121 was annotated in place (F1 `canAccessStudent` repair
++ the SchoolPulsePanel 400 no-retry component pin) — an annotation, not a new
+entry. **Total catalog: 92 entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 92 entries.** *(Footer corrected 2026-06-12: it previously read "88
+entries" — stale from before the REG-120..122 cluster landed. 91 was already
+the correct pre-Round-2 figure per the section totals above; 92 includes
+REG-124.)*

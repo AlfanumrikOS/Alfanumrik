@@ -15,6 +15,11 @@
  *      /api/school-admin/classes-at-risk. Paginated (limit/offset).
  *   3. Teacher-engagement table (lazy) — get_teacher_engagement via
  *      /api/school-admin/teacher-engagement. Paginated (limit/offset).
+ *   4. School Pulse summary (lazy, DOUBLE-gated: `ff_school_pulse_v1` default
+ *      OFF + institution.view_analytics) — /api/pulse/school. A slim summary
+ *      lens only (flagged-class count + freshness + anchor to the rail); the
+ *      overview tiles and the at-risk roster render EXACTLY ONCE on this page
+ *      (panels 1 and 2 above — ops de-dup review 2026-06-12).
  *
  * Multi-school caller: when the caller administers MULTIPLE schools and no
  * ?school_id is supplied, the overview endpoint returns HTTP 400 with
@@ -34,6 +39,9 @@ import { useCallback, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
+import { usePermissions } from '@/lib/usePermissions';
+import { useSchoolPulse } from '@/lib/pulse/use-pulse';
+import { useSchoolPulseFlag } from '@/lib/use-school-pulse-flag';
 import { useSchoolProvisioning } from '@/lib/use-school-provisioning';
 import { NoDataState } from '@/components/admin-ui';
 import {
@@ -52,6 +60,12 @@ const ClassesAtRiskRail = dynamic(() => import('./command-center/ClassesAtRiskRa
 });
 const TeacherEngagementTable = dynamic(
   () => import('./command-center/TeacherEngagementTable'),
+  { ssr: false, loading: () => <PanelSkeleton /> },
+);
+// School Pulse panel is code-split (P10) — only ships when the Command Center
+// renders the principal Pulse section.
+const SchoolPulsePanel = dynamic(
+  () => import('@/components/pulse/SchoolPulsePanel'),
   { ssr: false, loading: () => <PanelSkeleton /> },
 );
 
@@ -279,6 +293,42 @@ function OverviewStrip({
   );
 }
 
+// ── School Pulse section (principal / institution_admin lens) ────────────────
+// Gated by the host on ff_school_pulse_v1 AND can('institution.view_analytics');
+// the /api/pulse/school route enforces the school-membership boundary
+// server-side (usePermissions is UX-only). Forwards the selected school id for
+// a multi-school caller.
+//
+// FETCH SUPPRESSION: useSchoolPulse always builds a non-null SWR key, so the
+// only way to suppress the /api/pulse/school call while the flag is OFF (or
+// still resolving from its default-OFF initial value) is to NOT MOUNT this
+// section — the host renders it only when useSchoolPulseFlag() is true. That
+// also keeps the code-split SchoolPulsePanel chunk off the wire when OFF (P10).
+function SchoolPulseSection({
+  schoolId,
+  isHi,
+}: {
+  schoolId: string | null;
+  isHi: boolean;
+}) {
+  const { data, error, isLoading, mutate } = useSchoolPulse(schoolId ?? undefined);
+  return (
+    <section aria-label={tt(isHi, 'School Pulse', 'स्कूल पल्स')}>
+      <h2 className="text-sm font-bold text-[var(--text-3)] uppercase tracking-wider mb-2">
+        🩺 {tt(isHi, 'School Pulse', 'स्कूल पल्स')}
+      </h2>
+      <SchoolPulsePanel
+        school={data}
+        isHi={isHi}
+        isLoading={isLoading}
+        error={error}
+        onRetry={() => mutate()}
+        atRiskHref="#cc-classes-at-risk"
+      />
+    </section>
+  );
+}
+
 // ── School picker (multi-school 400 case) ────────────────────────────────────
 function SchoolPicker({
   schoolIds,
@@ -322,11 +372,17 @@ function SchoolPicker({
 export default function CommandCenter() {
   const auth = useAuth();
   const { isHi, signOut } = auth;
+  const { can } = usePermissions();
 
   // Seat-enforcement UI gate (Phase 3B Wave B). OFF ⇒ the seat gauge stays the
   // Wave A display-only gauge (byte-identical). ON ⇒ the gauge is augmented with
   // the enforcement band derived from the overview counts (no new fetch).
   const seatEnforced = useSchoolProvisioning();
+
+  // School Pulse gate (`ff_school_pulse_v1`, default OFF). OFF ⇒ the Pulse
+  // section never mounts ⇒ useSchoolPulse never runs ⇒ zero /api/pulse/school
+  // calls AND the code-split SchoolPulsePanel chunk never loads (P10).
+  const pulseEnabled = useSchoolPulseFlag();
 
   // The selected school for a multi-school caller. null = no explicit selection
   // (single-school callers never set this; the API resolves their one school).
@@ -467,20 +523,25 @@ export default function CommandCenter() {
               ) : null}
             </section>
 
-            {/* 2 + 3. Two-column body: classes-at-risk rail + teacher table */}
+            {/* 2 + 3. Two-column body: classes-at-risk rail + teacher table.
+                The rail wrapper carries the anchor id the Pulse summary links
+                to (scroll-mt offsets the sticky header). This rail is the ONE
+                authoritative at-risk roster on the page (ops de-dup review). */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-              <ClassesAtRiskRail
-                rows={classesSWR.data?.data ?? []}
-                loading={classesSWR.isLoading && !classesSWR.data}
-                error={Boolean(classesSWR.error)}
-                isHi={isHi}
-                limit={classesSWR.data?.limit ?? limit}
-                offset={classesSWR.data?.offset ?? classOffset}
-                count={classesSWR.data?.count ?? 0}
-                onPrev={() => setClassOffset((o) => Math.max(0, o - limit))}
-                onNext={() => setClassOffset((o) => o + limit)}
-                onRetry={() => classesSWR.mutate()}
-              />
+              <div id="cc-classes-at-risk" className="scroll-mt-20">
+                <ClassesAtRiskRail
+                  rows={classesSWR.data?.data ?? []}
+                  loading={classesSWR.isLoading && !classesSWR.data}
+                  error={Boolean(classesSWR.error)}
+                  isHi={isHi}
+                  limit={classesSWR.data?.limit ?? limit}
+                  offset={classesSWR.data?.offset ?? classOffset}
+                  count={classesSWR.data?.count ?? 0}
+                  onPrev={() => setClassOffset((o) => Math.max(0, o - limit))}
+                  onNext={() => setClassOffset((o) => o + limit)}
+                  onRetry={() => classesSWR.mutate()}
+                />
+              </div>
               <TeacherEngagementTable
                 rows={teachersSWR.data?.data ?? []}
                 loading={teachersSWR.isLoading && !teachersSWR.data}
@@ -494,6 +555,18 @@ export default function CommandCenter() {
                 onRetry={() => teachersSWR.mutate()}
               />
             </div>
+
+            {/* School Pulse — principal lens. DOUBLE-gated:
+                1. ff_school_pulse_v1 (default OFF) — independent kill switch.
+                   Flag-first ordering matters: while OFF/unresolved the section
+                   never mounts, so useSchoolPulse never runs (no SWR key ⇒ zero
+                   /api/pulse/school calls) and the code-split SchoolPulsePanel
+                   chunk never loads (P10).
+                2. institution.view_analytics (UX only; /api/pulse/school
+                   enforces school membership server-side). */}
+            {pulseEnabled && can('institution.view_analytics') && (
+              <SchoolPulseSection schoolId={selectedSchoolId} isHi={isHi} />
+            )}
           </>
         )}
       </main>

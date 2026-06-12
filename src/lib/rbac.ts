@@ -247,7 +247,10 @@ export async function canAccessStudent(authUserId: string, studentId: string): P
   // Admin/super_admin can access any student
   if (perms.roles.some(r => r.name === 'admin' || r.name === 'super_admin')) return true;
 
-  // Institution admin: can access students in their school
+  // Institution admin: can access students in their school.
+  // Matrix source of truth: school_admins(auth_user_id, school_id, is_active)
+  // matched against students.school_id. (The previously referenced
+  // school_memberships table does not exist in the prod baseline.)
   if (perms.roles.some(r => r.name === 'institution_admin')) {
     const { data: studentSchool } = await supabase
       .from('students')
@@ -257,7 +260,7 @@ export async function canAccessStudent(authUserId: string, studentId: string): P
 
     if (studentSchool?.school_id) {
       const { data: membership } = await supabase
-        .from('school_memberships')
+        .from('school_admins')
         .select('id')
         .eq('auth_user_id', authUserId)
         .eq('school_id', studentSchool.school_id)
@@ -295,15 +298,48 @@ export async function canAccessStudent(authUserId: string, studentId: string): P
     if (linkedChild && linkedChild.length > 0) return true;
   }
 
-  // Teacher: can access students in assigned classes
+  // Teacher: can access students in assigned classes (matrix ownership
+  // mode 'assigned'). Resolved via explicit joins against the prod schema:
+  //   teachers(auth_user_id, is_active)
+  //     → class_teachers(teacher_id, class_id, is_active)
+  //     → class_students(class_id, student_id, is_active)
+  // Mirrors the ownership pattern in /api/pulse/class/[classId] and the
+  // "Teachers can view students in their classes" RLS policy. No RPC — the
+  // previously called is_teacher_of_student RPC does not exist in the prod
+  // baseline. Fail-closed: any error on any step → no access via this path.
   try {
-    const { data: assignedStudent } = await supabase.rpc('is_teacher_of_student', {
-      p_auth_user_id: authUserId,
-      p_student_id: studentId,
-    });
-    if (assignedStudent) return true;
+    const { data: teacher, error: teacherErr } = await supabase
+      .from('teachers')
+      .select('id')
+      .eq('auth_user_id', authUserId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (!teacherErr && teacher?.id) {
+      const { data: teacherClasses, error: classesErr } = await supabase
+        .from('class_teachers')
+        .select('class_id')
+        .eq('teacher_id', teacher.id)
+        .eq('is_active', true);
+
+      const classIds = (teacherClasses ?? [])
+        .map(c => c.class_id)
+        .filter(Boolean);
+
+      if (!classesErr && classIds.length > 0) {
+        const { data: assignedRows, error: assignedErr } = await supabase
+          .from('class_students')
+          .select('id')
+          .eq('student_id', studentId)
+          .eq('is_active', true)
+          .in('class_id', classIds)
+          .limit(1);
+
+        if (!assignedErr && assignedRows && assignedRows.length > 0) return true;
+      }
+    }
   } catch {
-    // RPC may not exist yet — silently continue
+    // Fail closed — unexpected error means no access via the teacher path
   }
 
   return false;

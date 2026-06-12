@@ -4,7 +4,7 @@
  * Phase 3 (per-portal authorization isolation). The teacher notes route is the
  * one teacher *write* path whose ownership boundary is enforced through the
  * `canAccessStudent(authUserId, studentId)` RBAC helper (which traverses
- * class_teachers + class_enrollments via the `is_teacher_of_student` RPC) —
+ * teachers → class_teachers ⋈ class_students via explicit service-role joins) —
  * NOT through an inline roster query the way `/api/teacher/remediation` does.
  * That seam had no route-level test: `rbac.test.ts` covers `canAccessStudent`
  * in isolation, and `subject-readiness.test.ts` covers it on a `/api/v1/*`

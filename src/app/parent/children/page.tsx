@@ -6,6 +6,9 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { track } from '@/lib/analytics';
 import ChildDataErasureSection from '@/components/parent/ChildDataErasureSection';
+import { usePermissions } from '@/lib/usePermissions';
+import { usePulse } from '@/lib/pulse/use-pulse';
+import { StudentPulse } from '@/components/pulse';
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -144,10 +147,48 @@ function MiniProgressBar({ label, percent, color }: { label: string; percent: nu
 }
 
 // ============================================================
+// CHILD PULSE SECTION (parent child-view lens)
+// ============================================================
+/** Renders the child's Pulse inside the expanded card. Gated by the host on
+ *  can('child.view_progress'); the fetch is disabled until the card is
+ *  expanded (id=undefined ⇒ no request) to avoid N fetches across the roster.
+ *  usePermissions is UX-only; /api/pulse/student/[id] enforces the parent↔child
+ *  ownership boundary server-side (canAccessStudent). */
+function ChildPulseSection({
+  childId,
+  childName,
+  enabled,
+  isHi,
+}: {
+  childId: string;
+  childName: string;
+  enabled: boolean;
+  isHi: boolean;
+}) {
+  const { data, error, isLoading, mutate } = usePulse(enabled ? childId : undefined);
+  return (
+    <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #FDBA7433' }}>
+      <h4 style={{ fontSize: 13, fontWeight: 600, color: '#1E293B', margin: '0 0 10px' }}>
+        🩺 {t(isHi, 'Learning Pulse', 'सीखने का पल्स')}
+      </h4>
+      <StudentPulse
+        variant="parent"
+        isHi={isHi}
+        pulse={data}
+        isLoading={isLoading}
+        error={error}
+        displayName={childName}
+        onRetry={() => mutate()}
+      />
+    </div>
+  );
+}
+
+// ============================================================
 // CHILD CARD
 // ============================================================
 function ChildCard({
-  child, expanded, onToggle, onViewReport, onUnlink, onDownloadData,
+  child, expanded, onToggle, onViewReport, onUnlink, onDownloadData, canViewProgress, isHi,
 }: {
   child: ChildData;
   expanded: boolean;
@@ -155,6 +196,8 @@ function ChildCard({
   onViewReport: () => void;
   onUnlink: () => void;
   onDownloadData: () => void;
+  canViewProgress: boolean;
+  isHi: boolean;
 }) {
   const subjectColors = ['#16A34A', '#2563EB', '#D97706', '#8B5CF6', '#EC4899', '#06B6D4'];
 
@@ -352,6 +395,20 @@ function ChildCard({
               <p style={{ fontSize: 13, color: '#475569', margin: 0, lineHeight: 1.5 }}>
                 {child.weekSummary}
               </p>
+            </div>
+          )}
+
+          {/* Learning Pulse (parent child-view lens) — gated by child.view_progress
+              (UX only; server enforces parent↔child ownership). Fetch is enabled
+              only while the card is expanded. */}
+          {canViewProgress && (
+            <div onClick={(e) => e.stopPropagation()}>
+              <ChildPulseSection
+                childId={child.id}
+                childName={child.name}
+                enabled={expanded}
+                isHi={isHi}
+              />
             </div>
           )}
 
@@ -953,6 +1010,7 @@ const t = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
 
 export default function ParentChildrenPage() {
   const { guardian, isLoading: authLoading, isLoggedIn, isHi } = useAuth();
+  const { can } = usePermissions();
   const router = useRouter();
 
   const [children, setChildren] = useState<ChildData[]>([]);
@@ -1120,6 +1178,8 @@ export default function ParentChildrenPage() {
               onViewReport={handleViewReport}
               onUnlink={() => setUnlinkTarget(child)}
               onDownloadData={() => setDownloadTarget(child)}
+              canViewProgress={can('child.view_progress')}
+              isHi={isHi}
             />
           ))}
 

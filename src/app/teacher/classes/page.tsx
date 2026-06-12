@@ -6,6 +6,9 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useTeacherAllowedSubjects } from '@/lib/useTeacherAllowedSubjects';
 import { VALID_GRADES } from '@/lib/identity';
+import { usePermissions } from '@/lib/usePermissions';
+import { useClassPulse } from '@/lib/pulse/use-pulse';
+import { StudentPulseList } from '@/components/pulse';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -69,9 +72,43 @@ const pageStyle: React.CSSProperties = {
   minHeight: '100vh',
 };
 
+/* ─── Class Pulse roster (teacher class lens) ─── */
+/** Worst-first Pulse roster for a class, shown inside the expanded class detail.
+ *  Gated by the host on can('class.view_analytics'); fetch is enabled only while
+ *  the class is expanded (id=undefined ⇒ no request). usePermissions is UX-only —
+ *  /api/pulse/class/[classId] enforces the teacher↔assigned-class boundary
+ *  server-side. */
+function ClassPulseSection({
+  classId,
+  enabled,
+  isHi,
+}: {
+  classId: string;
+  enabled: boolean;
+  isHi: boolean;
+}) {
+  const { data, error, isLoading, mutate } = useClassPulse(enabled ? classId : undefined);
+  return (
+    <div style={{ marginTop: 16 }}>
+      <h4 style={{ fontSize: 14, fontWeight: 600, color: '#F1F5F9', margin: '0 0 10px' }}>
+        🩺 {tt(isHi, 'Class Pulse (worst-first)', 'कक्षा पल्स (पहले जोखिम)')}
+      </h4>
+      <StudentPulseList
+        students={data?.students}
+        isHi={isHi}
+        variant="teacher"
+        isLoading={isLoading}
+        error={error}
+        onRetry={() => mutate()}
+      />
+    </div>
+  );
+}
+
 export default function TeacherClassesPage() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
   const { subjects } = useTeacherAllowedSubjects();
+  const { can } = usePermissions();
   const router = useRouter();
 
   const [classes, setClasses] = useState<ClassData[]>([]);
@@ -711,6 +748,13 @@ export default function TeacherClassesPage() {
                         )}
                       </div>
                     </div>
+
+                    {/* Class Pulse roster (teacher class lens) — gated by
+                        class.view_analytics (UX only; server enforces the
+                        teacher↔class boundary). Fetch enabled only while expanded. */}
+                    {can('class.view_analytics') && (
+                      <ClassPulseSection classId={cls.id} enabled={isExpanded} isHi={isHi} />
+                    )}
 
                     {/* Share class code button */}
                     <div style={{ marginTop: 16, textAlign: 'center' }}>
