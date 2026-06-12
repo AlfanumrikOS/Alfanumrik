@@ -115,6 +115,9 @@ export function FoxyStudySheet({
   // Remember the element that had focus when the sheet opened so we can
   // return focus to it on close (SheetModal does not do this for us).
   const triggerRef = useRef<HTMLElement | null>(null);
+  // Cached focusable list, computed once per open (Phase 4 optimization — the
+  // Tab handler no longer re-queries the DOM on every keydown).
+  const focusablesRef = useRef<HTMLElement[]>([]);
   // Subject tablist — drives roving-tabindex arrow-key navigation (Phase 3 a11y).
   const subjectTablistRef = useRef<HTMLDivElement>(null);
 
@@ -144,20 +147,25 @@ export function FoxyStudySheet({
   useEffect(() => {
     if (!open) return;
     triggerRef.current = (document.activeElement as HTMLElement) ?? null;
-    // Move focus into the sheet on open.
+    const FOCUSABLE_SELECTOR =
+      'button:not([disabled]), [href], input, [tabindex]:not([tabindex="-1"])';
+    // Compute the focusable list once per open and cache it. The roving-tabindex
+    // tablist means tabindex="-1" tabs are correctly excluded at query time.
+    const refreshFocusables = () => {
+      focusablesRef.current = sheetRef.current
+        ? Array.from(sheetRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+        : [];
+    };
+    // Move focus into the sheet on open, then snapshot the focusable list.
     const id = window.requestAnimationFrame(() => {
-      const first = sheetRef.current?.querySelector<HTMLElement>(
-        'button:not([disabled]), [href], input, [tabindex]:not([tabindex="-1"])',
-      );
-      first?.focus();
+      refreshFocusables();
+      focusablesRef.current[0]?.focus();
     });
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Tab') return;
-      const focusables = sheetRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input, [tabindex]:not([tabindex="-1"])',
-      );
-      if (!focusables || focusables.length === 0) return;
+      const focusables = focusablesRef.current;
+      if (focusables.length === 0) return;
       const first = focusables[0];
       const last = focusables[focusables.length - 1];
       if (e.shiftKey && document.activeElement === first) {
@@ -173,6 +181,7 @@ export function FoxyStudySheet({
     return () => {
       window.cancelAnimationFrame(id);
       document.removeEventListener('keydown', onKeyDown);
+      focusablesRef.current = [];
       // Return focus to the trigger.
       triggerRef.current?.focus?.();
     };
