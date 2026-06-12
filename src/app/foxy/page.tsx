@@ -33,6 +33,7 @@ const ConversationHeader = dynamic(() => import('@/components/foxy/ConversationH
 import { useSELCheckIn, type MoodState } from '@/components/SELCheckIn';
 import { track } from '@/lib/analytics';
 import {
+  LANGS,
   MODES,
   FOXY_FACES,
   MASTERY_COLORS,
@@ -65,6 +66,13 @@ const FoxyTopBar = dynamic(
 );
 const FoxyStudySheet = dynamic(
   () => import('@/components/foxy/mobile/FoxyStudySheet').then((m) => ({ default: m.FoxyStudySheet })),
+  { ssr: false, loading: () => null },
+);
+// Foxy OS mobile redesign Phase 3 — Tools bottom sheet (language / voice /
+// progress / history / context). Lazy-loaded behind the same flag+breakpoint
+// gate so the OFF path / >=lg fetch zero new chunks (P10).
+const FoxyToolsSheet = dynamic(
+  () => import('@/components/foxy/mobile/FoxyToolsSheet').then((m) => ({ default: m.FoxyToolsSheet })),
   { ssr: false, loading: () => null },
 );
 
@@ -338,6 +346,8 @@ export default function FoxyPage() {
   const foxyOsEnabled = useFoxyOsFlag();
   const [foxyOsMobile, setFoxyOsMobile] = useState(false);
   const [studySheetOpen, setStudySheetOpen] = useState(false);
+  // Phase 3 — Tools sheet (language / voice / progress / history / context).
+  const [toolsSheetOpen, setToolsSheetOpen] = useState(false);
   // Track the <lg breakpoint with matchMedia so the new surface is rendered
   // ONLY on phones. The OFF path never enters this effect's render branch.
   useEffect(() => {
@@ -1500,6 +1510,7 @@ export default function FoxyPage() {
       chapterLabel={foxyOsChapterLabel}
       onBack={() => router.push('/dashboard')}
       onOpenStudy={() => setStudySheetOpen(true)}
+      onOpenTools={() => setToolsSheetOpen(true)}
     />
   );
 
@@ -1648,6 +1659,23 @@ export default function FoxyPage() {
             // Promote the chat scroll region to its own compositing layer as
             // defense-in-depth against residual scroll flicker on Chromium.
             style={{ transform: 'translateZ(0)' }}
+            // Phase 3 a11y (flag-ON mobile only) — announce settled AI turns to
+            // screen readers. `aria-busy` is raised while a reply is streaming
+            // so the SR waits for the turn to settle instead of being spammed
+            // token-by-token; it drops to false when streaming ends and the
+            // newly-added (aria-relevant="additions") message is announced.
+            // ONLY the container ARIA changes — the REG-55 structured-render
+            // DOM/markup inside MessageList is untouched. Gated by
+            // useFoxyOsHeader so the OFF path / desktop are byte-identical.
+            {...(useFoxyOsHeader
+              ? {
+                  role: 'log' as const,
+                  'aria-live': 'polite' as const,
+                  'aria-relevant': 'additions' as const,
+                  'aria-busy': loading,
+                  'aria-label': isHi ? 'Foxy के साथ बातचीत' : 'Conversation with Foxy',
+                }
+              : {})}
           >
             {/* SEL mood check-in — shown once per day at session start */}
             {showSELCheckIn && student && (
@@ -1948,6 +1976,45 @@ export default function FoxyPage() {
                   onNext: () => { advanceLessonStep(); },
                 }
               : null
+          }
+        />
+      )}
+
+      {/* ═══ FOXY OS — Tools bottom sheet (ff_foxy_os_v1, <lg only) ═══ */}
+      {/* Phase 3. Rendered ONLY when the flag is ON and viewport is <lg, so the
+          OFF path / >=lg are byte-identical. Every action calls an EXISTING
+          page handler — no logic moves in. The "Your context" entry is only
+          wired when ff_student_os_v1 (osEnabled) is ON, because that is the
+          only flag that mounts the ContextPanel surface; otherwise it is
+          omitted (the sheet never invents a context surface). */}
+      {useFoxyOsHeader && (
+        <FoxyToolsSheet
+          open={toolsSheetOpen}
+          onClose={() => setToolsSheetOpen(false)}
+          isHi={isHi}
+          languages={LANGS}
+          activeLanguage={language}
+          languageLocked={isLangLocked}
+          onSelectLanguage={(code) => setLanguage(code)}
+          voiceSupported={ttsSupported}
+          voiceOn={voiceMode}
+          onToggleVoice={toggleVoiceMode}
+          xpTotal={totalXP + xpGained}
+          streakDays={streakDays}
+          studentGrade={studentGrade}
+          usageRemaining={chatUsage?.remaining ?? null}
+          usageLimit={chatUsage?.limit ?? null}
+          onOpenHistory={() => {
+            setToolsSheetOpen(false);
+            setConversationSidebarOpen(true);
+          }}
+          onOpenContext={
+            osEnabled
+              ? () => {
+                  setToolsSheetOpen(false);
+                  setContextSheetOpen(true);
+                }
+              : undefined
           }
         />
       )}

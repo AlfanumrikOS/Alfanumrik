@@ -5,8 +5,8 @@
  *
  * Replaces the legacy 5-row Foxy header stack on phones with a single ~56px
  * sticky bar: back chevron · Foxy avatar + tappable "subject · chapter" chip
- * (opens the Study sheet) · overflow "⋯" button (Phase 1: also opens the Study
- * sheet; Tools sheet is Phase 3).
+ * (opens the Study sheet) · overflow "⋯" button (Phase 3: opens the Tools
+ * sheet — language / voice / progress / history / context).
  *
  * PRESENTATION ONLY. All data + handlers arrive as props from /foxy/page.tsx —
  * no chat/scoring/AI logic lives here. Cosmic light tokens only (no dark mode),
@@ -32,8 +32,10 @@ interface FoxyTopBarProps {
   chapterLabel: string | null;
   /** Back navigation (e.g. router.push('/dashboard')). */
   onBack: () => void;
-  /** Opens the Study sheet (subject/chapter chip + overflow both call this). */
+  /** Opens the Study sheet (subject/chapter chip calls this). */
   onOpenStudy: () => void;
+  /** Opens the Tools sheet (overflow "⋯" calls this). Phase 3. */
+  onOpenTools: () => void;
 }
 
 export function FoxyTopBar({
@@ -46,6 +48,7 @@ export function FoxyTopBar({
   chapterLabel,
   onBack,
   onOpenStudy,
+  onOpenTools,
 }: FoxyTopBarProps) {
   const chipText = chapterLabel
     ? `${subjectName} · ${chapterLabel}`
@@ -110,10 +113,11 @@ export function FoxyTopBar({
         <span className="text-[10px] shrink-0 ml-auto" style={{ color: 'var(--text-3)' }} aria-hidden="true">▾</span>
       </button>
 
-      {/* Overflow — Phase 1 opens the Study sheet too (Tools sheet is Phase 3) */}
+      {/* Overflow — Phase 3 opens the Tools sheet (language / voice / progress
+          / history / context). The chip above keeps opening the Study sheet. */}
       <button
         type="button"
-        onClick={onOpenStudy}
+        onClick={onOpenTools}
         className="foxy-os-tap flex items-center justify-center rounded-xl transition-all active:scale-90"
         style={{ color: 'var(--text-2)' }}
         aria-label={isHi ? 'अधिक विकल्प' : 'More options'}

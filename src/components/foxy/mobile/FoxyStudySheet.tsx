@@ -21,7 +21,7 @@
  * chunks (P10).
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { SheetModal } from '@/components/ui';
 
 export interface StudySheetSubject {
@@ -115,6 +115,31 @@ export function FoxyStudySheet({
   // Remember the element that had focus when the sheet opened so we can
   // return focus to it on close (SheetModal does not do this for us).
   const triggerRef = useRef<HTMLElement | null>(null);
+  // Subject tablist — drives roving-tabindex arrow-key navigation (Phase 3 a11y).
+  const subjectTablistRef = useRef<HTMLDivElement>(null);
+
+  // Left/Right arrow navigation across the subject tabs. Moves DOM focus to the
+  // adjacent tab (wrapping at the ends) without activating it — selection still
+  // happens on click/Enter/Space via the button's native activation, which calls
+  // onSelectSubject. Home/End jump to the first/last tab.
+  const onSubjectTabKeyDown = (
+    e: ReactKeyboardEvent<HTMLButtonElement>,
+    idx: number,
+  ) => {
+    const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+    if (!keys.includes(e.key)) return;
+    const tabs = subjectTablistRef.current?.querySelectorAll<HTMLElement>(
+      '[data-foxy-os-subject-tab="true"]',
+    );
+    if (!tabs || tabs.length === 0) return;
+    e.preventDefault();
+    let next = idx;
+    if (e.key === 'ArrowLeft') next = (idx - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'ArrowRight') next = (idx + 1) % tabs.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = tabs.length - 1;
+    tabs[next]?.focus();
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -161,15 +186,35 @@ export function FoxyStudySheet({
     >
       <div ref={sheetRef} className="foxy-os-study space-y-5">
         {/* ── Subject tabs ───────────────────────────────────── */}
+        {/* Phase 3 a11y: a true ARIA tablist. Each subject is role="tab" with
+            aria-selected + a roving tabindex (only the active tab is in the Tab
+            order); Left/Right arrows move selection between tabs. */}
         <section aria-label={isHi ? 'विषय' : 'Subjects'}>
-          <h4 className="foxy-os-study-label">{isHi ? 'विषय' : 'Subjects'}</h4>
-          <div className="flex flex-wrap gap-2">
-            {subjects.map((sub) => {
+          <h4 className="foxy-os-study-label" id="foxy-os-subjects-label">
+            {isHi ? 'विषय' : 'Subjects'}
+          </h4>
+          <div
+            role="tablist"
+            aria-labelledby="foxy-os-subjects-label"
+            aria-orientation="horizontal"
+            className="flex flex-wrap gap-2"
+            ref={subjectTablistRef}
+          >
+            {subjects.map((sub, idx) => {
               const isActive = sub.code === activeSubjectCode;
               return (
                 <button
                   key={sub.code}
                   type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  // Roving tabindex: only the selected tab (or the first, when
+                  // none match) participates in the page Tab sequence.
+                  tabIndex={
+                    isActive || (activeSubjectCode == null && idx === 0) ? 0 : -1
+                  }
+                  data-foxy-os-subject-tab="true"
+                  onKeyDown={(e) => onSubjectTabKeyDown(e, idx)}
                   onClick={() => {
                     if (sub.isLocked) onLockedSubject(sub.code);
                     else onSelectSubject(sub.code);
@@ -188,7 +233,6 @@ export function FoxyStudySheet({
                         : `${sub.name} (locked — tap to upgrade)`
                       : sub.name
                   }
-                  aria-pressed={isActive}
                 >
                   <span aria-hidden="true">{sub.icon}</span>
                   <span className="whitespace-nowrap">{sub.name}</span>
@@ -248,8 +292,14 @@ export function FoxyStudySheet({
 
         {/* ── Mode picker ────────────────────────────────────── */}
         <section aria-label={isHi ? 'मोड' : 'Modes'}>
-          <h4 className="foxy-os-study-label">{isHi ? 'मोड चुनो' : 'Choose a mode'}</h4>
-          <div className="grid grid-cols-3 gap-2">
+          <h4 className="foxy-os-study-label" id="foxy-os-modes-label">{isHi ? 'मोड चुनो' : 'Choose a mode'}</h4>
+          {/* Phase 3 a11y: explicit group so SR announces these toggle chips as
+              a labelled set. Each chip carries aria-pressed below. */}
+          <div
+            role="group"
+            aria-labelledby="foxy-os-modes-label"
+            className="grid grid-cols-3 gap-2"
+          >
             {modes.map((m) => {
               const backend = resolveBackendMode(m.id);
               const isActive =
@@ -311,7 +361,18 @@ export function FoxyStudySheet({
         {lesson && (
           <section aria-label={isHi ? 'पाठ प्रगति' : 'Lesson progress'}>
             <h4 className="foxy-os-study-label">{isHi ? 'पाठ प्रगति' : 'Lesson progress'}</h4>
-            <div className="flex items-center gap-1 mb-2">
+            {/* Phase 3 a11y: announce the current step to SRs. The tiny visual
+                step labels below are decorative (aria-hidden) — six labels in a
+                360px row cannot legibly hit 12px, so the readable status lives
+                here in a single non-truncated line that meets the contrast/size
+                floor. */}
+            <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-2)' }}>
+              {isHi ? 'चरण' : 'Step'} {Math.min(lesson.currentIndex + 1, lesson.stepLabels.length)}/{lesson.stepLabels.length}
+              {lesson.stepLabels[lesson.currentIndex]
+                ? ` · ${lesson.stepLabels[lesson.currentIndex]}`
+                : ''}
+            </p>
+            <div className="flex items-center gap-1 mb-2" aria-hidden="true">
               {lesson.stepLabels.map((label, idx) => {
                 const isCompleted = idx < lesson.currentIndex;
                 const isCurrent = idx === lesson.currentIndex;
@@ -328,7 +389,7 @@ export function FoxyStudySheet({
                       }}
                     />
                     <span
-                      className="text-[8px] font-bold truncate w-full text-center"
+                      className="text-[10px] font-bold truncate w-full text-center"
                       style={{ color: isCompleted || isCurrent ? subjectColor : 'var(--text-3)' }}
                     >
                       {label}
