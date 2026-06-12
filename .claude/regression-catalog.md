@@ -3633,7 +3633,47 @@ OFF-path safety). REG-121 was annotated in place (F1 `canAccessStudent` repair
 + the SchoolPulsePanel 400 no-retry component pin) — an annotation, not a new
 entry. **Total catalog: 92 entries (target: 35 — TARGET EXCEEDED).**
 
-**Total: 92 entries.** *(Footer corrected 2026-06-12: it previously read "88
-entries" — stale from before the REG-120..122 cluster landed. 91 was already
-the correct pre-Round-2 figure per the section totals above; 92 includes
-REG-124.)*
+## Staging migration sync wall — feature_flags seed shape (2026-06-12) — REG-125
+
+Source: PR #1014 P14 review (`fix/staging-migration-sync-feature-flags`). The
+original `20260606000000_phase5_phase6_python_flags.sql` inserted into
+`feature_flags(name, description, enabled, metadata) ... ON CONFLICT (name)
+DO UPDATE` — but the canonical table (pg_dump prod baseline
+`00000000000000_baseline_from_prod.sql` ~line 11212) has NO `name`/`enabled`
+columns; the key column is `flag_name` (UNIQUE `feature_flags_flag_name_key`,
+~line 15364) with `is_enabled` + `rollout_percentage` + `metadata`. The 42703
+("column does not exist") failed the "Sync Migrations to Staging" pipeline at
+statement 0 (GitHub run 27425591787 and 5+ predecessors) and walled EVERY
+later migration off staging. PR #1014 rewrote the file schema-adaptively
+(to_regclass fresh-DB guard, information_schema column detection with
+canonical-branch priority, ON CONFLICT (flag_name) DO NOTHING, guarded
+WHERE-NOT-EXISTS legacy branch, default-OFF posture); REG-125 turns the
+failure mode into a CI-time error and pins the rewrite.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-125 | `feature_flags_insert_shape_conformance` | Repo-wide static scanner over ROOT migrations (the only files `supabase db push` executes; `_legacy/` skipped): every `INSERT INTO feature_flags` carries an explicit column list that includes the canonical `flag_name` column — UNLESS the file is schema-adaptive (executable-SQL detection of `information_schema.columns` + `column_name = 'flag_name'` + `to_regclass('public.feature_flags')`), in which case a guarded legacy-shape branch is permitted but a canonical branch must coexist in the same file. No feature_flags insert may resolve conflicts on the nonexistent `name` column (`ON CONFLICT (name)`) — statement-scoped, so legitimate `ON CONFLICT (name)` on roles/guardians is untouched. Analysis runs on comment-stripped, string-blanked SQL (single-pass tokenizer) so the rewrite's own header comment quoting the broken SQL cannot trip the scanner and `;`/`--` inside description literals cannot truncate a statement; dollar-quoted DO bodies are analyzed, not skipped. Scanner self-test embeds the ORIGINAL broken SQL and asserts it is flagged on all three axes (legacy columns, no adaptive guard, ON CONFLICT (name)) — validated for real: the test fails 8/11 against the pre-PR file. File-specific pins on the rewritten 20260606000000: fresh-DB to_regclass guard; detects BOTH shapes with `IF v_has_flag_name ... ELSIF v_has_name` priority; canonical branch is `ON CONFLICT (flag_name) DO NOTHING` and the file contains NO `DO UPDATE` (the original DO UPDATE would clobber an ops-bumped `metadata.rollout_pct` back to 0 on re-apply — dropped deliberately, must never return); default-OFF posture pinned as "no boolean `true` literal anywhere in executable SQL" + no nonzero `'rollout_pct'` + ≥5× `'enabled', false` and `'kill_switch', false` (4 canonical rows + 1 legacy SELECT); all four `ff_python_{ncert_solver,cme_engine,foxy_tutor,quiz_generator}_v1` flags appear exactly twice (canonical AND legacy branch); legacy branch is `WHERE NOT EXISTS` with no `ON CONFLICT` (no dependence on a unique constraint over `name`). 11 tests, deterministic, no DB. | `src/__tests__/regressions/reg-125-feature-flags-insert-shape.test.ts` | U |
+
+### Invariants covered by this section
+
+- Operational integrity (deploy pipeline) — a wrong-shape feature_flags seed
+  is now a PR-CI failure, not a staging-deploy wall that blocks the entire
+  migration chain behind it.
+- OFF-path safety / P12-adjacent — the four Phase 5/6 Python-cutover flags
+  (AI-serving surface) cannot seed live: is_enabled=false,
+  rollout_percentage=0, metadata.enabled=false, metadata.kill_switch=false,
+  metadata.rollout_pct=0 are all statically pinned, matching the sibling
+  ff_python_* seeds (20260603*, 20260609*) and the
+  `python-ai-proxy.ts` precedence contract.
+- Ops-value preservation — the DO-NOTHING conflict posture guarantees a
+  re-applied seed can never reset an ops-bumped rollout_pct (the original
+  DO UPDATE could).
+
+### Catalog total
+
+Pre-REG-125: 92 entries. Adds REG-125 (feature_flags seed-shape conformance
+— staging-sync wall closure). **Total catalog: 93 entries (target: 35 —
+TARGET EXCEEDED).**
+
+**Total: 93 entries.** *(Footer history: corrected 2026-06-12 from a stale
+"88" to 92 — 91 pre-Round-2 + REG-124; 93 includes REG-125.)*
