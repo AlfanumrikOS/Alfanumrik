@@ -14,6 +14,11 @@ import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import ScoreHero from '@/components/score/ScoreHero';
 import ScoreCard from '@/components/score/ScoreCard';
 import CoinBalance from '@/components/coins/CoinBalance';
+import { usePermissions } from '@/lib/usePermissions';
+import { useMyPulse } from '@/lib/pulse/use-pulse';
+import { StudentPulse } from '@/components/pulse';
+import { calculateLevel } from '@/lib/xp-config';
+import type { StudentSnapshot } from '@/lib/types';
 
 /* ── Types for new Performance Score data ── */
 interface PerformanceScoreRow {
@@ -245,11 +250,46 @@ function SessionMetricCard({ session, isHi }: { session: CognitiveSessionMetrics
   );
 }
 
+/* ── My Pulse (student self lens) ──
+ * Self-contained section: always calls useMyPulse() (hook order safe) but the
+ * PARENT only mounts it when can('progress.view_own') is true. usePermissions is
+ * UX-only; the /api/pulse/me route enforces P9 server-side. */
+function MyPulseSection({
+  isHi,
+  snapshot,
+}: {
+  isHi: boolean;
+  snapshot: StudentSnapshot | null;
+}) {
+  const { data, error, isLoading, mutate } = useMyPulse();
+  const level =
+    snapshot?.total_xp != null ? calculateLevel(snapshot.total_xp) : null;
+  return (
+    <div>
+      <SectionHeader icon="🩺">{isHi ? 'मेरा पल्स' : 'My Pulse'}</SectionHeader>
+      <StudentPulse
+        variant="student"
+        isHi={isHi}
+        pulse={data}
+        isLoading={isLoading}
+        error={error}
+        onRetry={() => mutate()}
+        vitals={{
+          xp: snapshot?.total_xp ?? null,
+          level,
+          streakDays: snapshot?.current_streak ?? null,
+        }}
+      />
+    </div>
+  );
+}
+
 /* =================================================================
    PROGRESS PAGE -- Performance Score System + Cognitive Analytics
    ================================================================= */
 
 export default function ProgressPage() {
+  const { can, loading: permsLoading } = usePermissions();
   const { student, snapshot, isLoggedIn, isLoading, isHi, refreshSnapshot } = useAuth();
   const router = useRouter();
 
@@ -481,6 +521,14 @@ export default function ProgressPage() {
            ============================================================== */}
         {activeTab === 'overview' && (
           <>
+            {/* === MY PULSE (student self lens) — gated by progress.view_own (UX only;
+                   /api/pulse/me enforces server-side). Shown once the student has
+                   any quiz history so the empty-state hero stays the first thing
+                   a brand-new learner sees. === */}
+            {can('progress.view_own') && !permsLoading && totalSessions > 0 && (
+              <MyPulseSection isHi={isHi} snapshot={snapshot} />
+            )}
+
             {/* === EMPTY STATE -- show when student has zero quiz history === */}
             {totalSessions === 0 && !hasPerfScores ? (
               <Card className="!p-6 text-center">

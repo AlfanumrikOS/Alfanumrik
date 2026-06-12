@@ -846,6 +846,31 @@ export const FOXY_OS_FLAGS = {
 } as const;
 
 /**
+ * School Pulse panel flag (2026-06-12, CEO-approved F3).
+ *
+ *  ff_school_pulse_v1 — master switch for the School Pulse panel on the
+ *    school-admin Command Center (Slice B monitoring). When OFF, the Command
+ *    Center renders byte-identically to today — the Pulse panel does not mount
+ *    and no Pulse data paths are exercised. When ON, the panel renders inside
+ *    the (independently gated) ff_school_command_center surface; both flags
+ *    must resolve ON for the panel to be visible. Frontend wires the gate
+ *    against this exact flag name (CommandCenter.tsx — owned by frontend).
+ *    Default: false.
+ *
+ *    Seeded OFF (is_enabled=false, rollout=0, scoping NULL) by migration
+ *    20260619000100_seed_ff_school_pulse_v1.sql — mirrors the
+ *    ff_school_admin_rbac seed precedent — so the row is auditable and
+ *    flippable from the super-admin console. The server/client read paths
+ *    (isFeatureEnabled) return false for both is_enabled=false AND
+ *    rollout_percentage<=0, so the panel stays OFF until an operator
+ *    explicitly enables the flag.
+ */
+export const SCHOOL_PULSE_FLAGS = {
+  /** School Pulse panel (school-admin command center, Slice B monitoring). Default off. */
+  V1: 'ff_school_pulse_v1',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -893,6 +918,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [EDUCATION_INTELLIGENCE_FLAGS.V1]: false,
   [PRINCIPAL_AI_FLAGS.V1]: false,
   [FOXY_OS_FLAGS.V1]: false,
+  [SCHOOL_PULSE_FLAGS.V1]: false, // seeded OFF by 20260619000100_seed_ff_school_pulse_v1.sql
 } as const;
 
 /**

@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { usePermissions } from '@/lib/usePermissions';
+import { usePulse } from '@/lib/pulse/use-pulse';
+import { StudentPulse } from '@/components/pulse';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -81,17 +84,54 @@ function accuracyColor(pct: number): string {
   return '#DC2626';
 }
 
+/* ─── Teacher Student Pulse (teacher single-student lens) ─── */
+/** Renders one student's Pulse inside the expanded card. Gated by the host on
+ *  can('class.view_analytics'); fetch is enabled only while expanded (id=undefined
+ *  ⇒ no request). usePermissions is UX-only — /api/pulse/student/[id] enforces the
+ *  teacher↔assigned-student boundary server-side (canAccessStudent). */
+function TeacherStudentPulseSection({
+  studentId,
+  studentName,
+  enabled,
+  isHi,
+}: {
+  studentId: string;
+  studentName: string;
+  enabled: boolean;
+  isHi: boolean;
+}) {
+  const { data, error, isLoading, mutate } = usePulse(enabled ? studentId : undefined);
+  return (
+    <div style={{ marginTop: 14 }}>
+      <h4 style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0', margin: '0 0 10px' }}>
+        🩺 {tt(isHi, 'Learning Pulse', 'सीखने का पल्स')}
+      </h4>
+      <StudentPulse
+        variant="teacher"
+        isHi={isHi}
+        pulse={data}
+        isLoading={isLoading}
+        error={error}
+        displayName={studentName}
+        onRetry={() => mutate()}
+      />
+    </div>
+  );
+}
+
 /* ─── Student Card ─── */
 function StudentCard({
   student,
   teacherId,
   isHi,
   router,
+  canViewAnalytics,
 }: {
   student: StudentData;
   teacherId: string;
   isHi: boolean;
   router: ReturnType<typeof useRouter>;
+  canViewAnalytics: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [note, setNote] = useState('');
@@ -420,6 +460,18 @@ function StudentCard({
           >
             {saving ? tt(isHi, 'Saving...', 'सहेज रहे हैं...') : saved ? tt(isHi, 'Saved!', 'सहेज लिया!') : tt(isHi, 'Save Note & Goal', 'नोट और लक्ष्य सहेजें')}
           </button>
+
+          {/* Learning Pulse (teacher single-student lens) — gated by
+              class.view_analytics (UX only; server enforces teacher↔assigned
+              boundary). Fetch enabled only while the card is expanded. */}
+          {canViewAnalytics && (
+            <TeacherStudentPulseSection
+              studentId={student.id}
+              studentName={student.name}
+              enabled={expanded}
+              isHi={isHi}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -429,6 +481,7 @@ function StudentCard({
 /* ─── Main Page ─── */
 export default function TeacherStudentsPage() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
+  const { can } = usePermissions();
   const router = useRouter();
 
   const [classes, setClasses] = useState<ClassData[]>([]);
@@ -833,7 +886,7 @@ export default function TeacherStudentsPage() {
           }}
         >
           {filtered.map((student) => (
-            <StudentCard key={student.id} student={student} teacherId={teacherId} isHi={isHi} router={router} />
+            <StudentCard key={student.id} student={student} teacherId={teacherId} isHi={isHi} router={router} canViewAnalytics={can('class.view_analytics')} />
           ))}
         </div>
       )}

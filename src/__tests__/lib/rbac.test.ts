@@ -11,6 +11,9 @@
  *     positive + negative for ordinary roles
  *   - hasRole: positive + negative
  *   - canAccessStudent: own-student match, admin bypass, parent-link match,
+ *     teacher-assigned match (teachers → class_teachers ⋈ class_students),
+ *     institution_admin match (school_admins ⋈ students.school_id),
+ *     deny paths (teacher not assigned, admin of a different school),
  *     no-access fallthrough
  *   - canAccessImage: image-not-found short-circuit
  *   - canAccessReport: thin alias of canAccessStudent
@@ -34,8 +37,10 @@ const queueState = {
   guardianLinksResults: [] as DbResult[], // .in()...limit() on guardian_student_links
   auditInsertResults: [] as DbResult[],
   schoolStudentResults: [] as DbResult[],
-  schoolMembershipResults: [] as DbResult[],
-  isTeacherOfStudentResults: [] as DbResult[],
+  schoolAdminsResults: [] as DbResult[],   // maybeSingle() on school_admins
+  teachersResults: [] as DbResult[],       // maybeSingle() on teachers
+  classTeachersResults: [] as DbResult[],  // awaited array on class_teachers
+  classStudentsResults: [] as DbResult[],  // .in()...limit() on class_students
 };
 
 function nextOr(arr: DbResult[], fallback: DbResult): DbResult {
@@ -43,10 +48,7 @@ function nextOr(arr: DbResult[], fallback: DbResult): DbResult {
 }
 
 const mockSupabaseAdmin = {
-  rpc: vi.fn(async (rpcName: string, _params: any) => {
-    if (rpcName === 'is_teacher_of_student') {
-      return nextOr(queueState.isTeacherOfStudentResults, { data: false, error: null });
-    }
+  rpc: vi.fn(async (_rpcName: string, _params: any) => {
     return nextOr(queueState.rpcResults, { data: null, error: null });
   }),
   auth: {
@@ -65,8 +67,17 @@ const mockSupabaseAdmin = {
     if (table === 'guardian_student_links') {
       return makeGuardianLinksChain();
     }
-    if (table === 'school_memberships') {
-      return makeSchoolMembershipChain();
+    if (table === 'school_admins') {
+      return makeSchoolAdminsChain();
+    }
+    if (table === 'teachers') {
+      return makeTeachersChain();
+    }
+    if (table === 'class_teachers') {
+      return makeClassTeachersChain();
+    }
+    if (table === 'class_students') {
+      return makeClassStudentsChain();
     }
     if (table === 'audit_logs') {
       return {
@@ -127,12 +138,47 @@ function makeGuardianLinksChain() {
   return chain;
 }
 
-function makeSchoolMembershipChain() {
+function makeSchoolAdminsChain() {
+  // .select('id').eq('auth_user_id', uid).eq('school_id', sid).eq('is_active', true).maybeSingle()
   const chain: any = {};
   chain.select = vi.fn(() => chain);
   chain.eq = vi.fn(() => chain);
   chain.maybeSingle = vi.fn(async () =>
-    nextOr(queueState.schoolMembershipResults, { data: null, error: null }),
+    nextOr(queueState.schoolAdminsResults, { data: null, error: null }),
+  );
+  return chain;
+}
+
+function makeTeachersChain() {
+  // .select('id').eq('auth_user_id', uid).eq('is_active', true).maybeSingle()
+  const chain: any = {};
+  chain.select = vi.fn(() => chain);
+  chain.eq = vi.fn(() => chain);
+  chain.maybeSingle = vi.fn(async () =>
+    nextOr(queueState.teachersResults, { data: null, error: null }),
+  );
+  return chain;
+}
+
+function makeClassTeachersChain() {
+  // .select('class_id').eq('teacher_id', id).eq('is_active', true)  → awaited array
+  const chain: any = {};
+  chain.select = vi.fn(() => chain);
+  chain.eq = vi.fn(() => chain);
+  chain.then = (onFulfilled: (v: DbResult) => unknown, onRejected?: (e: unknown) => unknown) =>
+    Promise.resolve(nextOr(queueState.classTeachersResults, { data: [], error: null }))
+      .then(onFulfilled, onRejected);
+  return chain;
+}
+
+function makeClassStudentsChain() {
+  // .select('id').eq('student_id', sid).eq('is_active', true).in('class_id', ids).limit(1)
+  const chain: any = {};
+  chain.select = vi.fn(() => chain);
+  chain.eq = vi.fn(() => chain);
+  chain.in = vi.fn(() => chain);
+  chain.limit = vi.fn(async () =>
+    nextOr(queueState.classStudentsResults, { data: [], error: null }),
   );
   return chain;
 }
@@ -200,8 +246,10 @@ beforeEach(() => {
   queueState.guardianLinksResults = [];
   queueState.auditInsertResults = [];
   queueState.schoolStudentResults = [];
-  queueState.schoolMembershipResults = [];
-  queueState.isTeacherOfStudentResults = [];
+  queueState.schoolAdminsResults = [];
+  queueState.teachersResults = [];
+  queueState.classTeachersResults = [];
+  queueState.classStudentsResults = [];
 
   // Make sure no Redis env -> use local cache
   process.env = { ...ORIGINAL_ENV };
@@ -444,9 +492,119 @@ describe('canAccessStudent', () => {
     });
     queueState.studentsResults.push({ data: null, error: null });
     queueState.guardiansResults.push({ data: [], error: null });
-    queueState.isTeacherOfStudentResults.push({ data: false, error: null });
+    // Teacher path: no teachers row for this caller → fall through to false.
+    queueState.teachersResults.push({ data: null, error: null });
 
     await expect(canAccessStudent('uid-stranger', 'student-x')).resolves.toBe(false);
+  });
+
+  // ── TEACHER (ownership mode 'assigned'): teachers → class_teachers ⋈ class_students ──
+
+  it('returns true for a teacher assigned to the student via class_teachers ⋈ class_students', async () => {
+    queueState.rpcResults.push({
+      data: { roles: [{ name: 'teacher' }], permissions: [] },
+      error: null,
+    });
+    // Own-student lookup: teacher is not the student.
+    queueState.studentsResults.push({ data: null, error: null });
+    // Parent path: no guardian rows.
+    queueState.guardiansResults.push({ data: [], error: null });
+    // teachers row resolved by auth_user_id (is_active).
+    queueState.teachersResults.push({ data: { id: 'teacher-1' }, error: null });
+    // Active class links for this teacher.
+    queueState.classTeachersResults.push({
+      data: [{ class_id: 'class-1' }, { class_id: 'class-2' }],
+      error: null,
+    });
+    // Target student is an active member of one of those classes.
+    queueState.classStudentsResults.push({ data: [{ id: 'cs-1' }], error: null });
+
+    await expect(canAccessStudent('uid-teacher', 'student-5')).resolves.toBe(true);
+  });
+
+  it('returns false for a teacher NOT assigned to the student (classes exist, no roster match)', async () => {
+    queueState.rpcResults.push({
+      data: { roles: [{ name: 'teacher' }], permissions: [] },
+      error: null,
+    });
+    queueState.studentsResults.push({ data: null, error: null });
+    queueState.guardiansResults.push({ data: [], error: null });
+    queueState.teachersResults.push({ data: { id: 'teacher-1' }, error: null });
+    queueState.classTeachersResults.push({ data: [{ class_id: 'class-1' }], error: null });
+    // Student not in any of the teacher's classes.
+    queueState.classStudentsResults.push({ data: [], error: null });
+
+    await expect(canAccessStudent('uid-teacher-2', 'student-other')).resolves.toBe(false);
+  });
+
+  it('returns false for a teacher with no active class links (fail-closed, no roster query)', async () => {
+    queueState.rpcResults.push({
+      data: { roles: [{ name: 'teacher' }], permissions: [] },
+      error: null,
+    });
+    queueState.studentsResults.push({ data: null, error: null });
+    queueState.guardiansResults.push({ data: [], error: null });
+    queueState.teachersResults.push({ data: { id: 'teacher-1' }, error: null });
+    queueState.classTeachersResults.push({ data: [], error: null });
+
+    await expect(canAccessStudent('uid-teacher-3', 'student-z')).resolves.toBe(false);
+  });
+
+  it('returns false (fail-closed) when the class_teachers query errors', async () => {
+    queueState.rpcResults.push({
+      data: { roles: [{ name: 'teacher' }], permissions: [] },
+      error: null,
+    });
+    queueState.studentsResults.push({ data: null, error: null });
+    queueState.guardiansResults.push({ data: [], error: null });
+    queueState.teachersResults.push({ data: { id: 'teacher-1' }, error: null });
+    queueState.classTeachersResults.push({ data: null, error: { message: 'db down' } });
+
+    await expect(canAccessStudent('uid-teacher-err', 'student-z')).resolves.toBe(false);
+  });
+
+  // ── INSTITUTION_ADMIN: school_admins(auth_user_id, school_id, is_active) ──
+
+  it('returns true for an institution_admin with an active school_admins row for the student school', async () => {
+    queueState.rpcResults.push({
+      data: { roles: [{ name: 'institution_admin' }], permissions: [] },
+      error: null,
+    });
+    // students.school_id lookup for the target student.
+    queueState.schoolStudentResults.push({ data: { school_id: 'school-1' }, error: null });
+    // Active school_admins row for the same school.
+    queueState.schoolAdminsResults.push({ data: { id: 'sa-1' }, error: null });
+
+    await expect(canAccessStudent('uid-inst-admin', 'student-7')).resolves.toBe(true);
+  });
+
+  it('returns false for an institution_admin of a DIFFERENT school (no school_admins match)', async () => {
+    queueState.rpcResults.push({
+      data: { roles: [{ name: 'institution_admin' }], permissions: [] },
+      error: null,
+    });
+    queueState.schoolStudentResults.push({ data: { school_id: 'school-1' }, error: null });
+    // No active school_admins row for school-1 → branch falls through.
+    queueState.schoolAdminsResults.push({ data: null, error: null });
+    // Remaining checks all miss: not own student, no guardian rows, no teachers row.
+    queueState.studentsResults.push({ data: null, error: null });
+    queueState.guardiansResults.push({ data: [], error: null });
+    queueState.teachersResults.push({ data: null, error: null });
+
+    await expect(canAccessStudent('uid-inst-admin-other', 'student-7')).resolves.toBe(false);
+  });
+
+  it('returns false for an institution_admin when the student has no school_id', async () => {
+    queueState.rpcResults.push({
+      data: { roles: [{ name: 'institution_admin' }], permissions: [] },
+      error: null,
+    });
+    queueState.schoolStudentResults.push({ data: { school_id: null }, error: null });
+    queueState.studentsResults.push({ data: null, error: null });
+    queueState.guardiansResults.push({ data: [], error: null });
+    queueState.teachersResults.push({ data: null, error: null });
+
+    await expect(canAccessStudent('uid-inst-admin-noschool', 'student-8')).resolves.toBe(false);
   });
 });
 
