@@ -574,7 +574,7 @@ export const PERMISSIONS = {
   // /api/payments/create-order and /api/payments/verify as a
   // defense-in-depth layer on top of Supabase getUser() auth.
   // DB source of truth: migration
-  // 20260611000000_seed_payments_subscribe_permission.sql (grants to student;
+  // 20260611000050_seed_payments_subscribe_permission.sql (grants to student;
   // admin via wildcard, super_admin via hasPermission() bypass).
   PAYMENTS_SUBSCRIBE: 'payments.subscribe',
 

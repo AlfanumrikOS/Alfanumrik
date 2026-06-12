@@ -36,6 +36,7 @@ import {
 } from '@/lib/learn/weekly-dive-orchestrator';
 import { computeWeeklyStreakFromHistory } from '@/lib/learn/weekly-streak';
 import { logger } from '@/lib/logger';
+import { cacheFetchAsync, CACHE_TTL } from '@/lib/cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -107,6 +108,37 @@ export async function GET(_request: Request) {
 
   const currentIsoWeek = isoWeekOf(new Date());
 
+  // Phase 5 perf: this read-only state assembly issues several Supabase reads
+  // (student row, dive_artifacts, phenomena, get_due_reviews RPC) and fires on
+  // dashboard mount alongside the other per-student aggregate calls. Collapse
+  // repeat reads within a 30s window with a SERVER-SIDE cache keyed by userId +
+  // ISO week (the dive is scoped to the current week, so the week belongs in the
+  // key). The key includes userId so students NEVER collide (P13: per-student
+  // data must never be shared). This is a server cache, NOT a CDN/`s-maxage`
+  // header — Vercel's edge does not vary by auth, so a public cache would leak
+  // one student's dive state to another. This handler has no writes (all reads
+  // + one read RPC), so it is safe to cache.
+  const body = await cacheFetchAsync<DiveStateResponse>(
+    `dive:state:${userId}:${currentIsoWeek}`,
+    CACHE_TTL.USER,
+    () => buildDiveState(supabase, userId, currentIsoWeek),
+  );
+
+  return NextResponse.json(body, {
+    headers: { 'Cache-Control': 'private, max-age=0, must-revalidate' },
+  });
+}
+
+/**
+ * Assembles the weekly dive state for a student. All reads/read-RPCs — no
+ * writes — and never throws (every optional source degrades to a safe default),
+ * so the result is safe to memoize in the per-student server cache above.
+ */
+async function buildDiveState(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  userId: string,
+  currentIsoWeek: string,
+): Promise<DiveStateResponse> {
   // ── Student row (persona + grade). Missing profile degrades gracefully:
   //    persona null → orchestrator fallback default; grade '' → phenomena
   //    grade-band filter fails open. We do NOT 404/500 on a missing row;
@@ -250,7 +282,5 @@ export async function GET(_request: Request) {
     weakTopics,
   };
 
-  return NextResponse.json(body, {
-    headers: { 'Cache-Control': 'private, max-age=0, must-revalidate' },
-  });
+  return body;
 }

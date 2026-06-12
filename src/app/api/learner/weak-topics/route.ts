@@ -36,6 +36,7 @@ import {
   type WeakTopic,
 } from '@/lib/state/learner-loop/weak-topics';
 import { logger } from '@/lib/logger';
+import { cacheFetchAsync, CACHE_TTL } from '@/lib/cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,10 +65,25 @@ export async function GET(_request: Request) {
     return NextResponse.json({ error: 'not_found' }, { status: 404 });
   }
 
-  const builder = createStudentStateBuilder({ sb: supabase });
-  let state;
+  // Phase 5 perf: the state-builder read is the expensive part and fires on
+  // dashboard mount alongside the other per-student aggregate calls. Collapse
+  // repeat reads within a 30s window with a SERVER-SIDE cache keyed by userId
+  // (one student → one auth uid; students NEVER collide — P13: per-student data
+  // must never be shared). This is a server cache, NOT a CDN/`s-maxage` header —
+  // Vercel's edge does not vary by auth, so a public cache would leak one
+  // student's weak topics to another. The 404/200 branching stays OUTSIDE the
+  // cache so a transient "no weak topics yet" never pins a misleading payload.
+  let items: WeakTopic[];
   try {
-    state = await builder(userId);
+    items = await cacheFetchAsync(
+      `learner:weak-topics:${userId}`,
+      CACHE_TTL.USER,
+      async () => {
+        const builder = createStudentStateBuilder({ sb: supabase });
+        const state = await builder(userId);
+        return weakTopicsForStudent(state);
+      },
+    );
   } catch (err) {
     logger.warn('learner/weak-topics: state builder failed', {
       userId, error: (err as Error).message,
@@ -75,7 +91,6 @@ export async function GET(_request: Request) {
     return NextResponse.json({ error: 'no_student_profile' }, { status: 404 });
   }
 
-  const items = weakTopicsForStudent(state);
   if (items.length === 0) {
     return NextResponse.json({ error: 'no_weak_topics' }, { status: 404 });
   }

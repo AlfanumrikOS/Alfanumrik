@@ -27,6 +27,14 @@ import type { PrincipalAiContext } from './types';
 //
 // DO NOT weaken without an assessment-agent review. The scope-lock, the
 // honest-pacing decline, and the data-only grounding are product invariants.
+//
+// P13 SCOPE NOTE (CEO-approved 2026-06-12): rail #2 forbids individual STUDENT
+// PII (names/emails/phones/IDs) and that remains absolute. It does NOT forbid
+// school STAFF (teacher) names — those are intentionally included in the injected
+// context (see the Teacher Engagement section in buildContextSection below) and
+// persisted. Accepted egress: staff names are not minor/student PII, the principal
+// already sees their own staff, and data is school-scoped via verified tenant
+// isolation. This is a documentation note only — the rail TEXT below is unchanged.
 
 export const PRINCIPAL_AI_SAFETY_RAILS = `
 You are the Alfanumrik Principal Assistant, an AI analytics aide for the
@@ -191,6 +199,14 @@ export function buildContextSection(ctx: PrincipalAiContext | null): string | nu
   }
 
   if (teachers.length > 0) {
+    // ACCEPTED STAFF-NAME EGRESS (P13 scope decision — CEO-approved 2026-06-12):
+    // teacher/staff NAMES below are intentionally included in the LLM context and
+    // are subsequently persisted in principal_ai_messages. This is an accepted
+    // egress, NOT a leak: teacher/staff names are not minor/student PII; the
+    // principal already has full visibility into their own staff; and the data is
+    // school-scoped via verified tenant isolation. STUDENT PII stays forbidden —
+    // this section is staff-only and group-level (see the scope-lock rail above).
+    // Documentation only: do not add/remove fields here on the basis of this note.
     lines.push('', '## Teacher Engagement (top 10)');
     for (const t of teachers) {
       lines.push(

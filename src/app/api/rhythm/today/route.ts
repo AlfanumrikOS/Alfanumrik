@@ -38,6 +38,7 @@ import {
 } from '@/lib/learn/due-reviews-adapter';
 import { resolveGoalProfile, type GoalCode } from '@/lib/goals/goal-profile';
 import { logger } from '@/lib/logger';
+import { cacheFetchAsync, CACHE_TTL } from '@/lib/cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -101,6 +102,55 @@ export async function GET(_request: Request) {
     return NextResponse.json({ error: 'not_found' }, { status: 404 });
   }
 
+  // Phase 5 perf: the daily-rhythm composition below issues ~5 Supabase reads
+  // (student row, due reviews, question_bank, curriculum_topics, ZPD pool) and
+  // fires on dashboard mount alongside the other per-student aggregate calls.
+  // Collapse repeat reads within a 30s window with a SERVER-SIDE cache keyed by
+  // userId + day bucket (the reflection prompt + queue rotate daily, so the day
+  // belongs in the key). The key includes userId so students NEVER collide
+  // (P13: per-student data must never be shared). This is a server cache, NOT a
+  // CDN/`s-maxage` header — Vercel's edge does not vary by auth, so a public
+  // cache would leak one student's queue to another. This handler has no writes
+  // (all reads + read RPCs), so it is safe to cache. The 404 "no profile" path
+  // stays OUTSIDE the cache via a sentinel so a transient lookup miss is never
+  // pinned.
+  const dayKey = Math.floor(Date.now() / 86_400_000);
+  let cached: unknown;
+  try {
+    cached = await cacheFetchAsync<unknown>(
+      `rhythm:today:${userId}:${dayKey}`,
+      CACHE_TTL.USER,
+      async () => {
+        const built = await buildRhythmQueue(supabase, userId);
+        // A null build (missing profile) is wrapped in a sentinel so the 404
+        // branch is reproduced on cache hits without caching a transient miss.
+        return built ?? { __noProfile: true };
+      },
+    );
+  } catch (err) {
+    // Transient student-lookup failure — surfaced as 500, never cached.
+    logger.warn('rhythm/today: build failed', {
+      userId, error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json({ error: 'student_lookup_failed' }, { status: 500 });
+  }
+  if (cached && (cached as { __noProfile?: boolean }).__noProfile) {
+    return NextResponse.json({ error: 'no_student_profile' }, { status: 404 });
+  }
+  return NextResponse.json(cached, {
+    headers: { 'Cache-Control': 'private, max-age=0, must-revalidate' },
+  });
+}
+
+/**
+ * Builds the daily-rhythm queue for a student. Returns null when the student
+ * row is missing (handler maps to 404). All reads/read-RPCs — no writes — so
+ * the result is safe to memoize in the per-student server cache above.
+ */
+async function buildRhythmQueue(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  userId: string,
+): Promise<unknown | null> {
   // Load student row (A1 + A2 audit findings encoded here).
   const { data: studentRow, error: studentErr } = await supabase
     .from('students')
@@ -110,10 +160,10 @@ export async function GET(_request: Request) {
 
   if (studentErr) {
     logger.warn('rhythm/today: students fetch failed', { userId, error: studentErr.message });
-    return NextResponse.json({ error: 'student_lookup_failed' }, { status: 500 });
+    throw new Error('student_lookup_failed'); // do NOT cache transient failures
   }
   if (!studentRow) {
-    return NextResponse.json({ error: 'no_student_profile' }, { status: 404 });
+    return null;
   }
 
   const goalProfile = resolveGoalProfile(studentRow.academic_goal);
@@ -247,7 +297,5 @@ export async function GET(_request: Request) {
     reflectionPromptIndex,
   });
 
-  return NextResponse.json(queue, {
-    headers: { 'Cache-Control': 'private, max-age=0, must-revalidate' },
-  });
+  return queue;
 }

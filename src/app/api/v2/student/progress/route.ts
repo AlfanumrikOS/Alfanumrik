@@ -20,6 +20,7 @@ import { authorizeRequest } from '@/lib/rbac';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { v2Success, v2Error } from '@/lib/api/v2/envelope';
+import { cacheFetchAsync, CACHE_TTL } from '@/lib/cache';
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,6 +36,18 @@ export async function GET(request: NextRequest) {
 
     const admin = getSupabaseAdmin();
 
+    // Phase 5 perf: collapse the dashboard-mount fan-out (~10 aggregate calls
+    // per student per load) with a 30s SERVER-SIDE cache. The key includes
+    // student_id so students NEVER collide (P13: per-student data must never be
+    // shared). This is a server cache, NOT a CDN/`s-maxage` header — Vercel's
+    // edge does not vary by auth, so a shared cache would leak one student's
+    // mastery/XP to another. 30s is short enough that post-quiz staleness is
+    // trivial (SWR revalidate catches it) and long enough to coalesce the
+    // mount burst + quick remounts.
+    const payload = await cacheFetchAsync(
+      `v2:student:progress:${studentId}`,
+      CACHE_TTL.USER,
+      async () => {
     // Same sources the /progress page fetches, run in parallel server-side.
     const [perfRes, masteryRes, gapsRes, velocityRes, decayRes] = await Promise.all([
       admin
@@ -101,18 +114,21 @@ export async function GET(request: NextRequest) {
       next_review_at: (d.next_review_at as string | null) ?? null,
     }));
 
-    return v2Success(
-      {
-        schemaVersion: 1 as const,
-        student_id: studentId,
-        performance_scores,
-        topic_mastery,
-        knowledge_gaps,
-        learning_velocity,
-        decay_topics,
+        return {
+          schemaVersion: 1 as const,
+          student_id: studentId,
+          performance_scores,
+          topic_mastery,
+          knowledge_gaps,
+          learning_velocity,
+          decay_topics,
+        };
       },
-      { headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' } },
     );
+
+    return v2Success(payload, {
+      headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' },
+    });
   } catch (err) {
     logger.error('v2_student_progress_failed', {
       error: err instanceof Error ? err : new Error(String(err)),

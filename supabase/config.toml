@@ -1,0 +1,90 @@
+# Supabase local config for the Alfanumrik Adaptive Learning OS.
+#
+# WHY THIS FILE EXISTS (durable fix):
+#   Without a config.toml at supabase/, the Supabase CLI has no project_id
+#   anchor. Every `supabase` command then drops into an interactive project
+#   picker, and a misclick once deployed `daily-cron` to the WRONG project.
+#   Pinning project_id here makes the CLI default to the correct remote project
+#   for `db push` / `functions deploy`, eliminating that class of error.
+#
+# NOT A SECRET: the project ref is public (it appears in NEXT_PUBLIC_SUPABASE_URL).
+#   This file is SAFE to commit. Never put DB passwords, service-role keys, or
+#   API keys in it — those stay in Supabase secrets / .env.local (gitignored).
+#
+# project_id = the ref of "Alfanumrik Adaptive Learning OS" (PROD + promotion
+#   target), which the app's .env.local NEXT_PUBLIC_SUPABASE_URL points to.
+project_id = "shktyoxqhundlvkiwguu"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+# Match prod Postgres major version. Evidence: docs/runbooks/schema-
+# reproducibility-fix.md line 25 documents prod as "PG 17.6", and the baseline
+# (00000000000000_baseline_from_prod.sql) was captured from that prod via
+# pg_dump 17.x. So local must be 17 for the baseline+chain to replay faithfully.
+major_version = 17
+
+[db.pooler]
+enabled = false
+port = 54329
+pool_mode = "transaction"
+default_pool_size = 20
+max_client_conn = 100
+
+[studio]
+enabled = true
+port = 54323
+# Studio reaches the local API on this URL.
+api_url = "http://127.0.0.1:54321"
+
+# Local email testing inbox (Inbucket). Auth/confirm/recovery emails land here
+# during local dev instead of being sent for real — open http://localhost:54324.
+[inbucket]
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[auth]
+enabled = true
+# Local app origin. Auth callbacks (/auth/callback, /auth/confirm) redirect here.
+site_url = "http://localhost:3000"
+# Permit the local app origin (and its 127.0.0.1 alias) as post-auth redirect
+# targets so PKCE + token_hash flows complete against the local stack (P15).
+additional_redirect_urls = [
+  "http://localhost:3000",
+  "http://localhost:3000/auth/callback",
+  "http://localhost:3000/auth/confirm",
+  "http://127.0.0.1:3000",
+]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+# Local only: do NOT require email confirmation so dev signups land on the
+# dashboard immediately. Prod keeps confirmations ON (this file is local-only).
+double_confirm_changes = true
+
+[analytics]
+enabled = false
+
+# Edge Functions. daily-cron is invoked over HTTP with a CRON_SECRET header
+# (x-cron-secret), NOT a Supabase JWT, so disable JWT verification for it so it
+# can be invoked locally (and by the scheduler in prod) without a bearer token.
+# Its secrets (CRON_SECRET, ANTHROPIC_API_KEY, SUPABASE_SERVICE_ROLE_KEY) are
+# supplied via `supabase functions serve --env-file .env.local`, never here.
+[functions.daily-cron]
+verify_jwt = false

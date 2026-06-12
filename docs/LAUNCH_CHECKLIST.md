@@ -1,3 +1,5 @@
+> NOTE: The canonical launch checklist is the ROOT file `/LAUNCH_CHECKLIST.md` (per CLAUDE.md key-file map). This admin-focused doc is a secondary reference; for payment-webhook health and ops-alerting steps, see the root file.
+
 # Launch & Rollback Checklist
 
 ## Pre-Launch Verification

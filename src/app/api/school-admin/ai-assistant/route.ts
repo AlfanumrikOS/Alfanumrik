@@ -21,6 +21,19 @@
  * PRIVACY (P13): logs carry trace ids / counts only — never message content,
  * the principal's identity at error level, or PII.
  *
+ * ACCEPTED STAFF-NAME EGRESS (P13 scope decision — CEO-approved 2026-06-12):
+ * The school-data context built for this assistant (via get_principal_ai_context)
+ * intentionally INCLUDES school STAFF (teacher) names in the Teacher Engagement
+ * aggregate, and that context is BOTH sent to the LLM provider AND persisted in
+ * principal_ai_messages. This is an accepted egress: teacher/staff names are NOT
+ * minor/student PII; a principal already has full visibility into their own staff;
+ * and the data stays school-scoped via verified tenant isolation (school_id from
+ * authorizeSchoolAdmin + the RPC's auth.uid() scope guard). STUDENT PII remains
+ * FORBIDDEN here — the context exposes group-level aggregates only, never student
+ * names/emails/phones/IDs (reaffirmed by the prompt scope-lock in
+ * src/lib/ai/principal-ai/prompt.ts). This note is documentation only; no
+ * behavior, prompt text, or context-builder logic changes from it.
+ *
  * SCHOOL ID is ALWAYS the authorizeSchoolAdmin-resolved value — never read from
  * the client body / query.
  *
@@ -230,12 +243,34 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   // 4. Daily cap per school-admin (server-side, P12). We count the principal's
-  //    OWN user-role turns persisted today across this school. The migration
-  //    may be unapplied → a missing-table error fails OPEN (cap not enforced)
-  //    rather than 500; the flag itself is OFF by default so this only matters
-  //    once both flag + migration are live.
+  //    OWN user-role turns persisted today across this school.
+  //
+  //    FAIL-CLOSED (Finding #5): by the time control reaches here, the feature
+  //    flag is ON (POST already 404'd otherwise) and the cap tables are created
+  //    by THIS feature's migration — so they MUST exist. A genuine read ERROR on
+  //    the cap counter at this point is therefore a real failure, not a
+  //    pre-migration condition: we must NOT let the turn through unmetered (that
+  //    would silently disable the P12 rate limit on any transient DB blip →
+  //    unmetered LLM spend / abuse window). We return a safe deny (HTTP 503,
+  //    honest that we could not verify quota) instead.
+  //
+  //    A normal empty/no-rows result ("0 used so far today") is NOT an error and
+  //    still goes through — only a query error fails closed.
   const capState = await checkDailyCap(schoolId, authUserId);
-  if (capState.enforced && capState.usedToday >= DAILY_CAP_PER_ADMIN) {
+  if (capState.errored) {
+    logger.warn('principal_ai.cap_check_failed_closed', { traceId });
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'temporarily_unavailable',
+        message:
+          'We could not verify your usage quota right now. Please try again in a moment.',
+        quotaRemaining: null,
+      },
+      { status: 503 },
+    );
+  }
+  if (capState.usedToday >= DAILY_CAP_PER_ADMIN) {
     return NextResponse.json(
       {
         success: false,
@@ -362,9 +397,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     details: { traceId, model, tokensUsed, latencyMs }, // no schoolId/name/content
   });
 
-  const quotaRemaining = capState.enforced
-    ? Math.max(0, DAILY_CAP_PER_ADMIN - (capState.usedToday + 1))
-    : null;
+  const quotaRemaining = Math.max(0, DAILY_CAP_PER_ADMIN - (capState.usedToday + 1));
 
   return NextResponse.json({
     success: true,
@@ -435,13 +468,20 @@ async function fetchContext(
 
 /**
  * Count the principal's own user-role turns persisted TODAY across this
- * school's sessions. enforced=false when the table is missing (fail-open so a
- * pre-migration env never 500s on the cap path).
+ * school's sessions.
+ *
+ * FAIL-CLOSED (Finding #5): this is only ever reached AFTER the feature flag is
+ * ON (POST 404's otherwise) and the cap tables are created by THIS feature's
+ * migration — so they MUST exist here. Any genuine query ERROR (transient DB
+ * fault, or even a "relation does not exist" that should be impossible at this
+ * point) returns `errored: true`, and the caller denies the turn (503) rather
+ * than letting it through unmetered. A normal empty/no-rows result is NOT an
+ * error: `{ errored: false, usedToday: 0 }` (legitimate first use → allowed).
  */
 async function checkDailyCap(
   schoolId: string,
   authUserId: string,
-): Promise<{ enforced: boolean; usedToday: number }> {
+): Promise<{ errored: boolean; usedToday: number }> {
   try {
     const startOfDay = new Date();
     startOfDay.setUTCHours(0, 0, 0, 0);
@@ -453,11 +493,13 @@ async function checkDailyCap(
       .eq('school_id', schoolId)
       .eq('auth_user_id', authUserId);
     if (sErr) {
-      if (isMissingObjectError(sErr)) return { enforced: false, usedToday: 0 };
-      return { enforced: true, usedToday: 0 }; // transient error → don't over-count
+      // Genuine read error (incl. missing-object, which must not happen post-
+      // migration) → fail closed. Do NOT silently disable the P12 cap.
+      return { errored: true, usedToday: 0 };
     }
     const ids = (sessionRows ?? []).map((r) => r.id as string);
-    if (ids.length === 0) return { enforced: true, usedToday: 0 };
+    // No sessions yet = legitimate first use today (NOT an error). Allow.
+    if (ids.length === 0) return { errored: false, usedToday: 0 };
 
     const { count, error: cErr } = await supabaseAdmin
       .from('principal_ai_messages')
@@ -466,12 +508,13 @@ async function checkDailyCap(
       .eq('role', 'user')
       .gte('created_at', startOfDay.toISOString());
     if (cErr) {
-      if (isMissingObjectError(cErr)) return { enforced: false, usedToday: 0 };
-      return { enforced: true, usedToday: 0 };
+      return { errored: true, usedToday: 0 };
     }
-    return { enforced: true, usedToday: count ?? 0 };
+    // count == null with no error is a normal "0 used so far" → allow.
+    return { errored: false, usedToday: count ?? 0 };
   } catch {
-    return { enforced: false, usedToday: 0 };
+    // Unexpected throw while verifying quota → cannot confirm we're under cap.
+    return { errored: true, usedToday: 0 };
   }
 }
 

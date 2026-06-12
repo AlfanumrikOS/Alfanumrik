@@ -280,6 +280,9 @@ jobs:
   #   - parent-portal/__tests__/      (contract.test.ts: reads index.ts as text,
   #                                     asserts the auth-before-dispatch contract)
   #   - teacher-dashboard/__tests__/  (contract.test.ts: same static-source canary)
+  #   - daily-cron/__tests__/         (contract.test.ts: static-source canary —
+  #                                     pins the cron auth gate, critical steps,
+  #                                     Promise.allSettled isolation, flag gating)
   #   - bulk-jee-neet-curated-import/__tests__/validate.test.ts
   #                                     (pure validation helpers — no I/O)
   #   - grounded-answer/__tests__/*   (12 unit files of pure helpers)
@@ -313,6 +316,7 @@ jobs:
           deno test --no-lock --allow-read --allow-env \
             supabase/functions/parent-portal/__tests__/ \
             supabase/functions/teacher-dashboard/__tests__/ \
+            supabase/functions/daily-cron/__tests__/ \
             supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts \
             supabase/functions/grounded-answer/__tests__/cache.test.ts \
             supabase/functions/grounded-answer/__tests__/circuit.test.ts \
