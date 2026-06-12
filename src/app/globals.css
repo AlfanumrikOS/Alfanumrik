@@ -1386,6 +1386,63 @@ body:has(.foxy-shell) {
   font-weight: 700;
 }
 
+/* ─── Phase 3 — Tools sheet controls (ff_foxy_os_v1, <lg only) ───────────
+   All scoped under `.foxy-os-tools` (the Tools sheet body class) so nothing
+   matches outside the flag-ON mobile path. Cosmic light tokens only. */
+
+/* Language segmented control — >=44px tap targets. */
+.foxy-os-tools .foxy-os-tools-seg {
+  min-height: 44px;
+  padding: 8px 4px;
+}
+
+/* Voice toggle + nav rows — >=48px tall, comfortable tap. */
+.foxy-os-tools .foxy-os-tools-row {
+  min-height: 52px;
+  padding: 10px 12px;
+}
+
+/* iOS-style switch track + knob for the voice toggle. */
+.foxy-os-tools .foxy-os-tools-switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border-radius: 9999px;
+  transition: background 0.18s ease;
+}
+.foxy-os-tools .foxy-os-tools-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.18s ease;
+}
+
+/* Progress stat tiles. */
+.foxy-os-tools .foxy-os-tools-stat {
+  padding: 10px 4px;
+}
+
+/* ─── Phase 3 a11y — visible focus rings on every new Foxy OS control ─────
+   Keyboard users get a clear 2px orange outline. Pointer/touch users do not
+   see it (the :focus-visible heuristic). Scoped under `.foxy-os` so the OFF
+   path / desktop never match. */
+.foxy-os .foxy-os-tap:focus-visible,
+.foxy-os .foxy-os-chip:focus-visible,
+.foxy-os-study .foxy-os-tap-chip:focus-visible,
+.foxy-os-study .foxy-os-mode:focus-visible,
+.foxy-os-study .foxy-os-chapter:focus-visible,
+.foxy-os-tools .foxy-os-tools-seg:focus-visible,
+.foxy-os-tools .foxy-os-tools-row:focus-visible,
+.foxy-os-study [role='tab']:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 2px;
+}
+
 /* ─── Phase 2 — keyboard-aware composer (ff_foxy_os_v1, <lg only) ─────────
    `--kb-inset` is published by useKeyboardInset() on :root ONLY while the
    flag-ON mobile path is mounted (the hook keeps it at 0px otherwise). All
@@ -1425,7 +1482,11 @@ body:has(.foxy-shell) {
   .foxy-os .foxy-os-chip,
   .foxy-os-study .foxy-os-tap-chip,
   .foxy-os-study .foxy-os-mode,
-  .foxy-os-study .foxy-os-chapter {
+  .foxy-os-study .foxy-os-chapter,
+  .foxy-os-tools .foxy-os-tools-seg,
+  .foxy-os-tools .foxy-os-tools-row,
+  .foxy-os-tools .foxy-os-tools-switch,
+  .foxy-os-tools .foxy-os-tools-knob {
     transition: none !important;
   }
 }
