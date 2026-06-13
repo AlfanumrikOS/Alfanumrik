@@ -162,10 +162,91 @@ jobs:
             exit 1
           fi
 
-          # 3. Build the pooler connection string for the linked STAGING project.
-          #    Password is URL-encoded so special chars don't break the URI.
-          ENC_PW="$(python3 -c 'import os,urllib.parse;print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe=""))')"
-          DB_URL="postgresql://postgres.${LINKED_REF}:${ENC_PW}@aws-0-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require"
+          # 3. Build the pooler connection string from the CLI-DERIVED pooler URL.
+          #    DO NOT hardcode the pooler host/region/port: staging lives in a
+          #    different region than prod, so a hardcoded ap-south-1 host (or the
+          #    wrong port) points at the wrong tenant and fails with
+          #    "Tenant or user not found". `supabase link` writes the correct,
+          #    region-accurate pooler connection string to supabase/.temp/pooler-url.
+          #    We read THAT, verify it embeds the staging ref (and NOT the prod
+          #    ref), then inject the real DB password (URL-encoded). The host is
+          #    printed as proof; the password is never printed.
+          POOLER_FILE="supabase/.temp/pooler-url"
+          if [ ! -s "$POOLER_FILE" ]; then
+            echo "::error::$POOLER_FILE is missing or empty after 'supabase link'. Refusing to guess the pooler host. FAIL-CLOSED."
+            exit 1
+          fi
+
+          # Defense-in-depth: the pooler URL embeds the connecting role as
+          # postgres.<ref>. Assert that <ref> == staging ref and != prod ref
+          # BEFORE we ever connect, and inject the URL-encoded password into the
+          # CLI's URL (handles both the "[YOUR-PASSWORD]" placeholder format and
+          # the no-password userinfo format that newer CLI versions emit).
+          DB_URL="$(
+            LINKED_REF="$LINKED_REF" PROD_PROJECT_REF="$PROD_PROJECT_REF" \
+            python3 - "$POOLER_FILE" <<'PY'
+          import os, sys, urllib.parse
+
+          # NOTE: parse by hand rather than urllib.parse.urlsplit(). The legacy
+          # CLI format embeds a literal "[YOUR-PASSWORD]" placeholder in the
+          # userinfo, and urlsplit() misreads the brackets as an IPv6 host and
+          # raises. Manual scheme/userinfo/host splitting is format-agnostic and
+          # handles BOTH the "[YOUR-PASSWORD]" placeholder format and the newer
+          # no-password userinfo format.
+          path = sys.argv[1]
+          with open(path) as f:
+              raw = f.read().strip()
+          if not raw:
+              sys.stderr.write("pooler-url empty\n"); sys.exit(2)
+
+          if "://" not in raw:
+              sys.stderr.write("pooler-url has no scheme (unexpected format)\n"); sys.exit(2)
+          scheme, after = raw.split("://", 1)
+
+          # Split off any ?query / #fragment that trails the path.
+          tail = ""
+          for sep in ("?", "#"):
+              idx = after.find(sep)
+              if idx != -1:
+                  tail = after[idx:]
+                  after = after[:idx]
+                  break
+
+          if "@" not in after:
+              sys.stderr.write("pooler-url has no userinfo (unexpected format)\n"); sys.exit(2)
+          userinfo, hostpath = after.rsplit("@", 1)   # host[:port]/path
+
+          # user is "postgres.<ref>" (possibly followed by ":<password-or-placeholder>")
+          user = userinfo.split(":", 1)[0]
+          if "." not in user:
+              sys.stderr.write("pooler-url user is not postgres.<ref>\n"); sys.exit(2)
+          embedded_ref = user.split(".", 1)[1]
+
+          staging_ref = os.environ["LINKED_REF"]
+          prod_ref = os.environ["PROD_PROJECT_REF"]
+          if embedded_ref == prod_ref:
+              sys.stderr.write("pooler-url embeds the PROD ref. FAIL-CLOSED.\n"); sys.exit(3)
+          if embedded_ref != staging_ref:
+              sys.stderr.write(
+                  "pooler-url ref (%s) != linked staging ref (%s). FAIL-CLOSED.\n"
+                  % (embedded_ref[:4] + "****", staging_ref[:4] + "****")
+              ); sys.exit(3)
+
+          # Host[:port]/path is "host:port/postgres" — the host portion is up to
+          # the first "/". Printed as proof (region-accurate, no secret).
+          host_only = hostpath.split("/", 1)[0]
+
+          enc_pw = urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe="")
+          if "sslmode=" not in tail:
+              tail = (tail + ("&" if tail else "?") + "sslmode=require")
+          url = "%s://%s:%s@%s%s" % (scheme, user, enc_pw, hostpath, tail)
+
+          # Proof to stderr (no password): the CLI-derived host the URL targets.
+          sys.stderr.write("Pooler host (from supabase/.temp/pooler-url): %s\n" % host_only)
+          sys.stdout.write(url)
+          PY
+          )"
+          echo "Built connection string from CLI-derived pooler-url (password injected, not shown)."
 
           # 4. Idempotent UPDATE on STAGING, then SELECT the row back as proof.
           #    flag_name is the UNIQUE key. Inputs are passed as psql variables
