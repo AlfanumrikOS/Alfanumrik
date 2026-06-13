@@ -142,6 +142,12 @@ class RouterOptions:
     openai_default: bool = False
     # Per-task weight in [0,1]. weights[task] > 0.5 ⇒ openai becomes primary.
     weights: dict[str, float] = field(default_factory=dict)
+    # A2: when False (default, live path), priority is DETERMINISTIC — OpenAI
+    # is always the primary rung. When True (gated by ff_mol_deterministic_priority
+    # being OFF → shadow/experiment), restore the legacy probabilistic
+    # weights/random reorder. The flag name is inverted on purpose: the flag
+    # turns the *deterministic* path ON; shadow_priority is the negation.
+    shadow_priority: bool = False
 
 
 def get_max_tokens(task: TaskType) -> int:
@@ -196,27 +202,23 @@ def select_provider_chain(task: TaskType, opts: RouterOptions) -> SelectedChain:
             ]
             p["chain"] = [{"provider": "openai", "model": GPT_MINI}, *others]
 
-    # Step 4: probabilistic routing (80% default to OpenAI).
-    w = opts.weights.get(task)
-    if not isinstance(w, (int, float)):
-        w = 0.8
-
-    if random.random() < w:
-        for p in passes_raw:
-            openai_target = next((t for t in p["chain"] if t["provider"] == "openai"), None)
-            if openai_target is None:
-                continue
-            # Reorder: openai first, original-order remainder after.
-            rest = [t for t in p["chain"] if t is not openai_target]
-            p["chain"] = [openai_target, *rest]
+    # Step 4: priority selection.
+    if opts.shadow_priority:
+        # Shadow/experiment ONLY: legacy probabilistic 80%-to-OpenAI path.
+        w = opts.weights.get(task)
+        if not isinstance(w, (int, float)):
+            w = 0.8
+        head_provider = "openai" if random.random() < w else "anthropic"
     else:
-        for p in passes_raw:
-            anthropic_target = next((t for t in p["chain"] if t["provider"] == "anthropic"), None)
-            if anthropic_target is None:
-                continue
-            # Reorder: anthropic first, original-order remainder after.
-            rest = [t for t in p["chain"] if t is not anthropic_target]
-            p["chain"] = [anthropic_target, *rest]
+        # A2 live path: OpenAI is ALWAYS primary. Deterministic, no randomness.
+        head_provider = "openai"
+
+    for p in passes_raw:
+        target = next((t for t in p["chain"] if t["provider"] == head_provider), None)
+        if target is None:
+            continue
+        rest = [t for t in p["chain"] if t is not target]
+        p["chain"] = [target, *rest]
 
     # Step 5: compute mode.
     if task == "doubt_solving" and opts.hybrid_enabled:

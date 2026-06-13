@@ -10,21 +10,20 @@ Phase-0 scope:
 - Real telemetry writes (single ``mol_request_logs`` row per call, matching
   TS LogPayload shape exactly).
 
-Phase-0 stubs that Phase 1 will plug in:
-- ``classify_task_type()`` — Phase 1 ports the LLM-side classifier (TS
-  ``./classifier.ts``). Phase 0 falls back to a no-op that requires the
-  caller to pass ``task_type`` explicitly (matches TS contract when the
-  caller already knows the task).
-- ``build_system_prompt()`` — Phase 1 ports the prompt-builder
-  (TS ``./prompt-builder.ts``). Phase 0 uses a minimal placeholder so the
-  orchestrator + provider HTTP path are exercisable end-to-end; the
-  placeholder is bypassed entirely when the caller sets
-  ``config.system_prompt_override``.
-- ``post_process()`` — Phase 1 ports the response-shaper (TS
-  ``./post-processor.ts``). Phase 0 returns the model text verbatim.
-- ``get_routing_weights()`` — Phase 1 reads the per-task weights from the
-  ``mol_routing_weights`` table. Phase 0 returns an empty dict (no weight
-  overrides apply, matching the default-OFF behavior).
+Wired components:
+- ``classify_task_type()`` — the real classifier (TS ``./classifier.ts``
+  port): returns the caller-passed ``task_type`` when present, else infers
+  the task from the input surface, keyword, and regex signals, defaulting to
+  ``"explanation"`` for student-facing surfaces.
+- ``build_system_prompt()`` — the real prompt-builder (TS
+  ``./prompt-builder.ts`` port): full Foxy persona, grade-tier styling,
+  language + exam-goal hints, and NCERT RAG-context injection. Bypassed
+  entirely when the caller sets ``config.system_prompt_override``.
+- ``post_process()`` — the response-shaper (TS ``./post-processor.ts``
+  port).
+- ``get_routing_weights()`` — reads the per-task weights from the
+  ``mol_routing_weights`` table with a 5m cache; returns an empty dict when
+  the table is unreadable (no weight overrides apply, matching default-OFF).
 """
 
 from __future__ import annotations
@@ -36,8 +35,11 @@ from collections.abc import Iterable
 
 import structlog
 
+from . import breaker as cb
+from .cache import cache_key, get_cached, set_cached, should_cache
 from .classifier import classify as classify_task_type
 from .cost import compute_cost
+from .cost_cap import enforce_cost_cap
 from .errors import MolError
 from .feature_flag import is_flag_enabled
 from .post_processor import post_process
@@ -135,6 +137,8 @@ def _status_from_message(msg: str) -> int | None:
 async def _execute_pass(
     chain: Iterable[ProviderTarget],
     *,
+    task_type: TaskType,
+    breaker_on: bool,
     system_prompt: str,
     user_messages: list[ChatTurn],
     max_tokens: int,
@@ -151,11 +155,13 @@ async def _execute_pass(
       - Only retryable HTTP statuses get the second attempt.
       - On all-fail, raise MolError('NO_PROVIDER_AVAILABLE').
 
-    Phase 0 deliberately does NOT implement the per-worker circuit breaker
-    (TS ``canRequest`` / ``recordFailure``). The breaker is a perf
-    optimization; a request-driven retry loop is already correct without
-    it, and a cross-runtime breaker should be re-thought in Phase 2 when
-    we know whether to share state with the TS workers.
+    A3 (Phase 2): when ``breaker_on`` and the cross-instance breaker reports
+    the ``(provider, task_type)`` circuit OPEN, the target is skipped WITHOUT
+    an HTTP call (``{provider}:circuit_open`` failure entry). Provider
+    outcomes feed ``record_success`` / ``record_failure`` so the shared
+    (Upstash-backed) state machine tracks health across Cloud Run instances.
+    The breaker FAILS OPEN — when its Redis store is unconfigured / unreachable
+    ``can_request`` returns True, so this gate can never block a live request.
     """
     failures: list[str] = []
     fallback = 0
@@ -165,6 +171,11 @@ async def _execute_pass(
         provider = _providers[target.provider]
         if not provider.is_configured():
             failures.append(f"{target.provider}:not_configured")
+            fallback += 1
+            continue
+
+        if breaker_on and not await cb.can_request(target.provider, task_type):
+            failures.append(f"{target.provider}:circuit_open")
             fallback += 1
             continue
 
@@ -180,12 +191,22 @@ async def _execute_pass(
                     timeout_seconds=timeout_seconds,
                     image_url=image_url,
                 )
+                if breaker_on:
+                    await cb.record_success(target.provider, task_type)
                 return response, fallback, failures
             except Exception as err:  # noqa: BLE001 — boundary, classified below
                 msg = str(err) or type(err).__name__
                 status = _status_from_message(msg)
                 failures.append(f"{target.provider}:{status if status else 'err'}")
                 last_error = msg
+                # A3: only PROVIDER-HEALTH failures count toward the breaker.
+                # A network/timeout error (status is None) or a retryable status
+                # (429/5xx) is a provider-health signal; a non-retryable 4xx is a
+                # client/input error and must NOT trip the circuit (otherwise a
+                # burst of bad requests would wrongly open the breaker on a
+                # perfectly healthy provider).
+                if breaker_on and (status is None or is_retryable_status(status)):
+                    await cb.record_failure(target.provider, task_type)
                 # Only retry if the status is retryable AND this is the first attempt.
                 if status is None or not is_retryable_status(status):
                     break
@@ -239,13 +260,37 @@ async def generate_response(req: GenerateRequest) -> MolResult:
     task_type = classify_task_type(req)
 
     # Step 3 — flags + weights in parallel
-    hybrid_on, openai_default, weights = await asyncio.gather(
+    (
+        hybrid_on,
+        openai_default,
+        deterministic_on,
+        breaker_on,
+        cost_cap_on,
+        cache_on,
+        weights,
+    ) = await asyncio.gather(
         is_flag_enabled(
             "ff_mol_hybrid_mode_v1",
             student_id=req.student_context.student_id,
         ),
         is_flag_enabled(
             "ff_mol_openai_default",
+            student_id=req.student_context.student_id,
+        ),
+        is_flag_enabled(
+            "ff_mol_deterministic_priority",
+            student_id=req.student_context.student_id,
+        ),
+        is_flag_enabled(
+            "ff_mol_circuit_breaker_v1",
+            student_id=req.student_context.student_id,
+        ),
+        is_flag_enabled(
+            "ff_mol_cost_cap_v1",
+            student_id=req.student_context.student_id,
+        ),
+        is_flag_enabled(
+            "ff_mol_semantic_cache",
             student_id=req.student_context.student_id,
         ),
         get_routing_weights(),
@@ -258,6 +303,9 @@ async def generate_response(req: GenerateRequest) -> MolResult:
             hybrid_enabled=hybrid_on,
             openai_default=openai_default,
             weights=weights,
+            # deterministic ON  ⇒ shadow_priority OFF (OpenAI always primary).
+            # deterministic OFF ⇒ legacy probabilistic path (shadow/experiment).
+            shadow_priority=not deterministic_on,
         ),
     )
 
@@ -268,8 +316,10 @@ async def generate_response(req: GenerateRequest) -> MolResult:
             rest = [t for t in p.chain if t.provider != cfg.preferred_provider]
             p.chain = [*preferred, *rest]
 
-    # Step 6 — system prompt (override path bypasses the stub builder)
-    system_prompt = cfg.system_prompt_override or build_system_prompt(task_type, req)
+    # Step 6 — system prompt (override path bypasses the real builder)
+    system_prompt = cfg.system_prompt_override or build_system_prompt(
+        task_type, req.student_context, req.rag_context
+    )
 
     # Step 7 — user messages
     user_messages: list[ChatTurn] = []
@@ -281,6 +331,83 @@ async def generate_response(req: GenerateRequest) -> MolResult:
     max_tokens = cfg.max_tokens_override or get_max_tokens(task_type)
     temperature = cfg.temperature_override if cfg.temperature_override is not None else 0.7
 
+    # A4 — semantic-cache HIT short-circuit. Runs BEFORE the cost-cap block so a
+    # hit costs nothing (no provider call, no cost). Gated behind
+    # ff_mol_semantic_cache (default OFF). Skipped entirely for personalized
+    # turns (chat_history present) — those answers are never cached (P13: no
+    # student-identifiable conversation content is keyed or stored, and the key
+    # is not scoped by student_id so a hit is a clean, stateless answer).
+    # Consistent with the Foxy single-retrieval contract (REG-50): the cache
+    # short-circuits ahead of any retrieval/provider work.
+    cache_k: str | None = None
+    if cache_on and not inp.chat_history:
+        cache_k = cache_key(
+            task_type,
+            grade=req.student_context.grade,
+            subject=req.student_context.subject,
+            query=user_text,
+            language=req.student_context.language,
+            exam_goal=req.student_context.exam_goal,
+            learning_speed=req.student_context.learning_speed,
+        )
+        hit = await get_cached(cache_k)
+        if hit is not None:
+            latency_ms = int((time.monotonic() - start) * 1000)
+            await record_mol_request(
+                LogPayload(
+                    request_id=request_id,
+                    student_id=req.student_context.student_id,
+                    task_type=task_type,
+                    surface=cfg.surface,
+                    provider="cache",
+                    model="cache",
+                    passes=0,
+                    fallback_count=0,
+                    failure_chain=None,
+                    latency_ms=latency_ms,
+                    tokens=TokenUsage(),
+                    usd_cost=0.0,
+                    inr_cost=0.0,
+                    grade=req.student_context.grade,
+                    language=req.student_context.language,
+                    exam_goal=req.student_context.exam_goal,
+                    shadow_role=cfg.shadow_role,
+                    shadow_of_request_id=cfg.shadow_of_request_id,
+                    trace_id=cfg.trace_id,
+                )
+            )
+            return MolResult(
+                text=hit,
+                provider="cache",
+                model="cache",
+                task_type=task_type,
+                latency_ms=latency_ms,
+                tokens=TokenUsage(),
+                usd_cost=0.0,
+                inr_cost=0.0,
+                fallback_count=0,
+                passes=0,
+                request_id=request_id,
+                failure_chain=[],
+            )
+
+    # A4 — cost-cap enforcement BEFORE any provider HTTP call. Gated behind
+    # ff_mol_cost_cap_v1 (default OFF). Uses a conservative worst-case estimate
+    # against the primary rung's provider/model. Raises MolError(
+    # "COST_CAP_EXCEEDED") which the route maps to HTTP 429. Prompt tokens are a
+    # ~4-chars-per-token approximation over the composed system prompt + the
+    # user's text (both already in scope here).
+    if cost_cap_on:
+        primary = selected.passes[0].chain[0]
+        prompt_estimate = (len(system_prompt) + len(user_text)) // 4
+        enforce_cost_cap(
+            task_type=task_type,
+            provider=primary.provider,
+            model=primary.model,
+            prompt_tokens=prompt_estimate,
+            max_tokens=max_tokens,
+        )
+
     # Step 7 (cont.) — execute passes
     responses: list[ProviderResponse] = []
     all_failures: list[str] = []
@@ -290,6 +417,8 @@ async def generate_response(req: GenerateRequest) -> MolResult:
         first_pass = selected.passes[0]
         response_1, fb_1, fail_1 = await _execute_pass(
             first_pass.chain,
+            task_type=task_type,
+            breaker_on=breaker_on,
             system_prompt=system_prompt,
             user_messages=user_messages,
             max_tokens=max_tokens,
@@ -303,9 +432,11 @@ async def generate_response(req: GenerateRequest) -> MolResult:
 
         # Hybrid: 2-pass simplify
         if selected.mode == "hybrid" and len(selected.passes) >= 2:
-            simplify_prompt = build_simplify_prompt(req, response_1.text)
+            simplify_prompt = build_simplify_prompt(req.student_context, response_1.text)
             response_2, fb_2, fail_2 = await _execute_pass(
                 selected.passes[1].chain,
+                task_type=task_type,
+                breaker_on=breaker_on,
                 system_prompt=simplify_prompt,
                 user_messages=[ChatTurn(role="user", content="Rewrite the answer above.")],
                 max_tokens=get_simplify_max_tokens(),
@@ -359,6 +490,23 @@ async def generate_response(req: GenerateRequest) -> MolResult:
 
     # Steps 8 + 9 — derive MolResult + write telemetry
     final_text = post_process(responses[-1].text, task_type)
+
+    # A4 — semantic-cache STORE. Only persists clean, stateless, high-confidence
+    # answers: should_cache() refuses to store when a fallback occurred
+    # (low-confidence) or when chat_history was present (personalized — never
+    # written, P13). cache_k is only set on the HIT path above when caching was
+    # eligible, so this is a no-op when the cache is OFF or the turn was
+    # personalized.
+    if (
+        cache_on
+        and cache_k is not None
+        and should_cache(
+            fallback_count=total_fallback,
+            has_chat_history=bool(inp.chat_history),
+        )
+    ):
+        await set_cached(cache_k, final_text)
+
     tokens = sum_tokens([r.tokens for r in responses])
 
     usd_total = 0.0

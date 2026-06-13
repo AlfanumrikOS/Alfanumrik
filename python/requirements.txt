@@ -15,6 +15,11 @@ structlog>=24.4,<25.0
 sentry-sdk[fastapi]>=2.18,<3.0
 python-json-logger>=2.0,<3.0
 postgrest>=0.18,<1.0
+# PyJWT: decodes the Supabase JWT (verify_signature=False) in the CME-engine
+# router (services/ai/business/cme_engine/router.py) to resolve student_id from
+# the Bearer token. Used-but-undeclared until Phase 0.5 — adding it here fixes
+# the FastAPI app-import failure that blocked the integration suite.
+PyJWT>=2.8,<3.0
 # tenacity: industry-standard Python retry library. Used in shared/retry.py
 # for the @retry_with_backoff decorator. Locked here to keep provider HTTP
 # call retry semantics consistent across all Phase 1+ workloads (avoids each
@@ -27,3 +32,9 @@ opentelemetry-sdk>=1.27.0,<2.0
 opentelemetry-instrumentation-fastapi>=0.48b0,<1.0
 opentelemetry-exporter-gcp-trace>=1.7.0,<2.0
 pybreaker>=1.3.0,<2.0
+# upstash-redis: serverless Redis REST client. Backs the cross-instance MOL
+# circuit breaker (mol/breaker.py) and semantic cache (mol/cache.py). Cloud Run
+# is multi-instance so in-process state cannot be shared; Upstash REST is the
+# shared store. Fail-open: when unconfigured the client is None and callers
+# behave as if the breaker is CLOSED / the cache is empty.
+upstash-redis>=1.2,<2.0

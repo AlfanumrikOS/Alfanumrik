@@ -10,10 +10,12 @@ already validates the request envelope; this handler's job is to:
 
 from __future__ import annotations
 
+import json
 import uuid
 
 import structlog
 from fastapi import APIRouter, HTTPException, Request, status
+from starlette.responses import StreamingResponse
 
 from ...mol import GenerateRequest, MolResult, generate_response
 from ...mol.errors import MolError
@@ -85,3 +87,69 @@ async def post_generate(req: GenerateRequest, request: Request) -> MolResult:
         ) from err
     finally:
         structlog.contextvars.clear_contextvars()
+
+
+def _sse(event: str, data: dict) -> str:
+    """Format one Server-Sent Event frame."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+@router.post(
+    "/generate/stream",
+    summary="Run a MOL call and stream the answer as Server-Sent Events",
+)
+async def post_generate_stream(
+    req: GenerateRequest, request: Request
+) -> StreamingResponse:
+    """Stream a MOL answer. Emits ``event: token`` frames followed by a final
+    ``event: done`` frame; ``event: error`` on a MolError (never a 5xx into
+    the stream). Cooperatively cancels emission if the client disconnects.
+
+    The endpoint is always mounted; the ``ff_mol_stream_v1`` flag gating is a
+    caller-layer concern, not enforced here.
+    """
+    request_id = (
+        (req.config and req.config.request_id)
+        or request.headers.get("x-request-id")
+        or str(uuid.uuid4())
+    )
+    if req.config is None:
+        from ...mol.types import GenerateConfig
+
+        req.config = GenerateConfig(request_id=request_id)
+    else:
+        req.config.request_id = request_id
+
+    async def _gen():
+        try:
+            result = await generate_response(req)
+        except MolError as err:
+            logger.warning("mol.stream.error", code=err.code, message=err.message)
+            yield _sse(
+                "error",
+                {"code": err.code, "message": err.message, "request_id": request_id},
+            )
+            return
+        # Chunk the final text into ~120-char SSE token frames. Phase A streams
+        # the final answer in chunks; token-level provider streaming is a
+        # follow-up.
+        text = result.text
+        size = 120
+        for i in range(0, len(text), size):
+            # Cooperative cancellation: stop emitting if the client disconnected.
+            if await request.is_disconnected():
+                logger.info("mol.stream.client_disconnected", request_id=request_id)
+                return
+            yield _sse("token", {"text": text[i : i + size]})
+        yield _sse(
+            "done",
+            {
+                "request_id": result.request_id,
+                "provider": result.provider,
+                "model": result.model,
+                "task_type": result.task_type,
+                "latency_ms": result.latency_ms,
+            },
+        )
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")

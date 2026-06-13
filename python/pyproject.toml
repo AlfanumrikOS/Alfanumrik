@@ -32,6 +32,7 @@ dependencies = [
   "opentelemetry-instrumentation-fastapi>=0.48b0,<1.0",
   "opentelemetry-exporter-gcp-trace>=1.7.0,<2.0",
   "pybreaker>=1.3.0,<2.0",
+  "upstash-redis>=1.2,<2.0",
 ]
 [project.optional-dependencies]
 dev = [
@@ -52,6 +53,15 @@ include = ["services*"]
 minversion = "8.0"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# ``..`` puts the repo root (one level above python/) on sys.path so
+# ``cbse_parser`` — a package at the repo root, imported by
+# services/ai/api/v1/foxy_tutor.py — resolves when pytest's rootdir is
+# python/ (CI runs with ``working-directory: python``). ``.`` keeps the
+# python/ dir itself importable for the ``services`` + ``tests`` packages.
+# Order is load-bearing: ``.`` MUST precede ``..`` so ``import tests``
+# resolves to python/tests, not the repo-root tests tree (both are top-level
+# packages named ``tests``).
+pythonpath = [".", ".."]
 addopts = [
   "-ra",
   "--strict-markers",

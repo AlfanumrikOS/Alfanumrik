@@ -20,7 +20,7 @@ from starlette.responses import Response
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import RateLimitHeadersMiddleware
+from slowapi.middleware import SlowAPIMiddleware
 
 from .limiter import limiter
 
@@ -102,9 +102,12 @@ def create_app() -> FastAPI:
     )
     
     # slowapi integration
+    # SlowAPIMiddleware performs the per-route limit check AND injects the
+    # X-RateLimit-* response headers (slowapi 0.1.9 has no separate
+    # "RateLimitHeadersMiddleware" — that symbol does not exist in the pin).
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-    app.add_middleware(RateLimitHeadersMiddleware)
+    app.add_middleware(SlowAPIMiddleware)
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):

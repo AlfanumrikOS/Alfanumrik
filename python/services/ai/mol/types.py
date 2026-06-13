@@ -46,7 +46,9 @@ GradeTier = Literal["junior", "middle", "senior"]
 ProviderId = Literal["openai", "anthropic"]
 # 'hybrid' surfaces on MolResult when the orchestrator ran a 2-pass chain
 # (doubt_solving + hybrid flag ON). Matches TS types.ts:MolResult.provider.
-ResultProvider = Literal["openai", "anthropic", "hybrid"]
+# 'cache' surfaces on a semantic-cache hit (A4): the answer was served from the
+# Upstash exact-match cache with zero provider calls and zero cost.
+ResultProvider = Literal["openai", "anthropic", "hybrid", "cache"]
 PassRole = Literal["single", "reason", "simplify", "vision"]
 ChainMode = Literal["single", "hybrid", "vision"]
 
