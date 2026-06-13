@@ -114,8 +114,14 @@ def test_openai_default_promotes_openai_for_teaching_tasks(mock_rand):
 
 @patch("services.ai.mol.router.random.random", return_value=0.9)
 def test_openai_default_does_not_affect_reasoning(mock_rand):
-    """openai_default only flips teaching tasks; reasoning keeps Anthropic primary."""
-    selected = select_provider_chain("reasoning", _opts(openai_default=True))
+    """openai_default only flips teaching tasks; reasoning keeps Anthropic primary.
+
+    Observed on the shadow (probabilistic) path: the A2 deterministic default
+    always promotes OpenAI, so reasoning's anthropic-primary shape is only
+    visible when shadow_priority is ON with random(0.9) >= weight(0.8)."""
+    selected = select_provider_chain(
+        "reasoning", _opts(openai_default=True, shadow_priority=True)
+    )
     first = selected.passes[0].chain[0]
     assert first.provider == "anthropic"
 
@@ -131,16 +137,20 @@ def test_openai_default_no_duplicate_after_flip(mock_rand):
 
 @patch("services.ai.mol.router.random.random", return_value=0.1)
 def test_weight_above_random_promotes_openai_primary(mock_rand):
-    """w=0.8 > random(0.1) ensures the openai rung is primary."""
-    selected = select_provider_chain("reasoning", _opts(weights={"reasoning": 0.8}))
+    """w=0.8 > random(0.1) ensures the openai rung is primary (shadow path)."""
+    selected = select_provider_chain(
+        "reasoning", _opts(shadow_priority=True, weights={"reasoning": 0.8})
+    )
     first = selected.passes[0].chain[0]
     assert first.provider == "openai"
 
 
 @patch("services.ai.mol.router.random.random", return_value=0.9)
 def test_weight_below_random_promotes_anthropic_primary(mock_rand):
-    """w=0.8 < random(0.9) leaves anthropic as primary."""
-    selected = select_provider_chain("reasoning", _opts(weights={"reasoning": 0.8}))
+    """w=0.8 < random(0.9) leaves anthropic as primary (shadow path)."""
+    selected = select_provider_chain(
+        "reasoning", _opts(shadow_priority=True, weights={"reasoning": 0.8})
+    )
     first = selected.passes[0].chain[0]
     assert first.provider == "anthropic"
 
@@ -177,8 +187,15 @@ def test_hybrid_off_collapses_doubt_solving_to_single_pass():
 
 @patch("services.ai.mol.router.random.random", return_value=0.9)
 def test_hybrid_off_chain_has_cost_friendly_openai_fallback(mock_rand):
-    """Hybrid OFF collapsed chain includes gpt-4o-mini (not gpt-4o) per cost note."""
-    selected = select_provider_chain("doubt_solving", _opts(hybrid_enabled=False))
+    """Hybrid OFF collapsed chain includes gpt-4o-mini (not gpt-4o) per cost note.
+
+    Asserted on the shadow (probabilistic) path so the SONNET-first ordering
+    is preserved; the A2 deterministic default would promote the openai rung
+    to the head. The cost-note invariant (gpt-4o-mini as fallback, never
+    gpt-4o) holds on both paths."""
+    selected = select_provider_chain(
+        "doubt_solving", _opts(hybrid_enabled=False, shadow_priority=True)
+    )
     chain = selected.passes[0].chain
     assert chain[0].model == SONNET
     assert chain[-1].provider == "openai"
@@ -196,3 +213,60 @@ def test_hybrid_on_preserves_two_passes():
 def test_ocr_extraction_mode_is_vision():
     selected = select_provider_chain("ocr_extraction", _opts())
     assert selected.mode == "vision"
+
+
+# ─── Deterministic OpenAI-priority (spec A2) ────────────────────────────────
+
+
+def test_deterministic_priority_makes_openai_primary_without_random():
+    """With shadow_priority OFF (default), the openai rung is always primary —
+    no dependence on random.random()."""
+    for task in ("explanation", "concept_explanation", "step_by_step",
+                 "quiz_generation", "evaluation", "grounding_check"):
+        selected = select_provider_chain(task, _opts())
+        first = selected.passes[0].chain[0]
+        assert first.provider == "openai", f"{task} should be openai-primary"
+
+
+def test_deterministic_priority_reasoning_promotes_openai_first():
+    """reasoning has a gpt-4o rung; deterministic priority pulls it to the head."""
+    selected = select_provider_chain("reasoning", _opts())
+    first = selected.passes[0].chain[0]
+    assert first.provider == "openai"
+    assert first.model == GPT_FULL
+
+
+def test_deterministic_priority_is_stable_across_calls():
+    """Two identical calls must yield byte-identical chains (no randomness)."""
+    a = select_provider_chain("explanation", _opts())
+    b = select_provider_chain("explanation", _opts())
+    assert [(t.provider, t.model) for t in a.passes[0].chain] == \
+           [(t.provider, t.model) for t in b.passes[0].chain]
+
+
+def test_shadow_priority_on_uses_weights_and_random():
+    """shadow_priority=True restores the probabilistic path: w=0.8 < random(0.9)
+    leaves anthropic primary for reasoning."""
+    from unittest.mock import patch
+
+    with patch("services.ai.mol.router.random.random", return_value=0.9):
+        selected = select_provider_chain(
+            "reasoning",
+            _opts(shadow_priority=True, weights={"reasoning": 0.8}),
+        )
+    assert selected.passes[0].chain[0].provider == "anthropic"
+
+
+def test_deterministic_priority_noop_when_chain_has_no_openai():
+    """A chain with only anthropic rungs stays anthropic-first (nothing to promote)."""
+    from services.ai.mol import router as router_mod
+
+    original = router_mod.BASE_MATRIX["evaluation"]
+    try:
+        router_mod.BASE_MATRIX["evaluation"] = [
+            {"role": "single", "chain": [{"provider": "anthropic", "model": HAIKU}]}
+        ]
+        selected = select_provider_chain("evaluation", _opts())
+        assert all(t.provider == "anthropic" for t in selected.passes[0].chain)
+    finally:
+        router_mod.BASE_MATRIX["evaluation"] = original
