@@ -442,5 +442,37 @@ def test_generate_429_when_cost_cap_exceeded(
     assert not anthropic_route.called
 
 
+# ─── A4: ff_mol_semantic_cache short-circuit ────────────────────────────────
+
+
+def test_generate_serves_from_cache_without_provider_call(
+    client: TestClient, respx_mock, mock_supabase_client, monkeypatch
+):
+    """A cache hit short-circuits before any provider HTTP call."""
+    from services.ai.mol import cache as cache_mod  # noqa: F401
+
+    async def _flag(name, **kwargs):
+        return name == "ff_mol_semantic_cache"
+
+    monkeypatch.setattr("services.ai.mol.orchestrator.is_flag_enabled", _flag)
+
+    async def _get_cached(key):
+        return "Cached answer."
+
+    monkeypatch.setattr("services.ai.mol.orchestrator.get_cached", _get_cached)
+    openai_route = respx_mock.post("https://api.openai.com/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json={"choices": [], "usage": {}})
+    )
+    payload = {
+        "task_type": "explanation",
+        "input": {"question": "What is force?"},
+        "student_context": {"student_id": "x", "grade": "8", "subject": "science"},
+    }
+    res = client.post("/v1/generate", json=payload)
+    assert res.status_code == 200, res.text
+    assert res.json()["text"] == "Cached answer."
+    assert openai_route.call_count == 0
+
+
 async def _noop():
     return None

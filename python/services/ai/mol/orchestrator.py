@@ -36,6 +36,7 @@ from collections.abc import Iterable
 import structlog
 
 from . import breaker as cb
+from .cache import cache_key, get_cached, set_cached, should_cache
 from .classifier import classify as classify_task_type
 from .cost import compute_cost
 from .cost_cap import enforce_cost_cap
@@ -265,6 +266,7 @@ async def generate_response(req: GenerateRequest) -> MolResult:
         deterministic_on,
         breaker_on,
         cost_cap_on,
+        cache_on,
         weights,
     ) = await asyncio.gather(
         is_flag_enabled(
@@ -285,6 +287,10 @@ async def generate_response(req: GenerateRequest) -> MolResult:
         ),
         is_flag_enabled(
             "ff_mol_cost_cap_v1",
+            student_id=req.student_context.student_id,
+        ),
+        is_flag_enabled(
+            "ff_mol_semantic_cache",
             student_id=req.student_context.student_id,
         ),
         get_routing_weights(),
@@ -324,6 +330,63 @@ async def generate_response(req: GenerateRequest) -> MolResult:
 
     max_tokens = cfg.max_tokens_override or get_max_tokens(task_type)
     temperature = cfg.temperature_override if cfg.temperature_override is not None else 0.7
+
+    # A4 — semantic-cache HIT short-circuit. Runs BEFORE the cost-cap block so a
+    # hit costs nothing (no provider call, no cost). Gated behind
+    # ff_mol_semantic_cache (default OFF). Skipped entirely for personalized
+    # turns (chat_history present) — those answers are never cached (P13: no
+    # student-identifiable conversation content is keyed or stored, and the key
+    # is not scoped by student_id so a hit is a clean, stateless answer).
+    # Consistent with the Foxy single-retrieval contract (REG-50): the cache
+    # short-circuits ahead of any retrieval/provider work.
+    cache_k: str | None = None
+    if cache_on and not inp.chat_history:
+        cache_k = cache_key(
+            task_type,
+            grade=req.student_context.grade,
+            subject=req.student_context.subject,
+            query=user_text,
+        )
+        hit = await get_cached(cache_k)
+        if hit is not None:
+            latency_ms = int((time.monotonic() - start) * 1000)
+            await record_mol_request(
+                LogPayload(
+                    request_id=request_id,
+                    student_id=req.student_context.student_id,
+                    task_type=task_type,
+                    surface=cfg.surface,
+                    provider="cache",
+                    model="cache",
+                    passes=0,
+                    fallback_count=0,
+                    failure_chain=None,
+                    latency_ms=latency_ms,
+                    tokens=TokenUsage(),
+                    usd_cost=0.0,
+                    inr_cost=0.0,
+                    grade=req.student_context.grade,
+                    language=req.student_context.language,
+                    exam_goal=req.student_context.exam_goal,
+                    shadow_role=cfg.shadow_role,
+                    shadow_of_request_id=cfg.shadow_of_request_id,
+                    trace_id=cfg.trace_id,
+                )
+            )
+            return MolResult(
+                text=hit,
+                provider="cache",
+                model="cache",
+                task_type=task_type,
+                latency_ms=latency_ms,
+                tokens=TokenUsage(),
+                usd_cost=0.0,
+                inr_cost=0.0,
+                fallback_count=0,
+                passes=0,
+                request_id=request_id,
+                failure_chain=[],
+            )
 
     # A4 — cost-cap enforcement BEFORE any provider HTTP call. Gated behind
     # ff_mol_cost_cap_v1 (default OFF). Uses a conservative worst-case estimate
@@ -424,6 +487,23 @@ async def generate_response(req: GenerateRequest) -> MolResult:
 
     # Steps 8 + 9 — derive MolResult + write telemetry
     final_text = post_process(responses[-1].text, task_type)
+
+    # A4 — semantic-cache STORE. Only persists clean, stateless, high-confidence
+    # answers: should_cache() refuses to store when a fallback occurred
+    # (low-confidence) or when chat_history was present (personalized — never
+    # written, P13). cache_k is only set on the HIT path above when caching was
+    # eligible, so this is a no-op when the cache is OFF or the turn was
+    # personalized.
+    if (
+        cache_on
+        and cache_k is not None
+        and should_cache(
+            fallback_count=total_fallback,
+            has_chat_history=bool(inp.chat_history),
+        )
+    ):
+        await set_cached(cache_k, final_text)
+
     tokens = sum_tokens([r.tokens for r in responses])
 
     usd_total = 0.0
