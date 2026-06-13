@@ -34,7 +34,7 @@ function err(message: string, status: number) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await authorizeRequest(request, 'student.profile.write', { requireStudentId: true });
+  const auth = await authorizeRequest(request, 'profile.update_own', { requireStudentId: true });
   if (!auth.authorized) return auth.errorResponse!;
 
   let body: Record<string, unknown>;

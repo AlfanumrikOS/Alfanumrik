@@ -6,11 +6,11 @@ import { isValidUUID } from '@/lib/sanitize';
 
 /**
  * GET /api/v1/admin/roles — List all roles with their permissions
- * Permission: system.manage_roles
+ * Permission: role.manage
  */
 export async function GET(request: Request) {
   try {
-    const auth = await authorizeRequest(request, 'system.manage_roles');
+    const auth = await authorizeRequest(request, 'role.manage');
     if (!auth.authorized) return auth.errorResponse!;
 
     const { data: roles, error } = await supabaseAdmin
@@ -42,13 +42,13 @@ export async function GET(request: Request) {
 
 /**
  * POST /api/v1/admin/roles — Create a new role
- * Permission: system.manage_roles
+ * Permission: role.manage
  *
  * Body: { name: string, description?: string, permissions?: string[] }
  */
 export async function POST(request: Request) {
   try {
-    const auth = await authorizeRequest(request, 'system.manage_roles');
+    const auth = await authorizeRequest(request, 'role.manage');
     if (!auth.authorized) return auth.errorResponse!;
 
     const body = await request.json();
@@ -142,14 +142,14 @@ export async function POST(request: Request) {
 
 /**
  * PATCH /api/v1/admin/roles — Update a role's permissions
- * Permission: system.manage_roles
+ * Permission: role.manage
  *
  * Body: { role_id: string, permissions: string[] }
  * Replaces all permissions for the given role.
  */
 export async function PATCH(request: Request) {
   try {
-    const auth = await authorizeRequest(request, 'system.manage_roles');
+    const auth = await authorizeRequest(request, 'role.manage');
     if (!auth.authorized) return auth.errorResponse!;
 
     const body = await request.json();

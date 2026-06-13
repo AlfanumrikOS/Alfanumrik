@@ -27,7 +27,7 @@ function err(message: string, status: number) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await authorizeRequest(request, 'study_plan.write', { requireStudentId: true });
+  const auth = await authorizeRequest(request, 'study_plan.create', { requireStudentId: true });
   if (!auth.authorized) return auth.errorResponse!;
 
   let body: Record<string, unknown>;

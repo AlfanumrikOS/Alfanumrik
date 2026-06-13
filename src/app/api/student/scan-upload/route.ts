@@ -22,7 +22,7 @@ function err(message: string, status: number) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeRequest(request, 'student.scan', { requireStudentId: true });
+  const auth = await authorizeRequest(request, 'image.upload', { requireStudentId: true });
   if (!auth.authorized) return auth.errorResponse!;
 
   let body: Record<string, unknown>;
