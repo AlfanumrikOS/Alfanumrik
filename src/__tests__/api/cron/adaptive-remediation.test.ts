@@ -45,7 +45,18 @@ const isFeatureEnabledMock = vi.fn();
 vi.mock('@/lib/feature-flags', () => ({
   isFeatureEnabled: (...args: unknown[]) => isFeatureEnabledMock(...args),
   ADAPTIVE_REMEDIATION_FLAGS: { V1: 'ff_adaptive_remediation_v1' },
+  // Loops B/C share ONE flag (spec Decision X1), independent of Loop A's.
+  ADAPTIVE_LOOPS_BC_FLAGS: { V1: 'ff_adaptive_loops_bc_v1' },
 }));
+
+/**
+ * Default flag policy for the Loop-A-focused suites below: Loop A ON, Loops
+ * B/C OFF — so the existing Loop A assertions are unaffected by the B/C inject
+ * branches. The B/C suites at the bottom override this per-test.
+ */
+function loopAOnlyFlags(flagName: string): boolean {
+  return flagName === 'ff_adaptive_remediation_v1';
+}
 
 const onRemediationAssignedMock = vi.fn().mockResolvedValue(undefined);
 const onRemediationRecoveredMock = vi.fn().mockResolvedValue(undefined);
@@ -189,7 +200,11 @@ beforeEach(() => {
   fromCalls.length = 0;
   dbHandler = defaultHandler;
   process.env.CRON_SECRET = SECRET;
-  isFeatureEnabledMock.mockResolvedValue(true);
+  // Default: Loop A ON, Loops B/C OFF (flag-aware). Loop A suites rely on this;
+  // B/C suites override with their own mockImplementation.
+  isFeatureEnabledMock.mockImplementation(
+    async (flagName: string) => loopAOnlyFlags(flagName),
+  );
 });
 
 async function loadRoute() {

@@ -894,6 +894,34 @@ export const ADAPTIVE_REMEDIATION_FLAGS = {
 } as const;
 
 /**
+ * Phase A Loops B & C adaptive closed loops (2026-06-13). ONE flag for BOTH
+ * loops on the Loop A substrate (NOT a reuse of ff_adaptive_remediation_v1 —
+ * spec Decision X1; the two ramp independently).
+ *
+ *  ff_adaptive_loops_bc_v1 — master switch for the inactivity (Loop B) and
+ *    at-risk-concentration (Loop C) inject branches of the daily-cron adaptive
+ *    worker. When OFF, no new B/C interventions are opened (the inactivity +
+ *    at_risk_concentration inject branches short-circuit; the mastery_cliff
+ *    branch still respects its own ff_adaptive_remediation_v1 flag — per-signal
+ *    inject gating, Decision X2); when ON, Loop B opens a re-engagement nudge on
+ *    a 'broken' inactivity verdict and Loop C opens an IMMEDIATE teacher/parent
+ *    escalation on a 'high'-band subject. The verify phase is deliberately gated
+ *    on the existence of active rows, NOT this flag, so mid-flight B/C
+ *    interventions drain to terminal state (kill switch drains, does not freeze —
+ *    spec Section 9). Default: false.
+ *
+ *    Seeded OFF (is_enabled=false, rollout=0, scoping NULL) by migration
+ *    20260619000600_seed_ff_adaptive_loops_bc_v1.sql — mirrors the
+ *    ff_adaptive_remediation_v1 seed precedent. Substrate: adaptive_interventions
+ *    (20260619000200) with the CHECK extension (20260619000500). Spec:
+ *    docs/superpowers/specs/2026-06-13-phase-a-loops-b-c-design.md
+ */
+export const ADAPTIVE_LOOPS_BC_FLAGS = {
+  /** Phase A Loops B (inactivity nudge) & C (concentration escalation). Default off. */
+  V1: 'ff_adaptive_loops_bc_v1',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -943,6 +971,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [FOXY_OS_FLAGS.V1]: false,
   [SCHOOL_PULSE_FLAGS.V1]: false, // seeded OFF by 20260619000100_seed_ff_school_pulse_v1.sql
   [ADAPTIVE_REMEDIATION_FLAGS.V1]: false, // seeded OFF by 20260619000300_seed_ff_adaptive_remediation_v1.sql
+  [ADAPTIVE_LOOPS_BC_FLAGS.V1]: false, // seeded OFF by 20260619000600_seed_ff_adaptive_loops_bc_v1.sql
 } as const;
 
 /**

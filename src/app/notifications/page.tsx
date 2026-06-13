@@ -28,6 +28,15 @@ const TYPE_CONFIG: Record<string, { icon: string; color: string; label: string; 
   remediation_assigned: { icon: '🦊', color: '#F97316', label: 'Extra Practice', labelHi: 'अतिरिक्त अभ्यास' },
   remediation_recovered: { icon: '🎉', color: '#16A34A', label: 'Comeback', labelHi: 'वापसी' },
   remediation_escalated: { icon: '🤝', color: '#F59E0B', label: 'Extra Help', labelHi: 'अतिरिक्त मदद' },
+  // Phase A Loop B — inactivity / re-engagement (En in title/body; Hindi rides
+  // data.title_hi / data.body_hi per the house pattern — rendered below).
+  reengagement_nudge: { icon: '👋', color: '#7C3AED', label: 'Come Back', labelHi: 'वापस आओ' },
+  reengagement_returned: { icon: '🎉', color: '#16A34A', label: 'Welcome Back', labelHi: 'वापसी' },
+  reengagement_escalated: { icon: '🏠', color: '#F59E0B', label: 'Family Alert', labelHi: 'परिवार अलर्ट' },
+  // Phase A Loop C — at-risk concentration (subject-level escalation).
+  concentration_escalated: { icon: '🆘', color: '#DC2626', label: 'Subject At Risk', labelHi: 'विषय जोखिम में' },
+  concentration_resolved: { icon: '🎉', color: '#16A34A', label: 'Back on Track', labelHi: 'फिर पटरी पर' },
+  concentration_reescalated: { icon: '🔁', color: '#DC2626', label: 'Still At Risk', labelHi: 'अब भी जोखिम में' },
 };
 
 interface Notification {

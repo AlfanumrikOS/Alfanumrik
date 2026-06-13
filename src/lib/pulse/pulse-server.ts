@@ -210,6 +210,14 @@ const KIND_SAFE_KEYS: Record<string, readonly string[]> = {
   // timelineLine branches the student/parent/teacher escalation copy on it;
   // when absent/null the copy degrades to neutral "extra help" framing.
   'system.remediation_escalated': ['escalatedTo'],
+  // Phase A Loops B/C escalated kinds: same routing-LABEL contract as Loop A.
+  // 'escalatedTo' is 'teacher' | 'parent' | null only — never an identifier
+  // (P13). The interventionId / teacherAssignmentId / daysSince* / verifyBy
+  // fields on these payloads stay OFF the whitelist. subjectCode /
+  // chapterNumber already flow through the generic safeKeys below.
+  'system.engagement_escalated': ['escalatedTo'],
+  'system.concentration_escalated': ['escalatedTo'],
+  'system.concentration_reescalated': ['escalatedTo'],
 };
 
 /** Whitelist the small, non-PII payload subset surfaced on a timeline entry. */
