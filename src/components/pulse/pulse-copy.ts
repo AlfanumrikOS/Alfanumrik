@@ -56,6 +56,11 @@ export const PULSE_COLORS = {
   remediation: '#F97316', // brand orange — Foxy stepped in
   recovered: '#16A34A', // green — comeback verified
   escalated: '#F59E0B', // amber — a human was pulled in
+  // Phase A Loops B & C — engagement (inactivity) + concentration accents.
+  // Same a11y contract: every accent rides an icon + text pair, never colour-alone.
+  nudged: '#7C3AED', // purple (brand) — a warm "come back" nudge
+  returned: '#16A34A', // green — the learner came back (celebratory)
+  concentration: '#DC2626', // red — a whole subject is at risk (escalated to a human)
 } as const;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -448,6 +453,199 @@ export function timelineLine(
         );
       }
       return { icon: '🤝', accent: PULSE_COLORS.escalated, text };
+    }
+
+    // ── Phase A Loop B — inactivity / re-engagement (system.* actor) ────────
+    // Subject-less (Loop B uses an `_inactivity` sentinel subject server-side;
+    // the timeline never surfaces it). Tone: student = warm "we missed you",
+    // parent = supportive + actionable. No chapter, no subject in the copy.
+    case 'system.engagement_nudged': {
+      const self = variant === 'student';
+      return {
+        icon: '👋',
+        accent: PULSE_COLORS.nudged,
+        text: self
+          ? tp(
+              isHi,
+              "Foxy noticed you've been away — come back, we missed you!",
+              'Foxy ने देखा कि तुम कुछ दिनों से नहीं आए — वापस आ जाओ, हमें तुम्हारी याद आई!',
+            )
+          : variant === 'parent'
+            ? tp(
+                isHi,
+                "Your child hasn't studied in a few days — a little nudge from you would help them restart",
+                'आपका बच्चा कुछ दिनों से नहीं पढ़ा — आपका थोड़ा प्रोत्साहन उसे फिर से शुरू करने में मदद करेगा',
+              )
+            : tp(
+                isHi,
+                'Student has gone quiet — a re-engagement nudge was sent',
+                'विद्यार्थी कुछ दिनों से निष्क्रिय है — वापस लाने के लिए एक रिमाइंडर भेजा गया',
+              ),
+      };
+    }
+    case 'system.engagement_returned': {
+      const self = variant === 'student';
+      return {
+        icon: '🎉',
+        accent: PULSE_COLORS.returned,
+        text: self
+          ? tp(
+              isHi,
+              'Welcome back — you picked your learning right back up! 🎉',
+              'वापसी पर स्वागत है — तुमने अपनी पढ़ाई फिर से शुरू कर दी! 🎉',
+            )
+          : variant === 'parent'
+            ? tp(
+                isHi,
+                'Good news — your child is back and learning again 🎉',
+                'खुशखबरी — आपका बच्चा वापस आ गया और फिर से पढ़ने लगा 🎉',
+              )
+            : tp(
+                isHi,
+                'Student returned and resumed activity — no action needed',
+                'विद्यार्थी वापस आ गया और गतिविधि फिर से शुरू की — किसी कार्रवाई की ज़रूरत नहीं',
+              ),
+      };
+    }
+    case 'system.engagement_escalated': {
+      const self = variant === 'student';
+      // `escalatedTo` is 'parent' | null (Loop B never escalates to a teacher).
+      // When absent from the whitelisted summary, degrade to neutral framing —
+      // never claim a family was told when we can't confirm it.
+      const escalatedTo =
+        typeof summary.escalatedTo === 'string' ? summary.escalatedTo : null;
+      let text: string;
+      if (self) {
+        text =
+          escalatedTo === 'parent'
+            ? tp(
+                isHi,
+                "It's been a while — we let your family know so they can cheer you back",
+                'काफ़ी समय हो गया — हमने तुम्हारे परिवार को बताया ताकि वे तुम्हें वापस लाने में साथ दें',
+              )
+            : tp(
+                isHi,
+                "It's been a while — come back whenever you're ready, we're here",
+                'काफ़ी समय हो गया — जब भी तैयार हो वापस आ जाना, हम यहीं हैं',
+              );
+      } else if (variant === 'parent') {
+        text = tp(
+          isHi,
+          "Your child hasn't studied in several days — a short session together today would really help them restart",
+          'आपका बच्चा कई दिनों से नहीं पढ़ा — आज साथ बैठकर एक छोटा सत्र उसे फिर से शुरू करने में बहुत मदद करेगा',
+        );
+      } else {
+        text = tp(
+          isHi,
+          "Student stayed inactive past the nudge window — the family was alerted",
+          'रिमाइंडर के बाद भी विद्यार्थी निष्क्रिय रहा — परिवार को सूचित किया गया',
+        );
+      }
+      return { icon: '🏠', accent: PULSE_COLORS.escalated, text };
+    }
+
+    // ── Phase A Loop C — at-risk concentration (system.* actor) ─────────────
+    // Subject-scoped, immediate escalation to a human. `subjectCode` +
+    // `chapterNumber` ride the generic whitelist; `escalatedTo` needs the
+    // per-kind whitelist (see pulse-server gap report).
+    case 'system.concentration_escalated': {
+      const self = variant === 'student';
+      const escalatedTo =
+        typeof summary.escalatedTo === 'string' ? summary.escalatedTo : null;
+      const subj = subject ?? tp(isHi, 'a subject', 'एक विषय');
+      let text: string;
+      if (self) {
+        text =
+          escalatedTo === 'teacher'
+            ? tp(
+                isHi,
+                `Foxy asked your teacher to help with ${subj}`,
+                `Foxy ने ${subj} में मदद के लिए आपके शिक्षक से कहा`,
+              )
+            : escalatedTo === 'parent'
+              ? tp(
+                  isHi,
+                  `Foxy let your family know ${subj} needs some focus`,
+                  `Foxy ने आपके परिवार को बताया कि ${subj} पर ध्यान देने की ज़रूरत है`,
+                )
+              : tp(
+                  isHi,
+                  `${subj} needs some real focus — Foxy arranged extra help`,
+                  `${subj} पर पूरा ध्यान चाहिए — Foxy ने अतिरिक्त मदद की व्यवस्था की`,
+                );
+      } else if (variant === 'parent') {
+        text = tp(
+          isHi,
+          `${subj} is becoming a weak area for your child — sitting with them on it this week would help a lot`,
+          `${subj} आपके बच्चे के लिए कमज़ोर क्षेत्र बनता जा रहा है — इस हफ़्ते साथ बैठकर देखना बहुत मदद करेगा`,
+        );
+      } else {
+        text = tp(
+          isHi,
+          `${subj} flagged at-risk (multiple weak chapters) — assigned for your attention`,
+          `${subj} जोखिम में चिह्नित (कई कमज़ोर अध्याय) — आपके ध्यान के लिए सौंपा गया`,
+        );
+      }
+      return { icon: '🆘', accent: PULSE_COLORS.concentration, text };
+    }
+    case 'system.concentration_resolved': {
+      const self = variant === 'student';
+      const subj = subject ?? tp(isHi, 'a subject', 'एक विषय');
+      return {
+        icon: '🎉',
+        accent: PULSE_COLORS.recovered,
+        text: self
+          ? tp(
+              isHi,
+              `Great work — ${subj} is back on track! 🎉`,
+              `बहुत बढ़िया — ${subj} फिर से पटरी पर है! 🎉`,
+            )
+          : variant === 'parent'
+            ? tp(
+                isHi,
+                `${subj} is no longer a weak area — your child turned it around 🎉`,
+                `${subj} अब कमज़ोर क्षेत्र नहीं रहा — आपके बच्चे ने इसे संभाल लिया 🎉`,
+              )
+            : tp(
+                isHi,
+                `${subj} recovered out of the at-risk band — no action needed`,
+                `${subj} जोखिम स्तर से बाहर आ गया — किसी कार्रवाई की ज़रूरत नहीं`,
+              ),
+      };
+    }
+    case 'system.concentration_reescalated': {
+      const self = variant === 'student';
+      const escalatedTo =
+        typeof summary.escalatedTo === 'string' ? summary.escalatedTo : null;
+      const subj = subject ?? tp(isHi, 'a subject', 'एक विषय');
+      let text: string;
+      if (self) {
+        text = tp(
+          isHi,
+          `${subj} still needs focus — Foxy is keeping the extra help going`,
+          `${subj} पर अभी और ध्यान चाहिए — Foxy अतिरिक्त मदद जारी रखे हुए है`,
+        );
+      } else if (variant === 'parent') {
+        text = tp(
+          isHi,
+          `${subj} is still a weak area — it would really help to keep working on it together`,
+          `${subj} अब भी कमज़ोर क्षेत्र है — साथ मिलकर इस पर काम जारी रखना बहुत मदद करेगा`,
+        );
+      } else {
+        text =
+          escalatedTo === 'teacher'
+            ? tp(
+                isHi,
+                `${subj} is still at-risk — re-flagged for your attention`,
+                `${subj} अब भी जोखिम में है — आपके ध्यान के लिए फिर से चिह्नित`,
+              )
+            : tp(
+                isHi,
+                `${subj} is still at-risk after the window — a follow-up was sent`,
+                `${subj} अवधि के बाद भी जोखिम में — एक फ़ॉलो-अप भेजा गया`,
+              );
+      }
+      return { icon: '🔁', accent: PULSE_COLORS.concentration, text };
     }
 
     default:
