@@ -38,6 +38,7 @@ import structlog
 from . import breaker as cb
 from .classifier import classify as classify_task_type
 from .cost import compute_cost
+from .cost_cap import enforce_cost_cap
 from .errors import MolError
 from .feature_flag import is_flag_enabled
 from .post_processor import post_process
@@ -258,7 +259,14 @@ async def generate_response(req: GenerateRequest) -> MolResult:
     task_type = classify_task_type(req)
 
     # Step 3 — flags + weights in parallel
-    hybrid_on, openai_default, deterministic_on, breaker_on, weights = await asyncio.gather(
+    (
+        hybrid_on,
+        openai_default,
+        deterministic_on,
+        breaker_on,
+        cost_cap_on,
+        weights,
+    ) = await asyncio.gather(
         is_flag_enabled(
             "ff_mol_hybrid_mode_v1",
             student_id=req.student_context.student_id,
@@ -273,6 +281,10 @@ async def generate_response(req: GenerateRequest) -> MolResult:
         ),
         is_flag_enabled(
             "ff_mol_circuit_breaker_v1",
+            student_id=req.student_context.student_id,
+        ),
+        is_flag_enabled(
+            "ff_mol_cost_cap_v1",
             student_id=req.student_context.student_id,
         ),
         get_routing_weights(),
@@ -312,6 +324,23 @@ async def generate_response(req: GenerateRequest) -> MolResult:
 
     max_tokens = cfg.max_tokens_override or get_max_tokens(task_type)
     temperature = cfg.temperature_override if cfg.temperature_override is not None else 0.7
+
+    # A4 — cost-cap enforcement BEFORE any provider HTTP call. Gated behind
+    # ff_mol_cost_cap_v1 (default OFF). Uses a conservative worst-case estimate
+    # against the primary rung's provider/model. Raises MolError(
+    # "COST_CAP_EXCEEDED") which the route maps to HTTP 429. Prompt tokens are a
+    # ~4-chars-per-token approximation over the composed system prompt + the
+    # user's text (both already in scope here).
+    if cost_cap_on:
+        primary = selected.passes[0].chain[0]
+        prompt_estimate = (len(system_prompt) + len(user_text)) // 4
+        enforce_cost_cap(
+            task_type=task_type,
+            provider=primary.provider,
+            model=primary.model,
+            prompt_tokens=prompt_estimate,
+            max_tokens=max_tokens,
+        )
 
     # Step 7 (cont.) — execute passes
     responses: list[ProviderResponse] = []

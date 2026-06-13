@@ -373,5 +373,74 @@ def test_breaker_ignores_non_retryable_4xx_but_counts_5xx(
     assert ("openai", "explanation") in recorded_failures
 
 
+# ─── A4: ff_mol_cost_cap_v1 wiring ──────────────────────────────────────────
+
+
+def test_generate_429_when_cost_cap_exceeded(
+    client: TestClient, respx_mock, mock_supabase_client, monkeypatch
+):
+    """When ff_mol_cost_cap_v1 is ON and the worst-case estimate exceeds the
+    per-task ceiling, the route returns 429 COST_CAP_EXCEEDED and NO provider
+    HTTP call fires (the cap is enforced BEFORE the provider call).
+
+    Setup: task_type 'evaluation' (₹2.0 ceiling), preferred_provider 'anthropic'
+    so the anthropic rung is primary, and max_tokens_override 5_000_000 so the
+    worst-case completion estimate balloons past the ceiling.
+    """
+
+    async def _flag(name, **kwargs):
+        return name == "ff_mol_cost_cap_v1"
+
+    monkeypatch.setattr("services.ai.mol.orchestrator.is_flag_enabled", _flag)
+
+    # Register both provider routes so we can assert NEITHER was called.
+    openai_route = respx_mock.post("https://api.openai.com/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-should-not-fire",
+                "model": "gpt-4o-mini",
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": "Should not fire."},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 4, "completion_tokens": 2},
+            },
+        )
+    )
+    anthropic_route = respx_mock.post("https://api.anthropic.com/v1/messages").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "content": [{"type": "text", "text": "Should not fire."}],
+                "usage": {"input_tokens": 5, "output_tokens": 3},
+                "stop_reason": "end_turn",
+            },
+        )
+    )
+
+    payload = {
+        "task_type": "evaluation",
+        "input": {"question": "Is 7 prime?", "options": ["yes", "no"]},
+        "student_context": {
+            "student_id": "44444444-4444-4444-4444-444444444444",
+            "grade": "8",
+        },
+        "config": {
+            "preferred_provider": "anthropic",
+            "max_tokens_override": 5_000_000,
+        },
+    }
+    res = client.post("/v1/generate", json=payload)
+    assert res.status_code == 429, res.text
+    body = res.json()
+    assert body["detail"]["code"] == "COST_CAP_EXCEEDED"
+    # The cap must fire BEFORE any provider call.
+    assert not openai_route.called
+    assert not anthropic_route.called
+
+
 async def _noop():
     return None
