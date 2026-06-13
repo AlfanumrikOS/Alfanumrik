@@ -182,3 +182,45 @@ def test_generate_502_when_all_providers_fail(
     failure_row = mock_supabase_client.inserts[0]
     assert failure_row["passes"] == 0
     assert failure_row["failure_chain"]
+
+
+# ─── A2: ff_mol_deterministic_priority wiring ────────────────────────────────
+
+
+def test_generate_reads_deterministic_priority_flag(
+    client, openai_default_route, mock_supabase_client, monkeypatch
+):
+    """The orchestrator MUST read ff_mol_deterministic_priority on every call."""
+    seen: list[str] = []
+
+    async def _flag(name, **kwargs):
+        seen.append(name)
+        return False
+
+    monkeypatch.setattr("services.ai.mol.orchestrator.is_flag_enabled", _flag)
+    payload = {
+        "task_type": "explanation",
+        "input": {"question": "?"},
+        "student_context": {"student_id": "33333333-3333-3333-3333-333333333333", "grade": "8"},
+    }
+    client.post("/v1/generate", json=payload)
+    assert "ff_mol_deterministic_priority" in seen
+
+
+def test_generate_uses_openai_primary_when_deterministic_flag_on(
+    client, openai_default_route, mock_supabase_client, monkeypatch
+):
+    """When ff_mol_deterministic_priority is ON, OpenAI is the primary provider."""
+
+    async def _flag(name, **kwargs):
+        return name == "ff_mol_deterministic_priority"
+
+    monkeypatch.setattr("services.ai.mol.orchestrator.is_flag_enabled", _flag)
+    payload = {
+        "task_type": "reasoning",
+        "input": {"question": "Prove the Pythagoras theorem."},
+        "student_context": {"student_id": "33333333-3333-3333-3333-333333333333", "grade": "9"},
+    }
+    res = client.post("/v1/generate", json=payload)
+    assert res.status_code == 200, res.text
+    assert res.json()["provider"] == "openai"

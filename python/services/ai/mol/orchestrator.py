@@ -239,13 +239,17 @@ async def generate_response(req: GenerateRequest) -> MolResult:
     task_type = classify_task_type(req)
 
     # Step 3 — flags + weights in parallel
-    hybrid_on, openai_default, weights = await asyncio.gather(
+    hybrid_on, openai_default, deterministic_on, weights = await asyncio.gather(
         is_flag_enabled(
             "ff_mol_hybrid_mode_v1",
             student_id=req.student_context.student_id,
         ),
         is_flag_enabled(
             "ff_mol_openai_default",
+            student_id=req.student_context.student_id,
+        ),
+        is_flag_enabled(
+            "ff_mol_deterministic_priority",
             student_id=req.student_context.student_id,
         ),
         get_routing_weights(),
@@ -258,6 +262,9 @@ async def generate_response(req: GenerateRequest) -> MolResult:
             hybrid_enabled=hybrid_on,
             openai_default=openai_default,
             weights=weights,
+            # deterministic ON  ⇒ shadow_priority OFF (OpenAI always primary).
+            # deterministic OFF ⇒ legacy probabilistic path (shadow/experiment).
+            shadow_priority=not deterministic_on,
         ),
     )
 
