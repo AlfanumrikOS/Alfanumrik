@@ -48,6 +48,16 @@ class Settings(BaseSettings):
     anthropic_api_key: str = Field(default="", description="Claude API key (sk-ant-...).")
     openai_api_key: str = Field(default="", description="OpenAI API key (sk-proj-...).")
 
+    # ── Upstash Redis (cross-instance breaker + semantic cache) ──
+    # Empty defaults so the service still BOOTS in CI/test. When empty the
+    # breaker fails OPEN→CLOSED (never blocks) and the cache is a no-op.
+    upstash_redis_rest_url: str = Field(
+        default="", description="Upstash Redis REST endpoint. Empty disables breaker store."
+    )
+    upstash_redis_rest_token: str = Field(
+        default="", description="Upstash Redis REST token."
+    )
+
     # ── Azure Cognitive Services (Voice 1b — Indian-accent TTS) ──
     # Same posture as Anthropic/OpenAI: empty defaults so the service still
     # BOOTS in CI/test. /readyz surfaces voice-tts readiness; the TTS

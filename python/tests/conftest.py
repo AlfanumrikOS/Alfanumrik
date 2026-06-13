@@ -40,6 +40,7 @@ def _env_isolation(monkeypatch: pytest.MonkeyPatch) -> None:
                 "ALLOWED_ORIGINS",
                 "PORT",
                 "USD_TO_INR",
+                "UPSTASH_",
             )
         ):
             monkeypatch.delenv(k, raising=False)
@@ -58,6 +59,10 @@ def _env_isolation(monkeypatch: pytest.MonkeyPatch) -> None:
     get_settings.cache_clear()
     reset_service_client()
     _reset_flag_cache()
+
+    from services.ai.mol.redis_client import reset_redis_client
+
+    reset_redis_client()
 
 
 # ─── Supabase fake (telemetry sink) ──────────────────────────────────────────
