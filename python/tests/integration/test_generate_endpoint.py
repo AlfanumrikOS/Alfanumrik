@@ -291,5 +291,87 @@ def test_generate_skips_open_breaker_provider(
     assert not openai_route.called
 
 
+def test_breaker_ignores_non_retryable_4xx_but_counts_5xx(
+    client: TestClient, respx_mock, mock_supabase_client, monkeypatch
+):
+    """A3 health-signal gating: only provider-HEALTH failures trip the breaker.
+
+    A non-retryable 4xx (client/input error) on OpenAI must NOT call
+    ``record_failure`` (and the request falls through to the Anthropic rung),
+    while a retryable 5xx MUST call ``record_failure``.
+    """
+    from services.ai.mol import breaker as breaker_mod
+
+    async def _flag(name, **kwargs):
+        return name in ("ff_mol_circuit_breaker_v1", "ff_mol_deterministic_priority")
+
+    monkeypatch.setattr("services.ai.mol.orchestrator.is_flag_enabled", _flag)
+
+    # Spy on the breaker recorders. can_request stays CLOSED (allow all) so
+    # the only behavior under test is which failures get *recorded*.
+    recorded_failures: list[tuple[str, str]] = []
+
+    async def _can_request(provider, task):
+        return True
+
+    async def _record_failure(provider, task):
+        recorded_failures.append((provider, task))
+
+    async def _record_success(provider, task):
+        return None
+
+    monkeypatch.setattr(breaker_mod, "can_request", _can_request)
+    monkeypatch.setattr(breaker_mod, "record_failure", _record_failure)
+    monkeypatch.setattr(breaker_mod, "record_success", _record_success)
+
+    # ── Case 1: OpenAI 400 (non-retryable 4xx) → must NOT record, falls to Anthropic.
+    openai_400 = respx_mock.post("https://api.openai.com/v1/chat/completions").mock(
+        return_value=httpx.Response(400, json={"error": {"message": "bad request"}})
+    )
+    respx_mock.post("https://api.anthropic.com/v1/messages").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "content": [{"type": "text", "text": "Anthropic fallback."}],
+                "usage": {"input_tokens": 5, "output_tokens": 3},
+                "stop_reason": "end_turn",
+            },
+        )
+    )
+    payload = {
+        "task_type": "explanation",
+        "input": {"question": "?"},
+        "student_context": {"student_id": "x", "grade": "8"},
+    }
+    res = client.post("/v1/generate", json=payload)
+    assert res.status_code == 200, res.text
+    # Fell through to anthropic after the OpenAI 400.
+    assert res.json()["provider"] == "anthropic"
+    assert openai_400.called
+    # The non-retryable 4xx must NOT have been counted toward the breaker.
+    assert ("openai", "explanation") not in recorded_failures
+
+    # ── Case 2: OpenAI 503 (retryable 5xx) → MUST record_failure.
+    recorded_failures.clear()
+    respx_mock.post("https://api.openai.com/v1/chat/completions").mock(
+        return_value=httpx.Response(503)
+    )
+    respx_mock.post("https://api.anthropic.com/v1/messages").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "content": [{"type": "text", "text": "Anthropic fallback."}],
+                "usage": {"input_tokens": 5, "output_tokens": 3},
+                "stop_reason": "end_turn",
+            },
+        )
+    )
+    res = client.post("/v1/generate", json=payload)
+    assert res.status_code == 200, res.text
+    # A retryable provider-health failure MUST be recorded (at least once;
+    # the 503 rung gets 1 retry, so it may be recorded twice — both count).
+    assert ("openai", "explanation") in recorded_failures
+
+
 async def _noop():
     return None

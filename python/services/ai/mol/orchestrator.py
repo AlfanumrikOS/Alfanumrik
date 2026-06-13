@@ -197,7 +197,13 @@ async def _execute_pass(
                 status = _status_from_message(msg)
                 failures.append(f"{target.provider}:{status if status else 'err'}")
                 last_error = msg
-                if breaker_on:
+                # A3: only PROVIDER-HEALTH failures count toward the breaker.
+                # A network/timeout error (status is None) or a retryable status
+                # (429/5xx) is a provider-health signal; a non-retryable 4xx is a
+                # client/input error and must NOT trip the circuit (otherwise a
+                # burst of bad requests would wrongly open the breaker on a
+                # perfectly healthy provider).
+                if breaker_on and (status is None or is_retryable_status(status)):
                     await cb.record_failure(target.provider, task_type)
                 # Only retry if the status is retryable AND this is the first attempt.
                 if status is None or not is_retryable_status(status):
