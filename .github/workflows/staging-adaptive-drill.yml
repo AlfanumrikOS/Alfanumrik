@@ -1,0 +1,629 @@
+# Bounded, self-cleaning synthetic adaptive-learning DRILL against STAGING only.
+#
+# Why this exists:
+#   The adaptive closed loops (Phase A Loops A / B / C) are validated flag-by-flag
+#   on STAGING before prod. The flag-flip workflow (staging-flag-set.yml) can turn
+#   the loops ON, but it has NO SQL channel — there is no way to plant the synthetic
+#   learner-state that TRIPS a Pulse signal so the nightly cron worker
+#   (src/app/api/cron/adaptive-remediation/route.ts) actually opens an intervention.
+#   This workflow IS that SQL channel: it seeds a clearly-synthetic learner whose
+#   state trips one (or all) of the three signals, asserts the intervention the cron
+#   INJECT phase would open is creatable on the real staging schema (every CHECK +
+#   the one-active partial unique index), prints a PASS/FAIL per drill, and ALWAYS
+#   tears down EXACTLY and ONLY the rows it created. Zero prod blast radius.
+#
+# What this does NOT do:
+#   It does not invoke the TS cron worker (that needs the Next.js runtime + CRON_SECRET
+#   and cannot run inside psql). It validates the DATA SUBSTRATE the cron depends on:
+#     • the signal math thresholds (PULSE_THRESHOLDS in src/lib/pulse/signals.ts) are
+#       reproduced verbatim in SQL and the seeded state is asserted to cross them;
+#     • the adaptive_interventions row the worker would write passes every DB CHECK
+#       (trigger_signal allowlist, chapter_number >= 0, subject_code lowercase) and the
+#       one-active partial unique index.
+#   That is the end-to-end "can a tripped signal become an intervention on staging"
+#   contract — the missing SQL channel.
+#
+# Auth (mirrors .github/workflows/staging-flag-set.yml EXACTLY — do NOT regress):
+#   - environment: staging
+#   - SUPABASE_ACCESS_TOKEN  <- secrets.SUPABASE_STAGING_ACCESS_TOKEN
+#   - SUPABASE_DB_PASSWORD   <- secrets.SUPABASE_STAGING_DB_PASSWORD
+#   - --project-ref          <- secrets.SUPABASE_STAGING_PROJECT_REF
+#   The prod secrets (SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF /
+#   SUPABASE_DB_PASSWORD) are NEVER referenced here.
+#
+# Safety (TWO human gates + the prod-ref fail-closed wall):
+#   1. confirm input MUST equal the literal "RUN-ON-STAGING" or the job aborts
+#      BEFORE any DB access (the second human gate; an accidental dispatch no-ops).
+#   2. The connected project ref must equal the staging ref AND must NOT equal the
+#      prod ref shktyoxqhundlvkiwguu — verified against the secret, the CLI-linked
+#      ref, AND the ref embedded in the CLI-derived pooler URL. Fail-closed if any
+#      of those is the prod ref (identical to staging-flag-set.yml).
+#   - Every seeded row carries a per-run drill_run_id UUID AND a "drill-synthetic-"
+#     namespaced marker, so teardown deletes EXACTLY and ONLY this run's rows.
+#   - Teardown runs `if: always()` and FAILS the job if any synthetic row survives.
+#   - No secret values, no PII, and no per-row PII are ever printed — counts + the
+#     drill_run_id (a random UUID) + the synthetic marker only.
+#
+# Product invariants honored:
+#   P5  grades are STRINGS — the synthetic student is grade '8' (a TEXT literal).
+#   P8  RLS is never disabled; all writes/reads go through the service-role pooler
+#       connection the CLI already authorizes (same path as staging-flag-set.yml).
+#   P13 synthetic data only (is_demo=true, drill-synthetic-* marker); no real student
+#       row is read or touched; logs carry counts + ids + markers only.
+
+name: Staging Adaptive-Loop Drill
+
+on:
+  workflow_dispatch:
+    inputs:
+      drill:
+        description: 'Which loop signal to drill'
+        required: true
+        type: choice
+        default: all
+        options:
+          - cliff
+          - inactivity
+          - concentration
+          - all
+      confirm:
+        description: 'Type RUN-ON-STAGING to confirm (second human gate)'
+        required: true
+        type: string
+
+concurrency:
+  # Serialize drills so two runs never seed/tear-down against each other.
+  group: staging-adaptive-drill
+  cancel-in-progress: false
+
+jobs:
+  drill:
+    name: Run adaptive-loop drill on staging
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 10
+    env:
+      # The known-prod ref. This workflow must NEVER touch it. Used only as a
+      # negative assertion target (fail-closed if the connected ref matches it).
+      PROD_PROJECT_REF: shktyoxqhundlvkiwguu
+      DRILL: ${{ github.event.inputs.drill }}
+      CONFIRM: ${{ github.event.inputs.confirm }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: latest
+
+      - name: Gate 1 — require confirm == RUN-ON-STAGING
+        run: |
+          set -euo pipefail
+          if [ "$CONFIRM" != "RUN-ON-STAGING" ]; then
+            echo "::error::confirm input must be the literal 'RUN-ON-STAGING' to proceed. Aborting BEFORE any DB access."
+            exit 1
+          fi
+          echo "confirm gate passed."
+
+      - name: Validate drill choice
+        run: |
+          set -euo pipefail
+          case "$DRILL" in
+            cliff|inactivity|concentration|all)
+              echo "drill '$DRILL' is valid."
+              ;;
+            *)
+              echo "::error::drill '$DRILL' is not one of cliff|inactivity|concentration|all."
+              exit 1
+              ;;
+          esac
+
+      - name: Gate 2 — assert staging ref configured and is NOT the prod ref
+        env:
+          STAGING_PROJECT_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          if [ -z "${STAGING_PROJECT_REF:-}" ]; then
+            echo "::error::SUPABASE_STAGING_PROJECT_REF secret is empty."
+            exit 1
+          fi
+          echo "Configured target project ref: $STAGING_PROJECT_REF"
+          echo "Known prod ref (forbidden):     $PROD_PROJECT_REF"
+          if [ "$STAGING_PROJECT_REF" = "$PROD_PROJECT_REF" ]; then
+            echo "::error::Configured ref matches the PROD ref ($PROD_PROJECT_REF). Refusing to run. FAIL-CLOSED."
+            exit 1
+          fi
+          echo "Target ref is NOT prod. Proceeding."
+
+      - name: Link to staging and build the pooler connection string
+        id: link
+        env:
+          # Staging lives in a different Supabase org than prod, so the CLI's
+          # SUPABASE_ACCESS_TOKEN env var must be sourced from the dedicated
+          # staging token — the prod token returns Unauthorized here.
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_STAGING_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_STAGING_DB_PASSWORD }}
+          STAGING_PROJECT_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+
+          # 1. Link to the STAGING project (same pattern as staging-flag-set.yml).
+          supabase link --project-ref "$STAGING_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+          # 2. Re-assert the LINKED ref from the CLI state file. This catches any
+          #    mismatch between the secret and what the CLI actually connected to,
+          #    and fails-closed if the CLI somehow latched onto the prod ref.
+          LINKED_REF="$(cat supabase/.temp/project-ref)"
+          echo "Linked project ref: $LINKED_REF"
+          if [ "$LINKED_REF" != "$STAGING_PROJECT_REF" ]; then
+            echo "::error::Linked ref ($LINKED_REF) != configured staging ref ($STAGING_PROJECT_REF). FAIL-CLOSED."
+            exit 1
+          fi
+          if [ "$LINKED_REF" = "$PROD_PROJECT_REF" ]; then
+            echo "::error::Linked ref is the PROD ref ($PROD_PROJECT_REF). Refusing to run. FAIL-CLOSED."
+            exit 1
+          fi
+
+          # 3. Build the pooler connection string from the CLI-DERIVED pooler URL.
+          #    DO NOT hardcode the pooler host/region/port: staging lives in a
+          #    different region than prod, so a hardcoded ap-south-1 host (or the
+          #    wrong port) points at the wrong tenant and fails with
+          #    "Tenant or user not found". `supabase link` writes the correct,
+          #    region-accurate pooler connection string to supabase/.temp/pooler-url.
+          #    We read THAT, verify it embeds the staging ref (and NOT the prod
+          #    ref), then inject the real DB password (URL-encoded). The host is
+          #    printed as proof; the password is never printed.
+          POOLER_FILE="supabase/.temp/pooler-url"
+          if [ ! -s "$POOLER_FILE" ]; then
+            echo "::error::$POOLER_FILE is missing or empty after 'supabase link'. Refusing to guess the pooler host. FAIL-CLOSED."
+            exit 1
+          fi
+
+          DB_URL="$(
+            LINKED_REF="$LINKED_REF" PROD_PROJECT_REF="$PROD_PROJECT_REF" \
+            python3 - "$POOLER_FILE" <<'PY'
+          import os, sys, urllib.parse
+
+          # NOTE: parse by hand rather than urllib.parse.urlsplit(). The legacy
+          # CLI format embeds a literal "[YOUR-PASSWORD]" placeholder in the
+          # userinfo, and urlsplit() misreads the brackets as an IPv6 host and
+          # raises. Manual scheme/userinfo/host splitting is format-agnostic and
+          # handles BOTH the "[YOUR-PASSWORD]" placeholder format and the newer
+          # no-password userinfo format.
+          path = sys.argv[1]
+          with open(path) as f:
+              raw = f.read().strip()
+          if not raw:
+              sys.stderr.write("pooler-url empty\n"); sys.exit(2)
+
+          if "://" not in raw:
+              sys.stderr.write("pooler-url has no scheme (unexpected format)\n"); sys.exit(2)
+          scheme, after = raw.split("://", 1)
+
+          # Split off any ?query / #fragment that trails the path.
+          tail = ""
+          for sep in ("?", "#"):
+              idx = after.find(sep)
+              if idx != -1:
+                  tail = after[idx:]
+                  after = after[:idx]
+                  break
+
+          if "@" not in after:
+              sys.stderr.write("pooler-url has no userinfo (unexpected format)\n"); sys.exit(2)
+          userinfo, hostpath = after.rsplit("@", 1)   # host[:port]/path
+
+          # user is "postgres.<ref>" (possibly followed by ":<password-or-placeholder>")
+          user = userinfo.split(":", 1)[0]
+          if "." not in user:
+              sys.stderr.write("pooler-url user is not postgres.<ref>\n"); sys.exit(2)
+          embedded_ref = user.split(".", 1)[1]
+
+          staging_ref = os.environ["LINKED_REF"]
+          prod_ref = os.environ["PROD_PROJECT_REF"]
+          if embedded_ref == prod_ref:
+              sys.stderr.write("pooler-url embeds the PROD ref. FAIL-CLOSED.\n"); sys.exit(3)
+          if embedded_ref != staging_ref:
+              sys.stderr.write(
+                  "pooler-url ref (%s) != linked staging ref (%s). FAIL-CLOSED.\n"
+                  % (embedded_ref[:4] + "****", staging_ref[:4] + "****")
+              ); sys.exit(3)
+
+          host_only = hostpath.split("/", 1)[0]
+
+          enc_pw = urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe="")
+          if "sslmode=" not in tail:
+              tail = (tail + ("&" if tail else "?") + "sslmode=require")
+          url = "%s://%s:%s@%s%s" % (scheme, user, enc_pw, hostpath, tail)
+
+          sys.stderr.write("Pooler host (from supabase/.temp/pooler-url): %s\n" % host_only)
+          sys.stdout.write(url)
+          PY
+          )"
+          echo "Built connection string from CLI-derived pooler-url (password injected, not shown)."
+
+          # Hand the DB URL to subsequent steps via the step output (masked: it
+          # contains the password). GitHub masks step outputs that embed a secret
+          # value, but to be safe we ALSO register it as a mask.
+          echo "::add-mask::$DB_URL"
+          echo "db_url=$DB_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Run drill (seed -> assert) on staging
+        id: run
+        env:
+          DB_URL: ${{ steps.link.outputs.db_url }}
+        run: |
+          set -euo pipefail
+
+          # One drill_run_id per workflow run. EVERYTHING this run writes carries
+          # it (students.email/name marker + the synthetic auth_user_id derived
+          # deterministically from it via uuid5, so learner_mastery / state_events
+          # rows key back to it). Teardown deletes strictly by this id + marker.
+          DRILL_RUN_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+          echo "drill_run_id=$DRILL_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "DRILL_RUN_ID=$DRILL_RUN_ID" >> "$GITHUB_ENV"
+          echo "drill_run_id: $DRILL_RUN_ID"
+          echo "drill: $DRILL"
+
+          # ON_ERROR_STOP=1 makes any RAISE EXCEPTION (a failed assertion) fail
+          # the step. The whole seed+assert runs inside ONE transaction per drill
+          # so a failed assertion rolls back the seed automatically — the teardown
+          # step then confirms nothing leaked regardless.
+          set +e
+          psql "$DB_URL" \
+            --set=ON_ERROR_STOP=1 \
+            -v run_id="$DRILL_RUN_ID" \
+            -v drill="$DRILL" <<'SQL'
+          \set marker 'drill-synthetic-'
+
+          -- ════════════════════════════════════════════════════════════════════
+          -- Signal thresholds — reproduced VERBATIM from PULSE_THRESHOLDS
+          -- (src/lib/pulse/signals.ts). If these drift from the TS constants the
+          -- drill is meaningless, so they are pinned here as named literals.
+          --   inactivity: >= 2 whole UTC days since last activity => 'broken'.
+          --   masteryCliff: a single-event drop (fromMastery - toMastery) >= 0.15.
+          --   atRiskConcentration: >= concentration_high_min (5) chapters with
+          --                        mastery < at_risk_mastery (0.4) in one subject.
+          -- ════════════════════════════════════════════════════════════════════
+
+          -- psql's :'var' interpolation works at the TOP LEVEL only — it does NOT
+          -- substitute inside a dollar-quoted DO block (documented psql behavior;
+          -- the same constraint staging-flag-set.yml calls out). So we stash the
+          -- run id / drill / marker into session GUCs here (top-level, where :'var'
+          -- IS substituted as a safely single-quoted literal) and read them back
+          -- inside the DO block via current_setting(), under the reserved-for-
+          -- userspace 'drill.' GUC prefix.
+          SELECT set_config('drill.run_id', :'run_id', false);
+          SELECT set_config('drill.drill',  :'drill',  false);
+          SELECT set_config('drill.marker', :'marker', false);
+
+          DO $drill$
+          DECLARE
+            v_run_id        uuid := current_setting('drill.run_id')::uuid;
+            v_drill         text := current_setting('drill.drill');
+            v_marker        text := current_setting('drill.marker');
+            -- Synthetic auth_user_id: deterministic from the run id so every child
+            -- row (learner_mastery / state_events keyed on actor_auth_user_id) can
+            -- be matched on teardown WITHOUT an FK. state_events.actor_auth_user_id
+            -- has NO FK to auth.users, so a synthetic uuid is valid. Derived from
+            -- md5(run_id) (core, no extension / search_path dependency — the
+            -- uuid-ossp uuid_generate_v5 lives in the `extensions` schema which is
+            -- not reliably on the pooler session search_path) and formatted into a
+            -- canonical 8-4-4-4-12 uuid string, so the SAME value is reproducible
+            -- byte-for-byte in the teardown step.
+            v_hash          text := md5(v_run_id::text);
+            v_auth_uid      uuid := (
+              substr(v_hash, 1, 8)  || '-' ||
+              substr(v_hash, 9, 4)  || '-' ||
+              substr(v_hash, 13, 4) || '-' ||
+              substr(v_hash, 17, 4) || '-' ||
+              substr(v_hash, 21, 12)
+            )::uuid;
+            v_student_id    uuid;
+            v_email         text := v_marker || v_run_id::text || '@example.invalid';
+            v_name          text := v_marker || left(v_run_id::text, 8);
+
+            -- Thresholds (PULSE_THRESHOLDS verbatim).
+            c_cliff_drop        double precision := 0.15;
+            c_at_risk_mastery   double precision := 0.4;
+            c_high_min          integer          := 5;
+
+            v_count             integer;
+            v_max_drop          double precision;
+            v_days_inactive     integer;
+            v_iv_id             uuid;
+          BEGIN
+            -- ── 0. Seed the synthetic student (P5: grade is a TEXT string) ──────
+            -- is_demo=true keeps it out of analytics; the marker email/name make it
+            -- unmistakably synthetic. auth_user_id is the synthetic uuid above.
+            INSERT INTO public.students (
+              id, auth_user_id, name, email, grade, board,
+              is_active, is_demo, onboarding_completed, created_at, last_active
+            )
+            VALUES (
+              gen_random_uuid(), v_auth_uid, v_name, v_email, '8', 'CBSE',
+              true, true, true,
+              -- created_at older than the Loop B onboarding grace (7 days) so the
+              -- inactivity drill is not suppressed as a brand-new account.
+              now() - interval '30 days',
+              now()
+            )
+            RETURNING id INTO v_student_id;
+            RAISE NOTICE 'SEED student_id=% auth_uid=%', v_student_id, v_auth_uid;
+
+            -- ════════════════════════════════════════════════════════════════════
+            -- DRILL: cliff  — trip masteryCliff (single-event drop >= 0.15)
+            -- ════════════════════════════════════════════════════════════════════
+            IF v_drill IN ('cliff', 'all') THEN
+              -- Seed a learner.mastery_changed event whose fromMastery - toMastery
+              -- is 0.85 - 0.55 = 0.30 (>= 0.15). This is the exact payload shape
+              -- deriveMasteryCliff reads (subjectCode/chapterNumber/fromMastery/
+              -- toMastery). subject lowercase; chapter a real chapter (>= 1).
+              INSERT INTO public.state_events (
+                event_id, kind, actor_auth_user_id, idempotency_key, occurred_at, payload
+              )
+              VALUES (
+                gen_random_uuid(), 'learner.mastery_changed', v_auth_uid,
+                v_marker || v_run_id::text || ':cliff',
+                now() - interval '1 hour',
+                jsonb_build_object(
+                  'subjectCode', 'mathematics',
+                  'chapterNumber', 3,
+                  'fromMastery', 0.85,
+                  'toMastery', 0.55
+                )
+              );
+
+              SELECT max((payload->>'fromMastery')::double precision - (payload->>'toMastery')::double precision)
+                INTO v_max_drop
+                FROM public.state_events
+               WHERE actor_auth_user_id = v_auth_uid
+                 AND kind = 'learner.mastery_changed';
+
+              IF v_max_drop IS NULL OR v_max_drop < c_cliff_drop THEN
+                RAISE EXCEPTION 'CLIFF FAIL: largest drop % did not trip masteryCliff (>= %)', v_max_drop, c_cliff_drop;
+              END IF;
+              RAISE NOTICE 'CLIFF signal tripped: largest_drop=% threshold=%', v_max_drop, c_cliff_drop;
+
+              -- Assert the intervention the INJECT phase would create is creatable
+              -- (passes the trigger_signal allowlist, chapter_number >= 0, subject
+              -- lowercase CHECKs + the one-active partial unique index).
+              INSERT INTO public.adaptive_interventions (
+                id, student_id, subject_code, chapter_number, trigger_signal,
+                trigger_snapshot, status, created_at, verify_by
+              )
+              VALUES (
+                gen_random_uuid(), v_student_id, 'mathematics', 3, 'mastery_cliff',
+                jsonb_build_object('largestDrop', v_max_drop, 'rulesVersion', 'drill'),
+                'active', now(), now() + interval '7 days'
+              )
+              RETURNING id INTO v_iv_id;
+              RAISE NOTICE 'CLIFF intervention row creatable: id=%', v_iv_id;
+            END IF;
+
+            -- ════════════════════════════════════════════════════════════════════
+            -- DRILL: inactivity  — trip deriveInactivity 'broken' (>= 2 UTC days)
+            -- ════════════════════════════════════════════════════════════════════
+            IF v_drill IN ('inactivity', 'all') THEN
+              -- Push last_active to 5 whole days ago (>= 2 => 'broken'). The cron
+              -- over-fetches students with last_active before yesterday-00:00 UTC.
+              UPDATE public.students
+                 SET last_active = now() - interval '5 days'
+               WHERE id = v_student_id;
+
+              SELECT (date_trunc('day', now() AT TIME ZONE 'UTC')
+                      - date_trunc('day', (now() - interval '5 days') AT TIME ZONE 'UTC'))::int
+                INTO v_days_inactive;
+
+              IF v_days_inactive < 2 THEN
+                RAISE EXCEPTION 'INACTIVITY FAIL: % whole UTC days since active did not trip ''broken'' (>= 2)', v_days_inactive;
+              END IF;
+              RAISE NOTICE 'INACTIVITY signal tripped: days_since_active=% verdict=broken', v_days_inactive;
+
+              -- Assert the Loop B sentinel intervention is creatable: subject_code
+              -- '_inactivity' (lowercase, passes subject_lower CHECK) + chapter 0
+              -- (requires the >= 0 CHECK relax from migration 20260619000500).
+              INSERT INTO public.adaptive_interventions (
+                id, student_id, subject_code, chapter_number, trigger_signal,
+                trigger_snapshot, status, created_at, verify_by
+              )
+              VALUES (
+                gen_random_uuid(), v_student_id, '_inactivity', 0, 'inactivity',
+                jsonb_build_object('daysSinceActive', v_days_inactive, 'rulesVersion', 'drill'),
+                'active', now(), now() + interval '3 days'
+              )
+              RETURNING id INTO v_iv_id;
+              RAISE NOTICE 'INACTIVITY intervention row creatable (sentinel _inactivity / chapter 0): id=%', v_iv_id;
+            END IF;
+
+            -- ════════════════════════════════════════════════════════════════════
+            -- DRILL: concentration  — trip atRiskConcentration 'high' band
+            -- (>= 5 chapters with mastery < 0.4 in ONE subject)
+            -- ════════════════════════════════════════════════════════════════════
+            IF v_drill IN ('concentration', 'all') THEN
+              -- Seed 6 at-risk chapters (mastery 0.1..0.35, all < 0.4) in 'science'
+              -- => atRiskChapterCount = 6 >= concentration_high_min (5) => 'high'.
+              INSERT INTO public.learner_mastery (
+                id, auth_user_id, subject_code, chapter_number, mastery, attempts, last_updated_at
+              )
+              SELECT gen_random_uuid(), v_auth_uid, 'science', ch, 0.1 + (ch * 0.04), 3, now()
+                FROM generate_series(1, 6) AS ch;
+
+              SELECT count(*)
+                INTO v_count
+                FROM public.learner_mastery
+               WHERE auth_user_id = v_auth_uid
+                 AND subject_code = 'science'
+                 AND mastery < c_at_risk_mastery;
+
+              IF v_count < c_high_min THEN
+                RAISE EXCEPTION 'CONCENTRATION FAIL: % at-risk chapters did not reach ''high'' band (>= %)', v_count, c_high_min;
+              END IF;
+              RAISE NOTICE 'CONCENTRATION signal tripped: at_risk_chapters=% band=high', v_count;
+
+              -- Assert the Loop C intervention is creatable, escalate-at-inject:
+              -- escalated_to set at inject (the intervention IS the escalation).
+              INSERT INTO public.adaptive_interventions (
+                id, student_id, subject_code, chapter_number, trigger_signal,
+                trigger_snapshot, status, escalated_to, created_at, verify_by
+              )
+              VALUES (
+                gen_random_uuid(), v_student_id, 'science', 1, 'at_risk_concentration',
+                jsonb_build_object('atRiskChapterCount', v_count, 'bandAtTrigger', 'high', 'rulesVersion', 'drill'),
+                'active', 'parent', now(), now() + interval '14 days'
+              )
+              RETURNING id INTO v_iv_id;
+              RAISE NOTICE 'CONCENTRATION intervention row creatable (escalate-at-inject, escalated_to=parent): id=%', v_iv_id;
+            END IF;
+
+            RAISE NOTICE 'DRILL SEED+ASSERT OK for drill=%', v_drill;
+          END $drill$;
+
+          -- Proof read-back (counts + marker only, no PII): exactly the rows this
+          -- run created, by the synthetic student row.
+          SELECT
+            ai.trigger_signal,
+            count(*) AS rows_created
+          FROM public.adaptive_interventions ai
+          JOIN public.students s ON s.id = ai.student_id
+          WHERE s.email = :'marker' || :'run_id' || '@example.invalid'
+          GROUP BY ai.trigger_signal
+          ORDER BY ai.trigger_signal;
+          SQL
+          PSQL_RC=$?
+          set -e
+          if [ "$PSQL_RC" -ne 0 ]; then
+            echo "::error::Drill seed/assert FAILED (psql exit $PSQL_RC). Teardown will still run and verify zero leak."
+            echo "run_failed=true" >> "$GITHUB_OUTPUT"
+            exit "$PSQL_RC"
+          fi
+          echo "Drill seed+assert PASSED for drill=$DRILL."
+
+      - name: Teardown — delete EXACTLY this run's synthetic rows (always)
+        if: always()
+        env:
+          DB_URL: ${{ steps.link.outputs.db_url }}
+          DRILL_RUN_ID: ${{ steps.run.outputs.drill_run_id }}
+        run: |
+          set -euo pipefail
+
+          # If linking failed before a run_id was minted, there is nothing to clean.
+          if [ -z "${DRILL_RUN_ID:-}" ]; then
+            echo "No drill_run_id was minted (drill never seeded). Nothing to tear down."
+            exit 0
+          fi
+          if [ -z "${DB_URL:-}" ]; then
+            echo "::error::Teardown cannot run: no DB connection (link step failed). Manual cleanup may be needed for drill_run_id=$DRILL_RUN_ID if any rows were written."
+            exit 1
+          fi
+
+          echo "Tearing down drill_run_id=$DRILL_RUN_ID (synthetic rows only)."
+
+          # Delete strictly by the synthetic marker + the deterministic synthetic
+          # auth_user_id (uuid5 of the run id). adaptive_interventions FK-cascades
+          # from students(id) ON DELETE CASCADE, so deleting the student removes
+          # its interventions; we ALSO delete learner_mastery + state_events
+          # explicitly (they key on the synthetic auth_user_id, not student_id, and
+          # have no FK to students). Then we assert ZERO synthetic rows remain.
+          set +e
+          psql "$DB_URL" \
+            --set=ON_ERROR_STOP=1 \
+            -v run_id="$DRILL_RUN_ID" <<'SQL'
+          \set marker 'drill-synthetic-'
+
+          -- Same top-level GUC stash as the seed step (psql :'var' does not
+          -- substitute inside the dollar-quoted DO block).
+          SELECT set_config('drill.run_id', :'run_id', false);
+          SELECT set_config('drill.marker', :'marker', false);
+
+          DO $teardown$
+          DECLARE
+            v_run_id    uuid := current_setting('drill.run_id')::uuid;
+            v_marker    text := current_setting('drill.marker');
+            -- Recompute the SAME deterministic synthetic auth_user_id the seed used
+            -- (md5(run_id) -> canonical uuid). Byte-for-byte identical, so teardown
+            -- targets exactly the rows the seed wrote.
+            v_hash      text := md5(v_run_id::text);
+            v_auth_uid  uuid := (
+              substr(v_hash, 1, 8)  || '-' ||
+              substr(v_hash, 9, 4)  || '-' ||
+              substr(v_hash, 13, 4) || '-' ||
+              substr(v_hash, 17, 4) || '-' ||
+              substr(v_hash, 21, 12)
+            )::uuid;
+            v_email     text := v_marker || v_run_id::text || '@example.invalid';
+            v_iv         integer;
+            v_lm         integer;
+            v_se         integer;
+            v_st         integer;
+            v_remaining  integer;
+          BEGIN
+            -- adaptive_interventions: delete by the synthetic student (defensive —
+            -- the student delete below cascades, but delete explicitly first so the
+            -- post-delete leak check is unambiguous).
+            DELETE FROM public.adaptive_interventions ai
+             USING public.students s
+             WHERE ai.student_id = s.id
+               AND s.email = v_email;
+            GET DIAGNOSTICS v_iv = ROW_COUNT;
+
+            DELETE FROM public.learner_mastery
+             WHERE auth_user_id = v_auth_uid;
+            GET DIAGNOSTICS v_lm = ROW_COUNT;
+
+            DELETE FROM public.state_events
+             WHERE actor_auth_user_id = v_auth_uid
+               AND idempotency_key LIKE v_marker || '%';
+            GET DIAGNOSTICS v_se = ROW_COUNT;
+
+            -- The student row last (cascades any remaining interventions).
+            DELETE FROM public.students
+             WHERE email = v_email;
+            GET DIAGNOSTICS v_st = ROW_COUNT;
+
+            RAISE NOTICE 'TEARDOWN deleted: interventions=% learner_mastery=% state_events=% students=%',
+              v_iv, v_lm, v_se, v_st;
+
+            -- Leak assertion: ZERO synthetic rows may remain anywhere.
+            SELECT
+              (SELECT count(*) FROM public.students WHERE email = v_email)
+            + (SELECT count(*) FROM public.learner_mastery WHERE auth_user_id = v_auth_uid)
+            + (SELECT count(*) FROM public.state_events WHERE actor_auth_user_id = v_auth_uid)
+            + (SELECT count(*) FROM public.adaptive_interventions ai
+                 JOIN public.students s ON s.id = ai.student_id
+                WHERE s.email = v_email)
+              INTO v_remaining;
+
+            IF v_remaining <> 0 THEN
+              RAISE EXCEPTION 'TEARDOWN LEAK: % synthetic row(s) remain for drill_run_id=%', v_remaining, v_run_id;
+            END IF;
+            RAISE NOTICE 'TEARDOWN clean: 0 synthetic rows remain for drill_run_id=%', v_run_id;
+          END $teardown$;
+          SQL
+          PSQL_RC=$?
+          set -e
+          if [ "$PSQL_RC" -ne 0 ]; then
+            echo "::error::Teardown FAILED or leaked synthetic rows (psql exit $PSQL_RC) for drill_run_id=$DRILL_RUN_ID. MANUAL CLEANUP REQUIRED on staging."
+            exit "$PSQL_RC"
+          fi
+          echo "Teardown clean: 0 synthetic rows remain for drill_run_id=$DRILL_RUN_ID."
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Staging Adaptive-Loop Drill"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| drill | ${DRILL} |"
+            echo "| drill_run_id | ${{ steps.run.outputs.drill_run_id }} |"
+            echo "| seed+assert | ${{ steps.run.outcome }} |"
+            echo "| status | ${{ job.status }} |"
+            echo ""
+            echo "Synthetic data only (is_demo=true, drill-synthetic-* marker). Teardown runs"
+            echo "on every outcome and FAILS the job if any synthetic row survives. No PII or"
+            echo "secrets are printed — counts + the random drill_run_id + the marker only."
+            echo ""
+            echo "Triggered by: ${{ github.actor }} via ${{ github.event_name }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Drill '${DRILL}' complete. Job status: ${{ job.status }}."
