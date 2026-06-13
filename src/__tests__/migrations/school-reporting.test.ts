@@ -42,6 +42,10 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { hasSupabaseIntegrationEnv } from '../helpers/integration';
+import {
+  ensureSchoolReadModelReferenceData,
+  SAFE_PREFERRED_SUBJECT_CODE,
+} from './_helpers/reference-data';
 
 const describeIntegration = hasSupabaseIntegrationEnv() ? describe : describe.skip;
 
@@ -131,7 +135,11 @@ async function seedStudent(name: string, grade: string): Promise<string> {
   const fullName = `${name} ${RUN}`;
   const { data, error } = await supabaseAdmin
     .from('students')
-    .insert({ name: fullName, grade, is_active: true })
+    // Set preferred_subject EXPLICITLY to a seeded subjects.code — the column
+    // DEFAULT ('Mathematics') matches no subjects.code and trips
+    // students_preferred_subject_fkey (23503) on a schema-only-baseline DB.
+    // See ./_helpers/reference-data.ts for the full root-cause note.
+    .insert({ name: fullName, grade, is_active: true, preferred_subject: SAFE_PREFERRED_SUBJECT_CODE })
     .select('id')
     .single();
   if (error || !data) throw new Error(`seed student failed: ${error?.message}`);
@@ -242,18 +250,14 @@ interface BloomRow {
 
 describeIntegration('Phase 3B Wave D — school-wide reporting read models (live DB)', () => {
   beforeAll(async () => {
-    // concept_mastery.topic_id FK → curriculum_topics; reuse an existing topic.
-    const { data: topic, error: topicErr } = await supabaseAdmin
-      .from('curriculum_topics')
-      .select('id')
-      .limit(1)
-      .single();
-    if (topicErr || !topic) {
-      throw new Error(
-        `No curriculum_topics row to anchor concept_mastery — DB not seeded: ${topicErr?.message}`,
-      );
-    }
-    created.topicId = topic.id;
+    // Idempotently ensure reference data the fixtures depend on:
+    //  - the canonical `subjects` taxonomy (so the students FK resolves), and
+    //  - a `curriculum_topics` anchor for concept_mastery.topic_id (FK).
+    // Reuses an existing topic on a fully-seeded staging DB; self-seeds a
+    // minimal anchor on a fresh/reset/drifted CI DB (the schema-only baseline
+    // ships these tables EMPTY). See ./_helpers/reference-data.ts for the RCA.
+    const { topicId } = await ensureSchoolReadModelReferenceData(supabaseAdmin);
+    created.topicId = topicId;
 
     SCHOOL_A = await seedSchool('A');
     SCHOOL_B = await seedSchool('B-other');

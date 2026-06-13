@@ -45,6 +45,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { hasSupabaseIntegrationEnv } from '../helpers/integration';
+import { ensureSubjects, SAFE_PREFERRED_SUBJECT_CODE } from './_helpers/reference-data';
 
 const describeIntegration = hasSupabaseIntegrationEnv() ? describe : describe.skip;
 
@@ -128,7 +129,16 @@ async function seedClass(schoolId: string, name: string): Promise<string> {
 async function seedStudent(tag: string): Promise<string> {
   const { data, error } = await supabaseAdmin
     .from('students')
-    .insert({ name: `S-${tag} ${RUN}`, grade: '8', is_active: true })
+    // Set preferred_subject EXPLICITLY to a seeded subjects.code — the column
+    // DEFAULT ('Mathematics') matches no subjects.code and trips
+    // students_preferred_subject_fkey (23503) on a schema-only-baseline DB.
+    // See ./_helpers/reference-data.ts for the full root-cause note.
+    .insert({
+      name: `S-${tag} ${RUN}`,
+      grade: '8',
+      is_active: true,
+      preferred_subject: SAFE_PREFERRED_SUBJECT_CODE,
+    })
     .select('id')
     .single();
   if (error || !data) throw new Error(`seed student failed: ${error?.message}`);
@@ -182,6 +192,11 @@ interface Verdict {
 
 describeIntegration('Phase 3B seat enforcement — hybrid policy state machine (live DB)', () => {
   beforeAll(async () => {
+    // Ensure the canonical `subjects` taxonomy exists so test students'
+    // preferred_subject FK resolves on a schema-only-baseline DB (the seed
+    // lives only under _legacy/, which `db push` skips). Idempotent.
+    await ensureSubjects(supabaseAdmin);
+
     SCHOOL = await seedSchool('main');
     OTHER_SCHOOL = await seedSchool('other');
     SUB_ID = await seedSubscription(SCHOOL, SEATS); // S = 10
