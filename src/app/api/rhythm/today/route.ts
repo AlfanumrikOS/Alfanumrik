@@ -27,7 +27,11 @@
  */
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
-import { isFeatureEnabled, PEDAGOGY_V2_FLAGS } from '@/lib/feature-flags';
+import {
+  isFeatureEnabled,
+  PEDAGOGY_V2_FLAGS,
+  ADAPTIVE_REMEDIATION_FLAGS,
+} from '@/lib/feature-flags';
 import {
   composeDailyRhythm,
   type CandidateProblem,
@@ -36,6 +40,11 @@ import {
   dueReviewsToCards,
   type DueReviewRow,
 } from '@/lib/learn/due-reviews-adapter';
+import {
+  ADAPTIVE_REMEDIATION_RULES,
+  compareBySeverity,
+  type RemediationCard,
+} from '@/lib/learn/remediation-queue-adapter';
 import { resolveGoalProfile, type GoalCode } from '@/lib/goals/goal-profile';
 import { logger } from '@/lib/logger';
 import { cacheFetchAsync, CACHE_TTL } from '@/lib/cache';
@@ -297,5 +306,121 @@ async function buildRhythmQueue(
     reflectionPromptIndex,
   });
 
-  return queue;
+  // ── Phase A Loop A — adaptive remediation lane ──────────────────────────
+  // Cards are MATERIALIZED AT READ TIME from this student's active
+  // adaptive_interventions rows (spec Decision 5 — nothing is stored). The
+  // lane sits AFTER the SRS block and BEFORE the ZPD problem (warm-up →
+  // targeted repair → stretch). `kind: 'remediation_review'` is disjoint
+  // from the existing RhythmItem kinds, so the items union extends without
+  // touching the orchestrator and old clients that switch on known kinds are
+  // unaffected. Flag OFF (kill switch) ⇒ empty lane, base 7-item queue
+  // unchanged. Lane failures are swallowed — remediation is an enhancement,
+  // never a reason to 500 the daily queue.
+  const remediationCards = await buildRemediationLane(
+    supabase,
+    studentRow.id,
+    userId,
+    queue.items.length,
+  );
+  if (remediationCards.length === 0) {
+    return queue;
+  }
+  const SRS_BLOCK_SIZE = 5;
+  return {
+    ...queue,
+    items: [
+      ...queue.items.slice(0, SRS_BLOCK_SIZE),
+      ...remediationCards,
+      ...queue.items.slice(SRS_BLOCK_SIZE),
+    ],
+  };
+}
+
+// ─── Phase A Loop A lane builder ─────────────────────────────────────────────
+
+interface ActiveInterventionRow {
+  id: string;
+  subject_code: string;
+  chapter_number: number;
+  trigger_snapshot: Record<string, unknown> | null;
+}
+
+/**
+ * Read this student's active adaptive_interventions (RLS-scoped client: the
+ * student-SELECT-own policy is the boundary — P8) and compose ≤3 remediation
+ * cards under the ratified caps:
+ *
+ *   lane capacity = min(max_remediation_cards_per_day,
+ *                       max_daily_queue_total − base queue size)
+ *
+ * Severity-ordered: deepest trigger_snapshot.largestDrop first (nulls last),
+ * deterministic tie-break by subject then chapter — the same ordering the
+ * adapter's bySeverity uses. Returns [] when the flag is off, on any error,
+ * or when no active interventions exist.
+ */
+async function buildRemediationLane(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  studentId: string,
+  userId: string,
+  baseQueueSize: number,
+): Promise<RemediationCard[]> {
+  try {
+    const flagOn = await isFeatureEnabled(ADAPTIVE_REMEDIATION_FLAGS.V1, {
+      userId,
+      role: 'student',
+      environment: process.env.VERCEL_ENV || process.env.NODE_ENV,
+    });
+    if (!flagOn) return [];
+
+    const capacity = Math.min(
+      ADAPTIVE_REMEDIATION_RULES.max_remediation_cards_per_day,
+      ADAPTIVE_REMEDIATION_RULES.max_daily_queue_total - baseQueueSize,
+    );
+    if (capacity <= 0) return [];
+
+    const { data, error } = await supabase
+      .from('adaptive_interventions')
+      .select('id, subject_code, chapter_number, trigger_snapshot')
+      .eq('student_id', studentId)
+      .eq('status', 'active');
+    if (error) {
+      logger.warn('rhythm/today: remediation lane fetch failed', {
+        userId, error: error.message,
+      });
+      return [];
+    }
+    const rows = (data ?? []) as ActiveInterventionRow[];
+    if (rows.length === 0) return [];
+
+    // Severity ordering comes from the adapter's exported comparator (Round 2,
+    // assessment cond 4) — the SAME `compareBySeverity` the injection planner
+    // uses, so the lane can never drift from the planner's ordering.
+    const dropOf = (r: ActiveInterventionRow): number | null => {
+      const d = (r.trigger_snapshot ?? {})['largestDrop'];
+      return typeof d === 'number' && Number.isFinite(d) ? d : null;
+    };
+    const ordered = rows
+      .map((r) => ({
+        row: r,
+        rank: {
+          subjectCode: r.subject_code,
+          chapterNumber: r.chapter_number,
+          dropMagnitude: dropOf(r),
+        },
+      }))
+      .sort((a, b) => compareBySeverity(a.rank, b.rank));
+
+    return ordered.slice(0, capacity).map(({ row: r }, i) => ({
+      kind: 'remediation_review' as const,
+      subjectCode: r.subject_code,
+      chapterNumber: r.chapter_number,
+      interventionId: r.id,
+      priority: i + 1,
+    }));
+  } catch (err) {
+    logger.warn('rhythm/today: remediation lane failed', {
+      userId, error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
 }

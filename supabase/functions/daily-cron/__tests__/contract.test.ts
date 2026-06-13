@@ -133,6 +133,12 @@ const CRITICAL_STEPS: ReadonlyArray<readonly [string, string]> = [
   ['contract_grace_audited', 'auditContractGracePeriods'],
   // Pedagogy v2 Wave 3 — flag-gated monthly synthesis trigger (asserted gated below).
   ['monthly_synthesis_triggered', 'triggerMonthlySynthesis'],
+  // Phase A Loop A — thin trigger to the Next.js adaptive-remediation worker.
+  // Deliberately NOT flag-gated in Deno: the worker gates INJECT on
+  // ff_adaptive_remediation_v1 and VERIFY on active rows existing, so the
+  // kill switch drains mid-flight interventions instead of freezing them
+  // (spec §9). Asserted thin below (contract 4c).
+  ['adaptive_remediation_triggered', 'triggerAdaptiveRemediation'],
   ['purge_principal_ai', 'purgePrincipalAiTranscripts'],
 ];
 
@@ -200,6 +206,33 @@ Deno.test('daily-cron contract 4a: monthly synthesis is gated behind ff_pedagogy
       SRC,
     ),
     'expected triggerMonthlySynthesis to early-return 0 when the synthesis flag is missing/disabled',
+  );
+});
+
+Deno.test('daily-cron contract 4c: adaptive-remediation trigger is THIN and ungated in Deno (drain semantics)', () => {
+  // The step POSTs to the Next.js worker route with the cron secret — all
+  // detection/verification math lives in Next.js (spec Decision 3). If
+  // someone inlines threshold logic here, or flag-gates the trigger in Deno
+  // (which would freeze mid-flight interventions when the kill switch flips),
+  // these assertions turn red.
+  const fnIdx = SRC.indexOf('async function triggerAdaptiveRemediation');
+  assert(fnIdx > 0, 'expected triggerAdaptiveRemediation to remain defined');
+  const body = SRC.slice(fnIdx, SRC.indexOf('\n}', fnIdx) + 2);
+  // Thin fetch-out to the worker route, authenticated with the cron secret.
+  assertStringIncludes(body, '/api/cron/adaptive-remediation');
+  assertStringIncludes(body, "'x-cron-secret'");
+  // NOT flag-gated in Deno: the worker owns both gates (inject=flag,
+  // verify=active-rows). A feature_flags read inside this step is the
+  // freeze-regression this pin guards against.
+  assert(
+    !body.includes('ff_adaptive_remediation_v1') && !body.includes("from('feature_flags')"),
+    'triggerAdaptiveRemediation must stay ungated in Deno — the worker route gates inject (flag) and verify (active rows) so the kill switch drains, not freezes',
+  );
+  // No threshold logic in Deno (guardrail 6): the Deno side must never
+  // reference the loop constants or pulse thresholds.
+  assert(
+    !body.includes('PULSE_THRESHOLDS') && !body.includes('ADAPTIVE_REMEDIATION_RULES'),
+    'no cliff/recovery threshold logic may live in the Deno trigger',
   );
 });
 

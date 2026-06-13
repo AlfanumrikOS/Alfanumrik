@@ -12,9 +12,17 @@
  *   3. Run the test that pins the registry shape
  *
  * Naming convention: `<actor>.<verb_past_tense>`.
- *   Actors: learner, parent, teacher, school, ai, billing, mesh
+ *   Actors: learner, parent, teacher, school, ai, billing, mesh, system
  *   The compiler can't enforce this; the test in
  *   src/__tests__/state/events-registry.test.ts can.
+ *
+ * The `system` actor (added with Phase A Loop A, spec Decision 8 in
+ * docs/superpowers/specs/2026-06-12-phase-a-loop-a-adaptive-remediation-design.md)
+ * is the platform acting AUTONOMOUSLY under tiered authority — no existing
+ * actor fits (it is not a learner/teacher/ai-tutor action). Adding an actor
+ * is sanctioned ONLY as a paired change: this header comment AND the
+ * CANONICAL_ACTORS pin in src/__tests__/state/events-registry.test.ts move
+ * together in the same PR.
  */
 
 import { z } from 'zod';
@@ -489,6 +497,68 @@ export const BillingInvoicePaidSchema = EventBaseSchema.extend({
   }),
 });
 
+// ── System (autonomous tiered-authority) events ─────────────────────
+//
+// Phase A Loop A — adaptive closed loop (mastery-cliff → auto-remediation →
+// recovery verification). Producer is the daily-cron worker route
+// (/api/cron/adaptive-remediation) acting WITHOUT human approval under the
+// CEO-approved TIERED authority model; these events are the immutable audit
+// trail of every autonomous action ("show me every time the system acted on
+// its own"). The canonical state lives on adaptive_interventions — the bus is
+// observability, never load-bearing (spec Decision 4; escalations additionally
+// write an audit_logs row so the trail survives a bus-off environment).
+//
+// Envelope: actorAuthUserId carries the LEARNER's auth_user_id (the envelope
+// contract is "who the event is about"); tenantId carries the school for B2B,
+// null for B2C; idempotencyKey = `remediation:<interventionId>:<phase>` so
+// cron retries dedupe. Payloads are UUIDs + derived metrics only — no PII (P13).
+
+export const SystemRemediationInjectedSchema = EventBaseSchema.extend({
+  kind: z.literal('system.remediation_injected'),
+  payload: z.object({
+    interventionId: uuidLike(),
+    subjectCode: z.string(),
+    chapterNumber: z.number().int().positive(),
+    // Largest single-event mastery drop that triggered the cliff (0..1).
+    // Null when the flag fired without a measurable delta.
+    largestDrop: z.number().min(0).max(1).nullable(),
+    declineStreak: z.number().int().nonnegative(),
+    // Pre-cliff baseline frozen into trigger_snapshot. Null when unknown
+    // (score-trend cliff path) — then only the gain branch can recover.
+    baselineMastery: z.number().min(0).max(1).nullable(),
+    // Denormalized recovery deadline (created_at + verification window).
+    verifyBy: isoDatetime(),
+  }),
+});
+
+export const SystemRemediationRecoveredSchema = EventBaseSchema.extend({
+  kind: z.literal('system.remediation_recovered'),
+  payload: z.object({
+    interventionId: uuidLike(),
+    subjectCode: z.string(),
+    chapterNumber: z.number().int().positive(),
+    // Mastery at the latest in-window observation that satisfied recovery.
+    recoveredMastery: z.number().min(0).max(1),
+    daysToRecovery: z.number().int().nonnegative(),
+  }),
+});
+
+export const SystemRemediationEscalatedSchema = EventBaseSchema.extend({
+  kind: z.literal('system.remediation_escalated'),
+  payload: z.object({
+    interventionId: uuidLike(),
+    subjectCode: z.string(),
+    chapterNumber: z.number().int().positive(),
+    // 'teacher' (B2B roster), 'parent' (B2C linked guardian), or null when
+    // neither exists — the null case is deliberately on the payload so ops
+    // can see unreachable escalations (spec Decision 7).
+    escalatedTo: z.enum(['teacher', 'parent']).nullable(),
+    // FK of the Phase 3A teacher_remediation_assignments row created on B2B
+    // escalation; null for parent / no-recipient escalations.
+    teacherAssignmentId: uuidLike().nullable(),
+  }),
+});
+
 // ── Mesh (autonomous improvement) events ─────────────────────────────
 
 export const MeshCycleCompletedSchema = EventBaseSchema.extend({
@@ -534,6 +604,9 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   ParentTeacherMessageSentSchema,
   SchoolModuleToggledSchema,
   BillingInvoicePaidSchema,
+  SystemRemediationInjectedSchema,
+  SystemRemediationRecoveredSchema,
+  SystemRemediationEscalatedSchema,
   MeshCycleCompletedSchema,
 ]);
 
@@ -577,6 +650,9 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'parent.teacher_message_sent',
   'school.module_toggled',
   'billing.invoice_paid',
+  'system.remediation_injected',
+  'system.remediation_recovered',
+  'system.remediation_escalated',
   'mesh.cycle_completed',
 ] as const;
 

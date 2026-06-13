@@ -200,6 +200,18 @@ export function timelineFromRows(rows: StateEventRow[]): PulseTimelineEntry[] {
   }));
 }
 
+/**
+ * Per-kind ADDITIONS to the generic whitelist below. Each entry must be a
+ * non-PII routing/label field justified in place.
+ */
+const KIND_SAFE_KEYS: Record<string, readonly string[]> = {
+  // Phase A Loop A (Round 2, frontend-deferred item): 'teacher' | 'parent' |
+  // null — a routing LABEL, never an identifier (P13). pulse-copy's
+  // timelineLine branches the student/parent/teacher escalation copy on it;
+  // when absent/null the copy degrades to neutral "extra help" framing.
+  'system.remediation_escalated': ['escalatedTo'],
+};
+
 /** Whitelist the small, non-PII payload subset surfaced on a timeline entry. */
 function whitelistTimelineSummary(
   kind: string,
@@ -223,6 +235,7 @@ function whitelistTimelineSummary(
     'durationSec',
     'turnCount',
     'questionCount',
+    ...(KIND_SAFE_KEYS[kind] ?? []),
   ];
   for (const k of safeKeys) {
     const v = payload[k];

@@ -51,6 +51,11 @@ export const PULSE_COLORS = {
   low: '#F59E0B',
   medium: '#EA580C',
   high: '#DC2626',
+  // Phase A Loop A — adaptive-remediation timeline accents (paired with icon
+  // + text at every call site; never colour-alone).
+  remediation: '#F97316', // brand orange — Foxy stepped in
+  recovered: '#16A34A', // green — comeback verified
+  escalated: '#F59E0B', // amber — a human was pulled in
 } as const;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -287,12 +292,18 @@ export function concentrationToken(
  * Map a timeline entry `kind` (+ its whitelisted non-PII summary) to a short,
  * human-readable bilingual line. Unknown kinds degrade to a clean fallback so
  * the timeline never shows a raw event name to a learner.
+ *
+ * `variant` shifts TONE per lens (student = encouraging first-person;
+ * parent = warm + actionable; teacher/principal = triage language). The
+ * optional `accent` is a presentation hint for the icon chip — always paired
+ * with the icon + text, never colour-alone.
  */
 export function timelineLine(
   kind: string,
   summary: Record<string, string | number | boolean | null>,
   isHi: boolean,
-): { icon: string; text: string } {
+  variant: PulseVariant = 'student',
+): { icon: string; text: string; accent?: string } {
   const subject =
     typeof summary.subject === 'string'
       ? summary.subject
@@ -348,6 +359,97 @@ export function timelineLine(
         icon: '🦊',
         text: tp(isHi, 'Learned with Foxy', 'Foxy के साथ सीखा'),
       };
+
+    // ── Phase A Loop A — adaptive remediation (system.* actor) ──────────────
+    // Payload fields ride the generic whitelist (subjectCode/chapterNumber).
+    // Copy is variant-aware: student = encouraging, parent/teacher = actionable.
+    case 'system.remediation_injected': {
+      const self = variant === 'student';
+      const chEn = chapter != null ? ` for Chapter ${chapter}` : '';
+      const chHi = chapter != null ? `अध्याय ${chapter} के लिए ` : '';
+      return {
+        icon: '🦊',
+        accent: PULSE_COLORS.remediation,
+        text: self
+          ? tp(isHi, `Foxy added extra practice${chEn}`, `Foxy ने ${chHi}अतिरिक्त अभ्यास जोड़ा`)
+          : variant === 'parent'
+            ? tp(
+                isHi,
+                `Extra practice was added${chEn}${subjLabel} — the app is on it`,
+                `${chHi}अतिरिक्त अभ्यास जोड़ा गया${subjLabel} — ऐप इस पर काम कर रहा है`,
+              )
+            : tp(
+                isHi,
+                `Auto-practice assigned${chLabel}${subjLabel} — recovery being tracked`,
+                `स्वतः अभ्यास सौंपा गया${chLabel}${subjLabel} — रिकवरी पर नज़र है`,
+              ),
+      };
+    }
+    case 'system.remediation_recovered': {
+      const self = variant === 'student';
+      return {
+        icon: '🎉',
+        accent: PULSE_COLORS.recovered,
+        text: self
+          ? chapter != null
+            ? tp(isHi, `You recovered Chapter ${chapter} 🎉`, `तुमने अध्याय ${chapter} फिर से पक्का कर लिया 🎉`)
+            : tp(isHi, 'You recovered a tricky chapter 🎉', 'तुमने एक मुश्किल अध्याय फिर से पक्का कर लिया 🎉')
+          : variant === 'parent'
+            ? tp(
+                isHi,
+                `Chapter${chapter != null ? ` ${chapter}` : ''}${subjLabel} recovered after extra practice 🎉`,
+                `अतिरिक्त अभ्यास के बाद${chapter != null ? ` अध्याय ${chapter}` : ' अध्याय'}${subjLabel} की पकड़ लौट आई 🎉`,
+              )
+            : tp(
+                isHi,
+                `Mastery recovered${chLabel}${subjLabel} — no action needed`,
+                `महारत लौट आई${chLabel}${subjLabel} — किसी कार्रवाई की ज़रूरत नहीं`,
+              ),
+      };
+    }
+    case 'system.remediation_escalated': {
+      const self = variant === 'student';
+      // `escalatedTo` is not in the timeline whitelist today; branch when
+      // present, degrade to neutral copy when absent (never claim the wrong
+      // helper for a B2C student).
+      const escalatedTo =
+        typeof summary.escalatedTo === 'string' ? summary.escalatedTo : null;
+      let text: string;
+      if (self) {
+        text =
+          escalatedTo === 'teacher'
+            ? tp(
+                isHi,
+                `Your teacher was asked to help with Chapter ${chapter ?? '—'}`,
+                `अध्याय ${chapter ?? '—'} में मदद के लिए आपके शिक्षक से कहा गया`,
+              )
+            : escalatedTo === 'parent'
+              ? tp(
+                  isHi,
+                  `We asked your family to help with Chapter ${chapter ?? '—'}`,
+                  `अध्याय ${chapter ?? '—'} में साथ देने के लिए हमने आपके परिवार को बताया`,
+                )
+              : tp(
+                  isHi,
+                  `Foxy arranged extra help for Chapter ${chapter ?? '—'}`,
+                  `Foxy ने अध्याय ${chapter ?? '—'} के लिए अतिरिक्त मदद की व्यवस्था की`,
+                );
+      } else if (variant === 'parent') {
+        text = tp(
+          isHi,
+          `Your child needs your support with Chapter ${chapter ?? '—'}${subjLabel} — a short revision together will help`,
+          `अध्याय ${chapter ?? '—'}${subjLabel} में आपके बच्चे को आपके साथ की ज़रूरत है — साथ बैठकर छोटा रिवीज़न बहुत मदद करेगा`,
+        );
+      } else {
+        text = tp(
+          isHi,
+          `Needs intervention${chLabel}${subjLabel} — auto-practice didn't recover mastery`,
+          `हस्तक्षेप चाहिए${chLabel}${subjLabel} — स्वतः अभ्यास से महारत नहीं लौटी`,
+        );
+      }
+      return { icon: '🤝', accent: PULSE_COLORS.escalated, text };
+    }
+
     default:
       // Clean, non-PII fallback: humanise the trailing kind segment.
       return {

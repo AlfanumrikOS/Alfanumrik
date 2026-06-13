@@ -32,6 +32,9 @@ import {
 
 // Canonical actors per registry.ts header comment. Update this list (and
 // the registry comment) together if a new actor is introduced.
+// 'system' added with Phase A Loop A (adaptive remediation, spec Decision 8):
+// the platform acting autonomously under tiered authority — this paired
+// registry-comment + pin update is the sanctioned procedure for new actors.
 const CANONICAL_ACTORS = new Set([
   'learner',
   'parent',
@@ -40,6 +43,7 @@ const CANONICAL_ACTORS = new Set([
   'ai',
   'billing',
   'mesh',
+  'system',
 ]);
 
 // Deterministic fixtures. The regex validators on the envelope accept
@@ -261,6 +265,29 @@ const VALID_PAYLOADS: Record<DomainEventKind, Record<string, unknown>> = {
     invoiceId: FIXTURE_UUID_C,
     amountInr: 49900,
     planSlug: 'pro_monthly',
+  },
+  'system.remediation_injected': {
+    interventionId: FIXTURE_UUID_C,
+    subjectCode: 'math',
+    chapterNumber: 4,
+    largestDrop: 0.22,
+    declineStreak: 0,
+    baselineMastery: 0.72,
+    verifyBy: FIXTURE_ISO,
+  },
+  'system.remediation_recovered': {
+    interventionId: FIXTURE_UUID_C,
+    subjectCode: 'math',
+    chapterNumber: 4,
+    recoveredMastery: 0.74,
+    daysToRecovery: 5,
+  },
+  'system.remediation_escalated': {
+    interventionId: FIXTURE_UUID_C,
+    subjectCode: 'math',
+    chapterNumber: 4,
+    escalatedTo: 'teacher',
+    teacherAssignmentId: FIXTURE_UUID_A,
   },
   'mesh.cycle_completed': {
     cycleId: FIXTURE_UUID_C,

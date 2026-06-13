@@ -1059,6 +1059,53 @@ async function triggerMonthlySynthesis(supabase: ReturnType<typeof createClient>
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Phase A Loop A — adaptive remediation trigger (THIN, by design).
+// POSTs to the Next.js cron worker /api/cron/adaptive-remediation with
+// CRON_SECRET (x-cron-secret), mirroring the triggerMonthlySynthesis
+// fetch-out precedent. ALL detection/verification math lives in the worker
+// route, which imports the pure modules (signals.ts, remediation-queue-
+// adapter.ts, recovery-evaluation.ts) — NO thresholds are defined or
+// duplicated in Deno (spec Decision 3 / guardrail 6).
+//
+// Deliberately NOT flag-gated here: the worker gates its INJECT phase on
+// ff_adaptive_remediation_v1 and its VERIFY phase on the existence of
+// active intervention rows, so the kill switch DRAINS mid-flight
+// interventions instead of freezing them (spec §9). Gating this trigger on
+// the flag would break the drain.
+// Failures isolated by Promise.allSettled in the main handler.
+// ──────────────────────────────────────────────────────────────────────────
+async function triggerAdaptiveRemediation(_supabase: ReturnType<typeof createClient>): Promise<number> {
+  const siteUrl = Deno.env.get('SITE_URL') || 'https://alfanumrik.com'
+  const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
+  if (!cronSecret) {
+    console.warn('triggerAdaptiveRemediation: CRON_SECRET unavailable — skipping (worker rejects unauthenticated calls)')
+    return 0
+  }
+  try {
+    const res = await fetch(`${siteUrl}/api/cron/adaptive-remediation`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-cron-secret': cronSecret },
+      body: JSON.stringify({ phase: 'all' }),
+    })
+    if (!res.ok) {
+      const t = await res.text().catch(() => '')
+      console.warn(`triggerAdaptiveRemediation: non-OK ${res.status}: ${t.slice(0, 120)}`)
+      return 0
+    }
+    const j = await res.json().catch(() => null) as { data?: { injected?: number; resolved?: number } } | null
+    const injected = j?.data?.injected ?? 0
+    const resolved = j?.data?.resolved ?? 0
+    // P13: counts only — no student identifiers in logs.
+    console.log(`daily-cron: adaptive_remediation — injected=${injected} resolved=${resolved}`)
+    return injected + resolved
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e)
+    console.warn(`triggerAdaptiveRemediation: network error: ${m}`)
+    return 0
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Phase 3-C — Contract lifecycle automation
 // All three steps are no-ops when ff_school_contracts_v1 is OFF.
 // Failures isolated by Promise.allSettled in the main handler.
@@ -1384,6 +1431,11 @@ Deno.serve(async (req) => {
       ['contracts_expired',()=>expireContracts(sb)],
       ['contract_grace_audited',()=>auditContractGracePeriods(sb)],
       ['monthly_synthesis_triggered',()=>triggerMonthlySynthesis(sb)],
+      // Phase A Loop A (2026-06-12): thin trigger → Next.js worker route
+      // /api/cron/adaptive-remediation (inject flag-gated; verify gated on
+      // active rows = kill-switch drain semantics). No threshold logic in
+      // Deno — see triggerAdaptiveRemediation header.
+      ['adaptive_remediation_triggered',()=>triggerAdaptiveRemediation(sb)],
       // Phase 3 of Foxy continuity (2026-05-18): mark abandoned-by-time
       // open expectations as 'expired' so they don't keep injecting into
       // future prompts. Idempotent. See migration 20260528000013.

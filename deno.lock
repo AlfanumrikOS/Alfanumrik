@@ -95,7 +95,9 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
+        "npm:@asteasolutions/zod-to-openapi@^8.5.0",
         "npm:@next/bundle-analyzer@^16.2.6",
+        "npm:@openapitools/openapi-generator-cli@^2.34.0",
         "npm:@opentelemetry/api@^1.9.1",
         "npm:@opentelemetry/core@^2.6.1",
         "npm:@opentelemetry/instrumentation@0.217",
@@ -131,6 +133,7 @@
         "npm:postcss@^8.4.38",
         "npm:posthog-js@^1.372.1",
         "npm:posthog-node@^5.33.4",
+        "npm:prom-client@15",
         "npm:puppeteer@^25.0.4",
         "npm:react-dom@^18.3.1",
         "npm:react-markdown@^10.1.0",
@@ -143,8 +146,9 @@
         "npm:swr@^2.4.1",
         "npm:tailwind-merge@^2.5.2",
         "npm:tailwindcss@^3.4.4",
+        "npm:tsx@^4.22.4",
         "npm:typescript@^5.4.5",
-        "npm:vitest@^4.1.0",
+        "npm:vitest@^4.1.8",
         "npm:zod@^4.3.6"
       ]
     }

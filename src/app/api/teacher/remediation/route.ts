@@ -4,9 +4,17 @@
  * POST — a teacher assigns targeted remediation to a student on a weak concept
  *        (heatmap cell) or off an at-risk alert ("general" remediation, no
  *        chapter). Writes one `teacher_remediation_assignments` row (status
- *        'assigned'). Idempotent: if an OPEN row (assigned | in_progress)
- *        already exists for (teacher, student, chapter) it is returned rather
- *        than duplicated.
+ *        'assigned'). Idempotent in TWO layers:
+ *        (1) per-teacher pre-check — if an OPEN row (assigned | in_progress)
+ *            already exists for (teacher, student, chapter) it is returned
+ *            rather than duplicated;
+ *        (2) DB backstop — the partial unique index
+ *            uq_teacher_remediation_assignments_open_dedupe (migration
+ *            20260619000400; key student × class × chapter-bucket WHERE
+ *            status='assigned', teacher_id deliberately NOT in the key) turns
+ *            a cross-teacher or check-then-insert-race duplicate INSERT into
+ *            a 23505, which is handled as idempotent success: the surviving
+ *            assigned row is looked up and returned (200), never a 500.
  *
  * GET  — lists the caller-teacher's remediation assignments, optionally
  *        filtered by status / class. Roster-scoped (a teacher only ever sees
@@ -208,6 +216,47 @@ export async function POST(request: NextRequest) {
     )
     .single();
   if (insertErr) {
+    // 23505 = the partial unique dedupe index
+    // (uq_teacher_remediation_assignments_open_dedupe, migration
+    // 20260619000400) caught a duplicate OPEN row for the same
+    // (student, class, chapter-bucket). The pre-check above is keyed
+    // per-teacher, so a COLLEAGUE's open row — or a concurrent request racing
+    // this non-atomic check-then-insert — surfaces here as a unique violation
+    // instead of via the pre-check. Same duplicate signal to the student →
+    // same idempotent-success contract as the pre-check path: look up the
+    // surviving assigned row on the index's natural key (student, class,
+    // chapter eq-or-IS-NULL, status='assigned' — NOT teacher_id) and return it.
+    if (insertErr.code === '23505') {
+      let survivorQuery = supabaseAdmin
+        .from('teacher_remediation_assignments')
+        .select(
+          'id, teacher_id, student_id, class_id, chapter_id, source_alert_id, status, created_at, resolved_at',
+        )
+        .eq('student_id', studentId)
+        .eq('class_id', classId)
+        .eq('status', 'assigned');
+      survivorQuery = chapterId
+        ? survivorQuery.eq('chapter_id', chapterId)
+        : survivorQuery.is('chapter_id', null);
+      const { data: survivor, error: survivorErr } = await survivorQuery
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (survivorErr || !survivor) {
+        // Conflict reported but the surviving row can't be resolved (e.g. it
+        // transitioned between the failed insert and this lookup) — fall back
+        // to the established failure response; the teacher can simply retry.
+        logger.error('teacher_remediation_dedupe_lookup_failed', {
+          error: new Error(survivorErr?.message ?? 'no surviving assigned row found'),
+          route: 'teacher/remediation',
+        });
+        return err('Failed to assign remediation', 500);
+      }
+      return NextResponse.json(
+        { success: true, data: survivor, idempotent: true },
+        { status: 200 },
+      );
+    }
     logger.error('teacher_remediation_insert_failed', {
       error: new Error(insertErr.message),
       route: 'teacher/remediation',

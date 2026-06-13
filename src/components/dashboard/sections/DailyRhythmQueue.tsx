@@ -10,7 +10,15 @@
  * (returns 404 when off → component renders nothing). No client-side
  * flag check needed.
  *
+ * Phase A Loop A (adaptive remediation): items[] may additionally carry
+ * `kind: 'remediation_review'` cards (severity-ordered, positions 5..7,
+ * server-gated by ff_adaptive_remediation_v1 — flag OFF ⇒ the kind never
+ * appears). Rendered as warm, Foxy-framed orange cards between the SRS row
+ * and the ZPD row, mirroring the lane's position in the API contract.
+ * Unknown/future kinds are ignored by the filters below (default-safe).
+ *
  * Spec: docs/superpowers/specs/2026-05-08-pedagogy-v2-three-speed-rhythm-design.md
+ * Spec: docs/superpowers/specs/2026-06-12-phase-a-loop-a-adaptive-remediation-design.md
  */
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -18,7 +26,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { trackDashboardCta } from '@/lib/posthog/dashboard-cta';
 
 interface RhythmItem {
-  kind: 'srs_review' | 'zpd_problem' | 'reflection';
+  kind: 'srs_review' | 'zpd_problem' | 'reflection' | 'remediation_review';
   questionId?: string;
   topicId?: string;
   promptText?: string;
@@ -27,6 +35,11 @@ interface RhythmItem {
   productiveFailure?: boolean;
   workedExampleFirst?: boolean;
   problemFlavor?: string | null;
+  // Phase A Loop A — remediation_review fields (frozen /api/rhythm/today contract)
+  subjectCode?: string;
+  chapterNumber?: number;
+  interventionId?: string;
+  priority?: number;
 }
 
 interface RhythmQueue {
@@ -80,18 +93,37 @@ export default function DailyRhythmQueue() {
   const srs = queue.items.filter((i) => i.kind === 'srs_review' && !i.isPadding);
   const zpd = queue.items.find((i) => i.kind === 'zpd_problem');
   const reflection = queue.items.find((i) => i.kind === 'reflection');
+  // Phase A Loop A — remediation lane (server already severity-orders these;
+  // require the routing fields so a malformed card can never produce a dead link).
+  const remediation = queue.items.filter(
+    (i) =>
+      i.kind === 'remediation_review' &&
+      typeof i.subjectCode === 'string' &&
+      i.subjectCode.length > 0 &&
+      typeof i.chapterNumber === 'number',
+  );
 
   const reflectionText = reflection
     ? (isHi ? (reflection.promptTextHi || reflection.promptText) : reflection.promptText)
     : null;
 
-  return <RhythmQueueBody isHi={isHi} srs={srs} zpd={zpd} reflection={reflection} reflectionText={reflectionText} />;
+  return (
+    <RhythmQueueBody
+      isHi={isHi}
+      srs={srs}
+      zpd={zpd}
+      remediation={remediation}
+      reflection={reflection}
+      reflectionText={reflectionText}
+    />
+  );
 }
 
 interface RhythmQueueBodyProps {
   isHi: boolean;
   srs: RhythmItem[];
   zpd: RhythmItem | undefined;
+  remediation: RhythmItem[];
   reflection: RhythmItem | undefined;
   reflectionText: string | null | undefined;
 }
@@ -106,7 +138,7 @@ interface SynthesisStateLite {
   daysSinceCreated: number;
 }
 
-function RhythmQueueBody({ isHi, srs, zpd, reflection, reflectionText }: RhythmQueueBodyProps) {
+function RhythmQueueBody({ isHi, srs, zpd, remediation, reflection, reflectionText }: RhythmQueueBodyProps) {
   const [diveState, setDiveState] = useState<DiveStateLite | null>(null);
   const [synthesisState, setSynthesisState] = useState<SynthesisStateLite | null>(null);
 
@@ -169,6 +201,13 @@ function RhythmQueueBody({ isHi, srs, zpd, reflection, reflectionText }: RhythmQ
         </h2>
         <p className="text-xs text-purple-700">
           {isHi ? '5 दोहराव · 1 चुनौती · 1 रिफ्लेक्शन' : '5 reviews · 1 challenge · 1 reflection'}
+          {remediation.length > 0 && (
+            <span className="font-semibold text-orange-700">
+              {isHi
+                ? ` · ${remediation.length} Foxy बूस्ट`
+                : ` · ${remediation.length} Foxy boost${remediation.length > 1 ? 's' : ''}`}
+            </span>
+          )}
         </p>
       </header>
 
@@ -194,6 +233,65 @@ function RhythmQueueBody({ isHi, srs, zpd, reflection, reflectionText }: RhythmQ
             {isHi ? 'शुरू करो' : 'Start'}
           </Link>
         </li>
+
+        {/* Phase A Loop A — adaptive-remediation lane (after SRS, before ZPD:
+            warm-up → targeted repair → stretch). Warm Foxy framing, never
+            punitive (P12 note: static copy, nothing generated). Whole card is
+            the tap target (≥44px), keyboard-focusable with a visible ring. */}
+        {remediation.map((item, idx) => {
+          const ch = item.chapterNumber as number;
+          const subject = item.subjectCode as string;
+          const headline = isHi
+            ? `Foxy ने देखा कि अध्याय ${ch} थोड़ा मुश्किल लगा — चलो इसे पक्का करें`
+            : `Foxy noticed Chapter ${ch} got tricky — let's strengthen it`;
+          const href = `/quiz?subject=${encodeURIComponent(subject)}&chapter=${ch}`;
+          return (
+            <li key={item.interventionId || `remediation-${subject}-${ch}-${idx}`}>
+              <Link
+                href={href}
+                className="flex items-start gap-3 rounded-2xl border border-orange-200 bg-orange-50 p-3 min-h-[44px] transition-transform active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2"
+                data-testid="rhythm-remediation-card"
+                aria-label={
+                  isHi
+                    ? `${headline} — अभ्यास शुरू करो`
+                    : `${headline} — start practice`
+                }
+                onClick={() => {
+                  // interventionId is a uuid (not PII) but is intentionally NOT
+                  // emitted — same posture as the ZPD questionId above.
+                  trackDashboardCta({
+                    section: 'daily_rhythm_queue',
+                    action: 'remediation_review',
+                    destination: '/quiz',
+                  });
+                }}
+              >
+                <span className="text-lg leading-none mt-0.5" aria-hidden="true">🦊</span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm font-medium text-orange-900 leading-snug">
+                    {headline}
+                  </span>
+                  <span className="block text-[11px] text-orange-700 mt-0.5">
+                    {subject} · {isHi ? `अध्याय ${ch}` : `Ch. ${ch}`}
+                  </span>
+                </span>
+                <span className="flex flex-col items-end gap-1 shrink-0">
+                  {typeof item.priority === 'number' && (
+                    <span
+                      className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-orange-500 text-white"
+                      data-testid="rhythm-remediation-priority"
+                    >
+                      {isHi ? `प्राथमिकता ${item.priority}` : `Priority ${item.priority}`}
+                    </span>
+                  )}
+                  <span className="text-sm text-orange-700 underline font-medium">
+                    {isHi ? 'मज़बूत करो' : 'Strengthen'}
+                  </span>
+                </span>
+              </Link>
+            </li>
+          );
+        })}
 
         {zpd && zpd.kind === 'zpd_problem' && (
           <li className="flex items-center justify-between">
