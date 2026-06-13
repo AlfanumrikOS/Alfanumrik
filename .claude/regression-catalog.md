@@ -3724,3 +3724,55 @@ attribution), REG-129 (student-facing lane). **Total catalog: 97 entries
 (target: 35 — TARGET EXCEEDED).**
 
 **Total: 97 entries.**
+
+## MOL Python-unification (sub-project A) — router, breaker, cost-cap, parity gate, streaming safety (2026-06-13) — REG-130..REG-134
+
+Source: MOL Python-unification plan
+(`docs/superpowers/specs/2026-06-13-mol-python-unification-design.md`, Phase 9 /
+Task 9.1). Sub-project A ports the Model-Orchestration-Layer router, circuit
+breaker, cost cap, cache, and `/v1/generate{,/stream}` endpoints from the TS
+implementation into the Python AI service (`python/`), behind a TS→Python
+cutover. **Every flag introduced by this work ships DEFAULT-OFF** (deterministic
+OpenAI-priority, shadow-priority, the Python cutover kill-switch) so the live TS
+path is byte-unchanged until each flag is deliberately flipped. All five anchors
+verified green before cataloguing: `python -m pytest` over the named suites =
+**72 passed** (2026-06-13).
+
+> **ID note (2026-06-13):** the Phase 9 plan drafted these as REG-120..REG-124,
+> but REG-120..REG-129 were already claimed on this branch by the RBAC/Pulse
+> cluster (REG-120..REG-122), Foxy-OS (REG-123), School Pulse (REG-124),
+> feature_flags seed-shape (REG-125), and Phase A Loop A adaptive remediation
+> (REG-126..REG-129). Per the catalog's standing collision convention (see the
+> REG-117 and REG-124 ID notes), these MOL entries take the next free ids
+> **REG-130..REG-134**. No test code referenced the draft ids.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-130 | `mol_deterministic_openai_priority` | Provider-priority routing is predictable: OpenAI is ALWAYS the primary provider unless the circuit is OPEN, a per-task override applies, or the shadow-priority flag is set (P12 — no nondeterministic provider roulette for a live student turn). The deterministic-priority router promotes OpenAI to the front of every OpenAI-bearing chain WITHOUT consulting a random weight (the legacy weighted path is the OFF default), is a no-op when a chain has no OpenAI provider, and is stable across repeated calls (same input ⇒ same chain). The `/v1/generate` endpoint reads the deterministic-priority flag and, when ON, routes OpenAI-primary; the flag ships default-OFF so the live weighted path is unchanged until flipped. | `python/tests/unit/test_router.py` (`test_deterministic_priority_makes_openai_primary_without_random`, `test_deterministic_priority_reasoning_promotes_openai_first`, `test_deterministic_priority_is_stable_across_calls`, `test_deterministic_priority_noop_when_chain_has_no_openai`, `test_shadow_priority_on_uses_weights_and_random`), `python/tests/integration/test_generate_endpoint.py::test_generate_reads_deterministic_priority_flag` (+ `test_generate_uses_openai_primary_when_deterministic_flag_on`) | U + I |
+| REG-131 | `mol_cross_instance_circuit_breaker` | Cross-instance (Redis-keyed) circuit breaker degrades gracefully and NEVER blocks a live request when its own backing store is unreachable (P12). State machine pinned at every transition: CLOSED allows requests; three failures OPEN the circuit; the open window is keyed by provider × task (one tripped provider/task does not blast-radius the rest); on expiry exactly ONE half-open probe is allowed; two successes in half-open CLOSE the circuit, a single success does NOT, and a failure in half-open RE-OPENS it. FAIL-OPEN safety: when Redis is unreachable the breaker allows the request through rather than failing the student's turn. At the endpoint, a provider whose breaker is OPEN is skipped in favour of the next chain entry; only retryable 5xx count toward tripping (non-retryable 4xx do not). | `python/tests/unit/test_breaker.py` (`test_closed_breaker_allows_requests`, `test_three_failures_block_while_open_window_live`, `test_open_circuit_keyed_by_provider_and_task`, `test_open_expired_allows_exactly_one_probe`, `test_two_successes_in_half_open_close_the_circuit`, `test_failure_in_half_open_reopens_circuit`, `test_single_success_in_half_open_does_not_close`, `test_fail_open_when_redis_unreachable`), `python/tests/integration/test_generate_endpoint.py::test_generate_skips_open_breaker_provider` (+ `test_breaker_ignores_non_retryable_4xx_but_counts_5xx`) | U + I |
+| REG-132 | `mol_cost_cap_enforcement` | Per-task cost ceiling is enforced BEFORE any provider HTTP call (P12 / cost-control — a runaway/expensive request is rejected at the gate, never after spend). Every task type has a ceiling; the INR estimate uses the primary model's price; an under-ceiling estimate does not raise; an over-ceiling estimate raises `COST_CAP_EXCEEDED`; an unknown model estimates zero and passes (fail-soft for unpriced models, not fail-closed). At the endpoint, an over-ceiling request returns HTTP 429 and the test asserts NO provider call was made (the cap short-circuits ahead of the network seam). | `python/tests/unit/test_cost_cap.py` (`test_every_task_type_has_a_ceiling`, `test_estimate_inr_uses_primary_model_price`, `test_under_ceiling_does_not_raise`, `test_over_ceiling_raises_cost_cap_exceeded`, `test_unknown_model_estimate_is_zero_and_passes`), `python/tests/integration/test_generate_endpoint.py::test_generate_429_when_cost_cap_exceeded` (asserts no provider call) | U + I |
+| REG-133 | `mol_cutover_parity_gate` | Contract-parity gate blocking a regressing TS→Python cutover (P14 — the cutover must be behaviour-preserving). The Python router reproduces the TS routing decision cassette-for-cassette across task types (explanation, step_by_step, quiz_generation, reasoning) and emits a `mol_request_logs` telemetry row whose COLUMN SET matches the TS shape exactly (no field drift across the two implementations). The eval harness is the quality gate: a golden set is non-empty and typed, the gate PASSES when every item meets its quality floor, FAILS when any item drops below floor, and treats an ungradeable item as a failure (fail-closed gate — a regressing cutover cannot slip through on a missing grade). | `python/tests/integration/test_routing_parity.py` (`test_routing_decision_matches_ts_cassette[explanation/step_by_step/quiz_generation/reasoning]`, `test_telemetry_row_shape_matches_ts_cassette`), `python/tests/unit/test_eval_harness.py` (`test_golden_set_nonempty_and_typed`, `test_gate_passes_when_all_items_meet_floor`, `test_gate_fails_when_any_item_below_floor`, `test_gate_treats_ungradeable_as_failure`) | I + U |
+| REG-134 | `mol_streaming_path_safety` | The streaming endpoint never leaks a raw 5xx / stack trace to a student mid-stream (P12 — student-facing AI safety on the SSE path). `/v1/generate/stream` returns the SSE `text/event-stream` content-type; the terminal `done` event carries the request id (traceability without exposing internals); and an invalid-input failure becomes a structured `event: error` SSE frame rather than a transport-level 5xx or an unframed stack — a `MolError` is converted to an error event the client can render safely, and a client disconnect cancels the stream cleanly. | `python/tests/integration/test_generate_stream_endpoint.py` (`test_stream_returns_sse_content_type`, `test_stream_done_event_carries_request_id`, `test_stream_invalid_input_emits_error_event`) | I |
+
+### Invariants covered by this section
+
+- P12 AI safety / orchestration — REG-130 (deterministic, non-random provider
+  priority), REG-131 (breaker degrades gracefully + fail-open never blocks a live
+  turn), REG-132 (cost cap rejects before spend), REG-134 (streaming path emits a
+  safe `event: error` frame, never a raw 5xx/stack to a student).
+- P14 Contract parity / review-chain completeness — REG-133 (TS↔Python routing +
+  `mol_request_logs` column-set parity; eval-harness quality gate fails closed on
+  any regressing or ungradeable cutover item).
+- OFF-path safety / kill switch — every flag in this sub-project (deterministic
+  OpenAI-priority, shadow-priority, the Python cutover kill-switch) ships
+  DEFAULT-OFF; the live TS path is byte-unchanged until each flag is flipped.
+
+### Catalog total
+
+Pre-2026-06-13 (MOL): 97 entries. MOL Python-unification sub-project A adds
+REG-130 (deterministic OpenAI-priority), REG-131 (cross-instance circuit
+breaker), REG-132 (cost-cap enforcement), REG-133 (cutover parity gate),
+REG-134 (streaming-path safety). **Total catalog: 102 entries (target: 35 —
+TARGET EXCEEDED).**
+
+**Total: 102 entries.**
