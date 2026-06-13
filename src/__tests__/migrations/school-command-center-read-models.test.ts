@@ -36,6 +36,10 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { hasSupabaseIntegrationEnv } from '../helpers/integration';
+import {
+  ensureSchoolReadModelReferenceData,
+  SAFE_PREFERRED_SUBJECT_CODE,
+} from './_helpers/reference-data';
 
 const describeIntegration = hasSupabaseIntegrationEnv() ? describe : describe.skip;
 
@@ -110,7 +114,17 @@ async function seedClass(schoolId: string, name: string, grade: string): Promise
 async function seedStudent(name: string): Promise<string> {
   const { data, error } = await supabaseAdmin
     .from('students')
-    .insert({ name: `${name} ${RUN}`, grade: '8', is_active: true })
+    // Set preferred_subject EXPLICITLY to a seeded subjects.code. The column
+    // DEFAULT ('Mathematics') is a stale value that matches no subjects.code,
+    // so an omitted preferred_subject trips students_preferred_subject_fkey
+    // (23503) on any DB seeded only from the schema-only baseline. See
+    // ./_helpers/reference-data.ts for the full root-cause note.
+    .insert({
+      name: `${name} ${RUN}`,
+      grade: '8',
+      is_active: true,
+      preferred_subject: SAFE_PREFERRED_SUBJECT_CODE,
+    })
     .select('id')
     .single();
   if (error || !data) throw new Error(`seed student failed: ${error?.message}`);
@@ -159,20 +173,14 @@ async function makeAdmin(schoolId: string, authUserId: string): Promise<void> {
 
 describeIntegration('Phase 3B school command center read models (live DB)', () => {
   beforeAll(async () => {
-    // A topic id is required by concept_mastery.topic_id FK → curriculum_topics.
-    // Reuse an existing seeded topic (staging/prod has thousands) rather than
-    // pulling in the subjects FK chain.
-    const { data: topic, error: topicErr } = await supabaseAdmin
-      .from('curriculum_topics')
-      .select('id')
-      .limit(1)
-      .single();
-    if (topicErr || !topic) {
-      throw new Error(
-        `No curriculum_topics row to anchor concept_mastery — DB not seeded: ${topicErr?.message}`,
-      );
-    }
-    created.topicId = topic.id;
+    // Idempotently ensure reference data the fixtures depend on:
+    //  - the canonical `subjects` taxonomy (so the students FK resolves), and
+    //  - a `curriculum_topics` anchor for concept_mastery.topic_id.
+    // Reuses an existing topic on a fully-seeded staging DB; self-seeds a
+    // minimal anchor on a fresh/reset/drifted CI DB (schema-only baseline ships
+    // these tables EMPTY). See ./_helpers/reference-data.ts for the root cause.
+    const { topicId } = await ensureSchoolReadModelReferenceData(supabaseAdmin);
+    created.topicId = topicId;
 
     // ── School A: 2 classes, mastery spanning the 0.4 boundary, teachers. ──
     SCHOOL_A = await seedSchool('A');
