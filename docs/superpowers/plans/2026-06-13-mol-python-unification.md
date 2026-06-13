@@ -35,7 +35,7 @@
 | `python/tests/integration/test_generate_stream_endpoint.py` | Create | SSE chunking + client cancellation. |
 | `python/tests/integration/test_routing_parity.py` | Create | TS↔Python identical routing decision + `mol_request_logs` telemetry shape (golden cassettes). |
 | `docs/runbooks/2026-06-13-mol-python-cutover.md` | Create | Strangler-fig cutover runbook (flag order, 5%→48h→100%→delete gate, kill-switch). |
-| `.claude/regression-catalog.md` | Modify (append) | REG-120..REG-124 entries. |
+| `.claude/regression-catalog.md` | Modify (append) | REG-135..REG-139 entries. |
 
 > **Flags introduced:** `ff_mol_deterministic_priority` (Task 1), `ff_mol_circuit_breaker_v1` (Task 2), `ff_mol_cost_cap_v1` (Task 3), `ff_mol_semantic_cache` (Task 4), `ff_mol_stream_v1` (Task 5), plus the per-function `ff_python_*_v1` flags consumed in Task 8. All default OFF; the existing `feature_flag.is_flag_enabled` reader (DJB-2 rollout bucket) gates them.
 
@@ -1919,7 +1919,7 @@ This task is a checklist/runbook task (ops + flag changes), not new code. Author
   **Definition of done (sub-project A):**
   - [ ] All 13 flags at `rollout_pct=100` with 48h green parity.
   - [ ] Deno `_shared/mol/` brain deleted.
-  - [ ] REG-120..REG-124 catalogued and passing in CI.
+  - [ ] REG-135..REG-139 catalogued and passing in CI.
 
 - [ ] **Step 2 — (No automated test for a runbook.)** Verify the doc renders and the flag names match `python-ai-proxy.ts` conventions (`ff_python_<function>_v1`). Manual review only.
 
@@ -1936,7 +1936,7 @@ git add docs/runbooks/2026-06-13-mol-python-cutover.md && git commit -m "docs(mo
 
 ## Phase 9 — Regression catalog additions + review chain
 
-### Task 9.1 — Add REG-120..REG-124 to the regression catalog
+### Task 9.1 — Add REG-135..REG-139 to the regression catalog
 
 **Files:**
 - Modify: `.claude/regression-catalog.md` (append)
@@ -1944,11 +1944,11 @@ git add docs/runbooks/2026-06-13-mol-python-cutover.md && git commit -m "docs(mo
 **Steps:**
 
 - [ ] **Step 1 — Append the entries.** Add to `.claude/regression-catalog.md`:
-  - **REG-120 — Deterministic OpenAI-priority.** Invariant guarded: P12 (predictable, provider-priority routing; OpenAI always primary unless circuit OPEN / per-task override / shadow flag). Enforced by `python/tests/unit/test_router.py` (`test_deterministic_priority_*`) + `python/tests/integration/test_generate_endpoint.py::test_generate_reads_deterministic_priority_flag`.
-  - **REG-121 — Cross-instance circuit breaker.** Invariant guarded: P12 (graceful degradation; a tripped provider is skipped, fail-open never blocks a live request). Enforced by `python/tests/unit/test_breaker.py` (all state-transition + `test_fail_open_when_redis_unreachable`) + `python/tests/integration/test_generate_endpoint.py::test_generate_skips_open_breaker_provider`.
-  - **REG-122 — Cost-cap enforcement.** Invariant guarded: P12 / cost-control (over-ceiling request raises `COST_CAP_EXCEEDED` BEFORE any provider HTTP call). Enforced by `python/tests/unit/test_cost_cap.py::test_over_ceiling_raises_cost_cap_exceeded` + `python/tests/integration/test_generate_endpoint.py::test_generate_429_when_cost_cap_exceeded` (asserts `call_count == 0`).
-  - **REG-123 — Cutover parity gate.** Invariant guarded: P14 / contract parity (identical routing decision + identical `mol_request_logs` column set across TS and Python; quality gate blocks a regressing cutover). Enforced by `python/tests/integration/test_routing_parity.py` + `python/tests/unit/test_eval_harness.py`.
-  - **REG-124 — Streaming-path safety.** Invariant guarded: P12 (student never sees a raw 5xx/stack on a stream; a MolError becomes an `event: error` frame; client disconnect cancels cleanly). Enforced by `python/tests/integration/test_generate_stream_endpoint.py` (`test_stream_invalid_input_emits_error_event` + SSE content-type/done assertions).
+  - **REG-135 — Deterministic OpenAI-priority.** Invariant guarded: P12 (predictable, provider-priority routing; OpenAI always primary unless circuit OPEN / per-task override / shadow flag). Enforced by `python/tests/unit/test_router.py` (`test_deterministic_priority_*`) + `python/tests/integration/test_generate_endpoint.py::test_generate_reads_deterministic_priority_flag`.
+  - **REG-136 — Cross-instance circuit breaker.** Invariant guarded: P12 (graceful degradation; a tripped provider is skipped, fail-open never blocks a live request). Enforced by `python/tests/unit/test_breaker.py` (all state-transition + `test_fail_open_when_redis_unreachable`) + `python/tests/integration/test_generate_endpoint.py::test_generate_skips_open_breaker_provider`.
+  - **REG-137 — Cost-cap enforcement.** Invariant guarded: P12 / cost-control (over-ceiling request raises `COST_CAP_EXCEEDED` BEFORE any provider HTTP call). Enforced by `python/tests/unit/test_cost_cap.py::test_over_ceiling_raises_cost_cap_exceeded` + `python/tests/integration/test_generate_endpoint.py::test_generate_429_when_cost_cap_exceeded` (asserts `call_count == 0`).
+  - **REG-138 — Cutover parity gate.** Invariant guarded: P14 / contract parity (identical routing decision + identical `mol_request_logs` column set across TS and Python; quality gate blocks a regressing cutover). Enforced by `python/tests/integration/test_routing_parity.py` + `python/tests/unit/test_eval_harness.py`.
+  - **REG-139 — Streaming-path safety.** Invariant guarded: P12 (student never sees a raw 5xx/stack on a stream; a MolError becomes an `event: error` frame; client disconnect cancels cleanly). Enforced by `python/tests/integration/test_generate_stream_endpoint.py` (`test_stream_invalid_input_emits_error_event` + SSE content-type/done assertions).
 
 - [ ] **Step 2 — (No code test.)** Confirm each named test exists and passes from the prior phases:
 ```
@@ -1966,7 +1966,7 @@ Expected: all pass; `--cov-fail-under=70` satisfied.
 
 - [ ] **Step 5 — Commit.**
 ```
-git add .claude/regression-catalog.md && git commit -m "docs(catalog): REG-120..REG-124 — deterministic priority, breaker, cost-cap, parity gate, streaming safety"
+git add .claude/regression-catalog.md && git commit -m "docs(catalog): REG-135..REG-139 — deterministic priority, breaker, cost-cap, parity gate, streaming safety"
 ```
 
 ### Review chain (P14)
@@ -1976,6 +1976,6 @@ This is an AI-orchestration change. Required reviewers before the work can be ma
 - **assessment** — reviews routing correctness (deterministic OpenAI-priority preserves the CBSE task matrix) + the quality gate (golden-set content + `min_overall` floors + tolerance).
 - **architect** — reviews Cloud Run config, the new Upstash Redis dependency on the hot path (fail-open posture), security of the Redis credentials in `config.py`, and deploy/`PYTHON_AI_BASE_URL` wiring.
 - **ops** — owns the parity dashboard (TS-baseline vs Python-shadow) and the ₹/student rollup; drives the flag flips in the cutover runbook.
-- **testing** — runs after every task (every phase ends green) and confirms REG-120..REG-124 are catalogued and CI-enforced.
+- **testing** — runs after every task (every phase ends green) and confirms REG-135..REG-139 are catalogued and CI-enforced.
 
 User-approval gate already cleared: model-provider + architecture approval granted by CEO 2026-06-13 (per the design spec header).

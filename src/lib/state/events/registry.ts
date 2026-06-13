@@ -559,6 +559,96 @@ export const SystemRemediationEscalatedSchema = EventBaseSchema.extend({
   }),
 });
 
+// ── System — Phase A Loops B & C (autonomous tiered-authority) events ────────
+//
+// Phase A Loops B (inactivity re-engagement) + C (at-risk-concentration
+// escalation) ride the SAME `system` actor + the SAME daily-cron worker route
+// (/api/cron/adaptive-remediation) as Loop A — no new actor (spec §5.4).
+// Producer is the worker acting WITHOUT human approval under the CEO-approved
+// TIERED authority model; these events are the autonomous-action audit trail.
+// Canonical state lives on adaptive_interventions; the bus is observability,
+// never load-bearing. Loop C escalations additionally write an audit_logs row.
+//
+// Envelope: actorAuthUserId = the LEARNER's auth_user_id; tenantId = the school
+// for B2B (Loop C teacher path), null for B2C / Loop B; idempotencyKey =
+// `<loop>:<interventionId>:<phase>` so cron retries dedupe. Payloads are UUIDs +
+// subject codes + derived integer metrics only — no PII (P13).
+//
+// Loop B is subject-less (sentinel `_inactivity` row); its event payloads carry
+// NO subjectCode/chapterNumber. Loop C is subject-scoped and always attaches a
+// REAL chapter (>= 1, never the Loop B sentinel 0).
+
+export const SystemEngagementNudgedSchema = EventBaseSchema.extend({
+  kind: z.literal('system.engagement_nudged'),
+  payload: z.object({
+    interventionId: uuidLike(),
+    // Whole UTC days since the student's last activity at trigger time.
+    daysSinceActive: z.number().int().nonnegative(),
+    // Denormalized return deadline (created_at + inactivity return window).
+    verifyBy: isoDatetime(),
+  }),
+});
+
+export const SystemEngagementReturnedSchema = EventBaseSchema.extend({
+  kind: z.literal('system.engagement_returned'),
+  payload: z.object({
+    interventionId: uuidLike(),
+    // Whole rolling days from the nudge to the qualifying return.
+    daysToReturn: z.number().int().nonnegative(),
+  }),
+});
+
+export const SystemEngagementEscalatedSchema = EventBaseSchema.extend({
+  kind: z.literal('system.engagement_escalated'),
+  payload: z.object({
+    interventionId: uuidLike(),
+    // 'parent' (B2C linked guardian) or null when no guardian is linked — the
+    // null case is on the payload so ops can see unreachable escalations.
+    // NEVER 'teacher' (Decision B4 — disengagement is a parent matter).
+    escalatedTo: z.literal('parent').nullable(),
+  }),
+});
+
+export const SystemConcentrationEscalatedSchema = EventBaseSchema.extend({
+  kind: z.literal('system.concentration_escalated'),
+  payload: z.object({
+    interventionId: uuidLike(),
+    subjectCode: z.string(),
+    // Real chapter (>= 1) — the worst at-risk chapter at trigger time.
+    chapterNumber: z.number().int().positive(),
+    atRiskChapterCount: z.number().int().nonnegative(),
+    // 'teacher' (B2B roster), 'parent' (B2C linked guardian), or null when
+    // neither exists — null on the payload for ops visibility.
+    escalatedTo: z.enum(['teacher', 'parent']).nullable(),
+    // FK of the teacher_remediation_assignments row created on B2B escalation;
+    // null for parent / no-recipient escalations.
+    teacherAssignmentId: uuidLike().nullable(),
+    // Denormalized resolution deadline (created_at + concentration return window).
+    verifyBy: isoDatetime(),
+  }),
+});
+
+export const SystemConcentrationResolvedSchema = EventBaseSchema.extend({
+  kind: z.literal('system.concentration_resolved'),
+  payload: z.object({
+    interventionId: uuidLike(),
+    subjectCode: z.string(),
+    // Current at-risk-chapter count at the resolving snapshot (now below 'high').
+    atRiskChapterCount: z.number().int().nonnegative(),
+    daysToResolve: z.number().int().nonnegative(),
+  }),
+});
+
+export const SystemConcentrationReescalatedSchema = EventBaseSchema.extend({
+  kind: z.literal('system.concentration_reescalated'),
+  payload: z.object({
+    interventionId: uuidLike(),
+    subjectCode: z.string(),
+    escalatedTo: z.enum(['teacher', 'parent']).nullable(),
+    teacherAssignmentId: uuidLike().nullable(),
+  }),
+});
+
 // ── Mesh (autonomous improvement) events ─────────────────────────────
 
 export const MeshCycleCompletedSchema = EventBaseSchema.extend({
@@ -607,6 +697,12 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   SystemRemediationInjectedSchema,
   SystemRemediationRecoveredSchema,
   SystemRemediationEscalatedSchema,
+  SystemEngagementNudgedSchema,
+  SystemEngagementReturnedSchema,
+  SystemEngagementEscalatedSchema,
+  SystemConcentrationEscalatedSchema,
+  SystemConcentrationResolvedSchema,
+  SystemConcentrationReescalatedSchema,
   MeshCycleCompletedSchema,
 ]);
 
@@ -653,6 +749,12 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'system.remediation_injected',
   'system.remediation_recovered',
   'system.remediation_escalated',
+  'system.engagement_nudged',
+  'system.engagement_returned',
+  'system.engagement_escalated',
+  'system.concentration_escalated',
+  'system.concentration_resolved',
+  'system.concentration_reescalated',
   'mesh.cycle_completed',
 ] as const;
 

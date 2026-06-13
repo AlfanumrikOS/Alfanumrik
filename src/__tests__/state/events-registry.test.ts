@@ -289,6 +289,42 @@ const VALID_PAYLOADS: Record<DomainEventKind, Record<string, unknown>> = {
     escalatedTo: 'teacher',
     teacherAssignmentId: FIXTURE_UUID_A,
   },
+  // Phase A Loop B (inactivity) — subject-less; no subjectCode/chapterNumber.
+  'system.engagement_nudged': {
+    interventionId: FIXTURE_UUID_C,
+    daysSinceActive: 3,
+    verifyBy: FIXTURE_ISO,
+  },
+  'system.engagement_returned': {
+    interventionId: FIXTURE_UUID_C,
+    daysToReturn: 1,
+  },
+  'system.engagement_escalated': {
+    interventionId: FIXTURE_UUID_C,
+    escalatedTo: 'parent',
+  },
+  // Phase A Loop C (at-risk concentration) — subject-scoped; real chapter (>= 1).
+  'system.concentration_escalated': {
+    interventionId: FIXTURE_UUID_C,
+    subjectCode: 'science',
+    chapterNumber: 7,
+    atRiskChapterCount: 6,
+    escalatedTo: 'teacher',
+    teacherAssignmentId: FIXTURE_UUID_A,
+    verifyBy: FIXTURE_ISO,
+  },
+  'system.concentration_resolved': {
+    interventionId: FIXTURE_UUID_C,
+    subjectCode: 'science',
+    atRiskChapterCount: 3,
+    daysToResolve: 11,
+  },
+  'system.concentration_reescalated': {
+    interventionId: FIXTURE_UUID_C,
+    subjectCode: 'science',
+    escalatedTo: 'parent',
+    teacherAssignmentId: null,
+  },
   'mesh.cycle_completed': {
     cycleId: FIXTURE_UUID_C,
     decision: 'approve',

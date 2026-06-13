@@ -109,7 +109,7 @@ Per-function gate sequence: flag on at **5%** → parity dashboard green for **4
 - **Cost-cap tests:** request exceeding ceiling raises `COST_CAP_EXCEEDED` before provider call.
 - **Streaming tests:** SSE chunking + cancellation.
 - **Graceful-degradation test:** both providers down → safe P12 fallback, never a 5xx to the student.
-- **New regression-catalog entries (REG-120+):** deterministic OpenAI-priority; cross-instance breaker; cost-cap enforcement; cutover parity gate; streaming-path safety.
+- **New regression-catalog entries (REG-135+):** deterministic OpenAI-priority; cross-instance breaker; cost-cap enforcement; cutover parity gate; streaming-path safety.
 
 ---
 
@@ -165,7 +165,7 @@ AI orchestration change → **ai-engineer** (implements) must be reviewed by **a
 ## Definition of done (sub-project A)
 
 - 100% of AI traffic flows through the Python MOL; Deno `_shared/mol/` brain deleted.
-- OpenAI-priority is deterministic and health-aware; verified by REG-120.
+- OpenAI-priority is deterministic and health-aware; verified by REG-135.
 - Cross-instance breaker live and tested; graceful degradation verified.
 - Cost-cap enforced; ₹/student telemetry on the AI-health dashboard.
 - Quality eval harness gates cutovers; no quality regression vs Deno baseline.

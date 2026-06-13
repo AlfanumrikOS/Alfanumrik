@@ -148,4 +148,4 @@ All flags below ship **OFF (dark)** by default and are activated deliberately, p
 
 - All 13 `ff_python_*_v1` cutover flags at `rollout_pct=100` with 48h green parity.
 - Deno `_shared/mol/` brain deleted.
-- REG-120..REG-124 catalogued and passing in CI.
+- REG-135..REG-139 catalogued and passing in CI.

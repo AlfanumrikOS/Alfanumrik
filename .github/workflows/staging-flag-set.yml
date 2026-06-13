@@ -1,0 +1,317 @@
+# Set a feature flag on the STAGING Supabase project ONLY.
+#
+# Why this exists:
+#   The adaptive-program rollout is driven flag-by-flag on staging before prod.
+#   The orchestrator needs a way to flip a feature flag's rollout_percentage /
+#   is_enabled on STAGING without holding any Supabase secret locally and with
+#   ZERO possibility of touching production. The local Supabase CLI is linked to
+#   the PROD project (shktyoxqhundlvkiwguu via supabase/config.toml), so it must
+#   never be used for this — this workflow runs entirely in CI against staging.
+#
+# What this does:
+#   workflow_dispatch only. Validates inputs, hard-allowlists the flag name,
+#   asserts the connected project is the STAGING ref (and is NOT the prod ref),
+#   then runs an idempotent UPDATE on public.feature_flags and prints the row.
+#
+# Auth (mirrors .github/workflows/sync-staging-migrations.yml EXACTLY):
+#   - environment: staging
+#   - SUPABASE_ACCESS_TOKEN  <- secrets.SUPABASE_STAGING_ACCESS_TOKEN
+#   - SUPABASE_DB_PASSWORD   <- secrets.SUPABASE_STAGING_DB_PASSWORD
+#   - --project-ref          <- secrets.SUPABASE_STAGING_PROJECT_REF
+#   The prod secrets (SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF /
+#   SUPABASE_DB_PASSWORD) are NEVER referenced here.
+#
+# Safety:
+#   - Hard allowlist of flag_name (4 adaptive-program flags). Anything else
+#     fails the job BEFORE any DB access.
+#   - rollout_percentage must be an integer 0-100, else fail BEFORE DB access.
+#   - The connected project ref must equal the staging ref and must NOT equal
+#     the prod ref shktyoxqhundlvkiwguu. Fail-closed if it matches prod.
+#   - 0 rows updated (flag absent on staging) => fail with a clear message.
+#   - No secret values are ever printed.
+
+name: Set Staging Feature Flag
+
+on:
+  workflow_dispatch:
+    inputs:
+      flag_name:
+        description: 'Feature flag to set (must be in the allowlist)'
+        required: true
+        type: string
+      rollout_percentage:
+        description: 'Rollout percentage, integer 0-100'
+        required: true
+        type: string
+      is_enabled:
+        description: 'Whether the flag is enabled'
+        required: true
+        type: boolean
+        default: true
+
+concurrency:
+  group: staging-flag-set-${{ github.event.inputs.flag_name }}
+  cancel-in-progress: false   # never cancel a flag write mid-flight
+
+jobs:
+  set-flag:
+    name: Set feature flag on staging
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 5
+    env:
+      # The known-prod ref. This workflow must NEVER touch it. Used only as a
+      # negative assertion target (fail-closed if the connected ref matches it).
+      PROD_PROJECT_REF: shktyoxqhundlvkiwguu
+      FLAG_NAME: ${{ github.event.inputs.flag_name }}
+      ROLLOUT_PCT: ${{ github.event.inputs.rollout_percentage }}
+      IS_ENABLED: ${{ github.event.inputs.is_enabled }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: latest
+
+      - name: Validate flag_name against hard allowlist
+        run: |
+          set -euo pipefail
+          # Only these 4 adaptive-program flags may be set by this workflow.
+          case "$FLAG_NAME" in
+            ff_event_bus_v1|ff_school_pulse_v1|ff_adaptive_remediation_v1|ff_adaptive_loops_bc_v1)
+              echo "flag_name '$FLAG_NAME' is allowlisted."
+              ;;
+            *)
+              echo "::error::flag_name '$FLAG_NAME' is NOT in the allowlist."
+              echo "Allowed: ff_event_bus_v1, ff_school_pulse_v1, ff_adaptive_remediation_v1, ff_adaptive_loops_bc_v1"
+              exit 1
+              ;;
+          esac
+
+      - name: Validate rollout_percentage is an integer 0-100
+        run: |
+          set -euo pipefail
+          # Must be all digits (no signs, no decimals, no whitespace) ...
+          if ! printf '%s' "$ROLLOUT_PCT" | grep -Eq '^[0-9]+$'; then
+            echo "::error::rollout_percentage '$ROLLOUT_PCT' is not a non-negative integer."
+            exit 1
+          fi
+          # ... and within 0-100 inclusive.
+          if [ "$ROLLOUT_PCT" -lt 0 ] || [ "$ROLLOUT_PCT" -gt 100 ]; then
+            echo "::error::rollout_percentage '$ROLLOUT_PCT' is out of range (must be 0-100)."
+            exit 1
+          fi
+          echo "rollout_percentage '$ROLLOUT_PCT' is valid."
+
+      - name: Validate is_enabled is a boolean
+        run: |
+          set -euo pipefail
+          case "$IS_ENABLED" in
+            true|false)
+              echo "is_enabled = $IS_ENABLED"
+              ;;
+            *)
+              echo "::error::is_enabled '$IS_ENABLED' is not a boolean (expected true|false)."
+              exit 1
+              ;;
+          esac
+
+      - name: Assert staging ref configured and is NOT the prod ref
+        env:
+          STAGING_PROJECT_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          if [ -z "${STAGING_PROJECT_REF:-}" ]; then
+            echo "::error::SUPABASE_STAGING_PROJECT_REF secret is empty."
+            exit 1
+          fi
+          # The configured target ref (printed for proof — it is not a secret value).
+          echo "Configured target project ref: $STAGING_PROJECT_REF"
+          echo "Known prod ref (forbidden):     $PROD_PROJECT_REF"
+          if [ "$STAGING_PROJECT_REF" = "$PROD_PROJECT_REF" ]; then
+            echo "::error::Configured ref matches the PROD ref ($PROD_PROJECT_REF). Refusing to run. FAIL-CLOSED."
+            exit 1
+          fi
+          echo "Target ref is NOT prod. Proceeding."
+
+      - name: Link to staging and set feature flag
+        env:
+          # Staging lives in a different Supabase org than prod, so the CLI's
+          # SUPABASE_ACCESS_TOKEN env var must be sourced from the dedicated
+          # staging token — the prod token returns Unauthorized here.
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_STAGING_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_STAGING_DB_PASSWORD }}
+          STAGING_PROJECT_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+
+          # 1. Link to the STAGING project (same pattern as sync-staging-migrations.yml).
+          supabase link --project-ref "$STAGING_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+          # 2. Re-assert the LINKED ref from the CLI state file. This catches any
+          #    mismatch between the secret and what the CLI actually connected to,
+          #    and fails-closed if the CLI somehow latched onto the prod ref.
+          LINKED_REF="$(cat supabase/.temp/project-ref)"
+          echo "Linked project ref: $LINKED_REF"
+          if [ "$LINKED_REF" != "$STAGING_PROJECT_REF" ]; then
+            echo "::error::Linked ref ($LINKED_REF) != configured staging ref ($STAGING_PROJECT_REF). FAIL-CLOSED."
+            exit 1
+          fi
+          if [ "$LINKED_REF" = "$PROD_PROJECT_REF" ]; then
+            echo "::error::Linked ref is the PROD ref ($PROD_PROJECT_REF). Refusing to run. FAIL-CLOSED."
+            exit 1
+          fi
+
+          # 3. Build the pooler connection string from the CLI-DERIVED pooler URL.
+          #    DO NOT hardcode the pooler host/region/port: staging lives in a
+          #    different region than prod, so a hardcoded ap-south-1 host (or the
+          #    wrong port) points at the wrong tenant and fails with
+          #    "Tenant or user not found". `supabase link` writes the correct,
+          #    region-accurate pooler connection string to supabase/.temp/pooler-url.
+          #    We read THAT, verify it embeds the staging ref (and NOT the prod
+          #    ref), then inject the real DB password (URL-encoded). The host is
+          #    printed as proof; the password is never printed.
+          POOLER_FILE="supabase/.temp/pooler-url"
+          if [ ! -s "$POOLER_FILE" ]; then
+            echo "::error::$POOLER_FILE is missing or empty after 'supabase link'. Refusing to guess the pooler host. FAIL-CLOSED."
+            exit 1
+          fi
+
+          # Defense-in-depth: the pooler URL embeds the connecting role as
+          # postgres.<ref>. Assert that <ref> == staging ref and != prod ref
+          # BEFORE we ever connect, and inject the URL-encoded password into the
+          # CLI's URL (handles both the "[YOUR-PASSWORD]" placeholder format and
+          # the no-password userinfo format that newer CLI versions emit).
+          DB_URL="$(
+            LINKED_REF="$LINKED_REF" PROD_PROJECT_REF="$PROD_PROJECT_REF" \
+            python3 - "$POOLER_FILE" <<'PY'
+          import os, sys, urllib.parse
+
+          # NOTE: parse by hand rather than urllib.parse.urlsplit(). The legacy
+          # CLI format embeds a literal "[YOUR-PASSWORD]" placeholder in the
+          # userinfo, and urlsplit() misreads the brackets as an IPv6 host and
+          # raises. Manual scheme/userinfo/host splitting is format-agnostic and
+          # handles BOTH the "[YOUR-PASSWORD]" placeholder format and the newer
+          # no-password userinfo format.
+          path = sys.argv[1]
+          with open(path) as f:
+              raw = f.read().strip()
+          if not raw:
+              sys.stderr.write("pooler-url empty\n"); sys.exit(2)
+
+          if "://" not in raw:
+              sys.stderr.write("pooler-url has no scheme (unexpected format)\n"); sys.exit(2)
+          scheme, after = raw.split("://", 1)
+
+          # Split off any ?query / #fragment that trails the path.
+          tail = ""
+          for sep in ("?", "#"):
+              idx = after.find(sep)
+              if idx != -1:
+                  tail = after[idx:]
+                  after = after[:idx]
+                  break
+
+          if "@" not in after:
+              sys.stderr.write("pooler-url has no userinfo (unexpected format)\n"); sys.exit(2)
+          userinfo, hostpath = after.rsplit("@", 1)   # host[:port]/path
+
+          # user is "postgres.<ref>" (possibly followed by ":<password-or-placeholder>")
+          user = userinfo.split(":", 1)[0]
+          if "." not in user:
+              sys.stderr.write("pooler-url user is not postgres.<ref>\n"); sys.exit(2)
+          embedded_ref = user.split(".", 1)[1]
+
+          staging_ref = os.environ["LINKED_REF"]
+          prod_ref = os.environ["PROD_PROJECT_REF"]
+          if embedded_ref == prod_ref:
+              sys.stderr.write("pooler-url embeds the PROD ref. FAIL-CLOSED.\n"); sys.exit(3)
+          if embedded_ref != staging_ref:
+              sys.stderr.write(
+                  "pooler-url ref (%s) != linked staging ref (%s). FAIL-CLOSED.\n"
+                  % (embedded_ref[:4] + "****", staging_ref[:4] + "****")
+              ); sys.exit(3)
+
+          # Host[:port]/path is "host:port/postgres" — the host portion is up to
+          # the first "/". Printed as proof (region-accurate, no secret).
+          host_only = hostpath.split("/", 1)[0]
+
+          enc_pw = urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe="")
+          if "sslmode=" not in tail:
+              tail = (tail + ("&" if tail else "?") + "sslmode=require")
+          url = "%s://%s:%s@%s%s" % (scheme, user, enc_pw, hostpath, tail)
+
+          # Proof to stderr (no password): the CLI-derived host the URL targets.
+          sys.stderr.write("Pooler host (from supabase/.temp/pooler-url): %s\n" % host_only)
+          sys.stdout.write(url)
+          PY
+          )"
+          echo "Built connection string from CLI-derived pooler-url (password injected, not shown)."
+
+          # 4. Idempotent UPDATE on STAGING, then SELECT the row back as proof.
+          #    flag_name is the UNIQUE key. Inputs are passed as psql variables
+          #    (-v) and interpolated with psql's quoting syntax (:'var' => safely
+          #    single-quoted literal), never raw string-concatenated into SQL.
+          #    rollout_percentage and is_enabled are already validated upstream
+          #    (integer 0-100; boolean true|false) and cast explicitly in SQL.
+          #    updated_at exists on public.feature_flags (confirmed against the
+          #    prod baseline schema). ON_ERROR_STOP makes the RAISE EXCEPTION
+          #    (0-rows case) fail the step with a non-zero exit code.
+          #    NOTE: psql's :'var' interpolation is used at the TOP LEVEL only
+          #    (psql does not substitute inside dollar-quoted blocks). No psql
+          #    backslash meta-commands are used (they are indentation-sensitive
+          #    inside a heredoc), and no DO block is used. The zero-rows guard is
+          #    a pure-SQL trick: the UPDATE ... RETURNING feeds a CTE; the guard
+          #    SELECT divides by count(*), so 0 matched rows raises a server-side
+          #    "division by zero" and, with ON_ERROR_STOP=1, fails the step.
+          # Run the UPDATE+guard+proof SELECT. If psql exits non-zero (e.g. the
+          # 0-rows fail-closed div-by-zero), print a clear human message and fail.
+          set +e
+          psql "$DB_URL" \
+            --set=ON_ERROR_STOP=1 \
+            -v flag="$FLAG_NAME" \
+            -v pct="$ROLLOUT_PCT" \
+            -v enabled="$IS_ENABLED" <<'SQL'
+          WITH upd AS (
+            UPDATE public.feature_flags
+               SET rollout_percentage = (:'pct')::integer,
+                   is_enabled         = (:'enabled')::boolean,
+                   updated_at         = now()
+             WHERE flag_name = :'flag'
+            RETURNING 1
+          )
+          SELECT
+            CASE
+              WHEN count(*) = 0
+                THEN 1 / 0   -- flag absent on staging => fail-closed (div-by-zero)
+              ELSE count(*)
+            END AS updated_rows
+          FROM upd;
+
+          SELECT flag_name, is_enabled, rollout_percentage
+            FROM public.feature_flags
+           WHERE flag_name = :'flag';
+          SQL
+          PSQL_RC=$?
+          set -e
+          if [ "$PSQL_RC" -ne 0 ]; then
+            echo "::error::Failed to set '$FLAG_NAME' on staging (psql exit $PSQL_RC). If 0 rows matched, the flag is not seeded on staging yet — seed it first, then re-run."
+            exit "$PSQL_RC"
+          fi
+
+          # Proof line (no secret values).
+          echo "STAGING $FLAG_NAME -> is_enabled=$IS_ENABLED, rollout=$ROLLOUT_PCT%"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Staging Feature Flag Set"
+            echo ""
+            echo "STAGING ${FLAG_NAME} -> is_enabled=${IS_ENABLED}, rollout=${ROLLOUT_PCT}%"
+            echo ""
+            echo "Triggered by: ${{ github.event_name }}"
+            echo "Actor: ${{ github.actor }}"
+            echo "Status: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "STAGING ${FLAG_NAME} -> is_enabled=${IS_ENABLED}, rollout=${ROLLOUT_PCT}%"

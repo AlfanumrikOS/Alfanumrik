@@ -347,13 +347,21 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
     case 'system.remediation_injected':
     case 'system.remediation_recovered':
     case 'system.remediation_escalated':
-      // Phase A Loop A — autonomous tiered-authority audit events. These are
+    // Phase A Loops B (inactivity) & C (at-risk concentration) — same actor,
+    // same substrate, same rationale as Loop A below.
+    case 'system.engagement_nudged':
+    case 'system.engagement_returned':
+    case 'system.engagement_escalated':
+    case 'system.concentration_escalated':
+    case 'system.concentration_resolved':
+    case 'system.concentration_reescalated':
+      // Phase A Loops A/B/C — autonomous tiered-authority audit events. These are
       // rendered on the Pulse timeline lenses (student/parent/teacher), NOT as
       // journey cards: the journey shows what the LEARNER did; these describe
       // what the PLATFORM did. The student-facing communication for each
-      // transition is the bilingual notification (onRemediationAssigned /
-      // Recovered / Escalated), and the daily-queue lane itself is the
-      // visible surface while an intervention is active.
+      // transition is the bilingual notification (onRemediation* / onReEngagement*
+      // / onConcentration*), and the daily-queue lane itself is the visible
+      // surface while a Loop A intervention is active.
       return null;
     case 'learner.concept_check_answered':
       // ADR-004 Phase 2 — high-volume signal (one per /api/tutor/answer call).
