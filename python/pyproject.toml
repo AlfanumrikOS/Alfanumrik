@@ -52,6 +52,12 @@ include = ["services*"]
 minversion = "8.0"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# ``..`` puts the repo root (one level above python/) on sys.path so
+# ``cbse_parser`` — a package at the repo root, imported by
+# services/ai/api/v1/foxy_tutor.py — resolves when pytest's rootdir is
+# python/ (CI runs with ``working-directory: python``). ``.`` keeps the
+# python/ dir itself importable for the ``services`` + ``tests`` packages.
+pythonpath = [".", ".."]
 addopts = [
   "-ra",
   "--strict-markers",

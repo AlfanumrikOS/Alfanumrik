@@ -10,21 +10,20 @@ Phase-0 scope:
 - Real telemetry writes (single ``mol_request_logs`` row per call, matching
   TS LogPayload shape exactly).
 
-Phase-0 stubs that Phase 1 will plug in:
+Wired components:
 - ``classify_task_type()`` — Phase 1 ports the LLM-side classifier (TS
   ``./classifier.ts``). Phase 0 falls back to a no-op that requires the
   caller to pass ``task_type`` explicitly (matches TS contract when the
   caller already knows the task).
-- ``build_system_prompt()`` — Phase 1 ports the prompt-builder
-  (TS ``./prompt-builder.ts``). Phase 0 uses a minimal placeholder so the
-  orchestrator + provider HTTP path are exercisable end-to-end; the
-  placeholder is bypassed entirely when the caller sets
-  ``config.system_prompt_override``.
-- ``post_process()`` — Phase 1 ports the response-shaper (TS
-  ``./post-processor.ts``). Phase 0 returns the model text verbatim.
-- ``get_routing_weights()`` — Phase 1 reads the per-task weights from the
-  ``mol_routing_weights`` table. Phase 0 returns an empty dict (no weight
-  overrides apply, matching the default-OFF behavior).
+- ``build_system_prompt()`` — the real prompt-builder (TS
+  ``./prompt-builder.ts`` port): full Foxy persona, grade-tier styling,
+  language + exam-goal hints, and NCERT RAG-context injection. Bypassed
+  entirely when the caller sets ``config.system_prompt_override``.
+- ``post_process()`` — the response-shaper (TS ``./post-processor.ts``
+  port).
+- ``get_routing_weights()`` — reads the per-task weights from the
+  ``mol_routing_weights`` table with a 5m cache; returns an empty dict when
+  the table is unreadable (no weight overrides apply, matching default-OFF).
 """
 
 from __future__ import annotations
@@ -275,8 +274,10 @@ async def generate_response(req: GenerateRequest) -> MolResult:
             rest = [t for t in p.chain if t.provider != cfg.preferred_provider]
             p.chain = [*preferred, *rest]
 
-    # Step 6 — system prompt (override path bypasses the stub builder)
-    system_prompt = cfg.system_prompt_override or build_system_prompt(task_type, req)
+    # Step 6 — system prompt (override path bypasses the real builder)
+    system_prompt = cfg.system_prompt_override or build_system_prompt(
+        task_type, req.student_context, req.rag_context
+    )
 
     # Step 7 — user messages
     user_messages: list[ChatTurn] = []
@@ -310,7 +311,7 @@ async def generate_response(req: GenerateRequest) -> MolResult:
 
         # Hybrid: 2-pass simplify
         if selected.mode == "hybrid" and len(selected.passes) >= 2:
-            simplify_prompt = build_simplify_prompt(req, response_1.text)
+            simplify_prompt = build_simplify_prompt(req.student_context, response_1.text)
             response_2, fb_2, fail_2 = await _execute_pass(
                 selected.passes[1].chain,
                 system_prompt=simplify_prompt,
