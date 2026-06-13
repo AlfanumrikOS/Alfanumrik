@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+from typing import get_args
+
 import pytest
 
 from services.ai.mol.cost_cap import (
     PER_TASK_INR_CEILING,
-    estimate_inr,
     enforce_cost_cap,
+    estimate_inr,
 )
 from services.ai.mol.errors import MolError
+from services.ai.mol.types import TaskType
 
 
 def test_every_task_type_has_a_ceiling():
-    from typing import get_args
-    from services.ai.mol.types import TaskType
     for t in get_args(TaskType):
         assert t in PER_TASK_INR_CEILING, f"missing ceiling for {t!r}"
 
