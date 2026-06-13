@@ -378,6 +378,291 @@ export async function onWeeklyDigest(
   }
 }
 
+// ─── Phase A Loop A — adaptive remediation triggers ──────────────────────────
+//
+// Three triggers for the adaptive closed loop (mastery-cliff → auto-inject →
+// verify → escalate). All three follow the WORKING notifications-table shape
+// (the one daily-cron's generateParentDigests and the goal-daily-plan-reminder
+// builder use, verified against the prod baseline):
+//   - top-level `message` (NOT NULL in prod) + `body` carry the English copy;
+//   - Hindi copy lives in `data.title_hi` / `data.body_hi` / `data.message_hi`
+//     (P7 — the notifications table has NO top-level body_hi column; the older
+//     triggers above that set a top-level body_hi predate that verification);
+//   - deterministic `idempotency_key` + upsert on
+//     (recipient_id, type, idempotency_key) with ignoreDuplicates so cron
+//     retries never duplicate rows (migration 20260505100100);
+//   - fire-and-forget: never throws (P13: opaque ids + metrics only in logs).
+//
+// Copy is supportive, never punitive ("Foxy is helping you"), per the spec's
+// student-facing framing rule.
+// Spec: docs/superpowers/specs/2026-06-12-phase-a-loop-a-adaptive-remediation-design.md
+
+interface RemediationNotificationRow {
+  recipient_type: 'student' | 'guardian';
+  recipient_id: string;
+  type: string;
+  title: string;
+  message: string;
+  body: string;
+  data: Record<string, unknown>;
+  is_read: boolean;
+  created_at: string;
+  idempotency_key: string;
+}
+
+async function upsertRemediationNotifications(
+  rows: RemediationNotificationRow[],
+  triggerName: string,
+  logContext: Record<string, unknown>,
+): Promise<void> {
+  if (rows.length === 0) return;
+  const { error } = await supabaseAdmin
+    .from('notifications')
+    .upsert(rows, {
+      onConflict: 'recipient_id,type,idempotency_key',
+      ignoreDuplicates: true,
+    });
+  if (error) {
+    logger.error(`notification_triggers: ${triggerName} upsert failed`, {
+      error: new Error(error.message),
+      ...logContext,
+      rowCount: rows.length,
+    });
+    return;
+  }
+  logger.info(`notification_triggers: ${triggerName} sent`, {
+    ...logContext,
+    rowCount: rows.length,
+  });
+}
+
+export interface RemediationNotificationContext {
+  subjectCode: string;
+  chapterNumber: number;
+  interventionId: string;
+}
+
+/**
+ * Triggered when the adaptive loop auto-injects a remediation intervention
+ * (INJECT phase). Recipient: the student. Idempotent per intervention cycle.
+ */
+export async function onRemediationAssigned(
+  studentId: string,
+  ctx: RemediationNotificationContext,
+): Promise<void> {
+  try {
+    const { subjectCode, chapterNumber, interventionId } = ctx;
+    const now = new Date().toISOString();
+    const bodyEn = `Foxy noticed Chapter ${chapterNumber} (${subjectCode}) got tricky and added a few practice cards to your daily queue. A little each day brings it back!`;
+    const bodyHi = `Foxy ने देखा कि अध्याय ${chapterNumber} (${subjectCode}) थोड़ा कठिन हो गया है, इसलिए आपकी दैनिक सूची में कुछ अभ्यास कार्ड जोड़े हैं। रोज़ थोड़ा अभ्यास — और यह फिर से आसान!`;
+    await upsertRemediationNotifications(
+      [{
+        recipient_type: 'student',
+        recipient_id: studentId,
+        type: 'remediation_assigned',
+        title: `Foxy is helping you with Chapter ${chapterNumber}`,
+        message: bodyEn,
+        body: bodyEn,
+        data: {
+          student_id: studentId,
+          subject_code: subjectCode,
+          chapter_number: chapterNumber,
+          intervention_id: interventionId,
+          title_hi: `Foxy अध्याय ${chapterNumber} में आपकी मदद कर रहा है`,
+          message_hi: bodyHi,
+          body_hi: bodyHi,
+          trigger: 'remediation_assigned',
+        },
+        is_read: false,
+        created_at: now,
+        idempotency_key: `remediation_assigned_${interventionId}`,
+      }],
+      'onRemediationAssigned',
+      { studentId, subjectCode, chapterNumber, interventionId },
+    );
+  } catch (err) {
+    logger.error('notification_triggers: onRemediationAssigned unexpected error', {
+      error: err instanceof Error ? err : new Error(String(err)),
+      studentId,
+    });
+  }
+}
+
+/**
+ * Triggered when the verify phase confirms the remediated chapter recovered.
+ * Recipient: the student (celebratory). Idempotent per intervention cycle.
+ */
+export async function onRemediationRecovered(
+  studentId: string,
+  ctx: RemediationNotificationContext,
+): Promise<void> {
+  try {
+    const { subjectCode, chapterNumber, interventionId } = ctx;
+    const now = new Date().toISOString();
+    const bodyEn = `Your extra practice on Chapter ${chapterNumber} (${subjectCode}) worked — your mastery is back on track. Great comeback!`;
+    const bodyHi = `अध्याय ${chapterNumber} (${subjectCode}) पर आपका अतिरिक्त अभ्यास काम कर गया — आपकी पकड़ फिर से मज़बूत है। शानदार वापसी!`;
+    await upsertRemediationNotifications(
+      [{
+        recipient_type: 'student',
+        recipient_id: studentId,
+        type: 'remediation_recovered',
+        title: `Chapter ${chapterNumber} is back on track!`,
+        message: bodyEn,
+        body: bodyEn,
+        data: {
+          student_id: studentId,
+          subject_code: subjectCode,
+          chapter_number: chapterNumber,
+          intervention_id: interventionId,
+          title_hi: `अध्याय ${chapterNumber} फिर से पटरी पर!`,
+          message_hi: bodyHi,
+          body_hi: bodyHi,
+          trigger: 'remediation_recovered',
+        },
+        is_read: false,
+        created_at: now,
+        idempotency_key: `remediation_recovered_${interventionId}`,
+      }],
+      'onRemediationRecovered',
+      { studentId, subjectCode, chapterNumber, interventionId },
+    );
+  } catch (err) {
+    logger.error('notification_triggers: onRemediationRecovered unexpected error', {
+      error: err instanceof Error ? err : new Error(String(err)),
+      studentId,
+    });
+  }
+}
+
+/**
+ * Triggered when the verification window expires without recovery and the
+ * loop escalates to a human (spec Decision 7).
+ *
+ * Recipients:
+ *  - ALWAYS the student (supportive framing — a human is stepping in).
+ *  - When escalatedTo === 'parent' (B2C, no roster teacher): every linked
+ *    guardian with status approved/active, respecting each guardian's
+ *    notification preferences (key: 'remediation_escalated', default ON).
+ *  - When escalatedTo === 'teacher' (B2B): the teacher is reached through the
+ *    Phase 3A teacher_remediation_assignments row, not a notification here.
+ */
+export async function onRemediationEscalated(
+  studentId: string,
+  ctx: RemediationNotificationContext & { escalatedTo: 'teacher' | 'parent' | null },
+): Promise<void> {
+  try {
+    const { subjectCode, chapterNumber, interventionId, escalatedTo } = ctx;
+    const now = new Date().toISOString();
+    const rows: RemediationNotificationRow[] = [];
+
+    // Student-facing row — always (spec: even the no-recipient edge case keeps
+    // the student informed). Framing varies by who is stepping in.
+    const studentBodyEn =
+      escalatedTo === 'teacher'
+        ? `Chapter ${chapterNumber} (${subjectCode}) is still feeling tough, so your teacher will help you with it. You've got this!`
+        : escalatedTo === 'parent'
+          ? `Chapter ${chapterNumber} (${subjectCode}) is still feeling tough, so we let your family know — a little support goes a long way. Keep going!`
+          : `Chapter ${chapterNumber} (${subjectCode}) is still feeling tough. Keep at your practice cards — Foxy is with you!`;
+    const studentBodyHi =
+      escalatedTo === 'teacher'
+        ? `अध्याय ${chapterNumber} (${subjectCode}) अभी भी कठिन लग रहा है, इसलिए आपके शिक्षक इसमें आपकी मदद करेंगे। आप कर सकते हैं!`
+        : escalatedTo === 'parent'
+          ? `अध्याय ${chapterNumber} (${subjectCode}) अभी भी कठिन लग रहा है, इसलिए हमने आपके परिवार को बताया है — थोड़ा साथ बहुत काम आता है। लगे रहो!`
+          : `अध्याय ${chapterNumber} (${subjectCode}) अभी भी कठिन लग रहा है। अभ्यास कार्ड जारी रखें — Foxy आपके साथ है!`;
+
+    rows.push({
+      recipient_type: 'student',
+      recipient_id: studentId,
+      type: 'remediation_escalated',
+      title: `Extra help for Chapter ${chapterNumber}`,
+      message: studentBodyEn,
+      body: studentBodyEn,
+      data: {
+        student_id: studentId,
+        subject_code: subjectCode,
+        chapter_number: chapterNumber,
+        intervention_id: interventionId,
+        escalated_to: escalatedTo,
+        title_hi: `अध्याय ${chapterNumber} के लिए अतिरिक्त मदद`,
+        message_hi: studentBodyHi,
+        body_hi: studentBodyHi,
+        trigger: 'remediation_escalated',
+      },
+      is_read: false,
+      created_at: now,
+      idempotency_key: `remediation_escalated_${interventionId}_student`,
+    });
+
+    // Guardian rows — only on the parent escalation path. Dual-status link
+    // filter ('approved','active') matches the adaptive_interventions RLS and
+    // the spec's Decision 7; preference-respecting per guardian.
+    if (escalatedTo === 'parent') {
+      const { data: links, error: linkErr } = await supabaseAdmin
+        .from('guardian_student_links')
+        .select(
+          `guardian_id,
+           guardians (
+             id,
+             auth_user_id,
+             notification_preferences,
+             preferred_language
+           )`
+        )
+        .eq('student_id', studentId)
+        .in('status', ['approved', 'active']);
+
+      if (linkErr) {
+        logger.error('notification_triggers: onRemediationEscalated guardian fetch failed', {
+          error: new Error(linkErr.message),
+          studentId,
+        });
+      }
+
+      const guardianBodyEn = `Chapter ${chapterNumber} (${subjectCode}) has stayed difficult for your child despite extra practice over the last week. A short revision session together would really help.`;
+      const guardianBodyHi = `पिछले सप्ताह अतिरिक्त अभ्यास के बावजूद अध्याय ${chapterNumber} (${subjectCode}) आपके बच्चे के लिए कठिन बना हुआ है। साथ बैठकर एक छोटा रिवीज़न सत्र बहुत मदद करेगा।`;
+
+      for (const link of ((links ?? []) as unknown as LinkedGuardian[])) {
+        const guardian = resolveGuardian(link.guardians);
+        if (!guardian?.id) continue;
+        if (!isNotificationEnabled(guardian.notification_preferences, 'remediation_escalated')) continue;
+        rows.push({
+          recipient_type: 'guardian',
+          recipient_id: guardian.id,
+          type: 'remediation_escalated',
+          title: `Your child needs support with Chapter ${chapterNumber}`,
+          message: guardianBodyEn,
+          body: guardianBodyEn,
+          data: {
+            student_id: studentId,
+            subject_code: subjectCode,
+            chapter_number: chapterNumber,
+            intervention_id: interventionId,
+            escalated_to: escalatedTo,
+            title_hi: `आपके बच्चे को अध्याय ${chapterNumber} में सहयोग चाहिए`,
+            message_hi: guardianBodyHi,
+            body_hi: guardianBodyHi,
+            trigger: 'remediation_escalated',
+          },
+          is_read: false,
+          created_at: now,
+          idempotency_key: `remediation_escalated_${interventionId}_${guardian.id}`,
+        });
+      }
+    }
+
+    await upsertRemediationNotifications(
+      rows,
+      'onRemediationEscalated',
+      { studentId, subjectCode, chapterNumber, interventionId, escalatedTo },
+    );
+  } catch (err) {
+    logger.error('notification_triggers: onRemediationEscalated unexpected error', {
+      error: err instanceof Error ? err : new Error(String(err)),
+      studentId,
+    });
+  }
+}
+
 /**
  * Triggered when a student achieves mastery (>= 80%) on a concept.
  * Only fires if masteryLevel >= 80 (enforced here, not left to the caller).

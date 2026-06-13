@@ -11,11 +11,16 @@
 // time. Empty state when the timeline is blank.
 
 import type { PulseTimelineEntry } from '@/lib/pulse/types';
-import { timelineLine, timeAgo, tp } from './pulse-copy';
+import { timelineLine, timeAgo, tp, type PulseVariant } from './pulse-copy';
 
 interface PulseTimelineProps {
   timeline: PulseTimelineEntry[];
   isHi: boolean;
+  /**
+   * Lens tone for the humanised lines (student = encouraging first-person;
+   * parent/teacher = actionable). Defaults to 'student'.
+   */
+  variant?: PulseVariant;
   /** Cap the number of rows shown (default 10, matching the contract size). */
   max?: number;
 }
@@ -23,6 +28,7 @@ interface PulseTimelineProps {
 export default function PulseTimeline({
   timeline,
   isHi,
+  variant = 'student',
   max = 10,
 }: PulseTimelineProps) {
   const rows = (timeline ?? []).slice(0, max);
@@ -46,16 +52,21 @@ export default function PulseTimeline({
   return (
     <ol className="space-y-1.5" aria-label={tp(isHi, 'Recent activity', 'हाल की गतिविधि')}>
       {rows.map((entry, i) => {
-        const { icon, text } = timelineLine(entry.kind, entry.summary, isHi);
+        const { icon, text, accent } = timelineLine(entry.kind, entry.summary, isHi, variant);
         return (
           <li
             key={`${entry.kind}-${entry.occurredAt}-${i}`}
             className="flex items-center gap-3 rounded-xl px-3 py-2"
             style={{ background: 'var(--surface-2, #f8fafc)' }}
           >
+            {/* Accent tints the icon chip only — meaning is always carried by
+                the icon + text pair, never by colour alone (house a11y rule). */}
             <span
               className="flex items-center justify-center w-7 h-7 rounded-lg shrink-0 text-sm"
-              style={{ background: 'var(--surface-1, #fff)', border: '1px solid var(--border, #e5e7eb)' }}
+              style={{
+                background: accent ? `${accent}14` : 'var(--surface-1, #fff)',
+                border: `1px solid ${accent ? `${accent}55` : 'var(--border, #e5e7eb)'}`,
+              }}
               aria-hidden="true"
             >
               {icon}

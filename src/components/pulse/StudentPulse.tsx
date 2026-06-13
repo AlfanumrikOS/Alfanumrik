@@ -176,7 +176,7 @@ export default function StudentPulse({
 
       <div>
         <SectionLabel>{tp(isHi, 'Recent activity', 'हाल की गतिविधि')}</SectionLabel>
-        <PulseTimeline timeline={pulse.timeline} isHi={isHi} />
+        <PulseTimeline timeline={pulse.timeline} isHi={isHi} variant={variant} />
       </div>
     </div>
   );

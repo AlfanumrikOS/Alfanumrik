@@ -871,6 +871,29 @@ export const SCHOOL_PULSE_FLAGS = {
 } as const;
 
 /**
+ * Phase A Loop A adaptive remediation flag (2026-06-12, CEO-approved TIERED
+ * authority model 3).
+ *
+ *  ff_adaptive_remediation_v1 — master switch for the adaptive closed loop
+ *    (mastery-cliff -> auto-inject targeted remediation -> verify recovery ->
+ *    escalate on failure). When OFF, no new interventions are injected and the
+ *    /api/rhythm/today remediation lane renders empty; the verify cron step is
+ *    deliberately gated on the existence of active rows, NOT this flag, so
+ *    mid-flight interventions drain to terminal state (kill switch drains,
+ *    does not freeze — spec Section 9). Default: false.
+ *
+ *    Seeded OFF (is_enabled=false, rollout=0, scoping NULL) by migration
+ *    20260619000300_seed_ff_adaptive_remediation_v1.sql — mirrors the
+ *    ff_school_pulse_v1 seed precedent. Data layer: adaptive_interventions
+ *    (20260619000200). Spec:
+ *    docs/superpowers/specs/2026-06-12-phase-a-loop-a-adaptive-remediation-design.md
+ */
+export const ADAPTIVE_REMEDIATION_FLAGS = {
+  /** Phase A Loop A adaptive closed loop (cliff -> inject -> verify -> escalate). Default off. */
+  V1: 'ff_adaptive_remediation_v1',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -919,6 +942,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [PRINCIPAL_AI_FLAGS.V1]: false,
   [FOXY_OS_FLAGS.V1]: false,
   [SCHOOL_PULSE_FLAGS.V1]: false, // seeded OFF by 20260619000100_seed_ff_school_pulse_v1.sql
+  [ADAPTIVE_REMEDIATION_FLAGS.V1]: false, // seeded OFF by 20260619000300_seed_ff_adaptive_remediation_v1.sql
 } as const;
 
 /**

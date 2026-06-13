@@ -23,6 +23,11 @@ const TYPE_CONFIG: Record<string, { icon: string; color: string; label: string; 
   parent_cheer: { icon: '👏', color: '#EC4899', label: 'From Family', labelHi: 'परिवार से' },
   achievement: { icon: '🏅', color: '#F5A623', label: 'Achievement', labelHi: 'उपलब्धि' },
   quiz_result: { icon: '⚡', color: '#D97706', label: 'Quiz', labelHi: 'क्विज़' },
+  // Phase A Loop A — adaptive remediation (En in title/body; Hindi rides
+  // data.title_hi / data.body_hi per the house pattern — rendered below).
+  remediation_assigned: { icon: '🦊', color: '#F97316', label: 'Extra Practice', labelHi: 'अतिरिक्त अभ्यास' },
+  remediation_recovered: { icon: '🎉', color: '#16A34A', label: 'Comeback', labelHi: 'वापसी' },
+  remediation_escalated: { icon: '🤝', color: '#F59E0B', label: 'Extra Help', labelHi: 'अतिरिक्त मदद' },
 };
 
 interface Notification {
@@ -170,6 +175,13 @@ export default function NotificationsPage() {
                   // otherwise fall back to the type's default icon.
                   const displayIcon = typeof n.data?.icon === 'string' && n.data.icon ? n.data.icon : cfg.icon;
                   const isShareable = n.data?.shareable;
+                  // P7 — Hindi copy rides data.title_hi / data.body_hi (the
+                  // notifications table has no top-level *_hi columns). Falls
+                  // back to the En title/body when the row predates this.
+                  const displayTitle =
+                    isHi && typeof n.data?.title_hi === 'string' && n.data.title_hi ? n.data.title_hi : n.title;
+                  const displayBody =
+                    isHi && typeof n.data?.body_hi === 'string' && n.data.body_hi ? n.data.body_hi : n.body;
 
                   return (
                     <button
@@ -208,12 +220,12 @@ export default function NotificationsPage() {
 
                           {/* Title */}
                           <div className="text-sm font-semibold leading-snug" style={{ opacity: n.is_read ? 0.7 : 1 }}>
-                            {n.title}
+                            {displayTitle}
                           </div>
 
                           {/* Body */}
                           <p className="text-xs text-[var(--text-3)] mt-1 leading-relaxed line-clamp-2" style={{ opacity: n.is_read ? 0.6 : 0.85 }}>
-                            {n.body}
+                            {displayBody}
                           </p>
 
                           {/* Action hint */}

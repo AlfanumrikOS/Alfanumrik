@@ -38,14 +38,23 @@ const holders = vi.hoisted(() => ({
     enrolmentError?: { message: string } | null;
     existingOpen?: Record<string, unknown> | null;
     existingOpenError?: { message: string } | null;
-    insertResult?: { data: Record<string, unknown> | null; error: { message: string } | null };
+    insertResult?: {
+      data: Record<string, unknown> | null;
+      error: { code?: string; message: string } | null;
+    };
     listRows?: Array<Record<string, unknown>>;
     listError?: { message: string } | null;
+    // 23505 survivor-lookup result (the post-insert dedupe recovery path).
+    dedupeRow?: Record<string, unknown> | null;
+    dedupeRowError?: { message: string } | null;
   },
   // Capture filters applied to the list query so we can assert roster-scoping.
   listFilters: {} as Record<string, unknown>,
   // Capture the idempotency chapter filter (eq vs is null).
   idempotencyChapterFilter: { kind: '', value: undefined as unknown },
+  // Capture the 23505 survivor-lookup filters (natural key of the unique index).
+  dedupeFilters: {} as Record<string, unknown>,
+  dedupeChapterFilter: { kind: '', value: undefined as unknown },
 }));
 
 vi.mock('@/lib/rbac', () => ({
@@ -112,20 +121,34 @@ vi.mock('@/lib/supabase-admin', () => {
     return chain;
   }
 
-  // ── teacher_remediation_assignments SELECT chain (idempotency + list) ──
+  // ── teacher_remediation_assignments SELECT chain ──
+  // Serves THREE route queries, disambiguated at the terminal call:
+  //   - GET list             → terminates on awaited .limit(500)   (then)
+  //   - POST pre-check       → .in('status', OPEN) … .maybeSingle()
+  //   - POST 23505 survivor  → .eq('status','assigned') … .maybeSingle()
+  //     lookup                 (never calls .in — that's the discriminator)
   function remediationSelectChain() {
+    const filters: Record<string, unknown> = {};
+    const chapterFilter = { kind: '', value: undefined as unknown };
+    let usedIn = false;
     const chain = {
       eq(col: string, val: unknown) {
+        filters[col] = val;
         holders.listFilters[col] = val;
+        if (col === 'chapter_id') {
+          chapterFilter.kind = 'eq';
+          chapterFilter.value = val;
+        }
         return chain;
       },
       in() {
+        usedIn = true;
         return chain;
       },
       is(col: string, val: unknown) {
         if (col === 'chapter_id') {
-          holders.idempotencyChapterFilter.kind = 'is_null';
-          holders.idempotencyChapterFilter.value = val;
+          chapterFilter.kind = 'is_null';
+          chapterFilter.value = val;
         }
         return chain;
       },
@@ -133,32 +156,34 @@ vi.mock('@/lib/supabase-admin', () => {
         return chain;
       },
       limit() {
-        // GET list path terminates on .limit(500) (awaited array).
         return {
+          // GET list path terminates on .limit(500) (awaited array).
           then(resolve: (v: { data: unknown; error: unknown }) => unknown) {
             return Promise.resolve({
               data: holders.mockState.listRows ?? [],
               error: holders.mockState.listError ?? null,
             }).then(resolve);
           },
-          // POST idempotency path terminates on .limit(1).maybeSingle().
           maybeSingle() {
+            if (usedIn) {
+              // POST idempotency pre-check (.in('status', OPEN_STATUSES)).
+              holders.idempotencyChapterFilter.kind = chapterFilter.kind;
+              holders.idempotencyChapterFilter.value = chapterFilter.value;
+              return Promise.resolve({
+                data: holders.mockState.existingOpen ?? null,
+                error: holders.mockState.existingOpenError ?? null,
+              });
+            }
+            // POST 23505 survivor lookup (.eq('status', 'assigned')).
+            holders.dedupeFilters = { ...filters };
+            holders.dedupeChapterFilter = { ...chapterFilter };
             return Promise.resolve({
-              data: holders.mockState.existingOpen ?? null,
-              error: holders.mockState.existingOpenError ?? null,
+              data: holders.mockState.dedupeRow ?? null,
+              error: holders.mockState.dedupeRowError ?? null,
             });
           },
         };
       },
-    };
-    // Track chapter_id eq for the idempotency assertion.
-    const baseEq = chain.eq;
-    chain.eq = (col: string, val: unknown) => {
-      if (col === 'chapter_id') {
-        holders.idempotencyChapterFilter.kind = 'eq';
-        holders.idempotencyChapterFilter.value = val;
-      }
-      return baseEq(col, val);
     };
     return chain;
   }
@@ -251,6 +276,8 @@ beforeEach(() => {
   holders.mockState = {};
   holders.listFilters = {};
   holders.idempotencyChapterFilter = { kind: '', value: undefined };
+  holders.dedupeFilters = {};
+  holders.dedupeChapterFilter = { kind: '', value: undefined };
   // Default insert returns a fresh assignment row.
   holders.mockState.insertResult = {
     data: {
@@ -459,6 +486,131 @@ describe('POST /api/teacher/remediation — idempotency', () => {
     expect(body.data.status).toBe('in_progress');
     // No duplicate written.
     expect(holders.mockInsert).not.toHaveBeenCalled();
+  });
+});
+
+// ── 5b. DB-backstop dedupe: 23505 → idempotent success ────────────────
+// The partial unique index uq_teacher_remediation_assignments_open_dedupe
+// (migration 20260619000400) is keyed (student_id, class_id, chapter-bucket)
+// WHERE status='assigned' — teacher_id is NOT in the key. The route's
+// per-teacher pre-check cannot see a COLLEAGUE's open row, so a cross-teacher
+// duplicate surfaces as a 23505 on INSERT. The route must treat that as the
+// idempotent-success path (200, surviving row), never a 500.
+describe('POST /api/teacher/remediation — 23505 unique-violation dedupe (cross-teacher)', () => {
+  const OTHER_TEACHER_ID = '88888888-8888-4888-a888-888888888888';
+  const UNIQUE_VIOLATION = {
+    code: '23505',
+    message:
+      'duplicate key value violates unique constraint "uq_teacher_remediation_assignments_open_dedupe"',
+  };
+
+  function survivorRow(chapterId: string | null) {
+    return {
+      id: ASSIGNMENT_ID,
+      teacher_id: OTHER_TEACHER_ID, // a colleague's row — invisible to the pre-check
+      student_id: STUDENT_ID,
+      class_id: CLASS_ID,
+      chapter_id: chapterId,
+      source_alert_id: null,
+      status: 'assigned',
+      created_at: '2026-06-01T00:00:00Z',
+      resolved_at: null,
+    };
+  }
+
+  it('cross-teacher duplicate: 23505 returns the surviving row as idempotent success (200, not 500)', async () => {
+    const { POST } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.existingOpen = null; // per-teacher pre-check sees nothing
+    holders.mockState.insertResult = { data: null, error: UNIQUE_VIOLATION };
+    holders.mockState.dedupeRow = survivorRow(CHAPTER_ID);
+
+    const res = await POST(
+      makePost({ student_id: STUDENT_ID, chapter_id: CHAPTER_ID }) as never,
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // Exact same envelope as the pre-check idempotent path.
+    expect(body.success).toBe(true);
+    expect(body.idempotent).toBe(true);
+    expect(body.data.id).toBe(ASSIGNMENT_ID);
+    expect(body.data.status).toBe('assigned');
+    expect(body.data.teacher_id).toBe(OTHER_TEACHER_ID);
+
+    // The insert WAS attempted (the pre-check could not see the colleague's
+    // row) — this is the post-insert recovery path, not the pre-check path.
+    expect(holders.mockInsert).toHaveBeenCalledTimes(1);
+
+    // Survivor lookup keyed on the unique index's natural key — student,
+    // class, chapter (eq), status='assigned' — and NOT teacher_id (a
+    // teacher-scoped lookup would never find the colleague's row).
+    expect(holders.dedupeFilters.student_id).toBe(STUDENT_ID);
+    expect(holders.dedupeFilters.class_id).toBe(CLASS_ID);
+    expect(holders.dedupeFilters.status).toBe('assigned');
+    expect(holders.dedupeFilters.teacher_id).toBeUndefined();
+    expect(holders.dedupeChapterFilter.kind).toBe('eq');
+    expect(holders.dedupeChapterFilter.value).toBe(CHAPTER_ID);
+  });
+
+  it('general (no-chapter) duplicate: survivor lookup uses chapter_id IS NULL', async () => {
+    const { POST } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.existingOpen = null;
+    holders.mockState.insertResult = { data: null, error: UNIQUE_VIOLATION };
+    holders.mockState.dedupeRow = survivorRow(null);
+
+    const res = await POST(makePost({ student_id: STUDENT_ID }) as never);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.idempotent).toBe(true);
+    expect(holders.dedupeChapterFilter.kind).toBe('is_null');
+    expect(holders.dedupeChapterFilter.value).toBeNull();
+    expect(holders.dedupeFilters.class_id).toBe(CLASS_ID);
+  });
+
+  it('23505 but the surviving row cannot be resolved → 500 (established failure response)', async () => {
+    const { POST } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.existingOpen = null;
+    holders.mockState.insertResult = { data: null, error: UNIQUE_VIOLATION };
+    holders.mockState.dedupeRow = null; // conflict reported, no row found
+
+    const res = await POST(
+      makePost({ student_id: STUDENT_ID, chapter_id: CHAPTER_ID }) as never,
+    );
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body).toMatchObject({ success: false, error: 'Failed to assign remediation' });
+  });
+
+  it('a NON-23505 insert error still fails with 500 (handling not widened)', async () => {
+    const { POST } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.existingOpen = null;
+    holders.mockState.insertResult = {
+      data: null,
+      error: { code: '23503', message: 'foreign key violation' },
+    };
+    // Even with a survivor available, a non-23505 error must NOT recover.
+    holders.mockState.dedupeRow = survivorRow(CHAPTER_ID);
+
+    const res = await POST(
+      makePost({ student_id: STUDENT_ID, chapter_id: CHAPTER_ID }) as never,
+    );
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    // No survivor lookup ran on the non-23505 branch.
+    expect(holders.dedupeFilters).toEqual({});
   });
 });
 

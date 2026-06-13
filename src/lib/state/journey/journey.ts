@@ -344,6 +344,17 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
       };
     case 'mesh.cycle_completed':
       return null; // internal — never on learner journeys
+    case 'system.remediation_injected':
+    case 'system.remediation_recovered':
+    case 'system.remediation_escalated':
+      // Phase A Loop A — autonomous tiered-authority audit events. These are
+      // rendered on the Pulse timeline lenses (student/parent/teacher), NOT as
+      // journey cards: the journey shows what the LEARNER did; these describe
+      // what the PLATFORM did. The student-facing communication for each
+      // transition is the bilingual notification (onRemediationAssigned /
+      // Recovered / Escalated), and the daily-queue lane itself is the
+      // visible surface while an intervention is active.
+      return null;
     case 'learner.concept_check_answered':
       // ADR-004 Phase 2 — high-volume signal (one per /api/tutor/answer call).
       // Surfaced separately on the tutor page from concept_mastery rather than
