@@ -58,3 +58,26 @@ def test_should_cache_skips_personalized_chat_history():
 
 def test_should_cache_allows_clean_stateless_answer():
     assert should_cache(fallback_count=0, has_chat_history=False) is True
+
+
+def test_cache_key_includes_language():
+    en = cache_key("explanation", grade="8", subject="science", query="what is force", language="en")
+    hi = cache_key("explanation", grade="8", subject="science", query="what is force", language="hi")
+    assert en != hi  # language changes the answer → must change the key
+
+
+def test_cache_key_includes_exam_goal_and_speed():
+    cbse = cache_key("reasoning", grade="11", subject="physics", query="derive v=u+at", exam_goal="cbse")
+    jee = cache_key("reasoning", grade="11", subject="physics", query="derive v=u+at", exam_goal="jee")
+    assert cbse != jee
+    slow = cache_key("explanation", grade="8", subject="science", query="q", learning_speed="slow")
+    fast = cache_key("explanation", grade="8", subject="science", query="q", learning_speed="fast")
+    assert slow != fast
+
+
+def test_cache_key_defaults_match_when_attrs_absent():
+    """Omitting the new attrs must equal passing the coalesced defaults (back-compat)."""
+    bare = cache_key("explanation", grade="8", subject="science", query="q")
+    defaulted = cache_key("explanation", grade="8", subject="science", query="q",
+                          language="en", exam_goal=None, learning_speed=None)
+    assert bare == defaulted

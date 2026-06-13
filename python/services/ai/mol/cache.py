@@ -1,9 +1,14 @@
 """Semantic (exact-match) cache for MOL answers — A4.
 
-Keyed on ``(task_type, grade, subject, normalized_query)`` with a TTL. The
-cache short-circuits BEFORE any provider call (consistent with the Foxy
-single-retrieval contract, REG-50). Backed by Upstash Redis; fails open
-(every lookup is a miss) when Redis is unconfigured.
+Keyed on ``(task_type, grade, subject, language, exam_goal, learning_speed,
+normalized_query)`` with a TTL. The ``language``/``exam_goal``/``learning_speed``
+attrs are included because ``prompt_builder.build_system_prompt`` shapes the
+answer with them (a hard "Respond in English/Hindi/Hinglish" directive, JEE/NEET
+vs CBSE framing, and pacing); omitting them would let two students who share the
+same (task, grade, subject, query) but differ on those attrs collide and be
+served a wrong-variant answer. The cache short-circuits BEFORE any provider call
+(consistent with the Foxy single-retrieval contract, REG-50). Backed by Upstash
+Redis; fails open (every lookup is a miss) when Redis is unconfigured.
 
 Conservative by design (design-spec risk row):
 - exact-match key, not embedding similarity (pgvector match is a follow-up);
@@ -37,9 +42,28 @@ def _normalize(query: str) -> str:
     return _WS_RE.sub(" ", query.strip().lower())
 
 
-def cache_key(task_type: str, *, grade: str, subject: str | None, query: str) -> str:
-    """Stable Redis key for an answer. PII-free: the raw query is hashed."""
-    canonical = f"{task_type}|{grade}|{subject or '_'}|{_normalize(query)}"
+def cache_key(
+    task_type: str,
+    *,
+    grade: str,
+    subject: str | None,
+    query: str,
+    language: str | None = "en",
+    exam_goal: str | None = None,
+    learning_speed: str | None = None,
+) -> str:
+    """Stable Redis key for an answer. PII-free: the raw query is hashed.
+
+    The answer-shaping profile attrs (``language``/``exam_goal``/
+    ``learning_speed``) are part of the key so cross-variant collisions cannot
+    serve a wrong-language/exam/pace answer. Defaults mirror the prompt-builder
+    coalescing (language→'en', exam_goal→'general', learning_speed→'moderate')
+    so absent attrs are deterministic and back-compatible.
+    """
+    canonical = (
+        f"{task_type}|{grade}|{subject or '_'}|{language or 'en'}|"
+        f"{exam_goal or 'general'}|{learning_speed or 'moderate'}|{_normalize(query)}"
+    )
     digest = hashlib.sha256(canonical.encode()).hexdigest()
     return f"mol:cache:{digest}"
 

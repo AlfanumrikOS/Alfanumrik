@@ -346,6 +346,9 @@ async def generate_response(req: GenerateRequest) -> MolResult:
             grade=req.student_context.grade,
             subject=req.student_context.subject,
             query=user_text,
+            language=req.student_context.language,
+            exam_goal=req.student_context.exam_goal,
+            learning_speed=req.student_context.learning_speed,
         )
         hit = await get_cached(cache_k)
         if hit is not None:
