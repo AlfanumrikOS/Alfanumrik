@@ -35,6 +35,7 @@ from collections.abc import Iterable
 
 import structlog
 
+from . import breaker as cb
 from .classifier import classify as classify_task_type
 from .cost import compute_cost
 from .errors import MolError
@@ -134,6 +135,8 @@ def _status_from_message(msg: str) -> int | None:
 async def _execute_pass(
     chain: Iterable[ProviderTarget],
     *,
+    task_type: TaskType,
+    breaker_on: bool,
     system_prompt: str,
     user_messages: list[ChatTurn],
     max_tokens: int,
@@ -150,11 +153,13 @@ async def _execute_pass(
       - Only retryable HTTP statuses get the second attempt.
       - On all-fail, raise MolError('NO_PROVIDER_AVAILABLE').
 
-    Phase 0 deliberately does NOT implement the per-worker circuit breaker
-    (TS ``canRequest`` / ``recordFailure``). The breaker is a perf
-    optimization; a request-driven retry loop is already correct without
-    it, and a cross-runtime breaker should be re-thought in Phase 2 when
-    we know whether to share state with the TS workers.
+    A3 (Phase 2): when ``breaker_on`` and the cross-instance breaker reports
+    the ``(provider, task_type)`` circuit OPEN, the target is skipped WITHOUT
+    an HTTP call (``{provider}:circuit_open`` failure entry). Provider
+    outcomes feed ``record_success`` / ``record_failure`` so the shared
+    (Upstash-backed) state machine tracks health across Cloud Run instances.
+    The breaker FAILS OPEN — when its Redis store is unconfigured / unreachable
+    ``can_request`` returns True, so this gate can never block a live request.
     """
     failures: list[str] = []
     fallback = 0
@@ -164,6 +169,11 @@ async def _execute_pass(
         provider = _providers[target.provider]
         if not provider.is_configured():
             failures.append(f"{target.provider}:not_configured")
+            fallback += 1
+            continue
+
+        if breaker_on and not await cb.can_request(target.provider, task_type):
+            failures.append(f"{target.provider}:circuit_open")
             fallback += 1
             continue
 
@@ -179,12 +189,16 @@ async def _execute_pass(
                     timeout_seconds=timeout_seconds,
                     image_url=image_url,
                 )
+                if breaker_on:
+                    await cb.record_success(target.provider, task_type)
                 return response, fallback, failures
             except Exception as err:  # noqa: BLE001 — boundary, classified below
                 msg = str(err) or type(err).__name__
                 status = _status_from_message(msg)
                 failures.append(f"{target.provider}:{status if status else 'err'}")
                 last_error = msg
+                if breaker_on:
+                    await cb.record_failure(target.provider, task_type)
                 # Only retry if the status is retryable AND this is the first attempt.
                 if status is None or not is_retryable_status(status):
                     break
@@ -238,7 +252,7 @@ async def generate_response(req: GenerateRequest) -> MolResult:
     task_type = classify_task_type(req)
 
     # Step 3 — flags + weights in parallel
-    hybrid_on, openai_default, deterministic_on, weights = await asyncio.gather(
+    hybrid_on, openai_default, deterministic_on, breaker_on, weights = await asyncio.gather(
         is_flag_enabled(
             "ff_mol_hybrid_mode_v1",
             student_id=req.student_context.student_id,
@@ -249,6 +263,10 @@ async def generate_response(req: GenerateRequest) -> MolResult:
         ),
         is_flag_enabled(
             "ff_mol_deterministic_priority",
+            student_id=req.student_context.student_id,
+        ),
+        is_flag_enabled(
+            "ff_mol_circuit_breaker_v1",
             student_id=req.student_context.student_id,
         ),
         get_routing_weights(),
@@ -298,6 +316,8 @@ async def generate_response(req: GenerateRequest) -> MolResult:
         first_pass = selected.passes[0]
         response_1, fb_1, fail_1 = await _execute_pass(
             first_pass.chain,
+            task_type=task_type,
+            breaker_on=breaker_on,
             system_prompt=system_prompt,
             user_messages=user_messages,
             max_tokens=max_tokens,
@@ -314,6 +334,8 @@ async def generate_response(req: GenerateRequest) -> MolResult:
             simplify_prompt = build_simplify_prompt(req.student_context, response_1.text)
             response_2, fb_2, fail_2 = await _execute_pass(
                 selected.passes[1].chain,
+                task_type=task_type,
+                breaker_on=breaker_on,
                 system_prompt=simplify_prompt,
                 user_messages=[ChatTurn(role="user", content="Rewrite the answer above.")],
                 max_tokens=get_simplify_max_tokens(),

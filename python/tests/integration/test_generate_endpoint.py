@@ -224,3 +224,72 @@ def test_generate_uses_openai_primary_when_deterministic_flag_on(
     res = client.post("/v1/generate", json=payload)
     assert res.status_code == 200, res.text
     assert res.json()["provider"] == "openai"
+
+
+# ─── A3: ff_mol_circuit_breaker_v1 wiring ────────────────────────────────────
+
+
+def test_generate_skips_open_breaker_provider(
+    client: TestClient, respx_mock, mock_supabase_client, monkeypatch
+):
+    """When the OpenAI breaker is OPEN for the task, the orchestrator skips
+    OpenAI and resolves on the Anthropic fallback rung."""
+    from services.ai.mol import breaker as breaker_mod
+
+    async def _flag(name, **kwargs):
+        return name in ("ff_mol_circuit_breaker_v1", "ff_mol_deterministic_priority")
+
+    monkeypatch.setattr("services.ai.mol.orchestrator.is_flag_enabled", _flag)
+
+    async def _can_request(provider, task):
+        return provider != "openai"  # OpenAI breaker OPEN
+
+    monkeypatch.setattr(breaker_mod, "can_request", _can_request)
+    monkeypatch.setattr(breaker_mod, "record_failure", lambda *a, **k: _noop())
+    monkeypatch.setattr(breaker_mod, "record_success", lambda *a, **k: _noop())
+
+    # OpenAI is the deterministic-primary AND would succeed if called — so the
+    # ONLY way the result resolves on Anthropic is the breaker skipping OpenAI
+    # without an HTTP call. This makes the RED meaningful: un-wired, the result
+    # would be "openai".
+    openai_route = respx_mock.post("https://api.openai.com/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-breaker",
+                "model": "gpt-4o-mini",
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": "OpenAI reply."},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 4, "completion_tokens": 2},
+            },
+        )
+    )
+    respx_mock.post("https://api.anthropic.com/v1/messages").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "content": [{"type": "text", "text": "Anthropic fallback."}],
+                "usage": {"input_tokens": 5, "output_tokens": 3},
+                "stop_reason": "end_turn",
+            },
+        )
+    )
+    payload = {
+        "task_type": "explanation",
+        "input": {"question": "?"},
+        "student_context": {"student_id": "x", "grade": "8"},
+    }
+    res = client.post("/v1/generate", json=payload)
+    assert res.status_code == 200, res.text
+    assert res.json()["provider"] == "anthropic"
+    # OpenAI must be skipped WITHOUT an HTTP call (breaker OPEN), not merely
+    # tried-and-failed. A real network hit would mean the gate did nothing.
+    assert not openai_route.called
+
+
+async def _noop():
+    return None
