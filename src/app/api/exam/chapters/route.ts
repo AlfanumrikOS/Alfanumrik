@@ -32,7 +32,7 @@ interface ChapterInput {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeRequest(request, 'exam.write', { requireStudentId: true });
+  const auth = await authorizeRequest(request, 'exam.create', { requireStudentId: true });
   if (!auth.authorized) return auth.errorResponse!;
 
   let body: Record<string, unknown>;

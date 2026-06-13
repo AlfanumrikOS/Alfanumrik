@@ -2,7 +2,7 @@
  * POST /api/auth/repair
  *
  * Admin-only: repairs broken onboarding for a specific user.
- * Requires admin.manage_users permission via authorizeRequest.
+ * Requires user.manage permission via authorizeRequest.
  *
  * WARNING: Do not modify without updating auth/onboarding tests.
  *
@@ -18,7 +18,7 @@ import { logIdentityEvent } from '@/lib/identity/audit';
 export async function POST(request: NextRequest) {
   try {
     // Admin authorization via RBAC (P9)
-    const auth = await authorizeRequest(request, 'admin.manage_users');
+    const auth = await authorizeRequest(request, 'user.manage');
     if (!auth.authorized) return auth.errorResponse!;
 
     let body: Record<string, unknown>;

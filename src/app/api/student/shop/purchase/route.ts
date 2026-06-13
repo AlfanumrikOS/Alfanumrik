@@ -4,6 +4,12 @@
  * Atomically purchases an item from the shop (e.g., Streak Freeze) using Foxy Coins or XP.
  * Calls the secure purchase_streak_freeze DB RPC.
  *
+ * This spends the student's OWN earned in-app currency (coins/XP) and mutates
+ * their own account/inventory state — it does NOT initiate a real-money or
+ * subscription payment. The defensible self-service gate is therefore
+ * `profile.update_own` (granted to the `student` role in the RBAC matrix
+ * conformance migration 20260612123200), not `payments.subscribe`.
+ *
  * Body: { itemId: string, currency?: 'coins' | 'xp' }
  */
 
@@ -19,7 +25,7 @@ function err(message: string, status: number) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeRequest(request, 'student.profile.write', { requireStudentId: true });
+  const auth = await authorizeRequest(request, 'profile.update_own', { requireStudentId: true });
   if (!auth.authorized) return auth.errorResponse!;
 
   const studentId = auth.studentId!;
