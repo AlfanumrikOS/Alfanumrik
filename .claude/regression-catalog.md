@@ -3847,3 +3847,54 @@ REG-137 (cost-cap enforcement), REG-138 (cutover parity gate), REG-139
 EXCEEDED).**
 
 **Total: 107 entries.**
+
+## B1 RAG eval-harness — offline retrieval-quality measurement backbone (2026-06-14) — REG-140
+
+Source: B1 RAG eval-harness plan (Task 10). The harness is the OFFLINE
+retrieval-quality measurement backbone for the NCERT-grounded RAG path
+(`src/lib/foxy`/`src/app/api/foxy`): a golden query set, rank-based IR metrics
+(recall@k, nDCG@k, MRR, hit-rate, groundedness-rate), a Sonnet relevance judge,
+a trace-mining + telemetry rollup over `grounded_ai_traces`/`retrieval_traces`,
+and a three-state verdict gate (PASS / REGRESS / INCONCLUSIVE) against an
+assessment-reviewed baseline. The harness MUST be trustworthy — it can never
+silently bless a degraded run, never emit a metric > 1.0, never leak PII to a
+fixture or telemetry rollup, and can never be imported into production code. The
+entire harness is offline (no live API traffic, no DB writes); the relevance
+judge and runner take an INJECTED completion/retrieve function so the tests
+exercise the real wiring with a fake model. All cited suites verified green
+before cataloguing.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-140 | `rag_eval_harness_trustworthiness` | The offline RAG eval-harness can never silently bless a degraded, unmeasurable, or PII-leaking run (harness-trustworthiness contract; P5 / P12 / P13). **(1) Three-state verdict never silently PASSes a degraded/placeholder run:** `evaluateVerdict` returns INCONCLUSIVE (never PASS, never REGRESS) when the run is degraded (no/failed Voyage → silent FTS-only, surfaced as `reranked:false` on a rerank-expected item), when ANY primary metric is null/undefined/unmeasurable, or when a metric's baseline value is null; the runner additionally FORCES INCONCLUSIVE when the committed baseline is `metrics_placeholder:true` (carry-forward gate), when `VOYAGE_API_KEY` is absent, when `retrieve()` reports degraded/error for any item, and on silent rerank-degradation — so a clean-looking metric sheet on a degraded path cannot read as PASS. **(2) Rank-based metrics cannot exceed 1.0:** ranked-list first-occurrence dedup means RRF-emitted duplicate `chunk_id`s cannot push recall/nDCG/hit-rate > 1.0; `\|G\|=0` (no labeled-relevant chunks) or `k=0` → the metric returns null and the item is EXCLUDED + FLAGGED, never silently scored 0 or 1 (graded nDCG uses gain `2^rel − 1`, threshold `rel >= 1`). **(3) P13 on trace reads — no PII to harness/fixture:** the trace-mining + telemetry readers use a column-allowlist projection that NEVER SELECTs `student_id`/`user_id`/`session_id` (asserted on the literal `.select()` string, never `SELECT *`); every mined candidate carries a `query_sha256` BY DEFAULT (preview only on explicit `retainPreview`, and then run through `redactPIIInText`); the candidate sha256 matches the canonical digest of the source query; telemetry rollups are metadata-only (no forbidden identifier in the serialized output). **(4) Golden-set schema gate:** `validateGoldenSet` enforces P5 string grades `"6".."12"` (rejects integer `8` and out-of-range `"13"`), the canonical 17-code subject allowlist (accepts `social_studies`/`history_sr`/`hindi`; rejects `civics`, `history`, `social science`, `social_science`), a recursive PII-key reject (`student_id`/`user_id`/`session_id`/`email`/`phone`), a duplicate-item-id hard reject, the relevance `0\|1\|2` enum, and the `corpus_ref` object shape (`source: ncert_2025`); the seed query set carries no pre-resolved chunk ids (binding is the operator step) and stratifies 28–32 items across all three grade bands. **(5) Offline import boundary:** no file under `src/app`/`src/components`/`src/lib` can import the eval harness (enforced by an `no-restricted-imports` ESLint rule for `**/eval/**` and a path-regex test that matches a real harness import but NOT a `retrieval/` false-positive). **(6) Relevance judge is offline-only + CBSE-scoped (P12-adjacent):** the judge system prompt is scoped to CBSE/NCERT grades 6–12, penalizes off-syllabus chunks, flags `off_grade_scope` separately from relevance, demands strict JSON, and pins a Sonnet variant at temperature 0; `judgeRelevance` takes an INJECTED `complete` fn (no real API call — verified by reviewers via the fake completion), clamps out-of-range relevance into `{0,1,2}`, and returns a typed fallback (never throws) on malformed/throwing model output. | `src/__tests__/eval/rag/verdict.test.ts`, `run-eval.test.ts` (three-state verdict + placeholder/degraded carry-forward); `src/__tests__/eval/rag/metrics.test.ts` (rank-metric ≤ 1.0 + `\|G\|=0`/`k=0` null exclusion); `src/__tests__/eval/rag/trace-mining.test.ts`, `telemetry.test.ts` (P13 column-allowlist + sha256-default + metadata-only rollup); `src/__tests__/eval/rag/golden-schema.test.ts`, `seed-queries.test.ts` (golden-set schema gate); `src/__tests__/eval/rag/import-boundary.test.ts` (+ `.eslintrc.json` `no-restricted-imports` rule); `src/__tests__/eval/rag/relevance-judge.test.ts` (offline + CBSE-scoped + injected LLM) | U |
+
+### Invariants covered by this section
+
+- Harness-trustworthiness contract — the verdict gate is fail-closed: a degraded
+  (no/failed Voyage → silent FTS-only), unmeasurable (any null primary metric or
+  null baseline), or placeholder-baseline run resolves INCONCLUSIVE, never a
+  silent PASS/REGRESS; rank-based metrics are dedup-bounded ≤ 1.0 and `|G|=0`/`k=0`
+  items are excluded-and-flagged, never silently 0/1.
+- P5 Grade format — REG-140 (golden-set + seed-query grades are STRINGS `"6".."12"`;
+  integer and out-of-range grades hard-rejected).
+- P12 AI safety / curriculum scope — REG-140 (the relevance judge is offline-only
+  with an injected completion fn — no live API traffic — and its prompt is
+  CBSE/NCERT-scoped to grades 6–12, penalizing off-syllabus chunks and flagging
+  `off_grade_scope`).
+- P13 Data privacy — REG-140 (trace-mining + telemetry reads use a column-allowlist
+  projection that never SELECTs `student_id`/`user_id`/`session_id`, default to a
+  `query_sha256` over `redactPIIInText`, and emit metadata-only rollups; the
+  golden-set schema recursively rejects any PII-shaped key).
+- Offline import boundary — production code (`src/app`/`src/components`/`src/lib`)
+  can never import `eval/**` (ESLint `no-restricted-imports` + path-regex test).
+
+### Catalog total
+
+Pre-B1: 107 entries (through the MOL Python-unification sub-project A cluster,
+REG-139). The B1 RAG eval-harness adds REG-140 (offline retrieval-quality
+measurement backbone — three-state verdict trustworthiness, rank-metric ≤ 1.0
+bound, P13 trace-read safety, golden-set schema gate, offline import boundary,
+CBSE-scoped offline relevance judge). **Total catalog: 108 entries (target: 35 —
+TARGET EXCEEDED).**
+
+**Total: 108 entries.**

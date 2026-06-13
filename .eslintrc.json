@@ -131,6 +131,40 @@
           }
         ]
       }
+    },
+    {
+      "files": [
+        "src/app/**/*.{ts,tsx}",
+        "src/components/**/*.{ts,tsx}",
+        "src/lib/**/*.{ts,tsx}"
+      ],
+      "excludedFiles": [
+        "src/__tests__/**",
+        "src/**/*.test.{ts,tsx}",
+        "src/**/*.spec.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "**/eval/rag/harness/**",
+                  "../**/eval/rag/harness/*",
+                  "../../**/eval/rag/harness/*",
+                  "**/eval/**/harness/**",
+                  "../eval/**",
+                  "../../eval/**",
+                  "../../../eval/**",
+                  "../../../../eval/**"
+                ],
+                "message": "B1 RAG eval-harness (architect, B6): the offline read-only eval harness under eval/** (esp. eval/rag/harness/**) MUST NEVER be imported by production/client code (src/app, src/components, src/lib). It is build-time/offline-only and must not reach a shipped bundle. Only test files under src/__tests__/eval/** may import it. See docs/superpowers/plans/2026-06-13-rag-eval-harness.md (Task 8)."
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

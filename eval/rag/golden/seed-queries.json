@@ -1,0 +1,460 @@
+{
+  "version": "seed-v1",
+  "created_at": "2026-06-14",
+  "purpose": "B1 RAG eval-harness Task 9 SEED SOURCE — the assessment-owned, candidate-pool-independent CBSE/NCERT golden QUERY SET with per-item CURRICULUM TARGETS. This is the durable intellectual asset: real, natural CBSE student questions stratified by grade band x core subject x query type, each carrying a `target` describing what a relevance=2 chunk MUST contain.",
+  "binding_note": "This file deliberately carries NO `relevant_chunk_ids` and NO resolved `rag_content_chunks.id` UUIDs. Binding each query to real chunk UUIDs + assigning graded relevance (2/1/0) + the `off_grade_scope` flag is the TASK 10 OPERATOR STEP, performed against the live `ncert_2025` corpus (the same DB CI reads — Q1 corpus-parity condition). The operator reads `chunk_text` for chunks filtered by (source='ncert_2025', grade_short, subject_code, chapter_number/concept) and confirms the chunk genuinely answers the query per this `target` BEFORE labeling — A3 candidate-pool-independent labeling. The output of Task 10 is `eval/rag/golden/ncert-golden-v1.json` (schema `eval/rag/harness/golden-schema.ts`), NOT this file.",
+  "coverage_decision": "Q2 (spec section B1.3): grade bands 6-8 (junior) / 9-10 (secondary) / 11-12 (senior); 2 core subjects per band; all 4 query types (factual, conceptual, definition, multi_hop) present in every (band x subject) cell; >=2 items per (band x subject) cell; >=1 multi_hop per (band x subject) cell. Grades 11-12 substitute `physics` for the combined `science` code and `history_sr` for the combined `social_studies` code (those combined codes do not exist at senior-secondary). Total: 30 items. See `eval/rag/golden/README.md` for the full coverage matrix.",
+  "subject_substitution_note": "Canonical snake_case subject_code only (golden-schema.ts CANONICAL_SUBJECT_CODES). NEVER `civics`/`history`/`social science`. Grades 6-10 use combined `science` + `social_studies`; grades 11-12 use `physics` + `history_sr`.",
+  "query_types": ["factual", "conceptual", "definition", "multi_hop"],
+  "grade_bands": {
+    "junior": ["6", "7", "8"],
+    "secondary": ["9", "10"],
+    "senior": ["11", "12"]
+  },
+  "items": [
+    {
+      "id": "seed-j-sci-photosynthesis-factual-001",
+      "tier": "seed",
+      "query": "What gas do plants take in during photosynthesis?",
+      "query_type": "factual",
+      "grade": "7",
+      "subject": "science",
+      "chapter_number": 1,
+      "target": {
+        "chapter_name": "Nutrition in Plants",
+        "concept": "Autotrophic nutrition / photosynthesis raw materials",
+        "relevance_2_description": "A chunk that explicitly states green plants absorb carbon dioxide from the air (through stomata) as a raw material for photosynthesis, alongside water and sunlight."
+      }
+    },
+    {
+      "id": "seed-j-sci-photosynthesis-definition-002",
+      "tier": "seed",
+      "query": "Define photosynthesis.",
+      "query_type": "definition",
+      "grade": "7",
+      "subject": "science",
+      "chapter_number": 1,
+      "target": {
+        "chapter_name": "Nutrition in Plants",
+        "concept": "Definition of photosynthesis",
+        "relevance_2_description": "A chunk that defines photosynthesis as the process by which green plants synthesise food (carbohydrates) from carbon dioxide and water using sunlight captured by chlorophyll, releasing oxygen."
+      }
+    },
+    {
+      "id": "seed-j-sci-respiration-conceptual-003",
+      "tier": "seed",
+      "query": "Why do we breathe faster after running?",
+      "query_type": "conceptual",
+      "grade": "7",
+      "subject": "science",
+      "chapter_number": 10,
+      "target": {
+        "chapter_name": "Respiration in Organisms",
+        "concept": "Increased oxygen demand during exercise",
+        "relevance_2_description": "A chunk explaining that during heavy exercise muscle cells need more energy, so the body needs more oxygen and removes more carbon dioxide, increasing the breathing rate."
+      }
+    },
+    {
+      "id": "seed-j-sci-respiration-conceptual-004",
+      "tier": "seed",
+      "query": "Why do athletes sometimes get muscle cramps after vigorous exercise?",
+      "query_type": "conceptual",
+      "grade": "7",
+      "subject": "science",
+      "chapter_number": 10,
+      "target": {
+        "chapter_name": "Respiration in Organisms",
+        "concept": "Anaerobic respiration and lactic acid",
+        "relevance_2_description": "A chunk explaining that when oxygen supply is insufficient, muscle cells respire anaerobically and produce lactic acid, whose accumulation causes muscle cramps."
+      }
+    },
+    {
+      "id": "seed-j-sci-nutrition-respiration-multihop-005",
+      "tier": "seed",
+      "query": "How are photosynthesis in plants and respiration in animals linked through the gases they exchange?",
+      "query_type": "multi_hop",
+      "grade": "7",
+      "subject": "science",
+      "chapter_number": 1,
+      "target": {
+        "chapter_name": "Nutrition in Plants / Respiration in Organisms",
+        "concept": "Carbon dioxide and oxygen cycle between photosynthesis and respiration",
+        "relevance_2_description": "BOTH a chunk on photosynthesis (plants take in CO2 and release O2) AND a chunk on respiration (organisms take in O2 and release CO2) are required to show the complementary gas exchange.",
+        "multi_hop_required_concepts": [
+          "photosynthesis releases oxygen and consumes carbon dioxide",
+          "respiration consumes oxygen and releases carbon dioxide"
+        ]
+      }
+    },
+    {
+      "id": "seed-j-math-integers-factual-006",
+      "tier": "seed",
+      "query": "What is the product of (-3) and (+5)?",
+      "query_type": "factual",
+      "grade": "7",
+      "subject": "math",
+      "chapter_number": 1,
+      "target": {
+        "chapter_name": "Integers",
+        "concept": "Multiplication of a positive and a negative integer",
+        "relevance_2_description": "A chunk stating the rule that the product of a positive and a negative integer is negative, with a worked example giving (-3) x (+5) = -15."
+      }
+    },
+    {
+      "id": "seed-j-math-integers-definition-007",
+      "tier": "seed",
+      "query": "What is the additive inverse of a number?",
+      "query_type": "definition",
+      "grade": "7",
+      "subject": "math",
+      "chapter_number": 1,
+      "target": {
+        "chapter_name": "Integers",
+        "concept": "Additive inverse",
+        "relevance_2_description": "A chunk defining the additive inverse of an integer as the number that, when added to it, gives zero (e.g. the additive inverse of 5 is -5)."
+      }
+    },
+    {
+      "id": "seed-j-math-fractions-conceptual-008",
+      "tier": "seed",
+      "query": "Why does multiplying a number by a proper fraction make it smaller?",
+      "query_type": "conceptual",
+      "grade": "7",
+      "subject": "math",
+      "chapter_number": 2,
+      "target": {
+        "chapter_name": "Fractions and Decimals",
+        "concept": "Effect of multiplying by a fraction less than 1",
+        "relevance_2_description": "A chunk explaining that multiplying a whole number by a proper fraction (a fraction less than 1) gives a product smaller than the original number, because you are taking only a part of it."
+      }
+    },
+    {
+      "id": "seed-j-math-data-factual-009",
+      "tier": "seed",
+      "query": "How do you find the mean of a set of observations?",
+      "query_type": "factual",
+      "grade": "7",
+      "subject": "math",
+      "chapter_number": 3,
+      "target": {
+        "chapter_name": "Data Handling",
+        "concept": "Arithmetic mean",
+        "relevance_2_description": "A chunk stating that the mean (average) is found by dividing the sum of all observations by the number of observations, with the formula or a worked example."
+      }
+    },
+    {
+      "id": "seed-j-math-integers-fractions-multihop-010",
+      "tier": "seed",
+      "query": "When you divide a negative integer by a proper fraction, why is the result a larger negative number?",
+      "query_type": "multi_hop",
+      "grade": "7",
+      "subject": "math",
+      "chapter_number": 1,
+      "target": {
+        "chapter_name": "Integers / Fractions and Decimals",
+        "concept": "Combining sign rules for integers with division by a fraction less than 1",
+        "relevance_2_description": "BOTH a chunk on integer sign rules for division (negative divided by positive stays negative) AND a chunk on division by a proper fraction (dividing by a number less than 1 increases magnitude) are required to fully justify the result.",
+        "multi_hop_required_concepts": [
+          "sign rule: a negative integer divided by a positive gives a negative result",
+          "dividing by a fraction less than 1 increases the magnitude of the result"
+        ]
+      }
+    },
+    {
+      "id": "seed-s-sci-electricity-factual-011",
+      "tier": "seed",
+      "query": "What is the SI unit of electric current?",
+      "query_type": "factual",
+      "grade": "10",
+      "subject": "science",
+      "chapter_number": 12,
+      "target": {
+        "chapter_name": "Electricity",
+        "concept": "SI unit of current",
+        "relevance_2_description": "A chunk stating that the SI unit of electric current is the ampere (A), defined as one coulomb of charge flowing per second."
+      }
+    },
+    {
+      "id": "seed-s-sci-electricity-definition-012",
+      "tier": "seed",
+      "query": "State Ohm's law.",
+      "query_type": "definition",
+      "grade": "10",
+      "subject": "science",
+      "chapter_number": 12,
+      "target": {
+        "chapter_name": "Electricity",
+        "concept": "Ohm's law",
+        "relevance_2_description": "A chunk stating Ohm's law: at constant temperature the potential difference across a conductor is directly proportional to the current through it (V = IR), defining V, I and R."
+      }
+    },
+    {
+      "id": "seed-s-sci-acids-conceptual-013",
+      "tier": "seed",
+      "query": "Why does an acid conduct electricity only when dissolved in water?",
+      "query_type": "conceptual",
+      "grade": "10",
+      "subject": "science",
+      "chapter_number": 2,
+      "target": {
+        "chapter_name": "Acids, Bases and Salts",
+        "concept": "Ionisation of acids in aqueous solution",
+        "relevance_2_description": "A chunk explaining that acids conduct electricity in aqueous solution because they dissociate to release hydrogen ions (H+), which are absent in the dry acid, so the dry acid does not conduct."
+      }
+    },
+    {
+      "id": "seed-s-sci-life-conceptual-014",
+      "tier": "seed",
+      "query": "Why is the heart of mammals and birds divided into four chambers?",
+      "query_type": "conceptual",
+      "grade": "10",
+      "subject": "science",
+      "chapter_number": 6,
+      "target": {
+        "chapter_name": "Life Processes",
+        "concept": "Double circulation and separation of oxygenated and deoxygenated blood",
+        "relevance_2_description": "A chunk explaining that the four-chambered heart keeps oxygenated and deoxygenated blood from mixing, supporting double circulation and the high energy needs of birds and mammals."
+      }
+    },
+    {
+      "id": "seed-s-sci-electricity-life-multihop-015",
+      "tier": "seed",
+      "query": "Compare how current flows in a series electric circuit with how blood flows through the human circulatory system.",
+      "query_type": "multi_hop",
+      "grade": "10",
+      "subject": "science",
+      "chapter_number": 12,
+      "target": {
+        "chapter_name": "Electricity / Life Processes",
+        "concept": "Flow comparison across two domains",
+        "relevance_2_description": "BOTH a chunk on current flow in a series circuit (same current throughout a single path) AND a chunk on blood flow / double circulation are required to construct the comparison.",
+        "multi_hop_required_concepts": [
+          "in a series circuit the same current flows through every component",
+          "blood circulates through the heart in a closed double-circulation pathway"
+        ]
+      }
+    },
+    {
+      "id": "seed-s-sst-nationalism-factual-016",
+      "tier": "seed",
+      "query": "Who led the Non-Cooperation Movement in India?",
+      "query_type": "factual",
+      "grade": "10",
+      "subject": "social_studies",
+      "chapter_number": 2,
+      "target": {
+        "chapter_name": "Nationalism in India",
+        "concept": "Leadership of the Non-Cooperation Movement",
+        "relevance_2_description": "A chunk stating that Mahatma Gandhi launched and led the Non-Cooperation Movement (1920-22) as part of the Indian national movement."
+      }
+    },
+    {
+      "id": "seed-s-sst-resources-definition-017",
+      "tier": "seed",
+      "query": "What is meant by a renewable resource?",
+      "query_type": "definition",
+      "grade": "10",
+      "subject": "social_studies",
+      "chapter_number": 1,
+      "target": {
+        "chapter_name": "Resources and Development",
+        "concept": "Definition of renewable resources",
+        "relevance_2_description": "A chunk defining renewable (replenishable) resources as those that can be renewed or reproduced by physical, chemical or mechanical processes, such as solar energy, water, forests and wildlife."
+      }
+    },
+    {
+      "id": "seed-s-sst-nationalism-conceptual-018",
+      "tier": "seed",
+      "query": "Why did the First World War create new economic and political conditions in India?",
+      "query_type": "conceptual",
+      "grade": "10",
+      "subject": "social_studies",
+      "chapter_number": 2,
+      "target": {
+        "chapter_name": "Nationalism in India",
+        "concept": "Impact of the First World War on India",
+        "relevance_2_description": "A chunk explaining how the war raised defence expenditure, increased taxes and prices, forced recruitment, and caused hardship that fuelled nationalist discontent."
+      }
+    },
+    {
+      "id": "seed-s-sst-nationalism-conceptual-019",
+      "tier": "seed",
+      "query": "Why was the idea of Satyagraha significant for the Indian freedom struggle?",
+      "query_type": "conceptual",
+      "grade": "10",
+      "subject": "social_studies",
+      "chapter_number": 2,
+      "target": {
+        "chapter_name": "Nationalism in India",
+        "concept": "Concept and significance of Satyagraha",
+        "relevance_2_description": "A chunk explaining that Satyagraha was Gandhi's method of non-violent resistance emphasising truth and the power of moral persuasion over physical force, and why it mobilised mass participation."
+      }
+    },
+    {
+      "id": "seed-s-sst-nationalism-resources-multihop-020",
+      "tier": "seed",
+      "query": "How did economic hardship after the First World War and the unequal use of resources together push Indian peasants towards the national movement?",
+      "query_type": "multi_hop",
+      "grade": "10",
+      "subject": "social_studies",
+      "chapter_number": 2,
+      "target": {
+        "chapter_name": "Nationalism in India / Resources and Development",
+        "concept": "Linking wartime economic distress with resource/land pressures behind peasant mobilisation",
+        "relevance_2_description": "BOTH a chunk on the post-war economic hardship (taxes, prices, recruitment) AND a chunk on land/resource pressures on peasants are required to explain the combined push towards the national movement.",
+        "multi_hop_required_concepts": [
+          "post-war taxes, rising prices and forced recruitment caused rural distress",
+          "pressure on land and resources worsened the economic position of peasants"
+        ]
+      }
+    },
+    {
+      "id": "seed-sr-phy-motion-factual-021",
+      "tier": "seed",
+      "query": "What is the SI unit of force?",
+      "query_type": "factual",
+      "grade": "11",
+      "subject": "physics",
+      "chapter_number": 5,
+      "target": {
+        "chapter_name": "Laws of Motion",
+        "concept": "SI unit of force",
+        "relevance_2_description": "A chunk stating that the SI unit of force is the newton (N), defined as the force that gives a 1 kg mass an acceleration of 1 m/s^2."
+      }
+    },
+    {
+      "id": "seed-sr-phy-motion-definition-022",
+      "tier": "seed",
+      "query": "Define Newton's second law of motion.",
+      "query_type": "definition",
+      "grade": "11",
+      "subject": "physics",
+      "chapter_number": 5,
+      "target": {
+        "chapter_name": "Laws of Motion",
+        "concept": "Newton's second law",
+        "relevance_2_description": "A chunk defining Newton's second law as: the rate of change of momentum of a body is directly proportional to the applied force and acts in the direction of the force (F = ma)."
+      }
+    },
+    {
+      "id": "seed-sr-phy-gravitation-conceptual-023",
+      "tier": "seed",
+      "query": "Why does the value of acceleration due to gravity decrease as we go higher above the Earth's surface?",
+      "query_type": "conceptual",
+      "grade": "11",
+      "subject": "physics",
+      "chapter_number": 8,
+      "target": {
+        "chapter_name": "Gravitation",
+        "concept": "Variation of g with altitude",
+        "relevance_2_description": "A chunk explaining that g decreases with height because gravitational acceleration is inversely proportional to the square of the distance from the centre of the Earth, so increasing altitude increases that distance."
+      }
+    },
+    {
+      "id": "seed-sr-phy-motion-conceptual-024",
+      "tier": "seed",
+      "query": "Why does a passenger lurch forward when a moving bus suddenly stops?",
+      "query_type": "conceptual",
+      "grade": "11",
+      "subject": "physics",
+      "chapter_number": 5,
+      "target": {
+        "chapter_name": "Laws of Motion",
+        "concept": "Inertia of motion (Newton's first law)",
+        "relevance_2_description": "A chunk explaining that by inertia the passenger's body tends to continue in its state of motion when the bus stops, so the upper body moves forward relative to the decelerating bus."
+      }
+    },
+    {
+      "id": "seed-sr-phy-motion-gravitation-multihop-025",
+      "tier": "seed",
+      "query": "Using Newton's second law and the law of gravitation, explain why all objects fall with the same acceleration in the absence of air resistance.",
+      "query_type": "multi_hop",
+      "grade": "11",
+      "subject": "physics",
+      "chapter_number": 8,
+      "target": {
+        "chapter_name": "Laws of Motion / Gravitation",
+        "concept": "Combining F = ma with the gravitational force law to derive mass-independent g",
+        "relevance_2_description": "BOTH a chunk stating Newton's second law (F = ma) AND a chunk giving Newton's law of gravitation (F = GMm/r^2) are required to show that mass cancels, so acceleration g = GM/r^2 is independent of the falling object's mass.",
+        "multi_hop_required_concepts": [
+          "Newton's second law relates force, mass and acceleration (F = ma)",
+          "gravitational force on a mass is F = GMm/r^2, so a = GM/r^2 is mass-independent"
+        ]
+      }
+    },
+    {
+      "id": "seed-sr-hist-revolution-factual-026",
+      "tier": "seed",
+      "query": "In which year did the French Revolution begin?",
+      "query_type": "factual",
+      "grade": "11",
+      "subject": "history_sr",
+      "chapter_number": 9,
+      "target": {
+        "chapter_name": "The French Revolution (Themes in World History)",
+        "concept": "Start year of the French Revolution",
+        "relevance_2_description": "A chunk stating that the French Revolution began in 1789, marked by events such as the storming of the Bastille on 14 July 1789."
+      }
+    },
+    {
+      "id": "seed-sr-hist-revolution-definition-027",
+      "tier": "seed",
+      "query": "What is meant by the Old Regime (Ancien Regime) in pre-revolutionary France?",
+      "query_type": "definition",
+      "grade": "11",
+      "subject": "history_sr",
+      "chapter_number": 9,
+      "target": {
+        "chapter_name": "The French Revolution (Themes in World History)",
+        "concept": "Definition of the Old Regime",
+        "relevance_2_description": "A chunk defining the Old Regime as the social and political system of France before 1789, characterised by an absolute monarchy and a society divided into three estates with unequal privileges."
+      }
+    },
+    {
+      "id": "seed-sr-hist-revolution-conceptual-028",
+      "tier": "seed",
+      "query": "Why did the French middle class (the third estate) grow discontented before the Revolution?",
+      "query_type": "conceptual",
+      "grade": "11",
+      "subject": "history_sr",
+      "chapter_number": 9,
+      "target": {
+        "chapter_name": "The French Revolution (Themes in World History)",
+        "concept": "Grievances of the third estate",
+        "relevance_2_description": "A chunk explaining that the third estate bore the burden of taxes while being denied political privileges, and that Enlightenment ideas of equality and liberty fed their discontent with the privileged estates."
+      }
+    },
+    {
+      "id": "seed-sr-hist-revolution-conceptual-029",
+      "tier": "seed",
+      "query": "How did the ideas of philosophers like Rousseau influence the French Revolution?",
+      "query_type": "conceptual",
+      "grade": "11",
+      "subject": "history_sr",
+      "chapter_number": 9,
+      "target": {
+        "chapter_name": "The French Revolution (Themes in World History)",
+        "concept": "Influence of Enlightenment thinkers",
+        "relevance_2_description": "A chunk explaining how Enlightenment philosophers such as Rousseau and Montesquieu argued for popular sovereignty, the social contract and separation of powers, ideas that inspired revolutionaries to challenge absolute monarchy."
+      }
+    },
+    {
+      "id": "seed-sr-hist-revolution-multihop-030",
+      "tier": "seed",
+      "query": "How did economic hardship and Enlightenment ideas together lead to the outbreak of the French Revolution in 1789?",
+      "query_type": "multi_hop",
+      "grade": "11",
+      "subject": "history_sr",
+      "chapter_number": 9,
+      "target": {
+        "chapter_name": "The French Revolution (Themes in World History)",
+        "concept": "Combining economic causes with intellectual causes of the Revolution",
+        "relevance_2_description": "BOTH a chunk on the economic causes (state debt, food scarcity, taxation of the third estate) AND a chunk on the Enlightenment/philosophical ideas are required to explain the combined trigger of 1789.",
+        "multi_hop_required_concepts": [
+          "economic crisis: state debt, rising bread prices, and heavy taxation of the third estate",
+          "Enlightenment ideas of liberty, equality and popular sovereignty undermined the legitimacy of absolute monarchy"
+        ]
+      }
+    }
+  ]
+}

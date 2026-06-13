@@ -27,6 +27,7 @@
     "gen:dart": "openapi-generator-cli generate",
     "eval:rag": "npx tsx scripts/rag-eval.mjs",
     "eval:rag:check": "RAG_EVAL_THRESHOLD=0.80 npx tsx scripts/rag-eval.mjs",
+    "eval:rag:harness": "npx tsx eval/rag/harness/cli.ts",
     "eval:tenant-isolation": "npx tsx eval/tenant-isolation/run.ts",
     "eval:tenant-isolation:baseline": "npx tsx eval/tenant-isolation/run.ts --regenerate-baseline",
     "eval:unit-tests": "npx tsx eval/unit-tests/run.ts",
