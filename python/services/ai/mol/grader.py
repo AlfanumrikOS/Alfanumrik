@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import structlog
 import httpx
 
-from ...config import get_settings
+from ..config import get_settings
 
 logger = structlog.get_logger(__name__)
 
