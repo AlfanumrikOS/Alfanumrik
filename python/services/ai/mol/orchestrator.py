@@ -11,10 +11,10 @@ Phase-0 scope:
   TS LogPayload shape exactly).
 
 Wired components:
-- ``classify_task_type()`` — Phase 1 ports the LLM-side classifier (TS
-  ``./classifier.ts``). Phase 0 falls back to a no-op that requires the
-  caller to pass ``task_type`` explicitly (matches TS contract when the
-  caller already knows the task).
+- ``classify_task_type()`` — the real classifier (TS ``./classifier.ts``
+  port): returns the caller-passed ``task_type`` when present, else infers
+  the task from the input surface, keyword, and regex signals, defaulting to
+  ``"explanation"`` for student-facing surfaces.
 - ``build_system_prompt()`` — the real prompt-builder (TS
   ``./prompt-builder.ts`` port): full Foxy persona, grade-tier styling,
   language + exam-goal hints, and NCERT RAG-context injection. Bypassed

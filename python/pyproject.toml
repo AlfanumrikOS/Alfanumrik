@@ -57,6 +57,9 @@ asyncio_mode = "auto"
 # services/ai/api/v1/foxy_tutor.py — resolves when pytest's rootdir is
 # python/ (CI runs with ``working-directory: python``). ``.`` keeps the
 # python/ dir itself importable for the ``services`` + ``tests`` packages.
+# Order is load-bearing: ``.`` MUST precede ``..`` so ``import tests``
+# resolves to python/tests, not the repo-root tests tree (both are top-level
+# packages named ``tests``).
 pythonpath = [".", ".."]
 addopts = [
   "-ra",
