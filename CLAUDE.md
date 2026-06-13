@@ -171,6 +171,8 @@ See `.claude/CLAUDE.md` for the full product constitution:
 | Pedagogy v2 — student-visible surfaces | `src/app/dive/`, `src/app/synthesis/`, `src/components/dive/`, `src/components/synthesis/`, `src/components/dashboard/sections/DailyRhythmQueue.tsx` |
 | Pedagogy v2 — API routes | `src/app/api/rhythm/today/`, `src/app/api/dive/{state,start,artifact,history}/`, `src/app/api/synthesis/{state,parent-share}/`, `src/app/api/learn/remediation/` |
 | Pedagogy v2 — Edge Function (monthly synthesis builder, daily-cron trigger) | `supabase/functions/monthly-synthesis-builder/`, `supabase/functions/daily-cron/` (`triggerMonthlySynthesis` step) |
+| Adaptive program — Phase A Loop A (closed loop) | `adaptive_interventions` table + RLS (migration `20260619000200_adaptive_interventions.sql`), flag seed `20260619000300_seed_ff_adaptive_remediation_v1.sql` (OFF), teacher-dedupe index `20260619000400_teacher_remediation_dedupe_index.sql`. Cron worker `src/app/api/cron/adaptive-remediation/route.ts` (+ `_lib/subject-match.ts`), triggered thin from `daily-cron` (`triggerAdaptiveRemediation` step). Pure modules `src/lib/learn/remediation-queue-adapter.ts`, `src/lib/learn/recovery-evaluation.ts`. Gated by `ff_adaptive_remediation_v1`. (Loops B/C evaluators + `ff_adaptive_loops_bc_v1` not yet merged to main.) |
+| Student Pulse | `src/lib/pulse/`, `src/components/pulse/`, `src/app/api/pulse/{me,school,class/[classId],student/[id]}`. `canAccessStudent` is the single cross-role data boundary. Gated by `ff_school_pulse_v1` (seed `20260619000100_seed_ff_school_pulse_v1.sql`, OFF). |
 | Auth context | `src/lib/AuthContext.tsx` |
 | RBAC | `src/lib/rbac.ts`, `src/lib/usePermissions.ts` |
 | Supabase clients | `src/lib/supabase.ts`, `supabase-server.ts`, `supabase-admin.ts` |
@@ -185,3 +187,4 @@ See `.claude/CLAUDE.md` for the full product constitution:
 | CI/CD | `.github/workflows/ci.yml`, `deploy-production.yml`, `deploy-staging.yml` |
 | Operational docs | `docs/` (RBAC matrix, backup/restore, admin ops, architecture docs) |
 | Pedagogy v2 specs / plans / runbooks | `docs/superpowers/specs/2026-05-08-pedagogy-v2-three-speed-rhythm-design.md` (strategic), `docs/superpowers/plans/2026-05-08-*` + `2026-05-09-*` (Wave 1-3), `docs/superpowers/runbooks/2026-05-09-pedagogy-v2-wave-1-rollout.md` |
+| Adaptive program + Pulse specs / runbooks | `docs/superpowers/specs/2026-06-12-rbac-conformance-and-student-pulse-design.md`, `docs/superpowers/specs/2026-06-12-phase-a-loop-a-adaptive-remediation-design.md`; runbook `docs/runbooks/adaptive-remediation-rollout.md`. (Loops B/C spec + `adaptive-program-rollout.md` runbook not yet merged to main.) |
