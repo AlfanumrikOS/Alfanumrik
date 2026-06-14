@@ -232,7 +232,15 @@ function validateOptions(opts: RetrieveOptions): void {
 const VOYAGE_EMBED_ENDPOINT = 'https://api.voyageai.com/v1/embeddings';
 const VOYAGE_RERANK_ENDPOINT = 'https://api.voyageai.com/v1/rerank';
 const VOYAGE_EMBED_MODEL = 'voyage-3';
-const VOYAGE_RERANK_MODEL = 'voyage-rerank-2';
+// Voyage's API identifier for the voyage-rerank-2 model is 'rerank-2'. The
+// legacy 'voyage-rerank-2' string is REJECTED with HTTP 400 ("Model
+// voyage-rerank-2 is not supported. Supported models are ['rerank-lite-1',
+// 'rerank-2-lite', 'rerank-2', 'rerank-2.5', 'rerank-2.5-lite']"), which made
+// callVoyageRerank silently return reranked:false (FTS/similarity order only).
+// This is the SAME model (no provider/model swap) — only the stale API
+// identifier is corrected, matching grounded-answer/_shared/reranking.ts intent
+// and the foxy-rerank-fallback test fixture which already pins 'rerank-2'.
+const VOYAGE_RERANK_MODEL = 'rerank-2';
 const EMBEDDING_DIMENSIONS = 1024;
 const DEFAULT_TIMEOUT_MS = 12_000;
 const DEFAULT_LIMIT = 8;
