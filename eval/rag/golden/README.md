@@ -74,6 +74,18 @@ Each cell shows the count of items of that query type in that (band x subject) c
 - Every cell: **all 4 query types present**, **>=2 items** (5 >= 2), **>=1 multi_hop** (exactly 1 each).
 - Query-type totals: factual 7, conceptual 11, definition 6, multi_hop 6 (sum = 30).
 
+## Corpus binding (Option-1: prod-bound) — live-DB CI skips corpus-parity on staging
+
+`ncert-golden-v1.json` is **prod-bound**: its chunk UUIDs resolve only against the
+project declared in `corpus_ref.project_ref` (`shktyoxqhundlvkiwguu` = prod). The
+live-DB CI lane connects to **staging**, where those prod UUIDs don't exist, so the
+`run-eval.integration.test.ts` corpus-parity check **skips loudly on staging by
+design** (compares `corpus_ref.project_ref` to the connected project ref) rather
+than false-failing. Corpus-parity is enforced wherever the harness runs against the
+**bound** corpus — locally with prod creds, or the operator / scheduled prod-targeted
+run. (A golden set without `corpus_ref.project_ref` keeps the old same-corpus
+fail-loud behavior.)
+
 ## Subject-code discipline
 
 Canonical snake_case `subject_code` only (matches

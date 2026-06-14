@@ -3,6 +3,7 @@
   "created_at": "2026-06-14",
   "corpus_ref": {
     "source": "ncert_2025",
+    "project_ref": "shktyoxqhundlvkiwguu",
     "snapshot_note": "Bound against live rag_content_chunks (project shktyoxqhundlvkiwguu), source='ncert_2025', is_active=true, language='en'. FINAL assessment-validated labels (Task 10 step B). Every label spot_checked by reading chunk_text A3-independently against the seed target.relevance_2_description (NOT from retrieve() output). NCERT 2025 edition is renumbered/retitled vs the seed's assumed chapters; chunk_text is authoritative over chapter metadata. The g11/history_sr cell (items 026-030) was RE-TARGETED from the French Revolution (absent from the indexed corpus) to in-corpus 'Themes in World History Part 1' content (The Three Orders / feudalism + Changing Cultural Traditions / Renaissance). See eval/rag/golden/corpus-coverage-findings.md."
   },
   "judge": {

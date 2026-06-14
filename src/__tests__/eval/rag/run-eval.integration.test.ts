@@ -78,6 +78,44 @@ const GOLDEN_PATH = resolve(ROOT, 'eval', 'rag', 'golden', 'ncert-golden-v1.json
 const BASELINE_PATH = resolve(ROOT, 'eval', 'rag', 'baseline', 'ncert-baseline-v1.json');
 
 /**
+ * Derive the CONNECTED Supabase project ref from the SAME env var the
+ * integration client (`makeServiceSupabase()`) reads — `NEXT_PUBLIC_SUPABASE_URL`
+ * (falling back to `SUPABASE_URL`, mirroring the helper's own `?? ` fallback in
+ * `src/__tests__/migrations/_helpers/supabase-runtime.ts`). Parses the
+ * `<ref>.supabase.co` host. Returns `null` when no host-shaped URL is present
+ * (e.g. a self-hosted / non-standard URL) — the caller then preserves the old
+ * resolve behavior rather than skipping on an undeterminable ref.
+ *
+ * PURE (no I/O, no client) so the run-vs-skip decision is unit-assertable.
+ */
+function connectedProjectRef(): string | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? '';
+  const m = url.match(/https?:\/\/([a-z0-9]+)\.supabase\.co/i);
+  return m ? m[1] : null;
+}
+
+/**
+ * Decide whether the corpus-parity resolve assertion should RUN against the
+ * connected DB, or SKIP because the golden set is bound to a DIFFERENT, DECLARED
+ * project than CI connected to. Pure + total so the skip path is deterministically
+ * testable without a live DB.
+ *
+ * Rules (Option-1 prod binding):
+ *   - boundRef present AND connectedRef present AND they DIFFER  → skip ('corpus-mismatch')
+ *   - otherwise (match, OR no boundRef, OR undeterminable connectedRef) → run
+ *     (preserves the old fail-loud-on-unresolved behavior for same-corpus sets).
+ */
+export function corpusParityDecision(
+  boundRef: string | null | undefined,
+  connectedRef: string | null,
+): { action: 'run' | 'skip'; reason: 'same-corpus' | 'no-bound-ref' | 'undeterminable-connected' | 'corpus-mismatch' } {
+  if (!boundRef) return { action: 'run', reason: 'no-bound-ref' };
+  if (!connectedRef) return { action: 'run', reason: 'undeterminable-connected' };
+  if (boundRef === connectedRef) return { action: 'run', reason: 'same-corpus' };
+  return { action: 'skip', reason: 'corpus-mismatch' };
+}
+
+/**
  * Load the committed golden set if it has been seeded (Task 9). Until then,
  * fall back to a minimal 1-item inline golden set so the live-DB wiring is
  * exercisable. The runner re-validates either way; the corpus-parity check below
@@ -253,6 +291,28 @@ describeIntegration('run-eval LIVE-DB harness (Task 5, integration lane)', () =>
       // eslint-disable-next-line no-console
       console.warn(
         'corpus-parity: ncert-golden-v1.json not yet seeded (Task 9) — skipping the chunk-id resolve check.',
+      );
+      return;
+    }
+
+    // ── CORPUS-AWARENESS (Option-1 prod binding) ────────────────────────────
+    // The golden set is bound to PROD chunk UUIDs (corpus_ref.project_ref =
+    // shktyoxqhundlvkiwguu). CI's live-DB lane connects to STAGING — prod UUIDs
+    // do NOT resolve there. That is NOT a regression: parity is a property of
+    // the golden set vs the BOUND corpus, not vs whatever corpus CI happens to
+    // read. So we fail LOUDLY only when the connected DB IS the bound corpus,
+    // and SKIP LOUDLY when CI reads a DIFFERENT, DECLARED corpus. Parity is then
+    // enforced wherever the harness runs against the bound corpus — locally with
+    // prod creds, or the operator / scheduled prod-targeted run. (A golden set
+    // with no project_ref keeps the old same-corpus fail-loud behavior.)
+    const boundRef = deps.golden.corpus_ref.project_ref;
+    const connectedRef = connectedProjectRef();
+    const decision = corpusParityDecision(boundRef, connectedRef);
+    if (decision.action === 'skip') {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `corpus-parity: golden set bound to project ${boundRef}; CI connected to ${connectedRef}; ` +
+          'skipping chunk-id resolve — run against the bound corpus to validate.',
       );
       return;
     }
