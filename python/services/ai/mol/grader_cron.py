@@ -171,7 +171,7 @@ async def grade_mol_shadow_pairs(
         settled = await asyncio.gather(*tasks, return_exceptions=True)
 
         for outcome in settled:
-            if isinstance(outcome, Exception):
+            if isinstance(outcome, BaseException):
                 result.skipped_no_text += 1
                 logger.warning(f"grader_cron: unexpected worker rejection: {outcome}")
                 result.estimated_grader_cost_inr = round(
@@ -306,7 +306,7 @@ async def _flip_kill_switch(client: Any, now: datetime) -> bool:
         if data is None and isinstance(res, dict):
             data = res.get("data")
 
-        existing = {}
+        existing: dict[str, Any] = {}
         if data and isinstance(data, list) and len(data) > 0:
             existing = data[0].get("metadata") or {}
 

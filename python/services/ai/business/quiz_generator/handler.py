@@ -229,7 +229,7 @@ async def select_adaptive_questions(
 
     prioritised = sorted(weak_topics, key=sort_key)
 
-    questions = []
+    questions: list[dict[str, Any]] = []
     used_ids = set(exclude_ids)
     slots_per_topic = max(1, count // max(len(prioritised), 1))
 
@@ -607,7 +607,7 @@ async def generate_quiz(supabase, body: QuizGeneratorRequest) -> QuizGeneratorRe
     await check_and_reset_history(supabase, student_id, subject, grade, chapter_number, total_pool)
     seen_ids = await fetch_seen_question_ids(supabase, student_id, subject, grade, chapter_number)
 
-    review_questions = []
+    review_questions: list[dict[str, Any]] = []
     review_topic_count = 0
     if body.difficulty is None:
         review_slots = count // 2
@@ -664,7 +664,7 @@ async def generate_quiz(supabase, body: QuizGeneratorRequest) -> QuizGeneratorRe
     questions = shuffle_list(questions)
     interleaved = deduplicate_adjacent_topics(questions)
 
-    bloom_distribution = {}
+    bloom_distribution: dict[Any, int] = {}
     for q in interleaved:
         level = q.get("bloom_level", "unknown")
         bloom_distribution[level] = bloom_distribution.get(level, 0) + 1

@@ -145,26 +145,43 @@ Evaluate both candidates per the rubric and return strict JSON."""
 def compute_overall(
     scores: dict[str, float | None], rubric: GraderRubric = DEFAULT_RUBRIC
 ) -> float:
-    if scores.get("citation_accuracy") is None:
+    # The five mandatory dimensions are always populated by ``validate_candidate``;
+    # only ``citation_accuracy`` is legitimately nullable. Extract the mandatory
+    # five as non-None floats so the weighted sum is type-safe.
+    accuracy = scores["accuracy"]
+    cbse_scope = scores["cbse_scope"]
+    age_appropriateness = scores["age_appropriateness"]
+    scaffold_fidelity = scores["scaffold_fidelity"]
+    helpfulness = scores["helpfulness"]
+    assert (
+        accuracy is not None
+        and cbse_scope is not None
+        and age_appropriateness is not None
+        and scaffold_fidelity is not None
+        and helpfulness is not None
+    )
+
+    citation_accuracy = scores.get("citation_accuracy")
+    if citation_accuracy is None:
         remainder = 1.0 - rubric["citation_accuracy"]
         if remainder <= 0:
             return 0.0
         raw = (
-            scores["accuracy"] * rubric["accuracy"]
-            + scores["cbse_scope"] * rubric["cbse_scope"]
-            + scores["age_appropriateness"] * rubric["age_appropriateness"]
-            + scores["scaffold_fidelity"] * rubric["scaffold_fidelity"]
-            + scores["helpfulness"] * rubric["helpfulness"]
+            accuracy * rubric["accuracy"]
+            + cbse_scope * rubric["cbse_scope"]
+            + age_appropriateness * rubric["age_appropriateness"]
+            + scaffold_fidelity * rubric["scaffold_fidelity"]
+            + helpfulness * rubric["helpfulness"]
         )
         return max(0.0, min(1.0, raw / remainder))
 
     raw = (
-        scores["accuracy"] * rubric["accuracy"]
-        + scores["cbse_scope"] * rubric["cbse_scope"]
-        + scores["age_appropriateness"] * rubric["age_appropriateness"]
-        + scores["scaffold_fidelity"] * rubric["scaffold_fidelity"]
-        + scores["helpfulness"] * rubric["helpfulness"]
-        + scores["citation_accuracy"] * rubric["citation_accuracy"]
+        accuracy * rubric["accuracy"]
+        + cbse_scope * rubric["cbse_scope"]
+        + age_appropriateness * rubric["age_appropriateness"]
+        + scaffold_fidelity * rubric["scaffold_fidelity"]
+        + helpfulness * rubric["helpfulness"]
+        + citation_accuracy * rubric["citation_accuracy"]
     )
     return max(0.0, min(1.0, raw))
 
@@ -194,7 +211,7 @@ def validate_candidate(raw: Any, rubric: GraderRubric) -> CandidateScores | None
     else:
         return None
 
-    partial = {
+    partial: dict[str, float | None] = {
         "accuracy": out["accuracy"],
         "cbse_scope": out["cbse_scope"],
         "age_appropriateness": out["age_appropriateness"],
@@ -203,7 +220,15 @@ def validate_candidate(raw: Any, rubric: GraderRubric) -> CandidateScores | None
         "citation_accuracy": citation,
     }
     overall = compute_overall(partial, rubric)
-    return CandidateScores(**partial, overall=overall)
+    return CandidateScores(
+        accuracy=out["accuracy"],
+        cbse_scope=out["cbse_scope"],
+        age_appropriateness=out["age_appropriateness"],
+        scaffold_fidelity=out["scaffold_fidelity"],
+        helpfulness=out["helpfulness"],
+        citation_accuracy=citation,
+        overall=overall,
+    )
 
 
 def pick_winner(baseline_overall: float, shadow_overall: float) -> str:

@@ -131,11 +131,11 @@ def selectNextAction(
     if atRisk:
         atRisk.sort(key=lambda x: x[1])
         urgent = atRisk[0][0]
-        topic = next((t for t in topics if t["id"] == urgent["concept_id"]), None)
+        urgent_topic = next((t for t in topics if t["id"] == urgent["concept_id"]), None)
         return {
             "type": "revise",
             "concept_id": urgent["concept_id"],
-            "title": topic["title"] if topic else "Review concept",
+            "title": urgent_topic["title"] if urgent_topic else "Review concept",
             "reason": "Previously learned concept fading — revision needed",
             "difficulty": urgent.get("max_difficulty_succeeded") or 2,
         }
@@ -145,11 +145,11 @@ def selectNextAction(
     if errorProne:
         errorProne.sort(key=lambda x: x.get("error_count_conceptual", 0), reverse=True)
         worst = errorProne[0]
-        topic = next((t for t in topics if t["id"] == worst["concept_id"]), None)
+        worst_topic = next((t for t in topics if t["id"] == worst["concept_id"]), None)
         return {
             "type": "re_teach",
             "concept_id": worst["concept_id"],
-            "title": topic["title"] if topic else "Re-learn concept",
+            "title": worst_topic["title"] if worst_topic else "Re-learn concept",
             "reason": "Repeated conceptual errors — needs different explanation approach",
             "difficulty": 1,
         }
@@ -251,7 +251,7 @@ def computeExamReadiness(
             "concepts_mastered": 0,
         }
 
-    chapters = {}
+    chapters: dict[Any, dict[str, float]] = {}
     for topic in relevant:
         ch = topic.get("chapter_number", 0)
         if ch not in chapters:
@@ -267,9 +267,9 @@ def computeExamReadiness(
             if retention >= 0.7:
                 chapters[ch]["mastered"] += 1
 
-    chapterScores = {}
-    totalWeighted = 0
-    totalTopics = 0
+    chapterScores: dict[str, float] = {}
+    totalWeighted = 0.0
+    totalTopics = 0.0
 
     for ch, data in chapters.items():
         score = data["retention_sum"] / data["total"] if data["total"] > 0 else 0
@@ -279,9 +279,10 @@ def computeExamReadiness(
 
     overall = totalWeighted / totalTopics if totalTopics > 0 else 0
 
-    weakest_list = sorted(
-        [{"chapter": k, "score": v} for k, v in chapterScores.items()], key=lambda x: x["score"]
-    )
+    weakest_list: list[dict[str, Any]] = [
+        {"chapter": k, "score": v} for k, v in chapterScores.items()
+    ]
+    weakest_list.sort(key=lambda x: x["score"])
 
     concepts_mastered = 0
     for s in states:

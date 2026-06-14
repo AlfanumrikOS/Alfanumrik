@@ -65,6 +65,7 @@ async def next_action(
     req: NextActionRequest, student: dict[str, Any] = Depends(get_current_student)
 ):
     client = get_service_client()
+    assert client is not None  # guaranteed by get_current_student dependency
     subject_id = req.subject_id
     if not subject_id:
         raise HTTPException(status_code=400, detail="subject_id required")
@@ -93,7 +94,7 @@ async def next_action(
     states = states_res.data or []
     topics = topics_res.data or []
 
-    result = selectNextAction(states, topics, subject_id, student.get("grade"))
+    result = selectNextAction(states, topics, subject_id, student["grade"])
 
     # Log action
     await (
@@ -117,6 +118,7 @@ async def record_response(
     req: RecordResponseRequest, student: dict[str, Any] = Depends(get_current_student)
 ):
     client = get_service_client()
+    assert client is not None  # guaranteed by get_current_student dependency
 
     existing_res = (
         await client.table("cme_concept_state")
@@ -233,6 +235,7 @@ async def get_concept_state(
     req: ConceptStateRequest, student: dict[str, Any] = Depends(get_current_student)
 ):
     client = get_service_client()
+    assert client is not None  # guaranteed by get_current_student dependency
 
     # Validation per logic
     if req.subject_id:
@@ -261,6 +264,7 @@ async def get_concept_state(
 @router.get("/revision_due", response_model=RevisionScheduleResponse)
 async def get_revision_due(student: dict[str, Any] = Depends(get_current_student)):
     client = get_service_client()
+    assert client is not None  # guaranteed by get_current_student dependency
 
     states_res = (
         await client.table("cme_concept_state")
@@ -295,6 +299,7 @@ async def get_exam_readiness(
     req: ExamReadinessRequest, student: dict[str, Any] = Depends(get_current_student)
 ):
     client = get_service_client()
+    assert client is not None  # guaranteed by get_current_student dependency
 
     if not req.subject_id:
         raise HTTPException(status_code=400, detail="subject_id required")
@@ -325,7 +330,7 @@ async def get_exam_readiness(
     states = states_res.data or []
     topics = topics_res.data or []
 
-    readiness = computeExamReadiness(states, topics, req.subject_id, student.get("grade"))
+    readiness = computeExamReadiness(states, topics, req.subject_id, student["grade"])
 
     await (
         client.table("cme_exam_readiness")

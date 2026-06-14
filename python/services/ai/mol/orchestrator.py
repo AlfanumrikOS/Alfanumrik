@@ -32,6 +32,7 @@ import asyncio
 import time
 import uuid
 from collections.abc import Iterable
+from typing import cast
 
 import structlog
 
@@ -296,6 +297,14 @@ async def generate_response(req: GenerateRequest) -> MolResult:
         ),
         get_routing_weights(),
     )
+    # ``asyncio.gather`` loses the per-awaitable result types past its typed
+    # overload arity, widening each unpacked value to ``object``. Re-narrow to
+    # the known concrete types (``is_flag_enabled -> bool``,
+    # ``get_routing_weights -> dict[str, float]``) — no runtime effect.
+    hybrid_on = cast(bool, hybrid_on)
+    openai_default = cast(bool, openai_default)
+    breaker_on = cast(bool, breaker_on)
+    weights = cast("dict[str, float]", weights)
 
     # Step 4 — router
     selected = select_provider_chain(

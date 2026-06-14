@@ -105,7 +105,11 @@ def create_app() -> FastAPI:
     # X-RateLimit-* response headers (slowapi 0.1.9 has no separate
     # "RateLimitHeadersMiddleware" — that symbol does not exist in the pin).
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    # slowapi's handler is typed (Request, RateLimitExceeded) -> Response, which
+    # is narrower than Starlette's expected (Request, Exception) signature — a
+    # known library-typing quirk, safe because Starlette only ever dispatches a
+    # RateLimitExceeded instance to this handler.
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
     app.add_middleware(SlowAPIMiddleware)
 
     @app.middleware("http")

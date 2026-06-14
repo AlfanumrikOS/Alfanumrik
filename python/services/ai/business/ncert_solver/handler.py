@@ -1,6 +1,7 @@
 import json
 import re
 import time
+from typing import Any
 
 import httpx
 from fastapi import HTTPException
@@ -427,7 +428,7 @@ async def handle_ncert_solver(req: NcertSolverRequest, auth_header: str) -> Ncer
         print(f"Solver error: {e}")
         raise HTTPException(status_code=500, detail="Solver failed") from e
 
-    solution = {
+    solution: dict[str, Any] = {
         "answer": solutionRaw,
         "steps": [],
         "concept": "",
@@ -444,7 +445,7 @@ async def handle_ncert_solver(req: NcertSolverRequest, auth_header: str) -> Ncer
         pass
 
     # ── Step 5: Verify answer ──
-    verification = {"passed": True, "confidence": 0.7, "issues": []}
+    verification: dict[str, Any] = {"passed": True, "confidence": 0.7, "issues": []}
     if route.requiresVerification and solution.get("answer"):
         verifySystemPrompt = buildVerificationSystemPrompt(parsed)
         verifyPrompt = buildVerificationPrompt(parsed, json.dumps(solution))
