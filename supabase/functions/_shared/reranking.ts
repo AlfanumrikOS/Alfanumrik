@@ -14,7 +14,12 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-const RERANK_MODEL = 'voyage-rerank-2'
+// Voyage's API identifier for the voyage-rerank-2 model is 'rerank-2'. The
+// legacy 'voyage-rerank-2' string is REJECTED with HTTP 400, which silently
+// disabled reranking (best-effort fall-through to similarity order). Same
+// model, corrected identifier — matches the 'rerank-2' the grounded-answer
+// fallback test already pins.
+const RERANK_MODEL = 'rerank-2'
 const RERANK_ENDPOINT = 'https://api.voyageai.com/v1/rerank'
 const MAX_RETRIES = 3
 const INITIAL_RETRY_DELAY_MS = 500
