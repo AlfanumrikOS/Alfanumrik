@@ -202,10 +202,19 @@ export interface GoldenJudgeMeta {
  * `corpus_ref` pins the corpus the chunk-ids resolve against. The live
  * UUID-resolve check is the Task 5 runner's job; this module enforces only the
  * field shape + `source === 'ncert_2025'`.
+ *
+ * `project_ref` (OPTIONAL, Option-1 prod binding): the Supabase project ref the
+ * chunk-ids were bound against (e.g. `shktyoxqhundlvkiwguu` = prod). It lets the
+ * live-DB runner decide whether the connected DB IS the bound corpus: when the
+ * runner connects to a DIFFERENT declared project (e.g. staging in CI) it can
+ * SKIP the chunk-id resolve LOUDLY instead of failing on prod-only UUIDs. Absent
+ * = same-corpus behavior preserved (no skip). Validated only for type here.
  */
 export interface GoldenCorpusRef {
   source: typeof CORPUS_SOURCE;
   snapshot_note: string;
+  /** Optional Supabase project ref the chunk-ids are bound against (Option-1). */
+  project_ref?: string;
 }
 
 /** The full versioned golden-set document. */
@@ -386,6 +395,16 @@ export function validateGoldenSet(doc: unknown): ValidationResult {
     }
     if (typeof doc.corpus_ref.snapshot_note !== 'string') {
       errors.push('corpus_ref.snapshot_note must be a string');
+    }
+    // project_ref (Option-1 prod binding) is OPTIONAL — backward-compatible:
+    // absent is valid (same-corpus golden sets / the inline smoke fixture); when
+    // present it must be a non-empty string (the live-DB runner compares it to
+    // the connected project ref to decide run-vs-skip on the corpus-parity check).
+    if (
+      doc.corpus_ref.project_ref !== undefined &&
+      (typeof doc.corpus_ref.project_ref !== 'string' || doc.corpus_ref.project_ref.length === 0)
+    ) {
+      errors.push('corpus_ref.project_ref, when present, must be a non-empty string');
     }
   }
 

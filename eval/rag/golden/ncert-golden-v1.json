@@ -1,0 +1,438 @@
+{
+  "version": "ncert-golden-v1",
+  "created_at": "2026-06-14",
+  "corpus_ref": {
+    "source": "ncert_2025",
+    "project_ref": "shktyoxqhundlvkiwguu",
+    "snapshot_note": "Bound against live rag_content_chunks (project shktyoxqhundlvkiwguu), source='ncert_2025', is_active=true, language='en'. FINAL assessment-validated labels (Task 10 step B). Every label spot_checked by reading chunk_text A3-independently against the seed target.relevance_2_description (NOT from retrieve() output). NCERT 2025 edition is renumbered/retitled vs the seed's assumed chapters; chunk_text is authoritative over chapter metadata. The g11/history_sr cell (items 026-030) was RE-TARGETED from the French Revolution (absent from the indexed corpus) to in-corpus 'Themes in World History Part 1' content (The Three Orders / feudalism + Changing Cultural Traditions / Renaissance). See eval/rag/golden/corpus-coverage-findings.md."
+  },
+  "judge": {
+    "model": "assessment-validated",
+    "rubric_version": "task10-stepB-v1",
+    "temperature": 0
+  },
+  "items": [
+    {
+      "id": "g7-sci-photosynthesis-factual-001",
+      "tier": "seed",
+      "query": "What gas do plants take in during photosynthesis?",
+      "query_type": "factual",
+      "grade": "7",
+      "subject": "science",
+      "chapter_number": 10,
+      "relevant_chunks": [
+        { "chunk_id": "a0d9c7ab-2227-4bd2-b3b3-86a383eab541", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "ee7c40ba-64c1-4916-bb97-06dde5d77a58", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "fe51a392-8e3c-48cf-bb91-4f3ed6228aad", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g7-sci-photosynthesis-definition-002",
+      "tier": "seed",
+      "query": "Define photosynthesis.",
+      "query_type": "definition",
+      "grade": "7",
+      "subject": "science",
+      "chapter_number": 10,
+      "relevant_chunks": [
+        { "chunk_id": "ee7c40ba-64c1-4916-bb97-06dde5d77a58", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "a0d9c7ab-2227-4bd2-b3b3-86a383eab541", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g7-sci-respiration-conceptual-003",
+      "tier": "seed",
+      "query": "Why do we breathe faster after running?",
+      "query_type": "conceptual",
+      "grade": "7",
+      "subject": "science",
+      "chapter_number": 9,
+      "relevant_chunks": [
+        { "chunk_id": "27e06107-f5ee-4fe0-9f17-b53ad778259d", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "c8d87dda-87e1-4e0b-ae8e-f6225ab7fae9", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "81705754-0bea-4783-9192-b8722dd54331", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g7-sci-respiration-conceptual-004",
+      "tier": "seed",
+      "query": "How do we know that the air we breathe out contains more carbon dioxide than the air we breathe in?",
+      "query_type": "conceptual",
+      "grade": "7",
+      "subject": "science",
+      "chapter_number": 9,
+      "relevant_chunks": [
+        { "chunk_id": "199a2d49-2195-44fb-8848-b5594f3c8461", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "27e06107-f5ee-4fe0-9f17-b53ad778259d", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g7-sci-nutrition-respiration-multihop-005",
+      "tier": "seed",
+      "query": "How are photosynthesis in plants and respiration in animals linked through the gases they exchange?",
+      "query_type": "multi_hop",
+      "grade": "7",
+      "subject": "science",
+      "chapter_number": 10,
+      "relevant_chunks": [
+        { "chunk_id": "a0d9c7ab-2227-4bd2-b3b3-86a383eab541", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "ee7c40ba-64c1-4916-bb97-06dde5d77a58", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "27e06107-f5ee-4fe0-9f17-b53ad778259d", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "c8d87dda-87e1-4e0b-ae8e-f6225ab7fae9", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g7-math-integers-factual-006",
+      "tier": "seed",
+      "query": "What is the product of (-3) and (+5)?",
+      "query_type": "factual",
+      "grade": "7",
+      "subject": "math",
+      "chapter_number": 10,
+      "relevant_chunks": [
+        { "chunk_id": "fa42df90-5741-497c-bd63-66ec7a81cb7d", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "550d28aa-2415-451c-b385-19f6396e77b7", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "7b975d2c-086d-4c0c-8535-9f6a8d12de09", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g7-math-integers-definition-007",
+      "tier": "seed",
+      "query": "What is the additive inverse of a number?",
+      "query_type": "definition",
+      "grade": "7",
+      "subject": "math",
+      "chapter_number": 10,
+      "relevant_chunks": [
+        { "chunk_id": "18740fbb-94b3-489f-920b-ece69e0b3ea8", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g7-math-fractions-conceptual-008",
+      "tier": "seed",
+      "query": "Why does multiplying a number by a proper fraction make it smaller?",
+      "query_type": "conceptual",
+      "grade": "7",
+      "subject": "math",
+      "chapter_number": 8,
+      "relevant_chunks": [
+        { "chunk_id": "ba525851-f555-4935-bf61-40b394bee23c", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g7-math-data-factual-009",
+      "tier": "seed",
+      "query": "How do you find the mean of a set of observations?",
+      "query_type": "factual",
+      "grade": "7",
+      "subject": "math",
+      "chapter_number": 13,
+      "relevant_chunks": [
+        { "chunk_id": "8865531c-924b-4f64-bef2-4567c6a1f334", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "76051015-a483-4755-870e-a1a9de539b94", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "018a9b6e-a084-48b1-b21c-55e40b62ca69", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g7-math-integers-fractions-multihop-010",
+      "tier": "seed",
+      "query": "When you divide a negative integer by a proper fraction, why is the result a larger negative number?",
+      "query_type": "multi_hop",
+      "grade": "7",
+      "subject": "math",
+      "chapter_number": 10,
+      "relevant_chunks": [
+        { "chunk_id": "fa42df90-5741-497c-bd63-66ec7a81cb7d", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "e42cd036-6253-4bb9-9a5b-4bd72a87e5b4", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g10-sci-electricity-factual-011",
+      "tier": "seed",
+      "query": "What is the SI unit of electric current?",
+      "query_type": "factual",
+      "grade": "10",
+      "subject": "science",
+      "chapter_number": 11,
+      "relevant_chunks": [
+        { "chunk_id": "1bec9b4f-c158-41a3-9505-f30e990d2423", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g10-sci-electricity-definition-012",
+      "tier": "seed",
+      "query": "State Ohm's law.",
+      "query_type": "definition",
+      "grade": "10",
+      "subject": "science",
+      "chapter_number": 11,
+      "relevant_chunks": [
+        { "chunk_id": "d265d025-7693-4c22-bc39-0c1c05c23a5e", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "6eec371c-af5d-4b12-b243-fc45c11acc00", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g10-sci-acids-conceptual-013",
+      "tier": "seed",
+      "query": "Why does an acid conduct electricity only when dissolved in water?",
+      "query_type": "conceptual",
+      "grade": "10",
+      "subject": "science",
+      "chapter_number": 2,
+      "relevant_chunks": [
+        { "chunk_id": "2bb0179c-a49a-4f97-a96c-711349ea3289", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "360bf051-74fa-4c19-b745-5458bea0b984", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g10-sci-life-conceptual-014",
+      "tier": "seed",
+      "query": "Why is the heart of mammals and birds divided into four chambers?",
+      "query_type": "conceptual",
+      "grade": "10",
+      "subject": "science",
+      "chapter_number": 5,
+      "relevant_chunks": [
+        { "chunk_id": "b8971ee8-ee2b-4aaa-b86e-3260aa27e9b6", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g10-sci-electricity-life-multihop-015",
+      "tier": "seed",
+      "query": "Compare how current flows in a series electric circuit with how blood flows through the human circulatory system.",
+      "query_type": "multi_hop",
+      "grade": "10",
+      "subject": "science",
+      "chapter_number": 11,
+      "relevant_chunks": [
+        { "chunk_id": "e2ee4187-0cbf-4335-9f6c-b54668400126", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "b8971ee8-ee2b-4aaa-b86e-3260aa27e9b6", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g10-sst-nationalism-factual-016",
+      "tier": "seed",
+      "query": "Who led the Non-Cooperation Movement in India?",
+      "query_type": "factual",
+      "grade": "10",
+      "subject": "social_studies",
+      "chapter_number": 2,
+      "relevant_chunks": [
+        { "chunk_id": "f8bf88f4-d6b0-4ba7-aef5-4599847795b9", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "4f5c3586-7e2f-44a8-8506-13b5662b3e5c", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "d51a178d-8e6b-4462-b270-03ff1e6ccc74", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g10-sst-resources-definition-017",
+      "tier": "seed",
+      "query": "What is meant by a renewable resource?",
+      "query_type": "definition",
+      "grade": "10",
+      "subject": "social_studies",
+      "chapter_number": 1,
+      "relevant_chunks": [
+        { "chunk_id": "81fc463c-6bc4-4e4d-b7e5-b8606e0f6e3c", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g10-sst-nationalism-conceptual-018",
+      "tier": "seed",
+      "query": "Why did the First World War create new economic and political conditions in India?",
+      "query_type": "conceptual",
+      "grade": "10",
+      "subject": "social_studies",
+      "chapter_number": 2,
+      "relevant_chunks": [
+        { "chunk_id": "39820f3f-8444-4cbe-84d1-42905be56eef", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g10-sst-nationalism-conceptual-019",
+      "tier": "seed",
+      "query": "Why was the idea of Satyagraha significant for the Indian freedom struggle?",
+      "query_type": "conceptual",
+      "grade": "10",
+      "subject": "social_studies",
+      "chapter_number": 2,
+      "relevant_chunks": [
+        { "chunk_id": "e2a1ddaf-e86c-44bd-943c-9eb74092d5d4", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g10-sst-nationalism-resources-multihop-020",
+      "tier": "seed",
+      "query": "How did economic hardship after the First World War and the unequal use of resources together push Indian peasants towards the national movement?",
+      "query_type": "multi_hop",
+      "grade": "10",
+      "subject": "social_studies",
+      "chapter_number": 2,
+      "relevant_chunks": [
+        { "chunk_id": "39820f3f-8444-4cbe-84d1-42905be56eef", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "dfeb68cf-cbb9-480e-a0f9-eda4299552db", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "5d24bc66-bc71-437d-9830-bb9fb1e31a75", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g11-phy-motion-factual-021",
+      "tier": "seed",
+      "query": "What is the SI unit of force?",
+      "query_type": "factual",
+      "grade": "11",
+      "subject": "physics",
+      "chapter_number": 4,
+      "relevant_chunks": [
+        { "chunk_id": "6b7c4ff5-cb7f-4b8b-83a1-a914b7823b73", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g11-phy-motion-definition-022",
+      "tier": "seed",
+      "query": "Define Newton's second law of motion.",
+      "query_type": "definition",
+      "grade": "11",
+      "subject": "physics",
+      "chapter_number": 4,
+      "relevant_chunks": [
+        { "chunk_id": "6b7c4ff5-cb7f-4b8b-83a1-a914b7823b73", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "8a986433-1750-4b1c-9df8-80d78f9315b1", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "acfa1d36-e258-4961-868c-fd79e153c88e", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g11-phy-gravitation-conceptual-023",
+      "tier": "seed",
+      "query": "Why does the value of acceleration due to gravity decrease as we go higher above the Earth's surface?",
+      "query_type": "conceptual",
+      "grade": "11",
+      "subject": "physics",
+      "chapter_number": 7,
+      "relevant_chunks": [
+        { "chunk_id": "791576c9-df73-475a-98f3-96d704261658", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "919aec41-af93-49f8-8262-b1f304ac938c", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g11-phy-motion-conceptual-024",
+      "tier": "seed",
+      "query": "Why does a passenger lurch forward when a moving bus suddenly stops?",
+      "query_type": "conceptual",
+      "grade": "11",
+      "subject": "physics",
+      "chapter_number": 4,
+      "relevant_chunks": [
+        { "chunk_id": "0e3f70fa-d057-4682-9a4a-9eba607c291c", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "8e6734e6-12e0-4a6e-b90e-a8f79c486a79", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g11-phy-motion-gravitation-multihop-025",
+      "tier": "seed",
+      "query": "Using Newton's second law and the law of gravitation, explain why all objects fall with the same acceleration in the absence of air resistance.",
+      "query_type": "multi_hop",
+      "grade": "11",
+      "subject": "physics",
+      "chapter_number": 7,
+      "relevant_chunks": [
+        { "chunk_id": "8a986433-1750-4b1c-9df8-80d78f9315b1", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "606a26d4-0dd0-4768-aa17-5a45770a71f3", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "791576c9-df73-475a-98f3-96d704261658", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g11-hist-three-orders-factual-026",
+      "tier": "seed",
+      "query": "What were the three orders in medieval European society?",
+      "query_type": "factual",
+      "grade": "11",
+      "subject": "history_sr",
+      "chapter_number": 104,
+      "relevant_chunks": [
+        { "chunk_id": "806dea5c-24b2-4472-9dfc-7bf6efe858cf", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "f036b07c-3a08-4947-8b63-af06cc7074ab", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g11-hist-three-orders-definition-027",
+      "tier": "seed",
+      "query": "What is meant by feudalism in medieval Europe?",
+      "query_type": "definition",
+      "grade": "11",
+      "subject": "history_sr",
+      "chapter_number": 103,
+      "relevant_chunks": [
+        { "chunk_id": "cf7135b2-9c4a-4519-bcb2-520fbaedafdf", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g11-hist-three-orders-conceptual-028",
+      "tier": "seed",
+      "query": "Why were peasants and serfs heavily burdened in the medieval manorial system?",
+      "query_type": "conceptual",
+      "grade": "11",
+      "subject": "history_sr",
+      "chapter_number": 104,
+      "relevant_chunks": [
+        { "chunk_id": "d9a08f61-dd0c-4b39-8834-8fd5d69fe018", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "50ef1736-ec58-470c-9d1f-cb692578f866", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g11-hist-renaissance-conceptual-029",
+      "tier": "seed",
+      "query": "Why did a new humanist culture develop in the Italian towns during the Renaissance?",
+      "query_type": "conceptual",
+      "grade": "11",
+      "subject": "history_sr",
+      "chapter_number": 105,
+      "relevant_chunks": [
+        { "chunk_id": "31209851-e602-4e67-bdff-ca2227d55034", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "d78bb987-4a20-4c18-a37f-de142a3373c3", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    },
+    {
+      "id": "g11-hist-three-orders-renaissance-multihop-030",
+      "tier": "seed",
+      "query": "How did the structure of feudal society and the later rise of humanism together change the way Europeans saw the individual?",
+      "query_type": "multi_hop",
+      "grade": "11",
+      "subject": "history_sr",
+      "chapter_number": 104,
+      "relevant_chunks": [
+        { "chunk_id": "806dea5c-24b2-4472-9dfc-7bf6efe858cf", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "9a804094-47f4-4b4c-8e93-b9c3b0a7e188", "relevance": 2, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true },
+        { "chunk_id": "d78bb987-4a20-4c18-a37f-de142a3373c3", "relevance": 1, "off_grade_scope": false, "label_source": "assessment", "spot_checked": true }
+      ],
+      "provenance": null
+    }
+  ]
+}

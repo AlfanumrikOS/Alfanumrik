@@ -135,11 +135,11 @@
       "query_type": "factual",
       "grade": "7",
       "subject": "math",
-      "chapter_number": 3,
+      "chapter_number": 13,
       "target": {
-        "chapter_name": "Data Handling",
+        "chapter_name": "Connecting the Dots",
         "concept": "Arithmetic mean",
-        "relevance_2_description": "A chunk stating that the mean (average) is found by dividing the sum of all observations by the number of observations, with the formula or a worked example."
+        "relevance_2_description": "A chunk stating that the mean (average) is found by dividing the sum of all observations by the number of observations, with the formula or a worked example. (NCERT-2025 g7 'Ganita Prakash' teaches the arithmetic mean in ch13 'Connecting the Dots' — Data Handling — not in a separate 'Data Handling' chapter; the formula 'Mean = Sum of all the values / Number of values' is stated verbatim there.)"
       }
     },
     {
@@ -383,76 +383,81 @@
       }
     },
     {
-      "id": "seed-sr-hist-revolution-factual-026",
+      "id": "seed-sr-hist-three-orders-factual-026",
       "tier": "seed",
-      "query": "In which year did the French Revolution begin?",
+      "query": "What were the three orders in medieval European society?",
       "query_type": "factual",
       "grade": "11",
       "subject": "history_sr",
-      "chapter_number": 9,
+      "chapter_number": 104,
+      "retarget_note": "RE-TARGETED in Task 10 step B from 'In which year did the French Revolution begin?'. The French Revolution chapter is ABSENT from the indexed g11/history_sr corpus (which is 'Themes in World History Part 1' — feudalism / Renaissance / paths to modernisation). Re-anchored to in-corpus content so the cell remains measurable. See eval/rag/golden/corpus-coverage-findings.md.",
       "target": {
-        "chapter_name": "The French Revolution (Themes in World History)",
-        "concept": "Start year of the French Revolution",
-        "relevance_2_description": "A chunk stating that the French Revolution began in 1789, marked by events such as the storming of the Bastille on 14 July 1789."
+        "chapter_name": "The Three Orders (Themes in World History)",
+        "concept": "The three social orders of medieval Europe",
+        "relevance_2_description": "A chunk stating that the 'three orders' of medieval western Europe were three social categories: Christian priests (clergy), landowning nobles, and peasants — and that the changing relationships between these groups shaped European history."
       }
     },
     {
-      "id": "seed-sr-hist-revolution-definition-027",
+      "id": "seed-sr-hist-three-orders-definition-027",
       "tier": "seed",
-      "query": "What is meant by the Old Regime (Ancien Regime) in pre-revolutionary France?",
+      "query": "What is meant by feudalism in medieval Europe?",
       "query_type": "definition",
       "grade": "11",
       "subject": "history_sr",
-      "chapter_number": 9,
+      "chapter_number": 103,
+      "retarget_note": "RE-TARGETED in Task 10 step B from 'What is meant by the Old Regime (Ancien Regime)?' (French Revolution chapter absent from corpus). Re-anchored to the in-corpus 'feudalism' definition in the Changing Traditions / Three Orders theme.",
       "target": {
-        "chapter_name": "The French Revolution (Themes in World History)",
-        "concept": "Definition of the Old Regime",
-        "relevance_2_description": "A chunk defining the Old Regime as the social and political system of France before 1789, characterised by an absolute monarchy and a society divided into three estates with unequal privileges."
+        "chapter_name": "Changing Traditions / The Three Orders (Themes in World History)",
+        "concept": "Definition of feudalism",
+        "relevance_2_description": "A chunk defining feudalism as the medieval European system marked by agricultural production around castles and manor houses, where lords of the manor possessed land cultivated by peasants (serfs) who pledged loyalty, goods and services, and where lords in turn were vassals of kings."
       }
     },
     {
-      "id": "seed-sr-hist-revolution-conceptual-028",
+      "id": "seed-sr-hist-three-orders-conceptual-028",
       "tier": "seed",
-      "query": "Why did the French middle class (the third estate) grow discontented before the Revolution?",
+      "query": "Why were peasants and serfs heavily burdened in the medieval manorial system?",
       "query_type": "conceptual",
       "grade": "11",
       "subject": "history_sr",
-      "chapter_number": 9,
+      "chapter_number": 104,
+      "retarget_note": "RE-TARGETED in Task 10 step B from 'Why did the French third estate grow discontented?' (French Revolution chapter absent from corpus). Re-anchored to the in-corpus burdens of the medieval third order (peasants/serfs), the genuine medieval analogue.",
       "target": {
-        "chapter_name": "The French Revolution (Themes in World History)",
-        "concept": "Grievances of the third estate",
-        "relevance_2_description": "A chunk explaining that the third estate bore the burden of taxes while being denied political privileges, and that Enlightenment ideas of equality and liberty fed their discontent with the privileged estates."
+        "chapter_name": "The Three Orders (Themes in World History)",
+        "concept": "Obligations and burdens of the third order (peasants and serfs)",
+        "relevance_2_description": "A chunk explaining that free peasants owed military service and labour-rent (working several days a week on the lord's estate) plus the 'taille' tax, while serfs cultivated the lord's land, surrendered much of their produce, received no wages, could not leave the estate, and were subject to the lord's monopolies — so the third order bore the burden that sustained the first two orders."
       }
     },
     {
-      "id": "seed-sr-hist-revolution-conceptual-029",
+      "id": "seed-sr-hist-renaissance-conceptual-029",
       "tier": "seed",
-      "query": "How did the ideas of philosophers like Rousseau influence the French Revolution?",
+      "query": "Why did a new humanist culture develop in the Italian towns during the Renaissance?",
       "query_type": "conceptual",
       "grade": "11",
       "subject": "history_sr",
-      "chapter_number": 9,
+      "chapter_number": 105,
+      "retarget_note": "RE-TARGETED in Task 10 step B from 'How did Rousseau's ideas influence the French Revolution?' (French Revolution chapter absent from corpus). Re-anchored to the in-corpus Renaissance / humanism theme ('Changing Cultural Traditions').",
       "target": {
-        "chapter_name": "The French Revolution (Themes in World History)",
-        "concept": "Influence of Enlightenment thinkers",
-        "relevance_2_description": "A chunk explaining how Enlightenment philosophers such as Rousseau and Montesquieu argued for popular sovereignty, the social contract and separation of powers, ideas that inspired revolutionaries to challenge absolute monarchy."
+        "chapter_name": "Changing Cultural Traditions (Themes in World History)",
+        "concept": "Rise of Renaissance humanist urban culture in Italian towns",
+        "relevance_2_description": "A chunk explaining that from the fourteenth to seventeenth centuries towns such as Florence, Venice and Rome became centres of art and learning, that artists and writers were patronised by the wealthy, that printing spread new ideas, and that this period of cultural rebirth (later called the 'Renaissance') gave rise to a new humanist culture."
       }
     },
     {
-      "id": "seed-sr-hist-revolution-multihop-030",
+      "id": "seed-sr-hist-three-orders-renaissance-multihop-030",
       "tier": "seed",
-      "query": "How did economic hardship and Enlightenment ideas together lead to the outbreak of the French Revolution in 1789?",
+      "query": "How did the structure of feudal society and the later rise of humanism together change the way Europeans saw the individual?",
       "query_type": "multi_hop",
       "grade": "11",
       "subject": "history_sr",
-      "chapter_number": 9,
+      "chapter_number": 104,
+      "retarget_note": "RE-TARGETED in Task 10 step B from the French Revolution multi_hop (chapter absent from corpus). Re-anchored to two genuinely in-corpus halves: the rigid three-order structure of feudal society AND the Renaissance humanist view of the individual.",
       "target": {
-        "chapter_name": "The French Revolution (Themes in World History)",
-        "concept": "Combining economic causes with intellectual causes of the Revolution",
-        "relevance_2_description": "BOTH a chunk on the economic causes (state debt, food scarcity, taxation of the third estate) AND a chunk on the Enlightenment/philosophical ideas are required to explain the combined trigger of 1789.",
+        "chapter_name": "The Three Orders / Changing Cultural Traditions (Themes in World History)",
+        "concept": "Combining the rigid three-order feudal structure with the humanist re-conception of the individual",
+        "relevance_2_description": "BOTH a chunk on feudal society organising people into the three fixed orders (clergy, nobility, peasants) AND a chunk on Renaissance humanism re-conceiving a person as an individual in his own right — no longer simply a member of one of the three orders, with the eighteenth-century idea of equal political rights for all individuals — are required to explain the shift.",
         "multi_hop_required_concepts": [
-          "economic crisis: state debt, rising bread prices, and heavy taxation of the third estate",
-          "Enlightenment ideas of liberty, equality and popular sovereignty undermined the legitimacy of absolute monarchy"
+          "feudal society organised people into three fixed social orders (clergy, nobility, peasants) shaping medieval European life",
+          "Renaissance humanism re-conceived the person as an individual in his own right, separate from the three orders, foreshadowing the idea of equal political rights"
         ]
       }
     }

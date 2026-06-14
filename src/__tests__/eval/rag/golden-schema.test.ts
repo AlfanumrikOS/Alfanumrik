@@ -307,6 +307,46 @@ describe('validateGoldenSet — corpus_ref shape', () => {
     const result = validateGoldenSet(doc);
     expect(result.ok).toBe(false);
   });
+
+  // ── Optional project_ref (Option-1 prod binding) — backward-compatible ─────
+
+  it('accepts a corpus_ref WITHOUT project_ref (backward-compatible)', () => {
+    // The base fixture carries no project_ref — same-corpus golden sets and the
+    // inline smoke fixture must still validate.
+    const doc = clone(validGoldenSet()) as { corpus_ref: Record<string, unknown> };
+    expect(doc.corpus_ref.project_ref).toBeUndefined();
+    expect(validateGoldenSet(doc).ok).toBe(true);
+  });
+
+  it('accepts a corpus_ref WITH a string project_ref (prod-bound golden set)', () => {
+    const doc = clone(validGoldenSet()) as { corpus_ref: Record<string, unknown> };
+    doc.corpus_ref.project_ref = 'shktyoxqhundlvkiwguu';
+    const result = validateGoldenSet(doc);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.corpus_ref.project_ref).toBe('shktyoxqhundlvkiwguu');
+    }
+  });
+
+  it('rejects a project_ref of the wrong type (number) when present', () => {
+    const doc = clone(validGoldenSet()) as { corpus_ref: Record<string, unknown> };
+    doc.corpus_ref.project_ref = 123;
+    const result = validateGoldenSet(doc);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.join('\n')).toMatch(/project_ref/i);
+    }
+  });
+
+  it('rejects an empty-string project_ref when present', () => {
+    const doc = clone(validGoldenSet()) as { corpus_ref: Record<string, unknown> };
+    doc.corpus_ref.project_ref = '';
+    const result = validateGoldenSet(doc);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.join('\n')).toMatch(/project_ref/i);
+    }
+  });
 });
 
 describe('validateGoldenSet — PII-key recursion (P13)', () => {

@@ -72,6 +72,15 @@ const BASELINE_PATH = resolve(REPO_ROOT, 'eval', 'rag', 'baseline', 'ncert-basel
 const EXIT_OK = 0;
 const EXIT_CONFIG_ERROR = 2;
 
+/**
+ * Generous groundedness-judge timeout for the OFFLINE measurement run (30s).
+ * The production grounding-check default is 5s (a latency-bounded guardrail);
+ * here we want the judge's ACTUAL verdict, not a conservative-fail caused by
+ * transient network latency, which would show up as measurement noise in the
+ * baseline's groundedness-rate. Offline tooling only — production is unchanged.
+ */
+const GROUNDING_CHECK_EVAL_TIMEOUT_MS = 30_000;
+
 // The real Edge Function modules are excluded from the project tsconfig and
 // import `.ts`-extension Deno paths; type the dynamic imports as `any` so tsc
 // does not trace into them (the same convention as the integration test). The
@@ -189,6 +198,13 @@ async function buildDeps(creds: { url: string; serviceKey: string }): Promise<Ru
       query,
       chunks.map((c: InjectedRetrievedChunk) => ({ id: c.chunk_id, content: c.content })),
       anthropicKey,
+      // Offline-measurement timeout (30s) — NOT the production 5s default. A
+      // measurement must reflect the judge's actual verdict, not transient
+      // network latency: a timed-out call is a conservative `fail`, which would
+      // depress groundedness-rate as measurement noise rather than a real
+      // ungrounded result. This is offline tooling only and does NOT change the
+      // production grounding-check timeout.
+      GROUNDING_CHECK_EVAL_TIMEOUT_MS,
     );
     return { verdict: g.verdict };
   };
