@@ -116,7 +116,13 @@ jobs:
       # entire reason we never need a JSON key for GCP.
       id-token: write
     outputs:
-      image_tag: ${{ steps.image.outputs.tag }}
+      # IMPORTANT: only the non-secret short SHA crosses the job boundary.
+      # The full image URL embeds ${{ secrets.GCP_PROJECT_ID }}, and GitHub
+      # Actions BLANKS any cross-job `output` whose value contains a secret —
+      # which previously handed the deploy job an empty IMAGE_TAG and made
+      # `gcloud run services replace` reject the empty `image:`. The deploy
+      # job reconstructs the full URL locally where the secret is re-read.
+      image_sha: ${{ steps.image.outputs.short_sha }}
     steps:
       - uses: actions/checkout@v6
 
@@ -126,6 +132,12 @@ jobs:
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-12)
           REGISTRY="${{ env.GCP_REGION }}-docker.pkg.dev"
           TAG="${REGISTRY}/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/api:${SHORT_SHA}"
+          # short_sha is the ONLY value we expose as a cross-job output — it
+          # contains no secret, so GitHub will not mask it to empty.
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          # TAG is still emitted as a step output for this job's own build/push
+          # step below; it never crosses a job boundary, so the secret it
+          # embeds is safe here.
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Image: ${TAG}"
 
@@ -169,6 +181,11 @@ jobs:
     outputs:
       service_url: ${{ steps.deploy.outputs.url }}
       service_name: ${{ steps.target.outputs.service }}
+      # Forward the non-secret short SHA so the smoke job's summary can show
+      # which image shipped. We deliberately do NOT forward the full image URL
+      # (it embeds secrets.GCP_PROJECT_ID and would be blanked as a cross-job
+      # output) — the SHA alone identifies the build unambiguously.
+      image_sha: ${{ needs.build-and-push.outputs.image_sha }}
     steps:
       - uses: actions/checkout@v6
 
@@ -209,7 +226,16 @@ jobs:
         id: render
         run: |
           set -euo pipefail
-          export IMAGE_TAG="${{ needs.build-and-push.outputs.image_tag }}"
+          # Reconstruct the full image URL LOCALLY. The build job only handed
+          # us the non-secret short SHA (image_sha); passing the full URL
+          # across the job boundary is impossible because it embeds
+          # secrets.GCP_PROJECT_ID, which GitHub blanks in cross-job outputs.
+          # Re-reading the secret here (inside the job that needs it) keeps
+          # IMAGE_TAG non-empty. Registry/repo/region match the build job's
+          # `Compute image tag` step exactly — same image that was pushed.
+          REGISTRY="${{ env.GCP_REGION }}-docker.pkg.dev"
+          IMAGE_SHA="${{ needs.build-and-push.outputs.image_sha }}"
+          export IMAGE_TAG="${REGISTRY}/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/api:${IMAGE_SHA}"
           export RUNTIME_SERVICE_ACCOUNT="${{ secrets.GCP_RUNTIME_SERVICE_ACCOUNT }}"
           export ENVIRONMENT="${{ steps.target.outputs.environment }}"
           export ALLOWED_ORIGINS="https://alfanumrik.com,https://staging.alfanumrik.com"
@@ -316,5 +342,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- Service: \`${{ needs.deploy.outputs.service_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- URL: ${{ needs.deploy.outputs.service_url }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Image: \`${{ needs.build-and-push.outputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          # Image identified by its short SHA. The full registry URL embeds the
+          # project-id secret, which GitHub blanks in cross-job outputs — so we
+          # print the unambiguous, non-secret SHA instead of an empty string.
+          echo "- Image SHA: \`${{ needs.deploy.outputs.image_sha }}\` (repo \`${{ env.ARTIFACT_REPO }}/api\`, region \`${{ env.GCP_REGION }}\`)" >> $GITHUB_STEP_SUMMARY
           echo "- Region: \`${{ env.GCP_REGION }}\`" >> $GITHUB_STEP_SUMMARY

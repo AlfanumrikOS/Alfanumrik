@@ -230,12 +230,16 @@ The workflow substitutes these tokens before applying:
 
 | Token | Source | Example |
 | --- | --- | --- |
-| `${IMAGE_TAG}` | `build-and-push.outputs.image_tag` | `asia-south1-docker.pkg.dev/<project>/ai-services/api:<sha>` |
+| `${IMAGE_TAG}` | reconstructed in the `deploy` job from `build-and-push.outputs.image_sha` + secret `GCP_PROJECT_ID` + the `GCP_REGION`/`ARTIFACT_REPO` constants | `asia-south1-docker.pkg.dev/<project>/ai-services/api:<sha>` |
 | `${RUNTIME_SERVICE_ACCOUNT}` | secret `GCP_RUNTIME_SERVICE_ACCOUNT` | `ai-services-runtime@<project>.iam.gserviceaccount.com` |
 | `${ENVIRONMENT}` | computed (`staging` or `production`) | `production` |
 | `${ALLOWED_ORIGINS}` | workflow constant | `https://alfanumrik.com,https://staging.alfanumrik.com` |
 
 The token whitelist is explicit in `envsubst '...'` so any unintended `${...}` literal in the YAML survives unmodified.
+
+#### Why `IMAGE_TAG` is reconstructed, not passed across jobs
+
+The `build-and-push` job exposes **only** the non-secret short SHA as its cross-job output (`image_sha`), never the full registry URL. The full URL embeds `secrets.GCP_PROJECT_ID`, and GitHub Actions **blanks any cross-job `output` whose value contains a secret**. Previously the build job forwarded the full `image_tag`; the deploy job received an empty string, and `gcloud run services replace` rejected the empty `image:`. The `deploy` job now re-reads `secrets.GCP_PROJECT_ID` locally and rebuilds the identical URL from the SHA + the `GCP_REGION`/`ARTIFACT_REPO` constants — same registry, repo, and tag that were pushed. No GitHub config change is required. (A future durable cleanup is to reclassify `GCP_PROJECT_ID` as a non-secret `vars.*` variable, which would let the full URL cross jobs again; tracked separately.)
 
 ---
 

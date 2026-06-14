@@ -385,11 +385,27 @@ describe('committed baseline JSON — conforms to BaselineConfig + is verdict-co
     }
   });
 
-  it('marks its metric VALUES as PLACEHOLDER (Task 10 fills real values)', () => {
-    // The placeholder flag + note exist so no one mistakes the seed values for a
-    // real measurement before Task 10's reviewed full-path run.
-    expect(raw.metrics_placeholder).toBe(true);
-    expect(String(raw.placeholder_note)).toMatch(/TODO\(Task 10\)/);
+  it('carries REAL populated metric VALUES (Task 11 reviewed full-path run)', () => {
+    // Task 11 populated the baseline from a reviewed full-path harness run on
+    // production settings; the placeholder flag is now cleared so the verdict
+    // module can declare PASS/REGRESS against it.
+    expect(raw.metrics_placeholder).toBe(false);
+    // The note no longer warns the values are unusable — it documents a real run.
+    expect(String(raw.placeholder_note)).not.toMatch(/MUST NOT be used to gate/i);
+    expect(String(raw.placeholder_note)).toMatch(/real measurement/i);
+    // Every primary metric is a finite number in [0,1] (not the 0.0 placeholder
+    // for all five — at least one must be strictly positive for a real run).
+    const metrics = raw.metrics as Record<string, unknown>;
+    let anyPositive = false;
+    for (const metric of PRIMARY_METRICS) {
+      const v = metrics[metric];
+      expect(typeof v).toBe('number');
+      expect(Number.isFinite(v as number)).toBe(true);
+      expect(v as number).toBeGreaterThanOrEqual(0);
+      expect(v as number).toBeLessThanOrEqual(1);
+      if ((v as number) > 0) anyPositive = true;
+    }
+    expect(anyPositive).toBe(true);
   });
 
   it('documents the bands as assessment-reviewed + never auto-refreshed', () => {
@@ -402,10 +418,10 @@ describe('committed baseline JSON — conforms to BaselineConfig + is verdict-co
       metrics: raw.metrics as BaselineConfig['metrics'],
       bands: raw.bands as BaselineConfig['bands'],
     };
-    // A full-path current run equal to the (placeholder) baseline → PASS.
+    // A full-path current run equal to the (now populated) baseline → PASS.
     const current: CurrentMetrics = { degraded: false, metrics: { ...baseline.metrics } };
     const result = evaluateVerdict(current, baseline);
-    expect(['PASS', 'REGRESS', 'INCONCLUSIVE']).toContain(result.verdict);
+    expect(result.verdict).toBe('PASS');
     expect(result.perMetric).toHaveLength(PRIMARY_METRICS.length);
   });
 });

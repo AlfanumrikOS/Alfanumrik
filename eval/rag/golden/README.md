@@ -74,6 +74,18 @@ Each cell shows the count of items of that query type in that (band x subject) c
 - Every cell: **all 4 query types present**, **>=2 items** (5 >= 2), **>=1 multi_hop** (exactly 1 each).
 - Query-type totals: factual 7, conceptual 11, definition 6, multi_hop 6 (sum = 30).
 
+## Corpus binding (Option-1: prod-bound) — live-DB CI skips corpus-parity on staging
+
+`ncert-golden-v1.json` is **prod-bound**: its chunk UUIDs resolve only against the
+project declared in `corpus_ref.project_ref` (`shktyoxqhundlvkiwguu` = prod). The
+live-DB CI lane connects to **staging**, where those prod UUIDs don't exist, so the
+`run-eval.integration.test.ts` corpus-parity check **skips loudly on staging by
+design** (compares `corpus_ref.project_ref` to the connected project ref) rather
+than false-failing. Corpus-parity is enforced wherever the harness runs against the
+**bound** corpus — locally with prod creds, or the operator / scheduled prod-targeted
+run. (A golden set without `corpus_ref.project_ref` keeps the old same-corpus
+fail-loud behavior.)
+
 ## Subject-code discipline
 
 Canonical snake_case `subject_code` only (matches
@@ -85,8 +97,26 @@ NEVER `history`, NEVER `social science` / `social_science`. Senior History is
 
 `chapter_number` + `target.chapter_name` use real NCERT chapter
 names/numbers for the stated grade (e.g. Grade 10 Social Studies ch.2
-"Nationalism in India"; Grade 10 Science ch.12 "Electricity"; Grade 11 Physics
-ch.5 "Laws of Motion"; Grade 11 History "Themes in World History — The French
-Revolution"). They are the lookup keys the Task 10 operator uses to find the
-relevant chunks. (Chapter numbering can vary by NCERT edition; the operator
-confirms against the live corpus during binding.)
+"Nationalism in India"; Grade 10 Science ch.11 "Electricity"; Grade 11 Physics
+ch.4 "Laws of Motion"; Grade 11 History "Themes in World History Part 1 — The
+Three Orders / Changing Cultural Traditions"). They are the lookup keys the Task
+10 operator uses to find the relevant chunks. (Chapter numbering can vary by
+NCERT edition; the operator confirms against the live corpus during binding —
+the live `ncert_2025` edition is renumbered/retitled vs older editions, and
+`chunk_text` is authoritative over chapter metadata.)
+
+## Task 10 step B re-targets (assessment-validated, 2026-06-14)
+
+During binding it emerged that the live `ncert_2025` g11/history_sr corpus is
+**"Themes in World History Part 1"** (medieval/early-modern: The Three Orders /
+feudalism, Changing Cultural Traditions / Renaissance, Confrontation of
+Cultures, Paths to Modernisation) — **the French Revolution chapter is NOT in
+the indexed corpus.** A query about content that does not exist can never be
+measured, so the entire g11/history_sr cell (items 026-030) was **re-targeted**
+to in-corpus content while preserving the cell's query-type matrix (1 factual /
+1 definition / 2 conceptual / 1 multi_hop, multi_hop with full rel=2 coverage).
+The g7-math-009 mean item was re-anchored from a phantom "Data Handling" chapter
+to the real ch13 "Connecting the Dots" (which states the mean formula verbatim).
+Full rationale + the structural old-NCERT-vs-NCERT-2025 drift findings are in
+`eval/rag/golden/corpus-coverage-findings.md`. The coverage matrix below is
+**unchanged** by the re-targets — only the underlying chapters/queries moved.
