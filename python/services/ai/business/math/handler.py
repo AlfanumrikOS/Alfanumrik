@@ -49,9 +49,7 @@ try:  # pragma: no cover - import-time guard
     )
 
     _SYMPY_OK = True
-    _TRANSFORMATIONS = standard_transformations + (
-        implicit_multiplication_application,
-    )
+    _TRANSFORMATIONS = standard_transformations + (implicit_multiplication_application,)
 except Exception:  # pragma: no cover - import-time guard  # noqa: BLE001
     _SYMPY_OK = False
     _TRANSFORMATIONS = ()  # type: ignore[assignment]
