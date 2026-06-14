@@ -3898,3 +3898,42 @@ CBSE-scoped offline relevance judge). **Total catalog: 108 entries (target: 35 �
 TARGET EXCEEDED).**
 
 **Total: 108 entries.**
+
+## Voyage rerank model-id production guard (2026-06-14) — REG-141
+
+Source: rerank-model-id hotfix (PR #1032, branch `fix/voyage-rerank-model-id`).
+The two production Voyage rerank call sites had a stale model identifier
+(`'voyage-rerank-2'`) that is NOT a member of Voyage's supported rerank set —
+Voyage answers it with HTTP 400 ("Model voyage-rerank-2 is not supported.
+Supported models are ['rerank-lite-1','rerank-2-lite','rerank-2','rerank-2.5',
+'rerank-2.5-lite']"). The 400 was swallowed by the rerank fallback, so retrieval
+SILENTLY degraded to un-reranked RRF across EVERY RAG-bearing Edge Function
+(grounded-answer, quiz-generator, ncert-solver, generate-answers,
+bulk-jee-neet-import) with no error surfaced to logs or callers. The defect was
+surfaced by the B1 eval-harness first real baseline run — its S5.1
+silent-rerank-degradation guard resolved the run INCONCLUSIVE (REG-140's
+fail-closed verdict gate doing exactly its job). The fix repoints both consts to
+the correct `'rerank-2'` identifier; this entry pins them so the stale id can
+never come back. All cited suites verified green before cataloguing.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-141 | `voyage_rerank_model_id_guard` | Both production Voyage rerank call sites are pinned to a model identifier in Voyage's SUPPORTED rerank set `['rerank-lite-1','rerank-2-lite','rerank-2','rerank-2.5','rerank-2.5-lite']` and explicitly NOT the known-bad legacy id `'voyage-rerank-2'` (P12 — RAG-retrieval integrity). **(1) Both call sites pinned:** a source-string scan extracts the model literal at `_shared/rag/retrieve.ts` const `VOYAGE_RERANK_MODEL` and at `_shared/reranking.ts` const `RERANK_MODEL` and asserts each value `toContain`s a member of the supported set. **(2) Stale id rejected at each site:** each extracted literal `.not.toBe('voyage-rerank-2')` — the exact string Voyage 400s on. **(3) Tripwire:** a fabricated `const VOYAGE_RERANK_MODEL = 'voyage-rerank-2'` source string proves the extractor really reads the literal (extracts `'voyage-rerank-2'`) AND that `'voyage-rerank-2'` is absent from the supported set — so the guard cannot be defeated by a no-op matcher. **(4) Why it matters:** the stale id made Voyage return HTTP 400, silently disabling rerank across ALL RAG-bearing Edge Functions (grounded-answer, quiz-generator, ncert-solver, generate-answers, bulk-jee-neet-import) — retrieval fell back to un-reranked RRF with no error surfaced. Discovered by the B1 eval-harness first real baseline run (the S5.1 silent-rerank-degradation → INCONCLUSIVE guard, REG-140, caught it); the harness full-path `reranked:true` evidence is the corroborating end-to-end signal. | `src/__tests__/eval/rag/voyage-rerank-model-id.test.ts` (source-string scan of both call sites + stale-id rejection + tripwire); corroborated by the B1 harness full-path `reranked:true` evidence (REG-140) | E |
+
+### Invariants covered by this section
+
+- P12 AI safety / retrieval quality — REG-141 (RAG-retrieval integrity: both
+  production rerank call sites are pinned to Voyage's supported rerank set and can
+  never regress to the known-bad `'voyage-rerank-2'` id that silently disabled
+  rerank — degrading retrieval to un-reranked RRF — across every RAG-bearing Edge
+  Function).
+
+### Catalog total
+
+Pre-REG-141: 108 entries (through the B1 RAG eval-harness, REG-140). The Voyage
+rerank model-id hotfix adds REG-141 (production rerank model-id guard — both call
+sites pinned to the supported set, stale `'voyage-rerank-2'` id rejected, tripwire
+proves the matcher). **Total catalog: 109 entries (target: 35 — TARGET
+EXCEEDED).**
+
+**Total: 109 entries.**
