@@ -1,0 +1,22 @@
+{
+  "$schema_note": "B1 retrieval-quality eval baseline (Task 7). Consumed by eval/rag/harness/verdict.ts via the BaselineConfig shape: { metrics, bands }. The `metrics` values are the per-metric baseline on the CURRENT production retrieval settings (RRF k=60, MMR lambda=0.7, fetch-N=40, floor=0.5 via retrieve()). The `bands` are the A7 per-metric regress bands (spec section B1.5).",
+  "version": "v1",
+  "settings_note": "Baseline measured on production settings: RRF k=60, MMR lambda=0.7, fetch-N=40, floor=0.5 via retrieve(). A baseline refresh is an explicit, reviewed action (re-run on current settings + commit) — NEVER automatic, so the gate cannot silently rebaseline a regression away.",
+  "bands_note": "A7 per-metric regress bands (spec section B1.5). RELATIVE bands trip when drop > band*baseline; ABSOLUTE bands are percentage points (2pp = 0.02) and trip when drop > band. These bands are ASSESSMENT-REVIEWED and NEVER AUTO-REFRESHED. Changing any band value requires assessment review on the baseline file. The band STRUCTURE ships in Task 7; the metric VALUES are populated by a reviewed full-path run in Task 9/10.",
+  "placeholder_note": "TODO(Task 10): the `metrics` values below are PLACEHOLDERS — they are NOT a real measurement. Task 10 runs the harness full-path (VOYAGE_API_KEY present) on the Task 9 golden set against current production settings and commits the resulting metric values here (a reviewed action). Until then these values MUST NOT be used to gate any tuning decision. The `bands` block is real and ships in Task 7.",
+  "metrics": {
+    "nDCG@10": 0.0,
+    "recall@10": 0.0,
+    "MRR": 0.0,
+    "hit-rate@10": 0.0,
+    "groundedness-rate": 0.0
+  },
+  "bands": {
+    "nDCG@10": { "band": 0.02, "type": "relative" },
+    "recall@10": { "band": 0.02, "type": "relative" },
+    "MRR": { "band": 0.03, "type": "relative" },
+    "hit-rate@10": { "band": 0.02, "type": "absolute" },
+    "groundedness-rate": { "band": 0.03, "type": "absolute" }
+  },
+  "metrics_placeholder": true
+}

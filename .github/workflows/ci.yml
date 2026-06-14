@@ -373,6 +373,14 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          # B1 RAG eval-harness (Task 8, 2026-06-13). The retrieval-quality harness
+          # (run-eval.integration.test.ts) runs the REAL retrieve() full-path only
+          # when VOYAGE_API_KEY is present; without it the harness degrades to
+          # FTS-only and emits an INCONCLUSIVE verdict — it does NOT fail the job.
+          # NOTE (ops/architect prerequisite #1): the VOYAGE_API_KEY repository
+          # secret must be PROVISIONED by ops. Until it is, this resolves to empty
+          # and integration runs of the harness stay green via the degrade path.
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
         # BLOCKING gate restored (2026-05-05). Original audit Gap 5b mandated this
         # be blocking to enforce P8 (RLS boundary) + P9 (RBAC enforcement) against
         # the live staging schema. Was temporarily flipped to continue-on-error: true

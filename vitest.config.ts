@@ -8,9 +8,34 @@ import path from 'path';
 // views, UNIQUE indexes). They cannot run with placeholder env vars and would
 // always fail in PR CI. They are run by a separate `test:integration` script
 // gated on real `NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` secrets.
+//
+// These are DIRECTORY-PREFIX patterns: the integration-lane `include` below
+// suffixes each with `/**/*.{test,spec}.{ts,tsx}` to enumerate every test file
+// under the directory. Keep this list to directory prefixes only — file-level
+// globs go in INTEGRATION_TEST_FILE_GLOBS so the suffix-mapping doesn't mangle
+// them into `…/*.integration.test.ts/**/*.{test,spec}.{ts,tsx}`.
 const INTEGRATION_TEST_PATTERNS = [
   'src/__tests__/migrations/**',
   'src/__tests__/scripts/**',
+];
+
+// B1 RAG eval-harness (Task 8, 2026-06-13, architect-reviewed): the LIVE-DB
+// runner entry is NARROWLY matched as `src/__tests__/eval/**/*.integration.test.ts`
+// — ONLY the `*.integration.test.ts` file (run-eval.integration.test.ts) joins
+// the integration lane. The PURE eval tests (`src/__tests__/eval/rag/*.test.ts`
+// — golden-schema, metrics, relevance-judge, trace-mining, verdict, run-eval,
+// telemetry, import-boundary) intentionally STAY in the normal `npm test` lane:
+// they are offline pure-fn tests with no DB. Do NOT broaden this to
+// `src/__tests__/eval/**` or the pure tests get swept into the (currently-red)
+// integration lane. This is a FILE-level glob (not a directory prefix), so it is
+// added verbatim to the integration-lane `include` and the normal-lane `exclude`
+// — NOT suffix-mapped like INTEGRATION_TEST_PATTERNS. The normal lane excludes it
+// (plus every `*.integration.test.ts`) so the live-DB runner cannot accidentally
+// collect in the unit run — making the lane separation EXPLICIT rather than
+// relying solely on the runtime `hasSupabaseIntegrationEnv()` skip-guard inside
+// the test.
+const INTEGRATION_TEST_FILE_GLOBS = [
+  'src/__tests__/eval/**/*.integration.test.ts',
 ];
 
 const isIntegrationRun = process.env.RUN_INTEGRATION_TESTS === '1';
@@ -21,7 +46,10 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/__tests__/setup.ts'],
     include: isIntegrationRun
-      ? INTEGRATION_TEST_PATTERNS.map((p) => `${p}/**/*.{test,spec}.{ts,tsx}`)
+      ? [
+          ...INTEGRATION_TEST_PATTERNS.map((p) => `${p}/**/*.{test,spec}.{ts,tsx}`),
+          ...INTEGRATION_TEST_FILE_GLOBS,
+        ]
       : [
           'src/**/*.{test,spec}.{ts,tsx}',
           'supabase/functions/_shared/mol/__tests__/**/*.{test,spec}.ts',
@@ -64,6 +92,14 @@ export default defineConfig({
       : [
           'node_modules/**',
           ...INTEGRATION_TEST_PATTERNS,
+          ...INTEGRATION_TEST_FILE_GLOBS,
+          // B1 RAG eval-harness (Task 8): belt-and-braces — explicitly drop ANY
+          // `*.integration.test.ts` from the normal lane. INTEGRATION_TEST_FILE_GLOBS
+          // already excludes the eval one by its exact glob, but this blanket
+          // pattern makes the "integration tests never run in the unit lane"
+          // contract self-documenting and future-proof against new
+          // `*.integration.test.ts` files landing elsewhere under src/.
+          'src/**/*.integration.{test,spec}.{ts,tsx}',
           // TODO(reorder-baseline): vitest's rolldown transformer chokes
           // on the `#!/usr/bin/env node` shebang in scripts/reorder-baseline.mjs
           // when the test file imports it ("Invalid Character `!`"). The
