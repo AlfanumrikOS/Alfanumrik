@@ -157,7 +157,7 @@ async def fetch_due_review_questions(
     for q in questions:
         q["_source"] = "review"
 
-    unique_topics = set(c.get("topic") for c in due_cards if c.get("topic"))
+    unique_topics = {c.get("topic") for c in due_cards if c.get("topic")}
     return questions[:max_count], len(unique_topics)
 
 
@@ -169,9 +169,9 @@ async def is_irt_selection_enabled(supabase) -> bool:
         .maybe_single()
         .execute()
     )
-    if res.data and res.data.get("is_enabled") and res.data.get("rollout_percentage", 0) >= 100:
-        return True
-    return False
+    return bool(
+        res.data and res.data.get("is_enabled") and res.data.get("rollout_percentage", 0) >= 100
+    )
 
 
 async def select_questions_by_irt(
@@ -356,7 +356,7 @@ async def fetch_seen_question_ids(
     if chapter_number is not None:
         query = query.eq("chapter_number", chapter_number)
     res = query.limit(500).execute()
-    return set(r["question_id"] for r in (res.data or []))
+    return {r["question_id"] for r in (res.data or [])}
 
 
 async def check_and_reset_history(
@@ -615,7 +615,7 @@ async def generate_quiz(supabase, body: QuizGeneratorRequest) -> QuizGeneratorRe
             supabase, student_id, subject_id, subject, grade, review_slots, seen_ids
         )
 
-    review_ids = set(q["id"] for q in review_questions)
+    review_ids = {q["id"] for q in review_questions}
     used_after_review = seen_ids.union(review_ids)
 
     adaptive_questions = []
@@ -650,7 +650,7 @@ async def generate_quiz(supabase, body: QuizGeneratorRequest) -> QuizGeneratorRe
     questions = review_questions + adaptive_questions
 
     if len(questions) < count:
-        used_ids = used_after_review.union(set(q["id"] for q in adaptive_questions))
+        used_ids = used_after_review.union({q["id"] for q in adaptive_questions})
         if not questions:
             strategy = "random"
         remaining = count - len(questions)
@@ -681,7 +681,7 @@ async def generate_quiz(supabase, body: QuizGeneratorRequest) -> QuizGeneratorRe
         if isinstance(opts, str):
             try:
                 opts = json.loads(opts)
-            except:
+            except Exception:
                 opts = []
 
         candidate = CandidateQuestion(

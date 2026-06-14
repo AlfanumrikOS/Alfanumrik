@@ -41,7 +41,7 @@ async def get_current_student(authorization: str = Header(None)) -> dict[str, An
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token structure")
     except Exception:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Invalid token") from None
 
     client = get_service_client()
     if not client:

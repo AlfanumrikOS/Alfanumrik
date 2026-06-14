@@ -206,7 +206,7 @@ def select_provider_chain(task: TaskType, opts: RouterOptions) -> SelectedChain:
     if opts.shadow_priority:
         # Shadow/experiment ONLY: legacy probabilistic 80%-to-OpenAI path.
         w = opts.weights.get(task)
-        if not isinstance(w, (int, float)):
+        if not isinstance(w, int | float):
             w = 0.8
         head_provider = "openai" if random.random() < w else "anthropic"
     else:

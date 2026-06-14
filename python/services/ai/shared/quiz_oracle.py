@@ -1,6 +1,6 @@
 import math
 import re
-from typing import Literal, Union
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -90,7 +90,7 @@ class OracleRejectResult(BaseModel):
     llm_calls: int
 
 
-OracleResult = Union[OracleAcceptResult, OracleRejectResult]
+OracleResult = OracleAcceptResult | OracleRejectResult
 
 
 def normalise_digits(s: str) -> str:
@@ -147,7 +147,7 @@ def check_numeric_consistency(
     if not exp_numbers:
         return None
 
-    given_in_question = set(str(n) for n in extract_numbers(question_text))
+    given_in_question = {str(n) for n in extract_numbers(question_text)}
 
     for n in opt_numbers:
         if str(n) in given_in_question:
@@ -208,24 +208,23 @@ def run_deterministic_checks(q: CandidateQuestion) -> OracleRejectResult | None:
                 "p6_invalid_difficulty", f"difficulty must be one of easy|medium|hard, got {d}"
             )
 
-    if q.bloom_level is not None:
-        if not isinstance(q.bloom_level, str) or q.bloom_level.lower() not in VALID_BLOOM_LEVELS:
-            return reject_det(
-                "p6_invalid_bloom",
-                f"bloom_level must be one of remember|understand|apply|analyze|evaluate|create, got {q.bloom_level}",
-            )
+    if q.bloom_level is not None and (
+        not isinstance(q.bloom_level, str) or q.bloom_level.lower() not in VALID_BLOOM_LEVELS
+    ):
+        return reject_det(
+            "p6_invalid_bloom",
+            f"bloom_level must be one of remember|understand|apply|analyze|evaluate|create, got {q.bloom_level}",
+        )
 
-    if q.grade is not None:
-        if not isinstance(q.grade, str) or not VALID_GRADE_RE.match(q.grade):
-            return reject_det(
-                "p5_invalid_grade", f'grade must be a string "6".."12", got {q.grade}'
-            )
+    if q.grade is not None and (not isinstance(q.grade, str) or not VALID_GRADE_RE.match(q.grade)):
+        return reject_det("p5_invalid_grade", f'grade must be a string "6".."12", got {q.grade}')
 
-    if q.subject is not None:
-        if not isinstance(q.subject, str) or q.subject.lower().strip() not in VALID_CBSE_SUBJECTS:
-            return reject_det(
-                "invalid_subject", f"subject must be a known CBSE subject, got {q.subject}"
-            )
+    if q.subject is not None and (
+        not isinstance(q.subject, str) or q.subject.lower().strip() not in VALID_CBSE_SUBJECTS
+    ):
+        return reject_det(
+            "invalid_subject", f"subject must be a known CBSE subject, got {q.subject}"
+        )
 
     for i in range(4):
         for j in range(i + 1, 4):

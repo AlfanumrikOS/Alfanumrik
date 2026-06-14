@@ -55,10 +55,7 @@ def updateMastery(
     newVariance = max(0.01, newVariance)
 
     newHalfLife = state.get("retention_half_life", 48)
-    if correct:
-        newHalfLife = min(newHalfLife * 1.5, 720)
-    else:
-        newHalfLife = max(newHalfLife * 0.8, 4)
+    newHalfLife = min(newHalfLife * 1.5, 720) if correct else max(newHalfLife * 0.8, 4)
 
     errorType = None
     if not correct:

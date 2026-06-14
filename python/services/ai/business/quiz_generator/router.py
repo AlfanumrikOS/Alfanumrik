@@ -21,4 +21,4 @@ async def create_quiz(request: QuizGeneratorRequest, supabase=Depends(get_servic
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

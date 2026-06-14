@@ -161,7 +161,7 @@ def redact_pii_in_text(s: str) -> tuple[str, list[str]]:
     if _RZP_ID_RE.search(out):
         out = _RZP_ID_RE.sub("[REDACTED_PAYMENT_ID]", out)
         applied.add("payment_id")
-    return out, sorted(list(applied))
+    return out, sorted(applied)
 
 
 async def record_shadow_text(p: ShadowTextPayload) -> None:
@@ -189,7 +189,7 @@ async def record_shadow_text(p: ShadowTextPayload) -> None:
             shadow_sys_text, shadow_sys_app = None, []
 
         applied = sorted(
-            list(set(q_app + base_sys_app + base_resp_app + shadow_resp_app + shadow_sys_app))
+            set(q_app + base_sys_app + base_resp_app + shadow_resp_app + shadow_sys_app)
         )
 
         row = {

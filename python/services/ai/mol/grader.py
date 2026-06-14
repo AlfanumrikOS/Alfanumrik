@@ -182,14 +182,14 @@ def validate_candidate(raw: Any, rubric: GraderRubric) -> CandidateScores | None
     out = {}
     for f in required_fields:
         v = raw.get(f)
-        if not isinstance(v, (int, float)):
+        if not isinstance(v, int | float):
             return None
         out[f] = max(0.0, min(1.0, float(v)))
 
     raw_citation = raw.get("citation_accuracy")
     if raw_citation is None:
         citation = None
-    elif isinstance(raw_citation, (int, float)):
+    elif isinstance(raw_citation, int | float):
         citation = max(0.0, min(1.0, float(raw_citation)))
     else:
         return None
@@ -228,7 +228,7 @@ def validate_grader_shape(
         return None
 
     agreement = raw.get("agreement")
-    if isinstance(agreement, (int, float)):
+    if isinstance(agreement, int | float):
         agreement = max(0.0, min(1.0, float(agreement)))
     else:
         agreement = max(0.0, 1.0 - abs(baseline.overall - shadow.overall))
@@ -240,10 +240,7 @@ def validate_grader_shape(
         winner = pick_winner(baseline.overall, shadow.overall)
 
     notes = raw.get("notes", "")
-    if isinstance(notes, str):
-        notes = notes[:500]
-    else:
-        notes = ""
+    notes = notes[:500] if isinstance(notes, str) else ""
 
     return GraderResult(
         baseline=baseline,

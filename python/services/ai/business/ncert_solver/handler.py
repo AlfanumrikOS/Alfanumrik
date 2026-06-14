@@ -398,7 +398,7 @@ async def handle_ncert_solver(req: NcertSolverRequest, auth_header: str) -> Ncer
         raise HTTPException(
             status_code=422,
             detail={"error": "subject_not_allowed", "reason": "grade", "subject": req.subject},
-        )
+        ) from e
 
     if not CircuitBreaker.canRequest():
         raise HTTPException(
@@ -425,7 +425,7 @@ async def handle_ncert_solver(req: NcertSolverRequest, auth_header: str) -> Ncer
         solutionRaw = await callClaude(solverPrompt, route.maxResponseTokens, solverSystemPrompt)
     except Exception as e:
         print(f"Solver error: {e}")
-        raise HTTPException(status_code=500, detail="Solver failed")
+        raise HTTPException(status_code=500, detail="Solver failed") from e
 
     solution = {
         "answer": solutionRaw,
