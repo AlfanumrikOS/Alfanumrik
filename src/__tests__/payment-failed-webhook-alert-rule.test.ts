@@ -45,8 +45,15 @@ const WEBHOOK_PATH = join(
   'route.ts',
 );
 
-const migrationSql = readFileSync(MIGRATION_PATH, 'utf8');
-const webhookSrc = readFileSync(WEBHOOK_PATH, 'utf8');
+// Normalize line endings once at read so every downstream assertion is
+// EOL-agnostic. On CRLF checkouts (Windows), an un-normalized read leaves a
+// trailing `\r` on each line after split('\n') — that `\r` keeps the `--`
+// header comment (which mentions "ON CONFLICT") alive through the
+// comment-strip below, falsely tripping the `not.toMatch(/ON CONFLICT/i)`
+// assertion. Normalizing here is defense-in-depth alongside the .gitattributes
+// LF pin.
+const migrationSql = readFileSync(MIGRATION_PATH, 'utf8').replace(/\r\n/g, '\n');
+const webhookSrc = readFileSync(WEBHOOK_PATH, 'utf8').replace(/\r\n/g, '\n');
 
 // Executable SQL only — strip `-- ...` line comments so assertions about the
 // statement (e.g. "no ON CONFLICT") don't trip over the header's prose, which

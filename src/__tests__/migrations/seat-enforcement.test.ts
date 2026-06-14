@@ -72,6 +72,12 @@ let OTHER_SCHOOL = '';
 let CLASS_CS = ''; // class for the class_students roster path
 let CLASS_CE = ''; // class for the class_enrollments roster path
 let SUB_ID = ''; // school_subscriptions row id (for back-dating the grace clock)
+// A student_id that is GENUINELY on the active class_students roster at the
+// point the grace_expired test runs. Captured from the "SUCCEEDS within plan"
+// fill below — NOT taken from created.studentIds[0], whose roster row is
+// deleted by the unified-count test's cleanup (lines ~335-342), which made the
+// deactivate UPDATE touch 0 rows and the count never drop 11→10.
+let ACTIVE_CS_FILL_ID = '';
 
 const URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? '';
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
@@ -360,6 +366,12 @@ describeIntegration('Phase 3B seat enforcement — hybrid policy state machine (
       expect(r.success).toBe(true);
       expect(r.verdict.status).toBe('within_plan');
       expect(await countActive(SCHOOL)).toBe(10);
+
+      // Record a genuinely-active class_students row id for the grace_expired
+      // test to deactivate. This is one of the 10 rows just inserted and is
+      // still active at that point (only the unrelated only-cs/only-ce/both
+      // rows were torn down by the unified-count test).
+      ACTIVE_CS_FILL_ID = ids[0];
     });
 
     it('grace_warn (11th) is a SOFT ALLOW and SETS the grace clock', async () => {
@@ -412,12 +424,17 @@ describeIntegration('Phase 3B seat enforcement — hybrid policy state machine (
       // so to isolate grace_expired we deactivate one (active→10) WITHOUT refresh
       // (so the clock stays set), back-date it, then add one (projected 11 ≤ ceiling
       // but window elapsed ⇒ grace_expired).
-      const fillRows = created.studentIds.slice(0, 1); // any one active class_students row
+      // Use a row that is GENUINELY active on the class_students roster right
+      // now (one of the 10 within-plan fill rows). created.studentIds[0] is the
+      // 'only-cs' student whose roster row was deleted by the unified-count
+      // test's cleanup, so deactivating it would touch 0 rows and the count
+      // would never drop 11→10.
+      const fillStudentId = ACTIVE_CS_FILL_ID;
       // Deactivate one roster row directly (no refresh ⇒ clock NOT reset).
       await supabaseAdmin
         .from('class_students')
         .update({ is_active: false })
-        .eq('student_id', fillRows[0]);
+        .eq('student_id', fillStudentId);
       expect(await countActive(SCHOOL)).toBe(10);
 
       // Back-date the grace clock to 15 days ago (window = 14d ⇒ elapsed).
@@ -439,11 +456,12 @@ describeIntegration('Phase 3B seat enforcement — hybrid policy state machine (
       expect(error?.details).toContain('grace_expired');
       expect(await countActive(SCHOOL)).toBe(10); // nothing inserted
 
-      // Restore: reactivate the deactivated row + clear the clock for later tests.
+      // Restore: reactivate the SAME deactivated row + clear the clock for
+      // later tests (keeps the block balanced — active returns to 11).
       await supabaseAdmin
         .from('class_students')
         .update({ is_active: true })
-        .eq('student_id', fillRows[0]);
+        .eq('student_id', fillStudentId);
       await supabaseAdmin
         .from('school_subscriptions')
         .update({ seat_grace_started_at: null })
