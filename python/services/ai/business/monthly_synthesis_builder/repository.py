@@ -89,7 +89,9 @@ async def fetch_concept_mastery_rows(
     try:
         result = (
             await client.table("concept_mastery")
-            .select("topic_id, mastery_probability, mastery_level, total_attempts, last_attempted_at")
+            .select(
+                "topic_id, mastery_probability, mastery_level, total_attempts, last_attempted_at"
+            )
             .eq("student_id", student_id)
             .gte("last_attempted_at", start_iso)
             .lt("last_attempted_at", end_iso)
@@ -142,11 +144,7 @@ async def insert_synthesis_run(
         "parent_share_status": "pending",
     }
     try:
-        result = (
-            await client.table("monthly_synthesis_runs")
-            .insert(payload)
-            .execute()
-        )
+        result = await client.table("monthly_synthesis_runs").insert(payload).execute()
     except Exception as err:  # noqa: BLE001
         msg = str(err)
         if "23505" in msg:

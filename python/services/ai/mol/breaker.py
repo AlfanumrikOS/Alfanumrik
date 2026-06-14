@@ -87,7 +87,9 @@ async def can_request(provider: str, task: str) -> bool:
         # Fully CLOSED (never tripped, or already recovered) ⇒ allow.
         return True
     except Exception as err:  # noqa: BLE001 — never block on store failure
-        logger.warning("mol.breaker.can_request_failed", provider=provider, task=task, error=str(err))
+        logger.warning(
+            "mol.breaker.can_request_failed", provider=provider, task=task, error=str(err)
+        )
         return True  # FAIL-OPEN
 
 
@@ -115,7 +117,9 @@ async def record_failure(provider: str, task: str) -> None:
             await redis.set(_k(provider, task, "state"), "open", ex=OPEN_TTL_SECONDS)
             await redis.set(_k(provider, task, "tripped"), "1", ex=TRIPPED_TTL_SECONDS)
     except Exception as err:  # noqa: BLE001
-        logger.warning("mol.breaker.record_failure_failed", provider=provider, task=task, error=str(err))
+        logger.warning(
+            "mol.breaker.record_failure_failed", provider=provider, task=task, error=str(err)
+        )
 
 
 async def record_success(provider: str, task: str) -> None:
@@ -140,4 +144,6 @@ async def record_success(provider: str, task: str) -> None:
         # Normal CLOSED success: reset the failure counter.
         await redis.set(_k(provider, task, "failures"), "0", ex=FAILURE_WINDOW_SECONDS)
     except Exception as err:  # noqa: BLE001
-        logger.warning("mol.breaker.record_success_failed", provider=provider, task=task, error=str(err))
+        logger.warning(
+            "mol.breaker.record_success_failed", provider=provider, task=task, error=str(err)
+        )

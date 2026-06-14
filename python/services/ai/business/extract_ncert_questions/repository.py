@@ -106,11 +106,7 @@ async def fetch_chapters_without_extractions(
             if isinstance(cn, int):
                 existing_set.add(f"{g}|{s}|{cn}")
 
-    missing = [
-        chapter
-        for key, chapter in chapter_map.items()
-        if key not in existing_set
-    ]
+    missing = [chapter for key, chapter in chapter_map.items() if key not in existing_set]
     return missing[:limit]
 
 
@@ -128,8 +124,11 @@ async def get_extraction_overview() -> dict[str, Any]:
         )
     except Exception:  # noqa: BLE001
         return {
-            "total_chapters": 0, "with_extractions": 0, "without_extractions": 0,
-            "coverage_percent": 0, "breakdown": {},
+            "total_chapters": 0,
+            "with_extractions": 0,
+            "without_extractions": 0,
+            "coverage_percent": 0,
+            "breakdown": {},
         }
     chunks = _rows(chunks_result)
     total: set[str] = set()
@@ -171,9 +170,7 @@ async def get_extraction_overview() -> dict[str, Any]:
         else:
             breakdown[b_key]["without_extractions"] += 1
 
-    coverage = (
-        round(len(with_extractions) / len(total) * 100) if total else 0
-    )
+    coverage = round(len(with_extractions) / len(total) * 100) if total else 0
     return {
         "total_chapters": len(total),
         "with_extractions": len(with_extractions),

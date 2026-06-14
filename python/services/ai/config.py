@@ -54,9 +54,7 @@ class Settings(BaseSettings):
     upstash_redis_rest_url: str = Field(
         default="", description="Upstash Redis REST endpoint. Empty disables breaker store."
     )
-    upstash_redis_rest_token: str = Field(
-        default="", description="Upstash Redis REST token."
-    )
+    upstash_redis_rest_token: str = Field(default="", description="Upstash Redis REST token.")
 
     # ── Azure Cognitive Services (Voice 1b — Indian-accent TTS) ──
     # Same posture as Anthropic/OpenAI: empty defaults so the service still

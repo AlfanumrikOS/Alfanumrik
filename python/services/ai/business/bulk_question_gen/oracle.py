@@ -172,11 +172,7 @@ def parse_llm_grader_response(raw: str) -> LlmGradeResult | None:
         reasoning = ""
     suggested = obj.get("suggested_correct_index")
     suggested_clamped: int | None = None
-    if (
-        isinstance(suggested, int)
-        and not isinstance(suggested, bool)
-        and 0 <= suggested <= 3
-    ):
+    if isinstance(suggested, int) and not isinstance(suggested, bool) and 0 <= suggested <= 3:
         suggested_clamped = suggested
     return LlmGradeResult(
         verdict=verdict,

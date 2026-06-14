@@ -55,9 +55,7 @@ async def verify_guardian(authorization_header: str | None) -> GuardianAuthResul
     if guardian_row is None:
         raise AuthFailed("No guardian profile for this user", status=403)
 
-    return GuardianAuthResult(
-        ok=True, guardian_id=str(guardian_row["id"]), auth_user_id=user_id
-    )
+    return GuardianAuthResult(ok=True, guardian_id=str(guardian_row["id"]), auth_user_id=user_id)
 
 
 async def _resolve_user_id(token: str) -> str | None:

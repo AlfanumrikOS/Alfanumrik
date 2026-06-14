@@ -78,17 +78,31 @@ async def run_extraction(
         if not chapters:
             elapsed = int((time.monotonic() - started) * 1000)
             return ExtractResponse(
-                success=True, total_found=0, processed=0, succeeded=0,
-                failed=0, skipped=0, errors=[], elapsed_ms=elapsed,
-                dry_run=payload.dry_run, phase_2_stub=True,
+                success=True,
+                total_found=0,
+                processed=0,
+                succeeded=0,
+                failed=0,
+                skipped=0,
+                errors=[],
+                elapsed_ms=elapsed,
+                dry_run=payload.dry_run,
+                phase_2_stub=True,
             )
 
         if payload.dry_run:
             elapsed = int((time.monotonic() - started) * 1000)
             return ExtractResponse(
-                success=True, total_found=len(chapters), processed=0,
-                succeeded=0, failed=0, skipped=0, errors=[],
-                elapsed_ms=elapsed, dry_run=True, phase_2_stub=True,
+                success=True,
+                total_found=len(chapters),
+                processed=0,
+                succeeded=0,
+                failed=0,
+                skipped=0,
+                errors=[],
+                elapsed_ms=elapsed,
+                dry_run=True,
+                phase_2_stub=True,
                 chapters=[
                     ExtractedChapter(
                         grade=str(c.get("grade") or ""),
@@ -116,17 +130,22 @@ async def run_extraction(
             phase_2_stub=True,
         )
         return ExtractResponse(
-            success=True, total_found=len(chapters), processed=len(chapters),
-            succeeded=0, failed=0, skipped=skipped, errors=errors,
-            elapsed_ms=elapsed, dry_run=False, phase_2_stub=True,
+            success=True,
+            total_found=len(chapters),
+            processed=len(chapters),
+            succeeded=0,
+            failed=0,
+            skipped=skipped,
+            errors=errors,
+            elapsed_ms=elapsed,
+            dry_run=False,
+            phase_2_stub=True,
         )
     finally:
         structlog.contextvars.clear_contextvars()
 
 
-async def get_extraction_status(
-    *, admin_key_header: str | None
-) -> ExtractStatusResponse:
+async def get_extraction_status(*, admin_key_header: str | None) -> ExtractStatusResponse:
     try:
         verify_admin_key(admin_key_header)
     except AuthFailed as err:

@@ -12,7 +12,7 @@ Constants for thresholds + benchmarks live at module level for unit-testing.
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # NEP 2020 competency thresholds (TS lines 79-82).
 COMPETENCY_ADVANCED_THRESHOLD = 85
@@ -55,7 +55,7 @@ def get_academic_year(now: datetime | None = None) -> str:
 
     Optional `now` injection for testing — defaults to current UTC.
     """
-    n = now if now is not None else datetime.now(timezone.utc)
+    n = now if now is not None else datetime.now(UTC)
     if n.month >= 4:
         return f"{n.year}-{n.year + 1}"
     return f"{n.year - 1}-{n.year}"
@@ -66,7 +66,7 @@ def get_current_term(now: datetime | None = None) -> str:
 
     Optional `now` injection for testing.
     """
-    n = now if now is not None else datetime.now(timezone.utc)
+    n = now if now is not None else datetime.now(UTC)
     return "Term 1" if 4 <= n.month <= 9 else "Term 2"
 
 

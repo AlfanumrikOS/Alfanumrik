@@ -33,9 +33,7 @@ async def post_bulk_non_mcq(
     rid = request.headers.get("x-request-id") or str(uuid.uuid4())
     structlog.contextvars.bind_contextvars(request_id=rid)
     try:
-        return await run_bulk_non_mcq_gen(
-            payload, admin_key_header=x_admin_key, request_id=rid
-        )
+        return await run_bulk_non_mcq_gen(payload, admin_key_header=x_admin_key, request_id=rid)
     except UnauthorizedError as err:
         raise HTTPException(
             status_code=err.status,

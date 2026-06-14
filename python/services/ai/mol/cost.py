@@ -23,8 +23,8 @@ logger = structlog.get_logger(__name__)
 # undercounts cost in dashboards.
 PRICING: dict[str, dict[str, float]] = {
     "openai/gpt-4o-mini": {"input": 0.15, "output": 0.60},
-    "openai/gpt-4o":      {"input": 2.50, "output": 10.00},
-    "anthropic/claude-haiku-4-5-20251001":  {"input": 1.00, "output": 5.00},
+    "openai/gpt-4o": {"input": 2.50, "output": 10.00},
+    "anthropic/claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
     "anthropic/claude-sonnet-4-6-20251022": {"input": 3.00, "output": 15.00},
 }
 

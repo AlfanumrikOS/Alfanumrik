@@ -1,21 +1,20 @@
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException
 from python.services.ai.db.supabase import get_service_client
 
+from .handler import generate_quiz, handle_next_question
 from .models import QuizGeneratorRequest, QuizGeneratorResponse
-from .handler import handle_next_question, generate_quiz
 
 router = APIRouter()
 
+
 @router.post("/v1/quiz-generator", response_model=QuizGeneratorResponse)
-async def create_quiz(
-    request: QuizGeneratorRequest,
-    supabase=Depends(get_service_client)
-):
+async def create_quiz(request: QuizGeneratorRequest, supabase=Depends(get_service_client)):
     try:
-        if request.action == 'next_question':
+        if request.action == "next_question":
             if not request.session_id:
-                raise HTTPException(status_code=400, detail="session_id is required for next_question")
+                raise HTTPException(
+                    status_code=400, detail="session_id is required for next_question"
+                )
             return await handle_next_question(supabase, request)
         else:
             return await generate_quiz(supabase, request)

@@ -5,13 +5,14 @@ POST /v1/foxy-tutor
 
 from __future__ import annotations
 
+from cbse_parser.generator import generate_answer
 from fastapi import APIRouter, HTTPException, status
 
-from ...shared.budget_guard import BudgetExceeded, check_daily_budget
 from ...business.foxy.models import FoxyRequest, FoxyResponse
-from cbse_parser.generator import generate_answer
+from ...shared.budget_guard import BudgetExceeded, check_daily_budget
 
 router = APIRouter(prefix="/v1", tags=["foxy"])
+
 
 @router.post(
     "/foxy-tutor",
@@ -31,9 +32,7 @@ async def post_foxy_tutor(request: FoxyRequest) -> FoxyResponse:
     """
     # 1. Budget guard – fail fast if cap exceeded.
     if not await check_daily_budget(scope="org"):
-        raise BudgetExceeded(
-            "daily AI budget exceeded — try again tomorrow"
-        )
+        raise BudgetExceeded("daily AI budget exceeded — try again tomorrow")
 
     try:
         answer = await generate_answer(request.question)

@@ -203,9 +203,7 @@ async def handle_generate_concepts(
     errors: list[str] = []
 
     for i, chapter in enumerate(chapters):
-        chapter_key = (
-            f"Grade {chapter.grade} {chapter.subject} Ch{chapter.chapter_number}"
-        )
+        chapter_key = f"Grade {chapter.grade} {chapter.subject} Ch{chapter.chapter_number}"
 
         # Time guard — mirrors TS index.ts:716-722.
         elapsed_s = time.monotonic() - start_ms
@@ -262,9 +260,7 @@ async def handle_generate_concepts(
                     grade=chapter.grade,
                     subject=chapter.subject,
                 )
-                user_prompt = build_user_prompt(
-                    chapter, rag_chunks, diagram_refs, sample_question
-                )
+                user_prompt = build_user_prompt(chapter, rag_chunks, diagram_refs, sample_question)
 
                 # Step 4: Call MoL.
                 raw_response = await call_mol_for_concepts(
@@ -279,12 +275,8 @@ async def handle_generate_concepts(
                 concepts = parse_concepts_response(raw_response)
                 if concepts is None:
                     failed += 1
-                    errors.append(
-                        f"{chapter_key}: failed to parse Claude response"
-                    )
-                    await _log_chapter_event(
-                        chapter, rid, success=False, reason="parse_failed"
-                    )
+                    errors.append(f"{chapter_key}: failed to parse Claude response")
+                    await _log_chapter_event(chapter, rid, success=False, reason="parse_failed")
                 else:
                     # Step 6: Build insert rows.
                     rows = _build_insert_rows(
@@ -298,9 +290,7 @@ async def handle_generate_concepts(
                     ok, err_msg = await insert_chapter_concepts(rows)
                     if not ok:
                         failed += 1
-                        errors.append(
-                            f"{chapter_key}: DB insert error: {err_msg}"
-                        )
+                        errors.append(f"{chapter_key}: DB insert error: {err_msg}")
                         await _log_chapter_event(
                             chapter,
                             rid,
@@ -327,9 +317,7 @@ async def handle_generate_concepts(
                 error=msg,
                 request_id=rid,
             )
-            await _log_chapter_event(
-                chapter, rid, success=False, reason="unexpected_exception"
-            )
+            await _log_chapter_event(chapter, rid, success=False, reason="unexpected_exception")
 
         # Errors-list cap. Mirrors TS index.ts:834-837 (cap at 100, splice
         # the middle so head + tail entries are preserved).
@@ -453,9 +441,7 @@ async def _log_chapter_event(
 
     await log_generate_concepts_event(
         category=(
-            "generate_concepts.chapter.success"
-            if success
-            else "generate_concepts.chapter.failed"
+            "generate_concepts.chapter.success" if success else "generate_concepts.chapter.failed"
         ),
         severity="info",
         success=success,
@@ -536,16 +522,10 @@ def _build_insert_rows(
             common_mistakes=concept.common_mistakes,
             exam_tips=[],
             diagram_refs=matching_diagrams,
-            practice_question=(
-                practice_q.get("question_text") if practice_q else None
-            ),
+            practice_question=(practice_q.get("question_text") if practice_q else None),
             practice_options=practice_options,
-            practice_correct_index=(
-                practice_q.get("correct_answer_index") if practice_q else None
-            ),
-            practice_explanation=(
-                practice_q.get("explanation") if practice_q else None
-            ),
+            practice_correct_index=(practice_q.get("correct_answer_index") if practice_q else None),
+            practice_explanation=(practice_q.get("explanation") if practice_q else None),
             difficulty=concept.difficulty,
             bloom_level=concept.bloom_level,
             estimated_minutes=5,

@@ -99,9 +99,7 @@ def build_user_prompt(
         options = sample_question.get("options")
         options_text = ""
         if isinstance(options, list) and options:
-            options_text = " | ".join(
-                f"{chr(65 + i)}) {o}" for i, o in enumerate(options)
-            )
+            options_text = " | ".join(f"{chr(65 + i)}) {o}" for i, o in enumerate(options))
         question_text = sample_question.get("question_text", "")
         prompt += (
             f"\n"

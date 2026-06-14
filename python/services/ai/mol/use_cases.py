@@ -1,15 +1,19 @@
 import re
-from typing import TypedDict, Optional
+from typing import TypedDict
+
 from .types import StudentContext, TaskType
+
 
 class ProviderTarget(TypedDict):
     provider: str  # 'openai' | 'anthropic'
     model: str
 
+
 class UseCaseConfig(TypedDict):
     name: str
     primary: ProviderTarget
     fallbacks: list[ProviderTarget]
+
 
 USE_CASES: dict[str, UseCaseConfig] = {
     "hard_iit_math": {
@@ -99,11 +103,12 @@ USE_CASES: dict[str, UseCaseConfig] = {
     },
 }
 
+
 def determine_use_case(
     task: TaskType,
-    context: Optional[StudentContext] = None,
-    query: Optional[str] = None,
-) -> Optional[str]:
+    context: StudentContext | None = None,
+    query: str | None = None,
+) -> str | None:
     if not context:
         return None
 
@@ -111,7 +116,7 @@ def determine_use_case(
     exam_goal = (context.exam_goal or "").lower().strip()
     q_text = (query or "").lower().strip()
     speed = context.learning_speed
-    
+
     try:
         grade = int(context.grade) if context.grade else 0
     except (ValueError, TypeError):
@@ -160,9 +165,8 @@ def determine_use_case(
         return "generating_hints"
 
     # 7. Deep theory explanation
-    if (
-        task in ("concept_explanation", "explanation")
-        and (speed == "slow" or "detailed" in q_text or "deeply" in q_text or "theory" in q_text)
+    if task in ("concept_explanation", "explanation") and (
+        speed == "slow" or "detailed" in q_text or "deeply" in q_text or "theory" in q_text
     ):
         return "deep_theory_explanation"
 

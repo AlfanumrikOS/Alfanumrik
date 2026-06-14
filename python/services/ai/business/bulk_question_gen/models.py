@@ -25,9 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # ── Allowed enums (mirror the TS Edge Function) ─────────────────────────────
 # TS source: bulk-question-gen/index.ts lines 86-87
 VALID_GRADES = ("6", "7", "8", "9", "10", "11", "12")
-VALID_BLOOM_LEVELS = frozenset(
-    {"remember", "understand", "apply", "analyze", "evaluate", "create"}
-)
+VALID_BLOOM_LEVELS = frozenset({"remember", "understand", "apply", "analyze", "evaluate", "create"})
 
 # CBSE subject allowlist per grade. Mirrors TS VALID_SUBJECTS_BY_GRADE
 # (bulk-question-gen/index.ts lines 91-99). Subjects stored lowercase;
@@ -38,28 +36,64 @@ VALID_SUBJECTS_BY_GRADE: dict[str, frozenset[str]] = {
     "8": frozenset({"math", "science", "english", "hindi", "social_studies", "social studies"}),
     "9": frozenset(
         {
-            "math", "science", "english", "hindi", "social_studies", "social studies",
-            "physics", "chemistry", "biology",
+            "math",
+            "science",
+            "english",
+            "hindi",
+            "social_studies",
+            "social studies",
+            "physics",
+            "chemistry",
+            "biology",
         }
     ),
     "10": frozenset(
         {
-            "math", "science", "english", "hindi", "social_studies", "social studies",
-            "physics", "chemistry", "biology",
+            "math",
+            "science",
+            "english",
+            "hindi",
+            "social_studies",
+            "social studies",
+            "physics",
+            "chemistry",
+            "biology",
         }
     ),
     "11": frozenset(
         {
-            "math", "physics", "chemistry", "biology", "english", "hindi",
-            "economics", "accountancy", "business_studies", "business studies",
-            "history", "geography", "political_science", "political science",
+            "math",
+            "physics",
+            "chemistry",
+            "biology",
+            "english",
+            "hindi",
+            "economics",
+            "accountancy",
+            "business_studies",
+            "business studies",
+            "history",
+            "geography",
+            "political_science",
+            "political science",
         }
     ),
     "12": frozenset(
         {
-            "math", "physics", "chemistry", "biology", "english", "hindi",
-            "economics", "accountancy", "business_studies", "business studies",
-            "history", "geography", "political_science", "political science",
+            "math",
+            "physics",
+            "chemistry",
+            "biology",
+            "english",
+            "hindi",
+            "economics",
+            "accountancy",
+            "business_studies",
+            "business studies",
+            "history",
+            "geography",
+            "political_science",
+            "political science",
         }
     ),
 }
@@ -93,7 +127,9 @@ class BulkQuestionGenRequest(BaseModel):
     )
     subject: str = Field(..., min_length=1, description="CBSE subject; cross-checked vs grade.")
     chapter: str = Field(..., min_length=1, description="Chapter title/name.")
-    chapter_id: str | None = Field(default=None, max_length=36, description="curriculum_topics UUID.")
+    chapter_id: str | None = Field(
+        default=None, max_length=36, description="curriculum_topics UUID."
+    )
     count: int = Field(default=10, ge=1, le=50, description="1..50; TS default 10.")
     difficulty: int = Field(default=3, ge=1, le=5, description="1=easy..5=hard; TS default 3.")
     bloom_level: str = Field(default="remember", description="Bloom's taxonomy level.")
@@ -106,9 +142,7 @@ class BulkQuestionGenRequest(BaseModel):
             raise TypeError("bloom_level must be a string")
         lower = v.lower().strip()
         if lower not in VALID_BLOOM_LEVELS:
-            raise ValueError(
-                f"bloom_level must be one of {sorted(VALID_BLOOM_LEVELS)}, got {v!r}"
-            )
+            raise ValueError(f"bloom_level must be one of {sorted(VALID_BLOOM_LEVELS)}, got {v!r}")
         return lower
 
     @field_validator("subject")

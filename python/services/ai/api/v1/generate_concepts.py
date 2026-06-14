@@ -20,11 +20,10 @@ from __future__ import annotations
 import uuid
 
 import structlog
-from fastapi import APIRouter, Header, HTTPException, Request, status, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request, status
 
 from ...business.generate_concepts import (
     GenerateConceptsRequest,
-    GenerateConceptsResponse,
     GenerateConceptsStatusResponse,
     handle_generate_concepts,
     handle_generate_concepts_status,
@@ -36,7 +35,10 @@ from ...shared.budget_guard import BudgetExceeded, check_daily_budget
 router = APIRouter(prefix="/v1", tags=["admin"])
 logger = structlog.get_logger(__name__)
 
-async def _run_generate_concepts_task(payload: GenerateConceptsRequest, admin_key: str | None, rid: str):
+
+async def _run_generate_concepts_task(
+    payload: GenerateConceptsRequest, admin_key: str | None, rid: str
+):
     structlog.contextvars.bind_contextvars(request_id=rid)
     try:
         await handle_generate_concepts(payload, admin_key_header=admin_key, request_id=rid)
@@ -82,13 +84,8 @@ async def post_generate_concepts(
         verify_admin_key(x_admin_key)
         if not await check_daily_budget(scope="org"):
             raise BudgetExceeded("Daily AI INR budget exceeded — try again tomorrow.")
-            
-        background_tasks.add_task(
-            _run_generate_concepts_task,
-            payload,
-            x_admin_key,
-            rid
-        )
+
+        background_tasks.add_task(_run_generate_concepts_task, payload, x_admin_key, rid)
         return {"status": "queued", "request_id": rid}
     except AuthFailed as err:
         raise HTTPException(

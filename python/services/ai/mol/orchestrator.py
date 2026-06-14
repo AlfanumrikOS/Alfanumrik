@@ -69,8 +69,6 @@ _providers: dict[str, ModelProvider] = {
 }
 
 
-
-
 _weights_cache: dict[str, float] | None = None
 _weights_cache_expiry: float = 0.0
 _WEIGHTS_TTL_SEC: float = 300.0  # 5 minutes
@@ -80,22 +78,25 @@ async def get_routing_weights() -> dict[str, float]:
     """Phase-2 routing weights — reads ``mol_routing_weights`` with a 5m cache."""
     global _weights_cache, _weights_cache_expiry
     now = time.monotonic()
-    
+
     if _weights_cache is not None and now < _weights_cache_expiry:
         return _weights_cache
 
     try:
         from ..db.supabase import get_service_client
+
         client = get_service_client()
         if not client:
             return _weights_cache or {}
-            
-        result = await client.table("mol_routing_weights").select("task_type, openai_weight").execute()
-        
+
+        result = (
+            await client.table("mol_routing_weights").select("task_type, openai_weight").execute()
+        )
+
         data = getattr(result, "data", None)
         if data is None and isinstance(result, dict):
             data = result.get("data")
-            
+
         if data is not None:
             new_cache = {}
             for row in data:
@@ -105,7 +106,7 @@ async def get_routing_weights() -> dict[str, float]:
                     new_cache[task_type] = float(weight)
             _weights_cache = new_cache
             _weights_cache_expiry = now + _WEIGHTS_TTL_SEC
-        
+
         return _weights_cache or {}
     except Exception as err:
         # Avoid crashing the orchestration loop; just fallback to empty/stale cache

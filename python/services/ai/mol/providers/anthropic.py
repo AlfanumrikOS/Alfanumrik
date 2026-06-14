@@ -56,9 +56,7 @@ class AnthropicProvider(ModelProvider):
         image_url: str | None = None,
     ) -> ProviderResponse:
         if not self.is_configured():
-            raise RuntimeError(
-                "AnthropicProvider not configured (ANTHROPIC_API_KEY missing)"
-            )
+            raise RuntimeError("AnthropicProvider not configured (ANTHROPIC_API_KEY missing)")
 
         # Enable prompt caching when the system block crosses the cache cutoff.
         sys_block: Any

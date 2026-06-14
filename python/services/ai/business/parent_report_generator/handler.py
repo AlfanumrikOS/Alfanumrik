@@ -17,7 +17,7 @@ counters + counts).
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 
@@ -84,15 +84,11 @@ async def build_parent_report(
         assert guardian.guardian_id is not None
 
         try:
-            linked = await verify_guardian_student_link(
-                guardian.guardian_id, payload.student_id
-            )
+            linked = await verify_guardian_student_link(guardian.guardian_id, payload.student_id)
         except RepositoryError as err:
             raise HandlerError("server_misconfigured", status=500) from err
         if not linked:
-            raise GuardianNotLinkedError(
-                "guardian_not_linked_to_student", status=403
-            )
+            raise GuardianNotLinkedError("guardian_not_linked_to_student", status=403)
 
         try:
             student_name = await fetch_student_name(payload.student_id)
@@ -119,9 +115,7 @@ async def build_parent_report(
         stats_dict = compute_weekly_stats(
             quiz_sessions, foxy_sessions, learning_profile, mastery_rows
         )
-        report_dict = build_template_report(
-            stats_dict, payload.language, student_name
-        )
+        report_dict = build_template_report(stats_dict, payload.language, student_name)
         report = WeeklyReport(
             period=report_dict["period"],
             highlights=report_dict["highlights"],
@@ -138,9 +132,7 @@ async def build_parent_report(
 
         return ParentReportResponse(
             report=report,
-            generated_at=datetime.now(timezone.utc)
-            .isoformat()
-            .replace("+00:00", "Z"),
+            generated_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         )
     finally:
         structlog.contextvars.clear_contextvars()

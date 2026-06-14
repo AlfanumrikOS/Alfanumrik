@@ -56,10 +56,7 @@ async def post_bulk_question_gen(
     that forwards to this endpoint — the Python service trusts that the
     caller has already been admitted.
     """
-    rid = (
-        request.headers.get("x-request-id")
-        or str(uuid.uuid4())
-    )
+    rid = request.headers.get("x-request-id") or str(uuid.uuid4())
     structlog.contextvars.bind_contextvars(request_id=rid)
     try:
         return await handle_bulk_question_gen(

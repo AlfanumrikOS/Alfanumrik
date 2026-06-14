@@ -174,11 +174,7 @@ async def upsert_report(
         "report_data": report_data,
     }
     try:
-        result = (
-            await client.table("nep_compliance_reports")
-            .upsert(payload)
-            .execute()
-        )
+        result = await client.table("nep_compliance_reports").upsert(payload).execute()
     except Exception as err:  # noqa: BLE001
         return None, f"upsert_failed: {err}"
     row = _first_or_none(result)

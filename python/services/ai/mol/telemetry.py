@@ -131,6 +131,7 @@ def sum_tokens(usages: list[TokenUsage]) -> TokenUsage:
 @dataclass
 class ShadowTextPayload:
     """Payload for record_shadow_text. All text fields are pre-PII-redaction."""
+
     baseline_request_id: str
     shadow_request_id: str
     question_text: str
@@ -165,7 +166,7 @@ def redact_pii_in_text(s: str) -> tuple[str, list[str]]:
 
 async def record_shadow_text(p: ShadowTextPayload) -> None:
     """Fire-and-forget write to mol_shadow_text_buffer with PII redaction.
-    
+
     The DB has a 7-day TTL. The async grader CRON reads these rows, grades the
     shadow response, and deletes the row upon completion.
     """
@@ -181,13 +182,15 @@ async def record_shadow_text(p: ShadowTextPayload) -> None:
         base_sys_text, base_sys_app = redact_pii_in_text(p.baseline_system_prompt)
         base_resp_text, base_resp_app = redact_pii_in_text(p.baseline_response_text)
         shadow_resp_text, shadow_resp_app = redact_pii_in_text(p.shadow_response_text)
-        
+
         if p.shadow_system_prompt is not None:
             shadow_sys_text, shadow_sys_app = redact_pii_in_text(p.shadow_system_prompt)
         else:
             shadow_sys_text, shadow_sys_app = None, []
 
-        applied = sorted(list(set(q_app + base_sys_app + base_resp_app + shadow_resp_app + shadow_sys_app)))
+        applied = sorted(
+            list(set(q_app + base_sys_app + base_resp_app + shadow_resp_app + shadow_sys_app))
+        )
 
         row = {
             "baseline_request_id": p.baseline_request_id,
@@ -199,7 +202,7 @@ async def record_shadow_text(p: ShadowTextPayload) -> None:
             "shadow_response_text": shadow_resp_text,
             "redaction_applied": applied,
         }
-        
+
         await client.table("mol_shadow_text_buffer").insert(row).execute()
     except Exception as err:
         msg = str(err) if err else type(err).__name__

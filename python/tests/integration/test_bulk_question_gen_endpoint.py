@@ -89,10 +89,7 @@ class _FakeDbClient:
         if pending is not None and table == "question_bank":
             self.inserts.extend(pending)
             # Synthesize an id for each inserted row.
-            returned = [
-                {**row, "id": f"qb-{i}"}
-                for i, row in enumerate(pending)
-            ]
+            returned = [{**row, "id": f"qb-{i}"} for i, row in enumerate(pending)]
             return {"data": returned, "status_code": 201}
         if pending is not None and table == "ops_events":
             self.ops.extend(pending)
@@ -259,9 +256,7 @@ def test_bulk_question_gen_401_when_supabase_rejects_token(
     respx_mock: respx.MockRouter,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    respx_mock.get("https://test.supabase.co/auth/v1/user").mock(
-        return_value=httpx.Response(401)
-    )
+    respx_mock.get("https://test.supabase.co/auth/v1/user").mock(return_value=httpx.Response(401))
     _install_fake_db(monkeypatch, admin_rows=[])
     res = client.post(
         "/v1/bulk-question-gen",

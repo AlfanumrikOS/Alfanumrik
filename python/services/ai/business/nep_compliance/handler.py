@@ -12,7 +12,7 @@ No LLM call. Pure data aggregation following the TS index.ts pipeline.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -101,7 +101,7 @@ async def handle_nep_compliance(
 
 async def _get_hpc(student_id: str) -> NepComplianceResponse:
     """get_hpc: try cached, fall back to generate."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     academic_year = get_academic_year(now)
     term = get_current_term(now)
     try:
@@ -116,7 +116,7 @@ async def _get_hpc(student_id: str) -> NepComplianceResponse:
 
 async def _generate_hpc(student_id: str) -> NepComplianceResponse:
     """generate_hpc: full aggregation pipeline."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     academic_year = get_academic_year(now)
     term = get_current_term(now)
 
@@ -194,9 +194,7 @@ async def _generate_hpc(student_id: str) -> NepComplianceResponse:
     max_streak = max([0, *((p.get("streak_days") or 0) for p in profiles)])
     total_q_asked = sum((p.get("total_questions_asked") or 0) for p in profiles)
     active_day_set = {
-        (s.get("created_at") or "")[:10]
-        for s in sessions
-        if isinstance(s.get("created_at"), str)
+        (s.get("created_at") or "")[:10] for s in sessions if isinstance(s.get("created_at"), str)
     }
     active_day_set.discard("")
     active_days = len(active_day_set)
@@ -208,9 +206,7 @@ async def _generate_hpc(student_id: str) -> NepComplianceResponse:
     )
 
     study_reg = (
-        min(100, round(active_days / STUDY_REGULARITY_BENCHMARK_DAYS * 100))
-        if sessions
-        else 0
+        min(100, round(active_days / STUDY_REGULARITY_BENCHMARK_DAYS * 100)) if sessions else 0
     )
     holistic = HolisticIndicators(
         total_sessions=len(sessions),

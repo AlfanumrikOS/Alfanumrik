@@ -92,9 +92,7 @@ async def test_call_whisper_maps_hinglish_to_hi_language_hint(
     respx_mock: respx.MockRouter,
 ):
     route = respx_mock.post(WHISPER_URL).mock(
-        return_value=httpx.Response(
-            200, json={"text": "x", "language": "hi", "duration": 1.0}
-        )
+        return_value=httpx.Response(200, json={"text": "x", "language": "hi", "duration": 1.0})
     )
     await call_whisper(b"audio", "mp3", language_hint="hinglish")
     body = route.calls[0].request.content.decode("utf-8", errors="replace")
@@ -107,9 +105,7 @@ async def test_call_whisper_omits_language_when_hint_is_none(
     respx_mock: respx.MockRouter,
 ):
     route = respx_mock.post(WHISPER_URL).mock(
-        return_value=httpx.Response(
-            200, json={"text": "x", "language": "en", "duration": 1.0}
-        )
+        return_value=httpx.Response(200, json={"text": "x", "language": "en", "duration": 1.0})
     )
     await call_whisper(b"audio", "mp3", language_hint=None)
     body = route.calls[0].request.content.decode("utf-8", errors="replace")
@@ -126,9 +122,7 @@ async def test_call_whisper_omits_language_when_hint_is_unknown_token(
 ):
     """An alias outside {en, hi, hinglish} → omit the language form field."""
     route = respx_mock.post(WHISPER_URL).mock(
-        return_value=httpx.Response(
-            200, json={"text": "x", "language": "en", "duration": 1.0}
-        )
+        return_value=httpx.Response(200, json={"text": "x", "language": "en", "duration": 1.0})
     )
     await call_whisper(b"audio", "mp3", language_hint="fr")
     body = route.calls[0].request.content.decode("utf-8", errors="replace")
@@ -141,9 +135,7 @@ async def test_call_whisper_omits_language_when_hint_is_unknown_token(
 @pytest.mark.asyncio
 async def test_call_whisper_fills_defaults_on_quirky_200(respx_mock: respx.MockRouter):
     """A 200 missing fields gets defensive defaults (the handler relies on this)."""
-    respx_mock.post(WHISPER_URL).mock(
-        return_value=httpx.Response(200, json={})
-    )
+    respx_mock.post(WHISPER_URL).mock(return_value=httpx.Response(200, json={}))
     res = await call_whisper(b"audio", "mp3")
     assert res["text"] == ""
     assert res["language"] == ""
@@ -152,9 +144,7 @@ async def test_call_whisper_fills_defaults_on_quirky_200(respx_mock: respx.MockR
 
 @pytest.mark.asyncio
 async def test_call_whisper_raises_on_non_dict_200(respx_mock: respx.MockRouter):
-    respx_mock.post(WHISPER_URL).mock(
-        return_value=httpx.Response(200, json=["not a dict"])
-    )
+    respx_mock.post(WHISPER_URL).mock(return_value=httpx.Response(200, json=["not a dict"]))
     with pytest.raises(WhisperError) as exc:
         await call_whisper(b"audio", "mp3")
     assert exc.value.status == 200
@@ -162,9 +152,7 @@ async def test_call_whisper_raises_on_non_dict_200(respx_mock: respx.MockRouter)
 
 @pytest.mark.asyncio
 async def test_call_whisper_raises_on_non_json_200(respx_mock: respx.MockRouter):
-    respx_mock.post(WHISPER_URL).mock(
-        return_value=httpx.Response(200, text="<html>500</html>")
-    )
+    respx_mock.post(WHISPER_URL).mock(return_value=httpx.Response(200, text="<html>500</html>"))
     with pytest.raises(WhisperError) as exc:
         await call_whisper(b"audio", "mp3")
     assert exc.value.status == 200

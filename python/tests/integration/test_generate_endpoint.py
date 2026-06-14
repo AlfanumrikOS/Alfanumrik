@@ -158,16 +158,12 @@ def test_generate_422_when_envelope_malformed(client: TestClient):
     assert res.status_code == 422
 
 
-def test_generate_502_when_all_providers_fail(
-    client: TestClient, respx_mock, mock_supabase_client
-):
+def test_generate_502_when_all_providers_fail(client: TestClient, respx_mock, mock_supabase_client):
     """All providers in the chain return 500 → 502 NO_PROVIDER_AVAILABLE."""
     respx_mock.post("https://api.openai.com/v1/chat/completions").mock(
         return_value=httpx.Response(500)
     )
-    respx_mock.post("https://api.anthropic.com/v1/messages").mock(
-        return_value=httpx.Response(500)
-    )
+    respx_mock.post("https://api.anthropic.com/v1/messages").mock(return_value=httpx.Response(500))
     payload = {
         "task_type": "explanation",
         "input": {"question": "?"},

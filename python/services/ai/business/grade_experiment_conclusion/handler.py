@@ -69,9 +69,7 @@ async def grade_conclusion(
 ) -> GradeConclusionResponse:
     rid = request_id or str(uuid.uuid4())
     started = time.monotonic()
-    structlog.contextvars.bind_contextvars(
-        request_id=rid, observation_id=payload.observation_id
-    )
+    structlog.contextvars.bind_contextvars(request_id=rid, observation_id=payload.observation_id)
     try:
         try:
             student = await verify_student(authorization_header)
@@ -92,9 +90,7 @@ async def grade_conclusion(
         # Idempotency: cached grading wins.
         cached_grading = observation.get("grading_result")
         if cached_grading is not None and isinstance(cached_grading, dict):
-            return _from_cached(
-                payload.observation_id, cached_grading, coins=0, cached=True
-            )
+            return _from_cached(payload.observation_id, cached_grading, coins=0, cached=True)
 
         # Belt-and-suspenders: previously awarded but row missing grading? still cached.
         try:
@@ -104,9 +100,7 @@ async def grade_conclusion(
         if awarded_before:
             # No grading_result yet but coins already paid. Use scoring with zero
             # coin award (idempotency).
-            grading_dict = score_conclusion(
-                str(observation.get("conclusion_text") or "")
-            )
+            grading_dict = score_conclusion(str(observation.get("conclusion_text") or ""))
             return _from_cached(payload.observation_id, grading_dict, coins=0, cached=True)
 
         # Fresh grade.
@@ -132,9 +126,7 @@ async def grade_conclusion(
             latency_ms=elapsed_ms,
         )
 
-        return _from_cached(
-            payload.observation_id, grading_dict, coins=coins, cached=False
-        )
+        return _from_cached(payload.observation_id, grading_dict, coins=coins, cached=False)
     finally:
         structlog.contextvars.clear_contextvars()
 

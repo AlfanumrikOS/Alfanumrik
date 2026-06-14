@@ -13,7 +13,7 @@ Constants exposed at module level so callers (and tests) can reference them.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 TARGET_DIFFICULTY_V1: float = 0.55
@@ -40,11 +40,11 @@ def month_boundaries_of(month_label: str) -> tuple[str, str] | None:
     if month < 1 or month > 12:
         return None
 
-    start = datetime(year, month, 1, tzinfo=timezone.utc)
+    start = datetime(year, month, 1, tzinfo=UTC)
     if month == 12:
-        end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+        end = datetime(year + 1, 1, 1, tzinfo=UTC)
     else:
-        end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+        end = datetime(year, month + 1, 1, tzinfo=UTC)
 
     return (
         start.isoformat().replace("+00:00", "Z"),

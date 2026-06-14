@@ -49,7 +49,7 @@ def build_user_prompt(
     Source: ``supabase/functions/bulk-question-gen/index.ts:205-236``.
     """
     return (
-        f"Generate {count} CBSE Grade {grade} {subject} multiple-choice questions for chapter: \"{chapter}\".\n"
+        f'Generate {count} CBSE Grade {grade} {subject} multiple-choice questions for chapter: "{chapter}".\n'
         f"\n"
         f"Requirements:\n"
         f"- Each question must test a specific concept from this chapter\n"

@@ -126,9 +126,7 @@ async def build_synthesis(
         if cm_err:
             raise BundleBuildError(cm_err, status=500)
 
-        touched_topic_ids = [
-            r["topic_id"] for r in cm_rows if isinstance(r.get("topic_id"), str)
-        ]
+        touched_topic_ids = [r["topic_id"] for r in cm_rows if isinstance(r.get("topic_id"), str)]
         topic_rows: list[dict] = []
         if touched_topic_ids:
             try:
@@ -169,9 +167,7 @@ async def build_synthesis(
             raise BundleBuildError(insert_err, status=500)
 
         inserted_id = (
-            str(inserted.get("id"))
-            if inserted and isinstance(inserted.get("id"), str)
-            else None
+            str(inserted.get("id")) if inserted and isinstance(inserted.get("id"), str) else None
         )
         return BuildResponse(id=inserted_id, alreadyExists=False, bundle=bundle)
     finally:

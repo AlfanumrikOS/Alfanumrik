@@ -65,9 +65,7 @@ async def test_generate_response_wires_real_system_prompt_builder(
 
 
 @pytest.mark.asyncio
-async def test_generate_response_handles_absent_rag_context(
-    openai_success, mock_supabase_client
-):
+async def test_generate_response_handles_absent_rag_context(openai_success, mock_supabase_client):
     """``rag_context`` is optional (defaults to None); passing it straight
     through to the builder must not raise on the None branch."""
     req = GenerateRequest(

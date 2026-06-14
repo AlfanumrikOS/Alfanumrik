@@ -99,9 +99,7 @@ def build_user_prompt(question: dict[str, Any]) -> str:
         and 0 <= correct_index < len(options)
     ):
         correct_option = options[correct_index]
-        options_block = " | ".join(
-            f"{chr(65 + i)}) {o}" for i, o in enumerate(options)
-        )
+        options_block = " | ".join(f"{chr(65 + i)}) {o}" for i, o in enumerate(options))
         prompt += (
             f"\nOPTIONS: {options_block}\n"
             f"CORRECT ANSWER: {chr(65 + correct_index)}) {correct_option}"
@@ -121,11 +119,7 @@ def build_user_prompt(question: dict[str, Any]) -> str:
             "- Set marks_expected to 1"
         )
     else:
-        prompt += (
-            "\n"
-            "\n"
-            "Estimate appropriate marks_expected based on question depth and type."
-        )
+        prompt += "\n" "\n" "Estimate appropriate marks_expected based on question depth and type."
 
     prompt += (
         "\n"

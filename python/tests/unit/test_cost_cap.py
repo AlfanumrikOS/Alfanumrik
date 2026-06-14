@@ -26,16 +26,34 @@ def test_estimate_inr_uses_primary_model_price():
 
 
 def test_under_ceiling_does_not_raise():
-    enforce_cost_cap(task_type="explanation", provider="openai", model="gpt-4o-mini", prompt_tokens=500, max_tokens=1024)
+    enforce_cost_cap(
+        task_type="explanation",
+        provider="openai",
+        model="gpt-4o-mini",
+        prompt_tokens=500,
+        max_tokens=1024,
+    )
 
 
 def test_over_ceiling_raises_cost_cap_exceeded():
     with pytest.raises(MolError) as exc:
-        enforce_cost_cap(task_type="evaluation", provider="anthropic", model="claude-sonnet-4-6-20251022", prompt_tokens=2_000_000, max_tokens=2_000_000)
+        enforce_cost_cap(
+            task_type="evaluation",
+            provider="anthropic",
+            model="claude-sonnet-4-6-20251022",
+            prompt_tokens=2_000_000,
+            max_tokens=2_000_000,
+        )
     assert exc.value.code == "COST_CAP_EXCEEDED"
     assert "estimated_inr" in exc.value.details
     assert "ceiling_inr" in exc.value.details
 
 
 def test_unknown_model_estimate_is_zero_and_passes():
-    enforce_cost_cap(task_type="explanation", provider="openai", model="some-unpriced-model", prompt_tokens=10_000_000, max_tokens=10_000_000)
+    enforce_cost_cap(
+        task_type="explanation",
+        provider="openai",
+        model="some-unpriced-model",
+        prompt_tokens=10_000_000,
+        max_tokens=10_000_000,
+    )

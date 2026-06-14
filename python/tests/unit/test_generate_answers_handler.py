@@ -287,9 +287,7 @@ async def test_handler_skips_question_when_llm_empty(
         "services.ai.business.generate_answers.handler.generate_answer_for_question",
         fake_generate,
     )
-    monkeypatch.setattr(
-        "services.ai.business.generate_answers.handler.log_ops_event", fake_log
-    )
+    monkeypatch.setattr("services.ai.business.generate_answers.handler.log_ops_event", fake_log)
     monkeypatch.setattr(
         "services.ai.business.generate_answers.handler.count_active_questions",
         fake_count,
@@ -342,9 +340,7 @@ async def test_handler_rejects_too_short_answer(monkeypatch: pytest.MonkeyPatch)
         "services.ai.business.generate_answers.handler.generate_answer_for_question",
         fake_generate,
     )
-    monkeypatch.setattr(
-        "services.ai.business.generate_answers.handler.log_ops_event", fake_log
-    )
+    monkeypatch.setattr("services.ai.business.generate_answers.handler.log_ops_event", fake_log)
     monkeypatch.setattr(
         "services.ai.business.generate_answers.handler.count_active_questions",
         fake_count,
@@ -403,9 +399,7 @@ async def test_handler_db_update_failure_increments_failed(
         "services.ai.business.generate_answers.handler.update_question_answer",
         fake_update,
     )
-    monkeypatch.setattr(
-        "services.ai.business.generate_answers.handler.log_ops_event", fake_log
-    )
+    monkeypatch.setattr("services.ai.business.generate_answers.handler.log_ops_event", fake_log)
     monkeypatch.setattr(
         "services.ai.business.generate_answers.handler.count_active_questions",
         fake_count,
@@ -484,9 +478,7 @@ async def test_handler_clamps_oversized_batch(monkeypatch: pytest.MonkeyPatch):
     # layer (matches TS posture of clamping at the handler).
     req = GenerateAnswersRequest()
     req.batch_size = 999
-    await handle_generate_answers(
-        req, admin_key_header="test-admin-key", request_id="rid"
-    )
+    await handle_generate_answers(req, admin_key_header="test-admin-key", request_id="rid")
     # Handler clamps 999 → DEFAULT_BATCH_SIZE = 20.
     assert captured["limit"] == 20
 

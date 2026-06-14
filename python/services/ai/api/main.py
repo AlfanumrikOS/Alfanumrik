@@ -15,36 +15,35 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import Response
-
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from starlette.responses import Response
 
-from .limiter import limiter
-
+from ..business.cme_engine.router import router as cme_router
+from ..business.ncert_solver.router import router as ncert_solver_router
+from ..business.quiz_generator.router import router as quiz_generator_router
 from ..config import get_settings
 from ..db.supabase import get_service_client
 from ..observability.logger import configure_logging, get_logger
 from ..observability.sentry import configure_sentry
 from .health import router as health_router
+from .limiter import limiter
+from .v1.bulk_non_mcq_gen import router as bulk_non_mcq_gen_router
 from .v1.bulk_question_gen import router as bulk_question_gen_router
+from .v1.extract_ncert_questions import router as extract_ncert_questions_router
+from .v1.foxy_tutor import router as foxy_tutor_router
 from .v1.generate import router as generate_router
 from .v1.generate_answers import router as generate_answers_router
 from .v1.generate_concepts import router as generate_concepts_router
-from .v1.voice import router as voice_router
-from .v1.nep_compliance import router as nep_compliance_router
-from .v1.foxy_tutor import router as foxy_tutor_router
-from .v1.monthly_synthesis_builder import router as monthly_synthesis_builder_router
-from .v1.parent_report_generator import router as parent_report_generator_router
-from .v1.bulk_non_mcq_gen import router as bulk_non_mcq_gen_router
-from .v1.verify_question_bank import router as verify_question_bank_router
-from .v1.extract_ncert_questions import router as extract_ncert_questions_router
 from .v1.grade_experiment_conclusion import router as grade_experiment_conclusion_router
-from ..business.cme_engine.router import router as cme_router
-from ..business.ncert_solver.router import router as ncert_solver_router
-from ..business.quiz_generator.router import router as quiz_generator_router
+from .v1.monthly_synthesis_builder import router as monthly_synthesis_builder_router
+from .v1.nep_compliance import router as nep_compliance_router
+from .v1.parent_report_generator import router as parent_report_generator_router
+from .v1.verify_question_bank import router as verify_question_bank_router
+from .v1.voice import router as voice_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -100,7 +99,7 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-Request-Id"],
     )
-    
+
     # slowapi integration
     # SlowAPIMiddleware performs the per-route limit check AND injects the
     # X-RateLimit-* response headers (slowapi 0.1.9 has no separate

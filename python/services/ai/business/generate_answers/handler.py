@@ -106,9 +106,7 @@ async def handle_generate_answers(
     # 2. Daily INR budget guard. Must run BEFORE the LLM call so we fail
     # fast on overrun. Same posture as voice/transcribe.
     if not await check_daily_budget(scope="org"):
-        raise BudgetExceeded(
-            "Daily AI INR budget exceeded — try again tomorrow."
-        )
+        raise BudgetExceeded("Daily AI INR budget exceeded — try again tomorrow.")
 
     # 3. Param clamping. TS handler at index.ts:429-432 clamps batch_size to
     # [1, MAX_BATCH_SIZE], defaulting to DEFAULT_BATCH_SIZE when missing or

@@ -204,9 +204,7 @@ def test_post_401_when_wrong_admin_key(client: TestClient):
     assert res.status_code == 401
 
 
-def test_post_503_when_admin_key_env_empty(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-):
+def test_post_503_when_admin_key_env_empty(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("ADMIN_API_KEY", raising=False)
     res = client.post(
         "/v1/generate-concepts",
@@ -239,9 +237,7 @@ def test_post_422_when_grade_is_integer(client: TestClient):
     assert res.status_code == 422
 
 
-def test_post_empty_body_returns_2xx(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-):
+def test_post_empty_body_returns_2xx(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     """Empty body short-circuits on empty-batch path."""
     fake = _FakeDbClient()  # No candidate chapters.
     _install_fake_db(monkeypatch, fake)
@@ -453,9 +449,7 @@ def test_get_status_returns_coverage_shape(
     assert "Grade 10 - math" in body["breakdown"]
 
 
-def test_get_status_503_when_admin_env_missing(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-):
+def test_get_status_503_when_admin_env_missing(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("ADMIN_API_KEY", raising=False)
     res = client.get(
         "/v1/generate-concepts",

@@ -8,8 +8,6 @@ tests fail and quality MUST reject.
 
 from __future__ import annotations
 
-import pytest
-
 from services.ai.business.monthly_synthesis_builder.bundle import (
     CHAPTERS_IN_MOCK_SUMMARY_CAP,
     CHAPTERS_TOUCHED_SOFT_CAP,
@@ -22,7 +20,6 @@ from services.ai.business.monthly_synthesis_builder.bundle import (
     derive_chapters_touched,
     month_boundaries_of,
 )
-
 
 # Constants pinning
 
@@ -90,7 +87,10 @@ def test_compute_mastery_counters_improved_requires_threshold_and_attempts():
     rows = [
         {"mastery_probability": 0.6, "total_attempts": 5},  # qualifies
         {"mastery_probability": 0.51, "total_attempts": 1},  # qualifies (>0.5, >0 attempts)
-        {"mastery_probability": 0.5, "total_attempts": 5},  # equals threshold, not strictly greater - excluded
+        {
+            "mastery_probability": 0.5,
+            "total_attempts": 5,
+        },  # equals threshold, not strictly greater - excluded
         {"mastery_probability": 0.9, "total_attempts": 0},  # no attempts - excluded
         {"mastery_probability": None, "total_attempts": 5},  # None probability - excluded
     ]

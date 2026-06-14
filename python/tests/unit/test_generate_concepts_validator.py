@@ -45,9 +45,7 @@ def _make_concept(
 
 def _make_response(n: int, **overrides) -> str:
     """Build a JSON-array string with n valid concepts."""
-    return json.dumps(
-        [_make_concept(title=f"Concept {i}", **overrides) for i in range(n)]
-    )
+    return json.dumps([_make_concept(title=f"Concept {i}", **overrides) for i in range(n)])
 
 
 # ── Happy path ──────────────────────────────────────────────────────────────
@@ -147,12 +145,7 @@ def test_defaults_invalid_difficulty_to_2():
 
 
 def test_defaults_difficulty_when_missing():
-    raw = json.dumps(
-        [
-            _make_concept(title=f"C{i}", difficulty=None)
-            for i in range(3)
-        ]
-    )
+    raw = json.dumps([_make_concept(title=f"C{i}", difficulty=None) for i in range(3)])
     out = parse_concepts_response(raw)
     assert out is not None
     assert all(c.difficulty == 2 for c in out)
@@ -201,12 +194,7 @@ def test_defaults_invalid_bloom_to_understand():
 
 
 def test_defaults_bloom_when_missing():
-    raw = json.dumps(
-        [
-            _make_concept(title=f"C{i}", bloom_level=None)
-            for i in range(3)
-        ]
-    )
+    raw = json.dumps([_make_concept(title=f"C{i}", bloom_level=None) for i in range(3)])
     out = parse_concepts_response(raw)
     assert out is not None
     assert all(c.bloom_level == "understand" for c in out)
@@ -315,10 +303,7 @@ def test_common_mistakes_filters_non_strings():
 
 def test_common_mistakes_filters_empty_strings():
     raw = json.dumps(
-        [
-            _make_concept(title=f"C{i}", common_mistakes=["", "valid"])
-            for i in range(3)
-        ]
+        [_make_concept(title=f"C{i}", common_mistakes=["", "valid"]) for i in range(3)]
     )
     out = parse_concepts_response(raw)
     assert out is not None
@@ -349,12 +334,7 @@ def test_common_mistakes_missing_becomes_empty():
 
 
 def test_key_formula_when_string():
-    raw = json.dumps(
-        [
-            _make_concept(title=f"C{i}", key_formula="  E = mc^2  ")
-            for i in range(3)
-        ]
-    )
+    raw = json.dumps([_make_concept(title=f"C{i}", key_formula="  E = mc^2  ") for i in range(3)])
     out = parse_concepts_response(raw)
     assert out is not None
     # Trimmed.
@@ -429,10 +409,7 @@ def test_required_field_whitespace_only_skipped():
 
 def test_required_fields_stripped_of_whitespace():
     raw = json.dumps(
-        [
-            _make_concept(title=f"  C{i}  ", learning_objective="  trim me  ")
-            for i in range(3)
-        ]
+        [_make_concept(title=f"  C{i}  ", learning_objective="  trim me  ") for i in range(3)]
     )
     out = parse_concepts_response(raw)
     assert out is not None
