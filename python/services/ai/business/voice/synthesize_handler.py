@@ -177,9 +177,7 @@ async def synthesize_speech(
             success=False,
             failure_reason=f"text_too_long_{char_count}_chars",
         )
-        raise TextTooLongError(
-            f"Text exceeds {MAX_TEXT_CHARS} chars (got {char_count})"
-        )
+        raise TextTooLongError(f"Text exceeds {MAX_TEXT_CHARS} chars (got {char_count})")
 
     # 2. Budget check — fail-OPEN posture inside check_daily_budget means
     #    a Supabase outage won't gate synthesis. Same trade-off as

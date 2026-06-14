@@ -1,56 +1,64 @@
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+
 
 class NextActionRequest(BaseModel):
     subject_id: str
 
+
 class NextActionResponse(BaseModel):
     type: str
-    concept_id: Optional[str]
+    concept_id: str | None
     title: str
     reason: str
     difficulty: int
 
+
 class MicroTelemetry(BaseModel):
-    latency_ms: Optional[int] = None
-    changed_answers_count: Optional[int] = 0
-    hints_used: Optional[int] = 0
+    latency_ms: int | None = None
+    changed_answers_count: int | None = 0
+    hints_used: int | None = 0
+
 
 class RecordResponseRequest(BaseModel):
     concept_id: str
-    question_id: Optional[str] = None
+    question_id: str | None = None
     correct: bool
-    difficulty: Optional[int] = 2
-    response_time_ms: Optional[int] = 30000
-    student_answer: Optional[str] = None
-    correct_answer: Optional[str] = None
-    telemetry: Optional[MicroTelemetry] = None
+    difficulty: int | None = 2
+    response_time_ms: int | None = 30000
+    student_answer: str | None = None
+    correct_answer: str | None = None
+    telemetry: MicroTelemetry | None = None
+
 
 class RecordResponseResponse(BaseModel):
     mastery: float
     retention: float
     streak: int
-    error_type: Optional[str]
+    error_type: str | None
     total_attempts: int
     total_correct: int
 
+
 class ConceptStateRequest(BaseModel):
-    subject_id: Optional[str] = None
+    subject_id: str | None = None
+
 
 class ConceptStateItem(BaseModel):
     concept_id: str
     mastery_mean: float
     current_retention: float
     retention_half_life: float
-    last_practiced_at: Optional[str]
+    last_practiced_at: str | None
     total_attempts: int
     total_correct: int
     streak_current: int
     error_count_conceptual: int
-    max_difficulty_succeeded: Optional[float] = None
+    max_difficulty_succeeded: float | None = None
+
 
 class ConceptStateListResponse(BaseModel):
-    data: List[ConceptStateItem]
+    data: list[ConceptStateItem]
+
 
 class RevisionScheduleItem(BaseModel):
     concept_id: str
@@ -59,21 +67,25 @@ class RevisionScheduleItem(BaseModel):
     priority: float
     revision_type: str
 
+
 class RevisionScheduleResponse(BaseModel):
-    data: List[RevisionScheduleItem]
+    data: list[RevisionScheduleItem]
+
 
 class ExamReadinessRequest(BaseModel):
     subject_id: str
-    exam_type: Optional[str] = "periodic"
+    exam_type: str | None = "periodic"
+
 
 class WeakestChapter(BaseModel):
     chapter: str
     score: float
 
+
 class ExamReadinessResponse(BaseModel):
     overall: float
     predicted_percentage: int
-    chapters: Dict[str, float]
-    weakest: List[WeakestChapter]
+    chapters: dict[str, float]
+    weakest: list[WeakestChapter]
     total_concepts: int
     concepts_mastered: int

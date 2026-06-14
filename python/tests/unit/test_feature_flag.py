@@ -121,9 +121,7 @@ async def test_is_flag_enabled_environment_gate(monkeypatch, respx_mock):
 
 
 @pytest.mark.asyncio
-async def test_is_flag_enabled_requires_student_id_for_rollout(
-    monkeypatch, respx_mock
-):
+async def test_is_flag_enabled_requires_student_id_for_rollout(monkeypatch, respx_mock):
     monkeypatch.setenv("SUPABASE_URL", "https://flags.test")
     monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-key")
     from services.ai.config import get_settings

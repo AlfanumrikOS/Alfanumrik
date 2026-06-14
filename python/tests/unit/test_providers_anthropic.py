@@ -109,9 +109,7 @@ async def test_call_raises_anthropic_error_on_429(respx_mock):
 
 @pytest.mark.asyncio
 async def test_call_raises_on_500(respx_mock):
-    respx_mock.post("https://api.anthropic.com/v1/messages").mock(
-        return_value=httpx.Response(500)
-    )
+    respx_mock.post("https://api.anthropic.com/v1/messages").mock(return_value=httpx.Response(500))
     p = AnthropicProvider()
     with pytest.raises(AnthropicError) as exc_info:
         await p.call(

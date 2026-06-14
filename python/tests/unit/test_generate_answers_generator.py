@@ -80,7 +80,9 @@ async def test_generator_uses_user_prompt_as_input_instruction(
 
     async def fake_call_mol(req):
         captured["req"] = req
-        return _mol_result('{"answer_text": "x", "answer_methodology": "definition", "marks_expected": 1}')
+        return _mol_result(
+            '{"answer_text": "x", "answer_methodology": "definition", "marks_expected": 1}'
+        )
 
     monkeypatch.setattr(
         "services.ai.business.generate_answers.generator._call_mol",

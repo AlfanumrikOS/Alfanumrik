@@ -18,18 +18,14 @@ def compute_weekly_stats(
     """Build WeeklyStats dict from the 4 input row sets. TS lines 240-298."""
     quizzes_completed = len(quiz_sessions)
     score_total = sum((q.get("score_percent") or 0) for q in quiz_sessions)
-    avg_score = (
-        round(score_total / quizzes_completed) if quizzes_completed > 0 else 0
-    )
+    avg_score = round(score_total / quizzes_completed) if quizzes_completed > 0 else 0
     xp_earned = (learning_profile or {}).get("xp_total") if learning_profile else None
     xp_earned = xp_earned or 0
     # Quiz time + foxy time (seconds) -> minutes.
     quiz_seconds = sum((q.get("time_taken_seconds") or 0) for q in quiz_sessions)
     foxy_seconds = sum((f.get("time_taken_seconds") or 0) for f in foxy_sessions)
     time_spent_minutes = round((quiz_seconds + foxy_seconds) / 60)
-    topics_mastered = sum(
-        1 for m in mastery_rows if (m.get("mastery_level") or 0) >= 0.8
-    )
+    topics_mastered = sum(1 for m in mastery_rows if (m.get("mastery_level") or 0) >= 0.8)
     streak = (learning_profile or {}).get("streak_days") if learning_profile else None
     streak = streak or 0
 

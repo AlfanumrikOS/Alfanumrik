@@ -20,9 +20,7 @@ def test_pricing_has_all_known_models():
 
 def test_compute_cost_for_haiku():
     """1M prompt + 1M completion tokens at $1 / $5 = $6 + INR(6) = ₹498.0."""
-    usd, inr = compute_cost(
-        "anthropic", "claude-haiku-4-5-20251001", 1_000_000, 1_000_000
-    )
+    usd, inr = compute_cost("anthropic", "claude-haiku-4-5-20251001", 1_000_000, 1_000_000)
     assert usd == pytest.approx(6.0)
     assert inr == pytest.approx(6.0 * 83.0, rel=1e-9)
 
@@ -70,8 +68,6 @@ def test_to_inr_zero():
 
 def test_compute_cost_for_sonnet():
     """Sonnet pricing: $3 input / $15 output per 1M."""
-    usd, _ = compute_cost(
-        "anthropic", "claude-sonnet-4-6-20251022", 2_000_000, 500_000
-    )
+    usd, _ = compute_cost("anthropic", "claude-sonnet-4-6-20251022", 2_000_000, 500_000)
     # 2M * 3 + 0.5M * 15 = 6 + 7.5 = $13.50
     assert usd == pytest.approx(13.50, rel=1e-9)

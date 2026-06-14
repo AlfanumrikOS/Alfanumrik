@@ -281,15 +281,15 @@ def test_synthesize_request_rejects_invalid_language():
 def test_synthesize_request_rejects_invalid_gender():
     with pytest.raises(ValidationError):
         SynthesizeRequest(
-            text="hi", language="en", gender="neutral"  # type: ignore[arg-type]
+            text="hi",
+            language="en",
+            gender="neutral",  # type: ignore[arg-type]
         )
 
 
 def test_synthesize_request_accepts_valid_voice_override():
     """REG-75 — voice_override matching the Azure regex passes."""
-    r = SynthesizeRequest(
-        text="hi", language="en", voice_override="hi-IN-SwaraNeural"
-    )
+    r = SynthesizeRequest(text="hi", language="en", voice_override="hi-IN-SwaraNeural")
     assert r.voice_override == "hi-IN-SwaraNeural"
 
 
@@ -329,9 +329,7 @@ def test_voice_override_max_length_64():
     # like the pattern — the max_length check fires before the regex.
     too_long = "en-IN-" + ("a" * 60) + "Neural"  # >> 64 chars
     with pytest.raises(ValidationError):
-        SynthesizeRequest(
-            text="hi", language="en", voice_override=too_long
-        )
+        SynthesizeRequest(text="hi", language="en", voice_override=too_long)
 
 
 # ── SynthesizeError envelope ────────────────────────────────────────────────
@@ -350,6 +348,4 @@ def test_synthesize_error_happy_path():
 
 def test_synthesize_error_rejects_extras():
     with pytest.raises(ValidationError):
-        SynthesizeError(
-            error="X", detail="y", request_id="r", debug_info="oops"
-        )
+        SynthesizeError(error="X", detail="y", request_id="r", debug_info="oops")

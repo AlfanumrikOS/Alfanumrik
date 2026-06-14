@@ -57,7 +57,9 @@ class GenerateAnswersRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    grade: str | None = Field(default=None, description="P5: string grade '6'..'12' or None for any.")
+    grade: str | None = Field(
+        default=None, description="P5: string grade '6'..'12' or None for any."
+    )
     subject: str | None = Field(default=None, description="CBSE subject code; None for any.")
     batch_size: int | None = Field(
         default=None,

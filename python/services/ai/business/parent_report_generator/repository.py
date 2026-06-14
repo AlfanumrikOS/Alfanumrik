@@ -6,7 +6,7 @@ fetched; raw quiz responses, foxy chat text are NEVER pulled.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -42,7 +42,7 @@ def _first(result: Any) -> dict[str, Any] | None:
 
 def week_window_iso() -> tuple[str, str]:
     """Return (week_ago_iso, now_iso) - same window TS uses (7 days)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     week_ago = now - timedelta(days=7)
     return (
         week_ago.isoformat().replace("+00:00", "Z"),
@@ -50,9 +50,7 @@ def week_window_iso() -> tuple[str, str]:
     )
 
 
-async def verify_guardian_student_link(
-    guardian_id: str, student_id: str
-) -> bool:
+async def verify_guardian_student_link(guardian_id: str, student_id: str) -> bool:
     """Confirm the guardian is actually linked to this student. TS line 148."""
     client = get_service_client()
     if client is None:
@@ -78,11 +76,7 @@ async def fetch_student_name(student_id: str) -> str:
         raise RepositoryError("Supabase client not configured")
     try:
         result = (
-            await client.table("students")
-            .select("name")
-            .eq("id", student_id)
-            .limit(1)
-            .execute()
+            await client.table("students").select("name").eq("id", student_id).limit(1).execute()
         )
     except Exception:  # noqa: BLE001
         return ""

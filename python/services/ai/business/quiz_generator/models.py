@@ -1,64 +1,70 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional, Literal, Dict, Any, Union
+from typing import Any, Literal
+
+from pydantic import BaseModel
+
 
 class ResponseSoFar(BaseModel):
     question_id: str
     is_correct: bool
     time_spent: float
 
+
 class QuizGeneratorRequest(BaseModel):
-    action: Optional[Literal['generate', 'next_question']] = 'generate'
+    action: Literal["generate", "next_question"] | None = "generate"
     student_id: str
     subject: str
     grade: str
-    count: Optional[int] = 10
-    difficulty: Optional[int] = None
-    chapter_number: Optional[int] = None
-    ability_estimate: Optional[float] = None
-    
+    count: int | None = 10
+    difficulty: int | None = None
+    chapter_number: int | None = None
+    ability_estimate: float | None = None
+
     # For next_question
-    session_id: Optional[str] = None
-    responses_so_far: Optional[List[ResponseSoFar]] = None
-    exclude_ids: Optional[List[str]] = None
+    session_id: str | None = None
+    responses_so_far: list[ResponseSoFar] | None = None
+    exclude_ids: list[str] | None = None
+
 
 class QuestionRow(BaseModel):
     id: str
     question_text: str
-    question_hi: Optional[str] = None
+    question_hi: str | None = None
     question_type: str
-    options: Union[str, List[str]]
+    options: str | list[str]
     correct_answer_index: int
-    explanation: Optional[str] = None
-    explanation_hi: Optional[str] = None
-    hint: Optional[str] = None
+    explanation: str | None = None
+    explanation_hi: str | None = None
+    hint: str | None = None
     difficulty: int
     bloom_level: str
     chapter_number: int
-    topic: Optional[str] = None
-    concept_tag: Optional[str] = None
-    subject: Optional[str] = None
-    source: Optional[str] = None
+    topic: str | None = None
+    concept_tag: str | None = None
+    subject: str | None = None
+    source: str | None = None
+
 
 class QuizGeneratorMeta(BaseModel):
-    strategy: Optional[str] = None
-    weak_topics_targeted: Optional[int] = None
-    total_returned: Optional[int] = None
-    bloom_distribution: Optional[Dict[str, int]] = None
-    review_count: Optional[int] = None
-    adaptive_count: Optional[int] = None
-    random_count: Optional[int] = None
-    review_topic_count: Optional[int] = None
-    review_question_ids: Optional[List[str]] = None
-    dropped_by_p6_validator: Optional[int] = None
-    dropped_reasons: Optional[List[str]] = None
-    
+    strategy: str | None = None
+    weak_topics_targeted: int | None = None
+    total_returned: int | None = None
+    bloom_distribution: dict[str, int] | None = None
+    review_count: int | None = None
+    adaptive_count: int | None = None
+    random_count: int | None = None
+    review_topic_count: int | None = None
+    review_question_ids: list[str] | None = None
+    dropped_by_p6_validator: int | None = None
+    dropped_reasons: list[str] | None = None
+
     # Next question specific metadata
-    adjusted_difficulty: Optional[int] = None
-    reason: Optional[str] = None
-    running_score: Optional[str] = None
-    bloom_ceiling: Optional[str] = None
+    adjusted_difficulty: int | None = None
+    reason: str | None = None
+    running_score: str | None = None
+    bloom_ceiling: str | None = None
+
 
 class QuizGeneratorResponse(BaseModel):
-    questions: Optional[List[Dict[str, Any]]] = None # Can be dict or QuestionRow dict
-    question: Optional[Dict[str, Any]] = None # For next_question
+    questions: list[dict[str, Any]] | None = None  # Can be dict or QuestionRow dict
+    question: dict[str, Any] | None = None  # For next_question
     meta: QuizGeneratorMeta

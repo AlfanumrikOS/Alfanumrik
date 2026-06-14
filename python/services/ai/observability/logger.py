@@ -30,17 +30,38 @@ from ..config import get_settings
 _SENSITIVE_KEYS: frozenset[str] = frozenset(
     {
         # Auth / credentials
-        "password", "token", "secret",
-        "api_key", "apikey", "access_token", "refresh_token",
-        "service_role_key", "authorization", "cookie", "set-cookie", "x-api-key",
+        "password",
+        "token",
+        "secret",
+        "api_key",
+        "apikey",
+        "access_token",
+        "refresh_token",
+        "service_role_key",
+        "authorization",
+        "cookie",
+        "set-cookie",
+        "x-api-key",
         # Identity (D7 follow-up #4 alignment)
-        "email", "phone", "parent_phone", "mobile_number",
-        "full_name", "first_name", "last_name",
-        "school_name", "school_address",
+        "email",
+        "phone",
+        "parent_phone",
+        "mobile_number",
+        "full_name",
+        "first_name",
+        "last_name",
+        "school_name",
+        "school_address",
         # Payment surface
-        "razorpay_signature", "razorpay_webhook_signature",
-        "card_number", "card_cvv", "card_expiry", "card_holder",
-        "upi_id", "vpa", "upi_pin",
+        "razorpay_signature",
+        "razorpay_webhook_signature",
+        "card_number",
+        "card_cvv",
+        "card_expiry",
+        "card_holder",
+        "upi_id",
+        "vpa",
+        "upi_pin",
     }
 )
 

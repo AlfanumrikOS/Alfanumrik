@@ -182,9 +182,7 @@ async def test_synthesize_speech_uses_hindi_voice_for_hinglish(
 
 
 @pytest.mark.asyncio
-async def test_synthesize_speech_honors_voice_override(
-    _budget_ok, monkeypatch: pytest.MonkeyPatch
-):
+async def test_synthesize_speech_honors_voice_override(_budget_ok, monkeypatch: pytest.MonkeyPatch):
     captured: dict[str, Any] = {}
 
     async def fake_azure(text, voice_name, **_):
@@ -415,9 +413,7 @@ async def test_synthesize_speech_maps_502_for_azure_429(
 
 
 @pytest.mark.asyncio
-async def test_synthesize_speech_computes_cost_inr(
-    _budget_ok, monkeypatch: pytest.MonkeyPatch
-):
+async def test_synthesize_speech_computes_cost_inr(_budget_ok, monkeypatch: pytest.MonkeyPatch):
     async def fake_azure(*a, **kw):
         return b"audio"
 

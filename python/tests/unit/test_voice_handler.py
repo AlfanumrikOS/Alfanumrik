@@ -348,9 +348,7 @@ async def test_transcribe_audio_handles_non_numeric_duration(
 
 
 @pytest.mark.asyncio
-async def test_transcribe_audio_handles_empty_text(
-    _budget_ok, monkeypatch: pytest.MonkeyPatch
-):
+async def test_transcribe_audio_handles_empty_text(_budget_ok, monkeypatch: pytest.MonkeyPatch):
     """Whisper returned 200 but no speech detected."""
 
     async def fake_whisper(*a, **kw):

@@ -124,15 +124,11 @@ async def test_handler_closes_breaker_on_success(
     monkeypatch.setattr(
         "services.ai.business.bulk_question_gen.handler.generate_candidates", gen_one
     )
-    monkeypatch.setattr(
-        "services.ai.business.bulk_question_gen.handler.grade_candidate", grade_ok
-    )
+    monkeypatch.setattr("services.ai.business.bulk_question_gen.handler.grade_candidate", grade_ok)
     monkeypatch.setattr(
         "services.ai.business.bulk_question_gen.handler.insert_questions", insert_ok
     )
-    monkeypatch.setattr(
-        "services.ai.business.bulk_question_gen.handler.log_ops_event", log_noop
-    )
+    monkeypatch.setattr("services.ai.business.bulk_question_gen.handler.log_ops_event", log_noop)
 
     res = await handle_bulk_question_gen(_req(), authorization_header="Bearer x")
     assert res.generated == 1
@@ -149,9 +145,7 @@ async def test_handler_empty_candidates_returns_zero(
         del req, request_id
         return []
 
-    monkeypatch.setattr(
-        "services.ai.business.bulk_question_gen.handler.generate_candidates", empty
-    )
+    monkeypatch.setattr("services.ai.business.bulk_question_gen.handler.generate_candidates", empty)
     res = await handle_bulk_question_gen(_req(), authorization_header="Bearer x")
     assert res.generated == 0
     assert res.inserted == 0
@@ -171,9 +165,7 @@ async def test_handler_oracle_rejection_increments_counter(
         return [_candidate()]
 
     async def grade_reject(_c):
-        return OracleResult(
-            ok=False, category="llm_mismatch", reason="off", llm_calls=1
-        )
+        return OracleResult(ok=False, category="llm_mismatch", reason="off", llm_calls=1)
 
     async def insert_ok(accepted, request):
         del accepted, request
@@ -191,9 +183,7 @@ async def test_handler_oracle_rejection_increments_counter(
     monkeypatch.setattr(
         "services.ai.business.bulk_question_gen.handler.insert_questions", insert_ok
     )
-    monkeypatch.setattr(
-        "services.ai.business.bulk_question_gen.handler.log_ops_event", log_noop
-    )
+    monkeypatch.setattr("services.ai.business.bulk_question_gen.handler.log_ops_event", log_noop)
 
     res = await handle_bulk_question_gen(_req(), authorization_header="Bearer x")
     assert res.generated == 1
@@ -226,15 +216,11 @@ async def test_handler_repository_failure_maps_to_500(
     monkeypatch.setattr(
         "services.ai.business.bulk_question_gen.handler.generate_candidates", gen_one
     )
-    monkeypatch.setattr(
-        "services.ai.business.bulk_question_gen.handler.grade_candidate", grade_ok
-    )
+    monkeypatch.setattr("services.ai.business.bulk_question_gen.handler.grade_candidate", grade_ok)
     monkeypatch.setattr(
         "services.ai.business.bulk_question_gen.handler.insert_questions", insert_fail
     )
-    monkeypatch.setattr(
-        "services.ai.business.bulk_question_gen.handler.log_ops_event", log_noop
-    )
+    monkeypatch.setattr("services.ai.business.bulk_question_gen.handler.log_ops_event", log_noop)
 
     with pytest.raises(HandlerError) as exc:
         await handle_bulk_question_gen(_req(), authorization_header="Bearer x")

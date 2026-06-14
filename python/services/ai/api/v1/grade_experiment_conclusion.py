@@ -33,9 +33,7 @@ async def post_grade(
     rid = request.headers.get("x-request-id") or str(uuid.uuid4())
     structlog.contextvars.bind_contextvars(request_id=rid)
     try:
-        return await grade_conclusion(
-            payload, authorization_header=authorization, request_id=rid
-        )
+        return await grade_conclusion(payload, authorization_header=authorization, request_id=rid)
     except UnauthorizedError as err:
         raise HTTPException(
             status_code=err.status,

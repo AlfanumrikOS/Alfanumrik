@@ -131,9 +131,7 @@ async def transcribe_audio(
             success=False,
             failure_reason=f"payload_too_large_{mb:.1f}MB",
         )
-        raise PayloadTooLargeError(
-            f"Audio file exceeds 25 MB (got {mb:.1f} MB)"
-        )
+        raise PayloadTooLargeError(f"Audio file exceeds 25 MB (got {mb:.1f} MB)")
 
     # 2. Budget check — fail-OPEN posture inside check_daily_budget means
     #    a Supabase outage won't gate transcription. Same trade-off as
@@ -152,9 +150,7 @@ async def transcribe_audio(
             success=False,
             failure_reason="daily_budget_exceeded",
         )
-        raise BudgetExceededError(
-            "Daily voice transcription budget exceeded. Try again tomorrow."
-        )
+        raise BudgetExceededError("Daily voice transcription budget exceeded. Try again tomorrow.")
 
     # 3. Whisper call. Prefer the caller's hint; fall back to the student's
     #    preferred_language. Whisper will auto-detect if both are None.

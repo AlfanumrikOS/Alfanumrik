@@ -43,9 +43,9 @@ def test_parses_when_wrapped_in_markdown_fences():
 
 def test_parses_when_prose_wraps_json():
     raw = (
-        'Here is the answer:\n'
+        "Here is the answer:\n"
         '{"answer_text": "An object accelerates when force is applied.", "answer_methodology": "stepwise", "marks_expected": 3}\n'
-        'Done.'
+        "Done."
     )
     res = parse_answer_response(raw, is_mcq=False)
     assert res.answer is not None

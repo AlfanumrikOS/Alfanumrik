@@ -153,9 +153,7 @@ def test_status_response_shape():
         without_answer=40,
         coverage_percent=60,
         breakdown={
-            "Grade 10 - science": StatusBreakdownEntry(
-                total=50, with_answer=30, without_answer=20
-            ),
+            "Grade 10 - science": StatusBreakdownEntry(total=50, with_answer=30, without_answer=20),
         },
     )
     assert res.coverage_percent == 60

@@ -196,11 +196,7 @@ def build_ssml(text: str, voice_name: str, gender: str) -> str:
     # voice id doesn't match the documented pattern, fall back to en-IN.
     # (voice_override regex already enforces ``xx-XX-NameNeural`` shape,
     # so the else branch is effectively unreachable in production.)
-    xml_lang = (
-        voice_name[:5]
-        if len(voice_name) >= 5 and voice_name[2] == "-"
-        else "en-IN"
-    )
+    xml_lang = voice_name[:5] if len(voice_name) >= 5 and voice_name[2] == "-" else "en-IN"
 
     # Azure xml:gender is Title-case (not lower-case Pydantic enum).
     azure_gender = "Female" if gender.lower() == "female" else "Male"
@@ -296,10 +292,7 @@ async def call_azure_tts(
         # Region is also required. Same fail-closed posture.
         raise AzureTTSError("Azure Speech region not configured", status=0)
 
-    url = (
-        f"https://{s.azure_speech_region}.tts.speech.microsoft.com"
-        f"{AZURE_TTS_PATH}"
-    )
+    url = f"https://{s.azure_speech_region}.tts.speech.microsoft.com" f"{AZURE_TTS_PATH}"
     headers = {
         "Ocp-Apim-Subscription-Key": s.azure_speech_key,
         "Content-Type": "application/ssml+xml",

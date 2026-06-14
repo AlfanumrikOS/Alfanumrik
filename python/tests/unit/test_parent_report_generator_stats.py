@@ -16,7 +16,6 @@ from services.ai.business.parent_report_generator.templates import (
     build_template_report,
 )
 
-
 # compute_weekly_stats
 
 
@@ -52,7 +51,7 @@ def test_compute_stats_time_quiz_plus_foxy_seconds_to_minutes():
 def test_compute_stats_topics_mastered_threshold_at_0_8():
     mastery = [
         {"mastery_level": 0.79},  # below
-        {"mastery_level": 0.8},   # at threshold (inclusive)
+        {"mastery_level": 0.8},  # at threshold (inclusive)
         {"mastery_level": 0.95},  # above
     ]
     s = compute_weekly_stats([], [], None, mastery)
@@ -86,7 +85,13 @@ def test_period_label_en_hi():
 
 
 def test_highlights_high_performer_en():
-    stats = {"quizzes_completed": 6, "avg_score": 90, "streak": 5, "topics_mastered": 3, "xp_earned": 200}
+    stats = {
+        "quizzes_completed": 6,
+        "avg_score": 90,
+        "streak": 5,
+        "topics_mastered": 3,
+        "xp_earned": 200,
+    }
     h = build_highlights(stats, "en")
     assert any("6 quizzes" in s for s in h)
     assert any("90%" in s for s in h)
@@ -94,14 +99,26 @@ def test_highlights_high_performer_en():
 
 
 def test_highlights_high_performer_hi():
-    stats = {"quizzes_completed": 6, "avg_score": 90, "streak": 5, "topics_mastered": 3, "xp_earned": 200}
+    stats = {
+        "quizzes_completed": 6,
+        "avg_score": 90,
+        "streak": 5,
+        "topics_mastered": 3,
+        "xp_earned": 200,
+    }
     h = build_highlights(stats, "hi")
     assert any("6 क्विज़" in s for s in h)
     assert any("90%" in s for s in h)
 
 
 def test_highlights_zero_state_returns_placeholder():
-    stats = {"quizzes_completed": 0, "avg_score": 0, "streak": 0, "topics_mastered": 0, "xp_earned": 0}
+    stats = {
+        "quizzes_completed": 0,
+        "avg_score": 0,
+        "streak": 0,
+        "topics_mastered": 0,
+        "xp_earned": 0,
+    }
     h = build_highlights(stats, "en")
     assert len(h) == 1
     assert "Started" in h[0]
@@ -128,7 +145,17 @@ def test_suggestion_uses_fallback_name_when_blank():
 
 
 def test_full_template_report_shape():
-    stats = {"quizzes_completed": 5, "avg_score": 70, "xp_earned": 100, "time_spent_minutes": 90, "topics_mastered": 2, "streak": 3, "foxy_sessions": 2, "subjects_studied": ["math"], "chapters_covered": ["Algebra"]}
+    stats = {
+        "quizzes_completed": 5,
+        "avg_score": 70,
+        "xp_earned": 100,
+        "time_spent_minutes": 90,
+        "topics_mastered": 2,
+        "streak": 3,
+        "foxy_sessions": 2,
+        "subjects_studied": ["math"],
+        "chapters_covered": ["Algebra"],
+    }
     r = build_template_report(stats, "en", "Aanya")
     assert "period" in r
     assert isinstance(r["highlights"], list)

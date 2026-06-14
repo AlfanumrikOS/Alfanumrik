@@ -100,9 +100,7 @@ async def generate_candidates(
             message=err.message,
             request_id=request_id,
         )
-        raise GenerationError(
-            f"MoL {err.code}: {err.message}", mol_code=err.code
-        ) from err
+        raise GenerationError(f"MoL {err.code}: {err.message}", mol_code=err.code) from err
 
     raw_array = extract_json_array(mol_result.text)
     if raw_array is None:

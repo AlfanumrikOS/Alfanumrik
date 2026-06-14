@@ -7,7 +7,7 @@ boundaries, behavior-rating math, or term boundaries, these tests fail.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from services.ai.business.nep_compliance.mapping import (
     COMPETENCY_ADVANCED_THRESHOLD,
@@ -73,19 +73,19 @@ def test_behavior_rating_zero_value_returns_1():
 
 
 def test_academic_year_april_to_march_boundary():
-    apr = datetime(2026, 4, 1, tzinfo=timezone.utc)
+    apr = datetime(2026, 4, 1, tzinfo=UTC)
     assert get_academic_year(apr) == "2026-2027"
-    mar = datetime(2026, 3, 31, tzinfo=timezone.utc)
+    mar = datetime(2026, 3, 31, tzinfo=UTC)
     assert get_academic_year(mar) == "2025-2026"
 
 
 def test_current_term_april_to_september_is_term_1():
     for month in [4, 5, 6, 7, 8, 9]:
-        now = datetime(2026, month, 15, tzinfo=timezone.utc)
+        now = datetime(2026, month, 15, tzinfo=UTC)
         assert get_current_term(now) == "Term 1"
 
 
 def test_current_term_october_to_march_is_term_2():
     for month in [10, 11, 12, 1, 2, 3]:
-        now = datetime(2026, month, 15, tzinfo=timezone.utc)
+        now = datetime(2026, month, 15, tzinfo=UTC)
         assert get_current_term(now) == "Term 2"

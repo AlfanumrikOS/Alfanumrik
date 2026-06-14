@@ -216,7 +216,9 @@ async def handle_bulk_question_gen(
         if accepted and not inserted:
             warning = "All accepted candidates failed to persist. Check DB logs."
         elif candidates and not inserted:
-            warning = "All generated questions failed validation. Please retry or adjust parameters."
+            warning = (
+                "All generated questions failed validation. Please retry or adjust parameters."
+            )
 
         return BulkQuestionGenResponse(
             generated=len(candidates),

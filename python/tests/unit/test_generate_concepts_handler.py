@@ -97,7 +97,15 @@ def _patch_pipeline_happy(monkeypatch: pytest.MonkeyPatch):
 
     async def fake_questions(*, grade, subject, chapter_number):
         del grade, subject, chapter_number
-        return [{"id": "q1", "question_text": "Q?", "options": None, "correct_answer_index": None, "explanation": None}]
+        return [
+            {
+                "id": "q1",
+                "question_text": "Q?",
+                "options": None,
+                "correct_answer_index": None,
+                "explanation": None,
+            }
+        ]
 
     async def fake_diagrams(*, grade, subject, chapter_number):
         del grade, subject, chapter_number
@@ -294,7 +302,9 @@ async def test_handler_dry_run_returns_chapter_previews(
 
 
 @pytest.mark.asyncio
-async def test_handler_happy_path_one_chapter(_patch_pipeline_happy, monkeypatch: pytest.MonkeyPatch):
+async def test_handler_happy_path_one_chapter(
+    _patch_pipeline_happy, monkeypatch: pytest.MonkeyPatch
+):
     """One chapter, full pipeline runs to insert success."""
     # Override the second call to fetch (post-batch "remaining" count) →
     # use side_effect-style counter so the first call returns the candidate
@@ -629,9 +639,7 @@ async def test_handler_clamps_oversized_batch(monkeypatch: pytest.MonkeyPatch):
 
     req = GenerateConceptsRequest()
     req.batch_size = 999
-    await handle_generate_concepts(
-        req, admin_key_header="test-admin-key", request_id="rid"
-    )
+    await handle_generate_concepts(req, admin_key_header="test-admin-key", request_id="rid")
     # First call clamps 999 → DEFAULT (5).
     assert captured["limits"][0] == 5
 
@@ -666,9 +674,7 @@ async def test_handler_clamps_undersized_batch(monkeypatch: pytest.MonkeyPatch):
 
     req = GenerateConceptsRequest()
     req.batch_size = 0
-    await handle_generate_concepts(
-        req, admin_key_header="test-admin-key", request_id="rid"
-    )
+    await handle_generate_concepts(req, admin_key_header="test-admin-key", request_id="rid")
     assert captured["limits"][0] == 5
 
 
@@ -701,9 +707,7 @@ async def test_handler_accepts_valid_batch_size(monkeypatch: pytest.MonkeyPatch)
     )
 
     req = GenerateConceptsRequest(batch_size=7)
-    await handle_generate_concepts(
-        req, admin_key_header="test-admin-key", request_id="rid"
-    )
+    await handle_generate_concepts(req, admin_key_header="test-admin-key", request_id="rid")
     assert captured["limits"][0] == 7
 
 

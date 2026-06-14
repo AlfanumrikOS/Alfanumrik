@@ -137,9 +137,7 @@ async def test_grade_candidate_consistent_returns_ok(monkeypatch: pytest.MonkeyP
 
     async def fake_call(**kwargs):
         captured["kwargs"] = kwargs
-        return _provider_response(
-            '{"verdict":"consistent","reasoning":"matches"}'
-        )
+        return _provider_response('{"verdict":"consistent","reasoning":"matches"}')
 
     monkeypatch.setattr(
         "services.ai.business.bulk_question_gen.oracle._anthropic.call",

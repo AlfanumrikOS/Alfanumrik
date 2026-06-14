@@ -5,7 +5,7 @@ Ports of shared.ts (lines 16-69) - constants match TS byte-for-byte.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # IST peak window (TS shared.ts:16-17).
 IST_PEAK_START_HOUR = 14
@@ -35,7 +35,7 @@ def _ist_hour(now: datetime) -> int:
 
 def is_peak_hour_ist(now: datetime | None = None) -> bool:
     """True if now falls inside 14:00..22:00 Asia/Kolkata (TS shared.ts:38-50)."""
-    n = now if now is not None else datetime.now(timezone.utc)
+    n = now if now is not None else datetime.now(UTC)
     h = _ist_hour(n)
     return IST_PEAK_START_HOUR <= h < IST_PEAK_END_HOUR
 

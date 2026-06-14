@@ -1,6 +1,5 @@
-from typing import Optional
-from .types import StudentContext, TaskType
 from .classifier import grade_tier
+from .types import StudentContext, TaskType
 
 FOXY_BASE = """You are Foxy 🦊, a warm, encouraging, and highly explanatory AI teacher for Indian CBSE/NCERT students.
 - Behave like a real teacher. Guide the student comprehensively through the flow of the chapter's content as per the subject. Always explain the "why" and "how" behind concepts in detail, rather than giving short one-liner answers.
@@ -58,10 +57,11 @@ Whenever the question involves a concept that is commonly explained using a diag
 - Prioritize high-mark-value visuals frequently repeated in board exams.
 - Output Format: If existing NCERT diagram URLs are provided in your context, output standard markdown image links for them. Otherwise, generate a clean Mermaid.js block (using flowchart or sequence diagrams) for processes and structures."""
 
+
 def build_system_prompt(
     task: TaskType,
     ctx: StudentContext,
-    rag_context: Optional[str],
+    rag_context: str | None,
 ) -> str:
     tier = grade_tier(ctx.grade)
 
@@ -80,7 +80,7 @@ def build_system_prompt(
 
     if ctx.exam_goal and EXAM_GOAL_HINT.get(ctx.exam_goal):
         p += f"EXAM CONTEXT\n{EXAM_GOAL_HINT[ctx.exam_goal]}\n\n"
-    
+
     if ctx.learning_speed and LEARNING_SPEED_HINT.get(ctx.learning_speed):
         p += f"PACE\n{LEARNING_SPEED_HINT[ctx.learning_speed]}\n\n"
 
@@ -92,22 +92,23 @@ def build_system_prompt(
     p += "- Wrap formulas in [FORMULA: expression] tags.\n"
     p += "- Wrap key concepts in [KEY: term] tags.\n"
     p += "- Wrap exam tips in [TIP: advice] tags.\n"
-    p += "- DYNAMIC SCAFFOLDING: If a student is struggling and would benefit from a visual manipulative, you may output a JSON block at the very end of your response enclosed in ```json ... ``` with the format {\"ui_action\": {\"type\": \"render_number_line\", \"data\": { ... }}}. Do NOT output this for standard explanations.\n\n"
+    p += '- DYNAMIC SCAFFOLDING: If a student is struggling and would benefit from a visual manipulative, you may output a JSON block at the very end of your response enclosed in ```json ... ``` with the format {"ui_action": {"type": "render_number_line", "data": { ... }}}. Do NOT output this for standard explanations.\n\n'
 
     p += f"{DIAGRAM_INSTRUCTION}\n\n"
 
     if rag_context and rag_context.strip():
-        p += "NCERT REFERENCE MATERIAL (do not mention \"reference material\" to student):\n"
+        p += 'NCERT REFERENCE MATERIAL (do not mention "reference material" to student):\n'
         p += rag_context[:6000] + "\n\n"
         p += "Answer only using the provided NCERT context. If the context does not cover the question, say so honestly and suggest the student check with a teacher.\n"
 
     return p
 
+
 def build_simplify_prompt(ctx: StudentContext, prior_answer: str) -> str:
     tier = grade_tier(ctx.grade)
-    lang = LANGUAGE_INSTRUCTION.get(ctx.language or 'en', LANGUAGE_INSTRUCTION['en'])
+    lang = LANGUAGE_INSTRUCTION.get(ctx.language or "en", LANGUAGE_INSTRUCTION["en"])
     style = TIER_STYLE[tier]
-    
+
     return f"""You are Foxy 🦊, simplifying a more advanced answer for a Grade {ctx.grade} student.
 
 STYLE

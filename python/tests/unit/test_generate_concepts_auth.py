@@ -19,6 +19,7 @@ from services.ai.business.generate_concepts.auth import (
 def test_auth_failed_is_reexported():
     """The class identity is shared with generate_answers — fork would break this."""
     from services.ai.business.generate_answers.auth import AuthFailed as Original
+
     assert AuthFailed is Original
 
 

@@ -47,10 +47,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # iOS + desktop Chrome/Firefox/Safari without re-encoding on the client.
 SupportedAudioFormat = Literal[
     "webm",  # Chrome / Edge / Firefox default
-    "mp3",   # iOS Safari + universal fallback
-    "wav",   # Desktop fallback, larger payload
-    "m4a",   # iOS Safari output for some MediaRecorder configs
-    "ogg",   # Firefox Vorbis container
+    "mp3",  # iOS Safari + universal fallback
+    "wav",  # Desktop fallback, larger payload
+    "m4a",  # iOS Safari output for some MediaRecorder configs
+    "ogg",  # Firefox Vorbis container
     "mpga",  # MP3 audio with .mpga extension (rare but Whisper-supported)
     "flac",  # Lossless desktop uploads
 ]

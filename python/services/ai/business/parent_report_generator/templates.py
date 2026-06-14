@@ -44,9 +44,7 @@ def build_highlights(stats: dict[str, Any], language: str) -> list[str]:
         if stats.get("xp_earned", 0) >= 100:
             h.append(f"Earned {stats['xp_earned']} XP")
     if not h:
-        h.append(
-            "अध्ययन यात्रा शुरू हो गई है" if language == "hi" else "Started the learning journey"
-        )
+        h.append("अध्ययन यात्रा शुरू हो गई है" if language == "hi" else "Started the learning journey")
     return h
 
 

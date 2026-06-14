@@ -1,6 +1,7 @@
 """Router unit tests — BASE_MATRIX integrity + flag-driven reshape paths."""
 
 from __future__ import annotations
+
 from unittest.mock import patch
 
 from services.ai.mol.router import (
@@ -119,9 +120,7 @@ def test_openai_default_does_not_affect_reasoning(mock_rand):
     Observed on the shadow (probabilistic) path: the A2 deterministic default
     always promotes OpenAI, so reasoning's anthropic-primary shape is only
     visible when shadow_priority is ON with random(0.9) >= weight(0.8)."""
-    selected = select_provider_chain(
-        "reasoning", _opts(openai_default=True, shadow_priority=True)
-    )
+    selected = select_provider_chain("reasoning", _opts(openai_default=True, shadow_priority=True))
     first = selected.passes[0].chain[0]
     assert first.provider == "anthropic"
 
@@ -221,8 +220,14 @@ def test_ocr_extraction_mode_is_vision():
 def test_deterministic_priority_makes_openai_primary_without_random():
     """With shadow_priority OFF (default), the openai rung is always primary —
     no dependence on random.random()."""
-    for task in ("explanation", "concept_explanation", "step_by_step",
-                 "quiz_generation", "evaluation", "grounding_check"):
+    for task in (
+        "explanation",
+        "concept_explanation",
+        "step_by_step",
+        "quiz_generation",
+        "evaluation",
+        "grounding_check",
+    ):
         selected = select_provider_chain(task, _opts())
         first = selected.passes[0].chain[0]
         assert first.provider == "openai", f"{task} should be openai-primary"
@@ -240,8 +245,9 @@ def test_deterministic_priority_is_stable_across_calls():
     """Two identical calls must yield byte-identical chains (no randomness)."""
     a = select_provider_chain("explanation", _opts())
     b = select_provider_chain("explanation", _opts())
-    assert [(t.provider, t.model) for t in a.passes[0].chain] == \
-           [(t.provider, t.model) for t in b.passes[0].chain]
+    assert [(t.provider, t.model) for t in a.passes[0].chain] == [
+        (t.provider, t.model) for t in b.passes[0].chain
+    ]
 
 
 def test_shadow_priority_on_uses_weights_and_random():

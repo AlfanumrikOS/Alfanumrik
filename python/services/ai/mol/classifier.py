@@ -1,15 +1,34 @@
 import re
 from typing import Literal
+
 from .types import GenerateRequest, TaskType
 
 KEYWORDS = {
-    "step_by_step": re.compile(r"\b(step[\s-]?by[\s-]?step|solve.*step|derive|show your work|show the steps|prove)\b", re.IGNORECASE),
-    "reasoning": re.compile(r"\b(why .* and why|prove that|derive|justify|compare and contrast|critically)\b", re.IGNORECASE),
-    "evaluation": re.compile(r"\b(grade (my|this)|evaluate (my|this)|is this correct|check my (answer|work)|mark this)\b", re.IGNORECASE),
-    "explanation": re.compile(r"\b(explain|what is|define|describe|tell me about|kya hai|कैसे|क्या है)\b", re.IGNORECASE | re.UNICODE),
-    "doubt_solving": re.compile(r"\b(i don'?t understand|i'm confused|why does|how do i|samajh nahi|समझ नहीं)\b", re.IGNORECASE | re.UNICODE),
-    "quiz_generation": re.compile(r"\b(generate|create|make).*(quiz|questions?|mcqs?|test)\b", re.IGNORECASE),
+    "step_by_step": re.compile(
+        r"\b(step[\s-]?by[\s-]?step|solve.*step|derive|show your work|show the steps|prove)\b",
+        re.IGNORECASE,
+    ),
+    "reasoning": re.compile(
+        r"\b(why .* and why|prove that|derive|justify|compare and contrast|critically)\b",
+        re.IGNORECASE,
+    ),
+    "evaluation": re.compile(
+        r"\b(grade (my|this)|evaluate (my|this)|is this correct|check my (answer|work)|mark this)\b",
+        re.IGNORECASE,
+    ),
+    "explanation": re.compile(
+        r"\b(explain|what is|define|describe|tell me about|kya hai|कैसे|क्या है)\b",
+        re.IGNORECASE | re.UNICODE,
+    ),
+    "doubt_solving": re.compile(
+        r"\b(i don'?t understand|i'm confused|why does|how do i|samajh nahi|समझ नहीं)\b",
+        re.IGNORECASE | re.UNICODE,
+    ),
+    "quiz_generation": re.compile(
+        r"\b(generate|create|make).*(quiz|questions?|mcqs?|test)\b", re.IGNORECASE
+    ),
 }
+
 
 def classify(req: GenerateRequest) -> TaskType:
     if req.task_type:
@@ -46,6 +65,7 @@ def classify(req: GenerateRequest) -> TaskType:
 
     # Default — student-facing surfaces are usually teaching
     return "explanation"
+
 
 def grade_tier(grade: str) -> Literal["junior", "middle", "senior"]:
     try:

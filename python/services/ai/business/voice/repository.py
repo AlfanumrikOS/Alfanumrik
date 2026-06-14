@@ -93,8 +93,7 @@ async def log_voice_event(
     s = get_settings()
     category = VOICE_EVENT_SUCCESS if success else VOICE_EVENT_FAILURE
     message = (
-        f"Voice transcribed: {round(duration_seconds, 2)}s "
-        f"({detected_language})"
+        f"Voice transcribed: {round(duration_seconds, 2)}s " f"({detected_language})"
         if success
         else f"Voice transcription failed: {failure_reason or 'unknown'}"
     )

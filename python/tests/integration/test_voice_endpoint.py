@@ -259,9 +259,7 @@ def test_voice_transcribe_returns_401_on_invalid_token(
     respx_mock: respx.MockRouter,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    respx_mock.get("https://test.supabase.co/auth/v1/user").mock(
-        return_value=httpx.Response(401)
-    )
+    respx_mock.get("https://test.supabase.co/auth/v1/user").mock(return_value=httpx.Response(401))
     _install_fake_db(monkeypatch, student_rows=[])
     res = client.post(
         "/v1/voice/transcribe",
@@ -360,9 +358,7 @@ def test_voice_transcribe_returns_502_when_whisper_persistently_fails(
     body = res.json()
     assert body["detail"]["error"] == "WHISPER_ERROR"
     # Failure telemetry emitted (severity=error).
-    failure_events = [
-        e for e in fake_db.ops if e["category"] == "voice.transcribe.failure"
-    ]
+    failure_events = [e for e in fake_db.ops if e["category"] == "voice.transcribe.failure"]
     assert len(failure_events) == 1
     assert failure_events[0]["severity"] == "error"
 
@@ -407,6 +403,7 @@ def test_voice_transcribe_returns_429_when_budget_exceeded(
     respx_mock.post("https://api.openai.com/v1/audio/transcriptions").mock(
         return_value=httpx.Response(500, json={"error": "must not be hit"})
     )
+
     # Force the budget guard to refuse.
     async def fake_budget(**kwargs):
         del kwargs

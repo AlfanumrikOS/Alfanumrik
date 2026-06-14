@@ -19,9 +19,7 @@ from services.ai.api.main import create_app
 from services.ai.business.voice.tts import AZURE_TTS_PATH
 
 _AZURE_REGION = "centralindia"
-_AZURE_URL = (
-    f"https://{_AZURE_REGION}.tts.speech.microsoft.com{AZURE_TTS_PATH}"
-)
+_AZURE_URL = f"https://{_AZURE_REGION}.tts.speech.microsoft.com{AZURE_TTS_PATH}"
 
 
 @pytest.fixture()
@@ -127,9 +125,7 @@ def _mock_azure_tts_success(
     audio: bytes = b"\xff\xfb\x90\x00FAKE_MP3_AUDIO",
 ):
     return respx_mock.post(_AZURE_URL).mock(
-        return_value=httpx.Response(
-            200, content=audio, headers={"Content-Type": "audio/mpeg"}
-        )
+        return_value=httpx.Response(200, content=audio, headers={"Content-Type": "audio/mpeg"})
     )
 
 
@@ -146,9 +142,7 @@ def test_voice_synthesize_happy_path(
     _mock_azure_tts_success(respx_mock, audio=b"\xff\xfb\x90\x00MP3DATA")
     fake_db = _install_fake_db(
         monkeypatch,
-        student_rows=[
-            {"id": "student-uuid-1", "grade": "8", "preferred_language": "en"}
-        ],
+        student_rows=[{"id": "student-uuid-1", "grade": "8", "preferred_language": "en"}],
     )
 
     res = client.post(
@@ -170,9 +164,7 @@ def test_voice_synthesize_happy_path(
     assert len(res.headers["X-Request-Id"]) == 36
 
     # ops_events row written (success).
-    voice_events = [
-        e for e in fake_db.ops if e["category"] == "voice.synthesize.success"
-    ]
+    voice_events = [e for e in fake_db.ops if e["category"] == "voice.synthesize.success"]
     assert len(voice_events) == 1
     ctx = voice_events[0]["context"]
     # PII safety — telemetry has char_count, never the raw text.
@@ -252,9 +244,7 @@ def test_voice_synthesize_returns_401_on_invalid_token(
     respx_mock: respx.MockRouter,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    respx_mock.get("https://test.supabase.co/auth/v1/user").mock(
-        return_value=httpx.Response(401)
-    )
+    respx_mock.get("https://test.supabase.co/auth/v1/user").mock(return_value=httpx.Response(401))
     _install_fake_db(monkeypatch, student_rows=[])
     res = client.post(
         "/v1/voice/synthesize",
@@ -355,9 +345,7 @@ def test_voice_synthesize_returns_502_when_azure_persistently_5xx(
     monkeypatch: pytest.MonkeyPatch,
 ):
     _mock_supabase_auth(respx_mock)
-    respx_mock.post(_AZURE_URL).mock(
-        return_value=httpx.Response(503, text="down")
-    )
+    respx_mock.post(_AZURE_URL).mock(return_value=httpx.Response(503, text="down"))
     fake_db = _install_fake_db(
         monkeypatch,
         student_rows=[{"id": "s", "grade": "8", "preferred_language": "en"}],
@@ -370,9 +358,7 @@ def test_voice_synthesize_returns_502_when_azure_persistently_5xx(
     assert res.status_code == 502, res.text
     body = res.json()
     assert body["detail"]["error"] == "AZURE_TTS_ERROR"
-    failure_events = [
-        e for e in fake_db.ops if e["category"] == "voice.synthesize.failure"
-    ]
+    failure_events = [e for e in fake_db.ops if e["category"] == "voice.synthesize.failure"]
     assert len(failure_events) == 1
     assert failure_events[0]["severity"] == "error"
 
@@ -455,9 +441,7 @@ def test_voice_synthesize_returns_429_when_budget_exceeded(
         monkeypatch,
         student_rows=[{"id": "s", "grade": "8", "preferred_language": "en"}],
     )
-    respx_mock.post(_AZURE_URL).mock(
-        return_value=httpx.Response(500, content=b"must not hit")
-    )
+    respx_mock.post(_AZURE_URL).mock(return_value=httpx.Response(500, content=b"must not hit"))
 
     async def fake_budget(**kwargs):
         del kwargs

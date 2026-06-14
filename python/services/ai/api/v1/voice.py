@@ -115,7 +115,9 @@ async def post_transcribe(
     request: Request,
     # Body — FastAPI parses multipart automatically. We accept a single
     # audio file and an optional language hint.
-    audio: UploadFile = File(..., description="Audio file (webm/mp3/wav/m4a/ogg/mpga/flac, ≤25 MB)."),
+    audio: UploadFile = File(
+        ..., description="Audio file (webm/mp3/wav/m4a/ogg/mpga/flac, ≤25 MB)."
+    ),
     language_hint: str | None = Form(
         default=None,
         description="Optional iso-639-1 code: 'en' | 'hi' | 'hinglish'. "

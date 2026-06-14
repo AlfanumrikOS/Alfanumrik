@@ -40,9 +40,7 @@ async def verify_student(authorization_header: str | None) -> StudentAuthResult:
     student_row = await _lookup_student(user_id)
     if student_row is None:
         raise AuthFailed("student_not_found", status=403)
-    return StudentAuthResult(
-        ok=True, student_id=str(student_row["id"]), auth_user_id=user_id
-    )
+    return StudentAuthResult(ok=True, student_id=str(student_row["id"]), auth_user_id=user_id)
 
 
 async def _resolve_user_id(token: str) -> str | None:

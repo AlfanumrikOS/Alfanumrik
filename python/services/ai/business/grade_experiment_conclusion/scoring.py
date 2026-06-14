@@ -34,8 +34,16 @@ PROFICIENT_THRESHOLD = 200
 STRONG_THRESHOLD = 400
 
 EVIDENCE_KEYWORDS = (
-    "because", "since", "therefore", "data", "result", "measure", "observ",
-    "trial", "hypothesis", "predict",
+    "because",
+    "since",
+    "therefore",
+    "data",
+    "result",
+    "measure",
+    "observ",
+    "trial",
+    "hypothesis",
+    "predict",
     "क्योंकि",
     "इसलिए",
     "परिणाम",
@@ -43,7 +51,12 @@ EVIDENCE_KEYWORDS = (
     "प्रयोग",
 )
 METHOD_KEYWORDS = (
-    "first", "then", "next", "step", "procedure", "set up",
+    "first",
+    "then",
+    "next",
+    "step",
+    "procedure",
+    "set up",
     "पहले",
     "फिर",
     "चरण",
@@ -86,8 +99,7 @@ def score_conclusion(conclusion_text: str) -> dict[str, Any]:
     length = len(text)
     r1 = 1 if length >= SHORT_THRESHOLD else 0
     if "?" in text or any(
-        kw in text.lower()
-        for kw in ("question", "ask", "why", "how", "क्यों", "कैसे")
+        kw in text.lower() for kw in ("question", "ask", "why", "how", "क्यों", "कैसे")
     ):
         r1 = min(3, r1 + 1)
     if length >= DEVELOPING_THRESHOLD and r1 < 3:

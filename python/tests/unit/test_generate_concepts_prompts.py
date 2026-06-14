@@ -86,9 +86,7 @@ def test_system_prompt_specifies_3_to_6_concepts():
 
 
 def test_user_prompt_includes_chapter_header():
-    chapter = _chapter(
-        chapter_title="Quadratic Equations", chapter_number=4
-    )
+    chapter = _chapter(chapter_title="Quadratic Equations", chapter_number=4)
     p = build_user_prompt(chapter, ["sample chunk text"] * 3, [], None)
     assert "Quadratic Equations" in p
     assert "Chapter 4" in p

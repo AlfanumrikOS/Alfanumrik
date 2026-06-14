@@ -34,8 +34,7 @@ async def fetch_observation(observation_id: str) -> dict[str, Any] | None:
         result = (
             await client.table("experiment_observations")
             .select(
-                "id, student_id, conclusion_text, grading_result, "
-                "experiment_id, observed_at"
+                "id, student_id, conclusion_text, grading_result, " "experiment_id, observed_at"
             )
             .eq("id", observation_id)
             .limit(1)
@@ -65,9 +64,7 @@ async def already_awarded(observation_id: str) -> bool:
     return _first(result) is not None
 
 
-async def persist_grading(
-    observation_id: str, grading_result: dict[str, Any]
-) -> bool:
+async def persist_grading(observation_id: str, grading_result: dict[str, Any]) -> bool:
     client = get_service_client()
     if client is None:
         raise RepositoryError("supabase_unconfigured")
@@ -83,9 +80,7 @@ async def persist_grading(
     return True
 
 
-async def award_coins(
-    student_id: str, observation_id: str, amount: int, tier: str
-) -> bool:
+async def award_coins(student_id: str, observation_id: str, amount: int, tier: str) -> bool:
     if amount <= 0:
         return True
     client = get_service_client()

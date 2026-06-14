@@ -98,9 +98,7 @@ def _sse(event: str, data: dict) -> str:
     "/generate/stream",
     summary="Run a MOL call and stream the answer as Server-Sent Events",
 )
-async def post_generate_stream(
-    req: GenerateRequest, request: Request
-) -> StreamingResponse:
+async def post_generate_stream(req: GenerateRequest, request: Request) -> StreamingResponse:
     """Stream a MOL answer. Emits ``event: token`` frames followed by a final
     ``event: done`` frame; ``event: error`` on a MolError (never a 5xx into
     the stream). Cooperatively cancels emission if the client disconnects.

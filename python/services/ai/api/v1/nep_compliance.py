@@ -43,16 +43,12 @@ logger = structlog.get_logger(__name__)
 async def post_nep_compliance(
     payload: NepComplianceRequest,
     request: Request,
-    apikey: str | None = Header(
-        default=None, alias="apikey", description="Supabase anon key."
-    ),
+    apikey: str | None = Header(default=None, alias="apikey", description="Supabase anon key."),
 ) -> NepComplianceResponse:
     rid = request.headers.get("x-request-id") or str(uuid.uuid4())
     structlog.contextvars.bind_contextvars(request_id=rid)
     try:
-        return await handle_nep_compliance(
-            payload, apikey_header=apikey, request_id=rid
-        )
+        return await handle_nep_compliance(payload, apikey_header=apikey, request_id=rid)
     except UnauthorizedError as err:
         raise HTTPException(
             status_code=err.status,

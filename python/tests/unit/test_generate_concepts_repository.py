@@ -121,9 +121,7 @@ async def test_fetch_chapters_returns_missing_ones(monkeypatch: pytest.MonkeyPat
         }
     )
     _install(monkeypatch, client)
-    out = await fetch_chapters_without_concepts(
-        grade=None, subject=None, limit=10
-    )
+    out = await fetch_chapters_without_concepts(grade=None, subject=None, limit=10)
     assert len(out) == 1
     assert out[0].chapter_number == 2
     # Both raw and normalized fields populated correctly.
@@ -141,9 +139,7 @@ async def test_fetch_chapters_empty_returns_empty_list(monkeypatch: pytest.Monke
         }
     )
     _install(monkeypatch, client)
-    out = await fetch_chapters_without_concepts(
-        grade=None, subject=None, limit=5
-    )
+    out = await fetch_chapters_without_concepts(grade=None, subject=None, limit=5)
     assert out == []
 
 
@@ -167,9 +163,7 @@ async def test_fetch_chapters_limits_result_count(monkeypatch: pytest.MonkeyPatc
         }
     )
     _install(monkeypatch, client)
-    out = await fetch_chapters_without_concepts(
-        grade=None, subject=None, limit=1
-    )
+    out = await fetch_chapters_without_concepts(grade=None, subject=None, limit=1)
     assert len(out) == 1
 
 
@@ -194,9 +188,7 @@ async def test_fetch_chapters_with_filters_applied(monkeypatch: pytest.MonkeyPat
         }
     )
     _install(monkeypatch, client)
-    out = await fetch_chapters_without_concepts(
-        grade="10", subject="math", limit=5
-    )
+    out = await fetch_chapters_without_concepts(grade="10", subject="math", limit=5)
     assert len(out) == 1
 
 
@@ -204,9 +196,7 @@ async def test_fetch_chapters_with_filters_applied(monkeypatch: pytest.MonkeyPat
 async def test_fetch_chapters_raises_when_client_none(monkeypatch: pytest.MonkeyPatch):
     _install(monkeypatch, None)
     with pytest.raises(RepositoryError):
-        await fetch_chapters_without_concepts(
-            grade=None, subject=None, limit=5
-        )
+        await fetch_chapters_without_concepts(grade=None, subject=None, limit=5)
 
 
 @pytest.mark.asyncio
@@ -237,9 +227,7 @@ async def test_fetch_chapters_skips_malformed_rows(monkeypatch: pytest.MonkeyPat
         }
     )
     _install(monkeypatch, client)
-    out = await fetch_chapters_without_concepts(
-        grade=None, subject=None, limit=10
-    )
+    out = await fetch_chapters_without_concepts(grade=None, subject=None, limit=10)
     # Only 1 good row survives.
     assert len(out) == 1
     assert out[0].chapter_number == 1
@@ -265,9 +253,7 @@ async def test_fetch_chapters_negative_limit_clamped_to_zero(
         }
     )
     _install(monkeypatch, client)
-    out = await fetch_chapters_without_concepts(
-        grade=None, subject=None, limit=-5
-    )
+    out = await fetch_chapters_without_concepts(grade=None, subject=None, limit=-5)
     assert out == []
 
 
@@ -288,9 +274,7 @@ async def test_fetch_rag_chunks_returns_content_list(
         }
     )
     _install(monkeypatch, client)
-    out = await fetch_rag_chunks(
-        rag_grade="Grade 10", rag_subject="Mathematics", chapter_number=1
-    )
+    out = await fetch_rag_chunks(rag_grade="Grade 10", rag_subject="Mathematics", chapter_number=1)
     assert out == ["First chunk", "Second chunk"]
 
 
@@ -301,9 +285,7 @@ async def test_fetch_rag_chunks_returns_single_string(
     """RPC returning a single string (not a list) → wrapped in a list."""
     client = _FakeClient(rpc_response={"data": "all content here"})
     _install(monkeypatch, client)
-    out = await fetch_rag_chunks(
-        rag_grade="Grade 10", rag_subject="Mathematics", chapter_number=1
-    )
+    out = await fetch_rag_chunks(rag_grade="Grade 10", rag_subject="Mathematics", chapter_number=1)
     assert out == ["all content here"]
 
 
@@ -313,9 +295,7 @@ async def test_fetch_rag_chunks_returns_empty_on_no_data(
 ):
     client = _FakeClient(rpc_response={"data": None})
     _install(monkeypatch, client)
-    out = await fetch_rag_chunks(
-        rag_grade="Grade 10", rag_subject="Mathematics", chapter_number=1
-    )
+    out = await fetch_rag_chunks(rag_grade="Grade 10", rag_subject="Mathematics", chapter_number=1)
     assert out == []
 
 
@@ -324,9 +304,7 @@ async def test_fetch_rag_chunks_returns_empty_when_client_none(
     monkeypatch: pytest.MonkeyPatch,
 ):
     _install(monkeypatch, None)
-    out = await fetch_rag_chunks(
-        rag_grade="Grade 10", rag_subject="Mathematics", chapter_number=1
-    )
+    out = await fetch_rag_chunks(rag_grade="Grade 10", rag_subject="Mathematics", chapter_number=1)
     assert out == []
 
 
@@ -343,9 +321,7 @@ async def test_fetch_rag_chunks_returns_empty_on_rpc_error(
             return _Q()
 
     _install(monkeypatch, _ErrorClient())
-    out = await fetch_rag_chunks(
-        rag_grade="Grade 10", rag_subject="Mathematics", chapter_number=1
-    )
+    out = await fetch_rag_chunks(rag_grade="Grade 10", rag_subject="Mathematics", chapter_number=1)
     assert out == []
 
 
@@ -365,9 +341,7 @@ async def test_fetch_chapter_questions_returns_rows(monkeypatch: pytest.MonkeyPa
     ]
     client = _FakeClient(table_responses={"question_bank": {"data": rows}})
     _install(monkeypatch, client)
-    out = await fetch_chapter_questions(
-        grade="10", subject="math", chapter_number=1
-    )
+    out = await fetch_chapter_questions(grade="10", subject="math", chapter_number=1)
     assert out == rows
 
 
@@ -376,9 +350,7 @@ async def test_fetch_chapter_questions_returns_empty_when_client_none(
     monkeypatch: pytest.MonkeyPatch,
 ):
     _install(monkeypatch, None)
-    out = await fetch_chapter_questions(
-        grade="10", subject="math", chapter_number=1
-    )
+    out = await fetch_chapter_questions(grade="10", subject="math", chapter_number=1)
     assert out == []
 
 
@@ -390,9 +362,7 @@ async def test_fetch_diagram_refs_returns_rows(monkeypatch: pytest.MonkeyPatch):
     rows = [{"media_type": "image", "caption": "Diagram 1", "url": "https://x"}]
     client = _FakeClient(table_responses={"content_media": {"data": rows}})
     _install(monkeypatch, client)
-    out = await fetch_diagram_refs(
-        grade="10", subject="math", chapter_number=1
-    )
+    out = await fetch_diagram_refs(grade="10", subject="math", chapter_number=1)
     assert out == rows
 
 
@@ -401,9 +371,7 @@ async def test_fetch_diagram_refs_returns_empty_when_client_none(
     monkeypatch: pytest.MonkeyPatch,
 ):
     _install(monkeypatch, None)
-    out = await fetch_diagram_refs(
-        grade="10", subject="math", chapter_number=1
-    )
+    out = await fetch_diagram_refs(grade="10", subject="math", chapter_number=1)
     assert out == []
 
 
@@ -412,13 +380,9 @@ async def test_fetch_diagram_refs_returns_empty_when_client_none(
 
 @pytest.mark.asyncio
 async def test_insert_chapter_concepts_happy_path(monkeypatch: pytest.MonkeyPatch):
-    client = _FakeClient(
-        table_responses={"chapter_concepts": {"data": [], "status_code": 201}}
-    )
+    client = _FakeClient(table_responses={"chapter_concepts": {"data": [], "status_code": 201}})
     _install(monkeypatch, client)
-    ok, err = await insert_chapter_concepts(
-        [{"grade": "10", "title": "X"}]
-    )
+    ok, err = await insert_chapter_concepts([{"grade": "10", "title": "X"}])
     assert ok is True
     assert err is None
     # Confirm the insert payload reached the fake client.
@@ -441,9 +405,7 @@ async def test_insert_chapter_concepts_returns_error_when_client_none(
     monkeypatch: pytest.MonkeyPatch,
 ):
     _install(monkeypatch, None)
-    ok, err = await insert_chapter_concepts(
-        [{"grade": "10", "title": "X"}]
-    )
+    ok, err = await insert_chapter_concepts([{"grade": "10", "title": "X"}])
     assert ok is False
     assert err is not None
 
@@ -464,9 +426,7 @@ async def test_insert_chapter_concepts_returns_error_on_db_failure(
             return _Q()
 
     _install(monkeypatch, _ErrorClient())
-    ok, err = await insert_chapter_concepts(
-        [{"grade": "10", "title": "X"}]
-    )
+    ok, err = await insert_chapter_concepts([{"grade": "10", "title": "X"}])
     assert ok is False
     assert "DB write failed" in (err or "")
 

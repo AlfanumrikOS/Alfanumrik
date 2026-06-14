@@ -32,9 +32,7 @@ from services.ai.business.voice.tts import (
 # seed Azure env, so we set them in a fixture below — the URL host comes
 # from the region we set there.
 _AZURE_REGION = "centralindia"
-_AZURE_URL = (
-    f"https://{_AZURE_REGION}.tts.speech.microsoft.com{AZURE_TTS_PATH}"
-)
+_AZURE_URL = f"https://{_AZURE_REGION}.tts.speech.microsoft.com{AZURE_TTS_PATH}"
 
 
 @pytest.fixture(autouse=True)
@@ -70,12 +68,12 @@ def test_voice_catalog_covers_all_lang_gender_combos():
 def test_voice_catalog_uses_only_indian_voices():
     """REG-75 — direct CEO ask: Indian accent. Catch en-US, en-GB regressions."""
     for key, voice in VOICE_CATALOG.items():
-        assert voice.startswith(("en-IN-", "hi-IN-")), (
-            f"Voice {voice!r} for {key} is not an Indian voice (en-IN- or hi-IN- prefix)"
-        )
-        assert voice.endswith("Neural"), (
-            f"Voice {voice!r} must be a neural voice (ends with 'Neural')"
-        )
+        assert voice.startswith(
+            ("en-IN-", "hi-IN-")
+        ), f"Voice {voice!r} for {key} is not an Indian voice (en-IN- or hi-IN- prefix)"
+        assert voice.endswith(
+            "Neural"
+        ), f"Voice {voice!r} must be a neural voice (ends with 'Neural')"
 
 
 def test_voice_catalog_uses_neerja_for_english_female():
@@ -105,9 +103,7 @@ def test_resolve_voice_returns_indian_voices_for_all_lang_gender_combos():
 
 def test_resolve_voice_honors_override():
     """voice_override wins over the catalog lookup."""
-    assert (
-        resolve_voice("en", "female", "hi-IN-MadhurNeural") == "hi-IN-MadhurNeural"
-    )
+    assert resolve_voice("en", "female", "hi-IN-MadhurNeural") == "hi-IN-MadhurNeural"
 
 
 def test_resolve_voice_falls_back_when_catalog_misses():
@@ -206,9 +202,9 @@ def test_build_ssml_escapes_all_five_xml_special_chars():
         if inner[i] == "&":
             # Look ahead for an entity terminator (;) within the next ~6 chars.
             terminator = inner.find(";", i, i + 8)
-            assert terminator != -1, (
-                f"Raw '&' at index {i} is not part of an entity: {inner[i : i + 10]!r}"
-            )
+            assert (
+                terminator != -1
+            ), f"Raw '&' at index {i} is not part of an entity: {inner[i : i + 10]!r}"
             i = terminator + 1
         else:
             i += 1
@@ -281,9 +277,7 @@ async def test_call_azure_tts_returns_audio_bytes(respx_mock: respx.MockRouter):
 async def test_call_azure_tts_sends_subscription_key_header(
     respx_mock: respx.MockRouter,
 ):
-    route = respx_mock.post(_AZURE_URL).mock(
-        return_value=httpx.Response(200, content=b"audio")
-    )
+    route = respx_mock.post(_AZURE_URL).mock(return_value=httpx.Response(200, content=b"audio"))
     await call_azure_tts("Hello", "en-IN-NeerjaNeural")
     req = route.calls[0].request
     assert req.headers["Ocp-Apim-Subscription-Key"] == "azure-test-key"
@@ -293,9 +287,7 @@ async def test_call_azure_tts_sends_subscription_key_header(
 async def test_call_azure_tts_sends_output_format_header(
     respx_mock: respx.MockRouter,
 ):
-    route = respx_mock.post(_AZURE_URL).mock(
-        return_value=httpx.Response(200, content=b"audio")
-    )
+    route = respx_mock.post(_AZURE_URL).mock(return_value=httpx.Response(200, content=b"audio"))
     await call_azure_tts("Hello", "en-IN-NeerjaNeural")
     req = route.calls[0].request
     assert req.headers["X-Microsoft-OutputFormat"] == AZURE_TTS_OUTPUT_FORMAT
@@ -305,9 +297,7 @@ async def test_call_azure_tts_sends_output_format_header(
 async def test_call_azure_tts_sends_ssml_content_type(
     respx_mock: respx.MockRouter,
 ):
-    route = respx_mock.post(_AZURE_URL).mock(
-        return_value=httpx.Response(200, content=b"audio")
-    )
+    route = respx_mock.post(_AZURE_URL).mock(return_value=httpx.Response(200, content=b"audio"))
     await call_azure_tts("Hello", "en-IN-NeerjaNeural")
     req = route.calls[0].request
     assert req.headers["Content-Type"] == "application/ssml+xml"
@@ -315,9 +305,7 @@ async def test_call_azure_tts_sends_ssml_content_type(
 
 @pytest.mark.asyncio
 async def test_call_azure_tts_sends_ssml_body(respx_mock: respx.MockRouter):
-    route = respx_mock.post(_AZURE_URL).mock(
-        return_value=httpx.Response(200, content=b"audio")
-    )
+    route = respx_mock.post(_AZURE_URL).mock(return_value=httpx.Response(200, content=b"audio"))
     await call_azure_tts("Hello world", "hi-IN-SwaraNeural", gender="female")
     body = route.calls[0].request.content.decode("utf-8")
     assert body.startswith("<speak version='1.0'")
@@ -332,9 +320,7 @@ async def test_call_azure_tts_sends_ssml_body(respx_mock: respx.MockRouter):
 @pytest.mark.asyncio
 async def test_call_azure_tts_raises_on_400(respx_mock: respx.MockRouter):
     """4xx short-circuits — no retries."""
-    route = respx_mock.post(_AZURE_URL).mock(
-        return_value=httpx.Response(400, text="Bad SSML")
-    )
+    route = respx_mock.post(_AZURE_URL).mock(return_value=httpx.Response(400, text="Bad SSML"))
     with pytest.raises(AzureTTSError) as exc:
         await call_azure_tts("Hello", "en-IN-NeerjaNeural")
     assert exc.value.status == 400
@@ -360,9 +346,7 @@ async def test_call_azure_tts_retries_on_503_then_succeeds(
 async def test_call_azure_tts_raises_when_503_persists(
     respx_mock: respx.MockRouter,
 ):
-    route = respx_mock.post(_AZURE_URL).mock(
-        return_value=httpx.Response(503, text="down")
-    )
+    route = respx_mock.post(_AZURE_URL).mock(return_value=httpx.Response(503, text="down"))
     with pytest.raises(AzureTTSError) as exc:
         await call_azure_tts("Hello", "en-IN-NeerjaNeural")
     assert exc.value.status == 503

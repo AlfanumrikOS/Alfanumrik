@@ -32,9 +32,7 @@ async def post_verify_cron(
     rid = request.headers.get("x-request-id") or str(uuid.uuid4())
     structlog.contextvars.bind_contextvars(request_id=rid)
     try:
-        return await run_verifier_cron(
-            payload, cron_secret_header=x_cron_secret, request_id=rid
-        )
+        return await run_verifier_cron(payload, cron_secret_header=x_cron_secret, request_id=rid)
     except UnauthorizedError as err:
         raise HTTPException(
             status_code=err.status,
