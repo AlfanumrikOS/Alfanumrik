@@ -1,0 +1,22 @@
+# Force LF on SQL files that tests read as raw strings.
+# A test previously broke only on Windows because the working-tree checkout
+# had CRLF line endings (see payment-failed-webhook-alert-rule.test.ts). The
+# active migrations whose index blobs are already LF get pinned to LF here so
+# fresh Windows checkouts stop introducing CRLF — fixing that failure class.
+#
+# Scoped deliberately narrow to avoid a repo-wide renormalization in this PR.
+# The two exclusions below cover the only committed SQL blobs that still carry
+# CRLF in the index; pinning them to eol=lf would queue an 800+/49-file
+# renormalization, which we do NOT want in a config-only change. They are left
+# byte-for-byte untouched.
+*.sql text eol=lf
+
+# Generated pg_dump baseline (CRLF in its committed blob). Not a hand-edited
+# fixture; no test depends on its line endings. Leave it exactly as committed
+# so this PR does not renormalize ~880 lines of it.
+supabase/migrations/00000000000000_baseline_from_prod.sql -text
+
+# Archived pre-baseline legacy migrations (49 files carry CRLF blobs). These
+# are never applied (Supabase CLI only runs the immediate migrations root) and
+# never read by tests. Leave their line endings untouched.
+supabase/migrations/_legacy/** -text
