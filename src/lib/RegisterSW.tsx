@@ -8,6 +8,33 @@ export default function RegisterSW() {
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
 
+    // DEV ANTI-PATTERN GUARD:
+    // Registering the PWA service worker during `next dev` lets it cache the JS
+    // bundle and serve STALE code, so source changes "do nothing" across restarts.
+    // In development we never register; instead we best-effort UNREGISTER any
+    // previously-installed SW and purge its precaches so a developer who already
+    // has a stale one gets unstuck on the next fresh load. Never throws; no-ops
+    // when serviceWorker / caches are unavailable.
+    if (process.env.NODE_ENV !== 'production') {
+      (async () => {
+        try {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map((r) => r.unregister()));
+        } catch {
+          /* best-effort cleanup; ignore */
+        }
+        try {
+          if (typeof window !== 'undefined' && 'caches' in window) {
+            const keys = await window.caches.keys();
+            await Promise.all(keys.map((k) => window.caches.delete(k)));
+          }
+        } catch {
+          /* best-effort cleanup; ignore */
+        }
+      })();
+      return;
+    }
+
     navigator.serviceWorker.register('/sw.js').then((registration) => {
       // Check for updates periodically (every 60 min)
       const interval = setInterval(() => {

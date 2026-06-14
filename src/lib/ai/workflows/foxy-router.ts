@@ -11,6 +11,7 @@
 import type { FoxyIntent, IntentClassification, ChatMessage, WorkflowResult } from '../types';
 import { getAIConfig } from '../config';
 import { callClaude } from '../clients/claude';
+import { callReasoningModel } from '../clients/reasoning-cascade';
 import { TraceLogger, logTrace } from '../tracing/trace-logger';
 import { runExplainWorkflow } from './explain';
 import { runDoubtWorkflow } from './doubt-solve';
@@ -192,6 +193,252 @@ Current mode: ${mode}`;
     reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning : 'LLM classification',
     extractedTopic: typeof parsed.topic === 'string' ? parsed.topic : undefined,
     extractedConcept: typeof parsed.concept === 'string' ? parsed.concept : undefined,
+  };
+}
+
+// ─── Math-Solve Classifier (Part 1C — Foxy Math Pipeline) ───────────────────
+//
+// Detects whether a message is a MATH_SOLVE query: a STEM (math / physics /
+// chemistry / ...) query with a CONCRETE instance to compute and a single
+// determinable answer. This is the trigger for the 3-agent math pipeline
+// (gated by ff_foxy_math_pipeline_v1 in the route — this function does NOT
+// read the flag; the route gates the call).
+//
+// Binding contract (from assessment):
+//   - "add 1/2 + 3/4"            -> math_solve  (concrete operands + operator)
+//   - "explain how to add fractions" -> NOT      (conceptual, no concrete instance)
+//   - "prove that ..." / under-specified / conceptual -> NOT
+//   - low confidence             -> FAIL OPEN to the grounded path (isMathSolve: false)
+//
+// Strategy (cheap-first, identical philosophy to classifyByKeyword):
+//   1. A hard NEGATIVE gate: conceptual / prove / how-to phrasings short-circuit
+//      to NOT math_solve regardless of any numbers present.
+//   2. A deterministic POSITIVE signal: a concrete arithmetic expression, an
+//      equation to solve, or an imperative compute verb paired with a numeric
+//      instance (reuses the SOLVE_RE-style seed).
+//   3. Only when the deterministic signal is AMBIGUOUS (a compute verb present
+//      but no clear concrete instance) do we fall back to a tiny Haiku classify.
+//      Any error or low confidence there fails open to NOT math_solve.
+
+// STEM subjects the math pipeline applies to. Non-STEM subjects always fail
+// open (the grounded path owns English / SST / etc.). When subject is unknown
+// or general we still allow detection by message shape.
+const STEM_SUBJECT_RE = /\b(math|maths|mathematics|physics|chemistry|chem|science|accountancy|accounts|economics|statistics)\b/i;
+
+// Hard negative: conceptual / how-to / proof phrasings are NOT math_solve even
+// when numbers appear ("explain how to add 1/2 and 3/4 in general" is teaching,
+// not a concrete solve). Checked FIRST so it dominates.
+const MATH_CONCEPTUAL_RE = /\b(explain|what\s+is|what\s+are|why|how\s+(?:do|does|can|to)|define|definition\s+of|describe|prove\s+that|derive(?:\s+the)?\s+(?:formula|expression|relation)|in\s+general|concept\s+of|meaning\s+of)\b/i;
+
+// Positive signal A — a concrete arithmetic expression: two numbers (incl.
+// fractions / decimals) joined by an operator, e.g. "1/2 + 3/4", "12 * 4",
+// "25 - 7", "3.5 / 2".
+const ARITHMETIC_EXPR_RE = /(?:\d+(?:\.\d+)?|\d+\s*\/\s*\d+)\s*[+\-*/×÷·]\s*(?:\d+(?:\.\d+)?|\d+\s*\/\s*\d+)/;
+
+// Positive signal B — an equation with an unknown to solve, e.g.
+// "x^2 - 5x + 6 = 0", "2x + 3 = 7", "solve 3y = 9".
+const EQUATION_RE = /[a-z]\s*(?:\^?\d+)?[^=]*=[^=]*\d/i;
+
+// Positive signal C — an imperative compute verb (SOLVE_RE seed) AND at least
+// one numeric token, e.g. "find the value of x when 2x = 8", "calculate the
+// area of a circle of radius 7".
+const COMPUTE_VERB_RE = /\b(calculate|compute|solve|simplify|evaluate|factorise|factorize|find\s+the\s+(?:value|sum|product|difference|area|volume|speed|distance|force|root|roots)|how\s+many)\b/i;
+const HAS_NUMBER_RE = /\d/;
+
+// Positive signal D — a fully-specified STEM word problem where the compute
+// verb and the concrete number(s) appear in EITHER order, e.g.
+//   "A train travels 240 km in 4 hours. Find the average speed."  (verb last)
+//   "Calculate the area of a circle of radius 7"                   (verb first)
+// COMPUTE_VERB_RE only catches the verb when it is glued to a specific noun
+// ("find the speed") which misses "find the AVERAGE speed" and any verb that
+// trails the numbers. This broader verb gate is a STANDALONE word (no required
+// trailing noun) so word order does not matter. It is ONLY consulted when the
+// subject is a KNOWN STEM-calc subject (not merely "not clearly non-STEM"), so
+// unknown/general-subject prose with an incidental number cannot reach it.
+const STEM_COMPUTE_VERB_RE =
+  /\b(find|calculate|solve|evaluate|compute|determine|simplify|work\s+out)\b/i;
+
+// A "real quantity" number — used to reject the over-trigger case where the
+// ONLY number in the message is a 4-digit year ("find India's population in
+// 2011") or a chapter/class/exercise reference ("solve chapter 3"). We require
+// at least one number that is NOT one of those reference forms. Fractions,
+// decimals, and bare integers (240, 7, 4) all qualify as real quantities.
+const YEAR_RE = /\b(1[5-9]\d{2}|20\d{2})\b/g;
+const CHAPTER_REF_RE = /\b(?:chapter|chap|ch|class|grade|exercise|ex|q(?:uestion)?|page|pg|unit|lesson)\.?\s*#?\s*\d+\b/gi;
+
+export interface MathSolveClassification {
+  isMathSolve: boolean;
+  topic?: string;
+  chapter?: string;
+  difficulty?: string;
+}
+
+/**
+ * True when `message` contains at least one number that is a real quantity —
+ * i.e. NOT solely a 4-digit year or a chapter/class/exercise reference. Strips
+ * the reference forms first, then checks whether any digit survives. This is
+ * the guardrail that keeps "find India's population in 2011" and "solve chapter
+ * 3" out of the deterministic STEM word-problem branch while letting "240 km",
+ * "radius 7", and "1/2" through unchanged.
+ */
+function hasRealQuantity(message: string): boolean {
+  const stripped = message.replace(CHAPTER_REF_RE, ' ').replace(YEAR_RE, ' ');
+  return HAS_NUMBER_RE.test(stripped);
+}
+
+/**
+ * Classify whether `message` is a concrete math-solve query.
+ *
+ * Pure-deterministic for the common cases; falls back to a tiny Haiku classify
+ * ONLY when a compute verb is present but no concrete instance is detectable.
+ * Fails open (isMathSolve: false) on any uncertainty or error — the grounded
+ * path is always the safe default (P12).
+ *
+ * Does NOT mutate or call classifyIntent — fully independent and additive.
+ */
+export async function classifyMathSolve(
+  message: string,
+  subject: string,
+  grade: string,
+): Promise<MathSolveClassification> {
+  const trimmed = (message ?? '').trim();
+  if (!trimmed) return { isMathSolve: false };
+
+  // Subject gate: a clearly non-STEM subject never enters the math pipeline.
+  // Unknown / general / empty subject is allowed through to shape detection.
+  const subjectKnownStem = STEM_SUBJECT_RE.test(subject ?? '');
+  const subjectClearlyNonStem =
+    !!(subject ?? '').trim() &&
+    !subjectKnownStem &&
+    /\b(english|hindi|sanskrit|social|sst|history|geography|civics|political|literature)\b/i.test(
+      subject,
+    );
+  if (subjectClearlyNonStem) return { isMathSolve: false };
+
+  // 1. Hard negative gate (conceptual / how-to / prove) dominates.
+  //    EXCEPTION: a bare arithmetic expression like "add 1/2 + 3/4" can contain
+  //    no conceptual keyword, so the negative gate only fires when there is NOT
+  //    also a standalone concrete arithmetic expression / equation. This lets
+  //    "find x: x^2 = 9" pass while "explain how to solve x^2 = 9" is blocked.
+  const hasArithmetic = ARITHMETIC_EXPR_RE.test(trimmed);
+  const hasEquation = EQUATION_RE.test(trimmed);
+  const conceptual = MATH_CONCEPTUAL_RE.test(trimmed);
+  if (conceptual && !hasArithmetic && !hasEquation) {
+    return { isMathSolve: false };
+  }
+
+  // 2. Deterministic positive signal.
+  if (hasArithmetic || hasEquation) {
+    return {
+      isMathSolve: true,
+      difficulty: undefined,
+    };
+  }
+
+  // 2b. Fully-specified STEM word problem (order-independent): a KNOWN STEM-calc
+  //     subject + a compute/solve verb anywhere + a concrete real-quantity
+  //     number anywhere. This catches the canonical CBSE word problem
+  //     "A train travels 240 km in 4 hours. Find the average speed." (verb after
+  //     the numbers) which the noun-glued COMPUTE_VERB_RE below misses. Gated on
+  //     a KNOWN STEM subject (not just "not clearly non-STEM") and on a real
+  //     quantity (not a bare year / chapter ref) so it never over-triggers on
+  //     unknown-subject prose. Deterministic — no Claude call.
+  if (
+    subjectKnownStem &&
+    STEM_COMPUTE_VERB_RE.test(trimmed) &&
+    hasRealQuantity(trimmed)
+  ) {
+    return { isMathSolve: true };
+  }
+
+  const hasComputeVerb = COMPUTE_VERB_RE.test(trimmed);
+  const hasNumber = HAS_NUMBER_RE.test(trimmed);
+  if (hasComputeVerb && hasNumber) {
+    // Compute verb + a concrete number = a concrete instance. math_solve.
+    return { isMathSolve: true };
+  }
+
+  // 3. Ambiguous: a compute verb but NO concrete number, e.g. "find the value
+  //    of x" with the equation in an earlier turn, or "solve this". Only here
+  //    do we spend a tiny Haiku classify. Fail open on any error/low-confidence.
+  if (hasComputeVerb) {
+    try {
+      return await classifyMathSolveWithLLM(trimmed, subject, grade);
+    } catch {
+      return { isMathSolve: false };
+    }
+  }
+
+  // No signal at all -> grounded path.
+  return { isMathSolve: false };
+}
+
+async function classifyMathSolveWithLLM(
+  message: string,
+  subject: string,
+  grade: string,
+): Promise<MathSolveClassification> {
+  const systemPrompt = `You decide whether a Grade ${grade} ${subject} student's message is a MATH_SOLVE query.
+
+MATH_SOLVE = a STEM (math/physics/chemistry/etc.) query with a CONCRETE instance to compute and a single determinable answer.
+NOT MATH_SOLVE = conceptual ("explain how to add fractions"), under-specified, a request to prove something, or a definition/why/how-to question.
+
+Examples:
+- "add 1/2 + 3/4" -> math_solve
+- "solve x^2 - 5x + 6 = 0" -> math_solve
+- "explain how to add fractions" -> NOT
+- "prove that root 2 is irrational" -> NOT
+- "what is a quadratic equation" -> NOT
+
+Return ONLY JSON (no markdown):
+{"isMathSolve": true|false, "topic": "...", "difficulty": "easy"|"medium"|"hard"}
+If unsure, return {"isMathSolve": false}.`;
+
+  // Ambiguous-branch classify routes through the reasoning cascade at the base
+  // tier (gpt-4o-mini), with cross-provider AVAILABILITY fallback toward Claude
+  // Haiku. jsonMode requests a strict JSON object from the OpenAI tiers; the
+  // prompt also instructs JSON so the Haiku last-resort tier behaves identically.
+  const response = await callReasoningModel(
+    {
+      systemPrompt,
+      messages: [{ role: 'user', content: message }],
+      maxTokens: 96,
+      temperature: 0.1,
+      jsonMode: true,
+    },
+    { startTier: 'base' },
+  );
+
+  const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return { isMathSolve: false };
+
+  let parsed: {
+    isMathSolve?: unknown;
+    topic?: unknown;
+    chapter?: unknown;
+    difficulty?: unknown;
+  };
+  try {
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    return { isMathSolve: false };
+  }
+
+  // Fail open: only true when the model is explicitly true.
+  if (parsed.isMathSolve !== true) return { isMathSolve: false };
+
+  const difficulty =
+    parsed.difficulty === 'easy' ||
+    parsed.difficulty === 'medium' ||
+    parsed.difficulty === 'hard'
+      ? parsed.difficulty
+      : undefined;
+
+  return {
+    isMathSolve: true,
+    topic: typeof parsed.topic === 'string' ? parsed.topic : undefined,
+    chapter: typeof parsed.chapter === 'string' ? parsed.chapter : undefined,
+    difficulty,
   };
 }
 

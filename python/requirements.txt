@@ -38,3 +38,12 @@ pybreaker>=1.3.0,<2.0
 # shared store. Fail-open: when unconfigured the client is None and callers
 # behave as if the breaker is CLOSED / the cache is empty.
 upstash-redis>=1.2,<2.0
+# sympy: symbolic + numeric math engine. Backs the SERVER-SIDE deterministic
+# math verifier (services/ai/business/math/, exposed at POST /v1/math/verify) —
+# Agent 3 of the Foxy 3-Agent Math Pipeline. No LLM, ~100ms, $0. Used to parse
+# the problem + Foxy's proposed answer, compute the canonical result, and return
+# {is_correct, confidence} so a confidently-wrong answer is never served (P12,
+# fail-closed). Python-service ONLY — zero impact on the Next.js/JS bundle (P10);
+# the Next client (src/lib/math-python-client.ts) is a thin fetch wrapper that
+# carries no math code. Minor-pinned to the current stable line.
+sympy>=1.13,<2.0

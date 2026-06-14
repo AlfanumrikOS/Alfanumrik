@@ -119,6 +119,14 @@ const VALID_PAYLOADS: Record<DomainEventKind, Record<string, unknown>> = {
     subjectCode: 'math',
     chapterNumber: 6,
   },
+  'learner.learning_action': {
+    messageId: FIXTURE_UUID_A,
+    sessionId: FIXTURE_UUID_B,
+    conceptId: FIXTURE_UUID_C,
+    actionType: 'got_it',
+    subjectCode: 'math',
+    chapterNumber: 6,
+  },
   'ai.foxy_session_started': {
     foxySessionId: FIXTURE_UUID_C,
     subjectCode: 'math',

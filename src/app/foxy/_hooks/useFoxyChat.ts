@@ -84,6 +84,7 @@ export async function callFoxyTutor(params: Record<string, any> & { language?: s
         sessionId: params.session_id ?? null,
         mode:      params.mode      ?? 'learn',
         ...(typeof params.intent === 'string' ? { intent: params.intent } : {}),
+        ...(typeof params.coachDirective === 'string' ? { coachDirective: params.coachDirective } : {}),
         ...(params.image_base64 ? {
           image_base64: params.image_base64,
           image_media_type: params.image_media_type ?? 'image/jpeg',
@@ -173,6 +174,7 @@ export async function callFoxyTutor(params: Record<string, any> & { language?: s
       groundedFromChunks:     typeof data.groundedFromChunks === 'boolean' ? data.groundedFromChunks : false,
       citationsCount:         typeof data.citationsCount === 'number' ? data.citationsCount : 0,
       structured:             (data.structured as FoxyResponse | undefined) ?? undefined,
+      badgeState:             (data.badgeState as ('verified' | 'check_manually' | 'none' | 'out_of_scope') | undefined) ?? undefined,
       messageId:              typeof data.messageId === 'string' ? data.messageId : null,
     };
   } catch (err) {
@@ -247,6 +249,7 @@ export async function callFoxyTutorStream(
         citationsCount: typeof data?.citationsCount === 'number' ? data.citationsCount : 0,
         claudeModel: data?.meta?.claude_model || data?.claudeModel || '',
         structured: (data?.structured as FoxyResponse | undefined) ?? undefined,
+        badgeState: (data?.badgeState as ('verified' | 'check_manually' | 'none' | 'out_of_scope') | undefined) ?? undefined,
       });
       if (typeof data?.messageId === 'string' && data.messageId.length > 0) {
         callbacks.onPersisted?.({ messageId: data.messageId });
@@ -305,6 +308,7 @@ export async function callFoxyTutorStream(
           citationsCount,
           claudeModel: typeof parsed?.claudeModel === 'string' ? parsed.claudeModel : '',
           structured: (parsed?.structured as FoxyResponse | undefined) ?? undefined,
+          badgeState: (parsed?.badgeState as ('verified' | 'check_manually' | 'none' | 'out_of_scope') | undefined) ?? undefined,
         });
       } else if (eventName === 'persisted') {
         if (typeof parsed?.messageId === 'string' && parsed.messageId.length > 0) {
@@ -358,6 +362,16 @@ export interface SendMessageHooks {
  * subject/grade/topic state on every call — keeps the hook ignorant of
  * that state model.
  */
+/**
+ * Phase 1 post-answer learning actions: the optional re-teach / quiz directive
+ * the client appends when re-sending the SAME prior question. Maps 1:1 to the
+ * server's `coachDirective` enum on POST /api/foxy.
+ *   'simplify' → simpler re-explanation
+ *   'example'  → one worked example
+ *   'quiz_me'  → exactly one oracle-gated inline MCQ (server FORCES blocking)
+ */
+export type CoachDirective = 'simplify' | 'example' | 'quiz_me';
+
 export interface FoxySendPayload {
   message: string;
   augmentedMessage?: string;     // image-OCR fallback message
@@ -375,6 +389,25 @@ export interface FoxySendPayload {
   chapter?: string | null;
   selectedChapters?: string | null;
   intent?: string;
+  /**
+   * Phase 1 learning-action re-teach/quiz directive. When set, the SAME prior
+   * question is re-sent with this directive so a fresh, directive-shaped Foxy
+   * bubble appears. `quiz_me` is forced down the non-streaming JSON branch
+   * because the server returns a blocking JSON response (single oracle-gated
+   * MCQ) for it.
+   */
+  coachDirective?: CoachDirective;
+}
+
+/** Body for the learning-action telemetry endpoint. */
+export interface LearningActionInput {
+  /** Persisted DB uuid of the assistant message (ChatMessage.persistedMessageId). */
+  messageId: string;
+  actionType: 'got_it' | 'explain_simpler' | 'show_example' | 'quiz_me' | 'save';
+  sessionId?: string | null;
+  conceptId?: string | null;
+  subjectCode?: string | null;
+  chapterNumber?: number | null;
 }
 
 export interface UseFoxyChatResult {
@@ -389,6 +422,13 @@ export interface UseFoxyChatResult {
   nextMessageId: () => number;
   clearMessages: () => void;
   sendMessage: (payload: FoxySendPayload, hooks?: SendMessageHooks) => Promise<void>;
+  /**
+   * Phase 1 learning actions: fire-and-await the non-evidential telemetry
+   * endpoint POST /api/foxy/learning-action. Best-effort — resolves to true on
+   * a recorded action, false on any failure (the UI never blocks on it). Reuses
+   * the same Bearer/cookie auth construction as the chat protocol.
+   */
+  recordLearningAction: (input: LearningActionInput) => Promise<boolean>;
 }
 
 /**
@@ -418,6 +458,40 @@ export function useFoxyChat(): UseFoxyChatResult {
     setMessages([]);
     setChatSessionId(null);
     setXpGained(0);
+  }, []);
+
+  // Phase 1 learning actions — non-evidential telemetry. Best-effort: never
+  // throws, returns false on any failure. Reuses the same Bearer/cookie auth
+  // construction as callFoxyTutor so it works behind authorizeRequest.
+  const recordLearningAction = useCallback(async (input: LearningActionInput): Promise<boolean> => {
+    if (!input?.messageId) return false;
+    try {
+      let accessToken: string | null = null;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        accessToken = session?.access_token ?? null;
+      } catch { /* cookie fallback in authorizeRequest */ }
+
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+
+      const res = await fetch('/api/foxy/learning-action', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({
+          messageId: input.messageId,
+          actionType: input.actionType,
+          ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+          ...(input.conceptId ? { conceptId: input.conceptId } : {}),
+          ...(input.subjectCode ? { subjectCode: input.subjectCode } : {}),
+          ...(typeof input.chapterNumber === 'number' ? { chapterNumber: input.chapterNumber } : {}),
+        }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }, []);
 
   const sendMessage = useCallback(async (
@@ -482,13 +556,19 @@ export function useFoxyChat(): UseFoxyChatResult {
         selected_chapters: payload.selectedChapters || null,
       };
       if (payload.intent) foxyParams.intent = payload.intent;
+      if (payload.coachDirective) foxyParams.coachDirective = payload.coachDirective;
       if (payload.imageBase64) {
         foxyParams.image_base64 = payload.imageBase64;
         foxyParams.image_media_type = payload.imageMediaType || 'image/jpeg';
       }
 
+      // "Quiz me" forces the non-streaming JSON branch: the server returns a
+      // BLOCKING JSON response (single oracle-gated MCQ) for coachDirective
+      // 'quiz_me', so SSE would never carry the structured payload.
+      const forceBlocking = payload.coachDirective === 'quiz_me';
+
       // ── Streaming branch ─────────────────────────────────────────────
-      if (shouldUseStreaming() && !payload.imageBase64) {
+      if (shouldUseStreaming() && !payload.imageBase64 && !forceBlocking) {
         let streamGroundedFromChunks = false;
         let streamCitationsCount = 0;
         const tutorBubbleId = nextMessageId();
@@ -551,6 +631,11 @@ export function useFoxyChat(): UseFoxyChatResult {
                 let next: ChatMessage = m;
                 if (info.structured) {
                   next = { ...next, structured: info.structured };
+                }
+                // Display-only SymPy badge state (server-computed). Stamp only
+                // when present; absent leaves the bubble byte-identical to today.
+                if (info.badgeState) {
+                  next = { ...next, badgeState: info.badgeState };
                 }
                 if (next.content && next.content.length > 0) return next;
                 if (next.groundingStatus === 'hard-abstain') return next;
@@ -642,6 +727,7 @@ export function useFoxyChat(): UseFoxyChatResult {
         abstainReason: resp.abstainReason,
         suggestedAlternatives: resp.suggestedAlternatives,
         structured: resp.structured,
+        badgeState: resp.badgeState,
         persistedMessageId: resp.messageId ?? undefined,
       }]);
       if (resp.upgradePrompt) {
@@ -695,5 +781,6 @@ export function useFoxyChat(): UseFoxyChatResult {
     nextMessageId,
     clearMessages,
     sendMessage,
+    recordLearningAction,
   };
 }

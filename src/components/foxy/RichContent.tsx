@@ -41,6 +41,26 @@ function cleanLegacyMarkers(content: string): string {
 }
 
 /**
+ * Normalises LaTeX delimiters so `remark-math` can see them.
+ *
+ * `remark-math` recognises `$…$` (inline) and `$$…$$` (block) but NOT the
+ * `\( … \)` / `\[ … \]` style Claude frequently emits. Without this step,
+ * legacy markdown answers render the raw `\( \frac{3}{4} \)` delimiters as
+ * plain text. We convert:
+ *   `\[ … \]` → `$$ … $$`   (display)
+ *   `\( … \)` → `$ … $`     (inline)
+ *
+ * Non-greedy, single-line `[\s\S]` so multi-line LaTeX is captured. Done
+ * BEFORE the marker cleaning so converted `$` spans flow through unchanged.
+ * No new dependency — pure string transform.
+ */
+export function normalizeLatexDelimiters(content: string): string {
+  return content
+    .replace(/\\\[([\s\S]*?)\\\]/g, (_m, inner) => `$$${inner}$$`)
+    .replace(/\\\(([\s\S]*?)\\\)/g, (_m, inner) => `$${inner}$`);
+}
+
+/**
  * Renders AI tutor responses with proper markdown formatting.
  * Supports: bold, italic, headings, lists, code blocks, tables,
  * LaTeX math (inline $...$ and block $$...$$), and links.
@@ -56,8 +76,9 @@ function RichContentInner({ content, subjectKey, subjectConfig }: RichContentPro
   const cfg = subjectConfig || (resolved ? { icon: resolved.icon, color: resolved.color } : DEFAULT_CONFIG);
   if (!content) return null;
 
-  // Clean legacy markers from old stored messages
-  const cleaned = cleanLegacyMarkers(content);
+  // Normalise `\(…\)` / `\[…\]` LaTeX to `$…$` / `$$…$$` so remark-math sees
+  // it, THEN clean legacy markers from old stored messages.
+  const cleaned = cleanLegacyMarkers(normalizeLatexDelimiters(content));
 
   // Extract custom markers that ReactMarkdown can't handle natively,
   // then render them as inline elements after markdown processing.

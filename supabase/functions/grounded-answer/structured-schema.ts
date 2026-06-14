@@ -37,10 +37,22 @@ export type FoxyBlockType =
   | 'definition'
   | 'example'
   | 'question'
+  | 'mcq'
   | 'diagram'
   | 'code';
 
 export type FoxySubject = 'math' | 'science' | 'sst' | 'english' | 'general';
+
+// Bloom + difficulty enums accepted on mcq blocks (mirrors src/lib/foxy/schema.ts).
+const VALID_MCQ_BLOOM = new Set([
+  'Remember',
+  'Understand',
+  'Apply',
+  'Analyze',
+  'Evaluate',
+  'Create',
+]);
+const VALID_MCQ_DIFFICULTY = new Set(['easy', 'medium', 'hard']);
 
 export interface FoxyBlock {
   type: FoxyBlockType;
@@ -51,6 +63,13 @@ export interface FoxyBlock {
   search_query?: string;
   // code-only
   language?: string;
+  // mcq-only (Phase 1 — Foxy post-answer "Quiz me"). Present iff type==='mcq'.
+  stem?: string;
+  options?: string[];
+  correct_answer_index?: number;
+  explanation?: string;
+  bloom_level?: string;
+  difficulty?: string;
 }
 
 export interface FoxyResponse {
@@ -68,6 +87,7 @@ const ALLOWED_BLOCK_TYPES: ReadonlySet<FoxyBlockType> = new Set([
   'definition',
   'example',
   'question',
+  'mcq',
   'diagram',
   'code',
 ]);
@@ -173,8 +193,93 @@ function validateBlock(block: any, index: number): ValidationResult {
   if (typeof type !== 'string' || !ALLOWED_BLOCK_TYPES.has(type as FoxyBlockType)) {
     return {
       ok: false,
-      reason: `blocks[${index}].type must be one of paragraph|step|math|answer|exam_tip|definition|example|question|diagram|code (got ${String(type)})`,
+      reason: `blocks[${index}].type must be one of paragraph|step|math|answer|exam_tip|definition|example|question|mcq|diagram|code (got ${String(type)})`,
     };
+  }
+
+  // mcq blocks: stem/options/correct_answer_index/explanation required;
+  // no text/latex. Mirrors the Zod superRefine in src/lib/foxy/schema.ts so
+  // a "Quiz me" mcq survives validation through grounded-answer instead of
+  // being dropped to wrapAsParagraph. The REG-54 quiz-oracle gate runs AFTER
+  // this schema check (in the Next.js route boundary) — see /api/foxy.
+  if (type === 'mcq') {
+    const { stem, options, correct_answer_index, explanation, bloom_level, difficulty } =
+      block as Record<string, unknown>;
+    if (text !== undefined) {
+      return {
+        ok: false,
+        reason: `blocks[${index}] of type 'mcq' must not include a 'text' field; use 'stem'`,
+      };
+    }
+    if (latex !== undefined) {
+      return {
+        ok: false,
+        reason: `blocks[${index}] of type 'mcq' must not include a 'latex' field`,
+      };
+    }
+    if (typeof stem !== 'string' || stem.trim().length < 10 || stem.length > FOXY_MAX_TEXT_LEN) {
+      return {
+        ok: false,
+        reason: `blocks[${index}] of type 'mcq' requires a 'stem' of 10..${FOXY_MAX_TEXT_LEN} chars`,
+      };
+    }
+    if (!Array.isArray(options) || options.length !== 4) {
+      return {
+        ok: false,
+        reason: `blocks[${index}] of type 'mcq' requires exactly 4 'options' (P6)`,
+      };
+    }
+    const trimmedOpts: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      const o = options[i];
+      if (typeof o !== 'string' || o.trim() === '' || o.length > FOXY_MAX_TEXT_LEN) {
+        return {
+          ok: false,
+          reason: `blocks[${index}] mcq option ${i} must be a non-empty string <= ${FOXY_MAX_TEXT_LEN} chars`,
+        };
+      }
+      trimmedOpts.push(o.trim().toLowerCase());
+    }
+    if (new Set(trimmedOpts).size !== 4) {
+      return {
+        ok: false,
+        reason: `blocks[${index}] mcq options must be distinct (case-insensitive) (P6)`,
+      };
+    }
+    if (
+      typeof correct_answer_index !== 'number' ||
+      !Number.isInteger(correct_answer_index) ||
+      correct_answer_index < 0 ||
+      correct_answer_index > 3
+    ) {
+      return {
+        ok: false,
+        reason: `blocks[${index}] mcq requires integer 'correct_answer_index' in 0..3 (P6)`,
+      };
+    }
+    if (
+      typeof explanation !== 'string' ||
+      explanation.trim().length < 10 ||
+      explanation.length > FOXY_MAX_TEXT_LEN
+    ) {
+      return {
+        ok: false,
+        reason: `blocks[${index}] mcq requires an 'explanation' of 10..${FOXY_MAX_TEXT_LEN} chars (P6)`,
+      };
+    }
+    if (bloom_level !== undefined && (typeof bloom_level !== 'string' || !VALID_MCQ_BLOOM.has(bloom_level))) {
+      return {
+        ok: false,
+        reason: `blocks[${index}] mcq 'bloom_level' must be one of Remember|Understand|Apply|Analyze|Evaluate|Create`,
+      };
+    }
+    if (difficulty !== undefined && (typeof difficulty !== 'string' || !VALID_MCQ_DIFFICULTY.has(difficulty))) {
+      return {
+        ok: false,
+        reason: `blocks[${index}] mcq 'difficulty' must be one of easy|medium|hard`,
+      };
+    }
+    return { ok: true, value: undefined as unknown as FoxyResponse };
   }
 
   // diagram blocks: require search_query, no text/latex
@@ -592,6 +697,26 @@ export function denormalizeFoxyResponse(parsed: FoxyResponse): string {
       if (latex.trim().length > 0) {
         parts.push(`$$${latex}$$`);
       }
+    } else if (block.type === 'mcq') {
+      // mcq → stem + lettered options + answer + explanation (mirrors the
+      // Node-side denormalize in src/lib/foxy/denormalize.ts). Keeps the
+      // legacy TEXT content column human-readable on session resume.
+      const stem = (block.stem ?? '').trim();
+      const options = Array.isArray(block.options) ? block.options : [];
+      const correctIdx = block.correct_answer_index;
+      const explanation = (block.explanation ?? '').trim();
+      const lines: string[] = [];
+      if (stem.length > 0) lines.push(stem);
+      const letters = ['A', 'B', 'C', 'D'];
+      for (let i = 0; i < options.length && i < 4; i++) {
+        const opt = (options[i] ?? '').trim();
+        if (opt.length > 0) lines.push(`${letters[i]}) ${opt}`);
+      }
+      if (typeof correctIdx === 'number' && correctIdx >= 0 && correctIdx < 4) {
+        lines.push(`Answer: ${letters[correctIdx]}`);
+      }
+      if (explanation.length > 0) lines.push(`Explanation: ${explanation}`);
+      if (lines.length > 0) parts.push(lines.join('\n'));
     } else if (typeof block.text === 'string' && block.text.trim().length > 0) {
       parts.push(block.text);
     }
