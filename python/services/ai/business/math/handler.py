@@ -52,7 +52,7 @@ try:  # pragma: no cover - import-time guard
     _TRANSFORMATIONS = standard_transformations + (implicit_multiplication_application,)
 except Exception:  # pragma: no cover - import-time guard  # noqa: BLE001
     _SYMPY_OK = False
-    _TRANSFORMATIONS = ()  # type: ignore[assignment]
+    _TRANSFORMATIONS = ()
 
 
 # Numeric comparison tolerance for non-rational results (e.g. trig surds turned
@@ -190,7 +190,7 @@ def _verify_solve_equation(problem: str, claimed: str) -> VerifyMathResponse:
     if not roots:
         return _unverifiable("no_roots_parsed")
 
-    computed_str = ", ".join(_to_str(r) for r in roots)
+    computed_str = ", ".join(s for s in (_to_str(r) for r in roots) if s is not None)
 
     for root in roots:
         try:
