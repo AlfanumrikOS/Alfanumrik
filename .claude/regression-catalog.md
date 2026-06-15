@@ -4280,4 +4280,74 @@ reset-on-correct/increment-on-wrong via `p_is_correct` (never the invalid
 mastery-math block). **Total catalog: 113 entries (target: 35 — TARGET
 EXCEEDED).**
 
-**Total: 113 entries.**
+## SPEC-3 consecutive-wrong intervention alert — active path (2026-06-15) — REG-146
+
+Priority: **P8/P9/P13 (monitoring data boundary).** Source: SPEC-3 wiring
+(2026-06-15), post-submit telemetry. This is the LIVE half of the SPEC-3
+consecutive-wrong pathway whose data-producing half (the `concept_mastery.consecutive_wrong`
+counter) is pinned structurally by REG-145. Where REG-145 proves the counter is
+MAINTAINED without scoring drift, REG-146 pins what CONSUMES the counter: in
+`src/lib/quiz/post-submit-telemetry.ts`, after a successful (non-replay) quiz submit
+and gated behind `ff_quiz_telemetry_v1`, for each unique topic the post-RPC
+`concept_mastery` read returns `consecutive_wrong`; when `consecutive_wrong >= 3`,
+exactly one `intervention_alerts` row is inserted (`alert_type 'consecutive_wrong'`,
+`severity 'act'`, `trigger_data {count, threshold: 3}`) UNLESS an OPEN alert already
+exists for the same `(student_id + topic_id + alert_type + resolved_at IS NULL)` →
+dedup skip.
+
+> **ID note:** REG-145 is the previous entry (consecutive_wrong population
+> structural-diff guard, 2026-06-15). REG-146 is the next free id at the time this
+> entry was written.
+
+Three correctness hazards this pins against:
+
+- **Dual-id contract.** The `concept_mastery` read is keyed by `students.id`; the
+  `intervention_alerts` dedup-read + insert are keyed by `auth.uid()` (FK to
+  `auth.users`). Conflating the two id spaces FK-violates the insert. The pin keeps
+  the read and the write on their respective id keys.
+- **Topic attribution.** `topic_id` is a real `curriculum_topics.id` resolved from
+  `question_bank` topic resolution; an unattributable question emits NO alert (no
+  `node_code` guess / no synthetic topic). A bad guess would either mis-route an
+  alert or FK-violate against `curriculum_topics`.
+- **Fire-and-forget safety.** The alert path runs post-RPC, after scoring/XP/BKT
+  have already committed. It is fire-and-forget — it never throws or blocks the
+  submit, and it performs NO scoring/XP/BKT recompute (P1-P4 untouched). It writes
+  `intervention_alerts` ONLY — never the `adaptive_interventions` Loops A/B/C
+  substrate.
+
+P13: `trigger_data` carries only `{count, threshold}` (both numbers) — no PII.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-146 | `spec3_intervention_alert_active_path` | **(1) Threshold + shape:** when a unique topic's post-RPC `concept_mastery` read returns `consecutive_wrong >= 3`, exactly one `intervention_alerts` row is inserted with `alert_type='consecutive_wrong'`, `severity='act'`, `trigger_data={count, threshold:3}`; `consecutive_wrong < 3` inserts nothing. **(2) Dedup:** an OPEN alert (`student_id + topic_id + alert_type + resolved_at IS NULL`) already present → dedup skip, no second insert. **(3) Dual-id contract:** the `concept_mastery` read is keyed by `students.id`; the `intervention_alerts` dedup-read + insert are keyed by `auth.uid()` — never conflated. **(4) Topic attribution:** `topic_id` is a real `curriculum_topics.id` from `question_bank` resolution; unattributable questions emit no alert. **(5) Gating + replay:** gated behind `ff_quiz_telemetry_v1`; a replay submit emits no alert. **(6) Safety:** fire-and-forget — a thrown alert path never blocks/aborts the submit; no scoring/XP/BKT recompute; writes `intervention_alerts`, not `adaptive_interventions`. **(7) P13:** `trigger_data` keys are exactly `count` + `threshold`, both numbers, no PII. | `src/__tests__/quiz/post-submit-telemetry.test.ts` (30 tests; the 6 SPEC-3-active scenarios) | U (unit; companion to the REG-145 SPEC-3 population pin) |
+
+### Invariants covered by this section
+
+- P8 RLS boundary / data boundary — REG-146 (the alert path reads `concept_mastery`
+  by `students.id` and writes `intervention_alerts` by `auth.uid()`; the dual-id
+  contract keeps each read/write on its correct id space and inside the RLS-scoped
+  client, so an alert can never reference a row outside the acting student's boundary).
+- P9 RBAC enforcement — REG-146 (the alert is keyed to the right student via
+  `auth.uid()` (FK `auth.users`); topic attribution rides a real
+  `curriculum_topics.id` from `question_bank` resolution, so no alert is mis-routed
+  to another student or a guessed topic).
+- P13 Data privacy — REG-146 (`trigger_data` carries only `{count, threshold}` —
+  numbers, never PII).
+- P1-P4 (untouched, asserted) — REG-146 (the path is post-RPC, fire-and-forget; it
+  never recomputes scoring/XP/BKT and never throws into the submit, so quiz
+  accuracy / XP economy / anti-cheat / atomic submission are all unaffected; it
+  writes `intervention_alerts`, not the `adaptive_interventions` Loops substrate).
+
+### Catalog total
+
+Pre-REG-146: 113 entries (through the consecutive_wrong-population structural-diff
+guard, REG-145). The SPEC-3 active-path pin adds REG-146: the live consumer of the
+REG-145 counter — when a topic's post-RPC `consecutive_wrong >= 3` and behind
+`ff_quiz_telemetry_v1`, exactly one `intervention_alerts` row is inserted
+(`consecutive_wrong`/`act`/`{count, threshold:3}`) unless an OPEN alert already
+exists (dedup), on the dual-id contract (read by `students.id`, write by
+`auth.uid()`), with real-`curriculum_topics.id` attribution, no PII in
+`trigger_data`, and fire-and-forget post-RPC safety that leaves P1-P4 untouched.
+**Total catalog: 114 entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 114 entries.**

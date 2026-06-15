@@ -22,15 +22,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  *                                    scenario reproduces the route's behavior).
  *   - @/lib/supabase-admin         → a chained builder used for question_bank +
  *                                    concept_mastery READS and intervention_alerts
- *                                    OPS. The module reads/writes through the
- *                                    `admin` client PASSED BY THE CALLER, so the
- *                                    tests pass that same chained-builder instance
- *                                    in directly (and also register the module mock
- *                                    so an accidental module-level `supabaseAdmin`
- *                                    use would be caught, not hit the network).
+ *                                    OPS (SPEC-3 dedup-select + insert). The module
+ *                                    reads/writes through the `admin` client PASSED
+ *                                    BY THE CALLER, so the tests pass that same
+ *                                    chained-builder instance in directly (and also
+ *                                    register the module mock so an accidental
+ *                                    module-level `supabaseAdmin` use would be
+ *                                    caught, not hit the network).
+ *   - @/lib/logger                 → logger.debug (SPEC-3 emits a debug line on a
+ *                                    dedup skip; stubbed so the dedup test can prove
+ *                                    "log + continue, no throw, no insert").
  *
  * DUAL-ID CONTRACT (asserted): concept_mastery READS key on students.id;
- * learning_events WRITES key on auth.uid(). These must never be conflated.
+ * learning_events + intervention_alerts WRITES key on auth.uid(). These must never
+ * be conflated.
  */
 
 // ─── @/lib/monitoring/log-event ──────────────────────────────────────────────
@@ -54,14 +59,34 @@ vi.mock('@/lib/feature-flags', () => ({
   QUIZ_TELEMETRY_FLAGS: { V1: 'ff_quiz_telemetry_v1' },
 }));
 
+// ─── @/lib/logger ────────────────────────────────────────────────────────────
+// SPEC-3 dedup path logs `logger.debug(...)` then `continue`s (no insert, no
+// throw). Stub debug so the dedup test can assert the log fired.
+const _loggerDebug = vi.fn();
+vi.mock('@/lib/logger', () => ({
+  logger: {
+    debug: (...args: unknown[]) => _loggerDebug(...args),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
 // ─── @/lib/supabase-admin (chained builder) ──────────────────────────────────
-// Records every table touched + every terminal op so the dual-id + SPEC-3-inert
+// Records every table touched + every terminal op so the dual-id + SPEC-3-active
 // assertions can inspect what the code asked the client to do. The builder is a
 // thenable so `await admin.from('x').select(...).eq(...).in(...)` resolves.
 //
-// Per-table read data is injected via `cmReadData` (concept_mastery) and
-// `qbReadData` (question_bank) so each test controls the pre/post mastery + the
-// topic map without rebuilding the mock.
+// Per-table read data is injected so each test controls the pre/post mastery +
+// the topic map + the SPEC-3 consecutive-wrong/dedup data without rebuilding the
+// mock:
+//   - `qbReadData`            (question_bank)        → question_id → topic_id map
+//   - `cmReadQueue`           (concept_mastery)      → FIFO pre-then-post rows;
+//                                rows may carry `consecutive_wrong` (SPEC-3 reads
+//                                it off the SAME post-RPC concept_mastery read).
+//   - `interventionDedupData` (intervention_alerts)  → the rows the SPEC-3
+//                                dedup-select returns (default [] = no open alert
+//                                → insert proceeds; a row = open alert → dedup).
 
 interface BuilderCall {
   table: string;
@@ -74,7 +99,13 @@ interface BuilderCall {
 let builderCalls: BuilderCall[] = [];
 let qbReadData: Array<{ id: string; topic_id: string | null }> = [];
 // concept_mastery responses are FIFO: first read = pre, second read = post.
-let cmReadQueue: Array<Array<{ topic_id: string; mastery_level: unknown }>> = [];
+// Rows may include consecutive_wrong (SPEC-3 reads it from the post-RPC read).
+let cmReadQueue: Array<
+  Array<{ topic_id: string; mastery_level: unknown; consecutive_wrong?: unknown }>
+> = [];
+// What the SPEC-3 intervention_alerts dedup-select returns. [] → no open alert →
+// insert proceeds. A non-empty array → an open alert exists → dedup (no insert).
+let interventionDedupData: Array<{ id: string }> = [];
 
 function makeBuilder(table: string) {
   // For concept_mastery, dequeue the next queued read (pre then post).
@@ -86,6 +117,13 @@ function makeBuilder(table: string) {
     if (table === 'concept_mastery') {
       const next = cmReadQueue.shift() ?? [];
       return { data: next, error: null };
+    }
+    // intervention_alerts: only the dedup-SELECT resolves data; the INSERT also
+    // resolves through the thenable but its return value is unused by the module.
+    if (table === 'intervention_alerts') {
+      return call.op === 'select'
+        ? { data: interventionDedupData, error: null }
+        : { data: null, error: null };
     }
     return { data: [], error: null };
   };
@@ -118,6 +156,7 @@ function makeBuilder(table: string) {
     return builder;
   };
   builder.is = () => builder;
+  builder.limit = (..._a: unknown[]) => builder;
   builder.maybeSingle = () => Promise.resolve(resolveData());
   builder.single = () => Promise.resolve(resolveData());
   (builder as { then: unknown }).then = (
@@ -167,6 +206,7 @@ beforeEach(() => {
   builderCalls = [];
   qbReadData = [];
   cmReadQueue = [];
+  interventionDedupData = [];
   _isFeatureEnabled.mockResolvedValue(true);
 });
 
@@ -610,13 +650,17 @@ describe('Dual-id contract — concept_mastery READ on students.id, learning_eve
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SPEC-3 deferred — no intervention_alerts insert, no adaptive_mastery query
+// SPEC-3 ACTIVE — consecutive-wrong intervention alerts now fire
+//
+// SPEC-3 went live (concept_mastery.consecutive_wrong column + nightly
+// population shipped). The post-RPC concept_mastery read now also SELECTs
+// consecutive_wrong; for each unique topic at/over CONSECUTIVE_WRONG_THRESHOLD (3)
+// the module raises a check-before-insert intervention_alerts row keyed by
+// auth.uid(). These tests replace the prior "SPEC-3 deferred / inert" assertions.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('SPEC-3 deferred — the consecutive-wrong intervention path is inert', () => {
-  function manyWrongInput(): QuizTelemetryInput {
-    // 4 wrong answers in a row — would trip CONSECUTIVE_WRONG_THRESHOLD (3) if
-    // the deferred path were active. It must NOT be.
+describe('SPEC-3 active — consecutive-wrong intervention alerts', () => {
+  function wrongInput(): QuizTelemetryInput {
     return {
       studentId: STUDENT_ID,
       sessionId: 'rpc-session-wrong',
@@ -627,50 +671,184 @@ describe('SPEC-3 deferred — the consecutive-wrong intervention path is inert',
         { question_id: 'q1', time_taken_seconds: 4 },
         { question_id: 'q2', time_taken_seconds: 4 },
         { question_id: 'q3', time_taken_seconds: 4 },
-        { question_id: 'q4', time_taken_seconds: 4 },
       ],
       gradedQuestions: [
         { question_id: 'q1', is_correct: false },
         { question_id: 'q2', is_correct: false },
         { question_id: 'q3', is_correct: false },
-        { question_id: 'q4', is_correct: false },
       ],
     };
   }
 
-  function pre4(): QuizTelemetryPre {
+  function preTopicA(): QuizTelemetryPre {
     return {
-      topicIdByQuestionId: { q1: 'topic-A', q2: 'topic-A', q3: 'topic-A', q4: 'topic-A' },
+      topicIdByQuestionId: { q1: 'topic-A', q2: 'topic-A', q3: 'topic-A' },
       preMasteryByTopicId: { 'topic-A': 0.1 },
       correlationId: FIXED_CORRELATION_ID,
     };
   }
 
-  it('NO intervention_alerts insert occurs (deferred / mis-attribution-safe)', async () => {
-    cmReadQueue = [[{ topic_id: 'topic-A', mastery_level: '0.1' }]];
-    runQuizPostSubmitTelemetry(mockAdmin, AUTH_UID, manyWrongInput(), pre4());
+  /** Just the intervention_alerts INSERT builder-calls (op === 'insert'). */
+  function alertInserts(): BuilderCall[] {
+    return builderCalls.filter(
+      (c) => c.table === 'intervention_alerts' && c.op === 'insert',
+    );
+  }
+
+  it('consecutive_wrong >= 3 → exactly ONE intervention_alerts insert with the full payload', async () => {
+    cmReadQueue = [
+      [{ topic_id: 'topic-A', mastery_level: '0.1', consecutive_wrong: 3 }],
+    ];
+    interventionDedupData = []; // no existing open alert → insert proceeds
+    runQuizPostSubmitTelemetry(mockAdmin, AUTH_UID, wrongInput(), preTopicA());
     await flush();
+
+    const inserts = alertInserts();
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0].insertPayload).toEqual({
+      student_id: AUTH_UID, // WRITE → auth.uid(), NOT students.id
+      topic_id: 'topic-A',
+      alert_type: 'consecutive_wrong',
+      severity: 'act',
+      trigger_data: { count: 3, threshold: 3 },
+    });
+    // Insert keyed on auth.uid, never the students.id row id.
+    expect((inserts[0].insertPayload as { student_id: string }).student_id).not.toBe(
+      STUDENT_ID,
+    );
+  });
+
+  it('consecutive_wrong < 3 (e.g. 2) → NO intervention_alerts insert', async () => {
+    cmReadQueue = [
+      [{ topic_id: 'topic-A', mastery_level: '0.1', consecutive_wrong: 2 }],
+    ];
+    runQuizPostSubmitTelemetry(mockAdmin, AUTH_UID, wrongInput(), preTopicA());
+    await flush();
+
+    expect(alertInserts()).toHaveLength(0);
+    // Below threshold → not even the dedup-select runs.
     const alertOps = builderCalls.filter((c) => c.table === 'intervention_alerts');
     expect(alertOps).toHaveLength(0);
   });
 
-  it('NO adaptive_mastery query occurs (no topic_id mis-attribution attempt)', async () => {
-    cmReadQueue = [[{ topic_id: 'topic-A', mastery_level: '0.1' }]];
-    runQuizPostSubmitTelemetry(mockAdmin, AUTH_UID, manyWrongInput(), pre4());
+  it('DEDUP: an existing OPEN alert → NO duplicate insert (debug log + continue, no throw)', async () => {
+    cmReadQueue = [
+      [{ topic_id: 'topic-A', mastery_level: '0.1', consecutive_wrong: 5 }],
+    ];
+    interventionDedupData = [{ id: 'existing-open-alert-1' }]; // dedup hit
+    expect(() =>
+      runQuizPostSubmitTelemetry(mockAdmin, AUTH_UID, wrongInput(), preTopicA()),
+    ).not.toThrow();
     await flush();
-    const adaptiveOps = builderCalls.filter((c) => c.table === 'adaptive_mastery');
-    expect(adaptiveOps).toHaveLength(0);
+
+    // The dedup-SELECT ran, but no INSERT followed.
+    const alertSelects = builderCalls.filter(
+      (c) => c.table === 'intervention_alerts' && c.op === 'select',
+    );
+    expect(alertSelects.length).toBeGreaterThanOrEqual(1);
+    expect(alertInserts()).toHaveLength(0);
+    // Debug log on the dedup skip.
+    expect(_loggerDebug).toHaveBeenCalled();
   });
 
-  it('the only tables touched post-submit are concept_mastery reads (no writes to any table)', async () => {
-    cmReadQueue = [[{ topic_id: 'topic-A', mastery_level: '0.1' }]];
-    runQuizPostSubmitTelemetry(mockAdmin, AUTH_UID, manyWrongInput(), pre4());
+  it('DUAL-ID: concept_mastery read keys on students.id; intervention_alerts dedup+insert key on auth.uid', async () => {
+    cmReadQueue = [
+      [{ topic_id: 'topic-A', mastery_level: '0.1', consecutive_wrong: 4 }],
+    ];
+    interventionDedupData = []; // no open alert → insert proceeds
+    runQuizPostSubmitTelemetry(mockAdmin, AUTH_UID, wrongInput(), preTopicA());
     await flush();
-    // No insert/update/delete/upsert to ANY table from the telemetry module.
-    const writes = builderCalls.filter((c) => c.op !== 'select');
-    expect(writes).toHaveLength(0);
-    // Only concept_mastery was read (the post-mastery comparison).
-    const tablesTouched = [...new Set(builderCalls.map((c) => c.table))];
-    expect(tablesTouched).toEqual(['concept_mastery']);
+
+    // READ: concept_mastery filtered on students.id (input.studentId), not auth.uid.
+    const cmRead = builderCalls.find((c) => c.table === 'concept_mastery');
+    expect(cmRead).toBeDefined();
+    const cmStudentEq = cmRead!.eqArgs.find(([col]) => col === 'student_id');
+    expect(cmStudentEq).toEqual(['student_id', STUDENT_ID]);
+    expect(cmStudentEq![1]).not.toBe(AUTH_UID);
+
+    // DEDUP-SELECT: intervention_alerts filtered on auth.uid, not students.id.
+    const alertSelect = builderCalls.find(
+      (c) => c.table === 'intervention_alerts' && c.op === 'select',
+    );
+    expect(alertSelect).toBeDefined();
+    const selStudentEq = alertSelect!.eqArgs.find(([col]) => col === 'student_id');
+    expect(selStudentEq).toEqual(['student_id', AUTH_UID]);
+    expect(selStudentEq![1]).not.toBe(STUDENT_ID);
+
+    // INSERT: intervention_alerts.student_id = auth.uid, not students.id.
+    const insert = alertInserts()[0];
+    expect(insert).toBeDefined();
+    expect((insert.insertPayload as { student_id: string }).student_id).toBe(AUTH_UID);
+    expect((insert.insertPayload as { student_id: string }).student_id).not.toBe(
+      STUDENT_ID,
+    );
+  });
+
+  it('P13: trigger_data carries ONLY {count, threshold}, both numbers (no PII)', async () => {
+    cmReadQueue = [
+      [{ topic_id: 'topic-A', mastery_level: '0.1', consecutive_wrong: 7 }],
+    ];
+    interventionDedupData = [];
+    runQuizPostSubmitTelemetry(mockAdmin, AUTH_UID, wrongInput(), preTopicA());
+    await flush();
+
+    const insert = alertInserts()[0];
+    expect(insert).toBeDefined();
+    const triggerData = (insert.insertPayload as { trigger_data: Record<string, unknown> })
+      .trigger_data;
+    expect(Object.keys(triggerData).sort()).toEqual(['count', 'threshold']);
+    expect(typeof triggerData.count).toBe('number');
+    expect(typeof triggerData.threshold).toBe('number');
+    expect(triggerData).toEqual({ count: 7, threshold: 3 });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SPEC-3 flag OFF — gated off → no concept_mastery read, no intervention insert
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('SPEC-3 flag OFF — telemetry gated off → no SPEC-3 work', () => {
+  it('no telemetryPre (flag-OFF route) → no concept_mastery read and no intervention_alerts insert', async () => {
+    // Mirror submit-side-effects.ts: `if (input.telemetryPre) runQuiz...`. When
+    // ff_quiz_telemetry_v1 is OFF the route never threads telemetryPre, so the
+    // whole SPEC-3 path (read + alert) is unreachable.
+    _isFeatureEnabled.mockResolvedValue(false);
+    const enabled = await isFeatureEnabled(QUIZ_TELEMETRY_FLAGS.V1, { userId: AUTH_UID });
+    const telemetryPre: QuizTelemetryPre | undefined = enabled
+      ? {
+          topicIdByQuestionId: { q1: 'topic-A', q2: 'topic-A', q3: 'topic-A' },
+          preMasteryByTopicId: { 'topic-A': 0.1 },
+          correlationId: FIXED_CORRELATION_ID,
+        }
+      : undefined;
+
+    if (telemetryPre) {
+      runQuizPostSubmitTelemetry(
+        mockAdmin,
+        AUTH_UID,
+        {
+          studentId: STUDENT_ID,
+          sessionId: 'rpc-session-wrong',
+          responses: [
+            { question_id: 'q1', time_taken_seconds: 4 },
+            { question_id: 'q2', time_taken_seconds: 4 },
+            { question_id: 'q3', time_taken_seconds: 4 },
+          ],
+          gradedQuestions: [
+            { question_id: 'q1', is_correct: false },
+            { question_id: 'q2', is_correct: false },
+            { question_id: 'q3', is_correct: false },
+          ],
+        },
+        telemetryPre,
+      );
+    }
+    await flush();
+
+    expect(enabled).toBe(false);
+    expect(telemetryPre).toBeUndefined();
+    // No concept_mastery read, no intervention_alerts touched, no events.
+    expect(builderCalls).toHaveLength(0);
+    expect(_logLearningEvent).not.toHaveBeenCalled();
   });
 });

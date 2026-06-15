@@ -33,6 +33,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logLearningEvent, generateCorrelationId } from '@/lib/monitoring/log-event';
+import { logger } from '@/lib/logger';
 
 /** Mastery-achieved threshold (assessment-approved, SPEC-2). */
 const MASTERY_THRESHOLD = 0.8;
@@ -242,21 +243,29 @@ export function runQuizPostSubmitTelemetry(
     );
 
     if (uniqueTopicIds.length > 0) {
+      // One post-RPC concept_mastery read serving BOTH SPEC-2 (mastery_level)
+      // and SPEC-3 (consecutive_wrong). Keyed by students.id (the concept_mastery
+      // FK), batched on the unique topic_ids. Do NOT add a second query.
       let postByTopicId: Record<string, number> = {};
+      let consecutiveWrongByTopicId: Record<string, number> = {};
       try {
         const { data: cmPost } = await admin
           .from('concept_mastery')
-          .select('topic_id, mastery_level')
+          .select('topic_id, mastery_level, consecutive_wrong')
           .eq('student_id', input.studentId) // READ → students.id
           .in('topic_id', uniqueTopicIds);
         for (const row of (cmPost ?? []) as Array<{
           topic_id: string;
           mastery_level: unknown;
+          consecutive_wrong: unknown;
         }>) {
           postByTopicId[row.topic_id] = toMasteryFloat(row.mastery_level);
+          const cw = Number(row.consecutive_wrong);
+          consecutiveWrongByTopicId[row.topic_id] = Number.isFinite(cw) ? cw : 0;
         }
       } catch {
         postByTopicId = {};
+        consecutiveWrongByTopicId = {};
       }
 
       for (const topicId of uniqueTopicIds) {
@@ -282,33 +291,58 @@ export function runQuizPostSubmitTelemetry(
           context: baseContext,
         });
       }
-    }
 
-    // ── SPEC-3: consecutive-wrong intervention ──────────────────────────────
-    // OQ-5: adaptive_mastery is keyed by node_code (text), NOT topic_id. The
-    // baseline schema has NO reliable mapping from learning_graph.node_code →
-    // curriculum_topics.id (learning_graph carries no topic_id; curriculum_topics
-    // carries no node_code; question_bank carries topic_id but no node_code).
-    // Per the spec, we DO NOT guess topic attribution from adaptive_mastery —
-    // a mis-attributed intervention_alerts.topic_id is worse than none. SPEC-3 is
-    // therefore implemented DEFENSIVELY: the adaptive_mastery.consecutive_wrong
-    // path is skipped and no alert is inserted from it.
-    //
-    // TODO(backend/architect): establish a reliable node_code ↔ curriculum_topics.id
-    //   mapping (e.g. add learning_graph.topic_id, or a node_code→topic_id bridge
-    //   table) and then read adaptive_mastery.consecutive_wrong (keyed by
-    //   students.id) for the quiz's nodes, inserting a check-before-insert
-    //   intervention_alerts row when consecutive_wrong >= CONSECUTIVE_WRONG_THRESHOLD.
-    //   triggerFoxy would be true if any topic crosses the threshold (SPEC-4 —
-    //   not required synchronously this pass).
-    //
-    // The check-before-insert WRITE shape (kept here for the follow-up) is:
-    //   - look up an OPEN intervention_alerts row (student_id=authUserId, topic_id,
-    //     alert_type='consecutive_wrong', resolved_at IS NULL); insert only if none:
-    //     { student_id: authUserId, topic_id, alert_type:'consecutive_wrong',
-    //       severity:'act', trigger_data:{ count, threshold: CONSECUTIVE_WRONG_THRESHOLD } }
-    // Reference CONSECUTIVE_WRONG_THRESHOLD so the constant is not flagged unused.
-    void CONSECUTIVE_WRONG_THRESHOLD;
+      // ── SPEC-3: consecutive-wrong intervention ────────────────────────────
+      // Now that concept_mastery.consecutive_wrong is live (column + nightly
+      // population shipped), SPEC-3 reads it from the SAME post-RPC concept_mastery
+      // read above (consecutiveWrongByTopicId) — keyed by students.id. For each
+      // unique topic at/over the threshold we raise a check-before-insert
+      // intervention_alerts row keyed by auth.uid() (the table FKs
+      // student_id → auth.users(id), so passing students.id would FK-violate).
+      //
+      // SPEC-4: triggerFoxy is computed locally for the alert decision only. It is
+      // NOT surfaced in the submit response this pass — the response shape is
+      // unchanged. TODO(backend/SPEC-4): thread triggerFoxy back to the route /
+      // submit response when the synchronous Foxy-nudge surface lands.
+      let triggerFoxy = false;
+      for (const topicId of uniqueTopicIds) {
+        const consecutiveWrong = consecutiveWrongByTopicId[topicId] ?? 0;
+        if (consecutiveWrong < CONSECUTIVE_WRONG_THRESHOLD) continue;
+
+        triggerFoxy = true;
+
+        // DEDUP: only one OPEN consecutive_wrong alert per (student, topic).
+        const { data: openAlert } = await admin
+          .from('intervention_alerts')
+          .select('id')
+          .eq('student_id', authUserId) // WRITE/READ key → auth.uid()
+          .eq('topic_id', topicId)
+          .eq('alert_type', 'consecutive_wrong')
+          .is('resolved_at', null)
+          .limit(1);
+
+        if (openAlert && openAlert.length > 0) {
+          // An open alert already exists — skip the insert (dedup). P13: ids +
+          // numeric metric only, never PII.
+          logger.debug('SPEC-3 intervention alert deduped (open alert exists)', {
+            topic_id: topicId,
+            consecutive_wrong: consecutiveWrong,
+          });
+          continue;
+        }
+
+        // INSERT a fresh alert. trigger_data carries numbers only (P13).
+        await admin.from('intervention_alerts').insert({
+          student_id: authUserId, // WRITE → auth.uid()
+          topic_id: topicId,
+          alert_type: 'consecutive_wrong',
+          severity: 'act',
+          trigger_data: { count: consecutiveWrong, threshold: CONSECUTIVE_WRONG_THRESHOLD },
+        });
+      }
+      // triggerFoxy is intentionally not returned this pass (SPEC-4, see above).
+      void triggerFoxy;
+    }
   })().catch(() => {
     // Last-ditch swallow — telemetry must never break the submit flow.
   });
