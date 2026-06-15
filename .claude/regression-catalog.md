@@ -4350,4 +4350,66 @@ exists (dedup), on the dual-id contract (read by `students.id`, write by
 `trigger_data`, and fire-and-forget post-RPC safety that leaves P1-P4 untouched.
 **Total catalog: 114 entries (target: 35 — TARGET EXCEEDED).**
 
-**Total: 114 entries.**
+## Per-school deal-driven entitlements — precedence, parent→child, unlimited, flag-gated enforcement, super-admin API, RLS (2026-06-15) — REG-147
+
+Source: per-school deal-driven entitlements feature. A school's effective value
+for each of 12 catalog entitlement keys is resolved from a precedence chain
+(platform override → institution_entitlements deal row → tenant_modules coarse
+toggle → catalog plan default → deny). The runtime gate is config-read ALWAYS /
+enforce ONLY when `ff_institution_entitlements_v1` is ON (seeded OFF, so shipping
+is a zero-behavior change). Ops mints/edits the sparse `institution_entitlements`
+deviation rows through a super-admin-only API (service-role writes, full audit);
+school admins can READ their own school's entitlements but never write them;
+learners have NO access at all (commercial terms, never learner data).
+
+Files under test:
+- `src/lib/entitlements/catalog.ts` — the canonical 12-key catalog (5 modules /
+  5 features / 2 limits) + `isValidEntitlementKey` + `validateEntitlementValue`.
+- `src/lib/entitlements/resolver.ts` — `getResolvedEntitlements` (config-read,
+  flag-independent), `isEntitledEnforced` (flag-gated runtime gate), precedence,
+  parent→child force-off (Q3), unlimited→999999 mapping (Q6), effective windows.
+- `src/app/api/super-admin/entitlements/route.ts` — GET/PUT, super-admin auth,
+  sparse upsert/delete, validate-before-write, contract-ownership, per-change
+  audit (ids/keys/values only).
+- `supabase/migrations/20260615205752_institution_entitlements.sql` (table + RLS)
+  and the `20260615205753` flag seed (default OFF).
+
+> **ID note:** REG-146 is the previous entry (SPEC-3 consecutive-wrong
+> intervention alert active path, 2026-06-15). REG-147 is the next free id at the
+> time this entry was written.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-147 | `institution_entitlements_resolution_and_boundary` | **(1) Precedence (highest first):** for `module.*`, a `platform_module_overrides` force-disable WINS over an institution row + tenant toggle + plan default (`resolved_by='platform_override'`, effective OFF); else an in-window `institution_entitlements` row wins (`'institution_entitlement'`); else a `tenant_modules` coarse toggle wins (`'tenant_module'`); else the catalog plan default (`'plan_default'`); else `'deny'`. A MALFORMED stored value is ignored and resolution falls through to the next layer. **(2) Plan default per category:** a module pulls the MODULE_REGISTRY projection (`module.ai_tutor` ON for school); a feature pulls the hardcoded per-plan grant (free `foxy_interact` OFF, pro ON); a live limit pulls usage.ts (free `foxy_chat_daily` max 5); a `school_subscriptions` read error FAILS CLOSED to the free plan (never escalates tier). **(3) Parent→child (Q3):** when `module.ai_tutor` resolves OFF (via tenant toggle OR platform override), `feature.foxy_interact` is forced OFF with `force_disabled_by_parent:true` and `resolved_by` reflecting the PARENT's source; parent ON → child keeps its own resolution. **(4) Unlimited (Q6):** a stored/default `{max:null}` → `effectiveMax === 999999` (UNLIMITED_SENTINEL); a finite cap passes through unchanged. **(5) Effective window:** an override with `effective_to` in the past OR `effective_from` in the future does NOT apply (falls through to plan default); an in-window override DOES apply. **(6) Flag gate:** `getResolvedEntitlements` reads config REGARDLESS of the flag and never consults it; `isEntitledEnforced` is a NO-OP pass-through (`{allowed:true, enforced:false}`, resolved value still surfaced) when `ff_institution_entitlements_v1` is OFF, and actually ENFORCES (`allowed:false` when not entitled, `allowed:true` when entitled, `enforced:true`) when ON; a positive/unlimited limit cap is allowed, a 0 cap is blocked; an unknown key is a pass-through. **(7) API auth + sparse + validation + audit:** non-super-admin → the `authorizeAdmin('super_admin')` failure response (403) with NO data leak and NO DB write/audit; GET `?school_id` returns the 12-row resolved panel set; PUT `{key,value}` upserts (onConflict `school_id,entitlement_key`), `{key,_delete:true}` deletes that key only, mixed in one request; an INVALID key OR wrong value shape (`{max}` for a toggle, `{enabled}` for a limit) → 400 BEFORE any write (all-or-nothing batch validation); a `contract_id` not belonging to the school → 400, a missing contract → 404, neither writes; every applied change emits exactly one `logAdminAudit` row (`entitlement.override.set`/`.clear`, entityId `school:key`, details carrying `school_id`/`key`/`new_value`/`actor` — ids/keys/values only, NO email/phone/name/password — P13). **(8) RLS + flag-seed (static source-level):** `institution_entitlements` has RLS ENABLED; `service_role` is FOR ALL (only writer, the sole `USING(true)` policy); `school_admin read own` uses the VERBATIM `school_admins.auth_user_id = auth.uid() AND is_active` subquery; `super_admin read all` uses the `user_roles ⋈ roles` + `r.name IN ('admin','super_admin')` + `is_active` + `expires_at` guard; NO student/parent policy anywhere; exactly 3 `CREATE POLICY`, each `DROP POLICY IF EXISTS`-preceded (idempotent); no role-scoped policy uses `USING(true)`; the `20260615205753` seed creates `ff_institution_entitlements_v1` with `is_enabled=false`/rollout 0, canonical `flag_name` shape + `ON CONFLICT (flag_name) DO NOTHING` (REG-125), `to_regclass`-guarded, pure data seed (no schema change). | `src/__tests__/entitlements/catalog.test.ts` (31), `src/__tests__/entitlements/resolver.test.ts` (26), `src/__tests__/api/super-admin/entitlements-route.test.ts` (22), `src/__tests__/entitlements/institution-entitlements-rls.test.ts` (20 — static source-level over both migrations) | U (unit + static source-level; the RLS file lives in `entitlements/`, not `migrations/`, so it runs in the normal lane) |
+
+### Invariants covered by this section
+
+- P8 RLS boundary — REG-147 (`institution_entitlements` has RLS enabled with a
+  service-role-only writer; `school_admin` reads its OWN school via the verbatim
+  `school_admins.auth_user_id = auth.uid() AND is_active` subquery; `super_admin`
+  reads all via the `user_roles ⋈ roles` + active + expiry guard; NO learner
+  policy → learners deny by RLS default. The resolver reads config only through
+  the server-only `supabaseAdmin`).
+- P9 RBAC enforcement — REG-147 (the admin API is gated by
+  `authorizeAdmin(request, 'super_admin')`; a non-super-admin gets the 403
+  failure response and reaches NO DB write or audit; commercial terms are
+  read-only for school admins — only the service-role API writes).
+- P13 Data privacy — REG-147 (every entitlement-change audit row carries
+  ids/keys/values only — `school_id`/`key`/`old_value`/`new_value`/`actor` — and
+  is asserted to contain no email/phone/name/password; the API deny path leaks no
+  data).
+
+### Catalog total
+
+Pre-REG-147: 114 entries (through the SPEC-3 intervention-alert active path,
+REG-146). The per-school deal-driven entitlements pin adds REG-147: a single
+multi-file entry covering the 12-key catalog contract, the 5-layer resolution
+precedence (platform → institution → tenant → plan → deny), parent→child
+force-off, unlimited→999999 mapping, effective-window honouring, the config-read-
+always / enforce-only-when-`ff_institution_entitlements_v1`-ON flag gate, the
+super-admin-only GET/PUT API (validate-before-write + contract-ownership +
+per-change PII-free audit), and the `institution_entitlements` RLS posture +
+default-OFF flag seed (static source-level). 99 tests across 4 files.
+**Total catalog: 115 entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 115 entries.**
