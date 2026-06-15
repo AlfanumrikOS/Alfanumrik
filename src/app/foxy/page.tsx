@@ -41,8 +41,11 @@ import {
 } from './_lib/foxy-constants';
 import type { SubjectConfig, ChatMessage } from './_lib/foxy-types';
 import { useFoxyChat } from './_hooks/useFoxyChat';
+import type { CoachDirective } from './_hooks/useFoxyChat';
+import type { LearningActionType } from '@/components/foxy/ChatBubble';
 import { useStudentOsFlag } from '@/lib/use-student-os-flag';
 import { useFoxyOsFlag } from '@/lib/use-foxy-os-flag';
+import { useFoxyLearningActionsFlag } from '@/lib/use-foxy-learning-actions-flag';
 import { useKeyboardInset } from '@/lib/foxy/use-keyboard-inset';
 import { useCosmicLightSurface } from '@/lib/use-cosmic-light-surface';
 import type { MasterySuggestion } from '@/components/foxy/MasteryAwareness';
@@ -302,7 +305,16 @@ export default function FoxyPage() {
     setXpGained,
     nextMessageId,
     sendMessage: sendMessageCore,
+    recordLearningAction,
   } = useFoxyChat();
+
+  // Phase 1 post-answer learning actions (ff_foxy_learning_actions_v1). When
+  // OFF, ChatBubble renders the legacy QA-tester bar byte-identically to today.
+  const learningActionsEnabled = useFoxyLearningActionsFlag();
+  // Local-id set of messages the student tapped "Got it" on (drives the
+  // collapsed confirmation micro-CTA in the new bar). Distinct from
+  // savedMessageIds (which drives the "Saved" state).
+  const [gotItMessageIds, setGotItMessageIds] = useState<Set<number>>(new Set());
 
   const [collapsedAbove, setCollapsedAbove] = useState<number | null>(null); // index above which messages are collapsed
   const [sessionMode, setSessionMode] = useState('learn');
@@ -742,7 +754,7 @@ export default function FoxyPage() {
   const sendMessage = useCallback(async (
     text: string,
     image?: File | null,
-    extraParams?: { intent?: string },
+    extraParams?: { intent?: string; coachDirective?: CoachDirective },
   ) => {
     if (!text.trim() && !image) return;
 
@@ -822,6 +834,7 @@ export default function FoxyPage() {
         chapter: chapterForSession,
         selectedChapters: chapCtx,
         intent: extraParams?.intent,
+        coachDirective: extraParams?.coachDirective,
       },
       {
         onLimitReached: () => {
@@ -1017,6 +1030,72 @@ export default function FoxyPage() {
       setSavedMessageIds((prev: Set<number>) => { const s = new Set(prev); s.delete(msgId); return s; });
     }
   }, [student?.id, activeSubject, activeTopic]);
+
+  // ── Phase 1 learning actions (ff_foxy_learning_actions_v1) ──────────────────
+  // Dispatches a learning-action chip tap from the new ChatBubble bar:
+  //   - records non-evidential telemetry via /api/foxy/learning-action (the
+  //     persisted DB uuid is the only valid messageId; tap is a no-op without it)
+  //   - re-teach/quiz actions RE-SEND the SAME prior student question with a
+  //     coachDirective so a fresh, directive-shaped Foxy bubble appears.
+  //   - save reflects saved state; got_it collapses the row into a micro-CTA.
+  // Self-reports never mutate mastery/XP — that contract is enforced server-side.
+  const handleLearningAction = useCallback(async (msg: ChatMessage, action: LearningActionType) => {
+    const persistedMessageId = msg.persistedMessageId;
+    // Without the persisted DB uuid the server cannot record/own-check the
+    // action. Telemetry is skipped; the re-teach/quiz UX below still works since
+    // it only re-sends the prior question.
+    const subjectCode = activeSubject || null;
+    const chapterNumber =
+      typeof activeTopic?.chapter_number === 'number' ? activeTopic.chapter_number : null;
+
+    // Map the chip → telemetry actionType (1:1) and re-send directive.
+    if (persistedMessageId) {
+      void recordLearningAction({
+        messageId: persistedMessageId,
+        actionType: action,
+        sessionId: chatSessionId,
+        subjectCode: action === 'save' ? subjectCode : null,
+        chapterNumber: action === 'save' ? chapterNumber : null,
+      });
+    }
+
+    if (action === 'got_it') {
+      setGotItMessageIds((prev: Set<number>) => new Set(prev).add(msg.id));
+      return;
+    }
+
+    if (action === 'save') {
+      // Optimistic saved state; reuses the same set the bar reads. The server
+      // (learning-action route) owns the student_bookmarks insert.
+      setSavedMessageIds((prev: Set<number>) => new Set(prev).add(msg.id));
+      return;
+    }
+
+    if (action === 'explain_simpler' || action === 'show_example' || action === 'quiz_me') {
+      // Find the student question this answer responded to — the nearest
+      // preceding 'student' bubble (same lookup shape as openReport).
+      const idx = messages.findIndex((m: ChatMessage) => m.id === msg.id);
+      const priorStudent = idx > 0
+        ? messages.slice(0, idx).reverse().find((m: ChatMessage) => m.role === 'student')
+        : null;
+      const question = priorStudent?.content?.trim();
+      if (!question) {
+        // No prior question to re-teach (e.g. an opening Foxy bubble). Nudge the
+        // student to ask, bilingual — never silently no-op.
+        sendMessage(
+          language === 'hi'
+            ? 'किस सवाल पर मदद चाहिए? नीचे लिखो।'
+            : 'Which question should I help with? Type it below.',
+        );
+        return;
+      }
+      const directive: CoachDirective =
+        action === 'explain_simpler' ? 'simplify'
+        : action === 'show_example' ? 'example'
+        : 'quiz_me';
+      sendMessage(question, null, { coachDirective: directive });
+    }
+  }, [messages, recordLearningAction, sendMessage, chatSessionId, activeSubject, activeTopic, language]);
 
   // Submit report
   const submitReport = useCallback(async () => {
@@ -1813,6 +1892,9 @@ export default function FoxyPage() {
               onReport={openReport}
               onSaveFlashcard={saveToFlashcard}
               onSpeak={ttsSupported ? speakMessage : undefined}
+              learningActionsEnabled={learningActionsEnabled}
+              onLearningAction={handleLearningAction}
+              gotItMessageIds={gotItMessageIds}
             />
 
             {/* Report-error modal — extracted to ./_components/ReportDialog.tsx */}

@@ -508,10 +508,29 @@ describe('wrapAsParagraph', () => {
 });
 
 describe('FOXY_STRUCTURED_OUTPUT_PROMPT', () => {
-  it('forbids markdown and $ delimiters and explains JSON-only', () => {
+  it('forbids markdown EMPHASIS, keeps JSON-only / no-fences, and ALLOWS inline math', () => {
+    // (a) JSON-only contract, no markdown fences — unchanged.
     expect(FOXY_STRUCTURED_OUTPUT_PROMPT).toMatch(/Return ONLY valid JSON/i);
-    expect(FOXY_STRUCTURED_OUTPUT_PROMPT).toMatch(/Markdown is FORBIDDEN/i);
     expect(FOXY_STRUCTURED_OUTPUT_PROMPT).toMatch(/no markdown fences/i);
+
+    // (b) Markdown EMPHASIS is forbidden (new contract wording). The prior
+    // blanket "Markdown is FORBIDDEN" was narrowed: only emphasis is banned,
+    // because inline math (a backslash-escape syntax) is now ALLOWED in text.
+    expect(FOXY_STRUCTURED_OUTPUT_PROMPT).toMatch(/Markdown emphasis is FORBIDDEN/i);
+    // The concrete emphasis tokens are still called out as banned.
+    expect(FOXY_STRUCTURED_OUTPUT_PROMPT).toContain('"**"');
+    expect(FOXY_STRUCTURED_OUTPUT_PROMPT).toContain('"__"');
+
+    // (c) Inline math `\( ... \)` is now EXPLICITLY allowed inside text fields.
+    // The template literal escapes each backslash, so the constant contains a
+    // single literal backslash before "(" / "[". Assert the allow-statement and
+    // the delimiter form the prompt actually instructs the model to use.
+    expect(FOXY_STRUCTURED_OUTPUT_PROMPT).toMatch(/INLINE MATH inside "text" fields IS ALLOWED/i);
+    expect(FOXY_STRUCTURED_OUTPUT_PROMPT).toContain('\\( ... \\)');
+    expect(FOXY_STRUCTURED_OUTPUT_PROMPT).toContain('\\[ ... \\]');
+    // And it must still steer the model AWAY from "$" delimiters toward the
+    // backslash form (the normalizer canonicalises any stray "$" anyway).
+    expect(FOXY_STRUCTURED_OUTPUT_PROMPT).toMatch(/Do NOT use "\$" or "\$\$" delimiters/i);
   });
 
   it('includes a few-shot example for each subject', () => {

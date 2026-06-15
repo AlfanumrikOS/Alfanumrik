@@ -22,6 +22,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from starlette.responses import Response
 
 from ..business.cme_engine.router import router as cme_router
+from ..business.math.router import router as math_verify_router
 from ..business.ncert_solver.router import router as ncert_solver_router
 from ..business.quiz_generator.router import router as quiz_generator_router
 from ..config import get_settings
@@ -163,6 +164,7 @@ def create_app() -> FastAPI:
     app.include_router(verify_question_bank_router)
     app.include_router(extract_ncert_questions_router)
     app.include_router(grade_experiment_conclusion_router)
+    app.include_router(math_verify_router)
     # opentelemetry integration
     FastAPIInstrumentor.instrument_app(app)
 

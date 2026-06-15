@@ -127,6 +127,21 @@ export interface FoxySystemPromptParams {
   tenantPedagogy?: 'socratic' | 'direct_instruction' | 'worked_example';
   loSkills?: Array<{ loCode: string; loStatement: string; pKnow: number; pSlip: number; theta: number }>;
   misconceptions?: Array<{ code: string; label: string; count: number; remediationText: string }>;
+
+  /**
+   * Chapter-progression directive (Part 2A). When the route resolves the
+   * ordered next topic in the chapter sequence (from `curriculum_topics`),
+   * it passes the exact topic name here. The prompt then instructs Foxy to
+   * proactively TEACH that topic once the student shows understanding of the
+   * current one, ending with a Socratic check question — NEVER a yes/no
+   * "shall we move on?".
+   *
+   * When null/undefined (the default, and the only state until the route is
+   * wired to inject it), NO progression section is emitted and behavior is
+   * byte-identical to the pre-progression builder. The prompt NEVER invents a
+   * next topic — it only ever uses the exact string supplied here.
+   */
+  nextTopic?: string | null;
 }
 
 // ─── Tenant persona variants ───────────────────────────────────────────────
@@ -207,6 +222,7 @@ export function buildFoxySystemPrompt(params: FoxySystemPromptParams): string {
     tenantPedagogy,
     loSkills,
     misconceptions,
+    nextTopic,
   } = params;
 
   const chapterLabel = chapter ? `, Chapter: ${chapter}` : '';
@@ -277,6 +293,19 @@ export function buildFoxySystemPrompt(params: FoxySystemPromptParams): string {
       return `- [${m.code}] ${m.label} (seen ${m.count}x in last 30 days)${remediation}`;
     });
     mcSection = `\n## Known Misconceptions\n${mcLines.join('\n')}\n`;
+  }
+
+  // Chapter-progression directive (Part 2A). Only emitted when the route
+  // supplies the exact next topic — the prompt NEVER guesses one. Reconciles
+  // with the "no shall-we-move-on" rule: Foxy advances by TEACHING the next
+  // topic + a Socratic check question, never a yes/no permission prompt.
+  let progressionSection = '';
+  const nextTopicTrimmed = (nextTopic ?? '').trim();
+  if (nextTopicTrimmed) {
+    progressionSection =
+      `\n## Chapter Progression\n` +
+      `You are walking the student through this chapter in NCERT order. The next topic in the sequence is: ${nextTopicTrimmed}.\n` +
+      `When the student demonstrates understanding of the current topic (a correct answer, an accurate restatement, or a clear "got it"), do NOT stop and do NOT ask permission to continue. In the SAME reply, proactively begin teaching ${nextTopicTrimmed}, then end with a Socratic check question on it. Advance by TEACHING plus a thinking question — NEVER by a yes/no prompt like "shall we move on?". Use ${nextTopicTrimmed} exactly as written; never invent or guess a different next topic. If the student is still shaky on the current topic, stay on it and re-scaffold instead of advancing.\n`;
   }
 
   const ragSection = ragContext
@@ -372,7 +401,7 @@ Act as a CBSE board-paper evaluator following official marking scheme methodolog
 
 8. Strict Mathematical Formatting Rules:
    - NEVER write raw inline math like "x^2", "sqrt(x)", "(a+b)/c", or "2x+3=7 => x=2".
-   - ALWAYS format mathematics using proper mathematical notation. Use display-style block LaTeX ($$expression$$) or inline LaTeX ($expression$) for formulas, equations, derivations, simplifications, identities, calculations, and final answers.
+   - ALWAYS format mathematics using proper mathematical notation. For math woven INSIDE a sentence (a "text" field) use inline LaTeX delimited by \( ... \); for a display equation written inside prose use \[ ... \]. For a standalone equation use a dedicated "math" block whose "latex" field carries bare LaTeX with NO delimiters at all (the renderer adds KaTeX delimiters for math blocks). NEVER use bare "$" or "$$" delimiters anywhere.
    - Every mathematical expression must appear visually clean and textbook-like.
    - Multi-step solving MUST be vertical, stepwise, and vertically separated. Never compress multiple operations into one line.
    - Fractions must always use proper fraction notation (e.g., \frac{numerator}{denominator}).
@@ -383,6 +412,6 @@ Act as a CBSE board-paper evaluator following official marking scheme methodolog
    - Never use programming-style mathematical syntax (e.g., *, ^, /) in the final output.
 
 Optimize the answer for maximum board-exam scoring efficiency rather than prose elegance.
-${goalSection}${loSection}${mcSection}${ragSection}`;
+${goalSection}${loSection}${mcSection}${progressionSection}${ragSection}`;
 }
 

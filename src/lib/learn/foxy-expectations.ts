@@ -43,7 +43,14 @@ export type ExpectationKind =
   | 'recall'
   | 'solve'
   | 'explain'
-  | 'choose_topic';
+  | 'choose_topic'
+  // Foxy just TAUGHT the next topic in the chapter ladder and posed a Socratic
+  // check on it. The student's next reply is answering that check. Distinct
+  // from 'choose_topic' (a menu of topics to pick from): 'next_topic' is the
+  // ladder ANCHOR — "we advanced to topic Y; here's a check on Y". It must
+  // survive an ack-only reply so the progression ladder isn't silently dropped
+  // (Part 2C). meta carries { topic_id?, next_topic_title? } when known.
+  | 'next_topic';
 
 export interface ExtractedExpectation {
   kind: ExpectationKind;
@@ -129,6 +136,18 @@ const MCQ_OPTION_LINE_RE = /(?:^|\s)\(?([A-Da-d])\)?[\.\):\s]+([^A-Da-d\n]{1,80}
 //   "Pick one: photosynthesis, respiration, transpiration"
 //   "Which would you like? 1) X 2) Y 3) Z"
 const CHOOSE_TOPIC_RE = /\b(pick one|choose one|which (?:would you like|topic|sub-?topic)|let'?s start with|where would you like to start)\b/i;
+
+// "Next topic in the ladder" signature (Part 2C). Foxy advances the chapter
+// sequence by TEACHING the next topic and ending with a Socratic check, e.g.:
+//   "Now that you've got that, let's move on to <topic>. <check question>"
+//   "Next up is <topic>. Quick check: ..."
+//   "Aage badhte hain — agla topic hai <X>. ..."
+// We require BOTH an advance-phrasing AND a question signal so a plain
+// statement isn't mistaken for a ladder step. The route ALSO sets this kind
+// explicitly (with meta.topic_id/next_topic_title) when it knows the ordered
+// chapter position — this heuristic is the fallback when it doesn't.
+const NEXT_TOPIC_RE =
+  /\b(let'?s (?:move on|move ahead|advance|go) (?:to|on)|moving on to|next (?:up|topic|we'?ll|let'?s)|now (?:let'?s|we'?ll)|aage badh|agla topic|next concept|onto the next)\b/i;
 
 // Solve signature — numeric/computational expectation.
 const SOLVE_RE = /\b(calculate|compute|solve|find the (?:value|answer|result)|how many|what is the (?:sum|product|difference|area|volume|speed|distance|force))\b/i;
@@ -257,7 +276,8 @@ function normalizeKind(
       norm === 'recall' ||
       norm === 'solve' ||
       norm === 'explain' ||
-      norm === 'choose_topic'
+      norm === 'choose_topic' ||
+      norm === 'next_topic'
     ) {
       return norm;
     }
@@ -265,7 +285,13 @@ function normalizeKind(
 
   const combined = `${questionText}\n${fullReply}`;
 
-  // Choose-topic / menu signal trumps everything else — those replies often
+  // Next-topic ladder step trumps the menu signal: an advance-to-next-topic
+  // reply that ends with a check is a 'next_topic' anchor, not a 'choose_topic'
+  // menu. We only fire when the reply also carries a question (the Socratic
+  // check) so a bare "let's move on" statement doesn't anchor a non-question.
+  if (NEXT_TOPIC_RE.test(combined) && fullReply.includes('?')) return 'next_topic';
+
+  // Choose-topic / menu signal trumps the rest — those replies often
   // include "?" but aren't really questions in the answer-this sense.
   if (CHOOSE_TOPIC_RE.test(combined)) return 'choose_topic';
 
@@ -512,6 +538,8 @@ export async function markExpectationAbandoned(
 export function buildExpectationPromptSection(exp: OpenExpectation | null): string {
   if (!exp) return '';
 
+  const meta = (exp.meta ?? {}) as Record<string, unknown>;
+
   const lines: string[] = [
     '## ANSWERING_NOW (read carefully — this is what the student is responding to)',
     'On your previous turn you asked the student:',
@@ -519,9 +547,20 @@ export function buildExpectationPromptSection(exp: OpenExpectation | null): stri
     `Expected answer kind: ${exp.kind}`,
   ];
 
-  const options = Array.isArray((exp.meta as Record<string, unknown>).options)
-    ? ((exp.meta as Record<string, unknown>).options as unknown[])
-    : null;
+  // For a 'next_topic' ladder anchor, name the topic we advanced to so Foxy
+  // keeps teaching FROM there rather than restarting. The topic title may be
+  // carried in meta.next_topic_title by the route (Part 2B/2C).
+  if (exp.kind === 'next_topic') {
+    const nextTitle =
+      typeof meta.next_topic_title === 'string' && meta.next_topic_title.trim().length > 0
+        ? meta.next_topic_title.trim()
+        : null;
+    if (nextTitle) {
+      lines.push(`Current ladder topic (you just advanced to it): "${nextTitle}"`);
+    }
+  }
+
+  const options = Array.isArray(meta.options) ? (meta.options as unknown[]) : null;
   if (options && options.length > 0) {
     const rendered = options
       .filter((o): o is string => typeof o === 'string' && o.length > 0)
@@ -539,6 +578,16 @@ export function buildExpectationPromptSection(exp: OpenExpectation | null): stri
     'If the answer is wrong or partial, gently surface the misconception and re-prompt.',
     'If the student\'s message clearly ignores the question (e.g., asks something unrelated), briefly re-anchor: "Quick check — you were on: [restate question]. Want to stay on this or switch?"',
   );
+
+  // Ladder-survival re-anchor (Part 2C). For choose_topic / next_topic the
+  // ladder must NOT be silently dropped by an ack-only reply ("ok", "got it").
+  // If the student only acknowledged, keep them on the ladder rather than
+  // resetting to a generic greeting.
+  if (exp.kind === 'next_topic' || exp.kind === 'choose_topic') {
+    lines.push(
+      'If the student only ACKNOWLEDGED without answering (e.g. "ok", "got it", "samajh gaya"), do NOT drop the thread: continue the chapter ladder by re-posing the check (or teaching the next step of this same topic) — the ladder anchor stays open until they actually engage with the question.',
+    );
+  }
 
   return lines.join('\n');
 }

@@ -922,6 +922,95 @@ export const ADAPTIVE_LOOPS_BC_FLAGS = {
 } as const;
 
 /**
+ * Foxy Post-Answer Learning Actions flag (2026-06-14, Phase 1).
+ *
+ *  ff_foxy_learning_actions_v1 — master switch for the redesigned Foxy
+ *    post-answer action bar. When OFF, the ChatBubble renders BYTE-IDENTICALLY
+ *    to today (the legacy QA-tester bar: thumbs + dual report + vague "Save").
+ *    When ON, the action bar renders the learning-action row (Got it / Explain
+ *    simpler / Show example / Quiz me on this) + a single-path overflow menu
+ *    (Save to notebook / Read aloud / Report an issue). Got it -> is_up=true and
+ *    Explain simpler -> is_up=false reuse the existing record_message_feedback
+ *    RPC; Save to notebook reuses student_bookmarks; a new learner.learning_action
+ *    event (IDs + enums only) is published. Self-reports do NOT mutate BKT
+ *    mastery_mean (P2); only real "Quiz me" answers feed mastery via the existing
+ *    concept-check path. This is the FRONT-BAR redesign gate ONLY — the four
+ *    continuity/memory flags (ff_foxy_session_reactivate_v1,
+ *    ff_foxy_pending_expectations_v1, ff_foxy_long_memory_v1,
+ *    ff_foxy_context_rich_v1) ramp INDEPENDENTLY in Phase 2 and are NOT gated by
+ *    this flag. Default: false.
+ *
+ *    Seeded OFF (is_enabled=false, rollout=0, scoping NULL) by migration
+ *    20260619000700_seed_ff_foxy_learning_actions_v1.sql — mirrors the
+ *    ff_adaptive_loops_bc_v1 seed precedent (defensive to_regclass guard +
+ *    explicit column list + ON CONFLICT (flag_name) DO NOTHING; REG-125). No new
+ *    table — event-first, reuses foxy_message_feedback + student_bookmarks.
+ *    Spec/plan: Foxy AI Tutor — The Moat (Round 1: Post-Answer Learning Actions
+ *    + Living Memory), Phase 1.
+ */
+export const FOXY_LEARNING_ACTIONS_FLAGS = {
+  /** Foxy post-answer learning-action bar redesign (Phase 1). Default off. */
+  V1: 'ff_foxy_learning_actions_v1',
+} as const;
+
+/**
+ * Foxy 3-Agent Math Correctness Pipeline flag (2026-06-14, Part 1F).
+ *
+ *  ff_foxy_math_pipeline_v1 — master switch for the dedicated math-solve path
+ *    inside the EXISTING /api/foxy flow. When ON, a detected math-solve query is
+ *    routed through the 3-agent pipeline:
+ *      (1) Classifier (Haiku, no thinking — topic/chapter/grade/difficulty),
+ *      (2) Solver (Haiku 4.5 + Extended Thinking, cached per-chapter NCERT
+ *          system prompt, NO RAG, emits structured step/math/answer blocks),
+ *      (3) Verifier (SymPy in the Python AI service, no LLM, fail-closed).
+ *    On a verifier mismatch the pipeline escalates ONCE to Sonnet+thinking; if
+ *    still wrong/unavailable the confident answer is replaced with
+ *    show-the-working + a "Check manually" badge (P12 — never serve a
+ *    confidently wrong answer). Non-math Foxy keeps the RAG grounded-answer path
+ *    UNCHANGED. When OFF, /api/foxy renders BYTE-IDENTICALLY to today: no math
+ *    classifier/solver/verifier runs, the solve-math module + /v1/math/verify
+ *    Python endpoint are never reached, and no Verified/Check badge is shown.
+ *    Default: false.
+ *
+ *    Seeded OFF (is_enabled=false, rollout=0, scoping NULL) by migration
+ *    20260619000800_seed_ff_foxy_math_pipeline_v1.sql — mirrors the
+ *    ff_foxy_learning_actions_v1 seed precedent (defensive to_regclass guard +
+ *    explicit column list + ON CONFLICT (flag_name) DO NOTHING; REG-125). No new
+ *    table. This is the math-pipeline gate ONLY; Part-2 topic progression and
+ *    the foxy_pending_expectations `next_topic` CHECK widening (migration
+ *    20260619000900) ramp INDEPENDENTLY and are NOT gated by this flag.
+ *    Plan: Foxy Math Correctness (3-Agent Pipeline) + Topic-Progression Fixes,
+ *    Part 1F.
+ */
+export const FOXY_MATH_PIPELINE_FLAGS = {
+  /** Foxy 3-agent math correctness pipeline (Classifier -> Solver -> SymPy verifier). Default off. */
+  V1: 'ff_foxy_math_pipeline_v1',
+} as const;
+
+/**
+ * Foxy Curriculum Guard — deterministic (no-LLM) curriculum-authenticity gate on
+ * the EXISTING /api/foxy STEM path. Two purely-mechanical tiers run when ON:
+ *   (T1) Enrolled-grade authenticity — the student's enrolled grade is the only
+ *        authority for in-bounds curriculum scope; nothing is inferred from the
+ *        query text or model output.
+ *   (T4a) Out-of-grade math lexicon — a static lexicon classifies a math query
+ *        against the enrolled grade's CBSE band.
+ * It HARD-BLOCKS out-of-grade math on ALL STEM Foxy queries and redirects the
+ * learner to their current chapter/topic, surfaced with the Outside-Current-
+ * Chapter badge in the existing FoxyStructuredRenderer. Decision A (in-grade,
+ * DIFFERENT-chapter) stays SOFT (gentle nudge, not a hard block). Decoupled from
+ * FOXY_MATH_PIPELINE_FLAGS (the two ramp INDEPENDENTLY; neither gates the other).
+ * ENV override FF_FOXY_CURRICULUM_GUARD_V1 is resolved via isCurriculumGuardEnabled
+ * in src/lib/foxy/math-flag.ts (backend-owned). OFF = /api/foxy byte-identical to
+ * today (no tier runs, no lexicon, no redirect/badge). Default off.
+ * Seeded OFF by migration 20260619001000_seed_ff_foxy_curriculum_guard_v1.sql.
+ */
+export const FOXY_CURRICULUM_GUARD_FLAGS = {
+  /** Foxy deterministic curriculum guard (T1 enrolled-grade + T4a out-of-grade math lexicon). Default off. */
+  V1: 'ff_foxy_curriculum_guard_v1',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -972,6 +1061,9 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [SCHOOL_PULSE_FLAGS.V1]: false, // seeded OFF by 20260619000100_seed_ff_school_pulse_v1.sql
   [ADAPTIVE_REMEDIATION_FLAGS.V1]: false, // seeded OFF by 20260619000300_seed_ff_adaptive_remediation_v1.sql
   [ADAPTIVE_LOOPS_BC_FLAGS.V1]: false, // seeded OFF by 20260619000600_seed_ff_adaptive_loops_bc_v1.sql
+  [FOXY_LEARNING_ACTIONS_FLAGS.V1]: false, // seeded OFF by 20260619000700_seed_ff_foxy_learning_actions_v1.sql
+  [FOXY_MATH_PIPELINE_FLAGS.V1]: false, // seeded OFF by 20260619000800_seed_ff_foxy_math_pipeline_v1.sql
+  [FOXY_CURRICULUM_GUARD_FLAGS.V1]: false, // seeded OFF by 20260619001000_seed_ff_foxy_curriculum_guard_v1.sql
 } as const;
 
 /**

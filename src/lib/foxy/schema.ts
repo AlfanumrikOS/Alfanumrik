@@ -758,10 +758,10 @@ type FoxyResponse = {
   subject: "math" | "science" | "sst" | "english" | "general",
   blocks: Array<
     | { type: "paragraph" | "step" | "answer" | "exam_tip" | "definition" | "example" | "question",
-        text: string,                             // non-empty, <= 2000 chars
+        text: string,                             // non-empty, <= 2000 chars. Inline math allowed: \\( ... \\) inline, \\[ ... \\] display-in-prose
         label?: string }                          // optional caption, <= 2000 chars
     | { type: "math",
-        latex: string,                            // non-empty, <= 500 chars, NO "$" delimiters
+        latex: string,                            // non-empty, <= 500 chars, NO "$" delimiters (standalone display equation)
         label?: string }
     | { type: "diagram",
         search_query: string }                    // e.g. "Human Heart labeled diagram Class 10"
@@ -782,9 +782,10 @@ type FoxyResponse = {
 Constraints:
 - 1 to 50 blocks total.
 - Whole payload <= 16 KB.
-- Markdown is FORBIDDEN anywhere in any field. No "**", no "#", no ">", no markdown lists.
-- LaTeX is allowed ONLY inside the "latex" field of math blocks. Never inside "text".
-- Do NOT wrap latex in "$" or "$$". The renderer adds KaTeX delimiters.
+- Markdown emphasis is FORBIDDEN anywhere in any field. No "**", no "__", no "#", no ">", no markdown lists. Rely on the block structure (definition, example, step, exam_tip) to organise content — never markdown.
+- INLINE MATH inside "text" fields IS ALLOWED and ENCOURAGED for fractions, symbols, exponents, and short expressions that sit inside a sentence. Use \\( ... \\) for inline math and \\[ ... \\] for a display equation within prose. Example: "In \\( \\frac{3}{4} \\), 3 is the numerator and 4 is the denominator." Do NOT use "$" or "$$" delimiters — use the backslash-parenthesis / backslash-bracket form only.
+- STANDALONE display equations still use a dedicated "math" block (latex field, no delimiters). Use a "math" block when the equation is the focus of its own line; use inline \\( ... \\) when math is woven into a sentence.
+- The "latex" field of a "math" block must NOT contain "$" or "$$" delimiters and must NOT contain \\( \\) / \\[ \\] wrappers — the renderer adds the KaTeX delimiters for math blocks. (The \\( \\) / \\[ \\] wrappers are ONLY for inline math written inside a "text" field.)
 - "text" must be non-empty after trim.
 - "math" blocks must not include "text"; non-math blocks must not include "latex".
 - "diagram" blocks must not include "text" or "latex".
@@ -803,15 +804,23 @@ Constraints:
 
 # FEW-SHOT EXAMPLES
 
-## Math (Class 10, Quadratic numerical)
+## Math (Class 10, Quadratic numerical) — note inline math inside text fields
 {"title":"Solving a Quadratic Equation","subject":"math","blocks":[
-  {"type":"step","label":"Given","text":"The equation is x^2 - 5x + 6 = 0."},
+  {"type":"definition","text":"A quadratic equation has the form \\( ax^2 + bx + c = 0 \\), where \\( a \\neq 0 \\)."},
+  {"type":"step","label":"Given","text":"The equation is \\( x^2 - 5x + 6 = 0 \\)."},
   {"type":"math","label":"Formula","latex":"x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}"},
-  {"type":"step","label":"Substitution","text":"Here a=1, b=-5, c=6."},
+  {"type":"step","label":"Substitution","text":"Here \\( a = 1 \\), \\( b = -5 \\), \\( c = 6 \\)."},
   {"type":"math","label":"Calculation","latex":"x = \\frac{5 \\pm \\sqrt{25 - 24}}{2}"},
-  {"type":"answer","text":"x = 3 or x = 2"},
+  {"type":"answer","text":"\\( x = 3 \\) or \\( x = 2 \\)."},
   {"type":"exam_tip","text":"Always write the final values clearly, examiners look for it."},
-  {"type":"question","text":"Now try solving x^2 - 4x + 4 = 0."}
+  {"type":"question","text":"Now try solving \\( x^2 - 4x + 4 = 0 \\)."}
+]}
+
+## Math (Class 6, Fractions) — inline fractions woven into a sentence
+{"title":"Understanding Fractions","subject":"math","blocks":[
+  {"type":"definition","text":"A fraction shows a part of a whole. In \\( \\frac{3}{4} \\), 3 is the numerator and 4 is the denominator."},
+  {"type":"example","label":"Equivalent Fractions","text":"Multiply numerator and denominator by the same number to get an equivalent fraction: \\( \\frac{1}{2} = \\frac{2}{4} = \\frac{4}{8} \\)."},
+  {"type":"question","text":"Is \\( \\frac{3}{6} \\) equivalent to \\( \\frac{1}{2} \\)? Why?"}
 ]}
 
 ## Biology (Class 10, Process with diagram)

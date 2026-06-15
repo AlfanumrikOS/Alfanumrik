@@ -21,7 +21,7 @@
  * P10 bundle-budget purpose they did when the page owned them.
  */
 
-import ChatBubble from '@/components/foxy/ChatBubble';
+import ChatBubble, { type LearningActionType } from '@/components/foxy/ChatBubble';
 import { StructuredRenderBoundary } from '@/components/foxy/StructuredRenderBoundary';
 import { isFoxyResponse } from '@/lib/foxy/is-foxy-response';
 import { recoverFoxyResponseFromText } from '@/lib/foxy/recover-from-text';
@@ -51,6 +51,16 @@ export interface MessageListProps {
   onReport: (msgId: number) => void;
   onSaveFlashcard: (msgId: number, content: string) => void;
   onSpeak?: (text: string) => void;
+
+  // ── Phase 1 learning-action bar (ff_foxy_learning_actions_v1) ──────────────
+  /** When true, ChatBubble renders the new learning-action bar instead of the
+   *  legacy QA-tester bar. When false (default), the legacy bar is unchanged. */
+  learningActionsEnabled?: boolean;
+  /** Dispatch a learning action for a given message (flag ON only). The page
+   *  records telemetry + re-sends the prior question for re-teach/quiz. */
+  onLearningAction?: (msg: ChatMessage, action: LearningActionType) => void;
+  /** Local-id set of messages the student tapped "Got it" on (flag ON bar). */
+  gotItMessageIds?: Set<number>;
 }
 
 export function MessageList({
@@ -67,6 +77,9 @@ export function MessageList({
   onReport,
   onSaveFlashcard,
   onSpeak,
+  learningActionsEnabled,
+  onLearningAction,
+  gotItMessageIds,
 }: MessageListProps) {
   return (
     <>
@@ -182,8 +195,24 @@ export function MessageList({
               traceId={msg.traceId}
               abstainReason={msg.abstainReason}
               suggestedAlternatives={msg.suggestedAlternatives}
+              badgeState={msg.badgeState}
+              // Only thread the persisted uuid through when the new bar is
+              // active — keeps the flag-OFF ReportIssueModal payload
+              // byte-identical to today (messageId was undefined before).
+              messageId={learningActionsEnabled ? msg.persistedMessageId : undefined}
+              learningActionsEnabled={learningActionsEnabled}
+              onLearningAction={
+                learningActionsEnabled && onLearningAction
+                  ? (action) => onLearningAction(msg, action)
+                  : undefined
+              }
+              saved={savedMessageIds.has(msg.id)}
+              gotIt={gotItMessageIds?.has(msg.id) ?? false}
             />
-            {msg.role === 'tutor' && !msg.reported && (
+            {/* Legacy Save-to-flashcard button (flag OFF — byte-identical to
+                today). When the new bar is active, Save lives in its overflow
+                menu, so this legacy button is suppressed. */}
+            {!learningActionsEnabled && msg.role === 'tutor' && !msg.reported && (
               <div className="flex justify-start pl-11 -mt-2 mb-3">
                 <button
                   onClick={() => onSaveFlashcard(msg.id, effectiveContent)}

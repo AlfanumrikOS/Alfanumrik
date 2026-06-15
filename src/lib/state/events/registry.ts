@@ -163,6 +163,36 @@ export const LearnerConceptCheckAnsweredSchema = EventBaseSchema.extend({
   }),
 });
 
+// Foxy Post-Answer Learning Actions (Phase 1, 2026-06-14). NON-EVIDENTIAL
+// telemetry emitted when a student taps a post-answer action chip on a Foxy
+// assistant message (Got it / Explain simpler / Show example / Quiz me on this
+// / Save to notebook). This is a SELF-REPORT signal, NOT a graded answer:
+//
+//   ⚠️ BINDING learner-state contract (assessment-issued):
+//   No subscriber may consume this event to write ANY mastery surface
+//   (concept_mastery, cme_concept_state, student_skill_state, knowledge_gaps,
+//   learner_mastery, cme_error_log, quiz_sessions, student_learning_profiles,
+//   bloom_progression). A self-report cannot move mastery_mean / p_know.
+//   Only a REAL "Quiz me" answer feeds mastery, and it does so through the
+//   EXISTING concept-check / BKT path (learner.concept_check_answered) — never
+//   through this event. Award 0 XP. The bus row is pure observability.
+//
+// P13: payload is IDs + enums only — no free text (the saved answer body lives
+// in student_bookmarks, never on the bus; the message text is never echoed).
+export const LearnerLearningActionSchema = EventBaseSchema.extend({
+  kind: z.literal('learner.learning_action'),
+  payload: z.object({
+    messageId: uuidLike(),
+    sessionId: uuidLike(),
+    // The concept the answer was about, when the client knows it. Nullable +
+    // optional because the post-answer bar fires before any concept is bound.
+    conceptId: uuidLike().nullable().optional(),
+    actionType: z.enum(['got_it', 'explain_simpler', 'show_example', 'quiz_me', 'save']),
+    subjectCode: z.string().nullable(),
+    chapterNumber: z.number().int().nonnegative().nullable(),
+  }),
+});
+
 // ── AI / Foxy events ─────────────────────────────────────────────────
 
 export const FoxySessionStartedSchema = EventBaseSchema.extend({
@@ -672,6 +702,7 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   LearnerReviewGradedSchema,
   LearnerScanExtractedSchema,
   LearnerConceptCheckAnsweredSchema,
+  LearnerLearningActionSchema,
   FoxySessionStartedSchema,
   FoxySessionCompletedSchema,
   ParentLinkedSchema,
@@ -724,6 +755,7 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'learner.review_graded',
   'learner.scan_extracted',
   'learner.concept_check_answered',
+  'learner.learning_action',
   'ai.foxy_session_started',
   'ai.foxy_session_completed',
   'parent.linked_to_learner',

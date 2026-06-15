@@ -368,6 +368,15 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
       // Surfaced separately on the tutor page from concept_mastery rather than
       // as a journey card; keeping it out here avoids spamming the timeline.
       return null;
+    case 'learner.learning_action':
+      // Foxy Post-Answer Learning Actions (Phase 1) — NON-EVIDENTIAL self-report
+      // telemetry (Got it / Explain simpler / Show example / Quiz me / Save). It
+      // is NOT a learner milestone and (per the binding assessment learner-state
+      // contract) MUST NOT feed any mastery surface. The visible feedback for the
+      // action is the ChatBubble UI itself; the bus row is pure observability.
+      // Mapping to `null` keeps it off the journey timeline and ensures this
+      // projector never derives a mastery-moving milestone from a self-report.
+      return null;
     default: {
       // Exhaustiveness check — the compiler errors here if a new event
       // kind is added to the registry without a projector entry.

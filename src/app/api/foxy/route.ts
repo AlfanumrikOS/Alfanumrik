@@ -72,13 +72,31 @@ import {
 import { callGroundedAnswer, callGroundedAnswerStream, type GroundedRequest, type Citation, type SuggestedAlternative, type AbstainReason } from '@/lib/ai/grounded-client';
 import { PER_PLAN_TIMEOUT_MS, SOFT_CONFIDENCE_BANNER_THRESHOLD } from '@/lib/grounding-config';
 import { classifyIntent, routeIntent } from '@/lib/ai';
-import { QUIZ_PATTERNS } from '@/lib/ai/workflows/foxy-router';
+import { QUIZ_PATTERNS, classifyMathSolve } from '@/lib/ai/workflows/foxy-router';
+import {
+  runMathSolvePipeline,
+  type MathPipelineResult,
+} from '@/lib/ai/math/solve-pipeline';
+import { isMathPipelineEnabled, isCurriculumGuardEnabled } from '@/lib/foxy/math-flag';
+import {
+  validateCurriculumScope,
+  type CurriculumScopeResult,
+} from '@/lib/foxy/curriculum-scope';
 import { getAllTenantConfig } from '@/lib/tenant-config';
 import { coerceTenantType } from '@/lib/tenant-domain';
 import { buildTenantOverrideSection } from '@/lib/ai/prompts/tenant-overrides';
 import { FoxyResponseSchema, type FoxyResponse } from '@/lib/foxy/schema';
+import { normalizeFoxyResponseInline } from '@/lib/foxy/normalize-inline';
 import { recoverFoxyResponseFromText } from '@/lib/foxy/recover-from-text';
 import { denormalizeFoxyResponse } from '@/lib/foxy/denormalize';
+import { gateQuizMeMcq } from '@/lib/foxy/quiz-me-oracle-gate';
+import type { LlmGrader } from '@/lib/ai/validation/quiz-oracle';
+import { parseLlmGraderResponse } from '@/lib/ai/validation/quiz-oracle';
+import {
+  QUIZ_ORACLE_GRADER_SYSTEM_PROMPT,
+  buildQuizOracleGraderUserPrompt,
+} from '@/lib/ai/validation/quiz-oracle-prompts';
+import { callClaude } from '@/lib/ai';
 import { buildExpandedGoalSection } from '@/lib/goals/goal-personas';
 import { fetchRecentLabContext, type LabContextEntry } from '@/lib/foxy/recent-lab-context';
 import { buildLabContextSection } from '@/lib/foxy/foxy-lab-prompt';
@@ -281,9 +299,22 @@ function extractValidatedStructured(
   const candidate = (upstream as { structured?: unknown } | null | undefined)
     ?.structured;
 
+  // Mechanical, in-process normalizer for the structured payload's text/label
+  // fields. Canonicalises `$`/`$$` inline math to the `\(`/`\[` form the
+  // renderer + prompt standardise on, and strips stray markdown emphasis the
+  // prompt already forbids. No LLM call, no network. Re-validates against the
+  // schema and falls back to the already-valid input if (defensively) the
+  // re-validation ever fails — normalization only shrinks/holds field length,
+  // so a valid payload stays valid. P12: never lowers the validation bar.
+  const normalizeAndRevalidate = (valid: FoxyResponse): FoxyResponse => {
+    const normalized = normalizeFoxyResponseInline(valid);
+    const reparsed = FoxyResponseSchema.safeParse(normalized);
+    return reparsed.success ? reparsed.data : valid;
+  };
+
   if (candidate !== undefined && candidate !== null) {
     const parsed = FoxyResponseSchema.safeParse(candidate);
-    if (parsed.success) return parsed.data;
+    if (parsed.success) return normalizeAndRevalidate(parsed.data);
 
     // P12 defense-in-depth: never write malformed JSON into the JSONB column.
     // We log the issue but continue — recovery from `fallbackText` below may
@@ -319,7 +350,7 @@ function extractValidatedStructured(
         // Telemetry only — lets ops measure how often the Edge Function
         // drops `structured` so the upstream fix can be prioritised.
       });
-      return recovered;
+      return normalizeAndRevalidate(recovered);
     }
   }
 
@@ -693,9 +724,20 @@ const HINDI_ACK_RE = /(सही|बिल्कुल|शाबाश|बहु
  * net is the 24h expires_at sweep. Tracked as `expectation_abandoned_rate`
  * for future tuning.
  */
+// Progression expectation kinds whose ladder anchor must SURVIVE an ack-only
+// reply (Part 2C). For 'choose_topic'/'next_topic' an acknowledgment alone
+// ("Correct! / Bilkul sahi!") must NOT close the anchor — the student hasn't
+// actually picked/engaged the next ladder step, so we keep the row OPEN
+// ('unresolved') and re-inject it next turn. Other kinds keep the legacy
+// ack → 'answered' behaviour.
+const PROGRESSION_LIFECYCLE_KINDS = new Set<OpenExpectation['kind']>([
+  'choose_topic',
+  'next_topic',
+]);
+
 function classifyExpectationLifecycle(
   assistantReply: string,
-  _prior: OpenExpectation,
+  prior: OpenExpectation,
 ): 'answered' | 'abandoned' | 'unresolved' {
   const text = (assistantReply ?? '').trim();
   if (!text) return 'unresolved';
@@ -706,6 +748,13 @@ function classifyExpectationLifecycle(
   // Any `?` in the reply is a weaker signal.
   const hasArrowPrompt = /^->\s+/m.test(text);
   const hasAnyQuestion = text.includes('?');
+
+  // Progression ladder anchors (choose_topic / next_topic): an ack-only reply
+  // does NOT close the ladder. Keep it OPEN ('unresolved') so the next turn
+  // re-anchors and the chapter progression is never silently dropped.
+  if (PROGRESSION_LIFECYCLE_KINDS.has(prior.kind)) {
+    return 'unresolved';
+  }
 
   if (ack) {
     // Acknowledged: counts as answered even if a new question follows.
@@ -1065,6 +1114,520 @@ async function loadCognitiveContext(
     });
     return EMPTY_COGNITIVE_CONTEXT;
   }
+}
+
+// ─── Helper: chapter topic-progression context (Part 2B) ─────────────────────
+//
+// Computes the chapter's ORDERED topic list + the student's position + the
+// next unmastered topic, so Foxy can lead the student topic-to-topic instead
+// of guessing. Reuses curriculum_topics (display_order) + concept_mastery —
+// the same tables loadCognitiveContext already touches. Server-side
+// (supabaseAdmin) twin of getChapterTopics/getNextTopics (which are RLS
+// client-side); we query directly so this works on the service-role path.
+//
+// Best-effort: any failure returns an empty progression (all-null) so the
+// prompt section is empty and Foxy behaves exactly as before. NEVER fabricates
+// a next topic — `nextTopic` is null unless a real unmastered ordered topic
+// exists.
+interface ChapterTopicProgress {
+  /** Ordered topic titles for (subject, grade, chapter) by display_order. */
+  orderedTopics: string[];
+  /** The topic the student is currently on (highest-ordered with any mastery), or null. */
+  currentTopic: string | null;
+  /** The next unmastered ordered topic (the ladder target), or null. */
+  nextTopic: string | null;
+  /** curriculum_topics.id of nextTopic when known (for expectation meta). */
+  nextTopicId: string | null;
+}
+
+const EMPTY_TOPIC_PROGRESS: ChapterTopicProgress = {
+  orderedTopics: [],
+  currentTopic: null,
+  nextTopic: null,
+  nextTopicId: null,
+};
+
+// Mastery threshold above which a topic counts as "mastered" for the purpose
+// of advancing the ladder. Mirrors the 0.6 weak/strong cut used throughout
+// loadCognitiveContext so the progression view is consistent with the rest of
+// the cognitive context.
+const TOPIC_MASTERED_THRESHOLD = 0.6;
+
+async function loadChapterTopicProgress(
+  studentId: string,
+  subject: string,
+  grade: string,
+  chapter: string | null,
+): Promise<ChapterTopicProgress> {
+  // No chapter → no ordered ladder to compute.
+  if (!chapter) return EMPTY_TOPIC_PROGRESS;
+  try {
+    const { data: subjectRow } = await supabaseAdmin
+      .from('subjects')
+      .select('id')
+      .ilike('code', subject)
+      .maybeSingle();
+    const subjectId = subjectRow?.id ?? null;
+    if (!subjectId) return EMPTY_TOPIC_PROGRESS;
+
+    const chapterNum = /^\d+$/.test(chapter) ? parseInt(chapter, 10) : null;
+
+    // Ordered topics for this chapter. curriculum_topics.grade is stored
+    // without a "Grade " prefix (see loadCognitiveContext); normalise.
+    let topicsQuery = supabaseAdmin
+      .from('curriculum_topics')
+      .select('id, title, display_order')
+      .eq('subject_id', subjectId)
+      .eq('grade', grade)
+      .eq('is_active', true)
+      .order('display_order', { ascending: true })
+      .limit(50);
+    if (chapterNum !== null) {
+      topicsQuery = topicsQuery.eq('chapter_number', chapterNum);
+    }
+    const { data: topicRows } = await topicsQuery;
+    const topics = (topicRows ?? []) as Array<{
+      id: string;
+      title: string;
+      display_order: number | null;
+    }>;
+    if (topics.length === 0) return EMPTY_TOPIC_PROGRESS;
+
+    // Mastery for these topic ids (per-topic mastery_probability).
+    const topicIds = topics.map((t) => t.id);
+    const masteryByTopic = new Map<string, number>();
+    try {
+      const { data: masteryRows } = await supabaseAdmin
+        .from('concept_mastery')
+        .select('topic_id, mastery_probability')
+        .eq('student_id', studentId)
+        .in('topic_id', topicIds);
+      for (const m of (masteryRows ?? []) as Array<{
+        topic_id: string;
+        mastery_probability: number | null;
+      }>) {
+        masteryByTopic.set(m.topic_id, m.mastery_probability ?? 0);
+      }
+    } catch {
+      // Non-fatal — treat all topics as unmastered if mastery read fails.
+    }
+
+    const orderedTopics = topics.map((t) => t.title);
+
+    // currentTopic = the LAST ordered topic the student has touched (any
+    // mastery row), so Foxy knows where they are. nextTopic = the FIRST ordered
+    // topic that is not yet mastered (>= threshold). Never fabricated.
+    let currentTopic: string | null = null;
+    let nextTopic: string | null = null;
+    let nextTopicId: string | null = null;
+    for (const t of topics) {
+      const mastery = masteryByTopic.get(t.id);
+      if (mastery !== undefined) currentTopic = t.title;
+      if (nextTopic === null && (mastery ?? 0) < TOPIC_MASTERED_THRESHOLD) {
+        nextTopic = t.title;
+        nextTopicId = t.id;
+      }
+    }
+
+    return { orderedTopics, currentTopic, nextTopic, nextTopicId };
+  } catch (err) {
+    logger.warn('foxy_topic_progress_failed', {
+      error: err instanceof Error ? err.message : String(err),
+      // P13: no studentId at warn level beyond the existing convention.
+      subject,
+    });
+    return EMPTY_TOPIC_PROGRESS;
+  }
+}
+
+/**
+ * Render the chapter topic-progression prompt section (Part 2B). Empty string
+ * when there's no ordered ladder (template-safe). Injects:
+ *   "Topics in this chapter (in order): A; B; C. The student is on X.
+ *    The next topic to teach is Y."
+ * NEVER invents a next topic — when nextTopic is null we say the chapter is
+ * complete rather than guessing.
+ */
+function buildTopicProgressSection(p: ChapterTopicProgress): string {
+  if (p.orderedTopics.length === 0) return '';
+  const lines: string[] = [
+    '=== CHAPTER PROGRESSION (lead the student topic-to-topic, in order) ===',
+    `Topics in this chapter (in order): ${p.orderedTopics.join('; ')}.`,
+  ];
+  if (p.currentTopic) {
+    lines.push(`The student is currently on: ${p.currentTopic}.`);
+  }
+  if (p.nextTopic) {
+    lines.push(
+      `The NEXT topic to teach is: ${p.nextTopic}. When the student shows understanding of the current topic, proactively advance to "${p.nextTopic}" and end with ONE Socratic check question on it — do NOT ask a yes/no "shall we move on?"; advance by teaching plus a thinking question.`,
+    );
+  } else {
+    lines.push(
+      'The student has worked through all listed topics in this chapter — consolidate, then suggest the next chapter or a mixed review. Do NOT invent a new topic that is not in the list above.',
+    );
+  }
+  return lines.join('\n');
+}
+
+// ─── Foxy Math Pipeline: verdict → display mapping (Part 1D, P12 fail-closed) ─
+//
+// The Solver -> Verifier -> verdict→display mapping orchestrator
+// (`runMathSolvePipeline`), the `stripAnswerValue` fail-closed helper, the
+// `MathPipelineResult` shape, and the `FoxyMathBadgeState` type now live in
+// `@/lib/ai/math/solve-pipeline` so the P12-critical fail-closed mapping can be
+// unit-tested directly (mocking solveMath + verifyMath) without going through
+// this route's 503-before-pipeline auth/feature-flag gates. Behavior is
+// logic-identical to the prior inline definitions.
+//
+// ASSESSMENT BINDING CONTRACT (enforced in the module, unchanged):
+//   - verifier true            -> show answer + badge 'verified'.
+//   - verifier false           -> escalate ONCE (Sonnet) + re-verify.
+//                                   sonnet true  -> show + 'verified'.
+//                                   else (false / null / timeout on retry) ->
+//                                   STRIP the answer block value (neutral
+//                                   "let's check this together" line), keep the
+//                                   step/math working, badge 'check_manually'.
+//   - verifier null            -> show + badge 'none', NO escalation
+//                                   (unavailable != wrong).
+//   - solver emitted 0 or >1 answer blocks -> treat as null (badge 'none',
+//                                   no escalation; we can't isolate a single
+//                                   claimed value to verify).
+// Badge state is computed SERVER-SIDE in the pipeline and attached to the
+// /api/foxy response envelope as `badgeState`; the renderer must NOT recompute
+// it.
+
+/**
+ * Persist a completed math-solve turn EXACTLY like a normal blocking Foxy turn
+ * and build the response envelope (with the server-computed `badgeState`).
+ *
+ * Mirrors the blocking grounded-path persistence + pending-expectations
+ * lifecycle, minus the RAG-specific fields (sources/citations/grounding). The
+ * assistant content is the denormalized structured payload so the GET-resume +
+ * legacy-string clients render correctly. 0 XP, no mastery writes.
+ *
+ * NEVER throws — persistence failures log and continue (the student still gets
+ * the response). Returns the NextResponse for the math branch.
+ */
+async function persistMathTurnAndRespond(params: {
+  studentId: string;
+  userId: string;
+  resolvedSessionId: string;
+  message: string;
+  subject: string;
+  grade: string;
+  chapter: string | null;
+  mode: string;
+  quotaRemaining: number;
+  pipeline: MathPipelineResult;
+  traceId: string;
+  usePendingExpectations: boolean;
+  openExpectation: OpenExpectation | null;
+  nextTopicId: string | null;
+  nextTopicTitle: string | null;
+}): Promise<Response> {
+  const { pipeline } = params;
+  const structured = pipeline.structured;
+  const assistantContent = denormalizeFoxyResponse(structured);
+
+  // Persist user + assistant rows (legacy INSERT path — the math branch does
+  // not pre-insert). tokens_used is null: solveMath does not expose a token
+  // count, and this turn does NOT flow through the grounded meta. XP is 0 by
+  // construction (no submitQuizResults / atomic_quiz_profile_update anywhere).
+  let assistantMessageId: string | null = null;
+  const now = new Date().toISOString();
+  try {
+    const { data: insertedRows } = await supabaseAdmin
+      .from('foxy_chat_messages')
+      .insert([
+        {
+          session_id: params.resolvedSessionId,
+          student_id: params.studentId,
+          role: 'user',
+          content: params.message,
+          sources: null,
+          tokens_used: null,
+          created_at: now,
+        },
+        {
+          session_id: params.resolvedSessionId,
+          student_id: params.studentId,
+          role: 'assistant',
+          content: assistantContent,
+          structured: structured ?? null,
+          sources: null,
+          tokens_used: null,
+          created_at: new Date(Date.now() + 1).toISOString(),
+        },
+      ])
+      .select('id, role');
+    if (insertedRows) {
+      const assistantRow = insertedRows.find((r) => r.role === 'assistant');
+      assistantMessageId = (assistantRow?.id as string | undefined) ?? null;
+    }
+  } catch (saveErr) {
+    console.warn(
+      '[foxy] math message save failed:',
+      saveErr instanceof Error ? saveErr.message : String(saveErr),
+    );
+  }
+
+  // Pending-expectations lifecycle (parity with the grounded blocking path).
+  if (params.usePendingExpectations) {
+    try {
+      // Pass 1: resolve the prior open expectation. classifyExpectationLifecycle
+      // keeps choose_topic/next_topic OPEN on ack-only replies (Part 2C).
+      if (params.openExpectation) {
+        const lifecycle = classifyExpectationLifecycle(assistantContent, params.openExpectation);
+        if (lifecycle === 'answered') {
+          void markExpectationAnswered(supabaseAdmin, params.openExpectation.id, assistantMessageId);
+        } else if (lifecycle === 'abandoned') {
+          void markExpectationAbandoned(supabaseAdmin, params.openExpectation.id);
+        }
+      }
+
+      // Pass 2: extract the NEW expectation from the math reply. The math
+      // solution always ends with a Socratic question block, so the extractor
+      // anchors the follow-up. When the route knows the ordered next topic, we
+      // carry it in meta so buildExpectationPromptSection can re-anchor the
+      // ladder next turn (Part 2C).
+      const newExpectation = extractExpectation(assistantContent, {
+        structured: (structured ?? null) as StructuredAssistantPayload | null,
+      });
+      if (newExpectation) {
+        if (params.nextTopicTitle) {
+          newExpectation.meta = {
+            ...(newExpectation.meta ?? {}),
+            next_topic_title: params.nextTopicTitle,
+            ...(params.nextTopicId ? { topic_id: params.nextTopicId } : {}),
+          };
+        }
+        void writeExpectation(supabaseAdmin, {
+          sessionId: params.resolvedSessionId,
+          studentId: params.studentId,
+          expectation: newExpectation,
+          subject: params.subject,
+          grade: params.grade,
+          chapter: params.chapter ?? null,
+          topicId: params.nextTopicId ?? null,
+          askedMessageId: assistantMessageId,
+        });
+      }
+    } catch (expErr) {
+      console.warn(
+        '[foxy] math pending-expectations post-persist failed:',
+        expErr instanceof Error ? expErr.message : String(expErr),
+      );
+    }
+  }
+
+  // Audit (P13: verdict + badge + reason only — never the problem/answer).
+  logAudit(params.userId, {
+    action: 'foxy.chat',
+    resourceType: 'foxy_sessions',
+    resourceId: params.resolvedSessionId,
+    details: {
+      subject: params.subject,
+      grade: params.grade,
+      chapter: params.chapter,
+      mode: params.mode,
+      traceId: params.traceId,
+      flow: 'math-pipeline',
+      modelUsed: pipeline.modelUsed,
+      badgeState: pipeline.badgeState,
+      verifierVerdict: pipeline.verdict.is_correct,
+      verifierReason: pipeline.verdict.reason ?? null,
+      escalated: pipeline.escalated,
+      structured_present: true,
+      // 0 XP by construction; surfaced for audit clarity.
+      xpAwarded: 0,
+    },
+  });
+
+  // Response envelope — same shape as the grounded blocking path, PLUS the
+  // server-computed `badgeState` next to `structured`. The renderer must NOT
+  // recompute the badge.
+  return NextResponse.json({
+    success: true,
+    response: assistantContent,
+    sessionId: params.resolvedSessionId,
+    quotaRemaining: params.quotaRemaining,
+    tokensUsed: 0,
+    // A verified/none math answer is fully grounded in the NCERT method prompt;
+    // a stripped (check_manually) answer keeps the working but withholds the
+    // value. Mark 'grounded' for verified/none, 'unverified' for check_manually
+    // so legacy banner logic does not over-claim a stripped answer.
+    groundingStatus:
+      pipeline.badgeState === 'check_manually'
+        ? ('unverified' as const)
+        : ('grounded' as const),
+    groundedFromChunks: false,
+    citationsCount: 0,
+    traceId: params.traceId,
+    messageId: assistantMessageId,
+    structured,
+    // Server-side math-verifier badge state (Part 1D). Renderer renders this
+    // verbatim; never recomputed client-side.
+    badgeState: pipeline.badgeState,
+  });
+}
+
+// ─── Helper: curriculum-out-of-scope reply (math pipeline pre-solve gate) ────
+//
+// Called when validateCurriculumScope returns inScope:false for a detected
+// math-solve query. We DO persist the turn (so session history/continuity is
+// consistent — the student asked, Foxy answered "out of scope") but we run NO
+// solver/verifier and award NO XP / NO mastery (P2 — this is formative). The
+// reply carries the bilingual scope message + the suggested action, plus a
+// minimal valid FoxyResponse (single paragraph block) so the structured
+// renderer has something to show. badgeState 'out_of_scope' is a NEW state the
+// renderer treats as informational (not a verified/check-manually answer).
+async function respondCurriculumOutOfScope(params: {
+  studentId: string;
+  userId: string;
+  resolvedSessionId: string;
+  message: string;
+  subject: string;
+  grade: string;
+  chapter: string | null;
+  quotaRemaining: number;
+  scope: CurriculumScopeResult;
+  traceId: string;
+  // Optional already-loaded chapter-topic progression. When present we thread
+  // the current chapter + the next ordered topic into the bilingual redirect so
+  // the out-of-scope reply points the student back at what they ARE studying.
+  // Falls back to the generic scope copy when these are null.
+  topicProgress?: ChapterTopicProgress;
+}): Promise<Response> {
+  const { scope } = params;
+  const suggestedAction = scope.suggestedActionEn ?? '';
+  const messageEn = scope.messageEn ?? 'This question is outside your current scope.';
+
+  // ── Personalized redirect tail (P7 bilingual) ─────────────────────────────
+  // When we know the chapter and/or the next ordered topic, append a redirect
+  // that names them ("You're currently studying <chapter>; let's continue with
+  // <nextTopic>."). Each clause is emitted only when its field is non-null, so
+  // a partial (chapter-only or topic-only) state still reads cleanly. When both
+  // are null we add nothing — the generic scope copy stands alone.
+  const chapterName =
+    typeof params.chapter === 'string' && params.chapter.trim().length > 0
+      ? params.chapter.trim()
+      : null;
+  const nextTopic = params.topicProgress?.nextTopic ?? null;
+
+  let redirectEn = '';
+  let redirectHi = '';
+  if (chapterName && nextTopic) {
+    redirectEn = `You're currently studying ${chapterName}; let's continue with ${nextTopic}.`;
+    redirectHi = `आप अभी ${chapterName} पढ़ रहे हैं; चलिए ${nextTopic} के साथ आगे बढ़ते हैं।`;
+  } else if (chapterName) {
+    redirectEn = `You're currently studying ${chapterName}; let's continue there.`;
+    redirectHi = `आप अभी ${chapterName} पढ़ रहे हैं; चलिए वहीं से आगे बढ़ते हैं।`;
+  } else if (nextTopic) {
+    redirectEn = `Let's continue with ${nextTopic}.`;
+    redirectHi = `चलिए ${nextTopic} के साथ आगे बढ़ते हैं।`;
+  }
+
+  // Bilingual block text (EN + Hindi inline) so the structured renderer surfaces
+  // both — P7. The plain `response` string carries EN + the suggested action +
+  // (when available) the personalized redirect.
+  const blockText = [
+    messageEn,
+    redirectEn,
+    scope.suggestedActionEn,
+    scope.messageHi,
+    redirectHi,
+    scope.suggestedActionHi,
+  ]
+    .filter((s): s is string => typeof s === 'string' && s.length > 0)
+    .join(' ')
+    .slice(0, 2000);
+  const responseText = [messageEn, redirectEn, suggestedAction]
+    .filter((s) => typeof s === 'string' && s.length > 0)
+    .join(' ')
+    .trim();
+
+  // Minimal valid FoxyResponse: one paragraph block carrying the bilingual
+  // message. subject 'general' — this is a meta reply, not subject content.
+  const structured: FoxyResponse = {
+    title: 'Outside the selected chapter',
+    subject: 'general',
+    blocks: [{ type: 'paragraph', text: blockText }],
+  };
+
+  // Persist user + assistant rows (mirrors persistMathTurnAndRespond's INSERT
+  // path). tokens_used null; NO XP, NO mastery writes anywhere.
+  let assistantMessageId: string | null = null;
+  const now = new Date().toISOString();
+  try {
+    const { data: insertedRows } = await supabaseAdmin
+      .from('foxy_chat_messages')
+      .insert([
+        {
+          session_id: params.resolvedSessionId,
+          student_id: params.studentId,
+          role: 'user',
+          content: params.message,
+          sources: null,
+          tokens_used: null,
+          created_at: now,
+        },
+        {
+          session_id: params.resolvedSessionId,
+          student_id: params.studentId,
+          role: 'assistant',
+          content: responseText,
+          structured,
+          sources: null,
+          tokens_used: null,
+          created_at: new Date(Date.now() + 1).toISOString(),
+        },
+      ])
+      .select('id, role');
+    if (insertedRows) {
+      const assistantRow = insertedRows.find((r) => r.role === 'assistant');
+      assistantMessageId = (assistantRow?.id as string | undefined) ?? null;
+    }
+  } catch (saveErr) {
+    console.warn(
+      '[foxy] math out-of-scope message save failed:',
+      saveErr instanceof Error ? saveErr.message : String(saveErr),
+    );
+  }
+
+  // Audit (P13: reason + scope metadata only — never the problem text). 0 XP.
+  logAudit(params.userId, {
+    action: 'foxy.chat',
+    resourceType: 'foxy_sessions',
+    resourceId: params.resolvedSessionId,
+    details: {
+      subject: params.subject,
+      grade: params.grade,
+      chapter: params.chapter,
+      traceId: params.traceId,
+      flow: 'math-pipeline-out-of-scope',
+      curriculumScopeReason: scope.reason ?? null,
+      enrolledGrade: scope.enrolledGrade,
+      structured_present: true,
+      xpAwarded: 0,
+    },
+  });
+
+  return NextResponse.json({
+    success: true,
+    response: responseText,
+    structured,
+    badgeState: 'out_of_scope' as const,
+    curriculum: {
+      status: 'curriculum_out_of_scope' as const,
+      message: scope.messageEn,
+      suggestedAction: scope.suggestedActionEn,
+    },
+    verification_skipped: 'out_of_curriculum_scope' as const,
+    sessionId: params.resolvedSessionId,
+    quotaRemaining: params.quotaRemaining,
+    messageId: assistantMessageId,
+    traceId: params.traceId,
+  });
 }
 
 // ─── Helper: pKnow → directive sentence (per-LO bucket) ─────────────────────
@@ -1528,6 +2091,126 @@ const MODE_MAX_TOKENS: Record<string, number> = {
   revise: 3000,
 };
 
+// ─── Post-answer re-teach + Quiz-me directives (Phase 1 learning actions) ────
+//
+// The client passes `coachDirective` on a follow-up turn for the SAME question
+// the student just saw. We turn it into an instruction appended to the system
+// prompt so the model re-explains / works an example / emits a single MCQ —
+// all inside the existing FoxyResponse structured schema, bilingual (P7), and
+// inside CBSE scope (the RAG context + safety rails are unchanged).
+//
+// 'simplify'  → re-explain the previous answer at a lower reading level.
+// 'example'   → one fully worked example for the previous question.
+// 'quiz_me'   → exactly ONE oracle-gated mcq block on the same concept.
+//
+// Unknown values are dropped silently in the request parser below — never
+// trust the client to set arbitrary directives. P12: these directives only
+// constrain shape/level; they do NOT widen scope or relax safety rails.
+export const VALID_COACH_DIRECTIVES = ['simplify', 'example', 'quiz_me'] as const;
+export type CoachDirective = typeof VALID_COACH_DIRECTIVES[number];
+
+export const COACH_DIRECTIVE_SECTIONS: Record<CoachDirective, string> = {
+  simplify: [
+    '## RE-TEACH DIRECTIVE — EXPLAIN SIMPLER (overrides verbosity rules above)',
+    'The student just saw your previous answer to this question and asked for a SIMPLER explanation.',
+    'Re-explain the SAME concept / previous answer, do NOT change the answer itself:',
+    '- Lower the reading level: short sentences, one idea per block, everyday words.',
+    '- Lead with ONE concrete real-world analogy familiar to an Indian student.',
+    '- Keep it brief: 3-5 blocks total. Avoid jargon; if a technical term is',
+    '  unavoidable, define it in one short clause.',
+    '- Stay strictly within the same CBSE grade/subject/chapter scope as before.',
+    '- Do NOT emit an mcq block. End with ONE gentle check-for-understanding question.',
+  ].join('\n'),
+  example: [
+    '## RE-TEACH DIRECTIVE — SHOW EXAMPLE (overrides verbosity rules above)',
+    'The student just saw your previous answer and asked for a WORKED EXAMPLE.',
+    'Give ONE fully worked example for the SAME previous question / concept:',
+    '- Pick a concrete, grade-appropriate example from the CBSE chapter in scope.',
+    '- Work it step by step using "step" blocks (and "math" blocks for any',
+    '  calculations), then a final "answer" block stating the result clearly.',
+    '- Keep the example self-contained; do not introduce new unrelated concepts.',
+    '- Do NOT emit an mcq block. End with ONE "now you try" question of similar shape.',
+  ].join('\n'),
+  // quiz_me's prompt directive lives in SINGLE_MCQ_DIRECTIVE below and is wired
+  // through MODE_DIRECTIVES so it overrides the 5-question PRACTICE shape with a
+  // single-MCQ shape. The map entry here is intentionally empty: the system-
+  // prompt section for quiz_me is the single-MCQ directive, not a re-teach blurb.
+  quiz_me: '',
+};
+
+// Single-MCQ directive for the "Quiz me on this" post-answer action. Overrides
+// the 5-question MODE_DIRECTIVES.practice shape: emit EXACTLY ONE mcq block on
+// the concept the student just studied, so the route can oracle-gate that one
+// block (P6 + REG-54) before it is shown. P12: the block still flows through
+// the structured schema + the boundary oracle; a failing mcq is never shown.
+export const SINGLE_MCQ_DIRECTIVE = [
+  '## Mode Directive (QUIZ ME — overrides STEP CARDS and 5-question PRACTICE)',
+  'The student tapped "Quiz me on this" right after seeing your answer. They want',
+  'to test themselves on the SAME concept you just taught.',
+  'Respond with EXACTLY ONE "mcq" block and NOTHING else (no intro paragraph, no',
+  'extra blocks). The mcq block MUST satisfy:',
+  '- "stem": a clear 15-50 word question testing the concept just taught, inside',
+  '  the student\'s CBSE grade/subject/chapter scope. No "{{" or "[BLANK]" markers.',
+  '- "options": EXACTLY 4 distinct, non-empty options; exactly one is correct.',
+  '- "correct_answer_index": integer 0..3 pointing at the correct option.',
+  '- "explanation": 1-2 sentences (>=10 chars) saying why the correct option is right.',
+  '- "bloom_level" and "difficulty": set them honestly for this question.',
+  'Write the stem/options/explanation in the student\'s language (English, Hindi, or',
+  'Hinglish); keep technical terms (CBSE, NCERT, Bloom\'s) in English.',
+].join('\n');
+
+// Claude-backed LLM grader for the Quiz-me oracle gate (REG-54 second pass).
+// Wraps callClaude with the canonical grader prompt and the strict-JSON parser.
+// On ANY failure (circuit open, network, unparseable JSON) it THROWS, so the
+// oracle's validateCandidate catches it and fails CLOSED ('llm_grader_unavailable')
+// — P12: an unaudited MCQ is never shown. Temperature 0 for deterministic audit.
+const buildQuizMeLlmGrader = (): LlmGrader => async (input) => {
+  const resp = await callClaude({
+    systemPrompt: QUIZ_ORACLE_GRADER_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: buildQuizOracleGraderUserPrompt(input) }],
+    maxTokens: 256,
+    temperature: 0,
+    timeoutMs: 6000,
+  });
+  const parsed = parseLlmGraderResponse(resp.content);
+  if (!parsed) {
+    throw new Error('quiz-me oracle grader returned unparseable JSON');
+  }
+  return parsed;
+};
+
+// Map a free-form CBSE subject code to the narrower FoxySubject enum used by
+// the structured schema. Used only for the quiz-me graceful fallback below;
+// the model's emitted subject wins on the happy path.
+function mapToFoxySubject(code: string): FoxyResponse['subject'] {
+  const c = (code ?? '').toLowerCase().trim();
+  if (c.includes('math')) return 'math';
+  if (c.includes('science') || c.includes('physics') || c.includes('chemistry') || c.includes('biology')) return 'science';
+  if (c.includes('social') || c === 'sst' || c.includes('history') || c.includes('geography') || c.includes('civics') || c.includes('economics')) return 'sst';
+  if (c.includes('english')) return 'english';
+  return 'general';
+}
+
+// Graceful bilingual fallback shown when a "Quiz me" MCQ fails the oracle gate
+// (or is missing/duplicate). NEVER shows a broken MCQ (P12). The schema-valid
+// FoxyResponse carries one paragraph block with an inline EN + Hindi soft
+// message inviting the student to try again — no mcq block. Round-trips through
+// FoxyResponseSchema by construction (title 1..120, 1 block, text non-empty).
+function buildQuizMeFallbackResponse(subjectCode: string): FoxyResponse {
+  return {
+    title: 'Quiz me',
+    subject: mapToFoxySubject(subjectCode),
+    blocks: [
+      {
+        type: 'paragraph',
+        text:
+          "Let me try a different question for you in a moment — that one didn't come out right. " +
+          'Ek aur sawaal taiyaar kar raha hoon, thodi der mein dobara "Quiz me" dabaiye.',
+      },
+    ],
+  };
+}
+
 // ─── System-prompt safety rails (P12 AI Safety, P7 Bilingual) ────────────────
 //
 // These rails mirror the server-authoritative `foxy_tutor_v1` template stored
@@ -1902,6 +2585,21 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   });
   if (!auth.authorized) return auth.errorResponse!;
 
+  // Capture the caller's bearer JWT (if any) for the math-verify hop. The
+  // SymPy verifier endpoint authenticates as the STUDENT (it calls Supabase
+  // Auth /auth/v1/user). When the client uses cookie auth (no Bearer header)
+  // the token is null — the math-verify client then fail-softs to
+  // is_correct=null (show without escalation), which is the correct
+  // "unavailable != wrong" posture. This is read-only and additive.
+  const callerBearerToken: string | null = (() => {
+    const h = request.headers.get('Authorization');
+    if (h?.startsWith('Bearer ')) {
+      const t = h.slice(7).trim();
+      return t.length > 0 ? t : null;
+    }
+    return null;
+  })();
+
   // 1b. Global AI kill switch (ai_usage_global)
   // Seeded by 20260425160000_p0_launch_kill_switches_and_expiry_rpc.sql with
   // default true. Flip OFF in the super-admin console to halt ALL Claude
@@ -1934,14 +2632,37 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   const board = typeof body.board === 'string' ? body.board.trim() || 'CBSE' : 'CBSE';
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() || null : null;
   const requestedMode = typeof body.mode === 'string' && VALID_MODES.includes(body.mode) ? body.mode : 'learn';
+  // Phase 1 post-answer learning actions: optional `coachDirective`. Used for
+  // the "Explain simpler" / "Show example" re-teach buttons and the "Quiz me
+  // on this" inline-MCQ button. The client re-sends the SAME question with one
+  // of these directives. Unknown values are dropped silently — never trust the
+  // client to set an arbitrary directive.
+  //   'simplify' → simpler re-explanation of the previous answer
+  //   'example'  → one worked example for the previous question
+  //   'quiz_me'  → exactly one oracle-gated inline MCQ on the same concept
+  const coachDirective: CoachDirective | null =
+    typeof body.coachDirective === 'string'
+      && (VALID_COACH_DIRECTIVES as readonly string[]).includes(body.coachDirective)
+      ? (body.coachDirective as CoachDirective)
+      : null;
+  const isQuizMe = coachDirective === 'quiz_me';
   // The student's UI-selected mode is preserved for analytics/quota/persistence.
   // But for the LLM call we auto-promote to 'practice' when the message matches
   // quiz intent — without this, the foxy_tutor_v1 template emits the STEP CARDS
   // shape (intro paragraph then stops) for non-practice modes, leaving the
   // student with no actual MCQs. The MODE_DIRECTIVES.practice block is what
   // tells Claude to emit 5 mcq blocks instead of 2-4 step cards.
+  //
+  // "Quiz me" (coachDirective='quiz_me') ALSO routes through 'practice' so it
+  // gets the larger token budget, but the mode_directive is swapped to
+  // SINGLE_MCQ_DIRECTIVE below so the model emits exactly ONE mcq block (which
+  // is then oracle-gated before the wire). The 'simplify'/'example' directives
+  // keep the student's requested mode (they are re-teach prose, not quizzes).
   const isQuizIntent = QUIZ_PATTERNS.test(message);
-  const mode = isQuizIntent && requestedMode !== 'practice' ? 'practice' : requestedMode;
+  const mode =
+    isQuizMe || (isQuizIntent && requestedMode !== 'practice')
+      ? 'practice'
+      : requestedMode;
   // Phase 2.2: optional coaching mode. If the client passes one, we honor
   // it. Otherwise we pick a default later, after mastery is known
   // (mastery < 0.6 → 'socratic', else → 'answer').
@@ -2106,17 +2827,22 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   let history: ChatMessage[] = [];
   let priorSessionTurns: PriorSessionTurn[] = [];
   let labEntries: LabContextEntry[] = [];
+  // Part 2B: chapter topic-progression context (ordered topics + position +
+  // next unmastered topic). Best-effort; empty when no ordered ladder exists.
+  let topicProgress: ChapterTopicProgress = EMPTY_TOPIC_PROGRESS;
   try {
-    const [ctx, hist, prior, labs] = await Promise.all([
+    const [ctx, hist, prior, labs, prog] = await Promise.all([
       loadCognitiveContext(studentId, subject, grade, chapter),
       loadHistory(resolvedSessionId),
       loadPriorSessionContext(studentId, subject, grade, resolvedSessionId, chapter),
       fetchRecentLabContext(supabaseAdmin, studentId, 5),
+      loadChapterTopicProgress(studentId, subject, grade, chapter),
     ]);
     cognitiveCtx = ctx;
     history = hist;
     priorSessionTurns = prior;
     labEntries = labs;
+    topicProgress = prog;
   } catch (ctxErr) {
     logger.warn('foxy_context_load_failed', {
       error: ctxErr instanceof Error ? ctxErr.message : String(ctxErr),
@@ -2291,6 +3017,194 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   const chapterTitle: string | null =
     chapter && chapterNum === null ? chapter : null;
 
+  // ─── STEM-only curriculum HARD pre-gate (CEO Decision A, flag-gated) ──────
+  //
+  // Problem this closes: out-of-grade CONCEPTUAL queries (e.g. a Grade 7 student
+  // asking "Explain to me integration") never reach the math-SOLVE branch below
+  // (they're not concrete solve queries), so the curriculum validator never ran
+  // and the student got a full out-of-grade explanation. This pre-gate runs the
+  // validator on ALL grounded STEM queries — not just solve queries — and HARD-
+  // blocks TRULY out-of-grade topics.
+  //
+  // Mode 'grade_only': runs ONLY T1 (enrolled-grade authenticity) + T2 (subject)
+  // + T4a (out-of-grade math lexicon). It SKIPS T3 (chapter) + T4b (LLM classify)
+  // entirely — so there is NO extra LLM call here, and an in-grade DIFFERENT-
+  // chapter query is NOT blocked (that remains a SOFT redirect handled later by
+  // the prompt's topic-progression section). Only a truly higher-grade topic
+  // (caught by the deterministic lexicon) is hard-blocked.
+  //
+  // STEM-only: the out-of-grade lexicon is math/science-shaped, so we only run
+  // the gate for STEM subjects (matching foxy-router's STEM_SUBJECT_RE, which is
+  // ai-engineer-owned and not exported — replicated locally). Non-STEM subjects
+  // skip the pre-gate untouched.
+  //
+  // When the flag is OFF (ENV unset + DB off) this whole block is skipped and
+  // the grounded path is byte-identical. validateCurriculumScope never throws
+  // (P12 fail-closed); supabaseAdmin keeps the read server-side (P8); the reply
+  // awards 0 XP / no mastery (P2) and is bilingual (P7).
+  const STEM_SUBJECT_RE =
+    /\b(math|maths|mathematics|physics|chemistry|chem|science|accountancy|accounts|economics|statistics)\b/i;
+  try {
+    const curriculumGuardEnabled = await isCurriculumGuardEnabled({
+      role: 'student',
+      userId: auth.userId!,
+    });
+    if (curriculumGuardEnabled && STEM_SUBJECT_RE.test(subject)) {
+      const guardScope = await validateCurriculumScope(
+        {
+          studentId,
+          requestGrade: grade,
+          subject,
+          chapter,
+          problem: message,
+        },
+        { supabaseAdmin },
+        'grade_only',
+      );
+      if (!guardScope.inScope) {
+        logger.info('foxy.curriculum_guard.out_of_scope', {
+          grade,
+          reason: guardScope.reason,
+        });
+        return await respondCurriculumOutOfScope({
+          studentId,
+          userId: auth.userId!,
+          resolvedSessionId,
+          message,
+          subject,
+          grade,
+          chapter,
+          quotaRemaining: remaining,
+          scope: guardScope,
+          traceId: randomUUID(),
+          topicProgress,
+        });
+      }
+      // In scope for the grade-only pre-gate — continue exactly as today. The
+      // math-solve branch below still runs its OWN 'full' validator (chapter +
+      // LLM classify) on concrete solve queries; that is unchanged.
+    }
+  } catch (guardErr) {
+    // Defense-in-depth (P12): validateCurriculumScope is fail-closed and never
+    // throws, but if anything unexpected throws here we fall through to the
+    // grounded path rather than break the turn.
+    logger.warn('foxy.curriculum_guard.threw', {
+      subject,
+      grade,
+      error: guardErr instanceof Error ? guardErr.message : String(guardErr),
+    });
+  }
+
+  // ─── Foxy 3-Agent Math Pipeline branch (Part 1, flag-gated, ADDITIVE) ─────
+  //
+  // When ff_foxy_math_pipeline_v1 is ON *and* the message is a concrete
+  // math-solve query, route through Classifier -> Solver(Haiku) -> SymPy
+  // Verifier (with ONE Sonnet escalation on a confident mismatch), then persist
+  // EXACTLY like a normal Foxy turn (foxy_chat_messages) so sessions/memory/
+  // learning-actions/topic-progression still apply. On ANY pipeline failure we
+  // FALL THROUGH to the existing grounded-answer path below (the turn is never
+  // broken). When the flag is OFF, classifyMathSolve is never called and this
+  // block is a no-op — the grounded path stays byte-identical.
+  //
+  // The math pipeline does NOT consume the grounded RAG path's quota refund
+  // semantics specially: quota was already incremented in step 5 (same as every
+  // turn). 0 XP, no mastery writes — this is formative only.
+  try {
+    const mathPipelineEnabled = await isMathPipelineEnabled({
+      role: 'student',
+      userId: auth.userId!,
+    });
+    if (mathPipelineEnabled) {
+      const classification = await classifyMathSolve(message, subject, grade);
+      if (classification.isMathSolve) {
+        const traceId = randomUUID();
+
+        // Curriculum-scope gate (runs BEFORE the solver/verifier LLM calls).
+        // Anti-abuse: scope is decided against the SERVER-fetched enrolled
+        // grade, never the message content or the client-claimed grade. On an
+        // out-of-scope verdict we persist the turn + return a formative,
+        // bilingual out-of-scope reply (NO XP, NO mastery) instead of solving.
+        const scope = await validateCurriculumScope(
+          {
+            studentId,
+            requestGrade: grade,
+            subject,
+            chapter,
+            problem: message,
+          },
+          { supabaseAdmin },
+        );
+        if (!scope.inScope) {
+          logger.info('foxy.math.out_of_scope', {
+            traceId,
+            grade,
+            reason: scope.reason,
+          });
+          return await respondCurriculumOutOfScope({
+            studentId,
+            userId: auth.userId!,
+            resolvedSessionId,
+            message,
+            subject,
+            grade,
+            chapter,
+            quotaRemaining: remaining,
+            scope,
+            traceId,
+            topicProgress,
+          });
+        }
+
+        const pipeline = await runMathSolvePipeline({
+          problem: message,
+          grade,
+          classifier: {
+            topic: classification.topic,
+            chapter: classification.chapter,
+            difficulty: classification.difficulty,
+          },
+          chapter,
+          nextTopic: topicProgress.nextTopic,
+          jwt: callerBearerToken ?? '',
+          traceId,
+        });
+
+        if (pipeline) {
+          const mathResponse = await persistMathTurnAndRespond({
+            studentId,
+            userId: auth.userId!,
+            resolvedSessionId,
+            message,
+            subject,
+            grade,
+            chapter,
+            mode,
+            quotaRemaining: remaining,
+            pipeline,
+            traceId,
+            usePendingExpectations,
+            openExpectation,
+            nextTopicId: topicProgress.nextTopicId,
+            nextTopicTitle: topicProgress.nextTopic,
+          });
+          return mathResponse;
+        }
+        // pipeline === null -> solver produced nothing usable; fall through to
+        // the grounded path so the student still gets an answer.
+        logger.info('foxy.math.pipeline_fallthrough', { traceId });
+      }
+    }
+  } catch (mathErr) {
+    // Defense-in-depth: the pipeline + persist helpers swallow their own
+    // errors, but if anything unexpected throws here we fall through to the
+    // grounded path rather than break the turn (P12).
+    logger.warn('foxy.math.pipeline_threw', {
+      subject,
+      grade,
+      error: mathErr instanceof Error ? mathErr.message : String(mathErr),
+    });
+  }
+
   // Phase 1 — Goal-Adaptive Foxy persona gate.
   //
   // `ff_goal_aware_foxy` is seeded by the architect (DISABLED by default in
@@ -2334,6 +3248,38 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     tenantTone: tenantAi.tenantTone,
     tenantPedagogy: tenantAi.tenantPedagogy,
   });
+
+  // ── Part 2B: chapter topic-progression context (additive) ───────────────
+  // Inject the ordered topic list + the student's position + the next
+  // unmastered topic so Foxy leads the student topic-to-topic. Empty string
+  // when there's no ordered ladder (no chapter, no curriculum_topics) — a
+  // no-op that keeps the prompt byte-identical for non-laddered turns.
+  const topicProgressSection = buildTopicProgressSection(topicProgress);
+  if (topicProgressSection) {
+    foxySystemPrompt = `${foxySystemPrompt}\n\n${topicProgressSection}`;
+    logger.info('foxy.topic_progress.injected', {
+      // P13: counts + scope only, never the topic titles or studentId.
+      subject,
+      grade,
+      orderedCount: topicProgress.orderedTopics.length,
+      hasNext: topicProgress.nextTopic !== null,
+    });
+  }
+
+  // ── Phase 1 re-teach directive (Explain simpler / Show example) ──────────
+  // Appended at the END of the system prompt so it sits closest to the user
+  // message in the model's attention and overrides the verbosity rules above.
+  // Empty for quiz_me (its directive flows through mode_directive below) and
+  // for the no-directive default, so this is a no-op on the normal path.
+  if (coachDirective && COACH_DIRECTIVE_SECTIONS[coachDirective]) {
+    foxySystemPrompt = `${foxySystemPrompt}\n\n${COACH_DIRECTIVE_SECTIONS[coachDirective]}`;
+    logger.info('foxy.coach_directive.injected', {
+      // P13: directive enum + scope only, never studentId/message.
+      coachDirective,
+      subject,
+      grade,
+    });
+  }
 
   // ── R6 Tier 2: Lab-context awareness (additive — does NOT replace RAG) ──
   // Append the rendered lab section to the END of the system prompt so it
@@ -2554,7 +3500,11 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         // Per-request-mode directive. Overrides STEP CARDS for practice mode
         // (5 mcq blocks instead of 2-4 step cards). Empty string for other
         // modes preserves byte-identical legacy behavior.
-        mode_directive: MODE_DIRECTIVES[mode] ?? '',
+        //
+        // "Quiz me" (isQuizMe) routes through practice mode but swaps the
+        // 5-question shape for SINGLE_MCQ_DIRECTIVE so the model emits EXACTLY
+        // ONE mcq block — which is oracle-gated (P6 + REG-54) before the wire.
+        mode_directive: isQuizMe ? SINGLE_MCQ_DIRECTIVE : (MODE_DIRECTIVES[mode] ?? ''),
         // Phase 2.2: coaching mode and its instruction line, consumed by
         // the rewritten foxy_tutor_v1 template.
         coach_mode: coachMode.toUpperCase(),
@@ -2583,6 +3533,12 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         // when ff_foxy_long_memory_v1 is OFF or no synthesis/mastery data
         // exists yet (e.g. brand-new student). PII-scrubbed before injection.
         learner_memory_section: buildLongMemoryPromptSection(longMemory),
+        // Part 2B: the EXACT next topic in the chapter ladder (or '' when the
+        // chapter is complete / no ordered ladder exists). The foxy_tutor_v1
+        // template accepts {{next_topic}}; empty string is template-safe. Never
+        // fabricated — null becomes ''. The full ordered-topics directive is
+        // already inside foxy_system_prompt via buildTopicProgressSection.
+        next_topic: topicProgress.nextTopic ?? '',
         foxy_safety_rails: FOXY_SAFETY_RAILS,
         foxy_system_prompt: foxySystemPrompt,
         // Deprecated alias: kept populated for one release so the service can
@@ -2665,7 +3621,12 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   const hopTimeoutMs = (PER_PLAN_TIMEOUT_MS[plan] ?? 20000) + 2000;
 
   // ─── Phase 1.1: streaming branch (opt-in via body.stream + ff_foxy_streaming) ──
-  if (wantsStream) {
+  // "Quiz me" MUST go through the blocking path: the inline MCQ is oracle-gated
+  // (P6 + REG-54) on the FULL structured payload BEFORE it is shown, and the
+  // streaming path emits text deltas to the browser before the payload is
+  // complete (no gate point). Force quiz_me off the stream so a failing MCQ can
+  // never reach the student. (simplify/example are prose and stream fine.)
+  if (wantsStream && !isQuizMe) {
     const streamingEnabled = await isFeatureEnabled('ff_foxy_streaming', {
       role: 'student',
       userId: auth.userId!,
@@ -2807,7 +3768,7 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // column we are about to write cannot be poisoned by an upstream bug. If
   // validation fails the helper returns null and logs once; the legacy
   // `answer` string is still persisted in `content` so the turn is preserved.
-  const structured = extractValidatedStructured(grounded, {
+  let structured = extractValidatedStructured(grounded, {
     traceId: grounded.trace_id,
     studentId,
     subject,
@@ -2816,6 +3777,61 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     // is missing — keeps raw ```json {...}``` blobs out of the chat bubble.
     fallbackText: grounded.answer,
   });
+
+  // ── Quiz-me inline-MCQ oracle gate (BINDING CONTRACT, P6 + REG-54) ───────
+  // When the student tapped "Quiz me on this", the structured payload should
+  // carry EXACTLY ONE mcq block. Before showing it we run the SAME oracle that
+  // gates question_bank inserts: deterministic P6 checks + the Claude LLM
+  // grader. A failing (or missing/duplicate) mcq is NEVER shown — we replace
+  // the payload with a graceful bilingual fallback ("let me try a different
+  // question") so the student never sees a broken MCQ (P12). On grader
+  // unavailability the oracle fails CLOSED (rejects). The gate response field
+  // text is overridden too so legacy/string-only clients also get the fallback.
+  let quizMeWireText: string | null = null;
+  if (isQuizMe) {
+    if (structured) {
+      try {
+        const gate = await gateQuizMeMcq(structured, {
+          grade,
+          subject,
+          enableLlmGrader: true,
+          llmGrade: buildQuizMeLlmGrader(),
+        });
+        if (!gate.ok) {
+          logger.warn('foxy.quiz_me.oracle_rejected', {
+            // P13: reason/category + scope only; never the mcq text or studentId.
+            reason: gate.reason,
+            subject,
+            grade,
+            llmCalls: gate.llm_calls,
+          });
+          structured = buildQuizMeFallbackResponse(subject);
+          quizMeWireText = denormalizeFoxyResponse(structured);
+        } else {
+          logger.info('foxy.quiz_me.oracle_passed', {
+            subject,
+            grade,
+            llmCalls: gate.llm_calls,
+          });
+        }
+      } catch (gateErr) {
+        // Defense-in-depth: the gate already fails closed internally, but if
+        // anything unexpected throws here we still refuse to show the mcq.
+        logger.warn('foxy.quiz_me.oracle_threw', {
+          subject,
+          grade,
+          error: gateErr instanceof Error ? gateErr.message : String(gateErr),
+        });
+        structured = buildQuizMeFallbackResponse(subject);
+        quizMeWireText = denormalizeFoxyResponse(structured);
+      }
+    } else {
+      // No structured payload at all (upstream malformed) — quiz_me cannot be
+      // honored. Serve the graceful fallback rather than a raw text blob.
+      structured = buildQuizMeFallbackResponse(subject);
+      quizMeWireText = denormalizeFoxyResponse(structured);
+    }
+  }
 
   // When `structured` is present, the canonical assistant text is the
   // denormalized rendering (title + blocks → flat string with `$$ ... $$`
@@ -3043,7 +4059,10 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     // clients should prefer `structured` when present and fall back to
     // `response` only when `structured` is absent (legacy/kill-switch/
     // upstream-without-structured/malformed-payload paths).
-    response: grounded.answer,
+    //
+    // For a rejected/failed quiz_me, `quizMeWireText` is the denormalized
+    // graceful-fallback text so string-only clients also avoid the broken MCQ.
+    response: quizMeWireText ?? grounded.answer,
     sessionId: resolvedSessionId,
     quotaRemaining: remaining,
     tokensUsed: grounded.meta.tokens_used,

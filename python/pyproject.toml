@@ -33,6 +33,11 @@ dependencies = [
   "opentelemetry-exporter-gcp-trace>=1.7.0,<2.0",
   "pybreaker>=1.3.0,<2.0",
   "upstash-redis>=1.2,<2.0",
+  # sympy: server-side symbolic+numeric math engine for the deterministic math
+  # verifier (services/ai/business/math/ -> POST /v1/math/verify), Agent 3 of the
+  # Foxy 3-Agent Math Pipeline. No LLM, fail-closed (P12). Python-service only;
+  # no JS-bundle impact (P10). Keep in sync with requirements.txt.
+  "sympy>=1.13,<2.0",
 ]
 [project.optional-dependencies]
 dev = [

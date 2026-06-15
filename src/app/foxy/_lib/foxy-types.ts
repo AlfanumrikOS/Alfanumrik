@@ -40,6 +40,13 @@ export interface StreamingCallbacks {
      * renderer when this field is present.
      */
     structured?: FoxyResponse;
+    /**
+     * Server-computed SymPy-verifier badge state (fail-closed mapping). Carried
+     * on the streaming `done`/`persisted` event when present. The renderer
+     * DISPLAYS this only — never recomputes correctness. Absent on non-math /
+     * legacy responses (renders nothing).
+     */
+    badgeState?: 'verified' | 'check_manually' | 'none' | 'out_of_scope';
   }) => void;
   onAbstain?: (info: { abstainReason: AbstainReason; suggestedAlternatives: SuggestedAlternative[]; traceId?: string }) => void;
   onError?: (info: { reason: string; traceId?: string }) => void;
@@ -83,4 +90,12 @@ export interface ChatMessage {
    * handleFeedback then falls back to the legacy aggregate counter.
    */
   persistedMessageId?: string;
+  /**
+   * Server-computed SymPy-verifier badge state (fail-closed mapping). Set only
+   * on tutor messages whose Foxy response carried a `badgeState` on the POST
+   * /api/foxy envelope (next to `structured`). The renderer DISPLAYS this
+   * only — it never recomputes correctness. Absent on every non-math / legacy
+   * response, in which case the badge element is NOT rendered (zero DOM change).
+   */
+  badgeState?: 'verified' | 'check_manually' | 'none' | 'out_of_scope';
 }
