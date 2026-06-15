@@ -43,6 +43,7 @@ const NAV_ITEMS: SidebarNavItem[] = [
   { href: '/super-admin/workbench', label: 'Data Workbench', labelHi: 'डेटा वर्कबेंच', icon: '⊞' },
   { href: '/super-admin/flags', label: 'Feature Flags', labelHi: 'फ़ीचर फ़्लैग्स', icon: '⊡' },
   { href: '/super-admin/institutions', label: 'Institutions', labelHi: 'संस्थान', icon: '⊟' },
+  { href: '/super-admin/entitlements', label: 'Entitlements', labelHi: 'एंटाइटलमेंट', icon: '⊞' },
   { href: '/super-admin/invoices', label: 'Invoices', labelHi: 'चालान', icon: '⊓' },
   { href: '/super-admin/analytics-b2b', label: 'B2B Analytics', labelHi: 'B2B विश्लेषण', icon: '⊿' },
   { href: '/super-admin/sla', label: 'SLA Monitor', labelHi: 'SLA मॉनिटर', icon: '⊗' },
