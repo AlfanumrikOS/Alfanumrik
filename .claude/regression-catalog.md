@@ -4667,4 +4667,64 @@ get_admin_school_id institution_admin RLS widening (additive-only function +
 P11 cases + 18 static RLS-canary cases; the webhook-activation companion already
 existed). **Total catalog: 121 entries (target: 35 — TARGET EXCEEDED).**
 
-**Total: 121 entries.**
+---
+
+## Portal RBAC/SaaS remediation Phase 4 — pricing single-source-of-truth: marketing per-seat price must map to a real billable tier (2026-06-16) — REG-154
+
+Source: Phase 4 of `feat/portal-rbac-saas-remediation`. A new pricing
+single-source-of-truth module (`src/lib/pricing.ts`) centralizes every price the
+platform quotes or bills:
+
+- **B2B per-seat school tiers** — `SCHOOL_SEAT_TIER_INR`
+  (basic 99 / standard 199 / premium 399 / enterprise 599; default = standard 199)
+  is now the SYSTEM OF RECORD for the invoice-route fallback price.
+  `POST /api/super-admin/invoices` was repointed from its own hardcoded
+  `SEAT_PRICES` map at `schoolSeatPriceForTier()` from the SoT — the literals are
+  byte-identical, so billing is unchanged; the centralization removes the second
+  copy that could drift.
+- **Marketing per-seat headline** — `SCHOOL_PER_SEAT_MARKETING_INR` (the value the
+  /schools marketing page quotes) is DERIVED from the lowest published billable
+  tier (`SCHOOL_SEAT_TIER_INR.basic` = 99), NOT an independent literal. This is the
+  REG-65-family hardening: a public "from ₹X/student/month" claim can never quote a
+  number the system does not actually bill (the legacy hardcoded ₹75 mapped to NO
+  tier — a brand/legal drift risk).
+
+The trap this pins: a future edit could (a) change a tier value in the SoT while
+the invoice route silently keeps billing a different (re-hardcoded) number, or
+(b) repoint `SCHOOL_PER_SEAT_MARKETING_INR` at a vanity number (e.g. ₹75) that no
+tier charges. Both are pricing changes requiring CEO approval; the guard turns
+either into a PR-CI failure rather than a silent landing-page-vs-invoice mismatch.
+
+Files under test:
+- `src/__tests__/pricing-drift-guard.test.ts` — pins each tier literal to the
+  billed amount, asserts `schoolSeatPriceForTier()` resolves identically (incl.
+  case-insensitive + standard-default fallback), and asserts the marketing number
+  equals the basic tier / is a member of the billable set / formats to "₹99" /
+  is NOT the legacy ₹75.
+
+> **ID note:** REG-153 is the previous entry (get_admin_school_id RLS widening,
+> 2026-06-16). REG-154 is the next free id (the task brief referenced "after
+> REG-153").
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-154 | `pricing_sot_marketing_maps_to_billable_tier` | **THE PRICING SINGLE-SOURCE-OF-TRUTH GUARD (P11-adjacent / REG-65 family).** **(1) Tier literals = billed amounts:** `SCHOOL_SEAT_TIER_INR` pins basic=99 / standard=199 / premium=399 / enterprise=599 — the exact per-seat amounts `POST /api/super-admin/invoices` bills via `schoolSeatPriceForTier()`; the tier set is exactly those 4 keys (no silent add/remove). **(2) Resolver parity:** `schoolSeatPriceForTier(tier)` returns the billed amount for every tier, is case-insensitive (matches invoice-route `.toLowerCase()` normalisation), and falls back to the standard tier (199) for unknown/null/undefined/empty; `SCHOOL_SEAT_DEFAULT_INR` === standard === the billed default. **(3) Marketing maps to a real billed price (REG-65 hardening):** `SCHOOL_PER_SEAT_MARKETING_INR` === `SCHOOL_SEAT_TIER_INR.basic` (99), is a MEMBER of the billable tier set, formats to the label "₹99", and is explicitly NOT the legacy hardcoded ₹75 (which maps to no tier) — so the public "from ₹X/student/month" claim cannot drift away from a number the system actually charges. | `src/__tests__/pricing-drift-guard.test.ts` (17) | U (pure source-level; imports the SoT constants/helper directly, no mocks) |
+
+### Invariants covered by this section
+
+- P11 Payment integrity (adjacent) — REG-154 (the B2B per-seat billing fallback
+  amounts live in exactly one place; the invoice route bills off the SoT helper, so
+  a tier change cannot leave the route silently charging a stale number).
+- REG-65 family / landing-page pricing-verbatim drift — REG-154 (the marketing
+  headline per-seat price is derived from a real billable tier and asserted to be a
+  member of the billed set; a vanity number with no matching tier — the legacy ₹75
+  case — fails CI).
+
+### Catalog total
+
+Pre-REG-154: 121 entries (through the get_admin_school_id RLS widening, REG-153).
+Portal-remediation Phase 4 adds REG-154: the pricing single-source-of-truth /
+marketing-maps-to-billable-tier guard (17 tests, 1 file). **Total catalog: 122
+entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 122 entries.**

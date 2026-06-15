@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
 import { logger } from '@/lib/logger';
+import { schoolSeatPriceForTier } from '@/lib/pricing';
 
 /**
  * GET /api/super-admin/invoices — List invoices with filters
@@ -203,16 +204,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Calculate amount: use a default per-seat price based on school plan
-    // B2B pricing tiers (INR per seat per month)
-    const SEAT_PRICES: Record<string, number> = {
-      basic: 99,
-      standard: 199,
-      premium: 399,
-      enterprise: 599,
-    };
+    // Calculate amount: use a default per-seat price based on school plan.
+    // B2B per-seat tiers are centralized in the pricing SoT (src/lib/pricing.ts)
+    // so marketing copy and billing fallbacks cannot drift (REG-65). Values are
+    // unchanged: basic 99 / standard 199 / premium 399 / enterprise 599,
+    // default = standard (199).
     const plan = (school.subscription_plan || 'standard') as string;
-    const pricePerSeat = SEAT_PRICES[plan.toLowerCase()] || 199;
+    const pricePerSeat = schoolSeatPriceForTier(plan);
     const amountInr = seatsUsed * pricePerSeat;
 
     // Create the invoice
