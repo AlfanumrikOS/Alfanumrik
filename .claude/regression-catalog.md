@@ -4084,3 +4084,115 @@ append-only + service-role-only-write + CHECK↔TS parity). **Total catalog: 111
 entries (target: 35 — TARGET EXCEEDED).**
 
 **Total: 111 entries.**
+
+## Schema reproducibility — quiz functions missing from baseline AND linked project: 2 of 3 restored, 1 deferred (2026-06-15) — REG-144
+
+Priority: **P0/P1.** Source: Session 4 pre-spec schema-reproducibility audit
+(2026-06-15). The pg_dump-derived baseline
+(`supabase/migrations/00000000000000_baseline_from_prod.sql`) silently OMITTED
+three `public` functions, and — the part that turns this from a baseline-drift
+nit into a P0 — verifying via `pg_get_functiondef(...)` against the LINKED
+Supabase project (`shktyoxqhundlvkiwguu`) returned **0 rows for all three**: the
+functions were absent from the live project too, not just the baseline. The sole
+surviving source for their definitions is the archived legacy chain under
+`supabase/migrations/_legacy/timestamped/` (`20260405000001:254`,
+`20260405000002:57`, `20260401180000:21`).
+
+Outcome: **2 of 3 functions RESTORED, 1 DEFERRED.** The two that could be
+restored verbatim (with one minor schema repoint) are back in the baseline AND
+the linked project via the compensating migration; the third
+(`compute_post_quiz_action`) hit irreconcilable schema drift and is deferred to a
+redesign work item.
+
+The three missing functions, by blast radius and disposition:
+
+- `update_learner_state_post_quiz` — **P0. RESTORED.** The quiz-submit BKT
+  update. Called via an UNGUARDED `PERFORM` inside `submit_quiz_results_v2` (no
+  `EXCEPTION` wrapper). On a fresh DB — or on the linked project the moment real
+  quiz traffic with a non-null `topic_id` arrives — that `PERFORM` raises
+  `undefined_function` and rolls back the WHOLE submission transaction: no score
+  row, no XP. This is the P1/P4 hazard (score accuracy + atomic-submission both
+  depend on the quiz-submit RPC chain resolving every function it `PERFORM`s).
+- `compute_post_quiz_action` — **P1. DEFERRED — schema drift (chapter_topics
+  renamed to curriculum_topics; chapters JOIN hop removed; error_count_conceptual
+  and current_retention absent from concept_mastery — they live on
+  cme_concept_state); redesign required before restore; tracked as a separate
+  work item (`docs/architecture/cme-post-quiz-action-redesign.md`).** The CME
+  next-action computation. The legacy definition cannot be applied verbatim
+  against the current schema. It is called inside an `EXCEPTION` guard in
+  `submit_quiz_results_v2`, so its continued absence degrades SILENTLY (the
+  next-action feature no-ops; the submission itself survives) rather than rolling
+  back — which is precisely why deferring it is safe: the exception guard means a
+  missing `compute_post_quiz_action` does NOT break quiz submit.
+- `reset_demo_student` — **P2/P3. RESTORED.** Demo/seed tooling. Not on the quiz
+  hot path.
+
+Symptom (currently MASKED only by zero recent quiz traffic on the linked
+project): a quiz submission containing any question with a non-null `topic_id`
+hits the unguarded `PERFORM update_learner_state_post_quiz(...)` in
+`submit_quiz_results_v2`, raises `undefined_function`, and the student gets no
+score and no XP — a P1 (score accuracy) and P4 (atomic submission) failure that
+surfaces the instant traffic resumes, not at deploy time.
+
+Fix: compensating migration
+`supabase/migrations/20260615142552_restore_missing_quiz_functions.sql` —
+idempotent `DROP FUNCTION IF EXISTS` + `CREATE OR REPLACE FUNCTION` for the TWO
+restorable functions (`update_learner_state_post_quiz`, `reset_demo_student`),
+restored verbatim from the `_legacy/timestamped/` source EXCEPT
+`reset_demo_student`, whose `question_responses.session_id` reference was
+repointed to `quiz_session_id` to match the current schema. The third function,
+`compute_post_quiz_action`, is NOT in the compensating migration: its legacy
+definition references columns/tables that no longer exist as written
+(`chapter_topics` → `curriculum_topics`; the `chapters` JOIN hop is gone;
+`error_count_conceptual` and `current_retention` are no longer on
+`concept_mastery` — they live on `cme_concept_state`), so it requires a redesign
+before it can be safely re-created and is tracked as a separate work item
+(`docs/architecture/cme-post-quiz-action-redesign.md`). Its absence is
+exception-guarded inside `submit_quiz_results_v2`, so leaving it deferred does
+NOT break quiz submit. (Runbook
+`docs/runbooks/schema-reproducibility-fix.md` §9.2 — compensating-migration
+procedure.)
+
+The regression test below is a FRESH-DB bootstrap probe: it does not exercise the
+quiz path, it asserts that the two RESTORED functions actually EXIST after the
+migration chain (baseline + compensating migration) is applied to an empty
+database — the exact invariant the baseline broke. It deliberately queries ONLY
+the two restored names and expects exactly 2 rows; `compute_post_quiz_action` is
+intentionally EXCLUDED from the probe until its redesign lands (asserting its
+presence would fail by design, and its absence is exception-guarded in
+`submit_quiz_results_v2` so it does not break quiz submit). It belongs to the
+fresh-project bootstrap test family
+(`docs/runbooks/schema-reproducibility-fix.md` §4) and runs LIVE only (`skipIf`
+no live DB), since "does a function exist in `pg_proc`" cannot be proven by
+reading SQL text alone — the whole point is that the baseline's text was wrong.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-144 | `fresh_db_has_quiz_submit_functions` | After applying the FULL migration chain (baseline `00000000000000_baseline_from_prod.sql` + compensating `20260615142552_restore_missing_quiz_functions.sql`) to a FRESH/empty database, `SELECT proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND proname IN ('update_learner_state_post_quiz','reset_demo_student')` returns **exactly 2 rows** (both RESTORED names present). Fewer than 2 ⇒ the fresh-DB bootstrap is broken (a baseline omitted a live function) and the build fails. `compute_post_quiz_action` is intentionally EXCLUDED from this probe until its redesign lands (`docs/architecture/cme-post-quiz-action-redesign.md`); its absence is exception-guarded in `submit_quiz_results_v2` so it does NOT break quiz submit. Companion behavioral pin (live): a `submit_quiz_results_v2` call whose payload contains a question with a non-null `topic_id` COMPLETES (writes the score + XP) rather than raising `undefined_function` and rolling back — proving the unguarded `PERFORM update_learner_state_post_quiz(...)` resolves. | `src/__tests__/schema/fresh-db-quiz-functions.test.ts` (live, skipIf no TEST_SUPABASE_URL) | E (live fresh-DB bootstrap probe) |
+
+### Invariants covered by this section
+
+- P1 Score accuracy — REG-144 (the quiz-submit RPC chain
+  `submit_quiz_results_v2 → PERFORM update_learner_state_post_quiz` must resolve
+  every PERFORM'd function or the score never gets written; a fresh DB missing
+  the BKT function scores nothing).
+- P4 Atomic quiz submission — REG-144 (the missing function is PERFORM'd
+  UNGUARDED inside the `submit_quiz_results_v2` transaction, so its absence
+  doesn't degrade gracefully — it rolls back the entire atomic submission: no
+  score row, no XP, no session).
+
+### Catalog total
+
+Pre-REG-144: 111 entries (through the monitoring data-boundary cluster,
+REG-143). The schema-reproducibility fresh-DB-bootstrap pin adds REG-144: of the
+three quiz functions missing from the baseline AND the linked project, 2 were
+RESTORED via an idempotent compensating migration
+(`update_learner_state_post_quiz` / `reset_demo_student`) and 1 was DEFERRED
+pending redesign (`compute_post_quiz_action` — schema drift, tracked in
+`docs/architecture/cme-post-quiz-action-redesign.md`; absence exception-guarded in
+`submit_quiz_results_v2`). The fresh-DB probe asserts the 2 restored functions
+exist in `pg_proc` (expects 2 rows); `compute_post_quiz_action` is intentionally
+excluded until its redesign lands. **Total catalog: 112 entries (target: 35 —
+TARGET EXCEEDED).**
+
+**Total: 112 entries.**
