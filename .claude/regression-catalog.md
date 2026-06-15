@@ -4196,3 +4196,88 @@ excluded until its redesign lands. **Total catalog: 112 entries (target: 35 —
 TARGET EXCEEDED).**
 
 **Total: 112 entries.**
+
+## consecutive_wrong population — increment on wrong / reset on correct, BKT/SM-2 provably unchanged (2026-06-15) — REG-145
+
+Priority: **P1/P4-adjacent (learner-state).** Source: Session 4
+consecutive-wrong-maintenance change (2026-06-15), landing directly on top of the
+REG-144 schema-reproducibility fix. Migration
+`20260615181255_maintain_consecutive_wrong_in_learner_state.sql` extends
+`update_learner_state_post_quiz` to MAINTAIN the
+`concept_mastery.consecutive_wrong` counter — increment on a wrong answer, reset
+to 0 on a correct one — for the SPEC-3 intervention-alert pathway. The counter
+feeds NO scoring or mastery formula; it is pure bookkeeping.
+
+> **ID note:** REG-144 is the previous entry (schema-reproducibility fresh-DB
+> quiz-function probe, 2026-06-15). REG-145 is the next free id at the time this
+> entry was written.
+
+The change is deliberately SURGICAL: the function body is reproduced byte-for-byte
+from the deployed version
+(`20260615142552_restore_missing_quiz_functions.sql`, the REG-144 restore) and the
+ONLY diff is the 3 `consecutive_wrong` spots in the `concept_mastery` upsert (the
+INSERT column, the INSERT VALUES neutral `0` seed, and the
+`ON CONFLICT DO UPDATE SET` CASE clause) plus the updated COMMENT line. The
+10-param signature, the `mastery_level::TEXT` write, the BKT / SM-2 arithmetic, the
+RETURN jsonb, and `SECURITY DEFINER` + `SET search_path` are all unchanged.
+
+Two correctness hazards this pins against:
+
+- **Scoring drift.** Because the counter feeds no formula, a quiz attempt that
+  produced mastery X / ease Y / interval Z before the migration MUST produce the
+  SAME X / Y / Z after it (P1 score accuracy / P4 atomic submission are adjacent —
+  the same function runs inside the `submit_quiz_results_v2` atomic transaction).
+  The "BKT outputs unchanged" guarantee is asserted STRUCTURALLY: the entire
+  BKT/SM-2 mastery-math block is byte-identical between the two function bodies,
+  and the key BKT update line
+  `v_new_mastery := LEAST(1.0, GREATEST(0.0, v_p_know + (1.0 - v_p_know) * p_p_learn))`
+  is pinned byte-for-byte. Reference behavior for a known input (documented in the
+  test header, not executed): brand-new row + wrong → seed 0; existing row + wrong
+  → `concept_mastery.consecutive_wrong + 1`; existing row + correct → reset 0; in
+  all cases BKT output identical to the deployed version.
+- **EXCLUDED footgun.** The increment must read the LIVE row
+  (`concept_mastery.consecutive_wrong + 1`) and the PLpgSQL parameter
+  (`p_is_correct`), NOT the non-existent `EXCLUDED.p_is_correct` pseudo-column,
+  which would fail at apply time.
+
+Ordering prerequisite: the `consecutive_wrong` COLUMN is added by the EARLIER
+migration `20260615180149_add_consecutive_wrong_to_concept_mastery.sql`
+(`ALTER TABLE concept_mastery ADD COLUMN IF NOT EXISTS consecutive_wrong integer
+NOT NULL DEFAULT 0`), which sorts BEFORE 20260615181255 in lexicographic timestamp
+order — so the column exists before the function references it.
+
+The regression test below is STATIC (no DB): structural equivalence ("the only diff
+is the 3 additive lines") is provable from the SQL text alone, so it runs always-on
+in the normal unit lane and catches any future edit that perturbs the mastery math
+while touching this function. It is the no-DB companion to REG-144's live fresh-DB
+existence probe for the same function.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-145 | `consecutive_wrong_population_structural_diff` | **(1) Signature unchanged:** the CREATE FUNCTION parameter list of `update_learner_state_post_quiz` in `20260615181255` is byte-identical (whitespace-normalized) to the deployed version in `20260615142552` — the full 10-param BKT signature (`p_student_id UUID … p_p_guess FLOAT DEFAULT 0.25`); both migrations DROP the exact 10-arg-type signature. **(2) Column prerequisite:** `20260615180149` runs `ALTER TABLE public.concept_mastery ADD COLUMN IF NOT EXISTS consecutive_wrong integer NOT NULL DEFAULT 0`, AND `'20260615180149…' < '20260615181255…'` (column exists before the function references it). **(3) Population logic:** the `ON CONFLICT DO UPDATE SET` clause is `consecutive_wrong = CASE WHEN p_is_correct THEN 0 ELSE concept_mastery.consecutive_wrong + 1 END` (reset on correct, +1 on wrong) using the parameter `p_is_correct` and the LIVE row, and explicitly does NOT contain the invalid `EXCLUDED.p_is_correct`; the INSERT VALUES path seeds a neutral `0` for the first answer. **(4) BKT/SM-2 unchanged pin:** the entire BKT/SM-2 mastery-math block (BKT evidence/know update → mastery clamp → ease factor → SM-2 interval) is byte-identical between the two function bodies, and the key BKT line `v_new_mastery := LEAST(1.0, GREATEST(0.0, v_p_know + (1.0 - v_p_know) * p_p_learn))` is byte-identical in both — so consecutive_wrong adds no scoring drift; sanity floor: the deployed version has ZERO `consecutive_wrong` mentions, the population version introduces ≥3. | `src/__tests__/schema/consecutive-wrong-population.test.ts` (16 tests, static; no DB) | U (static structural-diff, always-on) |
+
+### Invariants covered by this section
+
+- P1 Score accuracy — REG-145 (the consecutive_wrong-maintenance migration leaves
+  the BKT/SM-2 mastery math byte-identical to the deployed version; the structural
+  diff pin proves scoring is untouched, so quiz scores cannot drift as a side
+  effect of the counter).
+- P4 Atomic quiz submission — REG-145 (the modified function still runs inside the
+  `submit_quiz_results_v2` atomic transaction; the column prerequisite ordering +
+  the no-`EXCLUDED.p_is_correct` assertion guard against an apply-time failure that
+  would roll back the whole submission, and the unchanged 10-param signature keeps
+  the unguarded `PERFORM update_learner_state_post_quiz(...)` caller valid — the
+  REG-144 hazard).
+
+### Catalog total
+
+Pre-REG-145: 112 entries (through the schema-reproducibility fresh-DB-bootstrap
+pin, REG-144). The consecutive_wrong-population structural-diff guard adds REG-145:
+a static (no-DB) pin that the consecutive_wrong-maintenance migration is surgical —
+unchanged 10-param signature, column added (and ordered) before it is referenced,
+reset-on-correct/increment-on-wrong via `p_is_correct` (never the invalid
+`EXCLUDED.p_is_correct`), and BKT/SM-2 outputs provably unchanged (byte-identical
+mastery-math block). **Total catalog: 113 entries (target: 35 — TARGET
+EXCEEDED).**
+
+**Total: 113 entries.**
