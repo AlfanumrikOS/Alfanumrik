@@ -4013,3 +4013,74 @@ null-grade warn-and-proceed, subject-independent). **Total catalog: 110
 entries (target: 35 — TARGET EXCEEDED).**
 
 **Total: 110 entries.**
+
+## Monitoring data boundary — learning_events / intervention_alerts / system_metrics RLS + CHECK↔TS parity (2026-06-15) — REG-143
+
+Source: monitoring substrate landing (`src/types/monitoring.ts` + three new
+tables under `supabase/migrations/20260615122657..659`). The monitoring stack
+introduces three tables with three DISTINCT security postures, all of which
+carry P8/P9/P13 weight:
+
+- `learning_events` — the student-owned event stream. Students read + insert
+  ONLY their own rows (`student_id = auth.uid()` in USING + WITH CHECK), and the
+  table is APPEND-ONLY (no UPDATE/DELETE policy → a student's UPDATE/DELETE
+  silently affects 0 rows with NO error and the row survives unchanged).
+- `intervention_alerts` — the staff-facing at-risk feed. SELECT + UPDATE are
+  restricted to teacher/admin/super_admin via a `user_roles × roles` join that
+  carries the A1 expired-grant guard `(ur.expires_at IS NULL OR ur.expires_at >
+  now())`; students/anon read 0 rows, no error; a lapsed grant
+  (`is_active=true` but `expires_at` in the past) does NOT grant access.
+- `system_metrics` — platform telemetry. Admin/super_admin READ only; there is
+  NO INSERT policy at all (exactly ONE `CREATE POLICY`, FOR SELECT) so the
+  service_role (RLS bypass) is the only writer; an authenticated non-admin
+  insert is rejected. The `metric_name` empty-string guard is APP-LEVEL in
+  `logSystemMetric()` (`src/lib/monitoring/log-event.ts`), NOT a DB constraint.
+
+> **ID note:** REG-142 is the previous entry (Foxy grade-spoof hard block,
+> 2026-06-15). REG-143 is the next free id at the time this entry was written.
+
+Each test file runs in TWO layers, mirroring the repo's established RLS-test
+pattern. STRUCTURAL assertions read the migration `.sql` text (RLS enabled,
+policy predicates present, CHECK lists exact, NOT NULL declared, `DEFAULT now()`
+present, indexes present, no `USING (true)`/`WITH CHECK (true)`, append-only =
+no `FOR UPDATE`/`FOR DELETE` policy) and run ALWAYS — no database needed,
+whitespace/quoting-tolerant via the house normalisation. LIVE assertions are
+wrapped in `describe.skipIf(!LIVE_DB)` (`LIVE_DB = process.env.TEST_SUPABASE_URL
+!== undefined`) and use real per-role authenticated clients so `auth.uid()` is
+the genuine session user; every id is `crypto.randomUUID()` (no hardcoded UUIDs,
+no hardcoded `auth.uid()`). Append-only edge case: a blocked UPDATE/DELETE
+asserts 0 rows AND NO error (the row is re-SELECTed via service role and proven
+unchanged) — it does NOT assert `error !== null`; an INSERT that violates
+WITH CHECK / a CHECK constraint DOES assert a non-null error.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-143 | `monitoring_rls_and_check_ts_parity` | **(A) SQL CHECK ↔ TS union parity (both directions):** `learning_events.event_type` CHECK = exactly the 8 values of `LearningEventType`; `intervention_alerts.alert_type` CHECK = exactly the 5 values of `AlertType`; `intervention_alerts.severity` CHECK = exactly `watch`/`act`/`urgent` of `AlertSeverity` (each literal present AND the CHECK-list literal count equals the union arity — a stray or dropped value fails). **(B) learning_events (P8/P13 — student own-row):** student CAN insert/select own rows (`student_id = auth.uid()`); CANNOT insert a foreign `student_id` (WITH CHECK → non-null error); CANNOT select another student's rows (0 rows, no error); anon insert rejected; required NOT NULL columns (`student_id`/`session_id`/`verb`/`event_type`) + `occurred_at DEFAULT now()` (omitted-on-insert → populated). **(C) learning_events append-only:** structurally no `FOR UPDATE`/`FOR DELETE` policy; live student UPDATE and DELETE each affect 0 rows with NO error and the row survives unchanged (service-role re-SELECT). **(D) intervention_alerts (P8/P9):** teacher/admin/super_admin CAN select; student 0 rows no error; anon blocked; teacher CAN update (resolve → `resolved_at`); student UPDATE affects 0 rows (alert unchanged); EXPIRED teacher grant (`expires_at` in past, `is_active=true`) does NOT grant access (0 rows) — the A1 `(expires_at IS NULL OR expires_at > now())` clause is also asserted present on both staff policies; invalid `alert_type`/`severity` insert → error. **(E) system_metrics (P8/P9/P13):** admin/super_admin CAN select; teacher/student 0 rows no error; anon blocked; service-role CAN insert (RLS bypass); authenticated non-admin (incl. the admin-READ user) + plain student INSERT rejected (no INSERT policy — structurally exactly ONE `CREATE POLICY`, FOR SELECT only); the `metric_name` empty/whitespace guard is asserted APP-LEVEL in `logSystemMetric()` (early `return;` before the `system_metrics` insert), noted as an app guard not a DB constraint. | `src/__tests__/monitoring/learning-events-rls.test.ts`, `src/__tests__/monitoring/intervention-alerts-rls.test.ts`, `src/__tests__/monitoring/system-metrics-rls.test.ts` | U (structural always-on) + E (live, skipIf TEST_SUPABASE_URL) |
+
+### Invariants covered by this section
+
+- P8 RLS boundary — REG-143 (learning_events is student-own-row read+insert and
+  append-only; intervention_alerts is staff-role-gated with the expired-grant
+  guard so a lapsed grant cannot read; system_metrics is admin/super_admin read
+  only with no write policy; no policy uses an open `USING (true)`/`WITH CHECK
+  (true)` predicate).
+- P9 RBAC enforcement — REG-143 (intervention_alerts SELECT/UPDATE and
+  system_metrics SELECT resolve role through the `user_roles × roles` join with
+  `is_active = true` AND the expired-grant guard; system_metrics has NO INSERT
+  policy so writes are service-role-only).
+- P13 Data privacy — REG-143 (a student cannot read another student's
+  learning_events; students/teachers/anon cannot read intervention_alerts /
+  system_metrics; the monitoring CHECK↔TS parity keeps the typed surface from
+  drifting away from the DB-enforced value set).
+- P5-adjacent (type/contract parity) — REG-143 (the 8 event_type / 5 alert_type
+  / 3 severity literals are asserted equal between the SQL CHECK lists and the
+  `src/types/monitoring.ts` unions in BOTH directions).
+
+### Catalog total
+
+Pre-REG-143: 110 entries (through the Foxy P12 grade-spoof hard-block,
+REG-142). The monitoring data-boundary cluster adds REG-143 (three-table RLS +
+append-only + service-role-only-write + CHECK↔TS parity). **Total catalog: 111
+entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 111 entries.**
