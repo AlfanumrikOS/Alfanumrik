@@ -61,7 +61,18 @@ const FORBIDDEN_RPCS = ['atomic_quiz_profile_update', 'submit_quiz_results'] as 
 // Tables the route LEGITIMATELY writes on a math turn:
 //   - foxy_sessions: touched by resolveSession (update last_active_at / insert new)
 //   - foxy_chat_messages: the user+assistant turn persistence
-const ALLOWED_WRITE_TABLES = ['foxy_sessions', 'foxy_chat_messages'] as const;
+//   - system_metrics / learning_events: fire-and-forget OBSERVABILITY writes
+//     introduced by the Foxy event-logging instrumentation (logSystemMetric →
+//     foxy_request / edge_fn_latency_ms / error_rate; logLearningEvent →
+//     foxy_ask). These are telemetry only — NOT XP, mastery, or any business
+//     state. The forbidden-mastery-table + forbidden-RPC assertions below remain
+//     the real wall (a math turn still grants 0 XP and moves 0 mastery).
+const ALLOWED_WRITE_TABLES = [
+  'foxy_sessions',
+  'foxy_chat_messages',
+  'system_metrics',
+  'learning_events',
+] as const;
 
 beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://test.local';
