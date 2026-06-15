@@ -1011,6 +1011,29 @@ export const FOXY_CURRICULUM_GUARD_FLAGS = {
 } as const;
 
 /**
+ * Post-submit quiz telemetry flag (2026-06-15, SPEC-1..5).
+ *
+ *  ff_quiz_telemetry_v1 — master switch for the best-effort post-submit learning
+ *    telemetry on the server-authoritative quiz submit path (/api/v2/quiz/submit
+ *    via the shared submit-side-effects seam). When ON, after a FRESH grade the
+ *    route emits per-answer learning_events (SPEC-1), mastery-achieved
+ *    learning_events (SPEC-2, 0.8 pre/post threshold), and (when a reliable
+ *    node_code↔topic mapping exists — see OQ-5) consecutive-wrong
+ *    intervention_alerts (SPEC-3). All telemetry is fire-and-forget and never
+ *    blocks/breaks the submit response; idempotent replays + errors emit nothing
+ *    (SPEC-5). When OFF/unseeded, the route captures no pre-snapshot and the
+ *    telemetry step is a complete no-op (submit path byte-identical to today).
+ *    Default: false.
+ *
+ *    Seeded OFF in a follow-up migration; ships gated (isFeatureEnabled returns
+ *    false for the unseeded flag until then).
+ */
+export const QUIZ_TELEMETRY_FLAGS = {
+  /** Post-submit learning telemetry (per-answer + mastery + intervention). Default off. */
+  V1: 'ff_quiz_telemetry_v1',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -1064,6 +1087,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [FOXY_LEARNING_ACTIONS_FLAGS.V1]: false, // seeded OFF by 20260619000700_seed_ff_foxy_learning_actions_v1.sql
   [FOXY_MATH_PIPELINE_FLAGS.V1]: false, // seeded OFF by 20260619000800_seed_ff_foxy_math_pipeline_v1.sql
   [FOXY_CURRICULUM_GUARD_FLAGS.V1]: false, // seeded OFF by 20260619001000_seed_ff_foxy_curriculum_guard_v1.sql
+  [QUIZ_TELEMETRY_FLAGS.V1]: false, // seeded OFF in a follow-up migration (SPEC-1..5)
 } as const;
 
 /**

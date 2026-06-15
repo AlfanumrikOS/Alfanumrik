@@ -3937,3 +3937,417 @@ proves the matcher). **Total catalog: 109 entries (target: 35 — TARGET
 EXCEEDED).**
 
 **Total: 109 entries.**
+
+## Foxy P12 grade-spoof hard block — unconditional, all subjects, audit row (2026-06-15) — REG-142
+
+Source: CEO Decision D2 (2026-06-15). The `/api/foxy` route previously trusted
+the client-supplied `grade` field for prompt assembly, RAG scope, and curriculum
+selection — so a Grade 7 student could send `grade:'12'` and receive senior-grade
+content (a P12 AI-safety violation: AI must stay within the student's enrolled
+CBSE scope). The flag-gated `validateCurriculumScope` STEM pre-gate (REG —
+curriculum-guard-pregate) catches this for math/physics/chemistry/biology when
+`ff_foxy_curriculum_guard_v1` is ON, but it does NOT cover non-STEM subjects
+(english, hindi, history, etc.) and it is OFF by design as a kill switch — so
+a determined spoofer could simply request `subject:'english'` or wait for an
+incident-flag-off window. This entry pins a SECOND, UNCONDITIONAL, subject-
+independent defense layer.
+
+> **ID note:** REG-135..REG-141 are taken by the MOL Python-unification cluster
+> (REG-135..REG-139), the B1 RAG eval-harness (REG-140), and the Voyage rerank
+> model-id hotfix (REG-141). REG-142 is the next free id at the time this
+> entry was written (2026-06-15).
+
+The wire (three layers, in order, before any LLM call):
+
+1. **Zod 400** at `route.ts:2641-2658`. `FoxyRequestBodySchema` requires
+   `grade ∈ z.enum(['6','7','8','9','10','11','12'])`. Any out-of-range string
+   OR wrong type (integer, missing) returns 400 with `code:'INVALID_GRADE'`
+   BEFORE the students fetch, studentId resolution, governance check, prompt
+   build, RAG retrieval, or LLM call. (P5: grades are strings.)
+2. **DB-authoritative compare** at `route.ts:2802-2849`. The students row's
+   `grade` column is loaded server-side and compared to the (Zod-validated)
+   body grade. If `dbGrade !== null` AND `dbGrade !== grade` the route returns
+   `403 {code:'GRADE_MISMATCH', message:'Request grade does not match
+   enrollment'}`, writes an `audit_logs` row via `logAudit` with
+   `action:'foxy.grade_spoof_attempt'` +
+   `details:{claimed_grade, actual_grade, route:'/api/foxy'}` + `status:'denied'`,
+   and SKIPS every downstream call — no Claude, no grounded answer, no quota
+   spend.
+3. **Null-grade warn-and-proceed** at `route.ts:2850-2856`. A `dbGrade === null`
+   row (legitimately-onboarding student) is NOT 403'd — the route logs a
+   `logger.warn` and continues. The flag-gated STEM curriculum guard still
+   acts as a second layer downstream.
+
+The block runs **independent of `ff_foxy_curriculum_guard_v1`** and fires for
+**ALL subjects including non-STEM** (english, hindi, history, etc.). The flag
+only gates the existing STEM-only `validateCurriculumScope` pre-gate, which
+remains in place as a defense-in-depth second layer for STEM topics.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-142 | `foxy_p12_grade_spoof_hard_block` | (A) Out-of-range `grade:'5'` → 400 `{code:'INVALID_GRADE'}`, no students-fetch, no Claude / grounded-answer / routeIntent call, no `foxy.grade_spoof_attempt` audit. (B) Wrong-type `grade:12` (integer) → same 400 + same downstream silence (P5 enforced via Zod). (C) Happy path `grade:'8'` / `dbGrade:'8'` → no 400/403, grounded path called exactly once, no spoof audit row. (D) Spoof `grade:'12'` / `dbGrade:'8'` → exact body `{code:'GRADE_MISMATCH', message:'Request grade does not match enrollment'}` at HTTP 403; exactly ONE `logAudit` call with `action:'foxy.grade_spoof_attempt'`, `resourceType:'students'`, `resourceId:'student-uuid-1'`, `status:'denied'`, and `details:{claimed_grade:'12', actual_grade:'8', route:'/api/foxy'}`; NO Claude / grounded-answer / routeIntent call; NO foxy quota RPC invoked (no quota spend on the 403 branch). (E) Null-grade onboarding (`dbGrade:null`, body `grade:'6'`) → NOT 403'd, grounded path called, `logger.warn` for the null-grade marker, NO spoof audit row. (F) Subject independence — `subject:'english'` (non-STEM) with `grade:'12'` / `dbGrade:'8'` still returns 403 GRADE_MISMATCH + writes the audit row + does NOT call grounded; explicitly with `ff_foxy_curriculum_guard_v1=false` to prove the gate is independent of the curriculum guard. **Deferred:** the inline `TODO(monitoring)` comment in `route.ts` flags that the per-request `logger.info('foxy.request', ...)` marker is intended to swap to `logSystemMetric` once the monitoring substrate lands; that swap is NOT in this entry's scope (no monitoring infra to assert against yet). | `src/__tests__/api/foxy/grade-spoof-hard-block.test.ts` (17 tests, 6 scenarios A–F) | E |
+
+### Invariants covered by this section
+
+- P12 AI safety / curriculum scope — REG-142 (an out-of-grade client claim
+  CANNOT reach prompt-assembly, RAG scope, or any LLM call; the block is
+  subject-independent so non-STEM topics are covered too; the block is
+  independent of `ff_foxy_curriculum_guard_v1` so an OFF-flag window does
+  NOT open a spoof vector).
+- P5 Grade format — REG-142 (Zod enforces `grade ∈ z.enum(['6'..'12'])` at
+  the API boundary; integer 12 is rejected as a P5 violation alongside the
+  out-of-range string '5').
+- P9 RBAC enforcement / audit completeness — REG-142 (every spoof attempt
+  writes an `audit_logs` row with `action:'foxy.grade_spoof_attempt'` and
+  the claimed/actual grade pair, giving ops the forensic trail to detect
+  scaled abuse).
+- P13 Data privacy — REG-142 (the audit details payload carries only the
+  two grade strings + the route name — no message text, no PII).
+
+### Catalog total
+
+Pre-REG-142: 109 entries (through the Voyage rerank model-id hotfix,
+REG-141). The Foxy P12 grade-spoof hard-block adds REG-142 (unconditional
+all-subject grade-spoof defense — Zod 400, DB-compare 403 with audit row,
+null-grade warn-and-proceed, subject-independent). **Total catalog: 110
+entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 110 entries.**
+
+## Monitoring data boundary — learning_events / intervention_alerts / system_metrics RLS + CHECK↔TS parity (2026-06-15) — REG-143
+
+Source: monitoring substrate landing (`src/types/monitoring.ts` + three new
+tables under `supabase/migrations/20260615122657..659`). The monitoring stack
+introduces three tables with three DISTINCT security postures, all of which
+carry P8/P9/P13 weight:
+
+- `learning_events` — the student-owned event stream. Students read + insert
+  ONLY their own rows (`student_id = auth.uid()` in USING + WITH CHECK), and the
+  table is APPEND-ONLY (no UPDATE/DELETE policy → a student's UPDATE/DELETE
+  silently affects 0 rows with NO error and the row survives unchanged).
+- `intervention_alerts` — the staff-facing at-risk feed. SELECT + UPDATE are
+  restricted to teacher/admin/super_admin via a `user_roles × roles` join that
+  carries the A1 expired-grant guard `(ur.expires_at IS NULL OR ur.expires_at >
+  now())`; students/anon read 0 rows, no error; a lapsed grant
+  (`is_active=true` but `expires_at` in the past) does NOT grant access.
+- `system_metrics` — platform telemetry. Admin/super_admin READ only; there is
+  NO INSERT policy at all (exactly ONE `CREATE POLICY`, FOR SELECT) so the
+  service_role (RLS bypass) is the only writer; an authenticated non-admin
+  insert is rejected. The `metric_name` empty-string guard is APP-LEVEL in
+  `logSystemMetric()` (`src/lib/monitoring/log-event.ts`), NOT a DB constraint.
+
+> **ID note:** REG-142 is the previous entry (Foxy grade-spoof hard block,
+> 2026-06-15). REG-143 is the next free id at the time this entry was written.
+
+Each test file runs in TWO layers, mirroring the repo's established RLS-test
+pattern. STRUCTURAL assertions read the migration `.sql` text (RLS enabled,
+policy predicates present, CHECK lists exact, NOT NULL declared, `DEFAULT now()`
+present, indexes present, no `USING (true)`/`WITH CHECK (true)`, append-only =
+no `FOR UPDATE`/`FOR DELETE` policy) and run ALWAYS — no database needed,
+whitespace/quoting-tolerant via the house normalisation. LIVE assertions are
+wrapped in `describe.skipIf(!LIVE_DB)` (`LIVE_DB = process.env.TEST_SUPABASE_URL
+!== undefined`) and use real per-role authenticated clients so `auth.uid()` is
+the genuine session user; every id is `crypto.randomUUID()` (no hardcoded UUIDs,
+no hardcoded `auth.uid()`). Append-only edge case: a blocked UPDATE/DELETE
+asserts 0 rows AND NO error (the row is re-SELECTed via service role and proven
+unchanged) — it does NOT assert `error !== null`; an INSERT that violates
+WITH CHECK / a CHECK constraint DOES assert a non-null error.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-143 | `monitoring_rls_and_check_ts_parity` | **(A) SQL CHECK ↔ TS union parity (both directions):** `learning_events.event_type` CHECK = exactly the 8 values of `LearningEventType`; `intervention_alerts.alert_type` CHECK = exactly the 5 values of `AlertType`; `intervention_alerts.severity` CHECK = exactly `watch`/`act`/`urgent` of `AlertSeverity` (each literal present AND the CHECK-list literal count equals the union arity — a stray or dropped value fails). **(B) learning_events (P8/P13 — student own-row):** student CAN insert/select own rows (`student_id = auth.uid()`); CANNOT insert a foreign `student_id` (WITH CHECK → non-null error); CANNOT select another student's rows (0 rows, no error); anon insert rejected; required NOT NULL columns (`student_id`/`session_id`/`verb`/`event_type`) + `occurred_at DEFAULT now()` (omitted-on-insert → populated). **(C) learning_events append-only:** structurally no `FOR UPDATE`/`FOR DELETE` policy; live student UPDATE and DELETE each affect 0 rows with NO error and the row survives unchanged (service-role re-SELECT). **(D) intervention_alerts (P8/P9):** teacher/admin/super_admin CAN select; student 0 rows no error; anon blocked; teacher CAN update (resolve → `resolved_at`); student UPDATE affects 0 rows (alert unchanged); EXPIRED teacher grant (`expires_at` in past, `is_active=true`) does NOT grant access (0 rows) — the A1 `(expires_at IS NULL OR expires_at > now())` clause is also asserted present on both staff policies; invalid `alert_type`/`severity` insert → error. **(E) system_metrics (P8/P9/P13):** admin/super_admin CAN select; teacher/student 0 rows no error; anon blocked; service-role CAN insert (RLS bypass); authenticated non-admin (incl. the admin-READ user) + plain student INSERT rejected (no INSERT policy — structurally exactly ONE `CREATE POLICY`, FOR SELECT only); the `metric_name` empty/whitespace guard is asserted APP-LEVEL in `logSystemMetric()` (early `return;` before the `system_metrics` insert), noted as an app guard not a DB constraint. | `src/__tests__/monitoring/learning-events-rls.test.ts`, `src/__tests__/monitoring/intervention-alerts-rls.test.ts`, `src/__tests__/monitoring/system-metrics-rls.test.ts` | U (structural always-on) + E (live, skipIf TEST_SUPABASE_URL) |
+
+### Invariants covered by this section
+
+- P8 RLS boundary — REG-143 (learning_events is student-own-row read+insert and
+  append-only; intervention_alerts is staff-role-gated with the expired-grant
+  guard so a lapsed grant cannot read; system_metrics is admin/super_admin read
+  only with no write policy; no policy uses an open `USING (true)`/`WITH CHECK
+  (true)` predicate).
+- P9 RBAC enforcement — REG-143 (intervention_alerts SELECT/UPDATE and
+  system_metrics SELECT resolve role through the `user_roles × roles` join with
+  `is_active = true` AND the expired-grant guard; system_metrics has NO INSERT
+  policy so writes are service-role-only).
+- P13 Data privacy — REG-143 (a student cannot read another student's
+  learning_events; students/teachers/anon cannot read intervention_alerts /
+  system_metrics; the monitoring CHECK↔TS parity keeps the typed surface from
+  drifting away from the DB-enforced value set).
+- P5-adjacent (type/contract parity) — REG-143 (the 8 event_type / 5 alert_type
+  / 3 severity literals are asserted equal between the SQL CHECK lists and the
+  `src/types/monitoring.ts` unions in BOTH directions).
+
+### Catalog total
+
+Pre-REG-143: 110 entries (through the Foxy P12 grade-spoof hard-block,
+REG-142). The monitoring data-boundary cluster adds REG-143 (three-table RLS +
+append-only + service-role-only-write + CHECK↔TS parity). **Total catalog: 111
+entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 111 entries.**
+
+## Schema reproducibility — quiz functions missing from baseline AND linked project: 2 of 3 restored, 1 deferred (2026-06-15) — REG-144
+
+Priority: **P0/P1.** Source: Session 4 pre-spec schema-reproducibility audit
+(2026-06-15). The pg_dump-derived baseline
+(`supabase/migrations/00000000000000_baseline_from_prod.sql`) silently OMITTED
+three `public` functions, and — the part that turns this from a baseline-drift
+nit into a P0 — verifying via `pg_get_functiondef(...)` against the LINKED
+Supabase project (`shktyoxqhundlvkiwguu`) returned **0 rows for all three**: the
+functions were absent from the live project too, not just the baseline. The sole
+surviving source for their definitions is the archived legacy chain under
+`supabase/migrations/_legacy/timestamped/` (`20260405000001:254`,
+`20260405000002:57`, `20260401180000:21`).
+
+Outcome: **2 of 3 functions RESTORED, 1 DEFERRED.** The two that could be
+restored verbatim (with one minor schema repoint) are back in the baseline AND
+the linked project via the compensating migration; the third
+(`compute_post_quiz_action`) hit irreconcilable schema drift and is deferred to a
+redesign work item.
+
+The three missing functions, by blast radius and disposition:
+
+- `update_learner_state_post_quiz` — **P0. RESTORED.** The quiz-submit BKT
+  update. Called via an UNGUARDED `PERFORM` inside `submit_quiz_results_v2` (no
+  `EXCEPTION` wrapper). On a fresh DB — or on the linked project the moment real
+  quiz traffic with a non-null `topic_id` arrives — that `PERFORM` raises
+  `undefined_function` and rolls back the WHOLE submission transaction: no score
+  row, no XP. This is the P1/P4 hazard (score accuracy + atomic-submission both
+  depend on the quiz-submit RPC chain resolving every function it `PERFORM`s).
+- `compute_post_quiz_action` — **P1. DEFERRED — schema drift (chapter_topics
+  renamed to curriculum_topics; chapters JOIN hop removed; error_count_conceptual
+  and current_retention absent from concept_mastery — they live on
+  cme_concept_state); redesign required before restore; tracked as a separate
+  work item (`docs/architecture/cme-post-quiz-action-redesign.md`).** The CME
+  next-action computation. The legacy definition cannot be applied verbatim
+  against the current schema. It is called inside an `EXCEPTION` guard in
+  `submit_quiz_results_v2`, so its continued absence degrades SILENTLY (the
+  next-action feature no-ops; the submission itself survives) rather than rolling
+  back — which is precisely why deferring it is safe: the exception guard means a
+  missing `compute_post_quiz_action` does NOT break quiz submit.
+- `reset_demo_student` — **P2/P3. RESTORED.** Demo/seed tooling. Not on the quiz
+  hot path.
+
+Symptom (currently MASKED only by zero recent quiz traffic on the linked
+project): a quiz submission containing any question with a non-null `topic_id`
+hits the unguarded `PERFORM update_learner_state_post_quiz(...)` in
+`submit_quiz_results_v2`, raises `undefined_function`, and the student gets no
+score and no XP — a P1 (score accuracy) and P4 (atomic submission) failure that
+surfaces the instant traffic resumes, not at deploy time.
+
+Fix: compensating migration
+`supabase/migrations/20260615142552_restore_missing_quiz_functions.sql` —
+idempotent `DROP FUNCTION IF EXISTS` + `CREATE OR REPLACE FUNCTION` for the TWO
+restorable functions (`update_learner_state_post_quiz`, `reset_demo_student`),
+restored verbatim from the `_legacy/timestamped/` source EXCEPT
+`reset_demo_student`, whose `question_responses.session_id` reference was
+repointed to `quiz_session_id` to match the current schema. The third function,
+`compute_post_quiz_action`, is NOT in the compensating migration: its legacy
+definition references columns/tables that no longer exist as written
+(`chapter_topics` → `curriculum_topics`; the `chapters` JOIN hop is gone;
+`error_count_conceptual` and `current_retention` are no longer on
+`concept_mastery` — they live on `cme_concept_state`), so it requires a redesign
+before it can be safely re-created and is tracked as a separate work item
+(`docs/architecture/cme-post-quiz-action-redesign.md`). Its absence is
+exception-guarded inside `submit_quiz_results_v2`, so leaving it deferred does
+NOT break quiz submit. (Runbook
+`docs/runbooks/schema-reproducibility-fix.md` §9.2 — compensating-migration
+procedure.)
+
+The regression test below is a FRESH-DB bootstrap probe: it does not exercise the
+quiz path, it asserts that the two RESTORED functions actually EXIST after the
+migration chain (baseline + compensating migration) is applied to an empty
+database — the exact invariant the baseline broke. It deliberately queries ONLY
+the two restored names and expects exactly 2 rows; `compute_post_quiz_action` is
+intentionally EXCLUDED from the probe until its redesign lands (asserting its
+presence would fail by design, and its absence is exception-guarded in
+`submit_quiz_results_v2` so it does not break quiz submit). It belongs to the
+fresh-project bootstrap test family
+(`docs/runbooks/schema-reproducibility-fix.md` §4) and runs LIVE only (`skipIf`
+no live DB), since "does a function exist in `pg_proc`" cannot be proven by
+reading SQL text alone — the whole point is that the baseline's text was wrong.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-144 | `fresh_db_has_quiz_submit_functions` | After applying the FULL migration chain (baseline `00000000000000_baseline_from_prod.sql` + compensating `20260615142552_restore_missing_quiz_functions.sql`) to a FRESH/empty database, `SELECT proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND proname IN ('update_learner_state_post_quiz','reset_demo_student')` returns **exactly 2 rows** (both RESTORED names present). Fewer than 2 ⇒ the fresh-DB bootstrap is broken (a baseline omitted a live function) and the build fails. `compute_post_quiz_action` is intentionally EXCLUDED from this probe until its redesign lands (`docs/architecture/cme-post-quiz-action-redesign.md`); its absence is exception-guarded in `submit_quiz_results_v2` so it does NOT break quiz submit. Companion behavioral pin (live): a `submit_quiz_results_v2` call whose payload contains a question with a non-null `topic_id` COMPLETES (writes the score + XP) rather than raising `undefined_function` and rolling back — proving the unguarded `PERFORM update_learner_state_post_quiz(...)` resolves. | `src/__tests__/schema/fresh-db-quiz-functions.test.ts` (live, skipIf no TEST_SUPABASE_URL) | E (live fresh-DB bootstrap probe) |
+
+### Invariants covered by this section
+
+- P1 Score accuracy — REG-144 (the quiz-submit RPC chain
+  `submit_quiz_results_v2 → PERFORM update_learner_state_post_quiz` must resolve
+  every PERFORM'd function or the score never gets written; a fresh DB missing
+  the BKT function scores nothing).
+- P4 Atomic quiz submission — REG-144 (the missing function is PERFORM'd
+  UNGUARDED inside the `submit_quiz_results_v2` transaction, so its absence
+  doesn't degrade gracefully — it rolls back the entire atomic submission: no
+  score row, no XP, no session).
+
+### Catalog total
+
+Pre-REG-144: 111 entries (through the monitoring data-boundary cluster,
+REG-143). The schema-reproducibility fresh-DB-bootstrap pin adds REG-144: of the
+three quiz functions missing from the baseline AND the linked project, 2 were
+RESTORED via an idempotent compensating migration
+(`update_learner_state_post_quiz` / `reset_demo_student`) and 1 was DEFERRED
+pending redesign (`compute_post_quiz_action` — schema drift, tracked in
+`docs/architecture/cme-post-quiz-action-redesign.md`; absence exception-guarded in
+`submit_quiz_results_v2`). The fresh-DB probe asserts the 2 restored functions
+exist in `pg_proc` (expects 2 rows); `compute_post_quiz_action` is intentionally
+excluded until its redesign lands. **Total catalog: 112 entries (target: 35 —
+TARGET EXCEEDED).**
+
+**Total: 112 entries.**
+
+## consecutive_wrong population — increment on wrong / reset on correct, BKT/SM-2 provably unchanged (2026-06-15) — REG-145
+
+Priority: **P1/P4-adjacent (learner-state).** Source: Session 4
+consecutive-wrong-maintenance change (2026-06-15), landing directly on top of the
+REG-144 schema-reproducibility fix. Migration
+`20260615181255_maintain_consecutive_wrong_in_learner_state.sql` extends
+`update_learner_state_post_quiz` to MAINTAIN the
+`concept_mastery.consecutive_wrong` counter — increment on a wrong answer, reset
+to 0 on a correct one — for the SPEC-3 intervention-alert pathway. The counter
+feeds NO scoring or mastery formula; it is pure bookkeeping.
+
+> **ID note:** REG-144 is the previous entry (schema-reproducibility fresh-DB
+> quiz-function probe, 2026-06-15). REG-145 is the next free id at the time this
+> entry was written.
+
+The change is deliberately SURGICAL: the function body is reproduced byte-for-byte
+from the deployed version
+(`20260615142552_restore_missing_quiz_functions.sql`, the REG-144 restore) and the
+ONLY diff is the 3 `consecutive_wrong` spots in the `concept_mastery` upsert (the
+INSERT column, the INSERT VALUES neutral `0` seed, and the
+`ON CONFLICT DO UPDATE SET` CASE clause) plus the updated COMMENT line. The
+10-param signature, the `mastery_level::TEXT` write, the BKT / SM-2 arithmetic, the
+RETURN jsonb, and `SECURITY DEFINER` + `SET search_path` are all unchanged.
+
+Two correctness hazards this pins against:
+
+- **Scoring drift.** Because the counter feeds no formula, a quiz attempt that
+  produced mastery X / ease Y / interval Z before the migration MUST produce the
+  SAME X / Y / Z after it (P1 score accuracy / P4 atomic submission are adjacent —
+  the same function runs inside the `submit_quiz_results_v2` atomic transaction).
+  The "BKT outputs unchanged" guarantee is asserted STRUCTURALLY: the entire
+  BKT/SM-2 mastery-math block is byte-identical between the two function bodies,
+  and the key BKT update line
+  `v_new_mastery := LEAST(1.0, GREATEST(0.0, v_p_know + (1.0 - v_p_know) * p_p_learn))`
+  is pinned byte-for-byte. Reference behavior for a known input (documented in the
+  test header, not executed): brand-new row + wrong → seed 0; existing row + wrong
+  → `concept_mastery.consecutive_wrong + 1`; existing row + correct → reset 0; in
+  all cases BKT output identical to the deployed version.
+- **EXCLUDED footgun.** The increment must read the LIVE row
+  (`concept_mastery.consecutive_wrong + 1`) and the PLpgSQL parameter
+  (`p_is_correct`), NOT the non-existent `EXCLUDED.p_is_correct` pseudo-column,
+  which would fail at apply time.
+
+Ordering prerequisite: the `consecutive_wrong` COLUMN is added by the EARLIER
+migration `20260615180149_add_consecutive_wrong_to_concept_mastery.sql`
+(`ALTER TABLE concept_mastery ADD COLUMN IF NOT EXISTS consecutive_wrong integer
+NOT NULL DEFAULT 0`), which sorts BEFORE 20260615181255 in lexicographic timestamp
+order — so the column exists before the function references it.
+
+The regression test below is STATIC (no DB): structural equivalence ("the only diff
+is the 3 additive lines") is provable from the SQL text alone, so it runs always-on
+in the normal unit lane and catches any future edit that perturbs the mastery math
+while touching this function. It is the no-DB companion to REG-144's live fresh-DB
+existence probe for the same function.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-145 | `consecutive_wrong_population_structural_diff` | **(1) Signature unchanged:** the CREATE FUNCTION parameter list of `update_learner_state_post_quiz` in `20260615181255` is byte-identical (whitespace-normalized) to the deployed version in `20260615142552` — the full 10-param BKT signature (`p_student_id UUID … p_p_guess FLOAT DEFAULT 0.25`); both migrations DROP the exact 10-arg-type signature. **(2) Column prerequisite:** `20260615180149` runs `ALTER TABLE public.concept_mastery ADD COLUMN IF NOT EXISTS consecutive_wrong integer NOT NULL DEFAULT 0`, AND `'20260615180149…' < '20260615181255…'` (column exists before the function references it). **(3) Population logic:** the `ON CONFLICT DO UPDATE SET` clause is `consecutive_wrong = CASE WHEN p_is_correct THEN 0 ELSE concept_mastery.consecutive_wrong + 1 END` (reset on correct, +1 on wrong) using the parameter `p_is_correct` and the LIVE row, and explicitly does NOT contain the invalid `EXCLUDED.p_is_correct`; the INSERT VALUES path seeds a neutral `0` for the first answer. **(4) BKT/SM-2 unchanged pin:** the entire BKT/SM-2 mastery-math block (BKT evidence/know update → mastery clamp → ease factor → SM-2 interval) is byte-identical between the two function bodies, and the key BKT line `v_new_mastery := LEAST(1.0, GREATEST(0.0, v_p_know + (1.0 - v_p_know) * p_p_learn))` is byte-identical in both — so consecutive_wrong adds no scoring drift; sanity floor: the deployed version has ZERO `consecutive_wrong` mentions, the population version introduces ≥3. | `src/__tests__/schema/consecutive-wrong-population.test.ts` (16 tests, static; no DB) | U (static structural-diff, always-on) |
+
+### Invariants covered by this section
+
+- P1 Score accuracy — REG-145 (the consecutive_wrong-maintenance migration leaves
+  the BKT/SM-2 mastery math byte-identical to the deployed version; the structural
+  diff pin proves scoring is untouched, so quiz scores cannot drift as a side
+  effect of the counter).
+- P4 Atomic quiz submission — REG-145 (the modified function still runs inside the
+  `submit_quiz_results_v2` atomic transaction; the column prerequisite ordering +
+  the no-`EXCLUDED.p_is_correct` assertion guard against an apply-time failure that
+  would roll back the whole submission, and the unchanged 10-param signature keeps
+  the unguarded `PERFORM update_learner_state_post_quiz(...)` caller valid — the
+  REG-144 hazard).
+
+### Catalog total
+
+Pre-REG-145: 112 entries (through the schema-reproducibility fresh-DB-bootstrap
+pin, REG-144). The consecutive_wrong-population structural-diff guard adds REG-145:
+a static (no-DB) pin that the consecutive_wrong-maintenance migration is surgical —
+unchanged 10-param signature, column added (and ordered) before it is referenced,
+reset-on-correct/increment-on-wrong via `p_is_correct` (never the invalid
+`EXCLUDED.p_is_correct`), and BKT/SM-2 outputs provably unchanged (byte-identical
+mastery-math block). **Total catalog: 113 entries (target: 35 — TARGET
+EXCEEDED).**
+
+## SPEC-3 consecutive-wrong intervention alert — active path (2026-06-15) — REG-146
+
+Priority: **P8/P9/P13 (monitoring data boundary).** Source: SPEC-3 wiring
+(2026-06-15), post-submit telemetry. This is the LIVE half of the SPEC-3
+consecutive-wrong pathway whose data-producing half (the `concept_mastery.consecutive_wrong`
+counter) is pinned structurally by REG-145. Where REG-145 proves the counter is
+MAINTAINED without scoring drift, REG-146 pins what CONSUMES the counter: in
+`src/lib/quiz/post-submit-telemetry.ts`, after a successful (non-replay) quiz submit
+and gated behind `ff_quiz_telemetry_v1`, for each unique topic the post-RPC
+`concept_mastery` read returns `consecutive_wrong`; when `consecutive_wrong >= 3`,
+exactly one `intervention_alerts` row is inserted (`alert_type 'consecutive_wrong'`,
+`severity 'act'`, `trigger_data {count, threshold: 3}`) UNLESS an OPEN alert already
+exists for the same `(student_id + topic_id + alert_type + resolved_at IS NULL)` →
+dedup skip.
+
+> **ID note:** REG-145 is the previous entry (consecutive_wrong population
+> structural-diff guard, 2026-06-15). REG-146 is the next free id at the time this
+> entry was written.
+
+Three correctness hazards this pins against:
+
+- **Dual-id contract.** The `concept_mastery` read is keyed by `students.id`; the
+  `intervention_alerts` dedup-read + insert are keyed by `auth.uid()` (FK to
+  `auth.users`). Conflating the two id spaces FK-violates the insert. The pin keeps
+  the read and the write on their respective id keys.
+- **Topic attribution.** `topic_id` is a real `curriculum_topics.id` resolved from
+  `question_bank` topic resolution; an unattributable question emits NO alert (no
+  `node_code` guess / no synthetic topic). A bad guess would either mis-route an
+  alert or FK-violate against `curriculum_topics`.
+- **Fire-and-forget safety.** The alert path runs post-RPC, after scoring/XP/BKT
+  have already committed. It is fire-and-forget — it never throws or blocks the
+  submit, and it performs NO scoring/XP/BKT recompute (P1-P4 untouched). It writes
+  `intervention_alerts` ONLY — never the `adaptive_interventions` Loops A/B/C
+  substrate.
+
+P13: `trigger_data` carries only `{count, threshold}` (both numbers) — no PII.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-146 | `spec3_intervention_alert_active_path` | **(1) Threshold + shape:** when a unique topic's post-RPC `concept_mastery` read returns `consecutive_wrong >= 3`, exactly one `intervention_alerts` row is inserted with `alert_type='consecutive_wrong'`, `severity='act'`, `trigger_data={count, threshold:3}`; `consecutive_wrong < 3` inserts nothing. **(2) Dedup:** an OPEN alert (`student_id + topic_id + alert_type + resolved_at IS NULL`) already present → dedup skip, no second insert. **(3) Dual-id contract:** the `concept_mastery` read is keyed by `students.id`; the `intervention_alerts` dedup-read + insert are keyed by `auth.uid()` — never conflated. **(4) Topic attribution:** `topic_id` is a real `curriculum_topics.id` from `question_bank` resolution; unattributable questions emit no alert. **(5) Gating + replay:** gated behind `ff_quiz_telemetry_v1`; a replay submit emits no alert. **(6) Safety:** fire-and-forget — a thrown alert path never blocks/aborts the submit; no scoring/XP/BKT recompute; writes `intervention_alerts`, not `adaptive_interventions`. **(7) P13:** `trigger_data` keys are exactly `count` + `threshold`, both numbers, no PII. | `src/__tests__/quiz/post-submit-telemetry.test.ts` (30 tests; the 6 SPEC-3-active scenarios) | U (unit; companion to the REG-145 SPEC-3 population pin) |
+
+### Invariants covered by this section
+
+- P8 RLS boundary / data boundary — REG-146 (the alert path reads `concept_mastery`
+  by `students.id` and writes `intervention_alerts` by `auth.uid()`; the dual-id
+  contract keeps each read/write on its correct id space and inside the RLS-scoped
+  client, so an alert can never reference a row outside the acting student's boundary).
+- P9 RBAC enforcement — REG-146 (the alert is keyed to the right student via
+  `auth.uid()` (FK `auth.users`); topic attribution rides a real
+  `curriculum_topics.id` from `question_bank` resolution, so no alert is mis-routed
+  to another student or a guessed topic).
+- P13 Data privacy — REG-146 (`trigger_data` carries only `{count, threshold}` —
+  numbers, never PII).
+- P1-P4 (untouched, asserted) — REG-146 (the path is post-RPC, fire-and-forget; it
+  never recomputes scoring/XP/BKT and never throws into the submit, so quiz
+  accuracy / XP economy / anti-cheat / atomic submission are all unaffected; it
+  writes `intervention_alerts`, not the `adaptive_interventions` Loops substrate).
+
+### Catalog total
+
+Pre-REG-146: 113 entries (through the consecutive_wrong-population structural-diff
+guard, REG-145). The SPEC-3 active-path pin adds REG-146: the live consumer of the
+REG-145 counter — when a topic's post-RPC `consecutive_wrong >= 3` and behind
+`ff_quiz_telemetry_v1`, exactly one `intervention_alerts` row is inserted
+(`consecutive_wrong`/`act`/`{count, threshold:3}`) unless an OPEN alert already
+exists (dedup), on the dual-id contract (read by `students.id`, write by
+`auth.uid()`), with real-`curriculum_topics.id` attribution, no PII in
+`trigger_data`, and fire-and-forget post-RPC safety that leaves P1-P4 untouched.
+**Total catalog: 114 entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 114 entries.**
