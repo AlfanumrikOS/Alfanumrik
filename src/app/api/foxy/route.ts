@@ -61,6 +61,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import {
+  logLearningEvent,
+  logSystemMetric,
+  generateCorrelationId,
+  generateSessionId,
+} from '@/lib/monitoring/log-event';
 import { isFeatureEnabled } from '@/lib/feature-flags';
 import { validateSubjectWrite } from '@/lib/subjects';
 import {
@@ -2582,6 +2588,16 @@ export async function POST(request: NextRequest): Promise<Response> {
         context: { stack: topLevelErr instanceof Error ? topLevelErr.stack?.slice(0, 500) : undefined },
       });
     } catch { /* even ops logging failed — nothing more we can do */ }
+    // Fire-and-forget error-rate signal. Only the genuine top-level exception
+    // path emits this — expected business early-returns (429 quota,
+    // 403/422 grade/subject denials) are NOT errors and never reach here.
+    // P13: error_code only, no PII.
+    void logSystemMetric({
+      metric_name: 'error_rate',
+      route: '/api/foxy',
+      value: 1,
+      tags: { error_code: (topLevelErr as { code?: string })?.code ?? 'unknown' },
+    });
     return errorJson(
       'Foxy encountered an error. Please try again.',
       'Foxy mein error aaya. Dobara try karein.',
@@ -2597,6 +2613,13 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     requireStudentId: true,
   });
   if (!auth.authorized) return auth.errorResponse!;
+
+  // Fire-and-forget observability (additive, non-blocking). `startTime` and
+  // `correlationId` are captured here so every terminal success/error path
+  // below can emit latency + correlated events. These never affect the hot
+  // path — the loggers are internally try/caught and `void`ed at each return.
+  const startTime = Date.now();
+  const correlationId = generateCorrelationId();
 
   // Capture the caller's bearer JWT (if any) for the math-verify hop. The
   // SymPy verifier endpoint authenticates as the STUDENT (it calls Supabase
@@ -2905,10 +2928,17 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   }
 
   // P12 per-request observability marker. Placed AFTER the grade check so
-  // spoof attempts are not counted as legitimate requests.
-  // TODO(monitoring): swap to logSystemMetric({ metric_name: 'foxy_request', value: 1, tags: { grade } })
-  // once src/lib/monitoring/log-event.ts ships (blocked: src/types/monitoring.ts and system_metrics table do not exist yet).
+  // spoof attempts are not counted as legitimate requests. Fire-and-forget;
+  // the structured logger line is kept for log-search continuity, and the
+  // metric is the queryable counterpart (now that log-event.ts has shipped).
+  // P13: grade only, no PII.
   logger.info('foxy.request', { route: '/api/foxy', grade, userId: auth.userId });
+  void logSystemMetric({
+    metric_name: 'foxy_request',
+    route: '/api/foxy',
+    value: 1,
+    tags: { grade },
+  });
 
   // 5. Quota check
   const { allowed, remaining } = await checkAndIncrementQuota(studentId, plan);
@@ -2945,6 +2975,35 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       500,
     );
   }
+
+  // Fire-and-forget success logger. Called immediately before each terminal
+  // SUCCESS return so the promise is initiated; never awaited in the hot path.
+  // The loggers are internally try/caught and never throw, so a `void` is safe.
+  //
+  // CRITICAL: learning_events.student_id MUST be the auth UUID (auth.users.id),
+  // NOT the students-table PK (`studentId`). `topic_id` is null because this
+  // route works in free-form subject/grade/chapter strings (no verified
+  // curriculum_topics.id in hand). `session_id` is the resolved Foxy session
+  // uuid, with a defensive fallback that should never fire in practice.
+  // P13: only non-PII fields (grade, token counts, correlation id) are logged.
+  const logFoxyAsk = (tokens: number | null): void => {
+    void logLearningEvent({
+      student_id: auth.userId!,
+      session_id: resolvedSessionId || generateSessionId(),
+      event_type: 'foxy_ask',
+      topic_id: null,
+      verb: 'asked',
+      object_type: 'foxy',
+      result: { response_tokens: tokens ?? null },
+      context: { grade, correlation_id: correlationId },
+    });
+    void logSystemMetric({
+      metric_name: 'edge_fn_latency_ms',
+      route: '/api/foxy',
+      value: Date.now() - startTime,
+      tags: { grade },
+    });
+  };
 
   // 7. Load cognitive context + history + prior-session context + lab context
   //    (parallel, non-fatal on failure)
@@ -3116,6 +3175,7 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       // approximated as `sources.length > 0` — the legacy path doesn't run
       // the soft-mode escape detection, so this is a conservative proxy
       // ("we retrieved chunks AND the LLM produced a response").
+      logFoxyAsk(legacy.tokensUsed ?? null);
       return NextResponse.json({
         success: true,
         response: legacy.response,
@@ -3347,6 +3407,9 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
             nextTopicId: topicProgress.nextTopicId,
             nextTopicTitle: topicProgress.nextTopic,
           });
+          // Math pipeline answers carry no Claude token count (solveMath does
+          // not expose one); the response envelope is tokensUsed: 0.
+          logFoxyAsk(0);
           return mathResponse;
         }
         // pipeline === null -> solver produced nothing usable; fall through to
@@ -3865,6 +3928,9 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       : remaining;
 
     // Phase 0: do NOT echo sources/diagrams to the client.
+    // Hard-abstain is a terminal success return (success: true) with no Claude
+    // tokens; log it with tokens 0 so latency telemetry stays complete.
+    logFoxyAsk(0);
     return NextResponse.json({
       success: true,
       response: '',
@@ -4213,6 +4279,7 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   const groundedFromChunks = groundedFromChunksRaw;
   const citationsCount = grounded.citations.length;
 
+  logFoxyAsk(grounded.meta.tokens_used ?? null);
   return NextResponse.json({
     success: true,
     // `response` stays as the legacy plain string for backward compat. New

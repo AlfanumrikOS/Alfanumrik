@@ -4413,3 +4413,68 @@ default-OFF flag seed (static source-level). 99 tests across 4 files.
 **Total catalog: 115 entries (target: 35 — TARGET EXCEEDED).**
 
 **Total: 115 entries.**
+
+## Foxy event-logging FK-safety + telemetry hygiene — fire-and-forget observability never corrupts state or leaks PII (2026-06-15) — REG-148
+
+Source: the Foxy event-logging instrumentation on `/api/foxy`. The route now
+fires ADDITIVE, non-blocking observability on every turn: `logLearningEvent →
+learning_events` (a `foxy_ask` row) and `logSystemMetric → system_metrics` (the
+`foxy_request` / `edge_fn_latency_ms` success metrics + an `error_rate` metric
+from the top-level catch). These are telemetry only — they move NO XP, mastery,
+or business state. Two silent-failure traps make this worth pinning:
+- **FK silent-drop:** `learning_events.student_id` is `uuid NOT NULL REFERENCES
+  auth.users(id)`. The route resolves TWO distinct ids — `auth.userId`
+  (= `auth.uid()`, the `auth.users` PK) and `auth.studentId` (the `students`-table
+  PK). The event FK targets `auth.users`, so `student_id` MUST be `auth.userId`.
+  A refactor that swaps in `studentId` makes EVERY event silently fail the FK and
+  be swallowed by fire-and-forget (`logLearningEvent` never throws) — no test, no
+  alert, no data.
+- **Telemetry-pollution / PII trap:** business early-returns (429 quota, 400
+  invalid-grade) are EXPECTED outcomes, not errors — they must emit neither
+  `error_rate` nor a `foxy_ask` event. The `error_rate` metric carries an
+  `error_code` tag ONLY (no message text, no PII).
+
+Files under test:
+- `src/app/api/foxy/route.ts` — the `logFoxyAsk` closure (success-terminal event +
+  latency/request metrics) and the top-level catch (`error_rate`).
+- `src/lib/monitoring/log-event.ts` — `logLearningEvent` / `logSystemMetric`
+  (mocked at the boundary so the loggers are observable, not Supabase-bound).
+
+The math-turn no-mastery guard (`src/__tests__/api/foxy/math-solve-no-xp-no-mastery.test.ts`)
+acknowledges `system_metrics` + `learning_events` on its `ALLOWED_WRITE_TABLES`
+allow-side as INTENDED, benign telemetry; its `FORBIDDEN_MASTERY_TABLES` +
+`FORBIDDEN_RPCS` assertions stay exactly as strict (a math turn still grants 0 XP
+and moves 0 mastery — P2/P4-adjacent).
+
+> **ID note:** REG-147 is the previous entry (per-school deal-driven
+> entitlements, 2026-06-15). REG-148 is the next free id at the time this entry
+> was written.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-148 | `foxy_event_logging_fk_safety_and_telemetry_hygiene` | **(1) FK-safe identity (silent-drop guard):** on the grounded-default SUCCESS path the route logs exactly one `foxy_ask` `learning_event` whose `student_id === auth.userId` (the `auth.uid()` / `auth.users` PK) and NOT `auth.studentId` (the `students`-table PK) — asserted by exact equality against two DELIBERATELY-distinct sentinel ids; `topic_id === null` (no verified `curriculum_topics.id` in scope); `session_id === resolvedSessionId` (the `foxy_sessions` row id, not the fallback); `event_type === 'foxy_ask'`, `verb === 'asked'`, `object_type === 'foxy'`, `result.response_tokens` from `grounded.meta`, and a PII-free `context` (no `email`/`phone`/`name` keys). **(2) Success metrics:** the same turn emits both a `foxy_request` and an `edge_fn_latency_ms` `system_metric` (`route === '/api/foxy'`, numeric `value`, `grade` tag) and does NOT emit `error_rate`. **(3) Error path:** when a downstream collaborator (`callGroundedAnswer`) rejects, the top-level catch returns 503 and emits exactly one `error_rate` metric (`route === '/api/foxy'`, `value === 1`, an `error_code` tag ONLY — the exception message text never rides along — P13); a thrown turn never reached `logFoxyAsk`, so NO `foxy_ask` event. **(4) Business early-returns do not pollute telemetry:** a 429 quota exhaustion (`check_and_record_usage` → `allowed:false`) emits NO `error_rate` and NO `foxy_ask`; a 400 invalid-grade (`grade:'5'`, below CBSE 6-12) emits NO `error_rate` and NO `foxy_ask`. **(5) Compile-time/shape guards:** `'foxy_ask'` is a member of `LearningEventType`; the verbatim `logFoxyAsk` event payload is assignable to `LearningEvent`; and the three route metrics (`error_rate`, `edge_fn_latency_ms`, `foxy_request`) are assignable to `SystemMetric` — a field/type drift breaks `npm run type-check`, not just the assertion. | `src/__tests__/monitoring/foxy-event-logging.test.ts` (13) | U (unit; drives the REAL `POST` handler with the heavy-mock surface, `@/lib/monitoring/log-event` mocked so the loggers are observable) |
+
+### Invariants covered by this section
+
+- P12 AI safety — REG-148 (the `foxy_ask` event + the success/latency metrics are
+  fire-and-forget observability on the Foxy turn; they never block, alter, or gate
+  the AI response, and the business early-returns that protect the per-plan daily
+  cap emit no spurious error telemetry).
+- P13 Data privacy — REG-148 (the `foxy_ask` event `context` carries no
+  `email`/`phone`/`name`; the `error_rate` metric carries an `error_code` tag only,
+  never the exception message text or any PII; the FK-safe `student_id` pin keeps
+  the event stream from silently dropping into a swallowed-write hole).
+
+### Catalog total
+
+Pre-REG-148: 115 entries (through the per-school deal-driven entitlements pin,
+REG-147). The Foxy event-logging telemetry-hygiene pin adds REG-148: the
+fire-and-forget `learning_events`/`system_metrics` instrumentation on `/api/foxy`
+is FK-safe (`student_id === auth.userId`, never the `students` PK — else every
+event silently fails the `auth.users` FK under fire-and-forget), emits the
+success `foxy_request`/`edge_fn_latency_ms` metrics and a catch-only `error_rate`
+(error_code tag only, no PII), and keeps business early-returns (429 quota / 400
+invalid-grade) out of the error/event telemetry entirely. 13 tests in 1 file.
+**Total catalog: 116 entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 116 entries.**
