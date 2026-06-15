@@ -5,8 +5,8 @@ import random
 from typing import Any
 
 from fastapi import HTTPException
-from python.services.ai.shared.quiz_oracle import CandidateQuestion, run_deterministic_checks
 
+from ...shared.quiz_oracle import CandidateQuestion, run_deterministic_checks
 from .models import (
     QuizGeneratorMeta,
     QuizGeneratorRequest,

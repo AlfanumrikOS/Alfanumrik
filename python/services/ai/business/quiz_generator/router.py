@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
-from python.services.ai.db.supabase import get_service_client
 
+from ...db.supabase import get_service_client
 from .handler import generate_quiz, handle_next_question
 from .models import QuizGeneratorRequest, QuizGeneratorResponse
 

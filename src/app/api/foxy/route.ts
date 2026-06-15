@@ -3044,6 +3044,12 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // awards 0 XP / no mastery (P2) and is bilingual (P7).
   const STEM_SUBJECT_RE =
     /\b(math|maths|mathematics|physics|chemistry|chem|science|accountancy|accounts|economics|statistics)\b/i;
+  // Hoisted so the math-solve branch below can REUSE the pre-gate's verdict and
+  // skip a redundant re-validation. `preGateConfirmedInScope` is only true when
+  // the guard actually ran this turn (flag ON + STEM subject) AND returned
+  // inScope — i.e. grade authenticity (T1) + subject (T2) + out-of-grade lexicon
+  // (T4a) are all already confirmed against the SERVER-fetched enrolled grade.
+  let preGateConfirmedInScope = false;
   try {
     const curriculumGuardEnabled = await isCurriculumGuardEnabled({
       role: 'student',
@@ -3080,9 +3086,10 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
           topicProgress,
         });
       }
-      // In scope for the grade-only pre-gate — continue exactly as today. The
-      // math-solve branch below still runs its OWN 'full' validator (chapter +
-      // LLM classify) on concrete solve queries; that is unchanged.
+      // In scope for the grade-only pre-gate. Record this so the math-solve
+      // branch below can REUSE it (grade + subject + out-of-grade already
+      // confirmed) instead of re-running the validator.
+      preGateConfirmedInScope = true;
     }
   } catch (guardErr) {
     // Defense-in-depth (P12): validateCurriculumScope is fail-closed and never
@@ -3124,35 +3131,57 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         // grade, never the message content or the client-claimed grade. On an
         // out-of-scope verdict we persist the turn + return a formative,
         // bilingual out-of-scope reply (NO XP, NO mastery) instead of solving.
-        const scope = await validateCurriculumScope(
-          {
-            studentId,
-            requestGrade: grade,
-            subject,
-            chapter,
-            problem: message,
-          },
-          { supabaseAdmin },
-        );
-        if (!scope.inScope) {
-          logger.info('foxy.math.out_of_scope', {
-            traceId,
-            grade,
-            reason: scope.reason,
-          });
-          return await respondCurriculumOutOfScope({
-            studentId,
-            userId: auth.userId!,
-            resolvedSessionId,
-            message,
-            subject,
-            grade,
-            chapter,
-            quotaRemaining: remaining,
-            scope,
-            traceId,
-            topicProgress,
-          });
+        //
+        // HOT-PATH OPTIMIZATION (latency, no accuracy change): this branch no
+        // longer runs the EXPENSIVE 'full' validation. 'full' would re-run
+        // T1 (grade DB) + T2 (subject DB) — already done by the grade-only
+        // pre-gate this turn — PLUS T3 (chapter DB reads) and T4b (a FULL LLM
+        // round-trip via classifyTopicInChapter). Chapter strictness is SOFT
+        // (CEO Decision A), so T3/T4b are a chapter-scope nicety, not an
+        // accuracy gate. SymPy verifyMath inside runMathSolvePipeline remains
+        // the accuracy gate (untouched). We therefore:
+        //   - If the grade-only pre-gate already ran this turn and confirmed
+        //     in-scope (preGateConfirmedInScope), REUSE it — no re-validation.
+        //     grade + subject + out-of-grade are already established.
+        //   - Otherwise (guard flag OFF / non-STEM / pre-gate didn't run), run
+        //     the CHEAP 'grade_only' mode here (T1 + T2 DB + T4a regex, NO LLM,
+        //     NO chapter DB) so a truly out-of-grade query is still HARD-blocked
+        //     deterministically before we spend solver/verifier calls.
+        // Net: the solver's ONE LLM call (+ SymPy verify) is the only model work
+        // on an in-scope solve; the T4b LLM call + T3 chapter reads + redundant
+        // T1/T2 are eliminated from the hot path.
+        if (!preGateConfirmedInScope) {
+          const scope = await validateCurriculumScope(
+            {
+              studentId,
+              requestGrade: grade,
+              subject,
+              chapter,
+              problem: message,
+            },
+            { supabaseAdmin },
+            'grade_only',
+          );
+          if (!scope.inScope) {
+            logger.info('foxy.math.out_of_scope', {
+              traceId,
+              grade,
+              reason: scope.reason,
+            });
+            return await respondCurriculumOutOfScope({
+              studentId,
+              userId: auth.userId!,
+              resolvedSessionId,
+              message,
+              subject,
+              grade,
+              chapter,
+              quotaRemaining: remaining,
+              scope,
+              traceId,
+              topicProgress,
+            });
+          }
         }
 
         const pipeline = await runMathSolvePipeline({
