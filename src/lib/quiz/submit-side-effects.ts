@@ -39,6 +39,10 @@ import { capture as posthogCapture } from '@/lib/posthog/server';
 import { maybeDispatchQuizCompletion } from '@/lib/state/quiz-orchestrator-bridge';
 import { publishEvent } from '@/lib/state/events/publish';
 import { bktUpdate } from '@/lib/state/services/quiz-completion-service';
+import {
+  runQuizPostSubmitTelemetry,
+  type QuizTelemetryPre,
+} from '@/lib/quiz/post-submit-telemetry';
 
 /** Minimal RPC result shape the side-effects read. Superset-safe. */
 export interface QuizSubmitSideEffectResult {
@@ -78,6 +82,8 @@ export interface QuizSubmitSideEffectInput {
   studentId: string;
   sessionId: string;
   subject?: string;
+  /** Enrolled grade as a STRING (P5). Threaded into telemetry event context. */
+  grade?: string;
   topic?: string | null;
   chapter?: number | null;
   totalTimeSeconds: number;
@@ -88,6 +94,13 @@ export interface QuizSubmitSideEffectInput {
    * replays (it measures them), BEFORE the idempotent_replay early-return.
    */
   offlineMeta?: QuizSubmitOfflineMeta;
+  /**
+   * Post-submit learning-telemetry pre-snapshot (SPEC-1..5), captured by the
+   * route BEFORE the submit RPC (topic_id resolution + pre-mastery read) when
+   * `ff_quiz_telemetry_v1` is enabled. Absent when the flag is OFF/unseeded →
+   * the telemetry step below is a no-op. Best-effort; never blocks the response.
+   */
+  telemetryPre?: QuizTelemetryPre;
 }
 
 /**
@@ -125,6 +138,35 @@ export function runQuizSubmitSideEffects(
   emitPostHogEvents(input, result);
   emitSpineEvents(admin, authUserId, input, result);
   dispatchOrchestratorBridge(authUserId, input, result);
+
+  // POST-SUBMIT LEARNING TELEMETRY (SPEC-1..5). Best-effort, fire-and-forget,
+  // never throws into / blocks the response. Runs ONLY on a fresh grade (the
+  // idempotent-replay guard above already returned for replays — SPEC-5) AND
+  // ONLY when the route captured the pre-RPC snapshot, which it does only when
+  // `ff_quiz_telemetry_v1` is enabled. Absent snapshot → no-op (flag OFF).
+  //
+  // DUAL-ID: WRITES use authUserId (auth.uid) for learning_events /
+  // intervention_alerts; READS use input.studentId (students.id) for
+  // concept_mastery / adaptive_mastery — runQuizPostSubmitTelemetry enforces this.
+  if (input.telemetryPre) {
+    runQuizPostSubmitTelemetry(
+      admin,
+      authUserId,
+      {
+        studentId: input.studentId,
+        sessionId: result.session_id ?? input.sessionId,
+        subject: input.subject,
+        grade: input.grade,
+        chapter: input.chapter,
+        responses: input.responses,
+        gradedQuestions: (result.questions ?? []).filter(
+          (q): q is { question_id?: string; is_correct?: boolean } =>
+            !!q && typeof q === 'object',
+        ),
+      },
+      input.telemetryPre,
+    );
+  }
 }
 
 // ─── 0. Offline-sync telemetry (Wave 2.5.3) ──────────────────────────────────

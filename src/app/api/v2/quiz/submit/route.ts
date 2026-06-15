@@ -42,6 +42,11 @@ import {
   runQuizSubmitSideEffects,
   type QuizSubmitOfflineMeta,
 } from '@/lib/quiz/submit-side-effects';
+import { isFeatureEnabled, QUIZ_TELEMETRY_FLAGS } from '@/lib/feature-flags';
+import {
+  prepareQuizTelemetry,
+  type QuizTelemetryPre,
+} from '@/lib/quiz/post-submit-telemetry';
 
 /**
  * Max age (hours) of an OFFLINE-captured attempt the server will still replay.
@@ -251,6 +256,32 @@ export async function POST(request: NextRequest) {
     };
   }
 
+  // 4c. POST-SUBMIT TELEMETRY PRE-SNAPSHOT (SPEC-1..5). Gated behind
+  //     ff_quiz_telemetry_v1 (unseeded → false → dormant). SPEC-2 needs a
+  //     pre/post mastery comparison, so the topic_id resolution + pre-mastery
+  //     read MUST happen BEFORE the RPC. Best-effort: prepareQuizTelemetry never
+  //     throws (returns a safe empty snapshot on failure). When the flag is OFF
+  //     telemetryPre stays undefined and the side-effects telemetry step no-ops,
+  //     keeping the submit path byte-identical to today.
+  //     DUAL-ID: this PRE-read keys concept_mastery by students.id (body.studentId,
+  //     cross-checked == studentRow.id above). WRITES (auth.uid) happen post-RPC.
+  let telemetryPre: QuizTelemetryPre | undefined;
+  try {
+    const telemetryEnabled = await isFeatureEnabled(QUIZ_TELEMETRY_FLAGS.V1, {
+      userId: auth.userId,
+    });
+    if (telemetryEnabled) {
+      telemetryPre = await prepareQuizTelemetry(
+        admin,
+        body.studentId, // students.id — concept_mastery READ key
+        body.responses.map((r) => r.question_id),
+      );
+    }
+  } catch {
+    // Never let telemetry preparation break submit. Leave telemetryPre undefined.
+    telemetryPre = undefined;
+  }
+
   // 5. Map body.responses → RPC's expected jsonb shape (rename ONLY).
   //    IDENTICAL mapping to /api/quiz/submit.
   const rpcResponses = body.responses.map((r) => ({
@@ -332,11 +363,16 @@ export async function POST(request: NextRequest) {
             studentId: body.studentId,
             sessionId: body.sessionId,
             subject: body.subject,
+            grade: body.grade,
             topic: body.topic,
             chapter: body.chapter,
             totalTimeSeconds: body.totalTimeSeconds,
             responses: body.responses,
             offlineMeta,
+            // SPEC-5: this is an idempotent replay — the side-effects function's
+            // own idempotent_replay guard short-circuits the telemetry step, so
+            // even though we pass the snapshot here it never fires on a replay.
+            telemetryPre,
           },
           replay,
         );
@@ -387,6 +423,7 @@ export async function POST(request: NextRequest) {
       studentId: body.studentId,
       sessionId: body.sessionId,
       subject: body.subject,
+      grade: body.grade,
       topic: body.topic,
       chapter: body.chapter,
       totalTimeSeconds: body.totalTimeSeconds,
@@ -394,6 +431,9 @@ export async function POST(request: NextRequest) {
       // Offline-sync telemetry (Wave 2.5.3). Undefined on the online path →
       // no new ops-event, byte-identical online behavior.
       offlineMeta,
+      // Post-submit learning telemetry pre-snapshot (SPEC-1..5). Undefined when
+      // ff_quiz_telemetry_v1 is OFF → the telemetry step no-ops.
+      telemetryPre,
     },
     rpcData,
   );
