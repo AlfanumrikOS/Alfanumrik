@@ -4566,3 +4566,105 @@ school→parent broadcast request/response contract. 39 tests across 4 files.
 **Total catalog: 119 entries (target: 35 — TARGET EXCEEDED).**
 
 **Total: 119 entries.**
+
+---
+
+## Portal RBAC/SaaS remediation Phase 3 — school self-service billing P11 integrity + get_admin_school_id institution_admin RLS widening (2026-06-16) — REG-152..REG-153
+
+Source: Phase 3 of `feat/portal-rbac-saas-remediation`. Two changes, both
+defense-of-an-invariant:
+
+- **School self-service billing P11 fixes** — `POST /api/school-admin/subscription`
+  (the school-admin buy-a-plan path, gated by `ff_school_self_service_billing_v1`).
+  Three P11-load-bearing corrections:
+  1. POST no longer sets `status='active'`. The provisioned `school_subscriptions`
+     row keeps its pre-payment `'trial'` status; entitlement is granted ONLY by the
+     signature-verified webhook (`handleSchoolSubscriptionEvent` →
+     `subscription.activated`/`.charged`). This is the core P11 rule: never grant
+     plan access without verified payment.
+  2. POST writes via `UPDATE ... .eq('school_id', schoolId)` — NOT
+     `upsert(..., { onConflict: 'school_id' })`. There is no unique constraint on
+     `school_id` (only the `id` pkey), so the old upsert path raised Postgres 42P10
+     and failed 100% of the time, orphaning the just-created Razorpay subscription.
+  3. `billing_cycle='yearly'` is rejected with `400 { code:'yearly_not_supported' }`
+     BEFORE any Razorpay subscription is created. Self-service v1 only supports
+     monthly recurring; a yearly recurring sub would never be activated by the
+     webhook (its school branch matches recurring activated/charged only), so it
+     would orphan. Annual plans stay sales-assisted until the one-time-Order path
+     ships.
+- **get_admin_school_id() RLS widening** — migration `20260620000300` widens the
+  single-value helper from teachers-only to `COALESCE(teachers-lookup,
+  school_admins-lookup)` so pure institution_admins (a `school_admins` row, NO
+  `teachers` row) resolve to a non-null school and regain read access to the
+  school-admin read surface; the 4 named SELECT policies (school_announcements,
+  school_exams, school_questions, class_enrollments) are recreated to
+  `OLD_PREDICATE OR is_school_admin_of(school_id)` for multi-school admins.
+  ADDITIVE/WIDENING-ONLY: the teacher arm resolves FIRST (byte-identical to the
+  baseline) so teacher access is preserved, and the OR-arm only ADMITS rows.
+
+Two traps make these worth pinning:
+- **The POST is a P11 cliff edge twice over.** If a future edit re-adds
+  `status:'active'` to the stamp fields, a school would get full plan access the
+  instant it clicks buy — before Razorpay ever charges it (P11 violation). If a
+  future edit reverts to `upsert({onConflict:'school_id'})`, every POST 42P10s and
+  orphans a live Razorpay sub. And if the yearly guard is dropped, a yearly POST
+  silently creates an unactivatable recurring sub.
+- **The RLS widening must stay widening-only.** RPC bodies are routinely copied
+  forward via `CREATE OR REPLACE`; a copy that drops the `school_admins` fallback
+  re-breaks every institution_admin's reads, and a policy recreate that drops the
+  `OR is_school_admin_of(...)` arm silently re-narrows access. The static canary
+  also guards against the migration ever turning destructive (DROP TABLE/COLUMN,
+  data UPDATE, RLS-posture toggle, or shadowing `is_school_admin_of`).
+
+Files under test:
+- `src/__tests__/api/school-admin-subscription.test.ts` — the 7 new
+  `POST ... P11 self-service billing integrity` cases (yearly-reject + no-orphan,
+  monthly-stays-trial, stamp fields, update-by-school_id/no-onConflict, defensive
+  insert stays trial, flag-OFF 403). The webhook-only-activation half of the P11
+  contract is already pinned in `src/__tests__/api/school-webhook-events.test.ts`
+  (subscription.activated → status active; subscription.charged → renewed) — that
+  is the only path that flips the POST-stamped `'trial'` row to `'active'`.
+- `src/__tests__/contract/get-admin-school-id-rls-widening.test.ts` — the static
+  migration canary (function-widening shape, teacher-first COALESCE ordering, the
+  4 policy recreates with the OR membership arm, additive-only safety contract).
+
+> **ID note:** REG-151 is the previous entry (parent calendar + school broadcast,
+> 2026-06-16). REG-152..REG-153 are the next free ids (the task brief referenced
+> "after REG-151").
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-152 | `school_self_service_billing_p11_pre_payment_trial_and_webhook_only_activation` | **THE SCHOOL-BILLING P11 CONTRACT.** **(1) Yearly reject + no orphan:** `billing_cycle='yearly'` → `400 {success:false, error:'yearly_not_supported', code:'yearly_not_supported'}`, and `createRazorpaySubscription` is NEVER called AND no `school_subscriptions` write is issued — the reject short-circuits before any Razorpay sub exists (no orphan recurring sub the webhook can't activate). **(2) Monthly stays pre-payment trial (P11):** a valid monthly POST returns 200 but the `school_subscriptions` write carries NO `status` key at all (the provisioned row keeps its `'trial'` status) and no field equals `'active'` — entitlement is NOT granted before a signature-verified payment. **(3) Stamp fields:** the same write sets `razorpay_subscription_id` (= the created sub id), `plan`, `seats_purchased`, `billing_cycle='monthly'`, `price_per_seat_monthly`; the Razorpay sub is created with `notes.school_id = schoolId` (so the webhook can match the row). **(4) No-onConflict (42P10 regression pin):** the DB write is `.update(...).eq('school_id', schoolId)` — `update` called once, `upsert` NEVER called, no `onConflict` ever passed, keyed by `school_id`. **(5) Defensive insert path:** when the UPDATE matches no provisioned row, the route falls back to `.insert(...)` with an EXPLICIT `status:'trial'` (never `'active'`) and `school_id`/`razorpay_subscription_id` — still no `upsert`/`onConflict`. **(6) Flag gate:** `ff_school_self_service_billing_v1` OFF → `403`, `isFeatureEnabled` consulted with `{institutionId: schoolId}`, and no Razorpay sub created. **(7) Webhook-only activation (companion file):** only `subscription.activated`/`.charged` (signature-verified webhook) flips the POST-stamped `'trial'` row to `status:'active'` — asserted in `school-webhook-events.test.ts`. | `src/__tests__/api/school-admin-subscription.test.ts` (7 new P11 cases; webhook-activation companion in `src/__tests__/api/school-webhook-events.test.ts`) | U (unit; real `POST` handler with school-admin-auth/feature-flags/razorpay/posthog/supabase-admin mocked; a recording in-memory `school_subscriptions` builder captures the update vs upsert shape, the eq column, and the stamped fields) |
+| REG-153 | `get_admin_school_id_institution_admin_rls_widening_additive_only` | **STATIC MIGRATION CANARY (20260620000300).** **(1) Function widening:** the migration `CREATE OR REPLACE`s `public.get_admin_school_id()`, keeps the teacher arm (`SELECT school_id FROM teachers WHERE auth_user_id = auth.uid()`), and ADDS the `school_admins` fallback arm (`SELECT school_id FROM school_admins ... is_active = true`). **(2) Teacher-first ordering (access preserved):** both arms live inside a single `COALESCE(...)`, the `FROM teachers` arm appears BEFORE the `FROM school_admins` arm, so any user with a `teachers.school_id` resolves to the identical pre-migration value (the fallback only ever fills a previously-NULL result). **(3) Baseline posture kept:** the redefined function stays `STABLE` + `SET search_path = public`. **(4) The 4 named policies widen:** each of `announcements_school_admin_select` / `school_exams_school_admin_select` / `school_questions_school_admin_select` / `class_enrollments_school_admin_select` is recreated idempotently (`DROP POLICY IF EXISTS` + `CREATE POLICY ... FOR SELECT`); the 3 flat policies keep `"school_id" = get_admin_school_id()` AND add `OR is_school_admin_of("school_id")`; class_enrollments keeps its nested `classes.school_id = get_admin_school_id()` AND adds `OR is_school_admin_of(classes.school_id)`; ≥4 `is_school_admin_of(...)` references total (OR only ADMITS rows → widening, never narrowing). **(5) Additive-only safety:** NO `DROP TABLE`/`DROP COLUMN`/`TRUNCATE`/`DELETE FROM`/data `UPDATE`; the ONLY DROPs are `DROP POLICY IF EXISTS` (each paired with a recreate); NO `CREATE TABLE`, NO `ENABLE/DISABLE ROW LEVEL SECURITY` (RLS posture unchanged); does NOT redefine `is_school_admin_of` (reuses the baseline helper); does NOT touch `feature_flags`; wrapped in one `BEGIN`/`COMMIT`. | `src/__tests__/contract/get-admin-school-id-rls-widening.test.ts` (18) | U (static source-level; reads the migration SQL from disk with comments stripped — runs in the normal lane under `contract/`, not the excluded `migrations/` lane) |
+
+### Invariants covered by this section
+
+- P11 Payment integrity — REG-152 (school self-service billing: POST grants NO
+  entitlement before a signature-verified payment — the row stays `'trial'`, only
+  the verified webhook activates it; yearly is rejected before any Razorpay sub is
+  created so no orphan; the write is keyed by `school_id` via UPDATE, never the
+  42P10-prone `onConflict` upsert).
+- P8 RLS boundary — REG-153 (`get_admin_school_id()` widening + the 4 named
+  policies are additive: teacher access is preserved byte-for-byte, the OR-arm only
+  admits rows for institution_admins; the migration introduces no new table, makes
+  no RLS-posture change, and the only DROPs are paired DROP POLICY IF EXISTS —
+  cross-tenant denial stays intact because `is_school_admin_of(B)` is false for an
+  admin of school A).
+- P9 RBAC enforcement — REG-152 (`ff_school_self_service_billing_v1` gates the
+  self-service POST; flag OFF → 403 with no Razorpay sub), REG-153 (the widening
+  restores the school-admin read surface to institution_admins WITHOUT loosening
+  the role-scoped policy predicates — every read still goes through
+  `get_admin_school_id()`/`is_school_admin_of()`).
+
+### Catalog total
+
+Pre-REG-152: 119 entries (through the parent calendar + school broadcast contract,
+REG-151). Portal-remediation Phase 3 adds REG-152..REG-153: the school
+self-service billing P11 contract (pre-payment trial + webhook-only activation +
+yearly-reject-no-orphan + update-by-school_id/no-onConflict + flag gate) and the
+get_admin_school_id institution_admin RLS widening (additive-only function +
+4-policy canary, teacher access preserved). 25 tests across 2 files (7 new POST
+P11 cases + 18 static RLS-canary cases; the webhook-activation companion already
+existed). **Total catalog: 121 entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 121 entries.**
