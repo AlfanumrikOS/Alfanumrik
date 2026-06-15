@@ -131,6 +131,56 @@ single-pass behavior). Use only if the oracle's rejection rate is
 clearly broken (e.g. rejecting 100% of candidates) and content
 shipping is blocked.
 
+## School-Admin Self-Service Broadcasts (Parent Messaging)
+
+School admins can broadcast a message to the parents of their school's
+students from the school-admin parents page. The broadcast is gated by
+`authorizeSchoolAdmin('school.manage_settings')` and is scoped to the
+acting admin's own school (students are filtered by `school_id`); only
+**approved** guardian-student links receive the message.
+
+**Channels** (`POST /api/school-admin/parents`, `channel` field):
+
+| Channel | Transport | Notes |
+|---|---|---|
+| `notification` | `notifications` table insert (batched, 500/batch) | In-app only; no external provider |
+| `whatsapp` | `whatsapp-notify` Edge Function | Sent only to guardians with a phone number |
+| `email` | `send-transactional-email` Edge Function, `school-parent-broadcast` template | Sent only to guardians with a valid email; Mailgun-backed |
+
+The `email` channel was added in Phase 2 (portal RBAC remediation). It
+reuses the existing Mailgun-backed `send-transactional-email` function
+(no new provider) via a dedicated `school-parent-broadcast` template.
+Recipient locale (`en`/`hi`) follows each guardian's `preferred_language`,
+and the message body is HTML-escaped in the template before render. The
+Edge Function is fire-and-forget (always HTTP 200; per-recipient outcome
+surfaced via the `sent` flag), and the route dispatches with bounded
+concurrency (10 in flight) to avoid overwhelming Mailgun.
+
+**Response shape:** `{ success, data: { sent_count, failed_count, channel } }`.
+
+**Audit + privacy (P13):** every broadcast writes a `parent_message.sent`
+row to `school_audit_log` with metadata-only fields — `target`,
+`target_value` (a grade string or class_id UUID, never PII), `channel`,
+and the `sent_count` / `failed_count` / `student_count` counts. **Message
+content and individual recipient email/phone are never logged or audited.**
+The route's structured logs (`parent_email_bulk_sent`,
+`parent_whatsapp_bulk_sent`) carry counts only.
+
+**Operational caveats (known limitations / follow-ups):**
+
+- **No per-school rate limit / volume cap on the email channel yet.** A
+  school admin can email all approved-linked parents of the school in one
+  call. For early B2B schools this is acceptable, but as the school count
+  grows this should gain a per-school daily send cap and/or a
+  cooldown to bound Mailgun spend and protect sender reputation
+  (SPF/DKIM/DMARC complaint rate). Monitor the Mailgun dashboard
+  (bounce/complaint rate) after enabling email broadcasts for any school.
+  Tracked as an ops follow-up.
+- **Single target per call.** The route accepts one `target`
+  (`all` | `grade` | `class`) and one `target_value`. A multi-grade /
+  multi-class broadcast requires multiple calls. Acceptable v1 limitation;
+  tracked as a frontend/backend follow-up if multi-select is requested.
+
 ## Environment Variables Required
 
 | Variable | Purpose | Where Set |

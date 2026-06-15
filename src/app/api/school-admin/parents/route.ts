@@ -308,7 +308,7 @@ export async function POST(request: NextRequest) {
   // Step 3: Get guardian details
   const { data: guardians } = await supabase
     .from('guardians')
-    .select('id, auth_user_id, phone, preferred_language')
+    .select('id, auth_user_id, phone, email, preferred_language')
     .in('id', uniqueGuardianIds);
 
   if (!guardians || guardians.length === 0) {
@@ -414,22 +414,87 @@ export async function POST(request: NextRequest) {
       route: 'school-admin/parents',
     });
   } else if (channel === 'email') {
-    // Email channel: log as TODO — bulk email needs separate implementation
-    // send-auth-email is for auth flows only
-    logger.info('parent_email_bulk_requested', {
-      guardianCount: guardians.length,
-      note: 'Bulk email not yet implemented — queued for future delivery',
-      route: 'school-admin/parents',
-    });
+    // Email channel: dispatch via the send-transactional-email Edge Function
+    // using the dedicated 'school-parent-broadcast' template. Authenticated
+    // with the service-role key (the Edge Function validates the bearer).
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        sent_count: 0,
-        failed_count: 0,
-        channel,
-        note: 'Email channel is not yet available. Please use notification or whatsapp channel.',
-      },
+    if (!supabaseUrl || !serviceRoleKey) {
+      logger.error('parent_email_missing_env', {
+        route: 'school-admin/parents',
+      });
+      return NextResponse.json(
+        { success: false, error: 'Email service not configured' },
+        { status: 503 }
+      );
+    }
+
+    // Resolve the school name for the email header. Best-effort — fall back
+    // to a generic label rather than failing the whole broadcast.
+    let schoolName = 'Your School';
+    if (auth.schoolId) {
+      const { data: school } = await supabase
+        .from('schools')
+        .select('name')
+        .eq('id', auth.schoolId)
+        .maybeSingle();
+      if (school?.name) schoolName = school.name as string;
+    }
+
+    const guardiansWithEmail = guardians.filter(
+      (g) => g.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(g.email)
+    );
+
+    // Batch sensibly: bounded concurrency so we don't overwhelm Mailgun /
+    // the Edge Function. The Edge Function is fire-and-forget (always 200).
+    const CONCURRENCY = 10;
+    for (let i = 0; i < guardiansWithEmail.length; i += CONCURRENCY) {
+      const batch = guardiansWithEmail.slice(i, i + CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch.map(async (guardian) => {
+          const lang = guardian.preferred_language === 'hi' ? 'hi' : 'en';
+          const msgContent = lang === 'hi' && message_hi ? message_hi : message;
+
+          const res = await fetch(`${supabaseUrl}/functions/v1/send-transactional-email`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${serviceRoleKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              template: 'school-parent-broadcast',
+              to: guardian.email,
+              locale: lang,
+              params: {
+                school_name: schoolName,
+                message: msgContent,
+              },
+            }),
+          });
+
+          if (!res.ok) return false;
+          // The Edge Function returns { sent: boolean } even on a 200.
+          const json = (await res.json().catch(() => ({ sent: false }))) as { sent?: boolean };
+          return json.sent === true;
+        })
+      );
+
+      for (const result of results) {
+        if (result.status === 'fulfilled' && result.value) {
+          sentCount++;
+        } else {
+          failedCount++;
+        }
+      }
+    }
+
+    // P13: Do not log individual email addresses or message content.
+    logger.info('parent_email_bulk_sent', {
+      totalTargeted: guardiansWithEmail.length,
+      sentCount,
+      failedCount,
+      route: 'school-admin/parents',
     });
   }
 

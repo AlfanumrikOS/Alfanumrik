@@ -4478,3 +4478,91 @@ invalid-grade) out of the error/event telemetry entirely. 13 tests in 1 file.
 **Total catalog: 116 entries (target: 35 — TARGET EXCEEDED).**
 
 **Total: 116 entries.**
+
+## Portal RBAC/SaaS remediation Phase 2 — guardian Foxy-transcript boundary + parent support/calendar + bulk-parent broadcast (2026-06-16) — REG-149..REG-151
+
+Source: Phase 2 of `feat/portal-rbac-saas-remediation`. This wave wired three
+previously-stubbed parent surfaces to live, RLS/RBAC-gated server data:
+- **Parent Foxy chat view** — `GET /api/parent/children/[student_id]/chat` lets
+  an APPROVED guardian read (read-only, keyset-paginated) their linked child's
+  Foxy AI-tutor transcript. Backed by migration `20260620000200` which adds a
+  SELECT-only, `is_guardian_of()`-scoped RLS policy on `foxy_chat_messages` (+
+  `foxy_sessions`). This is the most sensitive surface in the wave: it exposes a
+  child's chat to a parent (CEO-approved P13 widening), so the boundary is the
+  whole point of the test.
+- **Parent calendar** — `GET /api/parent/calendar` aggregates a linked child's
+  upcoming `assignments` + `school_exams` + recent `quiz_sessions` into one
+  sorted `events[]`.
+- **Parent support tickets** — `POST/GET /api/support/tickets` gained a guardian
+  path (parent holds `child.view_progress`, not `foxy.chat`): create + list-own,
+  anchored to a linked child, role-tagged `parent`, rate-limited 5/24h.
+- **Bulk parent broadcast** — `POST /api/school-admin/parents` now routes the
+  EMAIL channel through `send-transactional-email` (new `school-parent-broadcast`
+  template) and standardised the response to `{ sent_count, failed_count,
+  channel }`.
+
+Two traps make these worth pinning:
+- **The chat boundary is a P13 cliff edge.** `canAccessStudent(authUserId,
+  childId)` is the single app-layer data boundary; the migration RLS policy is
+  the defense-in-depth DB boundary (`is_guardian_of()` is true ONLY for
+  status IN ('active','approved'), so an UNLINKED or PENDING guardian gets zero
+  rows). If either gate weakened — or a write path were ever added — a parent
+  could read (or worse, alter) an arbitrary child's private tutoring chat.
+- **The bulk-broadcast + support paths handle PII at scale.** Email addresses,
+  message bodies, and phone numbers must never reach the logger or the audit
+  metadata; the audit row carries counts/channel/target only.
+
+Files under test:
+- `src/__tests__/api/parent/children-chat-boundary.test.ts` — the architect's
+  priority P13 regression (auth gate, boundary deny = 403 + no read + denied
+  audit + no payload, approved-child scope pin, read-only/no-write, keyset
+  pagination, source + migration SELECT-only contract).
+- `src/__tests__/api/support/support-tickets-guardian.test.ts` — guardian create
+  + list-own + 403 NO_LINKED_CHILD + 429 rate-limit + P13 redaction.
+- `src/__tests__/api/parent/parent-calendar.test.ts` — aggregation shape +
+  403-not-linked-no-payload + 400/404 + P5 grade-string + no-PII-logged.
+- `src/__tests__/api/school-admin/parents-broadcast.test.ts` — `{message,target,
+  channel}` → `{sent_count,failed_count,channel}` contract, per-guardian Edge
+  Function dispatch via the `school-parent-broadcast` template, authz, P13.
+
+> **ID note:** REG-148 is the previous entry (Foxy event-logging telemetry
+> hygiene, 2026-06-15). REG-149..REG-151 are the next free ids. (The originating
+> task brief referenced "after REG-134"; that was stale — the live catalog had
+> already grown to REG-148.)
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-149 | `parent_foxy_chat_p13_boundary_read_only_keyset` | **THE P13 CHAT BOUNDARY (architect priority).** **(1) Own-approved-child only:** with `canAccessStudent(callerAuthId, pathChildId)` true the route reads `foxy_chat_messages` on the RLS-scoped SSR client with EXACTLY one `student_id` eq filter equal to the path child id (asserted via a filter-recording in-memory `@supabase/ssr` client), newest-first on `created_at`, and returns only those rows mapped to `{id,role,text,created_at,session_id}`; the boundary call is keyed `(callerAuthId, pathChildId)`. **(2) Unlinked OR pending guardian → 403, zero rows:** when `canAccessStudent` is false the route returns 403, the transcript read is NEVER issued (a `readReached` sentinel stays false — no transcript is ever assembled), and a `parent.child_chat_viewed` audit row with `status:'denied'` + `resourceId=childId` is written. Pending links surface identically (`is_guardian_of()` requires status IN active/approved). **(3) No guardian write path:** the route module exports GET only (no POST/PUT/PATCH/DELETE), and the RLS client records ZERO insert/update/delete/upsert/rpc calls on the happy path; the migration `20260620000200` is FOR-SELECT-only (`foxy_chat_messages_guardian_select`, `is_guardian_of`), introduces no guardian INSERT/UPDATE/DELETE/ALL policy, and contains no executable DROP-other-than-POLICY / TRUNCATE / DROP TABLE (DDL checked with `--` comments stripped). **(4) No payload on any deny:** 401/400/403/500 bodies carry only `{success:false,error}` — no `data`, no `messages`, no `page`, and no chat text/role markers anywhere in the serialized body; a 500 from an RLS read error also leaks nothing. **(5) Keyset pagination:** the route over-fetches `limit+1`, returns only `limit` rows with `page.has_more=true` and `page.next_before` = the oldest returned row's `created_at`; passing `?before=<iso>` applies a `.lt('created_at', iso)` keyset filter; an over-large `?limit` is capped at 100 (over-fetch 101); the last page reports `has_more:false`/`next_before:null`. **(6) Audit hygiene:** the success audit `details` carries only `{message_count}` — never the message body. | `src/__tests__/api/parent/children-chat-boundary.test.ts` (17) | U (unit; drives the real `GET` handler with `@/lib/rbac` + `@supabase/ssr` + `next/headers` mocked; the SSR client records filters/mutations) |
+| REG-150 | `parent_support_tickets_guardian_path` | The Phase 2 guardian support path. **(1) Create:** a logged-in guardian (holds `child.view_progress`, fails `foxy.chat`) `POST`s a ticket → persisted to `support_tickets` anchored to the FIRST linked child's `student_id`, `user_role='parent'`, `status='open'`, returning the new `ticket_id`. **(2) No linked child:** a guardian with zero links → `403 NO_LINKED_CHILD` on create (no row inserted) and an EMPTY list on `GET` (no DB list query issued, never another family's tickets). **(3) List-own scope:** `GET` filters `student_id IN (linked children)` AND `user_role='parent'`, so a guardian never sees the child's own `student`-role tickets. **(4) Rate limit:** the 6th create inside the in-memory 24h/5 window → `429 RATE_LIMITED` with a numeric `retry_after_ms`, and no 6th row is inserted. **(5) P13:** the persisted `email` column is the redacted sentinel `authenticated@redacted`, and the `logOpsEvent` context carries ids/role/category only — the serialized payload contains neither the message body nor a phone number. **(6) Unauthenticated `GET` → 401 verbatim.** (Per-test distinct auth ids isolate the module-level rate-limit Map — no shared mutable state across tests.) | `src/__tests__/api/support/support-tickets-guardian.test.ts` (8) | U (unit; real POST/GET with `@/lib/rbac`, identity/relationship domains, ops-events, and an in-memory `support_tickets` admin client mocked) |
+| REG-151 | `parent_calendar_aggregation_and_school_broadcast_contract` | Two Phase-2 parent-facing wirings. **PARENT CALENDAR** (`GET /api/parent/calendar`): RBAC gate uses `child.view_progress`; `canAccessStudent` is the single boundary — a NOT-LINKED guardian → 403 with the source queries (assignments/exams/quiz) NEVER run (an `anySourceQueried` sentinel stays false) and NO `events` payload (P13); 401 when unauthenticated (no boundary call); 400 on a non-UUID `student_id`; 404 when the child can't be resolved (no payload); the happy path merges `assignments`+`school_exams`+`quiz_sessions` into one `events[]` (each tagged `type`), sorted ascending by date, with the quiz event carrying a rounded `NN%` subtitle and `data.grade` a STRING (P5); the student name is never logged. **SCHOOL→PARENT BROADCAST** (`POST /api/school-admin/parents`): the corrected `{message,target,channel}` → `{success,data:{sent_count,failed_count,channel}}` contract — missing `message`/invalid `target`/invalid `channel` → 400, a `grade` target with a non-CBSE grade `'5'` → 400 (P5); `authorizeSchoolAdmin('school.manage_settings')` rejects an unauthorized caller verbatim with NO email/audit fired; the EMAIL channel dispatches one `send-transactional-email` call per approved guardian-with-email using the `school-parent-broadcast` template, counting `json.sent===true` as sent and the rest as failed; a no-match target short-circuits to zero counts with no fetch; P13 — neither the logger nor the `logSchoolAudit` metadata carries a guardian email or the message body (audit records counts/channel/target only, `action='parent_message.sent'`). | `src/__tests__/api/parent/parent-calendar.test.ts` (7), `src/__tests__/api/school-admin/parents-broadcast.test.ts` (7) | U (unit; real GET/POST handlers with rbac/identity/school-admin-auth/audit + table-aware in-memory admin clients + stubbed global `fetch` for the Edge Function) |
+
+### Invariants covered by this section
+
+- P8 RLS boundary — REG-149 (the guardian Foxy-transcript read rides the
+  RLS-scoped SSR client, not `supabase-admin`; migration `20260620000200` adds a
+  SELECT-only `is_guardian_of()`-scoped policy on `foxy_chat_messages`/
+  `foxy_sessions` — the DB boundary beneath the `canAccessStudent` app gate).
+- P9 RBAC enforcement — REG-149/REG-150/REG-151 (`child.view_progress` gates the
+  chat + calendar surfaces; the support route falls back to `child.view_progress`
+  for the guardian path; `school.manage_settings` gates the bulk broadcast).
+- P5 Grade format — REG-151 (calendar `grade` is a string; the broadcast rejects
+  a non-CBSE grade `'5'`).
+- P13 Data privacy — REG-149 (no transcript payload on any deny path; success
+  audit carries `message_count` only, never the chat body; read-only, no guardian
+  write path), REG-150 (redacted email column; ops-event context carries no
+  message body / phone), REG-151 (no `events` payload on a calendar deny; the
+  broadcast logger + audit carry counts/channel/target only — never a guardian
+  email or the message body; the student name is never logged).
+
+### Catalog total
+
+Pre-REG-149: 116 entries (through the Foxy event-logging telemetry-hygiene pin,
+REG-148). Portal-remediation Phase 2 adds REG-149..REG-151: the guardian
+Foxy-transcript P13 boundary (own-approved-child only, unlinked/pending → 403 +
+zero rows + no payload, read-only/no-write, keyset pagination, SELECT-only RLS
+migration), the parent support-ticket guardian path (create + list-own + 403
+NO_LINKED_CHILD + 429 + PII redaction), and the parent-calendar aggregation +
+school→parent broadcast request/response contract. 39 tests across 4 files.
+**Total catalog: 119 entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 119 entries.**

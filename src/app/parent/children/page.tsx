@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { track } from '@/lib/analytics';
 import ChildDataErasureSection from '@/components/parent/ChildDataErasureSection';
+import ParentChildChat from '@/components/parent/ParentChildChat';
 import { usePermissions } from '@/lib/usePermissions';
 import { usePulse } from '@/lib/pulse/use-pulse';
 import { StudentPulse } from '@/components/pulse';
@@ -319,11 +320,14 @@ function ChildCard({
         </div>
       )}
 
-      {/* Expanded detail */}
+      {/* Expanded detail.
+          maxHeight raised from 500 → 2000 to accommodate the added read-only
+          Foxy chat transcript section (with its own internal 340px scroll
+          region) plus Pulse / achievements / DPDP controls without clipping. */}
       <div style={{
-        maxHeight: expanded ? 500 : 0,
+        maxHeight: expanded ? 2000 : 0,
         overflow: 'hidden',
-        transition: 'max-height 0.4s ease',
+        transition: 'max-height 0.5s ease',
       }}>
         <div style={{ padding: '0 18px 18px', borderTop: '1px solid #1E293B' }}>
           {/* Subject progress bars */}
@@ -404,6 +408,21 @@ function ChildCard({
           {canViewProgress && (
             <div onClick={(e) => e.stopPropagation()}>
               <ChildPulseSection
+                childId={child.id}
+                childName={child.name}
+                enabled={expanded}
+                isHi={isHi}
+              />
+            </div>
+          )}
+
+          {/* Foxy chat transcript (read-only). P13: sensitive child data.
+              Gated by child.view_progress (UX only; server enforces the
+              parent↔child ownership boundary + RLS). Fetch is enabled only
+              while the card is expanded (no request on the collapsed roster). */}
+          {canViewProgress && (
+            <div onClick={(e) => e.stopPropagation()}>
+              <ParentChildChat
                 childId={child.id}
                 childName={child.name}
                 enabled={expanded}
