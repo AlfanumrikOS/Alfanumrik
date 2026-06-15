@@ -3937,3 +3937,79 @@ proves the matcher). **Total catalog: 109 entries (target: 35 — TARGET
 EXCEEDED).**
 
 **Total: 109 entries.**
+
+## Foxy P12 grade-spoof hard block — unconditional, all subjects, audit row (2026-06-15) — REG-142
+
+Source: CEO Decision D2 (2026-06-15). The `/api/foxy` route previously trusted
+the client-supplied `grade` field for prompt assembly, RAG scope, and curriculum
+selection — so a Grade 7 student could send `grade:'12'` and receive senior-grade
+content (a P12 AI-safety violation: AI must stay within the student's enrolled
+CBSE scope). The flag-gated `validateCurriculumScope` STEM pre-gate (REG —
+curriculum-guard-pregate) catches this for math/physics/chemistry/biology when
+`ff_foxy_curriculum_guard_v1` is ON, but it does NOT cover non-STEM subjects
+(english, hindi, history, etc.) and it is OFF by design as a kill switch — so
+a determined spoofer could simply request `subject:'english'` or wait for an
+incident-flag-off window. This entry pins a SECOND, UNCONDITIONAL, subject-
+independent defense layer.
+
+> **ID note:** REG-135..REG-141 are taken by the MOL Python-unification cluster
+> (REG-135..REG-139), the B1 RAG eval-harness (REG-140), and the Voyage rerank
+> model-id hotfix (REG-141). REG-142 is the next free id at the time this
+> entry was written (2026-06-15).
+
+The wire (three layers, in order, before any LLM call):
+
+1. **Zod 400** at `route.ts:2641-2658`. `FoxyRequestBodySchema` requires
+   `grade ∈ z.enum(['6','7','8','9','10','11','12'])`. Any out-of-range string
+   OR wrong type (integer, missing) returns 400 with `code:'INVALID_GRADE'`
+   BEFORE the students fetch, studentId resolution, governance check, prompt
+   build, RAG retrieval, or LLM call. (P5: grades are strings.)
+2. **DB-authoritative compare** at `route.ts:2802-2849`. The students row's
+   `grade` column is loaded server-side and compared to the (Zod-validated)
+   body grade. If `dbGrade !== null` AND `dbGrade !== grade` the route returns
+   `403 {code:'GRADE_MISMATCH', message:'Request grade does not match
+   enrollment'}`, writes an `audit_logs` row via `logAudit` with
+   `action:'foxy.grade_spoof_attempt'` +
+   `details:{claimed_grade, actual_grade, route:'/api/foxy'}` + `status:'denied'`,
+   and SKIPS every downstream call — no Claude, no grounded answer, no quota
+   spend.
+3. **Null-grade warn-and-proceed** at `route.ts:2850-2856`. A `dbGrade === null`
+   row (legitimately-onboarding student) is NOT 403'd — the route logs a
+   `logger.warn` and continues. The flag-gated STEM curriculum guard still
+   acts as a second layer downstream.
+
+The block runs **independent of `ff_foxy_curriculum_guard_v1`** and fires for
+**ALL subjects including non-STEM** (english, hindi, history, etc.). The flag
+only gates the existing STEM-only `validateCurriculumScope` pre-gate, which
+remains in place as a defense-in-depth second layer for STEM topics.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-142 | `foxy_p12_grade_spoof_hard_block` | (A) Out-of-range `grade:'5'` → 400 `{code:'INVALID_GRADE'}`, no students-fetch, no Claude / grounded-answer / routeIntent call, no `foxy.grade_spoof_attempt` audit. (B) Wrong-type `grade:12` (integer) → same 400 + same downstream silence (P5 enforced via Zod). (C) Happy path `grade:'8'` / `dbGrade:'8'` → no 400/403, grounded path called exactly once, no spoof audit row. (D) Spoof `grade:'12'` / `dbGrade:'8'` → exact body `{code:'GRADE_MISMATCH', message:'Request grade does not match enrollment'}` at HTTP 403; exactly ONE `logAudit` call with `action:'foxy.grade_spoof_attempt'`, `resourceType:'students'`, `resourceId:'student-uuid-1'`, `status:'denied'`, and `details:{claimed_grade:'12', actual_grade:'8', route:'/api/foxy'}`; NO Claude / grounded-answer / routeIntent call; NO foxy quota RPC invoked (no quota spend on the 403 branch). (E) Null-grade onboarding (`dbGrade:null`, body `grade:'6'`) → NOT 403'd, grounded path called, `logger.warn` for the null-grade marker, NO spoof audit row. (F) Subject independence — `subject:'english'` (non-STEM) with `grade:'12'` / `dbGrade:'8'` still returns 403 GRADE_MISMATCH + writes the audit row + does NOT call grounded; explicitly with `ff_foxy_curriculum_guard_v1=false` to prove the gate is independent of the curriculum guard. **Deferred:** the inline `TODO(monitoring)` comment in `route.ts` flags that the per-request `logger.info('foxy.request', ...)` marker is intended to swap to `logSystemMetric` once the monitoring substrate lands; that swap is NOT in this entry's scope (no monitoring infra to assert against yet). | `src/__tests__/api/foxy/grade-spoof-hard-block.test.ts` (17 tests, 6 scenarios A–F) | E |
+
+### Invariants covered by this section
+
+- P12 AI safety / curriculum scope — REG-142 (an out-of-grade client claim
+  CANNOT reach prompt-assembly, RAG scope, or any LLM call; the block is
+  subject-independent so non-STEM topics are covered too; the block is
+  independent of `ff_foxy_curriculum_guard_v1` so an OFF-flag window does
+  NOT open a spoof vector).
+- P5 Grade format — REG-142 (Zod enforces `grade ∈ z.enum(['6'..'12'])` at
+  the API boundary; integer 12 is rejected as a P5 violation alongside the
+  out-of-range string '5').
+- P9 RBAC enforcement / audit completeness — REG-142 (every spoof attempt
+  writes an `audit_logs` row with `action:'foxy.grade_spoof_attempt'` and
+  the claimed/actual grade pair, giving ops the forensic trail to detect
+  scaled abuse).
+- P13 Data privacy — REG-142 (the audit details payload carries only the
+  two grade strings + the route name — no message text, no PII).
+
+### Catalog total
+
+Pre-REG-142: 109 entries (through the Voyage rerank model-id hotfix,
+REG-141). The Foxy P12 grade-spoof hard-block adds REG-142 (unconditional
+all-subject grade-spoof defense — Zod 400, DB-compare 403 with audit row,
+null-grade warn-and-proceed, subject-independent). **Total catalog: 110
+entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 110 entries.**

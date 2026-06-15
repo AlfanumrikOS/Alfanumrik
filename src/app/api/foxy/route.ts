@@ -117,10 +117,23 @@ import {
   type OpenExpectation,
   type StructuredAssistantPayload,
 } from '@/lib/learn/foxy-expectations';
+import { z } from 'zod';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
+
+// P12 — Grade-spoof hard block (CEO decision D2, 2026-06-15).
+// Zod schema validates the body's `grade` field is one of the seven CBSE
+// grade strings BEFORE the route resolves studentId or any downstream
+// scope/RAG/prompt assembly. Permissive on every other field — the route's
+// hand-rolled validators below still cover message/subject/mode/etc. The
+// schema's only job is to lock the `grade` shape (P5: grades are strings).
+const FoxyRequestBodySchema = z
+  .object({
+    grade: z.enum(['6', '7', '8', '9', '10', '11', '12']),
+  })
+  .passthrough();
 const VALID_MODES = ['learn', 'explain', 'practice', 'revise'];
 // Phase 2.2: coaching modes — distinct from the UI session mode above.
 // 'answer'   → student wants the answer (used when mastery is high).
@@ -2625,6 +2638,25 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     return errorJson('Invalid request body.', 'Request body galat hai.', 400);
   }
 
+  // 2a. P12 grade-spoof defense — Zod-validate the `grade` field is one of the
+  // seven CBSE grade strings (P5) BEFORE any downstream use. We trim first
+  // because the rest of the route already trimmed grade defensively. Other
+  // fields are still validated by the hand-rolled checks below.
+  const trimmedGradeForSchema =
+    typeof body.grade === 'string' ? body.grade.trim() : body.grade;
+  const parsedBody = FoxyRequestBodySchema.safeParse({
+    ...body,
+    grade: trimmedGradeForSchema,
+  });
+  if (!parsedBody.success) {
+    return errorJson(
+      'Valid grade (6–12) is required.',
+      'Grade 6 se 12 ke beech hona chahiye.',
+      400,
+      { code: 'INVALID_GRADE' },
+    );
+  }
+
   const message = typeof body.message === 'string' ? body.message.trim() : '';
   const subject = typeof body.subject === 'string' ? body.subject.trim() : '';
   const grade = typeof body.grade === 'string' ? body.grade.trim() : '';
@@ -2765,19 +2797,118 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // phrases like "Aarav showed strong progress…". P13 forbids forwarding
   // names into the model — see `scrubStudentName` in foxy-long-memory.ts.
   let studentName: string | null = null;
+  // P12 grade-spoof defense (CEO decision D2, 2026-06-15): the enrolled grade
+  // on the students row is authoritative. If the client-claimed `grade`
+  // disagrees, we hard-block (403) BEFORE any prompt assembly, RAG scope,
+  // chapter lookup, or LLM call. Runs unconditionally for ALL subjects
+  // (independent of the existing flag-gated validateCurriculumScope STEM
+  // path in src/lib/foxy/curriculum-scope.ts).
+  let dbGrade: string | null = null;
+  // P15 funnel-safety: legitimately-onboarding rows can have null grade until
+  // the /onboarding page writes it. We gate the null-grade branch below on
+  // this flag so that an ONBOARDED user with null grade (profile corruption
+  // or deliberate anon-client bypass) gets the 403, while a pre-onboarding
+  // user keeps the warn-and-proceed path.
+  let dbOnboardingCompleted = false;
   try {
     const { data: studentRow } = await supabaseAdmin
       .from('students')
-      .select('subscription_plan, account_status, academic_goal, name')
+      .select('subscription_plan, account_status, academic_goal, name, grade, onboarding_completed')
       .eq('id', studentId)
       .single();
     if (studentRow?.subscription_plan) plan = normalizePlan(studentRow.subscription_plan);
     if (studentRow?.academic_goal) academicGoal = studentRow.academic_goal;
     if (studentRow?.name) studentName = studentRow.name as string;
+    // P12 string-format normalization: students.grade has two production
+    // conventions — bootstrap writes BARE "6" (src/lib/identity/bootstrap-
+    // profile.ts via normalizeGrade) while the onboarding page writes
+    // PREFIXED "Grade 6" (src/app/onboarding/page.tsx). Strip the prefix
+    // on read so the gate below compares apples to apples and legacy
+    // onboarded users don't get falsely 403'd.
+    const dbGradeRaw = studentRow?.grade ?? null;
+    dbGrade = typeof dbGradeRaw === 'string'
+      ? dbGradeRaw.replace(/^Grade\s*/i, '').trim()
+      : null;
+    dbOnboardingCompleted = studentRow?.onboarding_completed === true;
     if (studentRow?.account_status === 'suspended') {
       return errorJson('Your account is suspended.', 'Aapka account suspend hai.', 403);
     }
   } catch { /* Non-fatal — use default free plan */ }
+
+  // P12 grade-spoof HARD BLOCK. Runs after the students fetch resolves and
+  // BEFORE prompt assembly, RAG scope build, chapter/curriculum_topics
+  // lookup, cognitive context load, or any LLM call. Independent of
+  // ff_foxy_curriculum_guard_v1 — the flag-gated path stays as a second
+  // layer for STEM subjects only.
+  if (dbGrade !== null && dbGrade !== grade) {
+    try {
+      await logAudit(auth.userId!, {
+        action: 'foxy.grade_spoof_attempt',
+        resourceType: 'students',
+        resourceId: studentId,
+        details: {
+          claimed_grade: grade,
+          actual_grade: dbGrade,
+          route: '/api/foxy',
+        },
+        status: 'denied',
+      });
+    } catch (auditErr) {
+      logger.error('[foxy] audit write failed for grade_spoof_attempt', {
+        err: String(auditErr),
+      });
+    }
+    return errorJson(
+      'Request grade does not match enrollment',
+      'Aapki request ka grade aapke profile se match nahi karta.',
+      403,
+      { code: 'GRADE_MISMATCH' },
+    );
+  }
+  if (dbGrade === null) {
+    // P12 hardening: an ONBOARDED user with null grade is either profile
+    // corruption or a deliberate anon-client patch (onboarding writes via the
+    // anon client, so a student CAN set their own row's grade to null).
+    // Either way, treat as a spoof — but still let pre-onboarding users
+    // through so the P15 funnel keeps working.
+    if (dbOnboardingCompleted) {
+      try {
+        await logAudit(auth.userId!, {
+          action: 'foxy.grade_spoof_attempt',
+          resourceType: 'students',
+          resourceId: studentId,
+          details: {
+            claimed_grade: grade,
+            actual_grade: null,
+            route: '/api/foxy',
+            reason: 'onboarded_null_grade',
+          },
+          status: 'denied',
+        });
+      } catch (auditErr) {
+        logger.error('[foxy] audit write failed for grade_spoof_attempt (null-grade)', {
+          err: String(auditErr),
+        });
+      }
+      return errorJson(
+        'Request grade does not match enrollment',
+        'Aapki request ka grade aapke profile se match nahi karta.',
+        403,
+        { code: 'GRADE_MISMATCH' },
+      );
+    }
+    // Legitimately-onboarding user — let the downstream flow proceed
+    // (validateCurriculumScope still fails closed for STEM, and the rest of
+    // the route handles missing grade gracefully via the hand-rolled
+    // validators above).
+    logger.warn('[foxy] student row has null grade (pre-onboarding)', { userId: auth.userId });
+  }
+
+  // P12 per-request observability marker. Placed AFTER the grade check so
+  // spoof attempts are not counted as legitimate requests.
+  // TODO(monitoring): swap to logSystemMetric({ metric_name: 'foxy_request', value: 1, tags: { grade } })
+  // once src/lib/monitoring/log-event.ts ships (blocked: src/types/monitoring.ts and system_metrics table do not exist yet).
+  logger.info('foxy.request', { route: '/api/foxy', grade, userId: auth.userId });
 
   // 5. Quota check
   const { allowed, remaining } = await checkAndIncrementQuota(studentId, plan);
