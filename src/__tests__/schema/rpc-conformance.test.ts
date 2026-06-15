@@ -39,9 +39,11 @@ import * as path from 'path';
  * `supabaseAdmin.rpc(name)` inside `safeRpc(name)`, where `name` is a function
  * parameter, not a literal. Its three call-time literals
  * (`get_slow_functions_stats`, `get_connection_stats`, `get_table_sizes`) reach
- * `.rpc()` only via that variable, so the static scan never sees them. They are
- * STILL listed in KNOWN_GAPS (defensively, with their real reason) so the audit
- * record is complete even though this test cannot match them as targets.
+ * `.rpc()` only via that variable, so the static scan never sees them as targets.
+ * They are NO LONGER in KNOWN_GAPS: migration
+ * `20260615162908_restore_missing_rpc_surface.sql` now DEFINES all three in the
+ * applied path, so the drainable check would flag lingering entries as dead
+ * weight. They were drained when that migration landed on disk.
  */
 
 const REPO_ROOT = process.cwd();
@@ -62,25 +64,9 @@ const BASELINE_FILE = path.join(MIGRATIONS_DIR, '00000000000000_baseline_from_pr
 // not a silent allowlist grant.
 // ---------------------------------------------------------------------------
 const KNOWN_GAPS: Record<string, string> = {
-  // --- P1 — absent from prod; live 500s; REG-144-class; pending compensating migration ---
-  get_question_history_stats:
-    'P1 — absent from prod; live 500s; REG-144-class; pending compensating migration.',
-  get_exam_paper:
-    'P1 — absent from prod; live 500s; REG-144-class; pending compensating migration.',
-  get_ncert_coverage:
-    'P1 — absent from prod; live 500s; REG-144-class; pending compensating migration.',
-
   // --- P1 — recoverable from _legacy/ (CREATE FUNCTION exists only in the archived chain) ---
   predict_exam_score:
     'P1 — _legacy-recoverable (definition lives only under supabase/migrations/_legacy/).',
-
-  // --- P2 — _legacy-recoverable; fail-soft (reached via the dynamic db-performance safeRpc) ---
-  get_slow_functions_stats:
-    'P2 — _legacy-recoverable; fail-soft via safeRpc (dynamic db-performance call; not a static target).',
-  get_connection_stats:
-    'P2 — _legacy-recoverable; fail-soft via safeRpc (dynamic db-performance call; not a static target).',
-  get_table_sizes:
-    'P2 — _legacy-recoverable; fail-soft via safeRpc (dynamic db-performance call; not a static target).',
 
   // --- P2 — orphaned dead code (the only caller, ChallengeMode.tsx, is unmounted) ---
   create_challenge:

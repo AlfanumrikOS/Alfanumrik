@@ -71,7 +71,7 @@ const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 const VALID_COUNTS = [5, 10, 15, 20];
 const VALID_DIFFICULTIES = ['easy', 'medium', 'hard', 'mixed', 'progressive'];
 const VALID_QUESTION_TYPES = ['mcq', 'true_false', 'fill_blank', 'assertion_reason'];
-const VALID_GET_ACTIONS = ['questions', 'chapter-progress', 'history-stats', 'exam-paper', 'ncert-coverage'];
+const VALID_GET_ACTIONS = ['questions', 'chapter-progress'];
 
 // ─── Bilingual Error Messages ───────────────────────────────────
 
@@ -188,7 +188,7 @@ async function resolveStudent(
 // ─── GET Handler ────────────────────────────────────────────────
 
 /**
- * GET /api/quiz?action=questions|chapter-progress|history-stats|exam-paper|ncert-coverage
+ * GET /api/quiz?action=questions|chapter-progress
  * Permission: quiz.attempt
  */
 export async function GET(request: NextRequest) {
@@ -265,15 +265,6 @@ export async function GET(request: NextRequest) {
 
       case 'chapter-progress':
         return await handleChapterProgress(studentId, subject, grade);
-
-      case 'history-stats':
-        return await handleHistoryStats(studentId, subject, grade);
-
-      case 'exam-paper':
-        return await handleGetExamPaper(request, studentId, subject, grade);
-
-      case 'ncert-coverage':
-        return await handleNcertCoverage(studentId, subject, grade);
 
       default:
         return errorResponse(errors.invalidAction, 400);
@@ -587,125 +578,4 @@ async function handleChapterProgress(
   }
 
   return NextResponse.json({ success: true, chapters: data ?? [] });
-}
-
-/**
- * Get question history stats: pool coverage, seen/unseen counts, etc.
- */
-async function handleHistoryStats(
-  studentId: string,
-  subject: string,
-  grade: string
-): Promise<NextResponse> {
-  const { data, error } = await supabaseAdmin.rpc('get_question_history_stats', {
-    p_student_id: studentId,
-    p_subject: subject,
-    p_grade: grade,
-  });
-
-  if (error) {
-    logger.error('quiz_history_stats_rpc_failed', {
-      error: new Error(error.message),
-      route: '/api/quiz',
-      studentId,
-      subject,
-      grade,
-    });
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Failed to load question history stats.',
-        error_hi: 'Question history stats load nahi ho paye.',
-      },
-      { status: 500 }
-    );
-  }
-
-  return NextResponse.json({ success: true, stats: data ?? {} });
-}
-
-/**
- * GET-based exam paper retrieval (for fetching a previously generated paper).
- */
-async function handleGetExamPaper(
-  request: NextRequest,
-  studentId: string,
-  subject: string,
-  grade: string
-): Promise<NextResponse> {
-  const url = new URL(request.url);
-  const templateId = url.searchParams.get('templateId') || null;
-
-  const { data, error } = await supabaseAdmin.rpc('get_exam_paper', {
-    p_student_id: studentId,
-    p_subject: subject,
-    p_grade: grade,
-    p_template_id: templateId,
-  });
-
-  if (error) {
-    logger.error('quiz_get_exam_paper_rpc_failed', {
-      error: new Error(error.message),
-      route: '/api/quiz',
-      studentId,
-      subject,
-      grade,
-    });
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Failed to load exam paper.',
-        error_hi: 'Exam paper load nahi ho paya.',
-      },
-      { status: 500 }
-    );
-  }
-
-  if (!data) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'No exam paper found.',
-        error_hi: 'Koi exam paper nahi mila.',
-      },
-      { status: 404 }
-    );
-  }
-
-  return NextResponse.json({ success: true, paper: data });
-}
-
-/**
- * Get NCERT coverage data: which NCERT topics have been practiced, coverage %.
- */
-async function handleNcertCoverage(
-  studentId: string,
-  subject: string,
-  grade: string
-): Promise<NextResponse> {
-  const { data, error } = await supabaseAdmin.rpc('get_ncert_coverage', {
-    p_student_id: studentId,
-    p_subject: subject,
-    p_grade: grade,
-  });
-
-  if (error) {
-    logger.error('quiz_ncert_coverage_rpc_failed', {
-      error: new Error(error.message),
-      route: '/api/quiz',
-      studentId,
-      subject,
-      grade,
-    });
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Failed to load NCERT coverage data.',
-        error_hi: 'NCERT coverage data load nahi ho paya.',
-      },
-      { status: 500 }
-    );
-  }
-
-  return NextResponse.json({ success: true, coverage: data ?? [] });
 }
