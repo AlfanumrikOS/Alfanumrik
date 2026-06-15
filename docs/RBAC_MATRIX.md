@@ -68,6 +68,7 @@ Higher hierarchy levels indicate more authority. Hierarchy level is informationa
 |----------------|-------------|
 | `class.manage` | Manage classes and enrollments |
 | `class.view_analytics` | View class analytics |
+| `class.assign_remediation` | Assign targeted remediation to a student on a weak concept (Teacher Command Center) |
 | `exam.assign` | Assign exams to classes |
 | `exam.create_for_class` | Create exams for class |
 | `test.create` | Create tests and quizzes |
@@ -88,10 +89,25 @@ Higher hierarchy levels indicate more authority. Hierarchy level is informationa
 | `institution.manage_students` | Add, remove, and manage students within the institution |
 | `institution.view_reports` | View institution-wide performance reports |
 
+### School Permissions (school)
+
+The `school.*` family scopes the institution-admin school-admin console (distinct from the broader `institution.*` settings family).
+
+| Permission Code | Description |
+|----------------|-------------|
+| `school.manage_exams` | Schedule, edit, and remove school-wide assessments/exams (school-admin exams console) |
+
+### Competition Permissions (competition)
+
+| Permission Code | Description |
+|----------------|-------------|
+| `competition.access` | Access JEE/NEET/Olympiad question banks and mock-test runner (requires active Competition plan) |
+
 ### Content Permissions (content)
 
 | Permission Code | Description |
 |----------------|-------------|
+| `content.read` | Student/teacher-facing read access to NCERT chapter content + content search (concept-engine). Fixed a live student 403 outage. |
 | `content.create` | Create new curriculum content items |
 | `content.edit` | Edit existing curriculum content |
 | `content.submit_review` | Submit content for review/approval |
@@ -103,6 +119,12 @@ Higher hierarchy levels indicate more authority. Hierarchy level is informationa
 | `content.reject` | Reject content and send back for revision |
 | `content.view_drafts` | View draft content pending review |
 | `content.manage` | Manage curriculum content (admin-level) |
+
+### AlfaBot Permissions (alfabot)
+
+| Permission Code | Description |
+|----------------|-------------|
+| `alfabot.read_messages` | Super-admin forensic read of AlfaBot session message content (P13 exception, super-admin only) |
 
 ### Support Permissions (support)
 
@@ -188,6 +210,7 @@ Legend: **X** = explicitly granted
 | **Class** | | | | | | | | | | | |
 | `class.manage` | | | X | | X | | | | | X | X |
 | `class.view_analytics` | | | X | | X | | | | | X | X |
+| `class.assign_remediation` | | | X | | | | | | | X | X |
 | **Test** | | | | | | | | | | | |
 | `test.create` | | | X | | X | | | | | X | X |
 | `test.edit` | | | X | | X | | | | | X | X |
@@ -203,7 +226,12 @@ Legend: **X** = explicitly granted
 | `institution.manage_teachers` | | | | | X | | | | | X | X |
 | `institution.manage_students` | | | | | X | | | | | X | X |
 | `institution.view_reports` | | | | | X | | | | | X | X |
+| **School** | | | | | | | | | | | |
+| `school.manage_exams` | | | | | X | | | | | X | X |
+| **Competition** | | | | | | | | | | | |
+| `competition.access` | | | | | | | | | | X | X |
 | **Content** | | | | | | | | | | | |
+| `content.read` | X | | X | | | | | | | X | X |
 | `content.create` | | | | | | X | | | | X | X |
 | `content.edit` | | | | | | X | | | | X | X |
 | `content.submit_review` | | | | | | X | | | | X | X |
@@ -215,6 +243,8 @@ Legend: **X** = explicitly granted
 | `content.reject` | | | | | | | X | | | X | X |
 | `content.view_drafts` | | | | | | | X | | | X | X |
 | `content.manage` | | | | | | | | | | X | X |
+| **AlfaBot** | | | | | | | | | | | |
+| `alfabot.read_messages` | | | | | | | | | | | X |
 | **Support** | | | | | | | | | | | |
 | `support.view_tickets` | | | | | | | | X | | X | X |
 | `support.manage_tickets` | | | | | | | | X | | X | X |

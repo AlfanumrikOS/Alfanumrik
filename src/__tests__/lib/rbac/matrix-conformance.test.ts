@@ -337,3 +337,94 @@ describe('RBAC matrix conformance — matrix shape sanity', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REG-120 EXTENSION — Portal RBAC remediation Phase 0 fold-in
+//   (migration 20260620000000_portal_rbac_remediation_phase0_school_manage_exams.sql)
+//
+// Phase 0 of the portal RBAC remediation closed three matrix-reproducibility
+// holes. These grants live in the Phase 0 migration (NOT the base conformance
+// migration above), so the matrix is only genuinely replayable from a fresh DB
+// if BOTH files apply. This block pins the Phase 0 migration to its three
+// expected role→permission resolutions:
+//   - school.manage_exams      → institution_admin  (NEW code; the 403 fix —
+//                                 the school-admin exams routes authorize against
+//                                 a code that was previously in no role)
+//   - class.assign_remediation → teacher            (live on prod; re-asserted
+//                                 for fresh-DB reproducibility)
+//   - competition.access       → admin, super_admin (live on prod, but had NO
+//                                 in-tree seed → missing on a fresh DB)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PHASE0_MIGRATION_RELATIVE_PATH =
+  'supabase/migrations/20260620000000_portal_rbac_remediation_phase0_school_manage_exams.sql';
+
+const phase0Sql = (() => {
+  const p = resolve(process.cwd(), PHASE0_MIGRATION_RELATIVE_PATH);
+  return readFileSync(p, 'utf8');
+})();
+
+/**
+ * True iff the Phase 0 migration grants `code` to `role` via the established
+ * `FROM roles r, permissions p WHERE r.name = '<role>' AND p.code = '<code>'`
+ * (or `r.name IN (...'<role>'...)`) seed-join pattern.
+ */
+function phase0GrantsCodeToRole(sql: string, code: string, role: string): boolean {
+  // Find each grant statement that targets the code, then confirm the role is
+  // named in that statement's r.name predicate (either `= 'role'` or
+  // `IN ( ... 'role' ... )`).
+  const stmtRe = new RegExp(
+    `INSERT INTO role_permissions[\\s\\S]*?p\\.code\\s*=\\s*'${code}'[\\s\\S]*?ON CONFLICT`,
+    'gi',
+  );
+  const stmts = sql.match(stmtRe) || [];
+  for (const stmt of stmts) {
+    const eq = new RegExp(`r\\.name\\s*=\\s*'${role}'`).test(stmt);
+    const inList = new RegExp(`r\\.name\\s+IN\\s*\\([^)]*'${role}'[^)]*\\)`).test(stmt);
+    if (eq || inList) return true;
+  }
+  return false;
+}
+
+describe('REG-120 extension — Phase 0 portal RBAC remediation grants resolvable', () => {
+  it('the Phase 0 migration exists and is additive + idempotent', () => {
+    expect(phase0Sql.length).toBeGreaterThan(0);
+    expect(phase0Sql).toMatch(/BEGIN;/);
+    expect(phase0Sql).toMatch(/COMMIT;/);
+    expect(phase0Sql).toMatch(/ON CONFLICT \(code\) DO NOTHING/);
+    expect(phase0Sql).toMatch(/ON CONFLICT \(role_id, permission_id\) DO NOTHING/);
+    const codeOnly = phase0Sql
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('--'))
+      .join('\n');
+    expect(codeOnly).not.toMatch(/\bDROP\s+(TABLE|COLUMN)\b/i);
+    expect(codeOnly).not.toMatch(/\bDELETE\s+FROM\b/i);
+    expect(codeOnly).not.toMatch(/\bTRUNCATE\b/i);
+  });
+
+  it('seeds the NEW permission code "school.manage_exams" into the permissions table', () => {
+    expect(phase0Sql).toMatch(
+      /INSERT INTO permissions[\s\S]*?\(\s*'school\.manage_exams'/,
+    );
+  });
+
+  it('resolves school.manage_exams → institution_admin', () => {
+    expect(phase0GrantsCodeToRole(phase0Sql, 'school.manage_exams', 'institution_admin')).toBe(true);
+  });
+
+  it('resolves school.manage_exams → admin and super_admin (explicit defensive grants)', () => {
+    expect(phase0GrantsCodeToRole(phase0Sql, 'school.manage_exams', 'admin')).toBe(true);
+    expect(phase0GrantsCodeToRole(phase0Sql, 'school.manage_exams', 'super_admin')).toBe(true);
+  });
+
+  it('resolves class.assign_remediation → teacher', () => {
+    expect(phase0Sql).toMatch(/\(\s*'class\.assign_remediation'/);
+    expect(phase0GrantsCodeToRole(phase0Sql, 'class.assign_remediation', 'teacher')).toBe(true);
+  });
+
+  it('resolves competition.access → admin and super_admin', () => {
+    expect(phase0Sql).toMatch(/\(\s*'competition\.access'/);
+    expect(phase0GrantsCodeToRole(phase0Sql, 'competition.access', 'admin')).toBe(true);
+    expect(phase0GrantsCodeToRole(phase0Sql, 'competition.access', 'super_admin')).toBe(true);
+  });
+});

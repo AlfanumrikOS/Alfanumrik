@@ -13,7 +13,12 @@ import { NextRequest, NextResponse } from 'next/server';
  *   1. TENANT ISOLATION — the get_principal_ai_context RPC is called with the
  *      authorizeSchoolAdmin-resolved schoolId, NEVER a body-supplied school_id.
  *   2. AUTH DENIAL — a denial short-circuits: no RPC, no Claude call.
- *   3. FLAG OFF → 404 before auth or any work.
+ *   3. FLAG OFF → 503 { success:false, error:'feature_not_enabled' } before auth
+ *      or any work (portal RBAC remediation Phase 0+1, 2026-06-16: the flag-OFF
+ *      contract moved from 404 {error:'not_found'} to 503
+ *      {success:false, error:'feature_not_enabled'} so an OFF feature reads as a
+ *      temporarily-unavailable capability — not a missing route — and is
+ *      distinguishable from a genuine not-found).
  *   4. FOREIGN session_id — a session whose school_id != caller's schoolId is
  *      NOT reused; a fresh school-scoped session is minted instead.
  *   5. DAILY CAP exceeded → 429, no LLM call.
@@ -283,16 +288,24 @@ describe('Principal AI POST — auth denial', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// 3. FLAG OFF → 404 before auth / work
+// 3. FLAG OFF → 503 { success:false, error:'feature_not_enabled' } before
+//    auth / work (portal RBAC remediation Phase 0+1, 2026-06-16)
 // ═══════════════════════════════════════════════════════════════════════
 describe('Principal AI POST — flag gate', () => {
-  it('returns 404 and never authorizes or calls the RPC/Claude when the flag is OFF', async () => {
+  it('returns 503 feature_not_enabled and never authorizes or calls the RPC/Claude when the flag is OFF', async () => {
     isFeatureEnabled.mockResolvedValue(false);
     const { POST } = await import('@/app/api/school-admin/ai-assistant/route');
 
     const res = await POST(postReq({ message: 'hi' }));
 
-    expect(res.status).toBe(404);
+    // Flag-OFF contract: 503 temporarily-unavailable capability (was 404
+    // not_found before the portal RBAC remediation Phase 0+1). The route gates
+    // on the flag BEFORE authz, so authorize is never reached, and no grounding
+    // RPC / Claude call is made.
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error).toBe('feature_not_enabled');
     expect(authorizeSchoolAdmin).not.toHaveBeenCalled();
     expect(rpcCalls).toHaveLength(0);
     expect(callClaude).not.toHaveBeenCalled();

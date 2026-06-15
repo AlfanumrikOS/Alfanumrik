@@ -14,7 +14,7 @@
  * change — no new server endpoints needed.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -22,6 +22,7 @@ import {
   supabaseUrl as SUPABASE_URL,
   supabaseAnonKey as SUPABASE_ANON,
 } from '@/lib/supabase';
+import { useTeacherAllowedSubjects } from '@/lib/useTeacherAllowedSubjects';
 import {
   AtlasShell,
   AtlasCard,
@@ -69,12 +70,43 @@ async function api(action: string, params: Record<string, unknown> = {}) {
   return res.json();
 }
 
+/**
+ * Current academic-week + date label for the class bar.
+ *
+ * The Indian CBSE session starts in April, so we anchor "Week 1" to 1 April of
+ * the current academic year (April→March). The label was previously the
+ * hardcoded string "Week 9 · May 11"; this derives it from `now` so it stays
+ * truthful. Bilingual (P7): short month names render in Hindi when `isHi`.
+ */
+const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS_HI = ['जन', 'फ़र', 'मार्च', 'अप्रैल', 'मई', 'जून', 'जुल', 'अग', 'सित', 'अक्तू', 'नव', 'दिस'];
+function currentWeekLabel(isHi: boolean, now: Date = new Date()): string {
+  const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  const sessionStart = new Date(year, 3, 1); // 1 April
+  const week = Math.max(1, Math.floor((now.getTime() - sessionStart.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1);
+  const month = (isHi ? MONTHS_HI : MONTHS_EN)[now.getMonth()];
+  const day = now.getDate();
+  return isHi
+    ? `सप्ताह ${week} · ${day} ${month}`
+    : `Week ${week} · ${month} ${day}`;
+}
+
 export default function AtlasTeacher() {
   const router = useRouter();
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
+  // Real subjects this teacher teaches — drives the class-bar filter pills
+  // (replaces the old hardcoded ['All','Forces',…] decoration). Bilingual via
+  // each subject's nameHi (P7).
+  const { subjects: teacherSubjects } = useTeacherAllowedSubjects();
 
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [heatmap, setHeatmap] = useState<HeatmapData | null>(null);
+  // 'all' ⇒ omit the subject param so get_heatmap returns every concept
+  // (the Edge Function only filters when a subject is supplied). Otherwise the
+  // selected subject code scopes the mastery map. Replaces the hardcoded
+  // subject:'math' literal in the heatmap fetch.
+  const [selectedSubject, setSelectedSubject] = useState<string>('all');
+  const [heatmapLoading, setHeatmapLoading] = useState(false);
   const [alerts, setAlerts] = useState<RiskAlert[]>([]);
   const [poll, setPoll] = useState<PollData | null>(null);
   const [pollDraft, setPollDraft] = useState({ q: '', opts: ['', '', '', ''], correctIdx: 0 });
@@ -97,6 +129,16 @@ export default function AtlasTeacher() {
   const teacherId = teacher?.id ?? '';
   const cls = dash?.classes?.[0];
   const t = (en: string, hi: string) => (isHi ? hi : en);
+
+  // Class-bar filter pills: a leading "All" (clears the subject filter) plus one
+  // pill per real teacher subject. Carries EN + Hindi labels for P7.
+  const subjectPills = useMemo(
+    () => [
+      { code: 'all', label: 'All', labelHi: 'सभी', icon: '' },
+      ...teacherSubjects.map((s) => ({ code: s.code, label: s.name, labelHi: s.nameHi, icon: s.icon })),
+    ],
+    [teacherSubjects],
+  );
 
   const fetchTodayLesson = useCallback(async (classId: string) => {
     try {
@@ -152,6 +194,24 @@ export default function AtlasTeacher() {
       console.error('Error fetching in-the-moment alerts:', err);
     }
   }, []);
+
+  // Subject-scoped heatmap fetch. 'all' omits the subject param (Edge Function
+  // returns every concept); a code scopes the matrix to that subject. Used both
+  // by the initial load and when the teacher taps a filter pill.
+  const fetchHeatmap = useCallback(async (classId: string, subject: string) => {
+    if (!teacherId) return;
+    setHeatmapLoading(true);
+    try {
+      const params: Record<string, unknown> = { teacher_id: teacherId, class_id: classId };
+      if (subject && subject !== 'all') params.subject = subject;
+      const h = await api('get_heatmap', params);
+      setHeatmap(h);
+    } catch (err) {
+      console.error('Error fetching heatmap:', err);
+    } finally {
+      setHeatmapLoading(false);
+    }
+  }, [teacherId]);
 
   const deployIntervention = async (alert: any) => {
     const alertId = alert.id;
@@ -215,13 +275,12 @@ export default function AtlasTeacher() {
       setDash(d);
       const firstClassId = d?.classes?.[0]?.id;
       if (firstClassId) {
-        const [h, a] = await Promise.all([
-          api('get_heatmap', { teacher_id: teacherId, class_id: firstClassId, subject: 'math' }),
-          api('get_alerts',  { teacher_id: teacherId, class_id: firstClassId }),
-        ]);
-        setHeatmap(h);
+        const a = await api('get_alerts', { teacher_id: teacherId, class_id: firstClassId });
         setAlerts(a.alerts || []);
 
+        // The heatmap is fetched by a dedicated effect keyed on (class,
+        // selectedSubject) so tapping a filter pill re-fetches only the map —
+        // not the whole dashboard.
         await Promise.all([
           fetchTodayLesson(firstClassId),
           fetchTopicsForClass(firstClassId),
@@ -236,6 +295,14 @@ export default function AtlasTeacher() {
   }, [teacherId, fetchTodayLesson, fetchTopicsForClass, fetchMomentAlerts]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Re-fetch the heatmap whenever the active class or the selected subject pill
+  // changes. Owns all heatmap fetching (load() no longer does it) so a pill tap
+  // re-queries only the mastery map.
+  const activeClassId = dash?.classes?.[0]?.id;
+  useEffect(() => {
+    if (activeClassId) fetchHeatmap(activeClassId, selectedSubject);
+  }, [activeClassId, selectedSubject, fetchHeatmap]);
 
   const resolveAlert = async (id: string) => {
     await api('resolve_alert', { teacher_id: teacherId, alert_id: id });
@@ -351,29 +418,38 @@ export default function AtlasTeacher() {
           </div>
         </div>
 
+        {/* Subject filter pills — real teacher subjects, bilingual (P7). Each
+            pill re-scopes the mastery heatmap below via setSelectedSubject;
+            'all' clears the subject filter (every concept). */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 }}>
-          {['All', 'Forces', 'Motion', 'Light', 'Heat', 'Sound'].map((s, i) => (
-            <button
-              key={s}
-              aria-pressed={i === 0}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 999,
-                fontFamily: 'var(--font-display)',
-                fontSize: 12,
-                fontWeight: 600,
-                border: '1px solid var(--line)',
-                background: i === 0 ? 'var(--ink)' : 'transparent',
-                color: i === 0 ? 'var(--cream)' : 'var(--ink-3)',
-                cursor: 'pointer',
-              }}
-            >
-              {s}
-            </button>
-          ))}
+          {subjectPills.map((p) => {
+            const active = selectedSubject === p.code;
+            return (
+              <button
+                key={p.code}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setSelectedSubject(p.code)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 999,
+                  fontFamily: 'var(--font-display)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  border: '1px solid var(--line)',
+                  background: active ? 'var(--accent)' : 'transparent',
+                  color: active ? 'white' : 'var(--ink-3)',
+                  cursor: 'pointer',
+                  opacity: heatmapLoading ? 0.7 : 1,
+                }}
+              >
+                {p.icon ? `${p.icon} ` : ''}{t(p.label, p.labelHi)}
+              </button>
+            );
+          })}
         </div>
 
-        <AtlasPill tone="teal">{t('Week 9 · May 11', 'सप्ताह 9 · मई 11')}</AtlasPill>
+        <AtlasPill tone="teal">{currentWeekLabel(isHi)}</AtlasPill>
       </AtlasCard>
 
       {/* ─── Three-column stage ─── */}
