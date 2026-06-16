@@ -13,6 +13,7 @@
  */
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 
 interface ArtifactRow {
@@ -44,13 +45,14 @@ const PICKER_LABEL_HI: Record<ArtifactRow['pickerOption'], string> = {
 };
 
 export default function DiveHistoryPage() {
+  const router = useRouter();
   const { isHi, isLoggedIn, isLoading } = useAuth();
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
 
   useEffect(() => {
     if (isLoading) return;
     if (!isLoggedIn) {
-      window.location.href = '/login';
+      router.replace('/login');
       return;
     }
     let cancelled = false;

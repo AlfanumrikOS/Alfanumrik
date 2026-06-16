@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
@@ -80,7 +80,7 @@ interface ConceptState {
   isCorrect: boolean;
 }
 
-export default function ChapterConceptPage() {
+function ChapterConceptPageContent() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -2279,6 +2279,14 @@ export default function ChapterConceptPage() {
       </main>
       </AppShell>
     </div>
+  );
+}
+
+export default function ChapterConceptPage() {
+  return (
+    <Suspense>
+      <ChapterConceptPageContent />
+    </Suspense>
   );
 }
 

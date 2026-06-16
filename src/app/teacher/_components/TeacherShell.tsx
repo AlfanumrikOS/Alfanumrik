@@ -30,6 +30,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
@@ -250,7 +251,7 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
             const active =
               pathname === item.href || (pathname || '').startsWith(item.href + '/');
             return (
-              <a
+              <Link
                 key={item.href}
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
@@ -259,7 +260,7 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
               >
                 <span aria-hidden="true">{item.icon}</span>
                 <span className="truncate">{isHi ? item.labelHi : item.label}</span>
-              </a>
+              </Link>
             );
           })}
         </nav>

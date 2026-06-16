@@ -521,7 +521,6 @@ export default function TeacherStudentsPage() {
           const heatData = await api('get_heatmap', {
             teacher_id: teacherId,
             class_id: cls.id,
-            subject: 'math',
           });
 
           if (heatData?.matrix) {
@@ -580,7 +579,7 @@ export default function TeacherStudentsPage() {
   const filtered = allStudents
     .filter((s) => {
       const matchesSearch = !search || s.name.toLowerCase().includes(search.toLowerCase());
-      const matchesClass = selectedClass === 'all' || true; // All students shown when 'all'
+      const matchesClass = selectedClass === 'all'; // Filter by class — no class_id on StudentData yet; shows all when 'all' selected
       const matchesStruggling = !filterStruggling || s.mastery < 50 || s.accuracy < 50;
       return matchesSearch && matchesClass && matchesStruggling;
     })
@@ -633,7 +632,7 @@ export default function TeacherStudentsPage() {
           onClick={() => router.push('/teacher')}
           style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 6, padding: '4px 10px', color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}
         >
-          &larr; {tt(isHi, 'डैशबोर्ड', 'Dashboard')}
+          &larr; {tt(isHi, 'Dashboard', 'डैशबोर्ड')}
         </button>
         <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: '#fff' }}>
           {'👨‍🎓'} {tt(isHi, 'My Students', 'मेरे छात्र')}

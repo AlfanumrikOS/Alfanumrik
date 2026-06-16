@@ -16,7 +16,7 @@
  *   - Mobile responsive: stacks single-column under md:.
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
@@ -73,7 +73,7 @@ function relativeTime(iso: string, isHi: boolean): string {
   });
 }
 
-export default function ParentNotificationsPage() {
+function ParentNotificationsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isHi } = useAuth();
@@ -368,5 +368,13 @@ function NotificationRow({
         </div>
       )}
     </li>
+  );
+}
+
+export default function ParentNotificationsPage() {
+  return (
+    <Suspense>
+      <ParentNotificationsContent />
+    </Suspense>
   );
 }

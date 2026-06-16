@@ -642,7 +642,7 @@ export default function TeacherReportsPage() {
       const [overview, students, trends] = await Promise.all([
         api('get_class_overview', { teacher_id: teacherId }),
         api('get_students_list', { teacher_id: teacherId }),
-        api('get_trends', { teacher_id: teacherId }),
+        api('get_class_trends', { teacher_id: teacherId }),
       ]);
       setOverviewData(overview);
       setStudentsList(students?.students || students || []);
@@ -686,7 +686,7 @@ export default function TeacherReportsPage() {
             onClick={() => router.push('/teacher')}
             style={{ background: 'rgba(232,88,28,0.12)', border: 'none', borderRadius: 6, padding: '4px 10px', color: '#E8581C', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}
           >
-            &larr; {tt(isHi, 'डैशबोर्ड', 'Dashboard')}
+            &larr; {tt(isHi, 'Dashboard', 'डैशबोर्ड')}
           </button>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1A1207', margin: 0 }}>{tt(isHi, 'Performance Reports', 'प्रदर्शन रिपोर्ट')}</h1>
           <p style={{ fontSize: 14, color: '#7D7264', margin: '4px 0 0' }}>

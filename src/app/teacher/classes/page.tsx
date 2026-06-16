@@ -328,7 +328,7 @@ export default function TeacherClassesPage() {
               onClick={() => router.push('/teacher')}
               style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 6, padding: '4px 10px', color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}
             >
-              &larr; {tt(isHi, 'डैशबोर्ड', 'Dashboard')}
+              &larr; {tt(isHi, 'Dashboard', 'डैशबोर्ड')}
             </button>
             <h1 style={{ fontSize: 26, fontWeight: 700, color: '#fff', margin: 0 }}>
               <span role="img" aria-label="school">🏫</span> {tt(isHi, 'My Classes', 'मेरी कक्षाएं')}

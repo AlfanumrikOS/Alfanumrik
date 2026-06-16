@@ -19,7 +19,7 @@
  * Polling at 15s for the active thread, 30s for the thread list.
  */
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
@@ -99,7 +99,7 @@ function relativeTime(iso: string, isHi: boolean): string {
   return new Date(iso).toLocaleDateString(isHi ? 'hi-IN' : 'en-IN', { day: 'numeric', month: 'short' });
 }
 
-export default function TeacherMessagesPage() {
+function TeacherMessagesContent() {
   const { isHi } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -404,5 +404,13 @@ export default function TeacherMessagesPage() {
         )}
       </section>
     </div>
+  );
+}
+
+export default function TeacherMessagesPage() {
+  return (
+    <Suspense>
+      <TeacherMessagesContent />
+    </Suspense>
   );
 }
