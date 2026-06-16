@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { AuthScreen } from '@/components/auth/AuthScreen';
 import { getRoleDestination, validateRedirectTarget } from '@/lib/identity';
 import { setPendingInvite } from '@/lib/school/pending-invite';
 
-export default function LoginPage() {
+function LoginPageContent() {
   const { isLoggedIn, isLoading, activeRole, isHi } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -93,5 +93,22 @@ export default function LoginPage() {
         onSuccess={handleSuccess}
       />
     </div>
+  );
+}
+
+/**
+ * Suspense boundary required by Next.js App Router when using useSearchParams().
+ *
+ * Without this, Next.js renders the page on the server with null searchParams
+ * and hydrates on the client with the actual URL values — any JSX that renders
+ * a different text node (e.g. the ?error= message) causes React #418 hydration
+ * mismatch. The Suspense boundary tells React to defer SSR of this content;
+ * the fallback is null since the auth form is instant-loading on the client.
+ */
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginPageContent />
+    </Suspense>
   );
 }
