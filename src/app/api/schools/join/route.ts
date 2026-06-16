@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
     // 1. Look up invite code
     const { data: invite, error: inviteErr } = await supabaseAdmin
       .from('school_invite_codes')
-      .select('id, school_id, code, role, class_id, max_uses, uses_count, expires_at, is_active')
+      .select('id, school_id, code, role_type, class_id, max_uses, used_count, expires_at, is_active')
       .eq('code', normalizedCode)
       .eq('is_active', true)
       .maybeSingle();
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Check max uses
-    if (invite.uses_count >= invite.max_uses) {
+    if (invite.used_count >= invite.max_uses) {
       return NextResponse.json(
         { success: false, error: 'This invite code has reached its usage limit' },
         { status: 410 }
@@ -168,10 +168,10 @@ export async function POST(request: NextRequest) {
           slug: school.slug,
           logo_url: school.logo_url,
         },
-        role: invite.role,
+        role: invite.role_type,
         class_name: className,
         class_grade: classGrade,
-        message: `Join ${school.name}${className ? `, ${className}` : ''} as a ${invite.role}. Sign up to continue.`,
+        message: `Join ${school.name}${className ? `, ${className}` : ''} as a ${invite.role_type}. Sign up to continue.`,
       });
     }
 
@@ -186,7 +186,7 @@ export async function POST(request: NextRequest) {
     //  • Applies to ANY school_subscriptions row, including trial schools
     //    (was: only when status='active'; trials were silently uncapped).
     //  • Emits school_seat_cap_hit so the funnel surfaces in PostHog.
-    if (invite.role === 'student') {
+    if (invite.role_type === 'student') {
       const { data: subscription } = await supabaseAdmin
         .from('school_subscriptions')
         .select('seats_purchased')
@@ -225,7 +225,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 8. Link user to school
-    if (invite.role === 'student') {
+    if (invite.role_type === 'student') {
       // `.select('id')` lets us verify the UPDATE actually matched a row. A
       // bare UPDATE that matches zero rows returns no error — if the student's
       // profile hasn't bootstrapped yet (fresh-signup race), we'd otherwise
@@ -285,7 +285,7 @@ export async function POST(request: NextRequest) {
             );
         }
       }
-    } else if (invite.role === 'teacher') {
+    } else if (invite.role_type === 'teacher') {
       // Same no-row guard as the student branch above (fresh-signup race).
       const { data: linkedRows, error: updateErr } = await supabaseAdmin
         .from('teachers')
@@ -319,33 +319,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 9. Atomically increment uses_count with a max_uses guard.
+    // 9. Atomically increment used_count with a max_uses guard.
     //
-    // Race condition fix: the read-then-write pattern (read uses_count above,
-    // then write uses_count + 1 here) lets two concurrent joiners both pass
-    // the max_uses check at uses_count=N, both link to the school, then both
+    // Race condition fix: the read-then-write pattern (read used_count above,
+    // then write used_count + 1 here) lets two concurrent joiners both pass
+    // the max_uses check at used_count=N, both link to the school, then both
     // write N+1 — net effect is two students joined but the counter only
     // advanced by 1, so the per-code limit can be exceeded by N.
     //
-    // The eq('uses_count', invite.uses_count) clause makes the increment a
-    // CAS (compare-and-swap): the UPDATE only fires if uses_count is still
+    // The eq('used_count', invite.used_count) clause makes the increment a
+    // CAS (compare-and-swap): the UPDATE only fires if used_count is still
     // exactly what we read in step 1. If it changed under us, the data
     // returned will be empty — we don't undo the link (the student is
     // already a member) but we do log the contention so ops can see if
     // codes are being hammered concurrently.
     const { data: incremented } = await supabaseAdmin
       .from('school_invite_codes')
-      .update({ uses_count: invite.uses_count + 1 })
+      .update({ used_count: invite.used_count + 1 })
       .eq('id', invite.id)
-      .eq('uses_count', invite.uses_count)
-      .select('id, uses_count')
+      .eq('used_count', invite.used_count)
+      .select('id, used_count')
       .maybeSingle();
 
     if (!incremented) {
       logger.warn('join_invite_code_increment_contention', {
         code_id: invite.id,
         school_id: invite.school_id,
-        observed_uses_count: invite.uses_count,
+        observed_used_count: invite.used_count,
         route: '/api/schools/join',
       });
     }
@@ -358,10 +358,10 @@ export async function POST(request: NextRequest) {
         name: school.name,
         slug: school.slug,
       },
-      role: invite.role,
+      role: invite.role_type,
       class_name: className,
       class_grade: classGrade,
-      message: `You've been added to ${school.name}${className ? `, ${className}` : ''} as a ${invite.role}.`,
+      message: `You've been added to ${school.name}${className ? `, ${className}` : ''} as a ${invite.role_type}.`,
     });
   } catch (err) {
     logger.error('join_school_error', {
