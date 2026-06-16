@@ -271,8 +271,19 @@ async function evaluateAnswer(body: Record<string, unknown>): Promise<Response> 
       .single()
     modelAnswer = data?.expected_answer || data?.answer_text || ''
     solutionSteps = data?.explanation ?? ''
-    if (Array.isArray(data?.answer_rubric)) {
-      rubricPoints = (data!.answer_rubric as Array<Record<string, unknown>>)
+    // answer_rubric is stored in TWO shapes:
+    //   • bulk-non-mcq-gen (Phase 2, ~92% of rows): an OBJECT { points: [{point, marks}] }
+    //   • promoted/legacy NCERT rows (~8%): a bare ARRAY [{point, marks}]
+    // Unwrap both into a single array before mapping so the per-mark CBSE
+    // scheme reaches the examiner prompt in either case.
+    const rawRubric = data?.answer_rubric as unknown
+    const rubric = Array.isArray(rawRubric)
+      ? rawRubric
+      : (rawRubric && typeof rawRubric === 'object'
+          ? ((rawRubric as Record<string, unknown>).points as unknown)
+          : null)
+    if (Array.isArray(rubric)) {
+      rubricPoints = (rubric as Array<Record<string, unknown>>)
         .map((r) => ({
           point: String(r.point ?? r.criterion ?? ''),
           marks: Number(r.marks ?? r.points ?? 0),

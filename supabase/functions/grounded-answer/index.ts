@@ -30,7 +30,10 @@ function jsonResponse(status: number, payload: unknown): Response {
   });
 }
 
-const FOXY_WORD_SOFT_CAP = 180;
+// TODO(ai-engineer): re-enable truncation once the MoL grading pipeline
+// confirms that capped responses do not lose scoring points. Until then,
+// the cap is a no-op (students see the full answer; truncated=false).
+const FOXY_WORD_SOFT_CAP = 180; // eslint-disable-line @typescript-eslint/no-unused-vars
 
 export function applyFoxyWordCap(answer: string): {
   answer: string;
@@ -231,4 +234,3 @@ function buildStreamingResponse(
 Deno.serve(handleRequest);
 
 export { getSb as __sbForTests };
-```__

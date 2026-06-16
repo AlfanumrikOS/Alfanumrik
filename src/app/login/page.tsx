@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { AuthScreen } from '@/components/auth/AuthScreen';
 import { getRoleDestination, validateRedirectTarget } from '@/lib/identity';
+import { setPendingInvite } from '@/lib/school/pending-invite';
 
 export default function LoginPage() {
   const { isLoggedIn, isLoading, activeRole, isHi } = useAuth();
@@ -14,10 +15,24 @@ export default function LoginPage() {
   const roleParam = searchParams.get('role');
   const redirectTo = searchParams.get('redirect');
   const errorParam = searchParams.get('error');
-  const initialRole: 'student' | 'teacher' | 'parent' =
+  // School invite-code redemption (B2B day-1 path). `/join` forwards
+  // unauthenticated joiners here as `/login?school=<slug>&code=<code>`. We
+  // persist the code so it survives the email-verification round-trip; once a
+  // session AND profile exist, AuthContext redeems it via /api/schools/join.
+  const codeParam = searchParams.get('code');
+  // institution_admin is included so a school admin opening an invite link
+  // lands on the right tab; the redeemed link itself is role-driven server-side.
+  const initialRole: 'student' | 'teacher' | 'parent' | 'institution_admin' =
     roleParam === 'teacher' ? 'teacher'
     : roleParam === 'parent' ? 'parent'
+    : roleParam === 'institution_admin' || roleParam === 'school' ? 'institution_admin'
     : 'student';
+
+  // Persist a pending invite code as early as possible (before any signup /
+  // verification redirect). Idempotent and bilingual-agnostic.
+  useEffect(() => {
+    if (codeParam) setPendingInvite(codeParam);
+  }, [codeParam]);
 
   useEffect(() => {
     // Don't redirect if user explicitly wants to switch accounts

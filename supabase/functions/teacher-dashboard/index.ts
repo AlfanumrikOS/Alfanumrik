@@ -150,8 +150,33 @@ async function handleGetDashboard(
 
   if (!teacher) return errorResponse('Teacher not found', 404, origin)
 
+  // Per-class roster student shape surfaced to /teacher/classes' expanded view
+  // (cls.students). Field names match the frontend ClassData contract exactly
+  // (src/app/teacher/classes/page.tsx:56):
+  //   { id, name, xp, mastery }
+  // `xp` is the student's existing xp_total (read-only; no XP math changed).
+  // `mastery` is the same BKT p_know average already used by the heatmap,
+  // rounded to a percent (no mastery math changed).
+  type DashStudent = { id: string; name: string; xp: number; mastery: number }
+  // Per-class assignment shape surfaced to /teacher/classes (cls.assignments).
+  // Field names match the frontend ClassData contract exactly
+  // (src/app/teacher/classes/page.tsx:57): { id, title, type, due_date }
+  type DashAssignment = {
+    id: string
+    title: string
+    type: string
+    due_date: string | null
+  }
+
   // Fetch classes assigned to this teacher
-  let classes: Array<{ id: string; name: string; student_count: number; avg_mastery?: number }> = []
+  let classes: Array<{
+    id: string
+    name: string
+    student_count: number
+    avg_mastery?: number
+    students?: DashStudent[]
+    assignments?: DashAssignment[]
+  }> = []
   try {
     const { data: classData } = await supabase
       .from('class_teachers')
@@ -173,6 +198,12 @@ async function handleGetDashboard(
         const rosterIds = (roster || [])
           .map((r: any) => r.student_id as string | null)
           .filter((id): id is string => !!id)
+
+        // Lightweight per-class roster students[] for the expanded view. Load
+        // live (non-deleted) student id+name+xp_total, then attach a coarse BKT
+        // mastery snapshot (avg p_know across that student's concept_mastery
+        // rows). Shape matches the frontend contract: { id, name, xp, mastery }.
+        const dashStudents: DashStudent[] = []
         if (rosterIds.length > 0) {
           const { count: liveCount } = await supabase
             .from('students')
@@ -180,12 +211,76 @@ async function handleGetDashboard(
             .in('id', rosterIds)
             .is('deleted_at', null)
           count = liveCount ?? 0
+
+          const { data: liveStudents } = await supabase
+            .from('students')
+            .select('id, name, xp_total')
+            .in('id', rosterIds)
+            .is('deleted_at', null)
+            .limit(200)
+          const liveIds = (liveStudents || []).map((s: any) => String(s.id))
+          // Batch the mastery snapshot: avg p_know per student over their
+          // concept_mastery rows. Degrade gracefully if the table is absent.
+          const masteryByStudent = new Map<string, { sum: number; n: number }>()
+          if (liveIds.length > 0) {
+            try {
+              const { data: cm } = await supabase
+                .from('concept_mastery')
+                .select('student_id, p_know')
+                .in('student_id', liveIds)
+                .limit(20000)
+              for (const row of cm || []) {
+                const sid = String((row as any).student_id)
+                const pk = Number((row as any).p_know) || 0
+                const agg = masteryByStudent.get(sid) || { sum: 0, n: 0 }
+                agg.sum += pk
+                agg.n += 1
+                masteryByStudent.set(sid, agg)
+              }
+            } catch { /* concept_mastery absent — mastery defaults to 0 */ }
+          }
+          for (const s of liveStudents || []) {
+            const sid = String((s as any).id)
+            const agg = masteryByStudent.get(sid)
+            const mastery = agg && agg.n > 0 ? Math.round((agg.sum / agg.n) * 100) : 0
+            dashStudents.push({
+              id: sid,
+              name: (s as any).name || 'Student',
+              xp: Number((s as any).xp_total) || 0,
+              mastery,
+            })
+          }
         }
+
+        // Lightweight per-class assignments[] for the expanded view. Shape
+        // matches the frontend contract: { id, title, type, due_date }. `type`
+        // is the assignment_type column (the kind label the UI renders).
+        // Degrade gracefully if the table is absent on this env.
+        const dashAssignments: DashAssignment[] = []
+        try {
+          const { data: classAssignments } = await supabase
+            .from('assignments')
+            .select('id, title, assignment_type, due_date')
+            .eq('class_id', cls.id)
+            .order('due_date', { ascending: false, nullsFirst: false })
+            .limit(50)
+          for (const a of classAssignments || []) {
+            dashAssignments.push({
+              id: String((a as any).id),
+              title: (a as any).title || 'Assignment',
+              type: String((a as any).assignment_type || 'assignment'),
+              due_date: (a as any).due_date ? String((a as any).due_date) : null,
+            })
+          }
+        } catch { /* assignments table absent — empty assignments[] */ }
+
         classes.push({
           id: cls.id,
           name: cls.name || `${cls.grade}-${cls.section || 'A'}`,
           student_count: count ?? 0,
           avg_mastery: 0,
+          students: dashStudents,
+          assignments: dashAssignments,
         })
       }
     }
@@ -207,6 +302,8 @@ async function handleGetDashboard(
         name: `Grade ${grade}`,
         student_count: count ?? 0,
         avg_mastery: 0,
+        students: [],
+        assignments: [],
       })
     }
   }
@@ -2049,6 +2146,55 @@ async function handleGetGradeBook(
     }
   }
 
+  // Merge first-class saved cells from `grade_book_entries` OVER the derived
+  // matrix so a teacher's explicit save SURVIVES a reload (FIX 1 — the core of
+  // the "save → reload → gone" bug). Saved cells are authoritative: they carry
+  // the teacher-entered raw score + the column's own max_score, and they cover
+  // every column kind (subject / attendance / unit), not just score_history
+  // subjects. Any saved column_key not already in `columns` is appended so the
+  // matrix stays rectangular and the saved cell is actually rendered.
+  // Migration: 20260620001000_grade_book_entries.sql (apply + redeploy on merge).
+  try {
+    const { data: savedRows } = await supabase
+      .from('grade_book_entries')
+      .select('student_id, column_key, score, max_score')
+      .eq('class_id', classId)
+      .in('student_id', studentIds)
+      .limit(20000)
+    for (const r of (savedRows || []) as Array<{
+      student_id: string
+      column_key: string
+      score: number | null
+      max_score: number | null
+    }>) {
+      const sid = String(r.student_id)
+      const key = String(r.column_key || '').toLowerCase()
+      if (!key || !cells[sid]) continue
+      // Ensure the saved column is part of the declared column set.
+      if (!columns.some(c => c.key === key)) {
+        const kind: 'subject' | 'unit' | 'attendance' =
+          key === 'attendance' ? 'attendance' : key.startsWith('unit:') ? 'unit' : 'subject'
+        const label = kind === 'attendance'
+          ? 'Attendance'
+          : key.charAt(0).toUpperCase() + key.slice(1)
+        // Insert subject/unit columns before the trailing attendance column to
+        // preserve the existing column ordering convention.
+        if (kind === 'attendance') {
+          columns.push({ key, label, kind })
+        } else {
+          const attIdx = columns.findIndex(c => c.kind === 'attendance')
+          if (attIdx >= 0) columns.splice(attIdx, 0, { key, label, kind })
+          else columns.push({ key, label, kind })
+        }
+      }
+      cells[sid][key] = {
+        score: r.score != null ? Number(r.score) : null,
+        max_score: r.max_score != null ? Number(r.max_score) : 100,
+        status: r.score != null ? 'graded' : 'pending',
+      }
+    }
+  } catch { /* grade_book_entries absent on this env — fall back to derived matrix */ }
+
   // Attendance column (best-effort). The baseline schema lacks a clean
   // attendance table the teacher portal can join to, so we surface a
   // pending placeholder rather than fabricating a number.
@@ -2204,10 +2350,45 @@ async function handleSetGradeBookCell(
     }
   }
 
-  // STEP 2: canonical write. TODO: extract to grade-book-projector subscriber.
-  // For subject columns, write to `score_history`. For attendance and unit
-  // columns the schema is not yet present — we surface the event but don't
-  // persist (flagged in PR description, follow-up migration).
+  // STEP 2: canonical write — `grade_book_entries` is the first-class store for
+  // the gradebook cell (keyed UNIQUE(class_id, student_id, column_key)). This is
+  // what makes a saved cell SURVIVE a reload: get_grade_book merges these rows
+  // over the derived matrix. Persisted for EVERY column kind (subject /
+  // attendance / unit) so non-subject cells no longer vanish on refresh.
+  // Migration: 20260620001000_grade_book_entries.sql (apply + redeploy on merge).
+  let gradeBookPersisted = false
+  try {
+    const { error: gbErr } = await supabase
+      .from('grade_book_entries')
+      .upsert(
+        {
+          class_id: classId,
+          student_id: studentId,
+          column_key: columnKeyRaw,
+          score,
+          max_score: maxScore,
+          teacher_id: teacherId,
+          updated_at: now,
+        },
+        { onConflict: 'class_id,student_id,column_key' },
+      )
+    if (gbErr) {
+      return errorResponse(`Failed to record grade: ${gbErr.message}`, 500, origin)
+    }
+    gradeBookPersisted = true
+  } catch (e) {
+    return errorResponse(
+      `Failed to record grade: ${e instanceof Error ? e.message : String(e)}`,
+      500,
+      origin,
+    )
+  }
+
+  // STEP 3: legacy derived write. For SUBJECT columns we additionally keep the
+  // pre-existing `score_history` derived row so the analytics/reports surfaces
+  // that read score_history stay populated (unchanged behaviour). Attendance
+  // and unit columns have no score_history representation and rely solely on
+  // the grade_book_entries store above.
   let canonicalWritten = false
   if (columnKind === 'subject') {
     try {
@@ -2248,6 +2429,7 @@ async function handleSetGradeBookCell(
     recorded_at: now,
     event_published: busFlagOn,
     canonical_written: canonicalWritten,
+    grade_book_persisted: gradeBookPersisted,
   }, 200, {}, origin)
 }
 

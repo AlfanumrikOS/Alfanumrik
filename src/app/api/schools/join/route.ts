@@ -6,6 +6,57 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
 /**
+ * Resolve the authenticated user from either:
+ *   1. the cookie-based server session (SSR/middleware-hydrated), OR
+ *   2. an `Authorization: Bearer <access_token>` header.
+ *
+ * The browser Supabase client persists the session in localStorage (not a
+ * cookie), so a fresh student/teacher redeeming an invite code from
+ * AuthContext sends the token as a Bearer header — the cookie-only path would
+ * otherwise see no user and wrongly return the "not authenticated" branch,
+ * dropping the school link. Mirrors resolveAuthUser in api/auth/bootstrap and
+ * api/auth/session. Never throws; never logs the token (P13).
+ */
+async function resolveJoinUser(
+  request: NextRequest,
+): Promise<{ id: string } | null> {
+  // Path 1: cookie session (wins when present — preserves prior behavior).
+  try {
+    const cookieStore = await cookies();
+    const supabaseServer = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+          setAll() {
+            // Read-only in route handler
+          },
+        },
+      }
+    );
+    const { data: { user } } = await supabaseServer.auth.getUser();
+    if (user) return { id: user.id };
+  } catch { /* fall through to Bearer */ }
+
+  // Path 2: Authorization: Bearer <jwt>
+  const authHeader = request.headers.get('authorization'); // case-insensitive per Fetch spec
+  if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+    const token = authHeader.slice(7).trim();
+    if (token) {
+      try {
+        const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+        if (user) return { id: user.id };
+      } catch { /* token invalid/expired/network */ }
+    }
+  }
+
+  return null;
+}
+
+/**
  * POST /api/schools/join — Join a school via invite code
  *
  * Body: { code: string }
@@ -102,24 +153,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 6. Check if user is authenticated
-    const cookieStore = await cookies();
-    const supabaseServer = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
-          setAll() {
-            // Read-only in route handler
-          },
-        },
-      }
-    );
-
-    const { data: { user } } = await supabaseServer.auth.getUser();
+    // 6. Check if user is authenticated (cookie session first, then the
+    //    Authorization: Bearer fallback for localStorage-session clients).
+    const user = await resolveJoinUser(request);
 
     if (!user) {
       // Not authenticated — return school info for pre-filled signup
@@ -190,10 +226,17 @@ export async function POST(request: NextRequest) {
 
     // 8. Link user to school
     if (invite.role === 'student') {
-      const { error: updateErr } = await supabaseAdmin
+      // `.select('id')` lets us verify the UPDATE actually matched a row. A
+      // bare UPDATE that matches zero rows returns no error — if the student's
+      // profile hasn't bootstrapped yet (fresh-signup race), we'd otherwise
+      // report success, link nobody, AND burn a use of the code. Treat the
+      // no-row case as a transient failure (503) so the client retries on the
+      // next AuthContext load WITHOUT consuming the invite.
+      const { data: linkedRows, error: updateErr } = await supabaseAdmin
         .from('students')
         .update({ school_id: invite.school_id })
-        .eq('auth_user_id', user.id);
+        .eq('auth_user_id', user.id)
+        .select('id');
 
       if (updateErr) {
         logger.error('join_student_link_failed', {
@@ -203,6 +246,20 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { success: false, error: 'Failed to link to school. Please try again.' },
           { status: 500 }
+        );
+      }
+
+      if (!linkedRows || linkedRows.length === 0) {
+        logger.warn('join_student_profile_not_ready', {
+          route: '/api/schools/join',
+        });
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'profile_not_ready',
+            error: 'Your profile is still being set up. Please try again in a moment.',
+          },
+          { status: 503 }
         );
       }
 
@@ -229,10 +286,12 @@ export async function POST(request: NextRequest) {
         }
       }
     } else if (invite.role === 'teacher') {
-      const { error: updateErr } = await supabaseAdmin
+      // Same no-row guard as the student branch above (fresh-signup race).
+      const { data: linkedRows, error: updateErr } = await supabaseAdmin
         .from('teachers')
         .update({ school_id: invite.school_id })
-        .eq('auth_user_id', user.id);
+        .eq('auth_user_id', user.id)
+        .select('id');
 
       if (updateErr) {
         logger.error('join_teacher_link_failed', {
@@ -242,6 +301,20 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { success: false, error: 'Failed to link to school. Please try again.' },
           { status: 500 }
+        );
+      }
+
+      if (!linkedRows || linkedRows.length === 0) {
+        logger.warn('join_teacher_profile_not_ready', {
+          route: '/api/schools/join',
+        });
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'profile_not_ready',
+            error: 'Your profile is still being set up. Please try again in a moment.',
+          },
+          { status: 503 }
         );
       }
     }
