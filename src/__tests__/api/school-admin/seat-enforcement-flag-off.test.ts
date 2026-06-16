@@ -197,7 +197,7 @@ describe('FLAG OFF — POST /api/school-admin/invite-codes (legacy path)', () =>
   it('issues a STUDENT code with the requested max_uses (no seat cap) — legacy 201 shape', async () => {
     dbState.handlers['schools'] = () => Promise.resolve({ data: { slug: 'dps', name: 'DPS' }, error: null });
     dbState.handlers['school_invite_codes:insert'] = () =>
-      Promise.resolve({ data: { id: 'inv-1', code: 'DPS-ABC', role: 'student', max_uses: 50, uses_count: 0, is_active: true }, error: null });
+      Promise.resolve({ data: { id: 'inv-1', code: 'DPS-ABC', role_type: 'student', max_uses: 50, used_count: 0, is_active: true }, error: null });
 
     const res = await INVITE_POST(
       jsonReq('/api/school-admin/invite-codes', { role: 'student', max_uses: 50 }) as never,

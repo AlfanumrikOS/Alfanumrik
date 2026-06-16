@@ -94,7 +94,7 @@ function makeAdminClient(opts: {
                   code: (row.code as string | undefined) ?? 'TEST-CODE',
                   role: row.role,
                   max_uses: row.max_uses,
-                  uses_count: 0,
+                  used_count: 0,
                   expires_at: row.expires_at,
                   is_active: true,
                   created_at: new Date().toISOString(),

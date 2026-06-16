@@ -386,7 +386,7 @@ describe('POST /api/school-admin/invite-codes (enforcement ON)', () => {
   function primeInvite() {
     dbState.handlers['schools'] = () => Promise.resolve({ data: { slug: 'dps', name: 'DPS' }, error: null });
     dbState.handlers['school_invite_codes:insert'] = () =>
-      Promise.resolve({ data: { id: 'inv-1', code: 'DPS-ABC123', role: 'student', max_uses: 3, uses_count: 0, is_active: true }, error: null });
+      Promise.resolve({ data: { id: 'inv-1', code: 'DPS-ABC123', role_type: 'student', max_uses: 3, used_count: 0, is_active: true }, error: null });
   }
 
   it('caps max_uses to remaining seats and returns max_uses_capped_to_seats + remaining_seats', async () => {
@@ -425,7 +425,7 @@ describe('POST /api/school-admin/invite-codes (enforcement ON)', () => {
   it('does NOT seat-bound a TEACHER invite (teachers are not seats)', async () => {
     primeInvite();
     dbState.handlers['school_invite_codes:insert'] = () =>
-      Promise.resolve({ data: { id: 'inv-2', code: 'DPS-XYZ', role: 'teacher', max_uses: 1, uses_count: 0, is_active: true }, error: null });
+      Promise.resolve({ data: { id: 'inv-2', code: 'DPS-XYZ', role_type: 'teacher', max_uses: 1, used_count: 0, is_active: true }, error: null });
     const res = await INVITE_POST(
       jsonReq('/api/school-admin/invite-codes', { role: 'teacher' }) as never,
     );

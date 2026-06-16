@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await supabase
       .from('school_invite_codes')
-      .select('id, code, role, max_uses, uses_count, expires_at, is_active, created_by, created_at')
+      .select('id, code, role_type, max_uses, used_count, expires_at, is_active, created_by, created_at')
       .eq('school_id', schoolId)
       .order('created_at', { ascending: false });
 
@@ -184,14 +184,14 @@ export async function POST(request: NextRequest) {
       .insert({
         school_id: schoolId,
         code,
-        role: body.role,
+        role_type: body.role,
         max_uses: maxUses,
-        uses_count: 0,
+        used_count: 0,
         expires_at: expiresAt.toISOString(),
         is_active: true,
         created_by: auth.schoolAdminId,
       })
-      .select('id, code, role, max_uses, uses_count, expires_at, is_active, created_at')
+      .select('id, code, role_type, max_uses, used_count, expires_at, is_active, created_at')
       .single();
 
     if (insertError) {
