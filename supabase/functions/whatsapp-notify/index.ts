@@ -217,6 +217,11 @@ async function logNotification(
   errorMessage?: string,
 ): Promise<void> {
   try {
+    // KNOWN GAP (needs migration — architect): the `notification_log` table
+    // does not exist on prod (confirmed against the live DB 2026-06-16). Every
+    // insert here fails and is swallowed, so WhatsApp delivery audit rows are
+    // silently dropped. Delivery itself is unaffected (this is logging only).
+    // Until the table is created, this is a best-effort no-op by design.
     await supabase.from('notification_log').insert({
       user_id: userId ?? null,
       channel,
@@ -238,8 +243,13 @@ async function queueEmailFallback(
   data: Record<string, string>,
 ): Promise<void> {
   try {
+    // Schema note: the live `task_queue` table keys the work type on
+    // `queue_name` (baseline_from_prod.sql:14324), NOT `type`. Inserting `type`
+    // made this insert fail with PGRST204 (column not found); it was swallowed
+    // by the catch below, so the WhatsApp→email fallback never actually
+    // enqueued. Use the real column name.
     await supabase.from('task_queue').insert({
-      type: 'email_fallback',
+      queue_name: 'email_fallback',
       payload: {
         original_channel: 'whatsapp',
         template_type: templateType,

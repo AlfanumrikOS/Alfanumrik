@@ -279,8 +279,12 @@ async function queueWhatsApp(supabase: ReturnType<typeof createClient>, phone: s
   try {
     // Best-effort enqueue into task_queue for the whatsapp-notify Edge Function
     // to consume. Email is the regulated channel; WhatsApp is convenience.
+    // Schema note: the live `task_queue` table keys work on `queue_name`
+    // (baseline_from_prod.sql:14324), NOT `task_type`. The old `task_type`
+    // insert failed and was swallowed below, so the WhatsApp convenience
+    // notice never queued (the regulated email path was unaffected).
     const { error } = await supabase.from('task_queue').insert({
-      task_type: 'whatsapp_pre_debit_notice',
+      queue_name: 'whatsapp_pre_debit_notice',
       payload: { to: phone, body, kind: 'pre_debit_notice' },
       status: 'pending',
     })

@@ -72,9 +72,13 @@ Deno.serve(async (req: Request) => {
     auth: { persistSession: false },
   });
 
+  // Schema note: `students` has no `institution_id` column on prod (confirmed
+  // against the live DB 2026-06-16) — the tenant FK is `school_id`. Selecting
+  // the non-existent column made this query error out, so EVERY student
+  // resolved to 404. Use `school_id` for institution targeting below.
   const { data: student, error: studentError } = await admin
     .from('students')
-    .select('id, grade, subscription_plan, school_id, account_status, institution_id')
+    .select('id, grade, subscription_plan, school_id, account_status')
     .eq('auth_user_id', user.id)
     .single();
 
@@ -125,9 +129,9 @@ Deno.serve(async (req: Request) => {
       enabled = false;
     }
 
-    // Institution targeting
-    if (enabled && flag.target_institutions?.length && student.institution_id) {
-      if (!flag.target_institutions.includes(student.institution_id)) {
+    // Institution targeting — keyed on the student's school_id (the tenant FK).
+    if (enabled && flag.target_institutions?.length && student.school_id) {
+      if (!flag.target_institutions.includes(student.school_id)) {
         enabled = false;
       }
     }
