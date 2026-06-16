@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { authHeader } from '@/lib/api/auth-header';
 import { usePermissions } from '@/lib/usePermissions';
 import { usePulse } from '@/lib/pulse/use-pulse';
 import { StudentPulse } from '@/components/pulse';
@@ -145,7 +146,7 @@ function StudentCard({
       const res = await fetch(`/api/teacher/students/${student.id}/notes`, {
         method: 'PUT',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
         body: JSON.stringify({ note, customGoal: goal }),
       });
       const json = await res.json();

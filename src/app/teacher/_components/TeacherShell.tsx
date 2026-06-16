@@ -35,6 +35,7 @@ import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
 import { useTenant } from '@/lib/tenant-context';
 import { supabase } from '@/lib/supabase';
+import { authHeader } from '@/lib/api/auth-header';
 import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
 import type { ModuleKey } from '@/lib/modules/registry';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
@@ -171,21 +172,24 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
   useEffect(() => {
     if (!authUserId) return;
     let cancelled = false;
-    fetch('/api/teacher/modules', { credentials: 'same-origin' })
-      .then(r => (r.ok ? r.json() : null))
-      .then(body => {
-        if (cancelled || !body?.success) return;
-        const map: Record<string, boolean> = {};
-        for (const m of body.data?.modules ?? []) {
-          if (m && typeof m.key === 'string' && typeof m.isEnabled === 'boolean') {
-            map[m.key] = m.isEnabled;
+    (async () => {
+      const headers = await authHeader();
+      return fetch('/api/teacher/modules', { credentials: 'same-origin', headers })
+        .then(r => (r.ok ? r.json() : null))
+        .then(body => {
+          if (cancelled || !body?.success) return;
+          const map: Record<string, boolean> = {};
+          for (const m of body.data?.modules ?? []) {
+            if (m && typeof m.key === 'string' && typeof m.isEnabled === 'boolean') {
+              map[m.key] = m.isEnabled;
+            }
           }
-        }
-        setModuleEnablement(map);
-      })
-      .catch(() => {
-        // Fail-open — moduleEnablement stays null and all items render.
-      });
+          setModuleEnablement(map);
+        })
+        .catch(() => {
+          // Fail-open — moduleEnablement stays null and all items render.
+        });
+    })();
     return () => {
       cancelled = true;
     };

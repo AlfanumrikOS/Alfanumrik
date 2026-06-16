@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useTeacherAllowedSubjects } from '@/lib/useTeacherAllowedSubjects';
 import { VALID_GRADES } from '@/lib/identity';
+import { authHeader } from '@/lib/api/auth-header';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -197,7 +198,7 @@ export default function AssignmentsPage() {
       const res = await fetch('/api/teacher/assignments', {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
         body: JSON.stringify({
           class_id: formClass,
           title: formTitle.trim(),

@@ -1518,9 +1518,11 @@ export async function generateExamPaper(
 /* ── NCERT Coverage Report ── */
 export async function getNCERTCoverageReport(grade: string, subject?: string) {
   try {
-    const studentId = await resolveStudentId();
+    // Live signature is get_ncert_coverage_report(p_grade text, p_subject text).
+    // The earlier call passed p_student_id, which made PostgREST 202 (no matching
+    // overload) and the report silently returned null. Coverage is grade/subject
+    // scoped, not per-student, so no student_id is needed. (RPC re-sweep 2026-06-16)
     const { data, error } = await supabase.rpc('get_ncert_coverage_report', {
-      p_student_id: studentId,
       p_grade: grade,
       p_subject: subject ?? null,
     });

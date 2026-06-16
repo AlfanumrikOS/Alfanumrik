@@ -403,7 +403,12 @@ async function runVectorSearch(
       p_syllabus_version: params.syllabusVersion ?? DEFAULT_SYLLABUS_VERSION,
     }
     if (params.chapterText) rpcParams.p_chapter = params.chapterText
-    if (params.contentType) rpcParams.p_content_type = params.contentType
+    // NOTE: legacy match_rag_chunks has NO p_content_type param. Passing it
+    // triggers PGRST202 (function-signature mismatch) and the call returns
+    // nothing — ungrounded. Omit it here: legacy cannot filter by content_type,
+    // so we accept the unfiltered top-k as graceful degradation rather than a
+    // hard failure. Content-type filtering is restored once match_rag_chunks_v2
+    // is deployed (the v2 branch above passes p_content_type).
     if (queryEmbedding) rpcParams.query_embedding = JSON.stringify(queryEmbedding)
 
     return supabase.rpc('match_rag_chunks', rpcParams)
