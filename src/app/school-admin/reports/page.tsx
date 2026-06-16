@@ -363,6 +363,13 @@ export default function SchoolAdminReportsPage() {
 
   const [classOptions, setClassOptions] = useState<ClassOption[]>([]);
   const [classOptionsLoading, setClassOptionsLoading] = useState(false);
+  // Dropdown-specific error. The /api/school-admin/classes route is gated by the
+  // `class.manage` permission, so a reports-only admin can get a 403; surfacing
+  // that (instead of an inscrutable empty dropdown) is the point of this state.
+  const [classOptionsError, setClassOptionsError] = useState<string | null>(null);
+  // Distinguishes "loaded OK, zero classes" (empty hint) from "never loaded"
+  // (no notice yet) so the empty hint only shows after a successful fetch.
+  const [classOptionsLoaded, setClassOptionsLoaded] = useState(false);
   const [selectedClassId, setSelectedClassId] = useState('');
   const [classData, setClassData] = useState<ClassPerformanceData | null>(null);
   const [classLoading, setClassLoading] = useState(false);
@@ -467,22 +474,33 @@ export default function SchoolAdminReportsPage() {
   ───────────────────────────────────────────────────────────── */
   const loadClassOptions = useCallback(async () => {
     const token = await getToken();
-    if (!token) return;
+    if (!token) {
+      setClassOptionsError(t(isHi, 'Not authenticated', 'प्रमाणित नहीं'));
+      return;
+    }
     setClassOptionsLoading(true);
+    setClassOptionsError(null);
     try {
       const res = await fetch('/api/school-admin/classes', {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
-        const json = await res.json();
-        setClassOptions((json.data ?? json) as ClassOption[]);
+      if (!res.ok) {
+        // 403 (reports-only admin lacks class.manage) / 500 etc. — surface it
+        // instead of silently leaving the dropdown empty.
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Request failed (${res.status})`);
       }
-    } catch {
-      // Non-critical — class dropdown may be empty
+      const json = await res.json();
+      setClassOptions((json.data ?? json) as ClassOption[]);
+      setClassOptionsLoaded(true);
+    } catch (err: any) {
+      setClassOptionsError(
+        err?.message || t(isHi, "Couldn't load classes", 'कक्षाएं लोड नहीं हो सकीं')
+      );
     } finally {
       setClassOptionsLoading(false);
     }
-  }, [getToken]);
+  }, [getToken, isHi]);
 
   const loadClassPerformance = useCallback(async (classId: string) => {
     if (!schoolId || !classId) return;
@@ -566,7 +584,13 @@ export default function SchoolAdminReportsPage() {
     if (activeTab === 'school_overview' && !overviewData && !overviewLoading) {
       loadOverview();
     }
-    if (activeTab === 'class_performance' && classOptions.length === 0 && !classOptionsLoading) {
+    if (
+      activeTab === 'class_performance' &&
+      classOptions.length === 0 &&
+      !classOptionsLoading &&
+      !classOptionsLoaded &&
+      !classOptionsError
+    ) {
       loadClassOptions();
     }
     if (activeTab === 'subject_gaps' && !gapsData && !gapsLoading) {
@@ -575,7 +599,7 @@ export default function SchoolAdminReportsPage() {
   }, [
     schoolId, activeTab,
     overviewData, overviewLoading, loadOverview,
-    classOptions.length, classOptionsLoading, loadClassOptions,
+    classOptions.length, classOptionsLoading, classOptionsLoaded, classOptionsError, loadClassOptions,
     gapsData, gapsLoading, gapGradeFilter, loadSubjectGaps,
   ]);
 
@@ -849,10 +873,66 @@ export default function SchoolAdminReportsPage() {
             options={classSelectOptions}
             disabled={classOptionsLoading}
           />
+
+          {/* Dropdown load error (e.g. 403 for a reports-only admin, or 500).
+              Surfaced inline with a Retry instead of silently swallowing. */}
+          {classOptionsError && !classOptionsLoading && (
+            <div
+              role="alert"
+              style={{
+                marginTop: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                flexWrap: 'wrap',
+                padding: '8px 12px',
+                borderRadius: 8,
+                background: `${DANGER_COLOR}0D`,
+                border: `1px solid ${DANGER_COLOR}40`,
+              }}
+            >
+              <span style={{ fontSize: 12, color: DANGER_COLOR, flex: 1, minWidth: 160 }}>
+                {t(isHi, "Couldn't load classes.", 'कक्षाएं लोड नहीं हो सकीं।')}
+              </span>
+              <button
+                type="button"
+                onClick={loadClassOptions}
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: DANGER_COLOR,
+                  background: 'transparent',
+                  border: `1px solid ${DANGER_COLOR}`,
+                  borderRadius: 6,
+                  padding: '4px 12px',
+                  cursor: 'pointer',
+                  minHeight: 28,
+                }}
+              >
+                {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
+              </button>
+            </div>
+          )}
+
+          {/* Genuine empty: loaded OK but the school has no classes yet.
+              Distinct from the error case above. */}
+          {!classOptionsError &&
+            !classOptionsLoading &&
+            classOptionsLoaded &&
+            classOptions.length === 0 && (
+              <p style={{ marginTop: 8, fontSize: 12, color: '#6b7280' }}>
+                {t(isHi, 'No classes found for this school yet.', 'इस स्कूल के लिए अभी कोई कक्षा नहीं मिली।')}
+              </p>
+            )}
         </div>
 
-        {/* No selection */}
-        {!selectedClassId && !classLoading && (
+        {/* No selection — hidden when the dropdown failed to load (error notice
+            shown instead) or when the school genuinely has no classes (empty
+            hint shown instead), so we never stack two prompts. */}
+        {!selectedClassId &&
+          !classLoading &&
+          !classOptionsError &&
+          !(classOptionsLoaded && classOptions.length === 0) && (
           <div style={{ marginTop: 24 }}>
             <EmptyState
               icon="---"
