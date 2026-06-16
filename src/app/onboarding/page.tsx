@@ -102,7 +102,7 @@ export default function OnboardingPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!grade) { setError('Please select your grade'); return; }
+    if (!grade) { setError(isHi ? 'कृपया अपनी कक्षा चुनें' : 'Please select your grade'); return; }
     setError('');
     setSaving(true);
     try {
@@ -117,7 +117,7 @@ export default function OnboardingPage() {
         .eq('id', student.id);
 
       if (updateErr) {
-        setError('Could not save — please try again.');
+        setError(isHi ? 'सहेज नहीं सका — कृपया फिर से प्रयास करें।' : 'Could not save — please try again.');
         setSaving(false);
         return;
       }
@@ -137,7 +137,7 @@ export default function OnboardingPage() {
       await refreshStudent();
       router.replace('/dashboard');
     } catch {
-      setError('Connection error. Please try again.');
+      setError(isHi ? 'कनेक्शन में समस्या। कृपया फिर से प्रयास करें।' : 'Connection error. Please try again.');
       setSaving(false);
     }
   };
@@ -172,10 +172,12 @@ export default function OnboardingPage() {
               marginBottom: 8, fontFamily: 'var(--font-display)',
             }}
           >
-            Welcome to Alfanumrik!
+            {isHi ? 'Alfanumrik में आपका स्वागत है!' : 'Welcome to Alfanumrik!'}
           </h1>
           <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.5 }}>
-            Tell us your grade and board so we can show you the right subjects and chapters.
+            {isHi
+              ? 'हमें अपनी कक्षा और बोर्ड बताएं ताकि हम आपको सही विषय और अध्याय दिखा सकें।'
+              : 'Tell us your grade and board so we can show you the right subjects and chapters.'}
           </p>
         </div>
 
@@ -195,7 +197,7 @@ export default function OnboardingPage() {
                     color: 'var(--text-2)', marginBottom: 6,
                   }}
                 >
-                  Your Grade
+                  {isHi ? 'आपकी कक्षा' : 'Your Grade'}
                 </label>
                 <select
                   value={grade}
@@ -203,9 +205,9 @@ export default function OnboardingPage() {
                   style={inputStyle}
                   required
                 >
-                  <option value="" disabled>Select grade...</option>
+                  <option value="" disabled>{isHi ? 'कक्षा चुनें...' : 'Select grade...'}</option>
                   {GRADES.map(g => (
-                    <option key={g} value={g}>Grade {g}</option>
+                    <option key={g} value={g}>{isHi ? 'कक्षा' : 'Grade'} {g}</option>
                   ))}
                 </select>
               </div>
@@ -218,7 +220,7 @@ export default function OnboardingPage() {
                     color: 'var(--text-2)', marginBottom: 6,
                   }}
                 >
-                  Your Board
+                  {isHi ? 'आपका बोर्ड' : 'Your Board'}
                 </label>
                 <select
                   value={board}
@@ -301,7 +303,7 @@ export default function OnboardingPage() {
                   animation: 'slideUp 0.4s ease-out 0.4s both',
                 }}
               >
-                {saving ? 'Saving...' : 'Start Learning'}
+                {saving ? (isHi ? 'सहेज रहे हैं...' : 'Saving...') : (isHi ? 'सीखना शुरू करें' : 'Start Learning')}
               </button>
             </div>
           </form>

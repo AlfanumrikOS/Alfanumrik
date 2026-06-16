@@ -369,6 +369,71 @@ function SchoolPicker({
   );
 }
 
+// ── First-run setup nudge (no_data state only) ───────────────────────────────
+// A dismissible "Get started" checklist surfaced ONLY when the overview resolves
+// to data_state==='no_data' (a brand-new school with nothing set up yet). It
+// links to the four provisioning surfaces a fresh school admin needs to reach but
+// can't discover from the empty Command Center alone. Pure navigation — no fetch,
+// no mutation, no scoring math. Bilingual via tt() (P7).
+const SETUP_STEPS: { href: string; en: string; hi: string }[] = [
+  { href: '/school-admin/setup', en: 'Finish school setup', hi: 'स्कूल सेटअप पूरा करें' },
+  { href: '/school-admin/invite-codes', en: 'Invite teachers & students', hi: 'शिक्षक और छात्र आमंत्रित करें' },
+  { href: '/school-admin/enroll', en: 'Enroll students', hi: 'छात्रों का नामांकन करें' },
+  { href: '/school-admin/classes', en: 'Create classes', hi: 'कक्षाएँ बनाएँ' },
+];
+
+function SetupChecklist({ isHi }: { isHi: boolean }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  return (
+    <section
+      aria-label={tt(isHi, 'Get started', 'शुरू करें')}
+      className="rounded-2xl border border-[var(--purple,#7C3AED)] bg-[var(--surface-1)] p-4 sm:p-5"
+      style={{ background: 'color-mix(in srgb, var(--purple,#7C3AED) 6%, var(--surface-1))' }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-bold text-[var(--text-1)] font-['Sora',system-ui,sans-serif]">
+            🚀 {tt(isHi, 'Get your school started', 'अपना स्कूल शुरू करें')}
+          </h2>
+          <p className="text-xs text-[var(--text-3)] mt-0.5">
+            {tt(
+              isHi,
+              'A few quick steps to bring your students and teachers on board.',
+              'अपने छात्रों और शिक्षकों को जोड़ने के लिए कुछ त्वरित चरण।',
+            )}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setDismissed(true)}
+          aria-label={tt(isHi, 'Dismiss', 'खारिज करें')}
+          className="shrink-0 rounded-lg px-2 py-1 text-sm text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-2)] transition-colors min-h-[44px] min-w-[44px]"
+        >
+          ✕
+        </button>
+      </div>
+      <ul className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {SETUP_STEPS.map((step) => (
+          <li key={step.href}>
+            <a
+              href={step.href}
+              className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-1)] px-3 py-3 text-sm font-semibold text-[var(--text-1)] no-underline hover:border-[var(--purple,#7C3AED)] active:scale-[0.99] transition-all min-h-[44px]"
+            >
+              <span
+                aria-hidden="true"
+                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-[var(--purple,#7C3AED)]"
+              />
+              <span className="truncate">{tt(isHi, step.en, step.hi)}</span>
+              <span aria-hidden="true" className="ml-auto text-[var(--purple,#7C3AED)]">→</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 // ── Command Center ───────────────────────────────────────────────────────────
 export default function CommandCenter() {
   const auth = useAuth();
@@ -498,6 +563,12 @@ export default function CommandCenter() {
           <SchoolPicker schoolIds={pickerSchoolIds} onPick={handlePickSchool} isHi={isHi} />
         ) : (
           <>
+            {/* First-run setup nudge — ONLY when the overview resolves to the
+                no_data state (brand-new school). Surfaces the provisioning
+                surfaces a fresh admin must reach but can't discover from the
+                empty Command Center. Dismissible; pure navigation. */}
+            {overview?.data_state === 'no_data' && <SetupChecklist isHi={isHi} />}
+
             {/* 1. Overview KPI strip (eager) */}
             <section aria-label={tt(isHi, 'School overview', 'स्कूल अवलोकन')}>
               {overviewSWR.isLoading && !overview ? (
