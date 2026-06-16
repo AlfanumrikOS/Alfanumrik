@@ -18,7 +18,7 @@
  * Contract (request body):
  *   {
  *     "template":   "school-trial-provisioned" | "school-invite-code-issued"
- *                   | "parent-link-code-otp",
+ *                   | "parent-link-code-otp" | "school-parent-broadcast",
  *     "to":         "principal@example.com",
  *     "locale":     "en" | "hi",      // optional, default "en"
  *     "params": {
@@ -30,7 +30,9 @@
  *       "recipient_name":"string",    // optional
  *       // parent-link-code-otp template (Phase D.4):
  *       "otp":          "6-digit string",
- *       "idempotency_key":"challenge UUID" // dedup key (not displayed)
+ *       "idempotency_key":"challenge UUID", // dedup key (not displayed)
+ *       // school-parent-broadcast template (Phase 2 portal remediation):
+ *       "message":      "string"      // the school's message body to parents
  *     }
  *   }
  *
@@ -225,6 +227,8 @@ interface TemplateParams {
   // parent-link-code-otp fields
   otp?: string
   idempotency_key?: string
+  // school-parent-broadcast fields
+  message?: string
 }
 
 function trialProvisionedEmail(p: TemplateParams, locale: 'en' | 'hi'): { subject: string; html: string; text: string } {
@@ -408,8 +412,68 @@ function parentLinkCodeOtpEmail(p: TemplateParams, locale: 'en' | 'hi'): { subje
   return { subject, html, text }
 }
 
+function schoolParentBroadcastEmail(p: TemplateParams, locale: 'en' | 'hi'): { subject: string; html: string; text: string } {
+  const schoolName = escapeHtml(p.school_name ?? '')
+  // Escape the message body, then restore intentional line breaks. The body
+  // is operator-authored school text — escape first to neutralise any HTML.
+  const rawMessage = p.message ?? ''
+  const messageHtml = escapeHtml(rawMessage).replace(/\n/g, '<br>')
+  const signInUrl = `${SITE_URL}/parent`
+  const safeSignIn = escapeHtml(signInUrl)
+
+  if (locale === 'hi') {
+    const subject = `${p.school_name ?? 'आपके स्कूल'} से एक संदेश`
+    const content = `
+      <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#18181b;">${schoolName} से संदेश</h2>
+      <p style="margin:0 0 16px;font-size:14px;color:#3f3f46;line-height:1.6;">
+        आपके बच्चे के स्कूल ने Alfanumrik के माध्यम से आपको एक संदेश भेजा है:
+      </p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+        <tr><td style="padding:18px 20px;background:#F5F3FF;border-left:4px solid #6C5CE7;border-radius:8px;">
+          <p style="margin:0;font-size:14px;color:#18181b;line-height:1.7;">${messageHtml}</p>
+        </td></tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
+        <tr><td align="center" style="padding:8px 0;">
+          <a href="${safeSignIn}" style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#6C5CE7,#A855F7);color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;border-radius:10px;">अभिभावक पोर्टल खोलें</a>
+        </td></tr>
+      </table>
+      <p style="margin:24px 0 0;font-size:13px;color:#71717a;line-height:1.6;">
+        प्रश्न हैं? सीधे अपने बच्चे के स्कूल से संपर्क करें।
+      </p>
+    `
+    const html = baseWrapper(content, `${p.school_name ?? 'आपके स्कूल'} से एक संदेश।`, 'hi')
+    const text = htmlToPlainText(content) + `\n\nAlfanumrik EdTech Pvt. Ltd., भारत`
+    return { subject, html, text }
+  }
+
+  const subject = `A message from ${p.school_name ?? 'your school'}`
+  const content = `
+      <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#18181b;">Message from ${schoolName}</h2>
+      <p style="margin:0 0 16px;font-size:14px;color:#3f3f46;line-height:1.6;">
+        Your child's school has sent you a message through Alfanumrik:
+      </p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+        <tr><td style="padding:18px 20px;background:#F5F3FF;border-left:4px solid #6C5CE7;border-radius:8px;">
+          <p style="margin:0;font-size:14px;color:#18181b;line-height:1.7;">${messageHtml}</p>
+        </td></tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
+        <tr><td align="center" style="padding:8px 0;">
+          <a href="${safeSignIn}" style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#6C5CE7,#A855F7);color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;border-radius:10px;">Open Parent Portal</a>
+        </td></tr>
+      </table>
+      <p style="margin:24px 0 0;font-size:13px;color:#71717a;line-height:1.6;">
+        Questions? Please contact your child's school directly.
+      </p>
+    `
+  const html = baseWrapper(content, `A message from ${p.school_name ?? 'your school'}.`, 'en')
+  const text = htmlToPlainText(content) + `\n\nAlfanumrik EdTech Pvt. Ltd., India`
+  return { subject, html, text }
+}
+
 // ─── Main Handler ─────────────────────────────────────────────────────────────
-type TemplateName = 'school-trial-provisioned' | 'school-invite-code-issued' | 'parent-link-code-otp'
+type TemplateName = 'school-trial-provisioned' | 'school-invite-code-issued' | 'parent-link-code-otp' | 'school-parent-broadcast'
 
 interface RequestBody {
   template: TemplateName
@@ -465,6 +529,10 @@ Deno.serve(async (req: Request) => {
     if (!params.idempotency_key) {
       return jsonResponse({ sent: false, error: 'Missing idempotency_key in params' }, 400, origin)
     }
+  } else if (template === 'school-parent-broadcast') {
+    if (!params.school_name || !params.message || !params.message.trim()) {
+      return jsonResponse({ sent: false, error: 'Missing school_name or message in params' }, 400, origin)
+    }
   } else {
     if (!params.school_name || !params.invite_code || !params.expires_at) {
       return jsonResponse({ sent: false, error: 'Missing school_name, invite_code, or expires_at in params' }, 400, origin)
@@ -482,6 +550,9 @@ Deno.serve(async (req: Request) => {
       break
     case 'parent-link-code-otp':
       content = parentLinkCodeOtpEmail(params, effectiveLocale)
+      break
+    case 'school-parent-broadcast':
+      content = schoolParentBroadcastEmail(params, effectiveLocale)
       break
     default:
       return jsonResponse({ sent: false, error: `Unknown template: ${template}` }, 400, origin)

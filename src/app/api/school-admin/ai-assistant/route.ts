@@ -140,10 +140,17 @@ function isMissingObjectError(err: { code?: string; message?: string } | null | 
 // ─── GET: recent sessions + latest session messages ─────────────────────────
 
 export async function GET(request: NextRequest): Promise<Response> {
-  // Flag OFF → 404 (behave as not-present) BEFORE auth, byte-identical to the
-  // flag-absent portal.
+  // Flag OFF → clean 503 "feature not enabled" BEFORE auth. The principal-AI
+  // permission code (`institution.use_principal_ai`) ships in a drafted-but-
+  // unapplied migration, so it exists in no role; reaching authorizeSchoolAdmin
+  // while the feature is off would surface a confusing nonexistent-permission
+  // 403. Gating on the flag first keeps the route safe and unavailable until
+  // Phase 3 enables it — only attempting the permission check when ON.
   if (!(await isFeatureEnabled(PRINCIPAL_AI_FLAGS.V1))) {
-    return NextResponse.json({ error: 'not_found' }, { status: 404 });
+    return NextResponse.json(
+      { success: false, error: 'feature_not_enabled' },
+      { status: 503 },
+    );
   }
 
   const auth = await authorizeSchoolAdmin(request, PERMISSION);
@@ -207,9 +214,18 @@ export async function GET(request: NextRequest): Promise<Response> {
 export async function POST(request: NextRequest): Promise<Response> {
   const traceId = newTraceId();
 
-  // 1. Flag OFF → 404 BEFORE auth (feature not available).
+  // 1. Flag OFF → clean 503 "feature not enabled" BEFORE auth. The principal-AI
+  //    permission code (`institution.use_principal_ai`) lives in a drafted-but-
+  //    unapplied migration and is granted to no role, so reaching the permission
+  //    check while the feature is off would surface a confusing nonexistent-
+  //    permission 403. Gating on the flag first fails cleanly and keeps the
+  //    route safe — the permission check is only attempted when the flag is ON
+  //    (Phase 3 enablement).
   if (!(await isFeatureEnabled(PRINCIPAL_AI_FLAGS.V1))) {
-    return NextResponse.json({ error: 'not_found' }, { status: 404 });
+    return NextResponse.json(
+      { success: false, error: 'feature_not_enabled' },
+      { status: 503 },
+    );
   }
 
   // 2. Auth → session-derived schoolId + role. 403 if not permitted.

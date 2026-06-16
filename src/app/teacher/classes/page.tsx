@@ -60,15 +60,15 @@ interface ClassData {
 const SECTIONS = ['', 'A', 'B', 'C', 'D', 'E'];
 const GRADES = VALID_GRADES;
 
-const AVATAR_COLORS = ['#6366F1', '#2563EB', '#0891B2', '#059669', '#D97706', '#DC2626'];
+const AVATAR_COLORS = ['#7C3AED', '#E8581C', '#0891B2', '#059669', '#D97706', '#DC2626'];
 
 const pageStyle: React.CSSProperties = {
   maxWidth: 1100,
   margin: '0 auto',
   padding: '0 16px 100px',
   fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
-  color: '#E2E8F0',
-  backgroundColor: '#0B1120',
+  color: '#1A1207',
+  backgroundColor: '#FBF8F4',
   minHeight: '100vh',
 };
 
@@ -90,7 +90,7 @@ function ClassPulseSection({
   const { data, error, isLoading, mutate } = useClassPulse(enabled ? classId : undefined);
   return (
     <div style={{ marginTop: 16 }}>
-      <h4 style={{ fontSize: 14, fontWeight: 600, color: '#F1F5F9', margin: '0 0 10px' }}>
+      <h4 style={{ fontSize: 14, fontWeight: 600, color: '#1A1207', margin: '0 0 10px' }}>
         🩺 {tt(isHi, 'Class Pulse (worst-first)', 'कक्षा पल्स (पहले जोखिम)')}
       </h4>
       <StudentPulseList
@@ -295,8 +295,8 @@ export default function TeacherClassesPage() {
   if (loading) {
     return (
       <div style={pageStyle}>
-        <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
-          <div style={{ width: 40, height: 40, border: '3px solid #1E293B', borderTopColor: '#2563EB', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
+        <div style={{ textAlign: 'center', padding: 80, color: '#7D7264' }}>
+          <div style={{ width: 40, height: 40, border: '3px solid #F5F0EA', borderTopColor: '#E8581C', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
           {tt(isHi, 'Loading classes...', 'कक्षाएं लोड हो रही हैं...')}
         </div>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -314,7 +314,7 @@ export default function TeacherClassesPage() {
 
       {/* Header */}
       <div style={{
-        background: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
+        background: 'linear-gradient(135deg, #E8581C, #C2410C)',
         borderRadius: 16,
         padding: '28px 28px 24px',
         marginBottom: 24,
@@ -362,11 +362,11 @@ export default function TeacherClassesPage() {
           borderRadius: 10,
           padding: '12px 16px',
           marginBottom: 16,
-          color: '#FCA5A5',
+          color: '#B91C1C',
           fontSize: 14,
         }}>
           {error}
-          <button onClick={loadClasses} style={{ marginLeft: 12, color: '#60A5FA', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>
+          <button onClick={loadClasses} style={{ marginLeft: 12, color: '#E8581C', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>
             {tt(isHi, 'Retry', 'पुनः प्रयास')}
           </button>
         </div>
@@ -377,22 +377,22 @@ export default function TeacherClassesPage() {
         <div style={{
           textAlign: 'center',
           padding: '60px 20px',
-          backgroundColor: '#0F172A',
+          backgroundColor: '#FFFFFF',
           borderRadius: 16,
-          border: '1px solid #1E293B',
+          border: '1px solid #F5F0EA',
         }}>
           <div style={{ fontSize: 64, marginBottom: 16 }}>🏫</div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F1F5F9', margin: '0 0 8px' }}>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: '#1A1207', margin: '0 0 8px' }}>
             {tt(isHi, 'You haven\'t created any classes yet', 'आपने अभी तक कोई कक्षा नहीं बनाई')}
           </h2>
-          <p style={{ fontSize: 15, color: '#64748B', margin: '0 0 24px', maxWidth: 400, marginLeft: 'auto', marginRight: 'auto' }}>
+          <p style={{ fontSize: 15, color: '#7D7264', margin: '0 0 24px', maxWidth: 400, marginLeft: 'auto', marginRight: 'auto' }}>
             {tt(isHi, 'Create your first class and share the class code with your students so they can join.', 'अपनी पहली कक्षा बनाएं और छात्रों के साथ कक्षा कोड साझा करें ताकि वे जुड़ सकें।')}
           </p>
           <button
             onClick={() => setShowModal(true)}
             style={{
               padding: '12px 28px',
-              background: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
+              background: 'linear-gradient(135deg, #E8581C, #C2410C)',
               color: '#fff',
               border: 'none',
               borderRadius: 10,
@@ -422,20 +422,20 @@ export default function TeacherClassesPage() {
               <div
                 key={cls.id}
                 style={{
-                  backgroundColor: '#0F172A',
+                  backgroundColor: '#FFFFFF',
                   borderRadius: 14,
-                  border: '1px solid #1E293B',
+                  border: '1px solid #F5F0EA',
                   overflow: 'hidden',
                   animation: `fadeIn 0.3s ease ${idx * 0.05}s both`,
                   transition: 'border-color 0.2s, box-shadow 0.2s',
                   gridColumn: isExpanded ? '1 / -1' : undefined,
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#2563EB';
-                  e.currentTarget.style.boxShadow = '0 4px 24px rgba(37,99,235,0.12)';
+                  e.currentTarget.style.borderColor = '#E8581C';
+                  e.currentTarget.style.boxShadow = '0 4px 24px rgba(232,88,28,0.12)';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#1E293B';
+                  e.currentTarget.style.borderColor = '#F5F0EA';
                   e.currentTarget.style.boxShadow = 'none';
                 }}
               >
@@ -458,16 +458,16 @@ export default function TeacherClassesPage() {
                             {subj.icon}
                           </span>
                         )}
-                        <h3 style={{ fontSize: 17, fontWeight: 600, color: '#F1F5F9', margin: 0 }}>
+                        <h3 style={{ fontSize: 17, fontWeight: 600, color: '#1A1207', margin: 0 }}>
                           {cls.name}
                         </h3>
                       </div>
-                      <p style={{ fontSize: 13, color: '#64748B', margin: '4px 0 0' }}>
+                      <p style={{ fontSize: 13, color: '#7D7264', margin: '4px 0 0' }}>
                         {tt(isHi, 'Grade', 'कक्षा')} {cls.grade}{cls.section ? ` - ${tt(isHi, 'Section', 'सेक्शन')} ${cls.section}` : ''}
                         {subj ? ` · ${subj.name}` : ''}
                       </p>
                     </div>
-                    <span style={{ fontSize: 11, color: '#64748B', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: 11, color: '#7D7264', whiteSpace: 'nowrap' }}>
                       {formatTime(cls.last_activity)}
                     </span>
                   </div>
@@ -481,7 +481,7 @@ export default function TeacherClassesPage() {
                           height: 26,
                           borderRadius: '50%',
                           backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length],
-                          border: '2px solid #0F172A',
+                          border: '2px solid #FFFFFF',
                           marginLeft: i > 0 ? -8 : 0,
                           display: 'flex',
                           alignItems: 'center',
@@ -495,7 +495,7 @@ export default function TeacherClassesPage() {
                         </div>
                       ))}
                     </div>
-                    <span style={{ fontSize: 13, color: '#94A3B8', fontWeight: 500 }}>
+                    <span style={{ fontSize: 13, color: '#7D7264', fontWeight: 500 }}>
                       {cls.student_count} {tt(isHi, cls.student_count !== 1 ? 'students' : 'student', 'छात्र')}
                     </span>
                   </div>
@@ -503,12 +503,12 @@ export default function TeacherClassesPage() {
                   {/* Average mastery bar */}
                   <div style={{ marginTop: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <span style={{ fontSize: 12, color: '#64748B' }}>{tt(isHi, 'Average Mastery', 'औसत मास्टरी')}</span>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: cls.average_mastery >= 70 ? '#059669' : cls.average_mastery >= 40 ? '#D97706' : '#94A3B8' }}>
+                      <span style={{ fontSize: 12, color: '#7D7264' }}>{tt(isHi, 'Average Mastery', 'औसत मास्टरी')}</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: cls.average_mastery >= 70 ? '#059669' : cls.average_mastery >= 40 ? '#D97706' : '#7D7264' }}>
                         {cls.average_mastery ?? 0}%
                       </span>
                     </div>
-                    <div style={{ height: 6, backgroundColor: '#1E293B', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: 6, backgroundColor: '#F5F0EA', borderRadius: 3, overflow: 'hidden' }}>
                       <div style={{
                         height: '100%',
                         width: `${Math.min(cls.average_mastery ?? 0, 100)}%`,
@@ -517,7 +517,7 @@ export default function TeacherClassesPage() {
                           ? 'linear-gradient(90deg, #059669, #10B981)'
                           : cls.average_mastery >= 40
                             ? 'linear-gradient(90deg, #D97706, #F59E0B)'
-                            : 'linear-gradient(90deg, #475569, #64748B)',
+                            : 'linear-gradient(90deg, #A89B86, #7D7264)',
                         transition: 'width 0.6s ease',
                       }} />
                     </div>
@@ -529,13 +529,13 @@ export default function TeacherClassesPage() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    backgroundColor: '#1E293B',
+                    backgroundColor: '#F5F0EA',
                     borderRadius: 8,
                     padding: '8px 12px',
                   }}>
                     <div>
-                      <span style={{ fontSize: 11, color: '#64748B', display: 'block' }}>{tt(isHi, 'Class Code', 'कक्षा कोड')}</span>
-                      <span style={{ fontSize: 16, fontWeight: 700, color: '#60A5FA', fontFamily: 'monospace', letterSpacing: 1.5 }}>
+                      <span style={{ fontSize: 11, color: '#7D7264', display: 'block' }}>{tt(isHi, 'Class Code', 'कक्षा कोड')}</span>
+                      <span style={{ fontSize: 16, fontWeight: 700, color: '#E8581C', fontFamily: 'monospace', letterSpacing: 1.5 }}>
                         {cls.class_code}
                       </span>
                     </div>
@@ -543,7 +543,7 @@ export default function TeacherClassesPage() {
                       onClick={() => copyClassCode(cls.class_code, cls.id)}
                       style={{
                         padding: '6px 12px',
-                        backgroundColor: isCopied ? '#059669' : '#2563EB',
+                        backgroundColor: isCopied ? '#059669' : '#E8581C',
                         color: '#fff',
                         border: 'none',
                         borderRadius: 6,
@@ -564,9 +564,9 @@ export default function TeacherClassesPage() {
                       onClick={() => toggleExpand(cls.id)}
                       style={{
                         padding: '7px 14px',
-                        backgroundColor: isExpanded ? '#2563EB' : 'transparent',
-                        color: isExpanded ? '#fff' : '#60A5FA',
-                        border: '1px solid #2563EB',
+                        backgroundColor: isExpanded ? '#E8581C' : 'transparent',
+                        color: isExpanded ? '#fff' : '#E8581C',
+                        border: '1px solid #E8581C',
                         borderRadius: 7,
                         fontSize: 12,
                         fontWeight: 500,
@@ -580,8 +580,8 @@ export default function TeacherClassesPage() {
                       style={{
                         padding: '7px 14px',
                         backgroundColor: 'transparent',
-                        color: '#60A5FA',
-                        border: '1px solid #334155',
+                        color: '#E8581C',
+                        border: '1px solid #EDE6DC',
                         borderRadius: 7,
                         fontSize: 12,
                         fontWeight: 500,
@@ -595,8 +595,8 @@ export default function TeacherClassesPage() {
                       style={{
                         padding: '7px 14px',
                         backgroundColor: 'transparent',
-                        color: '#60A5FA',
-                        border: '1px solid #334155',
+                        color: '#E8581C',
+                        border: '1px solid #EDE6DC',
                         borderRadius: 7,
                         fontSize: 12,
                         fontWeight: 500,
@@ -610,8 +610,8 @@ export default function TeacherClassesPage() {
                       style={{
                         padding: '7px 12px',
                         backgroundColor: 'transparent',
-                        color: '#A78BFA',
-                        border: '1px solid #4C1D95',
+                        color: '#7C3AED',
+                        border: '1px solid #D8C7F0',
                         borderRadius: 7,
                         fontSize: 12,
                         fontWeight: 500,
@@ -625,8 +625,8 @@ export default function TeacherClassesPage() {
                       style={{
                         padding: '7px 12px',
                         backgroundColor: 'transparent',
-                        color: '#F59E0B',
-                        border: '1px solid #78350F',
+                        color: '#B45309',
+                        border: '1px solid #E8C9A0',
                         borderRadius: 7,
                         fontSize: 12,
                         fontWeight: 500,
@@ -641,19 +641,19 @@ export default function TeacherClassesPage() {
                   {archiveConfirmId === cls.id && (
                     <div style={{
                       marginTop: 12,
-                      backgroundColor: '#1C0A00',
-                      border: '1px solid #78350F',
+                      backgroundColor: '#FBEBD2',
+                      border: '1px solid #E8C9A0',
                       borderRadius: 10,
                       padding: '14px 16px',
                       animation: 'fadeIn 0.2s ease',
                     }}>
-                      <p style={{ fontSize: 13, color: '#FCD34D', margin: '0 0 12px', fontWeight: 500 }}>
+                      <p style={{ fontSize: 13, color: '#9A5B16', margin: '0 0 12px', fontWeight: 500 }}>
                         {tt(isHi, 'Are you sure? This will hide the class from your dashboard.', 'क्या आप निश्चित हैं? यह कक्षा आपके डैशबोर्ड से छुप जाएगी।')}
                       </p>
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button
                           onClick={() => setArchiveConfirmId(null)}
-                          style={{ flex: 1, padding: '8px 12px', backgroundColor: 'transparent', color: '#94A3B8', border: '1px solid #334155', borderRadius: 7, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}
+                          style={{ flex: 1, padding: '8px 12px', backgroundColor: 'transparent', color: '#7D7264', border: '1px solid #EDE6DC', borderRadius: 7, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}
                         >
                           {tt(isHi, 'Cancel', 'रद्द करें')}
                         </button>
@@ -671,19 +671,19 @@ export default function TeacherClassesPage() {
                 {/* Expanded detail view */}
                 {isExpanded && (
                   <div style={{
-                    borderTop: '1px solid #1E293B',
+                    borderTop: '1px solid #EDE6DC',
                     padding: '16px 20px',
-                    backgroundColor: '#0B1120',
+                    backgroundColor: '#FBF8F4',
                     animation: 'fadeIn 0.25s ease',
                   }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
                       {/* Students list */}
                       <div>
-                        <h4 style={{ fontSize: 14, fontWeight: 600, color: '#F1F5F9', margin: '0 0 10px' }}>
+                        <h4 style={{ fontSize: 14, fontWeight: 600, color: '#1A1207', margin: '0 0 10px' }}>
                           {tt(isHi, 'Students', 'छात्र')} ({cls.student_count})
                         </h4>
                         {(!cls.students || cls.students.length === 0) ? (
-                          <p style={{ fontSize: 13, color: '#64748B', fontStyle: 'italic' }}>
+                          <p style={{ fontSize: 13, color: '#7D7264', fontStyle: 'italic' }}>
                             {tt(isHi, 'No students have joined yet. Share the class code.', 'अभी तक कोई छात्र नहीं जुड़ा। कक्षा कोड साझा करें।')}
                           </p>
                         ) : (
@@ -694,14 +694,14 @@ export default function TeacherClassesPage() {
                                 justifyContent: 'space-between',
                                 alignItems: 'center',
                                 padding: '8px 10px',
-                                backgroundColor: '#1E293B',
+                                backgroundColor: '#F5F0EA',
                                 borderRadius: 8,
                                 fontSize: 13,
                               }}>
-                                <span style={{ color: '#E2E8F0', fontWeight: 500 }}>{s.name}</span>
+                                <span style={{ color: '#1A1207', fontWeight: 500 }}>{s.name}</span>
                                 <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                                   <span style={{ color: '#F59E0B', fontSize: 12, fontWeight: 600 }}>{s.xp} XP</span>
-                                  <span style={{ color: '#60A5FA', fontSize: 12, fontWeight: 600 }}>{s.mastery}%</span>
+                                  <span style={{ color: '#E8581C', fontSize: 12, fontWeight: 600 }}>{s.mastery}%</span>
                                 </div>
                               </div>
                             ))}
@@ -711,11 +711,11 @@ export default function TeacherClassesPage() {
 
                       {/* Assignments list */}
                       <div>
-                        <h4 style={{ fontSize: 14, fontWeight: 600, color: '#F1F5F9', margin: '0 0 10px' }}>
+                        <h4 style={{ fontSize: 14, fontWeight: 600, color: '#1A1207', margin: '0 0 10px' }}>
                           {tt(isHi, 'Assignments', 'असाइनमेंट')}
                         </h4>
                         {(!cls.assignments || cls.assignments.length === 0) ? (
-                          <p style={{ fontSize: 13, color: '#64748B', fontStyle: 'italic' }}>
+                          <p style={{ fontSize: 13, color: '#7D7264', fontStyle: 'italic' }}>
                             {tt(isHi, 'No assignments created for this class.', 'इस कक्षा के लिए कोई असाइनमेंट नहीं बनाया गया।')}
                           </p>
                         ) : (
@@ -726,17 +726,17 @@ export default function TeacherClassesPage() {
                                 justifyContent: 'space-between',
                                 alignItems: 'center',
                                 padding: '8px 10px',
-                                backgroundColor: '#1E293B',
+                                backgroundColor: '#F5F0EA',
                                 borderRadius: 8,
                                 fontSize: 13,
                               }}>
-                                <span style={{ color: '#E2E8F0', fontWeight: 500 }}>{a.title}</span>
+                                <span style={{ color: '#1A1207', fontWeight: 500 }}>{a.title}</span>
                                 <span style={{
                                   fontSize: 11,
                                   padding: '2px 8px',
                                   borderRadius: 4,
-                                  backgroundColor: '#334155',
-                                  color: '#94A3B8',
+                                  backgroundColor: '#EDE6DC',
+                                  color: '#7D7264',
                                   fontWeight: 500,
                                   textTransform: 'capitalize' as const,
                                 }}>
@@ -762,7 +762,7 @@ export default function TeacherClassesPage() {
                         onClick={() => copyClassCode(cls.class_code, cls.id)}
                         style={{
                           padding: '10px 24px',
-                          background: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
+                          background: 'linear-gradient(135deg, #E8581C, #C2410C)',
                           color: '#fff',
                           border: 'none',
                           borderRadius: 8,
@@ -792,13 +792,13 @@ export default function TeacherClassesPage() {
           width: 56,
           height: 56,
           borderRadius: '50%',
-          background: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
+          background: 'linear-gradient(135deg, #E8581C, #C2410C)',
           color: '#fff',
           border: 'none',
           fontSize: 28,
           fontWeight: 300,
           cursor: 'pointer',
-          boxShadow: '0 4px 20px rgba(37,99,235,0.4)',
+          boxShadow: '0 4px 20px rgba(232,88,28,0.4)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -807,11 +807,11 @@ export default function TeacherClassesPage() {
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.transform = 'scale(1.1)';
-          e.currentTarget.style.boxShadow = '0 6px 28px rgba(37,99,235,0.5)';
+          e.currentTarget.style.boxShadow = '0 6px 28px rgba(232,88,28,0.5)';
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.transform = 'scale(1)';
-          e.currentTarget.style.boxShadow = '0 4px 20px rgba(37,99,235,0.4)';
+          e.currentTarget.style.boxShadow = '0 4px 20px rgba(232,88,28,0.4)';
         }}
         title={tt(isHi, 'Create New Class', 'नई कक्षा बनाएं')}
       >
@@ -824,29 +824,29 @@ export default function TeacherClassesPage() {
           style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, animation: 'fadeIn 0.2s ease' }}
           onClick={e => { if (e.target === e.currentTarget) setEditingClass(null); }}
         >
-          <div style={{ backgroundColor: '#0F172A', borderRadius: 16, border: '1px solid #1E293B', padding: '28px 24px', width: '100%', maxWidth: 440, margin: '0 16px', animation: 'fadeIn 0.25s ease' }}>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#F1F5F9', margin: '0 0 20px' }}>
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #F5F0EA', padding: '28px 24px', width: '100%', maxWidth: 440, margin: '0 16px', animation: 'fadeIn 0.25s ease' }}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1A1207', margin: '0 0 20px' }}>
               {tt(isHi, 'Edit Class', 'कक्षा संपादित करें')}
             </h2>
 
             {/* Name */}
             <label style={{ display: 'block', marginBottom: 14 }}>
-              <span style={{ fontSize: 13, color: '#94A3B8', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Class Name', 'कक्षा का नाम')}</span>
+              <span style={{ fontSize: 13, color: '#7D7264', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Class Name', 'कक्षा का नाम')}</span>
               <input
                 type="text"
                 value={editName}
                 onChange={e => setEditName(e.target.value)}
-                style={{ width: '100%', padding: '10px 12px', backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: 8, color: '#E2E8F0', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '10px 12px', backgroundColor: '#F5F0EA', border: '1px solid #EDE6DC', borderRadius: 8, color: '#1A1207', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
               />
             </label>
 
             {/* Section */}
             <label style={{ display: 'block', marginBottom: 20 }}>
-              <span style={{ fontSize: 13, color: '#94A3B8', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Section', 'सेक्शन')}</span>
+              <span style={{ fontSize: 13, color: '#7D7264', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Section', 'सेक्शन')}</span>
               <select
                 value={editSection}
                 onChange={e => setEditSection(e.target.value)}
-                style={{ width: '100%', padding: '10px 12px', backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: 8, color: '#E2E8F0', fontSize: 14, outline: 'none', boxSizing: 'border-box', cursor: 'pointer' }}
+                style={{ width: '100%', padding: '10px 12px', backgroundColor: '#F5F0EA', border: '1px solid #EDE6DC', borderRadius: 8, color: '#1A1207', fontSize: 14, outline: 'none', boxSizing: 'border-box', cursor: 'pointer' }}
               >
                 {SECTIONS.map(s => (
                   <option key={s} value={s}>{s || tt(isHi, '— None —', '— कोई नहीं —')}</option>
@@ -857,7 +857,7 @@ export default function TeacherClassesPage() {
             <div style={{ display: 'flex', gap: 10 }}>
               <button
                 onClick={() => setEditingClass(null)}
-                style={{ flex: 1, padding: '11px 16px', backgroundColor: 'transparent', color: '#94A3B8', border: '1px solid #334155', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}
+                style={{ flex: 1, padding: '11px 16px', backgroundColor: 'transparent', color: '#7D7264', border: '1px solid #EDE6DC', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}
               >
                 {tt(isHi, 'Cancel', 'रद्द करें')}
               </button>
@@ -866,7 +866,7 @@ export default function TeacherClassesPage() {
                 disabled={saving || !editName.trim()}
                 style={{
                   flex: 1, padding: '11px 16px',
-                  background: saving || !editName.trim() ? '#334155' : 'linear-gradient(135deg, #7C3AED, #6D28D9)',
+                  background: saving || !editName.trim() ? '#C9BEB0' : 'linear-gradient(135deg, #7C3AED, #6D28D9)',
                   color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600,
                   cursor: saving || !editName.trim() ? 'default' : 'pointer',
                   opacity: saving || !editName.trim() ? 0.5 : 1,
@@ -896,22 +896,22 @@ export default function TeacherClassesPage() {
           onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false); }}
         >
           <div style={{
-            backgroundColor: '#0F172A',
+            backgroundColor: '#FFFFFF',
             borderRadius: 16,
-            border: '1px solid #1E293B',
+            border: '1px solid #F5F0EA',
             padding: '28px 24px',
             width: '100%',
             maxWidth: 440,
             margin: '0 16px',
             animation: 'fadeIn 0.25s ease',
           }}>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#F1F5F9', margin: '0 0 20px' }}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1A1207', margin: '0 0 20px' }}>
               {tt(isHi, 'Create New Class', 'नई कक्षा बनाएं')}
             </h2>
 
             {/* Class Name */}
             <label style={{ display: 'block', marginBottom: 14 }}>
-              <span style={{ fontSize: 13, color: '#94A3B8', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Class Name', 'कक्षा का नाम')}</span>
+              <span style={{ fontSize: 13, color: '#7D7264', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Class Name', 'कक्षा का नाम')}</span>
               <input
                 type="text"
                 placeholder={tt(isHi, 'e.g. 10-A Science', 'जैसे 10-A विज्ञान')}
@@ -920,10 +920,10 @@ export default function TeacherClassesPage() {
                 style={{
                   width: '100%',
                   padding: '10px 12px',
-                  backgroundColor: '#1E293B',
-                  border: '1px solid #334155',
+                  backgroundColor: '#F5F0EA',
+                  border: '1px solid #EDE6DC',
                   borderRadius: 8,
-                  color: '#E2E8F0',
+                  color: '#1A1207',
                   fontSize: 14,
                   outline: 'none',
                   boxSizing: 'border-box',
@@ -933,17 +933,17 @@ export default function TeacherClassesPage() {
 
             {/* Grade */}
             <label style={{ display: 'block', marginBottom: 14 }}>
-              <span style={{ fontSize: 13, color: '#94A3B8', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Grade', 'कक्षा')}</span>
+              <span style={{ fontSize: 13, color: '#7D7264', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Grade', 'कक्षा')}</span>
               <select
                 value={formGrade}
                 onChange={(e) => setFormGrade(e.target.value)}
                 style={{
                   width: '100%',
                   padding: '10px 12px',
-                  backgroundColor: '#1E293B',
-                  border: '1px solid #334155',
+                  backgroundColor: '#F5F0EA',
+                  border: '1px solid #EDE6DC',
                   borderRadius: 8,
-                  color: '#E2E8F0',
+                  color: '#1A1207',
                   fontSize: 14,
                   outline: 'none',
                   boxSizing: 'border-box',
@@ -958,17 +958,17 @@ export default function TeacherClassesPage() {
 
             {/* Section */}
             <label style={{ display: 'block', marginBottom: 14 }}>
-              <span style={{ fontSize: 13, color: '#94A3B8', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Section (optional)', 'सेक्शन (वैकल्पिक)')}</span>
+              <span style={{ fontSize: 13, color: '#7D7264', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Section (optional)', 'सेक्शन (वैकल्पिक)')}</span>
               <select
                 value={formSection}
                 onChange={(e) => setFormSection(e.target.value)}
                 style={{
                   width: '100%',
                   padding: '10px 12px',
-                  backgroundColor: '#1E293B',
-                  border: '1px solid #334155',
+                  backgroundColor: '#F5F0EA',
+                  border: '1px solid #EDE6DC',
                   borderRadius: 8,
-                  color: '#E2E8F0',
+                  color: '#1A1207',
                   fontSize: 14,
                   outline: 'none',
                   boxSizing: 'border-box',
@@ -983,17 +983,17 @@ export default function TeacherClassesPage() {
 
             {/* Subject */}
             <label style={{ display: 'block', marginBottom: 20 }}>
-              <span style={{ fontSize: 13, color: '#94A3B8', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Subject', 'विषय')}</span>
+              <span style={{ fontSize: 13, color: '#7D7264', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Subject', 'विषय')}</span>
               <select
                 value={formSubject}
                 onChange={(e) => setFormSubject(e.target.value)}
                 style={{
                   width: '100%',
                   padding: '10px 12px',
-                  backgroundColor: '#1E293B',
-                  border: '1px solid #334155',
+                  backgroundColor: '#F5F0EA',
+                  border: '1px solid #EDE6DC',
                   borderRadius: 8,
-                  color: '#E2E8F0',
+                  color: '#1A1207',
                   fontSize: 14,
                   outline: 'none',
                   boxSizing: 'border-box',
@@ -1014,8 +1014,8 @@ export default function TeacherClassesPage() {
                   flex: 1,
                   padding: '11px 16px',
                   backgroundColor: 'transparent',
-                  color: '#94A3B8',
-                  border: '1px solid #334155',
+                  color: '#7D7264',
+                  border: '1px solid #EDE6DC',
                   borderRadius: 8,
                   fontSize: 14,
                   fontWeight: 500,
@@ -1031,8 +1031,8 @@ export default function TeacherClassesPage() {
                   flex: 1,
                   padding: '11px 16px',
                   background: creating || !formName.trim()
-                    ? '#334155'
-                    : 'linear-gradient(135deg, #2563EB, #1D4ED8)',
+                    ? '#C9BEB0'
+                    : 'linear-gradient(135deg, #E8581C, #C2410C)',
                   color: '#fff',
                   border: 'none',
                   borderRadius: 8,

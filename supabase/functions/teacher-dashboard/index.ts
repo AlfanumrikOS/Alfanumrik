@@ -95,25 +95,14 @@ async function assertTeacherOwnsClass(
     return grades.includes(grade)
   }
 
-  const { data: assignment } = await supabase
-    .from('teacher_class_assignments')
+  const { data: classTeacher } = await supabase
+    .from('class_teachers')
     .select('class_id')
     .eq('teacher_id', teacherId)
     .eq('class_id', classId)
     .limit(1)
     .maybeSingle()
-  if (assignment) return true
-
-  try {
-    const { data: classTeacher } = await supabase
-      .from('class_teachers')
-      .select('class_id')
-      .eq('teacher_id', teacherId)
-      .eq('class_id', classId)
-      .limit(1)
-      .maybeSingle()
-    if (classTeacher) return true
-  } catch { /* ignore */ }
+  if (classTeacher) return true
 
   return false
 }
@@ -165,7 +154,7 @@ async function handleGetDashboard(
   let classes: Array<{ id: string; name: string; student_count: number; avg_mastery?: number }> = []
   try {
     const { data: classData } = await supabase
-      .from('teacher_class_assignments')
+      .from('class_teachers')
       .select('class_id, classes(id, name, grade, section)')
       .eq('teacher_id', teacherId)
 
@@ -306,7 +295,7 @@ async function handleGetHeatmap(
 
       try {
         const { data: bkt } = await supabase
-          .from('bkt_mastery_state')
+          .from('concept_mastery')
           .select('p_know, attempts, mastery_level')
           .eq('student_id', student.id)
           .eq('topic_id', concept.id)
@@ -640,7 +629,7 @@ async function handleClosePoll(
 
     // Get responses
     const { data: responses, count } = await supabase
-      .from('classroom_responses')
+      .from('classroom_poll_responses')
       .select('*', { count: 'exact' })
       .eq('poll_id', pollId)
 
@@ -662,7 +651,7 @@ async function handleClosePoll(
 // ─── Reports helpers ────────────────────────────────────────
 // All three Reports actions aggregate over the union of students the
 // teacher owns. A teacher "owns" a student if either (a) the student is
-// in a class assigned to them via teacher_class_assignments, or (b) the
+// in a class assigned to them via class_teachers, or (b) the
 // student's grade is in the teacher's grades_taught. We resolve the
 // student set once and reuse it. Both lookups are RLS-friendly via the
 // service-role client after the JWT binding step.
@@ -676,7 +665,7 @@ async function resolveStudentsForTeacher(
   // Path A: students attached to this teacher's classes.
   try {
     const { data: assignments } = await supabase
-      .from('teacher_class_assignments')
+      .from('class_teachers')
       .select('class_id')
       .eq('teacher_id', teacherId)
     const classIds = (assignments || []).map((a: any) => a.class_id).filter(Boolean)
@@ -1146,9 +1135,8 @@ async function handleGetStudentsList(
 // breakdown with a feedback input.
 //
 // Ownership model — every handler verifies the underlying assignment
-// belongs to a class owned by `teacher_id`. We accept BOTH `class_teachers`
-// (used by /api/teacher/* routes) and `teacher_class_assignments` (used by
-// the rest of this Edge Function); the prod schema has both wired.
+// belongs to a class owned by `teacher_id`, either directly (assignment
+// row's teacher_id) or via co-teaching through `class_teachers`.
 
 /** Verify the assignment row belongs to a class the teacher owns. */
 async function teacherOwnsAssignment(
@@ -1169,8 +1157,8 @@ async function teacherOwnsAssignment(
     return { owns: true, assignment: a as Record<string, unknown> }
   }
 
-  // Indirect ownership: the class is co-taught (class_teachers /
-  // teacher_class_assignments) — surface the same data to all co-teachers.
+  // Indirect ownership: the class is co-taught (class_teachers) — surface
+  // the same data to all co-teachers.
   const classId = (a as { class_id?: string }).class_id
   if (!classId) return { owns: false, assignment: a as Record<string, unknown> }
 
@@ -1183,17 +1171,6 @@ async function teacherOwnsAssignment(
       .limit(1)
       .maybeSingle()
     if (link) return { owns: true, assignment: a as Record<string, unknown> }
-  } catch { /* table may not exist on this env */ }
-
-  try {
-    const { data: link2 } = await supabase
-      .from('teacher_class_assignments')
-      .select('class_id')
-      .eq('class_id', classId)
-      .eq('teacher_id', teacherId)
-      .limit(1)
-      .maybeSingle()
-    if (link2) return { owns: true, assignment: a as Record<string, unknown> }
   } catch { /* table may not exist on this env */ }
 
   return { owns: false, assignment: a as Record<string, unknown> }
@@ -2340,7 +2317,7 @@ async function handleExportGradeBookCsv(
 //   - export_student_report           — the per-student report in a parent-readable shape
 //
 // REUSE, don't rebuild:
-//   * Mastery reuses the get_heatmap BKT path verbatim — bkt_mastery_state
+//   * Mastery reuses the get_heatmap BKT path verbatim — concept_mastery
 //     (p_know / attempts / mastery_level) keyed by (student_id, topic_id). The
 //     p_know value is the existing BKT probability; we surface it as a percent
 //     for display only. NO new mastery math.
@@ -2455,7 +2432,7 @@ interface MasterySummary {
 
 /**
  * Shape the BKT mastery read (one row per concept the student has a
- * bkt_mastery_state row for) into the report's mastery block. `mastery_pct` is
+ * concept_mastery row for) into the report's mastery block. `mastery_pct` is
  * the existing BKT p_know surfaced as a percent (round(p_know*100)) — read
  * VERBATIM, no re-derivation. `overall_pct` is the simple mean of the
  * per-concept mastery percents (display rollup only). Concepts with no BKT row
@@ -2479,7 +2456,7 @@ function shapeMasterySummary(
 
 /**
  * Read a single student's BKT mastery rows joined to their concept titles.
- * Reuses the same bkt_mastery_state shape get_heatmap reads (p_know, attempts,
+ * Reuses the same concept_mastery shape get_heatmap reads (p_know, attempts,
  * mastery_level) — but here we list every concept the student has a row for
  * rather than intersecting with a fixed concept grid. Fails soft to [] when the
  * table is absent (older env), mirroring get_heatmap's defensive try/catch.
@@ -2491,7 +2468,7 @@ async function readStudentConceptMastery(
   const out: Array<{ topic_id: string; concept: string; p_know: number; attempts: number }> = []
   try {
     const { data: bktRows } = await supabase
-      .from('bkt_mastery_state')
+      .from('concept_mastery')
       .select('topic_id, p_know, attempts')
       .eq('student_id', studentId)
       .limit(500)
@@ -2524,7 +2501,7 @@ async function readStudentConceptMastery(
         attempts: Number((r as { attempts?: number }).attempts) || 0,
       })
     }
-  } catch { /* bkt_mastery_state absent on this env — empty mastery block */ }
+  } catch { /* concept_mastery absent on this env — empty mastery block */ }
   return out
 }
 
@@ -2681,11 +2658,11 @@ async function handleGetClassMasteryBloomSummary(
 
   // ── Class mastery rollup: average p_know per concept across the class. ──
   // Single batched read of every roster student's BKT rows; we average per
-  // topic. Same bkt_mastery_state shape get_heatmap reads — values verbatim.
+  // topic. Same concept_mastery shape get_heatmap reads — values verbatim.
   const conceptAgg = new Map<string, { masterySum: number; attemptsSum: number; n: number }>()
   try {
     const { data: bktRows } = await supabase
-      .from('bkt_mastery_state')
+      .from('concept_mastery')
       .select('topic_id, p_know, attempts')
       .in('student_id', studentIds)
       .limit(20000)
@@ -2698,7 +2675,7 @@ async function handleGetClassMasteryBloomSummary(
       a.n += 1
       conceptAgg.set(topicId, a)
     }
-  } catch { /* bkt_mastery_state absent — empty mastery rollup */ }
+  } catch { /* concept_mastery absent — empty mastery rollup */ }
 
   // Resolve concept titles for the aggregated topic ids.
   const topicIds = [...conceptAgg.keys()]

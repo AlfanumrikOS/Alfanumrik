@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import Link from 'next/link';
 import { LangProvider, LangToggle, useLang } from '@/components/landing/LangToggle';
+import { SCHOOL_PER_SEAT_MARKETING_LABEL } from '@/lib/pricing';
 
 /* ─── Data ─── */
 
@@ -234,7 +235,7 @@ function SchoolsContent() {
           >
             <div className="flex items-baseline gap-1 mb-2">
               <span className="text-4xl font-extrabold" style={{ color: '#7C3AED' }}>
-                ₹75
+                {SCHOOL_PER_SEAT_MARKETING_LABEL}
               </span>
               <span className="text-sm font-medium" style={{ color: 'var(--text-2)' }}>
                 {t('/student/month', '/छात्र/माह')}

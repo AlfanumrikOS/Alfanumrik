@@ -20,9 +20,17 @@ export async function GET(request: NextRequest) {
     case 'school_overview': return schoolOverview(auth.schoolId!);
     case 'class_performance': return classPerformance(auth.schoolId!, params);
     case 'student_detail': return studentDetail(auth.schoolId!, params);
+    case 'student_search': return studentSearch(auth.schoolId!, params);
     case 'subject_gaps': return subjectGaps(auth.schoolId!, params);
-    default: return NextResponse.json({ error: `Unknown report type: ${type}` }, { status: 400 });
+    default: return NextResponse.json({ success: false, error: `Unknown report type: ${type}` }, { status: 400 });
   }
+}
+
+// Every handler returns the canonical school-admin envelope `{ success, data }`
+// (the reports page unwraps `json.data` and throws when `!json.success`). The
+// 400/404 error paths keep `{ success: false, error }` for the same reason.
+function ok(data: unknown) {
+  return NextResponse.json({ success: true, data });
 }
 
 // ── School Overview ─────────────────────────────────────────
@@ -110,7 +118,7 @@ async function schoolOverview(schoolId: string) {
   const prevWeekCount = prevQuizzesRes.count || 0;
   const trend = quizzes.length - prevWeekCount;
 
-  return NextResponse.json({
+  return ok({
     total_quizzes: quizzes.length,
     avg_score: avgScore,
     active_students: activeStudents,
@@ -125,7 +133,7 @@ async function schoolOverview(schoolId: string) {
 // ── Class Performance ───────────────────────────────────────
 async function classPerformance(schoolId: string, params: URLSearchParams) {
   const classId = params.get('class_id');
-  if (!classId) return NextResponse.json({ error: 'class_id required' }, { status: 400 });
+  if (!classId) return NextResponse.json({ success: false, error: 'class_id required' }, { status: 400 });
 
   const supabase = getSupabaseAdmin();
 
@@ -137,7 +145,7 @@ async function classPerformance(schoolId: string, params: URLSearchParams) {
     .eq('school_id', schoolId)
     .single();
 
-  if (!cls) return NextResponse.json({ error: 'Class not found' }, { status: 404 });
+  if (!cls) return NextResponse.json({ success: false, error: 'Class not found' }, { status: 404 });
 
   // Get enrolled students
   const { data: enrollments } = await supabase
@@ -148,10 +156,11 @@ async function classPerformance(schoolId: string, params: URLSearchParams) {
 
   const studentIds = (enrollments || []).map(e => e.student_id);
   if (studentIds.length === 0) {
-    return NextResponse.json({
+    return ok({
       class_info: cls,
       enrolled_count: 0,
       avg_score: 0,
+      class_avg_score: 0,
       top_students: [],
       bottom_students: [],
       subject_breakdown: [],
@@ -210,10 +219,13 @@ async function classPerformance(schoolId: string, params: URLSearchParams) {
 
   const quizTakers = new Set(allQuizzes.map(q => q.student_id));
 
-  return NextResponse.json({
+  return ok({
     class_info: cls,
     enrolled_count: studentIds.length,
     avg_score: overallAvg,
+    // `class_avg_score` is the field the reports page's class-performance stat
+    // card reads; `avg_score` retained for any other consumer / backward compat.
+    class_avg_score: overallAvg,
     completion_rate: Math.round((quizTakers.size / studentIds.length) * 100),
     top_students: enriched.slice(0, 5),
     bottom_students: enriched.slice(-5).reverse(),
@@ -224,7 +236,7 @@ async function classPerformance(schoolId: string, params: URLSearchParams) {
 // ── Student Detail ──────────────────────────────────────────
 async function studentDetail(schoolId: string, params: URLSearchParams) {
   const studentId = params.get('student_id');
-  if (!studentId) return NextResponse.json({ error: 'student_id required' }, { status: 400 });
+  if (!studentId) return NextResponse.json({ success: false, error: 'student_id required' }, { status: 400 });
 
   const supabase = getSupabaseAdmin();
 
@@ -236,7 +248,7 @@ async function studentDetail(schoolId: string, params: URLSearchParams) {
     .eq('school_id', schoolId)
     .single();
 
-  if (!student) return NextResponse.json({ error: 'Student not found in your school' }, { status: 404 });
+  if (!student) return NextResponse.json({ success: false, error: 'Student not found in your school' }, { status: 404 });
 
   // Get quiz history (last 90 days)
   const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString();
@@ -269,7 +281,7 @@ async function studentDetail(schoolId: string, params: URLSearchParams) {
     ? Math.round(allQuizzes.reduce((sum, q) => sum + (q.score_percent || 0), 0) / allQuizzes.length)
     : 0;
 
-  return NextResponse.json({
+  return ok({
     student: {
       id: student.id,
       name: student.name,
@@ -284,6 +296,38 @@ async function studentDetail(schoolId: string, params: URLSearchParams) {
     subject_scores,
     recent_quizzes: allQuizzes.slice(0, 20),
   });
+}
+
+// ── Student Search ──────────────────────────────────────────
+// Powers the student-detail tab's drill-in autocomplete. The page sends
+// `?type=student_search&query=<2+ chars>` and reads `json.data` as an array of
+// { id, name, grade, xp_total, last_active }. Scoped to active students in the
+// caller's school (P8 boundary via authorizeSchoolAdmin's schoolId).
+async function studentSearch(schoolId: string, params: URLSearchParams) {
+  const query = (params.get('query') || params.get('q') || '').trim();
+  if (query.length < 2) {
+    return ok([]);
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data: students } = await supabase
+    .from('students')
+    .select('id, name, grade, xp_total, last_active')
+    .eq('school_id', schoolId)
+    .eq('is_active', true)
+    .ilike('name', `%${query}%`)
+    .order('name', { ascending: true })
+    .limit(20);
+
+  const results = (students || []).map(s => ({
+    id: s.id,
+    name: s.name,
+    grade: s.grade, // P5: string
+    xp_total: s.xp_total ?? 0,
+    last_active: s.last_active ?? null,
+  }));
+
+  return ok(results);
 }
 
 // ── Subject Gaps ────────────────────────────────────────────
@@ -310,7 +354,7 @@ async function subjectGaps(schoolId: string, params: URLSearchParams) {
 
     const studentIds = (gradeStudents || []).map(s => s.id);
     if (studentIds.length === 0) {
-      return NextResponse.json({ grade, gaps: [] });
+      return ok({ grade, gaps: [] });
     }
     query = query.in('student_id', studentIds);
   }
@@ -343,5 +387,5 @@ async function subjectGaps(schoolId: string, params: URLSearchParams) {
     };
   }).sort((a, b) => a.avg_score - b.avg_score);
 
-  return NextResponse.json({ grade: grade || 'all', gaps });
+  return ok({ grade: grade || 'all', gaps });
 }

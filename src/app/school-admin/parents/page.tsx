@@ -49,8 +49,11 @@ interface ParentStats {
 }
 
 type TabFilter = 'links' | 'message';
-type TargetType = 'all' | 'by_grade' | 'by_class';
-type ChannelType = 'in_app' | 'whatsapp' | 'email';
+// Wire values match the /api/school-admin/parents POST contract exactly:
+//   target  : 'all' | 'grade' | 'class'   (single target_value, not arrays)
+//   channel : 'notification' | 'whatsapp' | 'email'
+type TargetType = 'all' | 'grade' | 'class';
+type ChannelType = 'notification' | 'whatsapp' | 'email';
 
 /* ─────────────────────────────────────────────────────────────
    GRADE OPTIONS (strings — P5)
@@ -147,9 +150,11 @@ interface SendConfirmProps {
 }
 
 function SendConfirm({ isHi, recipientCount, channel, onConfirm, onCancel, loading }: SendConfirmProps) {
-  const channelLabel = channel === 'in_app'
+  const channelLabel = channel === 'notification'
     ? t(isHi, 'In-app notification', 'ऐप अधिसूचना')
-    : t(isHi, 'WhatsApp', 'WhatsApp');
+    : channel === 'email'
+      ? t(isHi, 'Email', 'ईमेल')
+      : t(isHi, 'WhatsApp', 'WhatsApp');
 
   return (
     <div className="space-y-4 pt-2">
@@ -206,17 +211,19 @@ export default function SchoolAdminParentsPage() {
   /* ── Stats ── */
   const [stats, setStats] = useState<ParentStats>({ total: 0, approved: 0, pending: 0 });
 
-  /* ── Send Message state ── */
+  /* ── Send Message state ──
+     The backend POST accepts a SINGLE target_value (one grade or one class),
+     so the targeting UI is single-select (not multi-set). */
   const [messageEn, setMessageEn] = useState('');
   const [messageHi, setMessageHi] = useState('');
   const [targetType, setTargetType] = useState<TargetType>('all');
-  const [selectedGrades, setSelectedGrades] = useState<Set<string>>(new Set());
-  const [selectedClassIds, setSelectedClassIds] = useState<Set<string>>(new Set());
-  const [channel, setChannel] = useState<ChannelType>('in_app');
+  const [selectedGrade, setSelectedGrade] = useState<string>('');
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
+  const [channel, setChannel] = useState<ChannelType>('notification');
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [sendConfirmOpen, setSendConfirmOpen] = useState(false);
   const [sendLoading, setSendLoading] = useState(false);
-  const [sendResult, setSendResult] = useState<{ success: number; failed: number } | null>(null);
+  const [sendResult, setSendResult] = useState<{ sent_count: number; failed_count: number; channel: string } | null>(null);
 
   /* ── Success toast ── */
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -301,13 +308,24 @@ export default function SchoolAdminParentsPage() {
     }
   }, [getToken]);
 
-  /* ── Send message ── */
+  /* ── Send message ──
+     Maps the compose form to the /api/school-admin/parents POST contract:
+       { message, message_hi, target, target_value, channel }
+     and consumes { success, data: { sent_count, failed_count, channel } }. */
   const handleSendMessage = useCallback(async () => {
     const token = await getToken();
     if (!token) return;
 
     setSendLoading(true);
     try {
+      // Single target_value per the backend contract (one grade or one class).
+      const targetValue =
+        targetType === 'grade'
+          ? selectedGrade
+          : targetType === 'class'
+            ? selectedClassId
+            : undefined;
+
       const res = await fetch('/api/school-admin/parents', {
         method: 'POST',
         headers: {
@@ -315,12 +333,10 @@ export default function SchoolAdminParentsPage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          action: 'send_message',
-          message_en: messageEn.trim(),
-          message_hi: messageHi.trim(),
-          target_type: targetType,
-          target_grades: Array.from(selectedGrades),
-          target_class_ids: Array.from(selectedClassIds),
+          message: messageEn.trim(),
+          message_hi: messageHi.trim() || undefined,
+          target: targetType,
+          ...(targetValue ? { target_value: targetValue } : {}),
           channel,
         }),
       });
@@ -333,61 +349,57 @@ export default function SchoolAdminParentsPage() {
       const json = await res.json();
       if (!json.success) throw new Error(json.error || 'Unknown error');
 
-      const result = json.data as { success: number; failed: number };
+      // Response: { success, data: { sent_count, failed_count, channel } }
+      const result = json.data as { sent_count: number; failed_count: number; channel: string };
       setSendResult(result);
       setSendConfirmOpen(false);
 
+      // Real summary toast: sent vs failed.
       setSuccessMsg(
-        t(isHi,
-          `Message sent to ${result.success} parent(s)`,
-          `${result.success} अभिभावक(ओं) को संदेश भेजा गया`
-        )
+        result.failed_count > 0
+          ? t(isHi,
+              `Sent to ${result.sent_count} parent(s), ${result.failed_count} failed`,
+              `${result.sent_count} अभिभावक(ओं) को भेजा गया, ${result.failed_count} विफल`
+            )
+          : result.sent_count > 0
+            ? t(isHi,
+                `Message sent to ${result.sent_count} parent(s)`,
+                `${result.sent_count} अभिभावक(ओं) को संदेश भेजा गया`
+              )
+            : t(isHi,
+                'No matching parents to send to',
+                'भेजने के लिए कोई मेल खाता अभिभावक नहीं'
+              )
       );
 
       // Reset form
       setMessageEn('');
       setMessageHi('');
       setTargetType('all');
-      setSelectedGrades(new Set());
-      setSelectedClassIds(new Set());
+      setSelectedGrade('');
+      setSelectedClassId('');
     } catch (err: any) {
       setLinksError(err.message);
       setSendConfirmOpen(false);
     } finally {
       setSendLoading(false);
     }
-  }, [getToken, isHi, messageEn, messageHi, targetType, selectedGrades, selectedClassIds, channel]);
+  }, [getToken, isHi, messageEn, messageHi, targetType, selectedGrade, selectedClassId, channel]);
 
-  /* ── Grade toggle ── */
-  const toggleGrade = (g: string) => {
-    setSelectedGrades(prev => {
-      const next = new Set(prev);
-      if (next.has(g)) next.delete(g);
-      else next.add(g);
-      return next;
-    });
-  };
-
-  /* ── Class toggle ── */
-  const toggleClass = (id: string) => {
-    setSelectedClassIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  /* ── Estimated recipient count ── */
+  /* ── Estimated recipient count ──
+     'all'   → all approved links
+     'grade' → approved links matching the single selected grade
+     'class' → not estimable client-side (need enrollments); show approved as
+               an upper bound once a class is chosen. */
   const estimatedRecipients = (() => {
     if (targetType === 'all') return stats.approved;
-    if (targetType === 'by_grade') {
+    if (targetType === 'grade') {
+      if (!selectedGrade) return 0;
       return parentLinks.filter(
-        l => l.status === 'approved' && selectedGrades.has(l.student_grade)
+        l => l.status === 'approved' && l.student_grade === selectedGrade
       ).length;
     }
-    // by_class — can't easily estimate client-side, just show "selected classes"
-    return selectedClassIds.size > 0 ? stats.approved : 0;
+    return selectedClassId ? stats.approved : 0;
   })();
 
   /* ── Auth redirect guard ── */
@@ -858,7 +870,7 @@ export default function SchoolAdminParentsPage() {
                 {t(isHi, 'Target', 'लक्ष्य')}
               </label>
               <div className="space-y-2">
-                {(['all', 'by_grade', 'by_class'] as TargetType[]).map(tt => (
+                {(['all', 'grade', 'class'] as TargetType[]).map(tt => (
                   <label
                     key={tt}
                     className="flex items-center gap-2 cursor-pointer select-none"
@@ -872,15 +884,16 @@ export default function SchoolAdminParentsPage() {
                     />
                     <span className="text-sm text-[var(--text-1)]">
                       {tt === 'all' && t(isHi, 'All parents', 'सभी अभिभावक')}
-                      {tt === 'by_grade' && t(isHi, 'By grade', 'कक्षा के अनुसार')}
-                      {tt === 'by_class' && t(isHi, 'By class', 'कक्षा समूह के अनुसार')}
+                      {tt === 'grade' && t(isHi, 'By grade', 'कक्षा के अनुसार')}
+                      {tt === 'class' && t(isHi, 'By class', 'कक्षा समूह के अनुसार')}
                     </span>
                   </label>
                 ))}
               </div>
 
-              {/* Grade checkboxes — P5: grades as strings */}
-              {targetType === 'by_grade' && (
+              {/* Grade single-select — P5: grades as strings.
+                  Backend takes ONE target_value, so this is single-select. */}
+              {targetType === 'grade' && (
                 <div className="mt-3 flex flex-wrap gap-2 pl-6">
                   {GRADE_VALUES.map(g => (
                     <label
@@ -888,9 +901,10 @@ export default function SchoolAdminParentsPage() {
                       className="flex items-center gap-1.5 cursor-pointer select-none"
                     >
                       <input
-                        type="checkbox"
-                        checked={selectedGrades.has(g)}
-                        onChange={() => toggleGrade(g)}
+                        type="radio"
+                        name="target_grade"
+                        checked={selectedGrade === g}
+                        onChange={() => setSelectedGrade(g)}
                         style={{ accentColor: 'var(--orange)', width: 16, height: 16 }}
                       />
                       <span className="text-xs font-medium text-[var(--text-2)]">
@@ -901,8 +915,8 @@ export default function SchoolAdminParentsPage() {
                 </div>
               )}
 
-              {/* Class multi-select */}
-              {targetType === 'by_class' && classes.length > 0 && (
+              {/* Class single-select */}
+              {targetType === 'class' && classes.length > 0 && (
                 <div
                   className="mt-3 ml-6"
                   style={{
@@ -920,9 +934,10 @@ export default function SchoolAdminParentsPage() {
                       className="flex items-center gap-2 py-1.5 cursor-pointer select-none"
                     >
                       <input
-                        type="checkbox"
-                        checked={selectedClassIds.has(cls.id)}
-                        onChange={() => toggleClass(cls.id)}
+                        type="radio"
+                        name="target_class"
+                        checked={selectedClassId === cls.id}
+                        onChange={() => setSelectedClassId(cls.id)}
                         style={{ accentColor: 'var(--orange)', width: 16, height: 16 }}
                       />
                       <span className="text-xs font-medium text-[var(--text-2)]">
@@ -947,12 +962,24 @@ export default function SchoolAdminParentsPage() {
                   <input
                     type="radio"
                     name="channel"
-                    checked={channel === 'in_app'}
-                    onChange={() => setChannel('in_app')}
+                    checked={channel === 'notification'}
+                    onChange={() => setChannel('notification')}
                     style={{ accentColor: 'var(--orange)', width: 16, height: 16 }}
                   />
                   <span className="text-sm text-[var(--text-1)]">
                     {t(isHi, 'In-app notification', 'ऐप अधिसूचना')}
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="radio"
+                    name="channel"
+                    checked={channel === 'email'}
+                    onChange={() => setChannel('email')}
+                    style={{ accentColor: 'var(--orange)', width: 16, height: 16 }}
+                  />
+                  <span className="text-sm text-[var(--text-1)]">
+                    {t(isHi, 'Email', 'ईमेल')}
                   </span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -981,8 +1008,8 @@ export default function SchoolAdminParentsPage() {
                   {t(isHi, 'Message sent!', 'संदेश भेजा गया!')}
                 </p>
                 <p className="text-xs text-[var(--text-2)] mt-1">
-                  {t(isHi, 'Success:', 'सफल:')} {sendResult.success} &nbsp;|&nbsp;{' '}
-                  {t(isHi, 'Failed:', 'विफल:')} {sendResult.failed}
+                  {t(isHi, 'Sent:', 'भेजा गया:')} {sendResult.sent_count} &nbsp;|&nbsp;{' '}
+                  {t(isHi, 'Failed:', 'विफल:')} {sendResult.failed_count}
                 </p>
               </div>
             )}
@@ -998,11 +1025,17 @@ export default function SchoolAdminParentsPage() {
               </p>
             )}
 
-            {/* Send button */}
+            {/* Send button — require a target_value when targeting a single
+                grade/class so we never POST an invalid body (avoids a 400). */}
             <Button
               variant="primary"
               fullWidth
-              disabled={!messageEn.trim() || sendLoading}
+              disabled={
+                !messageEn.trim() ||
+                sendLoading ||
+                (targetType === 'grade' && !selectedGrade) ||
+                (targetType === 'class' && !selectedClassId)
+              }
               onClick={() => setSendConfirmOpen(true)}
               style={{ minHeight: 48 }}
             >

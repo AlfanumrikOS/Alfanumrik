@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase';
 // ============================================================
 // BILINGUAL HELPER (P7)
 // ============================================================
-const t = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
+const t = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
 // ============================================================
 // SESSION TYPES + LOADER (mirrors parent/page.tsx HMAC pattern)
@@ -42,7 +42,54 @@ async function loadParentSession(): Promise<{ guardian: ParentSession; student: 
 }
 
 // ============================================================
+// AUTHED FETCH (attaches the guardian's Supabase JWT)
+// ============================================================
+async function authedFetch(url: string): Promise<Response> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+  } catch {
+    /* anonymous — server returns 401/403 */
+  }
+  return fetch(url, { headers });
+}
+
+// ============================================================
+// CALENDAR API CONTRACT TYPES (matches /api/parent/calendar)
+// ============================================================
+type CalendarEventType = 'assignment' | 'school_exam' | 'quiz_activity';
+
+interface CalendarEvent {
+  date: string;
+  type: CalendarEventType;
+  title: string;
+  subtitle?: string;
+  id?: string;
+}
+
+interface CalendarResponse {
+  success: boolean;
+  data?: {
+    student_id: string;
+    grade: string | null;
+    range: { from: string; to: string };
+    events: CalendarEvent[];
+  };
+  error?: string;
+}
+
+// Per-type styling — colors used for the calendar dot legend, event chips, and
+// upcoming-events rows. quiz_activity is past engagement; the others upcoming.
+const EVENT_STYLE: Record<CalendarEventType, { color: string; en: string; hi: string }> = {
+  assignment: { color: '#2563EB', en: 'Assignment', hi: 'असाइनमेंट' },
+  school_exam: { color: '#EF4444', en: 'School Exam', hi: 'स्कूल परीक्षा' },
+  quiz_activity: { color: '#F97316', en: 'Quiz activity', hi: 'क्विज़ गतिविधि' },
+};
+
+// ============================================================
 // BOARD EXAM DATES (Grade 10 and 12 only) — P5: grades are strings
+// Static national dates, not per-child data — these stay client-side.
 // ============================================================
 const BOARD_EXAM_DATES: Record<string, Date> = {
   '10': new Date('2026-03-15'),
@@ -75,6 +122,13 @@ function getCalendarDays(year: number, month: number): Array<{ date: number | nu
   return cells;
 }
 
+/** Convert an ISO timestamp to a local YYYY-MM-DD date key for calendar matching. */
+function localDateKey(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 // ============================================================
 // MAIN PAGE
 // ============================================================
@@ -86,27 +140,18 @@ export default function ParentCalendarPage() {
   const [student, setStudent] = useState<StudentSession | null>(null);
   const [checking, setChecking] = useState(true);
 
-  // Calendar state
+  // Calendar view state
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth());
 
-  // Activity data: set of dateStr strings with quiz activity
-  const [activityDates, setActivityDates] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(false);
-  const [monthQuizCount, setMonthQuizCount] = useState(0);
-  const [monthActiveDays, setMonthActiveDays] = useState(0);
+  // Server-aggregated events
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsError, setEventsError] = useState<string | null>(null);
+  const [notLinked, setNotLinked] = useState(false);
 
-  // Upcoming school exams for the child's school + grade
-  const [upcomingExams, setUpcomingExams] = useState<Array<{
-    id: string;
-    title: string;
-    subject: string;
-    start_time: string;
-  }>>([]);
-  const [examsLoading, setExamsLoading] = useState(false);
-
-  // Auth resolution
+  // Auth resolution (reuse the parent child-selector / HMAC session pattern)
   useEffect(() => {
     if (auth.isLoading) return;
     const resolve = (g: ParentSession | null, s: StudentSession | null) => {
@@ -131,107 +176,75 @@ export default function ParentCalendarPage() {
     }
   }, [checking, guardian, student]);
 
-  // Fetch quiz activity for this month
-  const fetchActivity = useCallback(async () => {
+  // Fetch aggregated calendar events for the active child from the API.
+  // horizon_days=120 (the API max) so the whole forward window is covered;
+  // the API also looks back 30 days for quiz_activity engagement markers.
+  const fetchEvents = useCallback(async () => {
     if (!student) return;
-    setLoading(true);
+    setEventsLoading(true);
+    setEventsError(null);
+    setNotLinked(false);
     try {
-      const startOfMonth = new Date(viewYear, viewMonth, 1).toISOString();
-      const endOfMonth = new Date(viewYear, viewMonth + 1, 0, 23, 59, 59).toISOString();
-      const { data } = await supabase
-        .from('quiz_sessions')
-        .select('created_at')
-        .eq('student_id', student.id)
-        .gte('created_at', startOfMonth)
-        .lte('created_at', endOfMonth);
-
-      if (data && data.length > 0) {
-        const dateSet = new Set<string>();
-        let quizCount = 0;
-        for (const row of data as Array<{ created_at: string }>) {
-          const d = new Date(row.created_at);
-          const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-          dateSet.add(dateStr);
-          quizCount++;
-        }
-        setActivityDates(dateSet);
-        setMonthQuizCount(quizCount);
-        setMonthActiveDays(dateSet.size);
-      } else {
-        setActivityDates(new Set());
-        setMonthQuizCount(0);
-        setMonthActiveDays(0);
+      const res = await authedFetch(
+        `/api/parent/calendar?student_id=${encodeURIComponent(student.id)}&horizon_days=120`,
+      );
+      if (res.status === 403) {
+        setNotLinked(true);
+        setEvents([]);
+        return;
       }
+      if (res.status === 404) {
+        setEventsError(t(isHi, 'Student record not found.', 'छात्र रिकॉर्ड नहीं मिला।'));
+        setEvents([]);
+        return;
+      }
+      if (res.status === 401) {
+        setEventsError(t(isHi, 'Please sign in again.', 'कृपया दोबारा साइन इन करें।'));
+        setEvents([]);
+        return;
+      }
+      const json = (await res.json().catch(() => ({}))) as CalendarResponse;
+      if (!res.ok || !json.success || !json.data) {
+        setEventsError(t(isHi, 'Could not load calendar events.', 'कैलेंडर कार्यक्रम लोड नहीं हो सके।'));
+        setEvents([]);
+        return;
+      }
+      // API already returns events sorted ascending.
+      setEvents(json.data.events);
     } catch {
-      setActivityDates(new Set());
+      setEventsError(t(isHi, 'Network error. Please try again.', 'नेटवर्क त्रुटि। कृपया दोबारा कोशिश करें।'));
+      setEvents([]);
+    } finally {
+      setEventsLoading(false);
     }
-    setLoading(false);
-  }, [student, viewYear, viewMonth]);
+  }, [student, isHi]);
 
   useEffect(() => {
-    if (student) fetchActivity();
-  }, [student, fetchActivity]);
-
-  // Fetch upcoming school exams for this student's school + grade
-  useEffect(() => {
-    if (!student) return;
-    let cancelled = false;
-    setExamsLoading(true);
-
-    (async () => {
-      try {
-        // Step 1: get this student's school_id
-        const { data: studentRow, error: studentErr } = await supabase
-          .from('students')
-          .select('school_id, grade')
-          .eq('id', student.id)
-          .single();
-
-        if (cancelled) return;
-
-        if (studentErr || !studentRow?.school_id) {
-          // Not in a B2B school — no school exams to show
-          setUpcomingExams([]);
-          setExamsLoading(false);
-          return;
-        }
-
-        // Step 2: fetch upcoming exams for that school + this student's grade
-        const { data: examRows, error: examErr } = await supabase
-          .from('school_exams')
-          .select('id, title, subject, grade, start_time, status')
-          .eq('school_id', studentRow.school_id)
-          .eq('grade', studentRow.grade ?? student.grade)
-          .in('status', ['scheduled', 'active'])
-          .gt('start_time', new Date().toISOString())
-          .order('start_time', { ascending: true })
-          .limit(20);
-
-        if (cancelled) return;
-
-        if (examErr || !examRows) {
-          setUpcomingExams([]);
-        } else {
-          setUpcomingExams(examRows.map(r => ({
-            id: r.id as string,
-            title: r.title as string,
-            subject: r.subject as string,
-            start_time: r.start_time as string,
-          })));
-        }
-      } catch {
-        if (!cancelled) setUpcomingExams([]);
-      } finally {
-        if (!cancelled) setExamsLoading(false);
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [student]);
+    if (student) fetchEvents();
+  }, [student, fetchEvents]);
 
   const grade = student?.grade || '';
   const boardExamDate = BOARD_EXAM_DATES[grade] || null;
   const daysUntilBoard = boardExamDate ? getDaysUntil(boardExamDate) : null;
+
+  // Map events onto the visible month's day cells, keyed by local date.
+  // Each day can carry multiple event types; we collect the distinct set so the
+  // grid can render one dot per type present that day.
+  const eventTypesByDay: Record<string, Set<CalendarEventType>> = {};
+  for (const ev of events) {
+    const key = localDateKey(ev.date);
+    if (!key) continue;
+    if (!eventTypesByDay[key]) eventTypesByDay[key] = new Set();
+    eventTypesByDay[key].add(ev.type);
+  }
+
+  // Upcoming events = assignment + school_exam strictly in the future, plus the
+  // board exam (client-side). quiz_activity is past engagement and is surfaced
+  // only as calendar dots, not in the upcoming list.
+  const nowMs = Date.now();
+  const upcoming = events
+    .filter((e) => (e.type === 'assignment' || e.type === 'school_exam') && new Date(e.date).getTime() >= nowMs)
+    .slice(0, 30);
 
   const calendarDays = getCalendarDays(viewYear, viewMonth);
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -247,7 +260,7 @@ export default function ParentCalendarPage() {
     else setViewMonth(m => m + 1);
   };
 
-  // Loading state
+  // Loading state (auth resolving)
   if (checking || auth.isLoading) {
     return (
       <div style={pageStyle}>
@@ -289,7 +302,7 @@ export default function ParentCalendarPage() {
             background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 6,
             padding: '4px 10px', color: '#fff', fontSize: 12, fontWeight: 600,
             cursor: 'pointer', marginBottom: 10,
-            display: 'inline-flex', alignItems: 'center', gap: 4,
+            display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 32,
           }}
         >
           &larr; {t(isHi, 'Dashboard', 'डैशबोर्ड')}
@@ -302,7 +315,31 @@ export default function ParentCalendarPage() {
         </p>
       </div>
 
-      {/* ── BOARD EXAM COUNTDOWN (Grade 10 / 12 only) ── */}
+      {/* ── NOT-LINKED STATE (403) ── */}
+      {notLinked && (
+        <div style={{
+          backgroundColor: '#FEF2F2',
+          border: '1px solid #FECACA',
+          borderRadius: 14,
+          padding: '18px',
+          marginBottom: 16,
+          textAlign: 'center',
+        }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>&#x1F517;</div>
+          <p style={{ fontSize: 14, fontWeight: 600, color: '#991B1B', margin: '0 0 4px' }}>
+            {t(isHi, 'Not linked to this child', 'इस बच्चे से जुड़े नहीं हैं')}
+          </p>
+          <p style={{ fontSize: 12, color: '#B91C1C', margin: 0, lineHeight: 1.5 }}>
+            {t(
+              isHi,
+              'You need an approved link to view this child’s calendar. Open the Children page to connect.',
+              'इस बच्चे का कैलेंडर देखने के लिए आपको एक स्वीकृत लिंक चाहिए। जुड़ने के लिए बच्चे पेज खोलें।'
+            )}
+          </p>
+        </div>
+      )}
+
+      {/* ── BOARD EXAM COUNTDOWN (Grade 10 / 12 only — client-side static) ── */}
       {boardExamDate && daysUntilBoard !== null && daysUntilBoard >= 0 && (
         <div style={{
           backgroundColor: '#FFF8F0',
@@ -390,7 +427,7 @@ export default function ParentCalendarPage() {
               return <div key={`empty-${idx}`} />;
             }
             const isToday = cell.dateStr === todayStr;
-            const hasActivity = activityDates.has(cell.dateStr);
+            const dayTypes = eventTypesByDay[cell.dateStr];
             return (
               <div
                 key={cell.dateStr}
@@ -414,11 +451,20 @@ export default function ParentCalendarPage() {
                 }}>
                   {cell.date}
                 </span>
-                {hasActivity && (
-                  <div style={{
-                    width: 6, height: 6, borderRadius: '50%',
-                    backgroundColor: '#F97316',
-                  }} />
+                {dayTypes && dayTypes.size > 0 && (
+                  <div style={{ display: 'flex', gap: 2 }}>
+                    {(['assignment', 'school_exam', 'quiz_activity'] as CalendarEventType[])
+                      .filter((ty) => dayTypes.has(ty))
+                      .map((ty) => (
+                        <div
+                          key={ty}
+                          style={{
+                            width: 5, height: 5, borderRadius: '50%',
+                            backgroundColor: EVENT_STYLE[ty].color,
+                          }}
+                        />
+                      ))}
+                  </div>
                 )}
               </div>
             );
@@ -426,11 +472,13 @@ export default function ParentCalendarPage() {
         </div>
 
         {/* Legend */}
-        <div style={{ display: 'flex', gap: 16, marginTop: 14, justifyContent: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#F97316' }} />
-            <span style={{ fontSize: 11, color: '#64748B' }}>{t(isHi, 'Quiz activity', 'क्विज़ गतिविधि')}</span>
-          </div>
+        <div style={{ display: 'flex', gap: 14, marginTop: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
+          {(['assignment', 'school_exam', 'quiz_activity'] as CalendarEventType[]).map((ty) => (
+            <div key={ty} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: EVENT_STYLE[ty].color }} />
+              <span style={{ fontSize: 11, color: '#64748B' }}>{t(isHi, EVENT_STYLE[ty].en, EVENT_STYLE[ty].hi)}</span>
+            </div>
+          ))}
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <div style={{ width: 14, height: 14, borderRadius: 4, border: '2px solid #F97316', backgroundColor: '#FFF3E0' }} />
             <span style={{ fontSize: 11, color: '#64748B' }}>{t(isHi, 'Today', 'आज')}</span>
@@ -438,12 +486,13 @@ export default function ParentCalendarPage() {
         </div>
       </div>
 
-      {/* ── MONTHLY SUMMARY ── */}
+      {/* ── UPCOMING EVENTS ── */}
       <div style={cardStyle}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1E293B', margin: '0 0 12px' }}>
-          &#x1F4CA; {t(isHi, 'Monthly Summary', 'मासिक सारांश')}
+        <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1E293B', margin: '0 0 14px' }}>
+          &#x1F4CC; {t(isHi, 'Upcoming Events', 'आगामी कार्यक्रम')}
         </h3>
-        {loading ? (
+
+        {eventsLoading ? (
           <div style={{ textAlign: 'center', padding: 20, color: '#94A3B8' }}>
             <div style={{
               width: 28, height: 28,
@@ -451,90 +500,56 @@ export default function ParentCalendarPage() {
               borderRadius: '50%', margin: '0 auto 8px',
               animation: 'spin 0.8s linear infinite',
             }} />
-            {t(isHi, 'Loading activity...', 'गतिविधि लोड हो रही है...')}
+            {t(isHi, 'Loading events...', 'कार्यक्रम लोड हो रहे हैं...')}
+          </div>
+        ) : eventsError ? (
+          <div style={{ textAlign: 'center', padding: '16px 8px' }}>
+            <p style={{ fontSize: 13, color: '#DC2626', margin: '0 0 12px' }}>{eventsError}</p>
+            <button
+              onClick={fetchEvents}
+              style={{
+                padding: '8px 18px', backgroundColor: 'transparent', color: '#F97316',
+                border: '1px solid #FDBA74', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                cursor: 'pointer', minHeight: 44,
+              }}
+            >
+              {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
+            </button>
           </div>
         ) : (
-          <div style={{ display: 'flex', gap: 12 }}>
-            <div style={summaryBoxStyle}>
-              <span style={{ fontSize: 24, fontWeight: 800, color: '#F97316' }}>{monthQuizCount}</span>
-              <span style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>
-                {t(isHi, 'Quizzes', 'क्विज़')}
-              </span>
-            </div>
-            <div style={summaryBoxStyle}>
-              <span style={{ fontSize: 24, fontWeight: 800, color: '#16A34A' }}>{monthActiveDays}</span>
-              <span style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>
-                {t(isHi, 'Active Days', 'सक्रिय दिन')}
-              </span>
-            </div>
-            <div style={summaryBoxStyle}>
-              <span style={{ fontSize: 24, fontWeight: 800, color: '#8B5CF6' }}>
-                {monthQuizCount > 0 && monthActiveDays > 0
-                  ? Math.round(monthQuizCount / monthActiveDays * 10) / 10
-                  : 0}
-              </span>
-              <span style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>
-                {t(isHi, 'Avg/Day', 'औसत/दिन')}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {!loading && monthActiveDays === 0 && (
-          <p style={{ fontSize: 13, color: '#94A3B8', textAlign: 'center', marginTop: 12, fontStyle: 'italic' }}>
-            {t(isHi,
-              `No quiz activity recorded for ${monthName}.`,
-              `${monthName} में कोई क्विज़ गतिविधि दर्ज नहीं हुई।`
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {/* Board exam event (client-side, if applicable) */}
+            {boardExamDate && daysUntilBoard !== null && daysUntilBoard >= 0 && (
+              <EventRow
+                dateLabel={boardExamDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                title={`${t(isHi, 'CBSE Board Exam', 'CBSE बोर्ड परीक्षा')} (${t(isHi, 'Grade', 'कक्षा')} ${grade})`}
+                chipLabel={t(isHi, 'Board', 'बोर्ड')}
+                chipColor="#EF4444"
+                daysLeft={daysUntilBoard}
+                isHi={isHi}
+              />
             )}
-          </p>
-        )}
-      </div>
 
-      {/* ── UPCOMING EVENTS ── */}
-      <div style={cardStyle}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1E293B', margin: '0 0 14px' }}>
-          &#x1F4CC; {t(isHi, 'Upcoming Events', 'आगामी कार्यक्रम')}
-        </h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {/* Board exam event (if applicable) */}
-          {boardExamDate && daysUntilBoard !== null && daysUntilBoard >= 0 && (
-            <EventRow
-              dateLabel={boardExamDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-              title={`${t(isHi, 'CBSE Board Exam', 'CBSE बोर्ड परीक्षा')} (${t(isHi, 'Grade', 'कक्षा')} ${grade})`}
-              chipLabel={t(isHi, 'Board', 'बोर्ड')}
-              chipColor="#EF4444"
-              daysLeft={daysUntilBoard}
-            />
-          )}
-
-          {/* Real school-scheduled exams */}
-          {examsLoading ? (
-            <div style={{ textAlign: 'center', padding: 16, color: '#94A3B8', fontSize: 12 }}>
-              <div style={{
-                width: 24, height: 24,
-                border: '2px solid #FDBA7444', borderTopColor: '#F97316',
-                borderRadius: '50%', margin: '0 auto 6px',
-                animation: 'spin 0.8s linear infinite',
-              }} />
-              {t(isHi, 'Loading exams...', 'परीक्षाएँ लोड हो रही हैं...')}
-            </div>
-          ) : upcomingExams.length > 0 ? (
-            upcomingExams.map(exam => {
-              const examDate = new Date(exam.start_time);
-              const daysLeft = Math.max(0, Math.ceil((examDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+            {/* Server-aggregated upcoming events (assignments + school exams) */}
+            {upcoming.map((ev) => {
+              const evDate = new Date(ev.date);
+              const daysLeft = Math.max(0, Math.ceil((evDate.getTime() - nowMs) / (1000 * 60 * 60 * 24)));
+              const style = EVENT_STYLE[ev.type];
               return (
                 <EventRow
-                  key={exam.id}
-                  dateLabel={examDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                  title={`${exam.title}${exam.subject ? ' — ' + exam.subject : ''}`}
-                  chipLabel={t(isHi, 'School', 'स्कूल')}
-                  chipColor={daysLeft <= 7 ? '#EF4444' : '#F97316'}
+                  key={ev.id ?? `${ev.type}-${ev.date}-${ev.title}`}
+                  dateLabel={evDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                  title={`${ev.title}${ev.subtitle ? ' — ' + ev.subtitle : ''}`}
+                  chipLabel={t(isHi, style.en, style.hi)}
+                  chipColor={daysLeft <= 7 ? '#EF4444' : style.color}
                   daysLeft={daysLeft}
+                  isHi={isHi}
                 />
               );
-            })
-          ) : (
-            !boardExamDate && (
+            })}
+
+            {/* Empty state — no upcoming events at all */}
+            {upcoming.length === 0 && !(boardExamDate && daysUntilBoard !== null && daysUntilBoard >= 0) && (
               <div style={{
                 borderRadius: 12,
                 border: '1px dashed #FDBA7488',
@@ -543,19 +558,19 @@ export default function ParentCalendarPage() {
                 textAlign: 'center',
               }}>
                 <p style={{ fontSize: 13, fontWeight: 600, color: '#9A3412', margin: '0 0 4px' }}>
-                  {t(isHi, 'No upcoming exams scheduled', 'कोई आगामी परीक्षा निर्धारित नहीं')}
+                  {t(isHi, 'No upcoming events', 'कोई आगामी कार्यक्रम नहीं')}
                 </p>
                 <p style={{ fontSize: 11, color: '#B45309', margin: 0, lineHeight: 1.4 }}>
                   {t(
                     isHi,
-                    "Exams added by your child's school will appear here.",
-                    'आपके बच्चे के स्कूल द्वारा जोड़ी गई परीक्षाएँ यहाँ दिखाई देंगी।'
+                    "Assignments and exams added by your child's school will appear here.",
+                    'आपके बच्चे के स्कूल द्वारा जोड़े गए असाइनमेंट और परीक्षाएँ यहाँ दिखाई देंगी।'
                   )}
                 </p>
               </div>
-            )
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── RECOMMENDED HABITS ── */}
@@ -570,6 +585,7 @@ export default function ParentCalendarPage() {
             chipLabel={t(isHi, 'Goal', 'लक्ष्य')}
             chipColor="#F97316"
             daysLeft={null}
+            isHi={isHi}
           />
           <EventRow
             dateLabel={t(isHi, 'Ongoing', 'जारी')}
@@ -577,6 +593,7 @@ export default function ParentCalendarPage() {
             chipLabel={t(isHi, 'Habit', 'आदत')}
             chipColor="#8B5CF6"
             daysLeft={null}
+            isHi={isHi}
           />
         </div>
       </div>
@@ -592,12 +609,13 @@ export default function ParentCalendarPage() {
 // ============================================================
 // EVENT ROW COMPONENT
 // ============================================================
-function EventRow({ dateLabel, title, chipLabel, chipColor, daysLeft }: {
+function EventRow({ dateLabel, title, chipLabel, chipColor, daysLeft, isHi }: {
   dateLabel: string;
   title: string;
   chipLabel: string;
   chipColor: string;
   daysLeft: number | null;
+  isHi: boolean;
 }) {
   return (
     <div style={{
@@ -636,7 +654,7 @@ function EventRow({ dateLabel, title, chipLabel, chipColor, daysLeft }: {
         </span>
         {daysLeft !== null && (
           <span style={{ fontSize: 10, color: '#64748B' }}>
-            {daysLeft}d left
+            {t(isHi, `${daysLeft}d left`, `${daysLeft} दिन शेष`)}
           </span>
         )}
       </div>
@@ -679,16 +697,4 @@ const navBtnStyle: React.CSSProperties = {
   justifyContent: 'center',
   fontWeight: 700,
   lineHeight: 1,
-};
-
-const summaryBoxStyle: React.CSSProperties = {
-  flex: 1,
-  backgroundColor: '#FFF8F0',
-  borderRadius: 12,
-  border: '1px solid #FDBA7444',
-  padding: '12px 10px',
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  gap: 0,
 };

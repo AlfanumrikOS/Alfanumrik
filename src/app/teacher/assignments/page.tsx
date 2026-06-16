@@ -66,7 +66,7 @@ const DIFFICULTIES = ['Easy', 'Medium', 'Hard'];
 const GRADES = [...VALID_GRADES];
 
 function statusBadge(dueDate: string | null): { label: string; labelHi: string; bg: string; color: string } {
-  if (!dueDate) return { label: 'No due date', labelHi: 'कोई अंतिम तिथि नहीं', bg: '#1E293B', color: '#94A3B8' };
+  if (!dueDate) return { label: 'No due date', labelHi: 'कोई अंतिम तिथि नहीं', bg: '#F5F0EA', color: '#7D7264' };
   const now = new Date();
   const due = new Date(dueDate);
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -74,7 +74,7 @@ function statusBadge(dueDate: string | null): { label: string; labelHi: string; 
   const diff = dueDay.getTime() - today.getTime();
   if (diff < 0) return { label: 'Overdue', labelHi: 'देरी हो चुकी', bg: '#FEF2F2', color: '#DC2626' };
   if (diff === 0) return { label: 'Due Today', labelHi: 'आज देय', bg: '#FFFBEB', color: '#D97706' };
-  return { label: 'Upcoming', labelHi: 'आगामी', bg: '#EFF6FF', color: '#2563EB' };
+  return { label: 'Upcoming', labelHi: 'आगामी', bg: '#FBE6D9', color: '#C2410C' };
 }
 
 function completionPct(submissions: { count: number }[], studentCount: number): number {
@@ -88,18 +88,18 @@ const pageStyle: React.CSSProperties = {
   margin: '0 auto',
   padding: '0 16px 100px',
   fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
-  color: '#E2E8F0',
-  backgroundColor: '#0B1120',
+  color: '#1A1207',
+  backgroundColor: '#FBF8F4',
   minHeight: '100vh',
 };
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 12px',
-  backgroundColor: '#1E293B',
-  border: '1px solid #334155',
+  backgroundColor: '#F5F0EA',
+  border: '1px solid #EDE6DC',
   borderRadius: 8,
-  color: '#E2E8F0',
+  color: '#1A1207',
   fontSize: 14,
   outline: 'none',
   boxSizing: 'border-box',
@@ -107,7 +107,7 @@ const inputStyle: React.CSSProperties = {
 
 const labelStyle: React.CSSProperties = {
   fontSize: 13,
-  color: '#94A3B8',
+  color: '#7D7264',
   display: 'block',
   marginBottom: 4,
 };
@@ -238,8 +238,8 @@ export default function AssignmentsPage() {
   if (loading) {
     return (
       <div style={pageStyle}>
-        <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
-          <div style={{ width: 40, height: 40, border: '3px solid #1E293B', borderTopColor: '#F97316', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
+        <div style={{ textAlign: 'center', padding: 80, color: '#7D7264' }}>
+          <div style={{ width: 40, height: 40, border: '3px solid #F5F0EA', borderTopColor: '#E8581C', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
           {tt(isHi, 'Loading assignments...', 'असाइनमेंट लोड हो रहे हैं...')}
         </div>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -256,7 +256,7 @@ export default function AssignmentsPage() {
 
       {/* Header */}
       <div style={{
-        background: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
+        background: 'linear-gradient(135deg, #E8581C, #C2410C)',
         borderRadius: 16,
         padding: '28px 28px 24px',
         marginBottom: 24,
@@ -298,9 +298,9 @@ export default function AssignmentsPage() {
 
       {/* Error */}
       {error && (
-        <div style={{ backgroundColor: 'rgba(220,38,38,0.1)', border: '1px solid #DC2626', borderRadius: 10, padding: '12px 16px', marginBottom: 16, color: '#FCA5A5', fontSize: 14 }}>
+        <div style={{ backgroundColor: 'rgba(220,38,38,0.1)', border: '1px solid #DC2626', borderRadius: 10, padding: '12px 16px', marginBottom: 16, color: '#B91C1C', fontSize: 14 }}>
           {error}
-          <button onClick={loadData} style={{ marginLeft: 12, color: '#60A5FA', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>
+          <button onClick={loadData} style={{ marginLeft: 12, color: '#E8581C', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>
             {tt(isHi, 'Retry', 'पुनः प्रयास')}
           </button>
         </div>
@@ -308,17 +308,17 @@ export default function AssignmentsPage() {
 
       {/* Empty state */}
       {assignments.length === 0 && !error && (
-        <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: '#0F172A', borderRadius: 16, border: '1px solid #1E293B' }}>
+        <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #F5F0EA' }}>
           <div style={{ fontSize: 64, marginBottom: 16 }}>📋</div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, color: '#F1F5F9', margin: '0 0 8px' }}>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1A1207', margin: '0 0 8px' }}>
             {tt(isHi, 'No assignments yet', 'अभी तक कोई असाइनमेंट नहीं')}
           </h2>
-          <p style={{ fontSize: 14, color: '#64748B', margin: '0 0 24px', maxWidth: 360, marginLeft: 'auto', marginRight: 'auto' }}>
+          <p style={{ fontSize: 14, color: '#7D7264', margin: '0 0 24px', maxWidth: 360, marginLeft: 'auto', marginRight: 'auto' }}>
             {tt(isHi, 'Create your first assignment to get started.', 'शुरू करने के लिए अपना पहला असाइनमेंट बनाएं।')}
           </p>
           <button
             onClick={() => { resetForm(); setShowModal(true); }}
-            style={{ padding: '12px 28px', background: 'linear-gradient(135deg, #2563EB, #1D4ED8)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
+            style={{ padding: '12px 28px', background: 'linear-gradient(135deg, #E8581C, #C2410C)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
           >
             {tt(isHi, 'Create First Assignment', 'पहला असाइनमेंट बनाएं')}
           </button>
@@ -338,19 +338,19 @@ export default function AssignmentsPage() {
               <div
                 key={asgn.id}
                 style={{
-                  backgroundColor: '#0F172A',
+                  backgroundColor: '#FFFFFF',
                   borderRadius: 14,
-                  border: '1px solid #1E293B',
+                  border: '1px solid #F5F0EA',
                   padding: '18px 20px',
                   animation: `fadeIn 0.3s ease ${idx * 0.05}s both`,
                   transition: 'border-color 0.2s, box-shadow 0.2s',
                 }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = '#2563EB'; e.currentTarget.style.boxShadow = '0 4px 24px rgba(37,99,235,0.1)'; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = '#1E293B'; e.currentTarget.style.boxShadow = 'none'; }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = '#E8581C'; e.currentTarget.style.boxShadow = '0 4px 24px rgba(232,88,28,0.1)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = '#F5F0EA'; e.currentTarget.style.boxShadow = 'none'; }}
               >
                 {/* Top row */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                  <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9', margin: 0, flex: 1, marginRight: 8 }}>{asgn.title}</h3>
+                  <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1A1207', margin: 0, flex: 1, marginRight: 8 }}>{asgn.title}</h3>
                   <span style={{
                     fontSize: 11,
                     fontWeight: 600,
@@ -368,7 +368,7 @@ export default function AssignmentsPage() {
                 {/* Class + Subject */}
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
                   {cls && (
-                    <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: '#1E293B', color: '#94A3B8' }}>
+                    <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: '#F5F0EA', color: '#7D7264' }}>
                       {cls.name}
                     </span>
                   )}
@@ -377,10 +377,10 @@ export default function AssignmentsPage() {
                       {subj.icon} {subj.name}
                     </span>
                   )}
-                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: '#1E293B', color: '#64748B', textTransform: 'capitalize' }}>
+                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: '#F5F0EA', color: '#7D7264', textTransform: 'capitalize' }}>
                     {asgn.difficulty}
                   </span>
-                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: '#1E293B', color: '#64748B' }}>
+                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: '#F5F0EA', color: '#7D7264' }}>
                     {asgn.question_count} {tt(isHi, 'Qs', 'प्रश्न')}
                   </span>
                 </div>
@@ -389,17 +389,17 @@ export default function AssignmentsPage() {
                 {cls && cls.student_count > 0 && (
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: 12, color: '#64748B' }}>{tt(isHi, 'Completion', 'पूर्णता')}</span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: pct >= 70 ? '#059669' : pct >= 40 ? '#D97706' : '#94A3B8' }}>
+                      <span style={{ fontSize: 12, color: '#7D7264' }}>{tt(isHi, 'Completion', 'पूर्णता')}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: pct >= 70 ? '#059669' : pct >= 40 ? '#D97706' : '#7D7264' }}>
                         {pct}%
                       </span>
                     </div>
-                    <div style={{ height: 5, backgroundColor: '#1E293B', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: 5, backgroundColor: '#F5F0EA', borderRadius: 3, overflow: 'hidden' }}>
                       <div style={{
                         height: '100%',
                         width: `${pct}%`,
                         borderRadius: 3,
-                        background: pct >= 70 ? 'linear-gradient(90deg,#059669,#10B981)' : pct >= 40 ? 'linear-gradient(90deg,#D97706,#F59E0B)' : 'linear-gradient(90deg,#475569,#64748B)',
+                        background: pct >= 70 ? 'linear-gradient(90deg,#059669,#10B981)' : pct >= 40 ? 'linear-gradient(90deg,#D97706,#F59E0B)' : 'linear-gradient(90deg,#A89B86,#7D7264)',
                         transition: 'width 0.6s ease',
                       }} />
                     </div>
@@ -408,7 +408,7 @@ export default function AssignmentsPage() {
 
                 {/* Due date */}
                 {asgn.due_date && (
-                  <p style={{ fontSize: 12, color: '#64748B', margin: 0 }}>
+                  <p style={{ fontSize: 12, color: '#7D7264', margin: 0 }}>
                     {tt(isHi, 'Due', 'देय')}: {new Date(asgn.due_date).toLocaleDateString(isHi ? 'hi-IN' : 'en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </p>
                 )}
@@ -424,14 +424,14 @@ export default function AssignmentsPage() {
         style={{
           position: 'fixed', bottom: 28, right: 28,
           width: 56, height: 56, borderRadius: '50%',
-          background: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
+          background: 'linear-gradient(135deg, #E8581C, #C2410C)',
           color: '#fff', border: 'none', fontSize: 28, fontWeight: 300,
-          cursor: 'pointer', boxShadow: '0 4px 20px rgba(37,99,235,0.4)',
+          cursor: 'pointer', boxShadow: '0 4px 20px rgba(232,88,28,0.4)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           zIndex: 50, transition: 'transform 0.2s, box-shadow 0.2s',
         }}
-        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.boxShadow = '0 6px 28px rgba(37,99,235,0.5)'; }}
-        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(37,99,235,0.4)'; }}
+        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.boxShadow = '0 6px 28px rgba(232,88,28,0.5)'; }}
+        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(232,88,28,0.4)'; }}
         title={tt(isHi, 'New Assignment', 'नया असाइनमेंट')}
       >
         +
@@ -443,8 +443,8 @@ export default function AssignmentsPage() {
           style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, animation: 'fadeIn 0.2s ease' }}
           onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}
         >
-          <div style={{ backgroundColor: '#0F172A', borderRadius: 16, border: '1px solid #1E293B', padding: '28px 24px', width: '100%', maxWidth: 480, margin: '0 16px', maxHeight: '90vh', overflowY: 'auto', animation: 'fadeIn 0.25s ease' }}>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#F1F5F9', margin: '0 0 20px' }}>
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #F5F0EA', padding: '28px 24px', width: '100%', maxWidth: 480, margin: '0 16px', maxHeight: '90vh', overflowY: 'auto', animation: 'fadeIn 0.25s ease' }}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1A1207', margin: '0 0 20px' }}>
               {tt(isHi, 'New Assignment', 'नया असाइनमेंट')}
             </h2>
 
@@ -517,9 +517,9 @@ export default function AssignmentsPage() {
                       padding: '9px 0',
                       borderRadius: 8,
                       border: '1px solid',
-                      borderColor: formDifficulty === d ? '#2563EB' : '#334155',
-                      backgroundColor: formDifficulty === d ? '#1E3A8A' : 'transparent',
-                      color: formDifficulty === d ? '#60A5FA' : '#94A3B8',
+                      borderColor: formDifficulty === d ? '#E8581C' : '#EDE6DC',
+                      backgroundColor: formDifficulty === d ? '#FBE6D9' : 'transparent',
+                      color: formDifficulty === d ? '#C2410C' : '#7D7264',
                       fontSize: 13,
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -541,9 +541,9 @@ export default function AssignmentsPage() {
                 step={1}
                 value={formCount}
                 onChange={e => setFormCount(Number(e.target.value))}
-                style={{ width: '100%', accentColor: '#2563EB' }}
+                style={{ width: '100%', accentColor: '#E8581C' }}
               />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#64748B', marginTop: 2 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#7D7264', marginTop: 2 }}>
                 <span>5</span><span>20</span>
               </div>
             </label>
@@ -556,7 +556,7 @@ export default function AssignmentsPage() {
                 value={formDueDate}
                 min={new Date().toISOString().split('T')[0]}
                 onChange={e => setFormDueDate(e.target.value)}
-                style={{ ...inputStyle, colorScheme: 'dark' }}
+                style={{ ...inputStyle, colorScheme: 'light' }}
               />
             </label>
 
@@ -564,7 +564,7 @@ export default function AssignmentsPage() {
             <div style={{ display: 'flex', gap: 10 }}>
               <button
                 onClick={() => setShowModal(false)}
-                style={{ flex: 1, padding: '11px 16px', backgroundColor: 'transparent', color: '#94A3B8', border: '1px solid #334155', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}
+                style={{ flex: 1, padding: '11px 16px', backgroundColor: 'transparent', color: '#7D7264', border: '1px solid #EDE6DC', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}
               >
                 {tt(isHi, 'Cancel', 'रद्द करें')}
               </button>
@@ -573,7 +573,7 @@ export default function AssignmentsPage() {
                 disabled={submitting || !formTitle.trim() || !formClass}
                 style={{
                   flex: 1, padding: '11px 16px',
-                  background: submitting || !formTitle.trim() || !formClass ? '#334155' : 'linear-gradient(135deg, #2563EB, #1D4ED8)',
+                  background: submitting || !formTitle.trim() || !formClass ? '#EDE6DC' : 'linear-gradient(135deg, #E8581C, #C2410C)',
                   color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600,
                   cursor: submitting || !formTitle.trim() || !formClass ? 'default' : 'pointer',
                   opacity: submitting || !formTitle.trim() || !formClass ? 0.5 : 1,

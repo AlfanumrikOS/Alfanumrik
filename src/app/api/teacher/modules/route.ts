@@ -47,11 +47,13 @@ interface ModuleViewRow {
 
 export async function GET(request: NextRequest) {
   try {
-    // `teacher.read` is the read-side permission seeded for teachers in
-    // the RBAC migration. If the deployment doesn't grant it, callers
-    // fall back to the unauth path → shell fail-opens.
-    const auth = await authorizeRequest(request, 'teacher.read');
-    if (auth.errorResponse) return auth.errorResponse;
+    // `class.view_analytics` is the read-side permission granted to the
+    // teacher role in the RBAC conformance migration. Listing module
+    // enablement is a read, so this is the semantically correct gate.
+    // (The previous code authorized against the orphan `teacher.read` code,
+    // which is granted to no role and 403'd every teacher.)
+    const auth = await authorizeRequest(request, 'class.view_analytics');
+    if (!auth.authorized) return auth.errorResponse as unknown as NextResponse;
 
     const supabase = getSupabaseAdmin();
 

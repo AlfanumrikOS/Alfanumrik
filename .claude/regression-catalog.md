@@ -4478,3 +4478,336 @@ invalid-grade) out of the error/event telemetry entirely. 13 tests in 1 file.
 **Total catalog: 116 entries (target: 35 — TARGET EXCEEDED).**
 
 **Total: 116 entries.**
+
+## Portal RBAC/SaaS remediation Phase 2 — guardian Foxy-transcript boundary + parent support/calendar + bulk-parent broadcast (2026-06-16) — REG-149..REG-151
+
+Source: Phase 2 of `feat/portal-rbac-saas-remediation`. This wave wired three
+previously-stubbed parent surfaces to live, RLS/RBAC-gated server data:
+- **Parent Foxy chat view** — `GET /api/parent/children/[student_id]/chat` lets
+  an APPROVED guardian read (read-only, keyset-paginated) their linked child's
+  Foxy AI-tutor transcript. Backed by migration `20260620000200` which adds a
+  SELECT-only, `is_guardian_of()`-scoped RLS policy on `foxy_chat_messages` (+
+  `foxy_sessions`). This is the most sensitive surface in the wave: it exposes a
+  child's chat to a parent (CEO-approved P13 widening), so the boundary is the
+  whole point of the test.
+- **Parent calendar** — `GET /api/parent/calendar` aggregates a linked child's
+  upcoming `assignments` + `school_exams` + recent `quiz_sessions` into one
+  sorted `events[]`.
+- **Parent support tickets** — `POST/GET /api/support/tickets` gained a guardian
+  path (parent holds `child.view_progress`, not `foxy.chat`): create + list-own,
+  anchored to a linked child, role-tagged `parent`, rate-limited 5/24h.
+- **Bulk parent broadcast** — `POST /api/school-admin/parents` now routes the
+  EMAIL channel through `send-transactional-email` (new `school-parent-broadcast`
+  template) and standardised the response to `{ sent_count, failed_count,
+  channel }`.
+
+Two traps make these worth pinning:
+- **The chat boundary is a P13 cliff edge.** `canAccessStudent(authUserId,
+  childId)` is the single app-layer data boundary; the migration RLS policy is
+  the defense-in-depth DB boundary (`is_guardian_of()` is true ONLY for
+  status IN ('active','approved'), so an UNLINKED or PENDING guardian gets zero
+  rows). If either gate weakened — or a write path were ever added — a parent
+  could read (or worse, alter) an arbitrary child's private tutoring chat.
+- **The bulk-broadcast + support paths handle PII at scale.** Email addresses,
+  message bodies, and phone numbers must never reach the logger or the audit
+  metadata; the audit row carries counts/channel/target only.
+
+Files under test:
+- `src/__tests__/api/parent/children-chat-boundary.test.ts` — the architect's
+  priority P13 regression (auth gate, boundary deny = 403 + no read + denied
+  audit + no payload, approved-child scope pin, read-only/no-write, keyset
+  pagination, source + migration SELECT-only contract).
+- `src/__tests__/api/support/support-tickets-guardian.test.ts` — guardian create
+  + list-own + 403 NO_LINKED_CHILD + 429 rate-limit + P13 redaction.
+- `src/__tests__/api/parent/parent-calendar.test.ts` — aggregation shape +
+  403-not-linked-no-payload + 400/404 + P5 grade-string + no-PII-logged.
+- `src/__tests__/api/school-admin/parents-broadcast.test.ts` — `{message,target,
+  channel}` → `{sent_count,failed_count,channel}` contract, per-guardian Edge
+  Function dispatch via the `school-parent-broadcast` template, authz, P13.
+
+> **ID note:** REG-148 is the previous entry (Foxy event-logging telemetry
+> hygiene, 2026-06-15). REG-149..REG-151 are the next free ids. (The originating
+> task brief referenced "after REG-134"; that was stale — the live catalog had
+> already grown to REG-148.)
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-149 | `parent_foxy_chat_p13_boundary_read_only_keyset` | **THE P13 CHAT BOUNDARY (architect priority).** **(1) Own-approved-child only:** with `canAccessStudent(callerAuthId, pathChildId)` true the route reads `foxy_chat_messages` on the RLS-scoped SSR client with EXACTLY one `student_id` eq filter equal to the path child id (asserted via a filter-recording in-memory `@supabase/ssr` client), newest-first on `created_at`, and returns only those rows mapped to `{id,role,text,created_at,session_id}`; the boundary call is keyed `(callerAuthId, pathChildId)`. **(2) Unlinked OR pending guardian → 403, zero rows:** when `canAccessStudent` is false the route returns 403, the transcript read is NEVER issued (a `readReached` sentinel stays false — no transcript is ever assembled), and a `parent.child_chat_viewed` audit row with `status:'denied'` + `resourceId=childId` is written. Pending links surface identically (`is_guardian_of()` requires status IN active/approved). **(3) No guardian write path:** the route module exports GET only (no POST/PUT/PATCH/DELETE), and the RLS client records ZERO insert/update/delete/upsert/rpc calls on the happy path; the migration `20260620000200` is FOR-SELECT-only (`foxy_chat_messages_guardian_select`, `is_guardian_of`), introduces no guardian INSERT/UPDATE/DELETE/ALL policy, and contains no executable DROP-other-than-POLICY / TRUNCATE / DROP TABLE (DDL checked with `--` comments stripped). **(4) No payload on any deny:** 401/400/403/500 bodies carry only `{success:false,error}` — no `data`, no `messages`, no `page`, and no chat text/role markers anywhere in the serialized body; a 500 from an RLS read error also leaks nothing. **(5) Keyset pagination:** the route over-fetches `limit+1`, returns only `limit` rows with `page.has_more=true` and `page.next_before` = the oldest returned row's `created_at`; passing `?before=<iso>` applies a `.lt('created_at', iso)` keyset filter; an over-large `?limit` is capped at 100 (over-fetch 101); the last page reports `has_more:false`/`next_before:null`. **(6) Audit hygiene:** the success audit `details` carries only `{message_count}` — never the message body. | `src/__tests__/api/parent/children-chat-boundary.test.ts` (17) | U (unit; drives the real `GET` handler with `@/lib/rbac` + `@supabase/ssr` + `next/headers` mocked; the SSR client records filters/mutations) |
+| REG-150 | `parent_support_tickets_guardian_path` | The Phase 2 guardian support path. **(1) Create:** a logged-in guardian (holds `child.view_progress`, fails `foxy.chat`) `POST`s a ticket → persisted to `support_tickets` anchored to the FIRST linked child's `student_id`, `user_role='parent'`, `status='open'`, returning the new `ticket_id`. **(2) No linked child:** a guardian with zero links → `403 NO_LINKED_CHILD` on create (no row inserted) and an EMPTY list on `GET` (no DB list query issued, never another family's tickets). **(3) List-own scope:** `GET` filters `student_id IN (linked children)` AND `user_role='parent'`, so a guardian never sees the child's own `student`-role tickets. **(4) Rate limit:** the 6th create inside the in-memory 24h/5 window → `429 RATE_LIMITED` with a numeric `retry_after_ms`, and no 6th row is inserted. **(5) P13:** the persisted `email` column is the redacted sentinel `authenticated@redacted`, and the `logOpsEvent` context carries ids/role/category only — the serialized payload contains neither the message body nor a phone number. **(6) Unauthenticated `GET` → 401 verbatim.** (Per-test distinct auth ids isolate the module-level rate-limit Map — no shared mutable state across tests.) | `src/__tests__/api/support/support-tickets-guardian.test.ts` (8) | U (unit; real POST/GET with `@/lib/rbac`, identity/relationship domains, ops-events, and an in-memory `support_tickets` admin client mocked) |
+| REG-151 | `parent_calendar_aggregation_and_school_broadcast_contract` | Two Phase-2 parent-facing wirings. **PARENT CALENDAR** (`GET /api/parent/calendar`): RBAC gate uses `child.view_progress`; `canAccessStudent` is the single boundary — a NOT-LINKED guardian → 403 with the source queries (assignments/exams/quiz) NEVER run (an `anySourceQueried` sentinel stays false) and NO `events` payload (P13); 401 when unauthenticated (no boundary call); 400 on a non-UUID `student_id`; 404 when the child can't be resolved (no payload); the happy path merges `assignments`+`school_exams`+`quiz_sessions` into one `events[]` (each tagged `type`), sorted ascending by date, with the quiz event carrying a rounded `NN%` subtitle and `data.grade` a STRING (P5); the student name is never logged. **SCHOOL→PARENT BROADCAST** (`POST /api/school-admin/parents`): the corrected `{message,target,channel}` → `{success,data:{sent_count,failed_count,channel}}` contract — missing `message`/invalid `target`/invalid `channel` → 400, a `grade` target with a non-CBSE grade `'5'` → 400 (P5); `authorizeSchoolAdmin('school.manage_settings')` rejects an unauthorized caller verbatim with NO email/audit fired; the EMAIL channel dispatches one `send-transactional-email` call per approved guardian-with-email using the `school-parent-broadcast` template, counting `json.sent===true` as sent and the rest as failed; a no-match target short-circuits to zero counts with no fetch; P13 — neither the logger nor the `logSchoolAudit` metadata carries a guardian email or the message body (audit records counts/channel/target only, `action='parent_message.sent'`). | `src/__tests__/api/parent/parent-calendar.test.ts` (7), `src/__tests__/api/school-admin/parents-broadcast.test.ts` (7) | U (unit; real GET/POST handlers with rbac/identity/school-admin-auth/audit + table-aware in-memory admin clients + stubbed global `fetch` for the Edge Function) |
+
+### Invariants covered by this section
+
+- P8 RLS boundary — REG-149 (the guardian Foxy-transcript read rides the
+  RLS-scoped SSR client, not `supabase-admin`; migration `20260620000200` adds a
+  SELECT-only `is_guardian_of()`-scoped policy on `foxy_chat_messages`/
+  `foxy_sessions` — the DB boundary beneath the `canAccessStudent` app gate).
+- P9 RBAC enforcement — REG-149/REG-150/REG-151 (`child.view_progress` gates the
+  chat + calendar surfaces; the support route falls back to `child.view_progress`
+  for the guardian path; `school.manage_settings` gates the bulk broadcast).
+- P5 Grade format — REG-151 (calendar `grade` is a string; the broadcast rejects
+  a non-CBSE grade `'5'`).
+- P13 Data privacy — REG-149 (no transcript payload on any deny path; success
+  audit carries `message_count` only, never the chat body; read-only, no guardian
+  write path), REG-150 (redacted email column; ops-event context carries no
+  message body / phone), REG-151 (no `events` payload on a calendar deny; the
+  broadcast logger + audit carry counts/channel/target only — never a guardian
+  email or the message body; the student name is never logged).
+
+### Catalog total
+
+Pre-REG-149: 116 entries (through the Foxy event-logging telemetry-hygiene pin,
+REG-148). Portal-remediation Phase 2 adds REG-149..REG-151: the guardian
+Foxy-transcript P13 boundary (own-approved-child only, unlinked/pending → 403 +
+zero rows + no payload, read-only/no-write, keyset pagination, SELECT-only RLS
+migration), the parent support-ticket guardian path (create + list-own + 403
+NO_LINKED_CHILD + 429 + PII redaction), and the parent-calendar aggregation +
+school→parent broadcast request/response contract. 39 tests across 4 files.
+**Total catalog: 119 entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 119 entries.**
+
+---
+
+## Portal RBAC/SaaS remediation Phase 3 — school self-service billing P11 integrity + get_admin_school_id institution_admin RLS widening (2026-06-16) — REG-152..REG-153
+
+Source: Phase 3 of `feat/portal-rbac-saas-remediation`. Two changes, both
+defense-of-an-invariant:
+
+- **School self-service billing P11 fixes** — `POST /api/school-admin/subscription`
+  (the school-admin buy-a-plan path, gated by `ff_school_self_service_billing_v1`).
+  Three P11-load-bearing corrections:
+  1. POST no longer sets `status='active'`. The provisioned `school_subscriptions`
+     row keeps its pre-payment `'trial'` status; entitlement is granted ONLY by the
+     signature-verified webhook (`handleSchoolSubscriptionEvent` →
+     `subscription.activated`/`.charged`). This is the core P11 rule: never grant
+     plan access without verified payment.
+  2. POST writes via `UPDATE ... .eq('school_id', schoolId)` — NOT
+     `upsert(..., { onConflict: 'school_id' })`. There is no unique constraint on
+     `school_id` (only the `id` pkey), so the old upsert path raised Postgres 42P10
+     and failed 100% of the time, orphaning the just-created Razorpay subscription.
+  3. `billing_cycle='yearly'` is rejected with `400 { code:'yearly_not_supported' }`
+     BEFORE any Razorpay subscription is created. Self-service v1 only supports
+     monthly recurring; a yearly recurring sub would never be activated by the
+     webhook (its school branch matches recurring activated/charged only), so it
+     would orphan. Annual plans stay sales-assisted until the one-time-Order path
+     ships.
+- **get_admin_school_id() RLS widening** — migration `20260620000300` widens the
+  single-value helper from teachers-only to `COALESCE(teachers-lookup,
+  school_admins-lookup)` so pure institution_admins (a `school_admins` row, NO
+  `teachers` row) resolve to a non-null school and regain read access to the
+  school-admin read surface; the 4 named SELECT policies (school_announcements,
+  school_exams, school_questions, class_enrollments) are recreated to
+  `OLD_PREDICATE OR is_school_admin_of(school_id)` for multi-school admins.
+  ADDITIVE/WIDENING-ONLY: the teacher arm resolves FIRST (byte-identical to the
+  baseline) so teacher access is preserved, and the OR-arm only ADMITS rows.
+
+Two traps make these worth pinning:
+- **The POST is a P11 cliff edge twice over.** If a future edit re-adds
+  `status:'active'` to the stamp fields, a school would get full plan access the
+  instant it clicks buy — before Razorpay ever charges it (P11 violation). If a
+  future edit reverts to `upsert({onConflict:'school_id'})`, every POST 42P10s and
+  orphans a live Razorpay sub. And if the yearly guard is dropped, a yearly POST
+  silently creates an unactivatable recurring sub.
+- **The RLS widening must stay widening-only.** RPC bodies are routinely copied
+  forward via `CREATE OR REPLACE`; a copy that drops the `school_admins` fallback
+  re-breaks every institution_admin's reads, and a policy recreate that drops the
+  `OR is_school_admin_of(...)` arm silently re-narrows access. The static canary
+  also guards against the migration ever turning destructive (DROP TABLE/COLUMN,
+  data UPDATE, RLS-posture toggle, or shadowing `is_school_admin_of`).
+
+Files under test:
+- `src/__tests__/api/school-admin-subscription.test.ts` — the 7 new
+  `POST ... P11 self-service billing integrity` cases (yearly-reject + no-orphan,
+  monthly-stays-trial, stamp fields, update-by-school_id/no-onConflict, defensive
+  insert stays trial, flag-OFF 403). The webhook-only-activation half of the P11
+  contract is already pinned in `src/__tests__/api/school-webhook-events.test.ts`
+  (subscription.activated → status active; subscription.charged → renewed) — that
+  is the only path that flips the POST-stamped `'trial'` row to `'active'`.
+- `src/__tests__/contract/get-admin-school-id-rls-widening.test.ts` — the static
+  migration canary (function-widening shape, teacher-first COALESCE ordering, the
+  4 policy recreates with the OR membership arm, additive-only safety contract).
+
+> **ID note:** REG-151 is the previous entry (parent calendar + school broadcast,
+> 2026-06-16). REG-152..REG-153 are the next free ids (the task brief referenced
+> "after REG-151").
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-152 | `school_self_service_billing_p11_pre_payment_trial_and_webhook_only_activation` | **THE SCHOOL-BILLING P11 CONTRACT.** **(1) Yearly reject + no orphan:** `billing_cycle='yearly'` → `400 {success:false, error:'yearly_not_supported', code:'yearly_not_supported'}`, and `createRazorpaySubscription` is NEVER called AND no `school_subscriptions` write is issued — the reject short-circuits before any Razorpay sub exists (no orphan recurring sub the webhook can't activate). **(2) Monthly stays pre-payment trial (P11):** a valid monthly POST returns 200 but the `school_subscriptions` write carries NO `status` key at all (the provisioned row keeps its `'trial'` status) and no field equals `'active'` — entitlement is NOT granted before a signature-verified payment. **(3) Stamp fields:** the same write sets `razorpay_subscription_id` (= the created sub id), `plan`, `seats_purchased`, `billing_cycle='monthly'`, `price_per_seat_monthly`; the Razorpay sub is created with `notes.school_id = schoolId` (so the webhook can match the row). **(4) No-onConflict (42P10 regression pin):** the DB write is `.update(...).eq('school_id', schoolId)` — `update` called once, `upsert` NEVER called, no `onConflict` ever passed, keyed by `school_id`. **(5) Defensive insert path:** when the UPDATE matches no provisioned row, the route falls back to `.insert(...)` with an EXPLICIT `status:'trial'` (never `'active'`) and `school_id`/`razorpay_subscription_id` — still no `upsert`/`onConflict`. **(6) Flag gate:** `ff_school_self_service_billing_v1` OFF → `403`, `isFeatureEnabled` consulted with `{institutionId: schoolId}`, and no Razorpay sub created. **(7) Webhook-only activation (companion file):** only `subscription.activated`/`.charged` (signature-verified webhook) flips the POST-stamped `'trial'` row to `status:'active'` — asserted in `school-webhook-events.test.ts`. | `src/__tests__/api/school-admin-subscription.test.ts` (7 new P11 cases; webhook-activation companion in `src/__tests__/api/school-webhook-events.test.ts`) | U (unit; real `POST` handler with school-admin-auth/feature-flags/razorpay/posthog/supabase-admin mocked; a recording in-memory `school_subscriptions` builder captures the update vs upsert shape, the eq column, and the stamped fields) |
+| REG-153 | `get_admin_school_id_institution_admin_rls_widening_additive_only` | **STATIC MIGRATION CANARY (20260620000300).** **(1) Function widening:** the migration `CREATE OR REPLACE`s `public.get_admin_school_id()`, keeps the teacher arm (`SELECT school_id FROM teachers WHERE auth_user_id = auth.uid()`), and ADDS the `school_admins` fallback arm (`SELECT school_id FROM school_admins ... is_active = true`). **(2) Teacher-first ordering (access preserved):** both arms live inside a single `COALESCE(...)`, the `FROM teachers` arm appears BEFORE the `FROM school_admins` arm, so any user with a `teachers.school_id` resolves to the identical pre-migration value (the fallback only ever fills a previously-NULL result). **(3) Baseline posture kept:** the redefined function stays `STABLE` + `SET search_path = public`. **(4) The 4 named policies widen:** each of `announcements_school_admin_select` / `school_exams_school_admin_select` / `school_questions_school_admin_select` / `class_enrollments_school_admin_select` is recreated idempotently (`DROP POLICY IF EXISTS` + `CREATE POLICY ... FOR SELECT`); the 3 flat policies keep `"school_id" = get_admin_school_id()` AND add `OR is_school_admin_of("school_id")`; class_enrollments keeps its nested `classes.school_id = get_admin_school_id()` AND adds `OR is_school_admin_of(classes.school_id)`; ≥4 `is_school_admin_of(...)` references total (OR only ADMITS rows → widening, never narrowing). **(5) Additive-only safety:** NO `DROP TABLE`/`DROP COLUMN`/`TRUNCATE`/`DELETE FROM`/data `UPDATE`; the ONLY DROPs are `DROP POLICY IF EXISTS` (each paired with a recreate); NO `CREATE TABLE`, NO `ENABLE/DISABLE ROW LEVEL SECURITY` (RLS posture unchanged); does NOT redefine `is_school_admin_of` (reuses the baseline helper); does NOT touch `feature_flags`; wrapped in one `BEGIN`/`COMMIT`. | `src/__tests__/contract/get-admin-school-id-rls-widening.test.ts` (18) | U (static source-level; reads the migration SQL from disk with comments stripped — runs in the normal lane under `contract/`, not the excluded `migrations/` lane) |
+
+### Invariants covered by this section
+
+- P11 Payment integrity — REG-152 (school self-service billing: POST grants NO
+  entitlement before a signature-verified payment — the row stays `'trial'`, only
+  the verified webhook activates it; yearly is rejected before any Razorpay sub is
+  created so no orphan; the write is keyed by `school_id` via UPDATE, never the
+  42P10-prone `onConflict` upsert).
+- P8 RLS boundary — REG-153 (`get_admin_school_id()` widening + the 4 named
+  policies are additive: teacher access is preserved byte-for-byte, the OR-arm only
+  admits rows for institution_admins; the migration introduces no new table, makes
+  no RLS-posture change, and the only DROPs are paired DROP POLICY IF EXISTS —
+  cross-tenant denial stays intact because `is_school_admin_of(B)` is false for an
+  admin of school A).
+- P9 RBAC enforcement — REG-152 (`ff_school_self_service_billing_v1` gates the
+  self-service POST; flag OFF → 403 with no Razorpay sub), REG-153 (the widening
+  restores the school-admin read surface to institution_admins WITHOUT loosening
+  the role-scoped policy predicates — every read still goes through
+  `get_admin_school_id()`/`is_school_admin_of()`).
+
+### Catalog total
+
+Pre-REG-152: 119 entries (through the parent calendar + school broadcast contract,
+REG-151). Portal-remediation Phase 3 adds REG-152..REG-153: the school
+self-service billing P11 contract (pre-payment trial + webhook-only activation +
+yearly-reject-no-orphan + update-by-school_id/no-onConflict + flag gate) and the
+get_admin_school_id institution_admin RLS widening (additive-only function +
+4-policy canary, teacher access preserved). 25 tests across 2 files (7 new POST
+P11 cases + 18 static RLS-canary cases; the webhook-activation companion already
+existed). **Total catalog: 121 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## Portal RBAC/SaaS remediation Phase 4 — pricing single-source-of-truth: marketing per-seat price must map to a real billable tier (2026-06-16) — REG-154
+
+Source: Phase 4 of `feat/portal-rbac-saas-remediation`. A new pricing
+single-source-of-truth module (`src/lib/pricing.ts`) centralizes every price the
+platform quotes or bills:
+
+- **B2B per-seat school tiers** — `SCHOOL_SEAT_TIER_INR`
+  (basic 99 / standard 199 / premium 399 / enterprise 599; default = standard 199)
+  is now the SYSTEM OF RECORD for the invoice-route fallback price.
+  `POST /api/super-admin/invoices` was repointed from its own hardcoded
+  `SEAT_PRICES` map at `schoolSeatPriceForTier()` from the SoT — the literals are
+  byte-identical, so billing is unchanged; the centralization removes the second
+  copy that could drift.
+- **Marketing per-seat headline** — `SCHOOL_PER_SEAT_MARKETING_INR` (the value the
+  /schools marketing page quotes) is DERIVED from the lowest published billable
+  tier (`SCHOOL_SEAT_TIER_INR.basic` = 99), NOT an independent literal. This is the
+  REG-65-family hardening: a public "from ₹X/student/month" claim can never quote a
+  number the system does not actually bill (the legacy hardcoded ₹75 mapped to NO
+  tier — a brand/legal drift risk).
+
+The trap this pins: a future edit could (a) change a tier value in the SoT while
+the invoice route silently keeps billing a different (re-hardcoded) number, or
+(b) repoint `SCHOOL_PER_SEAT_MARKETING_INR` at a vanity number (e.g. ₹75) that no
+tier charges. Both are pricing changes requiring CEO approval; the guard turns
+either into a PR-CI failure rather than a silent landing-page-vs-invoice mismatch.
+
+Files under test:
+- `src/__tests__/pricing-drift-guard.test.ts` — pins each tier literal to the
+  billed amount, asserts `schoolSeatPriceForTier()` resolves identically (incl.
+  case-insensitive + standard-default fallback), and asserts the marketing number
+  equals the basic tier / is a member of the billable set / formats to "₹99" /
+  is NOT the legacy ₹75.
+
+> **ID note:** REG-153 is the previous entry (get_admin_school_id RLS widening,
+> 2026-06-16). REG-154 is the next free id (the task brief referenced "after
+> REG-153").
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-154 | `pricing_sot_marketing_maps_to_billable_tier` | **THE PRICING SINGLE-SOURCE-OF-TRUTH GUARD (P11-adjacent / REG-65 family).** **(1) Tier literals = billed amounts:** `SCHOOL_SEAT_TIER_INR` pins basic=99 / standard=199 / premium=399 / enterprise=599 — the exact per-seat amounts `POST /api/super-admin/invoices` bills via `schoolSeatPriceForTier()`; the tier set is exactly those 4 keys (no silent add/remove). **(2) Resolver parity:** `schoolSeatPriceForTier(tier)` returns the billed amount for every tier, is case-insensitive (matches invoice-route `.toLowerCase()` normalisation), and falls back to the standard tier (199) for unknown/null/undefined/empty; `SCHOOL_SEAT_DEFAULT_INR` === standard === the billed default. **(3) Marketing maps to a real billed price (REG-65 hardening):** `SCHOOL_PER_SEAT_MARKETING_INR` === `SCHOOL_SEAT_TIER_INR.basic` (99), is a MEMBER of the billable tier set, formats to the label "₹99", and is explicitly NOT the legacy hardcoded ₹75 (which maps to no tier) — so the public "from ₹X/student/month" claim cannot drift away from a number the system actually charges. | `src/__tests__/pricing-drift-guard.test.ts` (17) | U (pure source-level; imports the SoT constants/helper directly, no mocks) |
+
+### Invariants covered by this section
+
+- P11 Payment integrity (adjacent) — REG-154 (the B2B per-seat billing fallback
+  amounts live in exactly one place; the invoice route bills off the SoT helper, so
+  a tier change cannot leave the route silently charging a stale number).
+- REG-65 family / landing-page pricing-verbatim drift — REG-154 (the marketing
+  headline per-seat price is derived from a real billable tier and asserted to be a
+  member of the billed set; a vanity number with no matching tier — the legacy ₹75
+  case — fails CI).
+
+### Catalog total
+
+Pre-REG-154: 121 entries (through the get_admin_school_id RLS widening, REG-153).
+Portal-remediation Phase 4 adds REG-154: the pricing single-source-of-truth /
+marketing-maps-to-billable-tier guard (17 tests, 1 file). **Total catalog: 122
+entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 122 entries.**
+
+## Portal RBAC/SaaS remediation — E2E fix pass: phantom-table repoints + drift-guard off:/on: coverage + cache table + enrollment sync + reports/parents envelope (2026-06-16) — REG-155..REG-159
+
+Source: the E2E fix-pass of `feat/portal-rbac-saas-remediation`. A cluster of
+SILENT-FAILURE bugs was fixed — each one returned empty/wrong data with NO error,
+so no existing test caught them. The fixes and their guards:
+
+- **Phantom-table repoints (teacher dashboard functional).** The teacher-dashboard
+  Edge Function and `/api/teacher/parent-notify` read three tables that never
+  existed on disk: `bkt_mastery_state` → `concept_mastery` (BKT p_know/attempts),
+  `teacher_class_assignments` → `class_teachers`, `classroom_responses` →
+  `classroom_poll_responses`. Every mastery/roster/poll read silently returned
+  empty. Two existing tests asserted the PHANTOM names and were REPAIRED to the
+  real tables (not weakened) + a negative guard pins that the phantom names can
+  never reappear in the Edge source.
+- **schoolAdminPermissionCode({off,on}) drift-guard blind spot.** The standing
+  RBAC permission-code drift guard only scanned `authorizeRequest`/
+  `authorizeSchoolAdmin` literals and NEVER looked inside
+  `schoolAdminPermissionCode({ off, on })`. That is exactly why
+  `school.manage_api_keys` (the api-keys route `off:` arm, granted to no role)
+  403'd every school admin with `ff_school_admin_rbac` OFF, undetected. The guard
+  now extracts BOTH the `off:` and `on:` literals and subjects each to the
+  "resolves to a granted role" invariant; with migration 20260620000500 seeding +
+  granting the code, both arms resolve.
+- **parent_weekly_reports cache table (20260620000600).** Created with
+  UNIQUE(student_id, guardian_id) + RLS + guardian/service-role policies so the
+  parent weekly-report 24h cache (which read a non-existent table → re-invoked
+  Claude on every load) becomes real. Additive, idempotent.
+- **class_students ↔ class_enrollments sync invariant (20260620000700).**
+  Bidirectional backfill + AFTER INSERT triggers (each ON CONFLICT DO NOTHING,
+  recursion-safe, SECURITY DEFINER) so a student enrolled via EITHER table appears
+  on ALL surfaces. Additive, no new table, no RLS change.
+- **reports + parents contract envelope.** `/api/school-admin/reports` now returns
+  `{success,data}` on EVERY type (+ a new `student_search` type + `class_avg_score`
+  on class_performance); `/api/school-admin/parents` GET now returns
+  `{success,data:{links:[{id,status,linked_at,...}]}}`. The pages unwrap
+  `json.data` and throw on `!json.success`, so a bare-payload regression would
+  render a broken report/list with no error.
+
+> **ID note:** REG-154 is the previous entry (pricing single-source-of-truth,
+> 2026-06-16). REG-155..REG-159 are the next free ids (the task brief referenced
+> "after REG-154").
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-155 | `teacher_dashboard_phantom_table_repoints` | **THE PHANTOM-TABLE REPOINT GUARD (teacher dashboard functional, P8-adjacent).** **(1) Mastery reads the REAL table:** the teacher-dashboard Edge source contains `from('concept_mastery')` (BKT p_know/attempts verbatim, `select('topic_id, p_know, attempts')`) and the phantom `from('bkt_mastery_state')` appears NOWHERE in the Edge source (negative guard — a refactor cannot regress to the non-existent name that returned empty silently). **(2) parent-notify mastery mock follows the route:** the `/api/teacher/parent-notify` `include_report` mastery line reads `concept_mastery` (the route's `buildReportSummaryLine` reads `from('concept_mastery').select('p_know')`), so the in-memory mock case is keyed on the real table — the mastery-summary assertion now exercises a real read path, not a phantom. **(3) Bloom source unchanged:** the Bloom rollup still reads `quiz_responses.bloom_level` (the answered-question row), untouched by the repoint. **(4) Whole-suite phantom sweep:** no test under `src/__tests__` still references `bkt_mastery_state` / `teacher_class_assignments` / `classroom_responses` as a live table name. | `src/__tests__/functions/teacher-dashboard-mastery-report.test.ts` (repaired: concept_mastery + negative guard), `src/__tests__/api/teacher/parent-notify/route.test.ts` (repaired: mock case `concept_mastery`) | U (unit; Edge source-string inspection + route handler with table-aware in-memory admin mock) |
+| REG-156 | `rbac_drift_guard_covers_schoolAdminPermissionCode_off_on` | **THE DRIFT-GUARD off:/on: EXTENSION (P9 — the blind spot that 403'd school admins undetected).** **(1) Extension is live (not a no-op):** the guard now extracts both the `off:` and `on:` string literals from every `schoolAdminPermissionCode({ ... })` call site across `src/app/api/**/route.ts`; both extraction lists are non-empty. **(2) Both arms extracted from a known site:** the api-keys route yields `off: 'school.manage_api_keys'` AND `on: 'institution.manage'` on all three verbs. **(3) Folded into the core scan:** the extracted off/on codes are now members of the main `routeRefs` set the "every route code resolves to a role" assertion scans (`school.manage_api_keys` + `institution.manage` both present). **(4) New invariant enforced:** EVERY off:/on: arm resolves to a granted role (offenders list empty). **(5) The original blind-spot code resolves:** `school.manage_api_keys` is in the canonical universe (seeded + granted by 20260620000500), proving the end-to-end fix. **(6) Would-have-caught proof:** a synthetic `off: 'school.totally_ungranted'` arm is surfaced by the off-extraction regex and is absent from the universe — had it been a real route it would be a hard offender. | `src/__tests__/rbac-permission-code-drift-guard.test.ts` (extended: off:/on: extraction + dedicated coverage describe block) | U (unit; static scan of API route source + canonical permission universe built from migration SQL — no DB) |
+| REG-157 | `parent_weekly_reports_cache_table_unique_rls` | **STATIC MIGRATION CANARY (20260620000600 — FIX B).** **(1) Table created idempotently:** `CREATE TABLE IF NOT EXISTS public.parent_weekly_reports`. **(2) Route-shaped columns:** `student_id, guardian_id, report, language, generated_at` all present (the columns the parent-report route reads/upserts). **(3) UNIQUE(student_id, guardian_id):** the constraint the route's `onConflict:'student_id,guardian_id'` upsert needs is present and added via a guarded `IF NOT EXISTS … pg_constraint` block (replay-safe). **(4) RLS enabled IN-MIGRATION (P8):** `ENABLE ROW LEVEL SECURITY` on the new table. **(5) Guardian policies:** SELECT/INSERT/UPDATE policies each scoped via `is_guardian_of(student_id)`, all idempotent (`DROP POLICY IF EXISTS` + CREATE); plus a `service_role` policy (the route's actual supabaseAdmin runtime path). **(6) FK cascade:** `student_id → students` and `guardian_id → guardians` both `ON DELETE CASCADE`. **(7) Additive-only:** no DROP TABLE/COLUMN/TRUNCATE/DELETE/UPDATE (executable SQL, comments stripped). **(8) Route still upserts onConflict student_id,guardian_id** (the constraint must keep matching). | `src/__tests__/contract/portal-rbac-remediation-migration-canaries.test.ts` (FIX B block) | U (static source-level; reads the migration SQL from disk with comments stripped — runs in the normal lane under `contract/`, not the excluded `migrations/` lane) |
+| REG-158 | `class_students_class_enrollments_bidirectional_sync` | **STATIC MIGRATION CANARY (20260620000700 — FIX C, enrollment split-brain).** **(1) Backfill BOTH directions:** `class_students → class_enrollments` AND `class_enrollments → class_students`, each `ON CONFLICT (class_id, student_id) DO NOTHING`. **(2) AFTER INSERT trigger each direction:** one `AFTER INSERT ON class_students`, one `AFTER INSERT ON class_enrollments`. **(3) Recursion-safe mirror:** ≥4 `ON CONFLICT (class_id, student_id) DO NOTHING` occurrences (2 backfills + 2 trigger bodies, quoted-or-unquoted columns) — a conflict-skipped zero-row insert fires no row trigger, so the bounce terminates after one hop. **(4) SECURITY DEFINER + pinned search_path** on the mirror functions (a faithful copy of an already-authorized row, no privilege-escalation surface). **(5) Idempotent re-create:** `DROP TRIGGER IF EXISTS` before each `CREATE TRIGGER`; functions are `CREATE OR REPLACE`. **(6) No new table** (no new RLS posture — operates on the two existing roster tables). **(7) Additive-only:** the ONLY DROPs in executable SQL are trigger/function (re-create) guards — no DROP TABLE/COLUMN/TRUNCATE/DELETE/UPDATE. | `src/__tests__/contract/portal-rbac-remediation-migration-canaries.test.ts` (FIX C block) | U (static source-level; comments stripped before the additive-only scan; normal lane under `contract/`) |
+| REG-159 | `school_admin_reports_parents_response_envelope` | **THE REPORTS + PARENTS CONTRACT-ENVELOPE GUARD (silent-failure prevention).** **REPORTS** (`GET /api/school-admin/reports`): authz denial returns the auth `errorResponse` verbatim (no DB); `school_overview` / default / `class_performance` / `student_detail` / `subject_gaps` each return `{success:true, data}`; `class_performance` carries the NEW `class_avg_score` field (alongside backward-compat `avg_score`) and returns `class_avg_score:0` on an empty roster; `student_detail.student.grade` is a STRING (P5); the NEW `student_search` type is ROUTED (not "Unknown report type"), returns `data` as an array of `{id,name,grade,...}`, and short-circuits to `[]` for a <2-char query; an unknown type → 400 `{success:false, error}` (envelope on the error branch too). **PARENTS** (`GET /api/school-admin/parents`): authz denial verbatim; empty school → `{success:true, data:{links:[],total:0}}`; the happy path's `data.links[*]` carries the three load-bearing keys `id` (= `guardian_id:student_id`), `status`, `linked_at` PLUS the display fields (`parent_name`/`student_name`/`student_grade` string P5); `linked_at` falls back to `created_at` when the dedicated column is null; `page`/`limit` echoed in the envelope. **Also pinned:** REG-159 repairs the legacy `school-admin-api.test.ts` school_overview assertion that read the OLD flat shape — now reads `body.data.total_students` (repaired to the new envelope, not weakened). | `src/__tests__/api/school-admin/reports-envelope-contract.test.ts` (10), `src/__tests__/api/school-admin/parents-list-contract.test.ts` (5), `src/__tests__/school-admin-api.test.ts` (repaired school_overview case) | U (unit; real GET handlers with school-admin-auth + per-table chainable in-memory admin clients mocked) |
+
+### Invariants covered by this section
+
+- P8 RLS boundary — REG-157 (parent_weekly_reports ships RLS + guardian/service-role
+  policies in the same migration that creates the table); REG-158 (the roster sync
+  triggers are SECURITY DEFINER faithful copies that touch no RLS posture and add
+  no new table); REG-155 (the teacher-dashboard mastery/roster reads now hit the
+  real RLS-backed tables instead of phantom names that returned empty).
+- P9 RBAC enforcement — REG-156 (the drift guard now covers the
+  `schoolAdminPermissionCode({off,on})` extraction path — the exact blind spot
+  that let `school.manage_api_keys`, granted to no role, 403 every school admin
+  with the flag OFF; both arms now must resolve to a granted role).
+- P5 Grade format — REG-159 (`student_detail` + `student_search` + parents `links`
+  carry `grade` as a STRING through the new envelopes).
+- Operational integrity / additive-migration safety — REG-157/REG-158 (both new
+  migrations are additive + idempotent: no DROP TABLE/COLUMN/TRUNCATE/DELETE/UPDATE;
+  the only DROPs are trigger/function/policy re-create guards).
+- Silent-failure / contract-drift prevention — REG-155 (phantom-table reads that
+  returned empty with no error), REG-159 (bare-payload regressions on the reports/
+  parents endpoints would render broken surfaces with no error).
+
+### Catalog total
+
+Pre-REG-155: 122 entries (through the pricing single-source-of-truth guard,
+REG-154). The E2E fix pass adds REG-155..REG-159: phantom-table repoints (teacher
+dashboard functional), schoolAdminPermissionCode drift-guard off:/on: coverage +
+school.manage_api_keys, parent_weekly_reports cache table, class_students↔
+class_enrollments sync invariant, and the reports/parents response-envelope
+contract (5 entries across 6 test files; 2 existing tests repaired to the correct
+tables/envelope, not weakened). **Total catalog: 127 entries (target: 35 — TARGET
+EXCEEDED).**
+
+**Total: 127 entries.**

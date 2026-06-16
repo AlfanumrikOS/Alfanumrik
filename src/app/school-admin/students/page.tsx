@@ -339,7 +339,7 @@ export default function SchoolAdminStudentsPage() {
     setRpcError(null);
 
     const { data, error } = await supabase.rpc('get_school_students', {
-      school_id: sid,
+      p_school_id: sid,
     });
 
     if (error) {

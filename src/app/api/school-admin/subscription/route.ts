@@ -189,6 +189,29 @@ export async function POST(request: NextRequest) {
     if (billingCycle !== 'monthly' && billingCycle !== 'yearly') {
       return NextResponse.json({ success: false, error: 'Invalid billing_cycle' }, { status: 400 });
     }
+    // FIX 6.3 (HIGH): Self-service v1 supports monthly recurring subscriptions
+    // only. A 'yearly' plan must be a one-time Razorpay Order (total_count=1),
+    // but the webhook's school branch only matches recurring
+    // subscription.activated/charged events — a yearly subscription created
+    // here would never be activated, leaving the school stuck on 'trial' with a
+    // live Razorpay sub it can't reconcile. Reject cleanly until the Order path
+    // ships.
+    // TODO(backend, follow-up): implement the yearly self-service path via a
+    // one-time Razorpay Order + payment.captured webhook handling, mirroring the
+    // student yearly flow. Until then annual plans are sales-assisted only.
+    if (billingCycle === 'yearly') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'yearly_not_supported',
+          code: 'yearly_not_supported',
+          // Bilingual-safe note: annual plans go through sales, not self-service.
+          message:
+            'Annual (yearly) plans are not available via self-service yet. Please contact our sales team to set up an annual plan. वार्षिक प्लान अभी सेल्फ-सर्विस में उपलब्ध नहीं है; कृपया वार्षिक प्लान के लिए हमारी सेल्स टीम से संपर्क करें।',
+        },
+        { status: 400 },
+      );
+    }
     if (!Number.isInteger(seats) || seats < MIN_SEATS || seats > MAX_SEATS) {
       return NextResponse.json({ success: false, error: 'Invalid seats count' }, { status: 400 });
     }
@@ -267,25 +290,43 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = getSupabaseAdmin();
-    const { error: upsertError } = await supabase
-      .from('school_subscriptions')
-      .upsert(
-        {
-          school_id: schoolId,
-          plan,
-          billing_cycle: billingCycle,
-          seats_purchased: seats,
-          price_per_seat_monthly: planRow.price_monthly,
-          status: 'active',
-          razorpay_subscription_id: rzpSub.id,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'school_id' },
-      );
 
-    if (upsertError) {
-      logger.error('school_admin_subscription_upsert_failed', {
-        error: new Error(upsertError.message),
+    // FIX 6.1 (P11) + 6.2 (runtime): Stamp the EXISTING provisioned row
+    // (every school gets a status='trial' school_subscriptions row at
+    // provisioning — school-provisioning.ts). We do NOT upsert with
+    // onConflict:'school_id' — there is no unique constraint on school_id
+    // (only the pkey on id), so that path raised 42P10 and failed 100% of the
+    // time, orphaning the just-created Razorpay subscription.
+    //
+    // We also do NOT set status:'active' here. Granting plan access before a
+    // signature-verified payment violates P11. The row keeps its pre-payment
+    // 'trial' status; the signature-verified webhook
+    // (handleSchoolSubscriptionEvent) flips it to 'active' on
+    // subscription.activated/charged. The webhook matches the school via
+    // notes.school_id (stamped on the Razorpay sub below) and then looks the
+    // row up by .eq('school_id', schoolId) — so stamping THIS row by school_id
+    // is exactly what the webhook will find and activate.
+    const stampFields = {
+      plan,
+      billing_cycle: billingCycle,
+      seats_purchased: seats,
+      price_per_seat_monthly: planRow.price_monthly,
+      // status intentionally left as the pre-payment 'trial' — webhook activates.
+      razorpay_subscription_id: rzpSub.id,
+      updated_at: new Date().toISOString(),
+    };
+
+    // Update the existing provisioned row in place.
+    const { data: stamped, error: stampError } = await supabase
+      .from('school_subscriptions')
+      .update(stampFields)
+      .eq('school_id', schoolId)
+      .select('id')
+      .maybeSingle();
+
+    if (stampError) {
+      logger.error('school_admin_subscription_stamp_failed', {
+        error: new Error(stampError.message),
         route: '/api/school-admin/subscription',
         schoolId,
         razorpaySubscriptionId: rzpSub.id,
@@ -296,6 +337,32 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'Subscription created in Razorpay but DB write failed; reconciliation will run.' },
         { status: 500 },
       );
+    }
+
+    // Defensive: if no provisioned row exists (data drift — provisioning
+    // skipped the insert), create one WITHOUT the bad onConflict, still in the
+    // pre-payment 'trial' state. The webhook keys on school_id, so this row is
+    // matchable just like the provisioned one.
+    if (!stamped) {
+      const { error: insertError } = await supabase
+        .from('school_subscriptions')
+        .insert({
+          school_id: schoolId,
+          status: 'trial', // pre-payment; webhook flips to 'active'
+          ...stampFields,
+        });
+      if (insertError) {
+        logger.error('school_admin_subscription_insert_failed', {
+          error: new Error(insertError.message),
+          route: '/api/school-admin/subscription',
+          schoolId,
+          razorpaySubscriptionId: rzpSub.id,
+        });
+        return NextResponse.json(
+          { success: false, error: 'Subscription created in Razorpay but DB write failed; reconciliation will run.' },
+          { status: 500 },
+        );
+      }
     }
 
     await capture('school_billing_plan_change_completed', userId, {
