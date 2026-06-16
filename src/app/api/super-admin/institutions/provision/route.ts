@@ -154,9 +154,9 @@ export async function POST(request: NextRequest) {
     const invitePayload = {
       school_id: schoolId,
       code: inviteCode,
-      role: 'teacher', // School admin is a teacher-role user with institution_admin permissions
+      role_type: 'teacher', // School admin is a teacher-role user with institution_admin permissions
       max_uses: 1,
-      uses_count: 0,
+      used_count: 0,
       is_active: true,
       expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
     };

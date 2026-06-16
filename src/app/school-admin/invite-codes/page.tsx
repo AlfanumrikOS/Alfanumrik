@@ -38,7 +38,7 @@ interface InviteCode {
   role_type: RoleType;
   class_id: string | null;
   max_uses: number;
-  uses_count: number;
+  used_count: number;
   expires_at: string;
   is_active: boolean;
   created_at: string;
@@ -183,7 +183,7 @@ function CodeCard({
   deactivatingId,
 }: CodeCardProps) {
   const expired = isExpired(code.expires_at);
-  const usePct = code.max_uses > 0 ? (code.uses_count / code.max_uses) * 100 : 0;
+  const usePct = code.max_uses > 0 ? (code.used_count / code.max_uses) * 100 : 0;
 
   /* Status: deactivated > expired > active */
   const statusLabel = !code.is_active
@@ -244,7 +244,7 @@ function CodeCard({
       <div className="mt-3">
         <div className="flex justify-between text-xs mb-1" style={{ color: 'var(--text-3)' }}>
           <span>
-            {code.uses_count}/{code.max_uses}{' '}
+            {code.used_count}/{code.max_uses}{' '}
             {t(isHi, 'uses', 'उपयोग')}
           </span>
           <span style={{ color: expired ? '#DC2626' : 'var(--text-3)' }}>
@@ -545,7 +545,7 @@ export default function InviteCodesPage() {
         supabase
           .from('school_invite_codes')
           .select(
-            'id, code, role_type, class_id, max_uses, uses_count, expires_at, is_active, created_at'
+            'id, code, role_type, class_id, max_uses, used_count, expires_at, is_active, created_at'
           )
           .eq('school_id', sid)
           .order('created_at', { ascending: false }),

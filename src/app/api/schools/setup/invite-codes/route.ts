@@ -98,10 +98,10 @@ export async function POST(request: Request) {
       return {
         school_id,
         code: generateCode(),
-        role: req.role,
+        role_type: req.role,
         class_id: req.class_id || null,
         max_uses: maxUses,
-        uses_count: 0,
+        used_count: 0,
         expires_at: expiresAt.toISOString(),
         created_by: auth.userId,
         is_active: true,
