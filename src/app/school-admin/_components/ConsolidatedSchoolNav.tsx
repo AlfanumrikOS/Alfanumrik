@@ -153,14 +153,16 @@ export const SCHOOL_NAV_SECTIONS: ReadonlyArray<ConsolidatedNavSection> = [
       { href: '/school-admin/classes', label: 'Classes', labelHi: 'कक्षाएँ', icon: '⊞' },
       { href: '/school-admin/exams', label: 'Exams', labelHi: 'परीक्षा', icon: '⊙', moduleKey: 'testing_engine' },
       { href: '/school-admin/content', label: 'Content', labelHi: 'सामग्री', icon: '⊠', moduleKey: 'lms' },
-      { href: '/school-admin/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘', moduleKey: 'analytics' },
+      { href: '/school-admin/reports', label: 'Academic Reports', labelHi: 'शैक्षणिक रिपोर्ट', icon: '⊘', moduleKey: 'analytics' },
       // Phase 3B Wave D — NEW deep school-wide reporting surface (board/parent-ready
       // mastery + Bloom's + export). reportsDepthOnly: only renders while
       // ff_school_reports_depth is ON; analytics module gating still applies.
+      // Labelled "Board Report" to disambiguate from the interactive "Academic
+      // Reports" tabbed analytics above — different purpose, distinct route.
       {
         href: '/school-admin/reports-depth',
-        label: 'School Report',
-        labelHi: 'स्कूल रिपोर्ट',
+        label: 'Board Report',
+        labelHi: 'बोर्ड रिपोर्ट',
         icon: '⊟',
         moduleKey: 'analytics',
         reportsDepthOnly: true,
