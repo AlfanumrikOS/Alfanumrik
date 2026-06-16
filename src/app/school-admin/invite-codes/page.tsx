@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { authedFetch } from '@/lib/school-admin/authed-fetch';
 import { useSchoolProvisioning } from '@/lib/use-school-provisioning';
 import { InviteCapNotice, SeatCapBlockBanner } from '@/components/school/SeatPolicyBanners';
 import type { SeatPolicyStatus } from '@/lib/school-admin/seat-enforcement';
@@ -635,7 +636,7 @@ export default function InviteCodesPage() {
     // or hard-blocks with a 409 `seat_cap_violation` when capacity is exhausted.
     if (seatUiEnabled && values.roleType === 'student' && !values.classId) {
       try {
-        const res = await fetch('/api/school-admin/invite-codes', {
+        const res = await authedFetch('/api/school-admin/invite-codes', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { useTenant } from '@/lib/tenant-context';
 import { supabase } from '@/lib/supabase';
+import { authedFetch } from '@/lib/school-admin/authed-fetch';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
 import { useSchoolReportsDepth } from '@/lib/use-school-reports-depth';
 import { useSchoolAdminRbac } from '@/lib/use-school-admin-rbac';
@@ -218,7 +219,7 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
   useEffect(() => {
     if (!authUserId) return;
     let cancelled = false;
-    fetch('/api/school-admin/modules', { credentials: 'same-origin' })
+    authedFetch('/api/school-admin/modules')
       .then(r => (r.ok ? r.json() : null))
       .then(body => {
         if (cancelled || !body?.success) return;
