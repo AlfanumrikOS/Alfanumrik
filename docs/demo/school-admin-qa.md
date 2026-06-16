@@ -37,7 +37,7 @@ Source of truth for the nav: `src/app/school-admin/_components/ConsolidatedSchoo
 | Nav Item | Route | Flag / Module gate | Status | Notes |
 |---|---|---|---|---|
 | **Overview** | | | | |
-| Command Center | `/school-admin` | — (sole home; legacy toggle removed) | WORKING (verified 2026-06-16) | Overview / Classes-at-risk / Teacher-engagement widgets call `get_school_overview`, `get_classes_at_risk`, `get_teacher_engagement`. The 3 RPCs were repair-skipped on the live DB and have now been created there (`CREATE OR REPLACE`); verified end-to-end through `is_school_admin_of` — `get_school_overview` non-null, `get_classes_at_risk` 3 rows, `get_teacher_engagement` 3 rows, `get_school_dashboard_stats` total_classes=3 / total_teachers=3 / total_students=12. Page shell, header, language toggle, sign-out, school-picker, and per-widget Retry/empty states present and safe. `avg_mastery` is null (no `concept_mastery` data yet) → mastery widget shows an empty state, not an error. School Pulse summary remains **FLAG-GATED** (`ff_school_pulse_v1` OFF) — unchanged. |
+| Command Center | `/school-admin` | — (sole home; legacy toggle removed) | WORKING (verified 2026-06-16) | Overview / Classes-at-risk / Teacher-engagement widgets call `get_school_overview`, `get_classes_at_risk`, `get_teacher_engagement`. The 3 RPCs were repair-skipped on the live DB and have now been created there (`CREATE OR REPLACE`); verified end-to-end through `is_school_admin_of` — `get_school_overview` non-null, `get_classes_at_risk` 3 rows, `get_teacher_engagement` 3 rows, `get_school_dashboard_stats` total_classes=3 / total_teachers=3 / total_students=12. Page shell, header, language toggle, sign-out, school-picker, and per-widget Retry/empty states present and safe. `concept_mastery` is now seeded for both demo schools, so "Classes at risk" shows a real mastery distribution (Class 9A flagged at-risk: avg_mastery 0.2733, 3/3 at-risk; Class 10B 0.5400, 0 at-risk; Class 11 Science 0.8000, 0 at-risk). School Pulse summary remains **FLAG-GATED** (`ff_school_pulse_v1` OFF) — unchanged. |
 | **People** | | | | |
 | Students | `/school-admin/students` | — | Pending DB verification | Roster screen. Has its own load/error/empty handling; live data depends on demo seed. |
 | Teachers | `/school-admin/teachers` | — | Pending DB verification | Roster screen. Live data depends on demo seed (3 demo teachers). |
@@ -99,9 +99,10 @@ fixes (code-level, as read on this branch), and **Remaining known issues**.
   - School Pulse summary is additionally gated OFF by `ff_school_pulse_v1` (default OFF)
     AND `institution.view_analytics`; it does not mount (no `/api/pulse/school` call)
     while the flag is OFF.
-  - Even after RPCs apply, at-risk / mastery columns stay 0/empty until
-    `concept_mastery` rows accrue for the demo roster — expected for freshly seeded
-    students.
+  - `concept_mastery` is now seeded for both demo schools (2026-06-16), so the at-risk /
+    mastery columns reflect a real distribution: Class 9A is flagged at-risk
+    (avg_mastery 0.2733, 3/3 at-risk), Class 10B (0.5400) and Class 11 Science (0.8000)
+    are not at-risk (at-risk threshold = avg p_know < 0.4).
 
 ### 2.2 Parents (`/school-admin/parents`)
 
@@ -178,9 +179,10 @@ fixes (code-level, as read on this branch), and **Remaining known issues**.
 ## 4. Blocked / pending operator action
 
 A clean demo (real, non-zero numbers in the Command Center widgets and Reports tabs)
-required the following operator steps against the target live DB. **Steps 1–3 are now
-DONE and verified against project `shktyoxqhundlvkiwguu` (2026-06-16).** One optional
-follow-up remains (concept_mastery data — see step 4).
+required the following operator steps against the target live DB. **Steps 1–4 are now
+DONE and verified against project `shktyoxqhundlvkiwguu` (2026-06-16)** — including the
+`concept_mastery` backfill (step 4), so "Classes at risk" now shows a real mastery
+distribution.
 
 ### Prerequisites for a clean demo (in order)
 
@@ -212,27 +214,33 @@ follow-up remains (concept_mastery data — see step 4).
    non-null; `get_classes_at_risk` returns 3 rows; `get_teacher_engagement` returns 3
    rows. Widgets render data or clean empty states, **not** errors.
 
-4. **[OPTIONAL — remaining follow-up] Backfill `concept_mastery` data** so "classes at
-   risk" and the mastery KPI reflect real mastery rather than null. `avg_mastery` is
-   currently null (no `concept_mastery` rows for the demo roster yet), so those columns
-   show an empty/null state — expected for freshly seeded students, not a bug. This is a
-   nice-to-have for a richer demo, not a blocker.
+4. **[DONE 2026-06-16] Backfill `concept_mastery` data** so "classes at risk" and the
+   mastery KPI reflect real mastery rather than null. `concept_mastery` is now seeded for
+   both demo schools (`61d15e48…` and `a2e40b65…`). Verified `get_classes_at_risk` output
+   per school:
+   - **Class 9A** — 3 students, **3 at-risk**, avg_mastery **0.2733** (flagged at-risk)
+   - **Class 10B** — 3 students, 0 at-risk, avg_mastery **0.5400**
+   - **Class 11 Science** — 3 students, 0 at-risk, avg_mastery **0.8000**
+
+   (at-risk threshold = avg p_know < 0.4). The "Classes at risk" widget now shows a real
+   mastery distribution instead of null. No longer pending.
 
 ### Notes / caveats
 
 - The `get_school_dashboard_stats` call-site bug was fixed in code this pass
   (`{ school_id }` → `{ p_school_id }`); no migration needed (the function already
   existed). This is a code fix, not an operator action.
-- After seeding, **at-risk and mastery columns remain 0/empty/null** until
-  `concept_mastery` rows accrue for the demo roster (`avg_mastery` is currently null) —
-  that is expected for freshly seeded students, not a bug. Backfilling that data is the
-  optional step 4 above.
+- `concept_mastery` has now been backfilled for both demo schools (step 4 above), so the
+  at-risk and mastery columns show a real distribution: Class 9A is flagged at-risk
+  (avg_mastery 0.2733, 3/3 at-risk), Class 10B (0.5400) and Class 11 Science (0.8000) are
+  not at-risk (threshold = avg p_know < 0.4).
 - **School Pulse** stays hidden regardless of the above until `ff_school_pulse_v1` is
   flipped ON (default OFF) — a separate, independent operator decision.
-- Steps 1–3 are **DONE and verified against the live DB on 2026-06-16** (project
-  `shktyoxqhundlvkiwguu`); Command Center widgets and dashboard stats are confirmed
-  working. See [Verified results (2026-06-16)](#verified-results-2026-06-16). Reports tab
-  numbers still depend on real quiz activity for non-zero values.
+- Steps 1–4 are **DONE and verified against the live DB on 2026-06-16** (project
+  `shktyoxqhundlvkiwguu`); Command Center widgets, dashboard stats, and the "Classes at
+  risk" mastery distribution are confirmed working. See
+  [Verified results (2026-06-16)](#verified-results-2026-06-16). Reports tab numbers still
+  depend on real quiz activity for non-zero values.
 
 ### Verified results (2026-06-16)
 
@@ -260,12 +268,24 @@ Applied + verified against the live DB (project `shktyoxqhundlvkiwguu`).
 |---|---|
 | `get_school_dashboard_stats` | total_classes=3, total_teachers=3, total_students=12 |
 | `get_school_overview` | non-null |
-| `get_classes_at_risk` | 3 rows |
+| `get_classes_at_risk` | 3 rows (real mastery distribution — see below) |
 | `get_teacher_engagement` | 3 rows |
 
-`avg_mastery` is **null** (no `concept_mastery` data yet) → the affected widgets show a
-data/empty state, **not** an error. Backfilling `concept_mastery` is the optional
-follow-up (step 4 above).
+**`concept_mastery` seeded — "Classes at risk" distribution (per school, via `get_classes_at_risk`)**
+
+`concept_mastery` has now been seeded for both demo schools (`61d15e48…` and
+`a2e40b65…`), so `avg_mastery` is populated and the "Classes at risk" widget shows a real
+distribution instead of null:
+
+| Class | Students | At-risk | avg_mastery | At-risk? |
+|---|---|---|---|---|
+| Class 9A | 3 | 3 | 0.2733 | **Yes** (flagged) |
+| Class 10B | 3 | 0 | 0.5400 | No |
+| Class 11 Science | 3 | 0 | 0.8000 | No |
+
+At-risk threshold = avg p_know < 0.4. The mastery KPI and "Classes at risk" rail now
+reflect real mastery data, **not** a null/empty state — the optional follow-up (step 4
+above) is **DONE [2026-06-16]**.
 
 ---
 

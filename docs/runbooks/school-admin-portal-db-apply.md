@@ -152,6 +152,54 @@ that has an **ACTIVE `school_admin`** (`name ILIKE '%demo%'` AND a live row in
 >   teacher/student email school-scoped by embedding an 8-char tag from the
 >   school id (`left(replace(school_id::text,'-',''),8)`) so running across
 >   multiple schools never collides or cross-wires.
+> - **(C) Student grade aligned to the enrolled class.** The old seed stamped a
+>   student's `grade` from the alphabetical class-loop index (`CASE i WHEN 1 THEN
+>   '9' …`), so e.g. `Class 10B` students could get grade `'9'`. The seed now
+>   takes `grade` from the enrolled class's `grade` column (`c.grade`, still
+>   TEXT — P5), so every student's grade matches the class it sits in.
+
+### B.1 concept_mastery seeding — make "Classes at risk" show real mastery
+
+Added live **2026-06-16**. Freshly-seeded demo students have **no**
+`concept_mastery` rows, so the **Classes at risk** widget rendered an
+empty/zero column. The seed now gives each demo student a small set of
+`concept_mastery` rows with a **per-class `p_know` band**, so the widget shows a
+realistic spread.
+
+**Why this is the column that matters.** `get_classes_at_risk` averages
+`concept_mastery.p_know` per student and flags a **class** as at-risk when its
+students' average `p_know < 0.4` (the **at-risk threshold = 0.4 on `p_know`**).
+`mastery_probability` / `mastery_mean` are written in lockstep with `p_know` by
+convention; the RPC only reads `p_know`.
+
+**Per-class bands** (one value per student, 3 students per class):
+
+| Class | `p_know` band | class avg | at-risk? |
+|---|---|---|---|
+| Class 9A | 0.20 / 0.28 / 0.34 | 0.2733 | **yes** (< 0.4) |
+| Class 10B | 0.45 / 0.55 / 0.62 | 0.5400 | no |
+| Class 11 Science | 0.72 / 0.80 / 0.88 | 0.8000 | no |
+
+**Topic ids are discovered at RUNTIME — never hardcoded.**
+`concept_mastery.topic_id` FKs `public.curriculum_topics(id)` (**not** `topics`),
+and `(student_id, topic_id)` is UNIQUE. The topic UUIDs are environment-specific,
+so the seed discovers them at run time with
+`SELECT id FROM public.curriculum_topics ORDER BY id LIMIT 3` and writes one
+`concept_mastery` row per `(student, discovered topic)`. It degrades gracefully:
+it uses however many topics exist (1..3); if **zero** `curriculum_topics` exist
+it `RAISE NOTICE`s and **skips `concept_mastery` only** (classes/teachers/
+students still seed). Inserts are idempotent via
+`ON CONFLICT (student_id, topic_id) DO NOTHING`, so the step is safe to re-run.
+
+**Verified schema facts (live 2026-06-16):** `concept_mastery` — NOT NULL
+`student_id` (FK `students.id`) + `topic_id` (FK `curriculum_topics.id`); UNIQUE
+`(student_id, topic_id)`; `concept_id` nullable (left NULL); no CHECK
+constraints; `p_know double precision DEFAULT 0.1` is the read column.
+
+**Acceptance.** The verification query block at the bottom of the seed file
+(items `1b` + `1c`) shows non-zero `concept_mastery` rows per demo student, and
+`get_classes_at_risk` (under the simulated-admin JWT — see C.3) returns the
+spread below.
 
 ```bash
 # Option 1 — Supabase CLI (uses the linked project from step A):
@@ -290,9 +338,10 @@ connection-agnostic proof of the roster, rely on C.2 instead.
 
 Log into the School Command Center page as a school admin of the demo school.
 The overview, classes-at-risk, and teacher-engagement widgets should now return
-HTTP 200 with populated numbers (3 classes, 3 teachers, 9 students; at-risk and
-mastery columns are 0/empty until `concept_mastery` rows accrue for the demo
-roster — that is expected for freshly-seeded demo students).
+HTTP 200 with populated numbers (3 classes, 3 teachers, 9 students). Because the
+seed now also writes `concept_mastery` rows (Section B.1), the **at-risk and
+mastery columns are populated** rather than empty — Class 9A shows as at-risk
+(avg `p_know` 0.2733 < 0.4) while Class 10B and Class 11 Science do not.
 
 ### C.5 VERIFIED OUTCOME — prod `shktyoxqhundlvkiwguu`, 2026-06-16
 
@@ -315,6 +364,19 @@ Recorded for the record (all VERIFIED live on prod):
 - **All 3 Command Center widget RPCs execute** (under the simulated-admin JWT
   from C.3): `get_school_overview` → `overview_ok`; `get_classes_at_risk` → 3
   rows; `get_teacher_engagement` → 3 rows.
+- **Cosmetic grade fix applied** (BUG FIX C): each demo student's `grade` is now
+  aligned to its enrolled class's `grade` (was previously assigned by the
+  alphabetical class-loop index, so e.g. `Class 10B` students had been stamped
+  grade `'9'`).
+- **`concept_mastery` seeded** (Section B.1) with runtime-discovered topic ids
+  (first 3 of `curriculum_topics ORDER BY id`). VERIFIED `get_classes_at_risk`
+  output for a demo school:
+  - **Class 9A** → 3 students, **3 at-risk**, avg mastery **0.2733** (< 0.4)
+  - **Class 10B** → 3 students, 0 at-risk, avg mastery **0.5400**
+  - **Class 11 Science** → 3 students, 0 at-risk, avg mastery **0.8000**
+
+  i.e. only Class 9A falls below the 0.4 at-risk threshold, giving the widget a
+  realistic spread.
 
 ---
 

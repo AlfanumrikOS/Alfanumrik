@@ -12,6 +12,40 @@
 --   - 3 classes (Class 9A, Class 10B, Class 11 Science)
 --   - 3 demo teachers (one assigned to each class)
 --   - 9 demo students (3 per class) wired onto each class roster
+--   - concept_mastery rows for every demo student (see CONCEPT_MASTERY below)
+--     so the "Classes at risk" widget shows a realistic mastery spread instead
+--     of an empty/zero column.
+--
+-- CONCEPT_MASTERY SEEDING ("Classes at risk" now shows real mastery).
+-- -------------------------------------------------------------------
+-- ADDED live 2026-06-16. get_classes_at_risk averages concept_mastery.p_know
+-- per student and flags a CLASS as at-risk when its students' avg p_know < 0.4
+-- (the AT-RISK THRESHOLD = 0.4 on p_know). Freshly-seeded students have NO
+-- concept_mastery rows, so the column was empty/zero. This step gives each demo
+-- student a small set of concept_mastery rows with a per-CLASS p_know band so
+-- the widget shows a realistic spread:
+--   - Class 9A          → at-risk band  (0.20 / 0.28 / 0.34 across its 3 students)
+--   - Class 10B         → mid band      (0.45 / 0.55 / 0.62)
+--   - Class 11 Science  → high band     (0.72 / 0.80 / 0.88)
+-- so on a typical run Class 9A is the only class flagged at-risk.
+--
+-- TOPIC IDS ARE DISCOVERED AT RUNTIME (NOT hardcoded).
+-- ---------------------------------------------------
+-- concept_mastery.topic_id FKs public.curriculum_topics(id) (NOT 'topics') and
+-- (student_id, topic_id) is UNIQUE. The topic UUIDs are ENVIRONMENT-SPECIFIC, so
+-- this script discovers them at run time with
+--   SELECT id FROM public.curriculum_topics ORDER BY id LIMIT 3
+-- and seeds ONE row per (student, discovered topic). It degrades gracefully: it
+-- uses however many topics exist (1..3); if ZERO curriculum_topics exist it
+-- RAISEs a NOTICE and SKIPS concept_mastery only — classes/teachers/students
+-- still seed. Idempotent via ON CONFLICT (student_id, topic_id) DO NOTHING.
+--
+-- concept_mastery SCHEMA FACTS (verified live 2026-06-16):
+--   - NOT NULL: student_id (FK students.id), topic_id (FK curriculum_topics.id).
+--     UNIQUE (student_id, topic_id). concept_id is NULLABLE (left NULL). No CHECK
+--     constraints. p_know double precision (DEFAULT 0.1) is the column
+--     get_classes_at_risk reads; mastery_probability / mastery_mean are kept in
+--     lockstep with p_know by convention.
 --
 -- THIS IS NOT A MIGRATION.
 -- ------------------------
@@ -73,6 +107,12 @@
 -- (see 00000000000000_baseline_from_prod.sql code→name mapping).
 --
 -- P5 COMPLIANCE: grade is seeded as TEXT ('9','10','11') — never an integer.
+--   BUG FIX (C), discovered live 2026-06-16: each demo student's grade now comes
+--   from its ENROLLED CLASS's grade column (selected at loop time), NOT from the
+--   alphabetical class-loop index. The prior `CASE i WHEN 1 THEN '9' …` index
+--   hack assigned grade by class iteration order, so e.g. 'Class 10B' students
+--   could be stamped grade '9'. Deriving grade from c.grade keeps the student's
+--   grade aligned to the class it is enrolled in (still TEXT, P5).
 -- P13: no real PII — demo names + @demo.alfanumrik.invalid emails only.
 --
 -- AUTH COUPLING (verified against 00000000000000_baseline_from_prod.sql):
@@ -122,15 +162,29 @@ DECLARE
     'Demo Teacher Ravi',
     'Demo Teacher Meera'
   ];
+  -- Per-class concept_mastery p_know bands (index-aligned with v_classes), one
+  -- value per student j=1..3. Class 9A lands in the at-risk band (avg < 0.4);
+  -- 10B mid; 11 Science high. AT-RISK THRESHOLD = 0.4 on p_know.
+  v_pknow_bands CONSTANT double precision[][] := ARRAY[
+    ARRAY[0.20, 0.28, 0.34],   -- Class 9A         (avg 0.2733 → at-risk)
+    ARRAY[0.45, 0.55, 0.62],   -- Class 10B        (avg 0.5400 → ok)
+    ARRAY[0.72, 0.80, 0.88]    -- Class 11 Science (avg 0.8000 → ok)
+  ];
   r_school      record;
   r_class       record;
   i             int;
   j             int;
+  k             int;
   v_class_id    uuid;
+  v_class_grade text;
   v_pref_code   text;
   v_teacher_email text;
   v_student_email text;
   v_seeded_any  boolean := false;
+  v_topic_ids   uuid[];
+  v_topic_count int;
+  v_pknow       double precision;
+  v_mastery_level text;
 BEGIN
   -- ── 0. Resolve EVERY demo school that has an ACTIVE school_admin (BUG FIX B).
   --     We do NOT pick the oldest; we loop over ALL qualifying schools so the
@@ -174,15 +228,33 @@ BEGIN
       );
     END LOOP;
 
+    -- ── 1b. Discover up to 3 curriculum_topics at RUNTIME for concept_mastery.
+    --        topic_id FKs public.curriculum_topics(id); the UUIDs are
+    --        environment-specific, so NEVER hardcode them. Degrade gracefully:
+    --        use however many exist (0..3). If zero, concept_mastery is skipped
+    --        for this school (classes/teachers/students still seed).
+    SELECT array_agg(t.id ORDER BY t.id)
+      INTO v_topic_ids
+      FROM (
+        SELECT ct.id
+          FROM public.curriculum_topics ct
+         ORDER BY ct.id
+         LIMIT 3
+      ) t;
+    v_topic_count := COALESCE(array_length(v_topic_ids, 1), 0);
+    IF v_topic_count = 0 THEN
+      RAISE NOTICE 'demo-school-data: no curriculum_topics found — skipping concept_mastery for school % (roster still seeded).', v_school_id;
+    END IF;
+
     -- ──────────────────────────────────────────────────────────────────────
-    -- 2 & 3. Teachers + Students + enrollments.
+    -- 2 & 3. Teachers + Students + enrollments + concept_mastery.
     --        Schema-permitted WITHOUT auth.users (see AUTH COUPLING note):
     --        id is self-generated, auth_user_id left NULL, is_demo = true.
     --        Emails are SCHOOL-SCOPED via v_school_tag (BUG FIX B).
     -- ──────────────────────────────────────────────────────────────────────
     i := 0;
     FOR r_class IN
-      SELECT c.id, c.name
+      SELECT c.id, c.name, c.grade
         FROM public.classes c
        WHERE c.school_id = v_school_id
          AND c.name = ANY (ARRAY['Class 9A','Class 10B','Class 11 Science'])
@@ -191,6 +263,9 @@ BEGIN
     LOOP
       i := i + 1;
       v_class_id  := r_class.id;
+      -- Grade comes from the CLASS row (BUG FIX C) — NOT the loop index. Kept
+      -- as TEXT (P5). Every student enrolled in this class inherits c.grade.
+      v_class_grade := r_class.grade;
       -- Valid subjects.code for this class's students (BUG FIX A).
       v_pref_code := v_classes[i][5];
       v_teacher_email := 'demo.teacher.' || v_school_tag || '.' || i || '@demo.alfanumrik.invalid';
@@ -240,8 +315,9 @@ BEGIN
         SELECT
           'Demo Student ' || i || '-' || j,
           v_student_email,
-          -- grade as TEXT, aligned to the class grade (P5).
-          CASE i WHEN 1 THEN '9' WHEN 2 THEN '10' ELSE '11' END,
+          -- grade as TEXT, taken from the ENROLLED CLASS's grade (BUG FIX C, P5)
+          -- — never the alphabetical loop index.
+          v_class_grade,
           -- preferred_subject as a VALID subjects.code, per class (BUG FIX A).
           v_pref_code,
           v_school_id,
@@ -267,6 +343,45 @@ BEGIN
              WHERE cs.class_id = v_class_id
                AND cs.student_id = v_student_id
           );
+
+          -- ── 3c. concept_mastery: one row per discovered topic for this
+          --        student, p_know set by the student's ENROLLED CLASS band so
+          --        "Classes at risk" shows a realistic spread. Idempotent via
+          --        ON CONFLICT (student_id, topic_id) DO NOTHING. Skipped when
+          --        no curriculum_topics exist (v_topic_count = 0).
+          IF v_topic_count > 0 THEN
+            -- Per-student p_know from the per-class band (j = 1..3).
+            v_pknow := v_pknow_bands[i][j];
+            v_mastery_level := CASE
+              WHEN v_pknow < 0.4 THEN 'building'
+              WHEN v_pknow < 0.7 THEN 'developing'
+              ELSE 'proficient'
+            END;
+
+            FOR k IN 1 .. v_topic_count LOOP
+              INSERT INTO public.concept_mastery (
+                student_id, topic_id, concept_id,
+                p_know, mastery_probability, mastery_mean, mastery_level,
+                attempts, correct_attempts, total_attempts, total_correct,
+                last_attempted_at, last_practiced_at, updated_at
+              )
+              VALUES (
+                v_student_id,
+                v_topic_ids[k],
+                NULL,                       -- concept_id nullable: left NULL
+                v_pknow,                    -- the column get_classes_at_risk reads
+                v_pknow,                    -- mastery_probability in lockstep
+                v_pknow,                    -- mastery_mean in lockstep
+                v_mastery_level,
+                5,                          -- attempts
+                GREATEST(0, round(v_pknow * 5))::int,   -- correct_attempts
+                5,                          -- total_attempts
+                GREATEST(0, round(v_pknow * 5))::int,   -- total_correct
+                now(), now(), now()
+              )
+              ON CONFLICT (student_id, topic_id) DO NOTHING;
+            END LOOP;
+          END IF;
         END IF;
       END LOOP;
     END LOOP;
@@ -308,6 +423,34 @@ ORDER BY s.id;
 -- Expect per qualifying school: class_count >= 3, demo_teacher_count >= 3,
 -- demo_student_count >= 9. On prod (2026-06-16): both 61d15e48 and a2e40b65
 -- show classes=3, teachers=3, students=12 (3 pre-existing + 9 demo).
+
+-- 1b) concept_mastery footprint (connection-agnostic; no admin guard). Confirms
+--     each demo student now has up to 3 concept_mastery rows so the at-risk
+--     widget has data to average.
+SELECT
+  st.school_id            AS demo_school_id,
+  count(DISTINCT cm.student_id) AS students_with_mastery,
+  count(*)                AS concept_mastery_rows,
+  round(avg(cm.p_know)::numeric, 4) AS avg_p_know
+FROM public.concept_mastery cm
+JOIN public.students st ON st.id = cm.student_id AND st.is_demo
+GROUP BY st.school_id
+ORDER BY st.school_id;
+
+-- 1c) "Classes at risk" — the actual widget RPC. get_classes_at_risk averages
+--     concept_mastery.p_know per student and flags a CLASS at-risk when its
+--     students' avg p_know < 0.4 (AT-RISK THRESHOLD). It is SECURITY DEFINER +
+--     school_admin-guarded, so simulate the admin JWT for one transaction (see
+--     the runbook's "simulated-admin JWT trick"):
+--       BEGIN;
+--       SELECT set_config('request.jwt.claims',
+--         json_build_object('sub','<admin auth_user_id>')::text, true);
+--       SELECT * FROM public.get_classes_at_risk('<school_id>', 20, 0);
+--       COMMIT;
+--     VERIFIED live 2026-06-16 (one demo school): Class 9A → 3 students, 3
+--     at-risk, avg_mastery 0.2733; Class 10B → 3, 0 at-risk, 0.5400; Class 11
+--     Science → 3, 0 at-risk, 0.8000. (Only Class 9A falls below the 0.4
+--     threshold.)
 
 -- 2) The dashboard RPC (NOTE: SECURITY DEFINER + is_school_admin_of() guard —
 --    it RAISES 'Forbidden'/42501 unless auth.uid() is an ACTIVE school_admin of
