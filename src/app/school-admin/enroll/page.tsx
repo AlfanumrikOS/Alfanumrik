@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useSchoolProvisioning } from '@/lib/use-school-provisioning';
+import { authedFetch } from '@/lib/school-admin/authed-fetch';
 import { GraceWarningBanner, SeatCapBlockBanner } from '@/components/school/SeatPolicyBanners';
 import type { SeatPolicyStatus } from '@/lib/school-admin/seat-enforcement';
 import {
@@ -273,7 +274,7 @@ export default function SchoolAdminEnrollPage() {
 
       setSeatBlockStatus(null);
 
-      const res = await fetch('/api/schools/enroll', {
+      const res = await authedFetch('/api/schools/enroll', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ school_id: schoolId, students }),

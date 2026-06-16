@@ -22,6 +22,7 @@
  */
 
 import useSWR, { SWRConfiguration } from 'swr';
+import { authHeader } from '@/lib/api/auth-header';
 import type {
   PulseResponse,
   ClassPulseResponse,
@@ -57,7 +58,14 @@ const SCHOOL_PULSE_CONFIG: SWRConfiguration = {
  * the `{ success, data }` envelope to the bare contract type.
  */
 async function pulseFetcher<T>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: 'same-origin' });
+  // The app's session lives in localStorage, not a cookie, so server routes
+  // (authorizeRequest) need the access token forwarded as a Bearer header;
+  // without it every /api/pulse/* route returns 401. authHeader() returns {}
+  // when there is no session (the request still fires and surfaces the 401).
+  const res = await fetch(url, {
+    credentials: 'same-origin',
+    headers: await authHeader(),
+  });
   if (!res.ok) {
     const error = new Error(`Pulse fetch failed: ${url}`) as Error & {
       status: number;
