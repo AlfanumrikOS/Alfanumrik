@@ -235,9 +235,9 @@ export async function provisionTrialSchool(
         .insert({
           school_id: schoolRow.id,
           code: inviteCode,
-          role: 'teacher',
+          role_type: 'teacher',
           max_uses: 1,
-          use_count: 0,
+          used_count: 0,
           expires_at: inviteExpiry.toISOString(),
         });
       if (!inviteError) {
