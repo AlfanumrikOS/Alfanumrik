@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { authedFetch } from '@/lib/school-admin/authed-fetch';
 import {
   Card,
   Button,
@@ -301,7 +302,7 @@ export default function SchoolAdminAuditLogPage() {
         if (dateFrom) params.set('date_from', dateFrom);
         if (dateTo) params.set('date_to', dateTo);
 
-        const res = await fetch(`/api/school-admin/audit-log?${params.toString()}`, {
+        const res = await authedFetch(`/api/school-admin/audit-log?${params.toString()}`, {
           headers: { 'Content-Type': 'application/json' },
         });
 

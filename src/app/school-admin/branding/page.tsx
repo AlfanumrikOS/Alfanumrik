@@ -25,6 +25,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { authedFetch } from '@/lib/school-admin/authed-fetch';
 import { Card, Button, Input, Skeleton } from '@/components/ui';
 
 // ─── Bilingual helper ─────────────────────────────────────────────────
@@ -107,7 +108,7 @@ export default function BrandingPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/school-admin/branding', { credentials: 'same-origin' });
+      const res = await authedFetch('/api/school-admin/branding');
       const body = await res.json();
       if (!res.ok || !body.success) {
         throw new Error(body.error || `HTTP ${res.status}`);
@@ -168,9 +169,8 @@ export default function BrandingPage() {
         font_body: form.fontBody.trim() || null,
         border_radius_px: form.borderRadiusPx.trim() === '' ? null : parseInt(form.borderRadiusPx, 10),
       };
-      const res = await fetch('/api/school-admin/branding', {
+      const res = await authedFetch('/api/school-admin/branding', {
         method: 'PUT',
-        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });

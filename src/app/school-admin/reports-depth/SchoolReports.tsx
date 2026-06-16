@@ -36,6 +36,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import useSWR from 'swr';
+import { authedFetch } from '@/lib/school-admin/authed-fetch';
 import { useAuth } from '@/lib/AuthContext';
 import { NoDataState } from '@/components/admin-ui';
 import {
@@ -55,7 +56,7 @@ interface SchoolPickerError extends Error {
 }
 
 async function reportFetcher<T>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: 'same-origin' });
+  const res = await authedFetch(url);
   if (!res.ok) {
     let body: { error?: string; school_ids?: string[] } | null = null;
     try {
@@ -299,15 +300,14 @@ export default function SchoolReports() {
   }, []);
 
   // 3a. Export CSV — blob download from the export route (server builds the CSV;
-  //     the client only triggers the download). credentials: same-origin carries
-  //     the auth cookie. P13: only a generic error toast/message, never any PII.
+  //     the client only triggers the download). authedFetch forwards the Bearer
+  //     access token (the session lives in localStorage, not a cookie). P13: only
+  //     a generic error toast/message, never any PII.
   const handleDownloadCsv = useCallback(async () => {
     setExporting(true);
     setExportError(null);
     try {
-      const res = await fetch(withSchool('/api/school-admin/reports/export?format=csv'), {
-        credentials: 'same-origin',
-      });
+      const res = await authedFetch(withSchool('/api/school-admin/reports/export?format=csv'));
       if (!res.ok) {
         throw new Error(`Export failed (${res.status})`);
       }

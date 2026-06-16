@@ -22,6 +22,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { authedFetch } from '@/lib/school-admin/authed-fetch';
 import { Card, Button, Skeleton } from '@/components/ui';
 
 // ─── Bilingual helper ─────────────────────────────────────────────────
@@ -59,7 +60,7 @@ export default function ModulesPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/school-admin/modules', { credentials: 'same-origin' });
+      const res = await authedFetch('/api/school-admin/modules');
       const body = await res.json();
       if (!res.ok || !body.success) {
         throw new Error(body.error || `HTTP ${res.status}`);
@@ -81,9 +82,8 @@ export default function ModulesPage() {
     setSavingKey(m.key);
     setError(null);
     try {
-      const res = await fetch('/api/school-admin/modules', {
+      const res = await authedFetch('/api/school-admin/modules', {
         method: 'PUT',
-        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ moduleKey: m.key, isEnabled: !m.isEnabled }),
       });

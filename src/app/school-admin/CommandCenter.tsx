@@ -38,6 +38,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import useSWR from 'swr';
+import { authedFetch } from '@/lib/school-admin/authed-fetch';
 import { useAuth } from '@/lib/AuthContext';
 import { usePermissions } from '@/lib/usePermissions';
 import { useSchoolPulse } from '@/lib/pulse/use-pulse';
@@ -79,7 +80,7 @@ interface SchoolPickerError extends Error {
 }
 
 async function ccFetcher<T>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: 'same-origin' });
+  const res = await authedFetch(url);
   if (!res.ok) {
     let body: { error?: string; school_ids?: string[] } | null = null;
     try {

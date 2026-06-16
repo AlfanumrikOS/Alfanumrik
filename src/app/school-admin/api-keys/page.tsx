@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { authedFetch } from '@/lib/school-admin/authed-fetch';
 import {
   Card,
   Button,
@@ -502,7 +503,7 @@ export default function SchoolAdminApiKeysPage() {
       setSchoolId(adminRecord.school_id);
 
       // Fetch API keys via the API route (server-side permission check)
-      const res = await fetch('/api/school-admin/api-keys', {
+      const res = await authedFetch('/api/school-admin/api-keys', {
         headers: { 'Content-Type': 'application/json' },
       });
 
@@ -544,7 +545,7 @@ export default function SchoolAdminApiKeysPage() {
         payload.expires_in_days = values.expiryDays;
       }
 
-      const res = await fetch('/api/school-admin/api-keys', {
+      const res = await authedFetch('/api/school-admin/api-keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -581,7 +582,7 @@ export default function SchoolAdminApiKeysPage() {
     setRevokingId(keyId);
 
     try {
-      const res = await fetch('/api/school-admin/api-keys', {
+      const res = await authedFetch('/api/school-admin/api-keys', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: keyId }),

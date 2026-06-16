@@ -25,6 +25,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { authedFetch } from '@/lib/school-admin/authed-fetch';
 import { Card, Button, Skeleton } from '@/components/ui';
 
 // ─── Bilingual helper ─────────────────────────────────────────────────
@@ -119,7 +120,7 @@ export default function AiConfigPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/school-admin/tenant-config', { credentials: 'same-origin' });
+      const res = await authedFetch('/api/school-admin/tenant-config');
       const body = await res.json();
       if (!res.ok || !body.success) {
         throw new Error(body.error || `HTTP ${res.status}`);
@@ -166,9 +167,8 @@ export default function AiConfigPage() {
     setError(null);
     try {
       const entries = dirtyKeys.map(key => ({ key, value: draft[key] }));
-      const res = await fetch('/api/school-admin/tenant-config', {
+      const res = await authedFetch('/api/school-admin/tenant-config', {
         method: 'PUT',
-        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ entries }),
       });

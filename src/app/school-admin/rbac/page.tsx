@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { getAccessToken } from '@/lib/school-admin/authed-fetch';
 import {
   Card,
   Button,
@@ -226,12 +227,22 @@ export default function SchoolAdminRBACPage() {
     setLoadingAdmin(false);
   }, [authUserId, isHi]);
 
-  /* ── API fetch helper ── */
+  /* ── API fetch helper ──
+     Forwards the Bearer access token (the browser session lives in localStorage,
+     not a cookie, so credentials alone never authenticate the server route). */
   const apiFetch = useCallback(async (url: string, options?: RequestInit) => {
+    const token = await getAccessToken();
+    const headers = new Headers({ 'Content-Type': 'application/json' });
+    if (options?.headers) {
+      new Headers(options.headers).forEach((value, key) => headers.set(key, value));
+    }
+    if (token && !headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
     return fetch(url, {
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
       ...options,
+      headers,
     });
   }, []);
 

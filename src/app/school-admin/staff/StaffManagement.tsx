@@ -20,6 +20,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { authedFetch } from '@/lib/school-admin/authed-fetch';
 import { useSchoolAdminRole, type SchoolAdminRole } from '@/lib/use-school-admin-role';
 import {
   Card,
@@ -287,7 +288,7 @@ export default function StaffManagement() {
     setLoading(true);
     setPageError(null);
     try {
-      const res = await fetch('/api/school-admin/staff', { credentials: 'same-origin' });
+      const res = await authedFetch('/api/school-admin/staff');
       if (res.status === 404) {
         // Flag turned OFF mid-session (or feature not available).
         setPageError(
@@ -341,10 +342,9 @@ export default function StaffManagement() {
     setActionError(null);
     setLockoutMsg(null);
     try {
-      const res = await fetch('/api/school-admin/staff', {
+      const res = await authedFetch('/api/school-admin/staff', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
         body: JSON.stringify({ email, role }),
       });
       const body = await res.json();
@@ -373,10 +373,9 @@ export default function StaffManagement() {
     setActionError(null);
     setLockoutMsg(null);
     try {
-      const res = await fetch('/api/school-admin/staff', {
+      const res = await authedFetch('/api/school-admin/staff', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
         body: JSON.stringify({ id, role }),
       });
       const body = await res.json();
@@ -425,9 +424,8 @@ export default function StaffManagement() {
     setActionError(null);
     setLockoutMsg(null);
     try {
-      const res = await fetch(`/api/school-admin/staff?id=${encodeURIComponent(id)}`, {
+      const res = await authedFetch(`/api/school-admin/staff?id=${encodeURIComponent(id)}`, {
         method: 'DELETE',
-        credentials: 'same-origin',
       });
       const body = await res.json();
       if (res.status === 409 && body?.code === 'LAST_PRINCIPAL_LOCKOUT') {
