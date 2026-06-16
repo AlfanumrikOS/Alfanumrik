@@ -17,6 +17,82 @@ import { useCosmicTheme } from '@/lib/cosmic-theme';
 import { Starfield } from '@/components/cosmic';
 import ConsolidatedSchoolNav from './ConsolidatedSchoolNav';
 
+/* ─── School identity: ONE authoritative resolution (stop the flip) ───
+ *
+ * The sidebar brand used to flip "School Admin" (avatar "S") → "Demo School"
+ * (avatar "D") across hydration because the literal 'School Admin' fallback
+ * was painted FIRST and the async DB name resolved SECOND — two values with
+ * different first letters. We now resolve the displayed school name through a
+ * single priority chain and, crucially, never paint a misleading literal that
+ * later changes its first letter.
+ *
+ * Resolution priority (highest first):
+ *   1. useTenant().schoolName            (present once SchoolThemeProvider hydrates)
+ *   2. school_admins → schools(name) DB  (direct-URL access fallback)
+ *   3. a synchronous per-user cache      (so repeat visits paint the resolved name)
+ *   4. email-prefix of the admin's email (humane last-resort label)
+ *   5. a neutral, stable placeholder     (em-dash — never a fake-name first letter)
+ *
+ * The cache mirrors the localStorage pattern in `useSchoolCommandCenter`: a
+ * synchronous read on mount means the first paint on a repeat visit already
+ * matches the resolved name, so the user never sees an S→D swap. Other
+ * school-admin surfaces (AtlasSchoolAdmin) read the SAME cache so the school
+ * name shown anywhere is identical — no third divergent source.
+ */
+const SCHOOL_IDENTITY_CACHE_PREFIX = 'alfanumrik_school_identity_v1'; // gitleaks:allow — sessionStorage key, not a secret
+const SCHOOL_IDENTITY_TTL_MS = 12 * 60 * 60 * 1000; // 12h — identity rarely changes within a session
+/** Neutral, stable placeholder painted while the name is genuinely unresolved.
+ *  An em-dash reads as "loading" and never masquerades as a real school whose
+ *  first letter would later change. */
+export const SCHOOL_NAME_PLACEHOLDER = '—';
+
+interface CachedSchoolIdentity {
+  name: string;
+  logoUrl: string | null;
+  ts: number;
+}
+
+function schoolIdentityCacheKey(authUserId: string | null): string | null {
+  return authUserId ? `${SCHOOL_IDENTITY_CACHE_PREFIX}:${authUserId}` : null;
+}
+
+/** Synchronous read of the cached school identity for this user; null when
+ *  absent, malformed, or stale. Safe in SSR (returns null). */
+export function readSchoolIdentityCache(authUserId: string | null): CachedSchoolIdentity | null {
+  if (typeof window === 'undefined') return null;
+  const key = schoolIdentityCacheKey(authUserId);
+  if (!key) return null;
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedSchoolIdentity;
+    if (!parsed || typeof parsed.name !== 'string' || typeof parsed.ts !== 'number') return null;
+    if (Date.now() - parsed.ts > SCHOOL_IDENTITY_TTL_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeSchoolIdentityCache(authUserId: string | null, name: string, logoUrl: string | null) {
+  if (typeof window === 'undefined') return;
+  const key = schoolIdentityCacheKey(authUserId);
+  if (!key || !name) return;
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify({ name, logoUrl, ts: Date.now() } satisfies CachedSchoolIdentity));
+  } catch {
+    /* quota or disabled storage — fall back to per-request resolution */
+  }
+}
+
+/** The single resolver other school-admin surfaces should call so the school
+ *  name they display matches the shell exactly. Returns the resolved name, or
+ *  null when nothing authoritative is known yet (caller decides the label). */
+export function resolveCachedSchoolName(authUserId: string | null, tenantSchoolName?: string | null): string | null {
+  if (tenantSchoolName) return tenantSchoolName;
+  return readSchoolIdentityCache(authUserId)?.name ?? null;
+}
+
 /* ─── P7: Bilingual labels ───────────────────────────────────────────
  *
  * `moduleKey` (optional) maps a nav entry to a module from the registry
@@ -78,8 +154,16 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
   // Cosmic Phase 3: flag-gated dark reskin (gold/steel via data-role="school").
   // OFF ⇒ cosmicEnabled false ⇒ byte-identical to before this change.
   const { cosmicEnabled } = useCosmicTheme();
-  const [schoolName, setSchoolName] = useState<string>(tenant.schoolName || '');
-  const [logoUrl, setLogoUrl] = useState<string | null>(tenant.branding.logoUrl);
+  // Seed from the SAME authoritative chain we resolve below so the first paint
+  // on a repeat visit already shows the resolved name (no S→D flip):
+  //   tenant.schoolName → synchronous per-user identity cache → ''(unresolved).
+  const cachedIdentity = readSchoolIdentityCache(authUserId);
+  const [schoolName, setSchoolName] = useState<string>(tenant.schoolName || cachedIdentity?.name || '');
+  const [logoUrl, setLogoUrl] = useState<string | null>(tenant.branding.logoUrl || cachedIdentity?.logoUrl || null);
+  // Email-prefix is the humane last-resort label (priority 4). Sourced from the
+  // SAME school_admins row the direct-URL fallback already reads — no new query
+  // pattern, no auth-flow change.
+  const [emailPrefix, setEmailPrefix] = useState<string>('');
 
   // null while loading or on fetch failure (fail-open: show all items).
   // Otherwise a partial map of moduleKey → enabled. Only modules that
@@ -123,6 +207,15 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
 
   const primaryColor = tenant.branding.primaryColor || '#7C3AED';
 
+  // ─── Single authoritative brand title (the value the avatar initial derives
+  // from). Priority: tenant → DB-resolved name → email-prefix → neutral
+  // placeholder. We deliberately do NOT fall back to the old 'School Admin'
+  // literal: it had a different first letter than the resolved name and was the
+  // sole cause of the S→D avatar flip. The sub-line keeps the static
+  // "School Administration" label, so context is never lost. ───
+  const resolvedSchoolName =
+    tenant.schoolName || schoolName || emailPrefix || SCHOOL_NAME_PLACEHOLDER;
+
   // Track 2 — additively append the Principal Assistant entry to the FLAT legacy
   // sidebar ONLY when `ff_principal_ai_v1` is ON AND the caller is a principal
   // (mirrors the principal-only capability; fail-CLOSED so non-principals never
@@ -145,15 +238,25 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
       router.push('/login');
       return;
     }
-    // If no tenant context (direct URL access), fetch school info from DB
-    if (!tenant.schoolName && authUserId) {
+    // Tenant context is authoritative when present — mirror it into the cache so
+    // repeat visits + sibling surfaces (AtlasSchoolAdmin) paint the same name.
+    if (tenant.schoolName) {
+      writeSchoolIdentityCache(authUserId, tenant.schoolName, tenant.branding.logoUrl ?? null);
+      return;
+    }
+    // If no tenant context (direct URL access), fetch school info from DB. We
+    // also pull the admin's email so the email-prefix last-resort label can be
+    // derived from the SAME row (no extra query, no auth-flow change).
+    if (authUserId) {
       supabase
         .from('school_admins')
-        .select('school_id, schools(name, logo_url, primary_color)')
+        .select('school_id, email, schools(name, logo_url, primary_color)')
         .eq('auth_user_id', authUserId)
         .eq('is_active', true)
         .single()
         .then(({ data }) => {
+          const adminEmail = typeof data?.email === 'string' ? data.email : '';
+          if (adminEmail) setEmailPrefix(adminEmail.split('@')[0] ?? '');
           if (data?.schools && typeof data.schools === 'object') {
             // Supabase FK join may return array or object depending on relation type
             const raw = data.schools as unknown;
@@ -162,11 +265,14 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
               const school = s as { name: string; logo_url: string | null; primary_color: string | null };
               setSchoolName(school.name);
               if (school.logo_url) setLogoUrl(school.logo_url);
+              // Persist the resolved identity so the next paint (and sibling
+              // surfaces) never see the S→D flip.
+              writeSchoolIdentityCache(authUserId, school.name, school.logo_url ?? null);
             }
           }
         });
     }
-  }, [authUserId, tenant.schoolName, router]);
+  }, [authUserId, tenant.schoolName, tenant.branding.logoUrl, router]);
 
   // Fetch module enablement once per shell mount. /api/school-admin/modules
   // requires `school.manage_modules` permission; admins without it land
@@ -211,7 +317,7 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
           preserved (module gating, active highlight, mobile drawer). */}
       {commandCenterOn ? (
         <ConsolidatedSchoolNav
-          brandTitle={schoolName || (isHi ? 'स्कूल प्रशासन' : 'School Admin')}
+          brandTitle={resolvedSchoolName}
           brandSubtitle={isHi ? 'स्कूल प्रशासन' : 'School Administration'}
           logoUrl={logoUrl}
           primaryColor={primaryColor}
@@ -235,7 +341,7 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
         />
       ) : (
         <DashboardSidebar
-          brandTitle={schoolName || (isHi ? 'स्कूल प्रशासन' : 'School Admin')}
+          brandTitle={resolvedSchoolName}
           brandSubtitle={isHi ? 'स्कूल प्रशासन' : 'School Administration'}
           logoUrl={logoUrl}
           primaryColor={primaryColor}
