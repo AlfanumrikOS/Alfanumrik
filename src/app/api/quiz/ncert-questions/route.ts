@@ -53,6 +53,46 @@ function resolveGrade(grade: string): string {
   return `Grade ${num}`;
 }
 
+/**
+ * Resolve a quiz subject code to the `question_bank.subject` form.
+ * question_bank stores lowercase subject CODES ("math", "science",
+ * "social_studies", "biology", ...) and string grades ("6".."12") — i.e. the
+ * same shape the route already receives as raw params — so this is mostly a
+ * passthrough with a couple of alias collapses.
+ */
+function resolveQuestionBankSubject(code: string): string {
+  const lower = code.toLowerCase().trim();
+  const aliases: Record<string, string> = {
+    sst: 'social_studies',
+    mathematics: 'math',
+    maths: 'math',
+    coding: 'computer_science',
+  };
+  return aliases[lower] ?? lower;
+}
+
+/**
+ * Unwrap a stored answer_rubric (object { points: [...] } OR bare array) into a
+ * normalised array of { point, marks } for the evaluator. Mirrors the unwrap in
+ * supabase/functions/ncert-question-engine/index.ts so both serving and grading
+ * agree on the rubric shape. Returns null when no usable rubric is present.
+ */
+function normaliseRubric(raw: unknown): Array<{ point: string; marks: number }> | null {
+  const arr = Array.isArray(raw)
+    ? raw
+    : (raw && typeof raw === 'object'
+        ? (raw as Record<string, unknown>).points
+        : null);
+  if (!Array.isArray(arr)) return null;
+  const points = arr
+    .map((r: Record<string, unknown>) => ({
+      point: String(r?.point ?? r?.criterion ?? ''),
+      marks: Number(r?.marks ?? r?.points ?? 0),
+    }))
+    .filter((r) => r.point.length > 0);
+  return points.length > 0 ? points : null;
+}
+
 /** Normalise type aliases to canonical rag_content_chunks question_type values */
 function resolveQuestionType(t: string): string {
   const map: Record<string, string> = {
@@ -183,6 +223,110 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // 2c. PREFER question_bank for descriptive (SA/LA) questions.
+    //     rag_content_chunks rows carry NO answer_rubric/expected_answer/max_marks,
+    //     so the CBSE examiner grader (ncert-question-engine evaluate_answer) falls
+    //     back to freehand grading for them. question_bank rows DO carry a per-mark
+    //     marking scheme (answer_rubric { points:[{point,marks}] }), so serving
+    //     descriptive questions from question_bank lets the grader mark against the
+    //     stored CBSE scheme. We collect these first and backfill from
+    //     rag_content_chunks only if question_bank is short.
+    //
+    //     question_bank stores subject CODES (lowercase) + string grades, matching
+    //     the route's raw params — no rag-style display-name remapping needed.
+    const qbSubject = resolveQuestionBankSubject(subjectParam);
+    // Only descriptive types belong here; numerical/MCQ etc. keep the rag path.
+    const qbTypes = resolvedTypes.filter(t => t === 'short_answer' || t === 'long_answer');
+    const bankSelected: Array<Record<string, unknown>> = [];
+    if (qbTypes.length > 0) {
+      try {
+        let bankQuery = supabaseAdmin
+          .from('question_bank')
+          .select('id, question_text, question_hi, expected_answer, answer_text, explanation, explanation_hi, answer_rubric, max_marks, marks_expected, marks, question_type, bloom_level, chapter_number, difficulty, subject, grade')
+          .eq('is_active', true)
+          .eq('grade', gradeNum)
+          .eq('subject', qbSubject)
+          .not('answer_rubric', 'is', null)
+          .not('question_text', 'is', null)
+          .neq('question_text', '');
+
+        bankQuery = qbTypes.length === 1
+          ? bankQuery.eq('question_type', qbTypes[0])
+          : bankQuery.in('question_type', qbTypes);
+
+        if (chapter && chapter > 0) {
+          bankQuery = bankQuery.eq('chapter_number', chapter);
+        }
+
+        const bankFetchCount = Math.min(count * 3, 60);
+        const { data: bankRows } = await bankQuery.limit(bankFetchCount);
+
+        if (bankRows && bankRows.length > 0) {
+          // Dedup by question_text prefix, exclude previously-seen IDs.
+          const bankSeenTexts = new Set<string>();
+          const bankUnseen: Array<Record<string, unknown>> = [];
+          const bankSeen: Array<Record<string, unknown>> = [];
+          for (const r of bankRows as Array<Record<string, unknown>>) {
+            const key = String(r.question_text ?? '').slice(0, 80).toLowerCase().trim();
+            if (!key || bankSeenTexts.has(key)) continue;
+            bankSeenTexts.add(key);
+            (seenQuestionIds.has(String(r.id)) ? bankSeen : bankUnseen).push(r);
+          }
+          bankUnseen.sort(() => Math.random() - 0.5);
+          bankSeen.sort(() => Math.random() - 0.5);
+          bankSelected.push(...bankUnseen, ...bankSeen);
+        }
+      } catch (bankErr) {
+        // Non-fatal: fall through to rag_content_chunks if question_bank fails.
+        logger.warn('ncert_questions_question_bank_lookup_failed', {
+          error: bankErr instanceof Error ? bankErr : new Error(String(bankErr)),
+          route: '/api/quiz/ncert-questions',
+        });
+      }
+    }
+
+    // Map question_bank rows to the Question interface, carrying the rubric so
+    // the grader's `source_table === 'question_bank'` branch marks against the
+    // stored CBSE per-mark scheme.
+    const bankQuestions = bankSelected.slice(0, count).map((row: Record<string, unknown>) => {
+      const qt = String(row.question_type ?? 'short_answer');
+      const marks = Number(row.max_marks ?? row.marks_expected ?? row.marks ?? 2);
+      let cbseType = qt;
+      if (qt === 'short_answer') cbseType = marks >= 3 ? 'medium_answer' : 'short_answer';
+      else if (qt === 'long_answer') cbseType = 'long_answer';
+      const meta = CBSE_TYPE_MAP[cbseType] ?? CBSE_TYPE_MAP.short_answer;
+      const modelAnswer = (row.expected_answer as string) || (row.answer_text as string) || null;
+      return {
+        id: row.id as string,
+        question_text: row.question_text as string,
+        question_hi: (row.question_hi as string) ?? null,
+        question_type: cbseType,
+        options: [] as string[],
+        correct_answer_index: -1,
+        explanation: (row.explanation as string) ?? modelAnswer,
+        explanation_hi: (row.explanation_hi as string) ?? null,
+        hint: null,
+        difficulty: Number(row.difficulty ?? 2),
+        bloom_level: (row.bloom_level as string) ?? 'understand',
+        chapter_number: (row.chapter_number as number) ?? 0,
+        // Written-answer fields (the rubric is what makes scheme-based grading work)
+        marks_possible: marks,
+        answer_text: modelAnswer,
+        expected_answer: modelAnswer,
+        answer_rubric: normaliseRubric(row.answer_rubric),
+        max_marks: marks,
+        source_table: 'question_bank',
+        question_id: row.id as string,
+        cbse_type: cbseType,
+        cbse_label: meta.label,
+        time_estimate: meta.timeSeconds,
+        word_limit: meta.wordLimit,
+      };
+    });
+
+    // If question_bank fully satisfied the request, skip the rag path entirely.
+    const remaining = Math.max(0, count - bankQuestions.length);
+
     // 3. Build query
     let query = supabaseAdmin
       .from('rag_content_chunks')
@@ -213,50 +357,64 @@ export async function GET(request: NextRequest) {
     // but also check 'content' rows that got question_text added later
     // Don't filter by content_type -- just filter by question_text presence (already done above)
 
-    // Fetch extra for dedup, then limit
-    const fetchCount = Math.min(count * 3, 60);
+    // Fetch extra for dedup, then limit. Only backfill what question_bank
+    // (the rubric-bearing, scheme-gradable source) did not already supply.
+    const fetchCount = Math.min(Math.max(remaining, 1) * 3, 60);
 
-    const { data: rows, error } = await query.limit(fetchCount);
+    // Track question_bank texts/ids so rag backfill never duplicates a row we
+    // already served from question_bank.
+    const bankTextKeys = new Set<string>(
+      bankQuestions.map(q => String(q.question_text ?? '').slice(0, 80).toLowerCase().trim()).filter(Boolean)
+    );
+    const bankIds = new Set<string>(bankQuestions.map(q => String(q.id)));
 
-    if (error) {
-      logger.error('ncert_questions_query_failed', {
-        error: new Error(error.message),
-        route: '/api/quiz/ncert-questions',
-        grade: gradeNum,
-        subject: subjectParam,
-      });
-      return NextResponse.json(
-        { success: false, error: 'Failed to fetch NCERT questions.' },
-        { status: 500 }
-      );
-    }
+    // Short-circuit the rag path entirely when question_bank covered the request.
+    let resultRows: Array<Record<string, unknown>> = [];
+    if (remaining > 0) {
+      const { data: rows, error } = await query.limit(fetchCount);
 
-    // If exact subject match returns nothing, try ILIKE fallback
-    let resultRows = rows ?? [];
-    if (resultRows.length === 0) {
-      const { data: fallbackRows, error: fallbackError } = await supabaseAdmin
-        .from('rag_content_chunks')
-        .select('id, question_text, answer_text, question_type, marks_expected, bloom_level, chapter_title, chapter_number, content_type, subject, grade')
-        .eq('is_active', true)
-        .eq('grade', dbGrade)
-        .ilike('subject', `%${subjectParam.replace(/_/g, ' ')}%`)
-        .not('question_text', 'is', null)
-        .not('answer_text', 'is', null)
-        .neq('question_text', '')
-        .neq('answer_text', '')
-        .in('question_type', resolvedTypes.length > 0 ? resolvedTypes : ['short_answer', 'long_answer', 'intext', 'exercise', 'example', 'hots', 'numerical'])
-        .limit(fetchCount);
-
-      if (!fallbackError && fallbackRows && fallbackRows.length > 0) {
-        resultRows = fallbackRows;
+      if (error) {
+        logger.error('ncert_questions_query_failed', {
+          error: new Error(error.message),
+          route: '/api/quiz/ncert-questions',
+          grade: gradeNum,
+          subject: subjectParam,
+        });
+        return NextResponse.json(
+          { success: false, error: 'Failed to fetch NCERT questions.' },
+          { status: 500 }
+        );
       }
-    }
+
+      // If exact subject match returns nothing, try ILIKE fallback
+      resultRows = rows ?? [];
+      if (resultRows.length === 0) {
+        const { data: fallbackRows, error: fallbackError } = await supabaseAdmin
+          .from('rag_content_chunks')
+          .select('id, question_text, answer_text, question_type, marks_expected, bloom_level, chapter_title, chapter_number, content_type, subject, grade')
+          .eq('is_active', true)
+          .eq('grade', dbGrade)
+          .ilike('subject', `%${subjectParam.replace(/_/g, ' ')}%`)
+          .not('question_text', 'is', null)
+          .not('answer_text', 'is', null)
+          .neq('question_text', '')
+          .neq('answer_text', '')
+          .in('question_type', resolvedTypes.length > 0 ? resolvedTypes : ['short_answer', 'long_answer', 'intext', 'exercise', 'example', 'hots', 'numerical'])
+          .limit(fetchCount);
+
+        if (!fallbackError && fallbackRows && fallbackRows.length > 0) {
+          resultRows = fallbackRows;
+        }
+      }
+    } // end if (remaining > 0)
 
     // 4. Deduplicate by question_text prefix and exclude previously seen questions
-    const seenTexts = new Set<string>();
+    //    AND anything already served from question_bank above.
+    const seenTexts = new Set<string>(bankTextKeys);
     const deduped = resultRows.filter((q: Record<string, unknown>) => {
       const key = String(q.question_text ?? '').slice(0, 80).toLowerCase().trim();
       if (!key || seenTexts.has(key)) return false;
+      if (bankIds.has(String(q.id))) return false;
       seenTexts.add(key);
       return true;
     });
@@ -265,14 +423,14 @@ export async function GET(request: NextRequest) {
     const unseenQuestions = deduped.filter((q: Record<string, unknown>) => !seenQuestionIds.has(String(q.id)));
     const previouslySeen = deduped.filter((q: Record<string, unknown>) => seenQuestionIds.has(String(q.id)));
 
-    // 5. Shuffle and take requested count — prefer unseen, fall back to seen if pool exhausted
+    // 5. Shuffle and take only the backfill count — prefer unseen, fall back to seen if pool exhausted
     const shuffledUnseen = unseenQuestions.sort(() => Math.random() - 0.5);
     const shuffledSeen = previouslySeen.sort(() => Math.random() - 0.5);
     // Prioritize unseen questions, backfill with previously seen if not enough
-    const selected = [...shuffledUnseen, ...shuffledSeen].slice(0, count);
+    const selected = [...shuffledUnseen, ...shuffledSeen].slice(0, remaining);
 
-    // 6. Map to Question interface expected by quiz/page.tsx
-    const questions = selected.map((chunk: Record<string, unknown>) => {
+    // 6. Map rag_content_chunks rows to Question interface expected by quiz/page.tsx
+    const ragQuestions = selected.map((chunk: Record<string, unknown>) => {
       const qt = String(chunk.question_type ?? 'short_answer');
       const marks = Number(chunk.marks_expected ?? 2);
 
@@ -309,6 +467,10 @@ export async function GET(request: NextRequest) {
         word_limit: meta.wordLimit,
       };
     });
+
+    // 6b. Merge: rubric-bearing question_bank questions first (so the grader marks
+    //     against the stored CBSE per-mark scheme), then rag_content_chunks backfill.
+    const questions = [...bankQuestions, ...ragQuestions].slice(0, count);
 
     // 7. Record served questions in user_question_history for future dedup
     //    Fire-and-forget: don't block the response on history recording

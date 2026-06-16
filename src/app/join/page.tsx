@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { authHeader } from '@/lib/api/auth-header';
+import { setPendingInvite } from '@/lib/school/pending-invite';
 import {
   Card,
   Button,
@@ -72,9 +74,17 @@ export default function JoinPage() {
     setResult(null);
 
     try {
+      // Forward the Supabase Bearer token: an authenticated joiner's session
+      // lives in localStorage (not cookies), so without this the route's
+      // cookie path sees no user and wrongly returns the unauthenticated
+      // branch even though the user is signed in.
       const res = await fetch('/api/schools/join', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(await authHeader()),
+        },
+        credentials: 'same-origin',
         body: JSON.stringify({ code: trimmedCode }),
       });
 
@@ -200,22 +210,28 @@ export default function JoinPage() {
                     variant="primary"
                     fullWidth
                     size="lg"
-                    onClick={() =>
+                    onClick={() => {
+                      // Persist the code now so it survives the email-verify
+                      // round-trip even before /login's own effect runs.
+                      setPendingInvite(code);
                       router.push(
-                        `/login?school=${result.school?.slug ?? ''}&code=${code}`
-                      )
-                    }
+                        `/login?school=${result.school?.slug ?? ''}&code=${encodeURIComponent(code)}`
+                      );
+                    }}
                   >
                     {t(isHi, 'Sign Up to Continue', 'जारी रखने के लिए साइन अप करें')}
                   </Button>
                   <Button
                     variant="ghost"
                     fullWidth
-                    onClick={() =>
+                    onClick={() => {
+                      // Persist the code now so it survives the email-verify
+                      // round-trip even before /login's own effect runs.
+                      setPendingInvite(code);
                       router.push(
-                        `/login?school=${result.school?.slug ?? ''}&code=${code}`
-                      )
-                    }
+                        `/login?school=${result.school?.slug ?? ''}&code=${encodeURIComponent(code)}`
+                      );
+                    }}
                   >
                     {t(isHi, 'Already have an account? Sign In', 'पहले से खाता है? साइन इन करें')}
                   </Button>

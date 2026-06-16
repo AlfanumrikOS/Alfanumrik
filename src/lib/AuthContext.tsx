@@ -20,6 +20,7 @@ import { clearAllCache } from './swr';
 import { clearAtlasFlagCache } from './use-atlas-flag';
 import { track } from './analytics';
 import { identify as posthogIdentify, reset as posthogReset } from './posthog/client';
+import { redeemPendingInvite, clearPendingInvite } from './school/pending-invite';
 import type { Student, StudentSnapshot } from './types';
 
 /* ─── Role Types ─── */
@@ -224,6 +225,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Guard against recursive fetchUser calls after bootstrap.
   // Reset to false on each fresh fetchUser invocation; set to true after bootstrap attempt.
   const bootstrapAttemptedRef = useRef(false);
+
+  // P15 (school invite-code redemption): guard so the pending-invite POST to
+  // /api/schools/join fires at most once per signed-in session. A transient
+  // failure does NOT set this (the code stays in localStorage and the next
+  // load retries); a definitive verdict clears the code AND sets this ref.
+  const inviteRedeemedRef = useRef(false);
 
   // B11: Use useCallback + roles dependency to prevent stale closure.
   // Without useCallback, event handlers that captured a previous version of
@@ -607,6 +614,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [authUserId, student?.grade, student?.board, student?.subscription_plan, language]);
 
+  // ── School invite-code redemption (P15 day-1 B2B path) ──
+  // A fresh student/teacher who signed up via /join?code=… → /login?code=…
+  // has the code persisted in localStorage. /api/schools/join links by
+  // auth_user_id, so it can only run AFTER the profile row exists. We gate on
+  // roles.length > 0 (profile confirmed by fetchUser) and authUserId, then
+  // redeem with the session Bearer token (the app's session lives in
+  // localStorage, not cookies). Fire-and-forget: this NEVER blocks render and
+  // NEVER throws — onboarding integrity is preserved even if the link fails.
+  useEffect(() => {
+    if (!authUserId || roles.length === 0) return;
+    if (inviteRedeemedRef.current) return;
+    // Only students and teachers are linked to a school by invite code; the
+    // institution_admin who created the school is already linked, and a
+    // guardian links to a child via a separate link-code flow at signup.
+    const linkable = roles.includes('student') || roles.includes('teacher');
+    if (!linkable) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const outcome = await redeemPendingInvite();
+        if (cancelled) return;
+        // 'retry' leaves the code in place for the next load; everything else
+        // (linked / cleared / none) is terminal for this session.
+        if (outcome !== 'retry') {
+          inviteRedeemedRef.current = true;
+        }
+        if (outcome === 'linked') {
+          // Pull the freshly-set school_id into client state.
+          try { await fetchUser(); } catch { /* non-fatal */ }
+        }
+      } catch {
+        /* redeemPendingInvite never throws, but be defensive — P15 */
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [authUserId, roles, fetchUser]);
+
   const signOut = useCallback(async () => {
     // Deregister device session
     try {
@@ -615,6 +661,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     // Reset bootstrap guard so a new sign-in can trigger bootstrap if needed
     bootstrapAttemptedRef.current = false;
+    // Reset invite-redemption guard and drop any pending invite code so it can
+    // never be applied to a different account that signs in on this device.
+    inviteRedeemedRef.current = false;
+    clearPendingInvite();
     // Clear SWR cache to prevent data leakage between accounts on shared devices
     clearAllCache();
     // Clear Editorial Atlas flag cache so the next signin doesn't render
@@ -670,6 +720,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRoles([]);
         setActiveRoleState('none');
         bootstrapAttemptedRef.current = false;
+        // Reset invite-redemption guard + drop any pending code on cross-tab
+        // signout so it can't bleed into the next account on this device.
+        inviteRedeemedRef.current = false;
+        clearPendingInvite();
         // P13: clear PostHog identity on cross-tab signout too.
         try { posthogReset(); } catch { /* never throw from analytics */ }
       } else if (event === 'TOKEN_REFRESHED') {
@@ -681,6 +735,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoading(true);
         // Allow bootstrap for the new sign-in session
         bootstrapAttemptedRef.current = false;
+        // Allow invite redemption to fire for this new session (the guard is
+        // per-session; the redeem effect re-checks once roles resolve).
+        inviteRedeemedRef.current = false;
         // Register device session for 2-device limit enforcement.
         //
         // Auth token is forwarded as Authorization: Bearer so the server can

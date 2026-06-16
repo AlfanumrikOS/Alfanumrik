@@ -166,13 +166,14 @@ export default function ParentBillingPage() {
       if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
 
       // Reuse the existing Razorpay cancel endpoint — no parallel flow.
-      // Note: today this endpoint cancels by the *caller's* auth.userId →
-      // student lookup. Because parents are guardians (not students), the
-      // current endpoint will return 404. This is a known schema-shape
-      // limitation flagged in the PR description; the corresponding fix
-      // (allow cancel by student_id when caller is the linked guardian)
-      // is scoped to a follow-up backend PR. The UI surface is shipped
-      // here so the flow is wired end-to-end as soon as the backend lands.
+      // The endpoint accepts an optional `student_id` so a verified guardian
+      // can cancel a CHILD's subscription: it confirms the guardian↔student
+      // link server-side (listChildrenForGuardian — active/approved links
+      // only) before any DB write, then routes the cancel through the same
+      // atomic_cancel_subscription RPC as the student-self path (P11 atomic;
+      // P13/P9 — a guardian may cancel ONLY a linked child's sub, never an
+      // arbitrary student_id). We send the child's student_id plus the
+      // Authorization: Bearer header so the route can resolve the guardian.
       const res = await fetch('/api/payments/cancel', {
         method: 'POST',
         headers,

@@ -124,6 +124,10 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
   const [name, setName] = useState(prefillName || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // When true, the parent has no Supabase session, so the parent-portal Edge
+  // Function (JWT-required since PR #591) will reject the link-code login. We
+  // surface an account-creation CTA instead of a dead "Connection error".
+  const [needsSignIn, setNeedsSignIn] = useState(false);
 
   const submit = async () => {
     if (!code.trim()) { setError(t(isHi, 'Please enter link code', 'कृपया लिंक कोड दर्ज करें')); return; }
@@ -131,6 +135,21 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
     // Check lockout before attempting
     const lockout = isLockedOut();
     if (lockout.locked) { setError(lockout.message); return; }
+
+    // P15: the parent-portal Edge Function requires a Supabase Bearer JWT on
+    // EVERY action (PR #591 P13 hardening) — including parent_login. A parent
+    // with no Supabase session (authUserId is null) cannot complete a link-code
+    // login and, even if they could, every dashboard fetch would 401. Route
+    // them to create/sign into an account up-front (which mints the JWT) rather
+    // than letting the request fail with an opaque "Connection error". The
+    // guardian↔child boundary is unchanged: once signed in, the parent-portal
+    // link check (guardian_student_links keyed by the JWT-derived guardian_id)
+    // governs access exactly as today.
+    if (!authUserId) {
+      setNeedsSignIn(true);
+      setError('');
+      return;
+    }
 
     setLoading(true); setError('');
     try {
@@ -155,6 +174,48 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
       setError(lockMsg || 'Connection error. Please try again.');
     }
   };
+
+  // No Supabase session → show the account path. We preserve the entered link
+  // code through sign-in via a returnTo back to /parent so the parent can
+  // finish linking after authenticating.
+  if (needsSignIn) {
+    return (
+      <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen flex items-center justify-center">
+        <div className="max-w-[400px] w-full text-center">
+          <div className="text-5xl mb-3">&#x1F510;</div>
+          <h1 className="text-[22px] font-bold text-gray-900 mb-2">
+            {t(isHi, 'Create a parent account', 'अभिभावक अकाउंट बनाएँ')}
+          </h1>
+          <p className="text-sm text-gray-600 mb-1 leading-relaxed">
+            {t(
+              isHi,
+              "To view your child's progress securely, create a free parent account or sign in. It only takes a minute.",
+              'अपने बच्चे की प्रगति सुरक्षित रूप से देखने के लिए एक मुफ़्त अभिभावक अकाउंट बनाएँ या साइन इन करें। इसमें बस एक मिनट लगता है।',
+            )}
+          </p>
+          <p className="text-xs text-gray-400 mb-6 leading-relaxed">
+            {t(
+              isHi,
+              'After signing in, enter your link code once to connect to your child.',
+              'साइन इन करने के बाद, अपने बच्चे से जुड़ने के लिए एक बार अपना लिंक कोड दर्ज करें।',
+            )}
+          </p>
+          <button
+            onClick={() => { window.location.href = '/login?role=parent&redirectTo=/parent'; }}
+            className="w-full px-5 py-3 bg-orange-500 text-white border-none rounded-[10px] text-[15px] font-semibold cursor-pointer mb-3"
+          >
+            {t(isHi, 'Create / sign in to account', 'अकाउंट बनाएँ / साइन इन करें')}
+          </button>
+          <button
+            onClick={() => { setNeedsSignIn(false); }}
+            className="text-xs text-gray-400 hover:text-gray-600 underline bg-transparent border-none cursor-pointer"
+          >
+            {t(isHi, 'Back', 'वापस')}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen flex items-center justify-center">
@@ -191,6 +252,57 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
           className="text-xs text-gray-400 mt-2 hover:text-gray-600 underline bg-transparent border-none cursor-pointer"
         >
           {t(isHi, 'Sign out & switch account', 'साइन आउट करें और अकाउंट बदलें')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// LINK-CODE SIGN-IN GATE (P15 dead-end fix)
+// ============================================================
+// Shown when a parent is in link-code mode (HMAC sessionStorage session, NO
+// Supabase JWT). The parent-portal Edge Function requires a Bearer JWT on every
+// action since the PR #591 P13 hardening, so a link-code parent's dashboard
+// would 401 on every fetch. Instead of a broken/erroring dashboard, we surface a
+// clear bilingual path to create or sign into a real account — which mints a
+// JWT, makes them a guardian-mode parent, and unlocks the dashboard with the
+// exact same guardian↔child boundary enforced server-side.
+function LinkCodeSignInGate({ isHi, childName }: { isHi: boolean; childName: string }) {
+  const goSignIn = () => { window.location.href = '/login?role=parent&redirectTo=/parent'; };
+  const switchAccount = () => { clearParentSession(); window.location.reload(); };
+  return (
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen flex items-center justify-center">
+      <div className="max-w-[400px] w-full text-center">
+        <div className="text-5xl mb-3">&#x1F510;</div>
+        <h1 className="text-[22px] font-bold text-gray-900 mb-2">
+          {t(isHi, 'Sign in to view progress', 'प्रगति देखने के लिए साइन इन करें')}
+        </h1>
+        <p className="text-sm text-gray-600 mb-1 leading-relaxed">
+          {t(
+            isHi,
+            `Create a free parent account to see ${childName}'s full dashboard, reports and weekly progress.`,
+            `${childName} का पूरा डैशबोर्ड, रिपोर्ट और साप्ताहिक प्रगति देखने के लिए एक मुफ़्त अभिभावक अकाउंट बनाएँ।`,
+          )}
+        </p>
+        <p className="text-xs text-gray-400 mb-6 leading-relaxed">
+          {t(
+            isHi,
+            'Your child link is already saved — sign in once and it stays connected.',
+            'आपका बच्चे का लिंक पहले ही सहेजा गया है — एक बार साइन इन करें और यह जुड़ा रहेगा।',
+          )}
+        </p>
+        <button
+          onClick={goSignIn}
+          className="w-full px-5 py-3 bg-orange-500 text-white border-none rounded-[10px] text-[15px] font-semibold cursor-pointer mb-3"
+        >
+          {t(isHi, 'Create / sign in to account', 'अकाउंट बनाएँ / साइन इन करें')}
+        </button>
+        <button
+          onClick={switchAccount}
+          className="text-xs text-gray-400 hover:text-gray-600 underline bg-transparent border-none cursor-pointer"
+        >
+          {t(isHi, 'Use a different link code', 'दूसरा लिंक कोड इस्तेमाल करें')}
         </button>
       </div>
     </div>
@@ -1044,6 +1156,28 @@ export default function ParentPage() {
     // If guardian profile exists from signup, pre-fill name
     const prefillName = auth.guardian?.name || '';
     return <LoginScreen onLogin={(g, s) => { setGuardian(g); setStudent(s); fetchAllChildren(g.id, s); }} isHi={isHi} authUserId={auth.authUserId} prefillName={prefillName || undefined} />;
+  }
+
+  // ── Link-code-mode hard gate (P15 dead-end fix) ─────────────────────────
+  // The parent home (AtlasParent / Dashboard) fetches all of its data through
+  // the `parent-portal` Edge Function, which — since the PR #591 P13 hardening
+  // — REQUIRES a Supabase Bearer JWT on every action (get_child_dashboard,
+  // get_children, get_monthly_report, even parent_login). guardian-mode
+  // parents have that JWT (supabase.functions.invoke auto-attaches it).
+  // Link-code-mode parents authenticate via an HMAC sessionStorage payload and
+  // have NO Supabase session, so every parent-portal call returns 401 and the
+  // ENTIRE dashboard is dead for them.
+  //
+  // We detect link-code mode as "we resolved a guardian/student session but
+  // there is no Supabase guardian (auth.guardian is null → no JWT)". Rather
+  // than render a dashboard that will 401 on first paint, we route these
+  // parents to create/sign into a real account (which mints a JWT and makes
+  // them a guardian-mode parent). The cross-child boundary is unchanged: once
+  // they sign in, the parent-portal link check (guardian_student_links keyed
+  // by the JWT-derived guardian_id) governs access exactly as today.
+  const isLinkCodeMode = !auth.guardian;
+  if (isLinkCodeMode) {
+    return <LinkCodeSignInGate isHi={isHi} childName={student.name} />;
   }
 
   // canFetchMessages: only guardian-mode parents (a real Supabase JWT) can hit
