@@ -45,10 +45,7 @@ export async function GET(request: NextRequest) {
   if (!schoolStudents || schoolStudents.length === 0) {
     return NextResponse.json({
       success: true,
-      data: [],
-      total: 0,
-      page,
-      limit,
+      data: { links: [], total: 0, page, limit },
     });
   }
 
@@ -58,7 +55,7 @@ export async function GET(request: NextRequest) {
   // Step 2: Get guardian-student links for these students
   let linksQuery = supabase
     .from('guardian_student_links')
-    .select('guardian_id, student_id, status', { count: 'exact' })
+    .select('guardian_id, student_id, status, linked_at, created_at', { count: 'exact' })
     .in('student_id', studentIds);
 
   if (status && ['approved', 'pending', 'rejected'].includes(status)) {
@@ -84,10 +81,7 @@ export async function GET(request: NextRequest) {
   if (!links || links.length === 0) {
     return NextResponse.json({
       success: true,
-      data: [],
-      total: totalLinks || 0,
-      page,
-      limit,
+      data: { links: [], total: totalLinks || 0, page, limit },
     });
   }
 
@@ -135,11 +129,18 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Build response
-  const result = filteredLinks.map((l) => {
+  // Build response. The parents page reads `json.data.links` and expects each
+  // row to carry { id, status, linked_at } in addition to the existing display
+  // fields. `id` is the composite guardian:student key (the link table's own
+  // uuid is not selected here and the page only needs a stable React key).
+  // `linked_at` prefers the dedicated column and falls back to created_at.
+  const links_out = filteredLinks.map((l) => {
     const guardian = guardianMap.get(l.guardian_id);
     const student = studentMap.get(l.student_id);
     return {
+      id: `${l.guardian_id}:${l.student_id}`,
+      status: l.status,
+      linked_at: l.linked_at ?? l.created_at ?? null,
       guardian_id: l.guardian_id,
       student_id: l.student_id,
       link_status: l.status,
@@ -153,10 +154,12 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    data: result,
-    total: totalLinks || 0,
-    page,
-    limit,
+    data: {
+      links: links_out,
+      total: totalLinks || 0,
+      page,
+      limit,
+    },
   });
 }
 

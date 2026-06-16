@@ -160,9 +160,14 @@ describe('School Admin Reports API', () => {
     // Should succeed with empty data
     expect(res.status).toBe(200);
     const body = await res.json();
-    // Route returns flat object (no { success, data } wrapper)
-    expect(body.total_students).toBe(0);
-    expect(body.total_quizzes).toBe(0);
+    // E2E fix pass (2026-06-16): the reports route was standardised on the
+    // canonical school-admin envelope `{ success, data }` for EVERY report type
+    // (the page unwraps `json.data` and throws on `!json.success`). Previously
+    // school_overview returned a flat object; the metrics now live under
+    // `body.data`. Repaired to the new envelope — NOT weakened.
+    expect(body.success).toBe(true);
+    expect(body.data.total_students).toBe(0);
+    expect(body.data.total_quizzes).toBe(0);
   });
 });
 

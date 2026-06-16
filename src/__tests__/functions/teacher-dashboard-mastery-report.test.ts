@@ -615,9 +615,16 @@ describe('teacher-dashboard dispatcher — Phase 3A Wave C actions present', () 
     expect(src).toContain("select('bloom_level, is_correct')");
   });
 
-  it('REGRESSION: mastery reuses the bkt_mastery_state read (BKT verbatim, no new scoring)', async () => {
+  it('REGRESSION: mastery reuses the concept_mastery read (BKT verbatim, no new scoring)', async () => {
+    // E2E fix pass (2026-06-16): the read was repointed off the phantom
+    // `bkt_mastery_state` table (which never existed on disk → every report
+    // silently returned an empty mastery block) onto the real `concept_mastery`
+    // table that actually carries the BKT p_know/attempts state. Pin the REAL
+    // table so a future refactor cannot regress back to the phantom name.
     const src = await readEdgeSource();
-    expect(src).toContain("from('bkt_mastery_state')");
+    expect(src).toContain("from('concept_mastery')");
+    // The phantom table must NOT reappear anywhere in the Edge source.
+    expect(src).not.toContain("from('bkt_mastery_state')");
     // p_know is read, surfaced as a percent — never recomputed.
     expect(src).toContain("select('topic_id, p_know, attempts')");
   });

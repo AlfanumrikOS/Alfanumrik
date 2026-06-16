@@ -128,7 +128,7 @@ function firstName(fullName: string | null | undefined): string {
 
 /**
  * Inline progress summary line — the "attachment" for include_report. REUSES
- * Wave C's two read sources VERBATIM (bkt_mastery_state p_know → percent;
+ * Wave C's two read sources VERBATIM (concept_mastery p_know → percent;
  * quiz_sessions.score_percent → recent avg). No scoring/XP math, no new mastery
  * derivation, no file upload — a migration-free inline text summary. Returns
  * null (no line appended) when there is no signal yet.
@@ -139,7 +139,7 @@ async function buildReportSummaryLine(studentId: string): Promise<string | null>
   let masteryPct: number | null = null;
   try {
     const { data: bkt } = await supabaseAdmin
-      .from('bkt_mastery_state')
+      .from('concept_mastery')
       .select('p_know')
       .eq('student_id', studentId);
     const pcts = (bkt ?? []).map((r) =>
@@ -147,7 +147,7 @@ async function buildReportSummaryLine(studentId: string): Promise<string | null>
     );
     if (pcts.length > 0) masteryPct = Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length);
   } catch {
-    /* bkt_mastery_state absent — omit mastery */
+    /* concept_mastery absent — omit mastery */
   }
 
   // Recent avg = mean of completed quiz_sessions.score_percent (identical to

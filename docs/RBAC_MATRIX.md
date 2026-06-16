@@ -96,6 +96,7 @@ The `school.*` family scopes the institution-admin school-admin console (distinc
 | Permission Code | Description |
 |----------------|-------------|
 | `school.manage_exams` | Schedule, edit, and remove school-wide assessments/exams (school-admin exams console) |
+| `school.manage_api_keys` | School-admin self-service management of school API keys |
 
 ### Competition Permissions (competition)
 
@@ -228,6 +229,7 @@ Legend: **X** = explicitly granted
 | `institution.view_reports` | | | | | X | | | | | X | X |
 | **School** | | | | | | | | | | | |
 | `school.manage_exams` | | | | | X | | | | | X | X |
+| `school.manage_api_keys` | | | | | X | | | | | X | X |
 | **Competition** | | | | | | | | | | | |
 | `competition.access` | | | | | | | | | | X | X |
 | **Content** | | | | | | | | | | | |

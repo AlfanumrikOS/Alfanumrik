@@ -22,6 +22,30 @@
  *   and authorizeSchoolAdmin(request, '<code>'), then asserts each referenced
  *   code is resolvable to a role in the canonical SQL permission registry.
  *
+ * THE SCHOOLADMINPERMISSIONCODE({off,on}) BLIND SPOT (E2E fix pass, 2026-06-16)
+ *   The original regex ONLY matched the two literal helpers above. But many
+ *   school-admin routes do NOT pass a literal — they pass a flag-conditional
+ *   selector:
+ *       authorizeSchoolAdmin(request,
+ *         await schoolAdminPermissionCode({ off: 'school.manage_api_keys',
+ *                                           on:  'institution.manage' }))
+ *   schoolAdminPermissionCode (src/lib/school-admin/permission-code.ts) returns
+ *   the `off` code while ff_school_admin_rbac is OFF (today's prod default) and
+ *   the `on` code while ON. BOTH codes are live authorization targets — whichever
+ *   the flag selects is handed straight to authorizeRequest. The drift-guard's
+ *   regex never saw inside the object literal, so when `school.manage_api_keys`
+ *   (the `off` code on the api-keys route) was granted to NO role, the guard
+ *   stayed GREEN while EVERY school admin 403'd on the API-keys console with the
+ *   flag OFF — exactly the bug class this guard exists to kill, slipping through
+ *   the one extraction path it didn't cover.
+ *
+ *   FIX: this guard now ALSO extracts the off:/on: string literals from every
+ *   schoolAdminPermissionCode({ ... }) call and treats each as a route-referenced
+ *   code subject to the same "must resolve to a granted role" invariant. With
+ *   `school.manage_api_keys` seeded + granted to institution_admin by migration
+ *   20260620000500, both arms of every selector now resolve and the guard is GREEN
+ *   by genuine grant. Reintroducing an ungranted code in EITHER arm now fails.
+ *
  * CANONICAL REGISTRY (single source of truth = the SQL migrations, NOT the TS
  *   PERMISSIONS enum in src/lib/rbac.ts)
  *   The TS `PERMISSIONS` enum is a typing convenience and is INCOMPLETE (it omits
@@ -94,15 +118,41 @@ function walkRouteFiles(dir: string): string[] {
 const AUTHORIZE_CALL_RE =
   /authorize(?:Request|SchoolAdmin)\(\s*request\s*,\s*['"]([a-z_]+\.[a-z_]+)['"]/g;
 
+// Matches schoolAdminPermissionCode({ off: 'code', on: 'code' }) — the
+// flag-conditional selector whose result is handed to authorizeSchoolAdmin. BOTH
+// the off and on codes are live authorization targets (the flag picks one at
+// runtime), so BOTH must resolve to a granted role. The `off` arm in particular
+// is the one the regex above never saw — and the exact arm where
+// `school.manage_api_keys` 403'd undetected. Order-independent (off-then-on and
+// on-then-off both occur in the tree), so two passes, one per key.
+const SAPC_OFF_RE =
+  /schoolAdminPermissionCode\(\s*\{[^}]*\boff\s*:\s*['"]([a-z_]+\.[a-z_]+)['"]/g;
+const SAPC_ON_RE =
+  /schoolAdminPermissionCode\(\s*\{[^}]*\bon\s*:\s*['"]([a-z_]+\.[a-z_]+)['"]/g;
+
 function collectRouteCodeRefs(): RouteCodeRef[] {
   const files = walkRouteFiles(API_ROOT);
   const refs: RouteCodeRef[] = [];
   for (const file of files) {
     const src = readFileSync(file, 'utf8');
+    const rel = file.replace(REPO_ROOT, '').replace(/\\/g, '/');
     let m: RegExpExecArray | null;
+
     AUTHORIZE_CALL_RE.lastIndex = 0;
     while ((m = AUTHORIZE_CALL_RE.exec(src))) {
-      refs.push({ code: m[1], file: file.replace(REPO_ROOT, '').replace(/\\/g, '/') });
+      refs.push({ code: m[1], file: rel });
+    }
+
+    // schoolAdminPermissionCode({ off, on }) — extract BOTH arms. Each is a code
+    // authorizeSchoolAdmin may receive depending on ff_school_admin_rbac, so each
+    // is subject to the same "granted to ≥1 role" invariant.
+    SAPC_OFF_RE.lastIndex = 0;
+    while ((m = SAPC_OFF_RE.exec(src))) {
+      refs.push({ code: m[1], file: rel });
+    }
+    SAPC_ON_RE.lastIndex = 0;
+    while ((m = SAPC_ON_RE.exec(src))) {
+      refs.push({ code: m[1], file: rel });
     }
   }
   return refs;
@@ -280,5 +330,94 @@ describe('RBAC permission-code drift guard — Phase 0 fixes locked in', () => {
     );
     expect(examsRefs.length).toBeGreaterThan(0);
     for (const ref of examsRefs) expect(ref.code).toBe('school.manage_exams');
+  });
+});
+
+describe('RBAC permission-code drift guard — schoolAdminPermissionCode({off,on}) coverage (E2E fix pass)', () => {
+  // Re-extract directly here so this block proves the EXTENSION itself works,
+  // independent of how collectRouteCodeRefs folds the arms into routeRefs.
+  function collectSapcCodes(): { off: RouteCodeRef[]; on: RouteCodeRef[] } {
+    const files = walkRouteFiles(API_ROOT);
+    const off: RouteCodeRef[] = [];
+    const on: RouteCodeRef[] = [];
+    for (const file of files) {
+      const src = readFileSync(file, 'utf8');
+      const rel = file.replace(REPO_ROOT, '').replace(/\\/g, '/');
+      let m: RegExpExecArray | null;
+      SAPC_OFF_RE.lastIndex = 0;
+      while ((m = SAPC_OFF_RE.exec(src))) off.push({ code: m[1], file: rel });
+      SAPC_ON_RE.lastIndex = 0;
+      while ((m = SAPC_ON_RE.exec(src))) on.push({ code: m[1], file: rel });
+    }
+    return { off, on };
+  }
+
+  const sapc = collectSapcCodes();
+
+  it('the extension actually finds schoolAdminPermissionCode call sites (not a no-op)', () => {
+    // If this drops to zero, the helper was renamed / the regex rotted and the
+    // off:/on: blind spot is open again — fail loudly.
+    expect(sapc.off.length).toBeGreaterThan(0);
+    expect(sapc.on.length).toBeGreaterThan(0);
+  });
+
+  it('extracts BOTH the off: AND on: code from a known multi-arm call site (api-keys)', () => {
+    const apiKeysOff = sapc.off.filter((r) =>
+      r.file.endsWith('/api/school-admin/api-keys/route.ts'),
+    );
+    const apiKeysOn = sapc.on.filter((r) =>
+      r.file.endsWith('/api/school-admin/api-keys/route.ts'),
+    );
+    // The api-keys route uses { off: 'school.manage_api_keys', on: 'institution.manage' }
+    // on all three verbs.
+    expect(apiKeysOff.length).toBeGreaterThan(0);
+    expect(apiKeysOn.length).toBeGreaterThan(0);
+    expect(apiKeysOff.every((r) => r.code === 'school.manage_api_keys')).toBe(true);
+    expect(apiKeysOn.every((r) => r.code === 'institution.manage')).toBe(true);
+  });
+
+  it('the extracted off:/on: codes are now folded into the main routeRefs set the core assertion scans', () => {
+    // The whole point: the core "every route code resolves" assertion must now
+    // see school.manage_api_keys. If folding regressed, this catches it.
+    const foldedCodes = new Set(routeRefs.map((r) => r.code));
+    expect(foldedCodes.has('school.manage_api_keys')).toBe(true);
+    expect(foldedCodes.has('institution.manage')).toBe(true);
+  });
+
+  it('EVERY off: and on: code resolves to a granted role (the new invariant, now enforced)', () => {
+    const all = [...sapc.off, ...sapc.on];
+    const offenders = all
+      .filter((r) => !universe.has(r.code) && !(r.code in KNOWN_UNGRANTED_CODES))
+      .map((r) => `${r.code}  ←  ${r.file}`);
+    expect(
+      offenders,
+      `These schoolAdminPermissionCode({off,on}) arms reference a code granted to ` +
+        `NO role — the flag-conditional selector would 403 every school admin in ` +
+        `the arm the flag selects:\n  ${offenders.join('\n  ')}`,
+    ).toEqual([]);
+  });
+
+  it('REGRESSION: "school.manage_api_keys" (the original blind-spot code) now resolves (migration 20260620000500)', () => {
+    // Before the seed+grant migration this code was in NO role, and before this
+    // extension the guard could not see it (it lives only in an off: arm). Both
+    // gaps are now closed: the code is in the canonical universe AND the guard
+    // extracts it. This is the end-to-end proof the blind spot is shut.
+    expect(universe.has('school.manage_api_keys')).toBe(true);
+  });
+
+  it('would have CAUGHT the original blind spot: an ungranted off:-arm code is now an offender', () => {
+    // Simulate the pre-fix world on a synthetic source string: an off: arm whose
+    // code is granted to no role. The off-extraction regex must surface it so the
+    // core assertion would have failed (proving the guard now covers the path it
+    // historically missed).
+    const synthetic =
+      "authorizeSchoolAdmin(request, await schoolAdminPermissionCode({ off: 'school.totally_ungranted', on: 'institution.manage' }))";
+    SAPC_OFF_RE.lastIndex = 0;
+    const m = SAPC_OFF_RE.exec(synthetic);
+    expect(m).not.toBeNull();
+    expect(m![1]).toBe('school.totally_ungranted');
+    // And this synthetic code is genuinely absent from the canonical universe,
+    // so had it appeared in a real route it would be a hard offender.
+    expect(universe.has('school.totally_ungranted')).toBe(false);
   });
 });

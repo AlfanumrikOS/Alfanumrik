@@ -4728,3 +4728,86 @@ marketing-maps-to-billable-tier guard (17 tests, 1 file). **Total catalog: 122
 entries (target: 35 — TARGET EXCEEDED).**
 
 **Total: 122 entries.**
+
+## Portal RBAC/SaaS remediation — E2E fix pass: phantom-table repoints + drift-guard off:/on: coverage + cache table + enrollment sync + reports/parents envelope (2026-06-16) — REG-155..REG-159
+
+Source: the E2E fix-pass of `feat/portal-rbac-saas-remediation`. A cluster of
+SILENT-FAILURE bugs was fixed — each one returned empty/wrong data with NO error,
+so no existing test caught them. The fixes and their guards:
+
+- **Phantom-table repoints (teacher dashboard functional).** The teacher-dashboard
+  Edge Function and `/api/teacher/parent-notify` read three tables that never
+  existed on disk: `bkt_mastery_state` → `concept_mastery` (BKT p_know/attempts),
+  `teacher_class_assignments` → `class_teachers`, `classroom_responses` →
+  `classroom_poll_responses`. Every mastery/roster/poll read silently returned
+  empty. Two existing tests asserted the PHANTOM names and were REPAIRED to the
+  real tables (not weakened) + a negative guard pins that the phantom names can
+  never reappear in the Edge source.
+- **schoolAdminPermissionCode({off,on}) drift-guard blind spot.** The standing
+  RBAC permission-code drift guard only scanned `authorizeRequest`/
+  `authorizeSchoolAdmin` literals and NEVER looked inside
+  `schoolAdminPermissionCode({ off, on })`. That is exactly why
+  `school.manage_api_keys` (the api-keys route `off:` arm, granted to no role)
+  403'd every school admin with `ff_school_admin_rbac` OFF, undetected. The guard
+  now extracts BOTH the `off:` and `on:` literals and subjects each to the
+  "resolves to a granted role" invariant; with migration 20260620000500 seeding +
+  granting the code, both arms resolve.
+- **parent_weekly_reports cache table (20260620000600).** Created with
+  UNIQUE(student_id, guardian_id) + RLS + guardian/service-role policies so the
+  parent weekly-report 24h cache (which read a non-existent table → re-invoked
+  Claude on every load) becomes real. Additive, idempotent.
+- **class_students ↔ class_enrollments sync invariant (20260620000700).**
+  Bidirectional backfill + AFTER INSERT triggers (each ON CONFLICT DO NOTHING,
+  recursion-safe, SECURITY DEFINER) so a student enrolled via EITHER table appears
+  on ALL surfaces. Additive, no new table, no RLS change.
+- **reports + parents contract envelope.** `/api/school-admin/reports` now returns
+  `{success,data}` on EVERY type (+ a new `student_search` type + `class_avg_score`
+  on class_performance); `/api/school-admin/parents` GET now returns
+  `{success,data:{links:[{id,status,linked_at,...}]}}`. The pages unwrap
+  `json.data` and throw on `!json.success`, so a bare-payload regression would
+  render a broken report/list with no error.
+
+> **ID note:** REG-154 is the previous entry (pricing single-source-of-truth,
+> 2026-06-16). REG-155..REG-159 are the next free ids (the task brief referenced
+> "after REG-154").
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-155 | `teacher_dashboard_phantom_table_repoints` | **THE PHANTOM-TABLE REPOINT GUARD (teacher dashboard functional, P8-adjacent).** **(1) Mastery reads the REAL table:** the teacher-dashboard Edge source contains `from('concept_mastery')` (BKT p_know/attempts verbatim, `select('topic_id, p_know, attempts')`) and the phantom `from('bkt_mastery_state')` appears NOWHERE in the Edge source (negative guard — a refactor cannot regress to the non-existent name that returned empty silently). **(2) parent-notify mastery mock follows the route:** the `/api/teacher/parent-notify` `include_report` mastery line reads `concept_mastery` (the route's `buildReportSummaryLine` reads `from('concept_mastery').select('p_know')`), so the in-memory mock case is keyed on the real table — the mastery-summary assertion now exercises a real read path, not a phantom. **(3) Bloom source unchanged:** the Bloom rollup still reads `quiz_responses.bloom_level` (the answered-question row), untouched by the repoint. **(4) Whole-suite phantom sweep:** no test under `src/__tests__` still references `bkt_mastery_state` / `teacher_class_assignments` / `classroom_responses` as a live table name. | `src/__tests__/functions/teacher-dashboard-mastery-report.test.ts` (repaired: concept_mastery + negative guard), `src/__tests__/api/teacher/parent-notify/route.test.ts` (repaired: mock case `concept_mastery`) | U (unit; Edge source-string inspection + route handler with table-aware in-memory admin mock) |
+| REG-156 | `rbac_drift_guard_covers_schoolAdminPermissionCode_off_on` | **THE DRIFT-GUARD off:/on: EXTENSION (P9 — the blind spot that 403'd school admins undetected).** **(1) Extension is live (not a no-op):** the guard now extracts both the `off:` and `on:` string literals from every `schoolAdminPermissionCode({ ... })` call site across `src/app/api/**/route.ts`; both extraction lists are non-empty. **(2) Both arms extracted from a known site:** the api-keys route yields `off: 'school.manage_api_keys'` AND `on: 'institution.manage'` on all three verbs. **(3) Folded into the core scan:** the extracted off/on codes are now members of the main `routeRefs` set the "every route code resolves to a role" assertion scans (`school.manage_api_keys` + `institution.manage` both present). **(4) New invariant enforced:** EVERY off:/on: arm resolves to a granted role (offenders list empty). **(5) The original blind-spot code resolves:** `school.manage_api_keys` is in the canonical universe (seeded + granted by 20260620000500), proving the end-to-end fix. **(6) Would-have-caught proof:** a synthetic `off: 'school.totally_ungranted'` arm is surfaced by the off-extraction regex and is absent from the universe — had it been a real route it would be a hard offender. | `src/__tests__/rbac-permission-code-drift-guard.test.ts` (extended: off:/on: extraction + dedicated coverage describe block) | U (unit; static scan of API route source + canonical permission universe built from migration SQL — no DB) |
+| REG-157 | `parent_weekly_reports_cache_table_unique_rls` | **STATIC MIGRATION CANARY (20260620000600 — FIX B).** **(1) Table created idempotently:** `CREATE TABLE IF NOT EXISTS public.parent_weekly_reports`. **(2) Route-shaped columns:** `student_id, guardian_id, report, language, generated_at` all present (the columns the parent-report route reads/upserts). **(3) UNIQUE(student_id, guardian_id):** the constraint the route's `onConflict:'student_id,guardian_id'` upsert needs is present and added via a guarded `IF NOT EXISTS … pg_constraint` block (replay-safe). **(4) RLS enabled IN-MIGRATION (P8):** `ENABLE ROW LEVEL SECURITY` on the new table. **(5) Guardian policies:** SELECT/INSERT/UPDATE policies each scoped via `is_guardian_of(student_id)`, all idempotent (`DROP POLICY IF EXISTS` + CREATE); plus a `service_role` policy (the route's actual supabaseAdmin runtime path). **(6) FK cascade:** `student_id → students` and `guardian_id → guardians` both `ON DELETE CASCADE`. **(7) Additive-only:** no DROP TABLE/COLUMN/TRUNCATE/DELETE/UPDATE (executable SQL, comments stripped). **(8) Route still upserts onConflict student_id,guardian_id** (the constraint must keep matching). | `src/__tests__/contract/portal-rbac-remediation-migration-canaries.test.ts` (FIX B block) | U (static source-level; reads the migration SQL from disk with comments stripped — runs in the normal lane under `contract/`, not the excluded `migrations/` lane) |
+| REG-158 | `class_students_class_enrollments_bidirectional_sync` | **STATIC MIGRATION CANARY (20260620000700 — FIX C, enrollment split-brain).** **(1) Backfill BOTH directions:** `class_students → class_enrollments` AND `class_enrollments → class_students`, each `ON CONFLICT (class_id, student_id) DO NOTHING`. **(2) AFTER INSERT trigger each direction:** one `AFTER INSERT ON class_students`, one `AFTER INSERT ON class_enrollments`. **(3) Recursion-safe mirror:** ≥4 `ON CONFLICT (class_id, student_id) DO NOTHING` occurrences (2 backfills + 2 trigger bodies, quoted-or-unquoted columns) — a conflict-skipped zero-row insert fires no row trigger, so the bounce terminates after one hop. **(4) SECURITY DEFINER + pinned search_path** on the mirror functions (a faithful copy of an already-authorized row, no privilege-escalation surface). **(5) Idempotent re-create:** `DROP TRIGGER IF EXISTS` before each `CREATE TRIGGER`; functions are `CREATE OR REPLACE`. **(6) No new table** (no new RLS posture — operates on the two existing roster tables). **(7) Additive-only:** the ONLY DROPs in executable SQL are trigger/function (re-create) guards — no DROP TABLE/COLUMN/TRUNCATE/DELETE/UPDATE. | `src/__tests__/contract/portal-rbac-remediation-migration-canaries.test.ts` (FIX C block) | U (static source-level; comments stripped before the additive-only scan; normal lane under `contract/`) |
+| REG-159 | `school_admin_reports_parents_response_envelope` | **THE REPORTS + PARENTS CONTRACT-ENVELOPE GUARD (silent-failure prevention).** **REPORTS** (`GET /api/school-admin/reports`): authz denial returns the auth `errorResponse` verbatim (no DB); `school_overview` / default / `class_performance` / `student_detail` / `subject_gaps` each return `{success:true, data}`; `class_performance` carries the NEW `class_avg_score` field (alongside backward-compat `avg_score`) and returns `class_avg_score:0` on an empty roster; `student_detail.student.grade` is a STRING (P5); the NEW `student_search` type is ROUTED (not "Unknown report type"), returns `data` as an array of `{id,name,grade,...}`, and short-circuits to `[]` for a <2-char query; an unknown type → 400 `{success:false, error}` (envelope on the error branch too). **PARENTS** (`GET /api/school-admin/parents`): authz denial verbatim; empty school → `{success:true, data:{links:[],total:0}}`; the happy path's `data.links[*]` carries the three load-bearing keys `id` (= `guardian_id:student_id`), `status`, `linked_at` PLUS the display fields (`parent_name`/`student_name`/`student_grade` string P5); `linked_at` falls back to `created_at` when the dedicated column is null; `page`/`limit` echoed in the envelope. **Also pinned:** REG-159 repairs the legacy `school-admin-api.test.ts` school_overview assertion that read the OLD flat shape — now reads `body.data.total_students` (repaired to the new envelope, not weakened). | `src/__tests__/api/school-admin/reports-envelope-contract.test.ts` (10), `src/__tests__/api/school-admin/parents-list-contract.test.ts` (5), `src/__tests__/school-admin-api.test.ts` (repaired school_overview case) | U (unit; real GET handlers with school-admin-auth + per-table chainable in-memory admin clients mocked) |
+
+### Invariants covered by this section
+
+- P8 RLS boundary — REG-157 (parent_weekly_reports ships RLS + guardian/service-role
+  policies in the same migration that creates the table); REG-158 (the roster sync
+  triggers are SECURITY DEFINER faithful copies that touch no RLS posture and add
+  no new table); REG-155 (the teacher-dashboard mastery/roster reads now hit the
+  real RLS-backed tables instead of phantom names that returned empty).
+- P9 RBAC enforcement — REG-156 (the drift guard now covers the
+  `schoolAdminPermissionCode({off,on})` extraction path — the exact blind spot
+  that let `school.manage_api_keys`, granted to no role, 403 every school admin
+  with the flag OFF; both arms now must resolve to a granted role).
+- P5 Grade format — REG-159 (`student_detail` + `student_search` + parents `links`
+  carry `grade` as a STRING through the new envelopes).
+- Operational integrity / additive-migration safety — REG-157/REG-158 (both new
+  migrations are additive + idempotent: no DROP TABLE/COLUMN/TRUNCATE/DELETE/UPDATE;
+  the only DROPs are trigger/function/policy re-create guards).
+- Silent-failure / contract-drift prevention — REG-155 (phantom-table reads that
+  returned empty with no error), REG-159 (bare-payload regressions on the reports/
+  parents endpoints would render broken surfaces with no error).
+
+### Catalog total
+
+Pre-REG-155: 122 entries (through the pricing single-source-of-truth guard,
+REG-154). The E2E fix pass adds REG-155..REG-159: phantom-table repoints (teacher
+dashboard functional), schoolAdminPermissionCode drift-guard off:/on: coverage +
+school.manage_api_keys, parent_weekly_reports cache table, class_students↔
+class_enrollments sync invariant, and the reports/parents response-envelope
+contract (5 entries across 6 test files; 2 existing tests repaired to the correct
+tables/envelope, not weakened). **Total catalog: 127 entries (target: 35 — TARGET
+EXCEEDED).**
+
+**Total: 127 entries.**

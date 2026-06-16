@@ -215,7 +215,12 @@ vi.mock('@/lib/supabase-admin', () => ({
         case 'guardian_student_links': return makeBuilder(() => links as unknown as Row[]);
         case 'teacher_remediation_assignments': return makeBuilder(() => remediations as unknown as Row[]);
         case 'curriculum_topics':  return makeBuilder(() => topics as unknown as Row[]);
-        case 'bkt_mastery_state':  return makeBuilder(() => bktRows as unknown as Row[]);
+        // E2E fix pass (2026-06-16): the route's include_report mastery read was
+        // repointed off the phantom `bkt_mastery_state` table (never on disk →
+        // the mastery line silently never rendered) onto the real
+        // `concept_mastery` table. The mock case must follow, or the
+        // include_report mastery assertion below would pass against a phantom.
+        case 'concept_mastery':    return makeBuilder(() => bktRows as unknown as Row[]);
         case 'quiz_sessions':      return makeBuilder(() => quizSessions as unknown as Row[]);
         case 'teacher_parent_threads':
           return makeBuilder(
