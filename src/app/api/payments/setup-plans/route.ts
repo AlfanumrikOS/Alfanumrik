@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     // Get paid plans that need Razorpay plan IDs
     const { data: plans } = await admin
       .from('subscription_plans')
-      .select('id, plan_code, name, price_monthly, razorpay_plan_id_monthly')
+      .select('id, plan_code, name, price_monthly, razorpay_plan_id_monthly, razorpay_plan_id_quarterly')
       .eq('is_active', true)
       .gt('price_monthly', 0)
       .order('sort_order');
@@ -44,40 +44,64 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'No paid plans found' });
     }
 
-    const results: Array<{ plan_code: string; status: string; razorpay_plan_id?: string }> = [];
+    const results: Array<{
+      plan_code: string;
+      status: string;
+      razorpay_plan_id?: string;
+      razorpay_plan_id_quarterly?: string;
+    }> = [];
 
     for (const plan of plans) {
-      if (plan.razorpay_plan_id_monthly) {
-        results.push({
-          plan_code: plan.plan_code,
-          status: 'already_exists',
-          razorpay_plan_id: plan.razorpay_plan_id_monthly,
-        });
-        continue;
+      // ── Monthly plan provisioning (existing behaviour) ──
+      let monthlyId: string | null = plan.razorpay_plan_id_monthly;
+      let monthlyStatus = 'already_exists';
+      if (!monthlyId) {
+        try {
+          const rzpPlan = await createRazorpayPlan(
+            `Alfanumrik ${plan.name} Monthly`,
+            plan.price_monthly,
+          );
+          monthlyId = rzpPlan.id;
+          monthlyStatus = 'created';
+          await admin
+            .from('subscription_plans')
+            .update({ razorpay_plan_id_monthly: rzpPlan.id })
+            .eq('id', plan.id);
+        } catch (err) {
+          monthlyStatus = `error: ${err instanceof Error ? err.message : 'unknown'}`;
+        }
       }
 
-      try {
-        const rzpPlan = await createRazorpayPlan(
-          `Alfanumrik ${plan.name} Monthly`,
-          plan.price_monthly,
-        );
-
-        await admin
-          .from('subscription_plans')
-          .update({ razorpay_plan_id_monthly: rzpPlan.id })
-          .eq('id', plan.id);
-
-        results.push({
-          plan_code: plan.plan_code,
-          status: 'created',
-          razorpay_plan_id: rzpPlan.id,
-        });
-      } catch (err) {
-        results.push({
-          plan_code: plan.plan_code,
-          status: `error: ${err instanceof Error ? err.message : 'unknown'}`,
-        });
+      // ── Quarterly plan provisioning ──
+      // Quarterly is a monthly-period plan billed every 3rd interval. Razorpay
+      // charges item.amount per interval, so the per-charge amount is
+      // price_monthly × 3 (three months billed at the end of each quarter).
+      let quarterlyId: string | null = plan.razorpay_plan_id_quarterly;
+      let quarterlyStatus = 'already_exists';
+      if (!quarterlyId) {
+        try {
+          const rzpQuarterly = await createRazorpayPlan(
+            `Alfanumrik ${plan.name} Quarterly`,
+            plan.price_monthly * 3,
+            { interval: 3 },
+          );
+          quarterlyId = rzpQuarterly.id;
+          quarterlyStatus = 'created';
+          await admin
+            .from('subscription_plans')
+            .update({ razorpay_plan_id_quarterly: rzpQuarterly.id })
+            .eq('id', plan.id);
+        } catch (err) {
+          quarterlyStatus = `error: ${err instanceof Error ? err.message : 'unknown'}`;
+        }
       }
+
+      results.push({
+        plan_code: plan.plan_code,
+        status: `monthly:${monthlyStatus}; quarterly:${quarterlyStatus}`,
+        ...(monthlyId ? { razorpay_plan_id: monthlyId } : {}),
+        ...(quarterlyId ? { razorpay_plan_id_quarterly: quarterlyId } : {}),
+      });
     }
 
     return NextResponse.json({ results });

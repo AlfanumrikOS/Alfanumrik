@@ -915,7 +915,11 @@ export async function POST(request: NextRequest) {
               Math.round(
                 Number(schoolSub.seats_purchased || notes.seats || 1) *
                 Number(schoolSub.price_per_seat_monthly || 0) *
-                (schoolSub.billing_cycle === 'yearly' ? 12 : 1) * 100
+                (schoolSub.billing_cycle === 'yearly'
+                  ? 12
+                  : schoolSub.billing_cycle === 'quarterly'
+                    ? 3
+                    : 1) * 100
               );
 
             const idempotencyKey = paymentEntity?.id ?? `school_sub_${rzSubId}_${Date.now()}`;

@@ -132,3 +132,34 @@ export const SCHOOL_PER_SEAT_MARKETING_INR: number = SCHOOL_SEAT_TIER_INR.basic;
 export const SCHOOL_PER_SEAT_MARKETING_LABEL: string = formatINR(
   SCHOOL_PER_SEAT_MARKETING_INR,
 );
+
+// ─── Quarterly (3-month) per-seat — DISPLAY / MARKETING ONLY ──────────────────
+//
+// IMPORTANT: this is a DERIVED display figure, not a billing input. The billing
+// path always charges `price_per_seat_monthly × seats × cycle` (cycle = 3 for
+// quarterly). A school admin comparing cadences sees "₹297 per seat per
+// quarter" = the basic tier × 3 months. There is NO independent quarterly
+// literal — changing the basic tier above moves this automatically (so the
+// PRICING-CHANGE POLICY in the module header still covers it with one number).
+
+/**
+ * The per-seat amount billed across a 3-month (quarterly) cycle, derived from
+ * the system-of-record basic tier. e.g. ₹99/mo × 3 = ₹297/quarter.
+ * DISPLAY/MARKETING ONLY — billing computes price_per_seat_monthly × seats × 3.
+ */
+export const SCHOOL_PER_SEAT_QUARTERLY_INR: number = SCHOOL_SEAT_TIER_INR.basic * 3;
+
+/** Pre-formatted quarterly per-seat headline, e.g. "₹297". Display only. */
+export const SCHOOL_PER_SEAT_QUARTERLY_LABEL: string = formatINR(
+  SCHOOL_PER_SEAT_QUARTERLY_INR,
+);
+
+/**
+ * Resolve the DISPLAY per-seat price for a 3-month quarterly cycle for a given
+ * school plan tier (tier monthly price × 3). Mirrors `schoolSeatPriceForTier`
+ * but for the quarterly display figure. DISPLAY/MARKETING ONLY — the live
+ * billed amount is still `price_per_seat_monthly × seats × 3`.
+ */
+export function schoolSeatPriceQuarterly(tier: string | null | undefined): number {
+  return schoolSeatPriceForTier(tier) * 3;
+}

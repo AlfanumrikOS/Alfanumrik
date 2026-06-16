@@ -4811,3 +4811,75 @@ tables/envelope, not weakened). **Total catalog: 127 entries (target: 35 — TAR
 EXCEEDED).**
 
 **Total: 127 entries.**
+
+## Quarterly school billing + demo-comp entitlement (P11) (2026-06-16) — REG-160..REG-161
+
+Source: `feat/portal-rbac-saas-remediation` — per-school QUARTERLY billing on
+`POST /api/school-admin/subscription` plus a sales/onboarding DEMO-COMP
+entitlement (the one sanctioned exception to P11's "never grant plan access
+without verified payment"). Both touch the payment-integrity invariant, so both
+get a regression pin.
+
+- **Quarterly billing (P11 — no split-brain, no pre-payment access).** A
+  `billing_cycle:'quarterly'` POST selects the `razorpay_plan_id_quarterly`
+  plan id (NEVER the monthly id — a quarterly request charged on the monthly
+  plan would charge 1× while the DB records quarterly = split-brain billing),
+  uses `totalBillingCycles=4`, carries `school_id` in Razorpay notes, and leaves
+  the row at pre-payment `'trial'` (the signature-verified webhook is the only
+  thing that flips it to `'active'`). When the quarterly plan id is NULL the
+  route 400s with code `plan_not_provisioned`, creating NO Razorpay subscription
+  (no orphan) and with NO silent monthly fallback. The webhook's school
+  invoice-amount fallback multiplies seats × per-seat price × **3** for
+  quarterly (×1 monthly, ×12 yearly) — a regression to ×1 would under-bill every
+  quarterly school by two-thirds. `createRazorpayPlan` gained an optional
+  `opts:{period,interval}` 3rd arg (quarterly = `{interval:3}` on a monthly
+  period); the 2-arg call shape is unchanged (backward compatible).
+- **Demo-comp server-gated boundary (the P11 exception).** A DEMO school
+  (`schools.is_demo=true`, resolved ONLY from the server-side `auth.schoolId` via
+  `isDemoSchool()`, never a request-body field) gets a complimentary
+  `status='active'` grant with `is_demo=true`, `razorpay_subscription_id=null`,
+  period stamped (+3mo quarterly / +1mo monthly), ZERO Razorpay calls,
+  `{comp:true}`, and a metadata-only `subscription.comp_granted` audit (no PII).
+  The comp branch runs ABOVE the quarterly null-guard, so a demo school with an
+  unprovisioned quarterly plan STILL comps (intentional reorder, pinned). The
+  load-bearing security boundary: a NON-DEMO school can NEVER reach the comp
+  branch — `isDemoSchool` returns false → real Razorpay path; and `isDemoSchool`
+  FAILS CLOSED (any error / missing row / null flag / thrown client → false), so
+  a Supabase blip can never accidentally hand out a free grant.
+
+> **ID note:** REG-159 is the previous entry (reports/parents response envelope,
+> 2026-06-16). REG-160..REG-161 are the next free ids.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-160 | `school_admin_quarterly_billing_p11_no_split_brain` | **THE QUARTERLY BILLING P11 GUARD (no split-brain, no pre-payment access, no orphan).** **(1) Plan-id by cycle:** a quarterly POST creates the Razorpay sub with `razorpayPlanId='rzp_quarterly_plan'` and `totalBillingCycles=4`, and NEVER with the monthly plan id (a quarterly request charged on the monthly plan = split-brain). **(2) Pre-payment trial (P11):** the DB stamp sets `billing_cycle='quarterly'` + `razorpay_subscription_id` but sets NO `status` (row keeps pre-payment `'trial'`); no field smuggles `'active'` — only the signature-verified webhook activates. **(3) notes carry school_id** so the webhook can match + activate. **(4) Null-guard (P11, no orphan):** quarterly plan id NULL → 400 code `plan_not_provisioned`, `createRazorpaySubscription` NEVER called, and NO fallback to the (present) monthly id. **(5) Real-path guard intact:** a non-demo school with an unprovisioned quarterly plan still 400s `plan_not_provisioned` (no comp). **(6) Webhook invoice fallback ×3:** with no payment entity the school invoice amount = seats × price_per_seat_monthly × 3 × 100 paisa for quarterly (monthly ×1, yearly ×12) — captured off the `publishEvent` payload; a mutation to ×1 fails the test. **(7) createRazorpayPlan back-compat:** the 2-arg call posts `period='monthly'`, `interval=1`; `{interval:3}` posts `interval=3` (rupees→paisa ×100 at the boundary). **(8) Setup-plans provisions both cadences:** a fully-provisioned (monthly+quarterly) plan reports `monthly:already_exists; quarterly:already_exists` (no recreation); a bare plan creates both. | `src/__tests__/api/school-admin-subscription-quarterly-comp.test.ts` (quarterly happy-path + null-guard + real-path guard), `src/__tests__/payments/webhook-school-quarterly-invoice.test.ts` (3), `src/__tests__/lib/razorpay-create-plan.test.ts` (3), `src/__tests__/api/payments/status-and-setup-plans.test.ts` (repaired: both-cadence idempotency), `src/__tests__/pricing-drift-guard.test.ts` (quarterly derived-figure block) | U (unit; real POST/webhook handlers with school-admin-auth + table-aware in-memory admin mocks; fetch-stubbed createRazorpayPlan; publishEvent mock captures the computed invoice amount) |
+| REG-161 | `school_admin_demo_comp_server_gated_boundary` | **THE DEMO-COMP SERVER-GATED BOUNDARY (the P11 sanctioned exception — a real school can NEVER comp).** **(1) Comp grant shape:** a demo school's POST → response `{success:true, comp:true}` with `status:'active'`, `is_demo:true`, `razorpay_subscription_id:null`; the DB row stamps the same; ZERO Razorpay calls. **(2) Period by cycle:** comp `current_period_end` is ~+3 months for quarterly, ~+1 month for monthly. **(3) Metadata-only audit (P13):** exactly one `subscription.comp_granted` audit with `metadata:{is_demo:true, billing_cycle, razorpay_subscription_id:null,…}` and NO PII (no email/phone/name keys anywhere in the audit blob). **(4) Reorder pin:** a demo school with an UNPROVISIONED quarterly plan STILL comps (the comp branch runs above the null-guard) — response is NOT `plan_not_provisioned`. **(5) THE CRITICAL BOUNDARY — non-demo can NEVER comp:** `isDemoSchool=false` → real Razorpay path (a real sub id is returned), response carries NO `comp`, the row stays pre-payment trial, and NO `subscription.comp_granted` audit fires. **(6) Fail-closed:** `isDemoSchool` is proven (directly) to return false — never throw — on is_demo=false / null / missing row / query error / thrown client / rejected maybeSingle / empty school id (no DB touch for empty id); the route therefore defaults to the payment-gated path on any predicate failure. **(7) Predicate input:** `isDemoSchool` resolves is_demo via `eq('id', schoolId)` from the server-resolved id only. | `src/__tests__/api/school-admin-subscription-quarterly-comp.test.ts` (demo comp quarterly/monthly + reorder pin + non-demo-never-comp + fail-closed), `src/__tests__/lib/is-demo-school.test.ts` (10) | U (unit; real POST handler with isDemoSchool + logSchoolAudit mocked at the boundary; direct is-demo-school predicate test with a table-aware admin mock) |
+
+### Invariants covered by this section
+
+- P11 Payment integrity — REG-160 (quarterly: plan-id-by-cycle with no
+  monthly fallback, pre-payment `'trial'` until the signature-verified webhook
+  activates, null-guard creates no orphan Razorpay sub, ×3 invoice multiplier);
+  REG-161 (the demo-comp exception is the ONLY way to reach `status='active'`
+  without a verified payment, and it is reachable ONLY by a server-resolved
+  `is_demo=true` school — a real school can never comp, even on a Supabase blip,
+  because `isDemoSchool` fails closed).
+- P13 Data privacy — REG-161 (the `subscription.comp_granted` audit is
+  metadata-only: no email/phone/name in the audit blob).
+
+### Catalog total
+
+Pre-REG-160: 127 entries (through the reports/parents response-envelope contract,
+REG-159). Quarterly school billing + demo-comp adds REG-160..REG-161: the
+quarterly-billing P11 guard (plan-id-by-cycle, pre-payment trial, null-guard /
+no-orphan, ×3 invoice fallback, createRazorpayPlan back-compat, both-cadence
+setup-plans idempotency) and the demo-comp server-gated boundary (comp grant
+shape + metadata-only audit + the load-bearing "non-demo can never comp" +
+fail-closed predicate). 2 entries across 6 test files (4 new: the
+quarterly+comp route test, the webhook quarterly-invoice test, the
+createRazorpayPlan back-compat test, the is-demo-school predicate test; 2
+extended/repaired: pricing-drift-guard quarterly block + status-and-setup-plans
+both-cadence idempotency, repaired to the new behavior not weakened). **Total
+catalog: 129 entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 129 entries.**

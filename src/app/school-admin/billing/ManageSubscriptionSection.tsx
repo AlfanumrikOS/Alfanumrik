@@ -22,13 +22,28 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Card, Button } from '@/components/ui';
+import {
+  SCHOOL_PER_SEAT_MARKETING_LABEL,
+  SCHOOL_PER_SEAT_QUARTERLY_LABEL,
+} from '@/lib/pricing';
+
+type BillingCycle = 'monthly' | 'quarterly';
 
 interface SubscriptionState {
   plan: string;
-  billing_cycle: 'monthly' | 'yearly';
+  billing_cycle: 'monthly' | 'quarterly' | 'yearly';
   seats_purchased: number;
   status: string;
   razorpay_subscription_id: string | null;
+  current_period_end: string | null;
+}
+
+/** Set after a successful demo-comp activation (no payment redirect). */
+interface CompResult {
+  plan: string;
+  billing_cycle: 'monthly' | 'quarterly' | 'yearly';
+  seats: number;
+  status: string;
   current_period_end: string | null;
 }
 
@@ -55,6 +70,18 @@ function t(isHi: boolean, en: string, hi: string): string {
   return isHi ? hi : en;
 }
 
+/** Human-friendly date for the comp period-end (locale-aware, no time). */
+function formatPeriodEnd(iso: string | null, isHi: boolean): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(isHi ? 'hi-IN' : 'en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
 export default function ManageSubscriptionSection({
   schoolId,
   seatsUsed,
@@ -71,9 +98,16 @@ export default function ManageSubscriptionSection({
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Set after a demo school activates a complimentary plan — drives the
+  // "Complimentary (demo account)" success state instead of a payment redirect.
+  const [compResult, setCompResult] = useState<CompResult | null>(null);
+
   // Form state (Change plan dialog)
   const [formPlan, setFormPlan] = useState<string>('starter');
   const [formSeats, setFormSeats] = useState<number>(50);
+  // Billing cadence for a NEW subscription (POST). Quarterly bills 3 months up
+  // front; monthly stays the recurring default. Yearly is not self-service.
+  const [formCycle, setFormCycle] = useState<BillingCycle>('monthly');
 
   // Cancel dialog state
   const [cancelImmediate, setCancelImmediate] = useState(false);
@@ -136,9 +170,11 @@ export default function ManageSubscriptionSection({
         return;
       }
       const method = isExistingSub ? 'PATCH' : 'POST';
+      // PATCH cannot change billing cycle (plan + seats only). The cycle
+      // selector is only meaningful for a NEW subscription via POST.
       const body = isExistingSub
         ? { plan: formPlan, seats: formSeats }
-        : { plan: formPlan, billing_cycle: 'monthly' as const, seats: formSeats };
+        : { plan: formPlan, billing_cycle: formCycle, seats: formSeats };
       const res = await fetch('/api/school-admin/subscription', {
         method,
         headers: {
@@ -149,13 +185,41 @@ export default function ManageSubscriptionSection({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
+        // Quarterly plan exists but Razorpay hasn't provisioned the quarterly
+        // plan id yet → friendly, support-pointed message (not the raw code).
+        if (json?.code === 'plan_not_provisioned') {
+          setErrorMsg(
+            t(
+              isHi,
+              'Quarterly billing isn’t set up for this plan yet — please contact support.',
+              'इस प्लान के लिए तिमाही बिलिंग अभी सेट नहीं है — कृपया सपोर्ट से संपर्क करें।',
+            ),
+          );
+          return;
+        }
         setErrorMsg(
-          (json?.error as string) ??
+          (json?.message as string) ??
+            (json?.error as string) ??
             t(isHi, 'Could not update subscription', 'सब्सक्रिप्शन अपडेट नहीं हो सका'),
         );
         return;
       }
-      // POST → redirect to Razorpay hosted page; PATCH → refresh in place.
+      // DEMO COMP → no payment redirect; show the complimentary success state.
+      if (json?.comp === true && json?.data) {
+        const d = json.data as Partial<CompResult>;
+        setCompResult({
+          plan: d.plan ?? formPlan,
+          billing_cycle: d.billing_cycle ?? formCycle,
+          seats: d.seats ?? formSeats,
+          status: d.status ?? 'active',
+          current_period_end: d.current_period_end ?? null,
+        });
+        changeDialog.current?.close();
+        onChange();
+        return;
+      }
+      // POST real success → redirect to Razorpay hosted page (unchanged).
+      // PATCH → refresh in place.
       if (method === 'POST' && (json?.data?.hosted_page_url as string)) {
         window.location.href = json.data.hosted_page_url as string;
         return;
@@ -202,6 +266,52 @@ export default function ManageSubscriptionSection({
 
   return (
     <section aria-label={t(isHi, 'Manage subscription', 'सब्सक्रिप्शन प्रबंधन')}>
+      {/* ── Complimentary (demo) activation banner ─────────────────── */}
+      {compResult && (
+        <Card className="mb-3">
+          <div
+            className="px-4 py-4 rounded-2xl"
+            style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)' }}
+            role="status"
+            data-testid="school-billing-comp-banner"
+          >
+            <div className="flex items-start gap-3">
+              <span className="text-2xl" aria-hidden="true">🎁</span>
+              <div className="min-w-0">
+                <p className="text-sm font-bold" style={{ color: '#16A34A', fontFamily: 'var(--font-display)' }}>
+                  {t(isHi, 'Complimentary (demo account)', 'निःशुल्क (डेमो खाता)')}
+                </p>
+                <p className="text-sm mt-1" style={{ color: 'var(--text-2)', lineHeight: 1.5 }}>
+                  {t(
+                    isHi,
+                    'Your plan is active — no payment required for this demo account.',
+                    'आपका प्लान सक्रिय है — इस डेमो खाते के लिए कोई भुगतान आवश्यक नहीं है।',
+                  )}
+                </p>
+                <p className="text-xs mt-2" style={{ color: 'var(--text-3)' }}>
+                  {compResult.plan} ·{' '}
+                  {compResult.billing_cycle === 'quarterly'
+                    ? t(isHi, 'Quarterly', 'तिमाही')
+                    : t(isHi, 'Monthly', 'मासिक')}{' '}
+                  · {compResult.seats} {t(isHi, 'seats', 'सीट')}
+                  {' · '}
+                  <span style={{ color: '#16A34A', fontWeight: 600 }}>
+                    {t(isHi, 'Active', 'सक्रिय')}
+                  </span>
+                  {compResult.current_period_end && (
+                    <>
+                      {' · '}
+                      {t(isHi, 'until', 'तक')}{' '}
+                      {formatPeriodEnd(compResult.current_period_end, isHi)}
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <Card>
         <div className="px-3 py-3 space-y-3">
           <div className="flex items-center justify-between">
@@ -287,6 +397,59 @@ export default function ManageSubscriptionSection({
                 ))}
               </select>
             </label>
+
+            {/* Billing cycle — NEW subscription only (PATCH can't change cycle). */}
+            {!isExistingSub && (
+              <fieldset className="block">
+                <legend className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-3)' }}>
+                  {t(isHi, 'Billing cycle', 'बिलिंग चक्र')}
+                </legend>
+                <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={t(isHi, 'Billing cycle', 'बिलिंग चक्र')}>
+                  {([
+                    {
+                      value: 'monthly' as const,
+                      labelEn: 'Monthly',
+                      labelHi: 'मासिक',
+                      noteEn: `${SCHOOL_PER_SEAT_MARKETING_LABEL}/seat/month`,
+                      noteHi: `${SCHOOL_PER_SEAT_MARKETING_LABEL}/सीट/माह`,
+                    },
+                    {
+                      value: 'quarterly' as const,
+                      labelEn: 'Quarterly',
+                      labelHi: 'तिमाही',
+                      // SoT-driven: ₹297/seat/quarter (= ₹99/seat/month billed quarterly).
+                      noteEn: `${SCHOOL_PER_SEAT_QUARTERLY_LABEL}/seat/quarter (${SCHOOL_PER_SEAT_MARKETING_LABEL}/seat/month billed quarterly)`,
+                      noteHi: `${SCHOOL_PER_SEAT_QUARTERLY_LABEL}/सीट/तिमाही (${SCHOOL_PER_SEAT_MARKETING_LABEL}/सीट/माह, तिमाही बिलिंग)`,
+                    },
+                  ]).map((opt) => {
+                    const active = formCycle === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => setFormCycle(opt.value)}
+                        className="text-left rounded-xl px-3 py-2.5 transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)]"
+                        style={{
+                          border: `1.5px solid ${active ? 'var(--purple)' : 'var(--border)'}`,
+                          background: active ? 'rgba(124,58,237,0.06)' : 'var(--surface-2)',
+                          minHeight: 44,
+                        }}
+                        data-testid={`school-billing-cycle-${opt.value}`}
+                      >
+                        <span className="block text-sm font-bold" style={{ color: active ? 'var(--purple)' : 'var(--text-1)' }}>
+                          {isHi ? opt.labelHi : opt.labelEn}
+                        </span>
+                        <span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-3)', lineHeight: 1.3 }}>
+                          {isHi ? opt.noteHi : opt.noteEn}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            )}
 
             <label className="block">
               <span className="block text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-3)' }}>

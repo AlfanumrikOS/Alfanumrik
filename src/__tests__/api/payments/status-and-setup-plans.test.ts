@@ -14,8 +14,12 @@
  *   3. NOT open — it requires the x-admin-secret header to equal the service
  *      role key (constant-time compare). Missing/wrong secret → 401, and NO
  *      Razorpay plan creation happens.
- *   4. Idempotent — a plan that already has razorpay_plan_id_monthly is
- *      reported 'already_exists' and is NOT re-created at Razorpay.
+ *   4. Idempotent — a plan that already has BOTH razorpay_plan_id_monthly AND
+ *      razorpay_plan_id_quarterly is reported fully 'already_exists' for both
+ *      cadences and is NOT re-created at Razorpay. (Quarterly provisioning was
+ *      added with the per-school quarterly-billing change — the route now
+ *      provisions a monthly AND a quarterly Razorpay plan per paid tier and
+ *      reports a combined "monthly:…; quarterly:…" status string.)
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -166,11 +170,21 @@ describe('POST /api/payments/setup-plans — admin-secret gate (NOT open)', () =
     expect(createRazorpayPlan).not.toHaveBeenCalled();
   });
 
-  it('is idempotent: a plan already carrying razorpay_plan_id_monthly is reported already_exists, not re-created', async () => {
+  it('is idempotent: a plan already carrying BOTH monthly + quarterly Razorpay ids is reported already_exists for both cadences, not re-created', async () => {
+    // pro is FULLY provisioned (monthly + quarterly) → fully already_exists,
+    // zero Razorpay calls. starter has NEITHER → both cadences created (2 calls).
     _setupPlansList = {
       data: [
-        { id: 'p1', plan_code: 'pro', name: 'Pro', price_monthly: 299, razorpay_plan_id_monthly: 'rzp_plan_existing' },
-        { id: 'p2', plan_code: 'starter', name: 'Starter', price_monthly: 99, razorpay_plan_id_monthly: null },
+        {
+          id: 'p1', plan_code: 'pro', name: 'Pro', price_monthly: 299,
+          razorpay_plan_id_monthly: 'rzp_plan_existing',
+          razorpay_plan_id_quarterly: 'rzp_plan_existing_q',
+        },
+        {
+          id: 'p2', plan_code: 'starter', name: 'Starter', price_monthly: 99,
+          razorpay_plan_id_monthly: null,
+          razorpay_plan_id_quarterly: null,
+        },
       ],
       error: null,
     };
@@ -184,12 +198,14 @@ describe('POST /api/payments/setup-plans — admin-secret gate (NOT open)', () =
 
     const proResult = body.results.find((r: any) => r.plan_code === 'pro');
     const starterResult = body.results.find((r: any) => r.plan_code === 'starter');
-    expect(proResult.status).toBe('already_exists');
-    expect(starterResult.status).toBe('created');
+    // pro is fully provisioned for both cadences → no recreation on either.
+    expect(proResult.status).toBe('monthly:already_exists; quarterly:already_exists');
+    // starter is missing both → both created.
+    expect(starterResult.status).toBe('monthly:created; quarterly:created');
 
-    // Razorpay was called exactly once — only for the plan missing an id.
-    expect(createRazorpayPlan).toHaveBeenCalledTimes(1);
-    // The already-provisioned plan was NOT re-updated.
-    expect(updateCalls).toHaveLength(1);
+    // Razorpay was called exactly twice — only for starter's two missing cadences.
+    expect(createRazorpayPlan).toHaveBeenCalledTimes(2);
+    // The fully-provisioned plan (pro) was NOT re-updated; only starter's two writes.
+    expect(updateCalls).toHaveLength(2);
   });
 });

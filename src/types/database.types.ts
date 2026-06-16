@@ -16567,6 +16567,7 @@ export type Database = {
           quizzes_per_day: number | null
           razorpay_plan_id: string | null
           razorpay_plan_id_monthly: string | null
+          razorpay_plan_id_quarterly: string | null
           seats_remaining: number | null
           sort_order: number | null
           study_plan_access: boolean | null
@@ -16599,6 +16600,7 @@ export type Database = {
           quizzes_per_day?: number | null
           razorpay_plan_id?: string | null
           razorpay_plan_id_monthly?: string | null
+          razorpay_plan_id_quarterly?: string | null
           seats_remaining?: number | null
           sort_order?: number | null
           study_plan_access?: boolean | null
@@ -16631,6 +16633,7 @@ export type Database = {
           quizzes_per_day?: number | null
           razorpay_plan_id?: string | null
           razorpay_plan_id_monthly?: string | null
+          razorpay_plan_id_quarterly?: string | null
           seats_remaining?: number | null
           sort_order?: number | null
           study_plan_access?: boolean | null
