@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { authHeader } from '@/lib/api/auth-header';
@@ -42,7 +42,7 @@ interface JoinResult {
 /* ─────────────────────────────────────────────────────────────
    MAIN PAGE
 ───────────────────────────────────────────────────────────── */
-export default function JoinPage() {
+function JoinPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isHi, isLoggedIn, isLoading: authLoading } = useAuth();
@@ -332,5 +332,17 @@ export default function JoinPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Suspense boundary required by Next.js App Router when using useSearchParams().
+ * Same pattern as login/page.tsx — prevents React #418 text-node hydration mismatch.
+ */
+export default function JoinPage() {
+  return (
+    <Suspense>
+      <JoinPageContent />
+    </Suspense>
   );
 }
