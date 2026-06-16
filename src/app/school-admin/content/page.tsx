@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 import {
   Card,
   Button,
@@ -790,7 +791,7 @@ function DeleteConfirm({ isHi, questionText, onConfirm, onCancel, loading }: Del
 ───────────────────────────────────────────────────────────── */
 export default function SchoolAdminContentPage() {
   const router = useRouter();
-  const { authUserId, isLoading: authLoading, isHi, setLanguage } = useAuth();
+  const { authUserId, isLoading: authLoading, isHi } = useAuth();
 
   /* ── State ── */
   const [schoolId, setSchoolId] = useState<string | null>(null);
@@ -1120,114 +1121,20 @@ export default function SchoolAdminContentPage() {
   }));
 
   /* ══════════════════════════════════════════════════════════
-     PAGE HEADER
-  ══════════════════════════════════════════════════════════ */
-  const PageHeader = (
-    <header
-      className="sticky top-0 z-10 px-4 py-3 flex items-center gap-2"
-      style={{
-        background: 'rgba(251,248,244,0.94)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-        borderBottom: '1px solid var(--border)',
-      }}
-    >
-      <button
-        onClick={() => router.push('/school-admin')}
-        className="flex items-center justify-center rounded-xl transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2 flex-shrink-0"
-        style={{
-          minWidth: 44,
-          minHeight: 44,
-          background: 'var(--surface-2)',
-          border: '1px solid var(--border)',
-          color: 'var(--text-2)',
-          fontSize: '18px',
-        }}
-        aria-label={t(isHi, 'Back to dashboard', 'डैशबोर्ड पर वापस')}
-      >
-        &#8592;
-      </button>
-
-      <div className="flex-1 min-w-0">
-        <h1
-          className="text-base font-bold text-[var(--text-1)] truncate"
-          style={{ fontFamily: 'var(--font-display)' }}
-        >
-          {t(isHi, 'Question Bank', 'प्रश्न बैंक')}
-        </h1>
-      </div>
-
-      <button
-        onClick={() => setLanguage && setLanguage(isHi ? 'en' : 'hi')}
-        className="flex items-center justify-center rounded-xl text-xs font-semibold transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2 flex-shrink-0"
-        style={{
-          minWidth: 44,
-          minHeight: 44,
-          background: 'var(--surface-2)',
-          border: '1px solid var(--border)',
-          color: 'var(--text-2)',
-        }}
-        aria-label={isHi ? 'Switch to English' : 'हिन्दी में बदलें'}
-      >
-        {isHi ? 'EN' : 'हि'}
-      </button>
-
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => setBulkUploadOpen(true)}
-        style={{ minHeight: 44, flexShrink: 0, whiteSpace: 'nowrap' }}
-      >
-        {t(isHi, 'Bulk Upload', 'बल्क अपलोड')}
-      </Button>
-
-      <Button
-        variant="primary"
-        size="sm"
-        onClick={openCreate}
-        style={{ minHeight: 44, flexShrink: 0 }}
-        aria-label={t(isHi, 'Add Question', 'प्रश्न जोड़ें')}
-      >
-        + {t(isHi, 'Add', 'जोड़ें')}
-      </Button>
-    </header>
-  );
-
-  /* ══════════════════════════════════════════════════════════
      FULL PAGE LOADING SKELETON
   ══════════════════════════════════════════════════════════ */
   if (isPageLoading) {
     return (
-      <div
-        style={{ background: 'var(--bg)' }}
-        className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-      >
-        <header
-          className="sticky top-0 z-10 px-4 py-3 flex items-center gap-2"
-          style={{
-            background: 'rgba(251,248,244,0.94)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <Skeleton variant="rect" width={44} height={44} rounded="rounded-xl" />
-          <Skeleton variant="title" height={20} width="30%" className="flex-1" />
-          <Skeleton variant="rect" width={44} height={44} rounded="rounded-xl" />
-          <Skeleton variant="rect" width={90} height={44} rounded="rounded-xl" />
-          <Skeleton variant="rect" width={70} height={44} rounded="rounded-xl" />
-        </header>
-        <div className="px-4 pt-4 pb-24 max-w-4xl mx-auto space-y-3">
-          <div className="grid grid-cols-4 gap-3">
-            {[1, 2, 3, 4].map(i => <Skeleton key={i} variant="rect" height={60} rounded="rounded-xl" />)}
-          </div>
-          <div className="flex gap-2">
-            <Skeleton variant="rect" height={44} rounded="rounded-xl" className="flex-1" />
-            <Skeleton variant="rect" height={44} rounded="rounded-xl" className="flex-1" />
-            <Skeleton variant="rect" height={44} rounded="rounded-xl" className="flex-1" />
-          </div>
-          {[1, 2, 3, 4, 5].map(i => <QuestionRowSkeleton key={i} />)}
+      <div className="space-y-4">
+        <div className="grid grid-cols-4 gap-3">
+          {[1, 2, 3, 4].map(i => <Skeleton key={i} variant="rect" height={60} rounded="rounded-xl" />)}
         </div>
+        <div className="flex gap-2">
+          <Skeleton variant="rect" height={44} rounded="rounded-xl" className="flex-1" />
+          <Skeleton variant="rect" height={44} rounded="rounded-xl" className="flex-1" />
+          <Skeleton variant="rect" height={44} rounded="rounded-xl" className="flex-1" />
+        </div>
+        {[1, 2, 3, 4, 5].map(i => <QuestionRowSkeleton key={i} />)}
       </div>
     );
   }
@@ -1237,12 +1144,34 @@ export default function SchoolAdminContentPage() {
   ══════════════════════════════════════════════════════════ */
   if (apiError && !loadingQuestions && questions.length === 0) {
     return (
-      <div
-        style={{ background: 'var(--bg)' }}
-        className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-      >
-        {PageHeader}
-        <main className="px-4 pt-6 pb-24 max-w-4xl mx-auto">
+      <>
+        <SchoolAdminPageHeader
+          title="Question Bank"
+          titleHi="प्रश्न बैंक"
+          isHi={isHi}
+          action={
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setBulkUploadOpen(true)}
+                style={{ minHeight: 44, flexShrink: 0, whiteSpace: 'nowrap' }}
+              >
+                {t(isHi, 'Bulk Upload', 'बल्क अपलोड')}
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={openCreate}
+                style={{ minHeight: 44, flexShrink: 0 }}
+                aria-label={t(isHi, 'Add Question', 'प्रश्न जोड़ें')}
+              >
+                + {t(isHi, 'Add', 'जोड़ें')}
+              </Button>
+            </div>
+          }
+        />
+        <div className="space-y-4 max-w-4xl">
           <Card className="text-center py-8">
             <div className="text-4xl mb-3" aria-hidden="true">&#9888;</div>
             <p className="text-sm text-[var(--text-2)] mb-4">{apiError}</p>
@@ -1250,9 +1179,8 @@ export default function SchoolAdminContentPage() {
               {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
             </Button>
           </Card>
-        </main>
-        
-      </div>
+        </div>
+      </>
     );
   }
 
@@ -1260,13 +1188,35 @@ export default function SchoolAdminContentPage() {
      LOADED STATE
   ══════════════════════════════════════════════════════════ */
   return (
-    <div
-      style={{ background: 'var(--bg)' }}
-      className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-    >
-      {PageHeader}
+    <>
+      <SchoolAdminPageHeader
+        title="Question Bank"
+        titleHi="प्रश्न बैंक"
+        isHi={isHi}
+        action={
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setBulkUploadOpen(true)}
+              style={{ minHeight: 44, flexShrink: 0, whiteSpace: 'nowrap' }}
+            >
+              {t(isHi, 'Bulk Upload', 'बल्क अपलोड')}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={openCreate}
+              style={{ minHeight: 44, flexShrink: 0 }}
+              aria-label={t(isHi, 'Add Question', 'प्रश्न जोड़ें')}
+            >
+              + {t(isHi, 'Add', 'जोड़ें')}
+            </Button>
+          </div>
+        }
+      />
 
-      <main className="px-4 pt-4 pb-24 max-w-4xl mx-auto space-y-4">
+      <div className="space-y-4 max-w-4xl">
 
         {/* ── Stats Row ── */}
         {!loadingQuestions && questions.length > 0 && (
@@ -1551,7 +1501,7 @@ export default function SchoolAdminContentPage() {
             }
           />
         )}
-      </main>
+      </div>
 
       {/* ── Add/Edit Question Modal ── */}
       <SheetModal
@@ -1615,7 +1565,7 @@ export default function SchoolAdminContentPage() {
         </div>
       )}
 
-      
-    </div>
+
+    </>
   );
 }

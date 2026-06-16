@@ -13,6 +13,7 @@ import { usePrincipalAi } from '@/lib/use-principal-ai';
 import { useCosmicTheme } from '@/lib/cosmic-theme';
 import { Starfield } from '@/components/cosmic';
 import ConsolidatedSchoolNav from './ConsolidatedSchoolNav';
+import { SchoolAdminContext } from '@/lib/school-admin/school-admin-context';
 
 /* ─── School identity: ONE authoritative resolution (stop the flip) ───
  *
@@ -38,6 +39,36 @@ import ConsolidatedSchoolNav from './ConsolidatedSchoolNav';
  */
 const SCHOOL_IDENTITY_CACHE_PREFIX = 'alfanumrik_school_identity_v1'; // gitleaks:allow — sessionStorage key, not a secret
 const SCHOOL_IDENTITY_TTL_MS = 12 * 60 * 60 * 1000; // 12h — identity rarely changes within a session
+
+const MODULE_CACHE_KEY_PREFIX = 'alfanumrik_modules_v1'; // gitleaks:allow — sessionStorage key
+const MODULE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min — modules rarely change mid-session
+
+interface CachedModules {
+  data: Record<string, boolean>;
+  ts: number;
+}
+
+function readModuleCache(authUserId: string | null): Record<string, boolean> | null {
+  if (typeof window === 'undefined' || !authUserId) return null;
+  try {
+    const raw = window.sessionStorage.getItem(`${MODULE_CACHE_KEY_PREFIX}:${authUserId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedModules;
+    if (!parsed || typeof parsed.ts !== 'number') return null;
+    if (Date.now() - parsed.ts > MODULE_CACHE_TTL_MS) return null;
+    return parsed.data;
+  } catch { return null; }
+}
+
+function writeModuleCache(authUserId: string | null, data: Record<string, boolean>) {
+  if (typeof window === 'undefined' || !authUserId) return;
+  try {
+    window.sessionStorage.setItem(
+      `${MODULE_CACHE_KEY_PREFIX}:${authUserId}`,
+      JSON.stringify({ data, ts: Date.now() } satisfies CachedModules),
+    );
+  } catch { /* quota / disabled — fail silently */ }
+}
 /** Neutral, stable placeholder painted while the name is genuinely unresolved.
  *  An em-dash reads as "loading" and never masquerades as a real school whose
  *  first letter would later change. */
@@ -108,7 +139,7 @@ export function resolveCachedSchoolName(authUserId: string | null, tenantSchoolN
 export default function SchoolAdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { authUserId, isHi } = useAuth();
+  const { authUserId, isHi, setLanguage } = useAuth();
   const tenant = useTenant();
   // Cosmic Phase 3: flag-gated dark reskin (gold/steel via data-role="school").
   // OFF ⇒ cosmicEnabled false ⇒ byte-identical to before this change.
@@ -123,6 +154,10 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
   // SAME school_admins row the direct-URL fallback already reads — no new query
   // pattern, no auth-flow change.
   const [emailPrefix, setEmailPrefix] = useState<string>('');
+  /** Resolved school_id — shared with child pages via SchoolAdminContext. */
+  const [schoolId, setSchoolId] = useState<string | null>(null);
+  /** true while we're still resolving identity (tenant OR direct-URL DB path). */
+  const [identityLoading, setIdentityLoading] = useState<boolean>(true);
 
   // null while loading or on fetch failure (fail-open: show all items).
   // Otherwise a partial map of moduleKey → enabled. Only modules that
@@ -176,37 +211,51 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
     // repeat visits + sibling surfaces paint the same name.
     if (tenant.schoolName) {
       writeSchoolIdentityCache(authUserId, tenant.schoolName, tenant.branding.logoUrl ?? null);
+      // Resolve schoolId from tenant context when available
+      if (tenant.schoolId) {
+        setSchoolId(tenant.schoolId as string);
+      }
+      setIdentityLoading(false);
       return;
     }
     // If no tenant context (direct URL access), fetch school info from DB. We
     // also pull the admin's email so the email-prefix last-resort label can be
     // derived from the SAME row (no extra query, no auth-flow change).
     if (authUserId) {
-      supabase
+      void supabase
         .from('school_admins')
         .select('school_id, email, schools(name, logo_url, primary_color)')
         .eq('auth_user_id', authUserId)
         .eq('is_active', true)
         .single()
-        .then(({ data }) => {
-          const adminEmail = typeof data?.email === 'string' ? data.email : '';
-          if (adminEmail) setEmailPrefix(adminEmail.split('@')[0] ?? '');
-          if (data?.schools && typeof data.schools === 'object') {
-            // Supabase FK join may return array or object depending on relation type
-            const raw = data.schools as unknown;
-            const s = Array.isArray(raw) ? raw[0] : raw;
-            if (s && typeof s === 'object' && 'name' in s) {
-              const school = s as { name: string; logo_url: string | null; primary_color: string | null };
-              setSchoolName(school.name);
-              if (school.logo_url) setLogoUrl(school.logo_url);
-              // Persist the resolved identity so the next paint (and sibling
-              // surfaces) never see the S→D flip.
-              writeSchoolIdentityCache(authUserId, school.name, school.logo_url ?? null);
+        .then(
+          ({ data }) => {
+            const adminEmail = typeof data?.email === 'string' ? data.email : '';
+            if (adminEmail) setEmailPrefix(adminEmail.split('@')[0] ?? '');
+            if (data?.school_id) {
+              setSchoolId(data.school_id as string);
             }
-          }
-        });
+            if (data?.schools && typeof data.schools === 'object') {
+              // Supabase FK join may return array or object depending on relation type
+              const raw = data.schools as unknown;
+              const s = Array.isArray(raw) ? raw[0] : raw;
+              if (s && typeof s === 'object' && 'name' in s) {
+                const school = s as { name: string; logo_url: string | null; primary_color: string | null };
+                setSchoolName(school.name);
+                if (school.logo_url) setLogoUrl(school.logo_url);
+                // Persist the resolved identity so the next paint (and sibling
+                // surfaces) never see the S→D flip.
+                writeSchoolIdentityCache(authUserId, school.name, school.logo_url ?? null);
+              }
+            }
+            setIdentityLoading(false);
+          },
+          () => {
+            setIdentityLoading(false);
+          },
+        );
     }
-  }, [authUserId, tenant.schoolName, tenant.branding.logoUrl, router]);
+  }, [authUserId, tenant.schoolName, tenant.branding.logoUrl, tenant.schoolId, router]);
 
   // Fetch module enablement once per shell mount. /api/school-admin/modules
   // requires `school.manage_modules` permission; admins without it land
@@ -214,6 +263,10 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
   // moduleEnablement stays null. Cached 5 min server-side via the registry.
   useEffect(() => {
     if (!authUserId) return;
+    // Seed from cache so nav items appear instantly on repeat visits (no flash).
+    const cached = readModuleCache(authUserId);
+    if (cached) setModuleEnablement(cached);
+
     let cancelled = false;
     authedFetch('/api/school-admin/modules')
       .then(r => (r.ok ? r.json() : null))
@@ -226,9 +279,10 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
           }
         }
         setModuleEnablement(map);
+        writeModuleCache(authUserId, map);
       })
       .catch(() => {
-        // Fail-open — moduleEnablement stays null and all items render.
+        // Fail-open — moduleEnablement stays null/cached and all items render.
       });
     return () => {
       cancelled = true;
@@ -269,17 +323,36 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
         reportsDepthEnabled={reportsDepthOn}
         principalAiEnabled={principalAiOn}
         footer={
-          (tenant.branding.showPoweredBy || tenant.schoolId) ? (
-            <div>
-              Powered by{' '}
-              <a href="https://alfanumrik.com" className="text-primary no-underline">
-                Alfanumrik
-              </a>
-            </div>
-          ) : null
+          <div className="flex items-center justify-between gap-2">
+            {(tenant.branding.showPoweredBy || tenant.schoolId) ? (
+              <div className="text-[10px] text-muted-foreground">
+                Powered by{' '}
+                <a href="https://alfanumrik.com" className="text-primary no-underline">
+                  Alfanumrik
+                </a>
+              </div>
+            ) : <span />}
+            <button
+              type="button"
+              onClick={() => setLanguage(isHi ? 'en' : 'hi')}
+              className="text-[11px] font-semibold rounded-lg px-2 py-1 transition-colors hover:bg-surface-2 flex-shrink-0"
+              style={{ color: 'var(--text-3)', border: '1px solid var(--border)' }}
+              aria-label={isHi ? 'Switch to English' : 'हिन्दी में बदलें'}
+            >
+              {isHi ? 'EN' : 'हि'}
+            </button>
+          </div>
         }
       />
-      <main className={`flex-1 max-w-screen-xl overflow-auto p-6${cosmicEnabled ? ' relative z-10' : ''}`}>{children}</main>
+      <SchoolAdminContext.Provider
+        value={{
+          schoolId,
+          schoolName: tenant.schoolName || schoolName || null,
+          isLoading: identityLoading,
+        }}
+      >
+        <main className={`flex-1 max-w-screen-xl overflow-auto p-6${cosmicEnabled ? ' relative z-10' : ''}`}>{children}</main>
+      </SchoolAdminContext.Provider>
     </div>
   );
 }

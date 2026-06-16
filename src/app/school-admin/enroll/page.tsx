@@ -18,6 +18,7 @@ import {
   Skeleton,
   EmptyState,
 } from '@/components/ui';
+import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 
 /* ─────────────────────────────────────────────────────────────
    BILINGUAL HELPER (P7)
@@ -122,7 +123,7 @@ function validateRow(row: string[], headers: string[]): RowValidation {
 ───────────────────────────────────────────────────────────── */
 function PageSkeleton() {
   return (
-    <div className="px-4 pt-4 pb-24 max-w-2xl mx-auto space-y-5">
+    <div className="space-y-5">
       <Skeleton variant="title" height={28} width="55%" />
       <Skeleton variant="rect" height={160} rounded="rounded-2xl" />
       <Skeleton variant="rect" height={48} rounded="rounded-xl" />
@@ -329,19 +330,7 @@ export default function SchoolAdminEnrollPage() {
   /* ── Render ── */
   if (authLoading || loading) {
     return (
-      <div style={{ background: 'var(--bg)' }} className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]">
-        <header
-          className="sticky top-0 z-10 px-4 py-3 flex items-center gap-3"
-          style={{
-            background: 'rgba(251,248,244,0.92)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <Skeleton variant="rect" height={36} width={36} rounded="rounded-xl" />
-          <Skeleton variant="title" height={22} width="50%" />
-        </header>
+      <div className="space-y-4">
         <PageSkeleton />
       </div>
     );
@@ -349,72 +338,37 @@ export default function SchoolAdminEnrollPage() {
 
   if (error && !schoolId) {
     return (
-      <div
-        className="min-h-dvh flex items-center justify-center px-4 font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-        style={{ background: 'var(--bg)' }}
-      >
-        <Card className="max-w-xs w-full text-center py-8">
-          <div className="text-4xl mb-3">⚠️</div>
-          <p className="text-sm text-[var(--text-2)] mb-4">{error}</p>
-          <Button variant="primary" onClick={bootstrap}>
-            {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
-          </Button>
-        </Card>
-      </div>
+      <>
+        <SchoolAdminPageHeader
+          title="Bulk Enrollment"
+          titleHi="सामूहिक नामांकन"
+          isHi={isHi}
+        />
+        <div className="space-y-4 max-w-4xl">
+          <Card className="max-w-xs w-full text-center py-8">
+            <div className="text-4xl mb-3">⚠️</div>
+            <p className="text-sm text-[var(--text-2)] mb-4">{error}</p>
+            <Button variant="primary" onClick={bootstrap}>
+              {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
+            </Button>
+          </Card>
+        </div>
+      </>
     );
   }
 
   return (
-    <div
-      style={{ background: 'var(--bg)' }}
-      className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-    >
-      {/* STICKY HEADER */}
-      <header
-        className="sticky top-0 z-10 px-4 py-3 flex items-center gap-3"
-        style={{
-          background: 'rgba(251,248,244,0.92)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <button
-          onClick={() => router.push('/school-admin')}
-          className="rounded-xl flex items-center justify-center transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
-          style={{
-            width: '40px',
-            height: '40px',
-            minWidth: '40px',
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
-            fontSize: '18px',
-          }}
-          aria-label={t(isHi, 'Back to dashboard', 'डैशबोर्ड पर वापस जाएं')}
-        >
-          ←
-        </button>
-        <div className="flex-1 min-w-0">
-          <h1
-            className="text-base font-bold text-[var(--text-1)] truncate"
-            style={{ fontFamily: 'Sora, system-ui, sans-serif' }}
-          >
-            {t(isHi, 'Bulk Enrollment', 'सामूहिक नामांकन')}
-          </h1>
-          <p className="text-xs text-[var(--text-3)]">
-            {step === 'upload' && t(isHi, 'Upload CSV', 'CSV अपलोड करें')}
-            {step === 'preview' && t(isHi, 'Preview Data', 'डेटा पूर्वावलोकन')}
-            {step === 'importing' && t(isHi, 'Importing...', 'आयात हो रहा है...')}
-            {step === 'results' && t(isHi, 'Results', 'परिणाम')}
-          </p>
-        </div>
-      </header>
-
-      <main className="px-4 pt-4 pb-24 max-w-2xl mx-auto">
+    <>
+      <SchoolAdminPageHeader
+        title="Bulk Enrollment"
+        titleHi="सामूहिक नामांकन"
+        isHi={isHi}
+      />
+      <div className="space-y-4 max-w-4xl">
         {/* Error banner */}
         {error && (
           <div
-            className="rounded-xl p-3 text-center mb-4"
+            className="rounded-xl p-3 text-center"
             style={{ background: '#FEE2E2', border: '1px solid #FCA5A5' }}
           >
             <p className="text-sm text-red-700">{error}</p>
@@ -772,9 +726,7 @@ export default function SchoolAdminEnrollPage() {
             </div>
           </div>
         )}
-      </main>
-
-      
-    </div>
+      </div>
+    </>
   );
 }

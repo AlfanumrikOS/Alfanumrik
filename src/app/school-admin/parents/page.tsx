@@ -13,6 +13,7 @@ import {
   EmptyState,
   SheetModal,
 } from '@/components/ui';
+import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 
 /* ─────────────────────────────────────────────────────────────
    BILINGUAL HELPER (P7)
@@ -193,7 +194,7 @@ function SendConfirm({ isHi, recipientCount, channel, onConfirm, onCancel, loadi
 ───────────────────────────────────────────────────────────── */
 export default function SchoolAdminParentsPage() {
   const router = useRouter();
-  const { authUserId, isLoading: authLoading, isHi, setLanguage } = useAuth();
+  const { authUserId, isLoading: authLoading, isHi } = useAuth();
 
   /* ── Core state ── */
   const [schoolId, setSchoolId] = useState<string | null>(null);
@@ -259,7 +260,7 @@ export default function SchoolAdminParentsPage() {
       if (error) {
         setAdminError(
           t(isHi,
-            'We couldn’t load your school admin account. Please try again.',
+            "We couldn’t load your school admin account. Please try again.",
             'हम आपका स्कूल एडमिन खाता लोड नहीं कर सके। कृपया दोबारा कोशिश करें।'
           )
         );
@@ -505,64 +506,6 @@ export default function SchoolAdminParentsPage() {
   const isPageLoading = authLoading || loadingAdmin;
 
   /* ══════════════════════════════════════════════════════════
-     PAGE HEADER
-  ══════════════════════════════════════════════════════════ */
-  const PageHeader = (
-    <header
-      className="sticky top-0 z-10 px-4 py-3 flex items-center gap-2"
-      style={{
-        background: 'rgba(251,248,244,0.94)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-        borderBottom: '1px solid var(--border)',
-      }}
-    >
-      {/* Back button */}
-      <button
-        onClick={() => router.push('/school-admin')}
-        className="flex items-center justify-center rounded-xl transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2 flex-shrink-0"
-        style={{
-          minWidth: 44,
-          minHeight: 44,
-          background: 'var(--surface-2)',
-          border: '1px solid var(--border)',
-          color: 'var(--text-2)',
-          fontSize: '18px',
-        }}
-        aria-label={t(isHi, 'Back to dashboard', 'डैशबोर्ड पर वापस')}
-      >
-        ←
-      </button>
-
-      {/* Title */}
-      <div className="flex-1 min-w-0">
-        <h1
-          className="text-base font-bold text-[var(--text-1)] truncate"
-          style={{ fontFamily: 'var(--font-display)' }}
-        >
-          {t(isHi, 'Parent Communications', 'अभिभावक संचार')}
-        </h1>
-      </div>
-
-      {/* Language toggle */}
-      <button
-        onClick={() => setLanguage && setLanguage(isHi ? 'en' : 'hi')}
-        className="flex items-center justify-center rounded-xl text-xs font-semibold transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2 flex-shrink-0"
-        style={{
-          minWidth: 44,
-          minHeight: 44,
-          background: 'var(--surface-2)',
-          border: '1px solid var(--border)',
-          color: 'var(--text-2)',
-        }}
-        aria-label={isHi ? 'Switch to English' : 'हिन्दी में बदलें'}
-      >
-        {isHi ? 'EN' : 'हि'}
-      </button>
-    </header>
-  );
-
-  /* ══════════════════════════════════════════════════════════
      TAB BAR
   ══════════════════════════════════════════════════════════ */
   const TabBar = (
@@ -600,33 +543,15 @@ export default function SchoolAdminParentsPage() {
   ══════════════════════════════════════════════════════════ */
   if (isPageLoading) {
     return (
-      <div
-        style={{ background: 'var(--bg)' }}
-        className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-      >
-        <header
-          className="sticky top-0 z-10 px-4 py-3 flex items-center gap-2"
-          style={{
-            background: 'rgba(251,248,244,0.94)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <Skeleton variant="rect" width={44} height={44} rounded="rounded-xl" />
-          <Skeleton variant="title" height={20} width="50%" className="flex-1" />
-          <Skeleton variant="rect" width={44} height={44} rounded="rounded-xl" />
-        </header>
-        <div className="px-4 pt-4 pb-24 max-w-2xl mx-auto space-y-3">
-          <Skeleton variant="rect" height={40} rounded="rounded-xl" />
-          <div className="grid grid-cols-3 gap-3">
-            <StatCardSkeleton />
-            <StatCardSkeleton />
-            <StatCardSkeleton />
-          </div>
-          <Skeleton variant="rect" height={44} rounded="rounded-xl" />
-          {[1, 2, 3, 4].map(i => <ParentRowSkeleton key={i} />)}
+      <div className="space-y-4">
+        <Skeleton variant="rect" height={40} rounded="rounded-xl" />
+        <div className="grid grid-cols-3 gap-3">
+          <StatCardSkeleton />
+          <StatCardSkeleton />
+          <StatCardSkeleton />
         </div>
+        <Skeleton variant="rect" height={44} rounded="rounded-xl" />
+        {[1, 2, 3, 4].map(i => <ParentRowSkeleton key={i} />)}
       </div>
     );
   }
@@ -638,12 +563,13 @@ export default function SchoolAdminParentsPage() {
   ══════════════════════════════════════════════════════════ */
   if (adminError) {
     return (
-      <div
-        style={{ background: 'var(--bg)' }}
-        className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-      >
-        {PageHeader}
-        <main className="px-4 pt-6 pb-24 max-w-2xl mx-auto">
+      <>
+        <SchoolAdminPageHeader
+          title="Parent Communications"
+          titleHi="अभिभावक संचार"
+          isHi={isHi}
+        />
+        <div className="space-y-4 max-w-4xl">
           <Card className="text-center py-8">
             <div className="text-4xl mb-3" aria-hidden="true">⚠</div>
             <p className="text-sm text-[var(--text-2)] mb-4">{adminError}</p>
@@ -651,8 +577,8 @@ export default function SchoolAdminParentsPage() {
               {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
             </Button>
           </Card>
-        </main>
-      </div>
+        </div>
+      </>
     );
   }
 
@@ -661,12 +587,13 @@ export default function SchoolAdminParentsPage() {
   ══════════════════════════════════════════════════════════ */
   if (linksError && !loadingLinks && parentLinks.length === 0 && activeTab === 'links') {
     return (
-      <div
-        style={{ background: 'var(--bg)' }}
-        className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-      >
-        {PageHeader}
-        <main className="px-4 pt-6 pb-24 max-w-2xl mx-auto">
+      <>
+        <SchoolAdminPageHeader
+          title="Parent Communications"
+          titleHi="अभिभावक संचार"
+          isHi={isHi}
+        />
+        <div className="space-y-4 max-w-4xl">
           <Card className="text-center py-8">
             <div className="text-4xl mb-3" aria-hidden="true">⚠</div>
             <p className="text-sm text-[var(--text-2)] mb-4">{linksError}</p>
@@ -674,9 +601,8 @@ export default function SchoolAdminParentsPage() {
               {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
             </Button>
           </Card>
-        </main>
-        
-      </div>
+        </div>
+      </>
     );
   }
 
@@ -684,13 +610,13 @@ export default function SchoolAdminParentsPage() {
      LOADED STATE
   ══════════════════════════════════════════════════════════ */
   return (
-    <div
-      style={{ background: 'var(--bg)' }}
-      className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-    >
-      {PageHeader}
-
-      <main className="px-4 pt-4 pb-24 max-w-2xl mx-auto space-y-4">
+    <>
+      <SchoolAdminPageHeader
+        title="Parent Communications"
+        titleHi="अभिभावक संचार"
+        isHi={isHi}
+      />
+      <div className="space-y-4 max-w-4xl">
 
         {/* Tab bar */}
         {TabBar}
@@ -1118,7 +1044,7 @@ export default function SchoolAdminParentsPage() {
             </Button>
           </Card>
         )}
-      </main>
+      </div>
 
       {/* ── Send Confirmation Modal ── */}
       <SheetModal
@@ -1151,8 +1077,6 @@ export default function SchoolAdminParentsPage() {
           {successMsg}
         </div>
       )}
-
-      
-    </div>
+    </>
   );
 }

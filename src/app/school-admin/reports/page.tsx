@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 import {
   Card,
   Button,
@@ -673,19 +674,14 @@ export default function SchoolAdminReportsPage() {
 
   if (isPageLoading) {
     return (
-      <div style={{ padding: 24 }}>
-        <Skeleton variant="title" height={28} width="40%" />
-        <div style={{ marginTop: 20 }}>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-            {[1, 2, 3, 4].map((i) => (
-              <Skeleton key={i} variant="rect" height={38} width={140} rounded="rounded-lg" />
-            ))}
-          </div>
-          <StatCardsSkeleton />
-          <div style={{ marginTop: 20 }}>
-            <TableSkeleton />
-          </div>
+      <div className="space-y-4">
+        <div style={{ display: 'flex', gap: 8 }}>
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} variant="rect" height={38} width={140} rounded="rounded-lg" />
+          ))}
         </div>
+        <StatCardsSkeleton />
+        <TableSkeleton />
       </div>
     );
   }
@@ -1409,19 +1405,12 @@ export default function SchoolAdminReportsPage() {
      RENDER
   ───────────────────────────────────────────────────────────── */
   return (
-    <div style={{ minHeight: '100%' }}>
-      {/* Page title */}
-      <h1
-        style={{
-          fontSize: 20,
-          fontWeight: 700,
-          color: '#111',
-          fontFamily: 'Sora, system-ui, sans-serif',
-          marginBottom: 20,
-        }}
-      >
-        {t(isHi, 'Academic Reports', 'शैक्षणिक रिपोर्ट')}
-      </h1>
+    <>
+      <SchoolAdminPageHeader
+        title="Academic Reports"
+        titleHi="शैक्षणिक रिपोर्ट"
+        isHi={isHi}
+      />
 
       {/* Tab bar */}
       <div
@@ -1476,6 +1465,6 @@ export default function SchoolAdminReportsPage() {
         {activeTab === 'student_detail' && renderStudentDetail()}
         {activeTab === 'subject_gaps' && renderSubjectGaps()}
       </div>
-    </div>
+    </>
   );
 }
