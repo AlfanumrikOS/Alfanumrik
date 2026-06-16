@@ -30,6 +30,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { authedFetch } from '@/lib/school-admin/authed-fetch';
 import PrincipalAiMessage, { type PrincipalAiMessageModel } from './PrincipalAiMessage';
 import PrincipalAiInput from './PrincipalAiInput';
 import PrincipalAiStarters from './PrincipalAiStarters';
@@ -101,7 +102,7 @@ export default function PrincipalAiChat() {
     setLoading(true);
     setLoadError(false);
     try {
-      const res = await fetch(API, { credentials: 'same-origin' });
+      const res = await authedFetch(API);
       if (!res.ok) {
         // 404 (flag off) / 403 (not principal) — the page gate normally prevents
         // mounting this, but treat any non-OK as an error surface here.
@@ -174,7 +175,7 @@ export default function PrincipalAiChat() {
       setSending(true);
 
       try {
-        const res = await fetch(API, {
+        const res = await authedFetch(API, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',

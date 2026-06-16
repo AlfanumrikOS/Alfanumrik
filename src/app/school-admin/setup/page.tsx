@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { authedFetch } from '@/lib/school-admin/authed-fetch';
 import {
   Card,
   Button,
@@ -237,7 +238,7 @@ function Step2Classes({ createdClasses, schoolId, isHi, onClassesCreated, onNext
     setSaving(true);
 
     try {
-      const res = await fetch('/api/schools/setup/classes', {
+      const res = await authedFetch('/api/schools/setup/classes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -429,7 +430,7 @@ function Step3InviteCodes({
     setGenerating(true);
 
     try {
-      const res = await fetch('/api/schools/setup/invite-codes', {
+      const res = await authedFetch('/api/schools/setup/invite-codes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -842,7 +843,7 @@ export default function SchoolAdminSetupPage() {
 
     setSaving(true);
     try {
-      const res = await fetch('/api/schools/setup/profile', {
+      const res = await authedFetch('/api/schools/setup/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -877,7 +878,7 @@ export default function SchoolAdminSetupPage() {
     setLaunching(true);
     try {
       // Mark setup as complete by updating school settings
-      const res = await fetch('/api/schools/setup/profile', {
+      const res = await authedFetch('/api/schools/setup/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

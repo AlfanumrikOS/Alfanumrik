@@ -159,14 +159,28 @@ async function handleGetDashboard(
       .eq('teacher_id', teacherId)
 
     if (classData && classData.length > 0) {
-      // Get student counts per class
+      // Get student counts per class. Roster lives in the class_students
+      // join table (there is no students.class_id column) — resolve the
+      // class's student ids, then count live (non-deleted) rows by id.
       for (const assignment of classData) {
         const cls = (assignment as any).classes
         if (!cls) continue
-        const { count } = await supabase
-          .from('students')
-          .select('*', { count: 'exact', head: true })
+        let count = 0
+        const { data: roster } = await supabase
+          .from('class_students')
+          .select('student_id')
           .eq('class_id', cls.id)
+        const rosterIds = (roster || [])
+          .map((r: any) => r.student_id as string | null)
+          .filter((id): id is string => !!id)
+        if (rosterIds.length > 0) {
+          const { count: liveCount } = await supabase
+            .from('students')
+            .select('*', { count: 'exact', head: true })
+            .in('id', rosterIds)
+            .is('deleted_at', null)
+          count = liveCount ?? 0
+        }
         classes.push({
           id: cls.id,
           name: cls.name || `${cls.grade}-${cls.section || 'A'}`,
@@ -252,13 +266,33 @@ async function handleGetHeatmap(
   const isGradeId = classId.startsWith('grade-')
   const grade = isGradeId ? classId.replace('grade-', '') : null
 
-  let studentQuery = supabase.from('students').select('id, name, grade')
+  let students: Array<{ id: string; name: string | null; grade: string | null }> | null = null
   if (isGradeId && grade) {
-    studentQuery = studentQuery.eq('grade', grade)
+    const { data } = await supabase
+      .from('students')
+      .select('id, name, grade')
+      .eq('grade', grade)
+      .limit(50)
+    students = data
   } else {
-    studentQuery = studentQuery.eq('class_id', classId)
+    // Roster lives in class_students (no students.class_id column):
+    // resolve the class's student ids, then load those students by id.
+    const { data: roster } = await supabase
+      .from('class_students')
+      .select('student_id')
+      .eq('class_id', classId)
+    const rosterIds = (roster || [])
+      .map((r: any) => r.student_id as string | null)
+      .filter((id): id is string => !!id)
+    if (rosterIds.length > 0) {
+      const { data } = await supabase
+        .from('students')
+        .select('id, name, grade')
+        .in('id', rosterIds)
+        .limit(50)
+      students = data
+    }
   }
-  const { data: students } = await studentQuery.limit(50)
 
   if (!students || students.length === 0) {
     return jsonResponse({
@@ -350,14 +384,33 @@ async function handleGetAlerts(
   const isGradeId = classId.startsWith('grade-')
   const grade = isGradeId ? classId.replace('grade-', '') : null
 
-  // Get students
-  let studentQuery = supabase.from('students').select('id, name, grade')
+  // Get students. Roster lives in class_students (no students.class_id
+  // column): resolve the class's student ids, then load those students.
+  let students: Array<{ id: string; name: string | null; grade: string | null }> | null = null
   if (isGradeId && grade) {
-    studentQuery = studentQuery.eq('grade', grade)
+    const { data } = await supabase
+      .from('students')
+      .select('id, name, grade')
+      .eq('grade', grade)
+      .limit(100)
+    students = data
   } else {
-    studentQuery = studentQuery.eq('class_id', classId)
+    const { data: roster } = await supabase
+      .from('class_students')
+      .select('student_id')
+      .eq('class_id', classId)
+    const rosterIds = (roster || [])
+      .map((r: any) => r.student_id as string | null)
+      .filter((id): id is string => !!id)
+    if (rosterIds.length > 0) {
+      const { data } = await supabase
+        .from('students')
+        .select('id, name, grade')
+        .in('id', rosterIds)
+        .limit(100)
+      students = data
+    }
   }
-  const { data: students } = await studentQuery.limit(100)
 
   if (!students || students.length === 0) {
     return jsonResponse([], 200, {}, origin)
@@ -662,7 +715,10 @@ async function resolveStudentsForTeacher(
   const seen = new Set<string>()
   const out: Array<{ id: string; name: string; grade: string }> = []
 
-  // Path A: students attached to this teacher's classes.
+  // Path A: students attached to this teacher's classes. Roster lives in
+  // the class_students join table (there is no students.class_id column):
+  // resolve the student ids for the teacher's classes, then load the live
+  // student rows by id.
   try {
     const { data: assignments } = await supabase
       .from('class_teachers')
@@ -670,16 +726,25 @@ async function resolveStudentsForTeacher(
       .eq('teacher_id', teacherId)
     const classIds = (assignments || []).map((a: any) => a.class_id).filter(Boolean)
     if (classIds.length > 0) {
-      const { data: classStudents } = await supabase
-        .from('students')
-        .select('id, name, grade')
+      const { data: roster } = await supabase
+        .from('class_students')
+        .select('student_id')
         .in('class_id', classIds)
-        .is('deleted_at', null)
-        .limit(1000)
-      for (const s of classStudents || []) {
-        if (s?.id && !seen.has(s.id)) {
-          seen.add(s.id)
-          out.push({ id: s.id, name: s.name || 'Student', grade: String(s.grade || '') })
+      const rosterIds = (roster || [])
+        .map((r: any) => r.student_id as string | null)
+        .filter((id): id is string => !!id)
+      if (rosterIds.length > 0) {
+        const { data: classStudents } = await supabase
+          .from('students')
+          .select('id, name, grade')
+          .in('id', rosterIds)
+          .is('deleted_at', null)
+          .limit(1000)
+        for (const s of classStudents || []) {
+          if (s?.id && !seen.has(s.id)) {
+            seen.add(s.id)
+            out.push({ id: s.id, name: s.name || 'Student', grade: String(s.grade || '') })
+          }
         }
       }
     }
@@ -1377,16 +1442,16 @@ async function handleGetAssignmentSubmissions(
   }
   const assignment = ownership.assignment
 
-  // Roster: students in the assignment's class. Same dual-path logic
-  // resolveStudentsForTeacher uses — start from class_students, fall
-  // back to grade when the class table is sparse on this env.
+  // Roster: students in the assignment's class. Roster lives in the
+  // class_students join table (there is no students.class_id column),
+  // resolve student ids there then load the live student rows by id.
   const classId = String((assignment as { class_id?: string } | null)?.class_id || '')
   const students: Array<{ id: string; name: string; grade: string }> = []
   const seen = new Set<string>()
 
   if (classId) {
     try {
-      // Path A: class_students (used by /api/teacher/classes wiring).
+      // class_students join table (used by /api/teacher/classes wiring).
       const { data: cs } = await supabase
         .from('class_students')
         .select('student_id, students(id, name, grade, deleted_at)')
@@ -1399,24 +1464,6 @@ async function handleGetAssignmentSubmissions(
         }
       }
     } catch { /* table may not exist */ }
-
-    if (students.length === 0) {
-      try {
-        // Path B: direct students.class_id (used elsewhere in this file).
-        const { data: ss } = await supabase
-          .from('students')
-          .select('id, name, grade')
-          .eq('class_id', classId)
-          .is('deleted_at', null)
-          .limit(1000)
-        for (const s of ss || []) {
-          if (s?.id && !seen.has(s.id)) {
-            seen.add(s.id)
-            students.push({ id: s.id, name: s.name || 'Student', grade: String(s.grade || '') })
-          }
-        }
-      } catch { /* fall through to empty */ }
-    }
   }
 
   // Submissions for these students on this assignment.
@@ -1847,7 +1894,11 @@ function buildGradeBookColumns(
   return cols
 }
 
-/** Resolve students for a class — same dual-path pattern as the submissions handler. */
+/**
+ * Resolve students for a class. Synthetic grade-<n> pseudo-classes fall back
+ * to a grade lookup; real classes roster through the class_students join
+ * table (there is no students.class_id column on the live schema).
+ */
 async function resolveStudentsForClass(
   supabase: ReturnType<typeof getServiceClient>,
   classId: string,
@@ -1875,7 +1926,7 @@ async function resolveStudentsForClass(
     return out
   }
 
-  // Path A: class_students.
+  // Real class: roster lives in the class_students join table.
   try {
     const { data: cs } = await supabase
       .from('class_students')
@@ -1889,24 +1940,6 @@ async function resolveStudentsForClass(
       }
     }
   } catch { /* table absent */ }
-
-  // Path B: students.class_id.
-  if (out.length === 0) {
-    try {
-      const { data } = await supabase
-        .from('students')
-        .select('id, name, grade')
-        .eq('class_id', classId)
-        .is('deleted_at', null)
-        .limit(1000)
-      for (const s of data || []) {
-        if (s?.id && !seen.has(s.id)) {
-          seen.add(s.id)
-          out.push({ id: s.id, name: s.name || 'Student', grade: String(s.grade || '') })
-        }
-      }
-    } catch { /* table absent */ }
-  }
 
   return out
 }
@@ -2085,7 +2118,8 @@ async function handleSetGradeBookCell(
   }
 
   // Student must belong to the class. For synthetic grade-<n> classes
-  // we check the student's grade matches; otherwise we hit class_students.
+  // we check the student's grade matches; otherwise membership lives in
+  // the class_students join table (there is no students.class_id column).
   let studentInClass = false
   if (classId.startsWith('grade-')) {
     const grade = classId.replace('grade-', '')
@@ -2108,17 +2142,6 @@ async function handleSetGradeBookCell(
         .maybeSingle()
       if (link) studentInClass = true
     } catch { /* fall through */ }
-    if (!studentInClass) {
-      // Fall back to students.class_id direct check.
-      try {
-        const { data: s } = await supabase
-          .from('students')
-          .select('class_id')
-          .eq('id', studentId)
-          .maybeSingle()
-        if (s && (s as { class_id?: string }).class_id === classId) studentInClass = true
-      } catch { /* fall through */ }
-    }
   }
   if (!studentInClass) {
     return errorResponse('Student not in this class', 403, origin)
