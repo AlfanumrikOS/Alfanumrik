@@ -6,6 +6,7 @@ import { isFeatureEnabled } from '@/lib/feature-flags';
 import { schoolAdminPermissionCode } from '@/lib/school-admin/permission-code';
 import { capture } from '@/lib/posthog/server';
 import { logSchoolAudit } from '@/lib/audit';
+import { isDemoSchool } from '@/lib/demo/is-demo-school';
 import {
   createRazorpaySubscription,
   cancelRazorpaySubscription,
@@ -18,10 +19,24 @@ const VALID_PAID_PLANS = new Set(['starter', 'pro', 'unlimited']);
 const MIN_SEATS = 1;
 const MAX_SEATS = 5_000; // generous cap; refuses obvious nonsense
 
+type SchoolBillingCycle = 'monthly' | 'quarterly' | 'yearly';
+
 interface PostBody {
   plan?: string;
-  billing_cycle?: 'monthly' | 'yearly';
+  billing_cycle?: SchoolBillingCycle;
   seats?: number;
+}
+
+/**
+ * Compute a comp entitlement's period-end from a start instant and cycle.
+ * monthly → +1 month, quarterly → +3 months. (Yearly never reaches the comp
+ * path — POST still rejects yearly for self-service.)
+ */
+function compPeriodEnd(start: Date, cycle: SchoolBillingCycle): string {
+  const end = new Date(start);
+  const months = cycle === 'quarterly' ? 3 : 1;
+  end.setMonth(end.getMonth() + months);
+  return end.toISOString();
 }
 
 interface PatchBody {
@@ -37,6 +52,7 @@ interface PlanRow {
   plan_code: string;
   razorpay_plan_id: string | null;
   razorpay_plan_id_monthly: string | null;
+  razorpay_plan_id_quarterly: string | null;
   price_monthly: number; // INR per seat per month
 }
 
@@ -55,7 +71,7 @@ async function fetchPlanRow(planCode: string): Promise<PlanRow | null> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from('subscription_plans')
-    .select('plan_code, razorpay_plan_id, razorpay_plan_id_monthly, price_monthly')
+    .select('plan_code, razorpay_plan_id, razorpay_plan_id_monthly, razorpay_plan_id_quarterly, price_monthly')
     .eq('plan_code', planCode)
     .eq('is_active', true)
     .maybeSingle();
@@ -186,7 +202,7 @@ export async function POST(request: NextRequest) {
     if (!VALID_PAID_PLANS.has(plan)) {
       return NextResponse.json({ success: false, error: 'Invalid plan' }, { status: 400 });
     }
-    if (billingCycle !== 'monthly' && billingCycle !== 'yearly') {
+    if (billingCycle !== 'monthly' && billingCycle !== 'quarterly' && billingCycle !== 'yearly') {
       return NextResponse.json({ success: false, error: 'Invalid billing_cycle' }, { status: 400 });
     }
     // FIX 6.3 (HIGH): Self-service v1 supports monthly recurring subscriptions
@@ -221,15 +237,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Plan not found or inactive' }, { status: 400 });
     }
 
-    const razorpayPlanId =
-      billingCycle === 'monthly' ? planRow.razorpay_plan_id_monthly : planRow.razorpay_plan_id;
-    if (!razorpayPlanId) {
-      return NextResponse.json(
-        { success: false, error: 'Plan is not provisioned with Razorpay yet' },
-        { status: 400 },
-      );
-    }
-
     const seatsUsed = await countActiveSeats(schoolId);
     if (seats < seatsUsed) {
       await capture('school_billing_plan_change_failed', userId, {
@@ -261,11 +268,152 @@ export async function POST(request: NextRequest) {
       from_seats: null,
     });
 
+    // ── DEMO COMP PATH (P11 sanctioned exception — strictly server-gated) ──
+    // BEFORE any Razorpay coordination: if this is a DEMO school
+    // (schools.is_demo = true, resolved from the server-side auth.schoolId — NEVER
+    // request body), grant a complimentary 'active' entitlement and skip Razorpay
+    // entirely. The predicate's only input is the authenticated school id, so a
+    // real school can never reach this branch even by forging a body field. On
+    // any error isDemoSchool() fails closed (returns false) → the real,
+    // payment-gated Razorpay path below runs instead.
+    if (await isDemoSchool(schoolId)) {
+      const supabaseDemo = getSupabaseAdmin();
+      const now = new Date();
+      const periodEnd = compPeriodEnd(now, billingCycle);
+
+      // In-place update by school_id → idempotent (re-running just re-stamps the
+      // same row). No Razorpay sub id (comp = no charge). status='active' is the
+      // sanctioned comp grant.
+      const compFields = {
+        plan,
+        billing_cycle: billingCycle,
+        seats_purchased: seats,
+        price_per_seat_monthly: planRow.price_monthly,
+        status: 'active' as const,
+        is_demo: true,
+        razorpay_subscription_id: null,
+        current_period_start: now.toISOString(),
+        current_period_end: periodEnd,
+        updated_at: now.toISOString(),
+      };
+
+      const { data: compStamped, error: compStampErr } = await supabaseDemo
+        .from('school_subscriptions')
+        .update(compFields)
+        .eq('school_id', schoolId)
+        .select('id')
+        .maybeSingle();
+
+      if (compStampErr) {
+        logger.error('school_admin_comp_stamp_failed', {
+          error: new Error(compStampErr.message),
+          route: '/api/school-admin/subscription',
+          schoolId,
+        });
+        return NextResponse.json(
+          { success: false, error: 'Failed to grant comp entitlement.' },
+          { status: 500 },
+        );
+      }
+
+      // Defensive insert if no provisioned row exists (data drift).
+      if (!compStamped) {
+        const { error: compInsertErr } = await supabaseDemo
+          .from('school_subscriptions')
+          .insert({ school_id: schoolId, ...compFields });
+        if (compInsertErr) {
+          logger.error('school_admin_comp_insert_failed', {
+            error: new Error(compInsertErr.message),
+            route: '/api/school-admin/subscription',
+            schoolId,
+          });
+          return NextResponse.json(
+            { success: false, error: 'Failed to grant comp entitlement.' },
+            { status: 500 },
+          );
+        }
+      }
+
+      await capture('school_billing_plan_change_completed', userId, {
+        school_id: schoolId,
+        plan,
+        billing_cycle: billingCycle,
+        seats,
+        source: 'self_service_post_comp',
+        from_plan: null,
+        from_seats: null,
+        razorpay_subscription_id: '',
+      });
+
+      // Metadata-only audit (no PII) — comp grant is a security-relevant event.
+      void logSchoolAudit({
+        schoolId,
+        actorId: userId,
+        action: 'subscription.comp_granted',
+        resourceType: 'school_subscription',
+        metadata: {
+          plan,
+          seats,
+          billing_cycle: billingCycle,
+          period_end: periodEnd,
+          is_demo: true,
+          razorpay_subscription_id: null,
+        },
+        ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+      });
+
+      return NextResponse.json({
+        success: true,
+        comp: true,
+        data: {
+          plan,
+          billing_cycle: billingCycle,
+          seats,
+          status: 'active',
+          current_period_end: periodEnd,
+          is_demo: true,
+          razorpay_subscription_id: null,
+        },
+      });
+    }
+
+    // ── P11 plan-ID selection + NULL-GUARD (REAL path only) ──
+    // Reached ONLY by non-demo schools (the demo comp branch above returns
+    // first and never touches Razorpay). Select the Razorpay plan id strictly
+    // by the requested cycle. We NEVER fall back from one cycle's id to
+    // another: a quarterly request that fell back to the monthly plan id would
+    // charge monthly while the DB records quarterly — a split-brain billing
+    // state (P11). So each cycle is guarded independently and, when its id is
+    // missing, we 400 with a distinct code.
+    let razorpayPlanId: string | null;
+    if (billingCycle === 'monthly') {
+      razorpayPlanId = planRow.razorpay_plan_id_monthly;
+    } else {
+      // billingCycle === 'quarterly' (yearly already rejected above)
+      razorpayPlanId = planRow.razorpay_plan_id_quarterly;
+    }
+    if (!razorpayPlanId) {
+      // Mirror the monthly null-guard; explicit code so the operator knows the
+      // quarterly plan still needs provisioning via /api/payments/setup-plans.
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'plan_not_provisioned',
+          code: 'plan_not_provisioned',
+          message:
+            billingCycle === 'quarterly'
+              ? 'This plan is not provisioned for quarterly billing yet. Please contact support. यह प्लान अभी तिमाही बिलिंग के लिए सेट नहीं है; कृपया सपोर्ट से संपर्क करें।'
+              : 'Plan is not provisioned with Razorpay yet.',
+        },
+        { status: 400 },
+      );
+    }
+
     let rzpSub: Awaited<ReturnType<typeof createRazorpaySubscription>>;
     try {
       rzpSub = await createRazorpaySubscription({
         razorpayPlanId,
-        totalBillingCycles: billingCycle === 'monthly' ? 12 : 1,
+        totalBillingCycles: billingCycle === 'monthly' ? 12 : 4,
         customerNotify: true,
         notes: { school_id: schoolId, seats: String(seats), source: 'school_self_service' },
       });
@@ -485,7 +633,7 @@ export async function PATCH(request: NextRequest) {
         await capture('school_billing_plan_change_failed', userId, {
           school_id: schoolId,
           plan: newPlan ?? (existing.plan as string),
-          billing_cycle: (existing.billing_cycle as 'monthly' | 'yearly') ?? 'monthly',
+          billing_cycle: (existing.billing_cycle as 'monthly' | 'quarterly' | 'yearly') ?? 'monthly',
           seats: newSeats,
           source: 'self_service_patch',
           reason: 'seat_cap_violation',
@@ -505,7 +653,7 @@ export async function PATCH(request: NextRequest) {
     const fromPlan = (existing.plan as string | null) ?? null;
     const fromSeats = (existing.seats_purchased as number | null) ?? null;
     const rzpSubId = (existing.razorpay_subscription_id as string | null) ?? null;
-    const billingCycle = (existing.billing_cycle as 'monthly' | 'yearly') ?? 'monthly';
+    const billingCycle = (existing.billing_cycle as 'monthly' | 'quarterly' | 'yearly') ?? 'monthly';
     const isPlanSwap = newPlan !== undefined && newPlan !== fromPlan;
     const isSeatOnly = newSeats !== undefined && !isPlanSwap;
 
@@ -544,6 +692,54 @@ export async function PATCH(request: NextRequest) {
         { success: false, error: 'Failed to update subscription' },
         { status: 500 },
       );
+    }
+
+    // ── DEMO COMP PATH (P11 sanctioned exception — server-gated) ──
+    // BEFORE any Razorpay coordination: a demo school's comp entitlement carries
+    // no Razorpay subscription (razorpay_subscription_id = null), so there is
+    // nothing to coordinate. The DB change already landed atomically via the RPC
+    // above. We branch on the SERVER-resolved auth.schoolId (never request body),
+    // so a real school can never reach this branch. Fails closed → real path runs.
+    if (await isDemoSchool(schoolId)) {
+      await capture('school_billing_plan_change_completed', userId, {
+        school_id: schoolId,
+        plan: newPlan ?? fromPlan ?? 'unknown',
+        billing_cycle: billingCycle,
+        seats: newSeats ?? fromSeats ?? 0,
+        source: 'self_service_patch_comp',
+        from_plan: fromPlan,
+        from_seats: fromSeats,
+        razorpay_subscription_id: '',
+      });
+
+      void logSchoolAudit({
+        schoolId,
+        actorId: userId,
+        action: 'subscription.comp_granted',
+        resourceType: 'school_subscription',
+        resourceId: (existing.id as string) ?? undefined,
+        metadata: {
+          plan: newPlan ?? fromPlan,
+          seats: newSeats ?? fromSeats,
+          billing_cycle: billingCycle,
+          is_demo: true,
+          razorpay_subscription_id: null,
+          path: 'patch',
+        },
+        ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+      });
+
+      return NextResponse.json({
+        success: true,
+        comp: true,
+        data: {
+          plan: newPlan ?? fromPlan,
+          seats: newSeats ?? fromSeats,
+          billing_cycle: billingCycle,
+          is_demo: true,
+          razorpay_subscription_id: null,
+        },
+      });
     }
 
     // ── 2. Razorpay coordination (only on seat-only mid-cycle change).
@@ -669,7 +865,7 @@ export async function DELETE(request: NextRequest) {
       await capture('school_subscription_cancelled', userId, {
         school_id: schoolId,
         plan: (existing.plan as string) ?? 'trial',
-        billing_cycle: (existing.billing_cycle as 'monthly' | 'yearly') ?? 'monthly',
+        billing_cycle: (existing.billing_cycle as 'monthly' | 'quarterly' | 'yearly') ?? 'monthly',
         seats: (existing.seats_purchased as number) ?? 0,
         razorpay_subscription_id: '',
         cancellation_timing: timing,

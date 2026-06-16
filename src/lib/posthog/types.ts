@@ -502,13 +502,18 @@ export interface LearnReviewWeakConceptClickedPayload extends LearnChapterContex
 interface SchoolBillingContextBase {
   school_id: string;        // uuid
   plan: string;             // 'starter' | 'pro' | 'unlimited' | 'trial'
-  billing_cycle: 'monthly' | 'yearly';
+  // 'quarterly' added with the self-service quarterly cadence (3-month cycle).
+  billing_cycle: 'monthly' | 'quarterly' | 'yearly';
   seats: number;
 }
 
 export interface SchoolBillingPlanChangeStartedPayload extends SchoolBillingContextBase {
-  /** Where the flow started: 'self_service_post' (new sub) or 'self_service_patch' (modify). */
-  source: 'self_service_post' | 'self_service_patch';
+  /**
+   * Where the flow started: 'self_service_post' (new sub) or 'self_service_patch'
+   * (modify). The '*_comp' variants are the demo-school complimentary path
+   * (P11 sanctioned exception — no Razorpay charge).
+   */
+  source: 'self_service_post' | 'self_service_patch' | 'self_service_post_comp' | 'self_service_patch_comp';
   /** Previous plan when this is a modification; null when it's a fresh subscription. */
   from_plan: string | null;
   /** Previous seats_purchased when this is a modification; null otherwise. */
@@ -516,15 +521,15 @@ export interface SchoolBillingPlanChangeStartedPayload extends SchoolBillingCont
 }
 
 export interface SchoolBillingPlanChangeCompletedPayload extends SchoolBillingContextBase {
-  source: 'self_service_post' | 'self_service_patch';
+  source: 'self_service_post' | 'self_service_patch' | 'self_service_post_comp' | 'self_service_patch_comp';
   from_plan: string | null;
   from_seats: number | null;
-  /** Razorpay subscription id created or updated. */
+  /** Razorpay subscription id created or updated. Empty string on the comp path. */
   razorpay_subscription_id: string;
 }
 
 export interface SchoolBillingPlanChangeFailedPayload extends SchoolBillingContextBase {
-  source: 'self_service_post' | 'self_service_patch';
+  source: 'self_service_post' | 'self_service_patch' | 'self_service_post_comp' | 'self_service_patch_comp';
   /** Closed-set reason; never includes free-form error text from Razorpay (PII risk). */
   reason: 'razorpay_error' | 'seat_cap_violation' | 'invalid_plan' | 'no_existing_subscription' | 'unknown';
 }

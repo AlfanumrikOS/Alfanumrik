@@ -41,17 +41,37 @@ interface RazorpayPlan {
   item: { id: string; name: string; amount: number; currency: string };
 }
 
+/** Billing cadence supported by Razorpay's Plans API. */
+export type RazorpayPlanPeriod = 'monthly' | 'yearly' | 'weekly' | 'daily';
+
 /**
  * Create a Razorpay Plan for recurring billing.
+ *
+ * Backward-compatible: existing callers that pass only (name, amountInr) keep
+ * the original monthly/interval-1 behaviour. The optional `opts` lets callers
+ * provision other cadences without a separate function:
+ *   - Monthly   → { period: 'monthly', interval: 1 } (default)
+ *   - Quarterly → { period: 'monthly', interval: 3 }  ← bills every 3 months
+ *   - Yearly    → { period: 'yearly',  interval: 1 }
+ *
  * @param name - Plan display name (e.g. "Alfanumrik Starter Monthly")
- * @param amountInr - Price in rupees
+ * @param amountInr - Price charged each interval, in rupees (already × interval
+ *   when the caller wants e.g. 3 months billed at once on a monthly/interval-3
+ *   plan — Razorpay charges `item.amount` per interval, NOT per period).
+ * @param opts - Optional cadence override. Defaults to { period: 'monthly', interval: 1 }.
  */
-export async function createRazorpayPlan(name: string, amountInr: number): Promise<RazorpayPlan> {
+export async function createRazorpayPlan(
+  name: string,
+  amountInr: number,
+  opts?: { period?: RazorpayPlanPeriod; interval?: number },
+): Promise<RazorpayPlan> {
+  const period = opts?.period ?? 'monthly';
+  const interval = opts?.interval ?? 1;
   return rzpFetch<RazorpayPlan>('/plans', {
     method: 'POST',
     body: JSON.stringify({
-      period: 'monthly',
-      interval: 1,
+      period,
+      interval,
       item: {
         name,
         amount: amountInr * 100, // convert to paisa for Razorpay

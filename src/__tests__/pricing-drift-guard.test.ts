@@ -4,7 +4,10 @@ import {
   SCHOOL_SEAT_DEFAULT_INR,
   SCHOOL_PER_SEAT_MARKETING_INR,
   SCHOOL_PER_SEAT_MARKETING_LABEL,
+  SCHOOL_PER_SEAT_QUARTERLY_INR,
+  SCHOOL_PER_SEAT_QUARTERLY_LABEL,
   schoolSeatPriceForTier,
+  schoolSeatPriceQuarterly,
 } from '@/lib/pricing';
 
 /**
@@ -112,6 +115,36 @@ describe('Pricing SoT drift guard (REG-154)', () => {
       const billableTiers = Object.values(SCHOOL_SEAT_TIER_INR) as number[];
       expect(billableTiers).not.toContain(75);
       expect(SCHOOL_PER_SEAT_MARKETING_INR).not.toBe(75);
+    });
+  });
+
+  describe('quarterly per-seat display figure is DERIVED (basic tier × 3), never an independent literal', () => {
+    it('SCHOOL_PER_SEAT_QUARTERLY_INR equals the basic tier × 3 (₹297)', () => {
+      expect(SCHOOL_PER_SEAT_QUARTERLY_INR).toBe(SCHOOL_SEAT_TIER_INR.basic * 3);
+      expect(SCHOOL_PER_SEAT_QUARTERLY_INR).toBe(297);
+    });
+
+    it('the quarterly label is the formatted ₹297', () => {
+      expect(SCHOOL_PER_SEAT_QUARTERLY_LABEL).toBe('₹297');
+    });
+
+    it('schoolSeatPriceQuarterly() = tier monthly × 3 for every published tier', () => {
+      expect(schoolSeatPriceQuarterly('basic')).toBe(99 * 3);
+      expect(schoolSeatPriceQuarterly('standard')).toBe(199 * 3);
+      expect(schoolSeatPriceQuarterly('premium')).toBe(399 * 3);
+      expect(schoolSeatPriceQuarterly('enterprise')).toBe(599 * 3);
+    });
+
+    it('schoolSeatPriceQuarterly() falls back to the standard tier × 3 for unknown/null', () => {
+      expect(schoolSeatPriceQuarterly('gold')).toBe(199 * 3);
+      expect(schoolSeatPriceQuarterly(null)).toBe(199 * 3);
+      expect(schoolSeatPriceQuarterly(undefined)).toBe(199 * 3);
+    });
+
+    it('quarterly display = exactly 3× the monthly billed amount (one number drives both)', () => {
+      // The quarterly figure is purely derived — there is no second literal to
+      // drift. Changing the basic tier moves both with one CEO-approved number.
+      expect(SCHOOL_PER_SEAT_QUARTERLY_INR).toBe(schoolSeatPriceForTier('basic') * 3);
     });
   });
 });

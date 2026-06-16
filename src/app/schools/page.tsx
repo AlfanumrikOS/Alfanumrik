@@ -3,7 +3,10 @@
 import { useState, useRef } from 'react';
 import Link from 'next/link';
 import { LangProvider, LangToggle, useLang } from '@/components/landing/LangToggle';
-import { SCHOOL_PER_SEAT_MARKETING_LABEL } from '@/lib/pricing';
+import {
+  SCHOOL_PER_SEAT_MARKETING_LABEL,
+  SCHOOL_PER_SEAT_QUARTERLY_LABEL,
+} from '@/lib/pricing';
 
 /* ─── Data ─── */
 
@@ -241,7 +244,16 @@ function SchoolsContent() {
                 {t('/student/month', '/छात्र/माह')}
               </span>
             </div>
-            <p className="text-xs mb-6" style={{ color: 'var(--text-3)' }}>
+            {/* Billing cadence note — schools bill quarterly. SoT-driven:
+                keeps the ₹99/student/month anchor above, adds the quarterly
+                cadence + the derived ₹297/quarter figure from pricing.ts. */}
+            <p className="text-xs" style={{ color: 'var(--text-2)', fontWeight: 600 }}>
+              {t(
+                `Billed quarterly — ${SCHOOL_PER_SEAT_QUARTERLY_LABEL}/student/quarter`,
+                `तिमाही बिलिंग — ${SCHOOL_PER_SEAT_QUARTERLY_LABEL}/छात्र/तिमाही`,
+              )}
+            </p>
+            <p className="text-xs mb-6 mt-1" style={{ color: 'var(--text-3)' }}>
               {t('Negotiable for 500+ students', '500+ छात्रों के लिए बातचीत योग्य')}
             </p>
 

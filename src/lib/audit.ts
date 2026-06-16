@@ -231,6 +231,9 @@ export const SCHOOL_AUDIT_ACTIONS = [
   // only logger.info'd — added with the school-admin audit-logging PR.
   'content.deleted', 'enrollment.removed', 'invite_code.revoked',
   'subscription.cancelled',
+  // Demo comp entitlement grant (P11 sanctioned exception) — written by
+  // POST /api/school-admin/subscription when schools.is_demo = true.
+  'subscription.comp_granted',
   // Roster/branding write coverage — endpoints that touched school state
   // (classes, students, teachers, parents) without writing school_audit_log.
   'class.created', 'class.updated',
