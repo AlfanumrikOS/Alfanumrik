@@ -625,11 +625,22 @@ Deno.serve(async (req) => {
 
     const taskIds = tasks.map((t: TaskRow) => t.id)
 
-    // Atomically mark tasks as processing
-    await supabaseClient
+    // Atomically mark tasks as processing.
+    // Schema note: the live `task_queue` table (baseline_from_prod.sql:14324)
+    // has NO `updated_at` column — only `processing_at`, `completed_at`, and
+    // `error`. Writing `updated_at` made this UPDATE silently fail (supabase-js
+    // returns the error rather than throwing, and the result was unchecked), so
+    // rows never left `pending`, tasks were re-dispatched on every invocation,
+    // and `attempts` never advanced toward dead-lettering. Map to the real
+    // columns and surface failures.
+    const { error: claimErr } = await supabaseClient
       .from('task_queue')
-      .update({ status: 'processing', updated_at: new Date().toISOString() })
+      .update({ status: 'processing', processing_at: new Date().toISOString() })
       .in('id', taskIds)
+    if (claimErr) {
+      console.error('queue-consumer: failed to claim tasks as processing:', claimErr.message)
+      throw claimErr
+    }
 
     const results = { processed: 0, failed: 0, errors: [] as string[] }
 
@@ -642,7 +653,6 @@ Deno.serve(async (req) => {
           .update({
             status: 'completed',
             completed_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
           })
           .eq('id', task.id)
 
@@ -653,20 +663,30 @@ Deno.serve(async (req) => {
         results.failed++
 
         const nextAttempt = task.attempts + 1
-        // Exponential backoff with jitter: delay reprocessing by 2^attempt * jitter minutes
+        // Schema note: the live `task_queue` table (baseline_from_prod.sql:14324)
+        // has only `error` for the failure message and no `retry_after` /
+        // `last_error` / `updated_at` columns. Earlier code wrote those three
+        // non-existent columns, so the whole UPDATE silently failed: `attempts`
+        // never advanced and rows never reached `failed`, so a poison task
+        // looped forever. We now write the real `error` column and rely on
+        // `status` + `attempts` (the claim query already filters `attempts < 3`)
+        // for retry/dead-letter control. The backoff timestamp is folded into
+        // the error text for forensic context (re-claim cadence is driven by
+        // the cron schedule, not a per-row retry_after).
         const backoffMinutes = Math.pow(2, nextAttempt) * (0.5 + Math.random() * 0.5)
         const retryAfter = new Date(Date.now() + backoffMinutes * 60_000).toISOString()
 
-        await supabaseClient
+        const { error: failUpdateErr } = await supabaseClient
           .from('task_queue')
           .update({
             status: nextAttempt >= 3 ? 'failed' : 'pending',
             attempts: nextAttempt,
-            last_error: message,
-            retry_after: retryAfter,
-            updated_at: new Date().toISOString(),
+            error: `${message} (suggested_retry_after=${retryAfter})`,
           })
           .eq('id', task.id)
+        if (failUpdateErr) {
+          console.error(`queue-consumer: failed to record task failure for ${task.id}:`, failUpdateErr.message)
+        }
       }
     }
 
