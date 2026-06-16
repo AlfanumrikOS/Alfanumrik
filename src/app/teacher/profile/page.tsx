@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useTeacherAllowedSubjects } from '@/lib/useTeacherAllowedSubjects';
+import { authHeader } from '@/lib/api/auth-header';
 
 const tt = (hi: boolean, en: string, hiText: string) => hi ? hiText : en;
 
@@ -42,7 +43,7 @@ export default function TeacherProfilePage() {
       const res = await fetch('/api/teacher/profile', {
         method: 'PATCH',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
         body: JSON.stringify({ name: trimmedName, school_name: trimmedSchool }),
       });
       const json = await res.json();

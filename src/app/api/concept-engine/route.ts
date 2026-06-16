@@ -485,9 +485,12 @@ async function handleSearchLegacy(
     rpcParams.query_embedding = JSON.stringify(embedding);
   }
 
-  if (contentType) {
-    rpcParams.p_content_type = contentType;
-  }
+  // NOTE: legacy match_rag_chunks has NO p_content_type param. Passing it
+  // triggers PGRST202 (function-signature mismatch), so this content-type-
+  // filtered search path returns nothing — ungrounded. Omit it here: legacy
+  // cannot filter by content_type, so we accept the unfiltered top-k as
+  // graceful degradation rather than a hard failure. (contentType is still
+  // echoed back in the response payload for the caller's context.)
 
   // eslint-disable-next-line alfanumrik/no-direct-rag-rpc -- TODO(phase-4-cleanup): concept-engine search helper — route through grounded-client.callGroundedAnswer() when search template is defined.
   const { data, error } = await supabaseAdmin.rpc('match_rag_chunks', rpcParams);

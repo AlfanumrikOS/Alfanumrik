@@ -29,6 +29,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
+import { authHeader } from '@/lib/api/auth-header';
 
 // ─── Bilingual helper (P7) ────────────────────────────────────────
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
@@ -149,6 +150,7 @@ export default function LabLeaderboardPage() {
       const res = await fetch('/api/teacher/lab-leaderboard', {
         method: 'GET',
         credentials: 'include',
+        headers: { ...(await authHeader()) },
       });
       const json = (await res.json()) as ApiResponse;
       if (!res.ok || !json.success) {

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useTeacherAllowedSubjects } from '@/lib/useTeacherAllowedSubjects';
 import { VALID_GRADES } from '@/lib/identity';
+import { authHeader } from '@/lib/api/auth-header';
 import { usePermissions } from '@/lib/usePermissions';
 import { useClassPulse } from '@/lib/pulse/use-pulse';
 import { StudentPulseList } from '@/components/pulse';
@@ -176,7 +177,7 @@ export default function TeacherClassesPage() {
       const res = await fetch('/api/teacher/classes', {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
         body: JSON.stringify({
           name: formName.trim(),
           grade: formGrade,
@@ -236,7 +237,7 @@ export default function TeacherClassesPage() {
       const res = await fetch(`/api/teacher/classes/${editingClass.id}`, {
         method: 'PATCH',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
         body: JSON.stringify({ name, section: editSection || null }),
       });
       const json = await res.json();
@@ -258,6 +259,7 @@ export default function TeacherClassesPage() {
       const res = await fetch(`/api/teacher/classes/${classId}/archive`, {
         method: 'POST',
         credentials: 'include',
+        headers: { ...(await authHeader()) },
       });
       const json = await res.json();
       if (!res.ok || !json.success) {

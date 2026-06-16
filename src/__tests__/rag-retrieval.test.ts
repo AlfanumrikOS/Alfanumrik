@@ -111,7 +111,14 @@ async function fetchRAGContextTestable(
         match_count: 5,
       };
       if (chapter) rpcParams.p_chapter = chapter;
-      if (contentType) rpcParams.p_content_type = contentType;
+      // CONTRACT (2026-06-16): the legacy `match_rag_chunks` RPC has NO
+      // p_content_type param. Passing it triggers PGRST202 (function-signature
+      // mismatch) and the call returns nothing — ungrounded. The legacy path
+      // therefore OMITS p_content_type and accepts the unfiltered top-k as
+      // graceful degradation. Content-type filtering is restored only on the v2
+      // path (`match_rag_chunks_v2`), which still passes p_content_type — see
+      // `runVectorSearchV2Testable` below. Mirrors the source legacy fallback in
+      // supabase/functions/_shared/retrieval.ts and src/app/api/concept-engine/route.ts.
       if (queryEmbedding) rpcParams.query_embedding = JSON.stringify(queryEmbedding);
 
       // eslint-disable-next-line alfanumrik/no-direct-rag-rpc -- TODO(phase-4-cleanup): this test validates the RPC shape directly; migrate to call grounded-client.callGroundedAnswer() once all retrievers route through the service.
@@ -312,7 +319,7 @@ describe('fetchRAGContext integration (mock Supabase + mock embedding)', () => {
   });
 
   // Test 3
-  it('routes to match_rag_chunks when contentType is set even with a successful embedding', async () => {
+  it('routes to legacy match_rag_chunks when contentType is set, and OMITS p_content_type', async () => {
     mockRpc.mockResolvedValue({
       data: [{ content: 'test', chapter_title: 'Ch1', topic: 'T1', concept: 'C1' }],
       error: null,
@@ -333,7 +340,11 @@ describe('fetchRAGContext integration (mock Supabase + mock embedding)', () => {
     expect(mockRpc).not.toHaveBeenCalledWith('hybrid_rag_search', expect.any(Object));
 
     const params = mockRpc.mock.calls[0][1] as Record<string, unknown>;
-    expect(params.p_content_type).toBe('qa');
+    // NEW CONTRACT (2026-06-16): legacy match_rag_chunks has no p_content_type
+    // overload. The legacy fallback MUST NOT pass it, or PostgREST returns
+    // PGRST202 and the call comes back ungrounded (empty). contentType still
+    // routes us to the legacy (keyword) path, but is NOT forwarded to the RPC.
+    expect(params).not.toHaveProperty('p_content_type');
   });
 
   // Test 4
@@ -530,5 +541,126 @@ describe('fetchRAGContext integration (mock Supabase + mock embedding)', () => {
     );
 
     expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — legacy-vs-v2 p_content_type contract (2026-06-16 RPC re-sweep)
+// ---------------------------------------------------------------------------
+//
+// The production retrievers (supabase/functions/_shared/retrieval.ts and
+// src/app/api/concept-engine/route.ts) try the v2 RPC `match_rag_chunks_v2`
+// FIRST (which has a p_content_type filter) and fall back to the LEGACY RPC
+// `match_rag_chunks` on PGRST202.
+//
+//   - The v2 branch MUST pass p_content_type (the 8-filter unified RPC).
+//   - The legacy fallback MUST NOT pass p_content_type — legacy has no such
+//     overload, so passing it triggers PGRST202 and returns nothing (ungrounded).
+//
+// These two helpers mirror the exact param shape of each source branch so the
+// invariant is pinned at the param level, not just at the routing level.
+
+/** Mirrors the LEGACY fallback param shape (retrieval.ts ~line 397). */
+function buildLegacyRpcParams(p: {
+  effectiveQuery: string;
+  subject: string;
+  grade: string;
+  matchCount: number;
+  board?: string | null;
+  syllabusVersion?: string;
+  chapterText?: string | null;
+  contentType?: string | null; // accepted but DELIBERATELY not forwarded
+  queryEmbedding?: number[] | null;
+}): Record<string, unknown> {
+  const rpcParams: Record<string, unknown> = {
+    query_text: p.effectiveQuery,
+    p_subject: p.subject,
+    p_grade: p.grade,
+    match_count: p.matchCount,
+    p_board: p.board ?? null,
+    p_syllabus_version: p.syllabusVersion ?? '2025-26',
+  };
+  if (p.chapterText) rpcParams.p_chapter = p.chapterText;
+  // p_content_type intentionally OMITTED — legacy has no such param.
+  if (p.queryEmbedding) rpcParams.query_embedding = JSON.stringify(p.queryEmbedding);
+  return rpcParams;
+}
+
+/** Mirrors the V2 param shape (retrieval.ts ~line 365). */
+function buildV2RpcParams(p: {
+  effectiveQuery: string;
+  subject: string;
+  grade: string;
+  matchCount: number;
+  contentType?: string | null; // forwarded on v2
+  source?: string;
+  syllabusVersion?: string;
+  board?: string;
+  queryEmbedding?: number[] | null;
+}): Record<string, unknown> {
+  return {
+    query_text: p.effectiveQuery,
+    p_subject: p.subject,
+    p_grade: p.grade,
+    match_count: p.matchCount,
+    p_content_type: p.contentType ?? null,
+    p_source: p.source ?? 'NCERT',
+    p_syllabus_version: p.syllabusVersion ?? '2025-26',
+    p_board: p.board ?? 'CBSE',
+    query_embedding: p.queryEmbedding ? JSON.stringify(p.queryEmbedding) : null,
+  };
+}
+
+describe('legacy match_rag_chunks fallback OMITS p_content_type (PGRST202 guard)', () => {
+  it('does not include p_content_type even when a contentType is requested', () => {
+    const params = buildLegacyRpcParams({
+      effectiveQuery: 'what is osmosis',
+      subject: 'Biology',
+      grade: '10',
+      matchCount: 5,
+      contentType: 'qa',
+    });
+    expect(params).not.toHaveProperty('p_content_type');
+    // The other legacy params are still present (backward-compat).
+    expect(params.p_subject).toBe('Biology');
+    expect(params.p_grade).toBe('10');
+    expect(params.match_count).toBe(5);
+  });
+
+  it('still forwards p_chapter on the legacy path when a chapter is given', () => {
+    const params = buildLegacyRpcParams({
+      effectiveQuery: 'q',
+      subject: 'Science',
+      grade: '8',
+      matchCount: 5,
+      chapterText: 'Cells',
+      contentType: 'content',
+    });
+    expect(params.p_chapter).toBe('Cells');
+    expect(params).not.toHaveProperty('p_content_type');
+  });
+});
+
+describe('v2 match_rag_chunks_v2 path STILL passes p_content_type', () => {
+  it('forwards the requested contentType on the v2 path', () => {
+    const params = buildV2RpcParams({
+      effectiveQuery: 'what is osmosis',
+      subject: 'Biology',
+      grade: '10',
+      matchCount: 5,
+      contentType: 'qa',
+    });
+    expect(params.p_content_type).toBe('qa');
+  });
+
+  it('passes p_content_type as null on the v2 path when none requested', () => {
+    const params = buildV2RpcParams({
+      effectiveQuery: 'q',
+      subject: 'Science',
+      grade: '7',
+      matchCount: 5,
+    });
+    expect(params).toHaveProperty('p_content_type');
+    expect(params.p_content_type).toBeNull();
   });
 });
