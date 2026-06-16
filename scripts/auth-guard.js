@@ -101,9 +101,15 @@ if (!exists('src/app/api/auth/session/route.ts')) {
 }
 
 // ── Check 9: All 4 role tabs in AuthScreen ────────────────────────────────────
+// 2026-06-16: role-tab labels became bilingual (pre-login EN/हिंदी toggle), so
+// `label: 'Student'` is now `label: t('Student', 'विद्यार्थी')`. We match the
+// English term inside t() — `label: t('${role}'` — which still fails if any of
+// the 4 role tabs is removed. Mirrors src/__tests__/auth-flows.test.ts:171-185.
+// (The School tab's `key` is `institution_admin`, but its label English term is
+// `School`, which is what we match here.)
 if (authScreenContent !== null) {
   for (const role of ['Student', 'Teacher', 'Parent', 'School']) {
-    if (!authScreenContent.includes(`label: '${role}'`)) {
+    if (!authScreenContent.includes(`label: t('${role}'`)) {
       fail(`❌ FATAL: AuthScreen.tsx is missing the ${role} role tab.`);
     }
   }

@@ -102,6 +102,11 @@ export default function ChapterConceptPage() {
     ncert_page_end: number | null;
   } | null>(null);
   const [loading, setLoading] = useState(true);
+  // P0 fix: error flag for the content fetch. When `load()` rejects (flaky
+  // Indian-4G network) we surface a retryable error card instead of hanging
+  // forever on <LoadingFoxy />. Distinct from the topics.length===0 empty
+  // state (which means "loaded OK, no concepts").
+  const [loadError, setLoadError] = useState(false);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [activeTab, setActiveTab] = useState<'core' | 'example' | 'cheat'>('core');
   const [visibleSteps, setVisibleSteps] = useState<Record<number, number>>({});
@@ -187,8 +192,14 @@ export default function ChapterConceptPage() {
   const load = useCallback(async () => {
     if (!student) return;
     setLoading(true);
+    setLoadError(false);
     const grade = student.grade;
 
+    // P0 fix: the entire fetch+merge body is wrapped in try/catch/finally so a
+    // single rejected query (flaky network) can never leave the student stuck
+    // on the skeleton. `finally` ALWAYS clears `loading`; `catch` flips the
+    // retryable error state.
+    try {
     // Load RAG topics, curated concepts, questions, diagrams, and chapter/subject metadata in parallel
     const [
       ragTopicsRaw,
@@ -326,12 +337,38 @@ export default function ChapterConceptPage() {
     setCompletedTopics(new Set());
     setQuizCurrentIdx(0);
     setQuizAnswers({});
-    setLoading(false);
+    } catch (err: unknown) {
+      // Transient fetch failure — surface a retryable error card. Note this is
+      // distinct from "loaded OK but empty": getChapterTopics() swallows RAG
+      // errors and returns [], so a network failure on the OTHER queries
+      // (questions/diagrams/chapter meta) is the path that reaches here.
+      console.warn('[learn] chapter load failed:', err instanceof Error ? err.message : String(err));
+      setLoadError(true);
+    } finally {
+      // ALWAYS clear loading — this is the line that previously never ran on a
+      // rejected await, leaving the student stuck on the permanent skeleton.
+      setLoading(false);
+    }
   }, [student, subject, chapterNum, chapterReaderV2FlagOn]);
 
   useEffect(() => {
     if (student) load();
   }, [student?.id, load]);
+
+  // P0 defense-in-depth: skeleton-timeout backstop. If we're still in the
+  // loading state 8s after it began (e.g. an await silently stalls on a dead
+  // socket without ever rejecting on Indian 4G), flip to the error card so the
+  // student always gets a Retry path instead of a permanent skeleton. The
+  // timer is cleared the moment loading ends (success OR error), so a normal
+  // fast load never trips it.
+  useEffect(() => {
+    if (!loading) return;
+    const t = setTimeout(() => {
+      setLoadError(true);
+      setLoading(false);
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [loading]);
 
   // Fire `learn_chapter_started` exactly once after data arrives. We need
   // student.grade + topics + questions to be ready so the payload counts
@@ -940,6 +977,49 @@ export default function ChapterConceptPage() {
               {isHi ? '← विषय सूची पर वापस जाओ' : '← Back to Subjects'}
             </Button>
           </div>
+        </main>
+        </AppShell>
+      </div>
+    );
+  }
+
+  // ── Load-error fallback (P0) ──
+  // Distinct from the empty state below: this means the content fetch FAILED
+  // (network/transient), not "loaded OK with no concepts". Mirrors the empty
+  // state's AppShell + centered-card styling but offers a Retry that
+  // re-invokes load(). Placed before the empty check because on error we have
+  // no trustworthy topics to reason about.
+  if (loadError) {
+    return (
+      <div className="mesh-bg">
+        <AppShell
+          variant="mobile"
+          header={
+            <div className="page-header-inner flex items-center gap-3">
+              <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">&larr;</button>
+              <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+                {subMeta?.icon} {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
+              </span>
+            </div>
+          }
+        >
+        <main className="w-full px-4 md:px-8 py-12 text-center">
+          <div className="text-5xl mb-4">📡</div>
+          <p className="text-base font-semibold text-[var(--text-2)] mb-2">
+            {isHi ? 'यह अध्याय लोड नहीं हो सका' : "Couldn't load this chapter"}
+          </p>
+          <p className="text-sm text-[var(--text-3)] mb-6">
+            {isHi ? 'नेटवर्क धीमा लग रहा है — फिर से कोशिश करो।' : 'Your network looks slow — please try again.'}
+          </p>
+          <Button onClick={() => load()} color={subMeta?.color}>
+            🔄 {isHi ? 'फिर से कोशिश करो' : 'Retry'}
+          </Button>
+          <button
+            onClick={() => router.push('/learn')}
+            className="mt-3 block mx-auto px-6 py-2.5 rounded-xl text-sm font-semibold text-[var(--text-3)] hover:bg-gray-50 active:scale-[0.98] transition-all"
+          >
+            {isHi ? '← विषय सूची पर वापस जाओ' : '← Back to Subjects'}
+          </button>
         </main>
         </AppShell>
       </div>

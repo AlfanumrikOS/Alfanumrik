@@ -6,7 +6,6 @@ import { useAuth } from '@/lib/AuthContext';
 import { useTenant } from '@/lib/tenant-context';
 import { supabase } from '@/lib/supabase';
 import { authedFetch } from '@/lib/school-admin/authed-fetch';
-import { useAtlasFlag } from '@/lib/use-atlas-flag';
 import { useSchoolReportsDepth } from '@/lib/use-school-reports-depth';
 import { useSchoolAdminRbac } from '@/lib/use-school-admin-rbac';
 import { useSchoolAdminRole } from '@/lib/use-school-admin-role';
@@ -130,9 +129,6 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
   // resolve to `false` are filtered out of the sidebar.
   const [moduleEnablement, setModuleEnablement] = useState<Record<string, boolean> | null>(null);
 
-  // Editorial Atlas pass-through. Sync read from cache — no flash.
-  const atlasOn = useAtlasFlag('school');
-
   // Phase 3B Wave D — deep school-wide reporting nav entry. Sync-paints
   // DEFAULT_OFF (1h cache), so for every current (flag-absent) user this is false
   // on the first paint and the Academics section omits the School Report entry
@@ -239,8 +235,13 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
     };
   }, [authUserId]);
 
-  if (atlasOn) return <>{children}</>;
-
+  // NOTE: this shell intentionally does NOT short-circuit on any Editorial-Atlas
+  // flag. The teacher/parent shells dispatch to their own Atlas bodies that carry
+  // their own nav, but the school-admin page renders ONLY <CommandCenter />, which
+  // has no sidebar of its own. Returning bare {children} here stripped the entire
+  // purple sidebar, leaving a brand-new school admin with NO way to reach
+  // Enrollment / Invite-Codes / Setup (P0 launch blocker). ConsolidatedSchoolNav
+  // must ALWAYS render around children regardless of any atlas flag.
   return (
     <div
       className={`flex min-h-screen bg-surface-2${cosmicEnabled ? ' school-admin-portal' : ''}`}

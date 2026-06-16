@@ -162,20 +162,26 @@ describe('identity/constants.ts — PUBLIC_ROUTES', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('AuthScreen.tsx — all 4 role tabs present', () => {
-  it('has Student tab', () => {
-    expect(readFile('src/components/auth/AuthScreen.tsx')).toContain("label: 'Student'");
+  // 2026-06-16: the role-tab labels became bilingual (pre-login EN/हिंदी toggle).
+  // `label: 'Student'` is now `label: t('Student', 'विद्यार्थी')`. The intent of
+  // these guards is unchanged — every role tab must still exist — so we assert
+  // the new bilingual form (English term + its Hindi pair) rather than the old
+  // monolingual literal. This is NOT a weakened assertion: it pins MORE (both the
+  // English term AND the Hindi translation must be present together).
+  it('has Student tab (bilingual label)', () => {
+    expect(readFile('src/components/auth/AuthScreen.tsx')).toContain("label: t('Student', 'विद्यार्थी')");
   });
 
-  it('has Teacher tab', () => {
-    expect(readFile('src/components/auth/AuthScreen.tsx')).toContain("label: 'Teacher'");
+  it('has Teacher tab (bilingual label)', () => {
+    expect(readFile('src/components/auth/AuthScreen.tsx')).toContain("label: t('Teacher', 'शिक्षक')");
   });
 
-  it('has Parent tab', () => {
-    expect(readFile('src/components/auth/AuthScreen.tsx')).toContain("label: 'Parent'");
+  it('has Parent tab (bilingual label)', () => {
+    expect(readFile('src/components/auth/AuthScreen.tsx')).toContain("label: t('Parent', 'अभिभावक')");
   });
 
-  it('has School tab (institution_admin)', () => {
-    expect(readFile('src/components/auth/AuthScreen.tsx')).toContain("label: 'School'");
+  it('has School tab (institution_admin, bilingual label)', () => {
+    expect(readFile('src/components/auth/AuthScreen.tsx')).toContain("label: t('School', 'स्कूल')");
   });
 });
 
