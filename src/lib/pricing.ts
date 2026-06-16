@@ -36,16 +36,18 @@
  *     is a pricing change and requires CEO approval (.claude/CLAUDE.md "User
  *     Approval Required For"). This module is for CENTRALIZATION ONLY.
  *
- * ⚠️  KNOWN DISCREPANCY (flagged for CEO — 2026-06): the /schools marketing
- *     page historically hardcoded "₹75/student/month". ₹75 matches NO value in
- *     the actual billing path:
+ * ✅  RESOLVED (CEO-approved 2026-06-16): ₹99 is the official public per-seat
+ *     marketing price for schools. It equals the lowest billable tier (`basic`),
+ *     so the public "from ₹99/student/month" claim is anchored to a real billed
+ *     figure with zero drift from the billing path:
  *        • invoice default tiers: 99 / 199 / 399 / 599 (default 199)
  *        • per-school negotiated price_per_seat_monthly: arbitrary, trial = 0
  *        • consumer "unlimited"/Family-School plan: ₹1,099/mo (B2C, not per-seat)
- *     This module does NOT adopt ₹75. It exposes the system-of-record value
- *     (`SCHOOL_PER_SEAT_MARKETING_INR`) instead. If the business wants to quote
- *     ₹75 publicly, the invoice default tier must be lowered to match — a real
- *     pricing change needing CEO sign-off.
+ *     The /schools page renders this value directly from the SoT
+ *     (`SCHOOL_PER_SEAT_MARKETING_INR`). The earlier "₹75" placeholder is retired;
+ *     no figure other than the SoT value may be quoted publicly. Any change to the
+ *     basic tier (and therefore this marketing figure) remains a pricing change
+ *     needing CEO sign-off per the PRICING-CHANGE POLICY above.
  */
 
 import { PRICING, formatINR, yearlyPerMonth } from '@/lib/plans';
@@ -113,13 +115,13 @@ export function schoolSeatPriceForTier(tier: string | null | undefined): number 
 }
 
 /**
- * The per-seat price the /schools MARKETING page should quote as its headline
+ * The per-seat price the /schools MARKETING page quotes as its headline
  * "from ₹X/student/month" figure.
  *
- * Anchored to the system-of-record lowest published tier (`basic`) so the
- * public "starting from" claim is a real billable number. This is the value the
- * frontend renders — it deliberately does NOT equal the legacy hardcoded ₹75
- * (see KNOWN DISCREPANCY in the module header).
+ * CEO-approved 2026-06-16: the official public per-seat price is ₹99, equal to
+ * the system-of-record lowest published tier (`basic`). The /schools page renders
+ * this SoT value directly, so the public "starting from" claim is a real billed
+ * number with zero drift (see RESOLVED note in the module header).
  */
 export const SCHOOL_PER_SEAT_MARKETING_INR: number = SCHOOL_SEAT_TIER_INR.basic;
 
