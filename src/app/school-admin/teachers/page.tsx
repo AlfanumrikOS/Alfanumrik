@@ -15,6 +15,7 @@ import {
   SheetModal,
   SectionHeader,
 } from '@/components/ui';
+import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 
 /* ─────────────────────────────────────────────────────────────
    BILINGUAL HELPER (P7)
@@ -63,7 +64,7 @@ function TeacherCardSkeleton() {
 
 function PageSkeleton() {
   return (
-    <div className="px-4 pt-4 pb-24 max-w-2xl mx-auto space-y-3">
+    <div className="space-y-3">
       {/* Search bar skeleton */}
       <Skeleton variant="rect" height={44} rounded="rounded-xl" />
       {/* Teacher cards */}
@@ -395,7 +396,7 @@ function TeacherCard({ teacher, isHi }: TeacherCardProps) {
 ───────────────────────────────────────────────────────────── */
 export default function SchoolAdminTeachersPage() {
   const router = useRouter();
-  const { authUserId, isLoading: authLoading, isHi, setLanguage } = useAuth();
+  const { authUserId, isLoading: authLoading, isHi } = useAuth();
 
   /* ── State ── */
   const [schoolId, setSchoolId] = useState<string | null>(null);
@@ -481,102 +482,10 @@ export default function SchoolAdminTeachersPage() {
   /* ── Loading states ── */
   const isPageLoading = authLoading || loadingAdmin;
 
-  /* ── Sticky header component (shared between loading + loaded states) ── */
-  const PageHeader = (
-    <header
-      className="sticky top-0 z-10 px-4 py-3 flex items-center gap-2"
-      style={{
-        background: 'rgba(251,248,244,0.94)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-        borderBottom: '1px solid var(--border)',
-      }}
-    >
-      {/* Back button */}
-      <button
-        onClick={() => router.push('/school-admin')}
-        className="flex items-center justify-center rounded-xl transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
-        style={{
-          minWidth: 40,
-          minHeight: 40,
-          background: 'var(--surface-2)',
-          border: '1px solid var(--border)',
-          color: 'var(--text-2)',
-          fontSize: '18px',
-        }}
-        aria-label={t(isHi, 'Back to dashboard', 'डैशबोर्ड पर वापस')}
-      >
-        ←
-      </button>
-
-      {/* Title */}
-      <div className="flex-1 min-w-0">
-        <h1
-          className="text-base font-bold text-[var(--text-1)] truncate"
-          style={{ fontFamily: 'var(--font-display)' }}
-        >
-          {t(isHi, 'Teachers', 'शिक्षक')}
-        </h1>
-        {!isPageLoading && !loadingTeachers && teachers.length > 0 && (
-          <p className="text-xs text-[var(--text-3)] mt-0.5">
-            {teachers.length}{' '}
-            {t(isHi, teachers.length === 1 ? 'teacher' : 'teachers', 'शिक्षक')}
-          </p>
-        )}
-      </div>
-
-      {/* Language toggle */}
-      <button
-        onClick={() => setLanguage && setLanguage(isHi ? 'en' : 'hi')}
-        className="flex items-center justify-center rounded-xl text-xs font-semibold transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
-        style={{
-          minWidth: 40,
-          minHeight: 40,
-          background: 'var(--surface-2)',
-          border: '1px solid var(--border)',
-          color: 'var(--text-2)',
-        }}
-        aria-label={isHi ? 'Switch to English' : 'हिन्दी में बदलें'}
-      >
-        {isHi ? 'EN' : 'हि'}
-      </button>
-
-      {/* Invite Teacher button */}
-      {schoolId && (
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => setInviteOpen(true)}
-          style={{ minHeight: 40 }}
-        >
-          + {t(isHi, 'Invite', 'आमंत्रित करें')}
-        </Button>
-      )}
-    </header>
-  );
-
   /* ── Full page loading skeleton ── */
   if (isPageLoading) {
     return (
-      <div
-        style={{ background: 'var(--bg)' }}
-        className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-      >
-        {/* Render header in skeleton form */}
-        <header
-          className="sticky top-0 z-10 px-4 py-3 flex items-center gap-2"
-          style={{
-            background: 'rgba(251,248,244,0.94)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <Skeleton variant="circle" width={40} height={40} />
-          <Skeleton variant="title" height={20} width="40%" className="flex-1" />
-          <Skeleton variant="rect" width={40} height={40} rounded="rounded-xl" />
-          <Skeleton variant="rect" width={80} height={40} rounded="rounded-xl" />
-        </header>
+      <div className="space-y-4">
         <PageSkeleton />
       </div>
     );
@@ -585,12 +494,25 @@ export default function SchoolAdminTeachersPage() {
   /* ── Error state ── */
   if (rpcError) {
     return (
-      <div
-        style={{ background: 'var(--bg)' }}
-        className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-      >
-        {PageHeader}
-        <main className="px-4 pt-6 pb-24 max-w-2xl mx-auto">
+      <>
+        <SchoolAdminPageHeader
+          title="Teachers"
+          titleHi="शिक्षक"
+          isHi={isHi}
+          action={
+            schoolId ? (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setInviteOpen(true)}
+                style={{ minHeight: 40 }}
+              >
+                + {t(isHi, 'Invite', 'आमंत्रित करें')}
+              </Button>
+            ) : undefined
+          }
+        />
+        <div className="space-y-4 max-w-4xl">
           <Card className="text-center py-8">
             <div className="text-4xl mb-3" aria-hidden="true">⚠️</div>
             <p className="text-sm text-[var(--text-2)] mb-4">{rpcError}</p>
@@ -601,21 +523,40 @@ export default function SchoolAdminTeachersPage() {
               {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
             </Button>
           </Card>
-        </main>
-        
-      </div>
+        </div>
+        {schoolId && (
+          <InviteModal
+            open={inviteOpen}
+            onClose={() => setInviteOpen(false)}
+            schoolId={schoolId}
+            isHi={isHi}
+          />
+        )}
+      </>
     );
   }
 
   /* ── Loaded state ── */
   return (
-    <div
-      style={{ background: 'var(--bg)' }}
-      className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-    >
-      {PageHeader}
-
-      <main className="px-4 pt-4 pb-24 max-w-2xl mx-auto space-y-4">
+    <>
+      <SchoolAdminPageHeader
+        title="Teachers"
+        titleHi="शिक्षक"
+        isHi={isHi}
+        action={
+          schoolId ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setInviteOpen(true)}
+              style={{ minHeight: 40 }}
+            >
+              + {t(isHi, 'Invite', 'आमंत्रित करें')}
+            </Button>
+          ) : undefined
+        }
+      />
+      <div className="space-y-4 max-w-4xl">
 
         {/* ── Invite Teacher (prominent CTA when no teachers yet and fully loaded) ── */}
         {!loadingTeachers && teachers.length === 0 && schoolId && (
@@ -715,7 +656,7 @@ export default function SchoolAdminTeachersPage() {
             }
           />
         )}
-      </main>
+      </div>
 
       {/* ── Invite code modal ── */}
       {schoolId && (
@@ -726,8 +667,6 @@ export default function SchoolAdminTeachersPage() {
           isHi={isHi}
         />
       )}
-
-      
-    </div>
+    </>
   );
 }

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { authedFetch } from '@/lib/school-admin/authed-fetch';
+import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 import {
   Card,
   Button,
@@ -902,19 +903,7 @@ export default function SchoolAdminSetupPage() {
   /* ── Render ── */
   if (authLoading || loading) {
     return (
-      <div style={{ background: 'var(--bg)' }} className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]">
-        <header
-          className="sticky top-0 z-10 px-4 py-3 flex items-center gap-3"
-          style={{
-            background: 'rgba(251,248,244,0.92)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <Skeleton variant="rect" height={36} width={36} rounded="rounded-xl" />
-          <Skeleton variant="title" height={22} width="45%" />
-        </header>
+      <div className="space-y-4">
         <SetupSkeleton />
       </div>
     );
@@ -922,10 +911,7 @@ export default function SchoolAdminSetupPage() {
 
   if (error && !profile) {
     return (
-      <div
-        className="min-h-dvh flex items-center justify-center px-4 font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-        style={{ background: 'var(--bg)' }}
-      >
+      <div className="space-y-4">
         <Card className="max-w-xs w-full text-center py-8">
           <div className="text-4xl mb-3">⚠️</div>
           <p className="text-sm text-[var(--text-2)] mb-4">{error}</p>
@@ -947,58 +933,13 @@ export default function SchoolAdminSetupPage() {
   ];
 
   return (
-    <div
-      style={{ background: 'var(--bg)' }}
-      className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-    >
-      {/* STICKY HEADER */}
-      <header
-        className="sticky top-0 z-10 px-4 py-3 flex items-center gap-3"
-        style={{
-          background: 'rgba(251,248,244,0.92)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <button
-          onClick={() => {
-            if (step > 0) {
-              setStep(step - 1);
-            } else {
-              router.push('/school-admin');
-            }
-          }}
-          className="rounded-xl flex items-center justify-center transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
-          style={{
-            width: '40px',
-            height: '40px',
-            minWidth: '40px',
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
-            fontSize: '18px',
-          }}
-          aria-label={
-            step > 0
-              ? t(isHi, 'Previous step', 'पिछला चरण')
-              : t(isHi, 'Back to dashboard', 'डैशबोर्ड पर वापस जाएं')
-          }
-        >
-          ←
-        </button>
-
-        <div className="flex-1 min-w-0">
-          <h1
-            className="text-base font-bold text-[var(--text-1)] truncate"
-            style={{ fontFamily: 'Sora, system-ui, sans-serif' }}
-          >
-            {t(isHi, 'School Setup', 'स्कूल सेटअप')}
-          </h1>
-          <p className="text-xs text-[var(--text-3)]">
-            {STEPS[step].icon} {STEPS[step].label}
-          </p>
-        </div>
-      </header>
+    <>
+      <SchoolAdminPageHeader
+        title="School Setup"
+        titleHi="स्कूल सेटअप"
+        isHi={isHi}
+      />
+      <div className="space-y-4 max-w-4xl">
 
       {/* Step indicator */}
       <div className="flex justify-center pt-4 pb-2">
@@ -1084,8 +1025,7 @@ export default function SchoolAdminSetupPage() {
           />
         )}
       </main>
-
-      
-    </div>
+      </div>
+    </>
   );
 }

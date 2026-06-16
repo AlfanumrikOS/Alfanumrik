@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { authedFetch } from '@/lib/school-admin/authed-fetch';
+import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 import {
   Card,
   Button,
@@ -243,7 +244,7 @@ function AuditRow({ entry, isHi }: AuditRowProps) {
 ----------------------------------------------------------------- */
 export default function SchoolAdminAuditLogPage() {
   const router = useRouter();
-  const { authUserId, isLoading: authLoading, isHi, setLanguage } = useAuth();
+  const { authUserId, isLoading: authLoading, isHi } = useAuth();
 
   /* State */
   const [entries, setEntries] = useState<AuditEntry[]>([]);
@@ -334,25 +335,8 @@ export default function SchoolAdminAuditLogPage() {
   /* Loading state */
   if (authLoading || isSchoolAdmin === null) {
     return (
-      <div
-        className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-        style={{ background: 'var(--bg)' }}
-      >
-        <div
-          className="sticky top-0 z-10 px-4 py-3 flex items-center gap-3"
-          style={{
-            background: 'rgba(251,248,244,0.92)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <Skeleton variant="rect" height={36} width={36} rounded="rounded-xl" />
-          <Skeleton variant="title" height={22} width="45%" />
-        </div>
-        <div className="max-w-2xl mx-auto px-4 pt-4 pb-24">
-          <TableSkeleton />
-        </div>
+      <div className="space-y-4">
+        <TableSkeleton />
       </div>
     );
   }
@@ -360,10 +344,7 @@ export default function SchoolAdminAuditLogPage() {
   /* Error state */
   if (pageError) {
     return (
-      <div
-        className="min-h-dvh flex items-center justify-center px-4 font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-        style={{ background: 'var(--bg)' }}
-      >
+      <div className="space-y-4">
         <Card className="max-w-xs w-full text-center py-8">
           <div className="text-4xl mb-3">Warning</div>
           <p className="text-sm text-[var(--text-2)] mb-4">{pageError}</p>
@@ -383,65 +364,13 @@ export default function SchoolAdminAuditLogPage() {
 
   /* Main render */
   return (
-    <div
-      className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-      style={{ background: 'var(--bg)' }}
-    >
-      {/* ---- STICKY HEADER ---- */}
-      <header
-        className="sticky top-0 z-10 px-4 py-3 flex items-center gap-3"
-        style={{
-          background: 'rgba(251,248,244,0.92)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        {/* Back button */}
-        <button
-          onClick={() => router.push('/school-admin')}
-          className="rounded-xl flex items-center justify-center transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
-          style={{
-            width: '40px',
-            height: '40px',
-            minWidth: '40px',
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
-            fontSize: '18px',
-          }}
-          aria-label={t(isHi, 'Back to dashboard', 'डैशबोर्ड पर वापस जाएं')}
-        >
-          &larr;
-        </button>
-
-        {/* Title */}
-        <div className="flex-1 min-w-0">
-          <h1
-            className="text-base font-bold text-[var(--text-1)] truncate"
-            style={{ fontFamily: 'Sora, system-ui, sans-serif' }}
-          >
-            {t(isHi, 'Audit Log', 'ऑडिट लॉग')}
-          </h1>
-        </div>
-
-        {/* Language toggle */}
-        <button
-          onClick={() => setLanguage && setLanguage(isHi ? 'en' : 'hi')}
-          className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all active:scale-95"
-          style={{
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
-            color: 'var(--text-2)',
-            minHeight: '36px',
-          }}
-          aria-label={isHi ? 'Switch to English' : 'Switch to Hindi'}
-        >
-          {isHi ? 'EN' : '\u0939\u093F'}
-        </button>
-      </header>
-
-      {/* ---- PAGE BODY ---- */}
-      <main className="max-w-2xl mx-auto px-4 pt-4 pb-24">
+    <>
+      <SchoolAdminPageHeader
+        title="Audit Log"
+        titleHi="ऑडिट लॉग"
+        isHi={isHi}
+      />
+      <div className="space-y-4 max-w-4xl">
 
         {/* ---- FILTER BAR ---- */}
         <section
@@ -598,10 +527,7 @@ export default function SchoolAdminAuditLogPage() {
             )}
           </>
         )}
-      </main>
-
-      {/* ---- BOTTOM NAV ---- */}
-      
-    </div>
+      </div>
+    </>
   );
 }

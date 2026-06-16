@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { getAccessToken } from '@/lib/school-admin/authed-fetch';
+import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 import {
   Card,
   Button,
@@ -150,7 +151,7 @@ function PageSkeleton() {
 export default function SchoolAdminRBACPage() {
   const router = useRouter();
   const auth = useAuth();
-  const { authUserId, isLoading: authLoading, isHi, signOut } = auth;
+  const { authUserId, isLoading: authLoading, isHi } = auth;
 
   /* ── School admin state ── */
   const [schoolId, setSchoolId] = useState<string | null>(null);
@@ -474,18 +475,7 @@ export default function SchoolAdminRBACPage() {
   /* ── Render: Loading ── */
   if (authLoading || loadingAdmin) {
     return (
-      <div style={{ background: 'var(--bg)' }} className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]">
-        <div
-          className="sticky top-0 z-10 px-4 py-3"
-          style={{
-            background: 'rgba(251,248,244,0.92)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <Skeleton variant="title" height={24} width="50%" />
-        </div>
+      <div className="space-y-4">
         <PageSkeleton />
       </div>
     );
@@ -494,7 +484,7 @@ export default function SchoolAdminRBACPage() {
   /* ── Render: Error / Not admin ── */
   if (error) {
     return (
-      <div style={{ background: 'var(--bg)' }} className="min-h-dvh flex items-center justify-center px-4">
+      <div className="space-y-4">
         <Card className="max-w-xs w-full text-center py-8">
           <div className="text-4xl mb-3" aria-hidden="true">&#x26A0;&#xFE0F;</div>
           <p className="text-sm text-[var(--text-2)] mb-4">{error}</p>
@@ -510,57 +500,15 @@ export default function SchoolAdminRBACPage() {
 
   /* ── Render: Page ── */
   return (
-    <div
-      style={{ background: 'var(--bg)' }}
-      className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-    >
-      {/* ═══ STICKY HEADER ═══ */}
-      <header
-        className="sticky top-0 z-10 px-4 py-3 flex items-center justify-between"
-        style={{
-          background: 'rgba(251,248,244,0.92)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.push('/school-admin')}
-            className="text-sm text-[var(--text-3)] hover:text-[var(--text-1)] transition-colors p-1"
-            aria-label={t(isHi, 'Back to dashboard', 'डैशबोर्ड पर वापस जाएं')}
-          >
-            &larr;
-          </button>
-          <div>
-            <h1 className="text-base font-bold text-[var(--text-1)] font-['Sora',system-ui,sans-serif]">
-              {t(isHi, 'RBAC Management', 'RBAC प्रबंधन')}
-            </h1>
-            <p className="text-xs text-[var(--text-3)] mt-0.5">
-              {t(isHi, 'Roles, elevations & delegations', 'भूमिकाएं, अधिकार और प्रतिनिधि')}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => auth.setLanguage && auth.setLanguage(isHi ? 'en' : 'hi')}
-            className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all active:scale-95"
-            style={{
-              background: 'var(--surface-2)',
-              border: '1px solid var(--border)',
-              color: 'var(--text-2)',
-              minHeight: '36px',
-            }}
-            aria-label={isHi ? 'Switch to English' : 'Switch to Hindi'}
-          >
-            {isHi ? 'EN' : 'HI'}
-          </button>
-        </div>
-      </header>
-
-      {/* ═══ PAGE BODY ═══ */}
-      <main className="px-4 pt-4 pb-24 max-w-2xl mx-auto space-y-5">
+    <>
+      <SchoolAdminPageHeader
+        title="RBAC Management"
+        titleHi="RBAC प्रबंधन"
+        isHi={isHi}
+        description="Roles, elevations & delegations"
+        descriptionHi="भूमिकाएं, अधिकार और प्रतिनिधि"
+      />
+      <div className="space-y-4 max-w-4xl">
 
         {/* Inline toast */}
         {message && (
@@ -1105,10 +1053,7 @@ export default function SchoolAdminRBACPage() {
             )}
           </section>
         )}
-      </main>
-
-      {/* ═══ BOTTOM NAV ═══ */}
-      
-    </div>
+      </div>
+    </>
   );
 }

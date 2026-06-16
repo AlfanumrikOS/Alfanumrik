@@ -19,6 +19,7 @@ import {
   EmptyState,
   SheetModal,
 } from '@/components/ui';
+import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 
 /* ─────────────────────────────────────────────────────────────
    BILINGUAL HELPER (P7)
@@ -505,7 +506,7 @@ function TabSwitcher({ active, onChange, isHi }: TabSwitcherProps) {
 ───────────────────────────────────────────────────────────── */
 export default function InviteCodesPage() {
   const router = useRouter();
-  const { authUserId, isLoading: authLoading, isHi, setLanguage } = useAuth();
+  const { authUserId, isLoading: authLoading, isHi } = useAuth();
 
   // Seat-enforcement UI gate (Phase 3B Wave B). OFF ⇒ code generation uses the
   // existing direct-insert path and renders no seat surfaces (byte-identical).
@@ -760,28 +761,10 @@ export default function InviteCodesPage() {
   /* ─── LOADING STATE ─────────────────────────────────────── */
   if (authLoading || loadingPage) {
     return (
-      <div
-        className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-        style={{ background: 'var(--bg)' }}
-      >
-        {/* Sticky header placeholder */}
-        <div
-          className="sticky top-0 z-10 px-4 py-3 flex items-center gap-3"
-          style={{
-            background: 'rgba(251,248,244,0.92)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <Skeleton variant="rect" height={36} width={36} rounded="rounded-xl" />
-          <Skeleton variant="title" height={22} width="45%" />
-        </div>
-        <div className="max-w-2xl mx-auto px-4 pt-4 pb-24 space-y-3">
-          {[1, 2, 3].map((i) => (
-            <CodeRowSkeleton key={i} />
-          ))}
-        </div>
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <CodeRowSkeleton key={i} />
+        ))}
       </div>
     );
   }
@@ -789,113 +772,92 @@ export default function InviteCodesPage() {
   /* ─── ERROR STATE ───────────────────────────────────────── */
   if (pageError) {
     return (
-      <div
-        className="min-h-dvh flex items-center justify-center px-4 font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-        style={{ background: 'var(--bg)' }}
-      >
-        <Card className="max-w-xs w-full text-center py-8">
-          <div className="text-4xl mb-3">⚠️</div>
-          <p className="text-sm text-[var(--text-2)] mb-4">{pageError}</p>
-          <Button
-            variant="primary"
-            onClick={() => {
-              setPageError(null);
-              bootstrap();
-            }}
-          >
-            {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
-          </Button>
-        </Card>
-      </div>
+      <>
+        <SchoolAdminPageHeader
+          title="Invite Codes"
+          titleHi="आमंत्रण कोड"
+          isHi={isHi}
+          action={
+            <button
+              onClick={() => {
+                setNewCode(null);
+                setCapNoticeSeats(null);
+                setSeatBlockStatus(null);
+                setModalOpen(true);
+              }}
+              className="btn-primary rounded-xl px-3 py-2 text-xs font-semibold transition-all active:scale-95 flex items-center gap-1.5"
+              style={{ minHeight: '40px' }}
+              aria-label={t(isHi, 'Generate new invite code', 'नया आमंत्रण कोड बनाएं')}
+            >
+              <span aria-hidden="true">+</span>
+              {t(isHi, 'New Code', 'नया कोड')}
+            </button>
+          }
+        />
+        <div className="space-y-4 max-w-4xl">
+          <Card className="max-w-xs w-full text-center py-8">
+            <div className="text-4xl mb-3">⚠️</div>
+            <p className="text-sm text-[var(--text-2)] mb-4">{pageError}</p>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setPageError(null);
+                bootstrap();
+              }}
+            >
+              {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
+            </Button>
+          </Card>
+        </div>
+        <SheetModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          title={t(isHi, 'New Code / नया कोड', 'New Code / नया कोड')}
+        >
+          <GenerateForm
+            classes={classes}
+            isHi={isHi}
+            onSubmit={handleGenerate}
+            submitting={submitting}
+            newCode={newCode}
+            capNoticeSeats={seatUiEnabled ? capNoticeSeats : null}
+            seatBlockStatus={seatUiEnabled ? seatBlockStatus : null}
+          />
+        </SheetModal>
+      </>
     );
   }
 
   /* ─── MAIN RENDER ───────────────────────────────────────── */
   return (
-    <div
-      className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-      style={{ background: 'var(--bg)' }}
-    >
-      {/* ══════════════════════════════════════
-          STICKY HEADER
-      ══════════════════════════════════════ */}
-      <header
-        className="sticky top-0 z-10 px-4 py-3 flex items-center gap-3"
-        style={{
-          background: 'rgba(251,248,244,0.92)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        {/* Back button */}
-        <button
-          onClick={() => router.push('/school-admin')}
-          className="rounded-xl flex items-center justify-center transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
-          style={{
-            width: '40px',
-            height: '40px',
-            minWidth: '40px',
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
-            fontSize: '18px',
-          }}
-          aria-label={t(isHi, 'Back to dashboard', 'डैशबोर्ड पर वापस जाएं')}
-        >
-          ←
-        </button>
-
-        {/* Title */}
-        <div className="flex-1 min-w-0">
-          <h1
-            className="text-base font-bold text-[var(--text-1)] truncate"
-            style={{ fontFamily: 'Sora, system-ui, sans-serif' }}
+    <>
+      <SchoolAdminPageHeader
+        title="Invite Codes"
+        titleHi="आमंत्रण कोड"
+        isHi={isHi}
+        action={
+          <button
+            onClick={() => {
+              setNewCode(null);
+              setCapNoticeSeats(null);
+              setSeatBlockStatus(null);
+              setModalOpen(true);
+            }}
+            className="btn-primary rounded-xl px-3 py-2 text-xs font-semibold transition-all active:scale-95 flex items-center gap-1.5"
+            style={{ minHeight: '40px' }}
+            aria-label={t(isHi, 'Generate new invite code', 'नया आमंत्रण कोड बनाएं')}
           >
-            {t(isHi, 'Invite Codes', 'आमंत्रण कोड')}
-          </h1>
-        </div>
-
-        {/* Language toggle */}
-        <button
-          onClick={() => setLanguage && setLanguage(isHi ? 'en' : 'hi')}
-          className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all active:scale-95"
-          style={{
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
-            color: 'var(--text-2)',
-            minHeight: '36px',
-          }}
-          aria-label={isHi ? 'Switch to English' : 'हिन्दी में बदलें'}
-        >
-          {isHi ? 'EN' : 'हि'}
-        </button>
-
-        {/* New Code CTA */}
-        <button
-          onClick={() => {
-            setNewCode(null);
-            setCapNoticeSeats(null);
-            setSeatBlockStatus(null);
-            setModalOpen(true);
-          }}
-          className="btn-primary rounded-xl px-3 py-2 text-xs font-semibold transition-all active:scale-95 flex items-center gap-1.5"
-          style={{ minHeight: '40px' }}
-          aria-label={t(isHi, 'Generate new invite code', 'नया आमंत्रण कोड बनाएं')}
-        >
-          <span aria-hidden="true">+</span>
-          {t(isHi, 'New Code', 'नया कोड')}
-        </button>
-      </header>
-
-      {/* ══════════════════════════════════════
-          PAGE BODY
-      ══════════════════════════════════════ */}
-      <main className="max-w-2xl mx-auto px-4 pt-4 pb-24">
+            <span aria-hidden="true">+</span>
+            {t(isHi, 'New Code', 'नया कोड')}
+          </button>
+        }
+      />
+      <div className="space-y-4 max-w-4xl">
         {/* Non-fatal class-list failure notice */}
         {classesLoadFailed && (
           <div
             role="alert"
-            className="rounded-xl px-4 py-3 mb-4 text-xs font-medium"
+            className="rounded-xl px-4 py-3 text-xs font-medium"
             style={{
               background: 'rgba(220,38,38,0.06)',
               border: '1px solid rgba(220,38,38,0.2)',
@@ -961,7 +923,7 @@ export default function InviteCodesPage() {
             ))}
           </div>
         )}
-      </main>
+      </div>
 
       {/* ══════════════════════════════════════
           GENERATE CODE SHEET MODAL
@@ -981,11 +943,6 @@ export default function InviteCodesPage() {
           seatBlockStatus={seatUiEnabled ? seatBlockStatus : null}
         />
       </SheetModal>
-
-      {/* ══════════════════════════════════════
-          BOTTOM NAV
-      ══════════════════════════════════════ */}
-      
-    </div>
+    </>
   );
 }

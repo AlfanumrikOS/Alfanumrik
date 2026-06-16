@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 import {
   Card,
   Button,
@@ -538,7 +539,7 @@ function ClassDetailPanel({ cls, isHi }: ClassDetailPanelProps) {
 ───────────────────────────────────────────────────────────── */
 export default function SchoolAdminClassesPage() {
   const router = useRouter();
-  const { authUserId, isLoading: authLoading, isHi, setLanguage } = useAuth();
+  const { authUserId, isLoading: authLoading, isHi } = useAuth();
 
   /* ── State ── */
   const [schoolId, setSchoolId] = useState<string | null>(null);
@@ -656,104 +657,15 @@ export default function SchoolAdminClassesPage() {
   const isPageLoading = authLoading || loadingAdmin;
 
   /* ══════════════════════════════════════════════════════════
-     PAGE HEADER — shared across states
-  ══════════════════════════════════════════════════════════ */
-  const PageHeader = (
-    <header
-      className="sticky top-0 z-10 px-4 py-3 flex items-center gap-2"
-      style={{
-        background: 'rgba(251,248,244,0.94)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-        borderBottom: '1px solid var(--border)',
-      }}
-    >
-      {/* Back button */}
-      <button
-        onClick={() => router.push('/school-admin')}
-        className="flex items-center justify-center rounded-xl transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2 flex-shrink-0"
-        style={{
-          minWidth: 44,
-          minHeight: 44,
-          background: 'var(--surface-2)',
-          border: '1px solid var(--border)',
-          color: 'var(--text-2)',
-          fontSize: '18px',
-        }}
-        aria-label={t(isHi, 'Back to dashboard', 'डैशबोर्ड पर वापस')}
-      >
-        ←
-      </button>
-
-      {/* Title */}
-      <div className="flex-1 min-w-0">
-        <h1
-          className="text-base font-bold text-[var(--text-1)] truncate"
-          style={{ fontFamily: 'var(--font-display)' }}
-        >
-          {t(isHi, 'Classes', 'कक्षाएं')}
-        </h1>
-      </div>
-
-      {/* Language toggle */}
-      <button
-        onClick={() => setLanguage && setLanguage(isHi ? 'en' : 'hi')}
-        className="flex items-center justify-center rounded-xl text-xs font-semibold transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2 flex-shrink-0"
-        style={{
-          minWidth: 44,
-          minHeight: 44,
-          background: 'var(--surface-2)',
-          border: '1px solid var(--border)',
-          color: 'var(--text-2)',
-        }}
-        aria-label={isHi ? 'Switch to English' : 'हिन्दी में बदलें'}
-      >
-        {isHi ? 'EN' : 'हि'}
-      </button>
-
-      {/* Create class button */}
-      <Button
-        variant="primary"
-        size="sm"
-        onClick={() => setCreateModalOpen(true)}
-        style={{ minHeight: 44, flexShrink: 0 }}
-        aria-label={t(isHi, 'Create Class', 'कक्षा बनाएं')}
-      >
-        + {t(isHi, 'Create Class', 'कक्षा बनाएं')}
-      </Button>
-    </header>
-  );
-
-  /* ══════════════════════════════════════════════════════════
      FULL PAGE LOADING SKELETON
   ══════════════════════════════════════════════════════════ */
   if (isPageLoading) {
     return (
-      <div
-        style={{ background: 'var(--bg)' }}
-        className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-      >
-        <header
-          className="sticky top-0 z-10 px-4 py-3 flex items-center gap-2"
-          style={{
-            background: 'rgba(251,248,244,0.94)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <Skeleton variant="rect" width={44} height={44} rounded="rounded-xl" />
-          <Skeleton variant="title" height={20} width="40%" className="flex-1" />
-          <Skeleton variant="rect" width={44} height={44} rounded="rounded-xl" />
-          <Skeleton variant="rect" width={110} height={44} rounded="rounded-xl" />
-        </header>
-
-        <div className="px-4 pt-4 pb-24 max-w-2xl mx-auto">
-          <div className="grid grid-cols-2 gap-3">
-            {[1, 2, 3, 4].map((i) => (
-              <ClassCardSkeleton key={i} />
-            ))}
-          </div>
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          {[1, 2, 3, 4].map((i) => (
+            <ClassCardSkeleton key={i} />
+          ))}
         </div>
       </div>
     );
@@ -764,12 +676,24 @@ export default function SchoolAdminClassesPage() {
   ══════════════════════════════════════════════════════════ */
   if (rpcError) {
     return (
-      <div
-        style={{ background: 'var(--bg)' }}
-        className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-      >
-        {PageHeader}
-        <main className="px-4 pt-6 pb-24 max-w-2xl mx-auto">
+      <>
+        <SchoolAdminPageHeader
+          title="Classes"
+          titleHi="कक्षाएं"
+          isHi={isHi}
+          action={
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setCreateModalOpen(true)}
+              style={{ minHeight: 44, flexShrink: 0 }}
+              aria-label={t(isHi, 'Create Class', 'कक्षा बनाएं')}
+            >
+              + {t(isHi, 'Create Class', 'कक्षा बनाएं')}
+            </Button>
+          }
+        />
+        <div className="space-y-4 max-w-4xl">
           <Card className="text-center py-8">
             <div className="text-4xl mb-3" aria-hidden="true">⚠️</div>
             <p className="text-sm text-[var(--text-2)] mb-4">{rpcError}</p>
@@ -780,9 +704,8 @@ export default function SchoolAdminClassesPage() {
               {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
             </Button>
           </Card>
-        </main>
-        
-      </div>
+        </div>
+      </>
     );
   }
 
@@ -790,13 +713,25 @@ export default function SchoolAdminClassesPage() {
      LOADED STATE
   ══════════════════════════════════════════════════════════ */
   return (
-    <div
-      style={{ background: 'var(--bg)' }}
-      className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-    >
-      {PageHeader}
+    <>
+      <SchoolAdminPageHeader
+        title="Classes"
+        titleHi="कक्षाएं"
+        isHi={isHi}
+        action={
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setCreateModalOpen(true)}
+            style={{ minHeight: 44, flexShrink: 0 }}
+            aria-label={t(isHi, 'Create Class', 'कक्षा बनाएं')}
+          >
+            + {t(isHi, 'Create Class', 'कक्षा बनाएं')}
+          </Button>
+        }
+      />
 
-      <main className="px-4 pt-4 pb-24 max-w-2xl mx-auto">
+      <div className="space-y-4 max-w-4xl">
 
         {/* ── Class list loading skeleton ── */}
         {loadingClasses && (
@@ -845,7 +780,7 @@ export default function SchoolAdminClassesPage() {
             }
           />
         )}
-      </main>
+      </div>
 
       {/* ══════════════════════════════════════════════════════
           CREATE CLASS MODAL
@@ -895,7 +830,7 @@ export default function SchoolAdminClassesPage() {
         </div>
       )}
 
-      
-    </div>
+
+    </>
   );
 }

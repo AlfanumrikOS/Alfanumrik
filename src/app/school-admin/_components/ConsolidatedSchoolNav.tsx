@@ -21,6 +21,7 @@
  *   - P7 bilingual via the `isHi` prop.
  */
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { twMerge } from 'tailwind-merge';
 import type { ModuleKey } from '@/lib/modules/registry';
@@ -258,14 +259,14 @@ export default function ConsolidatedSchoolNav({
 
   // Apply module gating + (Wave C) rbac gating per section; drop empty sections
   // so we never render a heading with no items beneath it.
+  // NOTE: module-key items are NOT filtered out here — they stay visible as
+  // "locked" items (grayed out, no-op click) when moduleEnablement[key] === false.
+  // All other gates (rbacOnly, capability, reportsDepthOnly, principalAiOnly)
+  // continue to hide items entirely (they represent access the admin never has).
   const visibleSections = useMemo(() => {
     return SCHOOL_NAV_SECTIONS.map((section) => ({
       ...section,
       items: section.items.filter((item) => {
-        // Module gating (Wave A — unchanged).
-        if (item.moduleKey && moduleEnablement != null && moduleEnablement[item.moduleKey] === false) {
-          return false;
-        }
         // Wave C rbac gating. When the flag is OFF, rbacOnly items are hidden and
         // capability filtering is skipped → byte-identical to Wave A.
         if (item.rbacOnly && !rbacEnabled) return false;
@@ -331,13 +332,37 @@ export default function ConsolidatedSchoolNav({
             {isHi ? section.titleHi : section.title}
           </div>
           {section.items.map((item) => {
-            const active = item.href === activeHref;
+            // A module-keyed item is "locked" only when moduleEnablement is
+            // non-null AND explicitly false for that key. When moduleEnablement
+            // is null (still loading) every item renders normally (fail-open).
+            const isLocked =
+              item.moduleKey != null &&
+              moduleEnablement != null &&
+              moduleEnablement[item.moduleKey] === false;
+
+            const active = !isLocked && item.href === activeHref;
             const label = isHi ? item.labelHi : item.label;
+
+            if (isLocked) {
+              return (
+                <div
+                  key={item.href}
+                  aria-disabled="true"
+                  className="relative flex items-center gap-2.5 border-l-[3px] px-3 py-2.5 text-[13px] cursor-not-allowed opacity-60 select-none"
+                  style={{ borderLeftColor: 'transparent' }}
+                >
+                  <span className="flex-shrink-0 text-[15px] leading-none">{item.icon}</span>
+                  <span className="truncate flex-1">{label}</span>
+                  <span className="ml-auto text-xs opacity-60" aria-label="Module not enabled">🔒</span>
+                </div>
+              );
+            }
+
             const activeStyle = active
               ? { color: primaryColor, background: `${primaryColor}14`, borderLeftColor: primaryColor }
               : { borderLeftColor: 'transparent' };
             return (
-              <a
+              <Link
                 key={item.href}
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
@@ -350,7 +375,7 @@ export default function ConsolidatedSchoolNav({
               >
                 <span className="flex-shrink-0 text-[15px] leading-none">{item.icon}</span>
                 <span className="truncate flex-1">{label}</span>
-              </a>
+              </Link>
             );
           })}
         </div>

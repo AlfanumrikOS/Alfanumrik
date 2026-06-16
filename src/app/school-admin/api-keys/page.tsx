@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { authedFetch } from '@/lib/school-admin/authed-fetch';
+import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 import {
   Card,
   Button,
@@ -457,7 +458,7 @@ function GenerateForm({ isHi, onSubmit, submitting, newKey }: GenerateFormProps)
 ----------------------------------------------------------------- */
 export default function SchoolAdminApiKeysPage() {
   const router = useRouter();
-  const { authUserId, isLoading: authLoading, isHi, setLanguage } = useAuth();
+  const { authUserId, isLoading: authLoading, isHi } = useAuth();
 
   /* State */
   const [schoolId, setSchoolId] = useState<string | null>(null);
@@ -608,27 +609,10 @@ export default function SchoolAdminApiKeysPage() {
   /* Loading state */
   if (authLoading || loadingPage) {
     return (
-      <div
-        className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-        style={{ background: 'var(--bg)' }}
-      >
-        <div
-          className="sticky top-0 z-10 px-4 py-3 flex items-center gap-3"
-          style={{
-            background: 'rgba(251,248,244,0.92)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <Skeleton variant="rect" height={36} width={36} rounded="rounded-xl" />
-          <Skeleton variant="title" height={22} width="45%" />
-        </div>
-        <div className="max-w-2xl mx-auto px-4 pt-4 pb-24 space-y-3">
-          {[1, 2, 3].map((i) => (
-            <KeyCardSkeleton key={i} />
-          ))}
-        </div>
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <KeyCardSkeleton key={i} />
+        ))}
       </div>
     );
   }
@@ -636,10 +620,7 @@ export default function SchoolAdminApiKeysPage() {
   /* Error state */
   if (pageError) {
     return (
-      <div
-        className="min-h-dvh flex items-center justify-center px-4 font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-        style={{ background: 'var(--bg)' }}
-      >
+      <div className="space-y-4">
         <Card className="max-w-xs w-full text-center py-8">
           <div className="text-4xl mb-3">Warning</div>
           <p className="text-sm text-[var(--text-2)] mb-4">{pageError}</p>
@@ -667,79 +648,27 @@ export default function SchoolAdminApiKeysPage() {
 
   /* Main render */
   return (
-    <div
-      className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-      style={{ background: 'var(--bg)' }}
-    >
-      {/* ---- STICKY HEADER ---- */}
-      <header
-        className="sticky top-0 z-10 px-4 py-3 flex items-center gap-3"
-        style={{
-          background: 'rgba(251,248,244,0.92)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        {/* Back button */}
-        <button
-          onClick={() => router.push('/school-admin')}
-          className="rounded-xl flex items-center justify-center transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
-          style={{
-            width: '40px',
-            height: '40px',
-            minWidth: '40px',
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
-            fontSize: '18px',
-          }}
-          aria-label={t(isHi, 'Back to dashboard', 'डैशबोर्ड पर वापस जाएं')}
-        >
-          &larr;
-        </button>
-
-        {/* Title */}
-        <div className="flex-1 min-w-0">
-          <h1
-            className="text-base font-bold text-[var(--text-1)] truncate"
-            style={{ fontFamily: 'Sora, system-ui, sans-serif' }}
+    <>
+      <SchoolAdminPageHeader
+        title="API Keys"
+        titleHi="API कुंजियाँ"
+        isHi={isHi}
+        action={
+          <button
+            onClick={() => {
+              setNewKey(null);
+              setModalOpen(true);
+            }}
+            className="btn-primary rounded-xl px-3 py-2 text-xs font-semibold transition-all active:scale-95 flex items-center gap-1.5"
+            style={{ minHeight: '40px' }}
+            aria-label={t(isHi, 'Generate new API key', 'नई API कुंजी बनाएं')}
           >
-            {t(isHi, 'API Keys', 'API कुंजियाँ')}
-          </h1>
-        </div>
-
-        {/* Language toggle */}
-        <button
-          onClick={() => setLanguage && setLanguage(isHi ? 'en' : 'hi')}
-          className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all active:scale-95"
-          style={{
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
-            color: 'var(--text-2)',
-            minHeight: '36px',
-          }}
-          aria-label={isHi ? 'Switch to English' : 'Switch to Hindi'}
-        >
-          {isHi ? 'EN' : '\u0939\u093F'}
-        </button>
-
-        {/* Generate new key CTA */}
-        <button
-          onClick={() => {
-            setNewKey(null);
-            setModalOpen(true);
-          }}
-          className="btn-primary rounded-xl px-3 py-2 text-xs font-semibold transition-all active:scale-95 flex items-center gap-1.5"
-          style={{ minHeight: '40px' }}
-          aria-label={t(isHi, 'Generate new API key', 'नई API कुंजी बनाएं')}
-        >
-          <span aria-hidden="true">+</span>
-          {t(isHi, 'New Key', 'नई कुंजी')}
-        </button>
-      </header>
-
-      {/* ---- PAGE BODY ---- */}
-      <main className="max-w-2xl mx-auto px-4 pt-4 pb-24">
+            <span aria-hidden="true">+</span>
+            {t(isHi, 'New Key', 'नई कुंजी')}
+          </button>
+        }
+      />
+      <div className="space-y-4 max-w-4xl">
 
         {/* No keys at all */}
         {keys.length === 0 && (
@@ -813,7 +742,7 @@ export default function SchoolAdminApiKeysPage() {
             </div>
           </section>
         )}
-      </main>
+      </div>
 
       {/* ---- GENERATE KEY SHEET MODAL ---- */}
       <SheetModal
@@ -828,9 +757,6 @@ export default function SchoolAdminApiKeysPage() {
           newKey={newKey}
         />
       </SheetModal>
-
-      {/* ---- BOTTOM NAV ---- */}
-      
-    </div>
+    </>
   );
 }

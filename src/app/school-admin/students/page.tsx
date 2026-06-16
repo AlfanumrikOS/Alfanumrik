@@ -15,6 +15,7 @@ import {
   Skeleton,
   EmptyState,
 } from '@/components/ui';
+import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 
 /* ─────────────────────────────────────────────────────────────
    BILINGUAL HELPER (P7)
@@ -284,7 +285,7 @@ const GRADE_OPTIONS_HI = [
 ───────────────────────────────────────────────────────────── */
 export default function SchoolAdminStudentsPage() {
   const router = useRouter();
-  const { authUserId, isLoading: authLoading, isHi, setLanguage } = useAuth();
+  const { authUserId, isLoading: authLoading, isHi } = useAuth();
 
   /* ── State ── */
   const [schoolId, setSchoolId] = useState<string | null>(null);
@@ -386,88 +387,14 @@ export default function SchoolAdminStudentsPage() {
   /* ── Loading states ── */
   const isPageLoading = authLoading || loadingAdmin;
 
-  /* ── Page header — rendered in both skeleton and loaded states ── */
-  const PageHeader = (
-    <header
-      className="sticky top-0 z-10 px-4 py-3 flex items-center gap-2"
-      style={{
-        background: 'rgba(251,248,244,0.94)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-        borderBottom: '1px solid var(--border)',
-      }}
-    >
-      {/* Back button */}
-      <button
-        onClick={() => router.push('/school-admin')}
-        className="flex items-center justify-center rounded-xl transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
-        style={{
-          minWidth: 40,
-          minHeight: 40,
-          background: 'var(--surface-2)',
-          border: '1px solid var(--border)',
-          color: 'var(--text-2)',
-          fontSize: '18px',
-        }}
-        aria-label={t(isHi, 'Back to dashboard', 'डैशबोर्ड पर वापस')}
-      >
-        ←
-      </button>
-
-      {/* Title */}
-      <div className="flex-1 min-w-0">
-        <h1
-          className="text-base font-bold text-[var(--text-1)] truncate"
-          style={{ fontFamily: 'var(--font-display)' }}
-        >
-          {t(isHi, 'Students', 'छात्र')}
-        </h1>
-      </div>
-
-      {/* Language toggle */}
-      <button
-        onClick={() => setLanguage && setLanguage(isHi ? 'en' : 'hi')}
-        className="flex items-center justify-center rounded-xl text-xs font-semibold transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
-        style={{
-          minWidth: 40,
-          minHeight: 40,
-          background: 'var(--surface-2)',
-          border: '1px solid var(--border)',
-          color: 'var(--text-2)',
-        }}
-        aria-label={isHi ? 'Switch to English' : 'हिन्दी में बदलें'}
-      >
-        {isHi ? 'EN' : 'हि'}
-      </button>
-    </header>
-  );
-
   /* ── Full page loading skeleton ── */
   if (isPageLoading) {
     return (
-      <div
-        style={{ background: 'var(--bg)' }}
-        className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-      >
-        <header
-          className="sticky top-0 z-10 px-4 py-3 flex items-center gap-2"
-          style={{
-            background: 'rgba(251,248,244,0.94)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <Skeleton variant="circle" width={40} height={40} />
-          <Skeleton variant="title" height={20} width="40%" className="flex-1" />
-          <Skeleton variant="rect" width={40} height={40} rounded="rounded-xl" />
-        </header>
-        <div className="px-4 pt-4 pb-24 max-w-2xl mx-auto space-y-3">
-          <FilterBarSkeleton />
-          {[1, 2, 3, 4].map((i) => (
-            <StudentCardSkeleton key={i} />
-          ))}
-        </div>
+      <div className="space-y-4">
+        <FilterBarSkeleton />
+        {[1, 2, 3, 4].map((i) => (
+          <StudentCardSkeleton key={i} />
+        ))}
       </div>
     );
   }
@@ -475,12 +402,13 @@ export default function SchoolAdminStudentsPage() {
   /* ── Error state ── */
   if (rpcError) {
     return (
-      <div
-        style={{ background: 'var(--bg)' }}
-        className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-      >
-        {PageHeader}
-        <main className="px-4 pt-6 pb-24 max-w-2xl mx-auto">
+      <>
+        <SchoolAdminPageHeader
+          title="Students"
+          titleHi="छात्र"
+          isHi={isHi}
+        />
+        <div className="space-y-4 max-w-4xl">
           <Card className="text-center py-8">
             <div className="text-4xl mb-3" aria-hidden="true">⚠️</div>
             <p className="text-sm text-[var(--text-2)] mb-4">{rpcError}</p>
@@ -491,21 +419,20 @@ export default function SchoolAdminStudentsPage() {
               {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
             </Button>
           </Card>
-        </main>
-        
-      </div>
+        </div>
+      </>
     );
   }
 
   /* ── Loaded state ── */
   return (
-    <div
-      style={{ background: 'var(--bg)' }}
-      className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
-    >
-      {PageHeader}
-
-      <main className="px-4 pt-4 pb-24 max-w-2xl mx-auto space-y-4">
+    <>
+      <SchoolAdminPageHeader
+        title="Students"
+        titleHi="छात्र"
+        isHi={isHi}
+      />
+      <div className="space-y-4 max-w-4xl">
 
         {/* ── Filter bar ── */}
         <section aria-label={t(isHi, 'Filters', 'फ़िल्टर')}>
@@ -639,9 +566,7 @@ export default function SchoolAdminStudentsPage() {
             }
           />
         )}
-      </main>
-
-      
-    </div>
+      </div>
+    </>
   );
 }
