@@ -1,89 +1,119 @@
 /**
- * Phase 3B Wave A / A5 — flag gate parity for the School Command Center.
+ * School Command Center — UNCONDITIONAL render contract (render unit).
  *
- * The single invariant: `ff_school_command_center` gates BOTH the /school-admin
- * page dispatch AND the consolidated school nav, and DEFAULTS OFF. When OFF,
- * neither surface shows the Command Center / 5-section nav — they render the
- * prior (legacy stat-tile) surface byte-identically.
+ * CONTRACT CHANGE (2026-06-16)
+ *   The `ff_school_command_center` legacy/new TOGGLE was removed from the
+ *   school-admin surfaces. The flag was globally ON in prod, so the legacy
+ *   dispatch (and its first-paint flag race) was deleted entirely:
+ *     - `src/app/school-admin/page.tsx` now renders <CommandCenter /> directly,
+ *       with NO branch on the flag and NO import of `useSchoolCommandCenter`.
+ *     - `SchoolAdminShell` always renders the consolidated 5-section
+ *       <ConsolidatedSchoolNav>, with NO branch on the flag.
+ *     - `AtlasSchoolAdmin` was renamed to `_deprecated_AtlasSchoolAdmin` and is
+ *       no longer rendered by any live surface.
  *
- * `useSchoolCommandCenter` is the single client gate both surfaces consume.
- * Pinning its default-OFF behaviour (synchronous first paint OFF, async confirm
- * OFF unless the flag is explicitly true) is the cheapest, most robust proof
- * that flag-OFF is byte-identical: every consumer branches on this one boolean
- * and falls through to the legacy surface when it is false. This deterministic
- * sync-OFF is what guarantees there is no first-paint flash for the production
- * (flag-absent) user.
+ *   This file PREVIOUSLY pinned the now-removed contract ("flag OFF ⇒ legacy
+ *   surface byte-identical, flag ON ⇒ Command Center"). That OFF→legacy
+ *   assertion is INVALID now that the UI no longer branches on the flag. Rather
+ *   than delete the coverage, it is converted to pin the NEW invariant: BOTH
+ *   school-admin surfaces render the Command Center / ConsolidatedSchoolNav
+ *   REGARDLESS of the `useSchoolCommandCenter` flag value (the hook may still
+ *   exist in the lib, but no school-admin surface consumes it anymore).
  *
- * Mirrors `src/__tests__/teacher/command-center-flag-gate.test.tsx` (Phase 3A).
+ * NOTE: the teacher equivalent (`src/__tests__/teacher/command-center-flag-gate.test.tsx`)
+ * is unchanged — only the school-admin surfaces were forced-purple.
  */
 
-import { waitFor, renderHook } from '@testing-library/react';
-import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import React from 'react';
 
-// ── localStorage shim (jsdom provides it via setup.ts, but ensure clean slate). ─
+// ── Flag holder: lets each test drive the (now-unused) flag value to PROVE the
+//    surfaces do not branch on it. Default OFF mirrors production reality. ──────
+const flagHolder = { enabled: false };
+vi.mock('@/lib/use-school-command-center', () => ({
+  useSchoolCommandCenter: () => flagHolder.enabled,
+}));
+
+// ── /school-admin page dispatch: stub the two candidate bodies so we can assert
+//    WHICH one renders without dragging their data layers in. ───────────────────
+vi.mock('@/app/school-admin/CommandCenter', () => ({
+  default: () => React.createElement('div', { 'data-testid': 'command-center' }, 'Command Center'),
+}));
+vi.mock('@/app/school-admin/_deprecated_AtlasSchoolAdmin', () => ({
+  default: () => React.createElement('div', { 'data-testid': 'atlas-school-admin' }, 'Atlas'),
+}));
+
+// ── SchoolAdminShell seams. We only care that ConsolidatedSchoolNav renders, so
+//    stub it (and the other client-only hooks the shell imports at module scope). ─
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => '/school-admin',
+}));
+vi.mock('@/lib/AuthContext', () => ({ useAuth: () => ({ authUserId: 'admin-user-1', isHi: false }) }));
+vi.mock('@/lib/tenant-context', () => ({
+  useTenant: () => ({ schoolName: 'Greenwood High', schoolId: 's1', branding: { primaryColor: '#7C3AED', logoUrl: null, showPoweredBy: false } }),
+}));
+vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn(() => ({ select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: null }), then: (r: (v: unknown) => unknown) => r({ data: null }) })) } }));
+// useAtlasFlag must stay OFF: when ON the shell short-circuits to {children} and
+// never renders the nav. Forced-purple keeps the consolidated nav unconditional.
+vi.mock('@/lib/use-atlas-flag', () => ({ useAtlasFlag: () => false }));
+vi.mock('@/lib/use-school-reports-depth', () => ({ useSchoolReportsDepth: () => false }));
+vi.mock('@/lib/use-school-admin-rbac', () => ({ useSchoolAdminRbac: () => false }));
+vi.mock('@/lib/use-school-admin-role', () => ({ useSchoolAdminRole: () => ({ role: null }) }));
+vi.mock('@/lib/use-principal-ai', () => ({ usePrincipalAi: () => false }));
+vi.mock('@/lib/cosmic-theme', () => ({ useCosmicTheme: () => ({ cosmicEnabled: false }) }));
+vi.mock('@/components/cosmic', () => ({ Starfield: () => null }));
+vi.mock('@/app/school-admin/_components/ConsolidatedSchoolNav', () => ({
+  default: () => React.createElement('nav', { 'data-testid': 'consolidated-school-nav' }, 'Consolidated Nav'),
+}));
+
+// `fetch` (module-enablement) — keep it a benign no-op so the shell effect runs clean.
 beforeEach(() => {
-  window.localStorage.clear();
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }));
+  flagHolder.enabled = false;
 });
 afterEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
-// ── getFeatureFlags mock — controllable per test via a module-level holder. ──
-const flagHolder: { flags: Record<string, boolean> } = { flags: {} };
-vi.mock('@/lib/supabase', () => ({
-  getFeatureFlags: vi.fn(async () => flagHolder.flags),
-}));
+import SchoolAdminPage from '@/app/school-admin/page';
+import SchoolAdminShell from '@/app/school-admin/_components/SchoolAdminShell';
 
-import { useSchoolCommandCenter } from '@/lib/use-school-command-center';
-import { SCHOOL_COMMAND_CENTER_FLAGS } from '@/lib/feature-flags';
-
-describe('useSchoolCommandCenter — default OFF (no first-paint flash)', () => {
-  it('initialises OFF synchronously and stays OFF when the flag is absent', async () => {
-    flagHolder.flags = {}; // unseeded — production reality
-    const { result } = renderHook(() => useSchoolCommandCenter());
-
-    // FIRST synchronous paint MUST be OFF (byte-identical legacy surface).
-    // No cache, no async resolution yet — the hook returns DEFAULT_OFF deterministically.
-    expect(result.current).toBe(false);
-
-    // The async confirm keeps it OFF (flag absent ⇒ resolves false).
-    await waitFor(() => expect(result.current).toBe(false));
+describe('/school-admin page — Command Center renders UNCONDITIONALLY', () => {
+  it('renders the Command Center when the (now-unused) flag is OFF', () => {
+    flagHolder.enabled = false;
+    render(React.createElement(SchoolAdminPage));
+    expect(screen.getByTestId('command-center')).toBeDefined();
+    // The deprecated Atlas body must NEVER render.
+    expect(screen.queryByTestId('atlas-school-admin')).toBeNull();
   });
 
-  it('stays OFF when the flag resolves explicitly false', async () => {
-    flagHolder.flags = { [SCHOOL_COMMAND_CENTER_FLAGS.V1]: false };
-    const { result } = renderHook(() => useSchoolCommandCenter());
-    expect(result.current).toBe(false);
-    await waitFor(() => expect(result.current).toBe(false));
+  it('renders the Command Center when the (now-unused) flag is ON', () => {
+    flagHolder.enabled = true;
+    render(React.createElement(SchoolAdminPage));
+    expect(screen.getByTestId('command-center')).toBeDefined();
+    expect(screen.queryByTestId('atlas-school-admin')).toBeNull();
   });
+});
 
-  it('flips ON only after the async confirm when the flag resolves true', async () => {
-    flagHolder.flags = { [SCHOOL_COMMAND_CENTER_FLAGS.V1]: true };
-    const { result } = renderHook(() => useSchoolCommandCenter());
-    // Sync paint is still OFF (no cache primed yet) — proves the default is the
-    // safe legacy paint even for a flagged-on admin's first-ever visit.
-    expect(result.current).toBe(false);
-    // Async confirm flips it ON.
-    await waitFor(() => expect(result.current).toBe(true));
-  });
-
-  it('stays OFF when getFeatureFlags rejects (network/auth failure)', async () => {
-    const supabase = await import('@/lib/supabase');
-    (supabase.getFeatureFlags as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error('network down'),
+describe('SchoolAdminShell — ConsolidatedSchoolNav renders UNCONDITIONALLY', () => {
+  it('renders the consolidated nav when the (now-unused) flag is OFF', () => {
+    flagHolder.enabled = false;
+    render(
+      React.createElement(SchoolAdminShell, null, React.createElement('div', { 'data-testid': 'shell-child' }, 'child')),
     );
-    const { result } = renderHook(() => useSchoolCommandCenter());
-    expect(result.current).toBe(false);
-    // Optimistic default-OFF is retained through the rejection.
-    await waitFor(() => expect(result.current).toBe(false));
+    expect(screen.getByTestId('consolidated-school-nav')).toBeDefined();
+    expect(screen.getByTestId('shell-child')).toBeDefined();
   });
 
-  it('requests flags scoped to the school_admin role', async () => {
-    const supabase = await import('@/lib/supabase');
-    const spy = supabase.getFeatureFlags as unknown as ReturnType<typeof vi.fn>;
-    flagHolder.flags = {};
-    renderHook(() => useSchoolCommandCenter());
-    await waitFor(() => expect(spy).toHaveBeenCalled());
-    expect(spy).toHaveBeenCalledWith({ role: 'school_admin' });
+  it('renders the consolidated nav when the (now-unused) flag is ON', () => {
+    flagHolder.enabled = true;
+    render(
+      React.createElement(SchoolAdminShell, null, React.createElement('div', { 'data-testid': 'shell-child' }, 'child')),
+    );
+    expect(screen.getByTestId('consolidated-school-nav')).toBeDefined();
+    expect(screen.getByTestId('shell-child')).toBeDefined();
   });
 });

@@ -1,6 +1,15 @@
 'use client';
 
 /**
+ * DEPRECATED — no longer rendered by any route.
+ *
+ * The purple School Command Center (./CommandCenter) is now the sole
+ * school-admin home. The ff_school_command_center flag is globally ON in prod,
+ * so the legacy flag dispatch in page.tsx was removed. This file is retained
+ * (renamed from AtlasSchoolAdmin.tsx) for verification only; it is not imported
+ * by any route (only the argument-name contract test references it). Do not wire
+ * it back without removing this notice.
+ *
  * AtlasSchoolAdmin — Editorial Atlas redesign of the principal/admin overview.
  *
  * Headlines (per MULTI_ROLE_REDESIGN.md §5.4):

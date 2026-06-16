@@ -1,17 +1,12 @@
 'use client';
 
-import { useSchoolCommandCenter } from '@/lib/use-school-command-center';
-import AtlasSchoolAdmin from './AtlasSchoolAdmin';
 import CommandCenter from './CommandCenter';
 
 export default function SchoolAdminPage() {
-  // Phase 3B dispatch (highest priority): when ff_school_command_center is ON,
-  // render the read-only School Command Center. The hook sync-paints DEFAULT_OFF
-  // with a 1h cache, so for every current (flag-absent) user it resolves to
-  // false on the very first paint — the OFF path below is reached
-  // byte-identically (no flash, no behaviour change). See
-  // src/lib/use-school-command-center.ts.
-  const commandCenter = useSchoolCommandCenter();
-  if (commandCenter) return <CommandCenter />;
-  return <AtlasSchoolAdmin />;
+  // School Command Center is the sole school-admin home. The
+  // ff_school_command_center flag is globally ON in prod, so the legacy
+  // dispatch (and its first-paint flag race) is removed: every school_admin
+  // sees the purple Command Center. The deprecated Atlas body is kept for
+  // verification at ./_deprecated_AtlasSchoolAdmin.tsx (not rendered).
+  return <CommandCenter />;
 }

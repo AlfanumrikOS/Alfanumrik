@@ -101,7 +101,7 @@ vi.mock('@/lib/supabase', () => {
   };
 });
 
-import AtlasSchoolAdmin from '@/app/school-admin/AtlasSchoolAdmin';
+import AtlasSchoolAdmin from '@/app/school-admin/_deprecated_AtlasSchoolAdmin';
 
 beforeEach(() => {
   rpcSpy.mockClear();

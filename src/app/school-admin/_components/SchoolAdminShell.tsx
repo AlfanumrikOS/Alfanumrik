@@ -5,10 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { useTenant } from '@/lib/tenant-context';
 import { supabase } from '@/lib/supabase';
-import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
-import type { ModuleKey } from '@/lib/modules/registry';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
-import { useSchoolCommandCenter } from '@/lib/use-school-command-center';
 import { useSchoolReportsDepth } from '@/lib/use-school-reports-depth';
 import { useSchoolAdminRbac } from '@/lib/use-school-admin-rbac';
 import { useSchoolAdminRole } from '@/lib/use-school-admin-role';
@@ -36,8 +33,8 @@ import ConsolidatedSchoolNav from './ConsolidatedSchoolNav';
  * The cache mirrors the localStorage pattern in `useSchoolCommandCenter`: a
  * synchronous read on mount means the first paint on a repeat visit already
  * matches the resolved name, so the user never sees an S→D swap. Other
- * school-admin surfaces (AtlasSchoolAdmin) read the SAME cache so the school
- * name shown anywhere is identical — no third divergent source.
+ * school-admin surfaces read the SAME cache so the school name shown anywhere
+ * is identical — no third divergent source.
  */
 const SCHOOL_IDENTITY_CACHE_PREFIX = 'alfanumrik_school_identity_v1'; // gitleaks:allow — sessionStorage key, not a secret
 const SCHOOL_IDENTITY_TTL_MS = 12 * 60 * 60 * 1000; // 12h — identity rarely changes within a session
@@ -93,58 +90,20 @@ export function resolveCachedSchoolName(authUserId: string | null, tenantSchoolN
   return readSchoolIdentityCache(authUserId)?.name ?? null;
 }
 
-/* ─── P7: Bilingual labels ───────────────────────────────────────────
- *
- * `moduleKey` (optional) maps a nav entry to a module from the registry
- * (src/lib/modules/registry.ts). When set, the entry is hidden in the
- * sidebar if `enabledModulesFor(schoolId, tenantType)` reports that
- * module as disabled. Items WITHOUT a moduleKey are always shown — they
- * cover platform-core admin functions (dashboard, students, teachers,
- * classes, branding, etc.) that are not gated by module enablement.
- *
- * Defensive fallback: when the /api/school-admin/modules fetch fails
- * for any reason, we render every item — favouring availability over
- * confusion. (Same fail-open semantics as the registry resolver.)
- */
-type SchoolAdminNavItem = {
-  href: string;
-  label: string;
-  labelHi: string;
-  icon: string;
-  /** When set: hide this item if the module is disabled for this tenant. */
-  moduleKey?: ModuleKey;
-};
-
-const NAV_ITEMS: ReadonlyArray<SchoolAdminNavItem> = [
-  { href: '/school-admin', label: 'Dashboard', labelHi: 'डैशबोर्ड', icon: '▦' },
-  { href: '/school-admin/students', label: 'Students', labelHi: 'छात्र', icon: '⊕' },
-  { href: '/school-admin/teachers', label: 'Teachers', labelHi: 'शिक्षक', icon: '⊛' },
-  { href: '/school-admin/classes', label: 'Classes', labelHi: 'कक्षाएँ', icon: '⊞' },
-  { href: '/school-admin/invite-codes', label: 'Invite Codes', labelHi: 'आमंत्रण कोड', icon: '⊡' },
-  { href: '/school-admin/announcements', label: 'Announcements', labelHi: 'घोषणाएँ', icon: '⊜', moduleKey: 'communication' },
-  { href: '/school-admin/parents', label: 'Parents', labelHi: 'अभिभावक', icon: '⊗' },
-  { href: '/school-admin/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘', moduleKey: 'analytics' },
-  { href: '/school-admin/content', label: 'Content', labelHi: 'सामग्री', icon: '⊠', moduleKey: 'lms' },
-  { href: '/school-admin/exams', label: 'Exams', labelHi: 'परीक्षा', icon: '⊙', moduleKey: 'testing_engine' },
-  { href: '/school-admin/setup', label: 'Setup', labelHi: 'सेटअप', icon: '◎' },
-  { href: '/school-admin/branding', label: 'Branding', labelHi: 'ब्रांडिंग', icon: '◐' },
-  { href: '/school-admin/modules', label: 'Modules', labelHi: 'मॉड्यूल', icon: '◍' },
-  { href: '/school-admin/ai-config', label: 'AI Config', labelHi: 'AI कॉन्फ़िग', icon: '◈', moduleKey: 'ai_tutor' },
-  { href: '/school-admin/enroll', label: 'Enrollment', labelHi: 'नामांकन', icon: '◉' },
-];
-
 /**
- * School Admin Shell — branded sidebar layout (Plan 0 Task 8).
+ * School Admin Shell — branded consolidated nav layout.
  *
- * Composes the shared `<DashboardSidebar>` primitive from
- * `@/components/admin-ui` and supplies tenant-driven branding:
+ * Renders the consolidated 5-section `<ConsolidatedSchoolNav>` (the purple
+ * School Command Center nav) and supplies tenant-driven branding:
  * - School logo / initial-letter tile
  * - School primary color for active nav highlight
  * - "Powered by Alfanumrik" footer for B2B tenants
  *
  * Falls back to a DB lookup if tenant context is null (e.g. direct URL
- * access before SchoolThemeProvider hydrates). Module-gated nav items
- * fail-open when /api/school-admin/modules errors or returns 403.
+ * access before SchoolThemeProvider hydrates). The nav's own items are
+ * gated by module enablement (fail-open when /api/school-admin/modules
+ * errors or returns 403) and by the per-section sub-flags
+ * (rbacEnabled/reportsDepthEnabled/principalAiEnabled).
  */
 export default function SchoolAdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -172,18 +131,13 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
 
   // Editorial Atlas pass-through. Sync read from cache — no flash.
   const atlasOn = useAtlasFlag('school');
-  // Phase 3B — consolidated 5-section nav. Sync-paints DEFAULT_OFF (1h cache),
-  // so for every current (flag-absent) user this is false on the first paint and
-  // the existing flat DashboardSidebar renders byte-identically. ON ⇒ the
-  // grouped ConsolidatedSchoolNav renders instead.
-  const commandCenterOn = useSchoolCommandCenter();
 
   // Phase 3B Wave D — deep school-wide reporting nav entry. Sync-paints
   // DEFAULT_OFF (1h cache), so for every current (flag-absent) user this is false
   // on the first paint and the Academics section omits the School Report entry
   // byte-identically. When ON, the entry appears (the route + read APIs are
-  // themselves flag-gated server-side). The consolidated nav only renders when
-  // commandCenterOn is true, so this entry is naturally scoped to that surface.
+  // themselves flag-gated server-side). The entry lives in the consolidated
+  // nav, which is now the sole school-admin nav.
   const reportsDepthOn = useSchoolReportsDepth();
 
   // Phase 3B Wave C — role-aware nav gating. Sync-paints DEFAULT_OFF (1h cache),
@@ -216,30 +170,13 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
   const resolvedSchoolName =
     tenant.schoolName || schoolName || emailPrefix || SCHOOL_NAME_PLACEHOLDER;
 
-  // Track 2 — additively append the Principal Assistant entry to the FLAT legacy
-  // sidebar ONLY when `ff_principal_ai_v1` is ON AND the caller is a principal
-  // (mirrors the principal-only capability; fail-CLOSED so non-principals never
-  // see it). When the flag is OFF this is byte-identical to the legacy NAV_ITEMS.
-  const flatNavItems: ReadonlyArray<SchoolAdminNavItem> =
-    principalAiOn && adminRole === 'principal'
-      ? [
-          ...NAV_ITEMS,
-          {
-            href: '/school-admin/ai-assistant',
-            label: 'Principal Assistant',
-            labelHi: 'Principal सहायक',
-            icon: '◈',
-          },
-        ]
-      : NAV_ITEMS;
-
   useEffect(() => {
     if (!authUserId) {
       router.push('/login');
       return;
     }
     // Tenant context is authoritative when present — mirror it into the cache so
-    // repeat visits + sibling surfaces (AtlasSchoolAdmin) paint the same name.
+    // repeat visits + sibling surfaces paint the same name.
     if (tenant.schoolName) {
       writeSchoolIdentityCache(authUserId, tenant.schoolName, tenant.branding.logoUrl ?? null);
       return;
@@ -311,56 +248,35 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
       {/* Cosmic dark canvas — decorative starfield behind the portal. Hidden in
           light/HC + reduced-motion via globals.css. */}
       {cosmicEnabled && <Starfield className="!fixed inset-0 -z-0" />}
-      {/* Phase 3B nav dispatch: ON ⇒ consolidated 5-section nav; OFF ⇒ the
-          existing flat DashboardSidebar (byte-identical). Both receive the same
-          branding, current path, and module-enablement so behaviour parity is
-          preserved (module gating, active highlight, mobile drawer). */}
-      {commandCenterOn ? (
-        <ConsolidatedSchoolNav
-          brandTitle={resolvedSchoolName}
-          brandSubtitle={isHi ? 'स्कूल प्रशासन' : 'School Administration'}
-          logoUrl={logoUrl}
-          primaryColor={primaryColor}
-          currentPath={pathname || ''}
-          isHi={isHi}
-          moduleEnablement={moduleEnablement}
-          rbacEnabled={rbacOn}
-          adminRole={adminRole}
-          reportsDepthEnabled={reportsDepthOn}
-          principalAiEnabled={principalAiOn}
-          footer={
-            (tenant.branding.showPoweredBy || tenant.schoolId) ? (
-              <div>
-                Powered by{' '}
-                <a href="https://alfanumrik.com" className="text-primary no-underline">
-                  Alfanumrik
-                </a>
-              </div>
-            ) : null
-          }
-        />
-      ) : (
-        <DashboardSidebar
-          brandTitle={resolvedSchoolName}
-          brandSubtitle={isHi ? 'स्कूल प्रशासन' : 'School Administration'}
-          logoUrl={logoUrl}
-          primaryColor={primaryColor}
-          items={flatNavItems as unknown as SidebarNavItem[]}
-          currentPath={pathname || ''}
-          isHi={isHi}
-          moduleEnablement={moduleEnablement}
-          footer={
-            (tenant.branding.showPoweredBy || tenant.schoolId) ? (
-              <div>
-                Powered by{' '}
-                <a href="https://alfanumrik.com" className="text-primary no-underline">
-                  Alfanumrik
-                </a>
-              </div>
-            ) : null
-          }
-        />
-      )}
+      {/* School Command Center is the sole school-admin nav. The
+          ff_school_command_center flag is globally ON in prod, so the legacy
+          flat-nav dispatch (and its first-paint flag race) is removed: the
+          consolidated 5-section ConsolidatedSchoolNav always renders. Per-item
+          gating is preserved via moduleEnablement + the sub-flags
+          (rbacEnabled/reportsDepthEnabled/principalAiEnabled) below. */}
+      <ConsolidatedSchoolNav
+        brandTitle={resolvedSchoolName}
+        brandSubtitle={isHi ? 'स्कूल प्रशासन' : 'School Administration'}
+        logoUrl={logoUrl}
+        primaryColor={primaryColor}
+        currentPath={pathname || ''}
+        isHi={isHi}
+        moduleEnablement={moduleEnablement}
+        rbacEnabled={rbacOn}
+        adminRole={adminRole}
+        reportsDepthEnabled={reportsDepthOn}
+        principalAiEnabled={principalAiOn}
+        footer={
+          (tenant.branding.showPoweredBy || tenant.schoolId) ? (
+            <div>
+              Powered by{' '}
+              <a href="https://alfanumrik.com" className="text-primary no-underline">
+                Alfanumrik
+              </a>
+            </div>
+          ) : null
+        }
+      />
       <main className={`flex-1 max-w-screen-xl overflow-auto p-6${cosmicEnabled ? ' relative z-10' : ''}`}>{children}</main>
     </div>
   );
