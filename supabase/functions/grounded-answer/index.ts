@@ -1,58 +1,35 @@
 // supabase/functions/grounded-answer/index.ts
-// HTTP entry point for the grounded-answer Edge Function.
-//
-// Responsibility: Deno.serve handler + request validation + safety net.
-// All pipeline orchestration lives in pipeline.ts (Q1 refactor). The shared
-// Supabase service-role client lives in _sb.ts so both modules can share
-// the singleton without a circular import.
-//
-// Contract: spec §6.1 request/response shape.
-// Safety net (spec §3.8 "service never throws"): runPipeline is wrapped in
-// try/catch so unexpected errors (missing prompt template, DB outage that
-// throws at client-init, etc.) become a structured upstream_error abstain
-// instead of an HTTP 500 with a Deno default page (C10 fix).
-
 import { validateRequest } from './validators.ts';
 import { runPipeline, writeUpstreamErrorTrace } from './pipeline.ts';
 import { runStreamingPipeline } from './pipeline-stream.ts';
 import { ensureSb, getSb, setSbForTests } from './_sb.ts';
 import type { GroundedRequest, GroundedResponse } from './types.ts';
 
-// Re-export pipeline hooks for tests. Conventional import path for tests
-// is `../index.ts`; keeping these forwards avoids churn across every test
-// file that already imports from here.
 export { runPipeline, writeUpstreamErrorTrace } from './pipeline.ts';
 export { __resetFeatureFlagCacheForTests } from './pipeline.ts';
 
-// Test hook: inject a stub Supabase client. Forwarded to the shared holder
-// so pipeline.ts picks up the same stub.
 // deno-lint-ignore no-explicit-any
 export function __setSupabaseClientForTests(client: any): void {
   setSbForTests(client);
 }
 
+/** CORS: required for browser invoke + preflight */
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
 function jsonResponse(status: number, payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...corsHeaders,
+    },
   });
 }
 
-/**
- * Foxy soft-cap enforcement (server-side guard for the prompt's 150-word
- * cap; we allow a 30-word grace window before truncating).
- *
- * The system prompt instructs Foxy to keep replies under ~150 words, but
- * the LLM occasionally overruns. We don't fail the request — we truncate
- * at the last sentence boundary at-or-before the 180-word point so the
- * student still gets a coherent reply, and we log the original count to
- * `foxy_word_cap_exceeded` for observability.
- *
- * Sentence-boundary detection: we scan backwards from the 180-word point
- * for the last `.`, `?`, or `!` followed by whitespace. If no boundary
- * exists in the window we fall back to a hard word-count truncation so
- * we never amplify a runaway response.
- */
 const FOXY_WORD_SOFT_CAP = 180;
 
 export function applyFoxyWordCap(answer: string): {
@@ -60,20 +37,10 @@ export function applyFoxyWordCap(answer: string): {
   truncated: boolean;
   originalWordCount: number;
 } {
-  // Word cap removed to allow rich, detailed Foxy explanations.
-  // We simply return the original answer untouched.
   const words = answer.split(/\s+/).filter((w) => w.length > 0);
   return { answer, truncated: false, originalWordCount: words.length };
 }
 
-
-/**
- * Structured upstream_error response used as the try/catch fallback.
- * Shape matches the abstain branch of GroundedResponse so callers don't
- * have to special-case "Deno default 500 page" vs a normal abstain.
- * status=500 signals to clients that this is a server issue (not a
- * content/scope decision).
- */
 function buildPanicResponse(
   traceId: string,
   latencyMs: number,
@@ -90,14 +57,18 @@ function buildPanicResponse(
 export async function handleRequest(req: Request): Promise<Response> {
   const started = Date.now();
 
-  if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 });
+  // ✅ Preflight support (fixes OPTIONS 405 from browser)
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { status: 200, headers: corsHeaders });
   }
 
-  // Streaming branch: opt-in via `?stream=1` query param. The body shape is
-  // identical to the blocking POST. We use a query param (not a request body
-  // field) so an HTTP middleware that doesn't parse JSON can still route on
-  // streaming-vs-not. Phase 1.1 — soft-mode only (foxy-tutor).
+  if (req.method !== 'POST') {
+    return new Response('Method not allowed', {
+      status: 405,
+      headers: corsHeaders,
+    });
+  }
+
   const url = new URL(req.url);
   const wantsStream = url.searchParams.get('stream') === '1';
 
@@ -118,10 +89,6 @@ export async function handleRequest(req: Request): Promise<Response> {
   const openaiKey = Deno.env.get('OPENAI_API_KEY') ?? '';
 
   if (wantsStream) {
-    // Streaming guards: only soft-mode + retrieve_only=false are supported.
-    // Strict-mode requires post-hoc grounding-check on the full answer (would
-    // defeat streaming). retrieve_only has no answer text. Both fall through
-    // to the blocking path silently for compatibility.
     const r = request as GroundedRequest;
     if (r.mode === 'soft' && r.retrieve_only !== true) {
       try {
@@ -135,7 +102,6 @@ export async function handleRequest(req: Request): Promise<Response> {
         return jsonResponse(500, buildPanicResponse(traceId, Date.now() - started));
       }
     }
-    // Else: silently fall through to the blocking path below.
   }
 
   try {
@@ -147,10 +113,7 @@ export async function handleRequest(req: Request): Promise<Response> {
       voyageKey,
       openaiKey,
     );
-    // Server-side word-cap guard: enforce the foxy_tutor_v1 prompt's
-    // 150-word soft cap (with a 30-word grace) before the response leaves
-    // the service. Only grounded:true responses carry an `answer` field.
-    // Abstain responses are unaffected.
+
     if (response.grounded && typeof response.answer === 'string') {
       const capped = applyFoxyWordCap(response.answer);
       if (capped.truncated) {
@@ -170,11 +133,6 @@ export async function handleRequest(req: Request): Promise<Response> {
     }
     return jsonResponse(200, response);
   } catch (err) {
-    // C10: spec §3.8 — service never throws. A thrown error here means
-    // something deep in the pipeline blew up unexpectedly (most likely a
-    // missing prompt template .txt file, a bad Supabase client, or a
-    // Deno runtime error). Return a structured abstain so callers can
-    // handle it the same way they handle any other upstream_error.
     console.error(
       `grounded-answer: runPipeline threw — ${String(err instanceof Error ? err.stack ?? err.message : err)}`,
     );
@@ -189,14 +147,6 @@ export async function handleRequest(req: Request): Promise<Response> {
   }
 }
 
-/**
- * Build an SSE Response that streams pipeline events to the client.
- * Each PipelineStreamEvent is serialized as one SSE frame with a named event
- * type so consumers can attach typed listeners. The cap-truncation logic from
- * applyFoxyWordCap CANNOT be applied mid-stream (we'd have to buffer the whole
- * answer); instead we rely on Claude's max_tokens setting + the prompt's
- * 150-word soft cap to keep responses bounded.
- */
 function buildStreamingResponse(
   request: GroundedRequest,
   startedAt: number,
@@ -272,13 +222,13 @@ function buildStreamingResponse(
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
-      // Disable nginx/CDN buffering so SSE frames arrive immediately.
       'X-Accel-Buffering': 'no',
+      ...corsHeaders, // ✅ important for browser streaming
     },
   });
 }
 
 Deno.serve(handleRequest);
 
-// Expose for tests that inspect the live client.
 export { getSb as __sbForTests };
+```__
