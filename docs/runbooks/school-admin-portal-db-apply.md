@@ -2,24 +2,52 @@
 
 > **Purpose**: Fix the three School Command Center widgets (overview,
 > classes-at-risk, teacher-engagement) that return HTTP 500 because their
-> backing `SECURITY DEFINER` RPCs are not yet applied on the live DB, then seed
-> the demo school so the widgets show real numbers.
+> backing `SECURITY DEFINER` RPCs are not present on the live DB, then seed the
+> demo school(s) so the widgets show real numbers.
 >
 > **Owner**: architect (DB) with ops oversight. **Approver**: user (CEO).
 >
-> **Root cause**: The RPCs `get_school_overview`, `get_classes_at_risk`, and
-> `get_teacher_engagement` are defined on disk in
-> `supabase/migrations/20260614000000_phase3b_school_command_center_read_models.sql`
-> but that migration (and its dependency,
-> `teacher_remediation_assignments`) has not been applied to the live DB. **No
-> new function code is needed — applying the existing migrations is the fix.**
+> **Root cause (TWO failure modes — both seen on prod)**:
+>
+> 1. **Migration genuinely pending** — the RPCs `get_school_overview`,
+>    `get_classes_at_risk`, `get_teacher_engagement` are defined on disk in
+>    `supabase/migrations/20260614000000_phase3b_school_command_center_read_models.sql`
+>    but that migration (and its dependency `teacher_remediation_assignments`)
+>    was never applied. Fix: `supabase db push` (Section A).
+>
+> 2. **"Repair-skip" — migration marked applied but its body never executed**
+>    (the failure mode actually hit on prod, 2026-06-16). During the
+>    schema-reproducibility cutover, `20260614000000` was `supabase migration
+>    repair`-marked applied on prod so the merge would *skip* re-running it — but
+>    on prod the function bodies had never actually been created. Because
+>    `supabase_migrations.schema_migrations` already lists `20260614000000`,
+>    **`supabase db push` is a NO-OP for it** (the CLI sees it as applied and
+>    skips it entirely), so the widgets keep 500-ing with
+>    `function public.get_school_overview(uuid) does not exist`. `db push`
+>    CANNOT fix a repair-skip — you must stream the migration **body** directly
+>    (Section A.2).
+>
+> **No new function code is needed — making the existing function bodies
+> actually exist on the live DB is the fix.**
 
 ---
 
-## A. Apply the pending migrations (`supabase db push`)
+## A. Make the function bodies exist on the live DB
 
 **Environment**: run against the environment whose Command Center is 500-ing
 (production if that is where the bug shows; otherwise staging first to rehearse).
+
+> **Decide which path you need FIRST.** Run the existence check in C.1 against
+> the target DB:
+> - If the three RPCs are **absent** AND `20260614000000` is **NOT** listed in
+>   `supabase_migrations.schema_migrations` → it is genuinely pending → use
+>   **A.1 (`db push`)**.
+> - If the three RPCs are **absent** but `20260614000000` **IS** already listed
+>   as applied → this is a **repair-skip** (Section "Root cause" #2) → `db push`
+>   will NO-OP → you MUST use **A.2 (stream the body via STDIN)**.
+
+### A.1 — Migration genuinely pending: `supabase db push`
+
 `supabase db push` applies only the files at the immediate
 `supabase/migrations/` root in ascending version order, so the files below run
 in the correct order automatically.
@@ -62,13 +90,68 @@ supabase db push
 - No `ERROR:` lines (notably no
   `relation "public.teacher_remediation_assignments" does not exist`).
 
+> **If C.1 still shows the RPCs absent after a clean `db push`, you are in the
+> repair-skip case — go to A.2.** `db push` reports "Remote database is up to
+> date" and changes nothing because `20260614000000` is already recorded as
+> applied.
+
+### A.2 — Repair-skip: stream the migration BODY via STDIN
+
+When the migration is marked applied but its body never ran, you must execute
+the SQL **body** directly (bypassing the `schema_migrations` bookkeeping that
+`db push` honours). This is what was done on prod (`shktyoxqhundlvkiwguu`) on
+2026-06-16:
+
+```bash
+# Run against the LINKED project. STDIN redirect — NOT the argument form.
+npx -y supabase db query --linked < supabase/migrations/20260614000000_phase3b_school_command_center_read_models.sql
+```
+
+> **Windows caveat — use STDIN (`<`), never the argument form.**
+> The argument form
+> `npx -y supabase db query "$(cat supabase/migrations/20260614000000_*.sql)"`
+> **FAILS on Windows** for two independent reasons:
+> 1. The file exceeds the Windows command-line length limit (~32 KB), so the
+>    argument is truncated and the SQL is incomplete/invalid.
+> 2. The shell mangles the `$$` dollar-quoting that wraps the PL/pgSQL function
+>    bodies, so even a short fragment parses wrong.
+> Piping the file on **STDIN** sidesteps both — the CLI reads the raw file
+> verbatim, no shell length limit, no `$$` mangling. STDIN is the reliable
+> channel for any large / dollar-quoted migration body on Windows.
+
+The migration is itself idempotent (`CREATE OR REPLACE FUNCTION`,
+`CREATE INDEX IF NOT EXISTS`, DO-block-guarded `GRANT`) and is wrapped in its
+own `BEGIN; … COMMIT;`, so streaming the body is safe to repeat and does not
+disturb the `schema_migrations` row (which already — correctly — lists the
+version as applied; only the body was missing).
+
+**Acceptance**: re-run C.1 — the three RPCs now exist.
+
 ---
 
 ## B. Run the demo seed
 
 The seed is **not** a migration — it lives under `scripts/seed/` and is run by
-hand against the project you want populated. It self-discovers the demo school
-(oldest school whose name matches `ILIKE '%demo%'`) and is fully idempotent.
+hand against the project you want populated. It targets **every** demo school
+that has an **ACTIVE `school_admin`** (`name ILIKE '%demo%'` AND a live row in
+`public.school_admins`), loops over all of them, and is fully idempotent.
+
+> **Two bug fixes baked into the current seed (both discovered live 2026-06-16):**
+> - **(A) `preferred_subject` FK.** `students.preferred_subject` has a column
+>   DEFAULT of `'Mathematics'` (a NAME) but FKs `public.subjects.code`, whose
+>   values are lowercase codes (`'math'`, `'science'`, `'physics'`, …). Leaving
+>   the column unset fired the default → `23503` FK violation. The seed now sets
+>   `preferred_subject` explicitly to a valid code, aligned per class:
+>   Class 9A → `math`, Class 10B → `science`, Class 11 Science → `physics`.
+> - **(B) Multi-school email collision + wrong target.** `teachers.email` /
+>   `students.email` are GLOBALLY UNIQUE. The old seed used non-school-scoped
+>   emails and auto-discovered only the OLDEST `%demo%` school — which on prod is
+>   "Alfanumrik Demo School", a school with NO admin (so it can never be
+>   demoed). The seed now (i) targets only `%demo%` schools that have an ACTIVE
+>   `school_admins` row, looping over ALL of them; and (ii) makes every
+>   teacher/student email school-scoped by embedding an 8-char tag from the
+>   school id (`left(replace(school_id::text,'-',''),8)`) so running across
+>   multiple schools never collides or cross-wires.
 
 ```bash
 # Option 1 — Supabase CLI (uses the linked project from step A):
@@ -77,15 +160,20 @@ supabase db execute --file scripts/seed/demo-school-data.sql --linked
 # Option 2 — psql directly (build DB_URL from the project ref + password):
 export DB_URL="postgresql://postgres.${TARGET_PROJECT_REF}:${TARGET_DB_PASSWORD}@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
 psql "$DB_URL" -f scripts/seed/demo-school-data.sql
+
+# Option 3 — STDIN via the CLI (mirrors the A.2 channel; reliable on Windows):
+npx -y supabase db query --linked < scripts/seed/demo-school-data.sql
 ```
 
 **Acceptance**:
-- Output includes `NOTICE: demo-school-data: seeding demo school <uuid>` then
-  `NOTICE: demo-school-data: seed complete`.
-- If you instead see `NOTICE: ... no school matching ILIKE '%demo%' found`, no
-  demo school exists yet — create one first (or rename an existing test school
-  to contain "demo"), then re-run. The seed is safe to re-run any number of
-  times.
+- Output includes one `NOTICE: demo-school-data: seeding demo school <uuid> (tag <8char>)`
+  + `NOTICE: demo-school-data: seed complete for school <uuid>` PER qualifying
+  school.
+- If you instead see
+  `NOTICE: ... no school matching ILIKE '%demo%' with an ACTIVE school_admin found`,
+  no demoable school exists yet — create one (or attach an active `school_admin`
+  to an existing `%demo%` school), then re-run. The seed is safe to re-run any
+  number of times.
 
 ---
 
@@ -105,6 +193,20 @@ psql "$DB_URL" -At -c "
 
 **Acceptance**: exactly **3 names** returned:
 `get_classes_at_risk`, `get_school_overview`, `get_teacher_engagement`.
+(If this returns **0 names but** `20260614000000` is recorded applied, you are
+in the repair-skip case — go back to **A.2**.)
+
+You can also confirm directly against `pg_proc.proname` via the CLI on STDIN:
+
+```bash
+npx -y supabase db query --linked <<'SQL'
+SELECT proname
+  FROM pg_proc
+ WHERE pronamespace = 'public'::regnamespace
+   AND proname IN ('get_school_overview','get_classes_at_risk','get_teacher_engagement')
+ ORDER BY proname;
+SQL
+```
 
 Also confirm the dependency table landed:
 
@@ -114,36 +216,75 @@ psql "$DB_URL" -At -c "SELECT to_regclass('public.teacher_remediation_assignment
 
 **Acceptance**: a non-null value (`teacher_remediation_assignments`).
 
-### C.2 Confirm the demo school has 3 classes + roster
+### C.2 Confirm EVERY demoable school has 3 classes + roster
+
+The seed now populates all `%demo%` schools that have an active admin, so verify
+**per school** (not just the oldest):
 
 ```bash
-psql "$DB_URL" -At -c "
-  WITH demo AS (
-    SELECT id FROM public.schools
-     WHERE name ILIKE '%demo%' AND deleted_at IS NULL
-     ORDER BY created_at ASC NULLS LAST LIMIT 1
-  )
+psql "$DB_URL" -At -F$'\t' -c "
   SELECT
+    s.id,
+    s.name,
     (SELECT count(*) FROM public.classes c
-       WHERE c.school_id = (SELECT id FROM demo) AND c.is_active AND c.deleted_at IS NULL) AS classes,
+       WHERE c.school_id = s.id AND c.is_active AND c.deleted_at IS NULL) AS classes,
     (SELECT count(*) FROM public.teachers t
-       WHERE t.school_id = (SELECT id FROM demo) AND t.is_active AND t.is_demo)            AS demo_teachers,
-    (SELECT count(*) FROM public.students s
-       WHERE s.school_id = (SELECT id FROM demo) AND s.is_active AND s.is_demo)            AS demo_students;
+       WHERE t.school_id = s.id AND t.is_active AND t.is_demo)            AS demo_teachers,
+    (SELECT count(*) FROM public.students st
+       WHERE st.school_id = s.id AND st.is_active AND st.is_demo)         AS demo_students
+  FROM public.schools s
+  WHERE s.name ILIKE '%demo%'
+    AND s.deleted_at IS NULL
+    AND EXISTS (SELECT 1 FROM public.school_admins sa
+                 WHERE sa.school_id = s.id AND sa.is_active)
+  ORDER BY s.id;
 "
 ```
 
-**Acceptance**: `classes >= 3`, `demo_teachers >= 3`, `demo_students >= 9`.
+**Acceptance**: per qualifying school `classes >= 3`, `demo_teachers >= 3`,
+`demo_students >= 9`. On prod (`shktyoxqhundlvkiwguu`, 2026-06-16) both demoable
+schools returned `classes = 3`, `teachers = 3`, `students = 12` (3 pre-existing
++ 9 demo) and `get_school_dashboard_stats` returned
+`total_classes = 3 / total_teachers = 3 / total_students = 12`.
 
-### C.3 (Optional) Exercise the dashboard RPC as the school admin
+### C.3 Exercise the dashboard / Command Center RPCs as the school admin
 
-`get_school_dashboard_stats` / `get_school_overview` are `SECURITY DEFINER` and
-guard on `is_school_admin_of(p_school_id)`, i.e. `auth.uid()` must be an ACTIVE
-`school_admins` row for that school. On a plain `psql` / service-role connection
-`auth.uid()` is NULL, so these **intentionally raise `Forbidden`** — that is the
-RLS boundary working, not a bug. To exercise them positively, hit the widget in
-the app while logged in as the school admin, or issue a PostgREST `rpc` call
-with that admin's JWT. For a connection-agnostic proof, rely on C.2 instead.
+`get_school_dashboard_stats`, `get_school_overview`, `get_classes_at_risk`, and
+`get_teacher_engagement` are `SECURITY DEFINER` and guard on the caller being an
+ACTIVE `school_admins` row for `p_school_id` (`auth.uid()` must match). On a
+plain `psql` / service-role connection `auth.uid()` is NULL, so these
+**intentionally raise `42501` / `Forbidden`** — that is the RLS boundary working,
+not a bug.
+
+To exercise them positively from a SQL connection WITHOUT a real login, simulate
+the admin's JWT for the duration of one transaction by setting
+`request.jwt.claims` (PostgREST/Supabase reads `auth.uid()` from the `sub`
+claim). Use the admin's `auth_user_id` (from `public.school_admins`):
+
+```sql
+-- Simulated-admin JWT trick — run as ONE transaction.
+BEGIN;
+SELECT set_config(
+  'request.jwt.claims',
+  json_build_object('sub', '<admin auth_user_id>')::text,
+  true            -- is_local = true: scoped to this transaction only
+);
+SELECT public.get_school_dashboard_stats('<school_id>');
+SELECT public.get_school_overview('<school_id>');
+SELECT * FROM public.get_classes_at_risk('<school_id>', 20, 0);
+SELECT * FROM public.get_teacher_engagement('<school_id>', 20, 0);
+COMMIT;
+```
+
+> Look up the admin's `auth_user_id` for a school with:
+> `SELECT auth_user_id, email FROM public.school_admins WHERE school_id = '<school_id>' AND is_active;`
+> On prod 2026-06-16 the two demoable schools were
+> `61d15e48-8214-425c-bc2f-9c2e2e584f09` (admin `demo-school@alfanumrik.com`)
+> and `a2e40b65-4386-46b4-bf6d-2bb2c52ba161` (admin `school-demo@alfanumrik.com`).
+
+You can also exercise them by hitting the widget in the app while logged in as
+the school admin, or via a PostgREST `rpc` call carrying that admin's JWT. For a
+connection-agnostic proof of the roster, rely on C.2 instead.
 
 ### C.4 Confirm the widgets stop 500-ing
 
@@ -153,6 +294,28 @@ HTTP 200 with populated numbers (3 classes, 3 teachers, 9 students; at-risk and
 mastery columns are 0/empty until `concept_mastery` rows accrue for the demo
 roster — that is expected for freshly-seeded demo students).
 
+### C.5 VERIFIED OUTCOME — prod `shktyoxqhundlvkiwguu`, 2026-06-16
+
+Recorded for the record (all VERIFIED live on prod):
+
+- **Repair-skip diagnosed**: `20260614000000` was recorded applied in
+  `schema_migrations` but the three RPCs did not exist (`db push` was a no-op).
+- **RPCs created via A.2**: streamed the migration body with
+  `npx -y supabase db query --linked < supabase/migrations/20260614000000_phase3b_school_command_center_read_models.sql`
+  (STDIN, not the arg form). C.1 then returned all three names.
+- **Schools seeded** (the two `%demo%` schools that have an active admin):
+  - `61d15e48-8214-425c-bc2f-9c2e2e584f09` — "Demo School — Demo School"
+    (admin `demo-school@alfanumrik.com`)
+  - `a2e40b65-4386-46b4-bf6d-2bb2c52ba161` — "Demo School — School"
+    (admin `school-demo@alfanumrik.com`)
+  Each now has classes = 3, teachers = 3, students = 12 (3 pre-existing + 9
+  demo), enrollments = 9, class_teacher_links = 3.
+- **`get_school_dashboard_stats`** returned `total_classes = 3 /
+  total_teachers = 3 / total_students = 12`.
+- **All 3 Command Center widget RPCs execute** (under the simulated-admin JWT
+  from C.3): `get_school_overview` → `overview_ok`; `get_classes_at_risk` → 3
+  rows; `get_teacher_engagement` → 3 rows.
+
 ---
 
 ## D. Rollback / cleanup
@@ -160,45 +323,53 @@ roster — that is expected for freshly-seeded demo students).
 ### D.1 Remove the demo seed data (does NOT touch any migration)
 
 The seed only creates `is_demo = true` rows plus their enrollments, so cleanup
-is a scoped delete. Run against the same project:
+is a scoped delete. It now spans ALL demoable schools (consistent with the seed
+target), not just the oldest. Run against the same project:
 
 ```bash
 psql "$DB_URL" <<'SQL'
 BEGIN;
+-- All demo schools that have an active admin (the exact seed target set).
 WITH demo AS (
-  SELECT id FROM public.schools
-   WHERE name ILIKE '%demo%' AND deleted_at IS NULL
-   ORDER BY created_at ASC NULLS LAST LIMIT 1
+  SELECT s.id
+  FROM public.schools s
+  WHERE s.name ILIKE '%demo%'
+    AND s.deleted_at IS NULL
+    AND EXISTS (SELECT 1 FROM public.school_admins sa
+                 WHERE sa.school_id = s.id AND sa.is_active)
 )
--- enrollments first (FK children), then the demo people.
+-- enrollments first (FK children), then the demo people, then the demo classes.
 DELETE FROM public.class_students cs
  USING public.students s
  WHERE cs.student_id = s.id AND s.is_demo
-   AND s.school_id = (SELECT id FROM demo);
+   AND s.school_id IN (SELECT id FROM demo);
 
 DELETE FROM public.class_teachers ct
  USING public.teachers t
  WHERE ct.teacher_id = t.id AND t.is_demo
-   AND t.school_id = (SELECT id FROM demo);
+   AND t.school_id IN (SELECT id FROM demo);
 
 DELETE FROM public.students s
- WHERE s.is_demo AND s.school_id = (SELECT id FROM (
-   SELECT id FROM public.schools
-    WHERE name ILIKE '%demo%' AND deleted_at IS NULL
-    ORDER BY created_at ASC NULLS LAST LIMIT 1) d);
+ WHERE s.is_demo AND s.school_id IN (
+   SELECT s2.id FROM public.schools s2
+    WHERE s2.name ILIKE '%demo%' AND s2.deleted_at IS NULL
+      AND EXISTS (SELECT 1 FROM public.school_admins sa
+                   WHERE sa.school_id = s2.id AND sa.is_active));
 
 DELETE FROM public.teachers t
- WHERE t.is_demo AND t.school_id = (SELECT id FROM (
-   SELECT id FROM public.schools
-    WHERE name ILIKE '%demo%' AND deleted_at IS NULL
-    ORDER BY created_at ASC NULLS LAST LIMIT 1) d);
+ WHERE t.is_demo AND t.school_id IN (
+   SELECT s2.id FROM public.schools s2
+    WHERE s2.name ILIKE '%demo%' AND s2.deleted_at IS NULL
+      AND EXISTS (SELECT 1 FROM public.school_admins sa
+                   WHERE sa.school_id = s2.id AND sa.is_active));
 
 -- Demo classes (the seed's 3 by name). Safe-delete; no soft-delete needed for demo.
 DELETE FROM public.classes c
- WHERE c.school_id = (SELECT id FROM (
-   SELECT id FROM public.schools
-    WHERE name ILIKE '%demo%' AND deleted_at IS NULL
-    ORDER BY created_at ASC NULLS LAST LIMIT 1) d)
+ WHERE c.school_id IN (
+   SELECT s2.id FROM public.schools s2
+    WHERE s2.name ILIKE '%demo%' AND s2.deleted_at IS NULL
+      AND EXISTS (SELECT 1 FROM public.school_admins sa
+                   WHERE sa.school_id = s2.id AND sa.is_active))
    AND c.name = ANY (ARRAY['Class 9A','Class 10B','Class 11 Science']);
 COMMIT;
 SQL
@@ -222,13 +393,18 @@ never `DROP` in panic).
 ## Quick reference
 
 ```bash
-# A. apply migrations (3 files, version-ordered automatically)
 supabase link --project-ref "$TARGET_PROJECT_REF" --password "$TARGET_DB_PASSWORD"
+
+# A.1 — migration genuinely pending: apply (version-ordered automatically)
 supabase db push --dry-run && supabase db push
 
-# B. seed demo data (idempotent, self-discovering, NOT a migration)
+# A.2 — repair-skip (marked applied, body never ran; db push NO-OPs):
+#        stream the BODY via STDIN. NOT the arg form (Windows ~32KB limit + $$ mangling).
+npx -y supabase db query --linked < supabase/migrations/20260614000000_phase3b_school_command_center_read_models.sql
+
+# B. seed demo data (idempotent; targets ALL %demo% schools with an active admin; NOT a migration)
 supabase db execute --file scripts/seed/demo-school-data.sql --linked
 
-# C. verify RPCs + roster
+# C. verify RPCs exist
 psql "$DB_URL" -At -c "SELECT proname FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('get_school_overview','get_classes_at_risk','get_teacher_engagement') ORDER BY proname;"
 ```

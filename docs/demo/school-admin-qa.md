@@ -8,14 +8,18 @@
 >
 > **Owner**: ops. **Last updated**: 2026-06-16.
 >
-> **IMPORTANT — verification status**: Items marked **pending DB verification** below
-> have NOT been confirmed against the live database. Their backing read-model RPCs are
-> present in migration files and the remote `supabase_migrations` table marks them
-> APPLIED, but they may be "repair-skipped" (marked applied without the function body
-> ever executing) as part of the schema-reproducibility cutover. Until the DB-apply
-> runbook is executed and the demo seed is run (see
-> [Blocked / pending operator action](#blocked--pending-operator-action)), treat those
-> widgets/screens as **possibly erroring**, not as working.
+> **DB STATUS — VERIFIED 2026-06-16**: The DB layer has now been **APPLIED and VERIFIED
+> against the live DB** (project `shktyoxqhundlvkiwguu`). The 3 Command Center read-model
+> RPCs (`get_school_overview`, `get_classes_at_risk`, `get_teacher_engagement`) were
+> missing on the live DB — migration `20260614000000` was marked APPLIED but its body
+> never executed ("repair-skip"). They have now been created on the live DB
+> (`CREATE OR REPLACE`, idempotent); `teacher_remediation_assignments` and all other
+> required tables already existed. Two demo schools with active admins were seeded, and
+> end-to-end verification through the real `is_school_admin_of` guard confirms the
+> Command Center widgets return data (or clean empty states), not errors. See
+> [Verified results (2026-06-16)](#verified-results-2026-06-16). _History: this section
+> previously read "pending DB verification" because the read-model RPCs were suspected
+> repair-skipped on the live DB; that has now been confirmed and remediated._
 
 ---
 
@@ -26,14 +30,14 @@ Source of truth for the nav: `src/app/school-admin/_components/ConsolidatedSchoo
 
 - **WORKING** — verified to render with its own loading/error/empty states.
 - **EMPTY STATE** — load-state-safe; renders a clean empty/no-data state when there is nothing to show.
-- **ERROR (DB-pending)** — may return HTTP 500 until the Phase 3B read-model RPCs are applied/verified against the live DB (and/or demo seed run). Pending DB verification.
+- **WORKING (verified 2026-06-16)** — Phase 3B read-model RPCs applied + verified against the live DB; widgets return data (or clean empty states), not 500s.
 - **FLAG-GATED** — only renders when a feature flag (and sometimes a role) is ON; default-OFF means hidden.
 - **NOT BUILT** — no implementation on disk.
 
 | Nav Item | Route | Flag / Module gate | Status | Notes |
 |---|---|---|---|---|
 | **Overview** | | | | |
-| Command Center | `/school-admin` | — (sole home; legacy toggle removed) | ERROR (DB-pending) | Overview / Classes-at-risk / Teacher-engagement widgets call `get_school_overview`, `get_classes_at_risk`, `get_teacher_engagement`. RPCs present in migrations; may be repair-skipped on live DB → widgets may 500 until DB-apply runbook + demo seed run. Page shell, header, language toggle, sign-out, school-picker, and per-widget Retry/empty states are present and safe. **Pending DB verification.** |
+| Command Center | `/school-admin` | — (sole home; legacy toggle removed) | WORKING (verified 2026-06-16) | Overview / Classes-at-risk / Teacher-engagement widgets call `get_school_overview`, `get_classes_at_risk`, `get_teacher_engagement`. The 3 RPCs were repair-skipped on the live DB and have now been created there (`CREATE OR REPLACE`); verified end-to-end through `is_school_admin_of` — `get_school_overview` non-null, `get_classes_at_risk` 3 rows, `get_teacher_engagement` 3 rows, `get_school_dashboard_stats` total_classes=3 / total_teachers=3 / total_students=12. Page shell, header, language toggle, sign-out, school-picker, and per-widget Retry/empty states present and safe. `avg_mastery` is null (no `concept_mastery` data yet) → mastery widget shows an empty state, not an error. School Pulse summary remains **FLAG-GATED** (`ff_school_pulse_v1` OFF) — unchanged. |
 | **People** | | | | |
 | Students | `/school-admin/students` | — | Pending DB verification | Roster screen. Has its own load/error/empty handling; live data depends on demo seed. |
 | Teachers | `/school-admin/teachers` | — | Pending DB verification | Roster screen. Live data depends on demo seed (3 demo teachers). |
@@ -174,50 +178,94 @@ fixes (code-level, as read on this branch), and **Remaining known issues**.
 ## 4. Blocked / pending operator action
 
 A clean demo (real, non-zero numbers in the Command Center widgets and Reports tabs)
-requires the following operator steps against the target live DB. These are **blocked
-on prod DB access** and were NOT executed in this pass.
+required the following operator steps against the target live DB. **Steps 1–3 are now
+DONE and verified against project `shktyoxqhundlvkiwguu` (2026-06-16).** One optional
+follow-up remains (concept_mastery data — see step 4).
 
 ### Prerequisites for a clean demo (in order)
 
-1. **Apply + verify the Phase 3B read-model RPCs** (fixes the Command Center widget
-   500s). Run the DB-apply runbook:
+1. **[DONE 2026-06-16] Apply + verify the Phase 3B read-model RPCs** (fixed the Command
+   Center widget 500s):
    - Runbook: `docs/runbooks/school-admin-portal-db-apply.md`
-   - Migrations that must end up genuinely APPLIED (body executed), in version order:
-     - `20260613000004_teacher_remediation_assignments.sql`
-     - `20260619000150_reconcile_teacher_remediation_assignments.sql` (re-creates the
-       table if `20260613000004` was repair-marked but never ran)
-     - `20260614000000_phase3b_school_command_center_read_models.sql` (the 3 RPCs +
-       covering indexes)
-   - Verify (runbook §C.1): exactly 3 functions present —
-     `get_classes_at_risk`, `get_school_overview`, `get_teacher_engagement` — and
+   - Root cause: migration `20260614000000` was marked APPLIED in `supabase_migrations`
+     but its body never executed (repair-skip), so the 3 RPCs were missing on the live
+     DB. `teacher_remediation_assignments` and all other required tables already existed.
+   - Action taken: the 3 RPCs were created directly on the live DB via `CREATE OR
+     REPLACE` (idempotent) —
+     `20260614000000_phase3b_school_command_center_read_models.sql` is the authoritative
+     source for their definitions.
+   - **Verified**: exactly 3 functions present — `get_classes_at_risk`,
+     `get_school_overview`, `get_teacher_engagement` — and
      `to_regclass('public.teacher_remediation_assignments')` is non-null.
 
-2. **Run the demo seed** (populates the demo school so widgets/reports show numbers):
-   - Script: `scripts/seed/demo-school-data.sql` (NOT a migration; run by hand)
-   - Self-discovers the oldest school whose name matches `ILIKE '%demo%'`, idempotent,
-     safe to re-run. Seeds 3 classes (Class 9A, Class 10B, Class 11 Science),
-     3 demo teachers, 9 demo students (3 per class), all marked `is_demo = true`,
-     grades as TEXT (P5), `@demo.alfanumrik.invalid` emails (no real PII, P13).
-   - If no `%demo%` school exists, create one (or rename a test school to contain
-     "demo") first, then re-run.
-   - Verify (runbook §C.2): `classes >= 3`, `demo_teachers >= 3`, `demo_students >= 9`.
+2. **[DONE 2026-06-16] Seed the demo schools** (so widgets/reports show numbers):
+   - Two demo schools with active admins were seeded:
+     - **Demo School — Demo School** (`61d15e48…`, admin `demo-school@alfanumrik.com`)
+     - **Demo School — School** (`a2e40b65…`, admin `school-demo@alfanumrik.com`)
+   - Each now has: **classes=3, teachers=3, students=12** (3 pre-existing + 9 demo),
+     **enrollments=9, class_teacher_links=3**.
+   - **Verified**: `classes >= 3`, `teachers >= 3`, `students >= 12` for both schools.
 
-3. **Verify the widgets stop 500-ing** (runbook §C.4): log in as a school admin of the
-   demo school and confirm the overview / classes-at-risk / teacher-engagement widgets
-   return HTTP 200 with populated counts.
+3. **[DONE 2026-06-16] Verify the widgets stop 500-ing**: a simulated admin JWT was run
+   through the real `is_school_admin_of` guard. `get_school_dashboard_stats` returns
+   total_classes=3 / total_teachers=3 / total_students=12; `get_school_overview` returns
+   non-null; `get_classes_at_risk` returns 3 rows; `get_teacher_engagement` returns 3
+   rows. Widgets render data or clean empty states, **not** errors.
+
+4. **[OPTIONAL — remaining follow-up] Backfill `concept_mastery` data** so "classes at
+   risk" and the mastery KPI reflect real mastery rather than null. `avg_mastery` is
+   currently null (no `concept_mastery` rows for the demo roster yet), so those columns
+   show an empty/null state — expected for freshly seeded students, not a bug. This is a
+   nice-to-have for a richer demo, not a blocker.
 
 ### Notes / caveats
 
 - The `get_school_dashboard_stats` call-site bug was fixed in code this pass
   (`{ school_id }` → `{ p_school_id }`); no migration needed (the function already
   existed). This is a code fix, not an operator action.
-- After seeding, **at-risk and mastery columns remain 0/empty** until `concept_mastery`
-  rows accrue for the demo roster — that is expected for freshly seeded students, not a
-  bug.
+- After seeding, **at-risk and mastery columns remain 0/empty/null** until
+  `concept_mastery` rows accrue for the demo roster (`avg_mastery` is currently null) —
+  that is expected for freshly seeded students, not a bug. Backfilling that data is the
+  optional step 4 above.
 - **School Pulse** stays hidden regardless of the above until `ff_school_pulse_v1` is
   flipped ON (default OFF) — a separate, independent operator decision.
-- Until steps 1–3 are executed and verified against the live DB, all Command Center
-  widgets and Reports tab numbers remain **pending DB verification**.
+- Steps 1–3 are **DONE and verified against the live DB on 2026-06-16** (project
+  `shktyoxqhundlvkiwguu`); Command Center widgets and dashboard stats are confirmed
+  working. See [Verified results (2026-06-16)](#verified-results-2026-06-16). Reports tab
+  numbers still depend on real quiz activity for non-zero values.
+
+### Verified results (2026-06-16)
+
+Applied + verified against the live DB (project `shktyoxqhundlvkiwguu`).
+
+**DB layer**
+
+- The 3 Command Center read-model RPCs were **missing** on the live DB (migration
+  `20260614000000` marked APPLIED but body never executed — a repair-skip). They were
+  **created** on the live DB via `CREATE OR REPLACE` (idempotent):
+  `get_school_overview`, `get_classes_at_risk`, `get_teacher_engagement`.
+- `teacher_remediation_assignments` and all other required tables already existed — no
+  table changes needed.
+
+**Demo schools seeded (per-school counts)**
+
+| School | ID | Admin | classes | teachers | students | enrollments | class_teacher_links |
+|---|---|---|---|---|---|---|---|
+| Demo School — Demo School | `61d15e48…` | `demo-school@alfanumrik.com` | 3 | 3 | 12 (3 pre-existing + 9 demo) | 9 | 3 |
+| Demo School — School | `a2e40b65…` | `school-demo@alfanumrik.com` | 3 | 3 | 12 (3 pre-existing + 9 demo) | 9 | 3 |
+
+**End-to-end RPC outputs (via simulated admin JWT through the real `is_school_admin_of` guard)**
+
+| RPC | Result |
+|---|---|
+| `get_school_dashboard_stats` | total_classes=3, total_teachers=3, total_students=12 |
+| `get_school_overview` | non-null |
+| `get_classes_at_risk` | 3 rows |
+| `get_teacher_engagement` | 3 rows |
+
+`avg_mastery` is **null** (no `concept_mastery` data yet) → the affected widgets show a
+data/empty state, **not** an error. Backfilling `concept_mastery` is the optional
+follow-up (step 4 above).
 
 ---
 
