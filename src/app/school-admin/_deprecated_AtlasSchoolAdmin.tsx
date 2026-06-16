@@ -1,6 +1,15 @@
 'use client';
 
 /**
+ * DEPRECATED — no longer rendered by any route.
+ *
+ * The purple School Command Center (./CommandCenter) is now the sole
+ * school-admin home. The ff_school_command_center flag is globally ON in prod,
+ * so the legacy flag dispatch in page.tsx was removed. This file is retained
+ * (renamed from AtlasSchoolAdmin.tsx) for verification only; it is not imported
+ * by any route (only the argument-name contract test references it). Do not wire
+ * it back without removing this notice.
+ *
  * AtlasSchoolAdmin — Editorial Atlas redesign of the principal/admin overview.
  *
  * Headlines (per MULTI_ROLE_REDESIGN.md §5.4):
@@ -19,7 +28,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { useTenant } from '@/lib/tenant-context';
 import { supabase } from '@/lib/supabase';
+import { resolveCachedSchoolName, SCHOOL_NAME_PLACEHOLDER } from './_components/SchoolAdminShell';
 import {
   AtlasShell,
   AtlasCard,
@@ -66,6 +77,7 @@ interface ClassRow {
 export default function AtlasSchoolAdmin() {
   const router = useRouter();
   const auth = useAuth();
+  const tenant = useTenant();
   const { authUserId, isLoading: authLoading, isHi } = auth;
 
   const [adminRecord, setAdminRecord] = useState<SchoolAdminRecord | null>(null);
@@ -101,7 +113,10 @@ export default function AtlasSchoolAdmin() {
   // ─── Step 2: load dashboard stats + class comparison ─────────────────
   const fetchStats = useCallback(async (schoolId: string) => {
     setLoading(true);
-    const { data, error: rpcErr } = await supabase.rpc('get_school_dashboard_stats', { school_id: schoolId });
+    // PostgREST resolves RPCs by ARGUMENT NAME. The DB function is
+    // get_school_dashboard_stats(p_school_id uuid) — passing { school_id }
+    // would fail with "Could not find the function ... in the schema cache".
+    const { data, error: rpcErr } = await supabase.rpc('get_school_dashboard_stats', { p_school_id: schoolId });
     if (rpcErr) setError(rpcErr.message);
     else setStats(data as DashboardStats);
 
@@ -222,6 +237,15 @@ export default function AtlasSchoolAdmin() {
   if (!adminRecord) return null;
 
   const firstName = adminRecord.name.split(' ')[0] ?? adminRecord.name;
+  // School name MUST match the shell — resolve through the shared chain
+  // (tenant → shared identity cache) and fall back to this surface's own
+  // schools(name) join, then a neutral label. This keeps the school name shown
+  // here identical to the sidebar. The personalized greeting above still uses
+  // the admin's first name, which is a distinct field (school_admins.name).
+  const schoolDisplayName =
+    resolveCachedSchoolName(authUserId, tenant.schoolName) ??
+    adminRecord.school_name ??
+    SCHOOL_NAME_PLACEHOLDER;
   const totalActive = stats?.active_today ?? 0;
   const totalStudents = stats?.total_students ?? 0;
   const totalTeachers = stats?.total_teachers ?? 0;
@@ -277,7 +301,9 @@ export default function AtlasSchoolAdmin() {
         </div>
         <div style={{ textAlign: 'right', fontFamily: 'var(--font-display)', fontSize: 12, color: 'var(--ink-3)' }}>
           <strong style={{ color: 'var(--ink)', fontWeight: 600, fontSize: 14, display: 'block' }}>
-            {adminRecord.school_name ?? t('Your school', 'आपका स्कूल')}
+            {schoolDisplayName === SCHOOL_NAME_PLACEHOLDER
+              ? t('Your school', 'आपका स्कूल')
+              : schoolDisplayName}
           </strong>
           <span className="atlas-tabnum">
             {totalClasses} {t('classes', 'कक्षाएँ')} · {totalTeachers} {t('teachers', 'शिक्षक')} · {totalStudents} {t('students', 'छात्र')}

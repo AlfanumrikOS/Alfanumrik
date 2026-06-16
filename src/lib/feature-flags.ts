@@ -548,10 +548,18 @@ export const TEACHER_PARENT_COMMS_FLAGS = {
  *         ~24 flat entries into FIVE grouped sections (Overview · People ·
  *         Academics · Billing · Settings); every existing route stays reachable
  *         (no dead links).
- *    When OFF, BOTH surfaces are byte-identical to today: `/school-admin` renders
- *    the existing dashboard (or AtlasSchoolAdmin when the Atlas flag is on) and
- *    SchoolAdminShell shows the existing flat nav. Default: false. Read
- *    client-side via the existing client flag read path (getFeatureFlags).
+ *    NOTE (2026-06-16): the flag is globally ON in prod, so the client-side
+ *    legacy dispatch has been REMOVED. `/school-admin` always renders the Command
+ *    Center and SchoolAdminShell always renders the consolidated nav. The legacy
+ *    Atlas body is retained, un-wired, at
+ *    src/app/school-admin/_deprecated_AtlasSchoolAdmin.tsx. The flag constant
+ *    remains for the seed/read-path contract and any server-side gating. The
+ *    historical OFF behaviour described below is no longer reachable from the UI.
+ *
+ *    (Historical) When OFF, BOTH surfaces were byte-identical to the prior
+ *    dashboard: `/school-admin` rendered the existing dashboard (or the Atlas
+ *    body when the Atlas flag was on) and SchoolAdminShell showed the flat nav.
+ *    Default: false. Read client-side via getFeatureFlags.
  *
  *    Seat-utilization is DISPLAY-ONLY in Wave A (enforcement is Wave B); the UI
  *    never implies any blocking.

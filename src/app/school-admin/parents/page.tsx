@@ -198,6 +198,8 @@ export default function SchoolAdminParentsPage() {
   /* ── Core state ── */
   const [schoolId, setSchoolId] = useState<string | null>(null);
   const [loadingAdmin, setLoadingAdmin] = useState(true);
+  /* Admin-record load failure (distinct from "not a school admin", which redirects). */
+  const [adminError, setAdminError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabFilter>('links');
 
   /* ── Parent Links state ── */
@@ -234,26 +236,54 @@ export default function SchoolAdminParentsPage() {
     return data.session?.access_token ?? null;
   }, []);
 
-  /* ── Step 1: Auth guard — fetch school_admins record ── */
+  /* ── Step 1: Auth guard — fetch school_admins record ──
+     SAFE pattern (mirrors setup/page.tsx + ai-config/page.tsx): loadingAdmin is
+     cleared on EVERY path via finally — including the redirect-to-/login branch —
+     so the full-page skeleton can never spin forever.
+       • Query error      → surface an inline, retryable error card (don't redirect).
+       • No record/session → genuine "not a school admin" → redirect to /login.   */
   const fetchAdminRecord = useCallback(async () => {
     if (!authUserId) return;
     setLoadingAdmin(true);
+    setAdminError(null);
 
-    const { data, error } = await supabase
-      .from('school_admins')
-      .select('school_id, name')
-      .eq('auth_user_id', authUserId)
-      .eq('is_active', true)
-      .maybeSingle();
+    try {
+      const { data, error } = await supabase
+        .from('school_admins')
+        .select('school_id, name')
+        .eq('auth_user_id', authUserId)
+        .eq('is_active', true)
+        .maybeSingle();
 
-    if (error || !data) {
-      router.replace('/login');
-      return;
+      // A real query failure: don't bounce the admin out — let them retry.
+      if (error) {
+        setAdminError(
+          t(isHi,
+            'We couldn’t load your school admin account. Please try again.',
+            'हम आपका स्कूल एडमिन खाता लोड नहीं कर सके। कृपया दोबारा कोशिश करें।'
+          )
+        );
+        return;
+      }
+
+      // Genuinely not a school admin (no active record) → send to login.
+      if (!data) {
+        router.replace('/login');
+        return;
+      }
+
+      setSchoolId(data.school_id as string);
+    } catch {
+      setAdminError(
+        t(isHi,
+          'Something went wrong loading your account. Please check your connection and try again.',
+          'आपका खाता लोड करने में कुछ गड़बड़ हुई। कृपया अपना कनेक्शन जाँचें और दोबारा कोशिश करें।'
+        )
+      );
+    } finally {
+      setLoadingAdmin(false);
     }
-
-    setSchoolId(data.school_id as string);
-    setLoadingAdmin(false);
-  }, [authUserId, router]);
+  }, [authUserId, router, isHi]);
 
   /* ── Fetch parent links via API ── */
   const fetchParentLinks = useCallback(async () => {
@@ -415,6 +445,24 @@ export default function SchoolAdminParentsPage() {
       fetchAdminRecord();
     }
   }, [authLoading, authUserId, fetchAdminRecord]);
+
+  /* ── Backstop: never let the page skeleton hang ──
+     The real fix is the try/catch/finally in fetchAdminRecord; this is a safety
+     net. If we're still resolving the admin record after 8s, flip to the error
+     state so the user gets a friendly retry instead of an infinite spinner. */
+  useEffect(() => {
+    if (!loadingAdmin) return;
+    const timer = setTimeout(() => {
+      setAdminError(
+        t(isHi,
+          'Failed to load. Please check your connection and retry.',
+          'लोड करने में विफल। कृपया अपना कनेक्शन जाँचें और दोबारा कोशिश करें।'
+        )
+      );
+      setLoadingAdmin(false);
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [loadingAdmin, isHi]);
 
   /* ── Fetch data once school_id is known ── */
   useEffect(() => {
@@ -579,6 +627,31 @@ export default function SchoolAdminParentsPage() {
           <Skeleton variant="rect" height={44} rounded="rounded-xl" />
           {[1, 2, 3, 4].map(i => <ParentRowSkeleton key={i} />)}
         </div>
+      </div>
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     ADMIN-RECORD ERROR STATE
+     Shown when the school-admin account fails to load (query error or the
+     8s backstop) — instead of an infinite skeleton. Retryable; never bounces.
+  ══════════════════════════════════════════════════════════ */
+  if (adminError) {
+    return (
+      <div
+        style={{ background: 'var(--bg)' }}
+        className="min-h-dvh font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
+      >
+        {PageHeader}
+        <main className="px-4 pt-6 pb-24 max-w-2xl mx-auto">
+          <Card className="text-center py-8">
+            <div className="text-4xl mb-3" aria-hidden="true">⚠</div>
+            <p className="text-sm text-[var(--text-2)] mb-4">{adminError}</p>
+            <Button variant="primary" onClick={fetchAdminRecord}>
+              {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
+            </Button>
+          </Card>
+        </main>
       </div>
     );
   }
@@ -780,15 +853,17 @@ export default function SchoolAdminParentsPage() {
               </Card>
             )}
 
-            {/* Empty state: no parent links */}
-            {!loadingLinks && parentLinks.length === 0 && (
+            {/* Empty state: parents loaded successfully but none linked yet.
+                An empty list is NOT an error — show a friendly prompt that points
+                admins toward the school invite code as the next step. */}
+            {!loadingLinks && !linksError && parentLinks.length === 0 && (
               <EmptyState
                 icon="👨‍👩‍👧"
-                title={t(isHi, 'No parent links yet', 'अभी कोई अभिभावक लिंक नहीं')}
+                title={t(isHi, 'No parents linked yet', 'अभी कोई अभिभावक नहीं जुड़ा')}
                 description={t(
                   isHi,
-                  'Parent-student links will appear here once parents sign up and connect with their children.',
-                  'जब अभिभावक साइन अप करेंगे और अपने बच्चों से जुड़ेंगे तो लिंक यहाँ दिखेंगे।'
+                  'Parents can join via your school invite code. Links will appear here once they sign up and connect with their children.',
+                  'अभिभावक आपके स्कूल आमंत्रण कोड के माध्यम से जुड़ सकते हैं। जैसे ही वे साइन अप करके अपने बच्चों से जुड़ेंगे, लिंक यहाँ दिखेंगे।'
                 )}
               />
             )}

@@ -458,7 +458,7 @@ export default function CommandCenter() {
             {tt(isHi, 'School Command Center', 'स्कूल कमांड सेंटर')}
           </h1>
           <p className="text-xs text-[var(--text-3)] mt-0.5">
-            {tt(isHi, 'Read-only overview', 'केवल-पठन अवलोकन')}
+            {tt(isHi, 'School overview and analytics', 'स्कूल अवलोकन और विश्लेषण')}
           </p>
         </div>
         <div className="flex items-center gap-2">

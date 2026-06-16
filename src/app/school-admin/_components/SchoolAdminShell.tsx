@@ -5,10 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { useTenant } from '@/lib/tenant-context';
 import { supabase } from '@/lib/supabase';
-import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
-import type { ModuleKey } from '@/lib/modules/registry';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
-import { useSchoolCommandCenter } from '@/lib/use-school-command-center';
 import { useSchoolReportsDepth } from '@/lib/use-school-reports-depth';
 import { useSchoolAdminRbac } from '@/lib/use-school-admin-rbac';
 import { useSchoolAdminRole } from '@/lib/use-school-admin-role';
@@ -17,58 +14,96 @@ import { useCosmicTheme } from '@/lib/cosmic-theme';
 import { Starfield } from '@/components/cosmic';
 import ConsolidatedSchoolNav from './ConsolidatedSchoolNav';
 
-/* ─── P7: Bilingual labels ───────────────────────────────────────────
+/* ─── School identity: ONE authoritative resolution (stop the flip) ───
  *
- * `moduleKey` (optional) maps a nav entry to a module from the registry
- * (src/lib/modules/registry.ts). When set, the entry is hidden in the
- * sidebar if `enabledModulesFor(schoolId, tenantType)` reports that
- * module as disabled. Items WITHOUT a moduleKey are always shown — they
- * cover platform-core admin functions (dashboard, students, teachers,
- * classes, branding, etc.) that are not gated by module enablement.
+ * The sidebar brand used to flip "School Admin" (avatar "S") → "Demo School"
+ * (avatar "D") across hydration because the literal 'School Admin' fallback
+ * was painted FIRST and the async DB name resolved SECOND — two values with
+ * different first letters. We now resolve the displayed school name through a
+ * single priority chain and, crucially, never paint a misleading literal that
+ * later changes its first letter.
  *
- * Defensive fallback: when the /api/school-admin/modules fetch fails
- * for any reason, we render every item — favouring availability over
- * confusion. (Same fail-open semantics as the registry resolver.)
+ * Resolution priority (highest first):
+ *   1. useTenant().schoolName            (present once SchoolThemeProvider hydrates)
+ *   2. school_admins → schools(name) DB  (direct-URL access fallback)
+ *   3. a synchronous per-user cache      (so repeat visits paint the resolved name)
+ *   4. email-prefix of the admin's email (humane last-resort label)
+ *   5. a neutral, stable placeholder     (em-dash — never a fake-name first letter)
+ *
+ * The cache mirrors the localStorage pattern in `useSchoolCommandCenter`: a
+ * synchronous read on mount means the first paint on a repeat visit already
+ * matches the resolved name, so the user never sees an S→D swap. Other
+ * school-admin surfaces read the SAME cache so the school name shown anywhere
+ * is identical — no third divergent source.
  */
-type SchoolAdminNavItem = {
-  href: string;
-  label: string;
-  labelHi: string;
-  icon: string;
-  /** When set: hide this item if the module is disabled for this tenant. */
-  moduleKey?: ModuleKey;
-};
+const SCHOOL_IDENTITY_CACHE_PREFIX = 'alfanumrik_school_identity_v1'; // gitleaks:allow — sessionStorage key, not a secret
+const SCHOOL_IDENTITY_TTL_MS = 12 * 60 * 60 * 1000; // 12h — identity rarely changes within a session
+/** Neutral, stable placeholder painted while the name is genuinely unresolved.
+ *  An em-dash reads as "loading" and never masquerades as a real school whose
+ *  first letter would later change. */
+export const SCHOOL_NAME_PLACEHOLDER = '—';
 
-const NAV_ITEMS: ReadonlyArray<SchoolAdminNavItem> = [
-  { href: '/school-admin', label: 'Dashboard', labelHi: 'डैशबोर्ड', icon: '▦' },
-  { href: '/school-admin/students', label: 'Students', labelHi: 'छात्र', icon: '⊕' },
-  { href: '/school-admin/teachers', label: 'Teachers', labelHi: 'शिक्षक', icon: '⊛' },
-  { href: '/school-admin/classes', label: 'Classes', labelHi: 'कक्षाएँ', icon: '⊞' },
-  { href: '/school-admin/invite-codes', label: 'Invite Codes', labelHi: 'आमंत्रण कोड', icon: '⊡' },
-  { href: '/school-admin/announcements', label: 'Announcements', labelHi: 'घोषणाएँ', icon: '⊜', moduleKey: 'communication' },
-  { href: '/school-admin/parents', label: 'Parents', labelHi: 'अभिभावक', icon: '⊗' },
-  { href: '/school-admin/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘', moduleKey: 'analytics' },
-  { href: '/school-admin/content', label: 'Content', labelHi: 'सामग्री', icon: '⊠', moduleKey: 'lms' },
-  { href: '/school-admin/exams', label: 'Exams', labelHi: 'परीक्षा', icon: '⊙', moduleKey: 'testing_engine' },
-  { href: '/school-admin/setup', label: 'Setup', labelHi: 'सेटअप', icon: '◎' },
-  { href: '/school-admin/branding', label: 'Branding', labelHi: 'ब्रांडिंग', icon: '◐' },
-  { href: '/school-admin/modules', label: 'Modules', labelHi: 'मॉड्यूल', icon: '◍' },
-  { href: '/school-admin/ai-config', label: 'AI Config', labelHi: 'AI कॉन्फ़िग', icon: '◈', moduleKey: 'ai_tutor' },
-  { href: '/school-admin/enroll', label: 'Enrollment', labelHi: 'नामांकन', icon: '◉' },
-];
+interface CachedSchoolIdentity {
+  name: string;
+  logoUrl: string | null;
+  ts: number;
+}
+
+function schoolIdentityCacheKey(authUserId: string | null): string | null {
+  return authUserId ? `${SCHOOL_IDENTITY_CACHE_PREFIX}:${authUserId}` : null;
+}
+
+/** Synchronous read of the cached school identity for this user; null when
+ *  absent, malformed, or stale. Safe in SSR (returns null). */
+export function readSchoolIdentityCache(authUserId: string | null): CachedSchoolIdentity | null {
+  if (typeof window === 'undefined') return null;
+  const key = schoolIdentityCacheKey(authUserId);
+  if (!key) return null;
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedSchoolIdentity;
+    if (!parsed || typeof parsed.name !== 'string' || typeof parsed.ts !== 'number') return null;
+    if (Date.now() - parsed.ts > SCHOOL_IDENTITY_TTL_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeSchoolIdentityCache(authUserId: string | null, name: string, logoUrl: string | null) {
+  if (typeof window === 'undefined') return;
+  const key = schoolIdentityCacheKey(authUserId);
+  if (!key || !name) return;
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify({ name, logoUrl, ts: Date.now() } satisfies CachedSchoolIdentity));
+  } catch {
+    /* quota or disabled storage — fall back to per-request resolution */
+  }
+}
+
+/** The single resolver other school-admin surfaces should call so the school
+ *  name they display matches the shell exactly. Returns the resolved name, or
+ *  null when nothing authoritative is known yet (caller decides the label). */
+export function resolveCachedSchoolName(authUserId: string | null, tenantSchoolName?: string | null): string | null {
+  if (tenantSchoolName) return tenantSchoolName;
+  return readSchoolIdentityCache(authUserId)?.name ?? null;
+}
 
 /**
- * School Admin Shell — branded sidebar layout (Plan 0 Task 8).
+ * School Admin Shell — branded consolidated nav layout.
  *
- * Composes the shared `<DashboardSidebar>` primitive from
- * `@/components/admin-ui` and supplies tenant-driven branding:
+ * Renders the consolidated 5-section `<ConsolidatedSchoolNav>` (the purple
+ * School Command Center nav) and supplies tenant-driven branding:
  * - School logo / initial-letter tile
  * - School primary color for active nav highlight
  * - "Powered by Alfanumrik" footer for B2B tenants
  *
  * Falls back to a DB lookup if tenant context is null (e.g. direct URL
- * access before SchoolThemeProvider hydrates). Module-gated nav items
- * fail-open when /api/school-admin/modules errors or returns 403.
+ * access before SchoolThemeProvider hydrates). The nav's own items are
+ * gated by module enablement (fail-open when /api/school-admin/modules
+ * errors or returns 403) and by the per-section sub-flags
+ * (rbacEnabled/reportsDepthEnabled/principalAiEnabled).
  */
 export default function SchoolAdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -78,8 +113,16 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
   // Cosmic Phase 3: flag-gated dark reskin (gold/steel via data-role="school").
   // OFF ⇒ cosmicEnabled false ⇒ byte-identical to before this change.
   const { cosmicEnabled } = useCosmicTheme();
-  const [schoolName, setSchoolName] = useState<string>(tenant.schoolName || '');
-  const [logoUrl, setLogoUrl] = useState<string | null>(tenant.branding.logoUrl);
+  // Seed from the SAME authoritative chain we resolve below so the first paint
+  // on a repeat visit already shows the resolved name (no S→D flip):
+  //   tenant.schoolName → synchronous per-user identity cache → ''(unresolved).
+  const cachedIdentity = readSchoolIdentityCache(authUserId);
+  const [schoolName, setSchoolName] = useState<string>(tenant.schoolName || cachedIdentity?.name || '');
+  const [logoUrl, setLogoUrl] = useState<string | null>(tenant.branding.logoUrl || cachedIdentity?.logoUrl || null);
+  // Email-prefix is the humane last-resort label (priority 4). Sourced from the
+  // SAME school_admins row the direct-URL fallback already reads — no new query
+  // pattern, no auth-flow change.
+  const [emailPrefix, setEmailPrefix] = useState<string>('');
 
   // null while loading or on fetch failure (fail-open: show all items).
   // Otherwise a partial map of moduleKey → enabled. Only modules that
@@ -88,18 +131,13 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
 
   // Editorial Atlas pass-through. Sync read from cache — no flash.
   const atlasOn = useAtlasFlag('school');
-  // Phase 3B — consolidated 5-section nav. Sync-paints DEFAULT_OFF (1h cache),
-  // so for every current (flag-absent) user this is false on the first paint and
-  // the existing flat DashboardSidebar renders byte-identically. ON ⇒ the
-  // grouped ConsolidatedSchoolNav renders instead.
-  const commandCenterOn = useSchoolCommandCenter();
 
   // Phase 3B Wave D — deep school-wide reporting nav entry. Sync-paints
   // DEFAULT_OFF (1h cache), so for every current (flag-absent) user this is false
   // on the first paint and the Academics section omits the School Report entry
   // byte-identically. When ON, the entry appears (the route + read APIs are
-  // themselves flag-gated server-side). The consolidated nav only renders when
-  // commandCenterOn is true, so this entry is naturally scoped to that surface.
+  // themselves flag-gated server-side). The entry lives in the consolidated
+  // nav, which is now the sole school-admin nav.
   const reportsDepthOn = useSchoolReportsDepth();
 
   // Phase 3B Wave C — role-aware nav gating. Sync-paints DEFAULT_OFF (1h cache),
@@ -123,37 +161,39 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
 
   const primaryColor = tenant.branding.primaryColor || '#7C3AED';
 
-  // Track 2 — additively append the Principal Assistant entry to the FLAT legacy
-  // sidebar ONLY when `ff_principal_ai_v1` is ON AND the caller is a principal
-  // (mirrors the principal-only capability; fail-CLOSED so non-principals never
-  // see it). When the flag is OFF this is byte-identical to the legacy NAV_ITEMS.
-  const flatNavItems: ReadonlyArray<SchoolAdminNavItem> =
-    principalAiOn && adminRole === 'principal'
-      ? [
-          ...NAV_ITEMS,
-          {
-            href: '/school-admin/ai-assistant',
-            label: 'Principal Assistant',
-            labelHi: 'Principal सहायक',
-            icon: '◈',
-          },
-        ]
-      : NAV_ITEMS;
+  // ─── Single authoritative brand title (the value the avatar initial derives
+  // from). Priority: tenant → DB-resolved name → email-prefix → neutral
+  // placeholder. We deliberately do NOT fall back to the old 'School Admin'
+  // literal: it had a different first letter than the resolved name and was the
+  // sole cause of the S→D avatar flip. The sub-line keeps the static
+  // "School Administration" label, so context is never lost. ───
+  const resolvedSchoolName =
+    tenant.schoolName || schoolName || emailPrefix || SCHOOL_NAME_PLACEHOLDER;
 
   useEffect(() => {
     if (!authUserId) {
       router.push('/login');
       return;
     }
-    // If no tenant context (direct URL access), fetch school info from DB
-    if (!tenant.schoolName && authUserId) {
+    // Tenant context is authoritative when present — mirror it into the cache so
+    // repeat visits + sibling surfaces paint the same name.
+    if (tenant.schoolName) {
+      writeSchoolIdentityCache(authUserId, tenant.schoolName, tenant.branding.logoUrl ?? null);
+      return;
+    }
+    // If no tenant context (direct URL access), fetch school info from DB. We
+    // also pull the admin's email so the email-prefix last-resort label can be
+    // derived from the SAME row (no extra query, no auth-flow change).
+    if (authUserId) {
       supabase
         .from('school_admins')
-        .select('school_id, schools(name, logo_url, primary_color)')
+        .select('school_id, email, schools(name, logo_url, primary_color)')
         .eq('auth_user_id', authUserId)
         .eq('is_active', true)
         .single()
         .then(({ data }) => {
+          const adminEmail = typeof data?.email === 'string' ? data.email : '';
+          if (adminEmail) setEmailPrefix(adminEmail.split('@')[0] ?? '');
           if (data?.schools && typeof data.schools === 'object') {
             // Supabase FK join may return array or object depending on relation type
             const raw = data.schools as unknown;
@@ -162,11 +202,14 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
               const school = s as { name: string; logo_url: string | null; primary_color: string | null };
               setSchoolName(school.name);
               if (school.logo_url) setLogoUrl(school.logo_url);
+              // Persist the resolved identity so the next paint (and sibling
+              // surfaces) never see the S→D flip.
+              writeSchoolIdentityCache(authUserId, school.name, school.logo_url ?? null);
             }
           }
         });
     }
-  }, [authUserId, tenant.schoolName, router]);
+  }, [authUserId, tenant.schoolName, tenant.branding.logoUrl, router]);
 
   // Fetch module enablement once per shell mount. /api/school-admin/modules
   // requires `school.manage_modules` permission; admins without it land
@@ -205,56 +248,35 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
       {/* Cosmic dark canvas — decorative starfield behind the portal. Hidden in
           light/HC + reduced-motion via globals.css. */}
       {cosmicEnabled && <Starfield className="!fixed inset-0 -z-0" />}
-      {/* Phase 3B nav dispatch: ON ⇒ consolidated 5-section nav; OFF ⇒ the
-          existing flat DashboardSidebar (byte-identical). Both receive the same
-          branding, current path, and module-enablement so behaviour parity is
-          preserved (module gating, active highlight, mobile drawer). */}
-      {commandCenterOn ? (
-        <ConsolidatedSchoolNav
-          brandTitle={schoolName || (isHi ? 'स्कूल प्रशासन' : 'School Admin')}
-          brandSubtitle={isHi ? 'स्कूल प्रशासन' : 'School Administration'}
-          logoUrl={logoUrl}
-          primaryColor={primaryColor}
-          currentPath={pathname || ''}
-          isHi={isHi}
-          moduleEnablement={moduleEnablement}
-          rbacEnabled={rbacOn}
-          adminRole={adminRole}
-          reportsDepthEnabled={reportsDepthOn}
-          principalAiEnabled={principalAiOn}
-          footer={
-            (tenant.branding.showPoweredBy || tenant.schoolId) ? (
-              <div>
-                Powered by{' '}
-                <a href="https://alfanumrik.com" className="text-primary no-underline">
-                  Alfanumrik
-                </a>
-              </div>
-            ) : null
-          }
-        />
-      ) : (
-        <DashboardSidebar
-          brandTitle={schoolName || (isHi ? 'स्कूल प्रशासन' : 'School Admin')}
-          brandSubtitle={isHi ? 'स्कूल प्रशासन' : 'School Administration'}
-          logoUrl={logoUrl}
-          primaryColor={primaryColor}
-          items={flatNavItems as unknown as SidebarNavItem[]}
-          currentPath={pathname || ''}
-          isHi={isHi}
-          moduleEnablement={moduleEnablement}
-          footer={
-            (tenant.branding.showPoweredBy || tenant.schoolId) ? (
-              <div>
-                Powered by{' '}
-                <a href="https://alfanumrik.com" className="text-primary no-underline">
-                  Alfanumrik
-                </a>
-              </div>
-            ) : null
-          }
-        />
-      )}
+      {/* School Command Center is the sole school-admin nav. The
+          ff_school_command_center flag is globally ON in prod, so the legacy
+          flat-nav dispatch (and its first-paint flag race) is removed: the
+          consolidated 5-section ConsolidatedSchoolNav always renders. Per-item
+          gating is preserved via moduleEnablement + the sub-flags
+          (rbacEnabled/reportsDepthEnabled/principalAiEnabled) below. */}
+      <ConsolidatedSchoolNav
+        brandTitle={resolvedSchoolName}
+        brandSubtitle={isHi ? 'स्कूल प्रशासन' : 'School Administration'}
+        logoUrl={logoUrl}
+        primaryColor={primaryColor}
+        currentPath={pathname || ''}
+        isHi={isHi}
+        moduleEnablement={moduleEnablement}
+        rbacEnabled={rbacOn}
+        adminRole={adminRole}
+        reportsDepthEnabled={reportsDepthOn}
+        principalAiEnabled={principalAiOn}
+        footer={
+          (tenant.branding.showPoweredBy || tenant.schoolId) ? (
+            <div>
+              Powered by{' '}
+              <a href="https://alfanumrik.com" className="text-primary no-underline">
+                Alfanumrik
+              </a>
+            </div>
+          ) : null
+        }
+      />
       <main className={`flex-1 max-w-screen-xl overflow-auto p-6${cosmicEnabled ? ' relative z-10' : ''}`}>{children}</main>
     </div>
   );
