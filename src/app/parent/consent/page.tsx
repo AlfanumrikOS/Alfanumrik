@@ -14,7 +14,7 @@
  * to /parent.
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -92,7 +92,7 @@ interface ChildSummaryResponse {
   needsConsent: boolean;
 }
 
-export default function ParentConsentPage() {
+function ParentConsentContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isHi, authUserId, isLoading } = useAuth();
@@ -339,5 +339,13 @@ export default function ParentConsentPage() {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function ParentConsentPage() {
+  return (
+    <Suspense>
+      <ParentConsentContent />
+    </Suspense>
   );
 }

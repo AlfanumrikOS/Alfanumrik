@@ -17,6 +17,7 @@
  */
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import Picker, { type PickerPhenomenon, type PickerWeakTopic } from '@/components/dive/Picker';
 import ArtifactComposer from '@/components/dive/ArtifactComposer';
@@ -50,13 +51,14 @@ type Phase =
   | { kind: 'just_saved'; weeklyStreakCount: number; isoWeek: string };
 
 export default function DivePage() {
+  const router = useRouter();
   const { isHi, isLoggedIn, isLoading } = useAuth();
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
 
   useEffect(() => {
     if (isLoading) return;
     if (!isLoggedIn) {
-      window.location.href = '/login';
+      router.replace('/login');
       return;
     }
     let cancelled = false;

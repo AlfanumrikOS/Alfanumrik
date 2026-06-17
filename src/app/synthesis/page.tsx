@@ -20,6 +20,7 @@
  */
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import SynthesisRitual from '@/components/synthesis/SynthesisRitual';
 import ParentShareCard from '@/components/synthesis/ParentShareCard';
@@ -43,13 +44,14 @@ type Phase =
   | { kind: 'ready'; row: SynthesisRow };
 
 export default function SynthesisPage() {
+  const router = useRouter();
   const { isHi, isLoggedIn, isLoading } = useAuth();
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
 
   useEffect(() => {
     if (isLoading) return;
     if (!isLoggedIn) {
-      window.location.href = '/login';
+      router.replace('/login');
       return;
     }
     let cancelled = false;

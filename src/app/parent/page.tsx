@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, getFeatureFlags } from '@/lib/supabase';
@@ -999,13 +1000,13 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
 
       {/* Quick nav links */}
       <div className="flex gap-3 mb-4 justify-center flex-wrap">
-        <a href="/parent/children" className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-orange-500 border border-orange-200 rounded-[10px] text-[13px] font-semibold no-underline">
+        <Link href="/parent/children" className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-orange-500 border border-orange-200 rounded-[10px] text-[13px] font-semibold no-underline">
           &#x1F467; {t(isHi, 'My Children', 'मेरे बच्चे')}
-        </a>
-        <a href="/parent/reports" className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-orange-500 border border-orange-200 rounded-[10px] text-[13px] font-semibold no-underline">
+        </Link>
+        <Link href="/parent/reports" className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-orange-500 border border-orange-200 rounded-[10px] text-[13px] font-semibold no-underline">
           &#x1F4CA; {t(isHi, 'Reports', 'रिपोर्ट')}
-        </a>
-        <a
+        </Link>
+        <Link
           href="/parent/reports#labs"
           className="flex items-center gap-1.5 min-h-[44px] px-4 py-2.5 bg-white text-orange-500 border border-orange-200 rounded-[10px] text-[13px] font-semibold no-underline"
           aria-label={t(isHi, 'View lab activity', 'लैब गतिविधि देखें')}
@@ -1016,10 +1017,10 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
               &#x1F525;{labStreak}
             </span>
           )}
-        </a>
-        <a href="/parent/calendar" className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-orange-500 border border-orange-200 rounded-[10px] text-[13px] font-semibold no-underline">
+        </Link>
+        <Link href="/parent/calendar" className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-orange-500 border border-orange-200 rounded-[10px] text-[13px] font-semibold no-underline">
           &#x1F4C5; {t(isHi, 'Calendar', 'कैलेंडर')}
-        </a>
+        </Link>
       </div>
 
       <p className="text-center text-[11px] text-gray-500 my-5">

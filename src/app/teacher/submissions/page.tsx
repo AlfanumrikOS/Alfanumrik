@@ -14,7 +14,7 @@
  * another teacher's assignments by passing a foreign id.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -556,7 +556,7 @@ function SubmissionDetailView({
 }
 
 /* ─── Main page ─── */
-export default function TeacherSubmissionsPage() {
+function TeacherSubmissionsPageContent() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
   const router = useRouter();
   // Phase 3A Wave B — deep-link target. The Command Center's grading queue
@@ -771,5 +771,14 @@ export default function TeacherSubmissionsPage() {
 
       
     </div>
+  );
+}
+
+
+export default function TeacherSubmissionsPage() {
+  return (
+    <Suspense>
+      <TeacherSubmissionsPageContent />
+    </Suspense>
   );
 }

@@ -13,7 +13,7 @@
  *   - POST /api/parent/messages
  */
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
@@ -93,7 +93,7 @@ function relativeTime(iso: string, isHi: boolean): string {
   return new Date(iso).toLocaleDateString(isHi ? 'hi-IN' : 'en-IN', { day: 'numeric', month: 'short' });
 }
 
-export default function ParentMessagesPage() {
+function ParentMessagesContent() {
   const { isHi } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -311,5 +311,13 @@ export default function ParentMessagesPage() {
         )}
       </section>
     </div>
+  );
+}
+
+export default function ParentMessagesPage() {
+  return (
+    <Suspense>
+      <ParentMessagesContent />
+    </Suspense>
   );
 }

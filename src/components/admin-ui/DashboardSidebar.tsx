@@ -20,6 +20,7 @@
  */
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { twMerge } from 'tailwind-merge';
 
 export interface SidebarNavItem {
@@ -133,7 +134,7 @@ export default function DashboardSidebar({
             }
           : { borderLeftColor: 'transparent' };
         return (
-          <a
+          <Link
             key={item.href}
             href={item.href}
             aria-current={active ? 'page' : undefined}
@@ -166,7 +167,7 @@ export default function DashboardSidebar({
                 style={{ background: primaryColor }}
               />
             )}
-          </a>
+          </Link>
         );
       })}
     </nav>

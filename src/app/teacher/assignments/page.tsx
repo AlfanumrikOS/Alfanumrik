@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -113,7 +113,7 @@ const labelStyle: React.CSSProperties = {
   marginBottom: 4,
 };
 
-export default function AssignmentsPage() {
+function AssignmentsPageContent() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
   const { subjects } = useTeacherAllowedSubjects();
   const router = useRouter();
@@ -599,7 +599,15 @@ export default function AssignmentsPage() {
         </div>
       )}
 
-      
+
     </div>
+  );
+}
+
+export default function AssignmentsPage() {
+  return (
+    <Suspense>
+      <AssignmentsPageContent />
+    </Suspense>
   );
 }
