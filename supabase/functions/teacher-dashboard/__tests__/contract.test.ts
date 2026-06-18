@@ -30,6 +30,7 @@
 
 import {
   assert,
+  assertEquals,
   assertStringIncludes,
 } from 'https://deno.land/std@0.210.0/assert/mod.ts';
 
@@ -168,4 +169,18 @@ Deno.test('teacher-dashboard contract 3: unknown/empty action → 400 (not silen
     /const\s+action\s*=\s*String\(\s*body\.action\s*\|\|\s*['"]['"]\s*\)/.test(HANDLER),
     'expected action read as String(body.action || "") with exact-match switch dispatch',
   );
+});
+
+Deno.test('teacher-dashboard action module exposes auth, tenant, audit and metric labels for every public action', async () => {
+  const { teacherDashboardActionNames, teacherDashboardActions } = await import('../actions.ts');
+  const switchActions = [...HANDLER.matchAll(/case '([^']+)'/g)].map((match) => match[1]);
+  assertEquals(teacherDashboardActionNames, switchActions);
+  for (const name of teacherDashboardActionNames) {
+    const action = teacherDashboardActions[name];
+    assertEquals(action.name, name);
+    assertEquals(action.requiresJwtTeacherBinding, true);
+    assertEquals(action.requiresTenantTeacherBinding, true);
+    assertEquals(action.auditLabel, `teacher_dashboard.${name}`);
+    assertEquals(action.metricLabel, `teacher_dashboard.${name}`);
+  }
 });

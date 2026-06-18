@@ -171,3 +171,19 @@ Deno.test('parent-portal contract 3: unknown/empty action → 400 (not silently 
     );
   }
 });
+
+Deno.test('parent-portal action module exposes auth, tenant, audit and metric labels for every public action', async () => {
+  const { parentPortalActionNames, parentPortalActions } = await import('../actions.ts');
+  assertEquals(parentPortalActionNames, [
+    'parent_login',
+    ...[...HANDLER.matchAll(/case '([^']+)'/g)].map((match) => match[1]),
+  ]);
+  for (const name of parentPortalActionNames) {
+    const action = parentPortalActions[name];
+    assertEquals(action.name, name);
+    assertEquals(action.requiresJwtAuth, true);
+    assertEquals(action.requiresGuardianTenantBinding, name !== 'parent_login');
+    assertEquals(action.auditLabel, `parent_portal.${name}`);
+    assertEquals(action.metricLabel, `parent_portal.${name}`);
+  }
+});
