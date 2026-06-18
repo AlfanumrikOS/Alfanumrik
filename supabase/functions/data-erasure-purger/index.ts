@@ -54,6 +54,7 @@
  */
 
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { auditInternalCronInvocation, internalCronUnauthorizedResponse, verifyInternalCronRequest } from '../_shared/security/internal-cron-auth.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -392,7 +393,9 @@ export async function runTick(sb: SupabaseClient): Promise<TickResult> {
 
 // ── HTTP entry ─────────────────────────────────────────────────────────────
 
-Deno.serve(async (_req: Request) => {
+Deno.serve(async (req: Request) => {
+  const requestId = req.headers.get('x-request-id') ?? crypto.randomUUID()
+  const authStarted = performance.now()
   if (!SUPABASE_URL || !SERVICE_ROLE) {
     return new Response(
       JSON.stringify({
@@ -402,6 +405,12 @@ Deno.serve(async (_req: Request) => {
     )
   }
   const sb = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } })
+  const auth = await verifyInternalCronRequest({ req, route: 'data-erasure-purger', sb, requestId, bodyText: '' })
+  if (!auth.ok) {
+    await auditInternalCronInvocation({ sb, route: 'data-erasure-purger', requestId, started: authStarted, auth, statusCode: auth.status })
+    return internalCronUnauthorizedResponse(auth)
+  }
+  await auditInternalCronInvocation({ sb, route: 'data-erasure-purger', requestId, started: authStarted, auth, statusCode: 200 })
   const start = performance.now()
   try {
     const result = await runTick(sb)

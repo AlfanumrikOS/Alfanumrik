@@ -28,6 +28,7 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
+import { auditInternalCronInvocation, internalCronUnauthorizedResponse, verifyInternalCronRequest } from '../_shared/security/internal-cron-auth.ts'
 
 const ALLOWED_ORIGINS = [
   'https://alfanumrik.com',
@@ -220,16 +221,24 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(origin) })
   if (req.method !== 'POST') return jsonResponse({ error: 'method_not_allowed' }, 405, origin)
 
-  // Cron-secret auth (service-role caller, no end-user JWT).
-  const expected = Deno.env.get('CRON_SECRET') ?? ''
-  const provided = req.headers.get('x-cron-secret') ?? ''
-  if (!expected || !constantTimeEqual(expected, provided)) {
-    return jsonResponse({ error: 'unauthorized' }, 401, origin)
+  const requestId = req.headers.get('x-request-id') ?? crypto.randomUUID()
+  const authStarted = performance.now()
+  const authSb = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    { auth: { persistSession: false } },
+  )
+  const bodyText = await req.text()
+  const auth = await verifyInternalCronRequest({ req, route: 'monthly-synthesis-builder', sb: authSb, requestId, bodyText })
+  if (!auth.ok) {
+    await auditInternalCronInvocation({ sb: authSb, route: 'monthly-synthesis-builder', requestId, started: authStarted, auth, statusCode: auth.status })
+    return internalCronUnauthorizedResponse(auth, corsHeaders(origin))
   }
+  await auditInternalCronInvocation({ sb: authSb, route: 'monthly-synthesis-builder', requestId, started: authStarted, auth, statusCode: 200 })
 
   let body: { student_id?: string; synthesis_month?: string }
   try {
-    body = await req.json()
+    body = JSON.parse(bodyText)
   } catch {
     return jsonResponse({ error: 'invalid_json' }, 400, origin)
   }
