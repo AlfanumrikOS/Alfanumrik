@@ -116,6 +116,40 @@ async function assertTeacherOwnsClass(
   if (!data) throw new Error('Forbidden: you do not own this class')
 }
 
+async function assertTeacherCanAccessStudent(
+  supabase: SupabaseClient,
+  teacherId: string,
+  studentId: string,
+): Promise<void> {
+  const { data: teacherClasses, error: classError } = await supabase
+    .from('class_teachers')
+    .select('class_id')
+    .eq('teacher_id', teacherId)
+    .eq('is_active', true)
+
+  if (classError) throw new Error(`Permission check failed: ${classError.message}`)
+
+  const classIds = (teacherClasses ?? [])
+    .map((row) => row.class_id)
+    .filter((classId): classId is string => typeof classId === 'string' && classId.length > 0)
+
+  if (classIds.length === 0) {
+    throw new Error('Forbidden: you are not assigned to this student')
+  }
+
+  const { data: enrollment, error: enrollmentError } = await supabase
+    .from('class_students')
+    .select('id')
+    .eq('student_id', studentId)
+    .eq('is_active', true)
+    .in('class_id', classIds)
+    .limit(1)
+    .maybeSingle()
+
+  if (enrollmentError) throw new Error(`Permission check failed: ${enrollmentError.message}`)
+  if (!enrollment) throw new Error('Forbidden: you are not assigned to this student')
+}
+
 async function assertGuardianLinkedToStudent(
   supabase: SupabaseClient,
   guardianId: string,
@@ -145,12 +179,8 @@ async function assertStudentOrGuardian(
   }
   // Teachers can also view student HPC for their enrolled students
   if (callerRole.role === 'teacher') {
-    const { data } = await supabase
-      .from('class_students')
-      .select('student_id')
-      .eq('student_id', studentId)
-      .limit(1)
-    if (data && data.length > 0) return
+    await assertTeacherCanAccessStudent(supabase, callerRole.internal_id, studentId)
+    return
   }
   throw new Error('Forbidden: insufficient permissions to view this student report')
 }
