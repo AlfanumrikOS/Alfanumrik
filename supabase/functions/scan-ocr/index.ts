@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
 import { getCorsHeaders } from '../_shared/cors.ts'
+import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
 
 /**
  * Scan OCR Pipeline
@@ -59,7 +60,7 @@ async function extractTextFromImage(imageUrl: string, supabase: any): Promise<{ 
     formData.append('scale', 'true')
     formData.append('OCREngine', '2') // Engine 2 is better for mixed content
 
-    const ocrRes = await fetch('https://api.ocr.space/parse/image', {
+    const ocrRes = await fetchWithProviderTimeout('https://api.ocr.space/parse/image', {
       method: 'POST',
       headers: { 'apikey': ocrSpaceKey },
       body: formData,
@@ -371,7 +372,7 @@ ${scan.normalized_text.slice(0, 4000)}
 Based on this scanned document, help the student with their question. Be clear, educational, and encouraging. If the text seems like exam questions, help solve them step by step. If it's textbook content, explain it simply.`
 
       // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): scan-ocr answers questions from uploaded images; route through grounded-answer when a vision-input template is added.
-      const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+      const aiRes = await fetchWithProviderTimeout('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

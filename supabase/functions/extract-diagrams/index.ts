@@ -22,6 +22,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { constantTimeEqual } from '../_shared/auth.ts'
+import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -168,7 +169,7 @@ Respond as a JSON array matching the input order. Each element: {"caption": "...
 
   try {
     // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): extract-diagrams is ingestion/content preparation, not student-facing. Exempt from grounded-answer routing.
-    const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+    const aiRes = await fetchWithProviderTimeout('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

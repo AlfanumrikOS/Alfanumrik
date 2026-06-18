@@ -83,6 +83,7 @@ import {
   type PaperSummary,
   type QuestionOutcome,
 } from './validation.ts'
+import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
 
 // ─── Environment ─────────────────────────────────────────────────────────────
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
@@ -181,7 +182,7 @@ async function callClaude(
 
   try {
     // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): bulk-jee-neet-import is back-office ingestion (not student-facing) — route through grounded-answer service when bulk grounding API exists. Same posture as bulk-question-gen.
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetchWithProviderTimeout('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'x-api-key': ANTHROPIC_API_KEY,
@@ -331,7 +332,7 @@ async function callOracleGrader(input: {
   const timeoutId = setTimeout(() => controller.abort(), ORACLE_GRADER_TIMEOUT_MS)
   try {
     // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): oracle grader is a content-audit path; mirrors bulk-question-gen.
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetchWithProviderTimeout('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'x-api-key': ANTHROPIC_API_KEY,

@@ -39,6 +39,7 @@ import { constantTimeEqual } from '../_shared/auth.ts'
 // (pre-Phase-1A direct-Anthropic-fetch path with 60s abort + 0.3 temperature).
 import { generateResponse, MolError } from '../_shared/mol/index.ts'
 import { isMolAdminRoutingEnabled } from '../_shared/mol/admin-rollback-flag.ts'
+import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -314,7 +315,7 @@ async function callClaudeLegacy(
 
   try {
     // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- legacy rollback path for ff_mol_admin_functions_v1; do not remove without retiring the rollback flag.
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetchWithProviderTimeout('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'x-api-key': ANTHROPIC_API_KEY,

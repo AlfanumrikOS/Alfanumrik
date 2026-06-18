@@ -25,6 +25,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { generateEmbedding, getEmbeddingModel } from '../_shared/embeddings.ts'
 import { constantTimeEqual } from '../_shared/auth.ts'
+import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -128,7 +129,7 @@ async function extractQAFromContent(chapterText: string): Promise<QAItem[]> {
 
   try {
     // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): embed-ncert-qa is ingestion-time content preparation; not student-facing. Consider routing through shared embeddings client but not the grounded-answer pipeline.
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetchWithProviderTimeout('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

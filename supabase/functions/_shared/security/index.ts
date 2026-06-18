@@ -8,3 +8,4 @@ export * from './policy.ts';
 export * from './quota.ts';
 export * from './circuit.ts';
 export * from './audit.ts';
+export * from './ai-admission.ts';
