@@ -68,11 +68,158 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
+import { jsonResponse, errorResponse } from '../_shared/cors.ts'
+import { getRequestId, getRequestIp, getRequestOrigin, hashRequestIp } from '../_shared/security/attribution.ts'
+import { resolveSecurityPrincipal } from '../_shared/security/auth.ts'
+import { resolveRoutePolicy } from '../_shared/security/policy.ts'
+import { computeEstimatedCost, reserveQuota, settleQuota } from '../_shared/security/quota.ts'
+import { writeSecurityAudit } from '../_shared/security/audit.ts'
+import { recordCircuitOutcome } from '../_shared/security/circuit.ts'
+import { securityCorsHeaders, securityErrorResponse } from '../_shared/security/cors.ts'
+import { sha256Hex } from '../_shared/security/request-signature.ts'
+import type { SecurityPrincipal, SecurityQuotaEstimate } from '../_shared/security/types.ts'
+import { createRateLimiter } from '../_shared/rate-limiter.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY')!
+const ROUTE_NAME = 'ncert-question-engine'
+
+type SupabaseClient = ReturnType<typeof createClient>
+
+type Admission = {
+  requestId: string
+  origin: string | null
+  requestIpHash: string
+  principal: SecurityPrincipal
+  policyMode: 'enforce' | 'shadow' | 'observe' | 'disabled'
+  quotaDecision: { allowed: boolean; decision: string; enforcementMode: 'enforce' | 'shadow' | 'observe' | 'disabled'; circuitState?: 'closed' | 'open' | 'half_open'; reason?: string }
+  quotaEstimate: SecurityQuotaEstimate
+}
+
+function estimateTokens(text: string): number {
+  return Math.max(1, Math.ceil(text.length / 4))
+}
+
+function estimateNcertUsage(body: Record<string, unknown>): SecurityQuotaEstimate {
+  const action = String(body.action ?? '')
+  if (action === 'evaluate_answer') {
+    const promptBits = [
+      body.question_text,
+      body.student_answer,
+      body.question_type,
+      body.marks_possible,
+    ].map((v) => String(v ?? '')).join('\n')
+    return {
+      requestCount: 1,
+      estimatedInputTokens: estimateTokens(promptBits) + 700,
+      estimatedOutputTokens: 600,
+      estimatedCost: 0,
+      modelProvider: 'anthropic',
+      modelName: 'claude-haiku-4-5-20251001',
+    }
+  }
+  return {
+    requestCount: 1,
+    estimatedInputTokens: 32,
+    estimatedOutputTokens: 64,
+    estimatedCost: 0,
+    modelProvider: 'anthropic',
+    modelName: 'claude-haiku-4-5-20251001',
+  }
+}
+
+function normalizeQuotaDecision(input: { allowed?: boolean; decision?: string; enforcementMode?: 'enforce' | 'shadow' | 'observe' | 'disabled'; circuitState?: 'closed' | 'open' | 'half_open'; reason?: string }) {
+  return {
+    allowed: input.allowed === true,
+    decision: input.decision ?? 'deny_invalid_request',
+    enforcementMode: input.enforcementMode ?? 'enforce',
+    circuitState: input.circuitState ?? 'closed',
+    reason: input.reason,
+  }
+}
+
+async function resolveStudentIdForPrincipal(sb: SupabaseClient, principal: SecurityPrincipal, body: Record<string, unknown>): Promise<string | null> {
+  if (principal.role === 'student' && principal.userId) {
+    const { data } = await sb
+      .from('students')
+      .select('id')
+      .eq('auth_user_id', principal.userId)
+      .eq('is_active', true)
+      .maybeSingle()
+    return data?.id ? String(data.id) : null
+  }
+  return body.student_id ? String(body.student_id) : null
+}
+
+async function finalizeSecurity(args: {
+  sb: SupabaseClient
+  admission: Admission
+  started: number
+  statusCode: number
+  errorCode?: string | null
+  actualInputTokens?: number | null
+  actualOutputTokens?: number | null
+  actualCost?: number | null
+}) {
+  const breakerState = args.admission.quotaDecision.circuitState ?? 'closed'
+  try {
+    await writeSecurityAudit(args.sb, {
+      requestId: args.admission.requestId,
+      route: ROUTE_NAME,
+      schoolId: args.admission.principal.schoolId,
+      userId: args.admission.principal.userId,
+      role: args.admission.principal.role,
+      callerType: args.admission.principal.callerType,
+      serviceName: args.admission.principal.serviceName,
+      cronJob: args.admission.principal.cronJob,
+      internalWorker: args.admission.principal.internalWorker,
+      internalCallerId: args.admission.principal.internalCallerId,
+      quotaDecision: args.admission.policyMode === 'enforce' ? args.admission.quotaDecision.decision : `shadow_${args.admission.quotaDecision.decision}`,
+      latencyMs: Date.now() - args.started,
+      statusCode: args.statusCode,
+      enforcementMode: args.admission.policyMode,
+      breakerState,
+      errorCode: args.errorCode ?? null,
+      estimatedInputTokens: args.admission.quotaEstimate.estimatedInputTokens,
+      estimatedOutputTokens: args.admission.quotaEstimate.estimatedOutputTokens,
+      estimatedCost: args.admission.quotaEstimate.estimatedCost,
+      actualInputTokens: args.actualInputTokens ?? null,
+      actualOutputTokens: args.actualOutputTokens ?? null,
+      actualCost: args.actualCost ?? null,
+    })
+  } catch (err) {
+    console.error(`[ncert-question-engine] audit write failed: ${String(err instanceof Error ? err.message : err)}`)
+  }
+  if (args.statusCode < 400) {
+    try {
+      await settleQuota(args.sb, {
+        route: ROUTE_NAME,
+        principal: args.admission.principal,
+        requestIpHash: args.admission.requestIpHash,
+        actualInputTokens: args.actualInputTokens ?? args.admission.quotaEstimate.estimatedInputTokens,
+        actualOutputTokens: args.actualOutputTokens ?? args.admission.quotaEstimate.estimatedOutputTokens,
+        actualCost: args.actualCost ?? args.admission.quotaEstimate.estimatedCost,
+        requestCount: 1,
+      })
+    } catch (err) {
+      console.error(`[ncert-question-engine] quota settle failed: ${String(err instanceof Error ? err.message : err)}`)
+    }
+  }
+  try {
+    await recordCircuitOutcome(args.sb, {
+      route: ROUTE_NAME,
+      schoolId: args.admission.principal.schoolId,
+      role: args.admission.principal.role,
+      callerType: args.admission.principal.callerType,
+      internalCallerId: args.admission.principal.internalCallerId,
+      event: args.statusCode >= 500 ? 'failure' : 'success',
+      errorCode: args.errorCode ?? null,
+    })
+  } catch (err) {
+    console.error(`[ncert-question-engine] circuit update failed: ${String(err instanceof Error ? err.message : err)}`)
+  }
+}
 
 // CBSE marks → question type mapping
 const CBSE_TYPE_MAP: Record<string, { label: string; marksRange: [number, number]; timeSeconds: number; wordLimit: number }> = {
@@ -214,8 +361,6 @@ async function fetchQuestions(body: Record<string, unknown>): Promise<Response> 
 // a simple counter row in student_ncert_attempts aggregation.
 // Uses a lightweight in-memory store keyed by student_id for the current
 // Edge Function instance. At scale, use Upstash Redis or Supabase realtime.
-import { createRateLimiter } from '../_shared/rate-limiter.ts'
-
 const EVAL_LIMIT = 30
 const EVAL_WINDOW_MS = 10 * 60 * 1000 // 10 minutes
 
@@ -448,9 +593,10 @@ async function saveAttempt(body: Record<string, unknown>): Promise<Response> {
 }
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
-Deno.serve(async (req: Request) => {
-  const origin = req.headers.get('origin')
-  const corsH  = getCorsHeaders(origin)
+export async function handleRequest(req: Request): Promise<Response> {
+  const started = Date.now()
+  const origin = getRequestOrigin(req)
+  const corsH = securityCorsHeaders(origin)
 
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsH })
@@ -460,58 +606,104 @@ Deno.serve(async (req: Request) => {
     return new Response('Method not allowed', { status: 405, headers: corsH })
   }
 
-  // Auth: resolve the student_id from the JWT, not from the request body.
-  //
-  // P13 — cross-tenant data leak fix: previously this route validated the
-  // JWT but read `body.student_id` for every action, so a logged-in student
-  // could pass any other student's id and:
-  //   • fetch_questions  — read another student's seen-question history
-  //   • evaluate_answer  — bypass per-student rate limit + attribute Claude
-  //                        cost to a different account
-  //   • save_attempt     — INSERT a fake attempt row under another student
-  //                        (corrupts their NCERT progress)
-  //
-  // We now look the JWT user up in students(auth_user_id), forcibly
-  // overwrite body.student_id, and reject if the JWT user is not a student.
-  const authHeader = req.headers.get('authorization') ?? ''
-  if (!authHeader.startsWith('Bearer ')) {
-    return errorResponse('Unauthorized', 401, origin)
+  const requestId = getRequestId(req)
+  const ipAddress = getRequestIp(req)
+  const requestIpHash = await hashRequestIp(ipAddress, Deno.env.get('SECURITY_IP_HASH_SALT') ?? '')
+
+  let rawBody = ''
+  try {
+    rawBody = await req.text()
+  } catch {
+    return securityErrorResponse('invalid_body', 'failed to read request body', 400, origin, requestId)
   }
-  const jwt = authHeader.split(' ')[1]
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-  const { data: { user }, error: authError } = await supabase.auth.getUser(jwt)
-  if (authError || !user) return errorResponse('Unauthorized', 401, origin)
 
-  const { data: studentRow } = await supabase
-    .from('students')
-    .select('id')
-    .eq('auth_user_id', user.id)
-    .eq('is_active', true)
-    .maybeSingle()
-
-  if (!studentRow?.id) {
-    return errorResponse('No active student profile for this user', 403, origin)
-  }
-  const jwtStudentId = studentRow.id as string
-
+  const bodyHash = await sha256Hex(rawBody)
   let body: Record<string, unknown>
   try {
-    body = await req.json()
+    body = rawBody ? JSON.parse(rawBody) : {}
     body._origin = origin
-    // Ignore client-supplied student_id — bind to the JWT-resolved id so all
-    // three actions write/read against the authenticated student only.
-    body.student_id = jwtStudentId
   } catch {
-    return errorResponse('Invalid JSON body', 400, origin)
+    return securityErrorResponse('invalid_json', 'Invalid JSON body', 400, origin, requestId)
   }
 
+  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+  const principalRes = await resolveSecurityPrincipal({
+    req,
+    sb,
+    _route: ROUTE_NAME,
+    requestId,
+    bodyHash,
+    requestBodyCaller: String(body.caller ?? 'ncert-question-engine'),
+  })
+  if (!principalRes.ok) {
+    return securityErrorResponse(principalRes.code, principalRes.message, principalRes.status, origin, requestId)
+  }
+
+  const principal = principalRes.principal
+  const policy = await resolveRoutePolicy(sb, {
+    route: ROUTE_NAME,
+    schoolId: principal.schoolId,
+    role: principal.role,
+    callerType: principal.callerType,
+    internalCallerId: principal.internalCallerId,
+  })
+  if (!policy || !policy.isEnabled) {
+    return securityErrorResponse('deny_policy', policy ? 'route policy is disabled' : 'route policy not found', 403, origin, requestId)
+  }
+  if (principal.callerType === 'internal_service' ? !policy.allowSignedInternal : !policy.allowJwt) {
+    return securityErrorResponse('deny_policy', 'caller is not permitted on this route', 403, origin, requestId)
+  }
+
+  const resolvedStudentId = await resolveStudentIdForPrincipal(sb, principal, body)
+  if (!resolvedStudentId) {
+    return securityErrorResponse('deny_auth', 'No active student profile for this request', 403, origin, requestId)
+  }
+  body.student_id = resolvedStudentId
+
+  const quotaEstimate = estimateNcertUsage(body)
+  quotaEstimate.estimatedCost = await computeEstimatedCost(sb, quotaEstimate)
+  const quotaDecision = normalizeQuotaDecision(await reserveQuota(sb, {
+    route: ROUTE_NAME,
+    principal,
+    _requestId: requestId,
+    requestIpHash,
+    estimate: quotaEstimate,
+    dryRun: policy.enforcementMode !== 'enforce',
+  }))
+  if (policy.enforcementMode === 'enforce' && !quotaDecision.allowed) {
+    return securityErrorResponse(
+      quotaDecision.decision,
+      quotaDecision.reason ?? 'quota denied',
+      quotaDecision.decision === 'deny_breaker' ? 503 : 429,
+      origin,
+      requestId,
+    )
+  }
+
+  const admission: Admission = { requestId, origin, requestIpHash, principal, policyMode: policy.enforcementMode, quotaDecision, quotaEstimate }
   const action = String(body.action ?? '')
-
-  switch (action) {
-    case 'fetch_questions': return fetchQuestions(body)
-    case 'evaluate_answer': return evaluateAnswer(body)
-    case 'save_attempt':    return saveAttempt(body)
-    default:
-      return errorResponse(`Unknown action "${action}". Valid: fetch_questions, evaluate_answer, save_attempt`, 400, origin)
+  let response: Response
+  try {
+    switch (action) {
+      case 'fetch_questions': response = await fetchQuestions(body); break
+      case 'evaluate_answer': response = await evaluateAnswer(body); break
+      case 'save_attempt':    response = await saveAttempt(body); break
+      default:
+        response = errorResponse(`Unknown action "${action}". Valid: fetch_questions, evaluate_answer, save_attempt`, 400, origin)
+    }
+  } catch (err) {
+    console.error(`[ncert-question-engine] unhandled error: ${String(err instanceof Error ? err.stack ?? err.message : err)}`)
+    response = securityErrorResponse('internal_error', 'Internal server error', 500, origin, requestId)
   }
-})
+
+  await finalizeSecurity({
+    sb,
+    admission,
+    started,
+    statusCode: response.status,
+    errorCode: response.status >= 400 ? (response.status >= 500 ? 'internal_error' : 'request_error') : null,
+  })
+  return response
+}
+
+Deno.serve(handleRequest)
