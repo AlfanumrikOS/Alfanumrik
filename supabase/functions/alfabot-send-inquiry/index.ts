@@ -23,6 +23,8 @@
  * Owner: backend.
  */
 
+import { edgeLog, getRequestId, type EdgeLogContext } from '../_shared/edge-audit-log.ts'
+
 // ─── Hardcoded recipient ─────────────────────────────────────────────────────
 // CHANGE THIS LINE to re-route AlfaBot inquiries. Single source of truth.
 const INQUIRY_RECIPIENT = 'alfanumrik10@gmail.com'
@@ -249,21 +251,26 @@ async function sendViaMailgun(args: {
 
 // ─── Structured logging (no PII) ─────────────────────────────────────────────
 
-function logEvent(event: string, fields: Record<string, unknown> = {}): void {
-  const payload = {
-    event,
-    ts: new Date().toISOString(),
+function logEvent(context: EdgeLogContext, action: string, status: 'ok' | 'error' | 'warn' | 'denied', fields: Record<string, unknown> = {}): void {
+  edgeLog(status === 'error' || status === 'denied' ? 'error' : status === 'warn' ? 'warn' : 'info', context, {
+    action,
+    status,
     ...fields,
-  }
-  // Edge Function logs go to Supabase's function logs and Vercel's tap. We
-  // emit a single-line JSON for grep-ability. NO email/name/question.
-  console.log(JSON.stringify(payload))
+  })
 }
 
 // ─── Main handler ────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get('origin')
+  const context: EdgeLogContext = {
+    requestId: getRequestId(req),
+    route: 'alfabot-send-inquiry',
+    role: 'unknown',
+    actor: null,
+    schoolId: null,
+    startedAt: Date.now(),
+  }
 
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: getCorsHeaders(origin) })
@@ -282,12 +289,12 @@ Deno.serve(async (req: Request) => {
   const authHeader = req.headers.get('Authorization') ?? ''
   const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
   if (!bearer) {
-    logEvent('alfabot_inquiry.unauthorized', { reason: 'no_bearer' })
+    logEvent(context, 'alfabot_inquiry.unauthorized', 'denied', { reason: 'no_bearer' })
     return jsonResponse({ ok: false, error: 'unauthorized' }, 401, origin)
   }
   const parts = bearer.split('.')
   if (parts.length !== 3) {
-    logEvent('alfabot_inquiry.unauthorized', { reason: 'bad_jwt_shape' })
+    logEvent(context, 'alfabot_inquiry.unauthorized', 'denied', { reason: 'bad_jwt_shape' })
     return jsonResponse({ ok: false, error: 'unauthorized' }, 401, origin)
   }
   let role = ''
@@ -297,11 +304,12 @@ Deno.serve(async (req: Request) => {
     const decoded = JSON.parse(atob(padded)) as { role?: string }
     role = String(decoded.role ?? '')
   } catch {
-    logEvent('alfabot_inquiry.unauthorized', { reason: 'jwt_decode_failed' })
+    logEvent(context, 'alfabot_inquiry.unauthorized', 'denied', { reason: 'jwt_decode_failed' })
     return jsonResponse({ ok: false, error: 'unauthorized' }, 401, origin)
   }
+  context.role = role || 'unknown'
   if (role !== 'service_role') {
-    logEvent('alfabot_inquiry.unauthorized', { reason: 'role_not_service', role })
+    logEvent(context, 'alfabot_inquiry.unauthorized', 'denied', { reason: 'role_not_service', role })
     return jsonResponse({ ok: false, error: 'unauthorized' }, 401, origin)
   }
 
@@ -321,7 +329,7 @@ Deno.serve(async (req: Request) => {
   const apiKey = Deno.env.get('MAILGUN_API_KEY') ?? ''
   const domain = Deno.env.get('MAILGUN_DOMAIN') ?? ''
   if (!apiKey || !domain) {
-    logEvent('alfabot_inquiry.mailgun_config_missing', {
+    logEvent(context, 'alfabot_inquiry.mailgun_config_missing', 'error', {
       has_api_key: Boolean(apiKey),
       has_domain: Boolean(domain),
     })
@@ -345,7 +353,7 @@ Deno.serve(async (req: Request) => {
   })
 
   if (!result.ok) {
-    logEvent('alfabot_inquiry.mailgun_failed', {
+    logEvent(context, 'alfabot_inquiry.mailgun_failed', 'error', {
       anon_id: validated.anonId,
       session_id: validated.sessionId,
       mailgun_status: result.status ?? null,
@@ -358,7 +366,7 @@ Deno.serve(async (req: Request) => {
     )
   }
 
-  logEvent('alfabot_inquiry.sent', {
+  logEvent(context, 'alfabot_inquiry.sent', 'ok', {
     anon_id: validated.anonId,
     session_id: validated.sessionId,
     mailgun_message_id: result.messageId ?? null,

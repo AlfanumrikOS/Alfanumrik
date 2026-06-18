@@ -15,6 +15,7 @@ import { createWhatsAppIdempotencyKey, fetchWithTimeout } from '../_shared/relia
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, jsonResponse, errorResponse, getCorsHeaders } from '../_shared/cors.ts'
 import { constantTimeEqual } from '../_shared/auth.ts'
+import { edgeLog, getRequestId, writeBusinessAudit, type EdgeLogContext } from '../_shared/edge-audit-log.ts'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -219,8 +220,9 @@ async function logNotification(
   templateType: string,
   recipient: string,
   status: string,
-  messageId?: string,
-  errorMessage?: string,
+  messageId: string | undefined,
+  errorMessage: string | undefined,
+  context: EdgeLogContext,
 ): Promise<void> {
   try {
     // KNOWN GAP (needs migration — architect): the `notification_log` table
@@ -238,7 +240,7 @@ async function logNotification(
       error_message: errorMessage ?? null,
     })
   } catch (err) {
-    console.error('[whatsapp-notify] Failed to log notification:', err instanceof Error ? err.message : String(err))
+    edgeLog('error', context, { action: 'whatsapp.audit_failed', status: 'error', reason: err instanceof Error ? err.message : String(err) })
   }
 }
 
@@ -247,6 +249,7 @@ async function queueEmailFallback(
   userId: string | undefined,
   templateType: string,
   data: Record<string, string>,
+  context: EdgeLogContext,
 ): Promise<void> {
   try {
     // Schema note: the live `task_queue` table keys the work type on
@@ -264,9 +267,9 @@ async function queueEmailFallback(
       },
       status: 'pending',
     })
-    console.info(`[whatsapp-notify] Queued email fallback for template=${templateType}`)
+    edgeLog('warn', context, { action: 'whatsapp.email_fallback_queued', status: 'warn', template: templateType })
   } catch (err) {
-    console.error('[whatsapp-notify] Failed to queue email fallback:', err instanceof Error ? err.message : String(err))
+    edgeLog('error', context, { action: 'whatsapp.email_fallback_failed', status: 'error', reason: err instanceof Error ? err.message : String(err) })
   }
 }
 
@@ -274,6 +277,7 @@ async function queueEmailFallback(
 
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get('origin')
+  const context: EdgeLogContext = { requestId: getRequestId(req), route: 'whatsapp-notify', role: 'service_role', actor: null, schoolId: null, startedAt: Date.now() }
 
   // CORS preflight
   if (req.method === 'OPTIONS') {
@@ -294,6 +298,7 @@ Deno.serve(async (req: Request) => {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     const provided = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/, '')
     if (!serviceRoleKey || !constantTimeEqual(provided, serviceRoleKey)) {
+      edgeLog('error', context, { action: 'whatsapp.auth_denied', status: 'denied', reason: 'invalid_service_role' })
       return errorResponse('Unauthorized', 401, origin)
     }
 
@@ -339,8 +344,8 @@ Deno.serve(async (req: Request) => {
 
     // Check rate limit
     if (isRateLimited(recipient_phone)) {
-      console.warn(`[whatsapp-notify] Rate limited: ${redactPhone(recipient_phone)}`)
-      await logNotification(supabase, user_id, 'whatsapp', type, recipient_phone, 'rate_limited')
+      edgeLog('warn', context, { action: 'whatsapp.rate_limited', status: 'denied', recipient_phone })
+      await logNotification(supabase, user_id, 'whatsapp', type, recipient_phone, 'rate_limited', undefined, undefined, context)
       return jsonResponse(
         { success: false, error: 'Rate limit exceeded (100 messages/day per number)' },
         429,
@@ -366,12 +371,13 @@ Deno.serve(async (req: Request) => {
     }
 
     // Send WhatsApp message
-    console.info(`[whatsapp-notify] Sending ${type} (${language}) to ${redactPhone(recipient_phone)}`)
+    edgeLog('info', context, { action: 'whatsapp.send_attempt', status: 'ok', template: type, language, recipient_phone })
     const result = await sendWhatsAppMessage(template, recipient_phone, language, data)
 
     if (result.success) {
-      console.info(`[whatsapp-notify] Sent successfully, messageId=${result.messageId}`)
-      await logNotification(supabase, user_id, 'whatsapp', type, recipient_phone, 'sent', result.messageId)
+      edgeLog('info', context, { action: 'whatsapp.sent', status: 'ok', template: type, language, message_id: result.messageId ?? null })
+      await logNotification(supabase, user_id, 'whatsapp', type, recipient_phone, 'sent', result.messageId, undefined, context)
+      await writeBusinessAudit({ supabase, context, action: 'whatsapp.sent', status: 'ok', metadata: { template: type, language, user_id: user_id ?? null } })
 
       return jsonResponse(
         { success: true, message_id: result.messageId },
@@ -382,9 +388,9 @@ Deno.serve(async (req: Request) => {
     }
 
     // WhatsApp failed — log and queue email fallback
-    console.error(`[whatsapp-notify] Send failed: ${result.error}`)
-    await logNotification(supabase, user_id, 'whatsapp', type, recipient_phone, 'failed', undefined, result.error)
-    await queueEmailFallback(supabase, user_id, type, data)
+    edgeLog('error', context, { action: 'whatsapp.send_failed', status: 'error', template: type, language, reason: result.error ?? 'unknown' })
+    await logNotification(supabase, user_id, 'whatsapp', type, recipient_phone, 'failed', undefined, result.error, context)
+    await queueEmailFallback(supabase, user_id, type, data, context)
 
     return jsonResponse(
       { success: false, error: 'WhatsApp delivery failed, queued for email fallback', fallback: 'email' },
@@ -394,7 +400,7 @@ Deno.serve(async (req: Request) => {
     )
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    console.error('[whatsapp-notify] Fatal error:', message)
+    edgeLog('error', context, { action: 'whatsapp.unhandled', status: 'error', reason: message })
     return errorResponse('Internal server error', 500, origin)
   }
 })
