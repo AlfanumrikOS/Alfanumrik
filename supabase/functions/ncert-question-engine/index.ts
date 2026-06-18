@@ -139,7 +139,7 @@ function normalizeQuotaDecision(input: { allowed?: boolean; decision?: string; e
   }
 }
 
-async function resolveStudentIdForPrincipal(sb: SupabaseClient, principal: SecurityPrincipal, body: Record<string, unknown>): Promise<string | null> {
+async function resolveAuthorizedStudentId(sb: SupabaseClient, principal: SecurityPrincipal, body: Record<string, unknown>): Promise<string | null> {
   if (principal.role === 'student' && principal.userId) {
     const { data } = await sb
       .from('students')
@@ -149,7 +149,41 @@ async function resolveStudentIdForPrincipal(sb: SupabaseClient, principal: Secur
       .maybeSingle()
     return data?.id ? String(data.id) : null
   }
-  return body.student_id ? String(body.student_id) : null
+
+  const requestedStudentId = body.student_id ? String(body.student_id) : ''
+  if (!requestedStudentId) return null
+
+  if (principal.callerType === 'internal_service') {
+    return requestedStudentId
+  }
+
+  if (!principal.userId || !principal.schoolId) return null
+
+  if (principal.role === 'parent') {
+    const { data } = await sb
+      .from('guardian_student_links')
+      .select('student_id, guardians!inner(auth_user_id), students!inner(school_id, is_active)')
+      .eq('student_id', requestedStudentId)
+      .eq('guardians.auth_user_id', principal.userId)
+      .eq('students.school_id', principal.schoolId)
+      .eq('students.is_active', true)
+      .eq('status', 'active')
+      .maybeSingle()
+    return data?.student_id ? requestedStudentId : null
+  }
+
+  if (principal.role === 'teacher' || principal.role === 'school_admin') {
+    const { data } = await sb
+      .from('students')
+      .select('id')
+      .eq('id', requestedStudentId)
+      .eq('school_id', principal.schoolId)
+      .eq('is_active', true)
+      .maybeSingle()
+    return data?.id ? requestedStudentId : null
+  }
+
+  return null
 }
 
 async function finalizeSecurity(args: {
@@ -654,9 +688,9 @@ export async function handleRequest(req: Request): Promise<Response> {
     return securityErrorResponse('deny_policy', 'caller is not permitted on this route', 403, origin, requestId)
   }
 
-  const resolvedStudentId = await resolveStudentIdForPrincipal(sb, principal, body)
+  const resolvedStudentId = await resolveAuthorizedStudentId(sb, principal, body)
   if (!resolvedStudentId) {
-    return securityErrorResponse('deny_auth', 'No active student profile for this request', 403, origin, requestId)
+    return securityErrorResponse('deny_auth', 'No active or authorized student profile for this request', 403, origin, requestId)
   }
   body.student_id = resolvedStudentId
 

@@ -1,4 +1,4 @@
--- 20260618000002_ncert_question_engine_security_policy.sql
+-- 20260620001200_ncert_question_engine_security_policy.sql
 -- Phase 2 rollout: attach ncert-question-engine to the frozen Platform Security Layer.
 -- The quota keys include route + school_id + user_id + role, while tenant AI budget
 -- rows are keyed by school_id + route. This preserves independent per-school budgets.
