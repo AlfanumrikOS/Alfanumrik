@@ -28,6 +28,7 @@ import { capture as posthogCapture } from '../_shared/posthog.ts'
 import { gradeMolShadowPairs as gradeMolShadowPairsImpl } from '../_shared/mol/grader-cron.ts'
 import { gradeShadowPair } from '../_shared/mol/grader.ts'
 import { auditInternalCronInvocation, internalCronUnauthorizedResponse, verifyInternalCronRequest } from '../_shared/security/internal-cron-auth.ts'
+import { createDailyCronActions, recordDailyCronActionMetric } from './actions.ts'
 
 // YYYY_MM_DD slug (UTC) used as the day component of idempotency_key.
 function todayUtcSlug(): string {
@@ -1413,51 +1414,31 @@ Deno.serve(async (req) => {
       return internalCronUnauthorizedResponse(auth, corsHeaders)
     }
     await auditInternalCronInvocation({ sb, route: 'daily-cron', requestId, started: authStarted, auth, statusCode: 200 })
-    const steps:[string,()=>Promise<number>][]=[
-      ['streaks_reset',()=>resetMissedStreaks(sb)],
-      ['leaderboard_entries',()=>recalculateLeaderboards(sb)],
-      ['parent_digests_sent',()=>generateParentDigests(sb)],
-      ['task_queue_rows_deleted',()=>cleanupTaskQueue(sb)],
-      ['health_snapshot',()=>recordHealthSnapshot(sb)],
-      // Track 1 — Education Intelligence Cloud nightly rollup populator. Calls
-      // the SQL orchestrator (school health → mrr → churn → geo, in order).
-      // Idempotent end-to-end; failure here is isolated by Promise.allSettled
-      // and does not abort the other steps. See migration 20260616000100.
-      ['education_intelligence_rollup',()=>computeEducationIntelligenceRollup(sb)],
-      ['ml_retrain_new_responses',()=>triggerModelRetrainIfNeeded(sb)],
-      ['performance_scores_recalculated',()=>recalculatePerformanceScores(sb)],
-      ['challenges_generated',()=>generateDailyChallenges(sb)],
-      ['streaks_managed',()=>manageChallengeStreaks(sb)],
-      ['lab_completions_logged',()=>logDailyLabDistribution(sb)],
-      ['contract_reminders_sent',()=>processContractReminders(sb)],
-      ['contracts_expired',()=>expireContracts(sb)],
-      ['contract_grace_audited',()=>auditContractGracePeriods(sb)],
-      ['monthly_synthesis_triggered',()=>triggerMonthlySynthesis(sb)],
-      // Phase A Loop A (2026-06-12): thin trigger → Next.js worker route
-      // /api/cron/adaptive-remediation (inject flag-gated; verify gated on
-      // active rows = kill-switch drain semantics). No threshold logic in
-      // Deno — see triggerAdaptiveRemediation header.
-      ['adaptive_remediation_triggered',()=>triggerAdaptiveRemediation(sb)],
-      // Phase 3 of Foxy continuity (2026-05-18): mark abandoned-by-time
-      // open expectations as 'expired' so they don't keep injecting into
-      // future prompts. Idempotent. See migration 20260528000013.
-      ['foxy_expectations_expired',()=>expireStaleFoxyExpectations(sb)],
-      // C4.2b-i (2026-05-19): grade sampled mol_shadow shadow rows via
-      // Sonnet. SCAFFOLD MODE until C4.2b-ii lands text capture — every
-      // sampled pair currently takes the skipped_no_text branch. The
-      // sampling + cost-cap + kill-switch paths are live regardless.
-      // See supabase/functions/_shared/mol/grader-cron.ts.
-      ['mol_shadow_pairs_graded',()=>gradeMolShadowPairs(sb)],
-      // Track 2 — Principal AI Assistant transcript retention. Deletes
-      // principal_ai_sessions older than 90 days; principal_ai_messages
-      // cascade-delete via FK ON DELETE CASCADE (migration 20260616010000).
-      // GRACEFUL pre-migration: no-op (returns 0) if the table is absent.
-      // P13: keys-only logging (count + status). Isolated by Promise.allSettled.
-      ['purge_principal_ai',()=>purgePrincipalAiTranscripts(sb)],
-    ]
-    const settled=await Promise.allSettled(steps.map(([,fn])=>fn()))
+    const actions = createDailyCronActions({
+      streaks_reset: () => resetMissedStreaks(sb),
+      leaderboard_entries: () => recalculateLeaderboards(sb),
+      parent_digests_sent: () => generateParentDigests(sb),
+      task_queue_rows_deleted: () => cleanupTaskQueue(sb),
+      health_snapshot: () => recordHealthSnapshot(sb),
+      education_intelligence_rollup: () => computeEducationIntelligenceRollup(sb),
+      ml_retrain_new_responses: () => triggerModelRetrainIfNeeded(sb),
+      performance_scores_recalculated: () => recalculatePerformanceScores(sb),
+      challenges_generated: () => generateDailyChallenges(sb),
+      streaks_managed: () => manageChallengeStreaks(sb),
+      lab_completions_logged: () => logDailyLabDistribution(sb),
+      contract_reminders_sent: () => processContractReminders(sb),
+      contracts_expired: () => expireContracts(sb),
+      contract_grace_audited: () => auditContractGracePeriods(sb),
+      monthly_synthesis_triggered: () => triggerMonthlySynthesis(sb),
+      adaptive_remediation_triggered: () => triggerAdaptiveRemediation(sb),
+      foxy_expectations_expired: () => expireStaleFoxyExpectations(sb),
+      mol_shadow_pairs_graded: () => gradeMolShadowPairs(sb),
+      purge_principal_ai: () => purgePrincipalAiTranscripts(sb),
+    })
+    const actionStartedAt = new Map(actions.map((action) => [action.name, Date.now()]))
+    const settled=await Promise.allSettled(actions.map((action)=>action.run({ sb })))
     const results:Record<string,number>={};const errors:Record<string,string>={}
-    for(let i=0;i<steps.length;i++){const[name]=steps[i];const r=settled[i];if(r.status==='fulfilled')results[name]=r.value;else{const m=r.reason instanceof Error?r.reason.message:String(r.reason);errors[name]=m;console.error(`daily-cron [${name}]:`,m)}}
+    for(let i=0;i<actions.length;i++){const action=actions[i];const name=action.name;const r=settled[i];recordDailyCronActionMetric(action,actionStartedAt.get(name)??Date.now(),r.status);if(r.status==='fulfilled')results[name]=r.value;else{const m=r.reason instanceof Error?r.reason.message:String(r.reason);errors[name]=m;console.error(`daily-cron [${name}]:`,m)}}
     const hasErr=Object.keys(errors).length>0
     return new Response(JSON.stringify({run_at:new Date().toISOString(),elapsed_ms:Date.now()-t0,results,...(hasErr?{errors}:{})}),{status:hasErr?207:200,headers:{...corsHeaders,'Content-Type':'application/json'}})
   } catch(err){const m=err instanceof Error?err.message:String(err);console.error('daily-cron fatal:',m);return new Response(JSON.stringify({error:m}),{status:500,headers:{...corsHeaders,'Content-Type':'application/json'}})}
