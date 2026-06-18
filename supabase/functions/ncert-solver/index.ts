@@ -31,6 +31,7 @@ import {
   isFeatureFlagEnabled,
   type GroundedRequest,
 } from '../_shared/grounded-client.ts'
+import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
@@ -388,7 +389,7 @@ async function callClaude(prompt: string, maxTokens: number, systemPrompt: strin
 
   try {
     // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): ncert-solver already routes through grounded-answer behind ff_ncert_grounded flag; delete this fallback call once flag defaults to true.
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetchWithProviderTimeout('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'x-api-key': ANTHROPIC_API_KEY,
