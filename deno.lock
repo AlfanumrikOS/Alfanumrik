@@ -105,7 +105,7 @@
         "npm:@playwright/test@^1.60.0",
         "npm:@sentry/nextjs@^10.53.1",
         "npm:@supabase/ssr@~0.10.3",
-        "npm:@supabase/supabase-js@^2.105.4",
+        "npm:@supabase/supabase-js@^2.108.2",
         "npm:@testing-library/jest-dom@^6.9.1",
         "npm:@testing-library/react@^16.3.2",
         "npm:@types/canvas-confetti@^1.9.0",
