@@ -82,6 +82,10 @@ BEGIN
             SELECT decrypted_secret FROM vault.decrypted_secrets
             WHERE name = 'projector_runner_service_role_key' LIMIT 1
           ),
+          'x-cron-secret', (
+            SELECT decrypted_secret FROM vault.decrypted_secrets
+            WHERE name = 'cron_secret' LIMIT 1
+          ),
           'Content-Type', 'application/json'
         ),
         body := jsonb_build_object('source', 'pg_cron'),
