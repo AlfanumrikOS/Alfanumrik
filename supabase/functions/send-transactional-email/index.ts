@@ -1,3 +1,4 @@
+import { createEmailIdempotencyKey, fetchWithTimeout } from '../_shared/reliability.ts'
 /**
  * send-transactional-email – Alfanumrik Edge Function
  *
@@ -112,7 +113,12 @@ async function sendMailgunEmail(params: {
   if (params.tags) {
     for (const t of params.tags) form.append('o:tag', `${t.name}:${t.value}`)
   }
-  const res = await fetch(MAILGUN_API_URL, {
+  const res = await fetchWithTimeout(MAILGUN_API_URL, {
+    provider: 'mailgun',
+    operation: 'send_transactional_email',
+    timeoutMs: 10_000,
+    retry: { maxAttempts: 3 },
+    idempotencyKey: createEmailIdempotencyKey({ template: 'transactional_email', recipient: params.to, subject: params.subject }),
     method: 'POST',
     headers: { Authorization: MAILGUN_AUTH_HEADER },
     body: form,

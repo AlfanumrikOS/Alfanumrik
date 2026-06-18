@@ -11,6 +11,7 @@
  * P13: Phone numbers are redacted in all log output.
  */
 
+import { createWhatsAppIdempotencyKey, fetchWithTimeout } from '../_shared/reliability.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, jsonResponse, errorResponse, getCorsHeaders } from '../_shared/cors.ts'
 import { constantTimeEqual } from '../_shared/auth.ts'
@@ -175,9 +176,14 @@ async function sendWhatsAppMessage(
   }
 
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
       {
+        provider: 'whatsapp',
+        operation: 'send_template_message',
+        timeoutMs: 10_000,
+        retry: { maxAttempts: 3 },
+        idempotencyKey: createWhatsAppIdempotencyKey({ template: template.id, recipientPhone, language }),
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
