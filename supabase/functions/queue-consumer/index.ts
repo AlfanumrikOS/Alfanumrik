@@ -12,7 +12,7 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, getCorsHeaders } from '../_shared/cors.ts'
-import { constantTimeEqual } from '../_shared/auth.ts'
+import { auditInternalCronInvocation, internalCronUnauthorizedResponse, verifyInternalCronRequest } from '../_shared/security/internal-cron-auth.ts'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -556,35 +556,21 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
-  // ── Auth: cron-secret OR service-role bearer ────────────────────────────
-  // Pre-fix this function had NO auth check. Anyone with the public anon
-  // key (which is, by design, exposed to clients) could POST to drain the
-  // task_queue at will — starving legitimate cron runs and triggering
-  // BKT updates / notification batches at unauthorized cadence. Now we
-  // require either:
-  //   • x-cron-secret: <CRON_SECRET>          (matches account-purge / daily-cron)
-  //   • Authorization: Bearer <SERVICE_ROLE_KEY>  (server-to-server)
-  // Both compares are constant-time.
-  const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-  const providedCron = req.headers.get('x-cron-secret') ?? ''
-  const providedAuth = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/, '')
-  const cronOk = cronSecret.length > 0 && constantTimeEqual(providedCron, cronSecret)
-  const serviceOk = serviceRoleKey.length > 0 && constantTimeEqual(providedAuth, serviceRoleKey)
-  if (!cronOk && !serviceOk) {
-    return new Response(
-      JSON.stringify({ error: 'Unauthorized' }),
-      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    )
+  const requestId = req.headers.get('x-request-id') ?? crypto.randomUUID()
+  const authStarted = performance.now()
+  const supabaseClient = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    { auth: { persistSession: false } },
+  )
+  const auth = await verifyInternalCronRequest({ req, route: 'queue-consumer', sb: supabaseClient, requestId, bodyText: '' })
+  if (!auth.ok) {
+    await auditInternalCronInvocation({ sb: supabaseClient, route: 'queue-consumer', requestId, started: authStarted, auth, statusCode: auth.status })
+    return internalCronUnauthorizedResponse(auth, corsHeaders)
   }
+  await auditInternalCronInvocation({ sb: supabaseClient, route: 'queue-consumer', requestId, started: authStarted, auth, statusCode: 200 })
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      { auth: { persistSession: false } },
-    )
-
     // Parse optional filter from body (e.g. { queue_name: 'quiz_processing', batch_size: 20 })
     let queueFilter: string | null = null
     let batchSize = 25

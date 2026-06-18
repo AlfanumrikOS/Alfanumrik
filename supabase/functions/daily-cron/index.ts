@@ -25,9 +25,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 import { capture as posthogCapture } from '../_shared/posthog.ts'
-import { constantTimeEqual } from '../_shared/auth.ts'
 import { gradeMolShadowPairs as gradeMolShadowPairsImpl } from '../_shared/mol/grader-cron.ts'
 import { gradeShadowPair } from '../_shared/mol/grader.ts'
+import { auditInternalCronInvocation, internalCronUnauthorizedResponse, verifyInternalCronRequest } from '../_shared/security/internal-cron-auth.ts'
 
 // YYYY_MM_DD slug (UTC) used as the day component of idempotency_key.
 function todayUtcSlug(): string {
@@ -1403,14 +1403,16 @@ async function purgePrincipalAiTranscripts(supabase: ReturnType<typeof createCli
 Deno.serve(async (req) => {
   if (req.method==='OPTIONS') return new Response('ok',{headers:corsHeaders})
   const t0=Date.now()
+  const requestId = req.headers.get('x-request-id') ?? crypto.randomUUID()
+  const authStarted = performance.now()
   const sb=createClient(Deno.env.get('SUPABASE_URL')??'',Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')??'',{auth:{persistSession:false}})
   try {
-    let secret=Deno.env.get('CRON_SECRET')??null
-    if(!secret){const{data,error:re}=await sb.rpc('get_cron_secret');if(re||!data){console.error('daily-cron: secret unavailable:',re?.message);return new Response(JSON.stringify({error:'Server misconfiguration'}),{status:500,headers:{...corsHeaders,'Content-Type':'application/json'}})}; secret=data as string}
-    // Constant-time compare — naive `!==` short-circuits and leaks the secret
-    // through response timing.
-    const provided=req.headers.get('x-cron-secret')??''
-    if(!secret||!constantTimeEqual(provided,secret)) return new Response(JSON.stringify({error:'Unauthorized'}),{status:401,headers:{...corsHeaders,'Content-Type':'application/json'}})
+    const auth = await verifyInternalCronRequest({ req, route: 'daily-cron', sb, requestId, bodyText: '' })
+    if (!auth.ok) {
+      await auditInternalCronInvocation({ sb, route: 'daily-cron', requestId, started: authStarted, auth, statusCode: auth.status })
+      return internalCronUnauthorizedResponse(auth, corsHeaders)
+    }
+    await auditInternalCronInvocation({ sb, route: 'daily-cron', requestId, started: authStarted, auth, statusCode: 200 })
     const steps:[string,()=>Promise<number>][]=[
       ['streaks_reset',()=>resetMissedStreaks(sb)],
       ['leaderboard_entries',()=>recalculateLeaderboards(sb)],
