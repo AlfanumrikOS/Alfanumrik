@@ -23,6 +23,10 @@
 //
 // Owner: ai-engineer. Reviewers: assessment (scope), quality.
 
+function logDeprecatedEdgeFunctionHit() {
+  console.warn('api_deprecated_edge_function_hit', { workflow: 'ai-tutor', route: 'supabase/functions/alfabot-answer/index.ts', canonical_route: '/api/foxy', compatibility_type: 'internal-only', metric: 'api_deprecated_route_hit' })
+}
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
 
 import {
@@ -200,6 +204,7 @@ async function runTurnNonStream(
 // ─── HTTP entry ─────────────────────────────────────────────────────────────
 
 export async function handleRequest(req: Request): Promise<Response> {
+  logDeprecatedEdgeFunctionHit()
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }

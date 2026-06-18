@@ -10,6 +10,10 @@
  *   - get_monthly_report: Return monthly report data for a child
  */
 
+function logDeprecatedEdgeFunctionHit() {
+  console.warn('api_deprecated_edge_function_hit', { workflow: 'parent', route: 'supabase/functions/parent-portal/index.ts', canonical_route: '/api/v2/parent/children or /api/v2/parent/glance', compatibility_type: 'compatibility', metric: 'api_deprecated_route_hit' })
+}
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 // P12/P13: never surface stale/invalid subject data to a parent; see
@@ -1049,6 +1053,7 @@ function generateTips(
 // ─── Main Handler ─────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
+  logDeprecatedEdgeFunctionHit()
   const origin = req.headers.get('origin')
   const corsHeaders = getCorsHeaders(origin)
 

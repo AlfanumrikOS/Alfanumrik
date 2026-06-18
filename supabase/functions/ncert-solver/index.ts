@@ -21,6 +21,10 @@
  * }
  */
 
+function logDeprecatedEdgeFunctionHit() {
+  console.warn('api_deprecated_edge_function_hit', { workflow: 'ncert-solve', route: 'supabase/functions/ncert-solver/index.ts', canonical_route: '/api/scan-solve', compatibility_type: 'internal-only', metric: 'api_deprecated_route_hit' })
+}
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, errorResponse, jsonResponse } from '../_shared/cors.ts'
 import { fetchRAGContext } from '../_shared/rag-retrieval.ts'
@@ -77,6 +81,7 @@ const circuitBreaker = {
 }
 
 Deno.serve(async (req) => {
+  logDeprecatedEdgeFunctionHit()
   const origin = req.headers.get('origin') || ''
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: getCorsHeaders(origin) })

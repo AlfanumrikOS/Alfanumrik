@@ -67,6 +67,10 @@
  * }
  */
 
+function logDeprecatedEdgeFunctionHit() {
+  console.warn('api_deprecated_edge_function_hit', { workflow: 'ncert-solve', route: 'supabase/functions/ncert-question-engine/index.ts', canonical_route: '/api/scan-solve', compatibility_type: 'internal-only', metric: 'api_deprecated_route_hit' })
+}
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { getRequestId, getRequestIp, getRequestOrigin, hashRequestIp } from '../_shared/security/attribution.ts'
@@ -628,6 +632,7 @@ async function saveAttempt(body: Record<string, unknown>): Promise<Response> {
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 export async function handleRequest(req: Request): Promise<Response> {
+  logDeprecatedEdgeFunctionHit()
   const started = Date.now()
   const origin = getRequestOrigin(req)
   const corsH = securityCorsHeaders(origin)
