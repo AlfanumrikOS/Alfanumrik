@@ -10,6 +10,7 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { edgeLog, getRequestId, writeBusinessAudit, type EdgeLogContext } from '../_shared/edge-audit-log.ts'
 
 // ─── Inline CORS ──────────────────────────────────────────────────────────────
 const ALLOWED_ORIGINS = [
@@ -249,6 +250,7 @@ function parentEmail(name: string): { subject: string; html: string; text: strin
 
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get('origin')
+  const context: EdgeLogContext = { requestId: getRequestId(req), route: 'send-welcome-email', role: 'authenticated', actor: null, schoolId: null, startedAt: Date.now() }
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: getCorsHeaders(origin) })
   }
@@ -264,7 +266,11 @@ Deno.serve(async (req: Request) => {
     )
 
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
-    if (userError || !user) return errorResponse('Unauthorized', 401, origin)
+    if (userError || !user) {
+      edgeLog('error', context, { action: 'welcome_email.auth_denied', status: 'denied', reason: userError?.message ?? 'missing_user' })
+      return errorResponse('Unauthorized', 401, origin)
+    }
+    context.actor = user.id
 
     const body: WelcomeRequest = await req.json()
     const { role, name, grade, board, school_name } = body
@@ -307,12 +313,13 @@ Deno.serve(async (req: Request) => {
         })
 
         if (result.success) {
-          console.log(`[Welcome Email] Sent to ${email}, id: ${result.id}`)
+          edgeLog('info', context, { action: 'welcome_email.sent', status: 'ok', provider: 'mailgun', role, mailgun_message_id: result.id ?? null })
+          await writeBusinessAudit({ supabase: supabaseClient, context, action: 'welcome_email.sent', status: 'ok', metadata: { provider: 'mailgun', role } })
           return jsonResponse({ sent: true, provider: 'mailgun', id: result.id }, 200, {}, origin)
         }
-        console.error('[Welcome Email] Mailgun error:', result.error)
+        edgeLog('error', context, { action: 'welcome_email.mailgun_failed', status: 'error', provider: 'mailgun', reason: result.error ?? 'unknown' })
       } catch (fetchErr) {
-        console.error('[Welcome Email] Fetch error:', fetchErr)
+        edgeLog('error', context, { action: 'welcome_email.fetch_failed', status: 'error', reason: fetchErr instanceof Error ? fetchErr.message : String(fetchErr) })
       }
     }
 
@@ -330,9 +337,11 @@ Deno.serve(async (req: Request) => {
       is_read: false,
     })
 
+    edgeLog('warn', context, { action: 'welcome_email.notification_fallback', status: 'warn', provider: 'notification_fallback', role })
+    await writeBusinessAudit({ supabase: supabaseAdmin, context, action: 'welcome_email.notification_fallback', status: 'warn', metadata: { role } })
     return jsonResponse({ sent: true, provider: 'notification_fallback' }, 200, {}, origin)
   } catch (err) {
-    console.error('[Welcome Email] Error:', err)
+    edgeLog('error', context, { action: 'welcome_email.unhandled', status: 'error', reason: err instanceof Error ? err.message : String(err) })
     return errorResponse('Internal server error', 500, origin)
   }
 })

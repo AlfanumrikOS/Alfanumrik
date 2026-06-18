@@ -42,7 +42,8 @@
     "smoke:agent": "npx tsx scripts/smoke-agent.ts",
     "flags:check": "npx tsx scripts/sync-production-flags.ts --check",
     "flags:sync": "npx tsx scripts/sync-production-flags.ts --apply",
-    "flags:reset": "npx tsx scripts/sync-production-flags.ts --reset --force"
+    "flags:reset": "npx tsx scripts/sync-production-flags.ts --reset --force",
+    "check:edge-logs": "node scripts/security/check-edge-logs.mjs"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
