@@ -2,7 +2,7 @@
 
 import type { ModelProvider, ProviderCallOptions } from './base.ts'
 import type { ProviderResponse } from '../types.ts'
-import { withTimeout } from './shared.ts'
+import { fetchWithTimeout } from '../../reliability.ts'
 
 const ANTHROPIC_VERSION = '2023-06-01'
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
@@ -56,9 +56,10 @@ export class AnthropicProvider implements ModelProvider {
       temperature: opts.temperature ?? 0.7,
     }
 
-    const res = await withTimeout(
-      (signal) =>
-        fetch(ANTHROPIC_URL, {
+    const res = await fetchWithTimeout(ANTHROPIC_URL, {
+          provider: 'anthropic',
+          operation: 'mol_messages',
+          timeoutMs: timeout,
           method: 'POST',
           headers: {
             'x-api-key': this.apiKey(),
@@ -66,10 +67,7 @@ export class AnthropicProvider implements ModelProvider {
             'content-type': 'application/json',
           },
           body: JSON.stringify(body),
-          signal,
-        }),
-      timeout,
-    )
+        })
 
     if (!res.ok) {
       const raw = await res.text().catch(() => '')

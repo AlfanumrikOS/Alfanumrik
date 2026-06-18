@@ -1,3 +1,4 @@
+import { createCronIdempotencyKey, fetchWithTimeout } from '../_shared/reliability.ts'
 /**
  * synthetic-host-monitor — Alfanumrik Edge Function (Phase E.5).
  *
@@ -132,13 +133,15 @@ async function fetchProbe(
   | { kind: 'dns';       durationMs: number; message: string }
   | { kind: 'error';     durationMs: number; message: string }
 > {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
   const start = performance.now()
   try {
-    const res = await fetch(`https://${host}/api/school-config`, {
+    const res = await fetchWithTimeout(`https://${host}/api/school-config`, {
+      provider: 'internal',
+      operation: 'synthetic_school_config',
+      timeoutMs: FETCH_TIMEOUT_MS,
+      retry: { maxAttempts: 2 },
+      idempotencyKey: createCronIdempotencyKey({ jobName: 'synthetic-host-monitor', scheduledFor: new Date().toISOString().slice(0, 16), shard: host }),
       method: 'GET',
-      signal: controller.signal,
       headers: {
         'User-Agent': 'Alfanumrik-Synthetic-Monitor/1.0 (+ops@alfanumrik.com)',
         'Accept':     'application/json',
@@ -172,7 +175,7 @@ async function fetchProbe(
     }
     return { kind: 'error', durationMs, message }
   } finally {
-    clearTimeout(timer)
+    // timeout handled by shared reliability helper
   }
 }
 

@@ -23,6 +23,7 @@
  */
 
 import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0'
+import { createEmailIdempotencyKey, fetchWithTimeout } from '../_shared/reliability.ts'
 
 // Supabase stores the secret as "v1,whsec_<base64>" but standardwebhooks expects "whsec_<base64>"
 const rawHookSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET') || ''
@@ -55,7 +56,12 @@ async function sendMailgunEmail(params: {
   if (params.tags) {
     for (const t of params.tags) form.append('o:tag', `${t.name}:${t.value}`)
   }
-  const res = await fetch(`https://api.mailgun.net/v3/${mailgunDomain}/messages`, {
+  const res = await fetchWithTimeout(`https://api.mailgun.net/v3/${mailgunDomain}/messages`, {
+    provider: 'mailgun',
+    operation: 'send_auth_email',
+    timeoutMs: 10_000,
+    retry: { maxAttempts: 3 },
+    idempotencyKey: createEmailIdempotencyKey({ template: 'auth_email', recipient: params.to, subject: params.subject }),
     method: 'POST',
     headers: { 'Authorization': `Basic ${btoa(`api:${mailgunApiKey}`)}` },
     body: form,

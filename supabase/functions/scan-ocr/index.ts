@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
 import { getCorsHeaders } from '../_shared/cors.ts'
-import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
+import { fetchWithTimeout } from '../_shared/reliability.ts'
 
 /**
  * Scan OCR Pipeline
@@ -22,7 +22,7 @@ import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
 async function extractTextFromImage(imageUrl: string, supabase: any): Promise<{ text: string; confidence: number }> {
   try {
     // Download the image from storage
-    const response = await fetch(imageUrl)
+    const response = await fetchWithTimeout(imageUrl, { provider: 'internal', operation: 'download_scan_image', timeoutMs: 10_000 })
     if (!response.ok) throw new Error('Failed to download image')
     const imageBuffer = await response.arrayBuffer()
     const base64 = btoa(String.fromCharCode(...new Uint8Array(imageBuffer)))
@@ -30,9 +30,12 @@ async function extractTextFromImage(imageUrl: string, supabase: any): Promise<{ 
     // Try Google Cloud Vision API if key is available
     const visionKey = Deno.env.get('GOOGLE_VISION_API_KEY')
     if (visionKey) {
-      const visionRes = await fetch(
+      const visionRes = await fetchWithTimeout(
         `https://vision.googleapis.com/v1/images:annotate?key=${visionKey}`,
         {
+          provider: 'google_vision',
+          operation: 'scan_ocr_google_vision',
+          timeoutMs: 15_000,
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -60,7 +63,10 @@ async function extractTextFromImage(imageUrl: string, supabase: any): Promise<{ 
     formData.append('scale', 'true')
     formData.append('OCREngine', '2') // Engine 2 is better for mixed content
 
-    const ocrRes = await fetchWithProviderTimeout('https://api.ocr.space/parse/image', {
+    const ocrRes = await fetchWithTimeout('https://api.ocr.space/parse/image', {
+      provider: 'ocr_space',
+      operation: 'scan_ocr_space',
+      timeoutMs: 20_000,
       method: 'POST',
       headers: { 'apikey': ocrSpaceKey },
       body: formData,

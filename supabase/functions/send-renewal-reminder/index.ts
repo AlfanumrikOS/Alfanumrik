@@ -36,6 +36,7 @@
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createEmailIdempotencyKey, fetchWithTimeout } from '../_shared/reliability.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders } from '../_shared/cors.ts'
 import { checkBearerToken } from '../_shared/auth.ts'
@@ -235,7 +236,12 @@ async function sendMailgunEmail(params: {
   if (params.tags) {
     for (const t of params.tags) form.append('o:tag', `${t.name}:${t.value}`)
   }
-  const res = await fetch(`https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`, {
+  const res = await fetchWithTimeout(`https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`, {
+    provider: 'mailgun',
+    operation: 'send_email',
+    timeoutMs: 10_000,
+    retry: { maxAttempts: 3 },
+    idempotencyKey: createEmailIdempotencyKey({ template: 'mailgun_email', recipient: params.to, subject: params.subject }),
     method: 'POST',
     headers: { 'Authorization': `Basic ${btoa(`api:${MAILGUN_API_KEY}`)}` },
     body: form,

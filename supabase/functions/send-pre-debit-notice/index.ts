@@ -1,3 +1,4 @@
+import { createEmailIdempotencyKey, fetchWithTimeout } from '../_shared/reliability.ts'
 /**
  * send-pre-debit-notice — Alfanumrik Edge Function
  *
@@ -255,7 +256,12 @@ async function sendEmailWithRetry(to: string, subject: string, html: string, tex
       form.append('o:tag', 'pre_debit_notice')
       form.append('o:tag', 'rbi_compliance')
 
-      const res = await fetch(`https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`, {
+      const res = await fetchWithTimeout(`https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`, {
+        provider: 'mailgun',
+        operation: 'send_pre_debit_notice',
+        timeoutMs: 10_000,
+        retry: { maxAttempts: 3 },
+        idempotencyKey: createEmailIdempotencyKey({ template: 'pre_debit_notice', recipient: to, subject, correlationId: idempotencyKey }),
         method: 'POST',
         headers: { 'Authorization': `Basic ${btoa(`api:${MAILGUN_API_KEY}`)}` },
         body: form,
