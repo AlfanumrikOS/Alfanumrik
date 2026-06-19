@@ -27,6 +27,7 @@ import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { isFeatureEnabled, PEDAGOGY_V2_FLAGS } from '@/lib/feature-flags';
 import { logger } from '@/lib/logger';
+import { buildInternalCallerHeaders } from '@/lib/security/internal-caller-signing';
 
 export const dynamic = 'force-dynamic';
 
@@ -125,23 +126,17 @@ export async function POST(request: Request) {
   let waStatus: 'sent' | 'failed' = 'failed';
   let waId: string | null = null;
   try {
+    const waPayload = JSON.stringify({ type: 'monthly_synthesis', recipient_phone: guardianRow.phone, language, data: { student_name: row.students.name, synthesis_month: row.synthesis_month, summary_preview: summaryPreview }, user_id: userId });
+    const waSignHeaders = buildInternalCallerHeaders('POST', '/functions/v1/whatsapp-notify', waPayload, 'synthesis-parent-share-route');
+
     const waRes = await fetch(whatsappUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+        ...(waSignHeaders ?? {}),
       },
-      body: JSON.stringify({
-        type: 'monthly_synthesis',
-        recipient_phone: guardianRow.phone,
-        language,
-        data: {
-          student_name: row.students.name,
-          synthesis_month: row.synthesis_month,
-          summary_preview: summaryPreview,
-        },
-        user_id: userId,
-      }),
+      body: waPayload,
     });
     if (waRes.ok) {
       waStatus = 'sent';

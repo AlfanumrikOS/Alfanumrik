@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit } from '@/lib/admin-auth';
 import { isValidE164, redactPhone, getTemplate } from '@/lib/whatsapp-templates';
 import type { WhatsAppTemplateType, WhatsAppLanguage } from '@/lib/whatsapp-templates';
+import { buildInternalCallerHeaders } from '@/lib/security/internal-caller-signing';
 
 const VALID_TYPES: WhatsAppTemplateType[] = [
   'daily_reminder',
@@ -104,19 +105,17 @@ export async function POST(request: NextRequest) {
 
     const edgeFunctionUrl = `${supabaseUrl}/functions/v1/whatsapp-notify`;
 
+    const bodyPayload = JSON.stringify({ type, recipient_phone, language, data, user_id });
+    const signingHeaders = buildInternalCallerHeaders('POST', '/functions/v1/whatsapp-notify', bodyPayload, 'notifications-whatsapp-route');
+
     const response = await fetch(edgeFunctionUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${serviceRoleKey}`,
         'Content-Type': 'application/json',
+        ...(signingHeaders ?? {}),
       },
-      body: JSON.stringify({
-        type,
-        recipient_phone,
-        language,
-        data,
-        user_id,
-      }),
+      body: bodyPayload,
     });
 
     const result = await response.json();

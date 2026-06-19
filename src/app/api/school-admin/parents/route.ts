@@ -3,6 +3,7 @@ import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { logSchoolAudit } from '@/lib/audit';
+import { buildInternalCallerHeaders } from '@/lib/security/internal-caller-signing';
 
 // ─── GET — List parent-student links for this school ─────────────────────────
 export async function GET(request: NextRequest) {
@@ -382,18 +383,17 @@ export async function POST(request: NextRequest) {
           const lang = guardian.preferred_language === 'hi' ? 'hi' : 'en';
           const msgContent = lang === 'hi' && message_hi ? message_hi : message;
 
+          const waBody = JSON.stringify({ type: 'score_notification', recipient_phone: guardian.phone, language: lang, data: { message: msgContent } });
+          const signingHeaders = buildInternalCallerHeaders('POST', '/functions/v1/whatsapp-notify', waBody, 'school-admin-parents-route');
+
           const res = await fetch(`${supabaseUrl}/functions/v1/whatsapp-notify`, {
             method: 'POST',
             headers: {
               Authorization: `Bearer ${serviceRoleKey}`,
               'Content-Type': 'application/json',
+              ...(signingHeaders ?? {}),
             },
-            body: JSON.stringify({
-              type: 'score_notification',
-              recipient_phone: guardian.phone,
-              language: lang,
-              data: { message: msgContent },
-            }),
+            body: waBody,
           });
 
           return res.ok;

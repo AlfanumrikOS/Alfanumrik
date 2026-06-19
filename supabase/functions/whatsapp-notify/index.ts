@@ -14,8 +14,8 @@
 import { createWhatsAppIdempotencyKey, fetchWithTimeout } from '../_shared/reliability.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, jsonResponse, errorResponse, getCorsHeaders } from '../_shared/cors.ts'
-import { constantTimeEqual } from '../_shared/auth.ts'
 import { edgeLog, getRequestId, writeBusinessAudit, type EdgeLogContext } from '../_shared/edge-audit-log.ts'
+import { admitAiRoute, finalizeAiRoute, createStaticAiRouteProfile } from '../_shared/security/ai-admission.ts'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -273,6 +273,16 @@ async function queueEmailFallback(
   }
 }
 
+// ─── Security route profile ──────────────────────────────────────────────────
+const WHATSAPP_NOTIFY_ROUTE_PROFILE = createStaticAiRouteProfile({
+  route: 'whatsapp-notify',
+  callerTypes: ['internal_service'],
+  modelProvider: 'meta',
+  modelName: 'whatsapp-cloud-api',
+  inputTokenFloor: 1,
+  outputTokens: 0,
+})
+
 // ─── Main handler ───────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -288,31 +298,29 @@ Deno.serve(async (req: Request) => {
     return errorResponse('Method not allowed', 405, origin)
   }
 
+  // ── Platform security admission ────────────────────────────────────────────
+  // Replaces the legacy constantTimeEqual service-role key check.
+  // callerType=internal_service: only signed Next.js routes may call this.
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    serviceRoleKey,
+    { auth: { persistSession: false } },
+  )
+  const bodyText = await req.text()
+  const admitResult = await admitAiRoute({ req, sb: supabase, profile: WHATSAPP_NOTIFY_ROUTE_PROFILE, bodyText })
+  if (!admitResult.ok) {
+    return admitResult.response
+  }
+  const { admission } = admitResult
+
   try {
-    // Auth: service-role bearer ONLY — this endpoint sends regulated
-    // WhatsApp messages billed against the project Meta API budget. The
-    // documented contract is server-to-server (callers in this repo all
-    // pass `Bearer ${SERVICE_ROLE_KEY}`). Pre-fix the gate only checked
-    // the Authorization header was PRESENT, so any holder of the public
-    // anon key could spam WhatsApp through our number.
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    const provided = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/, '')
-    if (!serviceRoleKey || !constantTimeEqual(provided, serviceRoleKey)) {
-      edgeLog('error', context, { action: 'whatsapp.auth_denied', status: 'denied', reason: 'invalid_service_role' })
-      return errorResponse('Unauthorized', 401, origin)
-    }
-
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      serviceRoleKey,
-      { auth: { persistSession: false } },
-    )
-
     // Parse and validate request body
     let body: NotifyRequest
     try {
-      body = await req.json()
+      body = JSON.parse(bodyText) as NotifyRequest
     } catch {
+      await finalizeAiRoute({ sb: supabase, admission, statusCode: 400, errorCode: 'invalid_json' })
       return errorResponse('Invalid JSON body', 400, origin)
     }
 
@@ -320,6 +328,7 @@ Deno.serve(async (req: Request) => {
 
     // Validate template type
     if (!type || !TEMPLATES[type]) {
+      await finalizeAiRoute({ sb: supabase, admission, statusCode: 400, errorCode: 'invalid_template' })
       return errorResponse(
         `Invalid template type. Must be one of: ${Object.keys(TEMPLATES).join(', ')}`,
         400,
@@ -329,16 +338,19 @@ Deno.serve(async (req: Request) => {
 
     // Validate phone number
     if (!recipient_phone || !isValidE164(recipient_phone)) {
+      await finalizeAiRoute({ sb: supabase, admission, statusCode: 400, errorCode: 'invalid_phone' })
       return errorResponse('Invalid phone number. Must be E.164 format (e.g., +919876543210)', 400, origin)
     }
 
     // Validate language
     if (!language || !['en', 'hi'].includes(language)) {
+      await finalizeAiRoute({ sb: supabase, admission, statusCode: 400, errorCode: 'invalid_language' })
       return errorResponse('Invalid language. Must be "en" or "hi"', 400, origin)
     }
 
     // Validate data
     if (!data || typeof data !== 'object') {
+      await finalizeAiRoute({ sb: supabase, admission, statusCode: 400, errorCode: 'invalid_data' })
       return errorResponse('Missing or invalid data object', 400, origin)
     }
 
@@ -346,6 +358,7 @@ Deno.serve(async (req: Request) => {
     if (isRateLimited(recipient_phone)) {
       edgeLog('warn', context, { action: 'whatsapp.rate_limited', status: 'denied', recipient_phone })
       await logNotification(supabase, user_id, 'whatsapp', type, recipient_phone, 'rate_limited', undefined, undefined, context)
+      await finalizeAiRoute({ sb: supabase, admission, statusCode: 429, errorCode: 'rate_limited' })
       return jsonResponse(
         { success: false, error: 'Rate limit exceeded (100 messages/day per number)' },
         429,
@@ -357,12 +370,14 @@ Deno.serve(async (req: Request) => {
     // Look up template
     const template = TEMPLATES[type][language]
     if (!template) {
+      await finalizeAiRoute({ sb: supabase, admission, statusCode: 400, errorCode: 'template_not_found' })
       return errorResponse('Template not found for given type and language', 400, origin)
     }
 
     // Validate required template params
     const missingParams = template.params.filter((p) => !data[p])
     if (missingParams.length > 0) {
+      await finalizeAiRoute({ sb: supabase, admission, statusCode: 400, errorCode: 'missing_params' })
       return errorResponse(
         `Missing template parameters: ${missingParams.join(', ')}`,
         400,
@@ -378,6 +393,7 @@ Deno.serve(async (req: Request) => {
       edgeLog('info', context, { action: 'whatsapp.sent', status: 'ok', template: type, language, message_id: result.messageId ?? null })
       await logNotification(supabase, user_id, 'whatsapp', type, recipient_phone, 'sent', result.messageId, undefined, context)
       await writeBusinessAudit({ supabase, context, action: 'whatsapp.sent', status: 'ok', metadata: { template: type, language, user_id: user_id ?? null } })
+      await finalizeAiRoute({ sb: supabase, admission, statusCode: 200 })
 
       return jsonResponse(
         { success: true, message_id: result.messageId },
@@ -391,6 +407,7 @@ Deno.serve(async (req: Request) => {
     edgeLog('error', context, { action: 'whatsapp.send_failed', status: 'error', template: type, language, reason: result.error ?? 'unknown' })
     await logNotification(supabase, user_id, 'whatsapp', type, recipient_phone, 'failed', undefined, result.error, context)
     await queueEmailFallback(supabase, user_id, type, data, context)
+    await finalizeAiRoute({ sb: supabase, admission, statusCode: 502, errorCode: 'whatsapp_send_failed' })
 
     return jsonResponse(
       { success: false, error: 'WhatsApp delivery failed, queued for email fallback', fallback: 'email' },
@@ -401,6 +418,7 @@ Deno.serve(async (req: Request) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     edgeLog('error', context, { action: 'whatsapp.unhandled', status: 'error', reason: message })
+    await finalizeAiRoute({ sb: supabase, admission, statusCode: 500, errorCode: 'unhandled_error' })
     return errorResponse('Internal server error', 500, origin)
   }
 })

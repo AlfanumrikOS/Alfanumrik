@@ -2,13 +2,14 @@
 
 ## Scope
 
-Phase 1 is complete for `grounded-answer`. Phase 2 is complete for `ncert-question-engine` (PR #1067). Phase 3 has partially completed code integration: `alfabot-answer` and `ncert-solver` are fully integrated. Route policies have been seeded in the database for the remaining 12 functions, but their `index.ts` files have not yet been updated to use the shared security admission flow.
+Phase 1 is complete for `grounded-answer`. Phase 2 is complete for `ncert-question-engine` (PR #1067). Phase 3 has completed code integration for `alfabot-answer`, `ncert-solver`, and `whatsapp-notify`. Route policies have been seeded in the database for the remaining 11 functions, but their `index.ts` files have not yet been updated to use the shared security admission flow.
 
 Rolled out with full security layer integration:
 - `grounded-answer` — rolled out and validated
 - `ncert-question-engine` — rolled out and validated (PR #1067)
 - `alfabot-answer` — rolled out (Phase 3); callerTypes `['internal_service']` only; Next.js proxy at `/api/alfabot` signs requests with HMAC-SHA256 internal caller signing
 - `ncert-solver` — rolled out (Phase 3); callerTypes `['student', 'internal_service']`; function-local circuit breaker preserved alongside platform circuit breaker
+- `whatsapp-notify` — rolled out (Phase 3 Wave 3); callerTypes `['internal_service']` only; modelProvider `meta` (WhatsApp Cloud API); legacy `constantTimeEqual` service-role check replaced; three Next.js callers sign requests with HMAC-SHA256 (`notifications-whatsapp-route`, `school-admin-parents-route`, `synthesis-parent-share-route`); migration `20260620001500_whatsapp_notify_security_policy.sql` seeds quota profile + route policy + three internal caller registrations
 
 Route policies seeded in DB, code integration pending:
 - `scan-ocr`
@@ -23,9 +24,6 @@ Route policies seeded in DB, code integration pending:
 - `embed-ncert-qa`
 - `embed-questions`
 - `embed-diagrams`
-
-Not yet seeded or code-integrated:
-- `whatsapp-notify`
 
 ## Architecture Summary
 
@@ -86,6 +84,7 @@ The implementation is split into small shared modules under `supabase/functions/
 - `supabase/migrations/20260620001100_platform_security_layer_replica_identity.sql`
 - `supabase/migrations/20260620001200_ncert_question_engine_security_policy.sql` (Phase 2 — 5 role-scoped quota profiles + internal caller registration + route policies for ncert-question-engine)
 - `supabase/migrations/20260620001300_ai_edge_function_security_policies.sql` (Phase 2 — bulk route policy and quota profile seeding for 14 additional AI Edge Functions; no code integration)
+- `supabase/migrations/20260620001500_whatsapp_notify_security_policy.sql` (Phase 3 Wave 3 — quota profile + route policy + three internal caller registrations for whatsapp-notify)
 
 ### Internal Caller Signing (Next.js)
 
@@ -98,6 +97,7 @@ The implementation is split into small shared modules under `supabase/functions/
 - `src/__tests__/alfabot-answer-security.test.ts` (Phase 3 — 7 tests: code primitives, callerTypes, body-text-before-parse order, finalizeAiRoute non-streaming, stream-response finally block, migration seeding, admission parameter)
 - `src/__tests__/ncert-solver-security.test.ts` (Phase 3 — 6 tests: code primitives, callerTypes, body-text-before-parse, finalize-on-every-exit-path, migration seeding, function-local circuit breaker preserved)
 - `src/__tests__/lib/security/internal-caller-signing.test.ts` (Phase 3 — 16 unit tests: sha256Hex, canonical field order, base64url encoding, HMAC determinism, missing-secret null return, headers shape, timestamp window)
+- `src/__tests__/whatsapp-notify-security.test.ts` (Phase 3 Wave 3 — 7 tests: code primitives, internal_service-only callerTypes, meta modelProvider, body-text-before-admit order, finalizeAiRoute call count, quota profile migration seeding, three internal caller registrations)
 
 ### Dependency/Tooling Updates
 
@@ -227,7 +227,7 @@ Contract test `src/__tests__/ncert-question-engine-security.test.ts` verifies:
 | `embed-ncert-qa` | Yes | No | Route policy seeded; code integration pending |
 | `embed-questions` | Yes | No | Route policy seeded; code integration pending |
 | `embed-diagrams` | Yes | No | Route policy seeded; code integration pending |
-| `whatsapp-notify` | No | No | Not yet seeded or code-integrated |
+| `whatsapp-notify` | Yes | Yes | Rolled out (Phase 3 Wave 3); internal_service caller only; 3 Next.js callers sign requests; migration 20260620001500 |
 
 The live database migrations required for the grounded-answer and ncert-question-engine rollouts are already applied. The bulk policy seeding migration (`20260620001300`) is also applied, making Phase 3 code integration purely a code change with no new migration required for the 14 already-seeded functions.
 
@@ -311,14 +311,9 @@ Functions: `bulk-question-gen`, `bulk-non-mcq-gen`, `bulk-jee-neet-import`, `gen
 - these are typically service-to-service callers; confirm internal caller signing is wired
 - audit logging must capture the internal caller context and route name
 
-### 4. Seed route policies and roll the shared layer into `whatsapp-notify`
+### 4. ✅ Seed route policies and roll the shared layer into `whatsapp-notify` (COMPLETE)
 
-`whatsapp-notify` has no policy seeded yet. It requires a migration before code integration.
-
-- write a policy seeding migration for whatsapp-notify
-- integrate internal caller resolution and route policy enforcement
-- ensure audit logging captures notification-specific caller context
-- validate circuit-breaker behavior for transient notification failures
+`whatsapp-notify` is fully integrated. Migration `20260620001500_whatsapp_notify_security_policy.sql` seeds the quota profile, route policy, and three internal caller registrations. The legacy `constantTimeEqual` service-role key check is replaced by `admitAiRoute`. All three Next.js callers (`/api/notifications/whatsapp`, `/api/school-admin/parents`, `/api/synthesis/parent-share`) now serialize body text before the fetch call and add HMAC-SHA256 signing headers via `buildInternalCallerHeaders`. `finalizeAiRoute` is called on every exit path (10 branches including the outer catch).
 
 ### 5. Operational hardening
 
@@ -327,10 +322,53 @@ Functions: `bulk-question-gen`, `bulk-non-mcq-gen`, `bulk-jee-neet-import`, `gen
 - keep migration additions incremental and reversible
 - verify each new rollout against the real database before enabling traffic
 
+## Phase 4 Implementation Roadmap
+
+Phase 4 covers the 10 bulk and embedding Edge Functions. These functions share a common problem: their current auth patterns are incompatible with the platform security layer and require auth migration before the admission flow can be applied.
+
+### Auth migration required before security layer integration
+
+**`bulk-question-gen`**
+Uses `verifyAdminAuth` which checks `admin_users.admin_level` — a custom admin table, not the platform RBAC roles (`student`, `teacher`, `school_admin`, `internal_service`). The security layer's `resolveSecurityPrincipal` cannot resolve a principal from this custom check. Migration path: replace `verifyAdminAuth` with platform RBAC role check (`teacher` or `school_admin`) before applying the admission flow.
+
+**`bulk-non-mcq-gen`**
+Same pattern as `bulk-question-gen` — uses `verifyAdminAuth` / `admin_users.admin_level`. Requires the same RBAC migration before security layer integration.
+
+**`bulk-jee-neet-import`**
+Uses an `x-admin-key` header (a shared secret, not a JWT). The security layer has no principal resolver for raw API keys. Migration path: replace `x-admin-key` with either a JWT-bearing caller or an internal caller signing header, then integrate the security layer.
+
+**`generate-answers`**
+Same `x-admin-key` pattern as `bulk-jee-neet-import`. Requires API key → JWT or internal caller signing migration.
+
+**`generate-concepts`**
+Same `x-admin-key` pattern. Requires API key → JWT or internal caller signing migration.
+
+**`extract-ncert-questions`**
+Same `x-admin-key` pattern. Requires API key → JWT or internal caller signing migration.
+
+**`extract-diagrams`**
+Same `x-admin-key` pattern. Requires API key → JWT or internal caller signing migration.
+
+**`embed-ncert-qa`**
+Same `x-admin-key` pattern. Requires API key → JWT or internal caller signing migration.
+
+**`embed-questions`**
+Same `x-admin-key` pattern. Requires API key → JWT or internal caller signing migration.
+
+**`embed-diagrams`**
+Same `x-admin-key` pattern. Requires API key → JWT or internal caller signing migration.
+
+### Recommended Phase 4 sequence
+
+1. Decide auth migration strategy for bulk functions: platform RBAC JWT (teacher/school_admin) or internal caller signing (service-to-service). The bulk/embed functions are typically run from scripts or the super-admin panel — internal caller signing is the simpler path if callers are always server-side.
+2. For `bulk-question-gen` and `bulk-non-mcq-gen`: replace `verifyAdminAuth` with platform role check or internal caller registration. These two functions already have quota profiles seeded in `20260620001300` for the `teacher`, `school_admin`, and `internal_service` roles.
+3. For the eight `x-admin-key` functions: register each as an internal caller (or wire JWT auth), then integrate `admitAiRoute` / `finalizeAiRoute`. Quota profiles are already seeded.
+4. No new migration is needed for the quota profiles or route policies — they were seeded in `20260620001300`. Only caller registrations may need updating if the caller names change during the auth migration.
+
 ## Notes
 
 - Phase 1 and Phase 2 were validated against the real Supabase database, not just local emulation.
 - The function response behavior for grounded-answer and ncert-question-engine remained unchanged in scope; the work was about securing the request lifecycle around each.
-- The 14 functions seeded in `20260620001300` have DB-side policy enforcement ready. No additional migration work is needed before Phase 3 code integration for those functions.
-- `whatsapp-notify` is the only remaining function that needs both a policy seeding migration and code integration.
+- The 14 functions seeded in `20260620001300` have DB-side policy enforcement ready. No additional migration work is needed before Phase 4 code integration for those functions (quota profiles and route policies exist).
+- `whatsapp-notify` is fully integrated as of Phase 3 Wave 3.
 - Unrelated workspace edits may exist outside the platform security layer scope and are not part of this handoff.
