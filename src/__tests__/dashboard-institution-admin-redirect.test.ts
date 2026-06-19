@@ -24,11 +24,10 @@ import { getRoleDestination } from '@/lib/identity';
  * Fix: three changes in three files. This test pins the contract by
  * verifying:
  *   1. getRoleDestination('institution_admin') === '/school-admin'
- *   2. dashboard/AtlasDashboard.tsx contains a redirect branch for
- *      institution_admin (the redirect logic was refactored out of
- *      dashboard/page.tsx — now a thin `return <AtlasDashboard />` wrapper —
- *      and into AtlasDashboard.tsx).
- *   3. dashboard/AtlasDashboard.tsx renders DashboardSkeleton (not /login
+ *   2. dashboard/StudentOSDashboard.tsx contains a redirect branch for
+ *      institution_admin (AtlasDashboard.tsx removed; ff_student_os_v1
+ *      is always-on and StudentOSDashboard is the sole dashboard).
+ *   3. dashboard/StudentOSDashboard.tsx renders DashboardSkeleton (not /login
  *      bounce) while institution_admin redirect is in flight. The
  *      skeleton-guard intent is satisfied by the `if (!student) return
  *      <DashboardSkeleton/>` early-return, since institution_admin has no
@@ -63,9 +62,11 @@ describe('post-login redirect chain — institution_admin', () => {
 });
 
 describe('post-login redirect chain — source structure', () => {
-  it('dashboard/AtlasDashboard.tsx redirects institution_admin to /school-admin', () => {
+  it('dashboard/StudentOSDashboard.tsx redirects institution_admin to /school-admin', () => {
+    // AtlasDashboard.tsx has been removed (ff_student_os_v1 is always-on).
+    // The redirect logic now lives in StudentOSDashboard.tsx.
     const file = readFileSync(
-      path.resolve(process.cwd(), 'src/app/dashboard/AtlasDashboard.tsx'),
+      path.resolve(process.cwd(), 'src/app/dashboard/StudentOSDashboard.tsx'),
       'utf-8'
     );
     // The useEffect must contain a branch that catches institution_admin
@@ -77,9 +78,11 @@ describe('post-login redirect chain — source structure', () => {
     );
   });
 
-  it('dashboard/AtlasDashboard.tsx orders teacher/guardian/institution_admin redirects before the no-student skeleton early-return', () => {
+  it('dashboard/StudentOSDashboard.tsx orders teacher/guardian/institution_admin redirects before the no-student skeleton early-return', () => {
+    // AtlasDashboard.tsx has been removed (ff_student_os_v1 is always-on).
+    // The redirect logic now lives in StudentOSDashboard.tsx.
     const file = readFileSync(
-      path.resolve(process.cwd(), 'src/app/dashboard/AtlasDashboard.tsx'),
+      path.resolve(process.cwd(), 'src/app/dashboard/StudentOSDashboard.tsx'),
       'utf-8'
     );
     // The role-redirect useEffect must handle teacher, guardian, and

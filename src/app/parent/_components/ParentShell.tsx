@@ -7,7 +7,6 @@ import { useAuth } from '@/lib/AuthContext';
 import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
 import { useParentAuth } from './useParentAuth';
 import { supabase } from '@/lib/supabase';
-import { useAtlasFlag } from '@/lib/use-atlas-flag';
 import ParentMobileNav from './ParentMobileNav';
 
 const NAV_ITEMS: SidebarNavItem[] = [
@@ -139,7 +138,6 @@ export default function ParentShell({ children }: { children: React.ReactNode })
   const { isHi } = useAuth();
   const { mode, parentName, loading } = useParentAuth();
   // Call all hooks unconditionally at the top — rules-of-hooks.
-  const atlasOn = useAtlasFlag('parent');
   // Only guardian mode parents have a Supabase JWT; link-code parents
   // can't authenticate against /api/parent/notifications. Guard the
   // SWR fetch so we don't generate spurious 401s.
@@ -169,13 +167,6 @@ export default function ParentShell({ children }: { children: React.ReactNode })
       router.replace(`/parent/consent?returnTo=${returnTo}`);
     }
   }, [consentGateEnabled, gateData, pathname, router]);
-
-  // ─── Editorial Atlas pass-through ────────────────────────────────────
-  // When Atlas is on, AtlasParent renders its own AtlasShell. Wrapping it
-  // in this legacy ParentShell would stack two side rails. The shared
-  // useAtlasFlag hook initializes synchronously from cache so this
-  // decision happens on the very first render — no spinner, no flash.
-  if (atlasOn) return <>{children}</>;
 
   // While auth is resolving, render children naked. Pages that require auth
   // (everything except `/parent` itself, which IS the login screen) will

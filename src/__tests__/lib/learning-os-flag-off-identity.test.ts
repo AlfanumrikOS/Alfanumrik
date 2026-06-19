@@ -32,10 +32,6 @@ vi.mock('@/lib/supabase', () => ({
 }));
 
 import {
-  getStudentOsFlagSync,
-  clearStudentOsFlagCache,
-} from '@/lib/use-student-os-flag';
-import {
   getSubjectsOsFlagSync,
   clearSubjectsOsFlagCache,
 } from '@/lib/use-subjects-os-flag';
@@ -53,7 +49,6 @@ import {
 } from '@/lib/use-test-os-flag';
 import {
   FLAG_DEFAULTS,
-  STUDENT_OS_FLAGS,
   SUBJECTS_OS_FLAGS,
   REVISION_OS_FLAGS,
   PRACTICE_OS_FLAGS,
@@ -63,14 +58,9 @@ import {
 } from '@/lib/feature-flags';
 
 // ── Each sync reader + its dev-force localStorage key + cache-clearer ──────────
+// Note: student OS flag (ff_student_os_v1) is now always-on; its reader has
+// been removed from this suite. Remaining readers cover the other OS surfaces.
 const READERS = [
-  {
-    name: 'student',
-    read: getStudentOsFlagSync,
-    clear: clearStudentOsFlagCache,
-    forceKey: 'alfanumrik_force_student_os',
-    cacheKey: 'alfanumrik_student_os_flag_v1',
-  },
   {
     name: 'subjects',
     read: getSubjectsOsFlagSync,
@@ -190,8 +180,8 @@ describe('Learning-OS cache clearers do not throw and reset to OFF', () => {
 });
 
 describe('FLAG_DEFAULTS — every Learning-OS + Track-2 flag defaults OFF', () => {
+  // Note: ff_student_os_v1 is now always-on and its reader has been removed.
   const NEW_FLAGS: Record<string, string> = {
-    'ff_student_os_v1': STUDENT_OS_FLAGS.V1,
     'ff_subjects_os_v1': SUBJECTS_OS_FLAGS.V1,
     'ff_revision_os_v1': REVISION_OS_FLAGS.V1,
     'ff_practice_os_v1': PRACTICE_OS_FLAGS.V1,

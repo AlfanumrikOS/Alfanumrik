@@ -43,7 +43,6 @@ import type { SubjectConfig, ChatMessage } from './_lib/foxy-types';
 import { useFoxyChat } from './_hooks/useFoxyChat';
 import type { CoachDirective } from './_hooks/useFoxyChat';
 import type { LearningActionType } from '@/components/foxy/ChatBubble';
-import { useStudentOsFlag } from '@/lib/use-student-os-flag';
 import { useFoxyOsFlag } from '@/lib/use-foxy-os-flag';
 import { useFoxyLearningActionsFlag } from '@/lib/use-foxy-learning-actions-flag';
 import { useKeyboardInset } from '@/lib/foxy/use-keyboard-inset';
@@ -345,7 +344,8 @@ export default function FoxyPage() {
   // workspace (conversations rail | chat | ContextPanel). Defaults OFF → the
   // layout is byte-identical to today. The mobile sheet state controls the
   // ContextPanel bottom-sheet on phones.
-  const osEnabled = useStudentOsFlag();
+  // ff_student_os_v1 is always-on; no flag hook needed.
+  const osEnabled = true;
   const [contextSheetOpen, setContextSheetOpen] = useState(false);
   // Activate Cosmic-LIGHT + student palette only while the OS workspace is on.
   // Passing `false` makes this a no-op so the OFF path is unaffected.

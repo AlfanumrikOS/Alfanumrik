@@ -39,8 +39,6 @@ import { supabase } from '@/lib/supabase';
 import { authHeader } from '@/lib/api/auth-header';
 import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/DashboardSidebar';
 import type { ModuleKey } from '@/lib/modules/registry';
-import { useAtlasFlag } from '@/lib/use-atlas-flag';
-import { useTeacherCommandCenter } from '@/lib/use-teacher-command-center';
 import { useCosmicTheme } from '@/lib/cosmic-theme';
 import { Starfield } from '@/components/cosmic';
 import TeacherMobileNav from './TeacherMobileNav';
@@ -77,21 +75,7 @@ async function messagesBadgeFetcher(url: string): Promise<TeacherThreadsResponse
   return res.json() as Promise<TeacherThreadsResponse>;
 }
 
-const NAV_ITEMS: ReadonlyArray<TeacherNavItem> = [
-  { href: '/teacher', label: 'Dashboard', labelHi: 'डैशबोर्ड', icon: '▦' },
-  { href: '/teacher/classes', label: 'Classes', labelHi: 'कक्षाएं', icon: '⊞' },
-  { href: '/teacher/students', label: 'Students', labelHi: 'छात्र', icon: '⊕' },
-  { href: '/teacher/assignments', label: 'Assignments', labelHi: 'असाइनमेंट', icon: '⊠', moduleKey: 'assignments' },
-  { href: '/teacher/submissions', label: 'Submissions', labelHi: 'सबमिशन', icon: '⊞', moduleKey: 'assignments' },
-  { href: '/teacher/grade-book', label: 'Grade Book', labelHi: 'ग्रेड बुक', icon: '⊟', moduleKey: 'assignments' },
-  { href: '/teacher/messages', label: 'Messages', labelHi: 'संदेश', icon: '✉' },
-  { href: '/teacher/worksheets', label: 'Worksheets', labelHi: 'वर्कशीट', icon: '⊡', moduleKey: 'lms' },
-  { href: '/teacher/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘', moduleKey: 'analytics' },
-  { href: '/teacher/lab-leaderboard', label: 'Lab Leaderboard', labelHi: 'लैब लीडरबोर्ड', icon: '⊙' },
-  { href: '/teacher/profile', label: 'Profile', labelHi: 'प्रोफ़ाइल', icon: '◎' },
-];
-
-// ─── Phase 3A — slimmed primary nav (gated on ff_teacher_command_center) ─────
+// ─── Slimmed primary nav (Command Center always-on) ───────────────────────────
 // FIVE primary items. The remaining legacy pages move to an account/overflow
 // menu (TEACHER_OVERFLOW_ITEMS) rendered in the sidebar footer so every route
 // stays reachable — no dead links. The "Command Center" entry is the existing
@@ -128,14 +112,9 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
   // resolve to `false` are filtered out of the sidebar.
   const [moduleEnablement, setModuleEnablement] = useState<Record<string, boolean> | null>(null);
 
-  // Editorial Atlas pass-through (see ParentShell for the rationale).
-  // useAtlasFlag initialises synchronously from cache → no first-render
-  // flash from legacy chrome to pass-through.
-  const atlasOn = useAtlasFlag('teacher');
-
-  // Phase 3A — slim the primary nav to FIVE when the Command Center flag is on.
-  // Default OFF + sync cache read ⇒ flag-OFF nav is byte-identical to today.
-  const commandCenterOn = useTeacherCommandCenter();
+  // Command Center is always-on; commandCenterOn stays as a named constant
+  // (not a hook) so TeacherMobileNav continues to receive it as a typed prop.
+  const commandCenterOn = true;
 
   // Messages tab unread badge — only fetch when authed as a teacher.
   const { data: messagesBadge } = useSWR<TeacherThreadsResponse>(
@@ -203,12 +182,7 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
     return <>{children}</>;
   }
 
-  // Atlas on → AtlasTeacher provides its own chrome.
-  if (atlasOn) return <>{children}</>;
-
-  // Phase 3A — choose the primary nav set. Slim 5-item nav when the Command
-  // Center flag is on; the full legacy nav otherwise (byte-identical when off).
-  const primaryNav = commandCenterOn ? TEACHER_PRIMARY_SLIM : NAV_ITEMS;
+  const primaryNav = TEACHER_PRIMARY_SLIM;
 
   // Logout button (shared by both footer variants).
   const logoutButton = (
@@ -238,7 +212,7 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
     return moduleEnablement[item.moduleKey] !== false;
   });
 
-  const footerContent = commandCenterOn ? (
+  const footerContent = (
     <div className="flex flex-col gap-2">
       <details className="group" data-testid="teacher-nav-overflow">
         <summary
@@ -268,8 +242,6 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
       </details>
       {logoutButton}
     </div>
-  ) : (
-    logoutButton
   );
 
   return (
