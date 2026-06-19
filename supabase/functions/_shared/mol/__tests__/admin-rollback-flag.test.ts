@@ -217,7 +217,9 @@ describe('admin-rollback-flag — Phase 1A Edge Function contract', () => {
         // The whole point of the rollback flag is to revert to direct
         // Anthropic. If a future refactor accidentally collapses the legacy
         // path back into MoL, the flag stops working — this is the canary.
-        expect(source).toMatch(/fetch\s*\(\s*['"]https:\/\/api\.anthropic\.com\/v1\/messages['"]/)
+        // `fetch` and `fetchWithProviderTimeout` are both direct-to-Anthropic;
+        // only `generateResponse` (MoL) is disallowed here.
+        expect(source).toMatch(/(?:fetch|fetchWithProviderTimeout)\s*\(\s*['"]https:\/\/api\.anthropic\.com\/v1\/messages['"]/)
         expect(source).toContain("'x-api-key'")
         expect(source).toContain('claude-haiku-4-5-20251001')
       })

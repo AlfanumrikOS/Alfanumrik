@@ -35,11 +35,29 @@ import {
   isFeatureFlagEnabled,
   type GroundedRequest,
 } from '../_shared/grounded-client.ts'
-import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
+import {
+  admitAiRoute,
+  finalizeAiRoute,
+  createStaticAiRouteProfile,
+  fetchWithProviderTimeout,
+} from '../_shared/security/ai-admission.ts'
+import { securityCorsHeaders } from '../_shared/security/cors.ts'
+import { getRequestOrigin } from '../_shared/security/attribution.ts'
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+
+const ROUTE_NAME = 'ncert-solver'
+
+const NCERT_SOLVER_PROFILE = createStaticAiRouteProfile({
+  route: ROUTE_NAME,
+  callerTypes: ['student', 'internal_service'],
+  modelProvider: 'anthropic',
+  modelName: 'claude-haiku-4-5-20251001',
+  inputTokenFloor: 512,
+  outputTokens: 1024,
+})
 
 // ─── Circuit breaker for Claude API ─────────────────────────────
 // Prevents cascade failures when Claude API is degraded.
@@ -82,14 +100,32 @@ const circuitBreaker = {
 
 Deno.serve(async (req) => {
   logDeprecatedEdgeFunctionHit()
-  const origin = req.headers.get('origin') || ''
+  const origin = getRequestOrigin(req)
   if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: getCorsHeaders(origin) })
+    return new Response(null, { status: 204, headers: getCorsHeaders(origin ?? '') })
   }
 
   if (req.method !== 'POST') {
-    return errorResponse('Method not allowed', 405, origin)
+    return errorResponse('Method not allowed', 405, origin ?? '')
   }
+
+  // ── Read body as text for security layer hash ──
+  let bodyText = ''
+  try {
+    bodyText = await req.text()
+  } catch {
+    return new Response(JSON.stringify({ error: 'invalid_body' }), { status: 400, headers: securityCorsHeaders(origin) })
+  }
+
+  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+  const admitResult = await admitAiRoute({ req, sb, profile: NCERT_SOLVER_PROFILE, bodyText })
+  if (!admitResult.ok) return admitResult.response
+  const admission = admitResult.admission
+
+  let statusCode = 200
+  let actualInputTokens: number | null = null
+  let actualOutputTokens: number | null = null
+  let errorCode: string | null = null
 
   try {
     const proxyTraceId =
@@ -106,32 +142,60 @@ Deno.serve(async (req) => {
 
     if (proxyDecision.should_proxy && proxyDecision.target_url) {
       try {
-        return await forwardToPython({
+        const proxyResp = await forwardToPython({
           target_url: proxyDecision.target_url,
           request: req,
         })
+        statusCode = proxyResp.status
+        await finalizeAiRoute({ sb, admission, statusCode, actualInputTokens, actualOutputTokens, actualCost: null, errorCode })
+        return proxyResp
       } catch (err) {
         console.warn(`[python-ai-proxy] forward failed for ncert-solver: ${err instanceof Error ? err.message : String(err)}; falling back to TS path`)
       }
     }
 
-    // ── Auth ──
+    // ── Auth — admission already verified the JWT via resolveSecurityPrincipal;
+    //    we still need the user id to resolve the student row. ──
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader) return errorResponse('Unauthorized', 401, origin)
+    if (!authHeader) {
+      statusCode = 401
+      errorCode = 'unauthorized'
+      await finalizeAiRoute({ sb, admission, statusCode, actualInputTokens, actualOutputTokens, actualCost: null, errorCode })
+      return errorResponse('Unauthorized', 401, origin ?? '')
+    }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
     // Verify JWT
     const token = authHeader.replace('Bearer ', '')
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
-    if (authErr || !user) return errorResponse('Invalid token', 401, origin)
+    if (authErr || !user) {
+      statusCode = 401
+      errorCode = 'invalid_token'
+      await finalizeAiRoute({ sb, admission, statusCode, actualInputTokens, actualOutputTokens, actualCost: null, errorCode })
+      return errorResponse('Invalid token', 401, origin ?? '')
+    }
 
     // ── Parse request ──
-    const body = await req.json()
-    const { question, subject, grade, options, marks, chapter } = body
+    let body: Record<string, unknown>
+    try {
+      body = bodyText ? JSON.parse(bodyText) : {}
+    } catch {
+      statusCode = 400
+      errorCode = 'invalid_json'
+      await finalizeAiRoute({ sb, admission, statusCode, actualInputTokens, actualOutputTokens, actualCost: null, errorCode })
+      return errorResponse('Invalid JSON body', 400, origin ?? '')
+    }
+    const { question, subject, grade, options, marks, chapter } = body as {
+      question?: string; subject?: string; grade?: string; options?: string[]; marks?: number; chapter?: string
+    }
 
     if (!question || !subject || !grade) {
-      return errorResponse('question, subject, and grade are required', 400, origin)
+      statusCode = 400
+      errorCode = 'missing_fields'
+      const resp = errorResponse('question, subject, and grade are required', 400, origin ?? '')
+      await finalizeAiRoute({ sb, admission, statusCode, actualInputTokens, actualOutputTokens, actualCost: null, errorCode })
+      return resp
     }
 
     // ── Subject governance + daily-quota enforcement (P12) ──
@@ -158,25 +222,37 @@ Deno.serve(async (req) => {
         .is('deleted_at', null)
         .maybeSingle()
       if (!studentRow?.id) {
-        return jsonResponse(
+        statusCode = 422
+        errorCode = 'subject_not_allowed'
+        const resp = jsonResponse(
           { error: 'subject_not_allowed', reason: 'grade', subject },
-          422, {}, origin,
+          422, {}, origin ?? '',
         )
+        await finalizeAiRoute({ sb, admission, statusCode, actualInputTokens, actualOutputTokens, actualCost: null, errorCode })
+        return resp
       }
       resolvedStudentId = studentRow.id
       const check = await validateSubjectRpc(supabase, studentRow.id, subject)
       if (!check.ok) {
-        return jsonResponse(
+        statusCode = 422
+        errorCode = 'subject_not_allowed'
+        const resp = jsonResponse(
           { error: 'subject_not_allowed', reason: check.reason, subject },
-          422, {}, origin,
+          422, {}, origin ?? '',
         )
+        await finalizeAiRoute({ sb, admission, statusCode, actualInputTokens, actualOutputTokens, actualCost: null, errorCode })
+        return resp
       }
     } catch (subjErr) {
       console.error('ncert-solver subject validation failed:', subjErr instanceof Error ? subjErr.message : String(subjErr))
-      return jsonResponse(
+      statusCode = 422
+      errorCode = 'subject_not_allowed'
+      const resp = jsonResponse(
         { error: 'subject_not_allowed', reason: 'grade', subject },
-        422, {}, origin,
+        422, {}, origin ?? '',
       )
+      await finalizeAiRoute({ sb, admission, statusCode, actualInputTokens, actualOutputTokens, actualCost: null, errorCode })
+      return resp
     }
 
     // Atomic quota check — DB derives the real limit from subscription_plans
@@ -190,19 +266,27 @@ Deno.serve(async (req) => {
     })
     if (usageErr) {
       console.error('ncert-solver check_and_record_usage failed:', usageErr.message)
-      return errorResponse('Usage tracking unavailable, please try again', 503, origin)
+      statusCode = 503
+      errorCode = 'usage_tracking_unavailable'
+      const resp = errorResponse('Usage tracking unavailable, please try again', 503, origin ?? '')
+      await finalizeAiRoute({ sb, admission, statusCode, actualInputTokens, actualOutputTokens, actualCost: null, errorCode })
+      return resp
     }
     const usageRow = usageRows?.[0]
     if (!usageRow?.allowed) {
-      return jsonResponse(
+      statusCode = 429
+      errorCode = 'daily_limit_reached'
+      const resp = jsonResponse(
         {
           error: 'Daily NCERT-solver limit reached',
           code: 'NCERT_LIMIT',
           used: usageRow?.used_count ?? null,
           message: "You've used all your NCERT-solver requests for today. Come back tomorrow! 🦊",
         },
-        429, {}, origin,
+        429, {}, origin ?? '',
       )
+      await finalizeAiRoute({ sb, admission, statusCode, actualInputTokens, actualOutputTokens, actualCost: null, errorCode })
+      return resp
     }
 
     // ── Phase 3: feature-flag-gated grounded-answer service path ──
@@ -250,7 +334,7 @@ Deno.serve(async (req) => {
         // Preserve the legacy "solution not available" client contract while
         // enriching it with trace_id + suggested_alternatives from the new
         // service. Existing clients that ignore the extra fields keep working.
-        return jsonResponse(
+        const resp = jsonResponse(
           {
             answer: '',
             steps: [],
@@ -267,15 +351,17 @@ Deno.serve(async (req) => {
             suggested_alternatives: grounded.suggested_alternatives,
             flow: 'grounded-answer',
           },
-          200, {}, origin,
+          200, {}, origin ?? '',
         )
+        await finalizeAiRoute({ sb, admission, statusCode: 200, actualInputTokens, actualOutputTokens, actualCost: null })
+        return resp
       }
 
       // Service returned a grounded answer. Map to the legacy response shape
       // so existing clients (Foxy, ncert-solver front-end) see no breakage.
       // The service's rich citations are flattened into `explanation` / we
       // also surface them as `citations` for clients that want them.
-      return jsonResponse(
+      const resp = jsonResponse(
         {
           answer: grounded.answer,
           steps: [],
@@ -293,17 +379,23 @@ Deno.serve(async (req) => {
           citations: grounded.citations,
           flow: 'grounded-answer',
         },
-        200, {}, origin,
+        200, {}, origin ?? '',
       )
+      await finalizeAiRoute({ sb, admission, statusCode: 200, actualInputTokens, actualOutputTokens, actualCost: null })
+      return resp
     }
 
     // ── Circuit breaker check ──
     if (!circuitBreaker.canRequest()) {
       console.warn('ncert-solver: circuit breaker OPEN — returning 503')
-      return jsonResponse(
+      statusCode = 503
+      errorCode = 'circuit_open'
+      const resp = jsonResponse(
         { error: 'Service temporarily unavailable, please try again shortly' },
-        503, {}, origin,
+        503, {}, origin ?? '',
       )
+      await finalizeAiRoute({ sb, admission, statusCode, actualInputTokens, actualOutputTokens, actualCost: null, errorCode })
+      return resp
     }
 
     // ── Step 1: Parse question ──
@@ -365,7 +457,7 @@ Deno.serve(async (req) => {
     const confidence = estimateConfidence(route.solver, verification.passed, !!ragContext)
 
     // ── Return ──
-    return jsonResponse({
+    const finalResp = jsonResponse({
       answer: solution.answer || '',
       steps: solution.steps || [],
       concept: solution.concept || '',
@@ -378,11 +470,18 @@ Deno.serve(async (req) => {
       solver_type: route.solver,
       question_type: parsed.type,
       marks: parsed.marks,
-    }, 200, {}, origin)
+    }, 200, {}, origin ?? '')
+    await finalizeAiRoute({ sb, admission, statusCode: 200, actualInputTokens, actualOutputTokens, actualCost: null })
+    return finalResp
 
   } catch (err) {
     console.error('Solver error:', err)
-    return errorResponse('Solver failed', 500, origin)
+    try {
+      await finalizeAiRoute({ sb, admission, statusCode: 500, actualInputTokens, actualOutputTokens, actualCost: null, errorCode: 'internal_error' })
+    } catch (finalizeErr) {
+      console.error('[ncert-solver] finalize failed after solver error:', String(finalizeErr instanceof Error ? finalizeErr.message : finalizeErr))
+    }
+    return errorResponse('Solver failed', 500, origin ?? '')
   }
 })
 

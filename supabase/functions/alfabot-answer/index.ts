@@ -28,6 +28,9 @@ function logDeprecatedEdgeFunctionHit() {
 }
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
+import { admitAiRoute, finalizeAiRoute, createStaticAiRouteProfile } from '../_shared/security/ai-admission.ts';
+import { securityCorsHeaders } from '../_shared/security/cors.ts';
+import { getRequestOrigin } from '../_shared/security/attribution.ts';
 
 import {
   ALFABOT_CORE_CONTEXT,
@@ -55,6 +58,21 @@ import {
   type DoneEnvelope,
 } from './shared.ts';
 import { buildStreamingResponse } from './stream-response.ts';
+
+// ─── Route constants ─────────────────────────────────────────────────────────
+
+const ROUTE_NAME = 'alfabot-answer';
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+const ALFABOT_ROUTE_PROFILE = createStaticAiRouteProfile({
+  route: ROUTE_NAME,
+  callerTypes: ['internal_service'],
+  modelProvider: 'openai',
+  modelName: 'gpt-4o-mini',
+  inputTokenFloor: 256,
+  outputTokens: 400,
+});
 
 // ─── CORS ───────────────────────────────────────────────────────────────────
 
@@ -205,23 +223,37 @@ async function runTurnNonStream(
 
 export async function handleRequest(req: Request): Promise<Response> {
   logDeprecatedEdgeFunctionHit()
+  const origin = getRequestOrigin(req);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
   if (req.method !== 'POST') {
-    return jsonResponse(405, { error: 'method_not_allowed' });
+    return new Response(JSON.stringify({ error: 'method_not_allowed' }), { status: 405, headers: securityCorsHeaders(origin) });
   }
+
+  let bodyText = '';
+  try {
+    bodyText = await req.text();
+  } catch {
+    return new Response(JSON.stringify({ error: 'invalid_body' }), { status: 400, headers: securityCorsHeaders(origin) });
+  }
+
+  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  const admitResult = await admitAiRoute({ req, sb, profile: ALFABOT_ROUTE_PROFILE, bodyText });
+  if (!admitResult.ok) return admitResult.response;
+  const admission = admitResult.admission;
 
   let raw: unknown;
   try {
-    raw = await req.json();
+    raw = bodyText ? JSON.parse(bodyText) : null;
   } catch {
-    return jsonResponse(400, { error: 'invalid_json' });
+    return new Response(JSON.stringify({ error: 'invalid_json' }), { status: 400, headers: securityCorsHeaders(admission.origin) });
   }
 
   const validation = validateBody(raw);
   if (!validation.ok) {
-    return jsonResponse(400, { error: validation.error });
+    return new Response(JSON.stringify({ error: validation.error }), { status: 400, headers: securityCorsHeaders(admission.origin) });
   }
   const reqBody = validation.value;
 
@@ -240,10 +272,18 @@ export async function handleRequest(req: Request): Promise<Response> {
       sourcesUsed: result.sourcesUsed,
     };
     logTurn(reqBody, doneShape);
+    await finalizeAiRoute({
+      sb,
+      admission,
+      statusCode: 200,
+      actualInputTokens: result.tokensUsed > 0 ? Math.ceil(result.tokensUsed * 0.7) : null,
+      actualOutputTokens: result.tokensUsed > 0 ? Math.ceil(result.tokensUsed * 0.3) : null,
+      actualCost: null,
+    });
     return jsonResponse(200, result);
   }
 
-  return buildStreamingResponse(reqBody, startedAt, getServiceClient());
+  return buildStreamingResponse(reqBody, startedAt, sb, admission);
 }
 
 Deno.serve(handleRequest);
