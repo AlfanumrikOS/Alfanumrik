@@ -40,6 +40,7 @@ import { isFeatureEnabled } from '@/lib/feature-flags';
 import { logAudit } from '@/lib/rbac';
 import { ANON_ID_COOKIE, ANON_ID_MAX_AGE_SECONDS, generateAnonId } from '@/lib/anon-id';
 import { ALFABOT_SSE_EVENTS } from '@/lib/alfabot/sse-events';
+import { buildInternalCallerHeaders } from '@/lib/security/internal-caller-signing';
 import type {
   AlfabotAudience,
   AlfabotErrorResponse,
@@ -653,6 +654,14 @@ async function callEdgeFunction(
   if (!supabaseUrl || !serviceKey) {
     return { ok: false, reason: 'config_missing' };
   }
+  const bodyStr = JSON.stringify(req);
+  const signingHeaders = buildInternalCallerHeaders('POST', '/functions/v1/alfabot-answer', bodyStr, 'alfabot-answer');
+  if (!signingHeaders) {
+    logger.warn('alfabot.internal_signing_not_configured', {
+      detail: 'INTERNAL_CALLER_SIGNING_SECRET is not set — alfabot-answer will reject unsigned calls',
+    });
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), EDGE_FUNCTION_TIMEOUT_MS);
   try {
@@ -664,8 +673,9 @@ async function callEdgeFunction(
         'Content-Type': 'application/json',
         Accept: accept,
         ...(req.degradedMode ? { 'x-alfabot-degraded': '1' } : {}),
+        ...(signingHeaders ?? {}),
       },
-      body: JSON.stringify(req),
+      body: bodyStr,
     });
     clearTimeout(timer);
     if (!res.ok) {
