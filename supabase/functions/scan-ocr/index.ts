@@ -2,6 +2,9 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
 import { getCorsHeaders } from '../_shared/cors.ts'
 import { fetchWithTimeout } from '../_shared/reliability.ts'
+import { admitAiRoute, finalizeAiRoute, createStaticAiRouteProfile, fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
+import { securityCorsHeaders } from '../_shared/security/cors.ts'
+import { getRequestOrigin } from '../_shared/security/attribution.ts'
 
 /**
  * Scan OCR Pipeline
@@ -13,6 +16,18 @@ import { fetchWithTimeout } from '../_shared/reliability.ts'
  *   retry_ocr          — Retry failed OCR
  *   ask_foxy           — Ask Foxy about scanned content
  */
+
+// ── Platform Security Layer — Phase 3 integration ──
+const ROUTE_NAME = 'scan-ocr'
+
+const SCAN_OCR_PROFILE = createStaticAiRouteProfile({
+  route: ROUTE_NAME,
+  callerTypes: ['student', 'internal_service'],
+  modelProvider: 'google',
+  modelName: 'vision-v1',
+  inputTokenFloor: 512,
+  outputTokens: 256,
+})
 
 // ── OCR via Tesseract.js WASM (runs in Edge Function) ──
 // For MVP: use Google Vision API or Tesseract
@@ -112,11 +127,35 @@ function normalizeOcrText(raw: string): string {
 }
 
 serve(async (req) => {
-  // Per-request CORS check — closes wildcard `*` from the April 2026 audit.
-  const corsHeaders = getCorsHeaders(req.headers.get('origin'))
+  // Per-request origin resolution for security CORS headers
+  const origin = getRequestOrigin(req)
+
+  // CORS preflight — must run before admission (no auth on OPTIONS)
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
+    return new Response(null, { headers: securityCorsHeaders(origin) })
   }
+
+  // Read body as text first — admitAiRoute needs bodyText for request body hash
+  let bodyText = ''
+  try {
+    bodyText = await req.text()
+  } catch {
+    return new Response(JSON.stringify({ error: 'invalid_body' }), {
+      status: 400,
+      headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+    })
+  }
+
+  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+  // ── Platform Security Layer admission ──
+  const admitResult = await admitAiRoute({ req, sb, profile: SCAN_OCR_PROFILE, bodyText })
+  if (!admitResult.ok) return admitResult.response
+  const admission = admitResult.admission
+
+  // Keep legacy corsHeaders for any sub-function calls that still need it,
+  // but all HTTP responses from the main handler use securityCorsHeaders(origin).
+  const corsHeaders = getCorsHeaders(req.headers.get('origin'))
 
   try {
     const supabase = createClient(
@@ -124,24 +163,47 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
 
-    // Auth
+    // Auth — admission already validated the JWT; we still need the student row
+    // for domain operations (OCR scan DB writes, RLS-scoped queries, etc.)
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Auth required' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      await finalizeAiRoute({ sb, admission, statusCode: 401, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'unauthorized' })
+      return new Response(JSON.stringify({ error: 'Auth required' }), {
+        status: 401,
+        headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+      })
     }
     const token = authHeader.replace('Bearer ', '')
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
     if (authErr || !user) {
-      return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      await finalizeAiRoute({ sb, admission, statusCode: 401, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'invalid_token' })
+      return new Response(JSON.stringify({ error: 'Invalid token' }), {
+        status: 401,
+        headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+      })
     }
 
     const { data: student } = await supabase
       .from('students').select('id').eq('auth_user_id', user.id).eq('is_active', true).maybeSingle()
     if (!student) {
-      return new Response(JSON.stringify({ error: 'Student not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      await finalizeAiRoute({ sb, admission, statusCode: 404, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'student_not_found' })
+      return new Response(JSON.stringify({ error: 'Student not found' }), {
+        status: 404,
+        headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+      })
     }
 
-    const body = await req.json()
+    // Parse body from the text already read above
+    let body: Record<string, unknown>
+    try {
+      body = bodyText ? JSON.parse(bodyText) : {}
+    } catch {
+      await finalizeAiRoute({ sb, admission, statusCode: 400, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'invalid_json' })
+      return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+        status: 400,
+        headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+      })
+    }
     const action = body.action
 
     // P12: enforce per-student daily quota on the cost-incurring actions
@@ -149,7 +211,7 @@ serve(async (req) => {
     // Vision). get_scans / get_scan are pure reads and skip the check.
     // Same atomic check_and_record_usage pattern as foxy-tutor + ncert-solver.
     const COST_INCURRING_ACTIONS = new Set(['upload_and_process', 'retry_ocr', 'ask_foxy'])
-    if (COST_INCURRING_ACTIONS.has(action)) {
+    if (COST_INCURRING_ACTIONS.has(action as string)) {
       const usageDate = new Date().toISOString().slice(0, 10)
       const { data: usageRows, error: usageErr } = await supabase.rpc('check_and_record_usage', {
         p_student_id: student.id,
@@ -158,13 +220,15 @@ serve(async (req) => {
       })
       if (usageErr) {
         console.error('scan-ocr check_and_record_usage failed:', usageErr.message)
+        await finalizeAiRoute({ sb, admission, statusCode: 503, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'usage_tracking_unavailable' })
         return new Response(
           JSON.stringify({ error: 'Usage tracking unavailable, please try again' }),
-          { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          { status: 503, headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' } },
         )
       }
       const usageRow = usageRows?.[0]
       if (!usageRow?.allowed) {
+        await finalizeAiRoute({ sb, admission, statusCode: 429, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'daily_limit_reached' })
         return new Response(
           JSON.stringify({
             error: 'Daily scan-OCR limit reached',
@@ -172,16 +236,20 @@ serve(async (req) => {
             used: usageRow?.used_count ?? null,
             message: "You've used all your scan-and-solve requests for today. Come back tomorrow! 🦊",
           }),
-          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          { status: 429, headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' } },
         )
       }
     }
 
     // ── UPLOAD AND PROCESS ──
     if (action === 'upload_and_process') {
-      const { file_name, file_type, storage_path } = body
+      const { file_name, file_type, storage_path } = body as { file_name?: string; file_type?: string; storage_path?: string }
       if (!file_name || !storage_path) {
-        return new Response(JSON.stringify({ error: 'file_name and storage_path required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        await finalizeAiRoute({ sb, admission, statusCode: 400, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'missing_fields' })
+        return new Response(JSON.stringify({ error: 'file_name and storage_path required' }), {
+          status: 400,
+          headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+        })
       }
 
       // Create scan record
@@ -198,7 +266,11 @@ serve(async (req) => {
         .single()
 
       if (insertErr || !scan) {
-        return new Response(JSON.stringify({ error: 'Failed to create scan record' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        await finalizeAiRoute({ sb, admission, statusCode: 500, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'insert_failed' })
+        return new Response(JSON.stringify({ error: 'Failed to create scan record' }), {
+          status: 500,
+          headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+        })
       }
 
       // Get signed URL for the file
@@ -208,7 +280,11 @@ serve(async (req) => {
 
       if (!signedUrl?.signedUrl) {
         await supabase.from('student_scans').update({ status: 'failed', error_message: 'Could not access file' }).eq('id', scan.id)
-        return new Response(JSON.stringify({ error: 'File not accessible', scan_id: scan.id }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        await finalizeAiRoute({ sb, admission, statusCode: 500, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'file_not_accessible' })
+        return new Response(JSON.stringify({ error: 'File not accessible', scan_id: scan.id }), {
+          status: 500,
+          headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+        })
       }
 
       // Run OCR
@@ -221,11 +297,12 @@ serve(async (req) => {
           updated_at: new Date().toISOString(),
         }).eq('id', scan.id)
 
+        await finalizeAiRoute({ sb, admission, statusCode: 200, actualInputTokens: null, actualOutputTokens: null, actualCost: null })
         return new Response(JSON.stringify({
           scan_id: scan.id,
           status: 'failed',
           message: 'Could not extract text. Try a clearer image.',
-        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }), { headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' } })
       }
 
       // Normalize text
@@ -240,18 +317,19 @@ serve(async (req) => {
         updated_at: new Date().toISOString(),
       }).eq('id', scan.id)
 
+      await finalizeAiRoute({ sb, admission, statusCode: 200, actualInputTokens: null, actualOutputTokens: null, actualCost: null })
       return new Response(JSON.stringify({
         scan_id: scan.id,
         status: 'completed',
         text_preview: normalized.slice(0, 500),
         confidence,
         char_count: normalized.length,
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }), { headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' } })
     }
 
     // ── GET SCANS ──
     if (action === 'get_scans') {
-      const page = body.page || 1
+      const page = (body.page as number) || 1
       const limit = 10
       const offset = (page - 1) * limit
 
@@ -262,14 +340,21 @@ serve(async (req) => {
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1)
 
-      return new Response(JSON.stringify({ data: scans || [], total: count || 0, page }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      await finalizeAiRoute({ sb, admission, statusCode: 200, actualInputTokens: null, actualOutputTokens: null, actualCost: null })
+      return new Response(JSON.stringify({ data: scans || [], total: count || 0, page }), {
+        headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+      })
     }
 
     // ── GET SINGLE SCAN ──
     if (action === 'get_scan') {
-      const { scan_id } = body
+      const { scan_id } = body as { scan_id?: string }
       if (!scan_id) {
-        return new Response(JSON.stringify({ error: 'scan_id required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        await finalizeAiRoute({ sb, admission, statusCode: 400, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'missing_scan_id' })
+        return new Response(JSON.stringify({ error: 'scan_id required' }), {
+          status: 400,
+          headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+        })
       }
 
       const { data: scan } = await supabase
@@ -280,7 +365,11 @@ serve(async (req) => {
         .single()
 
       if (!scan) {
-        return new Response(JSON.stringify({ error: 'Scan not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        await finalizeAiRoute({ sb, admission, statusCode: 404, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'scan_not_found' })
+        return new Response(JSON.stringify({ error: 'Scan not found' }), {
+          status: 404,
+          headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+        })
       }
 
       // Get signed URL for viewing
@@ -297,12 +386,15 @@ serve(async (req) => {
         .eq('scan_id', scan_id)
         .order('created_at', { ascending: true })
 
-      return new Response(JSON.stringify({ ...scan, image_url: imageUrl, queries: queries || [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      await finalizeAiRoute({ sb, admission, statusCode: 200, actualInputTokens: null, actualOutputTokens: null, actualCost: null })
+      return new Response(JSON.stringify({ ...scan, image_url: imageUrl, queries: queries || [] }), {
+        headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+      })
     }
 
     // ── RETRY OCR ──
     if (action === 'retry_ocr') {
-      const { scan_id } = body
+      const { scan_id } = body as { scan_id?: string }
       const { data: scan } = await supabase
         .from('student_scans')
         .select('id, storage_path, status')
@@ -311,7 +403,11 @@ serve(async (req) => {
         .single()
 
       if (!scan) {
-        return new Response(JSON.stringify({ error: 'Scan not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        await finalizeAiRoute({ sb, admission, statusCode: 404, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'scan_not_found' })
+        return new Response(JSON.stringify({ error: 'Scan not found' }), {
+          status: 404,
+          headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+        })
       }
 
       await supabase.from('student_scans').update({ status: 'processing', error_message: null }).eq('id', scan.id)
@@ -319,7 +415,11 @@ serve(async (req) => {
       const { data: signedUrl } = await supabase.storage.from('student-scans').createSignedUrl(scan.storage_path, 300)
       if (!signedUrl?.signedUrl) {
         await supabase.from('student_scans').update({ status: 'failed', error_message: 'File not accessible' }).eq('id', scan.id)
-        return new Response(JSON.stringify({ error: 'File not accessible' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        await finalizeAiRoute({ sb, admission, statusCode: 500, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'file_not_accessible' })
+        return new Response(JSON.stringify({ error: 'File not accessible' }), {
+          status: 500,
+          headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+        })
       }
 
       const { text, confidence } = await extractTextFromImage(signedUrl.signedUrl, supabase)
@@ -334,18 +434,23 @@ serve(async (req) => {
         updated_at: new Date().toISOString(),
       }).eq('id', scan.id)
 
+      await finalizeAiRoute({ sb, admission, statusCode: 200, actualInputTokens: null, actualOutputTokens: null, actualCost: null })
       return new Response(JSON.stringify({
         scan_id: scan.id,
         status: text ? 'completed' : 'failed',
         text_preview: normalized ? normalized.slice(0, 500) : null,
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }), { headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' } })
     }
 
     // ── ASK FOXY ──
     if (action === 'ask_foxy') {
-      const { scan_id, question } = body
+      const { scan_id, question } = body as { scan_id?: string; question?: string }
       if (!scan_id || !question) {
-        return new Response(JSON.stringify({ error: 'scan_id and question required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        await finalizeAiRoute({ sb, admission, statusCode: 400, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'missing_fields' })
+        return new Response(JSON.stringify({ error: 'scan_id and question required' }), {
+          status: 400,
+          headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+        })
       }
 
       // Get scan text
@@ -357,13 +462,21 @@ serve(async (req) => {
         .single()
 
       if (!scan || !scan.normalized_text) {
-        return new Response(JSON.stringify({ error: 'Scan text not available' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        await finalizeAiRoute({ sb, admission, statusCode: 404, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'scan_text_unavailable' })
+        return new Response(JSON.stringify({ error: 'Scan text not available' }), {
+          status: 404,
+          headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+        })
       }
 
       // Call Foxy with scan context
       const claudeKey = Deno.env.get('ANTHROPIC_API_KEY')
       if (!claudeKey) {
-        return new Response(JSON.stringify({ error: 'AI not configured' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        await finalizeAiRoute({ sb, admission, statusCode: 500, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'ai_not_configured' })
+        return new Response(JSON.stringify({ error: 'AI not configured' }), {
+          status: 500,
+          headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+        })
       }
 
       const systemPrompt = `You are Foxy, a friendly AI study buddy for Indian CBSE students. A student has scanned a document and wants your help understanding it.
@@ -407,16 +520,29 @@ Based on this scanned document, help the student with their question. Be clear, 
         response: foxyResponse,
       })
 
+      await finalizeAiRoute({ sb, admission, statusCode: 200, actualInputTokens: null, actualOutputTokens: null, actualCost: null })
       return new Response(JSON.stringify({
         question,
         response: foxyResponse,
         scan_id,
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }), { headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' } })
     }
 
-    return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    await finalizeAiRoute({ sb, admission, statusCode: 400, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'unknown_action' })
+    return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
+      status: 400,
+      headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+    })
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message || 'Internal error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    try {
+      await finalizeAiRoute({ sb, admission, statusCode: 500, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'internal_error' })
+    } catch (finalizeErr) {
+      console.error('[scan-ocr] finalize failed after error:', String(finalizeErr instanceof Error ? finalizeErr.message : finalizeErr))
+    }
+    return new Response(JSON.stringify({ error: err.message || 'Internal error' }), {
+      status: 500,
+      headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+    })
   }
 })

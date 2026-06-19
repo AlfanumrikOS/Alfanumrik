@@ -28,6 +28,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
+import { admitAiRoute, finalizeAiRoute, createStaticAiRouteProfile } from '../_shared/security/ai-admission.ts'
+import { securityCorsHeaders } from '../_shared/security/cors.ts'
+import { getRequestOrigin } from '../_shared/security/attribution.ts'
 // MoL (Model Orchestration Layer) — Phase 1A migration (2026-05-24).
 // parent-report-generator emits weekly summary text for parents. P13: PII
 // (student name) IS sent to the LLM by design — parents see the report
@@ -47,6 +50,17 @@ import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+
+// ─── Platform Security Layer — route profile ─────────────────────
+const ROUTE_NAME = 'parent-report-generator'
+const PARENT_REPORT_PROFILE = createStaticAiRouteProfile({
+  route: ROUTE_NAME,
+  callerTypes: ['parent', 'teacher', 'school_admin', 'internal_service'],
+  modelProvider: 'anthropic',
+  modelName: 'claude-haiku-4-5-20251001',
+  inputTokenFloor: 512,
+  outputTokens: 1024,
+})
 
 // ─── Circuit breaker for Claude API ─────────────────────────────
 const circuitBreaker = {
@@ -591,6 +605,8 @@ async function callLlmLegacy(prompt: string): Promise<string> {
 // ─── Main handler ──────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
+  // ── Python proxy check (MoL routing) — runs BEFORE admission ──
+  // The proxy may consume the request entirely; body must not be read yet.
   try {
     const request_id = req.headers.get('x-request-id') ?? crypto.randomUUID()
     const decision = await shouldProxyToPython({
@@ -605,7 +621,7 @@ Deno.serve(async (req: Request) => {
     console.warn('[parent-report-generator] python proxy fell through:', err instanceof Error ? err.message : String(err))
   }
 
-  const origin = req.headers.get('origin')
+  const origin = getRequestOrigin(req)
   const cors = getCorsHeaders(origin)
 
   if (req.method === 'OPTIONS') {
@@ -616,56 +632,80 @@ Deno.serve(async (req: Request) => {
     return errorResponse('Method not allowed', 405, origin)
   }
 
+  // ── Read body as text for admission body hash ──
+  let bodyText = ''
   try {
-    // ── Auth: resolve parent_id from the JWT, never trust the body. ──
-    //
-    // P13: previously the endpoint used `body.parent_id` directly. Even with
-    // verifyParentStudentLink as a guard, any logged-in user (carrying just
-    // the Supabase anon key as JWT) could pass any (parent_id, student_id)
-    // pair that happens to be linked and pull a Claude-generated report
-    // containing the student's PII + learning history. We now require a
-    // user JWT and look the guardian up in guardians(auth_user_id).
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      return errorResponse('Unauthorized', 401, origin)
-    }
-    const supabase = getServiceClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser(
-      authHeader.slice('Bearer '.length),
-    )
-    if (authError || !user) {
-      return errorResponse('Unauthorized', 401, origin)
-    }
-    const { data: guardianRow } = await supabase
-      .from('guardians')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .maybeSingle()
-    if (!guardianRow?.id) {
-      return errorResponse('No guardian profile for this user', 403, origin)
-    }
-    const jwtParentId = guardianRow.id as string
+    bodyText = await req.text()
+  } catch {
+    return new Response(JSON.stringify({ error: 'invalid_body' }), { status: 400, headers: securityCorsHeaders(origin) })
+  }
 
-    const body = await req.json()
-    const { student_id, language = 'en' } = body
-    // Ignore body.parent_id — bind to JWT-resolved guardian id.
-    const parent_id = jwtParentId
+  const sb = getServiceClient()
+  const admitResult = await admitAiRoute({ req, sb, profile: PARENT_REPORT_PROFILE, bodyText })
+  if (!admitResult.ok) return admitResult.response
+  const admission = admitResult.admission
+
+  try {
+    // ── Parse body from the text already read above ──
+    let body: Record<string, unknown>
+    try {
+      body = bodyText ? JSON.parse(bodyText) : {}
+    } catch {
+      await finalizeAiRoute({ sb, admission, statusCode: 400, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'invalid_json' })
+      return new Response(JSON.stringify({ error: 'invalid_json' }), { status: 400, headers: securityCorsHeaders(admission.origin) })
+    }
+
+    const { student_id, language = 'en' } = body as { student_id?: string; language?: string }
 
     // ── Input validation ──
     if (!student_id || typeof student_id !== 'string') {
+      await finalizeAiRoute({ sb, admission, statusCode: 400, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'missing_student_id' })
       return errorResponse('student_id is required', 400, origin)
     }
-    const safeLanguage = ['en', 'hi'].includes(language) ? language : 'en'
+    const safeLanguage = ['en', 'hi'].includes(language ?? '') ? (language as string) : 'en'
+
+    // ── Resolve guardian ID from JWT (via admission principal) ──
+    //
+    // admitAiRoute already verified the JWT via resolveSecurityPrincipal so we
+    // avoid a second getUser call. For internal_service callers there is no
+    // guardian — the service is trusted and the body student_id is authoritative.
+    const supabase = sb
+    let parent_id: string | null = null
+
+    if (admission.principal.role !== 'internal_service') {
+      // admission.principal.userId is the auth.users UUID resolved from the JWT
+      const userId = admission.principal.userId
+      if (!userId) {
+        await finalizeAiRoute({ sb, admission, statusCode: 401, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'unauthorized' })
+        return errorResponse('Unauthorized', 401, origin)
+      }
+      const { data: guardianRow } = await supabase
+        .from('guardians')
+        .select('id')
+        .eq('auth_user_id', userId)
+        .maybeSingle()
+      if (!guardianRow?.id) {
+        await finalizeAiRoute({ sb, admission, statusCode: 403, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'no_guardian_profile' })
+        return errorResponse('No guardian profile for this user', 403, origin)
+      }
+      parent_id = guardianRow.id as string
+    }
+    // For internal_service: parent_id stays null; link verification is skipped below.
 
     // ── Rate limit: 1 report per student per day ──
     if (!checkDailyRateLimit(student_id)) {
+      await finalizeAiRoute({ sb, admission, statusCode: 429, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'rate_limit_daily' })
       return errorResponse('Report already generated today. Try again tomorrow.', 429, origin)
     }
 
-    // ── Verify parent-student link (P11: no unverified access) ──
-    const isLinked = await verifyParentStudentLink(supabase, parent_id, student_id)
-    if (!isLinked) {
-      return errorResponse('Parent is not linked to this student', 403, origin)
+    // ── Verify parent-student link (P8/P13: no unverified access) ──
+    // Skipped for internal_service callers — the service is trusted.
+    if (parent_id !== null) {
+      const isLinked = await verifyParentStudentLink(supabase, parent_id, student_id)
+      if (!isLinked) {
+        await finalizeAiRoute({ sb, admission, statusCode: 403, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'parent_not_linked' })
+        return errorResponse('Parent is not linked to this student', 403, origin)
+      }
     }
 
     // ── Fetch student name (no PII in logs per P13) ──
@@ -688,6 +728,7 @@ Deno.serve(async (req: Request) => {
       report = buildFallbackReport(stats, safeLanguage, studentName)
     }
 
+    await finalizeAiRoute({ sb, admission, statusCode: 200, actualInputTokens: null, actualOutputTokens: null, actualCost: null })
     return jsonResponse(
       {
         report,
@@ -699,6 +740,11 @@ Deno.serve(async (req: Request) => {
     )
   } catch (err) {
     console.error('parent-report-generator error:', err instanceof Error ? err.message : String(err))
+    try {
+      await finalizeAiRoute({ sb, admission, statusCode: 500, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'internal_error' })
+    } catch (finalizeErr) {
+      console.error('[parent-report-generator] finalize failed after error:', String(finalizeErr instanceof Error ? finalizeErr.message : finalizeErr))
+    }
     return errorResponse('Internal server error', 500, origin)
   }
 })
