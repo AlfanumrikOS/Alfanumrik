@@ -40,5 +40,15 @@ Deno.test('export-report student_hpc teacher access is scoped to the teacher ass
   assertStringIncludes(SRC, ".from('class_students')");
   assertStringIncludes(SRC, ".eq('student_id', studentId)");
   assertStringIncludes(SRC, ".in('class_id', classIds)");
-  assert(!/\.from\('class_students'\)[\s\S]{0,120}\.eq\('student_id', studentId\)[\s\S]{0,80}\.limit\(1\)/.test(SRC), 'must not allow any teacher to view a student merely because the student is in any class');
+  // The student lookup in assertTeacherCanAccessStudent must be scoped to the teacher's
+  // assigned classes via .in('class_id', classIds) — not an unscoped any-class check.
+  const fnIdx = SRC.indexOf('async function assertTeacherCanAccessStudent');
+  const fnEnd = fnIdx > 0 ? SRC.indexOf('\n}', fnIdx + 10) + 2 : -1;
+  assert(fnIdx > 0 && fnEnd > fnIdx, 'expected assertTeacherCanAccessStudent to be defined');
+  const fnBody = SRC.slice(fnIdx, fnEnd);
+  assertStringIncludes(fnBody, ".in('class_id', classIds)");
+  assert(
+    fnBody.indexOf(".in('class_id', classIds)") < fnBody.lastIndexOf('.limit(1)'),
+    "expected .in('class_id', classIds) to appear before .limit(1) — scopes the lookup to teacher classes only",
+  );
 });
