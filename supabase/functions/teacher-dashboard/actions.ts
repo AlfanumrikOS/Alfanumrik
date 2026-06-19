@@ -17,6 +17,8 @@ export const teacherDashboardActionNames = [
   'get_grade_book',
   'set_grade_book_cell',
   'export_grade_book_csv',
+  'mark_attendance',
+  'get_attendance_record',
   'get_student_mastery_report',
   'get_class_mastery_bloom_summary',
   'export_student_report',

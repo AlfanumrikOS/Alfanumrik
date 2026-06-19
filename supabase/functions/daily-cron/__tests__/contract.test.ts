@@ -57,57 +57,45 @@ Deno.test('daily-cron: is a Deno.serve() Edge Function (canary precondition)', (
 });
 
 // ─── 1. Auth gate present and FAIL-CLOSED ────────────────────────────────────
-// The cron secret is taken from the CRON_SECRET env var, with a get_cron_secret()
-// DB RPC fallback. The provided `x-cron-secret` header is compared in CONSTANT
-// TIME (a naive `!==` would short-circuit and leak the secret via response
-// timing). A mismatch — or an unavailable secret — must reject with 401, BEFORE
-// any cron work runs.
+// Auth is now delegated to verifyInternalCronRequest from
+// _shared/security/internal-cron-auth.ts, which handles: CRON_SECRET env var,
+// get_cron_secret() DB RPC fallback, constant-time comparison, and rejection
+// responses (401/500). The handler checks auth.ok and bails before any cron work.
 
-Deno.test('daily-cron contract 1a: secret sourced from CRON_SECRET env + get_cron_secret() fallback', () => {
-  assertStringIncludes(HANDLER, "Deno.env.get('CRON_SECRET')");
-  assert(
-    /\.rpc\(\s*['"]get_cron_secret['"]\s*\)/.test(HANDLER),
-    'expected the get_cron_secret() RPC fallback when CRON_SECRET env is unset',
-  );
-  // Missing secret (env AND rpc both unavailable) is a 500 misconfiguration —
-  // it must NOT fall through to running the cron with no auth.
-  assert(
-    /Server misconfiguration[\s\S]{0,80}?status:\s*500/.test(HANDLER),
-    'expected a 500 (not a fall-through) when the secret cannot be resolved',
-  );
+Deno.test('daily-cron contract 1a: auth delegated to verifyInternalCronRequest (shared internal-cron-auth module)', () => {
+  // Auth is delegated to the shared verifyInternalCronRequest utility (not inlined).
+  assertStringIncludes(HANDLER, 'verifyInternalCronRequest(');
+  // The handler checks the returned auth.ok before ANY cron work.
+  assertStringIncludes(HANDLER, 'if (!auth.ok)');
+  // Unauthorized requests are rejected via internalCronUnauthorizedResponse.
+  assertStringIncludes(HANDLER, 'internalCronUnauthorizedResponse(');
 });
 
-Deno.test('daily-cron contract 1b: x-cron-secret compared in CONSTANT TIME, 401 on mismatch', () => {
-  // Header is read and constant-time-compared (defeats timing side-channel).
-  assertStringIncludes(HANDLER, "req.headers.get('x-cron-secret')");
+Deno.test('daily-cron contract 1b: auth is fail-closed — unauthorized requests exit before any cron work', () => {
+  // The handler bails immediately on !auth.ok before reaching the step dispatch.
+  assertStringIncludes(HANDLER, 'if (!auth.ok)');
+  // Audit trails are emitted for BOTH rejected and accepted invocations.
   assert(
-    /constantTimeEqual\(\s*provided\s*,\s*secret\s*\)/.test(HANDLER),
-    'expected constantTimeEqual(provided, secret) — a naive !== leaks the secret via timing',
-  );
-  // The guard is fail-closed: missing secret OR mismatch → 401 Unauthorized.
-  assert(
-    /if\s*\(\s*!secret\s*\|\|\s*!constantTimeEqual\([^)]*\)\s*\)\s*return[\s\S]{0,120}?status:\s*401/.test(
-      HANDLER,
-    ),
-    'expected `if (!secret || !constantTimeEqual(...)) return ... 401` fail-closed guard',
+    (HANDLER.match(/auditInternalCronInvocation\(/g) ?? []).length >= 2,
+    'expected auditInternalCronInvocation to be called for both rejected and accepted requests',
   );
 });
 
 Deno.test('daily-cron contract 1c: auth gate runs BEFORE any cron step dispatch', () => {
-  const authGuardIdx = HANDLER.indexOf('constantTimeEqual(provided');
-  const stepsArrayIdx = HANDLER.indexOf('const steps');
+  const authGuardIdx = HANDLER.indexOf('verifyInternalCronRequest(');
+  const actionsIdx = HANDLER.indexOf('createDailyCronActions(');
   const settleIdx = HANDLER.indexOf('Promise.allSettled(');
-  assert(authGuardIdx > 0, 'constant-time auth guard not found in handler');
-  assert(stepsArrayIdx > 0, 'cron steps array not found in handler');
+  assert(authGuardIdx > 0, 'verifyInternalCronRequest call not found in handler');
+  assert(actionsIdx > 0, 'createDailyCronActions call not found in handler');
   assert(settleIdx > 0, 'Promise.allSettled dispatch not found in handler');
   assert(
-    authGuardIdx < stepsArrayIdx && authGuardIdx < settleIdx,
-    'auth guard must precede the steps array AND the Promise.allSettled dispatch (no work before the 401 check)',
+    authGuardIdx < actionsIdx && authGuardIdx < settleIdx,
+    'auth gate must precede createDailyCronActions AND Promise.allSettled dispatch (no work before the auth check)',
   );
 });
 
 // ─── 2. Critical steps present (no silent deletion/rename) ───────────────────
-// Each entry below is a tuple of [step name registered in the `steps[]` array,
+// Each entry below is a tuple of [step name registered in createDailyCronActions({...}),
 // the helper function it dispatches to]. If anyone deletes or renames a step,
 // the corresponding assertion turns RED. These are the load-bearing nightly
 // jobs — losing one silently degrades streaks / leaderboards / digests /
@@ -144,10 +132,12 @@ const CRITICAL_STEPS: ReadonlyArray<readonly [string, string]> = [
 
 for (const [stepName, fnName] of CRITICAL_STEPS) {
   Deno.test(`daily-cron contract 2: step '${stepName}' is registered and dispatches ${fnName}()`, () => {
-    // The step is registered in the steps[] array with its canonical name...
+    // The step is registered in createDailyCronActions({...}) as an object key.
+    // New style: unquoted dict key `stepName: () => fn(sb)`.
+    // Fallback: accept either quoted (`'stepName'`) or unquoted (`stepName:`) form.
     assert(
-      HANDLER.includes(`'${stepName}'`),
-      `expected cron step name '${stepName}' to remain registered in the steps[] array`,
+      HANDLER.includes(`${stepName}:`) || HANDLER.includes(`'${stepName}'`),
+      `expected cron step name '${stepName}' to remain registered in createDailyCronActions`,
     );
     // ...and dispatches the real helper function.
     assert(
@@ -170,10 +160,8 @@ for (const [stepName, fnName] of CRITICAL_STEPS) {
 
 Deno.test('daily-cron contract 3a: steps run under Promise.allSettled (one failure does not abort the rest)', () => {
   assert(
-    /Promise\.allSettled\(\s*steps\.map\(\s*\(\[?,?\s*fn\]?\)\s*=>\s*fn\(\)\s*\)\s*\)/.test(
-      HANDLER,
-    ),
-    'expected Promise.allSettled(steps.map(([,fn]) => fn())) — the per-step isolation primitive',
+    /Promise\.allSettled\(\s*actions\.map\(/.test(HANDLER),
+    'expected Promise.allSettled(actions.map(...)) — the per-step isolation primitive',
   );
 });
 
