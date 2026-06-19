@@ -55,8 +55,8 @@
 
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
-import { checkBearerToken, constantTimeEqual } from '../_shared/auth.ts'
 import { logOpsEvent } from '../_shared/ops-events.ts'
+import { admitAiRoute, finalizeAiRoute, createStaticAiRouteProfile } from '../_shared/security/ai-admission.ts'
 import {
   validateCandidate,
   type CandidateQuestion,
@@ -89,7 +89,6 @@ import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-const ADMIN_API_KEY = Deno.env.get('ADMIN_API_KEY') || ''
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const MAX_EXECUTION_MS = 120_000 // 2 minutes — stay under Supabase 150s gateway timeout
@@ -129,24 +128,16 @@ const circuitBreaker = {
   },
 }
 
-// ─── Auth: constant-time Bearer-token compare ───────────────────────────────
-/**
- * The task spec requires `Authorization: Bearer <ADMIN_API_KEY>` with
- * constant-time comparison. We accept the legacy `x-admin-key` header too
- * for sibling parity with embed-* / extract-* / generate-* functions, also
- * via constant-time compare. The two paths are completely independent
- * (neither falls back to a vulnerable `===` check).
- */
-function authenticateAdmin(req: Request): boolean {
-  if (!ADMIN_API_KEY) return false
-  // Preferred: Authorization: Bearer <secret>
-  const auth = req.headers.get('authorization') || req.headers.get('Authorization')
-  if (auth && checkBearerToken(auth, ADMIN_API_KEY)) return true
-  // Legacy fallback: x-admin-key header. Same constant-time compare.
-  const xAdmin = req.headers.get('x-admin-key') ?? ''
-  if (xAdmin && constantTimeEqual(xAdmin, ADMIN_API_KEY)) return true
-  return false
-}
+// ─── Platform Security Layer — route profile ────────────────────────────────
+
+const BULK_JEE_NEET_IMPORT_ROUTE_PROFILE = createStaticAiRouteProfile({
+  route: 'bulk-jee-neet-import',
+  callerTypes: ['internal_service'],
+  modelProvider: 'anthropic',
+  modelName: 'claude-haiku-4-5-20251001',
+  inputTokenFloor: 512,
+  outputTokens: 1024,
+})
 
 // ─── Supabase admin client ──────────────────────────────────────────────────
 function getSupabaseAdmin(): SupabaseClient {
@@ -850,7 +841,7 @@ Deno.serve(async (req: Request) => {
       headers: {
         ...getCorsHeaders(origin),
         'Access-Control-Allow-Headers':
-          'authorization, x-client-info, apikey, content-type, x-request-id, x-admin-key',
+          'authorization, x-client-info, apikey, content-type, x-request-id, x-admin-key, x-internal-caller, x-internal-timestamp, x-internal-signature',
       },
     })
   }
@@ -859,28 +850,38 @@ Deno.serve(async (req: Request) => {
     return errorResponse('Method not allowed', 405, origin)
   }
 
-  // ── Auth — constant-time Bearer compare ──────────────────────────────────
-  if (!authenticateAdmin(req)) {
-    return errorResponse('Unauthorized', 401, origin)
-  }
+  // Read body as text first — admitAiRoute needs bodyText for request body hash
+  const bodyText = await req.text()
+
+  // Create Supabase admin client for security layer RPCs
+  const sb = getSupabaseAdmin()
+
+  // ── Platform Security Layer admission ────────────────────────────────────
+  const admitResult = await admitAiRoute({ req, sb, profile: BULK_JEE_NEET_IMPORT_ROUTE_PROFILE, bodyText })
+  if (!admitResult.ok) return admitResult.response
+  const { admission } = admitResult
 
   if (!ANTHROPIC_API_KEY) {
+    await finalizeAiRoute({ sb, admission, statusCode: 503, errorCode: 'ai_not_configured' })
     return errorResponse('ANTHROPIC_API_KEY not configured', 503, origin)
   }
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+    await finalizeAiRoute({ sb, admission, statusCode: 503, errorCode: 'supabase_not_configured' })
     return errorResponse('Supabase not configured', 503, origin)
   }
 
   // ── Parse body ───────────────────────────────────────────────────────────
   let rawBody: unknown
   try {
-    rawBody = await req.json()
+    rawBody = JSON.parse(bodyText)
   } catch {
+    await finalizeAiRoute({ sb, admission, statusCode: 422, errorCode: 'invalid_json' })
     return errorResponse('invalid JSON body', 422, origin)
   }
 
   const parsed = parseBulkImportBody(rawBody)
   if (!parsed.ok || !parsed.value) {
+    await finalizeAiRoute({ sb, admission, statusCode: 422, errorCode: 'validation_failed' })
     return jsonResponse(
       {
         error: 'validation_failed',
@@ -896,6 +897,7 @@ Deno.serve(async (req: Request) => {
   // Cap batch size — operator runbook says ≤ 100 questions per call.
   const totalQuestions = input.papers.reduce((sum, p) => sum + p.questions.length, 0)
   if (totalQuestions > MAX_QUESTIONS_PER_BATCH) {
+    await finalizeAiRoute({ sb, admission, statusCode: 413, errorCode: 'batch_too_large' })
     return errorResponse(
       `batch too large: ${totalQuestions} questions exceeds ${MAX_QUESTIONS_PER_BATCH} per-call cap (split into smaller batches)`,
       413,
@@ -903,86 +905,94 @@ Deno.serve(async (req: Request) => {
     )
   }
 
-  // ── Execute pipeline ─────────────────────────────────────────────────────
-  const startedAt = Date.now()
-  const deadlineMs = startedAt + MAX_EXECUTION_MS
-  const supabase = getSupabaseAdmin()
-  const ctx: PipelineContext = {
-    supabase,
-    topicCache: new Map<string, string | null>(),
-    sourceType: input.source_type,
-    dryRun: input.dry_run,
-    llmCallsRef: { count: 0 },
-  }
-
-  const paperSummaries: PaperSummary[] = []
-  for (const paper of input.papers) {
-    if (Date.now() > deadlineMs) {
-      paperSummaries.push({
-        exam_session: paper.exam_session,
-        exam_year: paper.exam_year,
-        subject: paper.subject,
-        grade: paper.grade,
-        total: paper.questions.length,
-        accepted: 0,
-        rejected: 0,
-        duplicates: 0,
-        errors: paper.questions.length,
-        outcomes: paper.questions.map(
-          (q: PyqQuestion): QuestionOutcome => ({
-            question_number: q.question_number,
-            status: 'error',
-            reason: 'execution_deadline_reached',
-          }),
-        ),
-      })
-      continue
+  try {
+    // ── Execute pipeline ───────────────────────────────────────────────────
+    const startedAt = Date.now()
+    const deadlineMs = startedAt + MAX_EXECUTION_MS
+    const supabase = getSupabaseAdmin()
+    const ctx: PipelineContext = {
+      supabase,
+      topicCache: new Map<string, string | null>(),
+      sourceType: input.source_type,
+      dryRun: input.dry_run,
+      llmCallsRef: { count: 0 },
     }
-    paperSummaries.push(await processPaper(ctx, paper, deadlineMs))
-  }
 
-  const elapsed = Date.now() - startedAt
+    const paperSummaries: PaperSummary[] = []
+    for (const paper of input.papers) {
+      if (Date.now() > deadlineMs) {
+        paperSummaries.push({
+          exam_session: paper.exam_session,
+          exam_year: paper.exam_year,
+          subject: paper.subject,
+          grade: paper.grade,
+          total: paper.questions.length,
+          accepted: 0,
+          rejected: 0,
+          duplicates: 0,
+          errors: paper.questions.length,
+          outcomes: paper.questions.map(
+            (q: PyqQuestion): QuestionOutcome => ({
+              question_number: q.question_number,
+              status: 'error',
+              reason: 'execution_deadline_reached',
+            }),
+          ),
+        })
+        continue
+      }
+      paperSummaries.push(await processPaper(ctx, paper, deadlineMs))
+    }
 
-  // ── Batch-level summary telemetry ───────────────────────────────────────
-  const totals = paperSummaries.reduce(
-    (acc, p) => {
-      acc.accepted += p.accepted
-      acc.rejected += p.rejected
-      acc.duplicates += p.duplicates
-      acc.errors += p.errors
-      return acc
-    },
-    { accepted: 0, rejected: 0, duplicates: 0, errors: 0 },
-  )
+    const elapsed = Date.now() - startedAt
 
-  await logOpsEvent({
-    category: 'content.pyq_ingestion',
-    source: 'bulk-jee-neet-import',
-    severity: totals.errors > 0 ? 'warning' : 'info',
-    message: 'Bulk PYQ ingestion batch completed',
-    context: {
-      source_type: input.source_type,
+    // ── Batch-level summary telemetry ─────────────────────────────────────
+    const totals = paperSummaries.reduce(
+      (acc, p) => {
+        acc.accepted += p.accepted
+        acc.rejected += p.rejected
+        acc.duplicates += p.duplicates
+        acc.errors += p.errors
+        return acc
+      },
+      { accepted: 0, rejected: 0, duplicates: 0, errors: 0 },
+    )
+
+    await logOpsEvent({
+      category: 'content.pyq_ingestion',
+      source: 'bulk-jee-neet-import',
+      severity: totals.errors > 0 ? 'warning' : 'info',
+      message: 'Bulk PYQ ingestion batch completed',
+      context: {
+        source_type: input.source_type,
+        dry_run: input.dry_run,
+        papers: paperSummaries.length,
+        total_questions: totalQuestions,
+        accepted: totals.accepted,
+        rejected: totals.rejected,
+        duplicates: totals.duplicates,
+        errors: totals.errors,
+        llm_calls: ctx.llmCallsRef.count,
+        elapsed_ms: elapsed,
+      },
+    })
+
+    const report: BatchReport = {
       dry_run: input.dry_run,
-      papers: paperSummaries.length,
-      total_questions: totalQuestions,
-      accepted: totals.accepted,
-      rejected: totals.rejected,
-      duplicates: totals.duplicates,
-      errors: totals.errors,
-      llm_calls: ctx.llmCallsRef.count,
+      source_type: input.source_type,
+      papers: paperSummaries,
+      llm_calls_total: ctx.llmCallsRef.count,
       elapsed_ms: elapsed,
-    },
-  })
+    }
 
-  const report: BatchReport = {
-    dry_run: input.dry_run,
-    source_type: input.source_type,
-    papers: paperSummaries,
-    llm_calls_total: ctx.llmCallsRef.count,
-    elapsed_ms: elapsed,
+    await finalizeAiRoute({ sb, admission, statusCode: 200 })
+    return jsonResponse(report, 200, {}, origin)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[bulk-jee-neet-import] Unhandled error:', message)
+    await finalizeAiRoute({ sb, admission, statusCode: 500, errorCode: 'unhandled_error' })
+    return errorResponse(`Internal error: ${message}`, 500, origin)
   }
-
-  return jsonResponse(report, 200, {}, origin)
 })
 
 // ── Test-only exports ───────────────────────────────────────────────────────

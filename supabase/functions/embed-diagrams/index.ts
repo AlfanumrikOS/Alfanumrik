@@ -22,7 +22,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { generateEmbedding, getEmbeddingModel } from '../_shared/embeddings.ts'
-import { constantTimeEqual } from '../_shared/auth.ts'
+import { admitAiRoute, finalizeAiRoute, createStaticAiRouteProfile } from '../_shared/security/ai-admission.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -59,13 +59,6 @@ function getSupabaseAdmin() {
   return createClient(url, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
-}
-
-function authenticateAdmin(req: Request): boolean {
-  const adminKey = Deno.env.get('ADMIN_API_KEY') ?? ''
-  if (!adminKey) return false
-  const provided = req.headers.get('x-admin-key') ?? ''
-  return constantTimeEqual(provided, adminKey)
 }
 
 /**
@@ -579,6 +572,19 @@ async function handlePost(
 }
 
 // ---------------------------------------------------------------------------
+// Platform Security Layer — route profile
+// ---------------------------------------------------------------------------
+
+const EMBED_DIAGRAMS_ROUTE_PROFILE = createStaticAiRouteProfile({
+  route: 'embed-diagrams',
+  callerTypes: ['internal_service'],
+  modelProvider: 'voyage',
+  modelName: 'voyage-multimodal',
+  inputTokenFloor: 32,
+  outputTokens: 0,
+})
+
+// ---------------------------------------------------------------------------
 // Main handler
 // ---------------------------------------------------------------------------
 
@@ -591,29 +597,51 @@ Deno.serve(async (req: Request) => {
       headers: {
         ...getCorsHeaders(origin),
         'Access-Control-Allow-Headers':
-          'authorization, x-client-info, apikey, content-type, x-request-id, x-admin-key',
+          'authorization, x-client-info, apikey, content-type, x-request-id, x-admin-key, x-internal-caller, x-internal-timestamp, x-internal-signature',
       },
     })
   }
 
-  // Authenticate
-  if (!authenticateAdmin(req)) {
-    return errorResponse('Unauthorized: invalid or missing x-admin-key', 401, origin)
+  // Method check before admission
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    const sb = getSupabaseAdmin()
+    const admitResult = await admitAiRoute({ req, sb, profile: EMBED_DIAGRAMS_ROUTE_PROFILE, bodyText: '' })
+    if (!admitResult.ok) return admitResult.response
+    await finalizeAiRoute({ sb, admission: admitResult.admission, statusCode: 405, errorCode: 'method_not_allowed' })
+    return errorResponse('Method not allowed', 405, origin)
   }
+
+  // Read body as text first — admitAiRoute needs bodyText for request body hash
+  const bodyText = req.method === 'POST' ? await req.text() : ''
+
+  // Create Supabase admin client for security layer RPCs
+  const sb = getSupabaseAdmin()
+
+  // Platform Security Layer admission
+  const admitResult = await admitAiRoute({ req, sb, profile: EMBED_DIAGRAMS_ROUTE_PROFILE, bodyText })
+  if (!admitResult.ok) return admitResult.response
+  const { admission } = admitResult
 
   try {
     if (req.method === 'GET') {
-      return await handleGet(origin)
+      const response = await handleGet(origin)
+      await finalizeAiRoute({ sb, admission, statusCode: response.status, errorCode: response.status >= 500 ? 'db_error' : null })
+      return response
     }
 
-    if (req.method === 'POST') {
-      return await handlePost(req, origin)
-    }
-
-    return errorResponse('Method not allowed', 405, origin)
+    // POST — reconstruct a Request with the already-read body text
+    const postReq = new Request(req.url, {
+      method: 'POST',
+      headers: req.headers,
+      body: bodyText,
+    })
+    const response = await handlePost(postReq, origin)
+    await finalizeAiRoute({ sb, admission, statusCode: response.status, errorCode: response.status >= 500 ? 'db_error' : null })
+    return response
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[embed-diagrams] Unhandled error:', message)
+    await finalizeAiRoute({ sb, admission, statusCode: 500, errorCode: 'unhandled_error' })
     return errorResponse(`Internal error: ${message}`, 500, origin)
   }
 })

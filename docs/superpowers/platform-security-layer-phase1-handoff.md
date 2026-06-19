@@ -63,6 +63,11 @@ The implementation is split into small shared modules under `supabase/functions/
 - `supabase/functions/alfabot-answer/index.ts` (Phase 3 — admitAiRoute with callerTypes `['internal_service']`; body read as text for body hash; finalizeAiRoute in non-streaming path and streaming finally block)
 - `supabase/functions/alfabot-answer/stream-response.ts` (Phase 3 — buildStreamingResponse accepts `admission: AiAdmissionContext` + `sb`; finalizeAiRoute in the ReadableStream finally block; streamStatusCode tracked for circuit outcome)
 - `supabase/functions/ncert-solver/index.ts` (Phase 3 — admitAiRoute with callerTypes `['student', 'internal_service']`; finalizeAiRoute on every exit path; function-local circuit breaker preserved)
+- `supabase/functions/embed-questions/index.ts` (Phase 4 Wave 1 — admitAiRoute callerTypes `['internal_service']`; GET + POST; bodyText='' for GET; finalizeAiRoute on all exit paths; removed constantTimeEqual/authenticateAdmin)
+- `supabase/functions/embed-ncert-qa/index.ts` (Phase 4 Wave 1 — same pattern; Voyage voyage-large-2-instruct; inputTokenFloor 128)
+- `supabase/functions/embed-diagrams/index.ts` (Phase 4 Wave 1 — same pattern; Voyage voyage-multimodal; inputTokenFloor 32)
+- `supabase/functions/extract-diagrams/index.ts` (Phase 4 Wave 1 — same pattern; Google Vision modelProvider; inputTokenFloor 32)
+- `supabase/functions/bulk-jee-neet-import/index.ts` (Phase 4 Wave 1 — POST only; Anthropic claude-haiku; body parsed from already-read text; finalizeAiRoute on all 5 exit paths including try/catch wrapper)
 
 ### Shared Security Layer
 
@@ -90,6 +95,7 @@ The implementation is split into small shared modules under `supabase/functions/
 
 - `src/lib/security/internal-caller-signing.ts` (Phase 3 — Node.js HMAC-SHA256 helper mirroring the Deno `request-signature.ts`; base64url encoding; canonical request matches Deno verifier field order)
 - `src/app/api/alfabot/route.ts` (Phase 3 — `callEdgeFunction` now serializes body to string, computes HMAC-SHA256 signing headers via `buildInternalCallerHeaders`, and spreads them into the fetch call)
+- `src/app/api/super-admin/ai/[fn]/route.ts` (Phase 4 — shared proxy for all 10 bulk/embed functions; `authorizeAdmin(request, 'super_admin')`; `buildInternalCallerHeaders` with `${fn}-proxy` caller name; forwards GET query params; supports GET + POST)
 
 ### Contract Tests
 
@@ -98,6 +104,7 @@ The implementation is split into small shared modules under `supabase/functions/
 - `src/__tests__/ncert-solver-security.test.ts` (Phase 3 — 6 tests: code primitives, callerTypes, body-text-before-parse, finalize-on-every-exit-path, migration seeding, function-local circuit breaker preserved)
 - `src/__tests__/lib/security/internal-caller-signing.test.ts` (Phase 3 — 16 unit tests: sha256Hex, canonical field order, base64url encoding, HMAC determinism, missing-secret null return, headers shape, timestamp window)
 - `src/__tests__/whatsapp-notify-security.test.ts` (Phase 3 Wave 3 — 7 tests: code primitives, internal_service-only callerTypes, meta modelProvider, body-text-before-admit order, finalizeAiRoute call count, quota profile migration seeding, three internal caller registrations)
+- `src/__tests__/phase4-wave1-proxy-security.test.ts` (Phase 4 Wave 1 — 28 tests: proxy unknown-fn 404, x-internal-caller naming convention, authorizeAdmin super_admin level, GET+POST export, all 10 fns in ALLOWED_FUNCTIONS; per-function: security primitives present, route/callerTypes, body-text-before-admit, finalizeAiRoute on GET and error paths, no legacy auth remnants; migration: all 10 proxy callers registered)
 
 ### Dependency/Tooling Updates
 
@@ -134,7 +141,11 @@ Seeds the security configuration for `ncert-question-engine`:
 
 Bulk-seeds route policies and quota profiles for 14 additional AI Edge Functions: `ncert-solver`, `scan-ocr`, `parent-report-generator`, `alfabot-answer`, `bulk-question-gen`, `bulk-non-mcq-gen`, `bulk-jee-neet-import`, `generate-answers`, `generate-concepts`, `extract-ncert-questions`, `extract-diagrams`, `embed-ncert-qa`, `embed-questions`, `embed-diagrams`.
 
-These policies are present in the database but none of these functions has been updated to use the shared security admission flow. Code integration is Phase 3 work.
+Wave 1 of Phase 4 has completed code integration for 5 of these functions. The remaining 5 (`generate-answers`, `generate-concepts`, `extract-ncert-questions`, `bulk-non-mcq-gen`, `bulk-question-gen`) still have route policies in DB but pending code integration (Phase 4 Wave 2).
+
+### `20260620001600_phase4_internal_caller_registrations.sql`
+
+Registers all 10 bulk/embed Edge Function proxies in `security_internal_callers`. Each proxy is named `${fnName}-proxy` and links to the `${fnName}-internal_service` quota profile seeded in `20260620001300`. All 10 registrations are included (Wave 1 and Wave 2) so no additional migration is needed for Wave 2 code integration.
 
 ## RPCs Added
 
@@ -217,16 +228,16 @@ Contract test `src/__tests__/ncert-question-engine-security.test.ts` verifies:
 | `scan-ocr` | Yes | Yes | Rolled out (Phase 3 Wave 2); student + internal_service callerTypes; domain OCR quota coexists |
 | `parent-report-generator` | Yes | Yes | Rolled out (Phase 3 Wave 2); parent + teacher + school_admin + internal_service; guardian lookup via admission.principal.userId |
 | `alfabot-answer` | Yes | Yes | Rolled out (Phase 3); internal_service caller only; Next.js proxy signs requests |
-| `bulk-question-gen` | Yes | No | Route policy seeded; code integration pending |
-| `bulk-non-mcq-gen` | Yes | No | Route policy seeded; code integration pending |
-| `bulk-jee-neet-import` | Yes | No | Route policy seeded; code integration pending |
-| `generate-answers` | Yes | No | Route policy seeded; code integration pending |
-| `generate-concepts` | Yes | No | Route policy seeded; code integration pending |
-| `extract-ncert-questions` | Yes | No | Route policy seeded; code integration pending |
-| `extract-diagrams` | Yes | No | Route policy seeded; code integration pending |
-| `embed-ncert-qa` | Yes | No | Route policy seeded; code integration pending |
-| `embed-questions` | Yes | No | Route policy seeded; code integration pending |
-| `embed-diagrams` | Yes | No | Route policy seeded; code integration pending |
+| `embed-questions` | Yes | Yes | Rolled out (Phase 4 Wave 1); internal_service only; Next.js proxy at `/api/super-admin/ai/[fn]`; migration 20260620001600 |
+| `embed-ncert-qa` | Yes | Yes | Rolled out (Phase 4 Wave 1); internal_service only; Next.js proxy at `/api/super-admin/ai/[fn]`; migration 20260620001600 |
+| `embed-diagrams` | Yes | Yes | Rolled out (Phase 4 Wave 1); internal_service only; Next.js proxy at `/api/super-admin/ai/[fn]`; migration 20260620001600 |
+| `extract-diagrams` | Yes | Yes | Rolled out (Phase 4 Wave 1); internal_service only; modelProvider google; Next.js proxy at `/api/super-admin/ai/[fn]`; migration 20260620001600 |
+| `bulk-jee-neet-import` | Yes | Yes | Rolled out (Phase 4 Wave 1); internal_service only; POST only; Next.js proxy at `/api/super-admin/ai/[fn]`; migration 20260620001600 |
+| `generate-answers` | Yes | No | Route policy seeded; caller registered in 20260620001600; code integration pending (Phase 4 Wave 2) |
+| `generate-concepts` | Yes | No | Route policy seeded; caller registered in 20260620001600; code integration pending (Phase 4 Wave 2) |
+| `extract-ncert-questions` | Yes | No | Route policy seeded; caller registered in 20260620001600; code integration pending (Phase 4 Wave 2) |
+| `bulk-non-mcq-gen` | Yes | No | Route policy seeded; caller registered in 20260620001600; code integration pending (Phase 4 Wave 2) |
+| `bulk-question-gen` | Yes | No | Route policy seeded; caller registered in 20260620001600; code integration pending (Phase 4 Wave 2) |
 | `whatsapp-notify` | Yes | Yes | Rolled out (Phase 3 Wave 3); internal_service caller only; 3 Next.js callers sign requests; migration 20260620001500 |
 
 The live database migrations required for the grounded-answer and ncert-question-engine rollouts are already applied. The bulk policy seeding migration (`20260620001300`) is also applied, making Phase 3 code integration purely a code change with no new migration required for the 14 already-seeded functions.
@@ -324,7 +335,34 @@ Functions: `bulk-question-gen`, `bulk-non-mcq-gen`, `bulk-jee-neet-import`, `gen
 
 ## Phase 4 Implementation Roadmap
 
-Phase 4 covers the 10 bulk and embedding Edge Functions. These functions share a common problem: their current auth patterns are incompatible with the platform security layer and require auth migration before the admission flow can be applied.
+Phase 4 covers the 10 bulk and embedding Edge Functions. Wave 1 (5 functions) is complete. Wave 2 (5 functions) covers the remaining MoL-routing functions.
+
+### Wave 1 — COMPLETE
+
+Migration `20260620001600_phase4_internal_caller_registrations.sql` registers all 10 proxy callers in `security_internal_callers` (both Wave 1 and Wave 2) so the DB is fully ready.
+
+The shared Next.js proxy at `src/app/api/super-admin/ai/[fn]/route.ts` handles all 10 functions. It:
+- Gates on `authorizeAdmin(request, 'super_admin')` (session-based super-admin auth)
+- Calls `buildInternalCallerHeaders(method, edgePath, bodyText, '${fn}-proxy')` for HMAC-SHA256 signing
+- Forwards to `${SUPABASE_URL}/functions/v1/${fn}` with `Authorization: Bearer ${SERVICE_ROLE_KEY}` and signing headers
+- Supports both GET (status) and POST (generation/ingestion)
+
+Functions integrated in Wave 1:
+- `embed-questions` — GET + POST; Voyage voyage-large-2-instruct; inputTokenFloor 64
+- `embed-ncert-qa` — GET + POST; Voyage voyage-large-2-instruct; inputTokenFloor 128
+- `embed-diagrams` — GET + POST; Voyage voyage-multimodal; inputTokenFloor 32
+- `extract-diagrams` — GET + POST; Google Vision; inputTokenFloor 32
+- `bulk-jee-neet-import` — POST only; Anthropic claude-haiku-4-5-20251001; inputTokenFloor 512, outputTokens 1024
+
+In each function: `constantTimeEqual`/`authenticateAdmin` removed; `admitAiRoute` called after CORS and method check, with `bodyText = req.method === 'POST' ? await req.text() : ''`; `finalizeAiRoute` called on all exit paths.
+
+### Wave 2 — PENDING
+
+The 5 remaining functions (`generate-answers`, `generate-concepts`, `extract-ncert-questions`, `bulk-non-mcq-gen`, `bulk-question-gen`) have their proxy callers registered in `20260620001600` and the shared Next.js proxy already routes for them. Only their Edge Function `index.ts` files need the same auth-swap pattern as Wave 1. No new migration is required.
+
+Note: `bulk-question-gen` and `bulk-non-mcq-gen` use `verifyAdminAuth` (checks `admin_users.admin_level`) rather than `x-admin-key`. The migration path for those two is to remove `verifyAdminAuth` and replace with `admitAiRoute` using `callerTypes: ['internal_service']`, matching Wave 1.
+
+### Legacy auth migration context (pre-Wave 1)
 
 ### Auth migration required before security layer integration
 
