@@ -141,9 +141,9 @@ export default function TeacherMobileNav({
 
   // Dark background for the teacher portal (bg-[#0B1120] theme).
   const darkNavStyle = {
-    background: 'rgba(11, 17, 32, 0.97)',
-    backdropFilter: 'blur(14px) saturate(140%)',
-    WebkitBackdropFilter: 'blur(14px) saturate(140%)',
+    background: 'rgb(11, 17, 32)',
+    backdropFilter: 'none',
+    WebkitBackdropFilter: 'none',
     borderTop: '1px solid rgba(255, 255, 255, 0.08)',
     paddingBottom: 'env(safe-area-inset-bottom, 0px)',
   } as React.CSSProperties;
