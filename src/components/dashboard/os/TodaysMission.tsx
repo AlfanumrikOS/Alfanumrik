@@ -3,27 +3,24 @@
 /**
  * TodaysMission — the PRIMARY hero of the Alfa OS dashboard (ff_student_os_v1).
  *
- * Decision-first design: this is the single dominant CTA on the page. It wraps
- * the existing <DailyRhythmQueue> (which fetches /api/v2/today via /api/rhythm/
- * today and is itself server-gated by ff_pedagogy_v2_daily_rhythm). When the
- * rhythm queue has nothing to render (flag off / no queue), this card falls
- * back to a "Begin today's lesson" CTA pointing at the student's next topic so
- * the hero is never empty.
+ * Decision-first design: this is the single dominant CTA on the page. It fetches
+ * the learner-loop queue from /api/v2/today (gated by ff_today_home_v1, which IS
+ * enabled globally) via the shared useTodayQueue hook. This replaces the former
+ * DailyRhythmQueue which fetched /api/rhythm/today (gated by
+ * ff_pedagogy_v2_daily_rhythm — OFF in production), meaning the hero was empty
+ * for all students. The always-present "Begin lesson" CTA provides a direct
+ * shortcut when the queue is loading or empty.
  *
- * No engine logic here — the rhythm queue owns its own data + CTAs. This only
- * supplies the editorial chrome + fallback. Bilingual via isHi.
+ * No engine logic here — queue ordering lives in the resolver. This supplies
+ * the editorial chrome + queue display + fallback CTA. Bilingual via isHi.
  */
 
 import { useRouter } from 'next/navigation';
-import dynamic from 'next/dynamic';
+import { useAuth } from '@/lib/AuthContext';
+import { useTodayQueue } from '@/lib/today/use-today-queue';
+import { todayIcon } from '@/lib/today/icon-map';
+import { todayCopy, deepLinkToHref } from '@/lib/today/copy';
 import type { CurriculumTopic } from '@/lib/types';
-
-// DailyRhythmQueue is below-the-engine and pulls KaTeX-free but still
-// non-trivial markup; lazy-load it so the hero shell paints first (P10).
-const DailyRhythmQueue = dynamic(
-  () => import('@/components/dashboard/sections/DailyRhythmQueue'),
-  { ssr: false, loading: () => null },
-);
 
 interface TodaysMissionProps {
   isHi: boolean;
@@ -46,6 +43,8 @@ export default function TodaysMission({
   todaysTopic,
 }: TodaysMissionProps) {
   const router = useRouter();
+  const { student } = useAuth();
+  const { data: queueData, isLoading: queueLoading } = useTodayQueue(student?.id);
   const firstName = studentName.split(' ')[0] || studentName;
 
   const beginLesson = () => {
@@ -91,10 +90,65 @@ export default function TodaysMission({
             : `Let's get going, ${firstName}`}
       </h1>
 
-      {/* Primary surface: the existing rhythm queue, rendered as the mission
-          body. It self-suppresses when there's no queue. */}
-      <div className="mt-4">
-        <DailyRhythmQueue />
+      {/* Learner-loop queue — powered by /api/v2/today */}
+      <div className="mt-3 flex flex-col gap-2">
+        {queueLoading && (
+          <div
+            className="h-20 rounded-2xl animate-pulse"
+            style={{ background: 'var(--surface-2)' }}
+            aria-hidden="true"
+          />
+        )}
+        {!queueLoading && queueData && queueData.queue.length > 0 && (
+          <>
+            {/* Primary action */}
+            <button
+              type="button"
+              onClick={() => router.push(deepLinkToHref(queueData.primary.deepLink))}
+              className="w-full text-left flex items-center gap-3 rounded-2xl px-4 py-3 transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
+              style={{
+                background: 'rgb(var(--orange-rgb) / 0.06)',
+                border: '1px solid rgb(var(--orange-rgb) / 0.15)',
+              }}
+              data-testid="mission-primary-action"
+            >
+              <span className="text-2xl" aria-hidden="true">
+                {todayIcon(queueData.primary.iconHint)}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>
+                  {todayCopy(queueData.primary.labelKey, isHi)}
+                </p>
+                <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+                  ~{queueData.primary.estMinutes} {isHi ? 'मिनट' : 'min'}
+                </p>
+              </div>
+              <span className="text-sm" style={{ color: 'var(--text-3)' }}>→</span>
+            </button>
+
+            {/* Secondary actions (up to 2 more) */}
+            {queueData.queue.slice(1, 3).map((item) => (
+              <button
+                key={item.rank}
+                type="button"
+                onClick={() => router.push(deepLinkToHref(item.deepLink))}
+                className="w-full text-left flex items-center gap-3 rounded-2xl px-4 py-2.5 transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
+                style={{
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <span className="text-lg" aria-hidden="true">{todayIcon(item.iconHint)}</span>
+                <span className="text-xs font-semibold flex-1 truncate" style={{ color: 'var(--text-2)' }}>
+                  {todayCopy(item.labelKey, isHi)}
+                </span>
+                <span className="text-xs" style={{ color: 'var(--text-3)' }}>
+                  ~{item.estMinutes}m
+                </span>
+              </button>
+            ))}
+          </>
+        )}
       </div>
 
       {/* Always-present primary CTA — the single dominant action. */}

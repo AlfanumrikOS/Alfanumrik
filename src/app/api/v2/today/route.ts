@@ -134,6 +134,7 @@ export async function GET(request: Request) {
         branch: result.branch,
         masterySubjectCount: state.mastery.length,
         dueReviewCount: augmentation.dueReviewCount,
+        practicedToday: augmentation.attemptedQuizToday,
       },
     };
 

@@ -20,15 +20,13 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
 import { useFeatureFlags } from '@/lib/swr';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
-import { authHeader } from '@/lib/api/auth-header';
+import { useTodayQueue } from '@/lib/today/use-today-queue';
 import { Skeleton, Button, EmptyState } from '@/components/ui';
 import { calculateLevel } from '@/lib/xp-config';
 import { todayCopy } from '@/lib/today/copy';
-import type { TodayResponse } from '@/lib/today/types';
 
 // Item cards are split out of first paint — the page chrome (greeting strip +
 // states) is the only thing in the initial bundle.
@@ -39,25 +37,9 @@ const TodayQueueItem = dynamic(() => import('@/components/today/TodayQueueItem')
   loading: () => <Skeleton height={68} rounded="rounded-2xl" />,
 });
 
-/** SWR fetcher for the Today BFF. 404 = flag off / no profile → null (caller
- *  routes to /dashboard). Other non-OK = throw so SWR surfaces the error state. */
-async function fetchToday(): Promise<TodayResponse | null> {
-  const res = await fetch('/api/v2/today', {
-    credentials: 'same-origin',
-    headers: { ...(await authHeader()) },
-  });
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    const error = new Error('today.fetch_failed') as Error & { status: number };
-    error.status = res.status;
-    throw error;
-  }
-  return (await res.json()) as TodayResponse;
-}
-
 export default function TodayPage() {
   const router = useRouter();
-  const { isHi, isLoading, isLoggedIn, snapshot } = useAuth();
+  const { isHi, isLoading, isLoggedIn, snapshot, student } = useAuth();
   const { data: flags, isLoading: flagsLoading } = useFeatureFlags();
   const { subjects } = useAllowedSubjects();
 
@@ -76,10 +58,10 @@ export default function TodayPage() {
   }, [isLoading, flagsLoading, isLoggedIn, flagOn, router]);
 
   // Only fetch once we know the flag is ON and the user is logged in.
-  const { data, error, isLoading: todayLoading, mutate } = useSWR<TodayResponse | null>(
-    flagOn && isLoggedIn ? 'v2/today' : null,
-    fetchToday,
-    { revalidateOnFocus: false, dedupingInterval: 5000 },
+  // studentId in the key ensures different students on the same device get
+  // separate cache entries (P13).
+  const { data, error, isLoading: todayLoading, mutate } = useTodayQueue(
+    flagOn && isLoggedIn ? student?.id : null,
   );
 
   // ── Pre-gate render: while resolving auth/flags, or about to redirect. ──
@@ -198,6 +180,46 @@ export default function TodayPage() {
   return (
     <main className="app-container py-6" data-testid="today-loaded">
       {greetingStrip}
+
+      {/* ── Monitoring strip — streak-at-risk banner + queue summary ── */}
+      {data.meta.practicedToday === false && streak > 0 && (
+        <div
+          role="alert"
+          className="flex items-center gap-2.5 rounded-2xl px-4 py-3 text-sm font-semibold mb-3"
+          style={{
+            background: 'rgb(var(--orange-rgb) / 0.08)',
+            border: '1px solid rgb(var(--orange-rgb) / 0.2)',
+            color: 'var(--orange)',
+          }}
+          data-testid="today-streak-risk-banner"
+        >
+          <span aria-hidden="true">🔥</span>
+          <span>
+            {isHi
+              ? 'स्ट्रीक खतरे में — आज कुछ अभ्यास करो!'
+              : 'Streak at risk — practice something today!'}
+          </span>
+        </div>
+      )}
+
+      {queue.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap mb-4" data-testid="today-queue-summary">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
+            style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-3)' }}
+          >
+            📋 {queue.length} {isHi ? 'आज की योजना में' : "items in today's plan"}
+          </span>
+          {data.meta.dueReviewCount > 0 && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
+              style={{ background: 'rgb(var(--purple-rgb, 124 58 237) / 0.08)', border: '1px solid rgb(var(--purple-rgb, 124 58 237) / 0.2)', color: '#7C3AED' }}
+            >
+              🗂️ {data.meta.dueReviewCount} {isHi ? 'रिव्यू बाकी' : 'reviews due'}
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="mb-4">
         <TodayFocusCard item={primary} subjects={subjects} isHi={isHi} />

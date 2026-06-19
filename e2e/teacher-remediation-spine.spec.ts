@@ -252,7 +252,7 @@ const TEACHER_TODAY_RESPONSE: TodayResponse = {
       meta: { dueCount: 4 },
     },
   ],
-  meta: { branch: 'teacher_remediation', masterySubjectCount: 1, dueReviewCount: 4 },
+  meta: { branch: 'teacher_remediation', masterySubjectCount: 1, dueReviewCount: 4, practicedToday: false },
 };
 
 async function installStudentTodayMocks(page: Page): Promise<void> {

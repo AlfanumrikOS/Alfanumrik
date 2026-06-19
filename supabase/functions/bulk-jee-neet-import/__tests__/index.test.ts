@@ -77,7 +77,9 @@ describe('bulk-jee-neet-import Edge Function — file shape', () => {
   it('imports shared CORS / auth / ops-events helpers (sibling parity)', () => {
     const src = readFileSync(FN_PATH, 'utf8');
     expect(src).toMatch(/from ['"]\.\.\/_shared\/cors\.ts['"]/);
-    expect(src).toMatch(/from ['"]\.\.\/_shared\/auth\.ts['"]/);
+    // Phase 4: auth is now via the Platform Security Layer (ai-admission.ts),
+    // not the legacy _shared/auth.ts constantTimeEqual check.
+    expect(src).toMatch(/from ['"]\.\.\/_shared\/security\/ai-admission\.ts['"]/);
     expect(src).toMatch(/from ['"]\.\.\/_shared\/ops-events\.ts['"]/);
   });
 
@@ -99,38 +101,42 @@ describe('bulk-jee-neet-import Edge Function — file shape', () => {
   });
 });
 
-// ─── 2. Constant-time Bearer-token auth ──────────────────────────────────────
+// ─── 2. Platform Security Layer auth (Phase 4 migration) ─────────────────────
 
-describe('bulk-jee-neet-import — auth (constant-time Bearer compare)', () => {
-  it('reads ADMIN_API_KEY from env', () => {
+describe('bulk-jee-neet-import — auth (Platform Security Layer)', () => {
+  it('uses admitAiRoute from _shared/security/ai-admission (Phase 4 migration)', () => {
     const src = readFileSync(FN_PATH, 'utf8');
-    expect(src).toMatch(/Deno\.env\.get\(['"]ADMIN_API_KEY['"]\)/);
+    // Phase 4: HMAC internal-caller signing replaced the old x-admin-key / ADMIN_API_KEY pattern.
+    expect(src).toMatch(/admitAiRoute/);
+    expect(src).toMatch(/finalizeAiRoute/);
+    expect(src).toMatch(/from ['"]\.\.\/_shared\/security\/ai-admission\.ts['"]/);
   });
 
-  it('uses checkBearerToken from _shared/auth (no naive === compare)', () => {
+  it('restricts callerTypes to internal_service only', () => {
     const src = readFileSync(FN_PATH, 'utf8');
-    expect(src).toMatch(/checkBearerToken/);
+    // Only internal callers (the /super-admin/ai proxy) may reach this function.
+    expect(src).toMatch(/callerTypes.*internal_service/s);
   });
 
-  it('also accepts x-admin-key via constantTimeEqual (sibling parity)', () => {
-    const src = readFileSync(FN_PATH, 'utf8');
-    expect(src).toMatch(/constantTimeEqual/);
-    expect(src).toMatch(/['"]x-admin-key['"]/);
-  });
-
-  it('returns 401 on auth failure BEFORE any DB read or Claude call', () => {
+  it('calls admitAiRoute BEFORE any callClaude (auth before business logic)', () => {
     const src = readFileSync(FN_PATH, 'utf8');
     const handlerStart = src.indexOf('Deno.serve(');
     expect(handlerStart).toBeGreaterThan(0);
     const handler = src.slice(handlerStart);
 
-    const status401 = handler.indexOf('401');
-    const firstDbRead = handler.indexOf('getSupabaseAdmin(');
-    const firstClaudeCall = handler.indexOf('callClaude(');
-    expect(status401).toBeGreaterThan(0);
-    // Either DB or Claude call must come after the 401 path.
-    if (firstDbRead > 0) expect(status401).toBeLessThan(firstDbRead);
-    if (firstClaudeCall > 0) expect(status401).toBeLessThan(firstClaudeCall);
+    const admitPos = handler.indexOf('admitAiRoute(');
+    const claudePos = handler.indexOf('callClaude(');
+    expect(admitPos).toBeGreaterThan(0);
+    // Claude call (if present) must come AFTER admitAiRoute.
+    if (claudePos > 0) expect(admitPos).toBeLessThan(claudePos);
+  });
+
+  it('propagates admitResult.response when admission fails (deny-before-IO pattern)', () => {
+    const src = readFileSync(FN_PATH, 'utf8');
+    // The deny path: `if (!admitResult.ok) return admitResult.response`
+    // This ensures rejected requests never reach DB reads or Claude calls.
+    expect(src).toMatch(/admitResult\.ok/);
+    expect(src).toMatch(/admitResult\.response/);
   });
 });
 

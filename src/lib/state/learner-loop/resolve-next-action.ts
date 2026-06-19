@@ -382,11 +382,11 @@ export async function buildLoopAugmentation(
       .limit(1),
     sb
       .from('chapter_progress')
-      .select('subject, chapter_number, progress_percent')
+      .select('subject, chapter_number, pool_coverage_percent')
       .eq('student_id', studentId)
-      .gte('progress_percent', LEARNER_LOOP_CONFIG.CONTINUE_LESSON_MIN_PROGRESS * 100)
-      .lt('progress_percent', 100)
-      .order('last_studied_at', { ascending: false })
+      .eq('is_completed', false)
+      .gte('pool_coverage_percent', LEARNER_LOOP_CONFIG.CONTINUE_LESSON_MIN_PROGRESS * 100)
+      .order('last_activity_at', { ascending: false })
       .limit(5),
     teacherRemediationPromise,
   ]);
@@ -394,7 +394,7 @@ export async function buildLoopAugmentation(
   const inProgressLessons = (inProgressRes.data ?? []).map(row => ({
     subjectCode: String(row.subject).toLowerCase(),
     chapterNumber: Number(row.chapter_number),
-    progressPct: Number(row.progress_percent) / 100,
+    progressPct: Number(row.pool_coverage_percent) / 100,
   }));
 
   return {

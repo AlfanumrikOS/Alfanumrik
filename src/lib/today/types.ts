@@ -105,5 +105,7 @@ export interface TodayResponse {
     masterySubjectCount: number;
     /** Number of flashcards due as of resolution. */
     dueReviewCount: number;
+    /** Whether the student has completed at least one quiz session today (IST). */
+    practicedToday: boolean;
   };
 }

@@ -97,6 +97,7 @@ const TODAY_RESPONSE: TodayResponse = {
     branch: 'start_quiz',
     masterySubjectCount: 3,
     dueReviewCount: 4,
+    practicedToday: false,
   },
 };
 
