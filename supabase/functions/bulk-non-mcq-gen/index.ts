@@ -53,6 +53,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
+import { admitAiRoute, finalizeAiRoute, createStaticAiRouteProfile } from '../_shared/security/ai-admission.ts'
 // MoL (Model Orchestration Layer) — Phase 1A migration (2026-05-24).
 // Routes SA/LA generation through the shared orchestrator (OpenAI gpt-4o-mini
 // primary, Claude Haiku fallback). The per-type validator in isValidQuestion
@@ -178,51 +179,16 @@ interface InsertedQuestion extends GeneratedQuestion {
   question_type_v2: QuestionType
 }
 
-// ─── Auth (admin-only or service-role) ──────────────────────────────────────
-// Accepts two auth modes:
-//   1. Service-role key — used by the bulk driver script (scripts/
-//      bulk-non-mcq-driver.ts). Bypasses the admin_users lookup; the
-//      service-role itself is the strongest credential and only ships to
-//      trusted backend callers.
-//   2. User JWT with admin_users.admin_level IN ('admin','super_admin') —
-//      used by the (forthcoming Phase 5) admin verification UI when an
-//      admin manually generates more questions for a chapter.
+// ─── Platform Security Layer — route profile (Phase 4 Wave 2) ───────────────
 
-async function verifyAdminAuth(req: Request): Promise<
-  | { authorized: true }
-  | { authorized: false; error: string; status: number }
-> {
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) {
-    return { authorized: false, error: 'Missing or invalid Authorization header', status: 401 }
-  }
-  const token = authHeader.replace('Bearer ', '')
-
-  // Service-role bypass: trusted backend callers (driver scripts, crons)
-  if (token === SUPABASE_SERVICE_KEY) {
-    return { authorized: true }
-  }
-
-  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  })
-  const { data: { user }, error: authError } = await userClient.auth.getUser()
-  if (authError || !user) {
-    return { authorized: false, error: 'Invalid or expired token', status: 401 }
-  }
-
-  const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-  const { data: adminRecord } = await adminClient
-    .from('admin_users')
-    .select('admin_level')
-    .eq('auth_user_id', user.id)
-    .eq('is_active', true)
-    .maybeSingle()
-  if (!adminRecord || !['admin','super_admin'].includes(adminRecord.admin_level)) {
-    return { authorized: false, error: 'Admin access required', status: 403 }
-  }
-  return { authorized: true }
-}
+const BULK_NON_MCQ_GEN_ROUTE_PROFILE = createStaticAiRouteProfile({
+  route: 'bulk-non-mcq-gen',
+  callerTypes: ['internal_service'],
+  modelProvider: 'anthropic',
+  modelName: 'claude-haiku-4-5-20251001',
+  inputTokenFloor: 512,
+  outputTokens: 1536,
+})
 
 // ─── NCERT context retrieval ─────────────────────────────────────────────────
 // Pull a few rag_content_chunks for the chapter to ground the generation.
@@ -643,6 +609,10 @@ async function insertQuestions(
 // ─── Main handler ────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
+  // ── Python AI proxy (Pattern B — proxy check is first, before body read) ──
+  // shouldProxyToPython reads ONLY headers/flags. forwardToPython consumes the
+  // body stream and returns immediately, so req.text() below is never reached
+  // on the proxy path.
   try {
     const request_id = req.headers.get('x-request-id') ?? crypto.randomUUID()
     const decision = await shouldProxyToPython({
@@ -666,42 +636,56 @@ Deno.serve(async (req: Request) => {
     return errorResponse('Method not allowed', 405, origin)
   }
 
-  // ── 1. Auth ─────────────────────────────────────────────────────────────────
-  const auth = await verifyAdminAuth(req)
-  if (!auth.authorized) {
-    return errorResponse(auth.error, auth.status, origin)
-  }
+  // Read body as text — admitAiRoute needs bodyText for request body hash.
+  // Safe to call here: proxy path already returned above if active.
+  const bodyText = await req.text()
+
+  // Create Supabase admin client for security layer RPCs
+  const adminSb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+
+  // ── Platform Security Layer admission (Phase 4 Wave 2) ──────────────────
+  const admitResult = await admitAiRoute({ req, sb: adminSb, profile: BULK_NON_MCQ_GEN_ROUTE_PROFILE, bodyText })
+  if (!admitResult.ok) return admitResult.response
+  const { admission } = admitResult
 
   // ── 2. Parse + validate body ────────────────────────────────────────────────
   let body: RequestBody
   try {
-    body = await req.json() as RequestBody
+    body = JSON.parse(bodyText) as RequestBody
   } catch {
+    await finalizeAiRoute({ sb: adminSb, admission, statusCode: 400, errorCode: 'invalid_json' })
     return errorResponse('Invalid JSON body', 400, origin)
   }
 
   const grade = String(body.grade ?? '').trim()
   if (!VALID_GRADES.includes(grade)) {
+    await finalizeAiRoute({ sb: adminSb, admission, statusCode: 400, errorCode: 'invalid_grade' })
     return errorResponse('grade must be one of "6"-"12"', 400, origin)
   }
 
   const subject = String(body.subject ?? '').toLowerCase().trim().replace(/\s+/g, '_')
   if (!isValidSubjectForGrade(grade, subject)) {
+    await finalizeAiRoute({ sb: adminSb, admission, statusCode: 400, errorCode: 'invalid_subject' })
     return errorResponse(`subject "${subject}" not valid for grade ${grade}`, 400, origin)
   }
 
   const chapterTitle = String(body.chapter_title ?? '').trim()
   if (chapterTitle.length < 3) {
+    await finalizeAiRoute({ sb: adminSb, admission, statusCode: 400, errorCode: 'invalid_chapter_title' })
     return errorResponse('chapter_title required', 400, origin)
   }
 
   const chapterNumber = Number(body.chapter_number)
   if (!Number.isInteger(chapterNumber) || chapterNumber < 1) {
+    await finalizeAiRoute({ sb: adminSb, admission, statusCode: 400, errorCode: 'invalid_chapter_number' })
     return errorResponse('chapter_number must be a positive integer', 400, origin)
   }
 
   const qType = body.question_type
   if (!VALID_QUESTION_TYPES.includes(qType)) {
+    await finalizeAiRoute({ sb: adminSb, admission, statusCode: 400, errorCode: 'invalid_question_type' })
     return errorResponse(`question_type must be one of: ${VALID_QUESTION_TYPES.join(', ')}`, 400, origin)
   }
 
@@ -709,62 +693,72 @@ Deno.serve(async (req: Request) => {
   const count = Math.min(MAX_COUNT, Math.max(1, Number(body.count ?? defaultCount)))
   const bloomLevel = (body.bloom_level ?? (qType === 'long_answer' ? 'analyze' : 'understand')).toLowerCase()
 
-  // ── 3. Fetch chapter context ───────────────────────────────────────────────
-  const context = await fetchChapterContext(grade, subject, chapterNumber)
+  try {
+    // ── 3. Fetch chapter context ─────────────────────────────────────────────
+    const context = await fetchChapterContext(grade, subject, chapterNumber)
 
-  // ── 4. Build prompts + call Claude ─────────────────────────────────────────
-  const systemPrompt = buildSystemPrompt(grade, subject, qType)
-  const userPrompt = qType === 'long_answer'
-    ? buildLAUserPrompt(grade, subject, chapterTitle, count, bloomLevel, context)
-    : buildSAUserPrompt(grade, subject, chapterTitle, count, bloomLevel, context)
+    // ── 4. Build prompts + call Claude ───────────────────────────────────────
+    const systemPrompt = buildSystemPrompt(grade, subject, qType)
+    const userPrompt = qType === 'long_answer'
+      ? buildLAUserPrompt(grade, subject, chapterTitle, count, bloomLevel, context)
+      : buildSAUserPrompt(grade, subject, chapterTitle, count, bloomLevel, context)
 
-  const claudeResult = await callClaude(systemPrompt, userPrompt, grade, subject)
-  if (!claudeResult.ok) {
-    return errorResponse(`AI generation failed: ${claudeResult.error}`, 503, origin)
-  }
-
-  // ── 5. Parse + validate ────────────────────────────────────────────────────
-  const rawArray = extractJsonArray(claudeResult.text)
-  if (!rawArray) {
-    return errorResponse('AI returned an unparseable response. Please retry.', 502, origin)
-  }
-
-  const validQuestions: GeneratedQuestion[] = []
-  const rejectionReasons: string[] = []
-  for (const item of rawArray) {
-    const result = isValidQuestion(item, qType)
-    if (result.valid) {
-      validQuestions.push(result.q)
-    } else {
-      rejectionReasons.push(result.reason)
+    const claudeResult = await callClaude(systemPrompt, userPrompt, grade, subject)
+    if (!claudeResult.ok) {
+      await finalizeAiRoute({ sb: adminSb, admission, statusCode: 503, errorCode: 'ai_generation_failed' })
+      return errorResponse(`AI generation failed: ${claudeResult.error}`, 503, origin)
     }
+
+    // ── 5. Parse + validate ──────────────────────────────────────────────────
+    const rawArray = extractJsonArray(claudeResult.text)
+    if (!rawArray) {
+      await finalizeAiRoute({ sb: adminSb, admission, statusCode: 502, errorCode: 'ai_unparseable' })
+      return errorResponse('AI returned an unparseable response. Please retry.', 502, origin)
+    }
+
+    const validQuestions: GeneratedQuestion[] = []
+    const rejectionReasons: string[] = []
+    for (const item of rawArray) {
+      const result = isValidQuestion(item, qType)
+      if (result.valid) {
+        validQuestions.push(result.q)
+      } else {
+        rejectionReasons.push(result.reason)
+      }
+    }
+
+    // ── 6. Insert with verification_state='pending' ──────────────────────────
+    const { inserted, rejected: dbRejections } = await insertQuestions(validQuestions, {
+      grade, subject, chapterNumber, qType,
+    })
+
+    rejectionReasons.push(...dbRejections)
+
+    console.warn(JSON.stringify({
+      event: 'bulk_non_mcq_gen',
+      function_name: 'bulk-non-mcq-gen',
+      grade, subject, chapter_number: chapterNumber, chapter_title: chapterTitle,
+      question_type: qType, count_requested: count,
+      generated: validQuestions.length,
+      inserted: inserted.length,
+      rejected: rejectionReasons.length,
+      bloom_level: bloomLevel,
+      has_context: context.length > 0,
+      ts: new Date().toISOString(),
+    }))
+
+    await finalizeAiRoute({ sb: adminSb, admission, statusCode: 200 })
+    return jsonResponse({
+      generated: validQuestions.length,
+      inserted: inserted.length,
+      rejected: rejectionReasons.length,
+      rejection_reasons: rejectionReasons.length > 0 ? rejectionReasons : undefined,
+      questions: inserted,
+    }, 200, {}, origin)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[bulk-non-mcq-gen] Unhandled error:', message)
+    await finalizeAiRoute({ sb: adminSb, admission, statusCode: 500, errorCode: 'unhandled_error' })
+    return errorResponse(`Internal error: ${message}`, 500, origin)
   }
-
-  // ── 6. Insert with verification_state='pending' ────────────────────────────
-  const { inserted, rejected: dbRejections } = await insertQuestions(validQuestions, {
-    grade, subject, chapterNumber, qType,
-  })
-
-  rejectionReasons.push(...dbRejections)
-
-  console.warn(JSON.stringify({
-    event: 'bulk_non_mcq_gen',
-    function_name: 'bulk-non-mcq-gen',
-    grade, subject, chapter_number: chapterNumber, chapter_title: chapterTitle,
-    question_type: qType, count_requested: count,
-    generated: validQuestions.length,
-    inserted: inserted.length,
-    rejected: rejectionReasons.length,
-    bloom_level: bloomLevel,
-    has_context: context.length > 0,
-    ts: new Date().toISOString(),
-  }))
-
-  return jsonResponse({
-    generated: validQuestions.length,
-    inserted: inserted.length,
-    rejected: rejectionReasons.length,
-    rejection_reasons: rejectionReasons.length > 0 ? rejectionReasons : undefined,
-    questions: inserted,
-  }, 200, {}, origin)
 })

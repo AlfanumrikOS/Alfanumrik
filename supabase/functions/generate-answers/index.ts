@@ -23,7 +23,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { fetchRAGContext } from '../_shared/rag-retrieval.ts'
-import { constantTimeEqual } from '../_shared/auth.ts'
 // MoL (Model Orchestration Layer) — Phase 1A migration (2026-05-24).
 // generate-answers writes board-exam-style model answers into question_bank
 // (admin-key only). RAG retrieval happens BEFORE this call; we pass the
@@ -46,7 +45,7 @@ import { isMolAdminRoutingEnabled } from '../_shared/mol/admin-rollback-flag.ts'
 // bumps the flag. The Python service performs its own constant-time
 // x-admin-key check, so the proxy forwards the header verbatim.
 import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
-import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
+import { admitAiRoute, finalizeAiRoute, createStaticAiRouteProfile, fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -92,12 +91,18 @@ function getSupabaseAdmin() {
   })
 }
 
-function authenticateAdmin(req: Request): boolean {
-  const adminKey = Deno.env.get('ADMIN_API_KEY') ?? ''
-  if (!adminKey) return false
-  const provided = req.headers.get('x-admin-key') ?? ''
-  return constantTimeEqual(provided, adminKey)
-}
+// ---------------------------------------------------------------------------
+// Platform Security Layer — route profile (Phase 4 Wave 2)
+// ---------------------------------------------------------------------------
+
+const GENERATE_ANSWERS_ROUTE_PROFILE = createStaticAiRouteProfile({
+  route: 'generate-answers',
+  callerTypes: ['internal_service'],
+  modelProvider: 'anthropic',
+  modelName: 'claude-haiku-4-5-20251001',
+  inputTokenFloor: 512,
+  outputTokens: 2048,
+})
 
 // ---------------------------------------------------------------------------
 // Question type definition
@@ -453,7 +458,7 @@ interface PostParams {
   dry_run?: boolean
 }
 
-async function handlePost(req: Request, origin: string | null): Promise<Response> {
+async function handlePost(req: Request, origin: string | null, bodyText: string): Promise<Response> {
   const supabase = getSupabaseAdmin()
   const startTime = Date.now()
 
@@ -464,12 +469,11 @@ async function handlePost(req: Request, origin: string | null): Promise<Response
     return errorResponse('No LLM provider configured (need OPENAI_API_KEY or ANTHROPIC_API_KEY)', 500, origin)
   }
 
-  // Parse params
+  // Parse params from already-read body text
   let params: PostParams = {}
   try {
-    const body = await req.text()
-    if (body.trim()) {
-      params = JSON.parse(body)
+    if (bodyText.trim()) {
+      params = JSON.parse(bodyText)
     }
   } catch {
     return errorResponse('Invalid JSON body', 400, origin)
@@ -688,43 +692,21 @@ Deno.serve(async (req: Request) => {
     })
   }
 
-  // Authenticate
-  if (!authenticateAdmin(req)) {
-    return errorResponse('Unauthorized: invalid or missing x-admin-key', 401, origin)
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return errorResponse('Method not allowed', 405, origin)
   }
 
-  try {
-    // ── Python AI services cutover (Phase 2 — 2026-05-24) ───────────────────
-    // When ff_python_generate_answers_v1 is enabled AND the per-request hash
-    // bucket falls within rollout_pct, forward the entire request to Cloud
-    // Run instead of running the Phase 1A TS path below. Default
-    // rollout_pct=0 means ZERO traffic forwards until ops bumps the
-    // envelope; first deploy ramp is 10% → 25% → 50% → 100% over 24-48h per
-    // the docs/PYTHON_AI_OPERATIONS.md rollout playbook.
-    //
-    // The traceId is locally generated (function has no upstream request id
-    // for non-correlated admin calls). Same UUID is passed to
-    // shouldProxyToPython so the hash bucket is reproducible across helper
-    // invocations within this call.
-    //
-    // Rollback gate is identical to ff_python_bulk_question_gen_v1: if Cloud
-    // Run is returning bad results, ops flips metadata.kill_switch=true and
-    // the 5-min flag cache TTL drains the proxy without a redeploy. If
-    // Cloud Run is hard-down, the proxy throws and we fall through to the
-    // TS path — admin batch jobs never see a 502 because the TS path is
-    // the safety net during transition (P12 — never crash the user-facing
-    // path).
-    //
-    // Auth note: the Python service performs ITS OWN constant-time
-    // x-admin-key check inside auth.py:verify_admin_key. We forward the
-    // header verbatim (forwardToPython preserves all headers including
-    // x-admin-key) so the Python gate matches.
-    const proxyTraceId =
-      req.headers.get('x-request-id') ??
-      (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `gen-ans-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`)
+  // ── Python AI services cutover (Phase 2 — 2026-05-24) ───────────────────
+  // shouldProxyToPython reads ONLY headers/flags, NOT the body stream, so it
+  // is safe to call BEFORE req.text(). forwardToPython consumes the body; if
+  // it is called, we return immediately and never reach req.text() below.
+  const proxyTraceId =
+    req.headers.get('x-request-id') ??
+    (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `gen-ans-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`)
 
+  try {
     const proxyDecision = await shouldProxyToPython({
       flag_name: 'ff_python_generate_answers_v1',
       endpoint_path: '/v1/generate-answers',
@@ -738,28 +720,47 @@ Deno.serve(async (req: Request) => {
           request: req,
         })
       } catch (err) {
-        // Proxy failure: log + fall through to the existing TS path. We
-        // intentionally never 502 the user because of proxy-layer issues
-        // during transition — TS is the safety net.
+        // Proxy failure: log + fall through to the TS path.
         console.warn(
           `[python-ai-proxy] forward failed for generate-answers: ${err instanceof Error ? err.message : String(err)}; falling back to TS path`,
         )
-        // Continue to the existing TS code below.
       }
     }
+  } catch (err) {
+    console.warn('[generate-answers] python proxy check failed:', err instanceof Error ? err.message : String(err))
+  }
 
+  // Read body as text — admitAiRoute needs bodyText for request body hash.
+  // Must come AFTER the proxy decision (forwardToPython would have consumed the stream).
+  const bodyText = req.method === 'POST' ? await req.text() : ''
+
+  // Create Supabase admin client for security layer RPCs
+  const sb = getSupabaseAdmin()
+
+  // ── Platform Security Layer admission (Phase 4 Wave 2) ──────────────────
+  const admitResult = await admitAiRoute({ req, sb, profile: GENERATE_ANSWERS_ROUTE_PROFILE, bodyText })
+  if (!admitResult.ok) return admitResult.response
+  const { admission } = admitResult
+
+  try {
     if (req.method === 'GET') {
-      return await handleGet(origin)
+      const resp = await handleGet(origin)
+      await finalizeAiRoute({ sb, admission, statusCode: resp.status })
+      return resp
     }
 
     if (req.method === 'POST') {
-      return await handlePost(req, origin)
+      const resp = await handlePost(req, origin, bodyText)
+      await finalizeAiRoute({ sb, admission, statusCode: resp.status })
+      return resp
     }
 
+    await finalizeAiRoute({ sb, admission, statusCode: 405 })
     return errorResponse('Method not allowed', 405, origin)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[generate-answers] Unhandled error:', message)
+    await finalizeAiRoute({ sb, admission, statusCode: 500, errorCode: 'unhandled_error' })
     return errorResponse(`Internal error: ${message}`, 500, origin)
   }
 })

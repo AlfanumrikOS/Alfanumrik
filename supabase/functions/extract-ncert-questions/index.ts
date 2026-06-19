@@ -26,7 +26,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
-import { constantTimeEqual } from '../_shared/auth.ts'
 // MoL (Model Orchestration Layer) — Phase 1A migration (2026-05-24).
 // extract-ncert-questions is admin-key-gated batch extraction from
 // rag_content_chunks. parseExtractedQuestions enforces P6 (4 distinct
@@ -39,7 +38,7 @@ import { constantTimeEqual } from '../_shared/auth.ts'
 // (pre-Phase-1A direct-Anthropic-fetch path with 60s abort + 0.3 temperature).
 import { generateResponse, MolError } from '../_shared/mol/index.ts'
 import { isMolAdminRoutingEnabled } from '../_shared/mol/admin-rollback-flag.ts'
-import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
+import { admitAiRoute, finalizeAiRoute, createStaticAiRouteProfile, fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -137,12 +136,18 @@ function getSupabaseAdmin() {
   })
 }
 
-function authenticateAdmin(req: Request): boolean {
-  const adminKey = Deno.env.get('ADMIN_API_KEY') ?? ''
-  if (!adminKey) return false
-  const provided = req.headers.get('x-admin-key') ?? ''
-  return constantTimeEqual(provided, adminKey)
-}
+// ---------------------------------------------------------------------------
+// Platform Security Layer — route profile (Phase 4 Wave 2)
+// ---------------------------------------------------------------------------
+
+const EXTRACT_NCERT_QUESTIONS_ROUTE_PROFILE = createStaticAiRouteProfile({
+  route: 'extract-ncert-questions',
+  callerTypes: ['internal_service'],
+  modelProvider: 'anthropic',
+  modelName: 'claude-haiku-4-5-20251001',
+  inputTokenFloor: 1024,
+  outputTokens: 2048,
+})
 
 // Map subject codes to display names (used in chapter_title matching)
 function subjectDisplayName(code: string): string {
@@ -748,7 +753,7 @@ interface PostParams {
   batch_size?: number
 }
 
-async function handlePost(req: Request, origin: string | null): Promise<Response> {
+async function handlePost(req: Request, origin: string | null, bodyText: string): Promise<Response> {
   const supabase = getSupabaseAdmin()
   const startTime = Date.now()
 
@@ -759,12 +764,11 @@ async function handlePost(req: Request, origin: string | null): Promise<Response
     return errorResponse('No LLM provider configured (need OPENAI_API_KEY or ANTHROPIC_API_KEY)', 500, origin)
   }
 
-  // Parse params
+  // Parse params from already-read body text
   let params: PostParams = {}
   try {
-    const body = await req.text()
-    if (body.trim()) {
-      params = JSON.parse(body)
+    if (bodyText.trim()) {
+      params = JSON.parse(bodyText)
     }
   } catch {
     return errorResponse('Invalid JSON body', 400, origin)
@@ -857,6 +861,10 @@ async function handlePost(req: Request, origin: string | null): Promise<Response
 // ---------------------------------------------------------------------------
 
 Deno.serve(async (req: Request) => {
+  // ── Python AI proxy (Pattern B — proxy check is first, before body read) ──
+  // shouldProxyToPython reads ONLY headers/flags. forwardToPython consumes the
+  // body stream and returns immediately, so req.text() below is never reached
+  // on the proxy path.
   try {
     const request_id = req.headers.get('x-request-id') ?? crypto.randomUUID()
     const decision = await shouldProxyToPython({
@@ -884,24 +892,41 @@ Deno.serve(async (req: Request) => {
     })
   }
 
-  // Authenticate
-  if (!authenticateAdmin(req)) {
-    return errorResponse('Unauthorized: invalid or missing x-admin-key', 401, origin)
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return errorResponse('Method not allowed', 405, origin)
   }
+
+  // Read body as text — admitAiRoute needs bodyText for request body hash.
+  // Safe to call here: proxy path already returned above if active.
+  const bodyText = req.method === 'POST' ? await req.text() : ''
+
+  // Create Supabase admin client for security layer RPCs
+  const sb = getSupabaseAdmin()
+
+  // ── Platform Security Layer admission (Phase 4 Wave 2) ──────────────────
+  const admitResult = await admitAiRoute({ req, sb, profile: EXTRACT_NCERT_QUESTIONS_ROUTE_PROFILE, bodyText })
+  if (!admitResult.ok) return admitResult.response
+  const { admission } = admitResult
 
   try {
     if (req.method === 'GET') {
-      return await handleGet(origin)
+      const resp = await handleGet(origin)
+      await finalizeAiRoute({ sb, admission, statusCode: resp.status })
+      return resp
     }
 
     if (req.method === 'POST') {
-      return await handlePost(req, origin)
+      const resp = await handlePost(req, origin, bodyText)
+      await finalizeAiRoute({ sb, admission, statusCode: resp.status })
+      return resp
     }
 
+    await finalizeAiRoute({ sb, admission, statusCode: 405 })
     return errorResponse('Method not allowed', 405, origin)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[extract-ncert-questions] Unhandled error:', message)
+    await finalizeAiRoute({ sb, admission, statusCode: 500, errorCode: 'unhandled_error' })
     return errorResponse(`Internal error: ${message}`, 500, origin)
   }
 })

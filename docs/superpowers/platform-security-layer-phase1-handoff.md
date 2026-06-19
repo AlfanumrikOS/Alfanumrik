@@ -14,16 +14,6 @@ Rolled out with full security layer integration:
 Route policies seeded in DB, code integration pending:
 - `scan-ocr`
 - `parent-report-generator`
-- `bulk-question-gen`
-- `bulk-non-mcq-gen`
-- `bulk-jee-neet-import`
-- `generate-answers`
-- `generate-concepts`
-- `extract-ncert-questions`
-- `extract-diagrams`
-- `embed-ncert-qa`
-- `embed-questions`
-- `embed-diagrams`
 
 ## Architecture Summary
 
@@ -68,6 +58,11 @@ The implementation is split into small shared modules under `supabase/functions/
 - `supabase/functions/embed-diagrams/index.ts` (Phase 4 Wave 1 — same pattern; Voyage voyage-multimodal; inputTokenFloor 32)
 - `supabase/functions/extract-diagrams/index.ts` (Phase 4 Wave 1 — same pattern; Google Vision modelProvider; inputTokenFloor 32)
 - `supabase/functions/bulk-jee-neet-import/index.ts` (Phase 4 Wave 1 — POST only; Anthropic claude-haiku; body parsed from already-read text; finalizeAiRoute on all 5 exit paths including try/catch wrapper)
+- `supabase/functions/generate-answers/index.ts` (Phase 4 Wave 2 — GET + POST; Pattern A restructure: proxy before body read; removed constantTimeEqual/authenticateAdmin; admitAiRoute callerTypes `['internal_service']`; finalizeAiRoute on all exit paths)
+- `supabase/functions/generate-concepts/index.ts` (Phase 4 Wave 2 — GET + POST; Pattern A restructure: proxy before body read; removed constantTimeEqual/authenticateAdmin; admitAiRoute callerTypes `['internal_service']`; finalizeAiRoute on all exit paths)
+- `supabase/functions/extract-ncert-questions/index.ts` (Phase 4 Wave 2 — GET + POST; Pattern B: proxy already first; removed constantTimeEqual/authenticateAdmin; admitAiRoute callerTypes `['internal_service']`; finalizeAiRoute on all exit paths)
+- `supabase/functions/bulk-non-mcq-gen/index.ts` (Phase 4 Wave 2 — POST only; Pattern B: proxy already first; removed verifyAdminAuth; admitAiRoute callerTypes `['internal_service']`; finalizeAiRoute on all exit paths including validation errors)
+- `supabase/functions/bulk-question-gen/index.ts` (Phase 4 Wave 2 — POST only; Pattern A restructure: proxy before body read; removed verifyAdminAuth; admitAiRoute callerTypes `['internal_service']`; finalizeAiRoute on all 7 exit paths: grounded zero-results, grounded DB error, grounded success, legacy Claude error, legacy parse error, legacy validation-empty, legacy DB error, legacy success, unhandled catch)
 
 ### Shared Security Layer
 
@@ -105,6 +100,7 @@ The implementation is split into small shared modules under `supabase/functions/
 - `src/__tests__/lib/security/internal-caller-signing.test.ts` (Phase 3 — 16 unit tests: sha256Hex, canonical field order, base64url encoding, HMAC determinism, missing-secret null return, headers shape, timestamp window)
 - `src/__tests__/whatsapp-notify-security.test.ts` (Phase 3 Wave 3 — 7 tests: code primitives, internal_service-only callerTypes, meta modelProvider, body-text-before-admit order, finalizeAiRoute call count, quota profile migration seeding, three internal caller registrations)
 - `src/__tests__/phase4-wave1-proxy-security.test.ts` (Phase 4 Wave 1 — 28 tests: proxy unknown-fn 404, x-internal-caller naming convention, authorizeAdmin super_admin level, GET+POST export, all 10 fns in ALLOWED_FUNCTIONS; per-function: security primitives present, route/callerTypes, body-text-before-admit, finalizeAiRoute on GET and error paths, no legacy auth remnants; migration: all 10 proxy callers registered)
+- `src/__tests__/phase4-wave2-security.test.ts` (Phase 4 Wave 2 — 21 tests: per-function security primitives, route/callerTypes, admission short-circuit, no legacy auth remnants, finalizeAiRoute on error path; 5 MoL proxy ordering tests confirming shouldProxyToPython precedes req.text(); migration Wave 2 caller names + internal_service link)
 
 ### Dependency/Tooling Updates
 
@@ -233,11 +229,11 @@ Contract test `src/__tests__/ncert-question-engine-security.test.ts` verifies:
 | `embed-diagrams` | Yes | Yes | Rolled out (Phase 4 Wave 1); internal_service only; Next.js proxy at `/api/super-admin/ai/[fn]`; migration 20260620001600 |
 | `extract-diagrams` | Yes | Yes | Rolled out (Phase 4 Wave 1); internal_service only; modelProvider google; Next.js proxy at `/api/super-admin/ai/[fn]`; migration 20260620001600 |
 | `bulk-jee-neet-import` | Yes | Yes | Rolled out (Phase 4 Wave 1); internal_service only; POST only; Next.js proxy at `/api/super-admin/ai/[fn]`; migration 20260620001600 |
-| `generate-answers` | Yes | No | Route policy seeded; caller registered in 20260620001600; code integration pending (Phase 4 Wave 2) |
-| `generate-concepts` | Yes | No | Route policy seeded; caller registered in 20260620001600; code integration pending (Phase 4 Wave 2) |
-| `extract-ncert-questions` | Yes | No | Route policy seeded; caller registered in 20260620001600; code integration pending (Phase 4 Wave 2) |
-| `bulk-non-mcq-gen` | Yes | No | Route policy seeded; caller registered in 20260620001600; code integration pending (Phase 4 Wave 2) |
-| `bulk-question-gen` | Yes | No | Route policy seeded; caller registered in 20260620001600; code integration pending (Phase 4 Wave 2) |
+| `generate-answers` | Yes | Yes | Rolled out (Phase 4 Wave 2); internal_service only; Pattern A: proxy before body read; removed authenticateAdmin; Next.js proxy at `/api/super-admin/ai/[fn]`; migration 20260620001600 |
+| `generate-concepts` | Yes | Yes | Rolled out (Phase 4 Wave 2); internal_service only; Pattern A: proxy before body read; removed authenticateAdmin; Next.js proxy at `/api/super-admin/ai/[fn]`; migration 20260620001600 |
+| `extract-ncert-questions` | Yes | Yes | Rolled out (Phase 4 Wave 2); internal_service only; Pattern B: proxy already first; removed authenticateAdmin; Next.js proxy at `/api/super-admin/ai/[fn]`; migration 20260620001600 |
+| `bulk-non-mcq-gen` | Yes | Yes | Rolled out (Phase 4 Wave 2); internal_service only; Pattern B: proxy already first; removed verifyAdminAuth; Next.js proxy at `/api/super-admin/ai/[fn]`; migration 20260620001600 |
+| `bulk-question-gen` | Yes | Yes | Rolled out (Phase 4 Wave 2); internal_service only; Pattern A: proxy before body read; removed verifyAdminAuth; Next.js proxy at `/api/super-admin/ai/[fn]`; migration 20260620001600 |
 | `whatsapp-notify` | Yes | Yes | Rolled out (Phase 3 Wave 3); internal_service caller only; 3 Next.js callers sign requests; migration 20260620001500 |
 
 The live database migrations required for the grounded-answer and ncert-question-engine rollouts are already applied. The bulk policy seeding migration (`20260620001300`) is also applied, making Phase 3 code integration purely a code change with no new migration required for the 14 already-seeded functions.
@@ -356,9 +352,17 @@ Functions integrated in Wave 1:
 
 In each function: `constantTimeEqual`/`authenticateAdmin` removed; `admitAiRoute` called after CORS and method check, with `bodyText = req.method === 'POST' ? await req.text() : ''`; `finalizeAiRoute` called on all exit paths.
 
-### Wave 2 — PENDING
+### Wave 2 — COMPLETE
 
-The 5 remaining functions (`generate-answers`, `generate-concepts`, `extract-ncert-questions`, `bulk-non-mcq-gen`, `bulk-question-gen`) have their proxy callers registered in `20260620001600` and the shared Next.js proxy already routes for them. Only their Edge Function `index.ts` files need the same auth-swap pattern as Wave 1. No new migration is required.
+Platform Security Layer Phase 4 complete — all AI Edge Functions now use admitAiRoute/finalizeAiRoute. Platform security perimeter is closed.
+
+The 5 remaining functions (`generate-answers`, `generate-concepts`, `extract-ncert-questions`, `bulk-non-mcq-gen`, `bulk-question-gen`) have been integrated. No new migration was required — proxy callers were already registered in `20260620001600` and the shared Next.js proxy already routed for them.
+
+Key implementation notes:
+- Pattern A functions (`generate-answers`, `generate-concepts`, `bulk-question-gen`): proxy decision moved before `req.text()` to preserve the one-time-read stream contract; legacy auth (`authenticateAdmin` / `verifyAdminAuth`) removed entirely.
+- Pattern B functions (`extract-ncert-questions`, `bulk-non-mcq-gen`): proxy was already first; only legacy auth removed and admission added after body read.
+- `handlePost` signatures updated to accept pre-read `bodyText` string in all 3 Pattern A functions.
+- `finalizeAiRoute` called on every exit path in all 5 functions.
 
 Note: `bulk-question-gen` and `bulk-non-mcq-gen` use `verifyAdminAuth` (checks `admin_users.admin_level`) rather than `x-admin-key`. The migration path for those two is to remove `verifyAdminAuth` and replace with `admitAiRoute` using `callerTypes: ['internal_service']`, matching Wave 1.
 

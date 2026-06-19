@@ -79,7 +79,7 @@ import { isMolAdminRoutingEnabled } from '../_shared/mol/admin-rollback-flag.ts'
 // user because Cloud Run is down. Default OFF (rollout_pct=0) until
 // architect wires PYTHON_AI_BASE_URL + ops bumps the flag.
 import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
-import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
+import { admitAiRoute, finalizeAiRoute, createStaticAiRouteProfile, fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
 
 // ─── Environment ──────────────────────────────────────────────────────────────
 const ANTHROPIC_API_KEY   = Deno.env.get('ANTHROPIC_API_KEY')   || ''
@@ -161,53 +161,16 @@ interface InsertedQuestion extends GeneratedQuestion {
   chapter: string
 }
 
-// ─── Auth: service-role or admin/super_admin user ────────────────────────────
+// ─── Platform Security Layer — route profile (Phase 4 Wave 2) ────────────────
 
-async function verifyAdminAuth(
-  req: Request,
-): Promise<{ authorized: true } | { authorized: false; error: string; status: number }> {
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) {
-    return { authorized: false, error: 'Missing or invalid Authorization header', status: 401 }
-  }
-
-  const token = authHeader.replace('Bearer ', '')
-
-  // Verify the JWT by calling getUser() against Supabase Auth.
-  // Admin callers must supply a user JWT with role = "admin" or "super_admin"
-  // in the profiles table.  The service-role key must NOT be passed as a bearer
-  // token over the wire — use server-side Supabase admin client calls instead.
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || ''
-  const userClient = createClient(SUPABASE_URL, anonKey, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  })
-
-  const { data: { user }, error: authError } = await userClient.auth.getUser()
-
-  if (authError || !user) {
-    return { authorized: false, error: 'Invalid or expired token', status: 401 }
-  }
-
-  // Require auth_user_id present in admin_users with admin_level IN ('admin', 'super_admin').
-  const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-  const { data: adminRecord, error: adminErr } = await adminClient
-    .from('admin_users')
-    .select('admin_level')
-    .eq('auth_user_id', user.id)
-    .eq('is_active', true)
-    .maybeSingle()
-
-  if (adminErr || !adminRecord) {
-    return { authorized: false, error: 'Admin access required', status: 403 }
-  }
-
-  const ADMIN_LEVELS = ['admin', 'super_admin']
-  if (!ADMIN_LEVELS.includes(adminRecord.admin_level)) {
-    return { authorized: false, error: 'Admin access required', status: 403 }
-  }
-
-  return { authorized: true }
-}
+const BULK_QUESTION_GEN_ROUTE_PROFILE = createStaticAiRouteProfile({
+  route: 'bulk-question-gen',
+  callerTypes: ['internal_service'],
+  modelProvider: 'anthropic',
+  modelName: 'claude-haiku-4-5-20251001',
+  inputTokenFloor: 512,
+  outputTokens: 2048,
+})
 
 // ─── Prompt builder ──────────────────────────────────────────────────────────
 
@@ -1027,37 +990,18 @@ Deno.serve(async (req: Request) => {
     return errorResponse('Supabase not configured', 503, origin)
   }
 
+  // ── Python AI proxy (Pattern A — proxy BEFORE body read) ─────────────────
+  // shouldProxyToPython reads ONLY headers/flags, NOT the body stream, so it
+  // is safe to call here before req.text(). forwardToPython consumes the body
+  // and returns immediately; the req.text() call below is only reached when
+  // the proxy is inactive or falls through.
+  const proxyTraceId =
+    req.headers.get('x-request-id') ??
+    (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `bqg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`)
+
   try {
-    // ── 1. Auth check (admin-only) ──────────────────────────────────────────
-    const authResult = await verifyAdminAuth(req)
-    if (!authResult.authorized) {
-      return errorResponse(authResult.error, authResult.status, origin)
-    }
-
-    // ── 1a. Python AI services cutover (Phase 1 — 2026-05-24) ───────────────
-    // When ff_python_bulk_question_gen_v1 is enabled AND the per-request
-    // hash bucket falls within rollout_pct, forward the entire request to
-    // Cloud Run instead of running the Phase 1A TS path below. Default
-    // rollout_pct=0 means ZERO traffic forwards until ops bumps the
-    // envelope; first deploy ramp is 10% → 25% → 50% → 100% over 24-48h
-    // per the docs/PYTHON_AI_OPERATIONS.md rollout playbook.
-    //
-    // The traceId is locally generated (function has no upstream request
-    // id today). Same UUID is passed to shouldProxyToPython so the hash
-    // bucket is reproducible across helper invocations within this call.
-    //
-    // Rollback gate is identical to the rest of Phase 1A: if Cloud Run is
-    // returning bad results, ops flips metadata.kill_switch=true and the
-    // 5-min flag cache TTL drains the proxy without a redeploy. If Cloud
-    // Run is hard-down, the proxy throws and we fall through to the TS
-    // path — the user never sees a 502 because the TS path is the safety
-    // net during transition (P12 — never crash the user-facing path).
-    const proxyTraceId =
-      req.headers.get('x-request-id') ??
-      (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `bqg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`)
-
     const proxyDecision = await shouldProxyToPython({
       flag_name: 'ff_python_bulk_question_gen_v1',
       endpoint_path: '/v1/bulk-question-gen',
@@ -1071,21 +1015,37 @@ Deno.serve(async (req: Request) => {
           request: req,
         })
       } catch (err) {
-        // Proxy failure: log + fall through to the existing TS path. We
-        // intentionally never 502 the user because of proxy-layer issues
-        // during transition — TS is the safety net.
+        // Proxy failure: log + fall through to the TS path.
         console.warn(
           `[python-ai-proxy] forward failed for bulk-question-gen: ${err instanceof Error ? err.message : String(err)}; falling back to TS path`,
         )
-        // Continue to the existing TS code below.
       }
     }
+  } catch (err) {
+    console.warn('[bulk-question-gen] python proxy check failed:', err instanceof Error ? err.message : String(err))
+  }
 
-    // ── 2. Parse + validate request body ───────────────────────────────────
+  // Read body as text — admitAiRoute needs bodyText for request body hash.
+  // Must come AFTER the proxy decision (forwardToPython would have consumed the stream).
+  const bodyText = await req.text()
+
+  // Create Supabase admin client for security layer RPCs
+  const adminSb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+
+  // ── Platform Security Layer admission (Phase 4 Wave 2) ──────────────────
+  const admitResult = await admitAiRoute({ req, sb: adminSb, profile: BULK_QUESTION_GEN_ROUTE_PROFILE, bodyText })
+  if (!admitResult.ok) return admitResult.response
+  const { admission } = admitResult
+
+  try {
+    // ── Parse + validate request body ──────────────────────────────────────
     let body: Record<string, unknown>
     try {
-      body = await req.json()
+      body = JSON.parse(bodyText)
     } catch {
+      await finalizeAiRoute({ sb: adminSb, admission, statusCode: 400, errorCode: 'invalid_json' })
       return errorResponse('Invalid JSON body', 400, origin)
     }
 
@@ -1272,6 +1232,7 @@ Deno.serve(async (req: Request) => {
       }
 
       if (resultRows.length === 0) {
+        await finalizeAiRoute({ sb: adminSb, admission, statusCode: 200 })
         return jsonResponse(
           {
             generated: 0,
@@ -1294,6 +1255,7 @@ Deno.serve(async (req: Request) => {
 
       if (insertError) {
         console.error('bulk-question-gen (grounded): DB insert failed:', insertError.message)
+        await finalizeAiRoute({ sb: adminSb, admission, statusCode: 500, errorCode: 'db_insert_failed' })
         return errorResponse(`Database insert failed: ${insertError.message}`, 500, origin)
       }
 
@@ -1321,6 +1283,7 @@ Deno.serve(async (req: Request) => {
         ts:            new Date().toISOString(),
       }))
 
+      await finalizeAiRoute({ sb: adminSb, admission, statusCode: 200 })
       return jsonResponse(
         {
           generated: resultRows.length,
@@ -1349,6 +1312,7 @@ Deno.serve(async (req: Request) => {
     const claudeResult = await callClaude(systemPrompt, userPrompt, grade, safeSubject)
     if (!claudeResult.ok) {
       console.error('bulk-question-gen: Claude API failed:', claudeResult.error)
+      await finalizeAiRoute({ sb: adminSb, admission, statusCode: 503, errorCode: 'ai_generation_failed' })
       return errorResponse(`AI generation failed: ${claudeResult.error}`, 503, origin)
     }
 
@@ -1356,6 +1320,7 @@ Deno.serve(async (req: Request) => {
     const rawArray = extractJsonArray(claudeResult.text)
     if (!rawArray) {
       console.error('bulk-question-gen: Failed to parse JSON array from Claude response')
+      await finalizeAiRoute({ sb: adminSb, admission, statusCode: 502, errorCode: 'ai_unparseable' })
       return errorResponse('AI returned an unparseable response. Please retry.', 502, origin)
     }
 
@@ -1439,6 +1404,7 @@ Deno.serve(async (req: Request) => {
     const generated = rawArray.length
 
     if (validQuestions.length === 0) {
+      await finalizeAiRoute({ sb: adminSb, admission, statusCode: 200 })
       return jsonResponse({
         generated,
         inserted:  0,
@@ -1478,6 +1444,7 @@ Deno.serve(async (req: Request) => {
 
     if (insertError) {
       console.error('bulk-question-gen: DB insert failed:', insertError.message)
+      await finalizeAiRoute({ sb: adminSb, admission, statusCode: 500, errorCode: 'db_insert_failed' })
       return errorResponse(`Database insert failed: ${insertError.message}`, 500, origin)
     }
 
@@ -1508,6 +1475,7 @@ Deno.serve(async (req: Request) => {
     }))
 
     // ── 8. Return result ────────────────────────────────────────────────────
+    await finalizeAiRoute({ sb: adminSb, admission, statusCode: 200 })
     return jsonResponse(
       {
         generated,
@@ -1524,6 +1492,7 @@ Deno.serve(async (req: Request) => {
 
   } catch (err) {
     console.error('bulk-question-gen: unexpected error:', err)
+    await finalizeAiRoute({ sb: adminSb, admission, statusCode: 500, errorCode: 'unhandled_error' })
     return errorResponse('Internal server error', 500, origin)
   }
 })
