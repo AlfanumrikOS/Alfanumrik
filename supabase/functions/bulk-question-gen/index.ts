@@ -56,7 +56,7 @@ import {
 } from '../_shared/quiz-oracle-prompts.ts'
 import { logOpsEvent } from '../_shared/ops-events.ts'
 // MoL (Model Orchestration Layer) router — Phase 1A migration (2026-05-24).
-// Replaces direct fetch('https://api.anthropic.com/v1/messages', ...) so that
+// Replaces direct fetchWithProviderTimeout('https://api.anthropic.com/v1/messages', ...) so that
 // (a) admin-only generation can be routed to OpenAI gpt-4o-mini (~85–90% cost
 //     reduction vs Haiku 4.5) with Claude fallback;
 // (b) telemetry, circuit-breaker, retries, and cost accounting live in one
@@ -79,6 +79,7 @@ import { isMolAdminRoutingEnabled } from '../_shared/mol/admin-rollback-flag.ts'
 // user because Cloud Run is down. Default OFF (rollout_pct=0) until
 // architect wires PYTHON_AI_BASE_URL + ops bumps the flag.
 import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
+import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
 
 // ─── Environment ──────────────────────────────────────────────────────────────
 const ANTHROPIC_API_KEY   = Deno.env.get('ANTHROPIC_API_KEY')   || ''
@@ -426,7 +427,7 @@ async function callClaudeLegacy(
 
   try {
     // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- legacy rollback path for ff_mol_admin_functions_v1; do not remove without retiring the rollback flag.
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetchWithProviderTimeout('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'x-api-key':         ANTHROPIC_API_KEY,
@@ -560,7 +561,7 @@ async function callOracleGraderLegacy(userPrompt: string): Promise<LlmGradeResul
 
   try {
     // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- legacy rollback path for ff_mol_admin_functions_v1; do not remove without retiring the rollback flag.
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetchWithProviderTimeout('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'x-api-key': ANTHROPIC_API_KEY,

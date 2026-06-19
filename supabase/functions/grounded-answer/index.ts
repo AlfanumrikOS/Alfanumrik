@@ -1,4 +1,8 @@
 // supabase/functions/grounded-answer/index.ts
+function logDeprecatedEdgeFunctionHit() {
+  console.warn('api_deprecated_edge_function_hit', { workflow: 'ai-tutor', route: 'supabase/functions/grounded-answer/index.ts', canonical_route: '/api/foxy', compatibility_type: 'internal-only', metric: 'api_deprecated_route_hit' })
+}
+
 import { validateRequest } from './validators.ts';
 import { runPipeline, writeUpstreamErrorTrace } from './pipeline.ts';
 import { runStreamingPipeline } from './pipeline-stream.ts';
@@ -341,6 +345,7 @@ async function finalizeCircuit(
 }
 
 export async function handleRequest(req: Request): Promise<Response> {
+  logDeprecatedEdgeFunctionHit()
   const started = Date.now();
   const origin = getRequestOrigin(req);
 

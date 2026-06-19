@@ -32,6 +32,7 @@ import { tickAll } from '../_shared/state-runtime/tick-all.ts'
 import { standardDispatcher } from '../_shared/state-runtime/dispatcher.ts'
 import { defaultLog } from '../_shared/state-runtime/subscriber.ts'
 import { capture as posthogCapture } from '../_shared/posthog.ts'
+import { auditInternalCronInvocation, internalCronUnauthorizedResponse, verifyInternalCronRequest } from '../_shared/security/internal-cron-auth.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -47,7 +48,9 @@ const SB = SUPABASE_URL && SERVICE_ROLE
   ? createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } })
   : null
 
-Deno.serve(async (_req) => {
+Deno.serve(async (req) => {
+  const requestId = req.headers.get('x-request-id') ?? crypto.randomUUID()
+  const authStarted = performance.now()
   if (!SUPABASE_URL || !SERVICE_ROLE || !SB) {
     return new Response(
       JSON.stringify({
@@ -58,6 +61,12 @@ Deno.serve(async (_req) => {
   }
 
   const sb = SB
+  const auth = await verifyInternalCronRequest({ req, route: 'projector-runner', sb, requestId, bodyText: '' })
+  if (!auth.ok) {
+    await auditInternalCronInvocation({ sb, route: 'projector-runner', requestId, started: authStarted, auth, statusCode: auth.status })
+    return internalCronUnauthorizedResponse(auth)
+  }
+  await auditInternalCronInvocation({ sb, route: 'projector-runner', requestId, started: authStarted, auth, statusCode: 200 })
   const start = performance.now()
 
   try {

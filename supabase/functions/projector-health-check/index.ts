@@ -38,6 +38,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { capture as posthogCapture } from '../_shared/posthog.ts'
+import { auditInternalCronInvocation, internalCronUnauthorizedResponse, verifyInternalCronRequest } from '../_shared/security/internal-cron-auth.ts'
 
 // ─── SLO thresholds ──────────────────────────────────────────────────────────
 // Mirrors docs/architecture/SLO.md "Projector lag" row. Update both together.
@@ -148,7 +149,9 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
-Deno.serve(async (_req) => {
+Deno.serve(async (req) => {
+  const requestId = req.headers.get('x-request-id') ?? crypto.randomUUID()
+  const authStarted = performance.now()
   if (!SUPABASE_URL || !SERVICE_ROLE) {
     return jsonResponse(
       {
@@ -163,6 +166,12 @@ Deno.serve(async (_req) => {
   const sb = createClient(SUPABASE_URL, SERVICE_ROLE, {
     auth: { persistSession: false },
   })
+  const auth = await verifyInternalCronRequest({ req, route: 'projector-health-check', sb, requestId, bodyText: '' })
+  if (!auth.ok) {
+    await auditInternalCronInvocation({ sb, route: 'projector-health-check', requestId, started: authStarted, auth, statusCode: auth.status })
+    return internalCronUnauthorizedResponse(auth)
+  }
+  await auditInternalCronInvocation({ sb, route: 'projector-health-check', requestId, started: authStarted, auth, statusCode: 200 })
   const start = performance.now()
 
   try {

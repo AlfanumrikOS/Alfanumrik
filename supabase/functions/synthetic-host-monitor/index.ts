@@ -1,3 +1,4 @@
+import { createCronIdempotencyKey, fetchWithTimeout } from '../_shared/reliability.ts'
 /**
  * synthetic-host-monitor — Alfanumrik Edge Function (Phase E.5).
  *
@@ -69,6 +70,7 @@
  */
 
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { auditInternalCronInvocation, internalCronUnauthorizedResponse, verifyInternalCronRequest } from '../_shared/security/internal-cron-auth.ts'
 import {
   classifyProbe,
   resolveHostForSchool,
@@ -131,13 +133,15 @@ async function fetchProbe(
   | { kind: 'dns';       durationMs: number; message: string }
   | { kind: 'error';     durationMs: number; message: string }
 > {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
   const start = performance.now()
   try {
-    const res = await fetch(`https://${host}/api/school-config`, {
+    const res = await fetchWithTimeout(`https://${host}/api/school-config`, {
+      provider: 'internal',
+      operation: 'synthetic_school_config',
+      timeoutMs: FETCH_TIMEOUT_MS,
+      retry: { maxAttempts: 2 },
+      idempotencyKey: createCronIdempotencyKey({ jobName: 'synthetic-host-monitor', scheduledFor: new Date().toISOString().slice(0, 16), shard: host }),
       method: 'GET',
-      signal: controller.signal,
       headers: {
         'User-Agent': 'Alfanumrik-Synthetic-Monitor/1.0 (+ops@alfanumrik.com)',
         'Accept':     'application/json',
@@ -171,7 +175,7 @@ async function fetchProbe(
     }
     return { kind: 'error', durationMs, message }
   } finally {
-    clearTimeout(timer)
+    // timeout handled by shared reliability helper
   }
 }
 
@@ -439,7 +443,9 @@ async function probeSchoolWithBodyCapture(
 
 // ── HTTP entry ────────────────────────────────────────────────────────────
 
-Deno.serve(async (_req: Request) => {
+Deno.serve(async (req: Request) => {
+  const requestId = req.headers.get('x-request-id') ?? crypto.randomUUID()
+  const authStarted = performance.now()
   if (!SUPABASE_URL || !SERVICE_ROLE) {
     return new Response(
       JSON.stringify({
@@ -452,6 +458,12 @@ Deno.serve(async (_req: Request) => {
   const sb = createClient(SUPABASE_URL, SERVICE_ROLE, {
     auth: { persistSession: false },
   })
+  const auth = await verifyInternalCronRequest({ req, route: 'synthetic-host-monitor', sb, requestId, bodyText: '' })
+  if (!auth.ok) {
+    await auditInternalCronInvocation({ sb, route: 'synthetic-host-monitor', requestId, started: authStarted, auth, statusCode: auth.status })
+    return internalCronUnauthorizedResponse(auth)
+  }
+  await auditInternalCronInvocation({ sb, route: 'synthetic-host-monitor', requestId, started: authStarted, auth, statusCode: 200 })
   try {
     const summary = await runTick(sb)
     console.log('synthetic-host-monitor: tick complete', {

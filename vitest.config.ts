@@ -76,6 +76,9 @@ export default defineConfig({
           // the proxy helper used by bulk-question-gen (and future
           // Phase 1+ ports) to forward traffic to Cloud Run.
           'supabase/functions/_shared/__tests__/python-ai-proxy.test.ts',
+          // Platform Security Layer AI admission wrapper regression tests.
+          'supabase/functions/_shared/__tests__/ai-admission.test.ts',
+          'supabase/functions/_shared/__tests__/reliability.test.ts',
           // C4.2b-ii text capture (2026-05-20). Tests for recordShadowText
           // + redaction aggregation + DB insert wiring.
           'supabase/functions/_shared/mol/__tests__/recordShadowText.test.ts',

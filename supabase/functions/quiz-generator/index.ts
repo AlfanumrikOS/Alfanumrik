@@ -26,6 +26,10 @@
  * }
  */
 
+function logDeprecatedEdgeFunctionHit() {
+  console.warn('api_deprecated_edge_function_hit', { workflow: 'quiz', route: 'supabase/functions/quiz-generator/index.ts', canonical_route: '/api/v2/quiz/questions', compatibility_type: 'internal-only', metric: 'api_deprecated_route_hit' })
+}
+
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, getCorsHeaders } from '../_shared/cors.ts'
 import { retrieveChunks } from '../_shared/retrieval.ts'
@@ -943,6 +947,7 @@ async function handleNextQuestion(
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
+  logDeprecatedEdgeFunctionHit()
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }

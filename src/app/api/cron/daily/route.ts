@@ -14,6 +14,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { logDeprecatedRouteHit, withDeprecationHeaders } from '@/lib/api-route-ownership';
 
 const CRON_SECRET  = process.env.CRON_SECRET ?? '';
 const SB_URL       = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
@@ -22,6 +23,14 @@ const SB_SERVICE   = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 export const runtime = 'nodejs'; // daily-cron needs longer timeout than Edge allows
 
 export async function GET(request: NextRequest) {
+  logDeprecatedRouteHit({
+    workflow: 'cron',
+    route: '/api/cron/daily',
+    canonicalRoute: '/api/cron/daily-cron',
+    compatibilityType: 'deprecated',
+    removalCondition: 'Remove after production telemetry shows zero hits for 30 days and one full release.',
+  });
+
   // ── Auth: Vercel passes CRON_SECRET as Authorization header ──────────────────
   const authHeader = request.headers.get('authorization');
   if (!CRON_SECRET || authHeader !== `Bearer ${CRON_SECRET}`) {
@@ -63,9 +72,12 @@ export async function GET(request: NextRequest) {
     results.snapshot_error = err instanceof Error ? err.message : String(err);
   }
 
-  return NextResponse.json({
-    ok: true,
-    ts: new Date().toISOString(),
-    ...results,
-  });
+  return withDeprecationHeaders(
+    NextResponse.json({
+      ok: true,
+      ts: new Date().toISOString(),
+      ...results,
+    }),
+    { canonicalRoute: '/api/cron/daily-cron', compatibilityType: 'deprecated' },
+  );
 }

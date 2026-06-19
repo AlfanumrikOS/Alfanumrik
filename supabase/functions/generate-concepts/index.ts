@@ -44,6 +44,7 @@ import { isMolAdminRoutingEnabled } from '../_shared/mol/admin-rollback-flag.ts'
 // bumps the flag. The Python service performs its own constant-time
 // x-admin-key check, so the proxy forwards the header verbatim.
 import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
+import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -393,7 +394,7 @@ async function callClaudeLegacy(
 
   try {
     // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- legacy rollback path for ff_mol_admin_functions_v1; do not remove without retiring the rollback flag.
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetchWithProviderTimeout('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'x-api-key': ANTHROPIC_API_KEY,

@@ -2,7 +2,7 @@
 
 import type { ModelProvider, ProviderCallOptions } from './base.ts'
 import type { ProviderResponse } from '../types.ts'
-import { withTimeout } from './shared.ts'
+import { fetchWithTimeout } from '../../reliability.ts'
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
 
@@ -52,19 +52,17 @@ export class OpenAIProvider implements ModelProvider {
       temperature: opts.temperature ?? 0.7,
     }
 
-    const res = await withTimeout(
-      (signal) =>
-        fetch(OPENAI_URL, {
+    const res = await fetchWithTimeout(OPENAI_URL, {
+          provider: 'openai',
+          operation: 'mol_chat_completion',
+          timeoutMs: timeout,
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${this.apiKey()}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(body),
-          signal,
-        }),
-      timeout,
-    )
+        })
 
     if (!res.ok) {
       const raw = await res.text().catch(() => '')

@@ -21,6 +21,10 @@
  * }
  */
 
+function logDeprecatedEdgeFunctionHit() {
+  console.warn('api_deprecated_edge_function_hit', { workflow: 'ncert-solve', route: 'supabase/functions/ncert-solver/index.ts', canonical_route: '/api/scan-solve', compatibility_type: 'internal-only', metric: 'api_deprecated_route_hit' })
+}
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, errorResponse, jsonResponse } from '../_shared/cors.ts'
 import { fetchRAGContext } from '../_shared/rag-retrieval.ts'
@@ -31,6 +35,7 @@ import {
   isFeatureFlagEnabled,
   type GroundedRequest,
 } from '../_shared/grounded-client.ts'
+import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
@@ -76,6 +81,7 @@ const circuitBreaker = {
 }
 
 Deno.serve(async (req) => {
+  logDeprecatedEdgeFunctionHit()
   const origin = req.headers.get('origin') || ''
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: getCorsHeaders(origin) })
@@ -388,7 +394,7 @@ async function callClaude(prompt: string, maxTokens: number, systemPrompt: strin
 
   try {
     // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): ncert-solver already routes through grounded-answer behind ff_ncert_grounded flag; delete this fallback call once flag defaults to true.
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetchWithProviderTimeout('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'x-api-key': ANTHROPIC_API_KEY,
