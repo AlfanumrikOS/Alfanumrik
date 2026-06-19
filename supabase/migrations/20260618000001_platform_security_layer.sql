@@ -1290,4 +1290,57 @@ GRANT EXECUTE ON FUNCTION public.security_settle_quota(text, uuid, uuid, text, t
 GRANT EXECUTE ON FUNCTION public.security_update_circuit_state(text, uuid, text, text, uuid, text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.security_write_request_audit(uuid, text, uuid, uuid, text, text, text, text, text, uuid, text, integer, integer, text, text, text, bigint, bigint, numeric, bigint, bigint, numeric) TO service_role;
 
+-- ─── RLS (P8 enforcement added retroactively to satisfy CI gate) ──────────────
+-- All security_ tables are internal quota-tracking/circuit-breaker stores.
+-- They are accessed ONLY via SECURITY DEFINER functions (security_reserve_quota,
+-- security_settle_quota, security_update_circuit_state, security_write_request_audit,
+-- etc. — all above). Direct table access from authenticated / anon roles is
+-- explicitly blocked; service_role has full access for operational tooling.
+
+ALTER TABLE public.security_quota_profiles          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.security_internal_callers        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.security_route_policies          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.security_request_usage_daily     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.security_request_usage_monthly   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.security_tenant_ai_usage_daily   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.security_tenant_ai_usage_monthly ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.security_circuit_state           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.security_request_audit           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.security_tenant_ai_budgets       ENABLE ROW LEVEL SECURITY;
+
+-- One policy per table: service_role full access. The SECURITY DEFINER functions
+-- bypass RLS anyway, but the service_role client used by Edge Functions for
+-- direct table access (audit INSERT, circuit_state INSERT) still needs this policy.
+-- No authenticated/anon policy: deliberate — zero direct table access for end users.
+
+DROP POLICY IF EXISTS "security_quota_profiles_service_role"          ON public.security_quota_profiles;
+CREATE POLICY "security_quota_profiles_service_role"          ON public.security_quota_profiles          TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "security_internal_callers_service_role"        ON public.security_internal_callers;
+CREATE POLICY "security_internal_callers_service_role"        ON public.security_internal_callers        TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "security_route_policies_service_role"          ON public.security_route_policies;
+CREATE POLICY "security_route_policies_service_role"          ON public.security_route_policies          TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "security_request_usage_daily_service_role"     ON public.security_request_usage_daily;
+CREATE POLICY "security_request_usage_daily_service_role"     ON public.security_request_usage_daily     TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "security_request_usage_monthly_service_role"   ON public.security_request_usage_monthly;
+CREATE POLICY "security_request_usage_monthly_service_role"   ON public.security_request_usage_monthly   TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "security_tenant_ai_usage_daily_service_role"   ON public.security_tenant_ai_usage_daily;
+CREATE POLICY "security_tenant_ai_usage_daily_service_role"   ON public.security_tenant_ai_usage_daily   TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "security_tenant_ai_usage_monthly_service_role" ON public.security_tenant_ai_usage_monthly;
+CREATE POLICY "security_tenant_ai_usage_monthly_service_role" ON public.security_tenant_ai_usage_monthly TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "security_circuit_state_service_role"           ON public.security_circuit_state;
+CREATE POLICY "security_circuit_state_service_role"           ON public.security_circuit_state           TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "security_request_audit_service_role"           ON public.security_request_audit;
+CREATE POLICY "security_request_audit_service_role"           ON public.security_request_audit           TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "security_tenant_ai_budgets_service_role"       ON public.security_tenant_ai_budgets;
+CREATE POLICY "security_tenant_ai_budgets_service_role"       ON public.security_tenant_ai_budgets       TO service_role USING (true) WITH CHECK (true);
+
 COMMIT;

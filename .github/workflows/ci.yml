@@ -311,6 +311,30 @@ jobs:
         with:
           deno-version: v2.7.14
 
+      - name: Cache Deno module dependencies
+        run: |
+          # Pre-warm Deno module cache so the offline test step doesn't need --allow-net.
+          # deno cache resolves and downloads all remote imports (std@0.210.0/assert,
+          # esm.sh/@supabase/supabase-js@2, etc.) and stores them in the Deno cache dir.
+          # The test step then runs with only --allow-read --allow-env (no network).
+          deno cache --no-lock \
+            supabase/functions/parent-portal/__tests__/contract.test.ts \
+            supabase/functions/teacher-dashboard/__tests__/contract.test.ts \
+            supabase/functions/daily-cron/__tests__/contract.test.ts \
+            supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts \
+            supabase/functions/grounded-answer/__tests__/cache.test.ts \
+            supabase/functions/grounded-answer/__tests__/circuit.test.ts \
+            supabase/functions/grounded-answer/__tests__/citations.test.ts \
+            supabase/functions/grounded-answer/__tests__/claude.test.ts \
+            supabase/functions/grounded-answer/__tests__/confidence.test.ts \
+            supabase/functions/grounded-answer/__tests__/coverage.test.ts \
+            supabase/functions/grounded-answer/__tests__/embedding.test.ts \
+            supabase/functions/grounded-answer/__tests__/grounding-check.test.ts \
+            supabase/functions/grounded-answer/__tests__/retrieval.test.ts \
+            supabase/functions/grounded-answer/__tests__/trace.test.ts \
+            supabase/functions/grounded-answer/__tests__/validation.test.ts \
+            supabase/functions/grounded-answer/__tests__/wrap-as-paragraph.test.ts
+
       - name: Run Edge Function Deno tests (deterministic, offline)
         run: |
           deno test --no-lock --allow-read --allow-env \
