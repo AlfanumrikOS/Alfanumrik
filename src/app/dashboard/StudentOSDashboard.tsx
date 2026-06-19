@@ -36,7 +36,7 @@ import { getNextTopics } from '@/lib/supabase';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { useCosmicLightSurface } from '@/lib/use-cosmic-light-surface';
 import { DashboardSkeleton } from '@/components/Skeleton';
-import { AppShell, MobileNav, STUDENT_NAV_ITEMS } from '@/components/responsive';
+import { AppShell } from '@/components/responsive';
 import { StreakBadge } from '@/components/ui';
 import type { CurriculumTopic } from '@/lib/types';
 import TodaysMission from '@/components/dashboard/os/TodaysMission';
@@ -173,7 +173,6 @@ export default function StudentOSDashboard() {
           <RevisionRail isHi={isHi} studentId={student.id} />
         </div>
       }
-      nav={<MobileNav items={STUDENT_NAV_ITEMS} />}
     >
       <div className="flex flex-col gap-5 px-4 pt-2 pb-6">
         {/* 1. PRIMARY hero — single dominant CTA. */}
