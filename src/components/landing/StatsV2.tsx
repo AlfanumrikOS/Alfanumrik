@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useWelcomeV2 } from './WelcomeV2Context';
 import s from './welcome-v2.module.css';
 
@@ -46,6 +46,25 @@ const STATS: Stat[] = [
 export default function StatsV2() {
   const { isHi, t } = useWelcomeV2();
   const [openIdx, setOpenIdx] = useState<number | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('visible');
+            obs.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.15 },
+    );
+    el.querySelectorAll('[data-reveal]').forEach(child => obs.observe(child));
+    return () => obs.disconnect();
+  }, []);
 
   return (
     <section className={s.stats} id="stats" aria-labelledby="stats-title">
@@ -60,13 +79,14 @@ export default function StatsV2() {
             {isHi ? ' किया गया।' : '.'}
           </h2>
         </div>
-        <div className={s.statsGrid}>
+        <div className={s.statsGrid} ref={gridRef}>
           {STATS.map((stat, i) => {
             const isOpen = openIdx === i;
             return (
               <button
                 key={i}
-                className={s.statRow}
+                data-reveal
+                className={`${s.statRow} ${s.reveal}`}
                 type="button"
                 aria-expanded={isOpen}
                 onClick={() => setOpenIdx(isOpen ? null : i)}

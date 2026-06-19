@@ -50,10 +50,9 @@ export function StickyMobileCTA() {
       className="fixed bottom-0 left-0 right-0 z-50 sm:hidden flex items-center justify-center gap-3 px-4"
       style={{
         height: 56,
-        background: 'rgba(251,248,244,0.92)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        borderTop: '1px solid var(--border)',
+        background: '#F4ECDB',
+        borderTop: '1px solid rgba(14,11,7,0.12)',
+        boxShadow: '0 -4px 16px rgba(14,11,7,0.08)',
         transform: visible ? 'translateY(0)' : 'translateY(100%)',
         transition: 'transform 0.3s ease-out',
         pointerEvents: visible ? 'auto' : 'none',

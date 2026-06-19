@@ -156,6 +156,7 @@ export default function HeroV2() {
 
             <div className={s.heroCtaRow}>
               <Link
+                id="hero-cta"
                 href={copy.ctaHref}
                 className={`${s.btn} ${s.btnPrimary} ${s.btnArrow}`}
                 onClick={() =>
@@ -172,6 +173,16 @@ export default function HeroV2() {
               <Link href="#how" className={`${s.btn} ${s.btnGhost}`}>
                 {t('How it works', 'कैसे काम करता है')}
               </Link>
+              <div className={s.heroSocial}>
+                <span className="avatarRow" aria-hidden="true">
+                  {['A', 'R', 'P', 'M'].map(i => (
+                    <span key={i} className="avatar">{i}</span>
+                  ))}
+                </span>
+                <span>
+                  {t('Joined by 12,000+ learners', '12,000+ विद्यार्थियों के साथ जुड़ें')}
+                </span>
+              </div>
             </div>
 
             <div className={s.heroFineprint}>

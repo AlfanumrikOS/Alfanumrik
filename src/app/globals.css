@@ -2412,7 +2412,7 @@ body:has(.foxy-shell) {
   /* Reset the inline backdrop the component sets so this rule set
      can take over. The component still sets backdrop-filter inline
      for browsers that don't read this declaration — no harm. */
-  background: rgba(var(--bg-rgb), 0.86);
+  background: rgba(var(--bg-rgb), 0.96);
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
   border-top: 1px solid var(--line);

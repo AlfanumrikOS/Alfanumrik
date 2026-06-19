@@ -1,10 +1,45 @@
 'use client';
 
+import { useRef, useEffect } from 'react';
+import useSWR from 'swr';
 import { useWelcomeV2 } from './WelcomeV2Context';
 import s from './welcome-v2.module.css';
 
+const liveFetcher = (url: string) =>
+  fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
+
+function toDevanagariNum(n: number): string {
+  return String(n).replace(/\d/g, d => '०१२३४५६७८९'[parseInt(d)]);
+}
+
 export default function TrustV2() {
   const { isHi, t } = useWelcomeV2();
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('visible');
+            obs.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.15 },
+    );
+    el.querySelectorAll('[data-reveal]').forEach(child => obs.observe(child));
+    return () => obs.disconnect();
+  }, []);
+
+  const { data: liveData } = useSWR<{ count: number }>(
+    '/api/v1/live-learners',
+    liveFetcher,
+    { refreshInterval: 300_000, revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+  const liveCount = liveData?.count ?? 142;
 
   return (
     <section className={s.trust} id="trust" aria-labelledby="trust-title">
@@ -20,8 +55,8 @@ export default function TrustV2() {
           </div>
         </div>
 
-        <div className={s.trustGrid}>
-          <div className={s.trustCol}>
+        <div className={s.trustGrid} ref={gridRef}>
+          <div data-reveal className={`${s.trustCol} ${s.reveal}`}>
             <h3 className="head">
               {t('A note from the founder', 'संस्थापक का एक नोट')}
             </h3>
@@ -51,7 +86,7 @@ export default function TrustV2() {
             </div>
           </div>
 
-          <div className={s.trustCol}>
+          <div data-reveal className={`${s.trustCol} ${s.reveal}`}>
             <h3 className="head">{t('From a teacher', 'एक शिक्षक से')}</h3>
             <div className={s.trustQuote}>
               {isHi ? (
@@ -79,7 +114,7 @@ export default function TrustV2() {
             </div>
           </div>
 
-          <div className={s.trustCol}>
+          <div data-reveal className={`${s.trustCol} ${s.reveal}`}>
             <h3 className="head">{t('From a parent', 'एक अभिभावक से')}</h3>
             <div className={s.trustQuote}>
               {isHi ? (
@@ -118,10 +153,9 @@ export default function TrustV2() {
         >
           <span className="pulse" aria-hidden="true"></span>
           <div className="liveText">
-            {/* TODO(ops): wire to /api/v1/live-learners endpoint when shipped. Static fallback for design preview. */}
-            <span className="num tabular">142</span>{' '}
+            <span className="num tabular">{liveCount}</span>{' '}
             {t('students learning right now', 'विद्यार्थी अभी सीख रहे हैं')}{' '}
-            <span className="devaNum" lang="hi">१४२</span>
+            <span className="devaNum" lang="hi">{toDevanagariNum(liveCount)}</span>
           </div>
           <div
             className="liveMeta"

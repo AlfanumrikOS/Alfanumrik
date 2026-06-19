@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { WelcomeV2Provider, useWelcomeV2 } from './WelcomeV2Context';
+import { LangProvider } from './LangToggle';
 import NavV2 from './NavV2';
 import HeroV2 from './HeroV2';
 import StatsV2 from './StatsV2';
@@ -14,6 +15,7 @@ import PricingTeaserV2 from './PricingTeaserV2';
 import FAQV2 from './FAQV2';
 import FinalCtaV2 from './FinalCtaV2';
 import FooterV2 from './FooterV2';
+import { StickyMobileCTA } from './StickyMobileCTA';
 import s from './welcome-v2.module.css';
 
 /**
@@ -84,6 +86,7 @@ function ThemedShell() {
         <FinalCtaV2 />
       </main>
       <FooterV2 />
+      <StickyMobileCTA />
       <AlfaBotMount />
     </div>
   );
@@ -91,8 +94,10 @@ function ThemedShell() {
 
 export default function WelcomeV2() {
   return (
-    <WelcomeV2Provider>
-      <ThemedShell />
-    </WelcomeV2Provider>
+    <LangProvider>
+      <WelcomeV2Provider>
+        <ThemedShell />
+      </WelcomeV2Provider>
+    </LangProvider>
   );
 }
