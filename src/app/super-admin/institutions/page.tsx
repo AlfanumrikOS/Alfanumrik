@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
 import {
   StatCard,
@@ -598,14 +599,18 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
 /*  Main Content                                                       */
 /* ------------------------------------------------------------------ */
 
+const PAGE_LIMIT = 50;
+
 function InstitutionsContent() {
   const { apiFetch } = useAdmin();
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
   /* ----- state ----- */
   const [institutions, setInstitutions] = useState<InstitutionRecord[]>([]);
   const [healthMap, setHealthMap] = useState<Record<string, HealthRecord>>({});
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
   const [loading, setLoading] = useState(false);
   const [healthLoading, setHealthLoading] = useState(false);
   const [selected, setSelected] = useState<SchoolRow | null>(null);
@@ -619,7 +624,7 @@ function InstitutionsContent() {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiFetch(`/api/super-admin/institutions?page=${page}&limit=25`);
+      const res = await apiFetch(`/api/super-admin/institutions?page=${page}&limit=${PAGE_LIMIT}`);
       if (res.ok) {
         const d = await res.json();
         setInstitutions(d.data || []);
@@ -1205,12 +1210,28 @@ function InstitutionsContent() {
       />
 
       {/* Pagination */}
-      <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center', alignItems: 'center' }}>
-        <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="rounded-md border border-surface-3 bg-surface-1 px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2">Prev</button>
-        <span style={{ fontSize: 12, color: '#9CA3AF', padding: '6px 12px' }}>
-          Page {page} of {Math.max(1, Math.ceil(total / 25))}
+      <div className="flex items-center justify-between px-4 py-3 border-t border-surface-3 text-[13px]">
+        <span className="text-muted-foreground">
+          {total === 0
+            ? 'No schools'
+            : `${(page - 1) * PAGE_LIMIT + 1}–${Math.min(page * PAGE_LIMIT, total)} of ${total}`}
         </span>
-        <button disabled={institutions.length < 25} onClick={() => setPage(p => p + 1)} className="rounded-md border border-surface-3 bg-surface-1 px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2">Next</button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => router.push(`?page=${page - 1}`)}
+            disabled={page <= 1}
+            className="px-3 py-1.5 rounded-md border border-surface-3 disabled:opacity-40"
+          >
+            Prev
+          </button>
+          <button
+            onClick={() => router.push(`?page=${page + 1}`)}
+            disabled={page * PAGE_LIMIT >= total}
+            className="px-3 py-1.5 rounded-md border border-surface-3 disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
       </div>
 
       {/* Provision Modal */}

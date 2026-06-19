@@ -831,6 +831,14 @@ img, video, iframe, canvas, svg {
   min-width: 0;
 }
 
+/* CSS-native row virtualization — zero bundle cost, zero JS.
+   content-visibility: auto skips paint/layout for off-screen rows.
+   contain-intrinsic-size gives the browser a stable scroll estimate. */
+.data-table tbody tr {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 48px;
+}
+
 /* Prevent horizontal scroll on any stacked layout.
    overflow-x:clip (not hidden) avoids creating a new BFC/stacking context
    while still preventing scroll, which matters for sticky/fixed children. */

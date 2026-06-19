@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
 import { DataTable, type Column, DetailDrawer, StatusBadge } from '@/components/admin-ui';
@@ -16,13 +17,17 @@ interface UserRecord {
 interface RoleRecord { id: string; name: string; display_name: string; hierarchy_level: number; description: string; }
 interface UserRoleRecord { id: string; auth_user_id: string; role_id: string; is_active: boolean; created_at: string; roles: { name: string; display_name: string } | null; }
 
+const PAGE_LIMIT = 50;
+
 function UsersContent() {
   const { apiFetch } = useAdmin();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [userTotal, setUserTotal] = useState(0);
   const [userRole, setUserRole] = useState('student');
   const [userSearch, setUserSearch] = useState('');
-  const [userPage, setUserPage] = useState(1);
+  const userPage = Math.max(1, parseInt(searchParams.get('page') || '1'));
   const [loading, setLoading] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -45,7 +50,7 @@ function UsersContent() {
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const p = new URLSearchParams({ role: userRole, page: String(userPage), limit: '25' });
+      const p = new URLSearchParams({ role: userRole, page: String(userPage), limit: String(PAGE_LIMIT) });
       if (userSearch) p.set('search', userSearch);
       const res = await apiFetch(`/api/super-admin/users?${p}`);
       if (res.ok) { const d = await res.json(); setUsers(d.data || []); setUserTotal(d.total || 0); }
@@ -277,7 +282,7 @@ function UsersContent() {
           ].map(r => (
             <button
               key={r.key}
-              onClick={() => { setUserRole(r.key); setUserPage(1); }}
+              onClick={() => { setUserRole(r.key); router.push('?page=1'); }}
               className={userRole === r.key ? filterBtnActive : filterBtnBase}
             >
               {r.label}
@@ -330,10 +335,28 @@ function UsersContent() {
       )}
 
       {/* Pagination */}
-      <div className="mt-3.5 flex items-center justify-center gap-2">
-        <button disabled={userPage <= 1} onClick={() => setUserPage(p => p - 1)} className={filterBtnBase}>Prev</button>
-        <span className="px-3 py-1.5 text-xs text-muted-foreground">Page {userPage} of {Math.max(1, Math.ceil(userTotal / 25))}</span>
-        <button disabled={users.length < 25} onClick={() => setUserPage(p => p + 1)} className={filterBtnBase}>Next</button>
+      <div className="flex items-center justify-between px-4 py-3 border-t border-surface-3 text-[13px]">
+        <span className="text-muted-foreground">
+          {userTotal === 0
+            ? 'No users found'
+            : `${(userPage - 1) * PAGE_LIMIT + 1}–${Math.min(userPage * PAGE_LIMIT, userTotal)} of ${userTotal}`}
+        </span>
+        <div className="flex gap-2">
+          <button
+            onClick={() => router.push(`?page=${userPage - 1}`)}
+            disabled={userPage <= 1}
+            className="px-3 py-1.5 rounded-md border border-surface-3 disabled:opacity-40"
+          >
+            Prev
+          </button>
+          <button
+            onClick={() => router.push(`?page=${userPage + 1}`)}
+            disabled={userPage * PAGE_LIMIT >= userTotal}
+            className="px-3 py-1.5 rounded-md border border-surface-3 disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
       </div>
 
       {/* User Detail Drawer */}
