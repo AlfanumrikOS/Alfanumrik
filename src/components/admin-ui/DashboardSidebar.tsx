@@ -38,19 +38,33 @@ export interface SidebarNavItem {
   badge?: number;
 }
 
+/** Section divider for grouped nav. Rendered as a small uppercase label row. */
+export interface SidebarSectionItem {
+  type: 'section';
+  label: string;
+  labelHi: string;
+}
+
+/** Union type for sidebar items — either a nav link or a section divider. */
+export type SidebarItem = SidebarNavItem | SidebarSectionItem;
+
 export interface DashboardSidebarProps {
   brandTitle: string;
   brandSubtitle: string;
   logoUrl?: string | null;
   /** Hex for active highlight. Default '#7C3AED' (brand-purple). */
   primaryColor?: string;
-  items: SidebarNavItem[];
+  /** Accepts nav items or section dividers (SidebarSectionItem). */
+  items: SidebarItem[];
   currentPath: string;
   isHi: boolean;
   /** null/undefined → fail-open (show all). Otherwise filter by key. */
   moduleEnablement?: Record<string, boolean> | null;
   footer?: React.ReactNode;
   className?: string;
+  /** When true, suppresses the mobile hamburger button and slide drawer.
+   *  Use for portals that render their own mobile bottom nav. */
+  disableMobileHamburger?: boolean;
 }
 
 const DESKTOP_WIDTH = 220;
@@ -67,14 +81,18 @@ export default function DashboardSidebar({
   moduleEnablement,
   footer,
   className,
+  disableMobileHamburger,
 }: DashboardSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const visibleItems = items.filter(item => {
-    if (!item.moduleKey) return true;
+  // Filter only nav items (not section dividers) for active-detection and module-gating.
+  const visibleItems = items.filter((item): item is SidebarNavItem => {
+    if ('type' in item && item.type === 'section') return false;
+    const navItem = item as SidebarNavItem;
+    if (!navItem.moduleKey) return true;
     if (moduleEnablement === null || moduleEnablement === undefined) return true;
-    return moduleEnablement[item.moduleKey] !== false;
+    return moduleEnablement[navItem.moduleKey] !== false;
   });
 
   // Active item = longest matching href among the visible items. This avoids
@@ -123,9 +141,26 @@ export default function DashboardSidebar({
 
   const renderNav = (onItemClick?: () => void) => (
     <nav className="flex-1 overflow-y-auto py-1">
-      {visibleItems.map(item => {
-        const active = item.href === activeHref;
-        const label = isHi ? item.labelHi : item.label;
+      {items.map((item, idx) => {
+        // Section divider
+        if ('type' in item && item.type === 'section') {
+          if (collapsed) return null;
+          return (
+            <div
+              key={`section-${idx}`}
+              className="mt-3 px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground select-none"
+            >
+              {isHi ? item.labelHi : item.label}
+            </div>
+          );
+        }
+        // Module-gated nav item
+        const navItem = item as SidebarNavItem;
+        if (navItem.moduleKey && moduleEnablement !== null && moduleEnablement !== undefined) {
+          if (moduleEnablement[navItem.moduleKey] === false) return null;
+        }
+        const active = navItem.href === activeHref;
+        const label = isHi ? navItem.labelHi : navItem.label;
         const activeStyle = active
           ? {
               color: primaryColor,
@@ -135,8 +170,8 @@ export default function DashboardSidebar({
           : { borderLeftColor: 'transparent' };
         return (
           <Link
-            key={item.href}
-            href={item.href}
+            key={navItem.href}
+            href={navItem.href}
             aria-current={active ? 'page' : undefined}
             onClick={onItemClick}
             title={collapsed ? label : undefined}
@@ -149,18 +184,18 @@ export default function DashboardSidebar({
             )}
             style={activeStyle}
           >
-            <span className="flex-shrink-0 text-[15px] leading-none">{item.icon}</span>
+            <span className="flex-shrink-0 text-[15px] leading-none">{navItem.icon}</span>
             {!collapsed && <span className="truncate flex-1">{label}</span>}
-            {!collapsed && typeof item.badge === 'number' && item.badge > 0 && (
+            {!collapsed && typeof navItem.badge === 'number' && navItem.badge > 0 && (
               <span
-                data-testid={`sidebar-badge-${item.href.replace(/^\//, '').replace(/\//g, '-')}`}
+                data-testid={`sidebar-badge-${navItem.href.replace(/^\//, '').replace(/\//g, '-')}`}
                 className="ml-auto flex h-[18px] min-w-[18px] flex-shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-bold text-white"
                 style={{ background: primaryColor }}
               >
-                {item.badge > 99 ? '99+' : item.badge}
+                {navItem.badge > 99 ? '99+' : navItem.badge}
               </span>
             )}
-            {collapsed && typeof item.badge === 'number' && item.badge > 0 && (
+            {collapsed && typeof navItem.badge === 'number' && navItem.badge > 0 && (
               <span
                 aria-hidden="true"
                 className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full"
@@ -247,8 +282,8 @@ export default function DashboardSidebar({
   return (
     <>
       {desktopAside}
-      {mobileHamburger}
-      {mobileDrawer}
+      {!disableMobileHamburger && mobileHamburger}
+      {!disableMobileHamburger && mobileDrawer}
     </>
   );
 }

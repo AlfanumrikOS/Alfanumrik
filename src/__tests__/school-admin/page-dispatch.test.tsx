@@ -28,10 +28,6 @@ vi.mock('@/lib/use-school-command-center', () => ({
 vi.mock('@/app/school-admin/CommandCenter', () => ({
   default: () => React.createElement('div', { 'data-testid': 'command-center' }, 'Command Center'),
 }));
-vi.mock('@/app/school-admin/_deprecated_AtlasSchoolAdmin', () => ({
-  default: () => React.createElement('div', { 'data-testid': 'atlas-school-admin' }, 'Atlas'),
-}));
-
 import SchoolAdminPage from '@/app/school-admin/page';
 
 beforeEach(() => {
@@ -47,8 +43,9 @@ describe('SchoolAdminPage — unconditional Command Center dispatch', () => {
     expect(screen.getByTestId('command-center')).toBeDefined();
   });
 
-  it('does NOT render the deprecated AtlasSchoolAdmin body', () => {
+  it('does NOT render any atlas-school-admin testid (structural — the deprecated component is deleted)', () => {
     render(React.createElement(SchoolAdminPage));
+    // The deprecated file has been deleted; this confirms nothing sneaked it back in.
     expect(screen.queryByTestId('atlas-school-admin')).toBeNull();
   });
 });

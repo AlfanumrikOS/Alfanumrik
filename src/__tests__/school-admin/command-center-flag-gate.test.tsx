@@ -42,10 +42,6 @@ vi.mock('@/lib/use-school-command-center', () => ({
 vi.mock('@/app/school-admin/CommandCenter', () => ({
   default: () => React.createElement('div', { 'data-testid': 'command-center' }, 'Command Center'),
 }));
-vi.mock('@/app/school-admin/_deprecated_AtlasSchoolAdmin', () => ({
-  default: () => React.createElement('div', { 'data-testid': 'atlas-school-admin' }, 'Atlas'),
-}));
-
 // ── SchoolAdminShell seams. We only care that ConsolidatedSchoolNav renders, so
 //    stub it (and the other client-only hooks the shell imports at module scope). ─
 vi.mock('next/navigation', () => ({

@@ -57,8 +57,8 @@ const pageStyle: React.CSSProperties = {
   minHeight: '100vh',
   backgroundColor: '#FBF8F4',
   color: '#1A1207',
-  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-  padding: '24px 20px 80px',
+  fontFamily: 'inherit',
+  padding: 'clamp(12px, 4vw, 24px) clamp(12px, 4vw, 20px) 80px',
   maxWidth: 1100,
   margin: '0 auto',
 };
@@ -126,6 +126,13 @@ function CellEditModal({
   const [maxScore, setMaxScore] = useState<string>(String(cell?.max_score || 100));
   const [notes, setNotes] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 640);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const submit = () => {
     setError('');
@@ -151,14 +158,18 @@ function CellEditModal({
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 50, padding: 20,
+        display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center',
+        zIndex: 70, padding: isMobile ? 0 : 20,
       }}
     >
       <div
         onClick={e => e.stopPropagation()}
         style={{
-          background: '#FFFFFF', borderRadius: 14, padding: 22, maxWidth: 420,
+          background: '#FFFFFF',
+          borderRadius: isMobile ? '14px 14px 0 0' : '14px',
+          padding: 22,
+          paddingBottom: isMobile ? 'max(20px, env(safe-area-inset-bottom, 20px))' : '22px',
+          maxWidth: 'min(420px, calc(100vw - 32px))',
           width: '100%', border: '1px solid #F5F0EA',
         }}
       >
@@ -300,7 +311,7 @@ function MatrixView({
           {data.students.map((stu, idx) => (
             <tr key={stu.id} style={{ background: idx % 2 === 0 ? '#FFFFFF' : '#FAF7F2' }}>
               <td style={{
-                padding: '10px 14px', fontSize: 13, fontWeight: 500, color: '#1A1207',
+                padding: '14px 14px', fontSize: 13, fontWeight: 500, color: '#1A1207',
                 borderTop: '1px solid #F5F0EA', position: 'sticky', left: 0,
                 background: idx % 2 === 0 ? '#FFFFFF' : '#FAF7F2',
               }}>
@@ -321,7 +332,7 @@ function MatrixView({
                     key={col.key}
                     onClick={() => onCellClick(stu.id, stu.name, col)}
                     style={{
-                      padding: '10px 14px', fontSize: 13, fontWeight: 600,
+                      padding: '14px 14px', fontSize: 13, fontWeight: 600,
                       color, textAlign: 'center', borderTop: '1px solid #F5F0EA',
                       cursor: 'pointer', transition: 'background 0.15s',
                     }}

@@ -8,6 +8,7 @@ import DashboardSidebar, { type SidebarNavItem } from '@/components/admin-ui/Das
 import { useParentAuth } from './useParentAuth';
 import { supabase } from '@/lib/supabase';
 import { useAtlasFlag } from '@/lib/use-atlas-flag';
+import ParentMobileNav from './ParentMobileNav';
 
 const NAV_ITEMS: SidebarNavItem[] = [
   { href: '/parent', label: 'Dashboard', labelHi: 'डैशबोर्ड', icon: '▦' },
@@ -234,6 +235,7 @@ export default function ParentShell({ children }: { children: React.ReactNode })
         items={visibleItems}
         currentPath={pathname || ''}
         isHi={isHi}
+        disableMobileHamburger={true}
         footer={
           <div>
             {parentName && (
@@ -248,7 +250,14 @@ export default function ParentShell({ children }: { children: React.ReactNode })
           </div>
         }
       />
-      <main className="flex-1 overflow-auto">{children}</main>
+      <main className="flex-1 overflow-auto pb-nav md:pb-0">{children}</main>
+      <ParentMobileNav
+        unreadCount={unreadCount}
+        messagesUnread={messagesUnread}
+        isHi={isHi}
+        mode={mode === 'link-code' ? 'link-code' : 'guardian'}
+        onLogout={handleLogout}
+      />
     </div>
   );
 }

@@ -43,6 +43,7 @@ import { useAtlasFlag } from '@/lib/use-atlas-flag';
 import { useTeacherCommandCenter } from '@/lib/use-teacher-command-center';
 import { useCosmicTheme } from '@/lib/cosmic-theme';
 import { Starfield } from '@/components/cosmic';
+import TeacherMobileNav from './TeacherMobileNav';
 
 type TeacherNavItem = {
   href: string;
@@ -284,6 +285,7 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
         brandSubtitle={isHi ? 'शिक्षक' : 'Teacher'}
         logoUrl={tenant.branding.logoUrl}
         primaryColor={tenant.branding.primaryColor || '#6366F1'}
+        disableMobileHamburger={true}
         items={
           (primaryNav as ReadonlyArray<TeacherNavItem>).map((item) =>
             item.href === '/teacher/messages'
@@ -296,7 +298,17 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
         moduleEnablement={moduleEnablement}
         footer={footerContent}
       />
-      <main className={`flex-1 overflow-auto${cosmicEnabled ? ' relative z-10' : ''}`}>{children}</main>
+      <main className={`flex-1 overflow-auto pb-nav md:pb-0${cosmicEnabled ? ' relative z-10' : ''}`}>{children}</main>
+      <TeacherMobileNav
+        commandCenterOn={commandCenterOn}
+        messagesUnread={messagesUnread}
+        moduleEnablement={moduleEnablement}
+        isHi={isHi}
+        onLogout={async () => {
+          await supabase.auth.signOut();
+          router.replace('/login');
+        }}
+      />
     </div>
   );
 }

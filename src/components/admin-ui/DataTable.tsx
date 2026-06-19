@@ -71,7 +71,7 @@ export default function DataTable<T extends Record<string, unknown>>({
   const colSpan = columns.length + (selectable ? 1 : 0);
 
   return (
-    <div className={twMerge('overflow-x-auto rounded-lg border border-surface-3', className)}>
+    <div className={twMerge('data-table overflow-x-auto rounded-lg border border-surface-3 min-w-0', className)}>
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr>

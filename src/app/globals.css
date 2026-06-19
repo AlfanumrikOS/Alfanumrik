@@ -91,6 +91,21 @@
   --header-height: 60px;
   --content-max: 720px;
   --content-max-wide: 1080px;
+
+  /* ─── Z-index tokens ──────────────────────────────────────
+     Canonical z-index ladder so stacking never collides.
+     Components should use these var() references rather than
+     hardcoded integers. */
+  --z-base:    0;
+  --z-raised:  1;
+  --z-sticky:  10;
+  --z-drawer:  40;
+  --z-nav:     50;
+  --z-modal:   60;
+  --z-toast:   70;
+  --z-tooltip: 80;
+  --z-overlay: 90;
+  --z-skip:    9999;
 }
 
 /* ─── Alfanumrik Dark Theme (Phase 1 — 2026-05-11) ────────────
@@ -112,11 +127,13 @@
    '#FBF8F4') will NOT theme-switch — those are tracked as Phase 1.5
    component-sweep work. The synthetic monitor will surface high-
    value contrast misses (Row 10+ assert dark-theme cohesion). */
-/* Dark-theme block REVERSED 2026-05-11 — see src/lib/AuthContext.tsx
-   ::resolveTheme. AuthContext now writes data-theme="light" universally.
-   This selector is retargeted to an attribute value the app NEVER writes,
-   so the variables below stay defined but never activate. Keeping them
-   in the file makes a future restore a one-line selector edit. */
+/* Dark-theme block FROZEN 2026-05-11 — DO NOT ACTIVATE WITHOUT CEO APPROVAL.
+   AuthContext (src/lib/AuthContext.tsx ::resolveTheme) writes data-theme="light"
+   universally. This selector is retargeted to a sentinel value the app NEVER
+   writes, so the variables below stay defined but never activate. Keeping them
+   in the file makes a future restore a one-line selector edit.
+   REG-NOTE: Changing this selector to "dark" without a CEO-approved product
+   invariant change constitutes a P13 (dark surfaces + PII display) risk. */
 [data-theme="dark-disabled-pending-cleanup"] {
   --bg: #0F0D08;
   --bg-rgb: 15, 13, 8;
@@ -156,7 +173,7 @@ body {
   font-size: 16px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
+  overflow-x: clip;
   min-height: 100dvh;
 }
 h1, h2, h3, h4, h5 {
@@ -391,6 +408,11 @@ h1, h2, h3, h4, h5 {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(232, 88, 28, 0.25); border-radius: 4px; }
 
+/* Scrollbar-hide utility — hide scrollbar while keeping scrollability.
+   Used by foxy-mode-bar, subject tabs, and any horizontal scroll surface. */
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
 /* ─── Range Input (Touch-Friendly for Simulations) ────────── */
 /* Minimum 44px touch target per Apple HIG, 48px per Material */
 input[type="range"] {
@@ -488,6 +510,9 @@ input[type="range"][style*="accentColor"]::-webkit-slider-thumb {
 @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(232, 88, 28, 0.3); } 50% { box-shadow: 0 0 0 12px rgba(232, 88, 28, 0); } }
 
 @keyframes bounceOnce { 0% { transform: scale(1); } 40% { transform: scale(1.15); } 70% { transform: scale(0.95); } 100% { transform: scale(1); } }
+
+/* pulse — used by Foxy avatar + mode-bar glows */
+@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
 
 /* ─── Animation Classes ───────────────────────────────────── */
 .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) both; }
@@ -775,6 +800,14 @@ img, video, iframe, canvas, svg {
 .text-\[10px\] { font-size: 11px !important; }
 .text-\[9px\] { font-size: 11px !important; }
 
+/* ─── Hindi / Devanagari Line-Height ────────────────────────
+   Devanagari script's top matra (vowel diacritic) extends above
+   the Latin cap-height. Without extra leading the matras on one
+   line collide with descenders on the line above — illegible at
+   any font size. 1.75 gives comfortable breathing room and applies
+   globally, not only on small phones. */
+[lang="hi"], .text-hi { line-height: 1.75; }
+
 /* ─── Text Overflow Protection ───────────────────────────── */
 .text-break {
   overflow-wrap: break-word;
@@ -782,10 +815,28 @@ img, video, iframe, canvas, svg {
   hyphens: auto;
 }
 
-/* Prevent horizontal scroll on any stacked layout */
+/* ─── Content Safety Utilities ────────────────────────────
+   Safe containers that prevent content from escaping their box.
+   Use .content-safe on any scrollable region that must not cause
+   horizontal page scroll. Use .content-safe-y for vertical-only
+   containment (e.g. modals, drawers). */
+.content-safe {
+  overflow: hidden;
+  overflow-x: clip;
+  min-width: 0;
+}
+.content-safe-y {
+  overflow-y: auto;
+  overflow-x: clip;
+  min-width: 0;
+}
+
+/* Prevent horizontal scroll on any stacked layout.
+   overflow-x:clip (not hidden) avoids creating a new BFC/stacking context
+   while still preventing scroll, which matters for sticky/fixed children. */
 .app-shell, main, section, article {
   max-width: 100vw;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* ─── Responsive Font Scaling ────────────────────────────── */
@@ -800,8 +851,7 @@ img, video, iframe, canvas, svg {
   .btn-ghost { padding: 12px 18px; font-size: 13px; }
   h1 { font-size: clamp(20px, 6vw, 28px) !important; }
   h2 { font-size: clamp(18px, 5vw, 24px) !important; }
-  /* Hindi text needs breathing room */
-  [lang="hi"], .text-hi { line-height: 1.7; }
+  /* Hindi line-height is set globally at 1.75 above; no override needed here. */
 }
 
 /* ─── Tablet Layout Improvements (iPad, etc.) ────────────── */
@@ -823,14 +873,6 @@ img, video, iframe, canvas, svg {
   }
 }
 
-/* ─── Foxy component styles (moved from dangerouslySetInnerHTML) ─── */
-@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
-.foxy-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 12px}
-.foxy-mode-bar{display:flex;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;overscroll-behavior-x:contain;flex-shrink:0}
-.foxy-mode-bar::-webkit-scrollbar{display:none}
-.scrollbar-hide{-ms-overflow-style:none;scrollbar-width:none}
-.scrollbar-hide::-webkit-scrollbar{display:none}
-@media(min-width:640px){.foxy-toolbar{flex-wrap:nowrap;gap:8px;padding:8px 12px}}
 
 /* ─── Low-End Device Fallback ────────────────────────────── */
 /* Budget Indian phones (Snapdragon 400-series, 512MB-2GB RAM)
