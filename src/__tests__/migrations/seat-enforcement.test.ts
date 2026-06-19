@@ -550,8 +550,14 @@ describeIntegration('Phase 3B seat enforcement — hybrid policy state machine (
 
       // Deactivate two (active → 9 ≤ S) — NEVER auto-deactivate is the policy, so
       // we do it explicitly (a real admin freeing seats), then refresh.
+      // Touch both tables — staging may insert via either enroll_students_with_seat_check
+      // or enroll_section_students_with_seat_check, which use class_students vs class_enrollments.
       await supabaseAdmin
         .from('class_enrollments')
+        .update({ is_active: false })
+        .in('student_id', [ids[0], ids[1]]);
+      await supabaseAdmin
+        .from('class_students')
         .update({ is_active: false })
         .in('student_id', [ids[0], ids[1]]);
 
