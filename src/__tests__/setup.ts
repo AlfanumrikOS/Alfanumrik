@@ -3,6 +3,57 @@ process.env.NEXT_PUBLIC_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '
 process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder';
 process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.ci-placeholder-service-role';
 
+// ─── Hermetic AI test layer (REG-168) ──────────────────────────────────────
+// All three LLM client modules have dedicated unit tests that exercise the
+// REAL function over a mocked fetch (vi.stubGlobal('fetch', ...)):
+//
+//   @/lib/ai/clients/claude         → src/__tests__/ai/agents/claude-tools.test.ts
+//   @/lib/ai/clients/openai         → src/__tests__/lib/ai/openai-client.test.ts
+//   @/lib/ai/clients/reasoning-cascade → src/__tests__/lib/ai/reasoning-cascade.test.ts
+//
+// Because these files test the REAL module, a setup-level vi.mock for any of
+// them would break those suites — vi.mock in setupFiles is not overrideable by
+// a test file's own dynamic import (the mock wins at module resolution time).
+//
+// The hermetic guarantee is therefore enforced PER-CALL-SITE rather than here:
+//
+//   - Every test file that calls code which USES callClaude / callOpenAI /
+//     callReasoningModel (but does NOT test those clients directly) must add
+//     its own vi.mock for the client module. This is the established pattern:
+//     math-classify.test.ts mocks both claude and reasoning-cascade;
+//     reasoning-cascade.test.ts mocks callOpenAI and callClaude as sub-clients.
+//
+//   - For callOpenAI: the function throws 'OPENAI_API_KEY not configured' before
+//     touching the network when the env var is absent — a safe no-network default.
+//
+//   - For callClaude: the function throws / returns an error response when
+//     ANTHROPIC_API_KEY is absent ('ANTHROPIC_API_KEY not configured', status 503).
+//
+// Rule: any new test file that imports application code which transitively calls
+// an LLM client MUST add vi.mock('@/lib/ai/clients/<module>') at the top of
+// that file. The CI environment guard below warns when keys are present so the
+// risk of accidental real calls is visible in test output.
+
+// ─── CI environment guard ──────────────────────────────────────────────────
+// Warn if real AI API keys are present so developers know to check their mocks.
+// The three client modules are NOT globally mocked here — see note above.
+if (process.env.ANTHROPIC_API_KEY) {
+  console.warn(
+    '[TEST SETUP] ANTHROPIC_API_KEY is set. ' +
+    'Any test that imports code which calls callClaude without mocking ' +
+    '@/lib/ai/clients/claude will make real API calls. ' +
+    'Add vi.mock(\'@/lib/ai/clients/claude\') to the test file (REG-168).',
+  );
+}
+if (process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.startsWith('sk-test')) {
+  console.warn(
+    '[TEST SETUP] OPENAI_API_KEY is set to a real key. ' +
+    'callReasoningModel and callOpenAI are not globally mocked. ' +
+    'Tests that use those clients must mock them at the file level (REG-168). ' +
+    'Consider unsetting OPENAI_API_KEY in test environments for clarity.',
+  );
+}
+
 import '@testing-library/jest-dom/vitest';
 
 // ── Blob.prototype.stream polyfill (jsdom + Node-22 CI gap) ───────────────────

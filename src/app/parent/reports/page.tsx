@@ -1171,6 +1171,245 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
 }
 
 // ============================================================
+// ASSIGNMENT SUBMISSIONS (P8: supabase client only — RLS handles parent access)
+// ============================================================
+interface AssignmentSubmissionRow {
+  id: string;
+  assignment_id: string;
+  score: number | null;
+  questions_total: number | null;
+  questions_correct: number | null;
+  status: 'submitted' | 'graded' | 'not_started' | string;
+  submitted_at: string | null;
+  teacher_feedback: string | null;
+  assignments: {
+    title: string;
+    subject: string;
+    due_date: string | null;
+    assignment_type: string | null;
+  } | null;
+}
+
+function assignmentStatusConfig(status: string): { label: string; labelHi: string; bg: string; color: string } {
+  switch (status) {
+    case 'graded':
+      return { label: 'Graded', labelHi: 'ग्रेड किया', bg: '#DCFCE7', color: '#15803D' };
+    case 'submitted':
+      return { label: 'Submitted', labelHi: 'जमा किया', bg: '#DBEAFE', color: '#1D4ED8' };
+    default:
+      return { label: 'Not Started', labelHi: 'शुरू नहीं', bg: '#F3F4F6', color: '#6B7280' };
+  }
+}
+
+function AssignmentSubmissions({ studentId, isHi }: { studentId: string; isHi: boolean }) {
+  const [submissions, setSubmissions] = useState<AssignmentSubmissionRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [expandedFeedback, setExpandedFeedback] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!studentId) return;
+    let cancelled = false;
+
+    const fetchSubmissions = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const { data, error: qErr } = await supabase
+          .from('assignment_submissions')
+          .select('id, assignment_id, score, questions_total, questions_correct, status, submitted_at, teacher_feedback, assignments(title, subject, due_date, assignment_type)')
+          .eq('student_id', studentId)
+          .order('submitted_at', { ascending: false })
+          .limit(20);
+
+        if (cancelled) return;
+        if (qErr) throw new Error(qErr.message);
+        // Supabase types the joined `assignments` relation as an array for the
+        // generic SDK return, but the runtime shape is a single object (many-to-one FK).
+        // The interface AssignmentSubmissionRow correctly declares it as an object.
+        // We assert through `unknown` to bridge the SDK type and our narrower interface.
+        setSubmissions((data ?? []) as unknown as AssignmentSubmissionRow[]);
+      } catch (e) {
+        if (!cancelled) {
+          setError(
+            e instanceof Error ? e.message :
+            t(isHi, 'Could not load assignments', 'असाइनमेंट लोड नहीं हो सके')
+          );
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    fetchSubmissions();
+    return () => { cancelled = true; };
+  }, [studentId, isHi]);
+
+  const toggleFeedback = (id: string) => {
+    setExpandedFeedback(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  if (loading) {
+    return (
+      <div style={cardStyle}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[1, 2, 3].map(i => (
+            <div key={i} style={{
+              height: 56, borderRadius: 10, backgroundColor: '#F1F5F9',
+              animation: 'spin 0s, fadeIn 0s',
+            }}>
+              <div style={{ height: '100%', background: 'linear-gradient(90deg,#F1F5F9 25%,#E2E8F0 50%,#F1F5F9 75%)', backgroundSize: '200% 100%' }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ ...cardStyle, border: '1px solid #FECACA', backgroundColor: '#FEF2F2' }}>
+        <p style={{ fontSize: 13, color: '#B91C1C', margin: 0 }}>{error}</p>
+      </div>
+    );
+  }
+
+  if (submissions.length === 0) {
+    return (
+      <div style={cardStyle}>
+        <h3 style={cardTitle}>{t(isHi, 'Recent Assignments', 'हाल के असाइनमेंट')}</h3>
+        <p style={emptyText}>{t(isHi, 'No assignments yet', 'अभी कोई असाइनमेंट नहीं')}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={cardStyle}>
+      <h3 style={cardTitle}>{t(isHi, 'Recent Assignments', 'हाल के असाइनमेंट')}</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {submissions.map(sub => {
+          const asgn = sub.assignments;
+          const statusCfg = assignmentStatusConfig(sub.status);
+          const hasFeedback = !!sub.teacher_feedback;
+          const feedbackOpen = expandedFeedback.has(sub.id);
+
+          // Score display: prefer questions_correct/total, fallback to score%
+          let scoreDisplay = '—';
+          if (sub.questions_correct != null && sub.questions_total != null && sub.questions_total > 0) {
+            scoreDisplay = `${sub.questions_correct}/${sub.questions_total}`;
+          } else if (sub.score != null) {
+            scoreDisplay = `${sub.score}%`;
+          }
+
+          const scoreNum = sub.questions_correct != null && sub.questions_total != null && sub.questions_total > 0
+            ? Math.round((sub.questions_correct / sub.questions_total) * 100)
+            : sub.score ?? 0;
+          const scoreColor = scoreNum >= 80 ? '#16A34A' : scoreNum >= 50 ? '#D97706' : '#EF4444';
+
+          return (
+            <div key={sub.id} style={{
+              padding: '12px 14px',
+              backgroundColor: '#F8FAFC',
+              borderRadius: 10,
+              borderLeft: `3px solid ${statusCfg.color}`,
+            }}>
+              {/* Title row */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#1E293B', marginBottom: 4 }}>
+                    {asgn?.title ?? t(isHi, 'Assignment', 'असाइनमेंट')}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {/* Subject badge */}
+                    {asgn?.subject && (
+                      <span style={{
+                        fontSize: 11, padding: '2px 8px', borderRadius: 6,
+                        backgroundColor: '#EDE9FE', color: '#5B21B6', fontWeight: 600,
+                      }}>
+                        {asgn.subject}
+                      </span>
+                    )}
+                    {/* Type badge */}
+                    {asgn?.assignment_type && (
+                      <span style={{
+                        fontSize: 11, padding: '2px 8px', borderRadius: 6,
+                        backgroundColor: '#FEF9C3', color: '#713F12', fontWeight: 600,
+                      }}>
+                        {asgn.assignment_type}
+                      </span>
+                    )}
+                    {/* Status chip */}
+                    <span style={{
+                      fontSize: 11, padding: '2px 8px', borderRadius: 6,
+                      backgroundColor: statusCfg.bg, color: statusCfg.color, fontWeight: 600,
+                    }}>
+                      {t(isHi, statusCfg.label, statusCfg.labelHi)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Score */}
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: scoreColor }}>
+                    {scoreDisplay}
+                  </div>
+                  <div style={{ fontSize: 10, color: '#94A3B8' }}>
+                    {t(isHi, 'Score', 'अंक')}
+                  </div>
+                </div>
+              </div>
+
+              {/* Submitted date */}
+              {sub.submitted_at && (
+                <div style={{ fontSize: 12, color: '#64748B', marginTop: 6 }}>
+                  {t(isHi, 'Submitted', 'जमा किया')}: {formatDate(sub.submitted_at)}
+                </div>
+              )}
+
+              {/* Teacher feedback (collapsible) */}
+              {hasFeedback && (
+                <div style={{ marginTop: 8 }}>
+                  <button
+                    onClick={() => toggleFeedback(sub.id)}
+                    style={{
+                      background: 'none', border: 'none', padding: 0,
+                      fontSize: 12, color: '#3B82F6', fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    {feedbackOpen
+                      ? t(isHi, 'Hide feedback', 'प्रतिक्रिया छुपाएं')
+                      : t(isHi, 'Show feedback', 'प्रतिक्रिया दिखाएं')
+                    } {feedbackOpen ? '▲' : '▼'}
+                  </button>
+                  {feedbackOpen && (
+                    <div style={{
+                      marginTop: 6, padding: '8px 12px',
+                      backgroundColor: '#EFF6FF', borderRadius: 8,
+                      fontSize: 13, color: '#1E40AF', lineHeight: 1.6,
+                      borderLeft: '3px solid #3B82F6',
+                    }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#3B82F6', display: 'block', marginBottom: 4 }}>
+                        {t(isHi, 'Feedback', 'प्रतिक्रिया')}
+                      </span>
+                      {sub.teacher_feedback}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // CHILD SELECTOR
 // ============================================================
 function ChildSelector({ childList, selectedId, onSelect }: {
@@ -1632,6 +1871,12 @@ export default function ParentReportsPage() {
             <div style={{ marginBottom: 20 }}>
               <div style={sectionHeading}>{t(isHi, 'Quiz History', 'क्विज़ इतिहास')}</div>
               <QuizHistory quizzes={quizzes} isHi={isHi} />
+            </div>
+
+            {/* ── 5a. ASSIGNMENT SUBMISSIONS ── */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={sectionHeading}>{t(isHi, 'Assignments', 'असाइनमेंट')}</div>
+              <AssignmentSubmissions studentId={student.id} isHi={isHi} />
             </div>
 
             {/* ── 6. INSIGHTS & RECOMMENDATIONS ── */}

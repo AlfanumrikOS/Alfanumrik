@@ -435,6 +435,10 @@ describeIntegration('Phase 3B seat enforcement — hybrid policy state machine (
         .from('class_students')
         .update({ is_active: false })
         .eq('student_id', fillStudentId);
+      await supabaseAdmin
+        .from('class_enrollments')
+        .update({ is_active: false })
+        .eq('student_id', fillStudentId);
       expect(await countActive(SCHOOL)).toBe(10);
 
       // Back-date the grace clock to 15 days ago (window = 14d ⇒ elapsed).
@@ -463,6 +467,10 @@ describeIntegration('Phase 3B seat enforcement — hybrid policy state machine (
         .update({ is_active: true })
         .eq('student_id', fillStudentId);
       await supabaseAdmin
+        .from('class_enrollments')
+        .update({ is_active: true })
+        .eq('student_id', fillStudentId);
+      await supabaseAdmin
         .from('school_subscriptions')
         .update({ seat_grace_started_at: null })
         .eq('id', SUB_ID);
@@ -472,8 +480,8 @@ describeIntegration('Phase 3B seat enforcement — hybrid policy state machine (
   describe('enroll_section_students_with_seat_check (class_enrollments path)', () => {
     it('over_ceiling RAISES P3B01 and inserts NOTHING into class_enrollments', async () => {
       // Reset roster to empty, set S small (3) to force a quick over-ceiling.
-      await supabaseAdmin.from('class_students').delete().eq('class_id', CLASS_CS);
-      await supabaseAdmin.from('class_enrollments').delete().eq('class_id', CLASS_CE);
+      await supabaseAdmin.from('class_students').delete().in('class_id', [CLASS_CS, CLASS_CE]);
+      await supabaseAdmin.from('class_enrollments').delete().in('class_id', [CLASS_CS, CLASS_CE]);
       await supabaseAdmin
         .from('school_subscriptions')
         .update({ seats_purchased: 3, seat_grace_started_at: null })
@@ -515,8 +523,8 @@ describeIntegration('Phase 3B seat enforcement — hybrid policy state machine (
   describe('grace clock reset + refresh idempotency', () => {
     it('SETS the clock on overage then RESETS to null when active <= S after refresh', async () => {
       // Reset rosters; S=10. Fill to 11 via the section path ⇒ clock set.
-      await supabaseAdmin.from('class_students').delete().eq('class_id', CLASS_CS);
-      await supabaseAdmin.from('class_enrollments').delete().eq('class_id', CLASS_CE);
+      await supabaseAdmin.from('class_students').delete().in('class_id', [CLASS_CS, CLASS_CE]);
+      await supabaseAdmin.from('class_enrollments').delete().in('class_id', [CLASS_CS, CLASS_CE]);
       await supabaseAdmin
         .from('school_subscriptions')
         .update({ seats_purchased: SEATS, seat_grace_started_at: null })
@@ -590,8 +598,8 @@ describeIntegration('Phase 3B seat enforcement — hybrid policy state machine (
   describe('race-safety (advisory lock serialises concurrent enrolls)', () => {
     it('two concurrent enrolls that would jointly exceed the ceiling never both succeed', async () => {
       // Fresh state: S=10, ceiling=11, roster emptied.
-      await supabaseAdmin.from('class_students').delete().eq('class_id', CLASS_CS);
-      await supabaseAdmin.from('class_enrollments').delete().eq('class_id', CLASS_CE);
+      await supabaseAdmin.from('class_students').delete().in('class_id', [CLASS_CS, CLASS_CE]);
+      await supabaseAdmin.from('class_enrollments').delete().in('class_id', [CLASS_CS, CLASS_CE]);
       await supabaseAdmin
         .from('school_subscriptions')
         .update({ seats_purchased: SEATS, seat_grace_started_at: null })
