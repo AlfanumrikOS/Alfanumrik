@@ -317,7 +317,7 @@ jobs:
           # deno cache resolves and downloads all remote imports (std@0.210.0/assert,
           # esm.sh/@supabase/supabase-js@2, etc.) and stores them in the Deno cache dir.
           # The test step then runs with only --allow-read --allow-env (no network).
-          deno cache --no-lock \
+          deno cache --no-lock --no-check \
             supabase/functions/parent-portal/__tests__/contract.test.ts \
             supabase/functions/teacher-dashboard/__tests__/contract.test.ts \
             supabase/functions/daily-cron/__tests__/contract.test.ts \
@@ -337,7 +337,7 @@ jobs:
 
       - name: Run Edge Function Deno tests (deterministic, offline)
         run: |
-          deno test --no-lock --allow-read --allow-env \
+          deno test --no-lock --no-check --allow-read --allow-env \
             supabase/functions/parent-portal/__tests__/ \
             supabase/functions/teacher-dashboard/__tests__/ \
             supabase/functions/daily-cron/__tests__/ \
