@@ -4883,3 +4883,119 @@ both-cadence idempotency, repaired to the new behavior not weakened). **Total
 catalog: 129 entries (target: 35 — TARGET EXCEEDED).**
 
 **Total: 129 entries.**
+
+## Phase 1 academic structure: boards, academic_terms, student_attendance, class_schedule (P8, P9) (2026-06-21) — REG-162..REG-167
+
+Source: migration `20260621000000_phase1_academic_structure_attendance_boards.sql`
+— creates 4 new tables (`boards`, `academic_terms`, `student_attendance`,
+`class_schedule`), seeds CBSE/ICSE/IB/NIOS board reference data, seeds CBSE
+2025-26 Term 1 + Term 2 academic defaults, and establishes RLS policies across
+all 4 tables. The `mark_attendance` Edge Function handler validates the input
+contract enforced here.
+
+All 6 entries are covered by pure-function unit tests in
+`src/__tests__/schema/phase1-academic-structure.test.ts` (56 tests total —
+no live DB required; RLS policies represented as TypeScript predicates,
+constraint logic represented as pure validators).
+
+> **ID note:** REG-161 is the previous entry (demo-comp server-gated boundary,
+> 2026-06-16). REG-162..REG-167 are the next free ids.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-162 | `boards_rls_anon_cannot_insert` | **BOARDS TABLE SCHEMA CONTRACT (P8 — service_role-only writes).** The `boards` reference table has 4 seeded rows (CBSE, ICSE, IB, NIOS) with required fields `id`, `code`, `name`, `name_hi`, `country`, `is_active`, `display_order`, `created_at`. CBSE carries `country='IN'` and `is_active=true`. The `code` column has a UNIQUE constraint — a second CBSE insert is rejected. RLS: authenticated users can SELECT (USING true); no INSERT/UPDATE policy exists for the `authenticated` role — only `service_role` (which bypasses RLS) can write board reference data. Unauthenticated users cannot SELECT. | `src/__tests__/schema/phase1-academic-structure.test.ts` (4 + 3 boards-RLS tests) | U (pure-function unit; no live DB) |
+| REG-163 | `student_attendance_rls_three_role_boundary` | **STUDENT_ATTENDANCE RLS — 3-ROLE ACCESS BOUNDARY (P8, P9).** Teacher SELECT: USING `class_id IN (SELECT ct.class_id FROM class_teachers ct JOIN teachers t ON t.id=ct.teacher_id WHERE t.auth_user_id=auth.uid())` — a teacher can only see attendance for classes they teach via `class_teachers`; an empty class list means zero rows visible. Student SELECT: USING `student_id = (SELECT id FROM students WHERE auth_user_id=auth.uid())` — a student sees only their own rows, never another student's. Parent/guardian SELECT: USING `student_id IN (SELECT gsl.student_id FROM guardian_student_links gsl JOIN guardians g ON g.id=gsl.guardian_id WHERE g.auth_user_id=auth.uid() AND gsl.status='approved')` — a parent sees only approved-linked children's rows; a pending link (status≠'approved') grants no access. An unauthenticated caller (no auth.uid()) sees zero rows from all three policies. Also covers the `assignment_submissions` parent SELECT policy that follows the same approved-guardian-link pattern (P8). | `src/__tests__/schema/phase1-academic-structure.test.ts` (7 + 4 parent-submissions-RLS tests + 3 regression-catalog pinning tests) | U (pure-function unit; no live DB) |
+| REG-164 | `student_attendance_status_enum_and_unique_constraint` | **STUDENT_ATTENDANCE VALIDATION — STATUS ENUM + UNIQUE CONSTRAINT (P8 schema integrity).** The `status` column accepts exactly four values: `'present'`, `'absent'`, `'late'`, `'excused'`. Values like `'here'`, `'tardy'`, `''`, or `'PRESENT'` (uppercase) are rejected. The `period` column defaults to `'All Day'` when absent or blank. The UNIQUE constraint on `(class_id, student_id, attendance_date, period)` rejects a second insert for the same student in the same class on the same date for the same period; inserting a second row with a different period is NOT a conflict. | `src/__tests__/schema/phase1-academic-structure.test.ts` (5 tests) | U (pure-function unit; no live DB) |
+| REG-165 | `mark_attendance_handler_input_validation` | **MARK_ATTENDANCE HANDLER — INPUT VALIDATION CONTRACT (P3 anti-cheat-adjacent, P8).** The `mark_attendance` Edge Function handler rejects: missing `teacher_id` (code `MISSING_TEACHER_ID`), missing `class_id` (code `MISSING_CLASS_ID`), date not matching `/^\d{4}-\d{2}-\d{2}$/` (code `INVALID_DATE_FORMAT`), empty `records` array (code `EMPTY_RECORDS`), `records` array with more than 200 items (code `RECORDS_TOO_LARGE`), any record missing `student_id` (code `MISSING_STUDENT_ID`), any record with a status not in `{present,absent,late,excused}` (code `INVALID_STATUS`). A fully valid batch (teacher_id + class_id + YYYY-MM-DD date + records each with student_id and a valid status) is accepted. Notes are clamped to 200 characters; period strings are trimmed and clamped to 50 characters. | `src/__tests__/schema/phase1-academic-structure.test.ts` (10 + 4 regression-catalog pinning tests) | U (pure-function unit; no live DB) |
+| REG-166 | `academic_terms_null_school_id_partial_index` | **ACADEMIC_TERMS PARTIAL INDEX — NO DUPLICATE GLOBAL DEFAULTS (P8 schema integrity).** The migration seeds two platform-wide default terms for CBSE 2025-26: Term 1 (Apr 2025 – Sep 2025, `is_current=false`) and Term 2 (Oct 2025 – Mar 2026, `is_current=true`). Both have `school_id=NULL`. A partial UNIQUE index on `(academic_year, term_number) WHERE school_id IS NULL` prevents duplicate global defaults: inserting a second NULL school_id row with `academic_year='2025-26'` and `term_number=1` conflicts. School-specific terms (school_id not null) with the same year+term do NOT conflict (the partial index does not apply). A NULL school_id row for a different academic year (e.g. `'2026-27'`) does not conflict with the seeded 2025-26 rows. | `src/__tests__/schema/phase1-academic-structure.test.ts` (6 + 1 regression-catalog pinning test) | U (pure-function unit; no live DB) |
+| REG-167 | `class_schedule_time_constraints` | **CLASS_SCHEDULE — TIME AND CONSTRAINT CHECKS (P8 schema integrity).** The `class_schedule` table enforces: `end_time > start_time` (equal or reversed times rejected); `effective_until >= effective_from` when both are present (inverted dates rejected); `effective_until=NULL` allowed (means currently active); `day_of_week` is an integer 0–6 inclusive (7 and -1 rejected); `period_number >= 1` (0 and -1 rejected). A fully valid row (day_of_week in 0–6, period_number≥1, end_time>start_time, effective_until=null) is accepted. `effective_until = effective_from` (single-day override) is also accepted. | `src/__tests__/schema/phase1-academic-structure.test.ts` (7 + 1 regression-catalog pinning test) | U (pure-function unit; no live DB) |
+
+### Invariants covered by this section
+
+- P8 RLS boundary — REG-162 (boards: authenticated SELECT, service_role-only
+  INSERT, no PII in reference data); REG-163 (student_attendance: teacher
+  scope = class_teachers join, student scope = own rows only, parent scope =
+  approved guardian_student_links only — three independent deny boundaries);
+  REG-164 (status CHECK + UNIQUE index defend against corrupt attendance
+  records); REG-165 (mark_attendance handler validates before any DB write,
+  preventing injection of oversized or invalid payloads); REG-166 (partial
+  index ensures global academic calendar cannot be double-seeded or corrupted
+  by an ambiguous upsert); REG-167 (CHECK constraints on time order and
+  day-of-week prevent impossible schedule rows that would break timetable
+  queries).
+- P9 RBAC enforcement — REG-163 (teacher access scoped strictly to
+  class_teachers rows; parent access requires approved link, not merely
+  any guardian_student_links row; student cannot cross-read peers).
+
+### Catalog total
+
+Pre-REG-162: 129 entries (through quarterly school billing + demo-comp,
+REG-161). Phase 1 academic structure adds REG-162..REG-167: boards schema
+contract (ref-data RLS), student_attendance 3-role RLS boundary, attendance
+status enum + UNIQUE constraint, mark_attendance handler input validation,
+academic_terms partial index for global defaults, and class_schedule time
+constraints. 6 entries, all covered by 56 pure-function unit tests in a
+single new file (no live DB). **Total catalog: 135 entries (target: 35 —
+TARGET EXCEEDED).**
+
+**Total: 135 entries.**
+
+## Hermetic LLM mock layer — per-call-site enforcement contract (2026-06-19) — REG-168
+
+Source: root cause analysis of `math-classify.test.ts` calling real OpenAI when
+`OPENAI_API_KEY` was set in `.env.local` (2026-06-19). The original `setup.ts`
+mocked `callClaude` globally but left `callReasoningModel` unmocked, so the
+ambiguous-branch LLM path reached the real API.
+
+The fix and the enforcement contract:
+
+All three LLM client modules have dedicated unit tests that test the REAL function
+by stubbing `global.fetch` (same pattern as `openai-client.test.ts`):
+- `@/lib/ai/clients/claude` — tested in `src/__tests__/ai/agents/claude-tools.test.ts`
+- `@/lib/ai/clients/openai` — tested in `src/__tests__/lib/ai/openai-client.test.ts`
+- `@/lib/ai/clients/reasoning-cascade` — tested in `src/__tests__/lib/ai/reasoning-cascade.test.ts`
+
+Because those files need the real module, a setup-level `vi.mock` for any client
+breaks them. The hermetic guarantee is therefore per-call-site:
+
+1. Every test file that imports application code which USES a client without
+   directly testing it MUST add `vi.mock('@/lib/ai/clients/<module>')` at the top.
+   This is the established and enforced pattern:
+   `math-classify.test.ts` mocks both `claude` and `reasoning-cascade`;
+   `reasoning-cascade.test.ts` mocks `callOpenAI` and `callClaude` as sub-clients.
+
+2. `setup.ts` emits a `console.warn` when `ANTHROPIC_API_KEY` or a real
+   `OPENAI_API_KEY` is present in the test environment, making the risk visible in
+   test output so developers know to check their file-level mocks.
+
+3. `callClaude` returns an error response (status 503) when `ANTHROPIC_API_KEY` is
+   absent. `callOpenAI` throws `'OPENAI_API_KEY not configured'` before any fetch
+   when the env var is absent. Both clients fail safely without network access.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-168 | `hermetic_llm_mock_layer_per_call_site` | (1) `setup.ts` emits `[TEST SETUP] ANTHROPIC_API_KEY is set` warn when `ANTHROPIC_API_KEY` is present and `[TEST SETUP] OPENAI_API_KEY is set to a real key` warn when `OPENAI_API_KEY` is present and does not start with `sk-test`. (2) `math-classify.test.ts` mocks both `@/lib/ai/clients/claude` and `@/lib/ai/clients/reasoning-cascade` at the file level — the ambiguous-branch test that originally hit real OpenAI is covered by the `_callReasoningModel` mock. (3) `reasoning-cascade.test.ts` mocks `callOpenAI` and `callClaude` as sub-clients and runs the REAL cascade — the file-level mocks take precedence and no real API is reached. (4) `openai-client.test.ts` and `claude-tools.test.ts` test the REAL client functions using `vi.stubGlobal('fetch', ...)` — no setup-level mock interferes. The contract: any new test file that imports code which transitively calls a client without mocking the client at the file level MUST be flagged as a quality rejection. | `src/__tests__/setup.ts` (CI environment guard + inline contract documentation) | E |
+
+### Invariants covered by this section
+
+- P12 (AI safety) — test suite cannot accidentally call real AI providers and
+  incur API costs, expose student data to external services, or produce
+  non-deterministic test results due to real API responses.
+
+### Notes on test strategy
+
+REG-168 is a process/infrastructure contract rather than a pure unit assertion.
+The enforcing artifact is the documented rule in `setup.ts` (read by every
+developer who touches test infrastructure) plus the CI environment guard that
+makes the risk visible. The `math-classify.test.ts` file-level mock pattern
+is the primary proof that per-call-site enforcement works: the previously-failing
+case (real OpenAI called on the ambiguous branch) is now hermetic.
+
+### Catalog total
+
+Pre-REG-168: 135 entries (through Phase 1 academic structure, REG-167). The
+hermetic LLM mock layer contract adds REG-168 (per-call-site enforcement +
+CI environment guard in setup.ts — P12 test-suite AI safety).
+**Total catalog: 136 entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 136 entries.**

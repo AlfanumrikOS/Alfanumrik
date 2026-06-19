@@ -31,6 +31,14 @@ vi.mock('@/lib/ai/clients/claude', () => ({
   callClaude: (...args: unknown[]) => _callClaude(...args),
 }));
 
+// The ambiguous LLM branch in classifyMathSolveWithLLM calls callReasoningModel
+// (from reasoning-cascade), NOT callClaude directly. Mock it so tests are
+// hermetic even when OPENAI_API_KEY is present in the local .env.local.
+const _callReasoningModel = vi.fn();
+vi.mock('@/lib/ai/clients/reasoning-cascade', () => ({
+  callReasoningModel: (...args: unknown[]) => _callReasoningModel(...args),
+}));
+
 import { classifyMathSolve } from '@/lib/ai/workflows/foxy-router';
 
 beforeEach(() => {
@@ -39,6 +47,7 @@ beforeEach(() => {
   // make it throw so any accidental reliance on Claude fails open (false)
   // rather than silently passing.
   _callClaude.mockRejectedValue(new Error('LLM should not be called for this case'));
+  _callReasoningModel.mockRejectedValue(new Error('LLM should not be called for this case'));
 });
 
 describe('GUARD #1 — classifyMathSolve: deterministic POSITIVE (concrete solve)', () => {
@@ -119,39 +128,45 @@ describe('GUARD #1 — classifyMathSolve: deterministic NEGATIVE (conceptual / p
 
 describe('GUARD #1 — classifyMathSolve: ambiguous branch FAILS OPEN (P12 safe default)', () => {
   it('LLM error on the ambiguous branch → fail open (false)', async () => {
-    _callClaude.mockRejectedValueOnce(new Error('circuit open'));
+    _callReasoningModel.mockRejectedValueOnce(new Error('circuit open'));
     const r = await classifyMathSolve('solve this', 'math', '10');
     expect(r.isMathSolve).toBe(false);
   });
 
   it('LLM returns isMathSolve:false → false', async () => {
-    _callClaude.mockResolvedValueOnce({
+    _callReasoningModel.mockResolvedValueOnce({
       content: '{"isMathSolve": false}',
-      model: 'claude-haiku-4-5-20251001',
+      model: 'gpt-4o-mini',
+      tokensUsed: 10,
+      tier: 'base',
     });
     const r = await classifyMathSolve('find the value', 'math', '10');
     expect(r.isMathSolve).toBe(false);
   });
 
   it('LLM returns malformed / non-JSON → fail open (false), never throws', async () => {
-    _callClaude.mockResolvedValueOnce({ content: 'not json at all', model: 'x' });
+    _callReasoningModel.mockResolvedValueOnce({ content: 'not json at all', model: 'x', tokensUsed: 0, tier: 'base' });
     const r = await classifyMathSolve('compute it', 'math', '10');
     expect(r.isMathSolve).toBe(false);
   });
 
   it('LLM returns a non-boolean isMathSolve (e.g. "maybe") → false (only explicit true passes)', async () => {
-    _callClaude.mockResolvedValueOnce({
+    _callReasoningModel.mockResolvedValueOnce({
       content: '{"isMathSolve": "maybe"}',
       model: 'x',
+      tokensUsed: 0,
+      tier: 'base',
     });
     const r = await classifyMathSolve('solve it', 'math', '10');
     expect(r.isMathSolve).toBe(false);
   });
 
   it('LLM returns isMathSolve:true with a difficulty → true + carries the difficulty hint', async () => {
-    _callClaude.mockResolvedValueOnce({
+    _callReasoningModel.mockResolvedValueOnce({
       content: '{"isMathSolve": true, "topic": "quadratics", "difficulty": "medium"}',
       model: 'x',
+      tokensUsed: 0,
+      tier: 'base',
     });
     const r = await classifyMathSolve('solve the equation from before', 'math', '10');
     expect(r.isMathSolve).toBe(true);
@@ -160,7 +175,7 @@ describe('GUARD #1 — classifyMathSolve: ambiguous branch FAILS OPEN (P12 safe 
   });
 
   it('classifyMathSolve NEVER throws on any input shape', async () => {
-    _callClaude.mockRejectedValue(new Error('boom'));
+    _callReasoningModel.mockRejectedValue(new Error('boom'));
     await expect(classifyMathSolve('solve please', 'math', '10')).resolves.toBeDefined();
     await expect(classifyMathSolve('???', '', '')).resolves.toBeDefined();
   });

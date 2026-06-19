@@ -24,6 +24,8 @@
  *   - get_grade_book:             Phase C.2 / matrix of students × columns
  *   - set_grade_book_cell:        Phase C.2 / set one (student, column) cell
  *   - export_grade_book_csv:      Phase C.2 / export grade book matrix as CSV
+ *   - mark_attendance:            Phase 1 / bulk-upsert daily roll call for a class
+ *   - get_attendance_record:      Phase 1 / fetch attendance records for a class on a date
  *   - get_student_mastery_report: Phase 3A Wave C / one roster student's mastery
  *                                 (BKT verbatim) + Bloom's (correct/total over
  *                                 answered quiz_responses) deep dive
@@ -2146,6 +2148,47 @@ async function handleGetGradeBook(
     }
   }
 
+  // Attendance column — query student_attendance for actual records.
+  // For each student: attendance% = round(days_present / total_days * 100).
+  // 'present' and 'late' both count as present for the % calculation.
+  // Falls back to null/pending if student_attendance table is absent or empty.
+  try {
+    const termStartDate = bounds.start.slice(0, 10)
+    const termEndDate = new Date().toISOString().slice(0, 10) // up to today
+    const { data: attRows } = await supabase
+      .from('student_attendance')
+      .select('student_id, status')
+      .eq('class_id', classId)
+      .in('student_id', studentIds)
+      .gte('date', termStartDate)
+      .lte('date', termEndDate)
+      .limit(50000)
+
+    const attByStudent = new Map<string, { present: number; total: number }>()
+    for (const row of ((attRows || []) as Array<{ student_id: string; status: string }>)) {
+      const sid = String(row.student_id)
+      if (!attByStudent.has(sid)) attByStudent.set(sid, { present: 0, total: 0 })
+      const cur = attByStudent.get(sid)!
+      cur.total++
+      if (row.status === 'present' || row.status === 'late') cur.present++
+    }
+
+    for (const stu of students) {
+      const att = attByStudent.get(stu.id)
+      if (att && att.total > 0) {
+        cells[stu.id]['attendance'] = {
+          score: Math.round((att.present / att.total) * 100),
+          max_score: 100,
+          status: 'graded',
+        }
+      }
+      // If no records found: fall through to the pending-placeholder block below.
+    }
+  } catch {
+    // student_attendance absent on older envs or query failed — fall through
+    // to the pending placeholder for graceful degradation.
+  }
+
   // Merge first-class saved cells from `grade_book_entries` OVER the derived
   // matrix so a teacher's explicit save SURVIVES a reload (FIX 1 — the core of
   // the "save → reload → gone" bug). Saved cells are authoritative: they carry
@@ -2431,6 +2474,158 @@ async function handleSetGradeBookCell(
     canonical_written: canonicalWritten,
     grade_book_persisted: gradeBookPersisted,
   }, 200, {}, origin)
+}
+
+// ─── mark_attendance ────────────────────────────────────────
+// Bulk-upserts attendance records for a class on a given date.
+// Body: { teacher_id, class_id, date (YYYY-MM-DD), records: Array<{student_id, status, period?, notes?}> }
+// Returns: { upserted: number, errors: string[] }
+async function handleMarkAttendance(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const teacherId = String(body.teacher_id || '')
+  const classId   = String(body.class_id   || '')
+  const dateRaw   = String(body.date        || '')
+  const records   = Array.isArray(body.records) ? body.records : []
+
+  if (!teacherId) return errorResponse('teacher_id required', 400, origin)
+  if (!classId)   return errorResponse('class_id required', 400, origin)
+  if (!dateRaw || !/^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) {
+    return errorResponse('date must be YYYY-MM-DD', 400, origin)
+  }
+  if (records.length === 0) return errorResponse('records array must be non-empty', 400, origin)
+  if (records.length > 200) return errorResponse('records exceeds max batch size of 200', 400, origin)
+
+  const VALID_STATUSES = new Set(['present', 'absent', 'late', 'excused'])
+  const supabase = getServiceClient()
+
+  // P13: teacher must own this class
+  if (!(await assertTeacherOwnsClass(supabase, teacherId, classId))) {
+    return errorResponse('Class not owned by caller', 403, origin)
+  }
+
+  // Synthetic grade-<n> class IDs are not real rows in `classes` and cannot
+  // satisfy the student_attendance FK constraint on class_id. Attendance marking
+  // requires a real class UUID. Teachers with only synthetic grade-level classes
+  // should create a formal class record first.
+  if (classId.startsWith('grade-')) {
+    return errorResponse(
+      'mark_attendance requires a real class ID. Synthetic grade-level classes are not supported for attendance.',
+      400,
+      origin,
+    )
+  }
+
+  const errors: string[] = []
+  const rows: Array<{
+    class_id: string
+    student_id: string
+    date: string
+    status: string
+    marked_by: string
+    period: string
+    notes: string | null
+  }> = []
+
+  for (const rec of records as Array<Record<string, unknown>>) {
+    const studentId = String(rec.student_id || '')
+    const status    = String(rec.status     || '').toLowerCase()
+    const period    = typeof rec.period === 'string' && rec.period.trim()
+      ? rec.period.trim().slice(0, 50)
+      : 'All Day'
+    const notes = typeof rec.notes === 'string' && rec.notes.trim()
+      ? rec.notes.trim().slice(0, 200)
+      : null
+
+    if (!studentId) { errors.push('record missing student_id'); continue }
+    if (!VALID_STATUSES.has(status)) {
+      errors.push(`student ${studentId}: invalid status "${status}"`)
+      continue
+    }
+    rows.push({ class_id: classId, student_id: studentId, date: dateRaw, status, marked_by: teacherId, period, notes })
+  }
+
+  if (rows.length === 0) {
+    return errorResponse(`No valid records: ${errors.join('; ')}`, 400, origin)
+  }
+
+  const { error: upsertErr } = await supabase
+    .from('student_attendance')
+    .upsert(rows, { onConflict: 'class_id,student_id,date,period' })
+
+  if (upsertErr) {
+    return errorResponse(`Attendance write failed: ${upsertErr.message}`, 500, origin)
+  }
+
+  return jsonResponse({ upserted: rows.length, errors }, 200, {}, origin)
+}
+
+// ─── get_attendance_record ──────────────────────────────────
+// Returns all attendance rows for a class on a specific date.
+// Body: { teacher_id, class_id, date (YYYY-MM-DD), period? }
+async function handleGetAttendanceRecord(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const teacherId = String(body.teacher_id || '')
+  const classId   = String(body.class_id   || '')
+  const dateRaw   = String(body.date        || '')
+  const period    = typeof body.period === 'string' && body.period.trim()
+    ? body.period.trim().slice(0, 50)
+    : null
+
+  if (!teacherId) return errorResponse('teacher_id required', 400, origin)
+  if (!classId)   return errorResponse('class_id required', 400, origin)
+  if (!dateRaw || !/^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) {
+    return errorResponse('date must be YYYY-MM-DD', 400, origin)
+  }
+
+  const supabase = getServiceClient()
+
+  if (!(await assertTeacherOwnsClass(supabase, teacherId, classId))) {
+    return errorResponse('Class not owned by caller', 403, origin)
+  }
+
+  // Fetch class roster — all enrolled students for the class
+  type RosterStudent = { id: string; name: string }
+  let students: RosterStudent[] = []
+  try {
+    if (!classId.startsWith('grade-')) {
+      // Real class ID: query class_students join → students
+      const { data: rosterRows } = await supabase
+        .from('class_students')
+        .select('students(id, name)')
+        .eq('class_id', classId)
+        .eq('is_active', true)
+        .limit(300)
+      students = ((rosterRows || []) as Array<{ students: RosterStudent | null }>)
+        .map(r => r.students)
+        .filter((s): s is RosterStudent => s !== null && !!s.id)
+    } else {
+      // Synthetic grade-<n> class: query students by grade
+      const grade = classId.replace('grade-', '')
+      const { data: gradeRows } = await supabase
+        .from('students')
+        .select('id, name')
+        .eq('grade', grade)
+        .limit(300)
+      students = ((gradeRows || []) as RosterStudent[]).filter(s => !!s.id)
+    }
+  } catch { /* table absent — return empty roster */ }
+
+  let query = supabase
+    .from('student_attendance')
+    .select('id, student_id, date, status, period, notes, marked_by, created_at, updated_at')
+    .eq('class_id', classId)
+    .eq('date', dateRaw)
+
+  if (period) query = query.eq('period', period)
+
+  const { data, error } = await query.limit(500)
+  if (error) return errorResponse(`Query failed: ${error.message}`, 500, origin)
+
+  return jsonResponse({ date: dateRaw, class_id: classId, students, records: data || [] }, 200, {}, origin)
 }
 
 // ─── export_grade_book_csv ──────────────────────────────────
@@ -3490,6 +3685,10 @@ Deno.serve(async (req: Request) => {
         return await handleSetGradeBookCell(body, origin)
       case 'export_grade_book_csv':
         return await handleExportGradeBookCsv(body, origin)
+      case 'mark_attendance':
+        return await handleMarkAttendance(body, origin)
+      case 'get_attendance_record':
+        return await handleGetAttendanceRecord(body, origin)
       case 'get_student_mastery_report':
         return await handleGetStudentMasteryReport(body, origin)
       case 'get_class_mastery_bloom_summary':
