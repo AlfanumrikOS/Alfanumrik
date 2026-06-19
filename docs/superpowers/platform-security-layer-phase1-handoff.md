@@ -214,8 +214,8 @@ Contract test `src/__tests__/ncert-question-engine-security.test.ts` verifies:
 | `grounded-answer` | Yes | Yes | Rolled out and validated |
 | `ncert-question-engine` | Yes | Yes | Rolled out and validated (PR #1067) |
 | `ncert-solver` | Yes | Yes | Rolled out (Phase 3); JWT + internal_service callers |
-| `scan-ocr` | Yes | No | Route policy seeded; code integration pending |
-| `parent-report-generator` | Yes | No | Route policy seeded; code integration pending |
+| `scan-ocr` | Yes | Yes | Rolled out (Phase 3 Wave 2); student + internal_service callerTypes; domain OCR quota coexists |
+| `parent-report-generator` | Yes | Yes | Rolled out (Phase 3 Wave 2); parent + teacher + school_admin + internal_service; guardian lookup via admission.principal.userId |
 | `alfabot-answer` | Yes | Yes | Rolled out (Phase 3); internal_service caller only; Next.js proxy signs requests |
 | `bulk-question-gen` | Yes | No | Route policy seeded; code integration pending |
 | `bulk-non-mcq-gen` | Yes | No | Route policy seeded; code integration pending |
@@ -300,7 +300,7 @@ Phase 3 is code integration only for the 14 functions that already have route po
 
 `ncert-solver` is integrated with `callerTypes: ['student', 'internal_service']`. The function-local circuit breaker for the Claude API is preserved alongside the platform circuit breaker (they coexist at different abstraction levels). `finalizeAiRoute` is called on every exit path.
 
-Remaining: `scan-ocr`, `parent-report-generator`
+Complete: ncert-solver (Wave 1), scan-ocr (Wave 2), parent-report-generator (Wave 2). Migration 20260620001400 added the missing parent caller policy.
 
 ### 3. Roll the shared layer into the bulk and embedding functions
 
