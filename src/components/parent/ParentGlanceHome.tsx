@@ -126,8 +126,6 @@ export interface ParentGlanceHomeProps {
   loading?: boolean;
   /** Error message from the page when the dash payload failed. */
   error?: string | null;
-  /** Reveal the classic 8-tab dashboard (set by the page). */
-  onShowClassic: () => void;
   /** Manual refresh — reuses the page's existing load(). */
   onRefresh: () => void;
   /** Logout — reuses the page's existing logout(). */
@@ -217,7 +215,6 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
     canFetchReport,
     loading,
     error,
-    onShowClassic,
     onRefresh,
     onLogout,
     isHi,
@@ -489,16 +486,6 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
                 <span className="text-orange-400 text-lg" aria-hidden="true">&#x2192;</span>
               </Link>
 
-              {/* Reveal classic 8-tab dashboard — nothing is lost. */}
-              <button
-                onClick={onShowClassic}
-                className="flex items-center gap-3 min-h-[44px] px-4 py-3 bg-white text-gray-900 border border-orange-200 rounded-[12px] cursor-pointer text-left"
-              >
-                <span className="text-lg" aria-hidden="true">&#x1F5C2;</span>
-                <span className="flex-1 text-[14px] font-semibold">{t(isHi, 'Detailed dashboard', 'विस्तृत डैशबोर्ड')}</span>
-                <span className="text-orange-400 text-lg" aria-hidden="true">&#x2192;</span>
-              </button>
-
               {/* Manage plan — existing billing page. */}
               <Link
                 href="/parent/billing"
@@ -529,15 +516,6 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
         </>
       )}
 
-      {/* Footer — also exposes the classic view link in the empty state. */}
-      <div className="text-center mt-6">
-        <button
-          onClick={onShowClassic}
-          className="text-[12px] text-orange-500 font-medium underline bg-transparent border-none cursor-pointer min-h-[36px]"
-        >
-          {t(isHi, 'View classic dashboard', 'क्लासिक डैशबोर्ड देखें')}
-        </button>
-      </div>
     </div>
   );
 }

@@ -98,7 +98,6 @@ function makeProps(overrides: Partial<ParentGlanceHomeProps> = {}): ParentGlance
     canFetchReport: false,
     loading: false,
     error: null,
-    onShowClassic: vi.fn(),
     onRefresh: vi.fn(),
     onLogout: vi.fn(),
     isHi: false,
@@ -166,7 +165,7 @@ describe('ParentGlanceHome — Snapshot + Moments + Actions (read-only)', () => 
     expect(supportLink).toHaveAttribute('href', '/parent/support');
 
     // Every action is either a same-app <Link>/<a> navigation or a button that
-    // toggles local UI (onShowClassic) — NONE is a form/submit/write affordance.
+    // NONE is a form/submit/write affordance.
     expect(container.querySelector('form')).toBeNull();
     expect(container.querySelector('input')).toBeNull();
     expect(container.querySelector('textarea')).toBeNull();
@@ -194,15 +193,6 @@ describe('ParentGlanceHome — Snapshot + Moments + Actions (read-only)', () => 
     // it never appears — the guard is `canFetchReport`, not load timing.
     await new Promise((r) => setTimeout(r, 10));
     expect(screen.queryByTestId('weekly-report-stub')).not.toBeInTheDocument();
-  });
-
-  it('"Detailed dashboard" and "View classic dashboard" call onShowClassic — no data loss', () => {
-    const onShowClassic = vi.fn();
-    render(<ParentGlanceHome {...makeProps({ onShowClassic })} />);
-
-    screen.getByRole('button', { name: /detailed dashboard/i }).click();
-    screen.getByRole('button', { name: /view classic dashboard/i }).click();
-    expect(onShowClassic).toHaveBeenCalledTimes(2);
   });
 
   it('renders the Hindi headline when isHi is true (P7)', () => {
@@ -257,94 +247,16 @@ describe('ParentGlanceHome — loading / empty / error states (from props, no fe
       screen.getByText("Asha hasn't started learning yet"),
     ).toBeInTheDocument();
     // The Moments/Actions sections are not rendered in the empty state, but the
-    // classic-reveal footer link still is (nothing is ever lost).
     expect(screen.queryByRole('region', { name: 'Quick actions' })).not.toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: /view classic dashboard/i }),
-    ).toBeInTheDocument();
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// PART 2 — page-level flag-branch dispatch (faithful replica of the ternary in
-// src/app/parent/page.tsx:569 — `glanceEnabled && !showClassic`).
-//
-// We render the EXACT decision the page makes, wired to a mocked useFeatureFlags
-// (the same SWR hook the page reads), and assert which branch is selected.
-// Sentinels stand in for the two heavy branches so the assertion is purely about
-// the SELECTION, mirroring cosmic-dispatch-flag-off.test.tsx (REG-79).
-// ═══════════════════════════════════════════════════════════════════════════
-
-// Mock the flag-read hook the page uses.
 const flagState: { value: Record<string, boolean> | undefined } = { value: undefined };
 vi.mock('@/lib/swr', () => ({
   useFeatureFlags: () => ({ data: flagState.value }),
 }));
 
 import { useFeatureFlags } from '@/lib/swr';
-
-/**
- * Faithful replica of the parent page's flag branch. `showClassic` is the
- * page's local "reveal classic" toggle; the branch must select the glance home
- * ONLY when the flag is ON and classic has not been revealed.
- */
-function ParentGlanceDispatcher({ showClassic = false }: { showClassic?: boolean }) {
-  const { data: flags } = useFeatureFlags();
-  const glanceEnabled = flags?.[CONSUMER_MINIMALISM_FLAGS.PARENT_GLANCE_V1] === true;
-  return glanceEnabled && !showClassic ? (
-    <div data-testid="branch-glance">glance</div>
-  ) : (
-    <div data-testid="branch-classic">classic 8-tab</div>
-  );
-}
-
-describe('Parent page — ff_parent_glance_v1 flag-branch dispatch', () => {
-  beforeEach(() => {
-    flagState.value = undefined;
-  });
-
-  it('production default (FLAG_DEFAULTS) keeps the glance flag OFF', () => {
-    // Guards against a regression that flips the default ON.
-    expect(FLAG_DEFAULTS[CONSUMER_MINIMALISM_FLAGS.PARENT_GLANCE_V1]).toBe(false);
-  });
-
-  it('renders the CLASSIC 8-tab dashboard when the flag is ABSENT (prod truth)', () => {
-    flagState.value = { some_other_flag: true };
-    render(<ParentGlanceDispatcher />);
-    expect(screen.getByTestId('branch-classic')).toBeInTheDocument();
-    expect(screen.queryByTestId('branch-glance')).not.toBeInTheDocument();
-  });
-
-  it('renders the CLASSIC dashboard when the flag is explicitly false', () => {
-    flagState.value = { [CONSUMER_MINIMALISM_FLAGS.PARENT_GLANCE_V1]: false };
-    render(<ParentGlanceDispatcher />);
-    expect(screen.getByTestId('branch-classic')).toBeInTheDocument();
-    expect(screen.queryByTestId('branch-glance')).not.toBeInTheDocument();
-  });
-
-  it('renders the CLASSIC dashboard while flags are still loading (data undefined)', () => {
-    flagState.value = undefined;
-    render(<ParentGlanceDispatcher />);
-    expect(screen.getByTestId('branch-classic')).toBeInTheDocument();
-    expect(screen.queryByTestId('branch-glance')).not.toBeInTheDocument();
-  });
-
-  it('renders the GLANCE home when the flag is ON (switch is live, not dead)', () => {
-    flagState.value = { [CONSUMER_MINIMALISM_FLAGS.PARENT_GLANCE_V1]: true };
-    render(<ParentGlanceDispatcher />);
-    expect(screen.getByTestId('branch-glance')).toBeInTheDocument();
-    expect(screen.queryByTestId('branch-classic')).not.toBeInTheDocument();
-  });
-
-  it('falls back to the CLASSIC dashboard with the flag ON once classic is revealed', () => {
-    // showClassic=true is the "View classic dashboard" escape hatch: nothing is
-    // lost — the legacy tree renders even while the flag is ON.
-    flagState.value = { [CONSUMER_MINIMALISM_FLAGS.PARENT_GLANCE_V1]: true };
-    render(<ParentGlanceDispatcher showClassic />);
-    expect(screen.getByTestId('branch-classic')).toBeInTheDocument();
-    expect(screen.queryByTestId('branch-glance')).not.toBeInTheDocument();
-  });
-});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PART 3 — Wave D "Encourage" affordance gate (REG-85).
