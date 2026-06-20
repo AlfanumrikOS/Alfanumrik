@@ -28,6 +28,20 @@ vi.mock('@/lib/gst', async (importOriginal) => {
   return { ...actual, computeGst: (...a: unknown[]) => mockComputeGst(...a) };
 });
 
+// ── Feature flags seam — gates GST stamp in verify route ──────────────────
+// isFeatureEnabled uses raw fetch (not supabaseAdmin), so the supabaseAdmin
+// mock can't intercept it. We mock the entire module so gstChargingEnabled()
+// returns true, allowing the GST stamp block to run as designed.
+// The kill-switch (razorpay_payments) is still read via supabaseAdmin.from()
+// which is handled by fromMock('feature_flags') → { is_enabled: true }.
+vi.mock('@/lib/feature-flags', () => ({
+  isFeatureEnabled: async (_flagName: string) => true,
+  PAYMENT_FLAGS: {
+    GST_INVOICING_V1: 'ff_gst_invoicing_v1',
+    RECONCILE_STUCK_SUBSCRIPTIONS_ENABLED: 'reconcile_stuck_subscriptions_enabled',
+  },
+}));
+
 // ── Auth seams ──────────────────────────────────────────────────────────────
 vi.mock('@supabase/ssr', () => ({
   createServerClient: () => ({ auth: { getUser: async () => ({ data: { user: null } }) } }),

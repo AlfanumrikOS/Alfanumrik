@@ -30,6 +30,20 @@ vi.mock('@/lib/gst', async (importOriginal) => {
   };
 });
 
+// ── Feature flags seam — gates GST charging in all three payment routes ────
+// isFeatureEnabled uses raw fetch (not supabaseAdmin), so the supabaseAdmin
+// mock can't intercept it. We mock the entire module so gstChargingEnabled()
+// returns true in all tests that exercise the GST logic path. Tests that need
+// the GST-OFF fallback do so by mocking computeGst to return null (not by
+// toggling the flag).
+vi.mock('@/lib/feature-flags', () => ({
+  isFeatureEnabled: async (_flagName: string) => true,
+  PAYMENT_FLAGS: {
+    GST_INVOICING_V1: 'ff_gst_invoicing_v1',
+    RECONCILE_STUCK_SUBSCRIPTIONS_ENABLED: 'reconcile_stuck_subscriptions_enabled',
+  },
+}));
+
 // ── Auth seams ──────────────────────────────────────────────────────────────
 vi.mock('@supabase/ssr', () => ({
   createServerClient: () => ({ auth: { getUser: async () => ({ data: { user: null } }) } }),

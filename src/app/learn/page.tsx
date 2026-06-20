@@ -17,7 +17,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
 import { getChaptersForSubject, supabase } from '@/lib/supabase';
@@ -49,6 +49,7 @@ export default function LearnPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
   const { subjects: allSubjects, unlocked: allowedSubjects, locked: lockedSubjects } = useAllowedSubjects();
   const router = useRouter();
+  const pathname = usePathname();
 
   // "Alfa OS" Subjects experience flag. Default OFF → legacy chapter list
   // renders unchanged (byte-identical). When ON, selecting a subject renders
@@ -90,7 +91,7 @@ export default function LearnPage() {
       .then(({ data }) => {
         if (data) setProgressRows(data as any[]);
       });
-  }, [student?.id]);
+  }, [student?.id, pathname]);
 
   useEffect(() => {
     if (!student?.grade) return;
