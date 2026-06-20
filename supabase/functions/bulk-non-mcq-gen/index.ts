@@ -66,35 +66,7 @@ import { admitAiRoute, finalizeAiRoute, createStaticAiRouteProfile } from '../_s
 import { generateResponse, MolError } from '../_shared/mol/index.ts'
 import { isMolAdminRoutingEnabled } from '../_shared/mol/admin-rollback-flag.ts'
 import { fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
-
-// ─── CORS ────────────────────────────────────────────────────────────────────
-const ALLOWED_ORIGINS = [
-  'https://alfanumrik.com',
-  'https://www.alfanumrik.com',
-  'https://alfanumrik.vercel.app',
-]
-function getCorsHeaders(origin?: string | null): Record<string, string> {
-  const isAllowed = origin && (
-    ALLOWED_ORIGINS.includes(origin) ||
-    (origin.endsWith('.vercel.app') && origin.includes('alfanumrik'))
-  )
-  return {
-    'Access-Control-Allow-Origin': isAllowed ? origin : ALLOWED_ORIGINS[0],
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Max-Age': '86400',
-    'Vary': 'Origin',
-  }
-}
-function jsonResponse(body: unknown, status = 200, extra: Record<string, string> = {}, origin?: string | null): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...getCorsHeaders(origin), 'Content-Type': 'application/json', ...extra },
-  })
-}
-function errorResponse(message: string, status = 400, origin?: string | null): Response {
-  return jsonResponse({ error: message }, status, {}, origin)
-}
+import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 
 // ─── Environment ─────────────────────────────────────────────────────────────
 const ANTHROPIC_API_KEY    = Deno.env.get('ANTHROPIC_API_KEY')        || ''

@@ -24,33 +24,17 @@
  */
 
 import { edgeLog, getRequestId, type EdgeLogContext } from '../_shared/edge-audit-log.ts'
+import { getCorsHeaders } from '../_shared/cors.ts'
 
 // ─── Hardcoded recipient ─────────────────────────────────────────────────────
 // CHANGE THIS LINE to re-route AlfaBot inquiries. Single source of truth.
 const INQUIRY_RECIPIENT = 'alfanumrik10@gmail.com'
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
-const ALLOWED_ORIGINS = [
-  'https://alfanumrik.com',
-  'https://www.alfanumrik.com',
-  'https://alfanumrik.vercel.app',
-  'https://alfanumrik-ten.vercel.app',
-  'http://localhost:3000',
-]
-
-function getCorsHeaders(requestOrigin?: string | null): Record<string, string> {
-  const origin = requestOrigin && ALLOWED_ORIGINS.some((o) => requestOrigin === o || requestOrigin.endsWith('.vercel.app'))
-    ? requestOrigin
-    : ALLOWED_ORIGINS[0]
-  return {
-    'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-request-id',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Max-Age': '86400',
-    'Vary': 'Origin',
-  }
-}
-
+// CORS logic (ALLOWED_ORIGINS + Vercel-preview detection) lives in
+// ../_shared/cors.ts. This thin wrapper preserves the local
+// (body, status, origin) call signature while delegating origin validation to
+// the shared getCorsHeaders.
 function jsonResponse(body: unknown, status = 200, requestOrigin?: string | null): Response {
   return new Response(JSON.stringify(body), {
     status,

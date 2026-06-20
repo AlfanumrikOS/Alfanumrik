@@ -12,39 +12,7 @@
 import { createEmailIdempotencyKey, fetchWithTimeout } from '../_shared/reliability.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { edgeLog, getRequestId, writeBusinessAudit, type EdgeLogContext } from '../_shared/edge-audit-log.ts'
-
-// ─── Inline CORS ──────────────────────────────────────────────────────────────
-const ALLOWED_ORIGINS = [
-  'https://alfanumrik.com',
-  'https://www.alfanumrik.com',
-  'https://alfanumrik.vercel.app',
-  'https://alfanumrik-ten.vercel.app',
-  'http://localhost:3000',
-]
-
-function getCorsHeaders(requestOrigin?: string | null): Record<string, string> {
-  const origin = requestOrigin && ALLOWED_ORIGINS.some((o) => requestOrigin === o || requestOrigin.endsWith('.vercel.app'))
-    ? requestOrigin
-    : ALLOWED_ORIGINS[0]
-  return {
-    'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-request-id',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Max-Age': '86400',
-    'Vary': 'Origin',
-  }
-}
-
-function jsonResponse(body: unknown, status = 200, extra: Record<string, string> = {}, requestOrigin?: string | null): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...getCorsHeaders(requestOrigin), 'Content-Type': 'application/json', ...extra },
-  })
-}
-
-function errorResponse(message: string, status = 400, requestOrigin?: string | null): Response {
-  return jsonResponse({ error: message }, status, {}, requestOrigin)
-}
+import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const MAILGUN_API_KEY = Deno.env.get('MAILGUN_API_KEY') ?? ''

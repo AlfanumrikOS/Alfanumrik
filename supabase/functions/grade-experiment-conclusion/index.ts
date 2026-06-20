@@ -41,6 +41,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
+import { getCorsHeaders } from '../_shared/cors.ts'
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
@@ -55,26 +56,10 @@ const MIN_CONCLUSION_CHARS = 20
 const DAILY_CAP_PER_STUDENT = 20
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
-const ALLOWED_ORIGINS = [
-  'https://alfanumrik.com',
-  'https://www.alfanumrik.com',
-  'https://alfanumrik.vercel.app',
-  'https://alfanumrik-ten.vercel.app',
-]
-function getCorsHeaders(origin?: string | null): Record<string, string> {
-  const isAllowed = !!origin && (
-    ALLOWED_ORIGINS.includes(origin) ||
-    (origin.endsWith('.vercel.app') && origin.includes('alfanumrik')) ||
-    origin.startsWith('http://localhost')
-  )
-  return {
-    'Access-Control-Allow-Origin': isAllowed ? origin : ALLOWED_ORIGINS[0],
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Max-Age': '86400',
-    'Vary': 'Origin',
-  }
-}
+// CORS logic (ALLOWED_ORIGINS + Vercel-preview detection) lives in
+// ../_shared/cors.ts. These thin wrappers preserve this function's local
+// (body, status, origin) call signature while delegating origin validation to
+// the shared getCorsHeaders.
 function jsonResponse(body: unknown, status = 200, origin?: string | null): Response {
   return new Response(JSON.stringify(body), {
     status,
