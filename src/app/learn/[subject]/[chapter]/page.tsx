@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
@@ -136,6 +136,7 @@ function ChapterConceptPageContent() {
   // rows are sparse or look like placeholder one-liners. Telemetry flag
   // `learn_v2_source` records which path actually rendered.
   const [chapterReaderV2FlagOn, setChapterReaderV2FlagOn] = useState(false);
+  const chapterReaderV2FlagRef = useRef(false);
   const [v2SourceUsed, setV2SourceUsed] = useState<'curated' | 'rag_fallback' | null>(null);
   // ── Pedagogy v2 / Wave 1: Productive Failure flip ──
   // When ff_productive_failure_v1 is on AND the resolved pedagogy rule says
@@ -201,22 +202,19 @@ function ChapterConceptPageContent() {
     // on the skeleton. `finally` ALWAYS clears `loading`; `catch` flips the
     // retryable error state.
     try {
-    // Load RAG topics, curated concepts, questions, diagrams, and chapter/subject metadata in parallel
+    // Phase 1 (critical): queries needed to render the lesson — one failure here IS a load error
     const [
       ragTopicsRaw,
       curatedConcepts,
       questionsData,
-      diagramsData,
       chapterMetaResult,
       subjectRow,
-      masteryResult
     ] = await Promise.all([
       getChapterTopics(subject, grade, chapterNum),
-      chapterReaderV2FlagOn
+      chapterReaderV2FlagRef.current
         ? getChapterTopicsFromConcepts(subject, grade, chapterNum)
         : Promise.resolve([]),
       getChapterQuestions(subject, grade, chapterNum, 30),
-      getTopicDiagrams(subject, grade, chapterNum),
       supabase
         .from('chapters')
         .select('title, title_hi, ncert_page_start, ncert_page_end')
@@ -230,11 +228,28 @@ function ChapterConceptPageContent() {
         .select('id')
         .eq('code', subject)
         .maybeSingle(),
+    ]);
+
+    // Phase 2 (deferred): enrichment data — failures here do NOT block the lesson
+    // diagrams and mastery scores are nice-to-have; load them in background
+    Promise.all([
+      getTopicDiagrams(subject, grade, chapterNum),
       supabase
         .from('concept_mastery_score')
         .select('concept_code, mastery_score')
-        .eq('student_id', student.id)
-    ]);
+        .eq('student_id', student.id),
+    ]).then(([dData, mResult]) => {
+      setDiagrams((dData as Diagram[]) ?? []);
+      const masteryMap: Record<string, number> = {};
+      if (mResult?.data) {
+        mResult.data.forEach((row: any) => {
+          if (row.concept_code) masteryMap[row.concept_code] = row.mastery_score;
+        });
+      }
+      setConceptMasteries(masteryMap);
+    }).catch(() => {
+      // Deferred data unavailable — lesson still works without diagrams or mastery scores
+    });
 
     if (chapterMetaResult?.data) {
       setChapterMeta(chapterMetaResult.data);
@@ -242,15 +257,7 @@ function ChapterConceptPageContent() {
       setChapterMeta(null);
     }
 
-    const masteryMap: Record<string, number> = {};
-    if (masteryResult?.data) {
-      masteryResult.data.forEach((row: any) => {
-        if (row.concept_code) {
-          masteryMap[row.concept_code] = row.mastery_score;
-        }
-      });
-    }
-    setConceptMasteries(masteryMap);
+    // mastery and diagrams are now handled in the deferred Phase 2 block above
 
     const normalizedGrade = grade.replace(/^Grade\s*/i, '').trim();
     let curriculumTopics: Array<{ id: string; title: string }> = [];
@@ -332,7 +339,7 @@ function ChapterConceptPageContent() {
 
     setTopics(mergedTopics);
     setQuestions(sortedQuestions);
-    setDiagrams(diagramsData as Diagram[]);
+    // setDiagrams is now handled in the deferred Phase 2 block (diagrams not needed to start the lesson)
     setV2SourceUsed(curatedConcepts.length > 0 ? 'curated' : 'rag_fallback');
     setPhase('explaining');
     setCompletedTopics(new Set());
@@ -350,7 +357,7 @@ function ChapterConceptPageContent() {
       // rejected await, leaving the student stuck on the permanent skeleton.
       setLoading(false);
     }
-  }, [student, subject, chapterNum, chapterReaderV2FlagOn]);
+  }, [student, subject, chapterNum]);
 
   useEffect(() => {
     if (student) load();
@@ -405,6 +412,7 @@ function ChapterConceptPageContent() {
           setReadModeFlagOn(Boolean(flags?.ff_learn_read_mode_v1));
           setProductiveFailureFlagOn(Boolean(flags?.ff_productive_failure_v1));
           setChapterReaderV2FlagOn(Boolean(flags?.ff_chapter_reader_v2));
+          chapterReaderV2FlagRef.current = Boolean(flags?.ff_chapter_reader_v2);
         }
       } catch {
         // Flags fail closed — practice mode only, tutorial-first preserved.
@@ -412,6 +420,7 @@ function ChapterConceptPageContent() {
           setReadModeFlagOn(false);
           setProductiveFailureFlagOn(false);
           setChapterReaderV2FlagOn(false);
+          chapterReaderV2FlagRef.current = false;
         }
       }
     })();
@@ -543,7 +552,8 @@ function ChapterConceptPageContent() {
   const submitAnswer = () => {
     const state = conceptStates[currentIdx];
     if (!state || state.selectedOption === null || state.submitted) return;
-    const q = questions[currentIdx % Math.max(questions.length, 1)];
+    const safeIdx = questions.length > 0 ? Math.min(currentIdx, questions.length - 1) : 0;
+    const q = questions.length > 0 ? questions[safeIdx] : null;
     if (!q) return;
     const isCorrect = state.selectedOption === q.correct_answer_index;
     setConceptStates(prev => ({
@@ -1073,7 +1083,7 @@ function ChapterConceptPageContent() {
   }
 
   const topic = topics[currentIdx];
-  const question = questions.length > 0 ? questions[currentIdx % questions.length] : null;
+  const question = questions.length > 0 ? questions[Math.min(currentIdx, questions.length - 1)] : null;
   const diagram = diagrams.length > 0 ? diagrams[currentIdx % diagrams.length] : null;
   const conceptState = conceptStates[currentIdx];
   

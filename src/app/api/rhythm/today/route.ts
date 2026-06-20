@@ -47,7 +47,7 @@ import {
 } from '@/lib/learn/remediation-queue-adapter';
 import { resolveGoalProfile, type GoalCode } from '@/lib/goals/goal-profile';
 import { logger } from '@/lib/logger';
-import { cacheFetchAsync, CACHE_TTL } from '@/lib/cache';
+import { cacheFetchAsync, CACHE_TTL, cacheInvalidatePrefixAsync } from '@/lib/cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -423,4 +423,31 @@ async function buildRemediationLane(
     });
     return [];
   }
+}
+
+/**
+ * POST /api/rhythm/today
+ *
+ * Cache-bust endpoint: invalidates this student's rhythm queue from both
+ * in-memory L1 and Redis L2. Called by quiz/page.tsx after quiz submission
+ * so the next GET /api/rhythm/today returns a fresh queue reflecting the
+ * student's updated chapter progress.
+ *
+ * Auth: same as GET — requires authenticated Supabase session.
+ * No body required. Returns { ok: true } on success.
+ */
+export async function POST(_request: Request) {
+  const supabase = await createSupabaseServerClient();
+  const { data: userResult, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userResult?.user) {
+    return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
+  }
+  const userId = userResult.user.id;
+
+  // Invalidate both L1 and L2 cache for this student's rhythm key.
+  // Uses prefix-match so all dayKey variants are busted (handles edge case
+  // where POST fires at midnight boundary and GET uses next day's key).
+  await cacheInvalidatePrefixAsync(`rhythm:today:${userId}:`);
+
+  return NextResponse.json({ ok: true });
 }

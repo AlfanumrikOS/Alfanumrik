@@ -1,9 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { supabase as globalSupabase } from '@/lib/supabase-client';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 import { capture as posthogCapture } from '@/lib/posthog/server';
 import { paymentSubscribeSchema, validateBody } from '@/lib/validation';
 import { authorizeRequest } from '@/lib/rbac';
+import { computeGst, gstToRazorpayNotes, supplierStateCode } from '@/lib/gst';
+import { isFeatureEnabled, PAYMENT_FLAGS } from '@/lib/feature-flags';
+import { logger } from '@/lib/logger';
+
+/**
+ * Fail-CLOSED GST gate (Track A.3 launch-safety).
+ *
+ * Returns true ONLY when ff_gst_invoicing_v1 resolves explicitly enabled.
+ * `isFeatureEnabled` already returns false for an absent/disabled/0%-rollout
+ * flag and for a malformed flags payload; this wrapper additionally treats ANY
+ * thrown error as OFF so an indeterminate flag state can NEVER charge GST.
+ * Never over-charge on uncertainty; never let the gate fail the sale.
+ */
+async function gstChargingEnabled(): Promise<boolean> {
+  try {
+    return await isFeatureEnabled(PAYMENT_FLAGS.GST_INVOICING_V1);
+  } catch {
+    return false; // fail-closed to NO-GST
+  }
+}
 
 // P11: payment endpoints are the highest-blast-radius write surface.
 // We share validateBody / paymentSubscribeSchema with the
@@ -72,7 +93,51 @@ export async function POST(request: NextRequest) {
       unlimited: { monthly: 149900,  yearly: 1199900 },  // ₹1499/mo, ₹11999/yr
     };
 
-    const amount = PRICING[plan_code][billing_cycle as 'monthly' | 'yearly'];
+    const taxablePaisa = PRICING[plan_code][billing_cycle as 'monthly' | 'yearly'];
+
+    // ─── Track A.3: per-state GST on the B2C order ───
+    // The listed plan price is the TAXABLE (pre-GST) value. We compute the GST
+    // split via the single compute_gst RPC and charge the TAX-INCLUSIVE total.
+    // place_of_supply (buyer state) may be supplied by the client at checkout;
+    // absent it, compute_gst conservatively treats the sale as inter-state (IGST).
+    // The GST breakdown rides in `notes` so the webhook/verify can reconcile.
+    const placeOfSupply =
+      typeof (rawBody as { place_of_supply?: unknown })?.place_of_supply === 'string'
+        ? ((rawBody as { place_of_supply: string }).place_of_supply.trim() || null)
+        : null;
+    const supplierState = supplierStateCode();
+    const taxableRupees = taxablePaisa / 100;
+
+    let amount = taxablePaisa; // default: bare taxable (pre-A.3 behavior, also the GST-OFF behavior)
+    let gstNotes: Record<string, string> = {};
+    // GST-metadata notes (supplier_state_code, place_of_supply) are themselves a
+    // Track A.3 addition; when the flag is OFF they must NOT ride on the order so
+    // the order payload is byte-for-byte the pre-A.3 shape.
+    let gstMetaNotes: Record<string, string> = {};
+
+    // ─── Launch-safety gate (P11): GST charging is OFF until ff_gst_invoicing_v1 ───
+    // When the flag is OFF (default) or its check errors, we charge the bare
+    // taxable amount with NO GST side effects — byte-for-byte the pre-Track-A.3
+    // behavior. compute_gst is NOT called for charging, and no GST notes ride
+    // on the order. The gate is fail-closed to NO-GST and never blocks the sale.
+    if (await gstChargingEnabled()) {
+      gstMetaNotes = {
+        supplier_state_code: supplierState,
+        place_of_supply: placeOfSupply ?? '',
+      };
+      const gst = await computeGst(supabaseAdmin, taxableRupees, placeOfSupply, '9992', supplierState);
+      if (gst) {
+        // Charge the tax-inclusive total, converted to paisa at the Razorpay boundary.
+        amount = Math.round(Number(gst.total_payable) * 100);
+        gstNotes = gstToRazorpayNotes(gst);
+      } else {
+        // GST RPC unavailable (e.g. tax_config not yet seeded). Do NOT block the
+        // sale — charge the listed taxable amount and log for reconciliation.
+        logger.warn('create-order: compute_gst unavailable — charging bare taxable amount', {
+          plan_code, billing_cycle,
+        });
+      }
+    }
 
     // Create Razorpay order
     const authString = Buffer.from(`${razorpayKey}:${razorpaySecret}`).toString('base64');
@@ -91,6 +156,8 @@ export async function POST(request: NextRequest) {
           plan_code,
           billing_cycle,
           email: user.email,
+          ...gstMetaNotes,
+          ...gstNotes,
         },
       }),
     });

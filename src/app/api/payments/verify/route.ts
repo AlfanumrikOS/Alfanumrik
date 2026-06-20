@@ -7,6 +7,25 @@ import { logger } from '@/lib/logger';
 import { logOpsEvent } from '@/lib/ops-events';
 import { paymentVerifySchema, validateBody } from '@/lib/validation';
 import { authorizeRequest } from '@/lib/rbac';
+import { computeGst, gstSubscriptionColumns, supplierStateCode } from '@/lib/gst';
+import { isFeatureEnabled, PAYMENT_FLAGS } from '@/lib/feature-flags';
+
+/**
+ * Fail-CLOSED GST gate (Track A.3 launch-safety).
+ *
+ * Returns true ONLY when ff_gst_invoicing_v1 resolves explicitly enabled.
+ * `isFeatureEnabled` already returns false for an absent/disabled/0%-rollout
+ * flag and for a malformed flags payload; this wrapper additionally treats ANY
+ * thrown error as OFF so an indeterminate flag state can NEVER stamp GST columns.
+ * Never act on uncertainty; the gate is post-entitlement and never affects the sale.
+ */
+async function gstChargingEnabled(): Promise<boolean> {
+  try {
+    return await isFeatureEnabled(PAYMENT_FLAGS.GST_INVOICING_V1);
+  } catch {
+    return false; // fail-closed to NO-GST
+  }
+}
 
 /**
  * Payment Verification Route
@@ -67,6 +86,7 @@ export async function POST(request: NextRequest) {
       razorpay_order_id, razorpay_payment_id, razorpay_signature,
       razorpay_subscription_id,
       plan_code, billing_cycle, type,
+      place_of_supply,
     } = validation.data;
 
     // Verify Razorpay HMAC signature
@@ -277,6 +297,46 @@ export async function POST(request: NextRequest) {
         payment_id: razorpay_payment_id,
         status: 'pending_confirmation',
       }, { status: 202 });
+    }
+
+    // ─── Track A.3: persist the GST breakdown on student_subscriptions ───
+    // Entitlement is already granted (the critical P11 path above is untouched).
+    // We re-derive the SAME GST split via the single compute_gst RPC (the plan
+    // price is the taxable value) and stamp it onto the just-activated
+    // subscription row in ONE UPDATE statement (atomic). The buyer place-of-supply
+    // comes from the checkout body; absent it, compute_gst treats the sale as IGST.
+    //
+    // This persist is best-effort for the RESPONSE: a GST-stamp failure must NOT
+    // flip a successful, paid, entitlement-granted activation into an error
+    // (the money + access already landed). We log for reconciliation instead.
+    //
+    // ─── Launch-safety gate (P11): GST stamping is OFF until ff_gst_invoicing_v1 ───
+    // When the flag is OFF (default) or its check errors, we do NOT call
+    // compute_gst and do NOT stamp any GST columns on student_subscriptions —
+    // byte-for-byte the pre-Track-A.3 behavior (the row keeps NULL GST columns).
+    // This block is entirely post-entitlement, so it can never affect the sale.
+    try {
+      if (await gstChargingEnabled()) {
+        const supplierState = supplierStateCode();
+        const taxableRupees = billing_cycle === 'yearly' ? planRow.price_yearly : planRow.price_monthly;
+        const gst = await computeGst(admin, taxableRupees, place_of_supply ?? null, '9992', supplierState);
+        if (gst) {
+          const { error: gstErr } = await admin
+            .from('student_subscriptions')
+            .update(gstSubscriptionColumns(gst, { supplierState, placeOfSupply: place_of_supply ?? null }))
+            .eq('student_id', studentId)
+            .eq('plan_code', plan_code);
+          if (gstErr) {
+            logger.warn('verify: GST column stamp failed (entitlement already granted)', { error: gstErr.message });
+          }
+        } else {
+          logger.warn('verify: compute_gst unavailable — subscription GST columns left null');
+        }
+      }
+    } catch (gstEx) {
+      logger.warn('verify: GST persist threw (non-blocking)', {
+        error: gstEx instanceof Error ? gstEx.message : String(gstEx),
+      });
     }
 
     return NextResponse.json({ success: true, plan: plan_code });

@@ -176,6 +176,10 @@ export const paymentVerifySchema = z.object({
   plan_code: zPlanCode,
   billing_cycle: zBillingCycle,
   type: z.enum(['subscription', 'order']).optional(),
+  // Track A.3 (per-state GST): optional buyer place-of-supply state code captured
+  // at checkout. Used only to re-derive + persist the GST split on
+  // student_subscriptions; never alters the signature-verification payload (P11).
+  place_of_supply: z.string().max(2).optional(),
 });
 
 export const paymentCancelSchema = z.object({

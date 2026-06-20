@@ -4,6 +4,7 @@ export const parentPortalActionNames = [
   'get_tips',
   'get_children',
   'get_monthly_report',
+  'get_child_attendance',
 ] as const
 
 export type ParentPortalActionName = typeof parentPortalActionNames[number]

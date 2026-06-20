@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { calculateScorePercent } from '@/lib/scoring';
 import { track } from '@/lib/analytics';
 import { submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress, startQuizSession } from '@/lib/supabase';
+import { invalidateDashboard } from '@/lib/swr';
 import { assembleQuiz } from '@/lib/quiz-assembler';
 import { XP_RULES } from '@/lib/xp-config';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
@@ -945,10 +946,15 @@ export default function QuizPage() {
           }));
         }
         refreshSnapshot();
+        // Invalidate SWR dashboard cache so DailyRhythmQueue reflects new unlock state
+        invalidateDashboard(student!.id);
+        // Bust the server-side rhythm cache (30s TTL) so next load sees updated chapter progress
+        fetch('/api/rhythm/today', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
 
-        // Update chapter progress after quiz
-        if (selectedChapter) {
-          updateChapterProgress(selectedSubject!, student!.grade, selectedChapter).catch((err: unknown) => {
+        // Update chapter progress after quiz — use chapter from URL param OR from question metadata
+        const chapterForProgress = selectedChapter ?? questions[0]?.chapter_number ?? null;
+        if (chapterForProgress) {
+          updateChapterProgress(selectedSubject!, student!.grade, chapterForProgress).catch((err: unknown) => {
             console.warn('[quiz] chapter progress update failed:', err instanceof Error ? err.message : String(err));
           });
         }
@@ -1098,11 +1104,16 @@ export default function QuizPage() {
         }));
       }
       refreshSnapshot();
+      // Invalidate SWR dashboard cache so DailyRhythmQueue reflects new unlock state
+      invalidateDashboard(student!.id);
+      // Bust the server-side rhythm cache (30s TTL) so next load sees updated chapter progress
+      fetch('/api/rhythm/today', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
       pendingSubmissionRef.current = null;
 
-      // Update chapter progress after quiz
-      if (selectedChapter) {
-        updateChapterProgress(selectedSubject, student.grade, selectedChapter).catch((err: unknown) => {
+      // Update chapter progress after quiz — use chapter from URL param OR from question metadata
+      const chapterForProgress = selectedChapter ?? questions[0]?.chapter_number ?? null;
+      if (chapterForProgress) {
+        updateChapterProgress(selectedSubject, student.grade, chapterForProgress).catch((err: unknown) => {
           console.warn('[quiz-retry] chapter progress update failed:', err instanceof Error ? err.message : String(err));
         });
       }
