@@ -1,4 +1,4 @@
--- Migration: 20260620001600_enable_latest_frontend_flags.sql
+-- Migration: 20260620001601_enable_latest_frontend_flags.sql
 -- Purpose: CEO-approved flag ENABLEMENT for the four latest portal frontend
 --          designs. All Phase 0/1D/1E implementation work is done and committed.
 --          This migration flips the gates ON so the newest designs become the
