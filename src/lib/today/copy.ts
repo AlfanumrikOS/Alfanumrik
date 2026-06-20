@@ -14,6 +14,7 @@
  *   {dueCount}  — number of due SRS cards
  *   {days}      — days since a topic was last studied
  *   {progress}  — lesson completion percentage (no % sign in the token)
+ *   {chapter}   — chapter number (integer, used by new_topic subtitle)
  *   {n}         — generic numeric (used by the minutes badge)
  *
  * `deepLinkToHref` is the SINGLE place a parsed `TodayDeepLink` ({route, params})
@@ -149,6 +150,16 @@ const COPY: Record<string, CopyEntry> = {
   'today.item.practice_weakest.subtitle': {
     en: 'Strengthen {subject}',
     hi: '{subject} मजबूत करें',
+  },
+
+  // ── Item: new_topic ────────────────────────────────────────────
+  'today.item.new_topic.label': {
+    en: 'Start new topic',
+    hi: 'नया विषय शुरू करो',
+  },
+  'today.item.new_topic.subtitle': {
+    en: 'Begin {subject} · Chapter {chapter}',
+    hi: '{subject} शुरू करो · अध्याय {chapter}',
   },
 };
 

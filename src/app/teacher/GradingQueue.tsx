@@ -23,6 +23,7 @@
  */
 
 import { useMemo } from 'react';
+import { StatusBadge } from '@/components/admin-ui/StatusBadge';
 
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -67,10 +68,8 @@ function ExceptionChip({
     <span
       data-testid={`exception-chip-${reason}`}
       title={tt(isHi, 'Review this submission first', 'इस सबमिशन की पहले समीक्षा करें')}
-      className="inline-flex items-center gap-1 py-0.5 px-2 rounded-md text-[11px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/40 whitespace-nowrap"
     >
-      <span aria-hidden="true">&#9888;</span>
-      {label}
+      <StatusBadge label={`⚠ ${label}`} variant="warning" />
     </span>
   );
 }
@@ -104,19 +103,26 @@ export default function GradingQueue({
   }, [items]);
 
   return (
-    <div className="td-card" data-testid="grading-queue">
-      <div className="td-card-head">
-        <h3>{tt(isHi, 'Grading queue', 'ग्रेडिंग कतार')}</h3>
+    <div
+      className="rounded-2xl px-5 py-[18px]"
+      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)' }}
+      data-testid="grading-queue"
+    >
+      <div className="flex justify-between items-center">
+        <h3 className="text-[16px] font-bold m-0 font-heading" style={{ color: 'var(--text-1)' }}>
+          {tt(isHi, 'Grading queue', 'ग्रेडिंग कतार')}
+        </h3>
         <div className="flex items-center gap-2">
           {!loading && !error && (
-            <span className="td-badge" data-testid="grading-queue-count">
-              {count} {tt(isHi, 'awaiting', 'लंबित')}
+            <span data-testid="grading-queue-count">
+              <StatusBadge label={`${count} ${tt(isHi, 'awaiting', 'लंबित')}`} variant="neutral" />
             </span>
           )}
           <button
             type="button"
             onClick={onClose}
-            className="py-1 px-2.5 bg-transparent text-slate-400 border border-slate-700 rounded-md text-[11px] font-medium cursor-pointer hover:border-indigo-500"
+            className="py-1 px-2.5 bg-transparent rounded-md text-[11px] font-semibold cursor-pointer hover:border-[#7C3AED]"
+            style={{ color: 'var(--text-3)', border: '1px solid var(--border)' }}
           >
             {tt(isHi, 'Close', 'बंद करें')}
           </button>
@@ -126,30 +132,34 @@ export default function GradingQueue({
       <div className="mt-3.5">
         {loading ? (
           // Loading
-          <div className="h-32 rounded-lg bg-slate-800/50 animate-pulse" aria-hidden="true" />
+          <div
+            className="h-32 rounded-lg animate-pulse motion-reduce:animate-none"
+            style={{ background: 'var(--surface-2)' }}
+            aria-hidden="true"
+          />
         ) : error ? (
           // Error
-          <div className="text-center py-8 text-slate-500" data-testid="grading-queue-error">
+          <div className="text-center py-8" style={{ color: 'var(--text-3)' }} data-testid="grading-queue-error">
             <div className="text-3xl mb-3">&#x1F615;</div>
-            <p className="text-[14px] font-medium text-slate-400 mb-3">
+            <p className="text-[14px] font-semibold mb-3" style={{ color: 'var(--text-2)' }}>
               {tt(isHi, "Couldn't load the grading queue", 'ग्रेडिंग कतार लोड नहीं हो सकी')}
             </p>
             <button
               type="button"
               onClick={onRetry}
-              className="py-2 px-5 bg-indigo-500 text-white border-none rounded-lg text-[13px] font-semibold cursor-pointer"
+              className="py-2 px-5 bg-[#E8581C] text-white border-none rounded-lg text-[13px] font-semibold cursor-pointer"
             >
               {tt(isHi, 'Retry', 'पुनः प्रयास करें')}
             </button>
           </div>
         ) : ordered.length === 0 ? (
           // Empty
-          <div className="text-center py-8 text-slate-500" data-testid="grading-queue-empty">
-            <span className="text-emerald-500 text-2xl block mb-2">&#x2713;</span>
-            <p className="text-[14px] font-medium text-slate-400 mb-1">
+          <div className="text-center py-8" style={{ color: 'var(--text-3)' }} data-testid="grading-queue-empty">
+            <span className="text-2xl block mb-2" style={{ color: 'var(--success, #059669)' }}>&#x2713;</span>
+            <p className="text-[14px] font-semibold mb-1" style={{ color: 'var(--text-2)' }}>
               {tt(isHi, 'Nothing to grade', 'ग्रेड करने के लिए कुछ नहीं')}
             </p>
-            <p className="text-[13px] text-slate-600">
+            <p className="text-[13px]" style={{ color: 'var(--text-3)' }}>
               {tt(
                 isHi,
                 'All submitted work has been reviewed. New submissions appear here.',
@@ -166,22 +176,24 @@ export default function GradingQueue({
                 type="button"
                 onClick={() => onOpenRow(item)}
                 data-testid="grading-queue-row"
-                className={`text-left w-full bg-slate-800 rounded-lg py-2.5 px-3 border cursor-pointer transition-colors hover:border-indigo-500 ${
-                  item.needs_review_reason ? 'border-amber-500/40' : 'border-slate-700'
-                }`}
+                className="text-left w-full rounded-lg py-2.5 px-3 cursor-pointer transition-colors hover:border-[#7C3AED]"
+                style={{
+                  background: 'var(--surface-2)',
+                  border: `1px solid ${item.needs_review_reason ? 'var(--warning, #D97706)' : 'var(--border)'}`,
+                }}
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[14px] font-semibold text-slate-100 truncate">
+                      <span className="text-[14px] font-bold truncate" style={{ color: 'var(--text-1)' }}>
                         {item.assignment_title}
                       </span>
                       {item.needs_review_reason && (
                         <ExceptionChip reason={item.needs_review_reason} isHi={isHi} />
                       )}
                     </div>
-                    <div className="text-[12px] text-slate-400 mt-0.5 flex flex-wrap items-center gap-x-1.5">
-                      <span className="text-slate-200">{item.student_name}</span>
+                    <div className="text-[12px] mt-0.5 flex flex-wrap items-center gap-x-1.5" style={{ color: 'var(--text-3)' }}>
+                      <span style={{ color: 'var(--text-2)' }}>{item.student_name}</span>
                       <span>&middot;</span>
                       <span>{formatDate(item.submitted_at, isHi)}</span>
                       <span>&middot;</span>
@@ -191,10 +203,10 @@ export default function GradingQueue({
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className="text-[18px] font-bold text-slate-100">
+                    <div className="text-[18px] font-extrabold" style={{ color: 'var(--text-1)' }}>
                       {item.auto_score != null ? `${item.auto_score}%` : '—'}
                     </div>
-                    <div className="text-[10px] text-slate-500 uppercase tracking-wide">
+                    <div className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-3)' }}>
                       {tt(isHi, 'auto', 'स्वतः')}
                     </div>
                   </div>

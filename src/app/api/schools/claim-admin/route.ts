@@ -37,7 +37,13 @@ export async function POST(request: NextRequest) {
     request.headers.get('x-real-ip') ||
     'unknown';
 
-  // Anti-abuse: limit token-guessing. 10 attempts / 15 min / IP.
+  // Anti-abuse: limit token-guessing. Documented intent is 10 attempts / 15 min
+  // / IP. NOTE: in production the shared Upstash limiter in api-rate-limit.ts
+  // applies its OWN fixed 100/min sliding window and ignores these passed
+  // limit/window args — so the effective prod cap is 100/min, not 10/15min. The
+  // in-memory fallback (no Upstash) DOES honour the passed args. Tightening the
+  // shared limiter to respect per-call args is out of Track A scope (backend
+  // review) — this comment records the intent-vs-actual gap for maintainers.
   const rateCheck = await checkApiRateLimit(`claim-admin:${ip}`, 10, 15 * 60 * 1000);
   if (!rateCheck.allowed) {
     return NextResponse.json(
@@ -90,7 +96,10 @@ export async function POST(request: NextRequest) {
           status: result.status,
           school_id: result.school_id,
           school_admin_id: result.school_admin_id,
-          password_set: result.status === 'claimed' && password !== null,
+          // Reflect the REAL GoTrue outcome: true only when a password was
+          // supplied AND the update genuinely succeeded. `already_claimed` never
+          // re-sets a password (no stranger re-activation), so it reports false.
+          password_set: result.status === 'claimed' && result.password_set,
         },
       });
 

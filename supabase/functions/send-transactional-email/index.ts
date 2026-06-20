@@ -29,6 +29,10 @@ import { createEmailIdempotencyKey, fetchWithTimeout } from '../_shared/reliabil
  *       "expires_at":   ISO string,
  *       "subdomain_url":"https://slug.alfanumrik.com",  // optional
  *       "recipient_name":"string",    // optional
+ *       "claim_url":"https://alfanumrik.com/school-admin/claim?token=<raw>",
+ *                                     // optional; school-trial-provisioned only.
+ *                                     // Primary CTA — activates the principal's
+ *                                     // admin login. Carries the raw claim token.
  *       // parent-link-code-otp template (Phase D.4):
  *       "otp":          "6-digit string",
  *       "idempotency_key":"challenge UUID", // dedup key (not displayed)
@@ -235,6 +239,10 @@ interface TemplateParams {
   idempotency_key?: string
   // school-parent-broadcast fields
   message?: string
+  // school-trial-provisioned: fully-formed admin-claim URL embedding the RAW
+  // one-time claim token. Rendered as the primary CTA so the principal can
+  // activate their admin login. Carried only in the email body (never logged).
+  claim_url?: string
 }
 
 function trialProvisionedEmail(p: TemplateParams, locale: 'en' | 'hi'): { subject: string; html: string; text: string } {
@@ -243,14 +251,37 @@ function trialProvisionedEmail(p: TemplateParams, locale: 'en' | 'hi'): { subjec
   const expiry = formatExpiry(p.expires_at ?? '', locale)
   const signInUrl = p.subdomain_url || `${SITE_URL}/auth/login`
   const safeSignIn = escapeHtml(signInUrl)
+  // When a claim URL is supplied (the principal's provisioning email), the
+  // PRIMARY CTA must activate the admin login — the principal cannot sign in
+  // until they claim. Fall back to the sign-in CTA when no claim URL is given.
+  const hasClaim = typeof p.claim_url === 'string' && p.claim_url.length > 0
+  const safeClaim = hasClaim ? escapeHtml(p.claim_url as string) : ''
 
   if (locale === 'hi') {
     const subject = `${p.school_name ?? ''} में आपका स्वागत है — Alfanumrik ट्रायल सक्रिय`
+    const claimCtaHi = hasClaim
+      ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
+        <tr><td align="center" style="padding:8px 0;">
+          <a href="${safeClaim}" style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#6C5CE7,#A855F7);color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;border-radius:10px;">अपना एडमिन खाता सक्रिय करें</a>
+        </td></tr>
+      </table>
+      <p style="margin:0 0 16px;font-size:13px;color:#71717a;line-height:1.6;text-align:center;">
+        यह सक्रियण लिंक केवल एक बार उपयोग के लिए है और सुरक्षित रूप से समाप्त हो जाएगा।
+      </p>`
+      : ''
+    const signInCtaHi = hasClaim
+      ? ''
+      : `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
+        <tr><td align="center" style="padding:8px 0;">
+          <a href="${safeSignIn}" style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#6C5CE7,#A855F7);color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;border-radius:10px;">अपने डैशबोर्ड में साइन इन करें</a>
+        </td></tr>
+      </table>`
     const content = `
       <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#18181b;">${schoolName} में स्वागत है!</h2>
       <p style="margin:0 0 24px;font-size:14px;color:#3f3f46;line-height:1.6;">
-        आपका 30-दिन का Alfanumrik ट्रायल अब सक्रिय है। नीचे दिया गया इनवाइट कोड शिक्षकों और छात्रों को आपके स्कूल खाते से जोड़ने के लिए उपयोग करें।
+        आपका 30-दिन का Alfanumrik ट्रायल अब सक्रिय है। ${hasClaim ? 'अपना एडमिन खाता सक्रिय करने के लिए नीचे दिए गए बटन पर क्लिक करें, फिर ' : ''}नीचे दिया गया इनवाइट कोड शिक्षकों और छात्रों को आपके स्कूल खाते से जोड़ने के लिए उपयोग करें।
       </p>
+      ${claimCtaHi}
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
         <tr><td style="padding:24px;background:#F5F3FF;border:2px dashed #6C5CE7;border-radius:12px;text-align:center;">
           <p style="margin:0 0 8px;font-size:12px;font-weight:600;color:#6C5CE7;text-transform:uppercase;letter-spacing:1px;">आपका इनवाइट कोड</p>
@@ -258,11 +289,7 @@ function trialProvisionedEmail(p: TemplateParams, locale: 'en' | 'hi'): { subjec
           <p style="margin:12px 0 0;font-size:12px;color:#6B7280;">${escapeHtml(expiry)} तक मान्य</p>
         </td></tr>
       </table>
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
-        <tr><td align="center" style="padding:8px 0;">
-          <a href="${safeSignIn}" style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#6C5CE7,#A855F7);color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;border-radius:10px;">अपने डैशबोर्ड में साइन इन करें</a>
-        </td></tr>
-      </table>
+      ${signInCtaHi}
       <p style="margin:24px 0 0;font-size:13px;color:#71717a;line-height:1.6;">
         प्रश्न हैं? <a href="mailto:support@alfanumrik.com" style="color:#6C5CE7;">support@alfanumrik.com</a> पर लिखें।
       </p>
@@ -273,11 +300,29 @@ function trialProvisionedEmail(p: TemplateParams, locale: 'en' | 'hi'): { subjec
   }
 
   const subject = `Welcome to Alfanumrik — your ${p.school_name ?? ''} trial is active`
+  const claimCtaEn = hasClaim
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
+        <tr><td align="center" style="padding:8px 0;">
+          <a href="${safeClaim}" style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#6C5CE7,#A855F7);color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;border-radius:10px;">Activate your admin account</a>
+        </td></tr>
+      </table>
+      <p style="margin:0 0 16px;font-size:13px;color:#71717a;line-height:1.6;text-align:center;">
+        This activation link is single-use and will expire for your security.
+      </p>`
+    : ''
+  const signInCtaEn = hasClaim
+    ? ''
+    : `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
+        <tr><td align="center" style="padding:8px 0;">
+          <a href="${safeSignIn}" style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#6C5CE7,#A855F7);color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;border-radius:10px;">Sign in to your dashboard</a>
+        </td></tr>
+      </table>`
   const content = `
       <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#18181b;">Welcome to ${schoolName}!</h2>
       <p style="margin:0 0 24px;font-size:14px;color:#3f3f46;line-height:1.6;">
-        Your 30-day Alfanumrik trial is now active. Share the invite code below with your teachers and students to link them to your school account.
+        Your 30-day Alfanumrik trial is now active. ${hasClaim ? 'Activate your admin account using the button below, then share' : 'Share'} the invite code below with your teachers and students to link them to your school account.
       </p>
+      ${claimCtaEn}
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
         <tr><td style="padding:24px;background:#F5F3FF;border:2px dashed #6C5CE7;border-radius:12px;text-align:center;">
           <p style="margin:0 0 8px;font-size:12px;font-weight:600;color:#6C5CE7;text-transform:uppercase;letter-spacing:1px;">Your invite code</p>
@@ -285,11 +330,7 @@ function trialProvisionedEmail(p: TemplateParams, locale: 'en' | 'hi'): { subjec
           <p style="margin:12px 0 0;font-size:12px;color:#6B7280;">Valid until ${escapeHtml(expiry)}</p>
         </td></tr>
       </table>
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
-        <tr><td align="center" style="padding:8px 0;">
-          <a href="${safeSignIn}" style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#6C5CE7,#A855F7);color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;border-radius:10px;">Sign in to your dashboard</a>
-        </td></tr>
-      </table>
+      ${signInCtaEn}
       <p style="margin:24px 0 0;font-size:13px;color:#71717a;line-height:1.6;">
         Questions? Email <a href="mailto:support@alfanumrik.com" style="color:#6C5CE7;">support@alfanumrik.com</a> and our team will help you get set up.
       </p>

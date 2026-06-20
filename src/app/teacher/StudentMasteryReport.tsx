@@ -30,25 +30,29 @@
 import { useMemo } from 'react';
 import { BLOOM_LEVEL_ORDER } from '@/lib/types';
 import type { StudentMasteryReport as StudentMasteryReportData } from '@/lib/types';
+import { heatColorClass } from '@/lib/teacher/heat-scale';
+import { StatusBadge } from '@/components/admin-ui/StatusBadge';
 
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
-/** Heat colour for a 0–100 mastery/accuracy percent (matches the heatmap scale). */
+/**
+ * Heat colour for a 0–100 mastery/accuracy percent. The shared heat scale
+ * (`heatColorClass`) takes a 0..1 fraction, so we divide by 100 before
+ * delegating — the unified Atlas band thresholds are the single source of truth.
+ */
 function heatBg(pct: number): string {
-  if (pct >= 95) return 'bg-emerald-600';
-  if (pct >= 80) return 'bg-violet-600';
-  if (pct >= 60) return 'bg-blue-600';
-  if (pct >= 30) return 'bg-amber-600';
-  if (pct > 10) return 'bg-amber-400';
-  return 'bg-slate-700';
+  return heatColorClass(pct / 100);
 }
 
-/** Recent-performance stat tile. */
+/** Recent-performance stat tile (Atlas warm-cream). */
 function StatTile({ label, value, color }: { label: string; value: string | number; color: string }) {
   return (
-    <div className="bg-slate-900 rounded-xl py-3 px-3.5 border border-slate-800">
-      <p className="text-slate-500 text-[10px] m-0 uppercase tracking-wide">{label}</p>
-      <p className={`${color} text-[22px] font-bold mt-1`}>{value}</p>
+    <div
+      className="rounded-xl py-3 px-3.5"
+      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+    >
+      <p className="text-[10px] m-0 uppercase tracking-wide font-semibold" style={{ color: 'var(--text-3)' }}>{label}</p>
+      <p className="text-[22px] font-extrabold mt-1" style={{ color }}>{value}</p>
     </div>
   );
 }
@@ -109,20 +113,26 @@ export default function StudentMasteryReport({
     : null;
 
   return (
-    <div className="td-card" data-testid="student-mastery-report">
-      <div className="td-card-head">
-        <h3>{tt(isHi, 'Student mastery report', 'छात्र मास्टरी रिपोर्ट')}</h3>
+    <div
+      className="rounded-2xl px-5 py-[18px]"
+      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)' }}
+      data-testid="student-mastery-report"
+    >
+      <div className="flex justify-between items-center">
+        <h3 className="text-[16px] font-bold m-0 font-heading" style={{ color: 'var(--text-1)' }}>
+          {tt(isHi, 'Student mastery report', 'छात्र मास्टरी रिपोर्ट')}
+        </h3>
         <div className="flex items-center gap-2">
           {/* Wave D — "Share with parent" (flag-gated). Only when a report is
               loaded and the parent-comms flag is ON. Server owns thread/message
               creation; this button only triggers the parent CommandCenter's POST. */}
           {parentCommsEnabled && report && !loading && !error &&
             (shareWithParentDone ? (
-              <span
-                data-testid="report-share-parent-done"
-                className="inline-flex items-center gap-1 py-1 px-2.5 rounded-md text-[11px] font-semibold bg-sky-500/15 text-sky-400 border border-sky-500/30"
-              >
-                ✓ {tt(isHi, 'Shared with parent', 'अभिभावक के साथ साझा किया')}
+              <span data-testid="report-share-parent-done">
+                <StatusBadge
+                  label={`✓ ${tt(isHi, 'Shared with parent', 'अभिभावक के साथ साझा किया')}`}
+                  variant="info"
+                />
               </span>
             ) : (
               <button
@@ -130,7 +140,7 @@ export default function StudentMasteryReport({
                 onClick={onShareWithParent}
                 disabled={shareWithParentBusy}
                 data-testid="report-share-parent-btn"
-                className="py-1 px-2.5 bg-sky-600 text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+                className="py-1 px-2.5 bg-[#E8581C] text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
               >
                 {shareWithParentBusy
                   ? tt(isHi, 'Sending…', 'भेजा जा रहा है…')
@@ -143,7 +153,8 @@ export default function StudentMasteryReport({
               onClick={onExport}
               disabled={exporting}
               data-testid="report-export-btn"
-              className="py-1 px-2.5 bg-emerald-600 text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+              className="py-1 px-2.5 text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+              style={{ background: 'var(--success, #059669)' }}
             >
               {exporting
                 ? tt(isHi, 'Preparing…', 'तैयार हो रहा है…')
@@ -154,7 +165,8 @@ export default function StudentMasteryReport({
             type="button"
             onClick={onClose}
             data-testid="report-close-btn"
-            className="py-1 px-2.5 bg-transparent text-slate-400 border border-slate-700 rounded-md text-[11px] font-medium cursor-pointer hover:border-indigo-500"
+            className="py-1 px-2.5 bg-transparent rounded-md text-[11px] font-semibold cursor-pointer hover:border-[#7C3AED]"
+            style={{ color: 'var(--text-3)', border: '1px solid var(--border)' }}
           >
             {tt(isHi, 'Close', 'बंद करें')}
           </button>
@@ -164,18 +176,22 @@ export default function StudentMasteryReport({
       <div className="mt-3.5">
         {loading ? (
           // Loading
-          <div className="h-48 rounded-lg bg-slate-800/50 animate-pulse" aria-hidden="true" />
+          <div
+            className="h-48 rounded-lg animate-pulse motion-reduce:animate-none"
+            style={{ background: 'var(--surface-2)' }}
+            aria-hidden="true"
+          />
         ) : error ? (
           // Error
-          <div className="text-center py-8 text-slate-500" data-testid="report-error">
+          <div className="text-center py-8" style={{ color: 'var(--text-3)' }} data-testid="report-error">
             <div className="text-3xl mb-3">&#x1F615;</div>
-            <p className="text-[14px] font-medium text-slate-400 mb-3">
+            <p className="text-[14px] font-semibold mb-3" style={{ color: 'var(--text-2)' }}>
               {tt(isHi, "Couldn't load the report", 'रिपोर्ट लोड नहीं हो सकी')}
             </p>
             <button
               type="button"
               onClick={onRetry}
-              className="py-2 px-5 bg-indigo-500 text-white border-none rounded-lg text-[13px] font-semibold cursor-pointer"
+              className="py-2 px-5 bg-[#E8581C] text-white border-none rounded-lg text-[13px] font-semibold cursor-pointer"
             >
               {tt(isHi, 'Retry', 'पुनः प्रयास करें')}
             </button>
@@ -184,8 +200,8 @@ export default function StudentMasteryReport({
           <div className="flex flex-col gap-5">
             {/* Header: name + grade */}
             <div>
-              <p className="text-[16px] font-bold text-slate-100 m-0">{report.student_name}</p>
-              <p className="text-[12px] text-slate-500 m-0">
+              <p className="text-[16px] font-bold m-0" style={{ color: 'var(--text-1)' }}>{report.student_name}</p>
+              <p className="text-[12px] m-0" style={{ color: 'var(--text-3)' }}>
                 {tt(isHi, 'Grade', 'कक्षा')} {report.grade || '—'}
               </p>
             </div>
@@ -195,32 +211,32 @@ export default function StudentMasteryReport({
               <StatTile
                 label={tt(isHi, 'Overall mastery', 'कुल मास्टरी')}
                 value={`${report.mastery.overall_pct}%`}
-                color="text-violet-400"
+                color="#7C3AED"
               />
               <StatTile
                 label={tt(isHi, 'Quizzes', 'क्विज़')}
                 value={report.recent.quizzes}
-                color="text-indigo-400"
+                color="#7C3AED"
               />
               <StatTile
                 label={tt(isHi, 'Avg score', 'औसत स्कोर')}
                 value={`${report.recent.avg_score}%`}
-                color="text-sky-400"
+                color="var(--info, #2563EB)"
               />
               <StatTile
                 label={tt(isHi, 'Streak', 'स्ट्रीक')}
                 value={report.recent.streak}
-                color="text-emerald-400"
+                color="var(--success, #059669)"
               />
             </div>
 
             {/* Mastery by concept */}
             <div data-testid="report-mastery-section">
-              <h4 className="text-[13px] font-semibold text-slate-200 m-0 mb-2.5 uppercase tracking-wide">
+              <h4 className="text-[13px] font-bold m-0 mb-2.5 uppercase tracking-wide" style={{ color: 'var(--text-2)' }}>
                 {tt(isHi, 'Mastery by concept', 'अवधारणा अनुसार मास्टरी')}
               </h4>
               {report.mastery.by_concept.length === 0 ? (
-                <p className="text-[13px] text-slate-500 m-0">
+                <p className="text-[13px] m-0" style={{ color: 'var(--text-3)' }}>
                   {tt(
                     isHi,
                     'No mastery data yet — this student needs to start practicing.',
@@ -231,19 +247,19 @@ export default function StudentMasteryReport({
                 <div className="flex flex-col gap-1.5">
                   {report.mastery.by_concept.map((c) => (
                     <div key={c.topic_id} className="flex items-center gap-2.5" data-testid="report-concept-row">
-                      <span className="text-[12px] text-slate-300 w-[42%] truncate" title={c.concept}>
+                      <span className="text-[12px] w-[42%] truncate" style={{ color: 'var(--text-2)' }} title={c.concept}>
                         {c.concept}
                       </span>
-                      <div className="flex-1 h-[18px] rounded bg-slate-800 overflow-hidden">
+                      <div className="flex-1 h-[18px] rounded overflow-hidden" style={{ background: 'var(--surface-2)' }}>
                         <div
                           className={`h-full ${heatBg(c.mastery_pct)}`}
                           style={{ width: `${Math.max(0, Math.min(100, c.mastery_pct))}%` }}
                         />
                       </div>
-                      <span className="text-[12px] font-semibold text-slate-200 w-[40px] text-right tabular-nums">
+                      <span className="text-[12px] font-bold w-[40px] text-right tabular-nums" style={{ color: 'var(--text-1)' }}>
                         {c.mastery_pct}%
                       </span>
-                      <span className="text-[10px] text-slate-500 w-[58px] text-right">
+                      <span className="text-[10px] w-[58px] text-right" style={{ color: 'var(--text-3)' }}>
                         {c.attempts} {tt(isHi, 'tries', 'प्रयास')}
                       </span>
                     </div>
@@ -255,7 +271,7 @@ export default function StudentMasteryReport({
             {/* Bloom's distribution — canonical 6 levels; weakest highlighted.
                 Bloom's level NAMES are technical terms — NOT translated (P7). */}
             <div data-testid="report-bloom-section">
-              <h4 className="text-[13px] font-semibold text-slate-200 m-0 mb-2.5 uppercase tracking-wide">
+              <h4 className="text-[13px] font-bold m-0 mb-2.5 uppercase tracking-wide" style={{ color: 'var(--text-2)' }}>
                 {/* "Bloom's" is a technical term — kept verbatim (P7 exception). */}
                 {tt(isHi, "Bloom's distribution", "Bloom's वितरण")}
               </h4>
@@ -266,15 +282,21 @@ export default function StudentMasteryReport({
                     <div
                       key={b.level}
                       data-testid={`bloom-row-${b.level}`}
-                      className={`flex items-center gap-2.5 rounded-md py-1 px-2 ${
-                        isWeakest ? 'bg-red-500/10 border border-red-500/40' : ''
-                      }`}
+                      className="flex items-center gap-2.5 rounded-md py-1 px-2"
+                      style={
+                        isWeakest
+                          ? {
+                              background: 'rgba(220,38,38,0.08)',
+                              border: '1px solid rgba(220,38,38,0.35)',
+                            }
+                          : undefined
+                      }
                     >
                       {/* Bloom level NAME — never translated. */}
-                      <span className="text-[12px] font-medium text-slate-200 w-[88px] capitalize">
+                      <span className="text-[12px] font-semibold w-[88px] capitalize" style={{ color: 'var(--text-1)' }}>
                         {b.level}
                       </span>
-                      <div className="flex-1 h-[16px] rounded bg-slate-800 overflow-hidden">
+                      <div className="flex-1 h-[16px] rounded overflow-hidden" style={{ background: 'var(--surface-2)' }}>
                         {b.attempted && (
                           <div
                             className={`h-full ${heatBg(b.accuracy_pct)}`}
@@ -283,19 +305,19 @@ export default function StudentMasteryReport({
                         )}
                       </div>
                       <span
-                        className={`text-[12px] font-semibold w-[40px] text-right tabular-nums ${
-                          b.attempted ? 'text-slate-200' : 'text-slate-600'
-                        }`}
+                        className="text-[12px] font-bold w-[40px] text-right tabular-nums"
+                        style={{ color: b.attempted ? 'var(--text-1)' : 'var(--text-3)' }}
                       >
                         {b.attempted ? `${b.accuracy_pct}%` : '—'}
                       </span>
-                      <span className="text-[10px] text-slate-500 w-[58px] text-right">
+                      <span className="text-[10px] w-[58px] text-right" style={{ color: 'var(--text-3)' }}>
                         {b.attempted ? `${b.correct}/${b.total}` : '—'}
                       </span>
                       {isWeakest && (
                         <span
                           data-testid="bloom-weakest-badge"
-                          className="text-[9px] font-bold text-red-400 uppercase tracking-wide whitespace-nowrap"
+                          className="text-[9px] font-bold uppercase tracking-wide whitespace-nowrap"
+                          style={{ color: 'var(--danger, #DC2626)' }}
                         >
                           {tt(isHi, 'Weakest', 'सबसे कमज़ोर')}
                         </span>

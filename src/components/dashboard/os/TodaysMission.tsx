@@ -20,6 +20,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useTodayQueue } from '@/lib/today/use-today-queue';
 import { todayIcon } from '@/lib/today/icon-map';
 import { todayCopy, deepLinkToHref } from '@/lib/today/copy';
+import { ALWAYS_NATIVE_SCRIPT } from '@/lib/today/render';
 import type { CurriculumTopic } from '@/lib/types';
 
 interface TodaysMissionProps {
@@ -33,6 +34,13 @@ interface TodaysMissionProps {
 function capitalize(s: string | null | undefined): string {
   if (!s) return '';
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Hindi and Sanskrit are always shown in native Devanagari script — this is
+ *  the culturally correct form in Indian education regardless of UI language.
+ *  Uses the shared ALWAYS_NATIVE_SCRIPT constant from render.ts (single source of truth). */
+function displaySubjectName(code: string): string {
+  return ALWAYS_NATIVE_SCRIPT[code.toLowerCase()] ?? capitalize(code);
 }
 
 export default function TodaysMission({
@@ -164,8 +172,8 @@ export default function TodaysMission({
         <span>
           {todaysTopic
             ? isHi
-              ? `पाठ शुरू करो · ${capitalize(subjectCode)}`
-              : `Begin lesson · ${capitalize(subjectCode)}`
+              ? `पाठ शुरू करो · ${displaySubjectName(subjectCode)}`
+              : `Begin lesson · ${displaySubjectName(subjectCode)}`
             : isHi
               ? 'आज का पाठ चुनो'
               : "Pick today's lesson"}

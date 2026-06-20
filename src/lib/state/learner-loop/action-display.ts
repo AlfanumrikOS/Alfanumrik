@@ -148,6 +148,18 @@ export function actionDisplay(action: LearnerAction): ActionDisplay {
         tint: '#D97706',
       };
 
+    case 'introduce_new_topic':
+      return {
+        icon: '🧭',
+        eyebrowEn: 'New',
+        eyebrowHi: 'नया',
+        titleEn: `${capitalize(action.subjectCode)} · Chapter ${action.chapterNumber}`,
+        titleHi: `${subjectHi(action.subjectCode)} · अध्याय ${action.chapterNumber}`,
+        subEn: 'Start this chapter — you have not explored it yet',
+        subHi: 'यह अध्याय शुरू करो — अभी तक नहीं देखा है',
+        tint: '#7C3AED',
+      };
+
     case 'resume_in_progress':
       return {
         icon: '▶️',
@@ -216,6 +228,12 @@ export function actionPrimaryCta(action: LearnerAction): ActionPrimaryCta {
     case 'monthly_synthesis':
       return { en: 'See monthly synthesis', hi: 'महीने का सारांश देखो' };
 
+    case 'introduce_new_topic':
+      return {
+        en: `Begin Chapter ${action.chapterNumber}`,
+        hi: `अध्याय ${action.chapterNumber} शुरू करो`,
+      };
+
     case 'resume_in_progress':
       return { en: 'Resume', hi: 'जारी रखो' };
   }
@@ -237,6 +255,7 @@ const SUBJECT_HI: Record<string, string> = {
   biology: 'जीव विज्ञान',
   english: 'अंग्रेज़ी',
   hindi: 'हिंदी',
+  sanskrit: 'संस्कृत',
   history: 'इतिहास',
   geography: 'भूगोल',
   civics: 'नागरिक शास्त्र',

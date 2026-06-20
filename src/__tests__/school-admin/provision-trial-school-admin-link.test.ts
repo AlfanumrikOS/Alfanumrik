@@ -22,8 +22,16 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+// Capture logger calls so we can assert the raw claim token never reaches the
+// logger (P13). The raw token lives only in the email body + claim URL.
+const loggerCalls: string[] = [];
 vi.mock('@/lib/logger', () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+  logger: {
+    info: (e: string, m: unknown) => loggerCalls.push(JSON.stringify({ e, m })),
+    warn: (e: string, m: unknown) => loggerCalls.push(JSON.stringify({ e, m })),
+    error: (e: string, m: unknown) => loggerCalls.push(JSON.stringify({ e, m })),
+    debug: (e: string, m: unknown) => loggerCalls.push(JSON.stringify({ e, m })),
+  },
 }));
 
 // Capture email dispatches; never actually send.
@@ -149,6 +157,7 @@ const BASE_INPUT = {
 };
 
 beforeEach(() => {
+  loggerCalls.length = 0;
   cap = {
     inviteCodeInserts: [],
     schoolAdminInserts: [],
@@ -242,5 +251,52 @@ describe('provisionTrialSchool — dry-run email suppression', () => {
     const payload = deliverEmail.mock.calls[0][0] as { template: string; params: { invite_code: string } };
     expect(payload.template).toBe('school-trial-provisioned');
     expect(payload.params.invite_code).toMatch(/^[A-Z0-9]{8}$/);
+  });
+});
+
+describe('provisionTrialSchool — claim URL delivery (DELTA)', () => {
+  it('includes a claim_url in the dispatched email params when a claim token is minted', async () => {
+    const res = await provisionTrialSchool({ ...BASE_INPUT });
+    expect(res.status).toBe('created');
+    expect(deliverEmail).toHaveBeenCalledTimes(1);
+    const payload = deliverEmail.mock.calls[0][0] as {
+      params: { claim_url?: string };
+    };
+    // A claim token was minted (claimTokenInserts has the hash) → claim_url present.
+    expect(cap.claimTokenInserts.length).toBe(1);
+    expect(typeof payload.params.claim_url).toBe('string');
+    const claimUrl = payload.params.claim_url as string;
+    // Canonical app host + /school-admin/claim path + token query param.
+    const parsed = new URL(claimUrl);
+    expect(parsed.hostname).toBe('alfanumrik.com');
+    expect(parsed.pathname).toBe('/school-admin/claim');
+    expect(parsed.searchParams.get('token')).toBeTruthy();
+  });
+
+  it('P13: the raw claim token (decoded from the email claim_url) is NEVER logged', async () => {
+    await provisionTrialSchool({ ...BASE_INPUT });
+    const payload = deliverEmail.mock.calls[0][0] as { params: { claim_url?: string } };
+    const rawToken = new URL(payload.params.claim_url as string).searchParams.get('token');
+    expect(rawToken).toBeTruthy();
+    // The actual minted raw token must not appear in any logger line.
+    const allLogs = loggerCalls.join('\n');
+    expect(allLogs).not.toContain(rawToken as string);
+    // The only token-shaped value ever persisted is the SHA-256 HASH, not the raw.
+    expect(allLogs).not.toContain('claim?token=');
+    // Sanity: the stored token_hash differs from the raw token (hash != plaintext).
+    const storedHash = cap.claimTokenInserts[0].token_hash as string;
+    expect(storedHash).not.toBe(rawToken);
+  });
+
+  it('sendEmail:false (dry-run/bulk) takes NO email path → no claim_url dispatched', async () => {
+    const res = await provisionTrialSchool({ ...BASE_INPUT, sendEmail: false });
+    expect(res.status).toBe('created');
+    if (res.status !== 'created') return;
+    expect(res.email_dispatched).toBe(false);
+    // The claim_url delivery path is NOT taken at all on dry-run.
+    expect(deliverEmail).not.toHaveBeenCalled();
+    // A token may still be minted (the link is real) but it was never emailed.
+    const allLogs = loggerCalls.join('\n');
+    expect(allLogs).not.toContain('claim?token=');
   });
 });

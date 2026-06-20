@@ -32,14 +32,37 @@ vi.mock('@/lib/api-rate-limit', () => ({
 // ── Supabase admin client mock ─────────────────────────────────────────
 // We simulate per-table state and capture ops_events inserts (which the
 // email-delivery helper writes for idempotency tracking).
+//
+// Track A provisioning changeset: `provisionTrialSchool()` now performs more
+// DB work than the original trial route did. The mock below models the CURRENT
+// call sequence so `inviteStored` is true AND the principal-admin establishment
+// (auth user → school_admins link → claim token) completes — both are required
+// for the email-dispatch path to run with a `claim_url`. The full sequence:
+//   1. schools.select('id').eq('code', slug).maybeSingle()   — slug uniqueness
+//   2. schools.select('id').eq('email', email).maybeSingle() — duplicate-email
+//   3. schools.insert(...).select('id, code').single()       — school insert
+//   4. school_subscriptions.insert(...)                      — subscription
+//   5. school_invite_codes.insert(...)  (await, reads error) — admin invite code
+//   6. establishPrincipalAdmin():
+//        a. admin.auth.admin.createUser(...)                 — find-or-create user
+//        b. school_admins.select(...).eq.eq.maybeSingle()    — existing link?
+//        c. school_admins.insert(...).select('id').single()  — new principal link
+//        d. school_admin_claim_tokens.insert(...) (await)    — mint claim token
 interface MockSchool { id: string; code: string; slug: string; name: string }
 const opsEventsInserts: Array<Record<string, unknown>> = [];
 const opsEventsRows: Array<Record<string, unknown>> = [];
+// Captures the claim-token rows inserted during principal-admin establishment so
+// a test can assert a token was minted (its hash persisted) WITHOUT the test ever
+// touching the raw token — P13 keeps the raw token out of logs/test assertions.
+const claimTokenInserts: Array<Record<string, unknown>> = [];
 
 function makeAdminClient(opts: {
   existingSchool?: boolean;
   insertSchoolFails?: boolean;
   inviteInsertFails?: boolean;
+  /** When true, the school_invite_codes insert succeeds but the principal-admin
+   *  claim-token insert fails — modelling the "no claim_url" degraded path. */
+  claimTokenInsertFails?: boolean;
 } = {}) {
   const school: MockSchool = {
     id: 'school-1',
@@ -48,7 +71,22 @@ function makeAdminClient(opts: {
     name: 'Demo School',
   };
 
-  return {
+  const client = {
+    // ── GoTrue admin surface — establishPrincipalAdmin find-or-creates the
+    //    principal's auth user before linking a school_admins row.
+    auth: {
+      admin: {
+        createUser: vi.fn().mockResolvedValue({
+          data: { user: { id: 'auth-user-1' } },
+          error: null,
+        }),
+        listUsers: vi.fn().mockResolvedValue({
+          data: { users: [] },
+          error: null,
+        }),
+        updateUserById: vi.fn().mockResolvedValue({ error: null }),
+      },
+    },
     from(table: string) {
       if (table === 'schools') {
         return {
@@ -115,6 +153,42 @@ function makeAdminClient(opts: {
           },
         };
       }
+      if (table === 'school_admins') {
+        return {
+          // Existing-link lookup: .select(...).eq(school_id).eq(auth_user_id).maybeSingle()
+          // Returns null so establishPrincipalAdmin takes the INSERT branch.
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: () => Promise.resolve({ data: null, error: null }),
+              }),
+            }),
+          }),
+          // New principal link: .insert(...).select('id').single()
+          insert: () => ({
+            select: () => ({
+              single: () => Promise.resolve({
+                data: { id: 'school-admin-1' },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'school_admin_claim_tokens') {
+        return {
+          // `await admin.from(...).insert(...)` — establishPrincipalAdmin only
+          // reads `error`. Capture the row so a test can assert the hash was
+          // persisted, never the raw token (P13).
+          insert: (row: Record<string, unknown>) => {
+            const error = opts.claimTokenInsertFails
+              ? { message: 'claim token insert failed' }
+              : null;
+            if (!error) claimTokenInserts.push(row);
+            return Promise.resolve({ error });
+          },
+        };
+      }
       if (table === 'ops_events') {
         return {
           select: () => ({
@@ -139,7 +213,8 @@ function makeAdminClient(opts: {
         insert: () => Promise.resolve({ error: null }),
       };
     },
-  } as unknown as ReturnType<typeof getSupabaseAdminPlaceholder>;
+  };
+  return client as unknown as ReturnType<typeof getSupabaseAdminPlaceholder>;
 }
 
 // Placeholder type alias — actual return type doesn't matter for the test
@@ -179,6 +254,7 @@ beforeEach(() => {
   );
   opsEventsInserts.length = 0;
   opsEventsRows.length = 0;
+  claimTokenInserts.length = 0;
   adminClientRef.current = makeAdminClient();
   Object.values(loggerSpy).forEach((fn) => fn.mockReset());
 });
@@ -252,6 +328,23 @@ describe('POST /api/schools/trial — email delivery', () => {
     expect(payload.params.invite_code).toMatch(/^[A-Z0-9]{8}$/);
     expect(payload.params.expires_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(payload.params.subdomain_url).toMatch(/\.alfanumrik\.com$/);
+
+    // Track A: the provisioning email now carries the principal's admin-claim
+    // URL so the claim flow is reachable end-to-end. The URL embeds the RAW
+    // one-time token (over TLS, in the body only) — we assert the URL is
+    // present and well-formed, NOT the raw token value (P13: the raw token
+    // must never be surfaced in logs/assertions).
+    expect(typeof payload.params.claim_url).toBe('string');
+    expect(payload.params.claim_url).toMatch(
+      /\/school-admin\/claim\?token=.+/
+    );
+
+    // And a claim-token row (hash only) was persisted during establishment.
+    expect(claimTokenInserts.length).toBe(1);
+    expect(typeof claimTokenInserts[0].token_hash).toBe('string');
+    // The persisted row stores the HASH, never the raw token — guard against a
+    // regression that accidentally writes a raw/plaintext token column.
+    expect(claimTokenInserts[0]).not.toHaveProperty('token');
   });
 
   it('returns 200 even when the email Edge Function returns an error', async () => {

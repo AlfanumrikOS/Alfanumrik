@@ -13,6 +13,13 @@
  *   - P13: the audit entry carries METADATA ONLY — no email, name, password, or
  *     raw claim token.
  *
+ * DELTA (claim-token DELIVERY): the repair path now also DISPATCHES the principal
+ * claim email (looking up the school's admin invite code) and returns
+ * `email_dispatched`. We assert the email is dispatched with a buildClaimUrl()
+ * derived claim_url, that `email_dispatched: true` is returned, and that the raw
+ * claim token NEVER appears in any logger/audit assertion path (P13 — it rides
+ * only in the email body + the TLS response).
+ *
  * Mock style mirrors src/__tests__/api/super-admin/bulk-onboard.test.ts.
  */
 
@@ -32,26 +39,60 @@ vi.mock('@/lib/admin-auth', () => ({
 
 // schools lookup — toggled per-test via schoolExists.
 let schoolExists = true;
+// school_invite_codes lookup — toggled per-test via inviteCodeExists (the DELTA
+// email-dispatch branch reads the school's admin invite code to render the email).
+let inviteCodeExists = true;
 vi.mock('@/lib/supabase-admin', () => ({
   getSupabaseAdmin: () => ({
-    from: (_t: string) => ({
-      select: () => ({
-        eq: () => ({
-          is: () => ({
-            maybeSingle: async () => ({
-              data: schoolExists ? { id: 'school-1', is_active: true } : null,
-              error: null,
+    from: (table: string) => {
+      if (table === 'school_invite_codes') {
+        // chain: .select().eq().eq().order().limit().maybeSingle()
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          order: () => chain,
+          limit: () => chain,
+          maybeSingle: async () => ({
+            data: inviteCodeExists
+              ? { code: 'ADMIN123', expires_at: new Date(Date.now() + 90 * 86400_000).toISOString() }
+              : null,
+            error: null,
+          }),
+        };
+        return chain;
+      }
+      // schools lookup: .select().eq().is().maybeSingle()
+      return {
+        select: () => ({
+          eq: () => ({
+            is: () => ({
+              maybeSingle: async () => ({
+                // The route now selects `name` for the claim email greeting.
+                data: schoolExists
+                  ? { id: 'school-1', name: 'Delhi Public School', is_active: true }
+                  : null,
+                error: null,
+              }),
             }),
           }),
         }),
-      }),
-    }),
+      };
+    },
   }),
+}));
+
+// DELTA: the repair route now dispatches the claim email. buildClaimUrl is the
+// REAL implementation (its URL-encoding is load-bearing); deliverEmail is captured.
+const deliverEmail = vi.fn().mockResolvedValue({ sent: true });
+vi.mock('@/lib/email-delivery', () => ({
+  deliverEmail: (...a: unknown[]) => deliverEmail(...a),
 }));
 
 vi.mock('@/lib/school-provisioning', () => ({
   establishPrincipalAdmin: (...a: unknown[]) => establishPrincipalAdmin(...a),
   validateEmail: (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e),
+  // Real builder — produces the canonical claim URL embedding the raw token.
+  buildClaimUrl: (raw: string) => `https://alfanumrik.com/school-admin/claim?token=${encodeURIComponent(raw)}`,
 }));
 
 const loggerCalls: string[] = [];
@@ -95,7 +136,9 @@ beforeEach(() => {
   authorizeAdmin.mockReset();
   logAdminAudit.mockReset();
   establishPrincipalAdmin.mockReset();
+  deliverEmail.mockClear();
   schoolExists = true;
+  inviteCodeExists = true;
   authOk();
   logAdminAudit.mockResolvedValue(undefined);
   establishPrincipalAdmin.mockResolvedValue({
@@ -159,6 +202,8 @@ describe('POST /api/super-admin/institutions/[id]/admins — create/repair succe
     expect(body.data.school_id).toBe(SCHOOL_ID);
     expect(body.data.school_admin_id).toBe('sa-1');
     expect(body.data.claim_token).toBe('raw-claim-token-xyz');
+    // DELTA: the claim email was dispatched (invite code present).
+    expect(body.data.email_dispatched).toBe(true);
 
     // invitedBy attribution = the acting super admin's user id.
     const call = establishPrincipalAdmin.mock.calls[0];
@@ -176,6 +221,68 @@ describe('POST /api/super-admin/institutions/[id]/admins — create/repair succe
     });
     const res = await POST(makeRequest({ email: PRINCIPAL_EMAIL }), params());
     expect(res.status).toBe(500);
+  });
+});
+
+describe('POST /api/super-admin/institutions/[id]/admins — claim email DELIVERY (DELTA)', () => {
+  it('dispatches the principal claim email with a buildClaimUrl()-derived claim_url and returns email_dispatched:true', async () => {
+    const res = await POST(
+      makeRequest({ email: PRINCIPAL_EMAIL, name: PRINCIPAL_NAME }),
+      params(),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.email_dispatched).toBe(true);
+
+    // The email was dispatched exactly once, to the principal, with the
+    // school-trial-provisioned template and a claim_url embedding the raw token.
+    expect(deliverEmail).toHaveBeenCalledTimes(1);
+    const payload = deliverEmail.mock.calls[0][0] as {
+      template: string;
+      to: string;
+      params: { claim_url?: string; invite_code?: string; school_name?: string };
+    };
+    expect(payload.template).toBe('school-trial-provisioned');
+    expect(payload.to).toBe(PRINCIPAL_EMAIL);
+    expect(payload.params.invite_code).toBe('ADMIN123');
+    expect(payload.params.school_name).toBe('Delhi Public School');
+    // The claim_url is the canonical app host + URL-encoded raw token.
+    expect(payload.params.claim_url).toBe(
+      'https://alfanumrik.com/school-admin/claim?token=raw-claim-token-xyz',
+    );
+  });
+
+  it('returns email_dispatched:false when no admin invite code exists to render (no email sent)', async () => {
+    inviteCodeExists = false;
+    const res = await POST(makeRequest({ email: PRINCIPAL_EMAIL }), params());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.email_dispatched).toBe(false);
+    expect(deliverEmail).not.toHaveBeenCalled();
+    // The raw token is still returned in the TLS body as a manual-relay fallback.
+    expect(body.data.claim_token).toBe('raw-claim-token-xyz');
+  });
+
+  it('does NOT dispatch an email when no claim token was minted', async () => {
+    establishPrincipalAdmin.mockResolvedValueOnce({
+      linked: true,
+      authUserId: 'auth-1',
+      schoolAdminId: 'sa-1',
+      claimToken: null,
+    });
+    const res = await POST(makeRequest({ email: PRINCIPAL_EMAIL }), params());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.email_dispatched).toBe(false);
+    expect(deliverEmail).not.toHaveBeenCalled();
+  });
+
+  it('P13: the raw claim token never appears in any logger line', async () => {
+    await POST(makeRequest({ email: PRINCIPAL_EMAIL, name: PRINCIPAL_NAME }), params());
+    const all = loggerCalls.join('\n');
+    expect(all).not.toContain('raw-claim-token-xyz');
+    // The dispatched claim_url (which embeds the raw token) is never logged either.
+    expect(all).not.toContain('school-admin/claim?token=');
   });
 });
 
