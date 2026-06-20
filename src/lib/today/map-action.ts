@@ -73,6 +73,7 @@ const TYPE_PRESENTATION: Record<
   revise_decayed_topic:   { estMinutes: 8,  iconHint: 'refresh-book' },
   weak_topic_zpd:         { estMinutes: 7,  iconHint: 'target' },
   continue_lesson:        { estMinutes: 6,  iconHint: 'book-open' },
+  new_topic:              { estMinutes: 10, iconHint: 'compass' },
   weekly_dive_due:        { estMinutes: 15, iconHint: 'telescope' },
   monthly_synthesis_due:  { estMinutes: 12, iconHint: 'scroll' },
   practice_weakest:       { estMinutes: 7,  iconHint: 'target' },
@@ -99,6 +100,8 @@ function itemTypeFor(action: LearnerAction): TodayItemType {
       return action.reason === 'todays_zpd' ? 'weak_topic_zpd' : 'practice_weakest';
     case 'continue_lesson':
       return 'continue_lesson';
+    case 'introduce_new_topic':
+      return 'new_topic';
     case 'weekly_dive':
       return 'weekly_dive_due';
     case 'monthly_synthesis':
@@ -162,6 +165,12 @@ function metaFor(action: LearnerAction): Record<string, unknown> | undefined {
         subjectCode: action.subjectCode,
         chapterNumber: action.chapterNumber,
         progressPct: action.progressPct,
+      };
+
+    case 'introduce_new_topic':
+      return {
+        subjectCode: action.subjectCode,
+        chapterNumber: action.chapterNumber,
       };
 
     case 'weekly_dive':

@@ -13,6 +13,13 @@ import type { Subject } from '@/lib/subjects.types';
 import type { TodayQueueItem } from '@/lib/today/types';
 import { todayCopy } from '@/lib/today/copy';
 
+/** Language subjects whose names are ALWAYS shown in native Devanagari script
+ *  regardless of UI language — culturally correct in Indian education. */
+const ALWAYS_NATIVE_SCRIPT: Record<string, string> = {
+  hindi: 'हिंदी',
+  sanskrit: 'संस्कृत',
+};
+
 /**
  * Resolve a subject CODE (from `item.meta.subjectCode`) to its bilingual
  * display name using the canonical allowed-subjects list. Falls back to a
@@ -25,6 +32,7 @@ function resolveSubjectName(
   isHi: boolean,
 ): string {
   if (typeof subjectCode === 'string' && subjectCode.length > 0) {
+    if (ALWAYS_NATIVE_SCRIPT[subjectCode]) return ALWAYS_NATIVE_SCRIPT[subjectCode];
     const match = subjects.find((s) => s.code === subjectCode);
     if (match) return isHi ? match.nameHi : match.name;
   }
@@ -51,6 +59,7 @@ function varsForItem(
   if (typeof meta.dueCount === 'number') vars.dueCount = meta.dueCount;
   if (typeof meta.daysSinceLastTouch === 'number') vars.days = meta.daysSinceLastTouch;
   if (typeof meta.progressPct === 'number') vars.progress = Math.round(meta.progressPct);
+  if (typeof meta.chapterNumber === 'number') vars.chapter = meta.chapterNumber;
   return vars;
 }
 

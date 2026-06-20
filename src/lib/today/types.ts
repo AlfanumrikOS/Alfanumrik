@@ -36,6 +36,7 @@
  *   start_quiz               todays_zpd             → weak_topic_zpd
  *   start_quiz               weakest_topic_practice → practice_weakest
  *   continue_lesson          in_progress_lesson     → continue_lesson
+ *   introduce_new_topic      unstarted_chapter_available → new_topic
  *   weekly_dive              sunday_default         → weekly_dive_due
  *   monthly_synthesis        month_end_default      → monthly_synthesis_due
  */
@@ -47,6 +48,7 @@ export type TodayItemType =
   | 'revise_decayed_topic'
   | 'weak_topic_zpd'
   | 'continue_lesson'
+  | 'new_topic'
   | 'weekly_dive_due'
   | 'monthly_synthesis_due'
   | 'practice_weakest';

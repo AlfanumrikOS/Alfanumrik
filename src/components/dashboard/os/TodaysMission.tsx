@@ -35,6 +35,13 @@ function capitalize(s: string | null | undefined): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** Hindi and Sanskrit are always shown in native Devanagari script — this is
+ *  the culturally correct form in Indian education regardless of UI language. */
+function displaySubjectName(code: string): string {
+  const ALWAYS_DEVANAGARI: Record<string, string> = { hindi: 'हिंदी', sanskrit: 'संस्कृत' };
+  return ALWAYS_DEVANAGARI[code.toLowerCase()] ?? capitalize(code);
+}
+
 export default function TodaysMission({
   isHi,
   studentName,
@@ -164,8 +171,8 @@ export default function TodaysMission({
         <span>
           {todaysTopic
             ? isHi
-              ? `पाठ शुरू करो · ${capitalize(subjectCode)}`
-              : `Begin lesson · ${capitalize(subjectCode)}`
+              ? `पाठ शुरू करो · ${displaySubjectName(subjectCode)}`
+              : `Begin lesson · ${displaySubjectName(subjectCode)}`
             : isHi
               ? 'आज का पाठ चुनो'
               : "Pick today's lesson"}

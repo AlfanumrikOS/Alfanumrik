@@ -92,6 +92,11 @@ export interface LoopAugmentation {
    *  when the student has none open. Optional so existing callers that don't
    *  fetch it (and test fixtures) remain valid — absence ≡ "no assignment". */
   pendingTeacherRemediation?: PendingTeacherRemediation | null;
+  /** The lowest-numbered unstarted chapter (subject + number) for this student's
+   *  grade, or null when every chapter in the curriculum has at least one
+   *  mastery row. Sourced from `get_next_unstarted_chapter` RPC.
+   *  Optional so existing callers and test fixtures remain valid — absence ≡ null. */
+  nextUnstartedChapter?: { subjectCode: string; chapterNumber: number } | null;
 }
 
 export interface BuildAugmentationOptions {
@@ -365,8 +370,8 @@ export async function buildLoopAugmentation(
       ? fetchPendingTeacherRemediation(opts.adminClient, studentId)
       : Promise.resolve(null);
 
-  // Run the three reads in parallel — they are independent.
-  const [dueCardsRes, todayQuizRes, inProgressRes, pendingTeacherRemediation] = await Promise.all([
+  // Run the reads in parallel — they are independent.
+  const [dueCardsRes, todayQuizRes, inProgressRes, pendingTeacherRemediation, unstartedRes] = await Promise.all([
     sb
       .from('review_cards')
       .select('id', { count: 'exact', head: true })
@@ -389,6 +394,7 @@ export async function buildLoopAugmentation(
       .order('last_activity_at', { ascending: false })
       .limit(5),
     teacherRemediationPromise,
+    sb.rpc('get_next_unstarted_chapter', { p_auth_user_id: authUserId }).maybeSingle(),
   ]);
 
   const inProgressLessons = (inProgressRes.data ?? []).map(row => ({
@@ -402,6 +408,12 @@ export async function buildLoopAugmentation(
     attemptedQuizToday: (todayQuizRes.count ?? 0) > 0,
     inProgressLessons,
     pendingTeacherRemediation,
+    nextUnstartedChapter: unstartedRes.data
+      ? {
+          subjectCode: (unstartedRes.data as { subject_code: string; chapter_number: number }).subject_code,
+          chapterNumber: (unstartedRes.data as { subject_code: string; chapter_number: number }).chapter_number,
+        }
+      : null,
   };
 }
 
@@ -653,6 +665,23 @@ const BRANCHES: ResolverBranch[] = [
         chapterNumber: top.chapterNumber,
         progressPct: top.progressPct,
         reason: 'in_progress_lesson',
+      };
+    },
+  },
+
+  // Branch 5b — introduce an unstarted chapter when the student has fresh content
+  // to explore (fired after today's ZPD quiz, or as secondary queue item).
+  {
+    kind: 'introduce_new_topic',
+    predicate: (_state, aug) => aug.nextUnstartedChapter != null,
+    build: (_state, aug) => {
+      const next = aug.nextUnstartedChapter!;
+      return {
+        kind: 'introduce_new_topic' as const,
+        url: `/learn/${encodeURIComponent(next.subjectCode)}/${next.chapterNumber}?mode=read&from=new_topic`,
+        subjectCode: next.subjectCode,
+        chapterNumber: next.chapterNumber,
+        reason: 'unstarted_chapter_available' as const,
       };
     },
   },

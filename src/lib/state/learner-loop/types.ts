@@ -141,6 +141,21 @@ export interface MonthlySynthesisAction {
   reason: 'month_end_default';
 }
 
+/**
+ * Introduce a chapter the student has never started — fired when the student
+ * has already quizzed today (ZPD branch skipped) and there is fresh content to
+ * explore, or as a secondary queue item alongside the ZPD quiz. Surfaces the
+ * lowest-numbered unstarted chapter across all active subjects for the
+ * student's grade (via `get_next_unstarted_chapter` RPC).
+ */
+export interface IntroduceNewTopicAction {
+  kind: 'introduce_new_topic';
+  url: string; // `/learn/${subjectCode}/${chapterNumber}?mode=read&from=new_topic`
+  subjectCode: string;
+  chapterNumber: number;
+  reason: 'unstarted_chapter_available';
+}
+
 /** The discriminated union returned by the resolver. */
 export type LearnerAction =
   | ColdStartDiagnosticAction
@@ -151,6 +166,7 @@ export type LearnerAction =
   | ContinueLessonAction
   | WeeklyDiveAction
   | MonthlySynthesisAction
+  | IntroduceNewTopicAction
   | ResumeInProgressAction;
 
 /** Frozen list of all action kinds — used by tests + telemetry. */
@@ -163,6 +179,7 @@ export const ALL_ACTION_KINDS = [
   'continue_lesson',
   'weekly_dive',
   'monthly_synthesis',
+  'introduce_new_topic',
   'resume_in_progress',
 ] as const satisfies ReadonlyArray<LearnerAction['kind']>;
 

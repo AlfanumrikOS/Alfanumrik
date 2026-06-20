@@ -363,6 +363,7 @@ describe('LearnerAction kinds', () => {
       'continue_lesson',
       'weekly_dive',
       'monthly_synthesis',
+      'introduce_new_topic',
       'resume_in_progress',
     ]);
   });

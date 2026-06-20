@@ -649,6 +649,7 @@ export interface LearnerNextResolvedPayload {
     | 'revise_decayed_topic'
     | 'start_quiz'
     | 'continue_lesson'
+    | 'introduce_new_topic'
     | 'weekly_dive'
     | 'monthly_synthesis';
   /** Closed-set reason key the branch emitted. Stable for facet analysis. */
