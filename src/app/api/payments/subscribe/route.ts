@@ -6,6 +6,25 @@ import { createRazorpaySubscription, createRazorpayOrder } from '@/lib/razorpay'
 import { logger } from '@/lib/logger';
 import { paymentSubscribeSchema, validateBody } from '@/lib/validation';
 import { logOpsEvent } from '@/lib/ops-events';
+import { computeGst, gstToRazorpayNotes, supplierStateCode } from '@/lib/gst';
+import { isFeatureEnabled, PAYMENT_FLAGS } from '@/lib/feature-flags';
+
+/**
+ * Fail-CLOSED GST gate (Track A.3 launch-safety).
+ *
+ * Returns true ONLY when ff_gst_invoicing_v1 resolves explicitly enabled.
+ * `isFeatureEnabled` already returns false for an absent/disabled/0%-rollout
+ * flag and for a malformed flags payload; this wrapper additionally treats ANY
+ * thrown error as OFF so an indeterminate flag state can NEVER charge GST.
+ * Never over-charge on uncertainty; never let the gate fail the sale.
+ */
+async function gstChargingEnabled(): Promise<boolean> {
+  try {
+    return await isFeatureEnabled(PAYMENT_FLAGS.GST_INVOICING_V1);
+  } catch {
+    return false; // fail-closed to NO-GST
+  }
+}
 
 /**
  * Subscribe Endpoint
@@ -119,6 +138,46 @@ export async function POST(request: NextRequest) {
 
     const razorpayKeyId = process.env.RAZORPAY_KEY_ID;
 
+    // ─── Track A.3: per-state GST ───
+    // The plan price is the TAXABLE (pre-GST) value. Compute the split via the
+    // single compute_gst RPC. For the YEARLY one-time order we charge the
+    // tax-inclusive total; for the MONTHLY recurring subscription the charge is
+    // fixed by razorpay_plan_id_monthly, so we carry the GST breakdown in notes
+    // for the webhook to reconcile (a tax-inclusive recurring plan is a separate
+    // plan-provisioning change, tracked for finance go-live). place_of_supply is
+    // optional at checkout; absent it, compute_gst treats the sale as IGST.
+    const placeOfSupply =
+      typeof (rawBody as { place_of_supply?: unknown })?.place_of_supply === 'string'
+        ? ((rawBody as { place_of_supply: string }).place_of_supply.trim() || null)
+        : null;
+    const supplierState = supplierStateCode();
+    const taxableForCycle =
+      billing_cycle === 'yearly' ? plan.price_yearly : plan.price_monthly;
+
+    // ─── Launch-safety gate (P11): GST charging is OFF until ff_gst_invoicing_v1 ───
+    // When the flag is OFF (default) or its check errors, `gst` stays null and no
+    // GST notes / GST-metadata notes ride on the Razorpay subscription or order —
+    // byte-for-byte the pre-Track-A.3 behavior. The yearly order then charges the
+    // bare taxable price (plan.price_yearly), and the monthly recurring charge is
+    // unchanged (it was always fixed by razorpay_plan_id_monthly). Fail-closed to
+    // NO-GST; never blocks the sale.
+    const gstOn = await gstChargingEnabled();
+    const gst = gstOn
+      ? await computeGst(admin, taxableForCycle, placeOfSupply, '9992', supplierState)
+      : null;
+    const gstNotes = gst ? gstToRazorpayNotes(gst) : {};
+    // GST-metadata notes (supplier_state_code, place_of_supply) are themselves a
+    // Track A.3 addition; when the flag is OFF they must NOT ride on the
+    // subscription/order so the Razorpay notes are byte-for-byte the pre-A.3 shape.
+    const gstMetaNotes: Record<string, string> = gstOn
+      ? { supplier_state_code: supplierState, place_of_supply: placeOfSupply ?? '' }
+      : {};
+    if (gstOn && !gst) {
+      logger.warn('subscribe: compute_gst unavailable — proceeding without GST notes', {
+        plan_code, billing_cycle,
+      });
+    }
+
     // ─── Monthly: Create Razorpay Subscription (recurring) ───
     if (billing_cycle === 'monthly') {
       if (!plan.razorpay_plan_id_monthly) {
@@ -157,6 +216,11 @@ export async function POST(request: NextRequest) {
           user_id: user.id,
           plan_code,
           billing_cycle: 'monthly',
+          // Track A.3 (flag-gated): GST breakdown for webhook reconciliation
+          // (codes + money only, no PII). supplier/place carried so the split is
+          // reproducible. Both spreads are empty when ff_gst_invoicing_v1 is OFF.
+          ...gstMetaNotes,
+          ...gstNotes,
         },
       });
 
@@ -212,14 +276,21 @@ export async function POST(request: NextRequest) {
     // ─── Yearly: Create Razorpay Order (one-time) ────────────
     // Yearly path is unchanged: verify route writes the payment_history row
     // after Razorpay signature verification succeeds.
+    // Charge the TAX-INCLUSIVE total for the yearly one-time order. If the GST
+    // RPC was unavailable, fall back to the bare taxable price (sale not blocked).
+    const yearlyChargeInr = gst ? Number(gst.total_payable) : plan.price_yearly;
     const order = await createRazorpayOrder({
-      amountInr: plan.price_yearly,
+      amountInr: yearlyChargeInr,
       receipt: `${user.id.substring(0, 8)}_${plan_code}_${Date.now().toString(36)}`,
       notes: {
         student_id: studentRow?.id ?? '',
         user_id: user.id,
         plan_code,
         billing_cycle: 'yearly',
+        // Track A.3 (flag-gated): empty spreads when ff_gst_invoicing_v1 is OFF,
+        // so the order notes are byte-for-byte the pre-A.3 shape.
+        ...gstMetaNotes,
+        ...gstNotes,
       },
     });
 
@@ -228,8 +299,9 @@ export async function POST(request: NextRequest) {
       data: {
         type: 'order',
         order_id: order.id,
-        amount: order.amount, // paisa — required by Razorpay checkout widget
-        price_inr: plan.price_yearly,
+        amount: order.amount, // paisa — tax-inclusive; required by Razorpay checkout widget
+        price_inr: plan.price_yearly,        // pre-GST taxable price (display)
+        total_payable_inr: yearlyChargeInr,  // tax-inclusive amount actually charged
         currency: order.currency,
         key: razorpayKeyId,
         plan_code,

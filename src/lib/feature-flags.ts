@@ -45,6 +45,17 @@ export const PAYMENT_FLAGS = {
   /** Enables the reconcile_stuck_subscriptions action in the payments Edge Function.
    *  Default: false (off). Flip via super-admin console after drift metrics confirmed. */
   RECONCILE_STUCK_SUBSCRIPTIONS_ENABLED: 'reconcile_stuck_subscriptions_enabled',
+
+  /** Track A.3 per-state GST on B2C payment paths (create-order, subscribe, verify).
+   *  Default: false (off) — seeded OFF by 20260507130003_add_ff_gst_invoicing_v1.sql.
+   *  Already gates the B2B invoice-generator Edge Function. When OFF, the B2C
+   *  payment routes charge the bare taxable amount with NO GST side effects
+   *  (no compute_gst for charging, no GST notes, no GST subscription columns) —
+   *  byte-for-byte the pre-Track-A.3 behavior. Fail-closed to OFF: if the flag
+   *  check itself errors, treat as OFF (never over-charge on an indeterminate
+   *  flag state, never fail the sale). Flip ON only after CEO/finance go-live
+   *  confirmation (real supplier GSTINs seeded + final GST rate confirmed). */
+  GST_INVOICING_V1: 'ff_gst_invoicing_v1',
 } as const;
 
 let _flagCache: FeatureFlagRow[] | null = null;
@@ -1049,6 +1060,7 @@ export const QUIZ_TELEMETRY_FLAGS = {
  * Keep in sync with the migration that seeds each flag.
  */
 export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
+  [PAYMENT_FLAGS.GST_INVOICING_V1]: false, // seeded OFF by 20260507130003_add_ff_gst_invoicing_v1.sql
   [WELCOME_FLAGS.WELCOME_V2]: false,
   [GOAL_ADAPTIVE_FLAGS.GOAL_PROFILES]: false,
   [GOAL_ADAPTIVE_FLAGS.GOAL_AWARE_FOXY]: false,

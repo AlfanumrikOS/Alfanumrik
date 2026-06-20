@@ -39,11 +39,17 @@ const SUPABASE_URL              = Deno.env.get('SUPABASE_URL') ?? ''
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
 const SUPPLIER_LEGAL_NAME       = Deno.env.get('ALFANUMRIK_LEGAL_NAME') ?? 'Cusiosense Learning India Private Limited'
-const SUPPLIER_GSTIN            = Deno.env.get('ALFANUMRIK_GSTIN') ?? ''
 const SUPPLIER_BILLING_ADDRESS  = Deno.env.get('ALFANUMRIK_BILLING_ADDRESS') ?? ''
-const SUPPLIER_STATE_CODE       = Deno.env.get('ALFANUMRIK_STATE_CODE') ?? 'MH'
+// The issuing Alfanumrik supplier STATE is configurable (per-state GSTIN model,
+// Track A.3) — NOT a hardcoded single GSTIN. The actual GSTIN string is resolved
+// by the compute_gst() RPC from the supplier_gstins registry keyed by this state
+// (returns NULL until finance seeds real GSTINs — handled below). The legacy
+// ALFANUMRIK_GSTIN env is retained only as a last-resort PDF display fallback.
+const SUPPLIER_STATE_CODE       = Deno.env.get('ALFANUMRIK_SUPPLIER_STATE_CODE')
+                                ?? Deno.env.get('ALFANUMRIK_STATE_CODE') ?? 'MH'
+const SUPPLIER_GSTIN_FALLBACK   = Deno.env.get('ALFANUMRIK_GSTIN') ?? ''
 const DEFAULT_HSN_CODE          = Deno.env.get('ALFANUMRIK_HSN_CODE') ?? '999293'
-const DEFAULT_GST_RATE_PCT      = Number(Deno.env.get('ALFANUMRIK_GST_RATE') ?? '18.00')
+const DEFAULT_SAC_CODE          = Deno.env.get('ALFANUMRIK_SAC_CODE') ?? '9992'
 
 const FLAG_NAME = 'ff_gst_invoicing_v1'
 const BUCKET    = 'school-invoices'
@@ -72,6 +78,27 @@ interface InvoiceRow {
   cgst_amount: number | null
   sgst_amount: number | null
   igst_amount: number | null
+  // Track A.3 per-state GST columns (additive, nullable).
+  sac: string | null
+  supplier_gstin: string | null
+  supplier_state_code: string | null
+  total_tax_inr: number | null
+  total_payable_inr: number | null
+}
+
+/** Shape returned by the public.compute_gst() RPC (jsonb). */
+interface ComputeGstResult {
+  taxable_amount: number
+  sac: string
+  rate: number
+  is_exempt: boolean
+  intra_state: boolean
+  cgst: number
+  sgst: number
+  igst: number
+  total_tax: number
+  total_payable: number
+  supplier_gstin: string | null
 }
 
 interface SchoolRow {
@@ -109,21 +136,6 @@ function financialYearForDate(d: Date): string {
   const startYear = m >= 4 ? y : y - 1
   const endYear   = startYear + 1
   return `${String(startYear).slice(-2)}${String(endYear).slice(-2)}`
-}
-
-/**
- * GST split given a taxable amount, rate (percent), and intra/inter-state.
- * Money rounded to 2 decimals. Halves sum to total exactly even with rounding.
- */
-function computeGst(taxable: number, ratePct: number, intraState: boolean) {
-  const total = Math.round(taxable * ratePct) / 100
-  if (intraState) {
-    const half = Math.round((total / 2) * 100) / 100
-    const cgst = half
-    const sgst = Math.round((total - cgst) * 100) / 100
-    return { cgst, sgst, igst: 0, total }
-  }
-  return { cgst: 0, sgst: 0, igst: total, total }
 }
 
 /**
@@ -336,7 +348,7 @@ serve(async (req) => {
   // Fetch invoice + school
   const { data: invoice, error: invErr } = await admin
     .from('school_invoices')
-    .select('id, school_id, period_start, period_end, seats_used, amount_inr, status, pdf_url, invoice_number, financial_year, state_code, place_of_supply, school_gstin, school_legal_name, school_billing_address, hsn_code, taxable_amount_inr, gst_rate, cgst_amount, sgst_amount, igst_amount')
+    .select('id, school_id, period_start, period_end, seats_used, amount_inr, status, pdf_url, invoice_number, financial_year, state_code, place_of_supply, school_gstin, school_legal_name, school_billing_address, hsn_code, taxable_amount_inr, gst_rate, cgst_amount, sgst_amount, igst_amount, sac, supplier_gstin, supplier_state_code, total_tax_inr, total_payable_inr')
     .eq('id', invoiceId)
     .maybeSingle()
   if (invErr || !invoice) {
@@ -362,21 +374,77 @@ serve(async (req) => {
   }
   const sch = school as SchoolRow
 
-  // ── Compute GST fields ───────────────────────────────────────────────
+  // ── Per-school tax identity (Track A.3) ──────────────────────────────
+  // The recipient place-of-supply state drives the intra/inter-state split.
+  // Prefer school_gst_details.place_of_supply_state_code; fall back to the
+  // school's own state, then the supplier state (conservative). Buyer GSTIN /
+  // legal name are also snapshotted from school_gst_details when present.
+  const { data: gstDetails } = await admin
+    .from('school_gst_details')
+    .select('gstin, legal_name, place_of_supply_state_code, is_registered')
+    .eq('school_id', inv.school_id)
+    .maybeSingle()
+
+  // ── Resolve GST inputs ───────────────────────────────────────────────
   const periodStartDate = new Date(inv.period_start)
   const finYear         = inv.financial_year ?? financialYearForDate(periodStartDate)
-  const stateCode       = inv.state_code     ?? SUPPLIER_STATE_CODE
-  const placeOfSupply   = inv.place_of_supply ?? (sch.state ?? SUPPLIER_STATE_CODE)
-  const intraState      = placeOfSupply === SUPPLIER_STATE_CODE
-  const gstRate         = inv.gst_rate ?? DEFAULT_GST_RATE_PCT
+  // SUPPLIER state of the issuing Alfanumrik GSTIN — configurable, not hardcoded.
+  const supplierState   = inv.supplier_state_code ?? SUPPLIER_STATE_CODE
+  const stateCode       = inv.state_code ?? supplierState
+  const placeOfSupply   = inv.place_of_supply
+                        ?? gstDetails?.place_of_supply_state_code
+                        ?? sch.state
+                        ?? supplierState
   const hsnCode         = inv.hsn_code ?? DEFAULT_HSN_CODE
+  const sacCode         = inv.sac ?? DEFAULT_SAC_CODE
   const taxable         = inv.taxable_amount_inr ?? Number(inv.amount_inr) ?? 0
+  // Buyer GSTIN / legal name: school_gst_details wins, then schools table.
+  const buyerGstin      = gstDetails?.gstin ?? sch.gstin ?? null
+  const buyerLegalName  = gstDetails?.legal_name ?? sch.legal_name ?? sch.name
 
   if (taxable <= 0) {
     return json({ error: 'invalid_amount', detail: 'taxable_amount_inr or amount_inr must be > 0' }, 400, cors)
   }
 
-  const split = computeGst(taxable, gstRate, intraState)
+  // ── Compute GST via the single reusable compute_gst() RPC ────────────
+  // Rate + exempt flag come from tax_config; the issuing supplier GSTIN comes
+  // from supplier_gstins keyed by supplierState. Money is numeric (2dp) — the
+  // RPC rounds per-component half-up. We do NOT re-derive any arithmetic here.
+  const { data: gstRaw, error: gstErr } = await admin.rpc('compute_gst', {
+    p_taxable_amount: taxable,
+    p_supplier_state: supplierState,
+    p_recipient_state: placeOfSupply,
+    p_sac: sacCode,
+  })
+  if (gstErr || !gstRaw) {
+    return json({ error: 'gst_compute_failed', detail: gstErr?.message }, 500, cors)
+  }
+  const gst = gstRaw as ComputeGstResult
+  const gstRate    = Number(gst.rate)
+  const intraState = gst.intra_state === true
+  const split      = { cgst: Number(gst.cgst), sgst: Number(gst.sgst), igst: Number(gst.igst), total: Number(gst.total_tax) }
+  // The supplier GSTIN is resolved by the RPC from supplier_gstins. It is NULL
+  // until finance seeds the per-state registry — make that a LOUD, explicit
+  // not-yet-finalizable state rather than silently shipping a GSTIN-less invoice.
+  const supplierGstin = gst.supplier_gstin ?? null
+
+  // ── Finalizability gate (P11-adjacent) ───────────────────────────────
+  // A tax invoice without a supplier GSTIN is NOT a valid tax document. We
+  // still COMPUTE + persist the breakdown (so the row is complete the instant
+  // finance seeds the GSTIN), but we mark the invoice 'draft_no_supplier_gstin'
+  // and surface the blocker in the response + structured log so it never ships
+  // to a buyer as a finalized tax invoice unnoticed.
+  const finalizable = supplierGstin !== null && supplierGstin !== ''
+  if (!finalizable) {
+    console.warn(JSON.stringify({
+      level: 'warn',
+      msg: 'invoice_generator: supplier GSTIN unseeded — invoice computed but NOT finalizable',
+      invoice_id: invoiceId,
+      supplier_state: supplierState,
+      sac: gst.sac,
+      // no PII: only business-registration codes and ids
+    }))
+  }
 
   // ── Allocate invoice number (only if not yet set) ─────────────────────
   let invoiceNumberInt: number
@@ -408,13 +476,15 @@ serve(async (req) => {
     hsnCode,
     placeOfSupply,
     supplierName:    SUPPLIER_LEGAL_NAME,
-    supplierGstin:   SUPPLIER_GSTIN,
+    // Prefer the registry-resolved GSTIN; fall back to the legacy env only for
+    // the PDF display string (the DB row stores the canonical registry value).
+    supplierGstin:   supplierGstin ?? SUPPLIER_GSTIN_FALLBACK,
     supplierAddress: SUPPLIER_BILLING_ADDRESS,
-    supplierState:   SUPPLIER_STATE_CODE,
-    schoolName:      sch.legal_name ?? sch.name,
-    schoolGstin:     sch.gstin ?? null,
+    supplierState:   supplierState,
+    schoolName:      buyerLegalName,
+    schoolGstin:     buyerGstin,
     schoolAddress:   sch.billing_address ?? sch.address ?? null,
-    schoolState:     sch.state ?? placeOfSupply,
+    schoolState:     placeOfSupply,
   })
 
   // ── Upload PDF ────────────────────────────────────────────────────────
@@ -427,8 +497,14 @@ serve(async (req) => {
     return json({ error: 'upload_failed', detail: upload.error.message }, 500, cors)
   }
 
-  // ── Update invoice row ────────────────────────────────────────────────
-  const totalAmount = Math.round((taxable + split.total) * 100) / 100
+  // ── Update invoice row (ATOMIC: P11) ─────────────────────────────────
+  // The ENTIRE GST breakdown (taxable, rate, cgst/sgst/igst, total_tax,
+  // total_payable, supplier + buyer GSTIN snapshots) is written in ONE
+  // PostgREST UPDATE statement together with the invoice_number, pdf_url and
+  // status. PostgREST runs a single-statement UPDATE as one transaction, so the
+  // GST split is NEVER persisted separately from the invoice record — there is
+  // no window where the row carries a number but no tax, or vice-versa.
+  const totalPayable = Number(gst.total_payable)
   const { error: updErr } = await admin
     .from('school_invoices')
     .update({
@@ -436,17 +512,33 @@ serve(async (req) => {
       financial_year:         finYear,
       state_code:             stateCode,
       hsn_code:               hsnCode,
+      sac:                    gst.sac,
       place_of_supply:        placeOfSupply,
-      school_gstin:           sch.gstin ?? null,
-      school_legal_name:      sch.legal_name ?? sch.name,
+      school_gstin:           buyerGstin,
+      school_legal_name:      buyerLegalName,
       school_billing_address: sch.billing_address ?? sch.address ?? null,
+      // Supplier-side snapshot (issuing Alfanumrik per-state GSTIN). NULL until
+      // finance seeds supplier_gstins — persisted as-is so the row completes the
+      // instant the registry is seeded (no recompute needed).
+      supplier_gstin:         supplierGstin,
+      supplier_state_code:    supplierState,
       taxable_amount_inr:     taxable,
       gst_rate:               gstRate,
       cgst_amount:            split.cgst,
       sgst_amount:            split.sgst,
       igst_amount:            split.igst,
-      amount_inr:             totalAmount,
+      total_tax_inr:          split.total,
+      total_payable_inr:      totalPayable,
+      amount_inr:             totalPayable,
       pdf_url:                path,
+      // Finalizability gate: a GSTIN-less invoice is NOT a valid tax document.
+      // The school_invoices.status CHECK only allows ('generated','sent','paid',
+      // 'overdue') — we do NOT invent a new status value (that would violate the
+      // constraint and fail the write). Instead the not-finalizable state is
+      // surfaced via the response `finalizable: false` + `blocker` field and the
+      // structured warning logged above, so a GSTIN-less invoice is never SENT
+      // as a finalized tax invoice unnoticed. (Widening the status enum to add a
+      // real 'draft' value is an architect-owned migration follow-up.)
       updated_at:             new Date().toISOString(),
     })
     .eq('id', invoiceId)
@@ -460,8 +552,16 @@ serve(async (req) => {
       invoice_id:     invoiceId,
       invoice_number: invoiceNumber,
       pdf_url:        path,
-      total_inr:      totalAmount,
+      total_inr:      totalPayable,
       taxable_inr:    taxable,
+      total_tax_inr:  split.total,
+      sac:            gst.sac,
+      is_exempt:      gst.is_exempt,
+      finalizable,
+      // When false, finance must seed supplier_gstins for `supplier_state`
+      // before this invoice can be issued as a valid tax document.
+      blocker:        finalizable ? null : 'supplier_gstin_unseeded',
+      supplier_state: supplierState,
       gst_breakdown:  intraState ? { cgst: split.cgst, sgst: split.sgst } : { igst: split.igst },
     },
     200,
