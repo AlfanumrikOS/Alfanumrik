@@ -243,6 +243,12 @@ interface TemplateParams {
   // one-time claim token. Rendered as the primary CTA so the principal can
   // activate their admin login. Carried only in the email body (never logged).
   claim_url?: string
+  // parent-guardian-invite fields (minor auto-invite). student_name greets the
+  // parent; link_code is the child's redemption code; accept_url is the deep
+  // link to the parent portal embedding it. The parent email is `to`, never here.
+  student_name?: string
+  link_code?: string
+  accept_url?: string
 }
 
 function trialProvisionedEmail(p: TemplateParams, locale: 'en' | 'hi'): { subject: string; html: string; text: string } {
@@ -459,6 +465,72 @@ function parentLinkCodeOtpEmail(p: TemplateParams, locale: 'en' | 'hi'): { subje
   return { subject, html, text }
 }
 
+function parentGuardianInviteEmail(p: TemplateParams, locale: 'en' | 'hi'): { subject: string; html: string; text: string } {
+  const studentName = p.student_name ? escapeHtml(p.student_name) : ''
+  const code = escapeHtml(p.link_code ?? '')
+  const acceptUrl = p.accept_url || `${SITE_URL}/parent`
+  const safeAccept = escapeHtml(acceptUrl)
+  const childLabel = studentName || (locale === 'hi' ? 'आपका बच्चा' : 'your child')
+
+  if (locale === 'hi') {
+    const subject = `${studentName || 'आपके बच्चे'} ने Alfanumrik पर आपको जोड़ने के लिए आमंत्रित किया है`
+    const content = `
+      <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#18181b;">नमस्ते!</h2>
+      <p style="margin:0 0 24px;font-size:14px;color:#3f3f46;line-height:1.6;">
+        <strong>${childLabel}</strong> ने Alfanumrik पर एक खाता बनाया है। चूँकि वे 13 वर्ष से कम उम्र के हैं, माता-पिता/अभिभावक की सहमति आवश्यक है। नीचे दिए गए कोड का उपयोग करके अपने खाते को उनके खाते से जोड़ें और उनकी प्रगति देखें।
+      </p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+        <tr><td style="padding:24px;background:#F5F3FF;border:2px dashed #6C5CE7;border-radius:12px;text-align:center;">
+          <p style="margin:0 0 8px;font-size:12px;font-weight:600;color:#6C5CE7;text-transform:uppercase;letter-spacing:1px;">लिंक कोड</p>
+          <p style="margin:0;font-size:32px;font-weight:800;color:#18181b;font-family:'Courier New',monospace;letter-spacing:4px;">${code}</p>
+        </td></tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
+        <tr><td align="center" style="padding:8px 0;">
+          <a href="${safeAccept}" style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#6C5CE7,#A855F7);color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;border-radius:10px;">अपने बच्चे से जुड़ें</a>
+        </td></tr>
+      </table>
+      <p style="margin:24px 0 0;font-size:13px;color:#71717a;line-height:1.6;">
+        यदि आपके पास Alfanumrik खाता नहीं है, तो पहले एक अभिभावक खाता बनाएं, फिर उपरोक्त कोड दर्ज करें।
+      </p>
+      <p style="margin:12px 0 0;font-size:13px;color:#71717a;line-height:1.6;">
+        सहायता चाहिए? <a href="mailto:support@alfanumrik.com" style="color:#6C5CE7;">support@alfanumrik.com</a> पर लिखें।
+      </p>
+    `
+    const html = baseWrapper(content, `${childLabel} ने आपको Alfanumrik पर जोड़ने के लिए आमंत्रित किया है।`, 'hi')
+    const text = htmlToPlainText(content) + `\n\nAlfanumrik EdTech Pvt. Ltd., भारत`
+    return { subject, html, text }
+  }
+
+  const subject = `${studentName || 'Your child'} invited you to connect on Alfanumrik`
+  const content = `
+      <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#18181b;">Hello!</h2>
+      <p style="margin:0 0 24px;font-size:14px;color:#3f3f46;line-height:1.6;">
+        <strong>${childLabel}</strong> has created an account on Alfanumrik. Because they are under 13, a parent/guardian needs to give consent. Use the code below to link your account to theirs and follow their progress.
+      </p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+        <tr><td style="padding:24px;background:#F5F3FF;border:2px dashed #6C5CE7;border-radius:12px;text-align:center;">
+          <p style="margin:0 0 8px;font-size:12px;font-weight:600;color:#6C5CE7;text-transform:uppercase;letter-spacing:1px;">Link code</p>
+          <p style="margin:0;font-size:32px;font-weight:800;color:#18181b;font-family:'Courier New',monospace;letter-spacing:4px;">${code}</p>
+        </td></tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
+        <tr><td align="center" style="padding:8px 0;">
+          <a href="${safeAccept}" style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#6C5CE7,#A855F7);color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;border-radius:10px;">Connect to your child</a>
+        </td></tr>
+      </table>
+      <p style="margin:24px 0 0;font-size:13px;color:#71717a;line-height:1.6;">
+        Don't have an Alfanumrik account yet? Create a parent account first, then enter the code above.
+      </p>
+      <p style="margin:12px 0 0;font-size:13px;color:#71717a;line-height:1.6;">
+        Need help? Email <a href="mailto:support@alfanumrik.com" style="color:#6C5CE7;">support@alfanumrik.com</a>.
+      </p>
+    `
+  const html = baseWrapper(content, `${childLabel} invited you to connect on Alfanumrik.`, 'en')
+  const text = htmlToPlainText(content) + `\n\nAlfanumrik EdTech Pvt. Ltd., India`
+  return { subject, html, text }
+}
+
 function schoolParentBroadcastEmail(p: TemplateParams, locale: 'en' | 'hi'): { subject: string; html: string; text: string } {
   const schoolName = escapeHtml(p.school_name ?? '')
   // Escape the message body, then restore intentional line breaks. The body
@@ -520,7 +592,7 @@ function schoolParentBroadcastEmail(p: TemplateParams, locale: 'en' | 'hi'): { s
 }
 
 // ─── Main Handler ─────────────────────────────────────────────────────────────
-type TemplateName = 'school-trial-provisioned' | 'school-invite-code-issued' | 'parent-link-code-otp' | 'school-parent-broadcast'
+type TemplateName = 'school-trial-provisioned' | 'school-invite-code-issued' | 'parent-link-code-otp' | 'school-parent-broadcast' | 'parent-guardian-invite'
 
 interface RequestBody {
   template: TemplateName
@@ -580,6 +652,12 @@ Deno.serve(async (req: Request) => {
     if (!params.school_name || !params.message || !params.message.trim()) {
       return jsonResponse({ sent: false, error: 'Missing school_name or message in params' }, 400, origin)
     }
+  } else if (template === 'parent-guardian-invite') {
+    // Minor auto-invite. Keyed by the pending-link row id (idempotency_key);
+    // link_code is the child's redemption code shown in the email.
+    if (!params.link_code || !params.idempotency_key) {
+      return jsonResponse({ sent: false, error: 'Missing link_code or idempotency_key in params' }, 400, origin)
+    }
   } else {
     if (!params.school_name || !params.invite_code || !params.expires_at) {
       return jsonResponse({ sent: false, error: 'Missing school_name, invite_code, or expires_at in params' }, 400, origin)
@@ -601,13 +679,16 @@ Deno.serve(async (req: Request) => {
     case 'school-parent-broadcast':
       content = schoolParentBroadcastEmail(params, effectiveLocale)
       break
+    case 'parent-guardian-invite':
+      content = parentGuardianInviteEmail(params, effectiveLocale)
+      break
     default:
       return jsonResponse({ sent: false, error: `Unknown template: ${template}` }, 400, origin)
   }
 
   // Log key derivation: school templates use invite_code, OTP uses
   // idempotency_key. Either way we redact via truncateCode().
-  const logKey = template === 'parent-link-code-otp'
+  const logKey = (template === 'parent-link-code-otp' || template === 'parent-guardian-invite')
     ? (params.idempotency_key ?? '')
     : (params.invite_code ?? '')
 
