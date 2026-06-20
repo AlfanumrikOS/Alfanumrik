@@ -36,6 +36,7 @@ import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import { logSchoolAudit } from '@/lib/audit';
 import { randomBytes } from 'crypto';
+import { enqueueWebhook } from '@/lib/public-api/webhook-enqueue';
 import {
   MAX_BULK_ROWS,
   validateStudentRow,
@@ -259,6 +260,21 @@ export async function POST(request: NextRequest) {
     resourceId: 'bulk',
     metadata: { source: 'bulk_import', total: rawRows.length, created, skipped, blocked, failed },
     ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+  });
+
+  // ── Track A.6: ONE wired outbound-webhook producer (proof of the seam) ──────
+  // Fan a 'roster.import.completed' event out to any active webhook_subscriptions
+  // in THIS school that subscribe to it. Fire-and-forget + fail-safe: webhook
+  // fan-out can NEVER fail the import response. P13: the payload carries COUNTS
+  // ONLY — no student name/email/phone/id. Scoped to schoolId (from auth, never
+  // the body). This is the OUTBOUND school-integration webhook system, separate
+  // from the inbound Razorpay payment webhook (P11).
+  void enqueueWebhook(schoolId, 'roster.import.completed', {
+    total: rawRows.length,
+    created,
+    skipped,
+    blocked,
+    failed,
   });
 
   return NextResponse.json({

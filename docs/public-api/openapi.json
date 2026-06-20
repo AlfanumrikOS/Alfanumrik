@@ -1,0 +1,225 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Alfanumrik Public API",
+    "version": "1.0.0",
+    "description": "Read-only institutional integration API for Alfanumrik (Track A.6). Authenticate with a school API key (scoped, hashed, issued via the school-admin panel). Every endpoint returns ONLY the issuing school's data — the tenant is derived from the key, never from the request. No surplus PII is exposed.\n\n## Verifying webhook signatures\n\nAlfanumrik delivers outbound webhooks as an HTTP POST with an HMAC-SHA256 signature in the `X-Alfanumrik-Signature` header (value format `sha256=<hex>`). The signature lets you confirm the request genuinely came from Alfanumrik and was not modified in transit. Verify EVERY webhook before acting on it.\n\n### IMPORTANT — non-standard signing key (read this first)\n\nUnlike Stripe / GitHub, the signing key is **NOT your raw webhook secret**. The signing key is `SHA256(your_webhook_secret)` — the SHA-256 digest (32 raw bytes) of your secret.\n\nWHY: Alfanumrik never stores your raw webhook secret. At creation we keep only its SHA-256 hash (so a database read can never leak the secret). The dispatcher therefore signs using that stored hash as the HMAC key. To reproduce the same key on your side, take your copy of the raw secret and hash it with SHA-256 yourself, then use those bytes as the HMAC key. If you naively HMAC with the raw `whsec_...` secret (the Stripe/GitHub convention), every signature will mismatch with no obvious cause.\n\n### The three rules\n\n1. **Key** = `SHA256(your_webhook_secret)` (the raw 32-byte digest), NOT the raw secret string.\n2. **Header** = `X-Alfanumrik-Signature: sha256=<hex>`. Strip the `sha256=` prefix; the remainder is lowercase hex.\n3. **Message** = the EXACT raw request body bytes, read off the wire before any JSON parsing. Do NOT parse-and-re-serialize the JSON (key order / whitespace / unicode escaping would change the bytes and break the signature). HMAC the raw body, then compare to the header hex using a constant-time comparison.\n\n### Worked example (Node.js)\n\n```js\nconst crypto = require('crypto');\n\n// `rawBody` MUST be the exact bytes received (e.g. a Buffer or the raw string),\n// NOT JSON.parse(...) then JSON.stringify(...).\nfunction verifyAlfanumrikWebhook(rawBody, signatureHeader, webhookSecret) {\n  // Key derivation: the HMAC key is SHA256(secret), NOT the raw secret.\n  const key = crypto.createHash('sha256').update(webhookSecret).digest();\n\n  const expected = crypto\n    .createHmac('sha256', key)\n    .update(rawBody)\n    .digest('hex');\n\n  // Header looks like \"sha256=<hex>\" — compare only the hex part.\n  const received = (signatureHeader || '').replace(/^sha256=/, '');\n\n  const a = Buffer.from(expected, 'hex');\n  const b = Buffer.from(received, 'hex');\n  return a.length === b.length && crypto.timingSafeEqual(a, b);\n}\n```\n\nOther useful headers on each delivery: `X-Alfanumrik-Event` (event type) and `X-Alfanumrik-Delivery` (unique delivery id — also use the `event_id` inside the JSON body to dedupe, since deliveries may be retried).\n\nA human-readable copy of this guide lives at `docs/public-api/webhook-signature-verification.md`.",
+    "contact": { "name": "Alfanumrik Integrations", "url": "https://alfanumrik.com" }
+  },
+  "servers": [{ "url": "https://alfanumrik.com", "description": "Production" }],
+  "security": [{ "ApiKeyAuth": [] }, { "BearerApiKey": [] }],
+  "tags": [
+    { "name": "Roster", "description": "Students and classes" },
+    { "name": "Reports", "description": "Aggregate performance summaries" },
+    { "name": "Marketplace", "description": "Integration catalog" }
+  ],
+  "paths": {
+    "/api/public/v1/students": {
+      "get": {
+        "tags": ["Roster"],
+        "summary": "List students (roster) for the key's school",
+        "description": "Paginated. Requires scope students.read. Returns id, name, grade, is_active, created_at. Email/phone are NEVER returned (P13).",
+        "security": [{ "ApiKeyAuth": ["students.read"] }, { "BearerApiKey": ["students.read"] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/Page" },
+          { "$ref": "#/components/parameters/Limit" },
+          { "name": "grade", "in": "query", "required": false, "schema": { "type": "string", "enum": ["6", "7", "8", "9", "10", "11", "12"] }, "description": "Filter by grade (string)." }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated student list.",
+            "headers": { "X-RateLimit-Limit": { "$ref": "#/components/headers/RateLimitLimit" }, "X-RateLimit-Remaining": { "$ref": "#/components/headers/RateLimitRemaining" }, "X-RateLimit-Reset": { "$ref": "#/components/headers/RateLimitReset" } },
+            "content": { "application/json": { "schema": {
+              "type": "object",
+              "properties": {
+                "success": { "type": "boolean" },
+                "data": { "type": "array", "items": { "$ref": "#/components/schemas/Student" } },
+                "pagination": { "$ref": "#/components/schemas/Pagination" }
+              }
+            } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/api/public/v1/classes": {
+      "get": {
+        "tags": ["Roster"],
+        "summary": "List classes for the key's school",
+        "description": "Paginated. Requires scope classes.read.",
+        "security": [{ "ApiKeyAuth": ["classes.read"] }, { "BearerApiKey": ["classes.read"] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/Page" },
+          { "$ref": "#/components/parameters/Limit" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated class list.",
+            "headers": { "X-RateLimit-Limit": { "$ref": "#/components/headers/RateLimitLimit" }, "X-RateLimit-Remaining": { "$ref": "#/components/headers/RateLimitRemaining" }, "X-RateLimit-Reset": { "$ref": "#/components/headers/RateLimitReset" } },
+            "content": { "application/json": { "schema": {
+              "type": "object",
+              "properties": {
+                "success": { "type": "boolean" },
+                "data": { "type": "array", "items": { "$ref": "#/components/schemas/Class" } },
+                "pagination": { "$ref": "#/components/schemas/Pagination" }
+              }
+            } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/api/public/v1/reports": {
+      "get": {
+        "tags": ["Reports"],
+        "summary": "Class/student performance summaries (aggregate)",
+        "description": "Requires scope reports.read. Aggregate summaries only — no per-student PII. view=grade (default) rolls up per grade; view=class rolls up per class.",
+        "security": [{ "ApiKeyAuth": ["reports.read"] }, { "BearerApiKey": ["reports.read"] }],
+        "parameters": [
+          { "name": "view", "in": "query", "required": false, "schema": { "type": "string", "enum": ["grade", "class"], "default": "grade" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Performance summary.",
+            "headers": { "X-RateLimit-Limit": { "$ref": "#/components/headers/RateLimitLimit" }, "X-RateLimit-Remaining": { "$ref": "#/components/headers/RateLimitRemaining" }, "X-RateLimit-Reset": { "$ref": "#/components/headers/RateLimitReset" } },
+            "content": { "application/json": { "schema": {
+              "type": "object",
+              "properties": {
+                "success": { "type": "boolean" },
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "view": { "type": "string", "enum": ["grade", "class"] },
+                    "summaries": { "type": "array", "items": { "$ref": "#/components/schemas/ReportSummary" } }
+                  }
+                }
+              }
+            } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/api/public/v1/marketplace/listings": {
+      "get": {
+        "tags": ["Marketplace"],
+        "summary": "List active integration catalog listings",
+        "description": "Scope-agnostic: any valid key may browse. Platform content, no tenant data.",
+        "responses": {
+          "200": {
+            "description": "Active listings.",
+            "headers": { "X-RateLimit-Limit": { "$ref": "#/components/headers/RateLimitLimit" }, "X-RateLimit-Remaining": { "$ref": "#/components/headers/RateLimitRemaining" }, "X-RateLimit-Reset": { "$ref": "#/components/headers/RateLimitReset" } },
+            "content": { "application/json": { "schema": {
+              "type": "object",
+              "properties": {
+                "success": { "type": "boolean" },
+                "data": { "type": "object", "properties": { "listings": { "type": "array", "items": { "$ref": "#/components/schemas/Listing" } } } }
+              }
+            } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": { "type": "apiKey", "in": "header", "name": "x-api-key", "description": "School API key (e.g. sk_school_...) issued via the school-admin panel. Scoped + hashed; raw value shown once at creation." },
+      "BearerApiKey": { "type": "http", "scheme": "bearer", "description": "Alternatively, pass the same school API key as `Authorization: Bearer <key>`." }
+    },
+    "parameters": {
+      "Page": { "name": "page", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "default": 1 } },
+      "Limit": { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 } }
+    },
+    "headers": {
+      "RateLimitLimit": { "description": "Per-key request budget for the window.", "schema": { "type": "string" } },
+      "RateLimitRemaining": { "description": "Requests remaining in the current window.", "schema": { "type": "string" } },
+      "RateLimitReset": { "description": "Unix epoch (seconds) when the window resets.", "schema": { "type": "string" } }
+    },
+    "schemas": {
+      "Student": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "grade": { "type": "string", "enum": ["6", "7", "8", "9", "10", "11", "12"] },
+          "is_active": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Class": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "grade": { "type": "string" },
+          "section": { "type": "string", "nullable": true },
+          "academic_year": { "type": "string", "nullable": true },
+          "subject": { "type": "string", "nullable": true },
+          "class_code": { "type": "string", "nullable": true },
+          "is_active": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ReportSummary": {
+        "type": "object",
+        "description": "Aggregate row; shape varies by view (grade vs class). No per-student PII.",
+        "properties": {
+          "grade": { "type": "string" },
+          "class_id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "section": { "type": "string", "nullable": true },
+          "total_students": { "type": "integer" },
+          "enrolled_students": { "type": "integer" },
+          "active_students": { "type": "integer" },
+          "avg_xp": { "type": "integer" }
+        }
+      },
+      "Listing": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "slug": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string", "nullable": true },
+          "scopes_required": { "type": "array", "items": { "type": "string" } },
+          "metadata": { "type": "object" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "limit": { "type": "integer" },
+          "total": { "type": "integer" },
+          "total_pages": { "type": "integer" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": { "success": { "type": "boolean", "example": false }, "error": { "type": "string" } }
+      }
+    },
+    "responses": {
+      "BadRequest": { "description": "Invalid request parameters.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Unauthorized": { "description": "Missing, invalid, expired, or inactive API key.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Forbidden": { "description": "Valid key, but it lacks the required scope.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "RateLimited": { "description": "Per-key rate limit exceeded. See Retry-After + X-RateLimit-* headers.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "ServerError": { "description": "Internal error.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    }
+  }
+}

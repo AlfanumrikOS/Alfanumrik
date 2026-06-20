@@ -18,6 +18,7 @@ export type DailyCronActionName =
   | 'contract_grace_audited'
   | 'monthly_synthesis_triggered'
   | 'adaptive_remediation_triggered'
+  | 'webhook_deliveries_dispatched'
   | 'foxy_expectations_expired'
   | 'mol_shadow_pairs_graded'
   | 'purge_principal_ai'

@@ -1107,6 +1107,52 @@ async function triggerAdaptiveRemediation(_supabase: ReturnType<typeof createCli
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Track A.6 — outbound webhook dispatcher trigger (THIN, by design).
+// POSTs to the webhook-dispatcher Edge Function with CRON_SECRET, mirroring the
+// triggerAdaptiveRemediation fetch-out precedent. ALL signing/SSRF/retry/DLQ
+// math lives in the dispatcher (Deno), which reads the pure _shared/ssrf.ts.
+// Deliberately NOT flag-gated: the dispatcher only acts on rows that already
+// exist in webhook_deliveries (a producer must have enqueued them), so there is
+// nothing to drain when no subscriptions exist. Failures isolated by
+// Promise.allSettled in the main handler. P13: counts-only logging.
+// ──────────────────────────────────────────────────────────────────────────
+async function triggerWebhookDispatcher(_supabase: ReturnType<typeof createClient>): Promise<number> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
+  const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
+  if (!supabaseUrl || !cronSecret) {
+    console.warn('triggerWebhookDispatcher: SUPABASE_URL or CRON_SECRET unavailable — skipping')
+    return 0
+  }
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/webhook-dispatcher`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-cron-secret': cronSecret,
+        // Edge-to-Edge invocation needs the platform anon/service auth header.
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''}`,
+      },
+      body: JSON.stringify({}),
+    })
+    if (!res.ok) {
+      const t = await res.text().catch(() => '')
+      console.warn(`triggerWebhookDispatcher: non-OK ${res.status}: ${t.slice(0, 120)}`)
+      return 0
+    }
+    const j = await res.json().catch(() => null) as { data?: { delivered?: number; dead_lettered?: number } } | null
+    const delivered = j?.data?.delivered ?? 0
+    const deadLettered = j?.data?.dead_lettered ?? 0
+    // P13: counts only — no subscription/school identifiers in logs.
+    console.log(`daily-cron: webhook_dispatcher — delivered=${delivered} dead_lettered=${deadLettered}`)
+    return delivered + deadLettered
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e)
+    console.warn(`triggerWebhookDispatcher: network error: ${m}`)
+    return 0
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Phase 3-C — Contract lifecycle automation
 // All three steps are no-ops when ff_school_contracts_v1 is OFF.
 // Failures isolated by Promise.allSettled in the main handler.
@@ -1431,6 +1477,7 @@ Deno.serve(async (req) => {
       contract_grace_audited: () => auditContractGracePeriods(sb),
       monthly_synthesis_triggered: () => triggerMonthlySynthesis(sb),
       adaptive_remediation_triggered: () => triggerAdaptiveRemediation(sb),
+      webhook_deliveries_dispatched: () => triggerWebhookDispatcher(sb),
       foxy_expectations_expired: () => expireStaleFoxyExpectations(sb),
       mol_shadow_pairs_graded: () => gradeMolShadowPairs(sb),
       purge_principal_ai: () => purgePrincipalAiTranscripts(sb),
