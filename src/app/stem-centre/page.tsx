@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import dynamic from 'next/dynamic';
-import SimulationSkeleton from '@/components/simulations/SimulationSkeleton';
+import { SimulationSkeleton } from '@/components/Skeleton';
 import { SimErrorBoundary } from '@/components/simulations/SimulationShell';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';

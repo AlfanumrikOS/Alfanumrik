@@ -22,12 +22,19 @@
  * routing, and access control. Run auth tests after any change.
  */
 
+import { GRADES } from '../constants';
+
 // ── Roles ────────────────────────────────────────────────────
 
 export const VALID_ROLES = ['student', 'teacher', 'parent', 'institution_admin'] as const;
 export type ValidRole = typeof VALID_ROLES[number];
 
-export const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'] as const;
+// Single-sourced from the canonical grade list in '@/lib/constants'.
+// GRADES is declared `as const` there, so `typeof VALID_GRADES[number]`
+// stays the identical literal union ('6' | … | '12') and ValidGrade is
+// byte-equivalent to the former inline tuple. constants.ts is an
+// import-free leaf module, so this introduces no circular import (P15-safe).
+export const VALID_GRADES = GRADES;
 export type ValidGrade = typeof VALID_GRADES[number];
 
 export const VALID_BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Other'] as const;

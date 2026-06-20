@@ -2,7 +2,7 @@
 
 import type { ComponentType } from 'react';
 import dynamic from 'next/dynamic';
-import SimulationSkeleton from './SimulationSkeleton';
+import { SimulationSkeleton } from '@/components/Skeleton';
 
 export interface BuiltInSimulation {
   id: string;

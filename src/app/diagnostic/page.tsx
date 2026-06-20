@@ -67,6 +67,11 @@ type DiagnosticScreen = 'setup' | 'quiz' | 'results';
 
 // ─── Constants ──────────────────────────────────────────────────
 
+// Deliberate subset of the canonical GRADES (src/lib/constants.ts): the
+// diagnostic flow only supports grades 6–10. Kept as an inline `as const`
+// tuple — NOT derived via GRADES.filter() — because `.filter()` would
+// widen the type to string[] and break the `typeof …[number]` literal
+// union used in the guard below.
 const VALID_DIAGNOSTIC_GRADES = ['6', '7', '8', '9', '10'] as const;
 
 const SUBJECT_OPTIONS: Record<string, { code: string; label: string; labelHi: string; icon: string }[]> = {
