@@ -75,6 +75,27 @@ function generateClaimToken(): string {
   return randomBytes(24).toString('base64url');
 }
 
+/**
+ * Canonical app host for principal-facing links. The claim flow lives on the
+ * apex host (a stable, already-TLS-terminated origin) rather than the school's
+ * `<slug>.alfanumrik.com` subdomain — wildcard subdomain TLS/routing is a
+ * separate concern and must never block the principal from reaching the claim
+ * screen. Overridable via NEXT_PUBLIC_APP_URL for non-prod environments.
+ */
+function appHost(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL || 'https://alfanumrik.com').replace(/\/$/, '');
+}
+
+/**
+ * Build the fully-formed admin-claim URL embedding the RAW one-time token.
+ * The raw token rides ONLY in this URL inside the email body (over TLS) and is
+ * never logged nor persisted in plaintext (P13). URL-encode the token so the
+ * base64url value survives query-string transport intact.
+ */
+export function buildClaimUrl(rawToken: string): string {
+  return `${appHost()}/school-admin/claim?token=${encodeURIComponent(rawToken)}`;
+}
+
 type AdminClient = ReturnType<typeof getSupabaseAdmin>;
 
 /**
@@ -124,7 +145,19 @@ async function resolveOrCreateAuthUser(
  * principal returns `already_claimed` (a success), never an error.
  */
 export type ClaimAdminResult =
-  | { status: 'claimed'; school_id: string; school_admin_id: string; auth_user_id: string }
+  | {
+      status: 'claimed';
+      school_id: string;
+      school_admin_id: string;
+      auth_user_id: string;
+      /**
+       * Whether the principal's password was GENUINELY updated in GoTrue. False
+       * when no password was supplied OR when the best-effort updateUserById call
+       * failed (a password failure never blocks activation — P15). The route
+       * surfaces this so the client can tell the principal to use reset-password.
+       */
+      password_set: boolean;
+    }
   | { status: 'already_claimed'; school_id: string; school_admin_id: string; auth_user_id: string }
   | { status: 'invalid_token' }
   | { status: 'expired' }
@@ -209,7 +242,9 @@ export async function claimAdminToken(
     // Optionally set the principal's password (they were created with a random
     // temp password during provisioning). Best-effort: a password-set failure
     // must NOT block activation — the principal can still use the magic-link /
-    // reset-password path. NEVER log the password.
+    // reset-password path. NEVER log the password. We thread the REAL outcome
+    // into the result so the route reports whether the password genuinely stuck.
+    let passwordSet = false;
     if (newPassword && newPassword.length >= 8) {
       const { error: pwErr } = await admin.auth.admin.updateUserById(link.auth_user_id, {
         password: newPassword,
@@ -219,6 +254,8 @@ export async function claimAdminToken(
           schoolId: row.school_id,
           reason: pwErr.message,
         });
+      } else {
+        passwordSet = true;
       }
     }
 
@@ -257,6 +294,7 @@ export async function claimAdminToken(
       school_id: row.school_id,
       school_admin_id: row.school_admin_id,
       auth_user_id: link.auth_user_id,
+      password_set: passwordSet,
     };
   } catch (err) {
     logger.error('school_admin_claim_unexpected_error', {
@@ -628,6 +666,12 @@ export async function provisionTrialSchool(
       trialEndIso.setDate(trialEndIso.getDate() + 90);
       const subdomainUrl = `https://${finalSlug}.alfanumrik.com`;
 
+      // P15: the principal needs the RAW claim token to actually claim. When the
+      // claim token was minted (adminLink.claimToken non-null), embed it in a
+      // fully-formed claim URL so the email is the delivery channel for it. The
+      // raw token travels ONLY in the email body — never logged/persisted plain.
+      const claimUrl = adminLink.claimToken ? buildClaimUrl(adminLink.claimToken) : undefined;
+
       void deliverEmail({
         template: 'school-trial-provisioned',
         to: principal_email,
@@ -638,6 +682,7 @@ export async function provisionTrialSchool(
           expires_at: trialEndIso.toISOString(),
           subdomain_url: subdomainUrl,
           recipient_name: principal_name,
+          ...(claimUrl ? { claim_url: claimUrl } : {}),
         },
       }).catch((err) => {
         logger.warn('school_provisioning_email_dispatch_failed', {

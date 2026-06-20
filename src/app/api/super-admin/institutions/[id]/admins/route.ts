@@ -29,7 +29,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, isValidUUID } from '@/lib/admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
-import { establishPrincipalAdmin, validateEmail } from '@/lib/school-provisioning';
+import { buildClaimUrl, establishPrincipalAdmin, validateEmail } from '@/lib/school-provisioning';
+import { deliverEmail } from '@/lib/email-delivery';
 import { logger } from '@/lib/logger';
 
 interface CreateAdminBody {
@@ -76,9 +77,10 @@ export async function POST(
   const admin = getSupabaseAdmin();
 
   // Verify the school exists (and is not soft-deleted) before minting an admin.
+  // `name` is needed for the principal-facing claim email.
   const { data: school, error: schoolErr } = await admin
     .from('schools')
-    .select('id, is_active')
+    .select('id, name, is_active')
     .eq('id', schoolId)
     .is('deleted_at', null)
     .maybeSingle();
@@ -123,11 +125,58 @@ export async function POST(
     claim_token_issued: linkResult.claimToken !== null,
   });
 
+  // P15: deliver the raw claim token to the principal directly so the claim flow
+  // is reachable end-to-end — the operator no longer HAS to hand-relay it (the
+  // raw token also remains in the TLS response below as a manual-relay fallback).
+  // The raw token rides ONLY inside the email body (over TLS); fire-and-forget,
+  // a mail failure must never fail the repair. We display the school's real
+  // 8-char admin invite code (looked up best-effort) — never the raw token — and
+  // email-delivery keys idempotency on that code (P13: the raw token is never an
+  // idempotency/log key). On re-repair the operator still has the TLS-returned
+  // token to relay even if the per-code email dedups.
+  let emailDispatched = false;
+  if (linkResult.claimToken) {
+    const schoolName = (school as { name?: string | null }).name ?? 'your school';
+    const { data: codeRow } = await admin
+      .from('school_invite_codes')
+      .select('code, expires_at')
+      .eq('school_id', schoolId)
+      .eq('role_type', 'admin')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const code = (codeRow as { code?: string } | null)?.code;
+    const codeExpiry = (codeRow as { expires_at?: string } | null)?.expires_at;
+
+    if (code) {
+      void deliverEmail({
+        template: 'school-trial-provisioned',
+        to: email,
+        locale: 'en',
+        params: {
+          school_name: schoolName,
+          invite_code: code,
+          expires_at: codeExpiry ?? new Date(Date.now() + 90 * 86400_000).toISOString(),
+          claim_url: buildClaimUrl(linkResult.claimToken),
+          recipient_name: name || undefined,
+        },
+      }).catch((err) => {
+        logger.warn('school_admin_repair_email_dispatch_failed', {
+          schoolId,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      });
+      emailDispatched = true;
+    }
+  }
+
   return NextResponse.json({
     success: true,
     data: {
       school_id: schoolId,
       school_admin_id: linkResult.schoolAdminId,
+      // Whether the principal-facing claim email was dispatched (best-effort).
+      email_dispatched: emailDispatched,
       // Raw claim token for the operator to relay to the principal (over TLS).
       // Never logged / persisted in plaintext. Null if token minting was skipped.
       claim_token: linkResult.claimToken,

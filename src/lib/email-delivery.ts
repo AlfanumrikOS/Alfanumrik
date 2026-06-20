@@ -34,6 +34,14 @@ export interface EmailTemplateParams {
   expires_at?: string;
   subdomain_url?: string;
   recipient_name?: string;
+  /**
+   * Fully-formed admin-claim URL embedding the RAW one-time claim token
+   * (e.g. `https://alfanumrik.com/school-admin/claim?token=<raw>`). Travels
+   * ONLY in the email body — never logged, never persisted in plaintext (P13).
+   * Present for the principal's `school-trial-provisioned` email so the claim
+   * flow is reachable end-to-end. Absent for teacher/student invite emails.
+   */
+  claim_url?: string;
   // parent-link-code-otp uses these. We share the type rather than adding a
   // union — the Edge Function validates the right combination per template.
   otp?: string;

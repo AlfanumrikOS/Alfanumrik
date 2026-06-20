@@ -142,6 +142,9 @@ describe('POST /api/schools/claim-admin — idempotent success (P15)', () => {
       school_id: 'school-1',
       school_admin_id: 'admin-1',
       auth_user_id: 'user-1',
+      // DELTA: the helper now threads the REAL GoTrue password outcome; the route
+      // surfaces it verbatim. A genuine success → password_set true.
+      password_set: true,
     });
     const res = await POST(makeRequest({ token: RAW_TOKEN, password: SECRET_PW }));
     expect(res.status).toBe(200);
@@ -173,6 +176,58 @@ describe('POST /api/schools/claim-admin — idempotent success (P15)', () => {
     const body = await res.json();
     expect(body.success).toBe(false);
     expect(body.error).toMatch(/could not complete/i);
+  });
+});
+
+describe('POST /api/schools/claim-admin — password_set accuracy (DELTA, P15 best-effort)', () => {
+  it('claimed with a genuine GoTrue success → password_set: true (link active either way)', async () => {
+    mockClaim.mockResolvedValue({
+      status: 'claimed',
+      school_id: 'school-1',
+      school_admin_id: 'admin-1',
+      auth_user_id: 'user-1',
+      password_set: true,
+    });
+    const res = await POST(makeRequest({ token: RAW_TOKEN, password: SECRET_PW }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // The claim succeeded — the link is activated regardless of the password.
+    expect(body.data.status).toBe('claimed');
+    expect(body.data.password_set).toBe(true);
+  });
+
+  it('claimed but GoTrue password update FAILED → password_set: false, still 200/claimed', async () => {
+    // The helper reports a genuine failure (best-effort password set lost) while
+    // still activating the link — P15: a password failure must NOT block activation.
+    mockClaim.mockResolvedValue({
+      status: 'claimed',
+      school_id: 'school-1',
+      school_admin_id: 'admin-1',
+      auth_user_id: 'user-1',
+      password_set: false,
+    });
+    const res = await POST(makeRequest({ token: RAW_TOKEN, password: SECRET_PW }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data.status).toBe('claimed');
+    // The route surfaces the REAL outcome so the client can prompt reset-password.
+    expect(body.data.password_set).toBe(false);
+  });
+
+  it('already_claimed never re-reports a password set (no stranger re-activation)', async () => {
+    mockClaim.mockResolvedValue({
+      status: 'already_claimed',
+      school_id: 'school-1',
+      school_admin_id: 'admin-1',
+      auth_user_id: 'user-1',
+    });
+    const res = await POST(makeRequest({ token: RAW_TOKEN, password: SECRET_PW }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // The result type for already_claimed carries no password_set; the route
+    // coerces the display to false (the && short-circuits on status).
+    expect(body.data.password_set).toBe(false);
   });
 });
 

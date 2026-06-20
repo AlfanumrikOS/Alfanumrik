@@ -65,6 +65,8 @@ interface FakeState {
   activateUpdates: Array<Record<string, unknown>>;
   consumeUpdates: number;
   passwordSets: Array<{ userId: string; password: string }>;
+  /** When true, the GoTrue password update returns an error (best-effort fail). */
+  passwordUpdateFails: boolean;
 }
 
 let state: FakeState;
@@ -75,6 +77,9 @@ function makeAdmin() {
       admin: {
         updateUserById: async (userId: string, attrs: { password?: string }) => {
           if (attrs.password) state.passwordSets.push({ userId, password: attrs.password });
+          if (state.passwordUpdateFails) {
+            return { data: { user: null }, error: { message: 'gotrue update failed' } };
+          }
           return { data: { user: { id: userId } }, error: null };
         },
       },
@@ -149,6 +154,7 @@ beforeEach(() => {
     activateUpdates: [],
     consumeUpdates: 0,
     passwordSets: [],
+    passwordUpdateFails: false,
   };
 });
 
@@ -187,6 +193,49 @@ describe('claimAdminToken — fresh token activation', () => {
   it('does not attempt a password set when none is supplied', async () => {
     await claimAdminToken(makeAdmin(), RAW_TOKEN, null);
     expect(state.passwordSets.length).toBe(0);
+  });
+});
+
+describe('claimAdminToken — password_set accuracy (DELTA, P15 best-effort)', () => {
+  it('reports password_set:true when the GoTrue update genuinely succeeds', async () => {
+    const res = await claimAdminToken(makeAdmin(), RAW_TOKEN, 'super-secret-pw');
+    expect(res.status).toBe('claimed');
+    if (res.status !== 'claimed') return;
+    expect(res.password_set).toBe(true);
+    // The link is activated regardless.
+    expect(state.activateUpdates.length).toBe(1);
+  });
+
+  it('reports password_set:false when the GoTrue update FAILS — link STILL activates', async () => {
+    state.passwordUpdateFails = true;
+    const res = await claimAdminToken(makeAdmin(), RAW_TOKEN, 'super-secret-pw');
+    expect(res.status).toBe('claimed');
+    if (res.status !== 'claimed') return;
+    // The genuine GoTrue failure is threaded through — NOT silently reported true.
+    expect(res.password_set).toBe(false);
+    // P15: a password-set failure must NOT block activation.
+    expect(state.activateUpdates.length).toBe(1);
+    expect(state.activateUpdates[0]).toMatchObject({ is_active: true });
+    // The token was still consumed (the claim completed).
+    expect(state.consumeUpdates).toBe(1);
+  });
+
+  it('reports password_set:false when no password was supplied (nothing to set)', async () => {
+    const res = await claimAdminToken(makeAdmin(), RAW_TOKEN, null);
+    expect(res.status).toBe('claimed');
+    if (res.status !== 'claimed') return;
+    expect(res.password_set).toBe(false);
+    expect(state.passwordSets.length).toBe(0);
+  });
+
+  it('a too-short password is not sent to GoTrue and reports password_set:false', async () => {
+    const res = await claimAdminToken(makeAdmin(), RAW_TOKEN, 'short');
+    expect(res.status).toBe('claimed');
+    if (res.status !== 'claimed') return;
+    expect(res.password_set).toBe(false);
+    expect(state.passwordSets.length).toBe(0);
+    // Activation still happened.
+    expect(state.activateUpdates.length).toBe(1);
   });
 });
 

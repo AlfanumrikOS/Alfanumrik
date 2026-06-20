@@ -158,6 +158,18 @@ The `school.*` family scopes the institution-admin school-admin console (distinc
 | `system.config` | Manage system configuration |
 | `analytics.global` | View global platform analytics |
 
+### Platform / Institution-Tier Admin Permissions (integration, public_api, ops_team)
+
+These three codes were added in migration `20260621000100_track_a_school_admin_provisioning.sql` (Part C) and `src/lib/rbac.ts`. They are **pre-wired for upcoming Integrations / Public API / Ops-team features and are currently granted-but-not-yet-enforced-by-any-route (safe inert grants)** — no route calls `authorizeRequest()` with these codes yet.
+
+| Permission Code | Description |
+|----------------|-------------|
+| `integration.manage` | Connect and manage external institution integrations (SIS/LMS/SSO connectors) |
+| `public_api.manage` | Manage API keys and public API access at the institution tier |
+| `ops_team.manage` | Manage the regional ops hierarchy (platform-level; future) |
+
+**Note:** `public_api.manage` is the institution-tier RBAC twin of `school.manage_api_keys` and is distinct from it: `school.manage_api_keys` governs the school-admin self-service console for *school* API keys, whereas `public_api.manage` governs API keys and public API access at the broader *institution* tier.
+
 ---
 
 ## Role-Permission Matrix
@@ -266,6 +278,12 @@ Legend: **X** = explicitly granted
 | `system.audit` | | | | | | | | | | X | X |
 | `system.config` | | | | | | | | | | X | X |
 | `analytics.global` | | | | | | | | | | X | X |
+| **Platform / Institution-Tier Admin** | | | | | | | | | | | |
+| `integration.manage` | | | | | X | | | | | X | X |
+| `public_api.manage` | | | | | X | | | | | X | X |
+| `ops_team.manage` | | | | | | | | | | X | X |
+
+**Note:** `integration.manage`, `public_api.manage`, and `ops_team.manage` are pre-wired (granted-but-not-yet-enforced-by-any-route — safe inert grants) for upcoming Integrations / Public API / Ops-team features. `ops_team.manage` is intentionally **not** granted to `institution_admin` (platform-level only: `admin` + `super_admin`).
 
 **Note:** The `tutor` role currently has no permissions seeded in the database. Tutor permissions should be configured per-institution as needed.
 
