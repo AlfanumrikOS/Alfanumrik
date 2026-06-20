@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
+import { calculateScorePercent } from '@/lib/scoring';
 import { getStudentProfiles, getSubjects, getBloomProgression, getLearningVelocity, getKnowledgeGaps, supabase } from '@/lib/supabase';
 import { BLOOM_CONFIG, BLOOM_LEVELS, BLOOM_ORDER, getHighestMasteredBloom, predictMasteryDate } from '@/lib/cognitive-engine';
 import { getLevelFromScore } from '@/lib/score-config';
@@ -395,7 +396,7 @@ export default function ProgressPage() {
   const totalSessions = profiles.reduce((a, p) => a + (p.total_sessions ?? 0), 0);
   const totalCorrect = profiles.reduce((a, p) => a + (p.total_questions_answered_correctly ?? 0), 0);
   const totalAsked = profiles.reduce((a, p) => a + (p.total_questions_asked ?? 0), 0);
-  const accuracy = totalAsked > 0 ? Math.round((totalCorrect / totalAsked) * 100) : 0;
+  const accuracy = calculateScorePercent(totalCorrect, totalAsked);
 
   /* ── Performance Score aggregates ── */
   const overallPerfScore = perfScores.length > 0
@@ -698,9 +699,7 @@ export default function ProgressPage() {
                     <div className="space-y-2">
                       {profiles.map((p) => {
                         const meta = subjects.find((s: { code: string }) => s.code === p.subject);
-                        const correctPct = p.total_questions_asked > 0
-                          ? Math.round((p.total_questions_answered_correctly / p.total_questions_asked) * 100)
-                          : 0;
+                        const correctPct = calculateScorePercent(p.total_questions_answered_correctly, p.total_questions_asked);
 
                         return (
                           <Card key={p.id} className="!p-3 flex items-center gap-3">

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
+import { calculateScorePercent } from '@/lib/scoring';
 import {
   getChapterTopics,
   getChapterQuestions,
@@ -510,7 +511,7 @@ function ChapterConceptPageContent() {
     if (!showCompletion || !student) return;
     const correctCount = Object.values(conceptStates).filter(s => s.submitted && s.isCorrect).length;
     const totalAnswered = Object.values(conceptStates).filter(s => s.submitted).length;
-    const pct = totalAnswered > 0 ? Math.round((correctCount / totalAnswered) * 100) : 0;
+    const pct = calculateScorePercent(correctCount, totalAnswered);
     const scoreGood = totalAnswered > 0 && pct >= 60;
     if (scoreGood) {
       updateChapterProgress(subject, student.grade, chapterNum).catch((err: unknown) => {
@@ -734,8 +735,8 @@ function ChapterConceptPageContent() {
     }
     const totalQ = questions.length;
     const correctQ = Object.values(quizAnswers).filter(a => a.isCorrect).length;
-    const pct = totalQ > 0 ? Math.round((correctQ / totalQ) * 100) : 0;
-    
+    const pct = calculateScorePercent(correctQ, totalQ);
+
     if (pct >= 60) {
       setTimeout(() => {
         confetti({
@@ -764,7 +765,7 @@ function ChapterConceptPageContent() {
   if (showCompletion) {
     const correctCount = Object.values(conceptStates).filter(s => s.submitted && s.isCorrect).length;
     const totalAnswered = Object.values(conceptStates).filter(s => s.submitted).length;
-    const pct = totalAnswered > 0 ? Math.round((correctCount / totalAnswered) * 100) : 0;
+    const pct = calculateScorePercent(correctCount, totalAnswered);
 
     // Which concepts did the student get wrong?
     const wrongTopics = Object.entries(conceptStates)
@@ -2113,7 +2114,7 @@ function ChapterConceptPageContent() {
           {phase === 'report' && (() => {
             const totalQ = questions.length;
             const correctQ = Object.values(quizAnswers).filter(a => a.isCorrect).length;
-            const pct = totalQ > 0 ? Math.round((correctQ / totalQ) * 100) : 0;
+            const pct = calculateScorePercent(correctQ, totalQ);
             const scoreGood = pct >= 60;
 
             const topicStats: Record<string, { total: number; correct: number; title: string; title_hi?: string | null; id: string }> = {};

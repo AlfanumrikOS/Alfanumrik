@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { calculateScorePercent } from '@/lib/scoring';
 import { supabase, getStudentProfiles, getSubjects, studentJoinClass } from '@/lib/supabase';
 import { Card, Button, Input, Select, Avatar, SectionHeader, ProgressBar, StatCard, LoadingFoxy } from '@/components/ui';
 import { toast } from '@/components/ui/toast';
@@ -1214,8 +1215,7 @@ export default function ProfilePage() {
                 <div className="space-y-4">
                   {profiles.map(p => {
                     const meta = subjects.find(s => s.code === p.subject);
-                    const pct = p.total_questions_asked > 0
-                      ? Math.round((p.total_questions_answered_correctly / p.total_questions_asked) * 100) : 0;
+                    const pct = calculateScorePercent(p.total_questions_answered_correctly, p.total_questions_asked);
                     return (
                       <div key={p.id} className="space-y-1.5">
                         <div className="flex items-center justify-between">

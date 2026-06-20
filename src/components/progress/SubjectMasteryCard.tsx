@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, MasteryRing, ProgressBar, Button } from '@/components/ui';
 import { BLOOM_LEVELS, BLOOM_CONFIG } from '@/lib/cognitive-engine';
+import { calculateScorePercent } from '@/lib/scoring';
 import type { BloomLevel } from '@/lib/types';
 import type { StudentLearningProfile, Subject, LearningVelocity } from '@/lib/types';
 
@@ -126,9 +127,7 @@ export default function SubjectMasteryCard({
   const router = useRouter();
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const correctPct = profile.total_questions_asked > 0
-    ? Math.round((profile.total_questions_answered_correctly / profile.total_questions_asked) * 100)
-    : 0;
+  const correctPct = calculateScorePercent(profile.total_questions_answered_correctly, profile.total_questions_asked);
 
   const masteryLevel = classifyMastery(correctPct);
   const subjectCode = profile.subject;

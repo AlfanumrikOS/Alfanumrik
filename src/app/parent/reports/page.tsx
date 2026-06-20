@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { calculateScorePercent } from '@/lib/scoring';
 import { supabase } from '@/lib/supabase';
 import { getLevelFromScore } from '@/lib/score-config';
 import { REPORT_MONTHS_COUNT } from '@/lib/constants';
@@ -1307,7 +1308,7 @@ function AssignmentSubmissions({ studentId, isHi }: { studentId: string; isHi: b
           }
 
           const scoreNum = sub.questions_correct != null && sub.questions_total != null && sub.questions_total > 0
-            ? Math.round((sub.questions_correct / sub.questions_total) * 100)
+            ? calculateScorePercent(sub.questions_correct, sub.questions_total)
             : sub.score ?? 0;
           const scoreColor = scoreNum >= 80 ? '#16A34A' : scoreNum >= 50 ? '#D97706' : '#EF4444';
 

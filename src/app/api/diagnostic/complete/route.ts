@@ -35,6 +35,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@/lib/rbac';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { calculateScorePercent } from '@/lib/scoring';
 
 interface DiagnosticResponseItem {
   question_id: string;
@@ -222,7 +223,7 @@ export async function POST(request: NextRequest) {
     //    P1: score_percent = Math.round((correct / total) * 100)
     const totalQuestions = responses.length;
     const correctCount = responses.filter((r) => r.is_correct === true).length;
-    const scorePercent = Math.round((correctCount / totalQuestions) * 100);
+    const scorePercent = calculateScorePercent(correctCount, totalQuestions);
     const actualTimeSeconds = Math.max(
       0,
       Math.round(

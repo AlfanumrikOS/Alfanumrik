@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { calculateScorePercent } from '@/lib/scoring';
 import { Card, Button, ProgressBar } from '@/components/ui';
 import { useSubjectLookup } from '@/lib/useSubjectLookup';
 
@@ -77,7 +78,7 @@ function MockExamResultsInner() {
   }
 
   const { correct, total, bySection, subject } = resultData;
-  const pct = Math.round((correct / total) * 100);
+  const pct = calculateScorePercent(correct, total);
   const gradeColor = getGradeColor(pct);
   const gradeLabel = getGradeLabel(pct, isHi);
   const subjectMeta = lookupSubject(subject);

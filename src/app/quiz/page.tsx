@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { calculateScorePercent } from '@/lib/scoring';
 import { track } from '@/lib/analytics';
 import { submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress, startQuizSession } from '@/lib/supabase';
 import { assembleQuiz } from '@/lib/quiz-assembler';
@@ -1053,7 +1054,7 @@ export default function QuizPage() {
         setResults({
           total,
           correct,
-          score_percent: total > 0 ? Math.round((correct / total) * 100) : 0,
+          score_percent: calculateScorePercent(correct, total),
           xp_earned: 0, // XP is ONLY awarded server-side
           session_id: '',
         });

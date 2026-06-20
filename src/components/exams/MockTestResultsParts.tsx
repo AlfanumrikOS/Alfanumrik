@@ -14,6 +14,7 @@
  */
 
 import { useState } from 'react';
+import { calculateScorePercent } from '@/lib/scoring';
 import type { ReviewItem, SubmitResult } from './mock-test-types';
 
 const CARD_STYLE = {
@@ -69,7 +70,7 @@ export function rollupByChapter(review: ReviewItem[], isHi: boolean): ChapterRol
   }
   return Array.from(map.entries())
     .map(([chapter, s]) => {
-      const percent = s.total > 0 ? Math.round((s.correct / s.total) * 100) : 0;
+      const percent = calculateScorePercent(s.correct, s.total);
       return { chapter, total: s.total, correct: s.correct, attempted: s.attempted, percent, weak: percent < 50 };
     })
     .sort((a, b) => a.percent - b.percent);
@@ -122,7 +123,7 @@ export function ScoreCard({ summary, isHi }: { summary: SubmitResult['summary'];
 
 export function BreakdownBar({ summary, isHi }: { summary: SubmitResult['summary']; isHi: boolean }) {
   const total = Math.max(1, summary.total_questions);
-  const pct = (n: number) => `${Math.round((n / total) * 100)}%`;
+  const pct = (n: number) => `${calculateScorePercent(n, total)}%`;
   return (
     <div className="rounded-2xl p-4 space-y-3" style={CARD_STYLE} data-testid="mock-results-breakdown">
       <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-3)]">

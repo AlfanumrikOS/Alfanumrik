@@ -16,6 +16,7 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { calculateScorePercent } from '@/lib/scoring';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
@@ -401,7 +402,7 @@ function SubmissionDetailView({
   };
 
   const accuracy = detail.submission.questions_total && detail.submission.questions_total > 0
-    ? Math.round(((detail.submission.questions_correct ?? 0) / detail.submission.questions_total) * 100)
+    ? calculateScorePercent(detail.submission.questions_correct ?? 0, detail.submission.questions_total)
     : detail.submission.score ?? 0;
 
   return (
