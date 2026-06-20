@@ -128,3 +128,19 @@ export function isPremium(planCode: string | null | undefined): boolean {
   const config = getPlanConfig(planCode);
   return config.tier > 0;
 }
+
+/**
+ * THE single tier-ordering source of truth.
+ *
+ * Returns the numeric rank of a plan code (0=free, 1=starter, 2=pro,
+ * 3=unlimited). Handles legacy aliases and billing-cycle suffixes via
+ * `getPlanConfig` → `normalizePlanCode`, so 'basic'/'premium'/'ultimate' and
+ * '*_monthly'/'*_yearly' all resolve to their canonical tier. An unknown code
+ * falls back to free (tier 0).
+ *
+ * This is the ONLY ranking the platform should use to compare plans (B2C vs
+ * B2B vs free). Do NOT hardcode a second ordering anywhere — import this.
+ */
+export function planTier(planCode: string | null | undefined): number {
+  return getPlanConfig(planCode).tier;
+}

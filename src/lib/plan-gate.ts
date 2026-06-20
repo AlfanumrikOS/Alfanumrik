@@ -13,6 +13,7 @@
 
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { planTier } from '@/lib/plans';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -239,6 +240,67 @@ export async function checkPlanGate(
     // Fail open
     return { granted: true };
   }
+}
+
+// ─── Effective (school-aware) Plan Gate ────────────────────────
+
+/**
+ * School-aware plan gate (Track A.5 B2C ↔ B2B coexistence).
+ *
+ * This is the entry point that consults the effective-plan resolver — the
+ * SINGLE source of truth for "what plan does this student effectively have" —
+ * BEFORE delegating to `checkPlanGate`. The effective plan is the HIGHEST tier
+ * among (a) school coverage, (b) the student's own B2C subscription, (c) free.
+ *
+ * BACKWARD COMPATIBILITY (CRITICAL): the resolved effective plan is only ever
+ * used when it is a HIGHER tier than the caller-supplied `plan`. We take
+ * max(supplied, effective) by tier, so:
+ *   - A B2C-only student (school_id NULL) resolves to their own personal plan,
+ *     which equals the supplied plan → gate is byte-identical to today.
+ *   - A free-tier student resolves to 'free' → identical to today.
+ *   - A school-covered student whose school tier exceeds their supplied plan is
+ *     gated UP at the school tier (the coexistence win) — never down.
+ * The effective plan NEVER lowers the gate, so no existing access is removed.
+ *
+ * Fail-OPEN: if effective-plan resolution errors, we fall back to gating on the
+ * caller-supplied `plan` (today's behavior) — the school-awareness is an
+ * upgrade convenience, not a security boundary (RLS + checkPlanGate enforce the
+ * real limits).
+ *
+ * @param studentId  the students.id (NOT the auth user id) — what the resolver
+ *                   keys on. Pass null to skip resolution (behaves exactly like
+ *                   checkPlanGate).
+ */
+export async function checkPlanGateEffective(
+  userId: string,
+  permissionCode: string,
+  plan: string,
+  studentId: string | null,
+  schoolId?: string,
+  increment?: boolean,
+): Promise<PlanGateResult> {
+  let effectivePlan = plan;
+
+  if (studentId) {
+    try {
+      // Lazy import to avoid a server-only module landing in any client bundle
+      // that statically imports plan-gate for its types.
+      const { resolveEffectivePlanCode } = await import('@/lib/entitlements/effective-plan');
+      const resolved = await resolveEffectivePlanCode(studentId, schoolId ?? undefined);
+      // Only ever gate UP — never strip an entitlement the supplied plan grants.
+      if (planTier(resolved) > planTier(plan)) {
+        effectivePlan = resolved;
+      }
+    } catch (e) {
+      logger.warn('plan_gate_effective_resolve_failed', {
+        route: 'plan-gate',
+        error: e instanceof Error ? e.message : String(e),
+      });
+      // Fall back to the supplied plan (today's behavior).
+    }
+  }
+
+  return checkPlanGate(userId, permissionCode, effectivePlan, schoolId, increment);
 }
 
 // ─── Parent Plan Gate ──────────────────────────────────────────
