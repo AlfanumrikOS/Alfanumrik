@@ -144,12 +144,20 @@ export function useHeatmap(classId?: string, subject?: string) {
 /**
  * At-risk alerts rail (`get_alerts`). Class scope is optional; without a
  * classId the Edge defaults to the teacher's full roster.
+ *
+ * `enabled` (default `true`) lets a caller keep the hook inert (null SWR key →
+ * no fetch) until it is ready — e.g. the Command Center defers alerts until a
+ * class scope has resolved so it never issues a transient roster-wide read
+ * before the class-scoped one. The default preserves the original
+ * fire-on-teacher behaviour for any other caller.
  */
-export function useAlerts(classId?: string) {
+export function useAlerts(classId?: string, enabled: boolean = true) {
   const { teacher } = useAuth();
   const teacherId = teacher?.id || '';
   return useSWR<AlertsResponse>(
-    teacherId ? ['teacher-dashboard', 'get_alerts', teacherId, classId || 'all'] : null,
+    enabled && teacherId
+      ? ['teacher-dashboard', 'get_alerts', teacherId, classId || 'all']
+      : null,
     () =>
       teacherDashboardFetch<AlertsResponse>('get_alerts', {
         teacher_id: teacherId,

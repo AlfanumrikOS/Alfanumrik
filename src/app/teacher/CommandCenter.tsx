@@ -1,53 +1,68 @@
 'use client';
 
 /**
- * CommandCenter — Phase 3A Wave A / A4. The dense, desktop-first teacher home
- * gated behind `ff_teacher_command_center`. Composes the EXISTING
- * `teacher-dashboard` Edge data (get_dashboard / get_heatmap / get_alerts) into
- * a single command surface:
+ * CommandCenter — the dense, desktop-first teacher home (the platform's
+ * flagship "Command Center"). Phase 2 of the Atlas redesign re-themes this
+ * surface from the legacy dark "Cosmic" chrome to the warm-cream Atlas OS theme
+ * shared with the parent/student portals. PRESENTATION + DATA-PLUMBING ONLY —
+ * all behaviour (flag gates, remediation state machine, parent-comms, testids)
+ * is byte-stable.
+ *
+ * It composes the EXISTING `teacher-dashboard` Edge data (get_dashboard /
+ * get_heatmap / get_alerts / get_grading_queue / get_student_mastery_report)
+ * into a single command surface:
  *
  *   - Class switcher (header) — picks the class scope; re-fetches heatmap+alerts.
- *   - Roster mastery heatmap (concept × student) — get_heatmap. A cell links to
- *     the student detail page.
- *   - At-risk alerts rail — get_alerts. Each alert carries its A2
- *     `remediation_status`: when `none`, a one-tap "Assign remediation" button
- *     POSTs /api/teacher/remediation (optimistic + rollback on error); when
- *     assigned/in_progress/resolved, that state is shown read-only.
- *   - Today summary + action bar (assign remediation · gradebook · messages ·
- *     grading queue placeholder for Wave B).
+ *   - Roster mastery heatmap (concept × student) — a cell links to the student
+ *     detail / drill-through.
+ *   - At-risk alerts rail — each alert carries its A2 `remediation_status`: when
+ *     `none`, a one-tap "Assign remediation" button POSTs /api/teacher/remediation
+ *     (optimistic + rollback on error); when assigned/in_progress/resolved that
+ *     state is shown read-only.
+ *   - Today summary + action bar.
+ *
+ * Data plumbing (Phase 2):
+ *   - READ paths now flow through the shared SWR hooks in
+ *     `@/lib/teacher/use-teacher-data` (useTeacherDashboard / useHeatmap /
+ *     useAlerts / useGradingQueue / useStudentMasteryReport) instead of bespoke
+ *     api()+useState/useEffect.
+ *   - POST mutations (remediation assign, parent-notify) stay direct calls and
+ *     then call the relevant hook's mutate() to revalidate (no manual refetch).
  *
  * Boundary discipline (frontend):
  *   - NO business logic in the client — the server owns remediation state. The
- *     button only POSTs; the row's authoritative status comes back from the
- *     Edge join on the next load.
- *   - Scoring/XP/mastery math is untouched — mastery % is rendered verbatim
- *     from get_heatmap (assessment owns the values).
+ *     button only POSTs; the row's authoritative status comes back from the Edge
+ *     join on the next revalidate.
+ *   - Scoring/XP/mastery math is untouched — mastery % is rendered verbatim from
+ *     get_heatmap (assessment owns the values); heat-scale only maps a fraction
+ *     to a colour/label (P1/P2).
  *   - P7 bilingual via AuthContext.isHi. P13 no PII in client logs.
- *
- * Reuses the SAME `api()` Edge-call pattern and dark `.td-*` chrome the legacy
- * dashboard uses (defined inline here so this surface stands alone).
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import {
-  supabase,
-  supabaseUrl as SUPABASE_URL,
-  supabaseAnonKey as SUPABASE_ANON,
-} from '@/lib/supabase';
-import { authHeader } from '@/lib/api/auth-header';
 import { useTeacherAssignmentLifecycle } from '@/lib/use-teacher-assignment-lifecycle';
 import { useTeacherGradebookDepth } from '@/lib/use-teacher-gradebook-depth';
 import { useTeacherParentComms } from '@/lib/use-teacher-parent-comms';
+import { authHeader } from '@/lib/api/auth-header';
+import { heatColorClass } from '@/lib/teacher/heat-scale';
+import {
+  useTeacherDashboard,
+  useHeatmap,
+  useAlerts,
+  useGradingQueue,
+  useStudentMasteryReport,
+} from '@/lib/teacher/use-teacher-data';
+import { TeacherDashboardSkeleton } from '@/components/Skeleton';
+import { StatusBadge, type StatusBadgeVariant } from '@/components/admin-ui/StatusBadge';
 import type {
   HeatmapData,
   HeatmapCell,
   HeatmapRow,
   RiskAlert,
   RemediationStatus,
-  StudentMasteryReport as StudentMasteryReportData,
 } from '@/lib/types';
 import type { GradingQueueItem } from './GradingQueue';
 
@@ -65,23 +80,12 @@ const StudentMasteryReport = dynamic(() => import('./StudentMasteryReport'), { s
 // ── Bilingual helper (P7) ───────────────────────────────────────────────────
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
-// ── Local Edge-data shapes (mirror the legacy dashboard) ────────────────────
+// ── Local Edge-data shapes ──────────────────────────────────────────────────
 interface DashboardClass {
   id: string;
   name: string;
   student_count: number;
   avg_mastery?: number;
-}
-interface DashboardStats {
-  total_students: number;
-  active_alerts: number;
-  critical_alerts: number;
-  active_assignments: number;
-}
-interface DashboardData {
-  teacher?: { name: string };
-  classes?: DashboardClass[];
-  stats?: DashboardStats;
 }
 interface HeatmapConcept {
   id: string;
@@ -89,46 +93,20 @@ interface HeatmapConcept {
   chapter: number;
 }
 
-/** teacher-dashboard Edge call. Mirrors the legacy dashboard's `api()`. */
-async function api(action: string, params: Record<string, unknown> = {}) {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    apikey: SUPABASE_ANON,
-  };
-  try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
-  } catch {
-    /* apikey-only fallback */
-  }
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/teacher-dashboard`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ action, ...params }),
-  });
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => 'Unknown error');
-    throw new Error(`API error ${res.status}: ${errorText}`);
-  }
-  return res.json();
-}
-
-function heatColor(p: number) {
-  if (p >= 0.95) return 'bg-emerald-600';
-  if (p >= 0.8) return 'bg-violet-600';
-  if (p >= 0.6) return 'bg-blue-600';
-  if (p >= 0.3) return 'bg-amber-600';
-  if (p > 0.1) return 'bg-amber-400';
-  return 'bg-slate-800';
-}
-
-const SEV: Record<string, { bg: string; border: string }> = {
-  critical: { bg: 'bg-red-600', border: 'border-red-500' },
-  high: { bg: 'bg-orange-600', border: 'border-orange-500' },
-  medium: { bg: 'bg-amber-600', border: 'border-amber-400' },
-  low: { bg: 'bg-blue-600', border: 'border-blue-500' },
+// Severity → StatusBadge variant + accent for the at-risk rail (Atlas semantic
+// status colours). The numeric/visual mapping is unchanged from the dark theme;
+// only the palette is re-themed.
+const SEV_VARIANT: Record<string, StatusBadgeVariant> = {
+  critical: 'danger',
+  high: 'danger',
+  medium: 'warning',
+  low: 'info',
+};
+const SEV_ACCENT: Record<string, string> = {
+  critical: 'var(--danger, #DC2626)',
+  high: '#E8581C',
+  medium: 'var(--warning, #D97706)',
+  low: 'var(--info, #2563EB)',
 };
 
 const CHAPTER_NAMES: Record<number, string> = {
@@ -155,7 +133,7 @@ function RosterHeatmap({
 }) {
   if (!data?.matrix?.length) {
     return (
-      <div className="p-10 text-center text-slate-600 italic">
+      <div className="p-10 text-center italic" style={{ color: 'var(--text-3)' }}>
         {tt(
           isHi,
           'No mastery data yet — students need to start practicing.',
@@ -170,16 +148,27 @@ function RosterHeatmap({
       <table className="border-collapse w-full text-xs">
         <thead>
           <tr>
-            <th className="px-2 py-1.5 text-slate-500 font-medium text-[10px] text-left border-b border-slate-800 min-w-[120px] sticky left-0 bg-[#0F172A]">
+            <th
+              className="px-2 py-1.5 font-semibold text-[10px] text-left min-w-[120px] sticky left-0"
+              style={{
+                color: 'var(--text-3)',
+                borderBottom: '1px solid var(--border)',
+                background: 'var(--surface-1)',
+              }}
+            >
               {tt(isHi, 'Student', 'छात्र')}
             </th>
-            <th className="px-1 py-1.5 text-slate-500 font-medium text-[10px] text-center border-b border-slate-800">
+            <th
+              className="px-1 py-1.5 font-semibold text-[10px] text-center"
+              style={{ color: 'var(--text-3)', borderBottom: '1px solid var(--border)' }}
+            >
               {tt(isHi, 'Avg', 'औसत')}
             </th>
             {concepts.map((c: HeatmapConcept, i: number) => (
               <th
                 key={i}
-                className="px-1 py-1.5 text-slate-500 font-medium text-[10px] text-center border-b border-slate-800"
+                className="px-1 py-1.5 font-semibold text-[10px] text-center"
+                style={{ color: 'var(--text-3)', borderBottom: '1px solid var(--border)' }}
                 title={c.title}
               >
                 Ch{c.chapter}
@@ -190,18 +179,25 @@ function RosterHeatmap({
         </thead>
         <tbody>
           {data.matrix.map((row: HeatmapRow, ri: number) => (
-            <tr key={ri} className="hover:bg-slate-800/40">
-              <td className="px-2 py-1.5 text-slate-200 font-medium text-[13px] whitespace-nowrap sticky left-0 bg-[#0F172A]">
+            <tr key={ri} className="hover:bg-[var(--surface-2)]">
+              <td
+                className="px-2 py-1.5 font-semibold text-[13px] whitespace-nowrap sticky left-0"
+                style={{ color: 'var(--text-1)', background: 'var(--surface-1)' }}
+              >
                 <button
                   type="button"
                   onClick={() => onCellStudent(row as HeatmapRowWithId)}
-                  className="text-left text-slate-200 hover:text-indigo-400 bg-transparent border-none cursor-pointer p-0"
+                  className="text-left bg-transparent border-none cursor-pointer p-0 hover:text-[#7C3AED]"
+                  style={{ color: 'var(--text-1)' }}
                   title={tt(isHi, 'View student detail', 'छात्र विवरण देखें')}
                 >
                   {row.student_name}
                 </button>
               </td>
-              <td className="px-1 py-1.5 text-center font-semibold text-slate-200 text-[13px]">
+              <td
+                className="px-1 py-1.5 text-center font-bold text-[13px]"
+                style={{ color: 'var(--text-1)' }}
+              >
                 {row.avg_mastery}%
               </td>
               {(row.cells || []).slice(0, 12).map((cell: HeatmapCell, ci: number) => (
@@ -212,7 +208,7 @@ function RosterHeatmap({
                     title={`${row.student_name} · ${concepts[ci]?.title ?? ''}: ${
                       cell.attempts > 0 ? Math.round(cell.p_know * 100) + '%' : '—'
                     }`}
-                    className={`inline-block min-w-[32px] py-1 px-0.5 rounded text-[10px] font-medium text-white border-none cursor-pointer ${heatColor(
+                    className={`inline-block min-w-[32px] py-1 px-0.5 rounded text-[10px] font-semibold text-white border-none cursor-pointer ${heatColorClass(
                       cell.p_know,
                     )} ${cell.attempts > 0 ? 'opacity-100' : 'opacity-30'}`}
                   >
@@ -254,17 +250,25 @@ function AlertRow({
   parentNotifyBusy: boolean;
   parentNotifyDone: boolean;
 }) {
-  const s = SEV[alert.severity] || SEV.medium;
+  const variant = SEV_VARIANT[alert.severity] || 'warning';
+  const accent = SEV_ACCENT[alert.severity] || SEV_ACCENT.medium;
   const status: RemediationStatus = alert.remediation_status ?? 'none';
 
   return (
-    <div className={`bg-slate-800 rounded-lg p-3 border-l-[3px] ${s.border}`}>
+    <div
+      className="rounded-xl p-3 border-l-[3px]"
+      style={{
+        background: 'var(--surface-2)',
+        borderLeftColor: accent,
+        boxShadow: 'var(--shadow-md)',
+      }}
+    >
       <div className="flex justify-between items-start gap-3">
         <div className="min-w-0">
-          <span className={`text-[10px] font-bold py-0.5 px-2 rounded ${s.bg} text-white uppercase`}>
-            {alert.severity}
+          <StatusBadge label={alert.severity} variant={variant} />
+          <span className="ml-2 font-bold text-sm" style={{ color: 'var(--text-1)' }}>
+            {alert.title}
           </span>
-          <span className="ml-2 font-semibold text-slate-100 text-sm">{alert.title}</span>
         </div>
         {/* Remediation control — server owns the state; the button only POSTs. */}
         <div className="shrink-0 flex items-center gap-2">
@@ -274,7 +278,7 @@ function AlertRow({
               onClick={() => onAssign(alert)}
               disabled={busy}
               data-testid="assign-remediation-btn"
-              className="py-1 px-2.5 bg-indigo-500 text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+              className="py-1 px-2.5 bg-[#7C3AED] text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
             >
               {busy
                 ? tt(isHi, 'Assigning…', 'सौंपा जा रहा है…')
@@ -282,38 +286,29 @@ function AlertRow({
             </button>
           )}
           {status === 'assigned' && (
-            <span
-              data-testid="remediation-status"
-              className="inline-flex items-center gap-1 py-1 px-2.5 rounded-md text-[11px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30"
-            >
-              {tt(isHi, 'Assigned', 'सौंपा गया')}
+            <span data-testid="remediation-status">
+              <StatusBadge label={tt(isHi, 'Assigned', 'सौंपा गया')} variant="warning" />
             </span>
           )}
           {status === 'in_progress' && (
-            <span
-              data-testid="remediation-status"
-              className="inline-flex items-center gap-1 py-1 px-2.5 rounded-md text-[11px] font-semibold bg-blue-500/15 text-blue-400 border border-blue-500/30"
-            >
-              {tt(isHi, 'In progress', 'जारी है')}
+            <span data-testid="remediation-status">
+              <StatusBadge label={tt(isHi, 'In progress', 'जारी है')} variant="info" />
             </span>
           )}
           {status === 'resolved' && (
-            <span
-              data-testid="remediation-status"
-              className="inline-flex items-center gap-1 py-1 px-2.5 rounded-md text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-            >
-              ✓ {tt(isHi, 'Resolved', 'हल हो गया')}
+            <span data-testid="remediation-status">
+              <StatusBadge label={`✓ ${tt(isHi, 'Resolved', 'हल हो गया')}`} variant="success" />
             </span>
           )}
           {/* Wave D — one-tap "Tell the parent" on a RESOLVED alert (flag-gated).
               Server owns thread/message creation; this button only POSTs. */}
           {parentCommsEnabled && status === 'resolved' &&
             (parentNotifyDone ? (
-              <span
-                data-testid="parent-notified-chip"
-                className="inline-flex items-center gap-1 py-1 px-2.5 rounded-md text-[11px] font-semibold bg-sky-500/15 text-sky-400 border border-sky-500/30"
-              >
-                ✓ {tt(isHi, 'Parent notified', 'अभिभावक को सूचित किया')}
+              <span data-testid="parent-notified-chip">
+                <StatusBadge
+                  label={`✓ ${tt(isHi, 'Parent notified', 'अभिभावक को सूचित किया')}`}
+                  variant="info"
+                />
               </span>
             ) : (
               <button
@@ -321,7 +316,7 @@ function AlertRow({
                 onClick={() => onTellParent(alert)}
                 disabled={parentNotifyBusy}
                 data-testid="tell-parent-btn"
-                className="py-1 px-2.5 bg-sky-600 text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+                className="py-1 px-2.5 bg-[#E8581C] text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
               >
                 {parentNotifyBusy
                   ? tt(isHi, 'Sending…', 'भेजा जा रहा है…')
@@ -330,9 +325,11 @@ function AlertRow({
             ))}
         </div>
       </div>
-      <p className="text-slate-400 text-[13px] my-1.5">{alert.description}</p>
+      <p className="text-[13px] my-1.5" style={{ color: 'var(--text-2)' }}>
+        {alert.description}
+      </p>
       {alert.recommended_action && (
-        <p className="text-indigo-400 text-xs m-0 italic">
+        <p className="text-xs m-0 italic" style={{ color: '#7C3AED' }}>
           {tt(isHi, 'Action', 'कार्रवाई')}: {alert.recommended_action}
         </p>
       )}
@@ -411,24 +408,46 @@ export function ActionBar({
           disabled={a.disabled}
           data-testid={a.testid}
           title={a.disabled ? tt(isHi, 'Coming soon', 'जल्द आ रहा है') : undefined}
-          className="py-2 px-3.5 bg-slate-800 text-slate-200 border border-slate-700 rounded-lg text-[13px] font-medium cursor-pointer hover:border-indigo-500 disabled:opacity-40 disabled:cursor-default"
+          className="py-2 px-3.5 rounded-lg text-[13px] font-semibold cursor-pointer transition-colors hover:border-[#7C3AED] disabled:opacity-40 disabled:cursor-default"
+          style={{
+            background: 'var(--surface-2)',
+            color: 'var(--text-1)',
+            border: '1px solid var(--border)',
+          }}
         >
           {tt(isHi, a.label, a.labelHi)}
           {a.disabled && (
-            <span className="ml-1.5 text-[10px] text-slate-500">
+            <span className="ml-1.5 text-[10px]" style={{ color: 'var(--text-3)' }}>
               {tt(isHi, 'soon', 'जल्द')}
             </span>
           )}
           {a.badge != null && (
             <span
               data-testid="grading-queue-action-badge"
-              className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold align-middle"
+              className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[#7C3AED] text-white text-[10px] font-bold align-middle"
             >
               {a.badge}
             </span>
           )}
         </button>
       ))}
+    </div>
+  );
+}
+
+// ─── Today-summary KPI tile (Atlas warm-cream card) ─────────────────────────
+function KpiTile({ label, value, accent }: { label: string; value: string | number; accent: string }) {
+  return (
+    <div
+      className="rounded-xl py-3.5 px-4"
+      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)' }}
+    >
+      <p className="text-[11px] m-0 uppercase tracking-wide font-semibold" style={{ color: 'var(--text-3)' }}>
+        {label}
+      </p>
+      <p className="text-[26px] font-extrabold mt-1" style={{ color: accent }}>
+        {value}
+      </p>
     </div>
   );
 }
@@ -451,30 +470,18 @@ export default function CommandCenter() {
   // ever issued (byte-identical to Wave A–C).
   const parentCommsEnabled = useTeacherParentComms();
 
-  const [dash, setDash] = useState<DashboardData | null>(null);
   const [activeClassId, setActiveClassId] = useState<string>('');
-  const [heatmap, setHeatmap] = useState<HeatmapData | null>(null);
-  const [alerts, setAlerts] = useState<RiskAlert[]>([]);
-  const [loadingDash, setLoadingDash] = useState(true);
-  const [loadingClass, setLoadingClass] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [assigning, setAssigning] = useState<Record<string, boolean>>({});
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const [assigning, setAssigning] = useState<Record<string, boolean>>({});
 
-  // Wave B — grading queue state.
+  // Wave B — grading queue open state (data comes from the SWR hook below).
   const [queueOpen, setQueueOpen] = useState(false);
-  const [queueItems, setQueueItems] = useState<GradingQueueItem[]>([]);
-  const [queueCount, setQueueCount] = useState(0);
-  const [queueLoading, setQueueLoading] = useState(false);
-  const [queueError, setQueueError] = useState(false);
 
   // Wave C — student mastery report drill-through state.
   const [reportOpen, setReportOpen] = useState(false);
-  const [report, setReport] = useState<StudentMasteryReportData | null>(null);
-  const [reportLoading, setReportLoading] = useState(false);
-  const [reportError, setReportError] = useState(false);
   const [reportExporting, setReportExporting] = useState(false);
-  // The student currently being reported on (id + name) — re-used by retry/export.
+  // The student currently being reported on (id + name) — drives the SWR key and
+  // is re-used by retry/export.
   const [reportStudent, setReportStudent] = useState<{ id: string; name: string } | null>(null);
 
   // Wave D — parent-comms state. `parentNotifyBusy` is keyed by student_id (a
@@ -486,12 +493,56 @@ export default function CommandCenter() {
   const [parentNotifyBusy, setParentNotifyBusy] = useState<Record<string, boolean>>({});
   const [parentNotifyDone, setParentNotifyDone] = useState<Record<string, boolean>>({});
 
-  const teacherId = teacher?.id || '';
-
   const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   }, []);
+
+  // ── Read paths (Phase 2): shared SWR hooks replace the bespoke api()+useState. ──
+  const { data: dash, error: dashError, isLoading: dashLoading, mutate: mutateDashboard } =
+    useTeacherDashboard();
+
+  // The class scope drives heatmap/alerts/queue. We derive it from the dashboard
+  // data so the FIRST class-scoped fetch already carries the resolved class_id —
+  // this avoids an extra, roster-wide pre-fetch flash before the switcher's
+  // explicit `activeClassId` lands (parity with the legacy page, which only ever
+  // fetched alerts/heatmap WITH a class). The hooks stay inert (null SWR key)
+  // until a class id is present.
+  const effectiveClassId = activeClassId || dash?.classes?.[0]?.id || undefined;
+
+  const { data: heatmap, isLoading: heatmapLoading } = useHeatmap(effectiveClassId, 'math');
+  // Inert until a class scope resolves — never a transient roster-wide read.
+  const { data: alertsRes, mutate: mutateAlerts } = useAlerts(effectiveClassId, !!effectiveClassId);
+  const { data: queueRes, isLoading: queueSwrLoading, error: queueSwrError, mutate: mutateQueue } =
+    useGradingQueue(gradingQueueEnabled, effectiveClassId);
+  const {
+    data: report,
+    isLoading: reportLoading,
+    error: reportError,
+    mutate: mutateReport,
+  } = useStudentMasteryReport(reportStudent?.id);
+
+  // get_alerts returns the array directly (A2 shape: each alert carries
+  // remediation_status). Tolerate the legacy {alerts:[...]} envelope too.
+  const alerts: RiskAlert[] = useMemo(() => {
+    const raw = alertsRes as unknown;
+    if (Array.isArray(raw)) return raw as RiskAlert[];
+    return (raw as { alerts?: RiskAlert[] })?.alerts ?? [];
+  }, [alertsRes]);
+
+  // Grading-queue derived view.
+  const queueItems: GradingQueueItem[] = Array.isArray(queueRes?.items) ? queueRes.items : [];
+  const queueCount = typeof queueRes?.count === 'number' ? queueRes.count : queueItems.length;
+  const queueLoading = gradingQueueEnabled && queueSwrLoading;
+  const queueError = !!queueSwrError;
+
+  const classes = useMemo<DashboardClass[]>(() => dash?.classes ?? [], [dash?.classes]);
+  const stats = dash?.stats;
+
+  // Default the active class to the first one once the dashboard resolves.
+  useEffect(() => {
+    if (!activeClassId && classes.length) setActiveClassId(classes[0].id);
+  }, [activeClassId, classes]);
 
   // Wrong-role / unauth redirect (mirrors the legacy page).
   useEffect(() => {
@@ -500,123 +551,49 @@ export default function CommandCenter() {
     }
   }, [authLoading, isLoggedIn, activeRole, teacher, router]);
 
-  // 1. Dashboard (teacher + classes + stats).
-  const loadDashboard = useCallback(async () => {
-    if (!teacherId) {
-      setLoadingDash(false);
-      return;
-    }
-    setLoadingDash(true);
-    setError(null);
-    try {
-      const d: DashboardData = await api('get_dashboard', { teacher_id: teacherId });
-      setDash(d);
-      const firstClassId = d?.classes?.[0]?.id || '';
-      setActiveClassId((prev) => prev || firstClassId);
-    } catch {
-      // No PII in logs (P13) — surface a generic error to the user.
-      setError('dashboard_load_failed');
-    } finally {
-      setLoadingDash(false);
-    }
-  }, [teacherId]);
-
-  useEffect(() => {
-    loadDashboard();
-  }, [loadDashboard]);
-
-  // 2. Per-class heatmap + alerts (re-runs on class switch).
-  const loadClassData = useCallback(async () => {
-    if (!teacherId || !activeClassId) return;
-    setLoadingClass(true);
-    try {
-      const [h, a] = await Promise.all([
-        api('get_heatmap', { teacher_id: teacherId, class_id: activeClassId, subject: 'math' }),
-        api('get_alerts', { teacher_id: teacherId, class_id: activeClassId }),
-      ]);
-      setHeatmap(h);
-      // get_alerts returns the array directly (A2 shape: each alert carries
-      // remediation_status). Tolerate the legacy {alerts:[...]} envelope too.
-      setAlerts(Array.isArray(a) ? a : a?.alerts ?? []);
-    } catch {
-      setHeatmap(null);
-      setAlerts([]);
-    } finally {
-      setLoadingClass(false);
-    }
-  }, [teacherId, activeClassId]);
-
-  useEffect(() => {
-    loadClassData();
-  }, [loadClassData]);
-
-  // 3. (Wave B) Cross-assignment grading queue. Fetched only when the Wave B
-  //    flag is ON — when OFF this is a no-op and the queue surface never mounts,
-  //    so flag-OFF stays byte-identical to Wave A. Scoped to the active class so
-  //    the count tracks what the teacher is currently looking at; the Edge
-  //    action defends teacher/roster scoping server-side regardless.
-  const loadGradingQueue = useCallback(async () => {
-    if (!gradingQueueEnabled || !teacherId) return;
-    setQueueLoading(true);
-    setQueueError(false);
-    try {
-      const params: Record<string, unknown> = { teacher_id: teacherId };
-      if (activeClassId) params.class_id = activeClassId;
-      const res = await api('get_grading_queue', params);
-      const items: GradingQueueItem[] = Array.isArray(res?.items) ? res.items : [];
-      setQueueItems(items);
-      setQueueCount(typeof res?.count === 'number' ? res.count : items.length);
-    } catch {
-      // No PII in logs (P13). Surface a retryable error in the queue surface;
-      // the badge falls back to 0 rather than a stale count.
-      setQueueError(true);
-      setQueueItems([]);
-      setQueueCount(0);
-    } finally {
-      setQueueLoading(false);
-    }
-  }, [gradingQueueEnabled, teacherId, activeClassId]);
-
-  useEffect(() => {
-    loadGradingQueue();
-  }, [loadGradingQueue]);
-
   // Open a queue row → navigate to the EXISTING /teacher/submissions review for
   // that submission/assignment (reuse, not rebuild). The submissions page
   // deep-links straight into its per-question breakdown + feedback form via the
-  // query params. We optimistically remove the row so it leaves the queue the
-  // moment the teacher starts grading it; loadGradingQueue() reconciles on
-  // return (and after mark_submission_reviewed lands graded_at).
+  // query params. We optimistically drop the row from the cached queue so it
+  // leaves the moment the teacher starts grading it; the SWR revalidate on
+  // return reconciles (after mark_submission_reviewed lands graded_at).
   const openQueueRow = useCallback(
     (item: GradingQueueItem) => {
-      setQueueItems((list) => list.filter((x) => x.submission_id !== item.submission_id));
-      setQueueCount((c) => Math.max(0, c - 1));
+      void mutateQueue(
+        (prev) =>
+          prev
+            ? {
+                items: prev.items.filter((x) => x.submission_id !== item.submission_id),
+                count: Math.max(0, prev.count - 1),
+              }
+            : prev,
+        { revalidate: false },
+      );
       router.push(
         `/teacher/submissions?assignment=${encodeURIComponent(
           item.assignment_id,
         )}&submission=${encodeURIComponent(item.submission_id)}`,
       );
     },
-    [router],
+    [router, mutateQueue],
   );
 
   // Assign remediation — optimistic update + rollback on error. The alert id is
   // the key; derived alerts have no chapter, so we POST general remediation
   // (student_id only). The server owns the authoritative status — we reconcile
-  // by re-fetching alerts on success.
+  // by revalidating the alerts SWR cache on success.
   const assignRemediation = useCallback(
     async (alert: RiskAlert) => {
       if (assigning[alert.id]) return;
       setAssigning((m) => ({ ...m, [alert.id]: true }));
 
       // Optimistic: flip THIS alert (and any other alert for the same student)
-      // to 'assigned' immediately.
-      const prevAlerts = alerts;
-      setAlerts((list) =>
-        list.map((x) =>
-          x.student_id === alert.student_id ? { ...x, remediation_status: 'assigned' } : x,
-        ),
+      // to 'assigned' immediately in the SWR cache, without revalidating yet.
+      const prev = alertsRes;
+      const optimistic = alerts.map((x) =>
+        x.student_id === alert.student_id ? { ...x, remediation_status: 'assigned' as const } : x,
       );
+      void mutateAlerts(optimistic as unknown as typeof alertsRes, { revalidate: false });
 
       try {
         const res = await fetch('/api/teacher/remediation', {
@@ -627,10 +604,10 @@ export default function CommandCenter() {
         if (!res.ok) throw new Error(`remediation_assign_failed:${res.status}`);
         showToast(tt(isHi, 'Remediation assigned', 'रिमेडिएशन सौंपा गया'), 'success');
         // Reconcile with the server's authoritative status.
-        await loadClassData();
+        await mutateAlerts();
       } catch {
         // Rollback the optimistic flip.
-        setAlerts(prevAlerts);
+        void mutateAlerts(prev, { revalidate: false });
         showToast(
           tt(isHi, "Couldn't assign — please retry", 'सौंपने में विफल — पुनः प्रयास करें'),
           'error',
@@ -643,7 +620,7 @@ export default function CommandCenter() {
         });
       }
     },
-    [assigning, alerts, isHi, showToast, loadClassData],
+    [assigning, alerts, alertsRes, isHi, showToast, mutateAlerts],
   );
 
   const goToStudent = useCallback(
@@ -668,35 +645,11 @@ export default function CommandCenter() {
     return m;
   }, [alerts]);
 
-  // Wave C — fetch the per-student mastery report and open the panel. Roster
-  // scoping + all mastery/Bloom math live server-side; the client only fetches
-  // and renders verbatim. P13: no PII in logs (we surface a generic error).
-  const fetchReport = useCallback(
-    async (studentId: string, studentName: string) => {
-      setReportLoading(true);
-      setReportError(false);
-      try {
-        const res = await api('get_student_mastery_report', {
-          teacher_id: teacherId,
-          student_id: studentId,
-        });
-        setReport(res as StudentMasteryReportData);
-      } catch {
-        setReport(null);
-        setReportError(true);
-      } finally {
-        setReportLoading(false);
-      }
-      // keep the target for retry/export even on error
-      setReportStudent({ id: studentId, name: studentName });
-    },
-    [teacherId],
-  );
-
   // Wave C — drill-through entry from a heatmap cell/row. When the depth flag is
   // OFF this is never invoked (the heatmap calls goToStudent instead), so
   // flag-OFF stays byte-identical. Resolves the id from the row (if stamped) or
   // the alerts map; falls back to the legacy navigate when no id is resolvable.
+  // Setting reportStudent activates the useStudentMasteryReport SWR key.
   const openReport = useCallback(
     (row: HeatmapRowWithId) => {
       const name = row.student_name || '';
@@ -708,11 +661,9 @@ export default function CommandCenter() {
         return;
       }
       setReportOpen(true);
-      setReport(null);
       setReportStudent({ id: resolvedId, name });
-      fetchReport(resolvedId, name);
     },
-    [studentIdByName, fetchReport, goToStudent],
+    [studentIdByName, goToStudent],
   );
 
   // Heatmap cell handler: drill into the report when the depth flag is ON,
@@ -732,10 +683,11 @@ export default function CommandCenter() {
     if (!reportStudent) return;
     setReportExporting(true);
     try {
-      const res = await api('export_student_report', {
-        teacher_id: teacherId,
-        student_id: reportStudent.id,
-      });
+      const { teacherDashboardFetch } = await import('@/lib/teacher/use-teacher-data');
+      const res = await teacherDashboardFetch<{ filename?: string; csv_content?: string }>(
+        'export_student_report',
+        { teacher_id: teacher?.id || '', student_id: reportStudent.id },
+      );
       const filename = String(res?.filename || 'student_report.csv');
       const content = String(res?.csv_content || '');
       const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
@@ -757,7 +709,7 @@ export default function CommandCenter() {
     } finally {
       setReportExporting(false);
     }
-  }, [reportStudent, teacherId, isHi, showToast]);
+  }, [reportStudent, teacher?.id, isHi, showToast]);
 
   // Wave D — "Tell the parent". One shared POST helper for BOTH entry points:
   //   1. a RESOLVED at-risk alert → context 'remediation_resolved' (+ remediation
@@ -852,23 +804,14 @@ export default function CommandCenter() {
     void notifyParent({ studentId: reportStudent.id, context: 'general' });
   }, [notifyParent, reportStudent]);
 
-  const classes = useMemo(() => dash?.classes ?? [], [dash?.classes]);
   const activeClass = useMemo(
     () => classes.find((c) => c.id === activeClassId) ?? classes[0],
     [classes, activeClassId],
   );
-  const stats = dash?.stats;
 
-  // ── Loading (initial) ──
-  if (loadingDash) {
-    return (
-      <Shell>
-        <div className="text-center py-20 text-slate-500">
-          <div className="w-10 h-10 border-[3px] border-slate-800 border-t-indigo-500 rounded-full mx-auto mb-4 animate-spin" />
-          {tt(isHi, 'Loading command center…', 'कमांड सेंटर लोड हो रहा है…')}
-        </div>
-      </Shell>
-    );
+  // ── Loading (initial) ── Atlas warm-cream skeleton.
+  if (dashLoading && !dash) {
+    return <TeacherDashboardSkeleton />;
   }
 
   // ── Not a teacher yet ──
@@ -877,12 +820,12 @@ export default function CommandCenter() {
       <Shell>
         <div className="text-center py-20">
           <div className="text-5xl mb-4">&#x1F464;</div>
-          <h2 className="text-xl font-bold text-slate-100 mb-2">
+          <h2 className="text-xl font-bold mb-2 font-heading" style={{ color: 'var(--text-1)' }}>
             {tt(isHi, 'Setting up your teacher account', 'आपका शिक्षक खाता सेट हो रहा है')}
           </h2>
           <button
             onClick={() => window.location.reload()}
-            className="py-2.5 px-6 bg-indigo-500 text-white border-none rounded-lg text-sm font-semibold cursor-pointer"
+            className="py-2.5 px-6 bg-[#E8581C] text-white border-none rounded-lg text-sm font-semibold cursor-pointer"
           >
             {tt(isHi, 'Refresh', 'रिफ्रेश')}
           </button>
@@ -892,17 +835,17 @@ export default function CommandCenter() {
   }
 
   // ── Error ──
-  if (error) {
+  if (dashError) {
     return (
       <Shell>
         <div className="text-center py-20">
           <div className="text-5xl mb-4">&#x1F615;</div>
-          <h2 className="text-xl font-bold text-slate-100 mb-2">
+          <h2 className="text-xl font-bold mb-2 font-heading" style={{ color: 'var(--text-1)' }}>
             {tt(isHi, "Couldn't load the command center", 'कमांड सेंटर लोड नहीं हो सका')}
           </h2>
           <button
-            onClick={loadDashboard}
-            className="py-2.5 px-6 bg-indigo-500 text-white border-none rounded-lg text-sm font-semibold cursor-pointer"
+            onClick={() => mutateDashboard()}
+            className="py-2.5 px-6 bg-[#E8581C] text-white border-none rounded-lg text-sm font-semibold cursor-pointer"
           >
             {tt(isHi, 'Retry', 'पुनः प्रयास करें')}
           </button>
@@ -917,10 +860,10 @@ export default function CommandCenter() {
       <Shell>
         <div className="text-center py-20">
           <div className="text-5xl mb-4">&#x1F3EB;</div>
-          <h2 className="text-xl font-bold text-slate-100 mb-2">
+          <h2 className="text-xl font-bold mb-2 font-heading" style={{ color: 'var(--text-1)' }}>
             {tt(isHi, 'Welcome to your command center!', 'आपके कमांड सेंटर में स्वागत है!')}
           </h2>
-          <p className="text-sm text-slate-500 mb-5 max-w-[360px] mx-auto">
+          <p className="text-sm mb-5 max-w-[360px] mx-auto" style={{ color: 'var(--text-3)' }}>
             {tt(
               isHi,
               'Create your first class to start tracking student mastery and assign remediation.',
@@ -929,7 +872,7 @@ export default function CommandCenter() {
           </p>
           <button
             onClick={() => router.push('/teacher/classes')}
-            className="py-2.5 px-6 bg-indigo-500 text-white border-none rounded-lg text-sm font-semibold cursor-pointer"
+            className="py-2.5 px-6 bg-[#E8581C] text-white border-none rounded-lg text-sm font-semibold cursor-pointer"
           >
             {tt(isHi, 'Create a Class', 'कक्षा बनाएं')}
           </button>
@@ -941,26 +884,35 @@ export default function CommandCenter() {
   const criticalCount = alerts.filter(
     (a) => a.severity === 'critical' || a.severity === 'high',
   ).length;
+  const loadingClass = heatmapLoading;
 
   return (
     <Shell>
       {/* Header — title + class switcher */}
-      <header className="flex flex-wrap justify-between items-center gap-3 mb-5 pb-4 border-b border-slate-800">
+      <header
+        className="flex flex-wrap justify-between items-center gap-3 mb-5 pb-4"
+        style={{ borderBottom: '1px solid var(--border)' }}
+      >
         <div>
-          <h1 className="text-2xl font-bold text-slate-50 m-0">
+          <h1 className="text-2xl font-extrabold m-0 font-heading" style={{ color: 'var(--text-1)' }}>
             {tt(isHi, 'Class Command Center', 'क्लास कमांड सेंटर')}
           </h1>
-          <p className="text-sm text-slate-500 mt-1">{dash?.teacher?.name}</p>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-3)' }}>{dash?.teacher?.name}</p>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-[11px] uppercase tracking-wide text-slate-500 font-bold">
+          <label className="text-[11px] uppercase tracking-wide font-bold" style={{ color: 'var(--text-3)' }}>
             {tt(isHi, 'Class', 'कक्षा')}
           </label>
           <select
             value={activeClassId}
             onChange={(e) => setActiveClassId(e.target.value)}
             data-testid="class-switcher"
-            className="bg-slate-800 border border-slate-700 rounded-lg text-slate-100 text-sm py-2 px-3 outline-none cursor-pointer"
+            className="rounded-lg text-sm py-2 px-3 outline-none cursor-pointer"
+            style={{
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border)',
+              color: 'var(--text-1)',
+            }}
           >
             {classes.map((c) => (
               <option key={c.id} value={c.id}>
@@ -970,10 +922,11 @@ export default function CommandCenter() {
           </select>
           <button
             onClick={() => {
-              loadDashboard();
-              loadClassData();
+              mutateDashboard();
+              mutateAlerts();
             }}
-            className="py-2 px-3 bg-transparent text-indigo-400 border border-indigo-500/40 rounded-lg text-[13px] font-medium cursor-pointer"
+            className="py-2 px-3 bg-transparent rounded-lg text-[13px] font-semibold cursor-pointer"
+            style={{ color: '#7C3AED', border: '1px solid rgba(124,58,237,0.35)' }}
           >
             {tt(isHi, 'Refresh', 'रिफ्रेश')}
           </button>
@@ -985,50 +938,44 @@ export default function CommandCenter() {
           ff_teacher_assignment_lifecycle is ON (otherwise the grid is the
           byte-identical Wave A 4-tile layout). One-tap it to open the queue. */}
       <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3 mb-4">
-        {[
-          {
-            label: tt(isHi, 'Students', 'छात्र'),
-            val: activeClass?.student_count ?? stats?.total_students ?? 0,
-            color: 'text-indigo-400',
-          },
-          {
-            label: tt(isHi, 'Avg mastery', 'औसत मास्टरी'),
-            val: activeClass?.avg_mastery != null ? `${activeClass.avg_mastery}%` : '—',
-            color: 'text-violet-400',
-          },
-          {
-            label: tt(isHi, 'At-risk', 'जोखिम में'),
-            val: alerts.length,
-            color: criticalCount > 0 ? 'text-red-500' : 'text-amber-400',
-          },
-          {
-            label: tt(isHi, 'Assignments', 'असाइनमेंट'),
-            val: stats?.active_assignments ?? 0,
-            color: 'text-emerald-400',
-          },
-        ].map((s, i) => (
-          <div key={i} className="bg-slate-900 rounded-xl py-3.5 px-4 border border-slate-800">
-            <p className="text-slate-500 text-[11px] m-0 uppercase tracking-wide">{s.label}</p>
-            <p className={`${s.color} text-[26px] font-bold mt-1`}>{s.val}</p>
-          </div>
-        ))}
+        <KpiTile
+          label={tt(isHi, 'Students', 'छात्र')}
+          value={activeClass?.student_count ?? stats?.total_students ?? 0}
+          accent="#7C3AED"
+        />
+        <KpiTile
+          label={tt(isHi, 'Avg mastery', 'औसत मास्टरी')}
+          value={activeClass?.avg_mastery != null ? `${activeClass.avg_mastery}%` : '—'}
+          accent="#7C3AED"
+        />
+        <KpiTile
+          label={tt(isHi, 'At-risk', 'जोखिम में')}
+          value={alerts.length}
+          accent={criticalCount > 0 ? 'var(--danger, #DC2626)' : 'var(--warning, #D97706)'}
+        />
+        <KpiTile
+          label={tt(isHi, 'Assignments', 'असाइनमेंट')}
+          value={stats?.active_assignments ?? 0}
+          accent="var(--success, #059669)"
+        />
 
         {gradingQueueEnabled && (
           <button
             type="button"
             onClick={() => setQueueOpen(true)}
             data-testid="awaiting-grading-tile"
-            className="text-left bg-slate-900 rounded-xl py-3.5 px-4 border border-slate-800 cursor-pointer hover:border-indigo-500 transition-colors"
+            className="text-left rounded-xl py-3.5 px-4 cursor-pointer transition-colors hover:border-[#7C3AED]"
+            style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)' }}
           >
-            <p className="text-slate-500 text-[11px] m-0 uppercase tracking-wide">
+            <p className="text-[11px] m-0 uppercase tracking-wide font-semibold" style={{ color: 'var(--text-3)' }}>
               {tt(isHi, 'Awaiting grading', 'ग्रेडिंग लंबित')}
             </p>
-            <p className="text-sky-400 text-[26px] font-bold mt-1 flex items-center gap-2">
+            <p className="text-[26px] font-extrabold mt-1 flex items-center gap-2" style={{ color: 'var(--info, #2563EB)' }}>
               {queueLoading ? '…' : queueCount}
               {!queueLoading && queueCount > 0 && (
                 <span
                   data-testid="awaiting-grading-badge"
-                  className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-sky-500 text-white text-[12px] font-bold"
+                  className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-[#2563EB] text-white text-[12px] font-bold"
                 >
                   {queueCount}
                 </span>
@@ -1059,7 +1006,7 @@ export default function CommandCenter() {
             error={queueError}
             isHi={isHi}
             onOpenRow={openQueueRow}
-            onRetry={loadGradingQueue}
+            onRetry={() => mutateQueue()}
             onClose={() => setQueueOpen(false)}
           />
         </div>
@@ -1070,13 +1017,13 @@ export default function CommandCenter() {
       {gradebookDepthEnabled && reportOpen && (
         <div className="mb-5">
           <StudentMasteryReport
-            report={report}
+            report={report ?? null}
             loading={reportLoading}
-            error={reportError}
+            error={!!reportError}
             exporting={reportExporting}
             isHi={isHi}
             onExport={exportReport}
-            onRetry={() => reportStudent && fetchReport(reportStudent.id, reportStudent.name)}
+            onRetry={() => mutateReport()}
             onClose={() => setReportOpen(false)}
             /* Wave D — "Share with parent" (flag-gated). When OFF the button is
                not rendered and shareReportWithParent is never invoked. */
@@ -1091,28 +1038,35 @@ export default function CommandCenter() {
       {/* Dense two-column body: heatmap (wide) + alerts rail */}
       <div className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-4 items-start">
         {/* Roster mastery heatmap */}
-        <div className="td-card">
-          <div className="td-card-head">
-            <h3>{tt(isHi, 'Roster mastery heatmap', 'रोस्टर मास्टरी हीटमैप')}</h3>
-            {heatmap && (
-              <span className="td-badge">
-                {heatmap.student_count} {tt(isHi, 'students', 'छात्र')} × {heatmap.concept_count}{' '}
-                {tt(isHi, 'concepts', 'अवधारणाएं')}
-              </span>
-            )}
-          </div>
+        <Panel>
+          <PanelHead
+            title={tt(isHi, 'Roster mastery heatmap', 'रोस्टर मास्टरी हीटमैप')}
+            badge={
+              heatmap
+                ? `${heatmap.student_count} ${tt(isHi, 'students', 'छात्र')} × ${heatmap.concept_count} ${tt(
+                    isHi,
+                    'concepts',
+                    'अवधारणाएं',
+                  )}`
+                : undefined
+            }
+          />
           <div className="mt-3.5">
             {loadingClass ? (
-              <div className="h-40 rounded-lg bg-slate-800/50 animate-pulse" aria-hidden="true" />
+              <div
+                className="h-40 rounded-lg animate-pulse motion-reduce:animate-none"
+                style={{ background: 'var(--surface-2)' }}
+                aria-hidden="true"
+              />
             ) : heatmap ? (
               <RosterHeatmap data={heatmap} isHi={isHi} onCellStudent={onHeatmapStudent} />
             ) : (
-              <div className="text-center py-8 text-slate-500">
+              <div className="text-center py-8" style={{ color: 'var(--text-3)' }}>
                 <div className="text-3xl mb-3">&#x1F4CA;</div>
-                <p className="text-[14px] font-medium text-slate-400 mb-1">
+                <p className="text-[14px] font-semibold mb-1" style={{ color: 'var(--text-2)' }}>
                   {tt(isHi, 'No mastery data yet', 'अभी तक कोई मास्टरी डेटा नहीं')}
                 </p>
-                <p className="text-[13px] text-slate-600">
+                <p className="text-[13px]" style={{ color: 'var(--text-3)' }}>
                   {tt(
                     isHi,
                     'Students need to complete quizzes before mastery data appears.',
@@ -1122,21 +1076,28 @@ export default function CommandCenter() {
               </div>
             )}
           </div>
-        </div>
+        </Panel>
 
         {/* At-risk alerts rail */}
-        <div className="td-card">
-          <div className="td-card-head">
-            <h3>{tt(isHi, 'At-risk alerts', 'जोखिम अलर्ट')}</h3>
-            {alerts.length > 0 && <span className="td-badge bg-red-600">{alerts.length}</span>}
-          </div>
+        <Panel>
+          <PanelHead
+            title={tt(isHi, 'At-risk alerts', 'जोखिम अलर्ट')}
+            badge={alerts.length > 0 ? String(alerts.length) : undefined}
+            badgeVariant={alerts.length > 0 ? 'danger' : 'neutral'}
+          />
           <div className="mt-3 flex flex-col gap-2.5">
             {loadingClass ? (
-              <div className="h-24 rounded-lg bg-slate-800/50 animate-pulse" aria-hidden="true" />
+              <div
+                className="h-24 rounded-lg animate-pulse motion-reduce:animate-none"
+                style={{ background: 'var(--surface-2)' }}
+                aria-hidden="true"
+              />
             ) : alerts.length === 0 ? (
-              <div className="py-8 text-center text-slate-500">
-                <span className="text-emerald-500 text-2xl block mb-2">&#x2713;</span>
-                <p className="text-[13px] text-slate-400 m-0">
+              <div className="py-8 text-center" style={{ color: 'var(--text-3)' }}>
+                <span className="text-2xl block mb-2" style={{ color: 'var(--success, #059669)' }}>
+                  &#x2713;
+                </span>
+                <p className="text-[13px] m-0" style={{ color: 'var(--text-2)' }}>
                   {tt(
                     isHi,
                     'No at-risk students detected.',
@@ -1160,16 +1121,18 @@ export default function CommandCenter() {
               ))
             )}
           </div>
-        </div>
+        </Panel>
       </div>
 
       {/* Toast */}
       {toast && (
         <div
           role="status"
-          className={`fixed bottom-5 right-5 z-50 rounded-lg px-4 py-2.5 text-sm font-medium shadow-lg ${
-            toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
-          }`}
+          className="fixed bottom-5 right-5 z-50 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-lg"
+          style={{
+            background:
+              toast.type === 'success' ? 'var(--success, #059669)' : 'var(--danger, #DC2626)',
+          }}
         >
           {toast.msg}
         </div>
@@ -1178,11 +1141,45 @@ export default function CommandCenter() {
   );
 }
 
-// Shared dark page chrome (the `.td-*` tokens the legacy dashboard defines).
+// ── Atlas warm-cream panel primitives (replace the dark `.td-*` chrome) ──────
+function Panel({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="rounded-2xl px-5 py-[18px]"
+      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)' }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function PanelHead({
+  title,
+  badge,
+  badgeVariant = 'neutral',
+}: {
+  title: string;
+  badge?: string;
+  badgeVariant?: StatusBadgeVariant;
+}) {
+  return (
+    <div className="flex justify-between items-center">
+      <h3 className="text-[16px] font-bold m-0 font-heading" style={{ color: 'var(--text-1)' }}>
+        {title}
+      </h3>
+      {badge && <StatusBadge label={badge} variant={badgeVariant} />}
+    </div>
+  );
+}
+
+// Shared warm-cream page chrome (Atlas tokens). The TeacherShell already sets
+// the page background to var(--bg); this wrapper centres + pads the content.
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="max-w-[1280px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-slate-200 bg-[#0B1120] min-h-screen">
-      <style>{`.td-card{background:#0F172A;border-radius:14px;padding:18px 20px;border:1px solid #1E293B} .td-card-head{display:flex;justify-content:space-between;align-items:center} .td-card-head h3{font-size:16px;font-weight:600;color:#F1F5F9;margin:0} .td-badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;background:#1E293B;color:#94A3B8}`}</style>
+    <div
+      className="max-w-[1280px] mx-auto px-4 py-5 min-h-screen"
+      style={{ background: 'var(--bg)', color: 'var(--text-2)' }}
+    >
       {children}
     </div>
   );

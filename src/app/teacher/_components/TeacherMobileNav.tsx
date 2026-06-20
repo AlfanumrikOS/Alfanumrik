@@ -139,17 +139,18 @@ export default function TeacherMobileNav({
     return 0;
   };
 
-  // Dark background for the teacher portal (bg-[#0B1120] theme).
-  const darkNavStyle = {
-    background: 'rgb(11, 17, 32)',
+  // Atlas warm-cream surface for the teacher portal — matches the sidebar +
+  // CommandCenter re-theme (Phase 2). Teacher accent = purple #7C3AED.
+  const navStyle = {
+    background: 'var(--surface-1)',
     backdropFilter: 'none',
     WebkitBackdropFilter: 'none',
-    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+    borderTop: '1px solid var(--border)',
     paddingBottom: 'env(safe-area-inset-bottom, 0px)',
   } as React.CSSProperties;
 
-  const activeColor = 'rgba(255,255,255,0.9)';
-  const inactiveColor = 'rgba(148, 163, 184, 0.7)'; // slate-400 / 70%
+  const activeColor = '#7C3AED';
+  const inactiveColor = 'var(--text-3)';
 
   return (
     <>
@@ -167,17 +168,17 @@ export default function TeacherMobileNav({
             aria-label={isHi ? 'अधिक नेविगेशन विकल्प' : 'More navigation options'}
             className="fixed bottom-0 left-0 right-0 z-[70] rounded-t-3xl"
             style={{
-              background: 'rgba(15, 23, 42, 0.97)',
+              background: 'var(--surface-1)',
               paddingBottom: 'env(safe-area-inset-bottom, 16px)',
-              boxShadow: '0 -8px 40px rgba(0,0,0,0.4)',
-              border: '1px solid rgba(255,255,255,0.08)',
+              boxShadow: '0 -8px 40px rgba(0,0,0,0.12)',
+              border: '1px solid var(--border)',
             }}
           >
             {/* Handle bar */}
             <div className="flex justify-center pt-3 pb-2">
               <div
                 className="w-10 h-1 rounded-full"
-                style={{ background: 'rgba(255,255,255,0.2)' }}
+                style={{ background: 'var(--border-mid, #ccc)' }}
               />
             </div>
             <div className="px-5 pb-4 space-y-1">
@@ -190,8 +191,8 @@ export default function TeacherMobileNav({
                     onClick={() => { setShowMore(false); router.push(item.href); }}
                     className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98]"
                     style={{
-                      background: active ? 'rgba(99, 102, 241, 0.12)' : 'transparent',
-                      color: active ? 'rgba(165,180,252,1)' : 'rgba(148,163,184,0.85)',
+                      background: active ? 'rgba(124, 58, 237, 0.10)' : 'transparent',
+                      color: active ? '#7C3AED' : 'var(--text-2)',
                     }}
                   >
                     <span className="text-xl w-7 text-center" aria-hidden="true">{item.icon}</span>
@@ -199,7 +200,7 @@ export default function TeacherMobileNav({
                     {active && (
                       <span
                         className="ml-auto w-1.5 h-1.5 rounded-full"
-                        style={{ background: 'rgba(165,180,252,1)' }}
+                        style={{ background: '#7C3AED' }}
                       />
                     )}
                   </button>
@@ -208,13 +209,13 @@ export default function TeacherMobileNav({
               {/* Logout at bottom of More sheet */}
               <div
                 className="pt-3 mt-2"
-                style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}
+                style={{ borderTop: '1px solid var(--border)' }}
               >
                 <button
                   type="button"
                   onClick={() => { setShowMore(false); onLogout(); }}
                   className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98]"
-                  style={{ color: 'rgba(148,163,184,0.7)' }}
+                  style={{ color: 'var(--text-3)' }}
                 >
                   <span className="text-xl w-7 text-center" aria-hidden="true">🚪</span>
                   <span className="text-sm font-semibold">{isHi ? 'लॉगआउट' : 'Logout'}</span>
@@ -230,7 +231,7 @@ export default function TeacherMobileNav({
         aria-label={isHi ? 'मुख्य नेविगेशन' : 'Main navigation'}
         role="navigation"
         data-scroll-hidden={navHidden ? 'true' : 'false'}
-        style={darkNavStyle}
+        style={navStyle}
       >
         <div className="flex items-end justify-around px-2 pt-2 pb-1">
           {visibleTabs.map(tab => {
@@ -260,7 +261,7 @@ export default function TeacherMobileNav({
                   {badgeCount > 0 && (
                     <span
                       className="absolute -top-1.5 -right-2.5 min-w-[16px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-0.5"
-                      style={{ background: '#DC2626', border: '1.5px solid rgba(11,17,32,1)' }}
+                      style={{ background: '#DC2626', border: '1.5px solid var(--surface-1)' }}
                     >
                       {badgeCount > 9 ? '9+' : badgeCount}
                     </span>

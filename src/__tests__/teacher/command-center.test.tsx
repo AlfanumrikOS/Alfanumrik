@@ -50,7 +50,26 @@ vi.mock('@/lib/api/auth-header', () => ({
   authHeader: vi.fn().mockResolvedValue({ Authorization: 'Bearer t' }),
 }));
 
+// The Command Center's READ paths now flow through the shared SWR hooks
+// (Phase 2 Atlas re-theme). SWR keeps a module-global cache, so each scenario
+// here must start from an empty cache or test N would observe test N-1's
+// reconciled alert status. We render under an SWRConfig with a fresh provider
+// Map per test, which makes every fixture hermetic without changing any
+// assertion. (Same pattern as use-teacher-data.test.ts.)
+import React from 'react';
+import { SWRConfig } from 'swr';
 import CommandCenter from '@/app/teacher/CommandCenter';
+
+let swrCache = new Map();
+function renderCC() {
+  return render(
+    React.createElement(
+      SWRConfig,
+      { value: { provider: () => swrCache, dedupingInterval: 0 } },
+      React.createElement(CommandCenter),
+    ),
+  );
+}
 
 const DASHBOARD = {
   teacher: { name: 'Ms. Rao' },
@@ -126,6 +145,7 @@ function installFetch(opts: {
 }
 
 beforeEach(() => {
+  swrCache = new Map();
   mockReplace.mockClear();
   mockPush.mockClear();
 });
@@ -143,7 +163,7 @@ describe('CommandCenter — assign remediation', () => {
       onRemediationPost: (b) => posted.push(b),
     });
 
-    render(<CommandCenter />);
+    renderCC();
 
     // Wait for the alert + button to render.
     const btn = await screen.findByTestId('assign-remediation-btn');
@@ -165,7 +185,7 @@ describe('CommandCenter — assign remediation', () => {
   it('rolls back the optimistic flip and shows an error toast on a failed POST', async () => {
     installFetch({ alertsStatus: 'none', remediationOk: false });
 
-    render(<CommandCenter />);
+    renderCC();
 
     const btn = await screen.findByTestId('assign-remediation-btn');
     fireEvent.click(btn);
@@ -183,7 +203,7 @@ describe('CommandCenter — assign remediation', () => {
   it('renders the assigned state read-only (no button) when status is in_progress', async () => {
     installFetch({ alertsStatus: 'in_progress', remediationOk: true });
 
-    render(<CommandCenter />);
+    renderCC();
 
     const status = await screen.findByTestId('remediation-status');
     expect(status).toHaveTextContent('In progress');
@@ -192,7 +212,7 @@ describe('CommandCenter — assign remediation', () => {
 
   it('exposes the class switcher', async () => {
     installFetch({ alertsStatus: 'none', remediationOk: true });
-    render(<CommandCenter />);
+    renderCC();
     const switcher = await screen.findByTestId('class-switcher');
     expect(within(switcher as HTMLElement).getByText(/Grade 7 A/)).toBeInTheDocument();
   });
