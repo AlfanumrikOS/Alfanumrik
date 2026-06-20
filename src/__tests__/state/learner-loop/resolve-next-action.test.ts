@@ -198,6 +198,36 @@ describe('resolveNextLearnerAction — branch ordering', () => {
     }
   });
 
+
+  it('branch 5b — attempted quiz today + no in-progress lesson + nextUnstartedChapter → introduce_new_topic', () => {
+    const state = makeState();
+    const aug: LoopAugmentation = {
+      dueReviewCount: 0,
+      attemptedQuizToday: true,
+      inProgressLessons: [],
+      nextUnstartedChapter: { subjectCode: 'history', chapterNumber: 1 },
+    };
+    const action = resolveNextLearnerAction(state, aug, { now: WEEKDAY_NOON_IST });
+    expect(action.kind).toBe('introduce_new_topic');
+    if (action.kind === 'introduce_new_topic') {
+      expect(action.subjectCode).toBe('history');
+      expect(action.chapterNumber).toBe(1);
+      expect(action.url).toContain('/learn/history/1');
+      expect(action.url).toContain('from=new_topic');
+    }
+  });
+
+  it('branch 5b — null nextUnstartedChapter does NOT fire introduce_new_topic', () => {
+    const state = makeState();
+    const aug: LoopAugmentation = {
+      ...emptyAugmentation(),
+      attemptedQuizToday: true,
+      nextUnstartedChapter: null,
+    };
+    const action = resolveNextLearnerAction(state, aug, { now: WEEKDAY_NOON_IST });
+    expect(action.kind).not.toBe('introduce_new_topic');
+  });
+
   it('branch 6 — Sunday with quiz already done and no other signals → weekly_dive', () => {
     // 2026-05-17 is a Sunday. Pick noon IST.
     const sundayNoonIst = new Date('2026-05-17T06:30:00.000Z');

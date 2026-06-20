@@ -15,7 +15,7 @@ import { todayCopy } from '@/lib/today/copy';
 
 /** Language subjects whose names are ALWAYS shown in native Devanagari script
  *  regardless of UI language — culturally correct in Indian education. */
-const ALWAYS_NATIVE_SCRIPT: Record<string, string> = {
+export const ALWAYS_NATIVE_SCRIPT: Record<string, string> = {
   hindi: 'हिंदी',
   sanskrit: 'संस्कृत',
 };

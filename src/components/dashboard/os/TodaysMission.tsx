@@ -20,6 +20,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useTodayQueue } from '@/lib/today/use-today-queue';
 import { todayIcon } from '@/lib/today/icon-map';
 import { todayCopy, deepLinkToHref } from '@/lib/today/copy';
+import { ALWAYS_NATIVE_SCRIPT } from '@/lib/today/render';
 import type { CurriculumTopic } from '@/lib/types';
 
 interface TodaysMissionProps {
@@ -36,10 +37,10 @@ function capitalize(s: string | null | undefined): string {
 }
 
 /** Hindi and Sanskrit are always shown in native Devanagari script — this is
- *  the culturally correct form in Indian education regardless of UI language. */
+ *  the culturally correct form in Indian education regardless of UI language.
+ *  Uses the shared ALWAYS_NATIVE_SCRIPT constant from render.ts (single source of truth). */
 function displaySubjectName(code: string): string {
-  const ALWAYS_DEVANAGARI: Record<string, string> = { hindi: 'हिंदी', sanskrit: 'संस्कृत' };
-  return ALWAYS_DEVANAGARI[code.toLowerCase()] ?? capitalize(code);
+  return ALWAYS_NATIVE_SCRIPT[code.toLowerCase()] ?? capitalize(code);
 }
 
 export default function TodaysMission({
