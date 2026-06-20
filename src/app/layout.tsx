@@ -150,16 +150,16 @@ export default function RootLayout({
               "var flagOn=false;" +
               "try{var raw=localStorage.getItem('alfanumrik_cosmic_flag_v1');" +
               "if(raw){var c=JSON.parse(raw);if(c&&typeof c.ts==='number'&&Date.now()-c.ts<=36e5&&c.on)flagOn=true;}}catch(e){}" +
-              // ── enable = preview || forceOn || cached flag ──
-              "if(!(PREVIEW||force==='on'||flagOn))return;" + // OFF ⇒ write nothing, first paint unchanged
-              "var V={dark:1,light:1,hc:1};" +
-              "var t=localStorage.getItem('alfanumrik_cosmic_theme');" +
-              "if(!V[t])t='dark';" + // DEFAULT_THEME
+              // ── enable = preview || forceOn || cached flag || student role (OS always cosmic-light) ──
               "var r=localStorage.getItem('alfanumrik_active_role');" +
-              "var role=r==='guardian'?'parent':r==='teacher'?'teacher':r==='institution_admin'?'school':'student';" +
+              "var isStudent=(!r||r==='student');" +
+              "if(!(PREVIEW||force==='on'||flagOn||isStudent))return;" +
               "var h=document.documentElement;" +
               "h.setAttribute('data-design','cosmic');" +
+              "var t;if(isStudent&&!(flagOn||PREVIEW||force==='on')){t='light';}" +
+              "else{var V={dark:1,light:1,hc:1};t=localStorage.getItem('alfanumrik_cosmic_theme');if(!V[t])t='dark';}" +
               "h.setAttribute('data-theme',t);" +
+              "var role=r==='guardian'?'parent':r==='teacher'?'teacher':r==='institution_admin'?'school':'student';" +
               "h.setAttribute('data-role',role);" +
               "}catch(e){}})();",
           }}

@@ -467,8 +467,9 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
   // flag is OFF (the default) glanceEnabled is false and the legacy render
   // path below is reached unchanged. `showClassic` lets the parent reveal the
   // existing 8-tab dashboard from the glance home so nothing is lost.
-  const { data: flags } = useFeatureFlags();
-  const glanceEnabled = flags?.[CONSUMER_MINIMALISM_FLAGS.PARENT_GLANCE_V1] === true;
+  // ff_parent_glance_v1 is permanently ON (seeded 20260620001600). Hardcode
+  // to eliminate the SWR-load flash that briefly showed the legacy dashboard.
+  const glanceEnabled = true;
   const [showClassic, setShowClassic] = useState(false);
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [tips, setTips] = useState<ParentTip[]>([]);
