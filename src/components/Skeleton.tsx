@@ -176,4 +176,119 @@ export function SimulationSkeleton() {
   );
 }
 
+/**
+ * Teacher Command Center skeleton — mirrors the Atlas teacher home layout: a
+ * header rail of ~5 KPI tile bones, an at-risk rail of ~3 row bones, and a
+ * roster mastery heatmap grid of bones. Warm-cream (NOT dark) using the shared
+ * var(--surface-*) tokens so it matches the rest of the OS shell.
+ */
+export function TeacherDashboardSkeleton() {
+  return (
+    <div className="mesh-bg min-h-dvh pb-nav">
+      {/* Header rail */}
+      <div className="page-header">
+        <div className="app-container py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Bone width={40} height={40} radius={12} />
+            <div className="space-y-1.5">
+              <Bone width={140} height={14} />
+              <Bone width={90} height={10} />
+            </div>
+          </div>
+          <Bone width={120} height={36} radius={12} />
+        </div>
+      </div>
+
+      <div className="app-container py-5 space-y-5">
+        {/* KPI tiles (~5) */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          {[1, 2, 3, 4, 5].map(i => (
+            <div
+              key={i}
+              className="rounded-2xl p-4 space-y-2"
+              style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+            >
+              <Bone width="50%" height={10} />
+              <Bone width="70%" height={24} />
+            </div>
+          ))}
+        </div>
+
+        {/* At-risk rail (~3 rows) */}
+        <div className="space-y-2">
+          <Bone width={120} height={12} className="mb-1" />
+          {[1, 2, 3].map(i => (
+            <div
+              key={i}
+              className="rounded-2xl p-4 flex items-center gap-3"
+              style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+            >
+              <Bone width={36} height={36} radius={18} />
+              <div className="flex-1 space-y-1.5">
+                <Bone width="55%" height={13} />
+                <Bone width="80%" height={10} />
+              </div>
+              <Bone width={88} height={28} radius={10} />
+            </div>
+          ))}
+        </div>
+
+        {/* Roster mastery heatmap grid */}
+        <div
+          className="rounded-2xl p-4 space-y-2"
+          style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+        >
+          <Bone width={160} height={12} className="mb-2" />
+          {[1, 2, 3, 4, 5].map(row => (
+            <div key={row} className="flex items-center gap-2">
+              <Bone width={96} height={16} />
+              <div className="flex-1 grid grid-cols-8 gap-1.5">
+                {Array.from({ length: 8 }).map((_, col) => (
+                  <Bone key={col} width="100%" height={20} radius={4} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Generic table/roster skeleton — a header bone plus N row bones. Used by the
+ * teacher students / gradebook / reports pages. Warm-cream, shared tokens.
+ */
+export function TeacherTableSkeleton({ rows = 6 }: { rows?: number }) {
+  return (
+    <div
+      className="rounded-2xl overflow-hidden"
+      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+    >
+      {/* Header row */}
+      <div
+        className="px-4 py-3 flex items-center gap-3"
+        style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}
+      >
+        <Bone width="30%" height={12} />
+        <Bone width="20%" height={12} />
+        <Bone width="20%" height={12} />
+        <Bone width="15%" height={12} />
+      </div>
+      {/* Body rows */}
+      <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+        {Array.from({ length: rows }).map((_, i) => (
+          <div key={i} className="px-4 py-3 flex items-center gap-3">
+            <Bone width={32} height={32} radius={16} />
+            <Bone width={`${30 + (i % 3) * 10}%`} height={13} />
+            <Bone width="18%" height={13} />
+            <Bone width="18%" height={13} />
+            <Bone width={48} height={22} radius={11} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export { Bone };
