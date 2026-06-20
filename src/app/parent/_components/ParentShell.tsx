@@ -16,6 +16,7 @@ const NAV_ITEMS: SidebarNavItem[] = [
   { href: '/parent/messages', label: 'Messages', labelHi: 'संदेश', icon: '✉' },
   { href: '/parent/notifications', label: 'Notifications', labelHi: 'सूचनाएँ', icon: '◉' },
   { href: '/parent/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘' },
+  { href: '/parent/attendance', label: 'Attendance', labelHi: 'उपस्थिति', icon: '✓' },
   { href: '/parent/billing', label: 'Billing', labelHi: 'बिलिंग', icon: '◈' },
   { href: '/parent/support', label: 'Support', labelHi: 'सहायता', icon: '⊛' },
   { href: '/parent/profile', label: 'Profile', labelHi: 'प्रोफ़ाइल', icon: '◎' },

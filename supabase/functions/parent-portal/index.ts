@@ -829,6 +829,62 @@ async function handleGetTips(
   return jsonResponse({ tips }, 200, {}, origin)
 }
 
+async function handleGetChildAttendance(
+  body: Record<string, unknown>,
+  origin: string | null
+): Promise<Response> {
+  const guardianId = String(body.guardian_id || '').trim()
+  const studentId  = String(body.student_id  || '').trim()
+  const dateFrom   = String(body.date_from   || '').trim()
+  const dateTo     = String(body.date_to     || '').trim()
+
+  if (!guardianId || !studentId) {
+    return jsonResponse({ error: 'guardian_id and student_id required' }, 400, {}, origin)
+  }
+
+  const supabase = getServiceClient()
+
+  // P13: Verify guardian→student link before any attendance read
+  const { data: link, error: linkErr } = await supabase
+    .from('guardian_student_links')
+    .select('id')
+    .eq('guardian_id', guardianId)
+    .eq('student_id', studentId)
+    .in('status', ['active', 'approved'])
+    .maybeSingle()
+
+  if (linkErr || !link) {
+    return jsonResponse({ error: 'Access denied' }, 403, {}, origin)
+  }
+
+  let query = supabase
+    .from('student_attendance')
+    .select('id, date, status, period, notes, created_at')
+    .eq('student_id', studentId)
+    .order('date', { ascending: false })
+    .limit(90)
+
+  if (dateFrom) query = query.gte('date', dateFrom)
+  if (dateTo)   query = query.lte('date', dateTo)
+
+  const { data: records, error: fetchErr } = await query
+
+  if (fetchErr) {
+    return jsonResponse({ error: 'Failed to fetch attendance' }, 500, {}, origin)
+  }
+
+  const list = records ?? []
+  const summary = {
+    total:   list.length,
+    present: list.filter((r: Record<string, unknown>) => r.status === 'present').length,
+    absent:  list.filter((r: Record<string, unknown>) => r.status === 'absent').length,
+    late:    list.filter((r: Record<string, unknown>) => r.status === 'late').length,
+    excused: list.filter((r: Record<string, unknown>) => r.status === 'excused').length,
+  }
+
+  return jsonResponse({ records: list, summary }, 200, {}, origin)
+}
+
 /**
  * get_monthly_report — Return monthly report data for a child.
  */
@@ -1124,6 +1180,9 @@ Deno.serve(async (req: Request) => {
 
       case 'get_monthly_report':
         return await handleGetMonthlyReport(body, origin)
+
+      case 'get_child_attendance':
+        return await handleGetChildAttendance(body, origin)
 
       default:
         return errorResponse(`Unknown action: ${action}`, 400, origin)
