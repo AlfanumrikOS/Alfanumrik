@@ -21,6 +21,7 @@
  *     `subscriptionCreated` / `inviteStored` flags for observability.
  */
 
+import { createHash, randomBytes } from 'crypto';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 import {
@@ -54,6 +55,336 @@ export function validateEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+// ─── Admin auth-user + claim-token helpers ─────────────────────────────
+
+/** Days a freshly-issued admin claim token stays valid. */
+export const ADMIN_CLAIM_TOKEN_TTL_DAYS = 90;
+
+/**
+ * Hash a raw claim token for at-rest storage. Only the SHA-256 hash is ever
+ * persisted in `school_admin_claim_tokens`; the raw token is emailed to the
+ * principal and never logged. Mirrors the standard "store the hash, mail the
+ * secret" pattern used for school_api_keys.key_hash.
+ */
+export function hashClaimToken(raw: string): string {
+  return createHash('sha256').update(raw).digest('hex');
+}
+
+/** Generate a high-entropy, URL-safe admin claim token (not the 8-char code). */
+function generateClaimToken(): string {
+  return randomBytes(24).toString('base64url');
+}
+
+type AdminClient = ReturnType<typeof getSupabaseAdmin>;
+
+/**
+ * Idempotently resolve (find-or-create) the Supabase auth user for an email.
+ * Returns the auth user id, or null on unrecoverable failure. Mirrors the
+ * create-then-link pattern in /api/school-admin/staff: try createUser; on the
+ * duplicate-email error, list and match. NEVER logs the email (P13).
+ */
+async function resolveOrCreateAuthUser(
+  admin: AdminClient,
+  email: string,
+  name: string | null,
+): Promise<string | null> {
+  const tempPassword = `Alf${randomBytes(6).toString('base64url')}!${Math.floor(Math.random() * 1000)}`;
+  const { data: created, error: createErr } = await admin.auth.admin.createUser({
+    email,
+    password: tempPassword,
+    email_confirm: true,
+    user_metadata: { role: 'institution_admin', ...(name ? { name } : {}) },
+  });
+
+  if (created?.user?.id) return created.user.id;
+
+  if (createErr) {
+    // Likely "already registered" — find and link the existing auth user.
+    const { data: list, error: listErr } = await admin.auth.admin.listUsers({
+      page: 1,
+      perPage: 200,
+    });
+    if (listErr) {
+      logger.error('school_provisioning_admin_user_lookup_failed', {
+        reason: listErr.message,
+      });
+      return null;
+    }
+    const match = list?.users?.find((u) => (u.email ?? '').toLowerCase() === email);
+    return match?.id ?? null;
+  }
+
+  return null;
+}
+
+/**
+ * Result of attempting to claim an admin invite (POST /api/schools/claim-admin).
+ * `status` is a discriminated tag so the route can map it to an HTTP code without
+ * re-deriving intent. Idempotent: replaying an already-consumed token for the SAME
+ * principal returns `already_claimed` (a success), never an error.
+ */
+export type ClaimAdminResult =
+  | { status: 'claimed'; school_id: string; school_admin_id: string; auth_user_id: string }
+  | { status: 'already_claimed'; school_id: string; school_admin_id: string; auth_user_id: string }
+  | { status: 'invalid_token' }
+  | { status: 'expired' }
+  | { status: 'failed'; error: string };
+
+/**
+ * Verify a raw admin claim token and activate the matching school_admins link.
+ *
+ * Flow (all via the service-role admin client; server-only):
+ *   1. hash the raw token and look it up in `school_admin_claim_tokens`;
+ *   2. reject unknown (`invalid_token`) or past-expiry (`expired`) tokens;
+ *   3. if the token was already consumed, treat as idempotent success
+ *      (`already_claimed`) — re-POSTing the same link must not 4xx the principal;
+ *   4. otherwise: optionally set the principal's password (admin updateUserById),
+ *      stamp `school_admins.accepted_at` + ensure `is_active=true`, and mark the
+ *      token `consumed_at`.
+ *
+ * NEVER logs the raw token, the password, or the principal's email (P13). The
+ * raw token and password live only in the request body and the GoTrue call.
+ */
+export async function claimAdminToken(
+  admin: AdminClient,
+  rawToken: string,
+  newPassword: string | null,
+): Promise<ClaimAdminResult> {
+  if (!rawToken || rawToken.length < 16) {
+    return { status: 'invalid_token' };
+  }
+  const tokenHash = hashClaimToken(rawToken);
+
+  try {
+    const { data: tokenRow, error: lookupErr } = await admin
+      .from('school_admin_claim_tokens')
+      .select('id, school_id, school_admin_id, expires_at, consumed_at')
+      .eq('token_hash', tokenHash)
+      .maybeSingle();
+
+    if (lookupErr) {
+      logger.error('school_admin_claim_lookup_failed', { reason: lookupErr.message });
+      return { status: 'failed', error: 'Claim lookup failed.' };
+    }
+    if (!tokenRow) {
+      return { status: 'invalid_token' };
+    }
+
+    const row = tokenRow as {
+      id: string;
+      school_id: string;
+      school_admin_id: string;
+      expires_at: string;
+      consumed_at: string | null;
+    };
+
+    // Resolve the auth user behind the linked school_admins row (needed for the
+    // response + the optional password set). A missing link is unrecoverable here.
+    const { data: linkRow } = await admin
+      .from('school_admins')
+      .select('id, auth_user_id, is_active')
+      .eq('id', row.school_admin_id)
+      .maybeSingle();
+    const link = linkRow as { id: string; auth_user_id: string; is_active: boolean } | null;
+    if (!link) {
+      logger.error('school_admin_claim_missing_link', { schoolId: row.school_id });
+      return { status: 'failed', error: 'Admin link not found.' };
+    }
+
+    // Idempotent: an already-consumed token is a no-op success for the same link.
+    if (row.consumed_at) {
+      return {
+        status: 'already_claimed',
+        school_id: row.school_id,
+        school_admin_id: row.school_admin_id,
+        auth_user_id: link.auth_user_id,
+      };
+    }
+
+    // Expiry check (only for not-yet-consumed tokens).
+    if (new Date(row.expires_at).getTime() < Date.now()) {
+      return { status: 'expired' };
+    }
+
+    // Optionally set the principal's password (they were created with a random
+    // temp password during provisioning). Best-effort: a password-set failure
+    // must NOT block activation — the principal can still use the magic-link /
+    // reset-password path. NEVER log the password.
+    if (newPassword && newPassword.length >= 8) {
+      const { error: pwErr } = await admin.auth.admin.updateUserById(link.auth_user_id, {
+        password: newPassword,
+      });
+      if (pwErr) {
+        logger.warn('school_admin_claim_password_set_skipped', {
+          schoolId: row.school_id,
+          reason: pwErr.message,
+        });
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+
+    // Activate the link: stamp accepted_at + ensure active. Idempotent UPDATE.
+    const { error: activateErr } = await admin
+      .from('school_admins')
+      .update({ accepted_at: nowIso, is_active: true, updated_at: nowIso })
+      .eq('id', row.school_admin_id);
+    if (activateErr) {
+      logger.error('school_admin_claim_activate_failed', {
+        schoolId: row.school_id,
+        reason: activateErr.message,
+      });
+      return { status: 'failed', error: 'Failed to activate admin link.' };
+    }
+
+    // Consume the token (so it can't be replayed by a third party). A failure
+    // here is non-fatal — the link is already active; worst case the token stays
+    // claimable until expiry, and the next claim hits the already_claimed branch.
+    const { error: consumeErr } = await admin
+      .from('school_admin_claim_tokens')
+      .update({ consumed_at: nowIso })
+      .eq('id', row.id)
+      .is('consumed_at', null);
+    if (consumeErr) {
+      logger.warn('school_admin_claim_consume_skipped', {
+        schoolId: row.school_id,
+        reason: consumeErr.message,
+      });
+    }
+
+    return {
+      status: 'claimed',
+      school_id: row.school_id,
+      school_admin_id: row.school_admin_id,
+      auth_user_id: link.auth_user_id,
+    };
+  } catch (err) {
+    logger.error('school_admin_claim_unexpected_error', {
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
+    return { status: 'failed', error: 'Unexpected claim error.' };
+  }
+}
+
+export interface EstablishPrincipalAdminResult {
+  /** Whether a school_admins link now exists & is active for this principal. */
+  linked: boolean;
+  authUserId: string | null;
+  schoolAdminId: string | null;
+  /** Raw claim token (emailed; never stored/logged) when a token was minted. */
+  claimToken: string | null;
+}
+
+/**
+ * Establish the principal's path to log in as their school's admin:
+ *   1. find-or-create the Supabase auth user for `principalEmail`;
+ *   2. idempotently INSERT a `school_admins` row (role 'principal') linking that
+ *      auth user to `schoolId` (the `sync_school_admin_role` trigger then grants
+ *      the institution_admin RBAC role);
+ *   3. mint a one-time admin claim token (store only its hash) so the principal
+ *      can accept/activate via POST /api/schools/claim-admin.
+ *
+ * Fully idempotent: if a school_admins row already exists for this auth user +
+ * school, it is reused (and reactivated if revoked) rather than duplicated.
+ * Failures here are NON-FATAL to provisioning (the school row already exists) —
+ * the caller logs `linked` for observability and a super-admin can repair via
+ * POST /api/super-admin/institutions/[id]/admins.
+ */
+export async function establishPrincipalAdmin(
+  admin: AdminClient,
+  schoolId: string,
+  principalEmail: string,
+  principalName: string | null,
+  invitedBy: string | null,
+): Promise<EstablishPrincipalAdminResult> {
+  const empty: EstablishPrincipalAdminResult = {
+    linked: false,
+    authUserId: null,
+    schoolAdminId: null,
+    claimToken: null,
+  };
+
+  const authUserId = await resolveOrCreateAuthUser(admin, principalEmail, principalName);
+  if (!authUserId) return empty;
+
+  const nowIso = new Date().toISOString();
+
+  // Idempotent link: reuse an existing row for this auth user + school.
+  let schoolAdminId: string | null = null;
+  const { data: existing } = await admin
+    .from('school_admins')
+    .select('id, is_active')
+    .eq('school_id', schoolId)
+    .eq('auth_user_id', authUserId)
+    .maybeSingle();
+
+  if (existing) {
+    schoolAdminId = (existing as { id: string }).id;
+    if (!(existing as { is_active: boolean }).is_active) {
+      await admin
+        .from('school_admins')
+        .update({ is_active: true, updated_at: nowIso })
+        .eq('id', schoolAdminId);
+    }
+  } else {
+    const { data: inserted, error: insertErr } = await admin
+      .from('school_admins')
+      .insert({
+        auth_user_id: authUserId,
+        school_id: schoolId,
+        role: 'principal',
+        name: principalName,
+        email: principalEmail,
+        is_active: true,
+        invited_by: invitedBy,
+        invited_at: nowIso,
+      })
+      .select('id')
+      .single();
+
+    if (insertErr || !inserted) {
+      logger.error('school_provisioning_admin_link_failed', {
+        schoolId,
+        reason: insertErr?.message ?? 'no row returned',
+      });
+      return { ...empty, authUserId };
+    }
+    schoolAdminId = (inserted as { id: string }).id;
+  }
+
+  // Mint a one-time claim token (store hash only). Best-effort — a failure here
+  // still leaves a usable admin link (the super-admin repair path can re-issue).
+  let claimToken: string | null = null;
+  try {
+    const raw = generateClaimToken();
+    const expiry = new Date();
+    expiry.setDate(expiry.getDate() + ADMIN_CLAIM_TOKEN_TTL_DAYS);
+    const { error: tokenErr } = await admin
+      .from('school_admin_claim_tokens')
+      .insert({
+        school_id: schoolId,
+        school_admin_id: schoolAdminId,
+        token_hash: hashClaimToken(raw),
+        expires_at: expiry.toISOString(),
+      });
+    if (!tokenErr) {
+      claimToken = raw;
+    } else {
+      logger.warn('school_provisioning_claim_token_insert_skipped', {
+        schoolId,
+        reason: tokenErr.message,
+      });
+    }
+  } catch (err) {
+    logger.warn('school_provisioning_claim_token_table_missing', {
+      schoolId,
+      reason: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  return { linked: true, authUserId, schoolAdminId, claimToken };
+}
+
 // ─── Public API ────────────────────────────────────────────────────────
 
 export interface ProvisionTrialSchoolInput {
@@ -68,6 +399,12 @@ export interface ProvisionTrialSchoolInput {
   sendEmail?: boolean;
   /** Locale for the transactional email; defaults to 'en'. */
   locale?: EmailLocale;
+  /**
+   * Optional auth_user_id of the actor provisioning this school (e.g. the
+   * super-admin running bulk-onboard). Stored as school_admins.invited_by for
+   * attribution. Null for the self-serve public trial path.
+   */
+  invitedBy?: string | null;
 }
 
 export type ProvisionTrialSchoolResult =
@@ -82,6 +419,10 @@ export type ProvisionTrialSchoolResult =
       subscription_created: boolean;
       invite_stored: boolean;
       email_dispatched: boolean;
+      /** Whether the principal's school_admins login link was established. */
+      admin_linked: boolean;
+      /** The principal's school_admins row id (when linked). */
+      school_admin_id?: string;
     }
   | {
       status: 'already_exists';
@@ -224,7 +565,10 @@ export async function provisionTrialSchool(
       });
     }
 
-    // 5. Invite code for the school admin
+    // 5. ADMIN invite code for the school's principal (admin-claim flow).
+    //    CHANGED (Track A): role_type is now 'admin' (was 'teacher'). The
+    //    principal's invite is an ADMIN claim, not a teacher join. Optional
+    //    teacher invite-code generation is a separate, later concern.
     const inviteCode = generateInviteCode();
     let inviteStored = false;
     try {
@@ -235,7 +579,7 @@ export async function provisionTrialSchool(
         .insert({
           school_id: schoolRow.id,
           code: inviteCode,
-          role_type: 'teacher',
+          role_type: 'admin',
           max_uses: 1,
           used_count: 0,
           expires_at: inviteExpiry.toISOString(),
@@ -254,17 +598,30 @@ export async function provisionTrialSchool(
       });
     }
 
+    // 6. Establish the principal's actual login path: find-or-create their auth
+    //    user, link a school_admins (role 'principal') row, mint a claim token.
+    //    Non-fatal — the school row already exists; admin_linked is reported.
+    const adminLink = await establishPrincipalAdmin(
+      admin,
+      schoolRow.id,
+      principal_email,
+      principal_name,
+      input.invitedBy ?? null,
+    );
+
     logger.info('school_provisioning_created', {
       schoolId: schoolRow.id,
       slug: finalSlug,
       board,
       subscriptionCreated,
       inviteStored,
+      adminLinked: adminLink.linked,
       inviteCodeTruncated: truncateInviteCode(inviteCode),
       sendEmail: input.sendEmail !== false,
     });
 
-    // 6. Email dispatch — skipped when sendEmail===false (dry-run / bulk)
+    // 7. Email dispatch — skipped when sendEmail===false (dry-run / bulk).
+    //    The email carries the admin invite code (the principal's claim code).
     let emailDispatched = false;
     if (input.sendEmail !== false && inviteStored) {
       const trialEndIso = new Date();
@@ -303,6 +660,8 @@ export async function provisionTrialSchool(
       subscription_created: subscriptionCreated,
       invite_stored: inviteStored,
       email_dispatched: emailDispatched,
+      admin_linked: adminLink.linked,
+      school_admin_id: adminLink.schoolAdminId ?? undefined,
     };
   } catch (err) {
     logger.error('school_provisioning_unexpected_error', {

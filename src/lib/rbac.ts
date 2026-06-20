@@ -723,6 +723,22 @@ export const PERMISSIONS = {
   INSTITUTION_VIEW_BILLING: 'institution.view_billing',
   INSTITUTION_MANAGE_STAFF: 'institution.manage_staff',
 
+  // ── Institution integrations / public API / regional ops (Track A) ──────────
+  // Phase 1 launch-readiness (white-label multi-tenant SaaS). User-approved
+  // 2026-06-20. Additive — granted in migration
+  // 20260621000100_track_a_school_admin_provisioning.sql. REG-120 conformance:
+  // every code below is granted to at least one role (no orphan codes).
+  //   integration.manage  — institution_admin + super_admin (connect/manage
+  //                          external integrations: SIS/LMS/SSO connectors).
+  //   public_api.manage    — institution_admin + super_admin (manage API keys /
+  //                          public API access at the institution tier; distinct
+  //                          from the existing school.manage_api_keys school-admin
+  //                          console code — this is the institution-RBAC twin).
+  //   ops_team.manage      — super_admin ONLY (regional ops hierarchy; future).
+  INTEGRATION_MANAGE: 'integration.manage',
+  PUBLIC_API_MANAGE: 'public_api.manage',
+  OPS_TEAM_MANAGE: 'ops_team.manage',
+
   // ── School-scoped content management ──────────────────────
   // school.manage_content — institution_admin manages school-scoped question
   // content (create, edit, approve, bulk upload). Enforced by

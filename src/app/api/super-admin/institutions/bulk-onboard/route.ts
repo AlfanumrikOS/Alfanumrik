@@ -328,6 +328,8 @@ export async function POST(request: NextRequest) {
         state: row.state || null,
         phone: row.phone || null,
         sendEmail: true,
+        // Attribute the principal's school_admins link to the super-admin actor.
+        invitedBy: auth.userId,
       });
 
       if (result.status === 'created') {
