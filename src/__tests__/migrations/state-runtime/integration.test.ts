@@ -9,15 +9,17 @@ import { makeServiceSupabase, insertEvent } from '../_helpers/supabase-runtime';
 const sb = makeServiceSupabase();
 const ctx: SubscriberContext = { sb, dryRun: false, now: () => new Date(), log: defaultLog };
 
-// Each run gets a unique second-offset (0..4294967295 ≈ 136-year spread).
-// beforeEach deletes by kind from CURSOR onward — covers all events either subscriber
-// can see from any prior run, regardless of when they were deposited.
-const RUN_ID     = crypto.randomUUID().replace(/-/g, '');
-const OFFSET_SEC = parseInt(RUN_ID.slice(0, 8), 16);  // 0..4294967295 ≈ 136-year spread
-const FUTURE     = Date.now() + 365 * 24 * 3600_000 + OFFSET_SEC * 1000;
-const CURSOR     = new Date(FUTURE - 1000).toISOString();   // 1 s before T1
-const T1         = new Date(FUTURE).toISOString();
-const T2         = new Date(FUTURE + 1000).toISOString();   // T1 + 1 s
+// Each run tags its events with a unique RUN_ACTOR_ID (a per-run UUID). beforeEach
+// (a) deletes only OUR events by RUN_ACTOR_ID — safe against concurrent runs, and
+// (b) deletes OLD events with the default actor-ID in our range — handles accumulated
+// past-run contamination without touching concurrent runs (they use their own IDs).
+const RUN_ID       = crypto.randomUUID().replace(/-/g, '');
+const RUN_ACTOR_ID = crypto.randomUUID();                // unique per-run event tag
+const OFFSET_SEC   = parseInt(RUN_ID.slice(0, 8), 16);  // 0..4294967295 ≈ 136-year spread
+const FUTURE       = Date.now() + 365 * 24 * 3600_000 + OFFSET_SEC * 1000;
+const CURSOR       = new Date(FUTURE - 1000).toISOString();   // 1 s before T1
+const T1           = new Date(FUTURE).toISOString();
+const T2           = new Date(FUTURE + 1000).toISOString();   // T1 + 1 s
 
 const RUN_SUFFIX = RUN_ID.slice(0, 6);
 const SOK        = `ok-${RUN_SUFFIX}`;
@@ -29,9 +31,13 @@ beforeEach(async () => {
     await sb.from('subscriber_retry_state').delete().eq('subscriber_name', name);
     await sb.from('subscriber_dead_letters').delete().eq('subscriber_name', name);
   }
-  // Delete by kind from CURSOR onward — covers all events either subscriber can see,
-  // even from prior runs that landed at timestamps far beyond this run's time window.
-  await sb.from('state_events').delete().gte('occurred_at', CURSOR).in('kind', ['learner.mastery_changed', 'learner.quiz_completed']);
+  // (a) Delete our own events from the previous test — safe: other runs have different RUN_ACTOR_IDs.
+  await sb.from('state_events').delete().eq('actor_auth_user_id', RUN_ACTOR_ID);
+  // (b) Delete accumulated past-run events (old runs used the default zero UUID) in our range.
+  await sb.from('state_events').delete()
+    .eq('actor_auth_user_id', '00000000-0000-0000-0000-000000000000')
+    .in('kind', ['learner.mastery_changed', 'learner.quiz_completed'])
+    .gte('occurred_at', CURSOR);
   await sb.from('feature_flags').delete().eq('flag_name', 'ff_projector_runner_v1');
   __resetFlagCacheForTests();
   await sb.from('feature_flags').insert({
@@ -57,9 +63,9 @@ describe('integration: tickAll with two subscribers across 3 ticks', () => {
       { subscriber_name: SOK,  kind_filter: 'learner.mastery_changed', last_processed_occurred_at: CURSOR },
     ]);
 
-    const bad = await insertEvent(sb, { kind: 'learner.quiz_completed',  occurredAt: T1 });
-    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T1 });
-    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T2 });
+    const bad = await insertEvent(sb, { kind: 'learner.quiz_completed', occurredAt: T1, actorAuthUserId: RUN_ACTOR_ID });
+    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T1, actorAuthUserId: RUN_ACTOR_ID });
+    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T2, actorAuthUserId: RUN_ACTOR_ID });
 
     const dispatcher = createDispatcher([badSub, okSub]);
     await tickAll({ sb, ctx, dispatcher });  // tick 1: badAttempts=1, retry state count=1; ok processes both events

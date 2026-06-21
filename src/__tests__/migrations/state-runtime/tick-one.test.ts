@@ -9,15 +9,17 @@ const ctx: SubscriberContext = {
   sb, dryRun: false, now: () => new Date(), log: defaultLog,
 };
 
-// Each run gets a unique second-offset (0..4294967295 ≈ 136-year spread).
-// beforeEach deletes by kind from CURSOR onward — covers all events the subscriber
-// can see from any prior run, regardless of when they were deposited.
-const RUN_ID     = crypto.randomUUID().replace(/-/g, '');
-const OFFSET_SEC = parseInt(RUN_ID.slice(0, 8), 16);  // 0..4294967295 ≈ 136-year spread
-const FUTURE     = Date.now() + 365 * 24 * 3600_000 + OFFSET_SEC * 1000;
-const CURSOR     = new Date(FUTURE - 1000).toISOString();   // 1 s before T1
-const T1         = new Date(FUTURE).toISOString();
-const T2         = new Date(FUTURE + 1000).toISOString();   // T1 + 1 s
+// Each run tags its events with a unique RUN_ACTOR_ID (a per-run UUID). beforeEach
+// (a) deletes only OUR events by RUN_ACTOR_ID — safe against concurrent runs, and
+// (b) deletes OLD events with the default actor-ID in our range — handles accumulated
+// past-run contamination without touching concurrent runs (they use their own IDs).
+const RUN_ID       = crypto.randomUUID().replace(/-/g, '');
+const RUN_ACTOR_ID = crypto.randomUUID();                // unique per-run event tag
+const OFFSET_SEC   = parseInt(RUN_ID.slice(0, 8), 16);  // 0..4294967295 ≈ 136-year spread
+const FUTURE       = Date.now() + 365 * 24 * 3600_000 + OFFSET_SEC * 1000;
+const CURSOR       = new Date(FUTURE - 1000).toISOString();   // 1 s before T1
+const T1           = new Date(FUTURE).toISOString();
+const T2           = new Date(FUTURE + 1000).toISOString();   // T1 + 1 s
 
 const HAPPY = `happy-${RUN_ID.slice(0, 6)}`;
 
@@ -25,9 +27,13 @@ beforeEach(async () => {
   await sb.from('subscriber_offsets').delete().eq('subscriber_name', HAPPY);
   await sb.from('subscriber_retry_state').delete().eq('subscriber_name', HAPPY);
   await sb.from('subscriber_dead_letters').delete().eq('subscriber_name', HAPPY);
-  // Delete by kind from CURSOR onward — covers all events the HAPPY subscriber can
-  // see, even from prior runs that landed at timestamps far beyond this run's window.
-  await sb.from('state_events').delete().gte('occurred_at', CURSOR).eq('kind', 'learner.mastery_changed');
+  // (a) Delete our own events from the previous test — safe: other runs have different RUN_ACTOR_IDs.
+  await sb.from('state_events').delete().eq('actor_auth_user_id', RUN_ACTOR_ID);
+  // (b) Delete accumulated past-run events (old runs used the default zero UUID) in our range.
+  await sb.from('state_events').delete()
+    .eq('actor_auth_user_id', '00000000-0000-0000-0000-000000000000')
+    .eq('kind', 'learner.mastery_changed')
+    .gte('occurred_at', CURSOR);
   await sb.from('subscriber_offsets').insert({
     subscriber_name: HAPPY,
     kind_filter: 'learner.mastery_changed',
@@ -43,8 +49,8 @@ describe('tickOne happy path', () => {
       kind: 'learner.mastery_changed',
       async handle(event) { calls.push(event.eventId); },
     };
-    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T1 });
-    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T2 });
+    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T1, actorAuthUserId: RUN_ACTOR_ID });
+    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T2, actorAuthUserId: RUN_ACTOR_ID });
     const result = await tickOne(sub, { sb, ctx });
     expect(result.processed).toBe(2);
     expect(result.deadLettered).toBe(0);
@@ -72,8 +78,8 @@ describe('tickOne happy path', () => {
       name: HAPPY, kind: 'learner.mastery_changed',
       async handle(event) { calls.push(event.eventId); },
     };
-    await insertEvent(sb, { kind: 'learner.quiz_completed',  occurredAt: T1 });
-    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T2 });
+    await insertEvent(sb, { kind: 'learner.quiz_completed', occurredAt: T1, actorAuthUserId: RUN_ACTOR_ID });
+    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T2, actorAuthUserId: RUN_ACTOR_ID });
     const result = await tickOne(sub, { sb, ctx });
     expect(result.processed).toBe(1);
     expect(calls.length).toBe(1);
@@ -86,7 +92,7 @@ describe('tickOne retry path', () => {
       name: HAPPY, kind: 'learner.mastery_changed',
       async handle() { throw new Error('boom'); },
     };
-    const e = await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T1 });
+    const e = await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T1, actorAuthUserId: RUN_ACTOR_ID });
 
     const r1 = await tickOne(sub, { sb, ctx });
     expect(r1.processed).toBe(0);
@@ -108,7 +114,7 @@ describe('tickOne retry path', () => {
       name: HAPPY, kind: 'learner.mastery_changed', maxRetries: 3,
       async handle() { throw new Error('persistent'); },
     };
-    const e = await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T1 });
+    const e = await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T1, actorAuthUserId: RUN_ACTOR_ID });
 
     await tickOne(sub, { sb, ctx });  // count=1
     await tickOne(sub, { sb, ctx });  // count=2
@@ -144,7 +150,7 @@ describe('tickOne retry path', () => {
       name: HAPPY, kind: 'learner.mastery_changed', maxRetries: 3,
       async handle() { if (++attempts < 2) throw new Error('flake'); },
     };
-    const e = await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T1 });
+    const e = await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T1, actorAuthUserId: RUN_ACTOR_ID });
     await tickOne(sub, { sb, ctx });  // count=1
     const r2 = await tickOne(sub, { sb, ctx });  // success
     expect(r2.processed).toBe(1);
@@ -167,7 +173,7 @@ describe('tickOne retry path', () => {
     await sb.from('state_events').insert({
       event_id: eventId,
       kind: 'learner.mastery_changed',
-      actor_auth_user_id: '00000000-0000-0000-0000-000000000000',
+      actor_auth_user_id: RUN_ACTOR_ID,  // tag so our cleanup (step a) can remove it
       tenant_id: null,
       idempotency_key: `bad-${eventId}`,
       occurred_at: T1,
