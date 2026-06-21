@@ -9,14 +9,21 @@ import { makeServiceSupabase, insertEvent } from '../_helpers/supabase-runtime';
 const sb = makeServiceSupabase();
 const ctx: SubscriberContext = { sb, dryRun: false, now: () => new Date(), log: defaultLog };
 
-// Unique run ID prevents concurrent CI runs on the same live DB from colliding.
-const RUN_ID  = crypto.randomUUID().replace(/-/g, '').slice(0, 6);
-const MS      = String(parseInt(RUN_ID.slice(0, 3), 16) % 1000).padStart(3, '0');
-const SOK     = `ok-${RUN_ID}`;
-const SBAD    = `bad-${RUN_ID}`;
-const CURSOR  = `2026-05-12T00:00:00.${MS}Z`;
-const T1      = `2026-05-12T01:00:00.${MS}Z`;
-const T2      = `2026-05-12T02:00:00.${MS}Z`;
+// Each run gets a unique second-offset (0..65535 s ≈ 18 h spread) derived from
+// the first 4 hex digits of a fresh UUID. Events are placed ~1 year in the
+// future at that offset, so: (a) stale events from prior CI runs at the usual
+// 2026-05-12 fixtures never contaminate this run's cursor scan, and (b) two
+// concurrent runs almost certainly land in different seconds.
+const RUN_ID     = crypto.randomUUID().replace(/-/g, '');
+const OFFSET_SEC = parseInt(RUN_ID.slice(0, 4), 16);  // 0..65535
+const FUTURE     = Date.now() + 365 * 24 * 3600_000 + OFFSET_SEC * 1000;
+const CURSOR     = new Date(FUTURE - 1000).toISOString();   // 1 s before T1
+const T1         = new Date(FUTURE).toISOString();
+const T2         = new Date(FUTURE + 1000).toISOString();   // T1 + 1 s
+
+const RUN_SUFFIX = RUN_ID.slice(0, 6);
+const SOK        = `ok-${RUN_SUFFIX}`;
+const SBAD       = `bad-${RUN_SUFFIX}`;
 
 beforeEach(async () => {
   for (const name of [SOK, SBAD]) {
@@ -24,7 +31,8 @@ beforeEach(async () => {
     await sb.from('subscriber_retry_state').delete().eq('subscriber_name', name);
     await sb.from('subscriber_dead_letters').delete().eq('subscriber_name', name);
   }
-  await sb.from('state_events').delete().in('occurred_at', [T1, T2]);
+  // Delete only events in this run's unique time window.
+  await sb.from('state_events').delete().gte('occurred_at', CURSOR).lte('occurred_at', T2);
   await sb.from('feature_flags').delete().eq('flag_name', 'ff_projector_runner_v1');
   __resetFlagCacheForTests();
   await sb.from('feature_flags').insert({
@@ -79,7 +87,7 @@ describe('integration: tickAll with two subscribers across 3 ticks', () => {
     const { data: badOffset } = await sb.from('subscriber_offsets')
       .select('last_processed_occurred_at, events_dead_lettered')
       .eq('subscriber_name', SBAD).single();
-    expect(badOffset?.last_processed_occurred_at?.startsWith('2026-05-12T01:00:00')).toBe(true);
+    expect(badOffset?.last_processed_occurred_at?.startsWith(T1.slice(0, 19))).toBe(true);
     expect(badOffset?.events_dead_lettered).toBe(1);
 
     // ok subscriber processed both its events on tick 1; nothing on ticks 2/3.
@@ -87,7 +95,7 @@ describe('integration: tickAll with two subscribers across 3 ticks', () => {
     const { data: okOffset } = await sb.from('subscriber_offsets')
       .select('last_processed_occurred_at, events_processed')
       .eq('subscriber_name', SOK).single();
-    expect(okOffset?.last_processed_occurred_at?.startsWith('2026-05-12T02:00:00')).toBe(true);
+    expect(okOffset?.last_processed_occurred_at?.startsWith(T2.slice(0, 19))).toBe(true);
     expect(okOffset?.events_processed).toBe(2);
   });
 });
