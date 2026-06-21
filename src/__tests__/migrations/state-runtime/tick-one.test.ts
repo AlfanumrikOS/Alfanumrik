@@ -9,19 +9,26 @@ const ctx: SubscriberContext = {
   sb, dryRun: false, now: () => new Date(), log: defaultLog,
 };
 
-// Unique run ID prevents concurrent CI runs on the same live DB from colliding.
-const RUN_ID  = crypto.randomUUID().replace(/-/g, '').slice(0, 6);
-const MS      = String(parseInt(RUN_ID.slice(0, 3), 16) % 1000).padStart(3, '0');
-const HAPPY   = `happy-${RUN_ID}`;
-const CURSOR  = `2026-05-12T00:00:00.${MS}Z`;
-const T1      = `2026-05-12T01:00:00.${MS}Z`;
-const T2      = `2026-05-12T02:00:00.${MS}Z`;
+// Each run gets a unique second-offset (0..65535 s ≈ 18 h spread) derived from
+// the first 4 hex digits of a fresh UUID. Events are placed ~1 year in the
+// future at that offset, so: (a) stale events from prior CI runs at the usual
+// 2026-05-12 fixtures never contaminate this run's cursor scan, and (b) two
+// concurrent runs almost certainly land in different seconds.
+const RUN_ID     = crypto.randomUUID().replace(/-/g, '');
+const OFFSET_SEC = parseInt(RUN_ID.slice(0, 4), 16);  // 0..65535
+const FUTURE     = Date.now() + 365 * 24 * 3600_000 + OFFSET_SEC * 1000;
+const CURSOR     = new Date(FUTURE - 1000).toISOString();   // 1 s before T1
+const T1         = new Date(FUTURE).toISOString();
+const T2         = new Date(FUTURE + 1000).toISOString();   // T1 + 1 s
+
+const HAPPY = `happy-${RUN_ID.slice(0, 6)}`;
 
 beforeEach(async () => {
   await sb.from('subscriber_offsets').delete().eq('subscriber_name', HAPPY);
   await sb.from('subscriber_retry_state').delete().eq('subscriber_name', HAPPY);
   await sb.from('subscriber_dead_letters').delete().eq('subscriber_name', HAPPY);
-  await sb.from('state_events').delete().in('occurred_at', [T1, T2]);
+  // Delete only events in this run's unique time window.
+  await sb.from('state_events').delete().gte('occurred_at', CURSOR).lte('occurred_at', T2);
   await sb.from('subscriber_offsets').insert({
     subscriber_name: HAPPY,
     kind_filter: 'learner.mastery_changed',
@@ -46,7 +53,7 @@ describe('tickOne happy path', () => {
     const { data: off } = await sb.from('subscriber_offsets')
       .select('last_processed_occurred_at, events_processed')
       .eq('subscriber_name', HAPPY).single();
-    expect(off?.last_processed_occurred_at?.startsWith('2026-05-12T02:00:00')).toBe(true);
+    expect(off?.last_processed_occurred_at?.startsWith(T2.slice(0, 19))).toBe(true);
     expect(off?.events_processed).toBe(2);
   });
 
@@ -94,7 +101,7 @@ describe('tickOne retry path', () => {
     // Cursor unchanged.
     const { data: off } = await sb.from('subscriber_offsets')
       .select('last_processed_occurred_at').eq('subscriber_name', HAPPY).single();
-    expect(off?.last_processed_occurred_at?.startsWith('2026-05-12T00:00:00')).toBe(true);
+    expect(off?.last_processed_occurred_at?.startsWith(CURSOR.slice(0, 19))).toBe(true);
   });
 
   it('dead-letters after maxRetries failed ticks and advances cursor', async () => {
@@ -109,7 +116,7 @@ describe('tickOne retry path', () => {
     // Cursor still unchanged.
     let { data: off } = await sb.from('subscriber_offsets')
       .select('last_processed_occurred_at, events_dead_lettered').eq('subscriber_name', HAPPY).single();
-    expect(off?.last_processed_occurred_at?.startsWith('2026-05-12T00:00:00')).toBe(true);
+    expect(off?.last_processed_occurred_at?.startsWith(CURSOR.slice(0, 19))).toBe(true);
 
     const r3 = await tickOne(sub, { sb, ctx });  // count=3 → dead-letter
     expect(r3.deadLettered).toBe(1);
@@ -128,7 +135,7 @@ describe('tickOne retry path', () => {
     // Cursor advanced past the bad event.
     ({ data: off } = await sb.from('subscriber_offsets')
       .select('last_processed_occurred_at, events_dead_lettered').eq('subscriber_name', HAPPY).single());
-    expect(off?.last_processed_occurred_at?.startsWith('2026-05-12T01:00:00')).toBe(true);
+    expect(off?.last_processed_occurred_at?.startsWith(T1.slice(0, 19))).toBe(true);
     expect(off?.events_dead_lettered).toBe(1);
   });
 
@@ -182,6 +189,6 @@ describe('tickOne retry path', () => {
     // Cursor advanced past the bad row.
     const { data: off } = await sb.from('subscriber_offsets')
       .select('last_processed_occurred_at').eq('subscriber_name', HAPPY).single();
-    expect(off?.last_processed_occurred_at?.startsWith('2026-05-12T01:00:00')).toBe(true);
+    expect(off?.last_processed_occurred_at?.startsWith(T1.slice(0, 19))).toBe(true);
   });
 });
