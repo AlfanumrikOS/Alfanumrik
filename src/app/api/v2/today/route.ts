@@ -93,9 +93,9 @@ export async function GET(request: Request) {
         adminClient: admin,
       });
     } catch (err) {
-      logger.warn('v2/today: augmentation failed; using safe defaults', {
+      logger.error('v2/today: augmentation failed; using safe defaults', {
+        error: err instanceof Error ? err : new Error(String(err)),
         userId,
-        error: (err as Error).message,
       });
       augmentation = {
         dueReviewCount: 0,
