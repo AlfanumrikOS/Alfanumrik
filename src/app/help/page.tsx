@@ -12,7 +12,7 @@ import { Card, Button, LoadingFoxy } from '@/components/ui';
    AI-powered support bot + FAQ + Ticket submission + Quick fixes
    ══════════════════════════════════════════════════════════════ */
 
-type View = 'home' | 'faq' | 'chat' | 'ticket' | 'ticket-sent';
+type View = 'home' | 'faq' | 'chat' | 'ticket' | 'ticket-sent' | 'my-tickets';
 type FaqCategory = typeof FAQ_CATEGORIES[number]['id'];
 
 /* ── FAQ Knowledge Base ── */
@@ -99,12 +99,15 @@ const QUICK_FIXES = [
 ];
 
 const TICKET_CATEGORIES = [
-  'Account issue', 'Login problem', 'Foxy not responding', 'Quiz bug', 'Wrong content',
-  'App crash / error', 'Feature request', 'Billing question', 'Data / privacy concern', 'Other',
+  { value: 'account', label: 'Account / Login issue', labelHi: 'खाता / लॉगिन समस्या' },
+  { value: 'bug', label: 'App bug or crash', labelHi: 'ऐप में गड़बड़ी / क्रैश' },
+  { value: 'content', label: 'Wrong content', labelHi: 'गलत सामग्री' },
+  { value: 'billing', label: 'Billing / Payment', labelHi: 'बिलिंग / भुगतान' },
+  { value: 'other', label: 'Feature request / Other', labelHi: 'फीचर अनुरोध / अन्य' },
 ];
 
 /* ── AI Support Bot via Foxy API route ── */
-async function askSupportBot(message: string, history: Array<{role: string; content: string}>, userContext: string): Promise<string> {
+async function askSupportBot(message: string, history: Array<{role: string; content: string}>, userContext: string, studentGrade?: string): Promise<string> {
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     try {
@@ -119,7 +122,7 @@ async function askSupportBot(message: string, history: Array<{role: string; cont
       body: JSON.stringify({
         message: `${userContext}\n\nUser question: ${message}`,
         subject: 'general',
-        grade:   '9',
+        grade:   studentGrade ?? '9',
         mode:    'doubt',
       }),
     });
@@ -155,6 +158,22 @@ export default function HelpPage() {
   const [ticketMessage, setTicketMessage] = useState('');
   const [ticketEmail, setTicketEmail] = useState('');
   const [ticketSubmitting, setTicketSubmitting] = useState(false);
+  const [ticketError, setTicketError] = useState('');
+
+  // My Tickets state
+  type SupportTicket = {
+    id: string;
+    subject: string;
+    category: string;
+    priority: string;
+    status: string;
+    created_at: string;
+    updated_at: string;
+    resolved_at: string | null;
+  };
+  const [myTickets, setMyTickets] = useState<SupportTicket[]>([]);
+  const [myTicketsLoading, setMyTicketsLoading] = useState(false);
+  const [myTicketsError, setMyTicketsError] = useState('');
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
 
@@ -173,7 +192,7 @@ export default function HelpPage() {
 
     const history = chatMessages.map(m => ({ role: m.role === 'bot' ? 'assistant' : 'user', content: m.content }));
     const ctx = student ? `Name: ${student.name}, Grade: ${student.grade}, Board: ${student.board}, Subject: ${student.preferred_subject}` : 'Guest user';
-    const reply = await askSupportBot(msg, history, ctx);
+    const reply = await askSupportBot(msg, history, ctx, student?.grade);
 
     setChatMessages(prev => [...prev, { role: 'bot', content: reply, ts: new Date().toISOString() }]);
     setChatLoading(false);
@@ -183,20 +202,62 @@ export default function HelpPage() {
   const submitTicket = async () => {
     if (!ticketCategory || !ticketMessage.trim()) return;
     setTicketSubmitting(true);
+    setTicketError('');
     try {
-      await fetch('/api/support/ticket', {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+      } catch { /* cookie fallback */ }
+
+      const res = await fetch('/api/support/tickets', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
+        credentials: 'include',
         body: JSON.stringify({
-          category: ticketCategory,
           subject: ticketSubject || ticketCategory,
-          message: ticketMessage,
-          email: ticketEmail || student?.email || undefined,
+          description: ticketMessage,
+          category: ticketCategory,
         }),
       });
-    } catch { /* non-critical — still show success to user */ }
+
+      if (!res.ok) {
+        setTicketError(isHi ? 'टिकट भेजने में समस्या हुई। कृपया फिर कोशिश करें।' : 'Failed to submit ticket. Please try again.');
+        setTicketSubmitting(false);
+        return;
+      }
+    } catch {
+      setTicketError(isHi ? 'कनेक्शन समस्या। कृपया फिर कोशिश करें।' : 'Connection issue. Please try again.');
+      setTicketSubmitting(false);
+      return;
+    }
     setTicketSubmitting(false);
     setView('ticket-sent');
+  };
+
+  // Fetch My Tickets
+  const fetchMyTickets = async () => {
+    setMyTicketsLoading(true);
+    setMyTicketsError('');
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+      } catch { /* cookie fallback */ }
+
+      const res = await fetch('/api/support/tickets', { headers, credentials: 'include' });
+      if (!res.ok) {
+        setMyTicketsError(isHi ? 'टिकट लोड नहीं हो सके।' : 'Could not load tickets.');
+        setMyTicketsLoading(false);
+        return;
+      }
+      const json = await res.json();
+      setMyTickets(json?.data?.tickets ?? []);
+    } catch {
+      setMyTicketsError(isHi ? 'कनेक्शन समस्या।' : 'Connection issue.');
+    }
+    setMyTicketsLoading(false);
   };
 
   // Quick fix actions
@@ -215,7 +276,7 @@ export default function HelpPage() {
         if (typeof window !== 'undefined') window.open('mailto:support@alfanumrik.com?subject=Support Request - Alfanumrik', '_blank');
         break;
       case 'bug':
-        setTicketCategory('App crash / error');
+        setTicketCategory('bug');
         setTicketSubject('Bug Report');
         setView('ticket');
         break;
@@ -245,7 +306,7 @@ export default function HelpPage() {
             <button onClick={() => view === 'home' ? router.back() : setView('home')} className="text-sm" style={{ color: 'var(--text-3)' }}>←</button>
             <div>
               <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-                {view === 'chat' ? (isHi ? 'सपोर्ट चैट' : 'Support Chat') : view === 'faq' ? 'FAQ' : view === 'ticket' || view === 'ticket-sent' ? (isHi ? 'टिकट' : 'Ticket') : (isHi ? 'सहायता और सपोर्ट' : 'Help & Support')}
+                {view === 'chat' ? (isHi ? 'सपोर्ट चैट' : 'Support Chat') : view === 'faq' ? 'FAQ' : view === 'ticket' || view === 'ticket-sent' ? (isHi ? 'टिकट' : 'Ticket') : view === 'my-tickets' ? (isHi ? 'मेरे टिकट' : 'My Tickets') : (isHi ? 'सहायता और सपोर्ट' : 'Help & Support')}
               </h1>
               <p className="text-xs" style={{ color: 'var(--text-3)' }}>
                 {view === 'chat' ? (isHi ? 'AI सपोर्ट बॉट से बात करें' : 'Chat with AI support bot') : isHi ? 'हम आपकी मदद के लिए यहाँ हैं' : 'We\'re here to help'}
@@ -341,6 +402,16 @@ export default function HelpPage() {
               <div className="text-sm font-bold">{isHi ? 'सपोर्ट टिकट भेजें' : 'Submit a Support Ticket'}</div>
               <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>{isHi ? 'समस्या का विवरण दें, हम 24 घंटे में जवाब देंगे' : 'Describe your issue, we\'ll respond within 24 hours'}</div>
             </div>
+          </button>
+
+          {/* My Tickets */}
+          <button onClick={() => { setView('my-tickets'); fetchMyTickets(); }} className="w-full rounded-xl p-4 flex items-center gap-3" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+            <span className="text-xl">🎫</span>
+            <div className="text-left flex-1">
+              <div className="text-sm font-bold">{isHi ? 'मेरे टिकट' : 'My Tickets'}</div>
+              <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>{isHi ? 'अपने पुराने सपोर्ट टिकट देखें' : 'View your previous support requests'}</div>
+            </div>
+            <span style={{ color: 'var(--text-3)' }}>→</span>
           </button>
 
           {/* Contact info */}
@@ -503,7 +574,7 @@ export default function HelpPage() {
                   <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-3)' }}>{isHi ? 'श्रेणी *' : 'Category *'}</label>
                   <select value={ticketCategory} onChange={e => setTicketCategory(e.target.value)} className="input-base">
                     <option value="">{isHi ? 'श्रेणी चुनें' : 'Select category'}</option>
-                    {TICKET_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    {TICKET_CATEGORIES.map(cat => <option key={cat.value} value={cat.value}>{isHi ? cat.labelHi : cat.label}</option>)}
                   </select>
                 </div>
 
@@ -521,6 +592,12 @@ export default function HelpPage() {
                   <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-3)' }}>{isHi ? 'समस्या का विवरण *' : 'Describe your issue *'}</label>
                   <textarea value={ticketMessage} onChange={e => setTicketMessage(e.target.value)} placeholder={isHi ? 'कृपया अपनी समस्या विस्तार से बताएँ...' : 'Please describe your issue in detail...'} rows={5} className="input-base" style={{ resize: 'vertical', minHeight: 100 }}/>
                 </div>
+
+                {ticketError && (
+                  <div className="rounded-xl px-4 py-3 text-sm" style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FCA5A5' }}>
+                    {ticketError}
+                  </div>
+                )}
 
                 <Button fullWidth onClick={submitTicket} disabled={ticketSubmitting || !ticketCategory || !ticketMessage.trim()}>
                   {ticketSubmitting ? (isHi ? 'भेज रहे हैं...' : 'Submitting...') : (isHi ? 'टिकट भेजें →' : 'Submit Ticket →')}
