@@ -57,7 +57,8 @@ export function GlobalAppLayout({ children }: { children: React.ReactNode }) {
                      pathname?.startsWith('/schools') ||
                      pathname?.startsWith('/security') ||
                      pathname?.startsWith('/support') ||
-                     pathname?.startsWith('/demo');
+                     pathname?.startsWith('/demo') ||
+                     pathname?.startsWith('/settings');
 
   const showNav = isLoggedIn && activeRole === 'student' && !isFocusedFoxy && !isExcluded;
 

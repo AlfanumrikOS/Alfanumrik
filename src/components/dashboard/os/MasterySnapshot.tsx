@@ -90,12 +90,26 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
         </div>
       ) : total === 0 ? (
         <div
-          className="rounded-2xl p-4 text-center text-sm"
-          style={{ background: 'var(--surface-2)', border: '1px dashed var(--border)', color: 'var(--text-3)' }}
+          className="rounded-2xl p-4 text-center"
+          style={{ background: 'var(--surface-2)', border: '1px dashed var(--border)' }}
         >
-          {isHi
-            ? 'अपनी पहली अवधारणा पूरी करो — तुम्हारी प्रगति यहाँ दिखेगी।'
-            : 'Master your first concept — your progress will appear here.'}
+          <div className="text-2xl mb-2" aria-hidden="true">🎯</div>
+          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-1)' }}>
+            {isHi
+              ? 'अभी तक कोई क्विज़ नहीं दी'
+              : 'No quizzes taken yet'}
+          </p>
+          <p className="text-xs mb-3" style={{ color: 'var(--text-3)' }}>
+            {isHi
+              ? 'पहली क्विज़ दो और अपनी महारत यहाँ देखो।'
+              : 'Take your first quiz to see your mastery here.'}
+          </p>
+          <a
+            href="/quiz"
+            className="inline-block rounded-xl px-4 py-2 text-sm font-semibold bg-orange-500 text-white hover:bg-orange-600 transition-colors"
+          >
+            {isHi ? 'पहली क्विज़ शुरू करें →' : 'Start your first quiz →'}
+          </a>
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-3">

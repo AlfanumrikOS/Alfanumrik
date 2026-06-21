@@ -84,7 +84,20 @@ export default function ExamsPage() {
         .eq('student_id', student.id)
         .eq('is_active', true)
         .order('exam_date');
-      if (!error && data) setExams(data as Exam[]);
+      if (!error && data) {
+        setExams(data as Exam[]);
+        // After exams load, sync mastery percentages in the background so
+        // exam cards reflect the student's latest concept_mastery data.
+        supabase.auth.getSession().then(({ data: sessionData }) => {
+          const token = sessionData.session?.access_token;
+          if (!token) return;
+          fetch('/api/exams/sync-mastery', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: 'include',
+          }).catch(() => {}); // fire and forget
+        }).catch(() => {});
+      }
     } catch (e) {
       console.error('Load exams error:', e);
     }
