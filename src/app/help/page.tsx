@@ -607,6 +607,65 @@ export default function HelpPage() {
           </div>
         )}
 
+        {/* ═══ MY TICKETS VIEW ═══ */}
+        {view === 'my-tickets' && (
+          <div className="space-y-4">
+            {myTicketsLoading && (
+              <div className="text-center py-12">
+                <LoadingFoxy />
+              </div>
+            )}
+            {!myTicketsLoading && myTicketsError && (
+              <div className="rounded-xl px-4 py-3 text-sm text-center" style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FCA5A5' }}>
+                {myTicketsError}
+              </div>
+            )}
+            {!myTicketsLoading && !myTicketsError && myTickets.length === 0 && (
+              <div className="text-center py-12 animate-slide-up">
+                <div className="text-5xl mb-4">🎫</div>
+                <p className="text-sm font-semibold mb-1">{isHi ? 'कोई टिकट नहीं मिला' : 'No tickets yet.'}</p>
+                <p className="text-xs mb-5" style={{ color: 'var(--text-3)' }}>
+                  {isHi ? 'मदद चाहिए? सपोर्ट टिकट भेजें।' : 'Need help? Submit a support request.'}
+                </p>
+                <button onClick={() => setView('ticket')} className="text-xs font-bold px-4 py-2 rounded-xl" style={{ background: 'var(--orange)', color: '#fff' }}>
+                  {isHi ? '📝 टिकट भेजें' : '📝 Submit a Ticket'}
+                </button>
+              </div>
+            )}
+            {!myTicketsLoading && !myTicketsError && myTickets.length > 0 && (
+              <div className="space-y-3">
+                {myTickets.map(ticket => {
+                  const catObj = TICKET_CATEGORIES.find(c => c.value === ticket.category);
+                  const catLabel = catObj ? (isHi ? catObj.labelHi : catObj.label) : ticket.category;
+                  const isResolved = ticket.status === 'resolved';
+                  return (
+                    <div key={ticket.id} className="rounded-xl p-4 space-y-2" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-bold truncate">{ticket.subject}</div>
+                          <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-3)' }}>{catLabel}</div>
+                        </div>
+                        <span
+                          className="shrink-0 text-[11px] font-bold px-2 py-0.5 rounded-full"
+                          style={{
+                            background: isResolved ? '#D1FAE5' : '#FEF3C7',
+                            color: isResolved ? '#065F46' : '#92400E',
+                          }}
+                        >
+                          {isResolved ? (isHi ? 'हल हुआ' : 'Resolved') : (isHi ? 'खुला' : 'Open')}
+                        </span>
+                      </div>
+                      <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>
+                        {isHi ? 'भेजा:' : 'Submitted:'} {new Date(ticket.created_at).toLocaleDateString(isHi ? 'hi-IN' : 'en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ═══ TICKET SENT VIEW ═══ */}
         {view === 'ticket-sent' && (
           <div className="text-center py-12 animate-slide-up">
