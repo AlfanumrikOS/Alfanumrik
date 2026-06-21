@@ -9,16 +9,13 @@ import { makeServiceSupabase, insertEvent } from '../_helpers/supabase-runtime';
 const sb = makeServiceSupabase();
 const ctx: SubscriberContext = { sb, dryRun: false, now: () => new Date(), log: defaultLog };
 
-// Each run gets a unique second-offset derived from the first 8 hex digits of a
-// fresh UUID (0..4294967295 ≈ 136-year spread). Events land ~1 year + that offset
-// in the future. The ±12 h wipe window in beforeEach clears any prior-run events
-// that share this run's time neighbourhood, regardless of how many runs accumulated.
+// Each run gets a unique second-offset (0..4294967295 ≈ 136-year spread).
+// beforeEach deletes by kind from CURSOR onward, which is the exact set of events
+// any subscriber for these kinds could see — eliminates all prior-run contamination
+// regardless of how far in the future prior runs deposited their events.
 const RUN_ID     = crypto.randomUUID().replace(/-/g, '');
 const OFFSET_SEC = parseInt(RUN_ID.slice(0, 8), 16);  // 0..4294967295 ≈ 136-year spread
 const FUTURE     = Date.now() + 365 * 24 * 3600_000 + OFFSET_SEC * 1000;
-const WIPE_HALF  = 12 * 3600_000;                                // 12-hour wipe radius
-const WIPE_START = new Date(FUTURE - WIPE_HALF).toISOString();
-const WIPE_END   = new Date(FUTURE + WIPE_HALF).toISOString();
 const CURSOR     = new Date(FUTURE - 1000).toISOString();   // 1 s before T1
 const T1         = new Date(FUTURE).toISOString();
 
@@ -34,8 +31,9 @@ beforeEach(async () => {
     await sb.from('subscriber_retry_state').delete().eq('subscriber_name', name);
     await sb.from('subscriber_dead_letters').delete().eq('subscriber_name', name);
   }
-  // Wipe ±12 h around this run's time slot to clear any accumulated prior-run events.
-  await sb.from('state_events').delete().gte('occurred_at', WIPE_START).lte('occurred_at', WIPE_END);
+  // Delete by kind from CURSOR onward — covers all events any subscriber here can see,
+  // even from prior runs that landed at timestamps far beyond this run's time window.
+  await sb.from('state_events').delete().gte('occurred_at', CURSOR).in('kind', ['learner.mastery_changed', 'learner.quiz_completed']);
   await sb.from('feature_flags').delete().eq('flag_name', 'ff_projector_runner_v1');
   __resetFlagCacheForTests();
 });
