@@ -9,16 +9,12 @@ const ctx: SubscriberContext = {
   sb, dryRun: false, now: () => new Date(), log: defaultLog,
 };
 
-// Each run gets a unique second-offset derived from the first 8 hex digits of a
-// fresh UUID (0..4294967295 ≈ 136-year spread). Events land ~1 year + that offset
-// in the future. The ±12 h wipe window in beforeEach clears any prior-run events
-// that share this run's time neighbourhood, regardless of how many runs accumulated.
+// Each run gets a unique second-offset (0..4294967295 ≈ 136-year spread).
+// beforeEach deletes by kind from CURSOR onward — covers all events the subscriber
+// can see from any prior run, regardless of when they were deposited.
 const RUN_ID     = crypto.randomUUID().replace(/-/g, '');
 const OFFSET_SEC = parseInt(RUN_ID.slice(0, 8), 16);  // 0..4294967295 ≈ 136-year spread
 const FUTURE     = Date.now() + 365 * 24 * 3600_000 + OFFSET_SEC * 1000;
-const WIPE_HALF  = 12 * 3600_000;                                // 12-hour wipe radius
-const WIPE_START = new Date(FUTURE - WIPE_HALF).toISOString();
-const WIPE_END   = new Date(FUTURE + WIPE_HALF).toISOString();
 const CURSOR     = new Date(FUTURE - 1000).toISOString();   // 1 s before T1
 const T1         = new Date(FUTURE).toISOString();
 const T2         = new Date(FUTURE + 1000).toISOString();   // T1 + 1 s
@@ -29,8 +25,9 @@ beforeEach(async () => {
   await sb.from('subscriber_offsets').delete().eq('subscriber_name', HAPPY);
   await sb.from('subscriber_retry_state').delete().eq('subscriber_name', HAPPY);
   await sb.from('subscriber_dead_letters').delete().eq('subscriber_name', HAPPY);
-  // Wipe ±12 h around this run's time slot to clear any accumulated prior-run events.
-  await sb.from('state_events').delete().gte('occurred_at', WIPE_START).lte('occurred_at', WIPE_END);
+  // Delete by kind from CURSOR onward — covers all events the HAPPY subscriber can
+  // see, even from prior runs that landed at timestamps far beyond this run's window.
+  await sb.from('state_events').delete().gte('occurred_at', CURSOR).eq('kind', 'learner.mastery_changed');
   await sb.from('subscriber_offsets').insert({
     subscriber_name: HAPPY,
     kind_filter: 'learner.mastery_changed',
