@@ -57,7 +57,7 @@ export default function LearnPage() {
   const subjectsOsOn = useSubjectsOsFlag();
 
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
-  const [chapters, setChapters] = useState<Array<{ chapter_number: number; title: string }>>([]);
+  const [chapters, setChapters] = useState<Array<{ chapter_number: number; title: string; verified_question_count?: number }>>([]);
   const [chaptersLoading, setChaptersLoading] = useState(false);
   const [lastStudied, setLastStudied] = useState<{ subject: string; chapter: number; chapterTitle: string; concept: number; timestamp: number } | null>(null);
   const [progressRows, setProgressRows] = useState<Array<{ subject: string; chapter_number: number; is_completed: boolean }>>([]);
@@ -431,10 +431,23 @@ export default function LearnPage() {
                               return null;
                             })()}
                           </div>
-                          <div className="text-[11px] text-[var(--text-3)] mt-0.5">
-                            {isHi
-                              ? `अध्याय ${ch.chapter_number} · पढ़ो और समझो`
-                              : `Chapter ${ch.chapter_number} · Read & understand`}
+                          <div className="text-[11px] text-[var(--text-3)] mt-0.5 flex items-center gap-2 flex-wrap">
+                            <span>
+                              {isHi
+                                ? `अध्याय ${ch.chapter_number} · पढ़ो और समझो`
+                                : `Chapter ${ch.chapter_number} · Read & understand`}
+                            </span>
+                            {(ch.verified_question_count ?? 0) > 0 && (
+                              <span
+                                className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+                                style={{
+                                  background: `${selectedMeta?.color || 'var(--orange)'}12`,
+                                  color: selectedMeta?.color || 'var(--orange)',
+                                }}
+                              >
+                                📝 {ch.verified_question_count} {isHi ? 'प्रश्न' : 'questions'}
+                              </span>
+                            )}
                           </div>
                         </div>
 

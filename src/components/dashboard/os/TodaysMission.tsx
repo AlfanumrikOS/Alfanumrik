@@ -109,52 +109,88 @@ export default function TodaysMission({
         )}
         {!queueLoading && queueData && queueData.queue.length > 0 && (
           <>
-            {/* Primary action */}
-            <button
-              type="button"
-              onClick={() => router.push(deepLinkToHref(queueData.primary.deepLink))}
-              className="w-full text-left flex items-center gap-3 rounded-2xl px-4 py-3 transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
-              style={{
-                background: 'rgb(var(--orange-rgb) / 0.06)',
-                border: '1px solid rgb(var(--orange-rgb) / 0.15)',
-              }}
-              data-testid="mission-primary-action"
-            >
-              <span className="text-2xl" aria-hidden="true">
-                {todayIcon(queueData.primary.iconHint)}
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>
-                  {todayCopy(queueData.primary.labelKey, isHi)}
-                </p>
-                <p className="text-xs" style={{ color: 'var(--text-3)' }}>
-                  ~{queueData.primary.estMinutes} {isHi ? 'मिनट' : 'min'}
-                </p>
-              </div>
-              <span className="text-sm" style={{ color: 'var(--text-3)' }}>→</span>
-            </button>
-
-            {/* Secondary actions (up to 2 more) */}
-            {queueData.queue.slice(1, 3).map((item) => (
+            {/* Cold-start: dominant full-width card instead of the normal queue */}
+            {queueData.primary.type === 'cold_start_diagnostic' ? (
               <button
-                key={item.rank}
                 type="button"
-                onClick={() => router.push(deepLinkToHref(item.deepLink))}
-                className="w-full text-left flex items-center gap-3 rounded-2xl px-4 py-2.5 transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
+                onClick={() => router.push(deepLinkToHref(queueData.primary.deepLink))}
+                className="w-full text-center rounded-2xl px-5 py-5 transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
                 style={{
-                  background: 'var(--surface-2)',
-                  border: '1px solid var(--border)',
+                  background: 'linear-gradient(135deg, rgba(232,88,28,0.10), rgba(245,158,11,0.10))',
+                  border: '1.5px solid rgba(232,88,28,0.25)',
                 }}
+                data-testid="mission-primary-action"
+                aria-label={isHi ? 'डायग्नोस्टिक शुरू करें' : 'Begin diagnostic'}
               >
-                <span className="text-lg" aria-hidden="true">{todayIcon(item.iconHint)}</span>
-                <span className="text-xs font-semibold flex-1 truncate" style={{ color: 'var(--text-2)' }}>
-                  {todayCopy(item.labelKey, isHi)}
-                </span>
-                <span className="text-xs" style={{ color: 'var(--text-3)' }}>
-                  ~{item.estMinutes}m
-                </span>
+                <div className="text-4xl mb-2" aria-hidden="true">🧭</div>
+                <p
+                  className="text-base font-extrabold mb-1"
+                  style={{ color: 'var(--text-1)', fontFamily: 'var(--font-display)' }}
+                >
+                  {isHi ? 'डायग्नोस्टिक शुरू करें' : 'Start your diagnostic'}
+                </p>
+                <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>
+                  {isHi
+                    ? '10 मिनट · Foxy आपका पर्सनलाइज्ड प्लान बनाएगा'
+                    : '10 min · Foxy will personalise your study plan'}
+                </p>
+                <div
+                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold text-white"
+                  style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)' }}
+                >
+                  {isHi ? 'शुरू करें' : 'Begin diagnostic'} →
+                </div>
               </button>
-            ))}
+            ) : (
+              <>
+                {/* Primary action */}
+                <button
+                  type="button"
+                  onClick={() => router.push(deepLinkToHref(queueData.primary.deepLink))}
+                  className="w-full text-left flex items-center gap-3 rounded-2xl px-4 py-3 transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
+                  style={{
+                    background: 'rgb(var(--orange-rgb) / 0.06)',
+                    border: '1px solid rgb(var(--orange-rgb) / 0.15)',
+                  }}
+                  data-testid="mission-primary-action"
+                >
+                  <span className="text-2xl" aria-hidden="true">
+                    {todayIcon(queueData.primary.iconHint)}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>
+                      {todayCopy(queueData.primary.labelKey, isHi)}
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+                      ~{queueData.primary.estMinutes} {isHi ? 'मिनट' : 'min'}
+                    </p>
+                  </div>
+                  <span className="text-sm" style={{ color: 'var(--text-3)' }}>→</span>
+                </button>
+
+                {/* Secondary actions (up to 2 more) */}
+                {queueData.queue.slice(1, 3).map((item) => (
+                  <button
+                    key={item.rank}
+                    type="button"
+                    onClick={() => router.push(deepLinkToHref(item.deepLink))}
+                    className="w-full text-left flex items-center gap-3 rounded-2xl px-4 py-2.5 transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
+                    style={{
+                      background: 'var(--surface-2)',
+                      border: '1px solid var(--border)',
+                    }}
+                  >
+                    <span className="text-lg" aria-hidden="true">{todayIcon(item.iconHint)}</span>
+                    <span className="text-xs font-semibold flex-1 truncate" style={{ color: 'var(--text-2)' }}>
+                      {todayCopy(item.labelKey, isHi)}
+                    </span>
+                    <span className="text-xs" style={{ color: 'var(--text-3)' }}>
+                      ~{item.estMinutes}m
+                    </span>
+                  </button>
+                ))}
+              </>
+            )}
           </>
         )}
       </div>

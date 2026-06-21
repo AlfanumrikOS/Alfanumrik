@@ -20,7 +20,7 @@
  */
 
 import { useState, useEffect, useRef, type CSSProperties } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { LoadingFoxy } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
@@ -171,6 +171,8 @@ function CircleProgress({ percent, size = 120, stroke = 10 }: { percent: number;
 export default function DiagnosticPage() {
   const { student, isLoggedIn, isLoading, isHi, activeRole } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isPostOnboarding = searchParams.get('ref') === 'onboarding';
 
   // ── Navigation guard ──────────────────────────────────────────
   useEffect(() => {
@@ -362,9 +364,11 @@ export default function DiagnosticPage() {
         }}
       >
         <div style={{ width: '100%', maxWidth: 420, animation: 'slideUp 0.5s ease-out' }}>
-          {/* Header */}
+          {/* Header — welcome variant when arriving from onboarding */}
           <div style={{ textAlign: 'center', marginBottom: 28 }}>
-            <div className="animate-float" style={{ fontSize: 44, marginBottom: 12 }}>🎯</div>
+            <div className="animate-float" style={{ fontSize: 44, marginBottom: 12 }}>
+              {isPostOnboarding ? '🧭' : '🎯'}
+            </div>
             <h1
               style={{
                 fontSize: 22,
@@ -374,12 +378,18 @@ export default function DiagnosticPage() {
                 fontFamily: 'var(--font-display)',
               }}
             >
-              {isHi ? 'डायग्नोस्टिक टेस्ट' : 'Diagnostic Assessment'}
+              {isPostOnboarding
+                ? (isHi ? 'स्वागत है! आपकी शुरुआत खोजें' : "Welcome! Let's find your starting point")
+                : (isHi ? 'डायग्नोस्टिक टेस्ट' : 'Diagnostic Assessment')}
             </h1>
             <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.6 }}>
-              {isHi
-                ? '15 प्रश्नों का टेस्ट देकर जानें आप किस स्तर पर हैं।'
-                : 'Answer 15 questions to discover your current level and get personalised recommendations.'}
+              {isPostOnboarding
+                ? (isHi
+                  ? 'यह 10 मिनट का डायग्नोस्टिक क्विज़ Foxy को आपका स्तर समझने और पर्सनलाइज्ड स्टडी प्लान बनाने में मदद करता है।'
+                  : 'This 10-minute diagnostic quiz helps Foxy understand your current level and create a personalised study plan.')
+                : (isHi
+                  ? '15 प्रश्नों का टेस्ट देकर जानें आप किस स्तर पर हैं।'
+                  : 'Answer 15 questions to discover your current level and get personalised recommendations.')}
             </p>
           </div>
 
@@ -1051,10 +1061,10 @@ export default function DiagnosticPage() {
               </div>
             )}
 
-            {/* CTA */}
+            {/* CTA — go to dashboard when arriving from onboarding, else to quiz */}
             <button
               type="button"
-              onClick={() => router.push('/quiz')}
+              onClick={() => router.push(isPostOnboarding ? '/dashboard' : '/quiz')}
               style={{
                 width: '100%',
                 padding: '15px 0',
@@ -1069,7 +1079,9 @@ export default function DiagnosticPage() {
                 minHeight: 44,
               }}
             >
-              {isHi ? 'अभ्यास शुरू करें' : 'Start Practicing'}
+              {isPostOnboarding
+                ? (isHi ? 'अपना डैशबोर्ड देखें →' : 'Go to your dashboard →')
+                : (isHi ? 'अभ्यास शुरू करें' : 'Start Practicing')}
             </button>
 
             {/* Secondary: re-take */}

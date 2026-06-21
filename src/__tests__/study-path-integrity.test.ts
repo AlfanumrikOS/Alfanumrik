@@ -88,9 +88,9 @@ describe('study-path integrity — getChaptersForSubject', () => {
     const chapters = await getChaptersForSubject('math', '9');
 
     expect(chapters).toEqual([
-      { chapter_number: 1, title: 'Number Systems' },
-      { chapter_number: 2, title: 'Polynomials' },
-      { chapter_number: 3, title: 'Coordinate Geometry' },
+      { chapter_number: 1, title: 'Number Systems', verified_question_count: 0 },
+      { chapter_number: 2, title: 'Polynomials', verified_question_count: 0 },
+      { chapter_number: 3, title: 'Coordinate Geometry', verified_question_count: 0 },
     ]);
   });
 
@@ -104,7 +104,7 @@ describe('study-path integrity — getChaptersForSubject', () => {
 
     const chapters = await getChaptersForSubject('math', '9');
 
-    expect(chapters).toEqual([{ chapter_number: 1, title: 'Number Systems' }]);
+    expect(chapters).toEqual([{ chapter_number: 1, title: 'Number Systems', verified_question_count: 0 }]);
   });
 
   it('falls back to "Chapter N" placeholder when neither field is present', async () => {
@@ -117,7 +117,7 @@ describe('study-path integrity — getChaptersForSubject', () => {
 
     const chapters = await getChaptersForSubject('math', '9');
 
-    expect(chapters).toEqual([{ chapter_number: 5, title: 'Chapter 5' }]);
+    expect(chapters).toEqual([{ chapter_number: 5, title: 'Chapter 5', verified_question_count: 0 }]);
   });
 
   it('returns [] on 401 (unauthenticated) without throwing', async () => {
