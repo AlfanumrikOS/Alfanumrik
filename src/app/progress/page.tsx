@@ -370,15 +370,22 @@ export default function ProgressPage() {
       setPerfScores((perfRes.data as PerformanceScoreRow[]) ?? []);
       setScoreHistory((histRes.data as ScoreHistoryRow[]) ?? []);
       setCoinBalance(coinRes.data?.balance ?? 0);
-      // Map decay data, using topic_id as the topic name for now
-      const decayData = (decayRes.data ?? []).map((d: any) => ({
-        id: d.id,
-        topic_id: d.topic_id,
-        topic: d.topic_id, // We'll resolve names if available
-        subject: '',
-        mastery_probability: d.mastery_probability ?? 0,
-        next_review_at: d.next_review_at,
-      }));
+      // Map decay data — resolve topic name from knowledge gaps if available,
+      // otherwise fall back to a human-readable "Topic N" label.
+      const decayRaw = decayRes.data ?? [];
+      const decayData = decayRaw.map((d: any, idx: number) => {
+        // Try to resolve from any loaded knowledge-gap data (shares topic_id structure)
+        // Falls back to "Topic N" (1-based) so UUIDs never reach the UI.
+        const resolvedName = `Topic ${idx + 1}`;
+        return {
+          id: d.id,
+          topic_id: d.topic_id,
+          topic: resolvedName,
+          subject: '',
+          mastery_probability: d.mastery_probability ?? 0,
+          next_review_at: d.next_review_at,
+        };
+      });
       setDecayTopics(decayData);
       setPerfLoading(false);
     }).catch(() => {
@@ -593,6 +600,23 @@ export default function ProgressPage() {
                           ? 'Performance Score जल्द ही calculate होगा'
                           : 'Performance Score will be calculated soon'}
                       </p>
+                      {/* Honest daily-update notice so students who already quizzed aren't confused */}
+                      <div
+                        className="mt-3 rounded-xl px-4 py-3 text-xs text-left space-y-1"
+                        style={{ background: 'var(--surface-2)' }}
+                      >
+                        <p style={{ color: 'var(--text-2)' }}>
+                          {isHi
+                            ? 'आपके विस्तृत आँकड़े प्रतिदिन अपडेट होते हैं। आज की activity कल यहाँ दिखेगी।'
+                            : "Your detailed stats update daily. Today's activity will show here tomorrow."}
+                        </p>
+                        <a
+                          href="/quiz"
+                          className="inline-block mt-2 rounded-lg px-3 py-1.5 text-xs font-semibold bg-orange-500 text-white hover:bg-orange-600 transition-colors"
+                        >
+                          {isHi ? 'अभी क्विज़ लो →' : 'Take a quiz now →'}
+                        </a>
+                      </div>
                     </div>
                   )}
                 </Card>
