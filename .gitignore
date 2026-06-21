@@ -40,3 +40,6 @@ Alfanumrik/
 # Previously committed as orphan gitlinks (mode 160000) with no .gitmodules
 # entry, which broke `git submodule` cleanup in CI (exit 128). Never track.
 .claude/worktrees/
+
+# Offline generation run logs/checkpoints (not source)
+scripts/.checkpoints/
