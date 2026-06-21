@@ -137,7 +137,14 @@ export default function OnboardingPage() {
       await refreshStudent();
       // Send new students straight to the diagnostic so they have a
       // personalised plan before seeing an empty dashboard (activation fix).
-      router.replace('/diagnostic?ref=onboarding');
+      // Diagnostic only supports grades 6–10; grades 11–12 go straight to
+      // the dashboard where the learner loop surfaces appropriate content.
+      const diagnosticGrades = ['6', '7', '8', '9', '10'];
+      if (diagnosticGrades.includes(grade)) {
+        router.replace('/diagnostic?ref=onboarding');
+      } else {
+        router.replace('/dashboard');
+      }
     } catch {
       setError(isHi ? 'कनेक्शन में समस्या। कृपया फिर से प्रयास करें।' : 'Connection error. Please try again.');
       setSaving(false);
