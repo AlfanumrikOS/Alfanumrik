@@ -9,16 +9,23 @@ const ctx: SubscriberContext = {
   sb, dryRun: false, now: () => new Date(), log: defaultLog,
 };
 
+// Unique run ID prevents concurrent CI runs on the same live DB from colliding.
+const RUN_ID  = crypto.randomUUID().replace(/-/g, '').slice(0, 6);
+const MS      = String(parseInt(RUN_ID.slice(0, 3), 16) % 1000).padStart(3, '0');
+const HAPPY   = `happy-${RUN_ID}`;
+const CURSOR  = `2026-05-12T00:00:00.${MS}Z`;
+const T1      = `2026-05-12T01:00:00.${MS}Z`;
+const T2      = `2026-05-12T02:00:00.${MS}Z`;
+
 beforeEach(async () => {
-  await sb.from('state_events').delete().eq('kind', 'learner.mastery_changed');
-  await sb.from('state_events').delete().eq('kind', 'learner.quiz_completed');
-  await sb.from('subscriber_offsets').delete().eq('subscriber_name', 'happy');
-  await sb.from('subscriber_retry_state').delete().eq('subscriber_name', 'happy');
-  await sb.from('subscriber_dead_letters').delete().eq('subscriber_name', 'happy');
+  await sb.from('subscriber_offsets').delete().eq('subscriber_name', HAPPY);
+  await sb.from('subscriber_retry_state').delete().eq('subscriber_name', HAPPY);
+  await sb.from('subscriber_dead_letters').delete().eq('subscriber_name', HAPPY);
+  await sb.from('state_events').delete().in('occurred_at', [T1, T2]);
   await sb.from('subscriber_offsets').insert({
-    subscriber_name: 'happy',
+    subscriber_name: HAPPY,
     kind_filter: 'learner.mastery_changed',
-    last_processed_occurred_at: '2026-05-12T00:00:00Z',
+    last_processed_occurred_at: CURSOR,
   });
 });
 
@@ -26,26 +33,26 @@ describe('tickOne happy path', () => {
   it('processes events in order and advances cursor', async () => {
     const calls: string[] = [];
     const sub: AnySubscriber = {
-      name: 'happy',
+      name: HAPPY,
       kind: 'learner.mastery_changed',
       async handle(event) { calls.push(event.eventId); },
     };
-    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: '2026-05-12T01:00:00Z' });
-    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: '2026-05-12T02:00:00Z' });
+    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T1 });
+    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T2 });
     const result = await tickOne(sub, { sb, ctx });
     expect(result.processed).toBe(2);
     expect(result.deadLettered).toBe(0);
     expect(calls.length).toBe(2);
     const { data: off } = await sb.from('subscriber_offsets')
       .select('last_processed_occurred_at, events_processed')
-      .eq('subscriber_name', 'happy').single();
+      .eq('subscriber_name', HAPPY).single();
     expect(off?.last_processed_occurred_at?.startsWith('2026-05-12T02:00:00')).toBe(true);
     expect(off?.events_processed).toBe(2);
   });
 
   it('processes nothing when no events past cursor', async () => {
     const sub: AnySubscriber = {
-      name: 'happy', kind: 'learner.mastery_changed',
+      name: HAPPY, kind: 'learner.mastery_changed',
       async handle() {},
     };
     const result = await tickOne(sub, { sb, ctx });
@@ -56,11 +63,11 @@ describe('tickOne happy path', () => {
   it('filters by kind', async () => {
     const calls: string[] = [];
     const sub: AnySubscriber = {
-      name: 'happy', kind: 'learner.mastery_changed',
+      name: HAPPY, kind: 'learner.mastery_changed',
       async handle(event) { calls.push(event.eventId); },
     };
-    await insertEvent(sb, { kind: 'learner.quiz_completed', occurredAt: '2026-05-12T01:00:00Z' });
-    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: '2026-05-12T02:00:00Z' });
+    await insertEvent(sb, { kind: 'learner.quiz_completed',  occurredAt: T1 });
+    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T2 });
     const result = await tickOne(sub, { sb, ctx });
     expect(result.processed).toBe(1);
     expect(calls.length).toBe(1);
@@ -70,38 +77,38 @@ describe('tickOne happy path', () => {
 describe('tickOne retry path', () => {
   it('persists attempt_count on failure and does not advance cursor', async () => {
     const sub: AnySubscriber = {
-      name: 'happy', kind: 'learner.mastery_changed',
+      name: HAPPY, kind: 'learner.mastery_changed',
       async handle() { throw new Error('boom'); },
     };
-    const e = await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: '2026-05-12T01:00:00Z' });
+    const e = await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T1 });
 
     const r1 = await tickOne(sub, { sb, ctx });
     expect(r1.processed).toBe(0);
     expect(r1.deadLettered).toBe(0);
     const { data: retryRow } = await sb.from('subscriber_retry_state')
       .select('attempt_count, last_error')
-      .eq('event_id', e.eventId).eq('subscriber_name', 'happy').single();
+      .eq('event_id', e.eventId).eq('subscriber_name', HAPPY).single();
     expect(retryRow?.attempt_count).toBe(1);
     expect(retryRow?.last_error).toBe('boom');
 
     // Cursor unchanged.
     const { data: off } = await sb.from('subscriber_offsets')
-      .select('last_processed_occurred_at').eq('subscriber_name', 'happy').single();
+      .select('last_processed_occurred_at').eq('subscriber_name', HAPPY).single();
     expect(off?.last_processed_occurred_at?.startsWith('2026-05-12T00:00:00')).toBe(true);
   });
 
   it('dead-letters after maxRetries failed ticks and advances cursor', async () => {
     const sub: AnySubscriber = {
-      name: 'happy', kind: 'learner.mastery_changed', maxRetries: 3,
+      name: HAPPY, kind: 'learner.mastery_changed', maxRetries: 3,
       async handle() { throw new Error('persistent'); },
     };
-    const e = await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: '2026-05-12T01:00:00Z' });
+    const e = await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T1 });
 
     await tickOne(sub, { sb, ctx });  // count=1
     await tickOne(sub, { sb, ctx });  // count=2
     // Cursor still unchanged.
     let { data: off } = await sb.from('subscriber_offsets')
-      .select('last_processed_occurred_at, events_dead_lettered').eq('subscriber_name', 'happy').single();
+      .select('last_processed_occurred_at, events_dead_lettered').eq('subscriber_name', HAPPY).single();
     expect(off?.last_processed_occurred_at?.startsWith('2026-05-12T00:00:00')).toBe(true);
 
     const r3 = await tickOne(sub, { sb, ctx });  // count=3 → dead-letter
@@ -109,7 +116,7 @@ describe('tickOne retry path', () => {
 
     const { data: dl } = await sb.from('subscriber_dead_letters')
       .select('attempt_count, last_error')
-      .eq('event_id', e.eventId).eq('subscriber_name', 'happy').single();
+      .eq('event_id', e.eventId).eq('subscriber_name', HAPPY).single();
     expect(dl?.attempt_count).toBe(3);
     expect(dl?.last_error).toBe('persistent');
 
@@ -120,7 +127,7 @@ describe('tickOne retry path', () => {
 
     // Cursor advanced past the bad event.
     ({ data: off } = await sb.from('subscriber_offsets')
-      .select('last_processed_occurred_at, events_dead_lettered').eq('subscriber_name', 'happy').single());
+      .select('last_processed_occurred_at, events_dead_lettered').eq('subscriber_name', HAPPY).single());
     expect(off?.last_processed_occurred_at?.startsWith('2026-05-12T01:00:00')).toBe(true);
     expect(off?.events_dead_lettered).toBe(1);
   });
@@ -128,10 +135,10 @@ describe('tickOne retry path', () => {
   it('clears retry state when handler eventually succeeds', async () => {
     let attempts = 0;
     const sub: AnySubscriber = {
-      name: 'happy', kind: 'learner.mastery_changed', maxRetries: 3,
+      name: HAPPY, kind: 'learner.mastery_changed', maxRetries: 3,
       async handle() { if (++attempts < 2) throw new Error('flake'); },
     };
-    const e = await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: '2026-05-12T01:00:00Z' });
+    const e = await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T1 });
     await tickOne(sub, { sb, ctx });  // count=1
     const r2 = await tickOne(sub, { sb, ctx });  // success
     expect(r2.processed).toBe(1);
@@ -142,7 +149,7 @@ describe('tickOne retry path', () => {
 
   it('dead-letters an unparseable row after maxRetries ticks', async () => {
     const sub: AnySubscriber = {
-      name: 'happy', kind: 'learner.mastery_changed', maxRetries: 3,
+      name: HAPPY, kind: 'learner.mastery_changed', maxRetries: 3,
       async handle() { /* never called */ },
     };
     // Insert a row that satisfies the table's NOT NULL constraints but whose
@@ -157,7 +164,7 @@ describe('tickOne retry path', () => {
       actor_auth_user_id: '00000000-0000-0000-0000-000000000000',
       tenant_id: null,
       idempotency_key: `bad-${eventId}`,
-      occurred_at: '2026-05-12T01:00:00Z',
+      occurred_at: T1,
       payload: 'this-should-be-an-object-but-isnt',
     });
 
@@ -168,13 +175,13 @@ describe('tickOne retry path', () => {
 
     const { data: dl } = await sb.from('subscriber_dead_letters')
       .select('attempt_count, last_error')
-      .eq('event_id', eventId).eq('subscriber_name', 'happy').single();
+      .eq('event_id', eventId).eq('subscriber_name', HAPPY).single();
     expect(dl?.attempt_count).toBe(3);
     expect(dl?.last_error).toContain('schema parse');
 
     // Cursor advanced past the bad row.
     const { data: off } = await sb.from('subscriber_offsets')
-      .select('last_processed_occurred_at').eq('subscriber_name', 'happy').single();
+      .select('last_processed_occurred_at').eq('subscriber_name', HAPPY).single();
     expect(off?.last_processed_occurred_at?.startsWith('2026-05-12T01:00:00')).toBe(true);
   });
 });

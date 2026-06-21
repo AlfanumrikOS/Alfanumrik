@@ -9,13 +9,23 @@ import { makeServiceSupabase, insertEvent } from '../_helpers/supabase-runtime';
 const sb = makeServiceSupabase();
 const ctx: SubscriberContext = { sb, dryRun: false, now: () => new Date(), log: defaultLog };
 
+// Unique run ID prevents concurrent CI runs on the same live DB from colliding.
+const RUN_ID  = crypto.randomUUID().replace(/-/g, '').slice(0, 6);
+const MS      = String(parseInt(RUN_ID.slice(0, 3), 16) % 1000).padStart(3, '0');
+const SA      = `a-${RUN_ID}`;
+const SB_     = `b-${RUN_ID}`;
+const SOK     = `ok-${RUN_ID}`;
+const SBAD    = `bad-${RUN_ID}`;
+const CURSOR  = `2026-05-12T00:00:00.${MS}Z`;
+const T1      = `2026-05-12T01:00:00.${MS}Z`;
+
 beforeEach(async () => {
-  // Clean state for the tests below.
-  await sb.from('state_events').delete().eq('kind', 'learner.mastery_changed');
-  await sb.from('state_events').delete().eq('kind', 'learner.quiz_completed');
-  await sb.from('subscriber_offsets').delete().in('subscriber_name', ['a', 'b', 'ok', 'bad']);
-  await sb.from('subscriber_retry_state').delete().in('subscriber_name', ['a', 'b', 'ok', 'bad']);
-  await sb.from('subscriber_dead_letters').delete().in('subscriber_name', ['a', 'b', 'ok', 'bad']);
+  for (const name of [SA, SB_, SOK, SBAD]) {
+    await sb.from('subscriber_offsets').delete().eq('subscriber_name', name);
+    await sb.from('subscriber_retry_state').delete().eq('subscriber_name', name);
+    await sb.from('subscriber_dead_letters').delete().eq('subscriber_name', name);
+  }
+  await sb.from('state_events').delete().eq('occurred_at', T1);
   await sb.from('feature_flags').delete().eq('flag_name', 'ff_projector_runner_v1');
   __resetFlagCacheForTests();
 });
@@ -45,23 +55,23 @@ describe('tickAll', () => {
       rollout_percentage: 100, target_environments: [],
     });
     const subA: AnySubscriber = {
-      name: 'a', kind: 'learner.mastery_changed', async handle() {},
+      name: SA, kind: 'learner.mastery_changed', async handle() {},
     };
     const subB: AnySubscriber = {
-      name: 'b', kind: 'learner.quiz_completed', async handle() {},
+      name: SB_, kind: 'learner.quiz_completed', async handle() {},
     };
     await sb.from('subscriber_offsets').insert([
-      { subscriber_name: 'a', kind_filter: 'learner.mastery_changed', last_processed_occurred_at: '2026-05-12T00:00:00Z' },
-      { subscriber_name: 'b', kind_filter: 'learner.quiz_completed', last_processed_occurred_at: '2026-05-12T00:00:00Z' },
+      { subscriber_name: SA,  kind_filter: 'learner.mastery_changed', last_processed_occurred_at: CURSOR },
+      { subscriber_name: SB_, kind_filter: 'learner.quiz_completed',  last_processed_occurred_at: CURSOR },
     ]);
-    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: '2026-05-12T01:00:00Z' });
-    await insertEvent(sb, { kind: 'learner.quiz_completed', occurredAt: '2026-05-12T01:00:00Z' });
+    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T1 });
+    await insertEvent(sb, { kind: 'learner.quiz_completed',  occurredAt: T1 });
     const dispatcher = createDispatcher([subA, subB]);
     const result = await tickAll({ sb, ctx, dispatcher });
     expect(result.skipped).toBe(false);
     expect(result.perSubscriber).toHaveLength(2);
-    expect(result.perSubscriber.find(r => r.subscriberName === 'a')?.processed).toBe(1);
-    expect(result.perSubscriber.find(r => r.subscriberName === 'b')?.processed).toBe(1);
+    expect(result.perSubscriber.find(r => r.subscriberName === SA)?.processed).toBe(1);
+    expect(result.perSubscriber.find(r => r.subscriberName === SB_)?.processed).toBe(1);
   });
 
   it('isolates subscribers — one failing does not block the other', async () => {
@@ -70,21 +80,21 @@ describe('tickAll', () => {
       rollout_percentage: 100, target_environments: [],
     });
     const okSub: AnySubscriber = {
-      name: 'ok', kind: 'learner.mastery_changed', async handle() {},
+      name: SOK, kind: 'learner.mastery_changed', async handle() {},
     };
     const badSub: AnySubscriber = {
-      name: 'bad', kind: 'learner.quiz_completed',
+      name: SBAD, kind: 'learner.quiz_completed',
       async handle() { throw new Error('always fails'); },
     };
     await sb.from('subscriber_offsets').insert([
-      { subscriber_name: 'ok', kind_filter: 'learner.mastery_changed', last_processed_occurred_at: '2026-05-12T00:00:00Z' },
-      { subscriber_name: 'bad', kind_filter: 'learner.quiz_completed', last_processed_occurred_at: '2026-05-12T00:00:00Z' },
+      { subscriber_name: SOK,  kind_filter: 'learner.mastery_changed', last_processed_occurred_at: CURSOR },
+      { subscriber_name: SBAD, kind_filter: 'learner.quiz_completed',  last_processed_occurred_at: CURSOR },
     ]);
-    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: '2026-05-12T01:00:00Z' });
-    await insertEvent(sb, { kind: 'learner.quiz_completed', occurredAt: '2026-05-12T01:00:00Z' });
+    await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T1 });
+    await insertEvent(sb, { kind: 'learner.quiz_completed',  occurredAt: T1 });
     const dispatcher = createDispatcher([okSub, badSub]);
     const result = await tickAll({ sb, ctx, dispatcher });
-    expect(result.perSubscriber.find(r => r.subscriberName === 'ok')?.processed).toBe(1);
-    expect(result.perSubscriber.find(r => r.subscriberName === 'bad')?.processed).toBe(0);
+    expect(result.perSubscriber.find(r => r.subscriberName === SOK)?.processed).toBe(1);
+    expect(result.perSubscriber.find(r => r.subscriberName === SBAD)?.processed).toBe(0);
   });
 });
