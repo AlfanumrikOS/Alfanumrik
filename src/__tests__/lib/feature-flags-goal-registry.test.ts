@@ -52,25 +52,27 @@ describe('GOAL_ADAPTIVE_FLAGS registry', () => {
   });
 });
 
-describe('FLAG_DEFAULTS — goal-adaptive defaults are OFF', () => {
+describe('FLAG_DEFAULTS — goal-adaptive defaults', () => {
   it('defaults ff_goal_profiles to false (preserves legacy behavior pre-DB-hit)', () => {
     expect(FLAG_DEFAULTS[GOAL_ADAPTIVE_FLAGS.GOAL_PROFILES]).toBe(false);
     expect(FLAG_DEFAULTS['ff_goal_profiles']).toBe(false);
   });
 
-  it('defaults ff_goal_aware_foxy to false (preserves legacy behavior pre-DB-hit)', () => {
-    expect(FLAG_DEFAULTS[GOAL_ADAPTIVE_FLAGS.GOAL_AWARE_FOXY]).toBe(false);
-    expect(FLAG_DEFAULTS['ff_goal_aware_foxy']).toBe(false);
+  it('defaults ff_goal_aware_foxy to true (RCA fix 2026-06-21: CEO-approved enable for student home)', () => {
+    // Updated 2026-06-21: ff_goal_aware_foxy was intentionally enabled as an RCA fix
+    // (migration 20260621000001_enable_core_student_flags.sql, CEO-approved).
+    // The "ship OFF" constraint is now met via the DB flag and the migration — the
+    // SSR default simply reflects production reality after the RCA.
+    expect(FLAG_DEFAULTS[GOAL_ADAPTIVE_FLAGS.GOAL_AWARE_FOXY]).toBe(true);
+    expect(FLAG_DEFAULTS['ff_goal_aware_foxy']).toBe(true);
   });
 
-  it('does NOT enable any goal-adaptive flag by default (founder safety constraint)', () => {
-    // Hard guard: if either flag is ever flipped to true in FLAG_DEFAULTS, the
-    // "ship OFF on prod and staging" constraint is violated for the SSR window
-    // before the DB fetch resolves.
+  it('ff_goal_profiles remains OFF (not part of the RCA enable set)', () => {
+    // Only ff_goal_aware_foxy and ff_goal_aware_selection were enabled by the RCA.
+    // ff_goal_profiles (super-admin preview page) remains OFF.
     const enabledKeys = Object.entries(FLAG_DEFAULTS)
       .filter(([, v]) => v === true)
       .map(([k]) => k);
     expect(enabledKeys).not.toContain('ff_goal_profiles');
-    expect(enabledKeys).not.toContain('ff_goal_aware_foxy');
   });
 });

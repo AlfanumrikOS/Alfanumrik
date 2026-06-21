@@ -48,25 +48,27 @@ describe('GOAL_ADAPTIVE_FLAGS — Phase 2 ff_goal_aware_selection', () => {
   });
 });
 
-describe('FLAG_DEFAULTS — Phase 2 default is OFF', () => {
-  it('defaults ff_goal_aware_selection to false (preserves legacy behavior pre-DB-hit)', () => {
-    expect(FLAG_DEFAULTS[GOAL_ADAPTIVE_FLAGS.GOAL_AWARE_SELECTION]).toBe(false);
-    expect(FLAG_DEFAULTS['ff_goal_aware_selection']).toBe(false);
+describe('FLAG_DEFAULTS — Phase 2 default (updated 2026-06-21)', () => {
+  it('defaults ff_goal_aware_selection to true (RCA fix 2026-06-21: CEO-approved enable)', () => {
+    // Updated 2026-06-21: ff_goal_aware_selection was intentionally enabled as an RCA fix
+    // (migration 20260621000001_enable_core_student_flags.sql, CEO-approved).
+    expect(FLAG_DEFAULTS[GOAL_ADAPTIVE_FLAGS.GOAL_AWARE_SELECTION]).toBe(true);
+    expect(FLAG_DEFAULTS['ff_goal_aware_selection']).toBe(true);
   });
 
-  it('does NOT enable the Phase 2 flag by default (founder safety constraint)', () => {
-    // If this flag is ever flipped to true in FLAG_DEFAULTS, the
-    // "ship OFF on prod and staging" constraint is violated for the SSR
-    // window before the DB fetch resolves.
+  it('ff_goal_profiles remains OFF (not part of the RCA enable set)', () => {
+    // Only goal-aware-foxy and goal-aware-selection were enabled by the RCA.
     const enabledKeys = Object.entries(FLAG_DEFAULTS)
       .filter(([, v]) => v === true)
       .map(([k]) => k);
-    expect(enabledKeys).not.toContain('ff_goal_aware_selection');
+    expect(enabledKeys).not.toContain('ff_goal_profiles');
   });
 
-  it('continues to default the Phase 0+1 flags to false (no regression)', () => {
+  it('ff_goal_profiles remains false; ff_goal_aware_foxy is now true (RCA)', () => {
+    // ff_goal_profiles (super-admin preview page) was not part of the RCA enable set.
     expect(FLAG_DEFAULTS['ff_goal_profiles']).toBe(false);
-    expect(FLAG_DEFAULTS['ff_goal_aware_foxy']).toBe(false);
+    // ff_goal_aware_foxy was enabled by the same RCA migration.
+    expect(FLAG_DEFAULTS['ff_goal_aware_foxy']).toBe(true);
   });
 });
 
