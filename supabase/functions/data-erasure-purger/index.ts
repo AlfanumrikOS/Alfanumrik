@@ -55,13 +55,26 @@ export function classifyFailure(message: string, rowsDeleted?: Record<string, nu
   return 'permanent';
 }
 
-export function normalizeRpcData(data: unknown): { status: ErasureResultStatus; rows_deleted: Record<string, number>; dry_run: boolean } {
+export function normalizeRpcData(data: unknown): {
+  status: ErasureResultStatus;
+  rows_deleted: Record<string, number>;
+  dry_run: boolean;
+  error?: string;
+  failure_classification?: FailureClassification;
+} {
   const record = (data && typeof data === 'object') ? data as Record<string, unknown> : {};
   const rowsDeleted = (record.rows_deleted && typeof record.rows_deleted === 'object') ? record.rows_deleted as Record<string, number> : {};
+  const VALID_STATUSES: readonly string[] = ['completed', 'failed', 'skipped', 'dry_run'];
+  const rawStatus = typeof record.status === 'string' ? record.status : 'completed';
+  const status: ErasureResultStatus = VALID_STATUSES.includes(rawStatus) ? rawStatus as ErasureResultStatus : 'completed';
   return {
-    status: record.status === 'dry_run' ? 'dry_run' : 'completed',
+    status,
     rows_deleted: rowsDeleted,
     dry_run: record.dry_run === true,
+    error: typeof record.error === 'string' ? record.error : undefined,
+    failure_classification: typeof record.failure_classification === 'string'
+      ? record.failure_classification as FailureClassification
+      : undefined,
   };
 }
 
@@ -89,7 +102,11 @@ export async function processErasureRow(
   options: PurgeOptions = {},
 ): Promise<PerRowResult> {
   const dryRun = options.dryRun === true;
-  await writeAuditEvent(sb, dryRun ? 'data_erasure.dry_run_started' : 'data_erasure.purge_started', row, { dry_run: dryRun, occurred_at: now().toISOString() });
+  // NOTE: Do NOT write a pre-RPC audit event here.
+  // execute_data_erasure_purge is transaction-safe and writes
+  // data_erasure.purge_started / dry_run_started internally via
+  // insert_data_erasure_audit_event (SECURITY DEFINER, service_role only).
+  // Writing it here would produce a duplicate audit entry.
 
   const { data, error } = await sb.rpc('execute_data_erasure_purge', {
     p_request_id: row.id,
@@ -98,6 +115,10 @@ export async function processErasureRow(
   });
 
   if (error) {
+    // Transport-level error: the RPC itself failed to execute (network error,
+    // Supabase client error, function not found, etc.). The RPC never ran so
+    // it did NOT write any audit entry. Write the failure audit here as the
+    // only fallback path that reaches audit_logs for transport failures.
     const msg = error.message ?? String(error);
     const classification = classifyFailure(msg);
     await writeAuditEvent(sb, 'data_erasure.failed', row, { error: msg.slice(0, 2000), failure_classification: classification, dry_run: dryRun }, 'failure');
@@ -105,11 +126,31 @@ export async function processErasureRow(
   }
 
   const normalized = normalizeRpcData(data);
+
+  // Row was locked by a concurrent tick (SKIP LOCKED → NOT FOUND → 55P03).
+  // The RPC returns {status:'skipped'} cleanly; no audit entry is expected.
+  if (normalized.status === 'skipped') {
+    return { request_id: row.id, student_id: row.student_id, status: 'skipped' };
+  }
+
+  // RPC hit an internal error and returned {status:'failed'} from its
+  // WHEN OTHERS handler. The handler already wrote data_erasure.failed to
+  // audit_logs atomically. Do NOT write a second audit entry here.
+  if (normalized.status === 'failed') {
+    const msg = normalized.error ?? 'RPC returned failed status without error message';
+    const classification = normalized.failure_classification ?? classifyFailure(msg);
+    return { request_id: row.id, student_id: row.student_id, status: 'failed', error: msg, failure_classification: classification };
+  }
+
+  // Dry run completed. The RPC wrote data_erasure.dry_run_completed to
+  // audit_logs atomically. Do NOT write a second audit entry here.
   if (normalized.status === 'dry_run') {
-    await writeAuditEvent(sb, 'data_erasure.dry_run_completed', row, { rows_deleted: normalized.rows_deleted, dry_run: true });
     return { request_id: row.id, student_id: row.student_id, status: 'dry_run', rows_deleted: normalized.rows_deleted };
   }
 
+  // Successful purge. The RPC wrote data_erasure.purge_completed to
+  // audit_logs atomically. Do NOT write a second audit entry here.
+  // Emit a domain event for downstream consumers (parent notification, analytics).
   try {
     await sb.from('state_events').insert({
       event_id: uuid(),
@@ -122,7 +163,6 @@ export async function processErasureRow(
     });
   } catch { /* best-effort */ }
 
-  await writeAuditEvent(sb, 'data_erasure.purge_completed', row, { rows_deleted: normalized.rows_deleted, dry_run: false });
   return { request_id: row.id, student_id: row.student_id, status: 'completed', rows_deleted: normalized.rows_deleted };
 }
 

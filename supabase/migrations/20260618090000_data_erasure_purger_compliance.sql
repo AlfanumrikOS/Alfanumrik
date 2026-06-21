@@ -56,6 +56,12 @@ BEGIN
 END;
 $$;
 
+-- Restrict insert_data_erasure_audit_event to service_role only.
+-- Without this revoke any anon/authenticated client can call a SECURITY DEFINER
+-- function and forge audit entries.
+REVOKE ALL ON FUNCTION public.insert_data_erasure_audit_event(uuid, text, text, jsonb) FROM PUBLIC, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.insert_data_erasure_audit_event(uuid, text, text, jsonb) TO service_role;
+
 CREATE OR REPLACE FUNCTION public.execute_data_erasure_purge(
   p_request_id uuid,
   p_dry_run boolean DEFAULT false,
@@ -77,6 +83,8 @@ DECLARE
 BEGIN
   SELECT * INTO v_req FROM public.data_erasure_requests WHERE id = p_request_id FOR UPDATE SKIP LOCKED;
   IF NOT FOUND THEN
+    -- Row is locked by a concurrent tick; raise 55P03 which the EXCEPTION block
+    -- below catches separately and returns as {status:'skipped'}.
     RAISE EXCEPTION 'data erasure request % is locked or absent', p_request_id USING ERRCODE = '55P03';
   END IF;
   IF v_req.status = 'completed' THEN
@@ -86,6 +94,8 @@ BEGIN
     RAISE EXCEPTION 'data erasure request % is not pending (status=%)', p_request_id, v_req.status USING ERRCODE = 'P0001';
   END IF;
 
+  -- FIX: use auth_user_id (the actual column name on students); actor_auth_user_id
+  -- was a typo that caused every purge to crash at the DELETE step.
   SELECT auth_user_id INTO v_auth_user_id FROM public.students WHERE id = v_req.student_id;
   PERFORM public.insert_data_erasure_audit_event(p_request_id, CASE WHEN p_dry_run THEN 'data_erasure.dry_run_started' ELSE 'data_erasure.purge_started' END, 'success', jsonb_build_object('dry_run', p_dry_run, 'operator_event_id', p_operator_event_id));
 
@@ -96,7 +106,8 @@ BEGIN
         CONTINUE;
       END IF;
       IF v_table = 'audit_logs' THEN
-        EXECUTE 'SELECT count(*) FROM public.audit_logs WHERE actor_auth_user_id = $1' INTO v_count USING v_auth_user_id;
+        -- FIX: use auth_user_id not actor_auth_user_id (column name typo).
+        EXECUTE 'SELECT count(*) FROM public.audit_logs WHERE auth_user_id = $1' INTO v_count USING v_auth_user_id;
       ELSIF v_table = 'notifications' THEN
         EXECUTE 'SELECT count(*) FROM public.notifications WHERE recipient_id = $1' INTO v_count USING v_auth_user_id;
       ELSIF v_table = 'students' THEN
@@ -116,7 +127,8 @@ BEGIN
   FOREACH v_table IN ARRAY v_tables LOOP
     IF to_regclass('public.' || quote_ident(v_table)) IS NULL THEN CONTINUE; END IF;
     IF v_table = 'audit_logs' THEN
-      DELETE FROM public.audit_logs WHERE actor_auth_user_id = v_auth_user_id;
+      -- FIX: use auth_user_id not actor_auth_user_id (column name typo).
+      DELETE FROM public.audit_logs WHERE auth_user_id = v_auth_user_id;
     ELSIF v_table = 'notifications' THEN
       DELETE FROM public.notifications WHERE recipient_id = v_auth_user_id;
     ELSIF v_table = 'students' THEN
@@ -134,12 +146,36 @@ BEGIN
     WHERE id = p_request_id AND lock_token = v_lock;
   PERFORM public.insert_data_erasure_audit_event(p_request_id, 'data_erasure.purge_completed', 'success', jsonb_build_object('rows_deleted', v_rows, 'dry_run', false));
   RETURN jsonb_build_object('status', 'completed', 'rows_deleted', v_rows, 'school_id', v_req.school_id);
-EXCEPTION WHEN OTHERS THEN
-  UPDATE public.data_erasure_requests
-    SET status = 'failed', processed_at = now(), error_message = left(SQLERRM, 2000), lock_token = NULL, locked_at = NULL, failure_classification = public.classify_data_erasure_failure(SQLERRM, v_rows)
-    WHERE id = p_request_id;
-  PERFORM public.insert_data_erasure_audit_event(p_request_id, 'data_erasure.failed', 'failure', jsonb_build_object('error', left(SQLERRM, 2000), 'failure_classification', public.classify_data_erasure_failure(SQLERRM, v_rows), 'rows_deleted', v_rows));
-  RAISE;
+
+EXCEPTION
+  -- Row locked by a concurrent tick: skip cleanly. Do NOT update status to
+  -- 'failed' — the other tick is (or already did) handle it successfully.
+  WHEN SQLSTATE '55P03' THEN
+    RETURN jsonb_build_object('status', 'skipped', 'reason', 'locked_by_concurrent_tick');
+
+  WHEN OTHERS THEN
+    -- IMPORTANT: do NOT re-RAISE. Re-raising here would roll back this entire
+    -- transaction, meaning the status UPDATE below would never commit and the
+    -- row would stay stuck in 'purging' forever. Instead, return a failure
+    -- jsonb so the caller can handle it; the UPDATE + audit write commit.
+    UPDATE public.data_erasure_requests
+      SET status = 'failed', processed_at = now(), error_message = left(SQLERRM, 2000),
+          lock_token = NULL, locked_at = NULL,
+          failure_classification = public.classify_data_erasure_failure(SQLERRM, v_rows)
+      WHERE id = p_request_id;
+    PERFORM public.insert_data_erasure_audit_event(
+      p_request_id, 'data_erasure.failed', 'failure',
+      jsonb_build_object(
+        'error', left(SQLERRM, 2000),
+        'failure_classification', public.classify_data_erasure_failure(SQLERRM, v_rows),
+        'rows_deleted', v_rows
+      )
+    );
+    RETURN jsonb_build_object(
+      'status', 'failed',
+      'error', left(SQLERRM, 2000),
+      'failure_classification', public.classify_data_erasure_failure(SQLERRM, v_rows)
+    );
 END;
 $$;
 
