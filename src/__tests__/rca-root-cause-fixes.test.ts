@@ -177,7 +177,7 @@ describe('RCA 2026-06-21 root-cause fixes', () => {
       const chapters = [
         { id: 'ch1', rag_status: 'missing' as string, chapter_number: 5, board: 'CBSE', subject_code: 'math', grade: '9' },
       ];
-      const verifiedQuestions: any[] = []; // no questions
+      const verifiedQuestions: any[] = []; // Reason: empty test stub — no fields accessed on this empty array
 
       for (const ch of chapters) {
         const hasVerified = verifiedQuestions.some(

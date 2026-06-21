@@ -252,9 +252,9 @@ BEGIN
   IF v_flagged THEN
     v_xp := 0;
   ELSE
-    v_xp := v_correct * 10;
-    IF v_score_percent >= 80 THEN v_xp := v_xp + 20; END IF;
-    IF v_score_percent = 100 THEN v_xp := v_xp + 50; END IF;
+    v_xp := v_correct * 10;                              -- P2: XP_RULES.quiz_per_correct=10 (src/lib/xp-config.ts)
+    IF v_score_percent >= 80 THEN v_xp := v_xp + 20; END IF; -- P2: XP_RULES.quiz_high_score_bonus=20
+    IF v_score_percent = 100 THEN v_xp := v_xp + 50; END IF; -- P2: XP_RULES.quiz_perfect_bonus=50
   END IF;
 
   -- Insert quiz_sessions row. Phase 2.8: persist idempotency_key alongside
