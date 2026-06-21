@@ -1352,6 +1352,139 @@ async function gradeMolShadowPairs(supabase: ReturnType<typeof createClient>): P
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// First-quiz nudge — students who completed onboarding but never took a quiz.
+//
+// Targets students who:
+//   1. Have onboarding_completed = true
+//   2. Have ZERO rows in quiz_sessions (never started a quiz)
+//   3. Signed up more than 24 hours ago (created_at < NOW() - INTERVAL '24h')
+//
+// Inserts a `first_quiz_nudge` notification row into the `notifications` table.
+// Idempotent: the idempotency_key 'first_quiz_nudge_<YYYY_MM_DD>_<student_id>'
+// prevents duplicate rows when the cron retries. An additional 3-day window
+// check (NOT EXISTS on keys from the last 3 days) prevents spamming the same
+// student on back-to-back days.
+//
+// P13: notification row carries only the student's own recipient_id (no name,
+// email, phone). The data JSONB carries the deep-link only. No PII in logs
+// (only aggregate counts).
+// ──────────────────────────────────────────────────────────────────────────
+async function nudgeFirstQuizStudents(supabase: ReturnType<typeof createClient>): Promise<number> {
+  // Find students who completed onboarding > 24h ago and never took a quiz.
+  // We use a NOT IN subquery via two sequential queries (Supabase client does
+  // not support NOT EXISTS in the JS API; doing it in two steps is clear and
+  // safe for the early-stage cohort size of ~60 students).
+  const cutoff24h = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+
+  const { data: candidates, error: candErr } = await supabase
+    .from('students')
+    .select('id')
+    .eq('onboarding_completed', true)
+    .eq('is_active', true)
+    .is('deleted_at', null)
+    .lt('created_at', cutoff24h)
+
+  if (candErr) throw new Error(`nudgeFirstQuizStudents: candidates fetch: ${candErr.message}`)
+  if (!candidates?.length) {
+    console.log('daily-cron: first_quiz_nudge — 0 onboarded students, skipping')
+    return 0
+  }
+
+  const allIds = (candidates as { id: string }[]).map((s) => s.id)
+
+  // Find which of those students have at least one quiz_session row.
+  const BATCH = 200
+  const studentsWithQuiz = new Set<string>()
+  for (let i = 0; i < allIds.length; i += BATCH) {
+    const batch = allIds.slice(i, i + BATCH)
+    const { data: sessions, error: sessErr } = await supabase
+      .from('quiz_sessions')
+      .select('student_id')
+      .in('student_id', batch)
+      .limit(BATCH)
+    if (sessErr) {
+      console.warn(`nudgeFirstQuizStudents: quiz_sessions lookup batch ${i}: ${sessErr.message}`)
+      continue
+    }
+    for (const row of (sessions ?? []) as { student_id: string }[]) {
+      studentsWithQuiz.add(row.student_id)
+    }
+  }
+
+  // Students with zero quiz history
+  const neverQuizzed = allIds.filter((id) => !studentsWithQuiz.has(id))
+  if (!neverQuizzed.length) {
+    console.log('daily-cron: first_quiz_nudge — all onboarded students have quiz history, skipping')
+    return 0
+  }
+
+  // 3-day idempotency window: exclude students who already received this nudge
+  // in the last 3 days. We check by scanning idempotency_key prefixes.
+  const threeDaysAgo = new Date(Date.now() - 3 * 86400 * 1000).toISOString()
+  const existingKeys = new Set<string>()
+  for (let i = 0; i < neverQuizzed.length; i += BATCH) {
+    const batch = neverQuizzed.slice(i, i + BATCH)
+    const { data: existing, error: exErr } = await supabase
+      .from('notifications')
+      .select('recipient_id')
+      .in('recipient_id', batch)
+      .eq('type', 'first_quiz_nudge')
+      .gte('created_at', threeDaysAgo)
+    if (exErr) {
+      console.warn(`nudgeFirstQuizStudents: existing nudge check batch ${i}: ${exErr.message}`)
+      continue
+    }
+    for (const row of (existing ?? []) as { recipient_id: string }[]) {
+      existingKeys.add(row.recipient_id)
+    }
+  }
+
+  const toNudge = neverQuizzed.filter((id) => !existingKeys.has(id))
+  if (!toNudge.length) {
+    console.log('daily-cron: first_quiz_nudge — all never-quizzed students already nudged in last 3 days, skipping')
+    return 0
+  }
+
+  const daySlug = todayUtcSlug()
+  const now = new Date().toISOString()
+
+  const rows = toNudge.map((studentId) => ({
+    recipient_type: 'student',
+    recipient_id: studentId,
+    type: 'first_quiz_nudge',
+    title: 'Take your first quiz, it only takes 5 minutes!',
+    message: 'Start your learning journey on Alfanumrik. Your first quiz is ready — pick a subject and go!',
+    body: 'Start your learning journey on Alfanumrik. Your first quiz is ready — pick a subject and go!',
+    data: {
+      action: '/diagnostic',
+      title_hi: 'अपना पहला क्विज़ लो, बस 5 मिनट लगेंगे!',
+      body_hi: 'अल्फानुमेरिक पर अपनी सीखने की यात्रा शुरू करो। तुम्हारा पहला क्विज़ तैयार है — एक विषय चुनो और शुरू करो!',
+    },
+    is_read: false,
+    created_at: now,
+    idempotency_key: `first_quiz_nudge_${daySlug}_${studentId}`,
+  }))
+
+  // Upsert in batches; ignoreDuplicates prevents duplicate rows on retry.
+  let inserted = 0
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const batch = rows.slice(i, i + BATCH)
+    const { error: uErr } = await supabase
+      .from('notifications')
+      .upsert(batch, { onConflict: 'recipient_id,type,idempotency_key', ignoreDuplicates: true })
+    if (uErr) {
+      console.warn(`nudgeFirstQuizStudents: upsert batch ${i}: ${uErr.message}`)
+    } else {
+      inserted += batch.length
+    }
+  }
+
+  // P13: only aggregate count in logs — no student identifiers.
+  console.log(`daily-cron: first_quiz_nudge — ${inserted} nudges sent to never-quizzed students (${neverQuizzed.length} candidates, ${toNudge.length} eligible after 3-day dedup)`)
+  return inserted
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Track 2 — Principal AI Assistant transcript retention purge (pre-GA follow-up).
 // Deletes principal_ai_sessions older than 90 days; principal_ai_messages rows
 // are removed automatically via the FK ON DELETE CASCADE
@@ -1434,6 +1567,7 @@ Deno.serve(async (req) => {
       foxy_expectations_expired: () => expireStaleFoxyExpectations(sb),
       mol_shadow_pairs_graded: () => gradeMolShadowPairs(sb),
       purge_principal_ai: () => purgePrincipalAiTranscripts(sb),
+      first_quiz_nudges_sent: () => nudgeFirstQuizStudents(sb),
     })
     const actionStartedAt = new Map(actions.map((action) => [action.name, Date.now()]))
     const settled=await Promise.allSettled(actions.map((action)=>action.run({ sb })))

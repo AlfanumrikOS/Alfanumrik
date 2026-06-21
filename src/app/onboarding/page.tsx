@@ -133,9 +133,11 @@ export default function OnboardingPage() {
         });
       } catch { /* analytics is non-critical */ }
 
-      // Refresh auth context so dashboard sees updated grade/board
+      // Refresh auth context so diagnostic sees updated grade/board
       await refreshStudent();
-      router.replace('/dashboard');
+      // Send new students straight to the diagnostic so they have a
+      // personalised plan before seeing an empty dashboard (activation fix).
+      router.replace('/diagnostic?ref=onboarding');
     } catch {
       setError(isHi ? 'कनेक्शन में समस्या। कृपया फिर से प्रयास करें।' : 'Connection error. Please try again.');
       setSaving(false);
