@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { ROLE_CONFIG } from '@/lib/constants';
 import { useDashboardData, useFeatureFlags } from '@/lib/swr';
 import { getCoreTabs, getMoreItems, getItemLockForGrade, isItemVisibleForFlags, type NavFlagGatedItem } from './nav-config';
@@ -58,12 +59,29 @@ export function MobileBottomNav() {
   }, [showMore]);
 
   const { data: navFlags } = useFeatureFlags();
-  const [hasUpcomingExam] = useState(true);
+  const [hasUpcomingExam, setHasUpcomingExam] = useState(false);
+
+  const student = (auth as any)?.student;
+  useEffect(() => {
+    const studentId = student?.id;
+    if (!studentId) return;
+    let cancelled = false;
+    supabase
+      .from('student_exams')
+      .select('id')
+      .eq('student_id', studentId)
+      .gte('exam_date', new Date().toISOString())
+      .limit(1)
+      .then(({ data }) => {
+        if (!cancelled) setHasUpcomingExam((data?.length ?? 0) > 0);
+      });
+    return () => { cancelled = true; };
+  }, [student?.id]);
 
   const tabs = getCoreTabs(activeRole);
-  const studentGrade = parseInt((auth as any)?.student?.grade ?? '6', 10);
+  const studentGrade = parseInt(student?.grade ?? '6', 10);
   const getItemLock = (item: any) => getItemLockForGrade(item, studentGrade);
-  const subscriptionPlan = ((auth as any)?.student?.subscription_plan as string | null | undefined) ?? null;
+  const subscriptionPlan = (student?.subscription_plan as string | null | undefined) ?? null;
   const showUpgradePill = activeRole === 'student' && (subscriptionPlan === null || subscriptionPlan === 'free');
 
   const passesExamGate = (item: any): boolean =>
@@ -73,7 +91,7 @@ export function MobileBottomNav() {
     .filter(item => isItemVisibleForFlags(item as NavFlagGatedItem, navFlags))
     .filter(passesExamGate);
 
-  const { data: dashData } = useDashboardData((auth as any)?.student?.id);
+  const { data: dashData } = useDashboardData(student?.id);
   const dueCount: number = (dashData as any)?.due_count ?? 0;
   const streakCount: number = (auth as any)?.snapshot?.current_streak ?? 0;
 

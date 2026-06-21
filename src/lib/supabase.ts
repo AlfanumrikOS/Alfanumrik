@@ -1282,7 +1282,7 @@ export async function getChaptersForSubject(subject: string, _grade: string) {
     if (!r.ok) {
       // 422 = subject not allowed for this student; 401 = unauthenticated.
       // Either way the correct UI behavior is "no chapters available".
-      return [] as Array<{ chapter_number: number; title: string }>;
+      return [] as Array<{ chapter_number: number; title: string; verified_question_count?: number }>;
     }
     // API v2 returns { chapters: [{ chapter_number, chapter_title, chapter_title_hi, verified_question_count }] }
     // QuizSetup expects { chapter_number, title } so map server column
@@ -1294,11 +1294,13 @@ export async function getChaptersForSubject(subject: string, _grade: string) {
         chapter_title_hi?: string | null;
         // Legacy shape kept for back-compat with older server revisions.
         title?: string;
+        verified_question_count?: number;
       }>;
     };
     return (body.chapters ?? []).map((c) => ({
       chapter_number: c.chapter_number,
       title: c.chapter_title ?? c.title ?? `Chapter ${c.chapter_number}`,
+      verified_question_count: c.verified_question_count ?? 0,
     }));
   } catch (e) {
     console.error('getChaptersForSubject(compat):', e instanceof Error ? e.message : String(e));

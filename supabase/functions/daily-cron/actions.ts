@@ -22,6 +22,7 @@ export type DailyCronActionName =
   | 'foxy_expectations_expired'
   | 'mol_shadow_pairs_graded'
   | 'purge_principal_ai'
+  | 'first_quiz_nudges_sent'
 
 export interface DailyCronActionContext {
   sb: DailyCronClient

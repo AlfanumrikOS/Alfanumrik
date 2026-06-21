@@ -31,9 +31,17 @@ describe('Phase 5 flag registry: ff_goal_daily_plan_reminder', () => {
     expect(existsSync(path)).toBe(true);
   });
 
-  it('founder safety guard: no goal-adaptive flag defaults true', () => {
+  it('only RCA-approved goal-adaptive flags default to true (updated 2026-06-21)', () => {
+    // RCA fix 2026-06-21 (CEO-approved): ff_goal_aware_foxy and ff_goal_aware_selection
+    // were intentionally enabled in FLAG_DEFAULTS via migration 20260621000001.
+    // All other goal-adaptive flags (including ff_goal_daily_plan_reminder) remain OFF.
+    const RCA_ENABLED = new Set(['ff_goal_aware_foxy', 'ff_goal_aware_selection']);
     for (const key of Object.values(GOAL_ADAPTIVE_FLAGS)) {
-      expect(FLAG_DEFAULTS[key]).toBe(false);
+      if (RCA_ENABLED.has(key)) {
+        expect(FLAG_DEFAULTS[key]).toBe(true);
+      } else {
+        expect(FLAG_DEFAULTS[key]).toBe(false);
+      }
     }
   });
 });

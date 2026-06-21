@@ -31,9 +31,17 @@ describe('Phase 4 flag registry: ff_goal_aware_rag', () => {
     expect(existsSync(path)).toBe(true);
   });
 
-  it('no goal-adaptive flag defaults to true (founder safety guard)', () => {
+  it('only RCA-approved goal-adaptive flags default to true (updated 2026-06-21)', () => {
+    // RCA fix 2026-06-21 (CEO-approved): ff_goal_aware_foxy and ff_goal_aware_selection
+    // were intentionally enabled in FLAG_DEFAULTS via migration 20260621000001.
+    // All other goal-adaptive flags remain OFF.
+    const RCA_ENABLED = new Set(['ff_goal_aware_foxy', 'ff_goal_aware_selection']);
     for (const key of Object.values(GOAL_ADAPTIVE_FLAGS)) {
-      expect(FLAG_DEFAULTS[key]).toBe(false);
+      if (RCA_ENABLED.has(key)) {
+        expect(FLAG_DEFAULTS[key]).toBe(true);
+      } else {
+        expect(FLAG_DEFAULTS[key]).toBe(false);
+      }
     }
   });
 });

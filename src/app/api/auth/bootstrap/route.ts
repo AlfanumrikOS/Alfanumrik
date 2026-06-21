@@ -377,6 +377,33 @@ async function handleBootstrap(
       { role, profile_id: result?.profile_id }
     );
 
+    // 4b. Track B (Feature 1): minor parental-consent auto-invite.
+    // If a student bootstrapped as a minor with a parent_consent_email captured
+    // at signup, enqueue the guardian invite. FIRE-AND-FORGET (P15): this must
+    // NEVER block or fail signup — enqueueGuardianInvite never throws and is not
+    // awaited. We read is_minor / parent_consent_email from the auth-user
+    // metadata that AuthScreen wrote at signup. P13: the parent email is passed
+    // straight to the invite helper (which uses it only as the email `to`) and
+    // is never logged here.
+    if (role === 'student' && result?.profile_id) {
+      try {
+        const { data: authUser } = await admin.auth.admin.getUserById(user.id);
+        const meta = (authUser?.user?.user_metadata ?? {}) as Record<string, unknown>;
+        const isMinor = meta.is_minor === true || meta.is_minor === 'true';
+        const consentEmail =
+          typeof meta.parent_consent_email === 'string' ? meta.parent_consent_email.trim() : '';
+        if (isMinor && consentEmail) {
+          // Lazy import keeps the server-only email/admin deps out of the hot
+          // bootstrap path for non-minor signups.
+          const { enqueueGuardianInvite } = await import('@/lib/identity/guardian-invite');
+          enqueueGuardianInvite(String(result.profile_id), consentEmail, 'en');
+        }
+      } catch (inviteErr) {
+        // Swallow — P15: a minor-invite hiccup can never break signup.
+        console.warn('[Bootstrap] minor guardian-invite enqueue skipped:', inviteErr);
+      }
+    }
+
     // 5. Determine redirect destination based on role
     const destination = getRoleDestination(role);
 

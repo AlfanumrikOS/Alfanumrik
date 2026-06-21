@@ -138,8 +138,9 @@ export async function GET(_request: Request) {
     );
   } catch (err) {
     // Transient student-lookup failure — surfaced as 500, never cached.
-    logger.warn('rhythm/today: build failed', {
-      userId, error: err instanceof Error ? err.message : String(err),
+    logger.error('rhythm/today: build failed', {
+      error: err instanceof Error ? err : new Error(String(err)),
+      userId,
     });
     return NextResponse.json({ error: 'student_lookup_failed' }, { status: 500 });
   }
@@ -168,7 +169,10 @@ async function buildRhythmQueue(
     .maybeSingle();
 
   if (studentErr) {
-    logger.warn('rhythm/today: students fetch failed', { userId, error: studentErr.message });
+    logger.error('rhythm/today: students fetch failed', {
+      error: new Error(studentErr.message),
+      userId,
+    });
     throw new Error('student_lookup_failed'); // do NOT cache transient failures
   }
   if (!studentRow) {
@@ -200,7 +204,10 @@ async function buildRhythmQueue(
     p_limit: 20,
   });
   if (dueErr) {
-    logger.warn('rhythm/today: get_due_reviews RPC failed', { userId, error: dueErr.message });
+    logger.error('rhythm/today: get_due_reviews RPC failed', {
+      error: new Error(dueErr.message),
+      userId,
+    });
   }
   const dueRows: DueReviewRow[] = (dueRowsRaw ?? []).map((r: Record<string, unknown>) => ({
     topic_id: String(r.topic_id ?? ''),
@@ -268,8 +275,10 @@ async function buildRhythmQueue(
       p_mode: 'cognitive',
     });
     if (zpdErr) {
-      logger.warn('rhythm/today: get_adaptive_questions RPC failed', {
-        userId, subjectCode, error: zpdErr.message,
+      logger.error('rhythm/today: get_adaptive_questions RPC failed', {
+        error: new Error(zpdErr.message),
+        userId,
+        subjectCode,
       });
     }
     candidatePool = ((zpdRows ?? []) as AdaptiveQuestionRow[]).map((q) => {
@@ -384,7 +393,7 @@ async function buildRemediationLane(
       .eq('student_id', studentId)
       .eq('status', 'active');
     if (error) {
-      logger.warn('rhythm/today: remediation lane fetch failed', {
+      logger.error('rhythm/today: remediation lane fetch failed', {
         userId, error: error.message,
       });
       return [];
@@ -418,7 +427,7 @@ async function buildRemediationLane(
       priority: i + 1,
     }));
   } catch (err) {
-    logger.warn('rhythm/today: remediation lane failed', {
+    logger.error('rhythm/today: remediation lane failed', {
       userId, error: err instanceof Error ? err.message : String(err),
     });
     return [];

@@ -37,6 +37,9 @@ const TYPE_CONFIG: Record<string, { icon: string; color: string; label: string; 
   concentration_escalated: { icon: '🆘', color: '#DC2626', label: 'Subject At Risk', labelHi: 'विषय जोखिम में' },
   concentration_resolved: { icon: '🎉', color: '#16A34A', label: 'Back on Track', labelHi: 'फिर पटरी पर' },
   concentration_reescalated: { icon: '🔁', color: '#DC2626', label: 'Still At Risk', labelHi: 'अब भी जोखिम में' },
+  // First-quiz nudge — sent by daily-cron to students who completed onboarding
+  // but never took a quiz. Deep-link: /diagnostic.
+  first_quiz_nudge: { icon: '🚀', color: '#F97316', label: 'Get Started', labelHi: 'शुरू करो' },
 };
 
 interface Notification {
