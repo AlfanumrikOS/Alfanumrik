@@ -4999,3 +4999,117 @@ CI environment guard in setup.ts — P12 test-suite AI safety).
 **Total catalog: 136 entries (target: 35 — TARGET EXCEEDED).**
 
 **Total: 136 entries.**
+
+## White-label flag registration + module-gating activation (Phase 3C Wave A) — REG-169
+
+Source: Phase 3C Wave A "white-label activation" (autonomous, additive,
+default OFF). Registers the four dormant multi-tenant feature flags in
+`src/lib/feature-flags.ts` (`WHITE_LABEL_FLAGS` + `FLAG_DEFAULTS`) so prod (which
+already had the legacy DB rows from migrations 20260507000004-7) and a fresh
+CI/staging/Preview env resolve them IDENTICALLY — OFF — paired with an idempotent
+seed migration (`supabase/migrations/20260615000000_phase3c_seed_white_label_flags.sql`,
+`INSERT ... ON CONFLICT (flag_name) DO NOTHING`). Activates the dormant module
+substrate via a thin route guard (`src/lib/modules/route-guard.ts`:
+`assertModuleEnabledForSchool` / `assertModuleEnabled`) applied AFTER auth on 7
+school-admin routes (exams→`testing_engine`, content→`lms`,
+analytics/reports/classes-at-risk/teacher-engagement→`analytics`,
+announcements→`communication`). The guard delegates the enablement decision
+entirely to the pre-existing registry resolver `isModuleEnabled` (which
+short-circuits to all-modules-enabled when `ff_tenant_module_registry_v1` is OFF)
+and maps ONLY an explicit `isModuleEnabled(...)===false` to a 404
+`{ code:'MODULE_DISABLED', module }`. NO new table, NO new RBAC permission, NO
+scoring/XP — flag registration + a fail-open gate + nav parity.
+
+Four things are blocking defects if they regress: (a) **flag registration +
+default OFF** — all four white-label flags (`ff_tenant_type_v1`,
+`ff_tenant_module_registry_v1`, `ff_tenant_config_v2`, `ff_event_bus_v1`) are
+present in `FLAG_DEFAULTS` and resolve to `false`; `WHITE_LABEL_FLAGS` maps each
+constant to its exact migration `flag_name` string (asserted against a SECOND
+independent literal so a drift on either side fails); `ff_event_bus_v1` is
+registered for correctness/env-parity even though it is not wired this phase; no
+white-label flag is ever `true` by default (founder ship-OFF constraint).
+(b) **route-guard fail-open contract** — an explicit DISABLED module → a 404
+carrying `code:'MODULE_DISABLED'` + the SPECIFIC module key (never 403/500);
+every uncertainty FAILS OPEN to `{ allowed:true }`: null/undefined/empty schoolId
+short-circuits with NO school lookup, `getSchoolById` ok(null)/failure/throw →
+allow, `isModuleEnabled` throw → allow; the resolved tenant_type is passed
+through to `isModuleEnabled`; the header-driven `assertModuleEnabled` resolves
+the school from `x-school-id` (absent header = B2C = fail-open). (c) **PII-safe
+error logging (P13)** — the resolve-failure `logger.warn` payload carries ONLY
+the module key + a route tag + the thrown Error; it never adds `schoolId` /
+`email` / `userId`; the happy path emits no warn. (d) **nav parity with the route
+guard** — `ConsolidatedSchoolNav` hides a `moduleKey`-tagged item exactly when
+`moduleEnablement[key]===false` (mirrors the 404), shows ALL items when
+`moduleEnablement` is null/undefined (loading/error fail-open), and shows ALL
+items when the enablement map is every-key-true (the flag-OFF all-enabled map the
+resolver returns), so a tenant never sees a nav link that 404s nor loses a link
+to a served module.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-169 | `white_label_flags_registered_off_module_route_guard_disabled_404_fail_open_nav_parity` | **(a) Flag registration (pure).** `WHITE_LABEL_FLAGS` maps `TENANT_TYPE_V1`/`TENANT_MODULE_REGISTRY_V1`/`TENANT_CONFIG_V2`/`EVENT_BUS_V1` to `ff_tenant_type_v1`/`ff_tenant_module_registry_v1`/`ff_tenant_config_v2`/`ff_event_bus_v1` (vs a 2nd independent literal); exactly those four keys; all four PRESENT in `FLAG_DEFAULTS` (key-existence, so a deletion fails) and each resolves to `false`; `ff_event_bus_v1` registered (correctness); no white-label flag is `true` in `FLAG_DEFAULTS`; `as const` literal narrowing. **(b) Route guard (mocked `isModuleEnabled` + `getSchoolById` + logger).** explicit `isModuleEnabled→false` → `{ allowed:false }` + 404 `{ success:false, code:'MODULE_DISABLED', module }` echoing the SPECIFIC key (testing_engine / lms / analytics), status 404 (NOT 403, NOT 500); tenant_type resolved + passed to `isModuleEnabled`; `isModuleEnabled→true` → `{ allowed:true }`; FAIL-OPEN → `{ allowed:true }` for null schoolId (NO lookup, NO resolver call), undefined schoolId, empty-string schoolId, `getSchoolById` ok(null) (no resolver call), `getSchoolById` failure result, `getSchoolById` throws (caught), `isModuleEnabled` throws (caught); header entry `assertModuleEnabled` 404s a disabled module from `x-school-id`, allows enabled, fails open on absent header (B2C, no lookup) + on school-lookup failure. **(c) PII-free logging (P13).** the error-branch `logger.warn('module_route_guard_resolve_failed', …)` payload carries `module` + route tag only — NOT `schoolId`/`school_id`/`email`/`userId`; happy path emits no warn. **(d) Guarded-route integration (mocked auth + guard spy).** GET /api/school-admin/exams: auth 401/403 short-circuits BEFORE the gate (gate never invoked); on auth success the gate is called with `(schoolId, 'testing_engine')`; a DISABLED gate → the 404 `MODULE_DISABLED` body and never reads the DB; an ALLOWED gate (flag-OFF / all-enabled / fail-open) → 200 with the handler's exam list. **(e) Nav parity.** `ConsolidatedSchoolNav` hides exactly the `moduleKey` item whose `moduleEnablement[key]===false` (and only that one) while keeping non-module items (Students/Classes/Command Center) visible; shows EVERY module-gated link when `moduleEnablement` is null/undefined (fail-open) and when the map is every-key-true (flag-OFF all-enabled). | `src/__tests__/lib/white-label-flags.test.ts` (13 unit tests: registry string parity vs 2nd literal + exactly-four-keys + event-bus registration + as-const narrowing; FLAG_DEFAULTS presence + per-flag OFF + no-flag-enabled-by-default) + `src/__tests__/lib/modules/route-guard.test.ts` (21 unit tests, mocked seams: disabled→404 MODULE_DISABLED + specific key + 404-not-403/500 + tenant_type passthrough; allowed; fail-open null/undefined/empty-schoolId-no-lookup + ok(null)-no-resolver + failure + getSchoolById-throw + isModuleEnabled-throw; PII-free warn + no-warn-on-happy-path; header entry disabled-404/allowed/B2C-no-lookup/lookup-failure) + `src/__tests__/api/school-admin/module-route-gate.test.ts` (5 unit tests, mocked: auth-401/403 before gate; gate called with (schoolId, testing_engine); disabled→404 no-DB-read; allowed→200 exam list) + `src/__tests__/school-admin/consolidated-nav-module-gating.test.tsx` (7 unit tests: section-map has module-gated items; hides exactly the disabled item + non-module items stay; null/undefined → all shown; all-enabled map → all shown) | E |
+
+### Pinned tests
+
+- `src/__tests__/lib/white-label-flags.test.ts::WHITE_LABEL_FLAGS registry::maps every constant to the exact flag string used by the seed migration`
+- `src/__tests__/lib/white-label-flags.test.ts::FLAG_DEFAULTS — every white-label flag is present and OFF::registers all four white-label flags in FLAG_DEFAULTS (closes the prod/fresh-env gap)`
+- `src/__tests__/lib/white-label-flags.test.ts::FLAG_DEFAULTS — every white-label flag is present and OFF::does NOT enable any white-label flag by default (founder safety constraint)`
+- `src/__tests__/lib/modules/route-guard.test.ts::assertModuleEnabledForSchool — explicit DISABLED → 404 MODULE_DISABLED::returns { allowed:false } with a 404 carrying code:MODULE_DISABLED + the module key`
+- `src/__tests__/lib/modules/route-guard.test.ts::assertModuleEnabledForSchool — FAIL-OPEN (never lock a tenant out)::null schoolId → allowed, and NO school lookup is attempted (short-circuit)`
+- `src/__tests__/lib/modules/route-guard.test.ts::assertModuleEnabledForSchool — FAIL-OPEN (never lock a tenant out)::getSchoolById throws → caught → allowed`
+- `src/__tests__/lib/modules/route-guard.test.ts::assertModuleEnabledForSchool — error-branch logging is PII-free (P13)::logs warn with ONLY the module key + route tag on a thrown error (no school_id, no PII)`
+- `src/__tests__/api/school-admin/module-route-gate.test.ts::GET /api/school-admin/exams — module gate runs AFTER auth::auth failure short-circuits BEFORE the module gate (gate never invoked)`
+- `src/__tests__/api/school-admin/module-route-gate.test.ts::GET /api/school-admin/exams — disabled module → 404; allowed → handler proceeds::a DISABLED module returns the gate 404 response and never reads the DB`
+- `src/__tests__/school-admin/consolidated-nav-module-gating.test.tsx::ConsolidatedSchoolNav — item with moduleKey whose enablement is false is HIDDEN::hides exactly the disabled item, mirroring the route-guard decision for that key`
+
+### Invariants covered by this section
+
+- Flag-OFF byte-identity (rollout safety) — `ff_tenant_module_registry_v1`
+  default-OFF makes the resolver short-circuit to all-modules-enabled, so the
+  route guard is a no-op and behaviour is byte-identical to pre-Wave-A; all four
+  white-label flags default OFF in `FLAG_DEFAULTS` so a fresh env matches prod.
+- P8/P9 (tenant scope) — the guard takes the school from `auth.schoolId`
+  (school-admin entry) or the proxy-injected `x-school-id` header (tenant entry),
+  never a request body; it runs AFTER `authorizeSchoolAdmin`, never before.
+- P13 (data privacy) — the resolve-failure `logger.warn` carries the module key +
+  route tag only, never the school UUID / email / user id; the disabled→404 body
+  carries the module key only (no PII).
+- Fail-open availability — a school-lookup failure, a missing school row, or any
+  thrown error resolves to `{ allowed:true }` so a tenant is never locked out of a
+  feature by an infra hiccup; only an explicit `isModuleEnabled===false` 404s.
+- No scoring/XP (activation only) — Wave A registers flags + adds a fail-open gate
+  + nav parity; no XP constant or scoring formula is read or written.
+
+### Notes on test strategy
+
+REG-169 is a **pure-unit + mocked-seam** entry (no live-DB tier — the only DB
+artifact is the idempotent `ON CONFLICT DO NOTHING` flag seed whose effect is a
+no-op on prod and equals the registered `FLAG_DEFAULTS` on a fresh env, asserted
+indirectly via the flag-registration test). The flag test imports the REAL
+exported `WHITE_LABEL_FLAGS` / `FLAG_DEFAULTS` and asserts every string against a
+SECOND independent EXPECTED literal so a drift in either copy fails (it is NOT a
+tautology against the source map), mirroring the goal-adaptive registry tests.
+The route-guard test mocks the two seams the guard delegates to
+(`@/lib/modules/registry` `isModuleEnabled` via `importActual` to keep `ModuleKey`
+typing, `@/lib/domains/tenant` `getSchoolById`) plus the logger so the guard's
+REAL fail-open branching + 404 mapping run, and asserts every fail-open branch
+plus the PII-free warn payload. The guarded-route integration test mocks the auth
+seam + spies the guard (`assertModuleEnabledForSchool`) so the exams route's REAL
+order (auth → gate → handler) is exercised: it proves the gate runs AFTER auth by
+asserting the spy is never called when auth fails, and that the gate is invoked
+with the correct `testing_engine` module key. The nav test renders the REAL
+`ConsolidatedSchoolNav` against the REAL `SCHOOL_NAV_SECTIONS` map and probes
+PURELY module-gated items (excluding the Wave C/D `rbacOnly`/`reportsDepthOnly`
+items, which carry their own default-OFF flag gates covered by REG-98/REG-99).
+
+### Catalog total
+
+Pre-REG-169: 136 entries (through hermetic LLM mock layer, REG-168). Phase 3C
+Wave A (white-label flag registration + module-gating activation, default OFF)
+adds REG-169 (four white-label flags registered + default OFF + migration-string
+parity; module route guard disabled→404 `MODULE_DISABLED` with fail-open on
+null/missing-school/error and PII-free logging; guarded-route gate runs after
+auth; nav hide/show parity with the route-guard decision).
+**Total catalog: 137 entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 137 entries.**

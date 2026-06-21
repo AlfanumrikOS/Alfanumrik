@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { schoolAdminPermissionCode } from '@/lib/school-admin/permission-code';
+import { assertModuleEnabledForSchool } from '@/lib/modules/route-guard';
 
 // GET — flexible academic report endpoint.
 // Permission (Wave C matrix): flag OFF → `institution.view_reports` (original);
@@ -12,6 +13,11 @@ export async function GET(request: NextRequest) {
     await schoolAdminPermissionCode({ off: 'institution.view_reports', on: 'institution.export_reports' }),
   );
   if (!auth.authorized) return auth.errorResponse!;
+
+  // Module gate: academic reports belong to the `analytics` module (registry
+  // routePrefix `/reports`). Disabled → 404; flag OFF / unresolved → allowed.
+  const gate = await assertModuleEnabledForSchool(auth.schoolId, 'analytics');
+  if (!gate.allowed) return gate.response;
 
   const params = new URL(request.url).searchParams;
   const type = params.get('type') || 'school_overview';

@@ -29,6 +29,7 @@ import {
   type TeacherEngagementRow,
 } from '@/lib/school-admin/command-center-types';
 import { logger } from '@/lib/logger';
+import { assertModuleEnabledForSchool } from '@/lib/modules/route-guard';
 
 const ROUTE = '/api/school-admin/teacher-engagement';
 
@@ -40,6 +41,12 @@ export async function GET(request: NextRequest) {
     if (!resolved.ok) return resolved.response;
 
     const { supabase, schoolId } = resolved.ctx;
+
+    // Module gate: teacher engagement belongs to the `analytics` module (registry
+    // routePrefix `/reports`). Disabled → 404; flag OFF / unresolved → allowed.
+    const gate = await assertModuleEnabledForSchool(schoolId, 'analytics');
+    if (!gate.allowed) return gate.response;
+
     const { limit, offset } = parsePagination(request, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT);
 
     const { data, error } = await supabase.rpc('get_teacher_engagement', {

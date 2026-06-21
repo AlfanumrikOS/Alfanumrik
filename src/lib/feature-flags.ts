@@ -1053,6 +1053,52 @@ export const QUIZ_TELEMETRY_FLAGS = {
 } as const;
 
 /**
+ * Phase 3C — White-label activation flags (2026-06-09).
+ *
+ * These four flags gate the multi-tenant ("white-label") substrate that already
+ * exists in the codebase but is dormant. All four were seeded in PRODUCTION by
+ * the pre-baseline `_legacy/` migrations (20260507000004-7) but were NEVER
+ * registered here in FLAG_DEFAULTS, so prod (which has the DB rows) and a fresh
+ * CI/staging/Preview env (no row, no default) were inconsistent. This registry +
+ * the companion seed migration (20260615000000_phase3c_seed_white_label_flags.sql)
+ * close that gap: every env now resolves these flags identically — OFF.
+ *
+ *  ff_tenant_type_v1
+ *    Gates the per-tenant `tenant_type` discriminator (b2c | school | white_label).
+ *    Default: false. Foundation flag — read by tenant-resolution code paths.
+ *
+ *  ff_tenant_module_registry_v1
+ *    Gates the per-tenant module registry. Read by
+ *    src/lib/modules/registry.ts (isModuleEnabled / enabledModulesFor). When OFF
+ *    (the default), the resolver SHORT-CIRCUITS to all-modules-enabled, so a
+ *    fresh env with no DB row behaves exactly like B2C today. Default: false.
+ *
+ *  ff_tenant_config_v2
+ *    Gates per-tenant config overrides (AI persona / locale / branding). Read by
+ *    src/lib/tenant-config/index.ts (getTenantConfig / getAllTenantConfig). When
+ *    OFF (the default), the resolver returns the registry DEFAULT for the tenant
+ *    type and ignores any DB rows, so a fresh env is identical to today.
+ *    Storage table tenant_configs created by legacy migration 20260507000006.
+ *    Default: false.
+ *
+ *  ff_event_bus_v1
+ *    Gates the cross-module domain event bus. Registered here for CORRECTNESS /
+ *    env-parity ONLY — it is NOT activated this phase and has no consuming
+ *    surface wired in Wave A. Default: false.
+ *
+ * All four default OFF. Seeded by migration
+ * 20260615000000_phase3c_seed_white_label_flags.sql.
+ * Spec/plan: docs/superpowers/{specs,plans}/2026-06-09-phase-3c-white-label-activation*
+ */
+export const WHITE_LABEL_FLAGS = {
+  TENANT_TYPE_V1:            'ff_tenant_type_v1',
+  TENANT_MODULE_REGISTRY_V1: 'ff_tenant_module_registry_v1',
+  TENANT_CONFIG_V2:         'ff_tenant_config_v2',
+  EVENT_BUS_V1:             'ff_event_bus_v1',
+} as const;
+
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -1093,6 +1139,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [SCHOOL_PROVISIONING_FLAGS.V1]: false,
   [SCHOOL_ADMIN_RBAC_FLAGS.V1]: false, // seeded OFF by 20260611000100_seed_ff_school_admin_rbac_flag.sql
   [SCHOOL_REPORTS_DEPTH_FLAGS.V1]: false,
+
   [STUDENT_OS_FLAGS.V1]: false,
   [SUBJECTS_OS_FLAGS.V1]: false,
   [REVISION_OS_FLAGS.V1]: false,
@@ -1108,6 +1155,10 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [FOXY_MATH_PIPELINE_FLAGS.V1]: false, // seeded OFF by 20260619000800_seed_ff_foxy_math_pipeline_v1.sql
   [FOXY_CURRICULUM_GUARD_FLAGS.V1]: false, // seeded OFF by 20260619001000_seed_ff_foxy_curriculum_guard_v1.sql
   [QUIZ_TELEMETRY_FLAGS.V1]: false, // seeded OFF in a follow-up migration (SPEC-1..5)
+  [WHITE_LABEL_FLAGS.TENANT_TYPE_V1]: false,
+  [WHITE_LABEL_FLAGS.TENANT_MODULE_REGISTRY_V1]: false,
+  [WHITE_LABEL_FLAGS.TENANT_CONFIG_V2]: false,
+  [WHITE_LABEL_FLAGS.EVENT_BUS_V1]: false,
 } as const;
 
 /**
