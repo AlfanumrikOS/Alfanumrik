@@ -23,7 +23,8 @@ import { logger } from '@/lib/logger';
 export type EmailTemplate =
   | 'school-trial-provisioned'
   | 'school-invite-code-issued'
-  | 'parent-link-code-otp';
+  | 'parent-link-code-otp'
+  | 'parent-guardian-invite';
 
 export type EmailLocale = 'en' | 'hi';
 
@@ -49,7 +50,19 @@ export interface EmailTemplateParams {
   // idempotency guard keyed on invite_code doesn't accidentally collapse two
   // distinct OTP challenges (each new request-otp call must email a fresh
   // OTP). The route layer passes a fresh challenge id here.
+  //
+  // Also used by the 'parent-guardian-invite' template (minor auto-invite):
+  // keyed on the pending guardian_student_links row id so re-invites against
+  // the same pending link are de-duplicated (one invite email per pending
+  // link). NEVER the parent email (P13).
   idempotency_key?: string;
+  // parent-guardian-invite (minor auto-invite) fields. `link_code` is the
+  // student's stable redemption code the parent enters at /parent to claim the
+  // link; `accept_url` is the deep link embedding it. `student_name` greets the
+  // parent. The parent email itself is the `to` field and is never in params.
+  student_name?: string;
+  link_code?: string;
+  accept_url?: string;
 }
 
 export interface DeliverEmailInput {
@@ -165,11 +178,13 @@ async function recordSent(
 export async function deliverEmail(input: DeliverEmailInput): Promise<DeliverEmailResult> {
   const { template, to, locale = 'en', params } = input;
 
-  // OTP path: keyed on a per-challenge idempotency key, since each
-  // request-otp invocation MUST email a fresh code. School-onboarding path
-  // remains keyed on invite_code (1 email per code, ever).
-  const isOtp = template === 'parent-link-code-otp';
-  const idempotencyKey = isOtp
+  // OTP path AND parent-guardian-invite path: keyed on a per-event
+  // idempotency key (challenge id / pending-link row id). The OTP must email a
+  // fresh code per request; the guardian-invite is de-duplicated per pending
+  // link. School-onboarding path remains keyed on invite_code (1 email/code).
+  const keyedByIdempotencyKey =
+    template === 'parent-link-code-otp' || template === 'parent-guardian-invite';
+  const idempotencyKey = keyedByIdempotencyKey
     ? params?.idempotency_key
     : params?.invite_code;
 
