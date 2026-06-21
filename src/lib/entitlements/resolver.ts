@@ -71,6 +71,30 @@ import {
 /** The flag that gates ENFORCEMENT (not config-read). */
 export const ENTITLEMENTS_FLAG = 'ff_institution_entitlements_v1';
 
+/**
+ * Track A.5 — B2C ↔ B2B effective-plan resolution.
+ *
+ * The INSTITUTION resolver above answers "what entitlement values does a SCHOOL
+ * have?". The STUDENT-centric effective-plan resolver below answers "what plan
+ * does a STUDENT effectively have, given their school coverage AND their own
+ * personal subscription?" — the single source of truth `plan-gate.ts` and the
+ * checkout routes consult to avoid double-charging a school-covered student
+ * while still allowing a genuine personal upgrade. Re-exported here so the
+ * entitlements module has one import surface. See `./effective-plan.ts`.
+ */
+export {
+  resolveEffectiveEntitlement,
+  resolveEffectiveEntitlementForUser,
+  resolveEffectivePlanCode,
+  assembleEffective,
+  isRedundantPurchase,
+  normalizeSchoolPlanToConsumerCode,
+  type EffectiveEntitlement,
+  type SchoolCoverage,
+  type RedundancyVerdict,
+  type ConsumerPlanCode,
+} from './effective-plan';
+
 // ─── Result types ──────────────────────────────────────────────────────────
 
 export type ResolvedBy =

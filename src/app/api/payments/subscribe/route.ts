@@ -8,6 +8,10 @@ import { paymentSubscribeSchema, validateBody } from '@/lib/validation';
 import { logOpsEvent } from '@/lib/ops-events';
 import { computeGst, gstToRazorpayNotes, supplierStateCode } from '@/lib/gst';
 import { isFeatureEnabled, PAYMENT_FLAGS } from '@/lib/feature-flags';
+import {
+  resolveEffectiveEntitlement,
+  isRedundantPurchase,
+} from '@/lib/entitlements/effective-plan';
 
 /**
  * Fail-CLOSED GST gate (Track A.3 launch-safety).
@@ -133,6 +137,34 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           error: 'You already have an active subscription to this plan',
         }, { status: 409 });
+      }
+
+      // ─── Track A.5: redundant-purchase guard (B2C ↔ B2B coexistence) ───
+      // If the student is already covered by their SCHOOL's plan at a tier >=
+      // the requested plan, this purchase adds NO entitlement → never charge.
+      // Return a STRUCTURED 409 (NOT a hard 403/500) so the client renders
+      // "covered by your school" and skips checkout. A request that EXCEEDS the
+      // school tier is a genuine upgrade and falls through to checkout normally.
+      // Students with no school (B2C-only) are never blocked here.
+      try {
+        const eff = await resolveEffectiveEntitlement(studentRow.id);
+        const verdict = isRedundantPurchase(eff, plan_code);
+        if (verdict.redundant) {
+          return NextResponse.json({
+            success: false,
+            already_covered: true,
+            covered_by_school: true,
+            school_plan: verdict.schoolPlan,
+            error: 'Your school already provides this plan or higher.',
+          }, { status: 409 });
+        }
+      } catch (covErr) {
+        // Fail-OPEN on a coverage-resolve error: never block a legitimate sale
+        // because the coverage check was unavailable (the guard is an
+        // anti-redundancy convenience, not a payment-integrity gate).
+        logger.warn('subscribe: coverage guard skipped (resolve error)', {
+          error: covErr instanceof Error ? covErr.message : String(covErr),
+        });
       }
     }
 

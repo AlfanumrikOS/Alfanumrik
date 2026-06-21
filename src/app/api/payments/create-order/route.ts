@@ -8,6 +8,10 @@ import { authorizeRequest } from '@/lib/rbac';
 import { computeGst, gstToRazorpayNotes, supplierStateCode } from '@/lib/gst';
 import { isFeatureEnabled, PAYMENT_FLAGS } from '@/lib/feature-flags';
 import { logger } from '@/lib/logger';
+import {
+  resolveEffectiveEntitlementForUser,
+  isRedundantPurchase,
+} from '@/lib/entitlements/effective-plan';
 
 /**
  * Fail-CLOSED GST gate (Track A.3 launch-safety).
@@ -77,6 +81,33 @@ export async function POST(request: NextRequest) {
     const validation = validateBody(paymentSubscribeSchema, rawBody);
     if (!validation.success) return validation.error;
     const { plan_code, billing_cycle } = validation.data;
+
+    // ─── Track A.5: redundant-purchase guard (B2C ↔ B2B coexistence) ───
+    // If the student is already covered by their SCHOOL's plan at a tier >= the
+    // requested plan, this order adds NO entitlement → never charge. Return a
+    // STRUCTURED 409 (NOT a hard 403/500) so the client renders "covered by your
+    // school" and skips checkout. A request that EXCEEDS the school tier is a
+    // genuine upgrade and falls through to order creation normally. B2C-only
+    // students (no school) are never blocked here. Fail-OPEN on resolve error.
+    try {
+      const resolved = await resolveEffectiveEntitlementForUser(user.id);
+      if (resolved) {
+        const verdict = isRedundantPurchase(resolved.entitlement, plan_code);
+        if (verdict.redundant) {
+          return NextResponse.json({
+            success: false,
+            already_covered: true,
+            covered_by_school: true,
+            school_plan: verdict.schoolPlan,
+            error: 'Your school already provides this plan or higher.',
+          }, { status: 409 });
+        }
+      }
+    } catch (covErr) {
+      logger.warn('create-order: coverage guard skipped (resolve error)', {
+        error: covErr instanceof Error ? covErr.message : String(covErr),
+      });
+    }
 
     // Get plan from DB
     const razorpayKey = process.env.RAZORPAY_KEY_ID;
