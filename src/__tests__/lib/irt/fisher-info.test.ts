@@ -127,3 +127,58 @@ describe('computeSelectionScore — branch coverage matches SQL RPC', () => {
     expect(fisher.score).toBeGreaterThan(proxy.score);
   });
 });
+
+// ─── Phase 5 IRT-proxy seed — distinct rankings across seeded bands ──────────
+// The seed migration 20260622100000_seed_irt_difficulty_proxy.sql gives
+// uncalibrated items real theta-scale signal by mapping the integer difficulty
+// band onto irt_difficulty: easy=-1.0, medium=0.0, hard=+1.0. These cases pin
+// that the proxy_distance score then RANKS those bands distinctly relative to a
+// student's theta — i.e. the seed actually creates signal where there was none.
+describe('computeSelectionScore — proxy_distance ranks seeded bands distinctly', () => {
+  // Three uncalibrated items carrying ONLY the seeded proxy anchors.
+  const easyItem = { irt_a: null, irt_b: null, irt_calibration_n: 0, irt_difficulty: -1.0 };
+  const mediumItem = { irt_a: null, irt_b: null, irt_calibration_n: 0, irt_difficulty: 0.0 };
+  const hardItem = { irt_a: null, irt_b: null, irt_calibration_n: 0, irt_difficulty: 1.0 };
+
+  it('all three seeded bands take the proxy_distance path (n=0, irt_difficulty present)', () => {
+    expect(computeSelectionScore(0, easyItem).path).toBe('proxy_distance');
+    expect(computeSelectionScore(0, mediumItem).path).toBe('proxy_distance');
+    expect(computeSelectionScore(0, hardItem).path).toBe('proxy_distance');
+  });
+
+  it('a high-ability student (theta = +1) ranks the hard (b=+1) item ABOVE the easy (b=-1) item', () => {
+    const hard = computeSelectionScore(1, hardItem); // |1 - 1|   = 0   → 1.0
+    const easy = computeSelectionScore(1, easyItem); // |1 - -1|  = 2   → 0.333
+    expect(hard.score).toBeGreaterThan(easy.score);
+    expect(hard.score).toBeCloseTo(1.0, 6);
+    expect(easy.score).toBeCloseTo(1 / 3, 6);
+  });
+
+  it('a low-ability student (theta = -1) ranks the easy (b=-1) item ABOVE the hard (b=+1) item', () => {
+    const easy = computeSelectionScore(-1, easyItem); // |-1 - -1| = 0  → 1.0
+    const hard = computeSelectionScore(-1, hardItem); // |-1 - 1|  = 2  → 0.333
+    expect(easy.score).toBeGreaterThan(hard.score);
+  });
+
+  it('the three bands produce THREE DISTINCT scores for a fixed theta (real signal, not a tie)', () => {
+    // theta = 0.5 → distances |0.5-(-1)|=1.5, |0.5-0|=0.5, |0.5-1|=0.5 would tie
+    // medium/hard; use theta = 0.4 so all three distances differ.
+    const theta = 0.4;
+    const s = [easyItem, mediumItem, hardItem].map(
+      (it) => computeSelectionScore(theta, it).score,
+    );
+    const unique = new Set(s.map((x) => x.toFixed(6)));
+    expect(unique.size).toBe(3);
+  });
+
+  it('BEFORE the seed (all irt_difficulty uniformly 0) the proxy carries NO signal — every score ties', () => {
+    // This is the degenerate state the seed migration fixes: with irt_difficulty
+    // uniformly 0, proxy distance is identical for every item at any theta.
+    const flat = { irt_a: null, irt_b: null, irt_calibration_n: 0, irt_difficulty: 0.0 };
+    const a = computeSelectionScore(0.7, flat).score;
+    const b = computeSelectionScore(0.7, { ...flat }).score;
+    const c = computeSelectionScore(0.7, { ...flat }).score;
+    expect(a).toBe(b);
+    expect(b).toBe(c);
+  });
+});
