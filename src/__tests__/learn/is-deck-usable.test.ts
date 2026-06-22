@@ -5,7 +5,7 @@
  * src/lib/chapter-reader/get-concepts-from-table.ts.
  *
  * This is the SAME gate the pilot seed migration
- * `20260621000700_seed_chapter_concepts_pilot_g7_g9.sql` must clear for every
+ * `20260621000750_seed_chapter_concepts_pilot_g7_g9.sql` must clear for every
  * chapter (G7 science ch1+ch3, G9 math ch1 — 4 curated concepts each). If this
  * floor moves, the assessment rubric at
  *   docs/superpowers/specs/2026-06-21-chapter-concepts-derivation-rubric.md

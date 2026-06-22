@@ -1,5 +1,5 @@
 /**
- * Migration 20260621000600_track_a6_public_api_webhooks_marketplace.sql — static
+ * Migration 20260621000660_track_a6_public_api_webhooks_marketplace.sql — static
  * conformance guard (Track A.6: public API v1 + outbound webhooks + marketplace).
  *
  * Unit tests have no Supabase connection, so — exactly like
@@ -33,7 +33,7 @@ import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
 const MIGRATION_PATH =
-  'supabase/migrations/20260621000600_track_a6_public_api_webhooks_marketplace.sql';
+  'supabase/migrations/20260621000660_track_a6_public_api_webhooks_marketplace.sql';
 
 const sql = readFileSync(resolve(process.cwd(), MIGRATION_PATH), 'utf8');
 
