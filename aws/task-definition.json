@@ -1,0 +1,75 @@
+{
+  "family": "alfanumrik-web",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::032064442164:role/alfa-ecs-execution",
+  "taskRoleArn": "arn:aws:iam::032064442164:role/alfa-ecs-task",
+  "containerDefinitions": [
+    {
+      "name": "web",
+      "image": "032064442164.dkr.ecr.ap-south-1.amazonaws.com/alfanumrik-web:latest",
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "DEPLOY_TARGET",          "value": "production" },
+        { "name": "PORT",                   "value": "3000" },
+        { "name": "HOSTNAME",               "value": "0.0.0.0" },
+        { "name": "NODE_ENV",               "value": "production" },
+        { "name": "NEXT_TELEMETRY_DISABLED","value": "1" }
+      ],
+      "secrets": [
+        { "name": "SUPABASE_SERVICE_ROLE_KEY",  "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:SUPABASE_SERVICE_ROLE_KEY::" },
+        { "name": "ANTHROPIC_API_KEY",           "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:ANTHROPIC_API_KEY::" },
+        { "name": "VOYAGE_API_KEY",              "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:VOYAGE_API_KEY::" },
+        { "name": "OPENAI_API_KEY",              "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:OPENAI_API_KEY::" },
+        { "name": "RAZORPAY_KEY_ID",             "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:RAZORPAY_KEY_ID::" },
+        { "name": "RAZORPAY_KEY_SECRET",         "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:RAZORPAY_KEY_SECRET::" },
+        { "name": "RAZORPAY_WEBHOOK_SECRET",     "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:RAZORPAY_WEBHOOK_SECRET::" },
+        { "name": "SUPER_ADMIN_SECRET",          "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:SUPER_ADMIN_SECRET::" },
+        { "name": "CRON_SECRET",                 "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:CRON_SECRET::" },
+        { "name": "ADMIN_API_KEY",               "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:ADMIN_API_KEY::" },
+        { "name": "MAILGUN_API_KEY",             "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:MAILGUN_API_KEY::" },
+        { "name": "MAILGUN_DOMAIN",              "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:MAILGUN_DOMAIN::" },
+        { "name": "SEND_EMAIL_HOOK_SECRET",      "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:SEND_EMAIL_HOOK_SECRET::" },
+        { "name": "RENEWAL_FROM_EMAIL",          "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:RENEWAL_FROM_EMAIL::" },
+        { "name": "UPSTASH_REDIS_REST_URL",      "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:UPSTASH_REDIS_REST_URL::" },
+        { "name": "UPSTASH_REDIS_REST_TOKEN",    "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:UPSTASH_REDIS_REST_TOKEN::" },
+        { "name": "WHATSAPP_TOKEN",              "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:WHATSAPP_TOKEN::" },
+        { "name": "WHATSAPP_PHONE_NUMBER_ID",    "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:WHATSAPP_PHONE_NUMBER_ID::" },
+        { "name": "GOOGLE_VISION_API_KEY",       "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:GOOGLE_VISION_API_KEY::" },
+        { "name": "OCR_SPACE_API_KEY",           "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:OCR_SPACE_API_KEY::" },
+        { "name": "SENTRY_ORG",                  "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:SENTRY_ORG::" },
+        { "name": "SENTRY_PROJECT",              "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:SENTRY_PROJECT::" },
+        { "name": "POSTHOG_PROJECT_API_KEY",     "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:POSTHOG_PROJECT_API_KEY::" },
+        { "name": "SITE_URL",                    "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:SITE_URL::" },
+        { "name": "PYTHON_AI_BASE_URL",          "valueFrom": "arn:aws:secretsmanager:ap-south-1:032064442164:secret:alfa/prod/app:PYTHON_AI_BASE_URL::" }
+      ],
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "node -e \"require('http').get('http://localhost:3000/api/v1/health', r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group":         "/ecs/alfanumrik-web",
+          "awslogs-region":        "ap-south-1",
+          "awslogs-stream-prefix": "web",
+          "awslogs-create-group":  "true"
+        }
+      },
+      "essential": true
+    }
+  ]
+}
