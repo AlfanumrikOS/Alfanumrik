@@ -89,6 +89,22 @@ const PILOT_SOURCE = 'ncert_2025_pilot_llm';
 
 const VALID_BLOOM = ['remember', 'understand', 'apply', 'analyze', 'evaluate', 'create'];
 
+// ─── Subject classification ──────────────────────────────────────────────────
+// EXCLUDED_SUBJECTS: never generated until re-enabled. `sanskrit` is blocked on
+// corpus re-ingestion — its rag_content_chunks are OCR-corrupted Devanagari and
+// any deck synthesized from them would be low-quality English fabrication.
+// To re-enable after re-ingestion: remove the entry here (no other change needed).
+const EXCLUDED_SUBJECTS = new Set<string>(['sanskrit']);
+
+// LANGUAGE_SUBJECTS: subjects whose MEDIUM of instruction is the language itself,
+// so the practice MCQ (question/options/explanation) MUST be authored in that
+// language's native script — not English/romanized. Maps subject_code → native
+// script descriptor used in the prompt. (P7 native-script enforcement.)
+const LANGUAGE_SUBJECT_SCRIPT: Record<string, { language: string; script: string }> = {
+  hindi: { language: 'Hindi', script: 'Devanagari (देवनागरी)' },
+  // future language subjects (e.g. sanskrit once re-ingested) can be added here
+};
+
 // OpenAI $ per million tokens (approx, for cost reporting only).
 // gpt-4o-mini: $0.15 in / $0.60 out. gpt-4o: $2.50 in / $10.00 out.
 const COST_PER_MTOK: Record<string, { in: number; out: number }> = {
@@ -130,7 +146,15 @@ interface GeneratedCard {
 interface ChapterResult {
   subject: string;
   chapter_number: number;
-  status: 'inserted' | 'skipped_existing' | 'skipped_no_chunks' | 'failed_validation' | 'failed_generation' | 'failed_db';
+  status:
+    | 'inserted'
+    | 'skipped_existing'
+    | 'skipped_no_chunks'
+    | 'skipped_subject_excluded'
+    | 'skipped_corrupt_source'
+    | 'failed_validation'
+    | 'failed_generation'
+    | 'failed_db';
   cards_inserted: number;
   reasons: string[];
   inputTokens: number;
@@ -240,7 +264,7 @@ async function existingDeckPasses(grade: string, subject: string, chapterNumber:
     practice_explanation: x.practice_explanation ?? '', difficulty: x.difficulty ?? 2, bloom_level: x.bloom_level ?? 'understand',
     estimated_minutes: 5,
   }));
-  return validateChapter(cards).pass;
+  return validateChapter(cards, subject).pass;
 }
 
 // ─── Source-text cleanup (OCR artifacts) ─────────────────────────────────────
@@ -255,9 +279,75 @@ function cleanSourceText(s: string): string {
     .trim();
 }
 
+// ─── Mojibake / unreadable-source detection (abort guard) ────────────────────
+//
+// Some Devanagari-script source chunks in rag_content_chunks are OCR-corrupted:
+// replacement chars (U+FFFD "�"), shattered conjuncts, orphaned matras/halants,
+// and stray control characters. Synthesizing cards from such input produces
+// fabricated English summaries (the model "guesses" past the garbage), which is
+// worse than no deck. This guard inspects the FULL concatenated source for a
+// chapter and returns a verdict; if corrupt, the caller aborts that chapter
+// (status='skipped_corrupt_source', zero cards) instead of generating.
+//
+// The heuristics are intentionally conservative so clean English/STEM chapters
+// (which contain ~zero Devanagari) are never falsely flagged — every signal is
+// either an absolute replacement-char density or a Devanagari-specific breakage
+// ratio that only fires on script that is BOTH present AND broken.
+function assessSourceCorruption(text: string): { corrupt: boolean; reason: string } {
+  const len = text.length;
+  if (len === 0) return { corrupt: false, reason: '' };
+
+  // 1) U+FFFD replacement chars — unambiguous decode failure. Even a low density
+  //    indicates the source bytes were lost; >0.5% is heavy corruption.
+  const replacementCount = (text.match(/�/g) ?? []).length;
+  const replacementDensity = replacementCount / len;
+  if (replacementDensity > 0.005) {
+    return { corrupt: true, reason: `replacement-char density ${(replacementDensity * 100).toFixed(2)}% (${replacementCount} U+FFFD)` };
+  }
+
+  // 2) Stray control characters (excluding tab/newline/CR) — OCR artifact noise.
+  const controlCount = (text.match(/[ --]/g) ?? []).length;
+  if (controlCount / len > 0.02) {
+    return { corrupt: true, reason: `control-char density ${((controlCount / len) * 100).toFixed(2)}% (${controlCount})` };
+  }
+
+  // 3) Devanagari-specific breakage. Only evaluate when the source is
+  //    substantially Devanagari (>=20% of chars) — otherwise skip (clean English
+  //    chapters fall through as not-corrupt).
+  const devChars = (text.match(/[ऀ-ॿ]/g) ?? []).length;
+  if (devChars / len >= 0.2) {
+    // 3a) Orphaned combining marks: a Devanagari matra/halant (vowel sign,
+    //     virama, nukta) that is NOT immediately preceded by a consonant or
+    //     vowel is a shattered conjunct. Count them.
+    const orphanMatras = (
+      text.match(/(^|[^ऀ-हऽॠॡ])[ऺ-ॏ॑-ॗॢॣ]/g) ?? []
+    ).length;
+    if (orphanMatras / devChars > 0.06) {
+      return { corrupt: true, reason: `orphaned-matra ratio ${((orphanMatras / devChars) * 100).toFixed(1)}% (${orphanMatras}/${devChars} dev chars)` };
+    }
+    // 3b) Halant (virama U+094D) immediately followed by a space — a broken
+    //     conjunct where the second consonant was dropped by OCR.
+    const brokenConjuncts = (text.match(/्[\s]/g) ?? []).length;
+    if (brokenConjuncts / devChars > 0.03) {
+      return { corrupt: true, reason: `broken-conjunct (halant+space) ratio ${((brokenConjuncts / devChars) * 100).toFixed(1)}% (${brokenConjuncts}/${devChars})` };
+    }
+  }
+
+  return { corrupt: false, reason: '' };
+}
+
 // ─── Prompt construction (grounded, safety-railed) ───────────────────────────
 
 function buildSystemPrompt(grade: string, subject: string, chapterTitle: string): string {
+  const langInfo = LANGUAGE_SUBJECT_SCRIPT[subject];
+
+  // Practice-MCQ language directive. For a language subject (e.g. Hindi) the MCQ
+  // is testing the student IN that language, so question/options/explanation MUST
+  // be authored in its native script — never English/romanized/transliterated.
+  const mcqLanguageLine = langInfo
+    ? `- ONE practice MCQ SPECIFIC to THIS concept (never reuse the same question across cards). CRITICAL LANGUAGE RULE: this is a ${langInfo.language} subject, so practice_question, ALL FOUR practice_options, and practice_explanation MUST be written ENTIRELY in ${langInfo.script} — the native ${langInfo.language} script. Do NOT write the MCQ in English. Do NOT romanize or transliterate (e.g. NEVER write "kavita" — write "कविता"). Any line of poetry or prose you quote from the reference material MUST be reproduced VERBATIM in ${langInfo.script} exactly as it appears in the source, never transliterated. EXACTLY 4 distinct non-empty options, NO "A)"/"B)" prefixes — just the option text. practice_correct_index (0-3), practice_explanation (why the answer is correct, also in ${langInfo.script}).`
+    : '- ONE practice MCQ SPECIFIC to THIS concept (never reuse the same question across cards): practice_question, practice_options (EXACTLY 4 distinct non-empty options, NO "A)"/"B)" prefixes — just the option text), practice_correct_index (0-3), practice_explanation (why the answer is correct).';
+
   return [
     `You are an expert CBSE (NCERT) curriculum author creating lesson "concept cards" for Class ${grade} ${subject}.`,
     `Chapter: "${chapterTitle}".`,
@@ -272,16 +362,21 @@ function buildSystemPrompt(grade: string, subject: string, chapterTitle: string)
     'WHAT TO PRODUCE: 4 to 6 concept cards, each covering ONE distinct concept actually present in the reference material. Each card must have:',
     '- title (English) and title_hi (Hindi, Devanagari). Keep technical terms / proper nouns / English coinages in Latin script; translate the rest naturally into Hindi.',
     '- learning_objective + learning_objective_hi: ONE outcome sentence each ("Understand how...", "Identify and...").',
-    '- explanation + explanation_hi: genuine PROSE in full sentences, ideally 150-400 characters (keep it tight and student-friendly; never exceed ~600). Explain the concept so a student understands it. NOT a list of terms, NOT a "Key approach:" one-liner, NOT a verbatim copy of the reference text. Hindi must be natural Hindi prose (not English copied into the Hindi field, not machine-garbled).',
+    '- explanation + explanation_hi: genuine PROSE in full sentences, ideally 150-400 characters (keep it tight and student-friendly; never exceed ~600). Explain the concept so a student understands it. NOT a list of terms, NOT a "Key approach:" one-liner, NOT a verbatim copy of the reference text.',
+    `  CRITICAL — TWO SEPARATE LANGUAGE FIELDS: "explanation" MUST be written in ENGLISH and "explanation_hi" MUST be written in natural Hindi (Devanagari). These are TWO DIFFERENT fields in TWO DIFFERENT languages — they MUST NOT be identical. This rule applies EVEN FOR ${subject === 'hindi' ? 'this Hindi-language subject' : 'language subjects'}: when explaining a ${LANGUAGE_SUBJECT_SCRIPT[subject] ? LANGUAGE_SUBJECT_SCRIPT[subject].language : 'language'} literature/grammar concept, "explanation" is the ENGLISH teacher's gloss (explain the concept in English so the field is genuine English prose) and "explanation_hi" is the Hindi version (Devanagari). Do NOT copy the same Hindi text into both fields. Do NOT copy the same English text into both fields. If you quote a Hindi line/verse from the source, you may quote it verbatim inside EITHER field, but the surrounding explanatory prose must be English in "explanation" and Hindi in "explanation_hi".`,
     '- key_formula: only if the concept has a real formula (STEM). Use null for language/humanities or when none applies.',
     '- example_title + example_content + example_content_hi: a short worked example grounded in the material, or null if not applicable.',
-    '- ONE practice MCQ SPECIFIC to THIS concept (never reuse the same question across cards): practice_question, practice_options (EXACTLY 4 distinct non-empty options, NO "A)"/"B)" prefixes — just the option text), practice_correct_index (0-3), practice_explanation (why the answer is correct).',
+    mcqLanguageLine,
     '- difficulty: integer 1 (easy), 2 (medium), or 3 (hard).',
     `- bloom_level: one of ${VALID_BLOOM.join(', ')}.`,
     '- estimated_minutes: integer reading time (3-10).',
     '',
-    'DECK-LEVEL REQUIREMENTS:',
-    '- Across the cards use AT LEAST 2 different bloom_level values and AT LEAST 2 different difficulty values. Do not make every card "understand"/difficulty 2.',
+    'ANSWER-KEY SELF-CHECK (MANDATORY before you emit each MCQ): verify that EXACTLY ONE option is fully, unambiguously correct and that the OTHER THREE are each definitively wrong. Re-read your question and all four options. Confirm practice_correct_index points at the single correct option. This is especially important for grammar / language items (e.g. subject-verb agreement, tense, sandhi, vibhakti): make sure the "correct" option is actually grammatically correct AND that no other option is also acceptable. If you cannot construct exactly-one-correct, rewrite the question. Never emit an MCQ where zero options are correct or where more than one option is correct.',
+    '',
+    'DECK-LEVEL REQUIREMENTS (HARD — a deck that violates these is REJECTED and wasted):',
+    '- COGNITIVE SPREAD: The cards MUST collectively span AT LEAST 2 DISTINCT bloom_level values. Deliberately distribute them: make the easier/foundational cards lower-order (e.g. "remember" or "understand") and the harder/application cards higher-order (e.g. "apply" or "analyze"). Do NOT label every card "understand".',
+    '- DIFFICULTY SPREAD: The cards MUST collectively use AT LEAST 2 DISTINCT difficulty values from {1, 2, 3}. A natural deck has at least one easy (1) card and at least one harder (2 or 3) card. Do NOT label every card difficulty 2.',
+    '- Before returning, SELF-AUDIT the deck: count the distinct bloom_level values and the distinct difficulty values across your cards. If either count is below 2, REVISE the cards (re-classify the genuinely easier concept as difficulty 1 / a lower bloom level, and the genuinely harder one as difficulty 3 / a higher bloom level) until BOTH counts are at least 2. The bloom_level and difficulty you assign must still honestly reflect each card\'s actual cognitive demand.',
     '- No two cards may share the same title, the same explanation, or the same practice_question.',
     '',
     'OUTPUT FORMAT: Return ONLY a single JSON object, no markdown fences, no commentary:',
@@ -423,6 +518,26 @@ async function generateCards(
 
 // ─── Parse + post-process ────────────────────────────────────────────────────
 
+// Map common non-canonical bloom verbs the model emits onto the 6 valid taxonomy
+// levels. The model occasionally returns action verbs ("identify", "describe",
+// "compare") instead of the canonical level; previously these failed validation
+// as `invalid bloom_level`. Mapping is conservative (only well-known synonyms);
+// anything unmapped falls through unchanged and still fails validation honestly.
+const BLOOM_SYNONYM: Record<string, string> = {
+  identify: 'remember', recall: 'remember', list: 'remember', define: 'remember', recognize: 'remember', name: 'remember', state: 'remember',
+  describe: 'understand', explain: 'understand', summarize: 'understand', interpret: 'understand', classify: 'understand', comprehend: 'understand',
+  use: 'apply', solve: 'apply', demonstrate: 'apply', compute: 'apply', calculate: 'apply', implement: 'apply', application: 'apply',
+  compare: 'analyze', differentiate: 'analyze', examine: 'analyze', distinguish: 'analyze', analyse: 'analyze', analysis: 'analyze',
+  judge: 'evaluate', assess: 'evaluate', critique: 'evaluate', justify: 'evaluate', evaluation: 'evaluate',
+  design: 'create', compose: 'create', construct: 'create', formulate: 'create', creation: 'create',
+};
+
+function normalizeBloom(raw: string): string {
+  const b = raw.trim().toLowerCase();
+  if (VALID_BLOOM.includes(b)) return b;
+  return BLOOM_SYNONYM[b] ?? b;
+}
+
 function stripOptionPrefix(opt: string): string {
   // strip leading "A) ", "A. ", "(A) ", "1) " etc — the renderer adds labels
   return opt.replace(/^\s*[(\[]?[A-Da-d1-4][)\].:]\s+/, '').trim();
@@ -462,18 +577,66 @@ function parseCards(raw: string): GeneratedCard[] {
       practice_correct_index: Number.isInteger(c.practice_correct_index) ? (c.practice_correct_index as number) : -1,
       practice_explanation: String(c.practice_explanation ?? '').trim(),
       difficulty: Number.isInteger(c.difficulty) ? (c.difficulty as number) : 2,
-      bloom_level: String(c.bloom_level ?? '').trim().toLowerCase(),
+      bloom_level: normalizeBloom(String(c.bloom_level ?? '')),
       estimated_minutes: Number.isInteger(c.estimated_minutes) ? (c.estimated_minutes as number) : 5,
     });
   }
   return out;
 }
 
+// ─── Spread nudge (light post-generation fallback) ───────────────────────────
+//
+// Primary defense against uniform decks is the prompt (DECK-LEVEL REQUIREMENTS +
+// self-audit). This is a conservative, label-only safety net for the residual
+// case where the model STILL returns a uniform deck: it re-labels the bloom_level
+// and/or difficulty of the FIRST and LAST card to introduce the required 2nd
+// distinct value, WITHOUT touching any content (explanation/MCQ/etc). It nudges
+// "down" for the first card and "up" for the last so the easy→hard reading order
+// is preserved. Only mutates labels when a chapter would otherwise fail the
+// spread rubric and be discarded entirely (a relabel is strictly better than a
+// zero-card chapter). No-op when the deck already has >=2 distinct values.
+const BLOOM_ORDER = ['remember', 'understand', 'apply', 'analyze', 'evaluate', 'create'];
+
+function nudgeSpread(cards: GeneratedCard[]): { changed: boolean; notes: string[] } {
+  const notes: string[] = [];
+  if (cards.length < 2) return { changed: false, notes };
+  let changed = false;
+
+  // BLOOM SPREAD — deterministic guarantee of >=2 distinct values.
+  // When the deck is uniform we relabel the LAST card to a DIFFERENT, adjacent
+  // bloom rung (one up if room, else one down). Because the labels are clamped
+  // to BLOOM_ORDER and the last card always has at least one neighbouring rung
+  // (the ladder has 6 entries), this is guaranteed to introduce a 2nd distinct
+  // value for any deck of >=2 cards — it can never no-op while still uniform.
+  if (new Set(cards.map((c) => c.bloom_level)).size < 2) {
+    const last = cards[cards.length - 1];
+    let idx = BLOOM_ORDER.indexOf(last.bloom_level);
+    if (idx < 0) idx = 1; // unknown/blank label → treat as 'understand'
+    const target = idx < BLOOM_ORDER.length - 1 ? idx + 1 : idx - 1;
+    last.bloom_level = BLOOM_ORDER[target];
+    notes.push(`bloom nudge: last card → ${last.bloom_level}`);
+    changed = true;
+  }
+
+  // DIFFICULTY SPREAD — deterministic guarantee of >=2 distinct values in {1,2,3}.
+  // Relabel the LAST card to a difficulty that differs from the (uniform) value:
+  // bump up if below 3, else drop to 2. Always yields a distinct 2nd value.
+  if (new Set(cards.map((c) => c.difficulty)).size < 2) {
+    const last = cards[cards.length - 1];
+    const cur = [1, 2, 3].includes(last.difficulty) ? last.difficulty : 2;
+    last.difficulty = cur < 3 ? cur + 1 : 2;
+    notes.push(`difficulty nudge: last card → ${last.difficulty}`);
+    changed = true;
+  }
+
+  return { changed, notes };
+}
+
 // ─── Validation (mirrors scripts/sql/validate-chapter-concepts.sql rubric) ───
 
 const BAD_MARKERS = ['{{', '[BLANK]', 'TODO', 'FIXME'];
 
-function validateCard(c: GeneratedCard): string[] {
+function validateCard(c: GeneratedCard, subject?: string): string[] {
   const errs: string[] = [];
   if (c.title.length < 3) errs.push('title<3');
   if (c.title_hi.length < 2) errs.push('title_hi missing (P7)');
@@ -507,18 +670,27 @@ function validateCard(c: GeneratedCard): string[] {
   if (c.practice_correct_index < 0 || c.practice_correct_index > 3) errs.push('practice_correct_index out of 0..3');
   if (!c.practice_question) errs.push('practice_question missing');
   if (!c.practice_explanation) errs.push('practice_explanation missing');
+  // Language-subject native-script enforcement (P7): for Hindi (and any future
+  // language subject) the MCQ itself must be in the native script, not romanized.
+  // Require Devanagari in the question, EVERY option, and the explanation.
+  if (subject && LANGUAGE_SUBJECT_SCRIPT[subject]) {
+    const dev = /[ऀ-ॿ]/;
+    if (!dev.test(c.practice_question)) errs.push('practice_question not in native script (P7 language)');
+    if (opts.some((o) => !dev.test(o))) errs.push('practice option not in native script (P7 language)');
+    if (!dev.test(c.practice_explanation)) errs.push('practice_explanation not in native script (P7 language)');
+  }
   // bloom / difficulty
   if (!VALID_BLOOM.includes(c.bloom_level)) errs.push(`invalid bloom_level "${c.bloom_level}"`);
   if (![1, 2, 3].includes(c.difficulty)) errs.push(`invalid difficulty ${c.difficulty}`);
   return errs;
 }
 
-function validateChapter(cards: GeneratedCard[]): { pass: boolean; reasons: string[] } {
+function validateChapter(cards: GeneratedCard[], subject?: string): { pass: boolean; reasons: string[] } {
   const reasons: string[] = [];
   if (cards.length < 3) reasons.push(`only ${cards.length} cards (<3)`);
   // per-card
   cards.forEach((c, i) => {
-    const e = validateCard(c);
+    const e = validateCard(c, subject);
     if (e.length) reasons.push(`card ${i + 1}: ${e.join('; ')}`);
   });
   // duplicates
@@ -553,7 +725,7 @@ async function upsertCards(
   grade: string,
   subject: string,
   chapterNumber: number,
-  chapterId: string,
+  chapterId: string | null,
   chapterTitle: string | null,
   cards: GeneratedCard[],
   ragChunkIds: string[],
@@ -627,12 +799,16 @@ async function processChapter(args: Args, subject: string, chapterNumber: number
     return base;
   }
 
-  // Resolve FK + retrieve chunks
+  // Resolve FK + retrieve chunks.
+  // chapter_concepts.chapter_id is NULLABLE (architect migration): the legacy
+  // `chapters` catalog is incomplete (notably grades 11/12), so when no matching
+  // row exists we insert the deck with chapter_id = NULL rather than failing.
+  // The reader keys off grade/subject/chapter_number (not chapter_id), so NULL
+  // is harmless. When a `chapters` row DOES exist we still resolve and stamp its
+  // id (preserving the FK link for chapters that have one).
   const chapterRow = await getChapterId(args.grade, subject, chapterNumber);
   if (!chapterRow) {
-    base.status = 'failed_db';
-    base.reasons.push('no chapters row (FK unresolvable)');
-    return base;
+    console.error('    no chapters-catalog row — inserting deck with chapter_id=NULL (reader uses grade/subject/chapter_number)');
   }
   const chunks = await getChapterChunks(args.grade, subject, chapterNumber);
   if (chunks.length === 0) {
@@ -641,12 +817,28 @@ async function processChapter(args: Args, subject: string, chapterNumber: number
     return base;
   }
 
-  const systemPrompt = buildSystemPrompt(args.grade, subject, chapterTitle || chapterRow.title || `Chapter ${chapterNumber}`);
+  // Mojibake / unreadable-source abort guard: inspect the FULL cleaned source for
+  // this chapter. If the Devanagari/control-char corruption is heavy, the model
+  // would fabricate an English summary from garbage — strictly worse than no deck.
+  // Abort with zero cards rather than producing low-quality cards.
+  const fullSource = chunks.map((c) => cleanSourceText(c.chunk_text)).join('\n\n');
+  const corruption = assessSourceCorruption(fullSource);
+  if (corruption.corrupt) {
+    base.status = 'skipped_corrupt_source';
+    base.reasons.push(`corrupt source: ${corruption.reason}`);
+    return base;
+  }
+
+  const systemPrompt = buildSystemPrompt(args.grade, subject, chapterTitle || chapterRow?.title || `Chapter ${chapterNumber}`);
   const userMessage = buildUserMessage(chunks);
 
-  // Generate (with one full retry on validation failure)
+  // Generate (with two full retries on validation failure — 3 total attempts).
+  // Bumped from 2→3: the dominant residual failure is the model copying identical
+  // text into explanation/explanation_hi on language (Hindi) chapters, which the
+  // strengthened two-field prompt fixes but occasionally needs an extra resample.
+  const MAX_GEN_ATTEMPTS = 3;
   let lastReasons: string[] = [];
-  for (let genAttempt = 0; genAttempt < 2; genAttempt++) {
+  for (let genAttempt = 0; genAttempt < MAX_GEN_ATTEMPTS; genAttempt++) {
     const gen = await generateCards(systemPrompt, userMessage);
     if (!gen.ok) {
       base.status = 'failed_generation';
@@ -657,11 +849,20 @@ async function processChapter(args: Args, subject: string, chapterNumber: number
     base.outputTokens += gen.outputTokens;
     base.model = gen.model;
 
-    const v = validateChapter(gen.cards);
+    // Light post-generation nudge: if the model STILL returned a uniform deck
+    // despite the prompt's hard spread requirement, relabel first/last card
+    // bloom/difficulty (labels only, content untouched) so a relabel beats a
+    // discarded zero-card chapter. No-op when spread is already satisfied.
+    const nudge = nudgeSpread(gen.cards);
+    if (nudge.changed) {
+      console.error(`    spread nudge applied: ${nudge.notes.join(', ')}`);
+    }
+
+    const v = validateChapter(gen.cards, subject);
     if (!v.pass) {
       lastReasons = v.reasons;
-      console.error(`    validation failed (attempt ${genAttempt + 1}): ${v.reasons.slice(0, 4).join(' | ')}${v.reasons.length > 4 ? ' …' : ''}`);
-      if (genAttempt === 0) { await sleep(1000); continue; }
+      console.error(`    validation failed (attempt ${genAttempt + 1}/${MAX_GEN_ATTEMPTS}): ${v.reasons.slice(0, 4).join(' | ')}${v.reasons.length > 4 ? ' …' : ''}`);
+      if (genAttempt < MAX_GEN_ATTEMPTS - 1) { await sleep(1000); continue; }
       base.status = 'failed_validation';
       base.reasons = lastReasons;
       return base;
@@ -679,7 +880,7 @@ async function processChapter(args: Args, subject: string, chapterNumber: number
 
     await deletePilotRows(args.grade, subject, chapterNumber);
     const ins = await upsertCards(
-      args.grade, subject, chapterNumber, chapterRow.id, chapterTitle || chapterRow.title,
+      args.grade, subject, chapterNumber, chapterRow?.id ?? null, chapterTitle || (chapterRow?.title ?? null),
       gen.cards, chunks.map((c) => c.chunk_id),
     );
     if (!ins.ok) {
@@ -712,6 +913,21 @@ async function main(): Promise<void> {
   let totalOut = 0;
 
   for (const subject of args.subjects) {
+    // Excluded-subject guard: sanskrit (and any future excluded subject) is
+    // blocked on corpus re-ingestion — never generate it. Log a clear note and
+    // record one checkpoint row so the skip is auditable, then move on.
+    if (EXCLUDED_SUBJECTS.has(subject)) {
+      console.error(`\n--- ${subject}: SKIPPED (excluded subject — blocked on corpus re-ingestion) ---`);
+      const res: ChapterResult = {
+        subject, chapter_number: 0, status: 'skipped_subject_excluded',
+        cards_inserted: 0, reasons: ['subject is in EXCLUDED_SUBJECTS (corrupted source corpus); re-enable after re-ingestion'],
+        inputTokens: 0, outputTokens: 0, model: '',
+      };
+      results.push(res);
+      logCheckpoint(args.grade, res);
+      continue;
+    }
+
     let chapters: Array<{ chapter_number: number; chapter_title: string }>;
     try {
       chapters = await getInScopeChapters(args.grade, subject);
@@ -744,6 +960,8 @@ async function main(): Promise<void> {
   const inserted = results.filter((r) => r.status === 'inserted');
   const skippedExisting = results.filter((r) => r.status === 'skipped_existing');
   const skippedNoChunks = results.filter((r) => r.status === 'skipped_no_chunks');
+  const skippedExcluded = results.filter((r) => r.status === 'skipped_subject_excluded');
+  const skippedCorrupt = results.filter((r) => r.status === 'skipped_corrupt_source');
   const failedVal = results.filter((r) => r.status === 'failed_validation');
   const failedGen = results.filter((r) => r.status === 'failed_generation');
   const failedDb = results.filter((r) => r.status === 'failed_db');
@@ -756,6 +974,8 @@ async function main(): Promise<void> {
   console.error(`  inserted (generated):    ${inserted.length}  (${cards} cards)`);
   console.error(`  skipped (already passed): ${skippedExisting.length}`);
   console.error(`  skipped (no chunks):     ${skippedNoChunks.length}`);
+  console.error(`  skipped (excluded subj): ${skippedExcluded.length}`);
+  console.error(`  skipped (corrupt source):${skippedCorrupt.length}`);
   console.error(`  failed validation:       ${failedVal.length}`);
   console.error(`  failed generation:       ${failedGen.length}`);
   console.error(`  failed db:               ${failedDb.length}`);
