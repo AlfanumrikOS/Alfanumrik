@@ -17,11 +17,16 @@
  *                              p_limit, p_include_review, p_mode)
  *                         → (question_id, bloom_level, priority_score, source, ...)
  *
- * Wave 1B v1 simplification: ZPD candidate `difficulty` is defaulted to 0.5
- * because the RPC does not surface per-question IRT difficulty. The
- * orchestrator's flavor filter still kicks in, so persona-aware selection
- * works; only the within-flavor difficulty fine-tuning is degraded. A
- * follow-on can JOIN question_bank.irt_difficulty for true ZPD targeting.
+ * Wave 1C ZPD targeting (Phase 3): real ability + per-question difficulty now
+ * feed the orchestrator. `studentAbility` is the student's `irt_theta` (logit
+ * scale) from student_learning_profiles; candidate `difficulty` is each
+ * question's `question_bank.irt_difficulty` (theta scale, [-4,4]) mapped onto
+ * the orchestrator's 0..1 axis via the SAME sigmoid the orchestrator uses to
+ * derive its target (`1/(1+e^-x)`), so "closest difficulty to target" is a
+ * true same-axis ZPD match. Both signals are non-fatal: a missing/failed theta
+ * defaults to 0 (sigmoid → 0.5), and a question with no difficulty signal
+ * defaults to 0.5 — exactly the prior placeholder behaviour, so the queue can
+ * never regress (same item count / shape; SRS slots untouched).
  *
  * Spec: docs/superpowers/specs/2026-05-08-pedagogy-v2-three-speed-rhythm-design.md
  */
@@ -90,6 +95,43 @@ function normalizeBloom(b: string | null): CandidateProblem['bloomLevel'] {
   return (b && VALID_BLOOM.has(b))
     ? (b as CandidateProblem['bloomLevel'])
     : 'understand';
+}
+
+/**
+ * Default candidate difficulty on the orchestrator's 0..1 axis. sigmoid(0) =
+ * 0.5; this is the EXACT value the route previously hardcoded, so any question
+ * with no usable difficulty signal degrades gracefully to the old behaviour.
+ */
+const DEFAULT_DIFFICULTY_0_1 = 0.5;
+
+/**
+ * Map a question's raw difficulty signal onto the orchestrator's 0..1
+ * `CandidateProblem.difficulty` axis.
+ *
+ * Primary source: `question_bank.irt_difficulty` — the 2PL `b` parameter on the
+ * SAME logit/theta scale as `studentAbility` (DB CHECK bounds it to [-4, 4]).
+ * The orchestrator derives its ZPD target as `targetDifficulty = sigmoid(theta)`
+ * (daily-rhythm-orchestrator.ts pickZpdItem, line ~159), so we push irt_difficulty
+ * through the IDENTICAL sigmoid to land on the same axis — then "closest
+ * difficulty to target" is a genuine same-scale ZPD match. (An uncalibrated
+ * irt_difficulty of 0.0 → sigmoid(0) = 0.5, the neutral midpoint.)
+ *
+ * Fallback source: the legacy integer `difficulty` column (1=easy, 2=medium,
+ * 3=hard) mapped onto {0.25, 0.5, 0.75}. Final fallback: 0.5 (= prior default).
+ */
+function mapDifficultyTo01(
+  irtDifficulty: number | null | undefined,
+  intDifficulty: number | null | undefined,
+): number {
+  if (typeof irtDifficulty === 'number' && Number.isFinite(irtDifficulty)) {
+    return 1 / (1 + Math.exp(-irtDifficulty));
+  }
+  if (typeof intDifficulty === 'number' && Number.isFinite(intDifficulty)) {
+    if (intDifficulty <= 1) return 0.25;
+    if (intDifficulty >= 3) return 0.75;
+    return 0.5;
+  }
+  return DEFAULT_DIFFICULTY_0_1;
 }
 
 export async function GET(_request: Request) {
@@ -197,6 +239,38 @@ async function buildRhythmQueue(
     subjectCode = subj?.code ?? null;
   }
 
+  // ── Real student ability (A3) ───────────────────────────────────────────
+  // Fetch this student's calibrated IRT theta (logit scale) from
+  // student_learning_profiles. The table is keyed (student_id, subject), so we
+  // scope to the ZPD subject when one is resolved; otherwise we take any row.
+  // The orchestrator maps theta → target difficulty via sigmoid, so theta is
+  // exactly the scale it expects. NON-FATAL: any miss/error defaults to 0
+  // (sigmoid(0) = 0.5 neutral target = prior hardcoded behaviour).
+  let studentAbility = 0;
+  try {
+    let thetaQuery = supabase
+      .from('student_learning_profiles')
+      .select('irt_theta')
+      .eq('student_id', studentRow.id);
+    if (subjectCode) {
+      thetaQuery = thetaQuery.eq('subject', subjectCode);
+    }
+    const { data: profileRow } = await thetaQuery
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const theta = (profileRow as { irt_theta?: number | null } | null)?.irt_theta;
+    if (typeof theta === 'number' && Number.isFinite(theta)) {
+      studentAbility = theta;
+    }
+  } catch (err) {
+    // Non-fatal: leave studentAbility = 0 (neutral target).
+    logger.error('rhythm/today: irt_theta fetch failed', {
+      userId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   // Load due reviews (A4). RPC returns rows already filtered to due-for-review.
   const { data: dueRowsRaw, error: dueErr } = await supabase.rpc('get_due_reviews', {
     p_student_id: userId,
@@ -281,11 +355,50 @@ async function buildRhythmQueue(
         subjectCode,
       });
     }
-    candidatePool = ((zpdRows ?? []) as AdaptiveQuestionRow[]).map((q) => {
+    const adaptiveRows = (zpdRows ?? []) as AdaptiveQuestionRow[];
+
+    // ── Real per-question difficulty (Phase 3) ────────────────────────────
+    // The RPC's RETURNS TABLE contract is frozen (7 cols, other callers depend
+    // on it), so we do NOT change it. Instead we batch-fetch the difficulty
+    // signal for exactly the candidate ids it returned. NON-FATAL: on any
+    // error the map stays empty and every candidate falls back to 0.5 (= prior
+    // placeholder), so the queue is identical to before.
+    const difficultyById = new Map<string, number>();
+    const candidateIds = adaptiveRows
+      .map((q) => String(q.question_id))
+      .filter(Boolean);
+    if (candidateIds.length > 0) {
+      try {
+        const { data: diffRows } = await supabase
+          .from('question_bank')
+          .select('id, irt_difficulty, difficulty')
+          .in('id', candidateIds);
+        for (const r of diffRows ?? []) {
+          const row = r as {
+            id: string;
+            irt_difficulty?: number | null;
+            difficulty?: number | null;
+          };
+          difficultyById.set(
+            String(row.id),
+            mapDifficultyTo01(row.irt_difficulty, row.difficulty),
+          );
+        }
+      } catch (err) {
+        logger.error('rhythm/today: question difficulty fetch failed', {
+          userId,
+          subjectCode,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    candidatePool = adaptiveRows.map((q) => {
       const flags = classifyFlags(q.source);
+      const qid = String(q.question_id);
       return {
-        questionId: String(q.question_id),
-        difficulty: 0.5, // see Wave 1B v1 simplification note above.
+        questionId: qid,
+        difficulty: difficultyById.get(qid) ?? DEFAULT_DIFFICULTY_0_1,
         bloomLevel: normalizeBloom(q.bloom_level),
         topicId: '',     // not surfaced by the RPC; only the orchestrator's
                          // flavor filter uses CandidateProblem.topicId today,
@@ -305,11 +418,11 @@ async function buildRhythmQueue(
 
   const queue = composeDailyRhythm({
     persona,
-    studentAbility: 0, // see A3 audit note: ability matching is internal to
-                       // get_adaptive_questions; the orchestrator's sigmoid
-                       // mapping with ability=0 yields a target difficulty
-                       // of 0.5, which matches our default candidate
-                       // difficulty so the sort is stable.
+    studentAbility, // Phase 3: real IRT theta (logit scale) from
+                    // student_learning_profiles. Defaults to 0 (sigmoid → 0.5
+                    // neutral target) when uncalibrated/missing, which is the
+                    // prior hardcoded behaviour — so a missing theta can never
+                    // regress the queue.
     dueSm2Cards,
     candidateProblemPool: candidatePool,
     reflectionPromptIndex,
