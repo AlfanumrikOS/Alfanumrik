@@ -13,6 +13,43 @@ Supabase Dashboard → Settings → Infrastructure → Region.
 
 ---
 
+## Step 0c — CloudFront pseudolink (active staging setup)
+
+The platform is accessible via CloudFront HTTPS **without any alfanumrik.com DNS change**.
+
+| Item | Value |
+|---|---|
+| **Pseudolink** | `https://da8yhieheuw7p.cloudfront.net` |
+| CloudFront distribution ID | `E3GYX90RS5NCAP` |
+| Origin | ALB HTTP:80 — `alfa-prod-alb-1820523356.ap-south-1.elb.amazonaws.com` |
+| HTTPS cert | CloudFront managed (`*.cloudfront.net`) — no ACM cert needed |
+| Indian edge nodes | Mumbai, Chennai, Hyderabad, Delhi, Kolkata (PriceClass_All) |
+| Price class | PriceClass_All |
+| Status | Propagating (~10 min after creation); check: `aws cloudfront get-distribution --id E3GYX90RS5NCAP --query 'Distribution.Status'` |
+
+### Cache behaviors
+| Path | Policy |
+|---|---|
+| `/_next/static/*` | CachingOptimized (immutable hashed assets — long TTL) |
+| `/api/*` | CachingDisabled (API must never be cached) |
+| Everything else | CachingDisabled (default — safe for SSR pages) |
+
+### Architecture
+```
+User → CloudFront (HTTPS, *.cloudfront.net cert)
+     → ALB port 80 (HTTP, X-Forwarded-Proto: https injected)
+     → ECS Fargate task (port 3000)
+```
+CloudFront terminates TLS. ALB handles HTTP routing. The `X-Forwarded-Proto: https` origin header tells Next.js the user is on HTTPS even though CloudFront→ALB is plain HTTP.
+
+### After full DNS cutover (future)
+To serve `alfanumrik.com` via this stack: add `alfanumrik.com` as a CloudFront alternate domain + attach the ACM cert. Or keep CloudFront as the staging URL permanently and route production via the ALB ALIAS record in Route 53.
+
+### Reference config
+The full distribution config is in `aws/cloudfront-config.json`.
+
+---
+
 ## Step 1 — Bootstrap IAM (one-time console action, ~2 minutes)
 
 The `alfanumrik-admin` IAM user exists but has no policies attached.
@@ -63,7 +100,7 @@ Set in: **GitHub → AlfanumrikOS/Alfanumrik → Settings → Secrets and variab
 | `ECR_REPOSITORY` | `alfa-web` |
 | `ECS_CLUSTER` | `alfa-prod` |
 | `ECS_SERVICE` | `web` |
-| `PRODUCTION_DOMAIN` | `https://alfanumrik.com` |
+| `PRODUCTION_DOMAIN` | `https://da8yhieheuw7p.cloudfront.net` (CloudFront pseudolink; update to `https://alfanumrik.com` only after DNS cutover) |
 
 ---
 

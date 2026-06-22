@@ -17,10 +17,11 @@ name: Deploy AWS ECS — Alfanumrik
 # Required GitHub Actions VARIABLES (Settings → Secrets and variables → Actions → Variables):
 #   ENABLE_AWS_DEPLOY   - Must be 'true' to run (phased cutover guard)
 #   AWS_REGION          - ap-south-1
-#   ECR_REPOSITORY      - alfanumrik-web
+#   ECR_REPOSITORY      - alfa-web
 #   ECS_CLUSTER         - alfa-prod
 #   ECS_SERVICE         - web
-#   PRODUCTION_DOMAIN   - https://alfanumrik.com
+#   PRODUCTION_DOMAIN   - CloudFront pseudolink: https://da8yhieheuw7p.cloudfront.net
+#                         (set to https://alfanumrik.com only after full DNS cutover)
 #
 # Server-side secrets (Supabase service role, Razorpay, Anthropic, etc.) are NOT
 # build-time variables — they are injected at container runtime by ECS from Secrets
@@ -194,6 +195,31 @@ jobs:
           # revision without manual intervention. This is a second safety net
           # independent of our smoke-test job below.
           deployment-controller-type: ECS
+
+      - name: Scale up service on first deploy
+        # The service was pre-created with desired-count=0 to satisfy ECS's
+        # requirement that the service exist before update-service runs.
+        # This step scales to 2 on first deploy; subsequent deploys are no-ops
+        # (desired-count stays at whatever ECS rolling deploy left it at).
+        run: |
+          CURRENT_COUNT=$(aws ecs describe-services \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].desiredCount' \
+            --output text \
+            --region "${{ env.AWS_REGION }}")
+          echo "Current desired task count: ${CURRENT_COUNT}"
+          if [ "${CURRENT_COUNT}" = "0" ]; then
+            echo "First deploy detected — scaling service from 0 to 2..."
+            aws ecs update-service \
+              --cluster "${{ env.ECS_CLUSTER }}" \
+              --service "${{ env.ECS_SERVICE }}" \
+              --desired-count 2 \
+              --region "${{ env.AWS_REGION }}"
+            echo "Scale-up initiated. ECS will launch 2 tasks with the new task definition."
+          else
+            echo "Service has ${CURRENT_COUNT} desired tasks — no scale-up needed."
+          fi
 
   # ── Step 3: Smoke test the production endpoint ──
   smoke-test:
