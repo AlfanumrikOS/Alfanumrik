@@ -60,7 +60,7 @@ Set in: **GitHub → AlfanumrikOS/Alfanumrik → Settings → Secrets and variab
 |---|---|
 | `ENABLE_AWS_DEPLOY` | `false` (flip to `true` only when ready for traffic cutover) |
 | `AWS_REGION` | `ap-south-1` |
-| `ECR_REPOSITORY` | `alfanumrik-web` |
+| `ECR_REPOSITORY` | `alfa-web` |
 | `ECS_CLUSTER` | `alfa-prod` |
 | `ECS_SERVICE` | `web` |
 | `PRODUCTION_DOMAIN` | `https://alfanumrik.com` |
