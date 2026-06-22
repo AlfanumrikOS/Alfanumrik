@@ -10,6 +10,11 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { XP_RULES } from './xp-config';
 import { calculateScorePercent, calculateQuizXP } from './scoring';
+import { ADAPTIVE_LIVE_SELECTION_FLAGS } from './feature-flags';
+import {
+  selectAdaptiveQuestions,
+  type AdaptiveClient,
+} from './adaptive/select-adaptive-questions';
 
 // Re-export from the canonical client module — new code uses supabase-client.ts
 export { supabase, supabaseUrl, supabaseAnonKey } from './supabase-client';
@@ -1373,6 +1378,76 @@ export async function getQuizQuestionsV2(
     // Non-fatal: quiz-generator will use default difficulty band
   }
 
+  // ── PHASE 2: LIVE adaptive candidate provider (flag-gated, fail-safe) ──
+  // When ff_adaptive_live_selection_v1 is ON AND the student has concept_mastery
+  // rows AND no specific chapter was requested, run the shared weak-topic
+  // selector FIRST to surface IRT-proxy-ranked candidates on the student's
+  // weakest + due-for-review topics. These are layered IN FRONT of the existing
+  // fallback ladder below — they NEVER replace it and NEVER act as a hard
+  // filter, so the count + P6 guarantees still hold (assembleQuiz tops up to
+  // the exact requested count from the ladder and re-validates every row).
+  //
+  // Restricted to chapter-less requests: a chapter-scoped quiz has its own
+  // integrity contract (assembleQuiz hard-drops cross-chapter rows), so
+  // weak-topic candidates from other chapters would just be discarded — running
+  // the provider there would be wasted work, not wrong.
+  //
+  // Fail-safe: any error in the provider returns [] and we fall straight
+  // through to the unchanged ladder — this can never regress the live quiz.
+  let adaptiveCandidates: unknown[] = [];
+  if (chapterNumber == null) {
+    try {
+      const flags = await getFeatureFlags();
+      if (flags[ADAPTIVE_LIVE_SELECTION_FLAGS.V1]) {
+        const { questions: adaptiveRows, weakTopicsTargeted } = await selectAdaptiveQuestions(
+          supabase as unknown as AdaptiveClient,
+          {
+            studentId,
+            subject,
+            grade,
+            count,
+            irtTheta,
+            excludeIds: [],
+          },
+        );
+        if (Array.isArray(adaptiveRows) && adaptiveRows.length > 0 && weakTopicsTargeted > 0) {
+          // weakTopicsTargeted is computed for observability/tests; the
+          // candidates themselves are what matter for selection.
+          adaptiveCandidates = adaptiveRows;
+        }
+      }
+    } catch (e) {
+      // Fail-safe: never let the adaptive provider break the quiz path.
+      console.warn('adaptive-live-selection provider failed, using ladder only:', e);
+      adaptiveCandidates = [];
+    }
+  }
+
+  // Merge adaptive candidates IN FRONT of a ladder result, deduped by id (then
+  // by question text). Adaptive weak-topic candidates lead; the ladder fills the
+  // rest. Never trims below the ladder's output — assembleQuiz does the final
+  // exact-count trim + P6 validation. When there are no adaptive candidates this
+  // returns the ladder result unchanged (byte-identical OFF-path behaviour).
+  const mergeAdaptiveFront = (ladder: any[]): any[] => {
+    if (adaptiveCandidates.length === 0) return ladder;
+    const seen = new Set<string>();
+    const keyOf = (q: unknown): string => {
+      const r = q as { id?: unknown; question_text?: unknown };
+      if (typeof r?.id === 'string' && r.id) return r.id;
+      if (typeof r?.question_text === 'string')
+        return r.question_text.trim().toLowerCase().slice(0, 80);
+      return '';
+    };
+    const out: any[] = [];
+    for (const q of [...adaptiveCandidates, ...ladder]) {
+      const k = keyOf(q);
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      out.push(q);
+    }
+    return out;
+  };
+
   // ── PRIMARY: quiz-generator Edge Function ──
   // This is the CME-driven source. It does adaptive selection based on
   // student mastery, RAG Q&A from NCERT content, and question_bank —
@@ -1397,8 +1472,10 @@ export async function getQuizQuestionsV2(
     if (!funcError && funcData?.questions) {
       const questions = Array.isArray(funcData.questions) ? funcData.questions : [];
       if (questions.length >= count) {
-        // Edge function returned the full requested count — use it directly
-        return questions;
+        // Edge function returned the full requested count — use it directly,
+        // with adaptive weak-topic candidates layered in front (deduped). When
+        // adaptive is empty this is byte-identical to returning `questions`.
+        return mergeAdaptiveFront(questions);
       }
       if (questions.length > 0) {
         // Partial results — try RPCs for full count, keep these as fallback
@@ -1428,7 +1505,7 @@ export async function getQuizQuestionsV2(
     if (!error && data) {
       const parsed = typeof data === 'string' ? JSON.parse(data) : data;
       const questions = Array.isArray(parsed) ? parsed : [];
-      if (questions.length > 0) return questions;
+      if (questions.length > 0) return mergeAdaptiveFront(questions);
     }
   } catch {
     // RAG RPC failed
@@ -1448,7 +1525,7 @@ export async function getQuizQuestionsV2(
     if (!error && data) {
       const parsed = typeof data === 'string' ? JSON.parse(data) : data;
       const questions = Array.isArray(parsed) ? parsed : [];
-      if (questions.length > 0) return questions;
+      if (questions.length > 0) return mergeAdaptiveFront(questions);
     }
   } catch {
     // v2 RPC failed
@@ -1459,9 +1536,9 @@ export async function getQuizQuestionsV2(
   // If edge function had partial results and v1 returned fewer, use the edge function's results
   // (they have dedup/history tracking already applied)
   if (edgeFunctionQuestions && edgeFunctionQuestions.length > v1Questions.length) {
-    return edgeFunctionQuestions;
+    return mergeAdaptiveFront(edgeFunctionQuestions);
   }
-  return v1Questions;
+  return mergeAdaptiveFront(v1Questions);
 }
 
 /* ── Update Chapter Progress (fire-and-forget after quiz) ──

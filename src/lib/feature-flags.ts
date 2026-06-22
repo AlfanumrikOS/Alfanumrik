@@ -1099,6 +1099,40 @@ export const WHITE_LABEL_FLAGS = {
 
 
 /**
+ * Phase 2 — Adaptive LIVE quiz selection flag (2026-06-22).
+ *
+ *  ff_adaptive_live_selection_v1 — gates the weak-topic-targeted candidate
+ *    provider layered IN FRONT of the existing getQuizQuestionsV2 fallback
+ *    ladder. When ON (and the student HAS concept_mastery rows), the shared
+ *    selectAdaptiveQuestions provider (src/lib/adaptive/select-adaptive-questions.ts)
+ *    runs FIRST to surface questions on the student's weakest + due-for-review
+ *    topics — applying a mastery→Bloom ceiling and ranking candidates by the
+ *    IRT-proxy computeSelectionScore(irt_theta, item) — and the EXISTING ladder
+ *    (RAG RPC → v2 RPC → v1 direct query) then tops the result up to the exact
+ *    requested count. When OFF, or when the student has NO mastery rows
+ *    (cold-start), getQuizQuestionsV2 is byte-identical to today (no provider
+ *    call, ladder unchanged).
+ *
+ *    Deliberately a SEPARATE flag from ff_irt_question_selection (which is
+ *    ON @100 in prod and gates the nightly-calibrated SQL-RPC IRT path):
+ *    reusing it would push this brand-new, unvalidated live-selection path to
+ *    100% on merge. A dedicated default-OFF flag gives an independent kill
+ *    switch and a clean validation ramp before it touches live quizzes.
+ *
+ *    The provider is a CANDIDATE PROVIDER, never a hard filter — it can only
+ *    ADD weak-topic candidates ahead of the ladder; the count + P6 guarantees
+ *    are still enforced downstream by assembleQuiz. Default: false.
+ *
+ *    Seeded OFF in a follow-up migration (mirrors the ff_school_pulse_v1 seed
+ *    precedent). While absent from feature_flags both read paths resolve it to
+ *    OFF, so the live quiz stays byte-identical until explicitly enabled.
+ */
+export const ADAPTIVE_LIVE_SELECTION_FLAGS = {
+  /** Weak-topic candidate provider in front of the getQuizQuestionsV2 ladder. Default off. */
+  V1: 'ff_adaptive_live_selection_v1',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -1151,6 +1185,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [SCHOOL_PULSE_FLAGS.V1]: false, // seeded OFF by 20260619000100_seed_ff_school_pulse_v1.sql
   [ADAPTIVE_REMEDIATION_FLAGS.V1]: false, // seeded OFF by 20260619000300_seed_ff_adaptive_remediation_v1.sql
   [ADAPTIVE_LOOPS_BC_FLAGS.V1]: false, // seeded OFF by 20260619000600_seed_ff_adaptive_loops_bc_v1.sql
+  [ADAPTIVE_LIVE_SELECTION_FLAGS.V1]: false, // Phase 2 live adaptive selection — seeded OFF in follow-up migration
   [FOXY_LEARNING_ACTIONS_FLAGS.V1]: false, // seeded OFF by 20260619000700_seed_ff_foxy_learning_actions_v1.sql
   [FOXY_MATH_PIPELINE_FLAGS.V1]: false, // seeded OFF by 20260619000800_seed_ff_foxy_math_pipeline_v1.sql
   [FOXY_CURRICULUM_GUARD_FLAGS.V1]: false, // seeded OFF by 20260619001000_seed_ff_foxy_curriculum_guard_v1.sql
