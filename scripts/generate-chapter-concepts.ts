@@ -362,7 +362,8 @@ function buildSystemPrompt(grade: string, subject: string, chapterTitle: string)
     'WHAT TO PRODUCE: 4 to 6 concept cards, each covering ONE distinct concept actually present in the reference material. Each card must have:',
     '- title (English) and title_hi (Hindi, Devanagari). Keep technical terms / proper nouns / English coinages in Latin script; translate the rest naturally into Hindi.',
     '- learning_objective + learning_objective_hi: ONE outcome sentence each ("Understand how...", "Identify and...").',
-    '- explanation + explanation_hi: genuine PROSE in full sentences, ideally 150-400 characters (keep it tight and student-friendly; never exceed ~600). Explain the concept so a student understands it. NOT a list of terms, NOT a "Key approach:" one-liner, NOT a verbatim copy of the reference text. Hindi must be natural Hindi prose (not English copied into the Hindi field, not machine-garbled).',
+    '- explanation + explanation_hi: genuine PROSE in full sentences, ideally 150-400 characters (keep it tight and student-friendly; never exceed ~600). Explain the concept so a student understands it. NOT a list of terms, NOT a "Key approach:" one-liner, NOT a verbatim copy of the reference text.',
+    `  CRITICAL — TWO SEPARATE LANGUAGE FIELDS: "explanation" MUST be written in ENGLISH and "explanation_hi" MUST be written in natural Hindi (Devanagari). These are TWO DIFFERENT fields in TWO DIFFERENT languages — they MUST NOT be identical. This rule applies EVEN FOR ${subject === 'hindi' ? 'this Hindi-language subject' : 'language subjects'}: when explaining a ${LANGUAGE_SUBJECT_SCRIPT[subject] ? LANGUAGE_SUBJECT_SCRIPT[subject].language : 'language'} literature/grammar concept, "explanation" is the ENGLISH teacher's gloss (explain the concept in English so the field is genuine English prose) and "explanation_hi" is the Hindi version (Devanagari). Do NOT copy the same Hindi text into both fields. Do NOT copy the same English text into both fields. If you quote a Hindi line/verse from the source, you may quote it verbatim inside EITHER field, but the surrounding explanatory prose must be English in "explanation" and Hindi in "explanation_hi".`,
     '- key_formula: only if the concept has a real formula (STEM). Use null for language/humanities or when none applies.',
     '- example_title + example_content + example_content_hi: a short worked example grounded in the material, or null if not applicable.',
     mcqLanguageLine,
@@ -517,6 +518,26 @@ async function generateCards(
 
 // ─── Parse + post-process ────────────────────────────────────────────────────
 
+// Map common non-canonical bloom verbs the model emits onto the 6 valid taxonomy
+// levels. The model occasionally returns action verbs ("identify", "describe",
+// "compare") instead of the canonical level; previously these failed validation
+// as `invalid bloom_level`. Mapping is conservative (only well-known synonyms);
+// anything unmapped falls through unchanged and still fails validation honestly.
+const BLOOM_SYNONYM: Record<string, string> = {
+  identify: 'remember', recall: 'remember', list: 'remember', define: 'remember', recognize: 'remember', name: 'remember', state: 'remember',
+  describe: 'understand', explain: 'understand', summarize: 'understand', interpret: 'understand', classify: 'understand', comprehend: 'understand',
+  use: 'apply', solve: 'apply', demonstrate: 'apply', compute: 'apply', calculate: 'apply', implement: 'apply', application: 'apply',
+  compare: 'analyze', differentiate: 'analyze', examine: 'analyze', distinguish: 'analyze', analyse: 'analyze', analysis: 'analyze',
+  judge: 'evaluate', assess: 'evaluate', critique: 'evaluate', justify: 'evaluate', evaluation: 'evaluate',
+  design: 'create', compose: 'create', construct: 'create', formulate: 'create', creation: 'create',
+};
+
+function normalizeBloom(raw: string): string {
+  const b = raw.trim().toLowerCase();
+  if (VALID_BLOOM.includes(b)) return b;
+  return BLOOM_SYNONYM[b] ?? b;
+}
+
 function stripOptionPrefix(opt: string): string {
   // strip leading "A) ", "A. ", "(A) ", "1) " etc — the renderer adds labels
   return opt.replace(/^\s*[(\[]?[A-Da-d1-4][)\].:]\s+/, '').trim();
@@ -556,7 +577,7 @@ function parseCards(raw: string): GeneratedCard[] {
       practice_correct_index: Number.isInteger(c.practice_correct_index) ? (c.practice_correct_index as number) : -1,
       practice_explanation: String(c.practice_explanation ?? '').trim(),
       difficulty: Number.isInteger(c.difficulty) ? (c.difficulty as number) : 2,
-      bloom_level: String(c.bloom_level ?? '').trim().toLowerCase(),
+      bloom_level: normalizeBloom(String(c.bloom_level ?? '')),
       estimated_minutes: Number.isInteger(c.estimated_minutes) ? (c.estimated_minutes as number) : 5,
     });
   }
@@ -581,40 +602,31 @@ function nudgeSpread(cards: GeneratedCard[]): { changed: boolean; notes: string[
   if (cards.length < 2) return { changed: false, notes };
   let changed = false;
 
-  // bloom spread
+  // BLOOM SPREAD — deterministic guarantee of >=2 distinct values.
+  // When the deck is uniform we relabel the LAST card to a DIFFERENT, adjacent
+  // bloom rung (one up if room, else one down). Because the labels are clamped
+  // to BLOOM_ORDER and the last card always has at least one neighbouring rung
+  // (the ladder has 6 entries), this is guaranteed to introduce a 2nd distinct
+  // value for any deck of >=2 cards — it can never no-op while still uniform.
   if (new Set(cards.map((c) => c.bloom_level)).size < 2) {
-    const first = cards[0];
     const last = cards[cards.length - 1];
-    const idx = BLOOM_ORDER.indexOf(last.bloom_level);
-    // bump the last (hardest-position) card up one bloom rung if possible,
-    // else drop the first card down one rung.
-    if (idx >= 0 && idx < BLOOM_ORDER.length - 1) {
-      last.bloom_level = BLOOM_ORDER[idx + 1];
-      notes.push(`bloom nudge: last card → ${last.bloom_level}`);
-      changed = true;
-    } else {
-      const fidx = BLOOM_ORDER.indexOf(first.bloom_level);
-      if (fidx > 0) {
-        first.bloom_level = BLOOM_ORDER[fidx - 1];
-        notes.push(`bloom nudge: first card → ${first.bloom_level}`);
-        changed = true;
-      }
-    }
+    let idx = BLOOM_ORDER.indexOf(last.bloom_level);
+    if (idx < 0) idx = 1; // unknown/blank label → treat as 'understand'
+    const target = idx < BLOOM_ORDER.length - 1 ? idx + 1 : idx - 1;
+    last.bloom_level = BLOOM_ORDER[target];
+    notes.push(`bloom nudge: last card → ${last.bloom_level}`);
+    changed = true;
   }
 
-  // difficulty spread
+  // DIFFICULTY SPREAD — deterministic guarantee of >=2 distinct values in {1,2,3}.
+  // Relabel the LAST card to a difficulty that differs from the (uniform) value:
+  // bump up if below 3, else drop to 2. Always yields a distinct 2nd value.
   if (new Set(cards.map((c) => c.difficulty)).size < 2) {
-    const first = cards[0];
     const last = cards[cards.length - 1];
-    if (first.difficulty > 1) {
-      first.difficulty = first.difficulty - 1;
-      notes.push(`difficulty nudge: first card → ${first.difficulty}`);
-      changed = true;
-    } else if (last.difficulty < 3) {
-      last.difficulty = last.difficulty + 1;
-      notes.push(`difficulty nudge: last card → ${last.difficulty}`);
-      changed = true;
-    }
+    const cur = [1, 2, 3].includes(last.difficulty) ? last.difficulty : 2;
+    last.difficulty = cur < 3 ? cur + 1 : 2;
+    notes.push(`difficulty nudge: last card → ${last.difficulty}`);
+    changed = true;
   }
 
   return { changed, notes };
@@ -713,7 +725,7 @@ async function upsertCards(
   grade: string,
   subject: string,
   chapterNumber: number,
-  chapterId: string,
+  chapterId: string | null,
   chapterTitle: string | null,
   cards: GeneratedCard[],
   ragChunkIds: string[],
@@ -787,12 +799,16 @@ async function processChapter(args: Args, subject: string, chapterNumber: number
     return base;
   }
 
-  // Resolve FK + retrieve chunks
+  // Resolve FK + retrieve chunks.
+  // chapter_concepts.chapter_id is NULLABLE (architect migration): the legacy
+  // `chapters` catalog is incomplete (notably grades 11/12), so when no matching
+  // row exists we insert the deck with chapter_id = NULL rather than failing.
+  // The reader keys off grade/subject/chapter_number (not chapter_id), so NULL
+  // is harmless. When a `chapters` row DOES exist we still resolve and stamp its
+  // id (preserving the FK link for chapters that have one).
   const chapterRow = await getChapterId(args.grade, subject, chapterNumber);
   if (!chapterRow) {
-    base.status = 'failed_db';
-    base.reasons.push('no chapters row (FK unresolvable)');
-    return base;
+    console.error('    no chapters-catalog row — inserting deck with chapter_id=NULL (reader uses grade/subject/chapter_number)');
   }
   const chunks = await getChapterChunks(args.grade, subject, chapterNumber);
   if (chunks.length === 0) {
@@ -813,12 +829,16 @@ async function processChapter(args: Args, subject: string, chapterNumber: number
     return base;
   }
 
-  const systemPrompt = buildSystemPrompt(args.grade, subject, chapterTitle || chapterRow.title || `Chapter ${chapterNumber}`);
+  const systemPrompt = buildSystemPrompt(args.grade, subject, chapterTitle || chapterRow?.title || `Chapter ${chapterNumber}`);
   const userMessage = buildUserMessage(chunks);
 
-  // Generate (with one full retry on validation failure)
+  // Generate (with two full retries on validation failure — 3 total attempts).
+  // Bumped from 2→3: the dominant residual failure is the model copying identical
+  // text into explanation/explanation_hi on language (Hindi) chapters, which the
+  // strengthened two-field prompt fixes but occasionally needs an extra resample.
+  const MAX_GEN_ATTEMPTS = 3;
   let lastReasons: string[] = [];
-  for (let genAttempt = 0; genAttempt < 2; genAttempt++) {
+  for (let genAttempt = 0; genAttempt < MAX_GEN_ATTEMPTS; genAttempt++) {
     const gen = await generateCards(systemPrompt, userMessage);
     if (!gen.ok) {
       base.status = 'failed_generation';
@@ -841,8 +861,8 @@ async function processChapter(args: Args, subject: string, chapterNumber: number
     const v = validateChapter(gen.cards, subject);
     if (!v.pass) {
       lastReasons = v.reasons;
-      console.error(`    validation failed (attempt ${genAttempt + 1}): ${v.reasons.slice(0, 4).join(' | ')}${v.reasons.length > 4 ? ' …' : ''}`);
-      if (genAttempt === 0) { await sleep(1000); continue; }
+      console.error(`    validation failed (attempt ${genAttempt + 1}/${MAX_GEN_ATTEMPTS}): ${v.reasons.slice(0, 4).join(' | ')}${v.reasons.length > 4 ? ' …' : ''}`);
+      if (genAttempt < MAX_GEN_ATTEMPTS - 1) { await sleep(1000); continue; }
       base.status = 'failed_validation';
       base.reasons = lastReasons;
       return base;
@@ -860,7 +880,7 @@ async function processChapter(args: Args, subject: string, chapterNumber: number
 
     await deletePilotRows(args.grade, subject, chapterNumber);
     const ins = await upsertCards(
-      args.grade, subject, chapterNumber, chapterRow.id, chapterTitle || chapterRow.title,
+      args.grade, subject, chapterNumber, chapterRow?.id ?? null, chapterTitle || (chapterRow?.title ?? null),
       gen.cards, chunks.map((c) => c.chunk_id),
     );
     if (!ins.ok) {
