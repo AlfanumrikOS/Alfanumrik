@@ -1,24 +1,53 @@
-**/.classpath
-**/.dockerignore
-**/.env
-**/.git
-**/.gitignore
-**/.project
-**/.settings
-**/.toolstarget
-**/.vs
-**/.vscode
-**/*.*proj.user
-**/*.dbmdl
-**/*.jfm
-**/charts
-**/docker-compose*
-**/compose*
-**/Dockerfile*
-**/node_modules
-**/npm-debug.log
-**/obj
-**/secrets.dev.yaml
-**/values.dev.yaml
-LICENSE
-README.md
+# Version control
+.git
+.gitignore
+
+# Dependencies (rebuilt in Docker)
+node_modules
+npm-debug.log*
+
+# Next.js build cache (not needed; build runs in Docker)
+.next
+!.next/static
+!.next/standalone
+
+# Supabase (functions run on Supabase cloud, not in this container)
+supabase/
+
+# Mobile app
+mobile/
+
+# Tests & coverage
+src/__tests__
+e2e
+coverage
+.nyc_output
+
+# Dev & local config
+.env
+.env.local
+.env*.local
+
+# IDE / OS
+.vscode
+.idea
+*.DS_Store
+Thumbs.db
+
+# Claude / AI tooling
+.claude
+FoxyTutorAgent
+agents/
+
+# Scripts & eval (not needed in prod container)
+# auth-guard.js is called by npm run build (node scripts/auth-guard.js && next build)
+scripts/
+!scripts/auth-guard.js
+eval/
+
+# Docs
+docs/
+
+# Misc
+*.md
+!README.md
