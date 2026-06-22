@@ -39,6 +39,7 @@
     "node_modules",
     "supabase",
     "scripts",
-    "Alfanumrik"
+    "Alfanumrik",
+    "FoxyTutorAgent"
   ]
 }

@@ -58,6 +58,7 @@ interface Question {
   id: string;
   question_text: string;
   question_hi: string | null;
+  question_type?: string | null;
   options: string | string[];
   correct_answer_index: number;
   explanation: string | null;
@@ -65,6 +66,22 @@ interface Question {
   bloom_level: string;
   difficulty: number;
   chapter_number: number;
+}
+
+/** Detect whether a question is MCQ — filters out short_answer / long_answer / intext
+ * types that have empty options arrays and no selectable choices. Mirrors the check
+ * in src/app/quiz/page.tsx isQuestionMCQ(). */
+function isLearnPageMCQ(q: Question): boolean {
+  if (q.question_type === 'mcq') return true;
+  const opts = Array.isArray(q.options)
+    ? q.options
+    : (() => { try { return JSON.parse(q.options as string); } catch { return []; } })();
+  return (
+    opts.length === 4 &&
+    typeof q.correct_answer_index === 'number' &&
+    q.correct_answer_index >= 0 &&
+    q.correct_answer_index <= 3
+  );
 }
 
 interface Diagram {
@@ -135,7 +152,10 @@ function ChapterConceptPageContent() {
   // quality gate (isUsableChapterDeck) falls back to legacy when concept
   // rows are sparse or look like placeholder one-liners. Telemetry flag
   // `learn_v2_source` records which path actually rendered.
-  const [chapterReaderV2FlagOn, setChapterReaderV2FlagOn] = useState(false);
+  // NOTE: chapterReaderV2FlagOn state was removed (2026-06-20) — it had zero
+  // JSX reads and was triggering a spurious load() re-run via the
+  // useEffect([student?.id, load]) dep chain. The ref below is the only
+  // authority inside load(); the flag effect updates only the ref.
   const chapterReaderV2FlagRef = useRef(false);
   const [v2SourceUsed, setV2SourceUsed] = useState<'curated' | 'rag_fallback' | null>(null);
   // ── Pedagogy v2 / Wave 1: Productive Failure flip ──
@@ -322,7 +342,9 @@ function ChapterConceptPageContent() {
     // Sort by display order / ordering to keep logical sequence
     mergedTopics.sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
 
-    const sortedQuestions = [...(questionsData as Question[])].sort((a, b) => {
+    const sortedQuestions = [...(questionsData as Question[])]
+      .filter(isLearnPageMCQ)
+      .sort((a, b) => {
       const bloomOrder: Record<string, number> = {
         remember: 1,
         understand: 2,
@@ -411,7 +433,6 @@ function ChapterConceptPageContent() {
         if (!cancelled) {
           setReadModeFlagOn(Boolean(flags?.ff_learn_read_mode_v1));
           setProductiveFailureFlagOn(Boolean(flags?.ff_productive_failure_v1));
-          setChapterReaderV2FlagOn(Boolean(flags?.ff_chapter_reader_v2));
           chapterReaderV2FlagRef.current = Boolean(flags?.ff_chapter_reader_v2);
         }
       } catch {
@@ -419,7 +440,6 @@ function ChapterConceptPageContent() {
         if (!cancelled) {
           setReadModeFlagOn(false);
           setProductiveFailureFlagOn(false);
-          setChapterReaderV2FlagOn(false);
           chapterReaderV2FlagRef.current = false;
         }
       }

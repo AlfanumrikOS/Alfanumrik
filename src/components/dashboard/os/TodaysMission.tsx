@@ -52,8 +52,17 @@ export default function TodaysMission({
 }: TodaysMissionProps) {
   const router = useRouter();
   const { student } = useAuth();
-  const { data: queueData, isLoading: queueLoading } = useTodayQueue(student?.id);
+  const { data: queueData, isLoading: queueLoading, error: queueError, mutate: retryQueue } =
+    useTodayQueue(student?.id);
   const firstName = studentName.split(' ')[0] || studentName;
+
+  // The queue block must never silently collapse. After loading resolves, we
+  // either have queue items, or we show an actionable empty/error card — never
+  // nothing. `queueData` is null on a 404 (flag off / no profile); `queueError`
+  // is set on a 5xx/network failure. Both fall through to the same friendly,
+  // actionable card (P7 bilingual) so the hero never reads as "broken".
+  const hasQueueItems = !!queueData && queueData.queue.length > 0;
+  const showEmptyState = !queueLoading && !hasQueueItems;
 
   const beginLesson = () => {
     if (todaysTopic) {
@@ -192,6 +201,60 @@ export default function TodaysMission({
               </>
             )}
           </>
+        )}
+
+        {/* Empty / error fallback — never collapse to nothing. Renders an
+            actionable, friendly card (P7 bilingual) routing to /learn. Error
+            and empty share this card; raw error text is never shown. A subtle
+            retry re-runs the SWR fetch when the failure was an error. */}
+        {showEmptyState && (
+          <div
+            className="rounded-2xl px-4 py-3"
+            style={{
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border)',
+            }}
+            data-testid="mission-empty-state"
+            role="status"
+          >
+            <p className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
+              {isHi
+                ? 'तुम्हारा सीखने का रास्ता तैयार हो रहा है'
+                : 'Your learning path is getting ready'}
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
+              {isHi
+                ? 'शुरू करने के लिए एक पाठ चुनो।'
+                : 'Pick a lesson to begin.'}
+            </p>
+            <div className="mt-2.5 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => router.push('/learn')}
+                className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2"
+                style={{
+                  background: 'rgb(var(--orange-rgb) / 0.10)',
+                  border: '1px solid rgb(var(--orange-rgb) / 0.20)',
+                  color: 'var(--orange, #E8581C)',
+                }}
+                data-testid="mission-empty-cta"
+              >
+                {isHi ? 'पाठ चुनो' : 'Pick a lesson'}
+                <span aria-hidden="true">→</span>
+              </button>
+              {queueError && (
+                <button
+                  type="button"
+                  onClick={() => retryQueue()}
+                  className="text-xs font-semibold underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 rounded"
+                  style={{ color: 'var(--text-3)' }}
+                  data-testid="mission-empty-retry"
+                >
+                  {isHi ? 'फिर से कोशिश करें' : 'Try again'}
+                </button>
+              )}
+            </div>
+          </div>
         )}
       </div>
 

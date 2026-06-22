@@ -1,5 +1,15 @@
-// Validate required env vars for production deployments (not during preview or local dev)
-if (process.env.NODE_ENV === 'production' && process.env.VERCEL && process.env.VERCEL_ENV === 'production') {
+// Validate required env vars for production deployments (not during preview or local dev).
+// Guard against running validation at build time — secrets are only injected at ECS task start.
+// NEXT_PHASE is 'phase-production-build' during `next build`; undefined at runtime.
+const isProductionBuild = process.env.NEXT_PHASE === 'phase-production-build';
+const isProductionRuntime =
+  !isProductionBuild &&
+  process.env.NODE_ENV === 'production' &&
+  // VERCEL_ENV is set by Vercel on production deploys.
+  // DEPLOY_TARGET='production' is the AWS/ECS runtime flag — set in the ECS task definition,
+  // never at build time, so secrets are always present when this guard runs on ECS.
+  (process.env.VERCEL_ENV === 'production' || process.env.DEPLOY_TARGET === 'production');
+if (isProductionRuntime) {
   const required = [
     'NEXT_PUBLIC_SUPABASE_URL',
     'NEXT_PUBLIC_SUPABASE_ANON_KEY',
@@ -30,6 +40,11 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Bundle a self-contained Node server into .next/standalone/ so the image
+  // can run on AWS ECS Fargate (or any container runtime) without needing a
+  // full node_modules install. Public assets and static chunks are copied
+  // separately in the Dockerfile.
+  output: 'standalone',
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
@@ -218,9 +233,10 @@ const nextConfig = {
   },
 };
 
-// Only wrap with Sentry in production (Vercel/CI) — avoids OpenTelemetry peer
+// Only wrap with Sentry in production (Vercel/CI/ECS) — avoids OpenTelemetry peer
 // dep issues in local dev where Sentry is not configured anyway.
-if (process.env.VERCEL || process.env.CI) {
+// Also wraps in AWS ECS (DEPLOY_TARGET=production set by task definition)
+if (process.env.VERCEL || process.env.CI || process.env.DEPLOY_TARGET === 'production') {
   const { withSentryConfig } = require('@sentry/nextjs');
   module.exports = withSentryConfig(withBundleAnalyzer(nextConfig), {
     silent: true,
