@@ -1,0 +1,89 @@
+{
+  "_comment": "CloudFront distribution config — Alfanumrik staging pseudolink (CloudFront → ALB HTTP:80 → ECS Fargate). Created 2026-06-22. Distribution ID: E3GYX90RS5NCAP. To recreate: aws cloudfront create-distribution --distribution-config file://aws/cloudfront-config.json",
+  "CallerReference": "alfa-prod-cf-2026-06-22",
+  "Comment": "Alfanumrik staging pseudolink — CloudFront to ALB to ECS",
+  "DefaultCacheBehavior": {
+    "TargetOriginId": "alfa-prod-alb",
+    "ViewerProtocolPolicy": "redirect-to-https",
+    "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+    "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+    "Compress": true,
+    "AllowedMethods": {
+      "Quantity": 7,
+      "Items": ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"],
+      "CachedMethods": {
+        "Quantity": 2,
+        "Items": ["GET", "HEAD"]
+      }
+    }
+  },
+  "CacheBehaviors": {
+    "Quantity": 2,
+    "Items": [
+      {
+        "PathPattern": "/_next/static/*",
+        "TargetOriginId": "alfa-prod-alb",
+        "ViewerProtocolPolicy": "redirect-to-https",
+        "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+        "Compress": true,
+        "AllowedMethods": {
+          "Quantity": 3,
+          "Items": ["GET", "HEAD", "OPTIONS"],
+          "CachedMethods": {
+            "Quantity": 3,
+            "Items": ["GET", "HEAD", "OPTIONS"]
+          }
+        }
+      },
+      {
+        "PathPattern": "/api/*",
+        "TargetOriginId": "alfa-prod-alb",
+        "ViewerProtocolPolicy": "redirect-to-https",
+        "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+        "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+        "Compress": false,
+        "AllowedMethods": {
+          "Quantity": 7,
+          "Items": ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"],
+          "CachedMethods": {
+            "Quantity": 2,
+            "Items": ["GET", "HEAD"]
+          }
+        }
+      }
+    ]
+  },
+  "Origins": {
+    "Quantity": 1,
+    "Items": [
+      {
+        "Id": "alfa-prod-alb",
+        "DomainName": "alfa-prod-alb-1820523356.ap-south-1.elb.amazonaws.com",
+        "CustomOriginConfig": {
+          "HTTPPort": 80,
+          "HTTPSPort": 443,
+          "OriginProtocolPolicy": "http-only",
+          "OriginSslProtocols": {
+            "Quantity": 1,
+            "Items": ["TLSv1.2"]
+          },
+          "OriginReadTimeout": 60,
+          "OriginKeepaliveTimeout": 5
+        },
+        "CustomHeaders": {
+          "Quantity": 1,
+          "Items": [
+            {
+              "HeaderName": "X-Forwarded-Proto",
+              "HeaderValue": "https"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "PriceClass": "PriceClass_All",
+  "HttpVersion": "http2and3",
+  "IsIPV6Enabled": true,
+  "Enabled": true
+}
