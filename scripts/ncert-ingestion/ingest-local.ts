@@ -18,8 +18,7 @@
  *
  * Required env vars (load via --env-file=.env.local):
  *   NEXT_PUBLIC_SUPABASE_URL — Supabase project URL (public, safe to use in scripts)
- *   SUPABASE_SVC_ROLE_KEY    — Service-role key (bypasses RLS for bulk insert)
- *                              Note: actual env var name is the standard Supabase key.
+ *   SUPABASE_SERVICE_ROLE_KEY — Service-role key (bypasses RLS for bulk insert)
  *   VOYAGE_API_KEY           — Voyage AI key (only required without --skip-embed)
  *
  * Owner: ai-engineer
@@ -28,6 +27,7 @@
 import { createClient } from '@supabase/supabase-js';
 import * as fs from 'fs';
 import * as path from 'path';
+import { assertNoMojibake } from './mojibake';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -795,6 +795,11 @@ async function main(): Promise<void> {
         created_at: now,
       };
     });
+
+    // Mojibake guardrail: reject Indic-script PDFs encoded with legacy fonts
+    // (Krutidev, SHUSHA) that produce Latin-garbage instead of Devanagari.
+    // The check is a no-op for non-Indic subjects (Math, Science, English, etc.).
+    assertNoMojibake(rows, meta.subject.toLowerCase());
 
     const inserted = await insertChunks(supabase, rows);
 

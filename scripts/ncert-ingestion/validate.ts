@@ -150,6 +150,26 @@ async function main() {
     });
   }
 
+  // Check 6: Embedding coverage — chunks without vectors won't be retrieved
+  const { count: nullEmbedCount } = await supabase
+    .from('rag_content_chunks')
+    .select('id', { count: 'exact', head: true })
+    .eq('is_active', true)
+    .eq('source', 'ncert_2025')
+    .is('embedding', null);
+
+  const nullEmbedPct = newCount && newCount > 0
+    ? Math.round(((nullEmbedCount ?? 0) / newCount) * 100)
+    : 0;
+
+  results.push({
+    check: 'Embedding coverage (ncert_2025)',
+    status: (nullEmbedCount ?? 0) === 0 ? 'PASS'
+          : nullEmbedPct > 5 ? 'FAIL'
+          : 'WARN',
+    details: `${nullEmbedCount ?? 0} chunks missing vector (${nullEmbedPct}% of ${newCount ?? 0}). Run npm run ncert:embed to fix.`,
+  });
+
   // Print results
   console.error('');
   let hasFailure = false;
