@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { hasSupabaseIntegrationEnv } from '../helpers/integration';
+import { hasSupabaseIntegrationEnv, skipIfNoSubstrate } from '../helpers/integration';
 
 /**
  * Canonical-mastery production fix — END-TO-END regression (integration lane).
@@ -119,6 +119,10 @@ describeIntegration('canonical-mastery e2e (live RPC + dashboard read contract)'
   let studentId: string;
   let topicA: string; // monotonic-escalation + fresh-write pair
   let topicB: string; // wrong-answer pair
+  // SEED-DATA gate: false when the live DB lacks a student or >=2 curriculum_topics.
+  // Each test skips gracefully via skipIfNoSubstrate rather than failing on the
+  // substrate-less CI DB. A real DB ERROR still throws (genuine regression).
+  let available = false;
 
   const cmOwned: Array<{ student_id: string; topic_id: string }> = [];
 
@@ -134,21 +138,23 @@ describeIntegration('canonical-mastery e2e (live RPC + dashboard read contract)'
       { auth: { persistSession: false } },
     );
 
+    // Substrate-absent (seed-less CI DB) => leave available=false so each test
+    // SKIPS. A real DB ERROR still throws (genuine break).
     const { data: student, error: sErr } = await admin
       .from('students')
       .select('id')
       .limit(1)
-      .single();
-    if (sErr || !student) throw new Error(`no student available: ${sErr?.message}`);
+      .maybeSingle();
+    if (sErr) throw new Error(`students probe failed: ${sErr.message}`);
+    if (!student) return; // no seed student on this DB → tests skip
     studentId = student.id;
 
     const { data: topics, error: tErr } = await admin
       .from('curriculum_topics')
       .select('id')
       .limit(2);
-    if (tErr || !topics || topics.length < 2) {
-      throw new Error(`need >= 2 curriculum_topics rows: ${tErr?.message}`);
-    }
+    if (tErr) throw new Error(`curriculum_topics probe failed: ${tErr.message}`);
+    if (!topics || topics.length < 2) return; // < 2 topics → tests skip
     topicA = topics[0].id;
     topicB = topics[1].id;
 
@@ -156,6 +162,8 @@ describeIntegration('canonical-mastery e2e (live RPC + dashboard read contract)'
     await cleanPair(studentId, topicB);
     cmOwned.push({ student_id: studentId, topic_id: topicA });
     cmOwned.push({ student_id: studentId, topic_id: topicB });
+
+    available = true;
   });
 
   afterAll(async () => {
@@ -166,7 +174,8 @@ describeIntegration('canonical-mastery e2e (live RPC + dashboard read contract)'
   // ───────────────────────────────────────────────────────────────────────
   // (1) Fresh write: canonical numeric + band label, p_know mirrors prob.
   // ───────────────────────────────────────────────────────────────────────
-  it('fresh (student,topic) + one CORRECT → mastery_probability>0.1, p_know==prob, mastery_level is a BAND not a number', async () => {
+  it('fresh (student,topic) + one CORRECT → mastery_probability>0.1, p_know==prob, mastery_level is a BAND not a number', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no student / >=2 curriculum_topics to drive the test');
     await cleanPair(studentId, topicA);
 
     const r = await apply(admin, studentId, topicA, true);
@@ -199,7 +208,8 @@ describeIntegration('canonical-mastery e2e (live RPC + dashboard read contract)'
   // ───────────────────────────────────────────────────────────────────────
   // (2) Repeated correct → prob monotonic↑, band escalates, caps at 'mastered'.
   // ───────────────────────────────────────────────────────────────────────
-  it('repeated correct → mastery_probability monotonically increases; band escalates and caps at mastered', async () => {
+  it('repeated correct → mastery_probability monotonically increases; band escalates and caps at mastered', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no student / >=2 curriculum_topics to drive the test');
     await cleanPair(studentId, topicA);
 
     const probs: number[] = [];
@@ -239,7 +249,8 @@ describeIntegration('canonical-mastery e2e (live RPC + dashboard read contract)'
   // ───────────────────────────────────────────────────────────────────────
   // (3) Wrong answer → prob does not increase; consecutive_wrong increments.
   // ───────────────────────────────────────────────────────────────────────
-  it('a WRONG answer does not increase mastery_probability and increments consecutive_wrong', async () => {
+  it('a WRONG answer does not increase mastery_probability and increments consecutive_wrong', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no student / >=2 curriculum_topics to drive the test');
     await cleanPair(studentId, topicB);
 
     // Build some mastery up first with two corrects so a wrong has somewhere to fall from.
@@ -274,7 +285,8 @@ describeIntegration('canonical-mastery e2e (live RPC + dashboard read contract)'
   // (4) DASHBOARD VALIDATION canary — four read-paths agree on the same row,
   //     plus the table-wide data-integrity invariants the backfill guarantees.
   // ───────────────────────────────────────────────────────────────────────
-  it('dashboard canary: a fully-mastered row reads identically on all four axes; no numeric mastery_level anywhere; prob==p_know across all rows', async () => {
+  it('dashboard canary: a fully-mastered row reads identically on all four axes; no numeric mastery_level anywhere; prob==p_know across all rows', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no student / >=2 curriculum_topics to drive the test');
     // Drive a throwaway pair to full mastery so we have a deterministic
     // mastery_probability ≈ 1.0 row to validate the 4 read-paths against. (The
     // backfilled prod row with prob=1.0 isn't guaranteed present on every env;

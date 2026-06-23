@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { hasSupabaseIntegrationEnv } from '../helpers/integration';
+import { hasSupabaseIntegrationEnv, skipIfNoSubstrate } from '../helpers/integration';
 
 /**
  * PART C (error_type -> remediate) — END-TO-END regression (integration lane).
@@ -85,6 +85,10 @@ describeIntegration('PART C — error_type consumer chain -> remediate (live DB)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let admin: SupabaseClient<any>;
   let scope: Scope;
+  // SEED-DATA gate: false when the live DB lacks a student or an active topic
+  // (subject join). Each test skips gracefully via skipIfNoSubstrate instead of
+  // failing on the substrate-less CI DB. A real DB ERROR still throws.
+  let available = false;
 
   beforeAll(async () => {
     const { makeServiceSupabase } = await import('./_helpers/supabase-runtime');
@@ -96,7 +100,8 @@ describeIntegration('PART C — error_type consumer chain -> remediate (live DB)
       .select('id')
       .limit(1)
       .maybeSingle();
-    if (sErr || !student) throw new Error('no existing student to drive the test');
+    if (sErr) throw new Error(`students probe failed: ${sErr.message}`);
+    if (!student) return; // no seed student on this DB → tests skip
 
     // Pick one existing active curriculum topic, reading its subject.code + grade
     // so compute_post_quiz_action's join (subjects.code + curriculum_topics.grade)
@@ -107,7 +112,8 @@ describeIntegration('PART C — error_type consumer chain -> remediate (live DB)
       .eq('is_active', true)
       .limit(1)
       .maybeSingle();
-    if (tErr || !topic) throw new Error('no existing active curriculum topic to drive the test');
+    if (tErr) throw new Error(`curriculum_topics probe failed: ${tErr.message}`);
+    if (!topic) return; // no active topic with a subject on this DB → tests skip
 
     const subjectRel = (topic as { subjects: { code: string } | Array<{ code: string }> }).subjects;
     const subjectCode = Array.isArray(subjectRel) ? subjectRel[0].code : subjectRel.code;
@@ -129,6 +135,8 @@ describeIntegration('PART C — error_type consumer chain -> remediate (live DB)
       .delete()
       .eq('student_id', scope.studentId)
       .eq('topic_id', scope.topicId);
+
+    available = true;
   });
 
   afterAll(async () => {
@@ -142,7 +150,8 @@ describeIntegration('PART C — error_type consumer chain -> remediate (live DB)
       .eq('topic_id', scope.topicId);
   });
 
-  it('a WRONG answer with error_type=conceptual increments error_count_conceptual', async () => {
+  it('a WRONG answer with error_type=conceptual increments error_count_conceptual', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no student / active curriculum_topic to drive the test');
     await apply(admin, scope, false, 'conceptual');
     const counts = await readErrorCounts(admin, scope);
     expect(counts.conceptual).toBe(1);
@@ -150,7 +159,8 @@ describeIntegration('PART C — error_type consumer chain -> remediate (live DB)
     expect(counts.careless).toBe(0);
   });
 
-  it('a CORRECT answer does NOT increment any error count', async () => {
+  it('a CORRECT answer does NOT increment any error count', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no student / active curriculum_topic to drive the test');
     const before = await readErrorCounts(admin, scope);
     // p_error_type passed null mirrors submit_quiz_results_v2's correct-answer path.
     await apply(admin, scope, true, null);
@@ -160,7 +170,8 @@ describeIntegration('PART C — error_type consumer chain -> remediate (live DB)
     expect(after.careless).toBe(before.careless);
   });
 
-  it('3 conceptual errors trip compute_post_quiz_action -> remediate', async () => {
+  it('3 conceptual errors trip compute_post_quiz_action -> remediate', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no student / active curriculum_topic to drive the test');
     // We have 1 conceptual from the first test; add 2 more to reach the >= 3 floor.
     await apply(admin, scope, false, 'conceptual');
     await apply(admin, scope, false, 'conceptual');
