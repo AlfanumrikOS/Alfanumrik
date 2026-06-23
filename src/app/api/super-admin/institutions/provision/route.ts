@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '@/lib/admin-auth';
-import crypto from 'crypto';
+import { authorizeAdmin, logAdminAudit } from '@/lib/admin-auth';
+import { supabaseAdmin } from '@/lib/supabase-admin';
+import {
+  normalizeSlug,
+  establishPrincipalAdmin,
+} from '@/lib/school-provisioning';
+import { logger } from '@/lib/logger';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -9,69 +14,37 @@ interface ProvisionBody {
   board?: string;
   city?: string;
   state?: string;
-  principal_name?: string;
-  email?: string;
+  /** Billing contact email for the school (stored; not used for admin invite). */
+  billing_email?: string;
+  /** If provided, immediately establish a principal admin account + send invite. */
+  admin_email?: string;
+  admin_name?: string;
   plan?: string;
   seats?: number;
   price_per_seat?: number;
-  admin_email?: string;
-  admin_name?: string;
+  tenant_type?: string;
 }
 
-// ─── Helpers ────────────────────────────────────────────────────
-
-function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/-+$/g, '')
-    .replace(/^-+/g, '');
-}
-
-function generateInviteCode(): string {
-  // 8-character alphanumeric invite code
-  return crypto.randomBytes(4).toString('hex').toUpperCase();
-}
-
-async function ensureUniqueSlug(slug: string): Promise<string> {
-  // Check if slug already exists
-  const checkRes = await fetch(
-    supabaseAdminUrl('schools', `select=id&slug=eq.${encodeURIComponent(slug)}&limit=1`),
-    { method: 'GET', headers: supabaseAdminHeaders('return=representation') },
-  );
-  if (!checkRes.ok) return slug;
-
-  const existing = await checkRes.json();
-  if (!Array.isArray(existing) || existing.length === 0) return slug;
-
-  // Append incrementing number to make unique
-  for (let i = 2; i <= 100; i++) {
-    const candidate = `${slug}-${i}`;
-    const res = await fetch(
-      supabaseAdminUrl('schools', `select=id&slug=eq.${encodeURIComponent(candidate)}&limit=1`),
-      { method: 'GET', headers: supabaseAdminHeaders('return=representation') },
-    );
-    if (!res.ok) return candidate;
-    const rows = await res.json();
-    if (!Array.isArray(rows) || rows.length === 0) return candidate;
-  }
-
-  // Fallback: append random suffix
-  return `${slug}-${crypto.randomBytes(2).toString('hex')}`;
+/** Typed shape returned by the provision_school RPC. */
+interface ProvisionSchoolRpcResult {
+  school_id: string;
+  slug: string;
+  invite_code: string;
+  subdomain: string;
 }
 
 // ─── Route ──────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
-  // Provisioning a new tenant + admin is a platform-wide change.
-  // super_admin only — matches the PATCH/POST gates on /institutions itself.
+  // Provisioning a new tenant is a platform-wide operation — super_admin only.
+  // Matches the PATCH/POST gates on /api/super-admin/institutions.
   const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {
     const body: ProvisionBody = await request.json();
 
-    // Validate required fields
+    // ── Input validation ──────────────────────────────────────
     if (!body.name || typeof body.name !== 'string' || body.name.trim().length === 0) {
       return NextResponse.json(
         { success: false, error: 'School name is required.' },
@@ -81,93 +54,94 @@ export async function POST(request: NextRequest) {
 
     const name = body.name.trim();
     const plan = body.plan || 'trial';
-    const seats = Math.max(1, Math.min(10000, body.seats || 50));
-    const pricePerSeat = Math.max(0, body.price_per_seat || 0);
+    const seats = Math.max(1, Math.min(10000, body.seats ?? 50));
+    const pricePerSeat = Math.max(0, body.price_per_seat ?? 0);
 
-    // 1. Generate unique slug
-    const baseSlug = generateSlug(name);
+    // ── Slug normalisation ────────────────────────────────────
+    // normalizeSlug() is the canonical helper shared with provisionTrialSchool().
+    // Examples: "St. Xavier's High School" → "st-xaviers-high-school"
+    const baseSlug = normalizeSlug(name);
     if (!baseSlug) {
       return NextResponse.json(
-        { success: false, error: 'Could not generate a valid slug from school name.' },
+        { success: false, error: 'Could not generate a valid slug from the school name.' },
         { status: 400 },
       );
     }
-    const slug = await ensureUniqueSlug(baseSlug);
 
-    // 2. Create school record
-    const schoolPayload: Record<string, unknown> = {
-      name,
-      slug,
-      board: body.board || 'CBSE',
-      is_active: true,
-    };
-    if (body.city) schoolPayload.city = body.city;
-    if (body.state) schoolPayload.state = body.state;
-    if (body.principal_name) schoolPayload.principal_name = body.principal_name;
-    if (body.email) schoolPayload.billing_email = body.email;
-
-    const schoolRes = await fetch(supabaseAdminUrl('schools'), {
-      method: 'POST',
-      headers: supabaseAdminHeaders('return=representation'),
-      body: JSON.stringify(schoolPayload),
+    // ── Step 1: Atomic DB provisioning via provision_school() RPC ──────────
+    // The RPC creates the schools row + school_subscriptions row +
+    // school_invite_codes row in a single transaction, writes both `slug` and
+    // the legacy `code` columns, and returns the generated invite_code.
+    const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('provision_school', {
+      p_name: name,
+      p_slug: baseSlug,
+      p_board: body.board ?? 'CBSE',
+      p_city: body.city ?? null,
+      p_state: body.state ?? null,
+      p_plan: plan,
+      p_seats: seats,
+      p_price_per_seat_monthly: pricePerSeat,
+      p_billing_email: body.billing_email ?? null,
+      p_tenant_type: body.tenant_type ?? 'school',
     });
 
-    if (!schoolRes.ok) {
-      const text = await schoolRes.text();
+    if (rpcError || !rpcData) {
+      logger.error('school_provision_rpc_failed', {
+        reason: rpcError?.message ?? 'no data returned',
+        slug: baseSlug,
+      });
       return NextResponse.json(
-        { success: false, error: `Failed to create school: ${text}` },
-        { status: schoolRes.status },
+        {
+          success: false,
+          error: rpcError?.message ?? 'Failed to provision school.',
+        },
+        { status: 500 },
       );
     }
 
-    const schoolData = await schoolRes.json();
-    const school = Array.isArray(schoolData) ? schoolData[0] : schoolData;
-    const schoolId: string = school.id;
+    const rpc = rpcData as ProvisionSchoolRpcResult;
+    const { school_id: schoolId, slug, invite_code: inviteCode, subdomain } = rpc;
 
-    // 3. Create school subscription
-    const subPayload = {
-      school_id: schoolId,
-      plan,
-      billing_cycle: 'monthly',
-      seats_purchased: seats,
-      price_per_seat_monthly: pricePerSeat,
-      status: plan === 'trial' ? 'trial' : 'active',
-      current_period_start: new Date().toISOString(),
-      current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    };
+    // ── Step 2: Admin invite (non-fatal on failure — P15 principle) ─────────
+    // The school row is already atomically committed. If admin-invite steps fail,
+    // we return school_id + invite_code with a warn flag so the operator can use
+    // the "send invite manually" path rather than receiving a misleading 500.
+    let adminInviteSent = false;
+    let warnFlag: string | undefined;
 
-    const subRes = await fetch(supabaseAdminUrl('school_subscriptions'), {
-      method: 'POST',
-      headers: supabaseAdminHeaders('return=representation'),
-      body: JSON.stringify(subPayload),
-    });
+    if (body.admin_email && typeof body.admin_email === 'string' && body.admin_email.trim()) {
+      try {
+        const adminResult = await establishPrincipalAdmin(
+          supabaseAdmin,
+          schoolId,
+          body.admin_email.trim().toLowerCase(),
+          body.admin_name?.trim() ?? null,
+          // invitedBy: the super-admin's own user id if available (P13: no email logged)
+          auth.userId ?? null,
+        );
 
-    let subscriptionId: string | null = null;
-    if (subRes.ok) {
-      const subData = await subRes.json();
-      const sub = Array.isArray(subData) ? subData[0] : subData;
-      subscriptionId = sub?.id || null;
+        if (adminResult.linked) {
+          adminInviteSent = true;
+        } else {
+          warnFlag = 'admin_invite_failed';
+          logger.warn('school_provision_admin_invite_failed', {
+            schoolId,
+            slug,
+            // P13: do not log admin_email
+            linked: adminResult.linked,
+          });
+        }
+      } catch (inviteErr) {
+        warnFlag = 'admin_invite_failed';
+        logger.warn('school_provision_admin_invite_error', {
+          schoolId,
+          slug,
+          reason: inviteErr instanceof Error ? inviteErr.message : String(inviteErr),
+        });
+      }
     }
 
-    // 4. Create invite code for school admin
-    const inviteCode = generateInviteCode();
-    const invitePayload = {
-      school_id: schoolId,
-      code: inviteCode,
-      role_type: 'teacher', // School admin is a teacher-role user with institution_admin permissions
-      max_uses: 1,
-      used_count: 0,
-      is_active: true,
-      expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
-    };
-
-    await fetch(supabaseAdminUrl('school_invite_codes'), {
-      method: 'POST',
-      headers: supabaseAdminHeaders('return=minimal'),
-      body: JSON.stringify(invitePayload),
-    });
-
-    // 5. Audit trail (no PII in details per P13)
+    // ── Step 3: Audit trail (P13 — no PII in details) ────────────────────
     await logAdminAudit(
       auth,
       'school.provisioned',
@@ -178,25 +152,41 @@ export async function POST(request: NextRequest) {
         seats,
         price_per_seat: pricePerSeat,
         slug,
-        has_admin_invite: !!(body.admin_email),
+        admin_invite_sent: adminInviteSent,
+        has_admin_email: !!(body.admin_email),
+        ...(warnFlag ? { warn: warnFlag } : {}),
       },
       request.headers.get('x-forwarded-for') || undefined,
     );
 
-    // 6. Build subdomain (informational only at this point)
-    const subdomain = `${slug}.alfanumrik.com`;
-
-    return NextResponse.json({
+    // ── Response (P13 — no auth_user_id, no email) ───────────────────────
+    const responseBody: {
+      success: true;
+      data: {
+        school_id: string;
+        slug: string;
+        subdomain: string;
+        invite_code: string;
+        admin_invite_sent: boolean;
+        warn?: string;
+      };
+    } = {
       success: true,
       data: {
         school_id: schoolId,
         slug,
         subdomain,
         invite_code: inviteCode,
-        subscription_id: subscriptionId,
+        admin_invite_sent: adminInviteSent,
+        ...(warnFlag ? { warn: warnFlag } : {}),
       },
-    }, { status: 201 });
+    };
+
+    return NextResponse.json(responseBody, { status: 201 });
   } catch (err) {
+    logger.error('school_provision_route_unexpected_error', {
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
     return NextResponse.json(
       { success: false, error: err instanceof Error ? err.message : 'Internal error' },
       { status: 500 },

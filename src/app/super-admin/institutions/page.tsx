@@ -17,6 +17,15 @@ import {
 
 type TenantType = 'school' | 'coaching' | 'corporate' | 'government';
 
+interface ProvisionResult {
+  school_id: string;
+  slug: string;
+  subdomain: string;
+  invite_code: string;
+  admin_invite_sent: boolean;
+  warn?: string;
+}
+
 interface InstitutionRecord {
   id: string; name: string; board: string; city?: string; state?: string;
   principal_name?: string; email?: string; phone?: string; max_students?: number;
@@ -215,13 +224,21 @@ function CircularGauge({ score }: { score: number }) {
 /* ------------------------------------------------------------------ */
 
 function ProvisionModal({
-  open, onClose, onSubmit, submitting,
-}: { open: boolean; onClose: () => void; onSubmit: (form: ProvisionForm) => void; submitting: boolean }) {
+  open, onClose, onSubmit, submitting, result, onDone,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (form: ProvisionForm) => void;
+  submitting: boolean;
+  result: ProvisionResult | null;
+  onDone: () => void;
+}) {
   const [form, setForm] = useState<ProvisionForm>({ ...EMPTY_FORM });
+  const [copied, setCopied] = useState<'subdomain' | 'invite' | null>(null);
 
   useEffect(() => {
-    if (open) setForm({ ...EMPTY_FORM });
-  }, [open]);
+    if (open && !result) setForm({ ...EMPTY_FORM });
+  }, [open, result]);
 
   if (!open) return null;
 
@@ -229,6 +246,13 @@ function ProvisionModal({
     setForm(prev => ({ ...prev, [key]: value }));
 
   const canSubmit = form.school_name.trim() && form.admin_email.trim() && form.admin_name.trim() && !submitting;
+
+  const copyToClipboard = (text: string, which: 'subdomain' | 'invite') => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(which);
+      setTimeout(() => setCopied(null), 2000);
+    }).catch(() => {/* clipboard denied — silent fail */});
+  };
 
   const inputStyle: React.CSSProperties = {
     padding: '8px 12px',
@@ -248,6 +272,138 @@ function ProvisionModal({
     textTransform: 'uppercase', letterSpacing: 0.8, display: 'block',
   };
 
+  /* ---------- success state ---------- */
+  if (result) {
+    const subdomainUrl = `${result.slug}.alfanumrik.com`;
+    return (
+      <>
+        <div onClick={onDone} style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 999,
+        }} />
+        <div style={{
+          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+          width: 520, maxHeight: '90vh', overflowY: 'auto',
+          background: '#FFFFFF', borderRadius: 12, zIndex: 1000,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.12)', border: '1px solid #E5E7EB',
+        }}>
+          {/* Header */}
+          <div style={{
+            padding: '16px 20px', borderBottom: '1px solid #E5E7EB',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#16A34A', margin: 0 }}>
+              School created!
+            </h3>
+            <button onClick={onDone} style={{
+              background: 'none', border: '1px solid #E5E7EB', borderRadius: 6,
+              padding: '4px 10px', fontSize: 13, cursor: 'pointer', color: '#6B7280',
+            }}>Close</button>
+          </div>
+
+          {/* Body */}
+          <div style={{ padding: 20 }}>
+            {/* Invite email status */}
+            {result.warn ? (
+              <div style={{
+                padding: 12, marginBottom: 16, borderRadius: 6,
+                background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E',
+                fontSize: 12, lineHeight: 1.5,
+              }}>
+                Invite email failed — share the invite code manually.
+              </div>
+            ) : result.admin_invite_sent ? (
+              <div style={{
+                padding: 12, marginBottom: 16, borderRadius: 6,
+                background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#166534',
+                fontSize: 12, lineHeight: 1.5,
+              }}>
+                Admin invite email sent successfully.
+              </div>
+            ) : null}
+
+            {/* Subdomain */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{
+                fontSize: 11, fontWeight: 600, color: '#6B7280', marginBottom: 6,
+                textTransform: 'uppercase', letterSpacing: 0.8,
+              }}>
+                Subdomain
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{
+                  flex: 1, padding: '8px 12px', borderRadius: 6,
+                  border: '1px solid #E5E7EB', background: '#F9FAFB',
+                  fontFamily: 'monospace', fontSize: 13, color: '#111827',
+                }}>
+                  {subdomainUrl}
+                </div>
+                <button
+                  onClick={() => copyToClipboard(subdomainUrl, 'subdomain')}
+                  style={{
+                    padding: '8px 14px', borderRadius: 6, border: '1px solid #E5E7EB',
+                    background: '#FFFFFF', fontSize: 12, cursor: 'pointer',
+                    color: copied === 'subdomain' ? '#16A34A' : '#6B7280',
+                    fontWeight: 500, whiteSpace: 'nowrap',
+                  }}
+                >
+                  {copied === 'subdomain' ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+            </div>
+
+            {/* Invite code */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{
+                fontSize: 11, fontWeight: 600, color: '#6B7280', marginBottom: 6,
+                textTransform: 'uppercase', letterSpacing: 0.8,
+              }}>
+                Admin Invite Code
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{
+                  flex: 1, padding: '10px 14px', borderRadius: 6,
+                  border: '2px solid #E5E7EB', background: '#F9FAFB',
+                  fontFamily: 'monospace', fontSize: 16, fontWeight: 700,
+                  color: '#111827', letterSpacing: 2,
+                }}>
+                  {result.invite_code}
+                </div>
+                <button
+                  onClick={() => copyToClipboard(result.invite_code, 'invite')}
+                  style={{
+                    padding: '8px 14px', borderRadius: 6, border: '1px solid #E5E7EB',
+                    background: '#FFFFFF', fontSize: 12, cursor: 'pointer',
+                    color: copied === 'invite' ? '#16A34A' : '#6B7280',
+                    fontWeight: 500, whiteSpace: 'nowrap',
+                  }}
+                >
+                  {copied === 'invite' ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 6 }}>
+                Share this code with the school admin so they can activate their account.
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div style={{
+            padding: '12px 20px', borderTop: '1px solid #E5E7EB',
+            display: 'flex', justifyContent: 'flex-end',
+          }}>
+            <button
+              onClick={onDone}
+              className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-surface-1 hover:opacity-90"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  /* ---------- form state ---------- */
   return (
     <>
       <div onClick={onClose} style={{
@@ -617,6 +773,7 @@ function InstitutionsContent() {
   const [pipelineFilter, setPipelineFilter] = useState<PipelineStage | null>(null);
   const [showProvision, setShowProvision] = useState(false);
   const [provisioning, setProvisioning] = useState(false);
+  const [provisionResult, setProvisionResult] = useState<ProvisionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   /* ----- fetch institutions ----- */
@@ -935,18 +1092,32 @@ function InstitutionsContent() {
         method: 'POST',
         body: JSON.stringify(form),
       });
+      const d = await res.json().catch(() => null);
       if (res.ok) {
-        setShowProvision(false);
+        // Store result and switch modal to success view — do NOT close yet.
+        // The operator needs to see/copy the invite code before dismissing.
+        setProvisionResult({
+          school_id: d?.data?.school_id ?? '',
+          slug: d?.data?.slug ?? '',
+          subdomain: d?.data?.subdomain ?? '',
+          invite_code: d?.data?.invite_code ?? '',
+          admin_invite_sent: !!d?.data?.admin_invite_sent,
+          warn: d?.data?.warn,
+        });
         fetchInstitutions();
         fetchHealth();
       } else {
-        const d = await res.json().catch(() => null);
         setError(d?.error || 'Provisioning failed');
       }
     } catch {
       setError('Network error during provisioning');
     }
     setProvisioning(false);
+  };
+
+  const handleProvisionDone = () => {
+    setShowProvision(false);
+    setProvisionResult(null);
   };
 
   /* ----- export CSV ----- */
@@ -1237,9 +1408,11 @@ function InstitutionsContent() {
       {/* Provision Modal */}
       <ProvisionModal
         open={showProvision}
-        onClose={() => setShowProvision(false)}
+        onClose={() => { setShowProvision(false); setProvisionResult(null); }}
         onSubmit={handleProvision}
         submitting={provisioning}
+        result={provisionResult}
+        onDone={handleProvisionDone}
       />
 
       {/* Pause / Resume Modal — server enforces the retype-name guardrail

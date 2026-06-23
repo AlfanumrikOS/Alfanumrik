@@ -32,7 +32,17 @@ import {
 
 // ─── Slug + invite code helpers (mirror trial route) ───────────────────
 
-function generateSlug(name: string): string {
+/**
+ * Canonical slug normaliser shared by both provisioning paths.
+ * Produces a lowercase, hyphen-delimited, alphanumeric string safe for use as
+ * a URL path segment and a DB `slug` / `code` column.
+ *
+ * Examples:
+ *   normalizeSlug("St. Xavier's High School")  → "st-xaviers-high-school"
+ *   normalizeSlug("  ABC   School ")           → "abc-school"
+ *   normalizeSlug("School #1 (Bengaluru)")     → "school-1-bengaluru"
+ */
+export function normalizeSlug(name: string): string {
   return name
     .toLowerCase()
     .trim()
@@ -40,6 +50,11 @@ function generateSlug(name: string): string {
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
+}
+
+/** @deprecated Use normalizeSlug() instead. */
+function generateSlug(name: string): string {
+  return normalizeSlug(name);
 }
 
 function generateInviteCode(): string {
@@ -547,11 +562,15 @@ export async function provisionTrialSchool(
     }
 
     // 3. Create school row
+    // NOTE: both `code` and `slug` are written with the same finalSlug value so
+    // that self-serve-provisioned schools are discoverable via /api/schools/join
+    // (which filters on the `slug` column) as well as legacy code-keyed look-ups.
     const { data: school, error: schoolError } = await admin
       .from('schools')
       .insert({
         name: school_name,
         code: finalSlug,
+        slug: finalSlug,
         board,
         city,
         state,
