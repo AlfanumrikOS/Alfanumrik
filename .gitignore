@@ -43,3 +43,15 @@ Alfanumrik/
 
 # Offline generation run logs/checkpoints (not source)
 scripts/.checkpoints/
+
+# FoxyTutor AgentCore project (AWS AgentCore CLI scaffold, separate product prototype)
+FoxyTutorAgent/
+
+# NCERT PDF library — large data files, sourced externally (not for git)
+# Covers the "data/NCERT books/" real directory layout (case+space variant of data/ncert-books/)
+"data/NCERT books/"
+data/NCERT*/
+
+# Temporary investigation / one-off verification scripts
+scripts/_tmp_*.mjs
+scripts/_tmp_*.ts

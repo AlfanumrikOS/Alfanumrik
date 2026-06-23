@@ -1166,11 +1166,11 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [CONSUMER_MINIMALISM_FLAGS.PARENT_UNIFIED_AUTH_V1]: false,
   [CONSUMER_MINIMALISM_FLAGS.PARENT_ENCOURAGE_V1]: false,
   [TEACHER_COMMAND_CENTER_FLAGS.V1]: false,
-  [TEACHER_ASSIGNMENT_LIFECYCLE_FLAGS.V1]: false,
-  [TEACHER_GRADEBOOK_DEPTH_FLAGS.V1]: false,
-  [TEACHER_PARENT_COMMS_FLAGS.V1]: false,
+  [TEACHER_ASSIGNMENT_LIFECYCLE_FLAGS.V1]: false, // seeded OFF by 20260623010000_seed_unseeded_b2b_flags.sql
+  [TEACHER_GRADEBOOK_DEPTH_FLAGS.V1]: false, // seeded OFF by 20260623010000_seed_unseeded_b2b_flags.sql
+  [TEACHER_PARENT_COMMS_FLAGS.V1]: false, // seeded OFF by 20260623010000_seed_unseeded_b2b_flags.sql
   [SCHOOL_COMMAND_CENTER_FLAGS.V1]: false,
-  [SCHOOL_PROVISIONING_FLAGS.V1]: false,
+  [SCHOOL_PROVISIONING_FLAGS.V1]: false, // seeded OFF by 20260623010000_seed_unseeded_b2b_flags.sql
   [SCHOOL_ADMIN_RBAC_FLAGS.V1]: false, // seeded OFF by 20260611000100_seed_ff_school_admin_rbac_flag.sql
   [SCHOOL_REPORTS_DEPTH_FLAGS.V1]: false,
 
@@ -1179,8 +1179,8 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [REVISION_OS_FLAGS.V1]: false,
   [PRACTICE_OS_FLAGS.V1]: false,
   [TEST_OS_FLAGS.V1]: false,
-  [EDUCATION_INTELLIGENCE_FLAGS.V1]: false,
-  [PRINCIPAL_AI_FLAGS.V1]: false,
+  [EDUCATION_INTELLIGENCE_FLAGS.V1]: false, // seeded OFF by 20260623010000_seed_unseeded_b2b_flags.sql
+  [PRINCIPAL_AI_FLAGS.V1]: false, // seeded OFF by 20260623010000_seed_unseeded_b2b_flags.sql (ENABLEMENT gated on ai-engineer P12 + 20260616010000 apply)
   [FOXY_OS_FLAGS.V1]: false,
   [SCHOOL_PULSE_FLAGS.V1]: false, // seeded OFF by 20260619000100_seed_ff_school_pulse_v1.sql
   [ADAPTIVE_REMEDIATION_FLAGS.V1]: false, // seeded OFF by 20260619000300_seed_ff_adaptive_remediation_v1.sql

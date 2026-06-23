@@ -1000,3 +1000,119 @@ The workflow uses only the five secrets the existing `deploy-production` and
 
 A concurrency group (`schema-reproducibility-fix`) prevents two operators from
 running `pre-mark-prod` simultaneously.
+
+---
+
+## Section 11 — B2B repair-skip detection (Command Center read-models, school/tenant objects)
+
+Added 2026-06-23 (B2B activation Phase 0 — "Trust the substrate").
+
+### 11.1 What "repair-skip" is, and why B2B is exposed to it
+
+The pre-mark steps above (Sections 7-8) deliberately record a migration as
+**applied** in `supabase_migrations.schema_migrations` **without executing its
+DDL** — that is the whole point of `supabase migration repair`: it lets prod and
+main-staging skip re-running a baseline they already physically have.
+
+The hazard is that the SAME ledger-vs-reality gap can exist for a *later*
+migration if it was ever marked-applied (manually, or by a tool, or because it
+sat below the baseline cut line) without its body running against a given
+environment. The Command Center read-model RPCs
+(`get_school_overview`, `get_classes_at_risk`, `get_teacher_engagement`),
+the school reporting RPCs (`get_school_mastery_rollup`, `get_school_bloom_summary`,
+`export_school_report`), the seat-enforcement primitives
+(`evaluate_seat_policy`, `enroll_students_with_seat_check`, …), the EIC rollups,
+and the `school_*` / `tenant_*` tables are the highest-blast-radius examples:
+**a B2B flag flip surfaces a page that immediately calls one of these RPCs, so a
+missing object is a user-facing 500 the moment the flag goes ON.**
+
+> Flipping a B2B flag ON is a two-part gate: (1) the seed row must exist
+> (Phase 0 seed migration `20260623010000_seed_unseeded_b2b_flags.sql` makes the
+> six previously-unseeded flags visible/flippable), AND (2) the objects the gated
+> surface calls must physically exist in the target environment. This section
+> covers part (2).
+
+### 11.2 Detect — run the existence audit (read-only, safe on prod)
+
+```bash
+# psql
+\i scripts/sql/verify-b2b-objects.sql
+
+# or Supabase CLI (linked to the target project)
+npx -y supabase db query --linked "$(cat scripts/sql/verify-b2b-objects.sql)"
+```
+
+`scripts/sql/verify-b2b-objects.sql` is pure catalog reads (`pg_proc`,
+`information_schema`, `to_regclass`) — **no writes, no DML, no DDL, no
+parameters, no user input interpolated** — so it is safe for an operator to run
+directly against prod.
+
+Read the output as:
+
+- `status = 'OK'` → the object exists in this environment.
+- `status = 'MISSING'` → repair-skip (or never-applied) debt. **Do not flip the
+  owning flag ON.**
+- The third result set lists which of the owning migrations are *recorded
+  applied* in `supabase_migrations.schema_migrations`. **A migration recorded
+  applied whose object is `MISSING` above is a confirmed repair-skip** — that is
+  the smoking gun.
+
+Known-expected MISSING (NOT debt): the Principal AI objects
+(`principal_ai_sessions`, `principal_ai_messages`, `get_principal_ai_context`)
+are **drafted-not-applied** — migration `20260616010000_principal_ai_assistant_v1.sql`
+is intentionally unapplied pending ai-engineer P12 review. The route degrades
+gracefully (clean abstain) when these are absent, and `ff_principal_ai_v1` is
+seeded OFF, so MISSING here is expected until that migration is applied.
+
+### 11.3 Safe re-apply procedure (when an object is genuinely MISSING)
+
+Mirror the baseline re-apply discipline from Sections 8-9. **Never** hand-craft
+a `CREATE` in psql to "patch" a missing object — that diverges the environment
+from the migration set. Instead, re-execute the owning migration's body so the
+ledger and reality reconcile through the normal channel.
+
+1. **Confirm the gap** with `scripts/sql/verify-b2b-objects.sql` (Section 11.2)
+   and note the `owning_migration` printed alongside each MISSING object.
+
+2. **Stage on staging first.** Re-apply the owning migration body against
+   main-staging and re-run the audit there; confirm the object flips to `OK` and
+   nothing else regresses. Every owning migration in the B2B set is idempotent
+   (`CREATE OR REPLACE FUNCTION`, `CREATE TABLE IF NOT EXISTS`, RLS guarded by
+   `DROP POLICY IF EXISTS` + `CREATE POLICY`), so re-execution is safe even where
+   the object partially exists.
+
+3. **If the migration is recorded-applied but its body never ran** (the
+   repair-skip case): clear the stale ledger row, then let the normal push
+   re-execute it:
+
+   ```sql
+   -- On the affected environment, after confirming the object is MISSING:
+   DELETE FROM supabase_migrations.schema_migrations WHERE version = '<14-digit version>';
+   ```
+
+   ```bash
+   # Then re-run the standard deploy push so the CLI re-applies the now-pending migration:
+   npx -y supabase db push --linked
+   ```
+
+   Because every B2B owning migration is idempotent, re-applying it where the
+   object already partially exists is a no-op for the existing parts and creates
+   only the missing object(s).
+
+4. **Verify** with `verify-b2b-objects.sql` again on the target environment
+   (staging, then prod) — every non-Principal-AI object must read `OK` BEFORE the
+   corresponding B2B flag is flipped ON.
+
+5. **Only then** flip the flag (super-admin Flags console, or the targeted enable
+   migration), staging-first, per `docs/runbooks/2026-06-16-phase3-billing-flag-rollout.md`.
+
+### 11.4 Pre-flip checklist (copy into the rollout PR/issue)
+
+```
+- [ ] verify-b2b-objects.sql run on STAGING → all non-PrincipalAI objects OK
+- [ ] verify-b2b-objects.sql run on PROD    → all non-PrincipalAI objects OK
+- [ ] Seed row exists for the flag (20260623010000 applied)
+- [ ] Flag is still OFF (this checklist does NOT flip it)
+- [ ] Staging-first enable validated before prod enable
+```
+
