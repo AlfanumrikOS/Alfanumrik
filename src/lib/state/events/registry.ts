@@ -193,6 +193,47 @@ export const LearnerLearningActionSchema = EventBaseSchema.extend({
   }),
 });
 
+// Foxy weak-area loop — struggle signal (PART B2, 2026-06-23). ADVISORY,
+// NON-MASTERY telemetry emitted when Foxy OBSERVES a struggle pattern during a
+// tutoring turn (e.g. repeated hints requested, repeated wrong free-text on the
+// same concept, an explicit "I don't get it"). Modelled on
+// learner.learning_action: it is a SELF-REPORT / heuristic OBSERVATION, NOT a
+// graded answer.
+//
+//   ⚠️ BINDING learner-state contract (assessment-issued, mirrors
+//   learner.learning_action): No subscriber may consume this event to write ANY
+//   mastery surface (concept_mastery, cme_concept_state, student_skill_state,
+//   knowledge_gaps, learner_mastery, cme_error_log, quiz_sessions,
+//   student_learning_profiles, bloom_progression). A struggle OBSERVATION cannot
+//   move mastery_mean / p_know / error_count_*. Only a REAL graded answer feeds
+//   mastery, through the EXISTING concept-check / BKT path
+//   (learner.concept_check_answered) — never through this event. The bus row is
+//   pure observability (drives Foxy's in-turn adaptation + analytics).
+//
+// P13: payload is IDs + enums only — no free text (the student's words are never
+// echoed onto the bus). conceptId is nullable because a struggle can be observed
+// before any concept is bound to the turn.
+export const LearnerStruggleObservedSchema = EventBaseSchema.extend({
+  kind: z.literal('learner.struggle_observed'),
+  payload: z.object({
+    studentId: uuidLike(),
+    sessionId: uuidLike(),
+    // The concept the struggle is about, when Foxy has bound one. Nullable.
+    conceptId: uuidLike().nullable(),
+    subjectCode: z.string(),
+    // The kind of struggle Foxy observed. Enum only — extend the union here (and
+    // the test fixture) when a new detector lands.
+    signalType: z.enum([
+      'repeated_hint',
+      'repeated_wrong',
+      'explicit_confusion',
+      'long_idle',
+      'give_up',
+    ]),
+    occurredAt: isoDatetime(),
+  }),
+});
+
 // ── AI / Foxy events ─────────────────────────────────────────────────
 
 export const FoxySessionStartedSchema = EventBaseSchema.extend({
@@ -703,6 +744,7 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   LearnerScanExtractedSchema,
   LearnerConceptCheckAnsweredSchema,
   LearnerLearningActionSchema,
+  LearnerStruggleObservedSchema,
   FoxySessionStartedSchema,
   FoxySessionCompletedSchema,
   ParentLinkedSchema,
@@ -756,6 +798,7 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'learner.scan_extracted',
   'learner.concept_check_answered',
   'learner.learning_action',
+  'learner.struggle_observed',
   'ai.foxy_session_started',
   'ai.foxy_session_completed',
   'parent.linked_to_learner',

@@ -127,6 +127,15 @@ const VALID_PAYLOADS: Record<DomainEventKind, Record<string, unknown>> = {
     subjectCode: 'math',
     chapterNumber: 6,
   },
+  // PART B2 — Foxy weak-area struggle signal. Advisory, non-mastery.
+  'learner.struggle_observed': {
+    studentId: FIXTURE_UUID_B,
+    sessionId: FIXTURE_UUID_A,
+    conceptId: FIXTURE_UUID_C,
+    subjectCode: 'math',
+    signalType: 'repeated_hint',
+    occurredAt: FIXTURE_ISO,
+  },
   'ai.foxy_session_started': {
     foxySessionId: FIXTURE_UUID_C,
     subjectCode: 'math',

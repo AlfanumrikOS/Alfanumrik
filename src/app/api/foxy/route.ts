@@ -95,7 +95,13 @@ import { FoxyResponseSchema, type FoxyResponse } from '@/lib/foxy/schema';
 import { normalizeFoxyResponseInline } from '@/lib/foxy/normalize-inline';
 import { recoverFoxyResponseFromText } from '@/lib/foxy/recover-from-text';
 import { denormalizeFoxyResponse } from '@/lib/foxy/denormalize';
-import { gateQuizMeMcq } from '@/lib/foxy/quiz-me-oracle-gate';
+import { gateQuizMeMcq, findSingleMcqBlock } from '@/lib/foxy/quiz-me-oracle-gate';
+import {
+  resolveLeadConceptId,
+  serveEvidentialItem,
+  payloadFromMcqBlock,
+} from '@/lib/foxy/evidential-quiz';
+import { detectStruggleSignal } from '@/lib/foxy/struggle-detection';
 import type { LlmGrader } from '@/lib/ai/validation/quiz-oracle';
 import { parseLlmGraderResponse } from '@/lib/ai/validation/quiz-oracle';
 import {
@@ -1747,6 +1753,121 @@ export function buildColdStartPromptSection(): string {
   ].join('\n');
 }
 
+// ─── Part A: deterministic lead-concept selector (READ-ONLY) ────────────────
+//
+// Assessment-authoritative selection rule. Pure function over the ALREADY-
+// loaded CognitiveContext — performs NO database reads and NO mastery writes.
+// First match wins:
+//   (1) Overdue review, weakest first: among revisionDue (next_review_date <=
+//       today, already pre-filtered at load time), pick the LOWEST mastery;
+//       tie-break by the OLDEST next_review_date (the `lastReviewed` field
+//       carries the concept_mastery.next_review_date string).
+//   (2) else weakTopics[0] (already sorted weakest-first at load time).
+//   (3) else nextAction.conceptName when set.
+//   (4) else null — NO fabrication. The caller reuses the existing
+//       "DO NOT invent topics" rail so Foxy asks what they want to work on.
+//
+// `mastery` here is the 0-100 integer already rounded at load time. Using the
+// integer for the "weakest" comparison is exact enough for selection — the
+// raw probability is monotonic with its rounded form, and the tie-break on
+// next_review_date keeps the choice deterministic.
+export type LeadConcept = {
+  title: string;
+  /** 0-100 integer mastery (rounded at load time). */
+  mastery: number;
+  /** Where the pick came from — drives the directive wording + telemetry. */
+  source: 'overdue_review' | 'weak_topic' | 'next_action';
+};
+
+export function selectLeadConcept(ctx: CognitiveContext): LeadConcept | null {
+  // (1) Overdue review, weakest first; tie-break oldest next_review_date.
+  // revisionDue is pre-filtered to next_review_date <= today at load time.
+  if (ctx.revisionDue.length > 0) {
+    const sorted = [...ctx.revisionDue].sort((a, b) => {
+      if (a.mastery !== b.mastery) return a.mastery - b.mastery; // weakest first
+      // tie-break: oldest next_review_date (lexicographic on YYYY-MM-DD is
+      // chronological; empty strings sort first which is a safe "oldest").
+      return (a.lastReviewed || '').localeCompare(b.lastReviewed || '');
+    });
+    const pick = sorted[0];
+    if (pick && pick.title) {
+      return { title: pick.title, mastery: pick.mastery, source: 'overdue_review' };
+    }
+  }
+
+  // (2) Weakest topic (weakTopics is already weakest-first at load time).
+  const weakest = ctx.weakTopics[0];
+  if (weakest && weakest.title) {
+    return { title: weakest.title, mastery: weakest.mastery, source: 'weak_topic' };
+  }
+
+  // (3) CME next-action concept, if named.
+  if (ctx.nextAction && ctx.nextAction.conceptName) {
+    // nextAction has no mastery number; treat as unknown (-1) so the directive
+    // does not assert a false percentage.
+    return { title: ctx.nextAction.conceptName, mastery: -1, source: 'next_action' };
+  }
+
+  // (4) No signal → no fabrication.
+  return null;
+}
+
+// Build a single explicit lead-concept directive naming the selected concept.
+// Instructs Foxy to OPEN by targeting it and to scaffold by the existing
+// weak-start rule: for a weak concept (mastery < 50%) open with an analogy or
+// worked example BEFORE the formal definition, and never pose a Bloom level
+// above the student's current ceiling + 1 (i.e. stay within reach). When no
+// concept is selected, emit the no-fabrication rail instead of a named target.
+export function buildLeadConceptDirective(lead: LeadConcept | null): string {
+  if (!lead) {
+    // (4) No-fabrication rail — mirror the existing "DO NOT invent topics" rail
+    // used by the intent=weak_areas path, so Foxy asks rather than hallucinates.
+    return [
+      '=== LEAD-CONCEPT DIRECTIVE (proactive weak-area targeting) ===',
+      'There is no mastery signal for this student yet, so you have NO verified',
+      'weakest concept to lead with. DO NOT invent a topic they are weak in.',
+      'Open by warmly asking what they would like to work on today, and offer to',
+      'run a short diagnostic quiz so future sessions can target their real gaps.',
+    ].join('\n');
+  }
+
+  const lines: string[] = [
+    '=== LEAD-CONCEPT DIRECTIVE (proactive weak-area targeting) ===',
+  ];
+  const masteryClause =
+    lead.mastery >= 0 ? ` (current mastery ~${lead.mastery}%)` : '';
+  const sourceClause =
+    lead.source === 'overdue_review'
+      ? ' It is OVERDUE for review.'
+      : lead.source === 'next_action'
+        ? ' The Cognitive Mastery Engine flagged it as the next best concept.'
+        : ' It is this student\'s weakest concept right now.';
+  lines.push(
+    `OPEN this turn by proactively targeting "${lead.title}"${masteryClause}.${sourceClause}`,
+  );
+  // Scaffold by Bloom ceiling — reuse the weak-start rule (mirrors
+  // buildLoDirective's < 0.5 branch). mastery < 0 means "unknown" (next_action
+  // path); treat unknown conservatively as weak so we never over-pitch.
+  if (lead.mastery < 50) {
+    lines.push(
+      '- This concept is WEAK. Open with a concrete real-world analogy or a worked',
+      '  example BEFORE introducing the formal definition.',
+      '- Stay within reach: scaffold from the student\'s current Bloom level and never',
+      '  pose a question more than one Bloom level above their current ceiling.',
+    );
+  } else {
+    lines.push(
+      '- Open with a one-sentence recap, then a quick recall check, then advance.',
+      '- Stay within reach: do not pose a question more than one Bloom level above',
+      '  the student\'s current ceiling for this concept.',
+    );
+  }
+  lines.push(
+    '- If the student then names a different topic, follow their lead instead.',
+  );
+  return lines.join('\n');
+}
+
 export function buildCognitivePromptSection(ctx: CognitiveContext): string {
   const isColdStart =
     ctx.weakTopics.length === 0 &&
@@ -2283,6 +2404,35 @@ You are Foxy, a friendly CBSE tutor. Safety rails you must follow:
    Hindi (use when the student wrote in Hindi / Devanagari script):
    "मेरे पास आपकी पाठ्यपुस्तक में इसके लिए सत्यापित स्रोत नहीं है। कृपया मुझे बताएं कि आप कौन सा अध्याय पढ़ रहे हैं, मैं फिर से देखूंगा।"
 `).trim();
+
+// ─── Part A: bare-open detector ─────────────────────────────────────────────
+//
+// A "bare open" is a turn that carries NO specific question text — a greeting
+// or a generic "what should I work on?" opener. On such turns (or when the
+// client sends intent in {weak_areas, study_today}) Foxy should LEAD with the
+// student's weakest concept via the lead-concept directive rather than wait
+// for a topic. Conservative by design: anything that looks like a real
+// subject question (longer, contains a topic noun, etc.) is NOT a bare open,
+// so normal Q&A turns are byte-identical to before.
+const BARE_OPEN_PATTERNS: readonly RegExp[] = [
+  // Pure greetings / session openers.
+  /^(hi|hii+|hey+|hello|hlo|yo|namaste|namaskar|hii foxy|hi foxy|hey foxy)[!.\s]*$/i,
+  /^(good\s+(morning|afternoon|evening))[!.\s]*$/i,
+  // "what should I work on / study / do (today)?" family (EN).
+  /^\s*what\s+(should|can|do)\s+i\s+(work\s+on|study|do|learn|practi[cs]e|revise)\b/i,
+  /^\s*(where|how)\s+(should|do)\s+i\s+(start|begin)\b/i,
+  /^\s*(help\s+me\s+)?(start|begin)\b.{0,30}$/i,
+  // Hinglish/Hindi "what should I study today" openers (kept short + literal).
+  /^\s*(aaj|aj)\s+(kya|kyaa)\s+(padh|padhu|study|karu|karun)/i,
+  /^\s*(kya|kyaa)\s+(padhu|padhun|karu|karun|study\s+karu)/i,
+];
+
+export function isBareOpen(message: string): boolean {
+  const t = (message ?? '').trim();
+  if (!t) return true; // empty/whitespace-only is the barest open of all.
+  if (t.length > 60) return false; // a real question — not a bare opener.
+  return BARE_OPEN_PATTERNS.some((re) => re.test(t));
+}
 
 /**
  * Compose the full system prompt for Foxy. Used as a template_variable for
@@ -3472,6 +3622,35 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     tenantPedagogy: tenantAi.tenantPedagogy,
   });
 
+  // ── Part A: proactive lead-concept directive (READ-ONLY, additive) ───────
+  // When a session opens with NO specific question text (a bare greeting /
+  // "what should I work on?") OR the client sends intent in
+  // {weak_areas, study_today}, inject a single explicit directive naming the
+  // deterministically-selected lead concept and instruct Foxy to OPEN by
+  // targeting it (scaffolded by the weak-start rule). The selector is a PURE
+  // function over the already-loaded cognitiveCtx — NO database reads, NO
+  // mastery writes. When cognitiveCtx carries no signal the directive is the
+  // no-fabrication rail (no named topic), so this is inert on cold-start.
+  //
+  // Gating: this block is only reachable when ff_grounded_ai_foxy is ON (the
+  // legacy path returns early above), so it rides the existing Foxy flag with
+  // no new flag. It is further gated on the bare-open / intent condition, so
+  // normal topic-bearing Q&A turns are byte-identical to before.
+  const leadConceptApplies =
+    isBareOpen(message) || intent === 'weak_areas' || intent === 'study_today';
+  if (leadConceptApplies) {
+    const lead = selectLeadConcept(cognitiveCtx);
+    foxySystemPrompt = `${foxySystemPrompt}\n\n${buildLeadConceptDirective(lead)}`;
+    logger.info('foxy.lead_concept.injected', {
+      // P13: scope + selector provenance only — NEVER the concept title or
+      // studentId. `source: null` means the no-fabrication rail fired.
+      subject,
+      grade,
+      source: lead?.source ?? null,
+      reason: intent ?? 'bare_open',
+    });
+  }
+
   // ── Part 2B: chapter topic-progression context (additive) ───────────────
   // Inject the ordered topic list + the student's position + the next
   // unmastered topic so Foxy leads the student topic-to-topic. Empty string
@@ -4014,6 +4193,17 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // unavailability the oracle fails CLOSED (rejects). The gate response field
   // text is overridden too so legacy/string-only clients also get the fallback.
   let quizMeWireText: string | null = null;
+  // ── Part B1: evidential served-item wire fields ──────────────────────────
+  // When a "Quiz me" MCQ passes the oracle gate AND resolves to a real
+  // chapter_concepts.id, we INSERT a server-issued foxy_served_items row (the
+  // verification anchor) so the answer can later move mastery through the
+  // sanctioned tutor_commit_attempt path (/api/foxy/quiz-answer). When the
+  // concept is unresolvable OR a second Quiz me fires on the same
+  // (session, concept), the item is NON-evidential (cannot move mastery) and we
+  // say so explicitly on the wire. P13: ids/scope only in logs.
+  let evidentialServedItemId: string | null = null;
+  let quizMeEvidential = false;
+  let quizMeNonEvidentialReason: string | null = null;
   if (isQuizMe) {
     if (structured) {
       try {
@@ -4039,6 +4229,66 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
             grade,
             llmCalls: gate.llm_calls,
           });
+          // ── Serve the evidential item (server-issued correct_index key) ──
+          try {
+            const found = findSingleMcqBlock(structured);
+            if (found.ok) {
+              const lead = selectLeadConcept(cognitiveCtx);
+              const resolved = await resolveLeadConceptId(supabaseAdmin, {
+                subject,
+                grade,
+                chapter,
+                leadConceptTitle: lead?.title ?? null,
+              });
+              if (resolved.ok) {
+                const { payload, correctIndex } = payloadFromMcqBlock(found.mcq);
+                const serve = await serveEvidentialItem(supabaseAdmin, {
+                  sessionId: resolvedSessionId,
+                  studentId,
+                  conceptId: resolved.concept.id,
+                  payload,
+                  correctIndex,
+                });
+                if (serve.evidential) {
+                  evidentialServedItemId = serve.servedItemId;
+                  quizMeEvidential = true;
+                  logger.info('foxy.quiz_me.evidential_served', {
+                    // P13: scope + provenance only — no concept title / studentId.
+                    subject,
+                    grade,
+                    leadSource: lead?.source ?? null,
+                  });
+                } else {
+                  // duplicate_in_session or insert_failed → NON-evidential.
+                  quizMeNonEvidentialReason = serve.reason;
+                  logger.info('foxy.quiz_me.non_evidential', {
+                    subject,
+                    grade,
+                    reason: serve.reason,
+                  });
+                }
+              } else {
+                // Concept could not be bound to a chapter_concepts.id → the item
+                // is shown as practice but CANNOT move mastery.
+                quizMeNonEvidentialReason = resolved.reason;
+                logger.info('foxy.quiz_me.non_evidential', {
+                  subject,
+                  grade,
+                  reason: resolved.reason,
+                });
+              }
+            }
+          } catch (serveErr) {
+            // Serving the evidential anchor is best-effort: a failure here must
+            // NOT break the turn. The student still sees the (oracle-passed) MCQ;
+            // it is simply non-evidential this turn.
+            quizMeNonEvidentialReason = 'serve_threw';
+            logger.warn('foxy.quiz_me.serve_threw', {
+              subject,
+              grade,
+              error: serveErr instanceof Error ? serveErr.message : String(serveErr),
+            });
+          }
         }
       } catch (gateErr) {
         // Defense-in-depth: the gate already fails closed internally, but if
@@ -4195,6 +4445,81 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     }
   }
 
+  // ── Part B2: chat-observed struggle detection (NON-MASTERY telemetry) ────
+  // Detect confusion patterns in the student's message + recent session turns
+  // and PUBLISH learner.struggle_observed (IDs/enums only). This NEVER writes
+  // mastery — the registry forbids any subscriber from consuming this event to
+  // move a mastery surface. Best-effort, fire-and-forget; flag-gated inside
+  // publishEvent (no-op when ff_event_bus_v1 is OFF). P13: no student words on
+  // the bus — only the studentId/sessionId/conceptId/subjectCode/signalType.
+  try {
+    const recentStudentMessages = [
+      ...history.filter((m) => m.role === 'user').map((m) => m.content),
+      message,
+    ].slice(-8);
+    const signalType = detectStruggleSignal({
+      message,
+      recentStudentMessages,
+      coachDirective,
+    });
+    if (signalType) {
+      // Bind a concept when this turn resolved one (evidential serve), else null.
+      let struggleConceptId: string | null = null;
+      try {
+        const lead = selectLeadConcept(cognitiveCtx);
+        const resolved = await resolveLeadConceptId(supabaseAdmin, {
+          subject,
+          grade,
+          chapter,
+          leadConceptTitle: lead?.title ?? null,
+        });
+        struggleConceptId = resolved.ok ? resolved.concept.id : null;
+      } catch {
+        struggleConceptId = null;
+      }
+      // Best-effort tenant scope (B2C → null).
+      let struggleTenantId: string | null = null;
+      try {
+        const { data: schoolRow } = await supabaseAdmin
+          .from('students')
+          .select('school_id')
+          .eq('id', studentId)
+          .maybeSingle();
+        struggleTenantId = (schoolRow as { school_id?: string | null } | null)?.school_id ?? null;
+      } catch {
+        struggleTenantId = null;
+      }
+      void publishEvent(supabaseAdmin, {
+        kind: 'learner.struggle_observed',
+        eventId: randomUUID(),
+        occurredAt: new Date().toISOString(),
+        actorAuthUserId: auth.userId!,
+        tenantId: struggleTenantId,
+        idempotencyKey: `struggle:${resolvedSessionId}:${signalType}:${Date.now()}`,
+        payload: {
+          studentId,
+          sessionId: resolvedSessionId,
+          conceptId: struggleConceptId,
+          subjectCode: subject ? subject.toLowerCase() : subject,
+          signalType,
+          occurredAt: new Date().toISOString(),
+        },
+      });
+      logger.info('foxy.struggle.signal_emitted', {
+        // P13: enum + scope only, never the student's message or studentId.
+        subject,
+        grade,
+        signalType,
+        conceptBound: struggleConceptId !== null,
+      });
+    }
+  } catch (struggleErr) {
+    console.warn(
+      '[foxy] struggle detection failed:',
+      struggleErr instanceof Error ? struggleErr.message : String(struggleErr),
+    );
+  }
+
   // Post-response cognitive logging (fire-and-forget)
   if (cognitiveCtx.nextAction) {
     Promise.resolve(
@@ -4308,6 +4633,20 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     // Omitting (vs. including null) keeps the wire shape backward-compatible
     // with clients that haven't been updated to read this field yet.
     ...(structured ? { structured } : {}),
+    // ── Part B1: evidential quiz-me contract on the wire ───────────────────
+    // Present ONLY on a "Quiz me" turn. `quizMe.evidential` tells the client
+    // whether answering moves mastery: when true, the client POSTs
+    // { served_item_id, chosen_index, attempt_id, response_time_ms } to
+    // /api/foxy/quiz-answer to commit the graded result through the sanctioned
+    // path. When false, the MCQ is practice-only (no mastery move) and the
+    // client renders it without the served_item_id (no grade endpoint call).
+    ...(isQuizMe
+      ? {
+          quizMe: quizMeEvidential
+            ? { evidential: true as const, servedItemId: evidentialServedItemId }
+            : { evidential: false as const, reason: quizMeNonEvidentialReason },
+        }
+      : {}),
   });
 }
 

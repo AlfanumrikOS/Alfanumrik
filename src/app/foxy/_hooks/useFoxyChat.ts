@@ -34,7 +34,7 @@ import type {
   SuggestedAlternative,
 } from '@/components/foxy/ChatBubble';
 import type { FoxyResponse } from '@/lib/foxy/schema';
-import type { ChatMessage, StreamingCallbacks } from '../_lib/foxy-types';
+import type { ChatMessage, StreamingCallbacks, QuizMeWire } from '../_lib/foxy-types';
 
 /* ══════════════════════════════════════════════════════════════
    STREAMING — Phase 1.1
@@ -176,6 +176,8 @@ export async function callFoxyTutor(params: Record<string, any> & { language?: s
       structured:             (data.structured as FoxyResponse | undefined) ?? undefined,
       badgeState:             (data.badgeState as ('verified' | 'check_manually' | 'none' | 'out_of_scope') | undefined) ?? undefined,
       messageId:              typeof data.messageId === 'string' ? data.messageId : null,
+      // Part B1: evidential "Quiz me" contract (present only on a quiz_me turn).
+      quizMe:                 (data.quizMe as QuizMeWire | undefined) ?? undefined,
     };
   } catch (err) {
     console.error('[Foxy] Network error:', err);
@@ -410,6 +412,42 @@ export interface LearningActionInput {
   chapterNumber?: number | null;
 }
 
+/**
+ * Part B1 — input for the evidential grade call (POST /api/foxy/quiz-answer).
+ * `attemptId` is client-generated (uuid) and serves as the idempotency key.
+ */
+export interface SubmitQuizAnswerInput {
+  servedItemId: string;
+  chosenIndex: number;        // 0..3
+  attemptId: string;          // client-generated uuid (idempotency key)
+  responseTimeMs: number;     // time from item shown to answer
+}
+
+/**
+ * Part B1 — normalized result of the evidential grade call. Never throws: a
+ * network/parse failure resolves to { ok:false, error:'network' } so the UI
+ * can offer a non-blocking retry. Server error codes are surfaced verbatim
+ * so the renderer can localise the message (P7).
+ */
+export type SubmitQuizAnswerResult =
+  | {
+      ok: true;
+      correct: boolean;
+      correctIndex: number;
+      mastery: { conceptId: string; masteryMean: number; attempts: number; mastered: boolean };
+    }
+  | {
+      ok: false;
+      /** Stable error code the UI maps to a bilingual message. */
+      error:
+        | 'already_answered'   // 409
+        | 'too_fast'           // 422
+        | 'not_evidential'     // 422 / 404 not_found
+        | 'unauthenticated'    // 401
+        | 'bad_request'        // 400
+        | 'network';           // fetch threw / 500 / unknown
+    };
+
 export interface UseFoxyChatResult {
   messages: ChatMessage[];
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
@@ -429,6 +467,13 @@ export interface UseFoxyChatResult {
    * the same Bearer/cookie auth construction as the chat protocol.
    */
   recordLearningAction: (input: LearningActionInput) => Promise<boolean>;
+  /**
+   * Part B1 — grade an evidential "Quiz me" answer through the sanctioned
+   * mastery pipeline (POST /api/foxy/quiz-answer). Only call this when the
+   * served item is evidential (quizMe.evidential === true). Never throws;
+   * resolves to a normalized result the renderer maps to a bilingual state.
+   */
+  submitQuizAnswer: (input: SubmitQuizAnswerInput) => Promise<SubmitQuizAnswerResult>;
 }
 
 /**
@@ -493,6 +538,82 @@ export function useFoxyChat(): UseFoxyChatResult {
       return false;
     }
   }, []);
+
+  // Part B1 — evidential grade call. Mirrors the Bearer/cookie auth
+  // construction used by callFoxyTutor / recordLearningAction so it works
+  // behind authorizeRequest. Never throws: returns a normalized result the
+  // MCQ renderer maps to a bilingual state. The SERVER is authoritative for
+  // grading, the 3s floor, idempotency, and the mastery move.
+  const submitQuizAnswer = useCallback(
+    async (input: SubmitQuizAnswerInput): Promise<SubmitQuizAnswerResult> => {
+      try {
+        let accessToken: string | null = null;
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          accessToken = session?.access_token ?? null;
+        } catch { /* cookie fallback in authorizeRequest */ }
+
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+
+        const res = await fetch('/api/foxy/quiz-answer', {
+          method: 'POST',
+          headers,
+          credentials: 'include',
+          body: JSON.stringify({
+            served_item_id: input.servedItemId,
+            chosen_index: input.chosenIndex,
+            attempt_id: input.attemptId,
+            response_time_ms: input.responseTimeMs,
+          }),
+        });
+
+        let body: Record<string, unknown> | null = null;
+        try { body = await res.json(); } catch { /* may be empty */ }
+
+        if (res.ok && body?.ok === true) {
+          const mastery = (body.mastery ?? {}) as Record<string, unknown>;
+          return {
+            ok: true,
+            correct: body.correct === true,
+            correctIndex: typeof body.correct_index === 'number' ? body.correct_index : -1,
+            mastery: {
+              conceptId: typeof mastery.concept_id === 'string' ? mastery.concept_id : '',
+              masteryMean: typeof mastery.mastery_mean === 'number' ? mastery.mastery_mean : 0,
+              attempts: typeof mastery.attempts === 'number' ? mastery.attempts : 0,
+              mastered: mastery.mastered === true,
+            },
+          };
+        }
+
+        // Map server status/error codes → stable UI codes (P7-localised by caller).
+        const serverError = typeof body?.error === 'string' ? body.error : '';
+        if (res.status === 401) return { ok: false, error: 'unauthenticated' };
+        if (res.status === 400) return { ok: false, error: 'bad_request' };
+        if (res.status === 409 || serverError === 'already_answered') {
+          return { ok: false, error: 'already_answered' };
+        }
+        if (res.status === 422 && serverError === 'too_fast') {
+          return { ok: false, error: 'too_fast' };
+        }
+        // 422 not_evidential, or 404 (served_item_not_found / not_found /
+        // no_student_profile) → the item cannot move mastery this turn.
+        if (
+          serverError === 'not_evidential' ||
+          serverError === 'served_item_not_found' ||
+          serverError === 'not_found' ||
+          serverError === 'no_student_profile'
+        ) {
+          return { ok: false, error: 'not_evidential' };
+        }
+        // 500 / unknown → non-blocking retry path.
+        return { ok: false, error: 'network' };
+      } catch {
+        return { ok: false, error: 'network' };
+      }
+    },
+    [],
+  );
 
   const sendMessage = useCallback(async (
     payload: FoxySendPayload,
@@ -729,6 +850,9 @@ export function useFoxyChat(): UseFoxyChatResult {
         structured: resp.structured,
         badgeState: resp.badgeState,
         persistedMessageId: resp.messageId ?? undefined,
+        // Part B1: stamp the evidential contract so the MCQ renderer knows
+        // whether answering moves mastery (evidential) or is practice-only.
+        quizMe: resp.quizMe,
       }]);
       if (resp.upgradePrompt) {
         const up = resp.upgradePrompt;
@@ -782,5 +906,6 @@ export function useFoxyChat(): UseFoxyChatResult {
     clearMessages,
     sendMessage,
     recordLearningAction,
+    submitQuizAnswer,
   };
 }
