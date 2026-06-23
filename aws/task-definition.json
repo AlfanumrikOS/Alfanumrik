@@ -4,8 +4,8 @@
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "1024",
   "memory": "2048",
-  "executionRoleArn": "arn:aws:iam::032064442164:role/alfa-ecs-execution",
-  "taskRoleArn": "arn:aws:iam::032064442164:role/alfa-ecs-task",
+  "executionRoleArn": "arn:aws:iam::032064442164:role/alfa-prod-ecs-execution",
+  "taskRoleArn": "arn:aws:iam::032064442164:role/alfa-prod-ecs-task",
   "containerDefinitions": [
     {
       "name": "web",

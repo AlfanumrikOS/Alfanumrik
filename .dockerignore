@@ -12,7 +12,11 @@ npm-debug.log*
 !.next/standalone
 
 # Supabase (functions run on Supabase cloud, not in this container)
+# _shared/ must be included — Next.js src files import from it at build time
 supabase/
+!supabase/functions/
+!supabase/functions/_shared/
+!supabase/functions/_shared/**
 
 # Mobile app
 mobile/

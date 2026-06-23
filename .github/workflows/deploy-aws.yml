@@ -108,7 +108,6 @@ jobs:
           REPO="${{ env.ECR_REPOSITORY }}"
           echo "sha_tag=${SHA_TAG}" >> "$GITHUB_OUTPUT"
           echo "image_sha=${ECR_REGISTRY}/${REPO}:${SHA_TAG}" >> "$GITHUB_OUTPUT"
-          echo "image_latest=${ECR_REGISTRY}/${REPO}:latest" >> "$GITHUB_OUTPUT"
           echo "registry=${ECR_REGISTRY}" >> "$GITHUB_OUTPUT"
 
       - name: Build Docker image
@@ -126,19 +125,18 @@ jobs:
             --build-arg NEXT_PUBLIC_POSTHOG_ENABLED="${{ secrets.NEXT_PUBLIC_POSTHOG_ENABLED }}" \
             --build-arg NODE_OPTIONS="--max-old-space-size=6144" \
             --tag "${{ steps.meta.outputs.image_sha }}" \
-            --tag "${{ steps.meta.outputs.image_latest }}" \
             --file Dockerfile \
             .
         env:
           NODE_OPTIONS: --max-old-space-size=6144
 
-      - name: Push image to ECR (SHA tag + latest)
+      - name: Push image to ECR (SHA tag only)
         id: push
         run: |
+          # Only push the immutable SHA tag. ECR tag immutability is ON —
+          # :latest cannot be overwritten once pushed. ECS always deploys
+          # from the SHA-pinned URI, never :latest.
           docker push "${{ steps.meta.outputs.image_sha }}"
-          docker push "${{ steps.meta.outputs.image_latest }}"
-          # Output the canonical image URI (SHA-pinned) for the deploy job.
-          # Never deploy :latest to ECS — always use the immutable SHA tag.
           echo "image_uri=${{ steps.meta.outputs.image_sha }}" >> "$GITHUB_OUTPUT"
           echo "Pushed: ${{ steps.meta.outputs.image_sha }}"
 
