@@ -36,3 +36,59 @@ export function hasSupabaseIntegrationEnv(): boolean {
 
   return !looksLikePlaceholder;
 }
+
+/**
+ * The shape of the per-test context object Vitest passes to a test body
+ * (`it('...', (ctx) => {...})`). We only need `.skip()` from it. Declared
+ * locally so callers don't have to import Vitest's `TestContext` type.
+ */
+export interface SkippableTestContext {
+  skip: (note?: string) => void;
+}
+
+/**
+ * Gracefully SKIP a live-DB integration test when a required SEED-DATA row is
+ * absent on the target database — instead of HARD-FAILING with an assertion.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * The integration lane (`RUN_INTEGRATION_TESTS=1`) runs against a live but
+ * SEED-LESS CI Supabase DB. The migration `*-e2e.test.ts` files need fixtures
+ * that DB doesn't have (an existing student / foxy_session / chapter_concepts /
+ * concept_mastery row, active curriculum_topics, question_bank rows, …). They
+ * already self-skip when integration CREDS are absent (`hasSupabaseIntegrationEnv`);
+ * they must ALSO skip when the required SUBSTRATE is absent — turning the lane
+ * from always-red into green/skip while keeping FULL assertions when the data
+ * IS present.
+ *
+ * CONTRACT
+ * --------
+ * - When `present` is falsy (no row / empty array / null), this calls
+ *   `ctx.skip(...)`, which Vitest records as a SKIP (not a pass, not a fail) and
+ *   aborts the rest of the test body. The `label` is surfaced in the report so
+ *   the missing-substrate gap stays VISIBLE.
+ * - When `present` is truthy, this is a no-op and the test runs its full
+ *   assertions unchanged.
+ *
+ * This NEVER weakens an assertion that runs when data is present — it only
+ * converts "precondition missing -> FAIL" into "precondition missing -> SKIP".
+ *
+ * @example
+ *   it('...', (ctx) => {
+ *     skipIfNoSubstrate(ctx, available, 'no foxy_session / chapter_concepts to reuse');
+ *     // …full assertions, only reached when the substrate exists…
+ *   });
+ */
+export function skipIfNoSubstrate(
+  ctx: SkippableTestContext,
+  present: unknown,
+  label: string,
+): void {
+  const missing =
+    present == null ||
+    present === false ||
+    (Array.isArray(present) && present.length === 0);
+  if (missing) {
+    ctx.skip(`[integration] substrate not present on this DB — ${label}`);
+  }
+}
