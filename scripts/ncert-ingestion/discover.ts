@@ -7,16 +7,23 @@
  *
  * Usage:
  *   npx tsx scripts/ncert-ingestion/discover.ts
+ *   npx tsx scripts/ncert-ingestion/discover.ts --source "./data/NCERT books"
  *
- * Looks in: data/ncert-books/ (relative to project root)
+ * Looks in: data/NCERT books/ (relative to project root) by default
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 
-const STAGING_DIR = path.join(process.cwd(), 'data', 'ncert-books');
+// Allow --source override from CLI
+const sourceArgIdx = process.argv.indexOf('--source');
+const STAGING_DIR = sourceArgIdx >= 0 && process.argv[sourceArgIdx + 1]
+  ? path.resolve(process.argv[sourceArgIdx + 1])
+  : path.join(process.cwd(), 'data', 'NCERT books');
 
 const CLASS_TO_GRADE: Record<string, string> = {
+  'grade 6': '6', 'grade 7': '7', 'grade 8': '8',
+  'grade 9': '9', 'grade 10': '10', 'grade 11': '11', 'grade 12': '12',
   'class 6': '6', 'class-6': '6', 'class6': '6',
   'class 7': '7', 'class-7': '7', 'class7': '7',
   'class 8': '8', 'class-8': '8', 'class8': '8',
@@ -29,21 +36,27 @@ const CLASS_TO_GRADE: Record<string, string> = {
 };
 
 const SUBJECT_NORMALIZE: Record<string, string> = {
+  // Most-specific first to avoid 'science' swallowing compound subjects
+  'social science': 'social_studies', 'social studies': 'social_studies',
+  'samajik vigyan': 'social_studies',
+  'computer science': 'computer_science',
+  'informatics practices': 'informatics_practices',
+  'informatics practice': 'informatics_practices',
+  'political science': 'political_science', 'rajniti vigyan': 'political_science',
+  'business studies': 'business_studies',
+  // Then single-word subjects
   'mathematics': 'math', 'maths': 'math', 'math': 'math', 'ganit': 'math',
-  'science': 'science', 'vigyan': 'science',
   'physics': 'physics', 'bhautiki': 'physics',
   'chemistry': 'chemistry', 'rasayan': 'chemistry',
   'biology': 'biology', 'jeev vigyan': 'biology',
-  'english': 'english', 'hindi': 'hindi',
-  'social science': 'social_studies', 'social studies': 'social_studies',
-  'samajik vigyan': 'social_studies',
+  'science': 'science', 'vigyan': 'science',
+  'english': 'english',
+  'hindi': 'hindi',
+  'sanskrit': 'sanskrit',
   'economics': 'economics', 'arthshastra': 'economics',
   'accountancy': 'accountancy', 'lekhashastra': 'accountancy',
-  'business studies': 'business_studies',
-  'political science': 'political_science', 'rajniti vigyan': 'political_science',
   'history': 'history_sr', 'itihas': 'history_sr',
   'geography': 'geography', 'bhugol': 'geography',
-  'computer science': 'computer_science',
 };
 
 interface DiscoveredFile {
@@ -167,7 +180,7 @@ function main() {
   console.error('');
   if (ready.length > 0) {
     console.error('✅ To run full ingestion:');
-    console.error(`   npx tsx scripts/ncert-ingestion/ingest.ts --source "${STAGING_DIR}"`);
+    console.error(`   npx tsx --env-file=.env.local scripts/ncert-ingestion/ingest-local.ts --source "${STAGING_DIR}"`);
   }
 }
 

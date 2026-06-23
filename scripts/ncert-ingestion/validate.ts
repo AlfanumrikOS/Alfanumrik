@@ -81,16 +81,18 @@ async function main() {
   });
 
   // Check 3: Coverage per grade/subject
-  const { data: coverageData } = await supabase
-    .from('rag_content_chunks')
-    .select('grade, subject')
-    .eq('is_active', true)
-    .eq('source', 'ncert_2025');
-
+  // Build coverage map using per-combo COUNT queries — avoids Supabase JS row limits.
   const coverage: Record<string, number> = {};
-  for (const row of coverageData || []) {
-    const key = `${row.grade}|${row.subject}`;
-    coverage[key] = (coverage[key] || 0) + 1;
+  for (const [grade, subjects] of Object.entries(EXPECTED_SUBJECTS)) {
+    for (const subject of subjects) {
+      const { count } = await supabase
+        .from('rag_content_chunks')
+        .select('id', { count: 'exact', head: true })
+        .eq('is_active', true)
+        .eq('grade_short', grade)
+        .eq('subject_code', subject);
+      coverage[`${grade}|${subject}`] = count ?? 0;
+    }
   }
 
   let gapsFound = 0;

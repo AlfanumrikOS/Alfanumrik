@@ -43,7 +43,12 @@
     "flags:check": "npx tsx scripts/sync-production-flags.ts --check",
     "flags:sync": "npx tsx scripts/sync-production-flags.ts --apply",
     "flags:reset": "npx tsx scripts/sync-production-flags.ts --reset --force",
-    "check:edge-logs": "node scripts/security/check-edge-logs.mjs"
+    "check:edge-logs": "node scripts/security/check-edge-logs.mjs",
+    "ncert:discover": "npx tsx --env-file=.env.local scripts/ncert-ingestion/discover.ts --source \"./data/NCERT books\"",
+    "ncert:ingest": "npx tsx --env-file=.env.local scripts/ncert-ingestion/ingest-local.ts",
+    "ncert:embed": "npx tsx --env-file=.env.local scripts/ncert-ingestion/embed-chunks.ts",
+    "ncert:validate": "npx tsx --env-file=.env.local scripts/ncert-ingestion/validate.ts",
+    "ncert:pipeline": "npm run ncert:ingest && npm run ncert:validate"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
