@@ -13,10 +13,22 @@ vi.mock('@/lib/school-admin-auth', () => ({
 vi.mock('@/lib/audit', () => ({ logSchoolAudit: vi.fn() }));
 vi.mock('@/lib/logger', () => ({ logger: { warn: vi.fn(), error: vi.fn() } }));
 
-let mockClassResult: any = { data: { id: 'cls-1' }, error: null };
+// Teacher assignment lives in the class_teachers junction table — the classes
+// table has NO teacher_id column. The route SELECTs the class (tenant check),
+// SELECTs the teacher (cross-school check), then UPSERTs into class_teachers.
+let mockClassResult: any = {
+  data: { id: 'cls-1', name: 'Class 9A', grade: '9', section: 'A' },
+  error: null,
+};
 let mockTeacherResult: any = { data: { id: 'tch-1' }, error: null };
-let mockUpdateResult: any = {
-  data: { id: 'cls-1', name: 'Class 9A', grade: '9', teacher_id: 'tch-1' },
+let mockAssignmentResult: any = {
+  data: {
+    id: 'asg-1',
+    class_id: 'cls-1',
+    teacher_id: 'tch-1',
+    role: 'teacher',
+    is_active: true,
+  },
   error: null,
 };
 
@@ -33,13 +45,6 @@ vi.mock('@/lib/supabase-admin', () => ({
               }),
             }),
           }),
-          update: () => ({
-            eq: () => ({
-              eq: () => ({
-                select: () => ({ single: vi.fn().mockResolvedValue(mockUpdateResult) }),
-              }),
-            }),
-          }),
         };
       }
       if (table === 'teachers') {
@@ -48,6 +53,13 @@ vi.mock('@/lib/supabase-admin', () => ({
             eq: () => ({
               eq: () => ({ maybeSingle: vi.fn().mockResolvedValue(mockTeacherResult) }),
             }),
+          }),
+        };
+      }
+      if (table === 'class_teachers') {
+        return {
+          upsert: () => ({
+            select: () => ({ single: vi.fn().mockResolvedValue(mockAssignmentResult) }),
           }),
         };
       }
@@ -86,8 +98,21 @@ function makeReq(body: unknown) {
 describe('PATCH /api/school-admin/classes/[classId]', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockClassResult = { data: { id: 'cls-1' }, error: null };
+    mockClassResult = {
+      data: { id: 'cls-1', name: 'Class 9A', grade: '9', section: 'A' },
+      error: null,
+    };
     mockTeacherResult = { data: { id: 'tch-1' }, error: null };
+    mockAssignmentResult = {
+      data: {
+        id: 'asg-1',
+        class_id: 'cls-1',
+        teacher_id: 'tch-1',
+        role: 'teacher',
+        is_active: true,
+      },
+      error: null,
+    };
   });
 
   it('returns 403 when not authorized', async () => {
