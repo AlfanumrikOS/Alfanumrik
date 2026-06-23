@@ -54,7 +54,9 @@ This roadmap defines the three planned releases of AEOS, each with a theme, scop
 - AI evaluation methodology defines measurable quality metrics and a repeatable harness.
 - `VERSION`, `CHANGELOG.md`, and `ROADMAP.md` are updated for the 1.1 release, with migration notes where applicable.
 
-**Status:** Planned
+**Status:** Complete (pending release commit)
+
+**Acceptance:** The 12 operational documents across `playbooks/` (4), `runbooks/` (5), `guides/` (2), and `checklists/` (1) are authored, grounded in the real Alfanumrik repository, and all cross-references are validated (0 dangling).
 
 ---
 

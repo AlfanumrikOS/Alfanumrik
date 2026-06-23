@@ -1,6 +1,6 @@
 # Alfanumrik Engineering Operating System (AEOS)
 
-> **Version:** 1.0.0 - **Status:** v1.0 corpus complete (pending release commit) - **Last reconciled:** 2026-06-23
+> **Version:** 1.1.0 - **Status:** v1.1 operational layer complete (pending release commit) - **Last reconciled:** 2026-06-23
 > Numbers and inventory below are point-in-time and updated per release.
 
 AEOS is a **versioned internal product** - the engineering constitution that governs every engineering activity performed by Claude Code and future AI agents working on Alfanumrik.
@@ -23,6 +23,10 @@ AEOS/
   docs/
     00_AI_CONSTITUTION.md ... 29_CONTINUOUS_IMPROVEMENT.md   # platform-agnostic core
     extensions/           # platform/vendor binding modules
+  playbooks/              # operational intelligence - AI workflows + prompt/eval/MCP (v1.1)
+  runbooks/               # operational intelligence - AWS/GitHub/Supabase ops, SRE, DR (v1.1)
+  guides/                 # operational intelligence - optimization + performance tuning (v1.1)
+  checklists/             # operational intelligence - consolidated operational checklists (v1.1)
 ```
 
 ## Authority Hierarchy
@@ -85,6 +89,34 @@ The AEOS core is platform-agnostic. Vendor- and platform-specific bindings live 
 - `docs/extensions/razorpay.md` - Razorpay payment integration, webhook verification, and subscription binding.
 - `docs/extensions/supabase.md` - Supabase Postgres, RLS, RPC, Auth, and Edge Function binding (live backend).
 - `docs/extensions/vercel.md` - Vercel hosting, build, and deployment binding (live web host, bom1/Mumbai).
+
+## Operational Layer (v1.1)
+
+The v1.1 release adds an operational layer of 12 documents across four new top-level folders (`playbooks/`, `runbooks/`, `guides/`, `checklists/`). Where v1.0 establishes the *standards and principles* (how to engineer well), v1.1 provides the *operational how-to* (how to run, operate, optimize, and recover the platform day to day). The two layers are complementary: v1.0 is the constitution, v1.1 is the operating manual.
+
+### Playbooks (`playbooks/`)
+
+- `playbooks/ai-workflows.md` - end-to-end AI workflow playbooks for building and shipping AI features.
+- `playbooks/prompt-engineering.md` - prompt design, iteration, and template conventions.
+- `playbooks/ai-evaluation.md` - AI evaluation methodology, quality metrics, and repeatable harness.
+- `playbooks/mcp-playbooks.md` - MCP server operations and integration playbooks.
+
+### Runbooks (`runbooks/`)
+
+- `runbooks/aws-operations.md` - AWS operational procedures for the cloud platform.
+- `runbooks/github-operations.md` - GitHub operations (repos, CI/CD, workflow management).
+- `runbooks/sre.md` - site reliability engineering procedures and on-call practice.
+- `runbooks/disaster-recovery.md` - disaster recovery procedures with explicit, testable recovery steps and objectives.
+- `runbooks/supabase-operations.md` - Supabase operational procedures (database, RLS, Edge Functions).
+
+### Guides (`guides/`)
+
+- `guides/optimization.md` - systematic optimization guidance across the stack.
+- `guides/performance-tuning.md` - performance tuning techniques and measurement practice.
+
+### Checklists (`checklists/`)
+
+- `checklists/operational-checklists.md` - consolidated operational checklists for routine and incident workflows.
 
 ## Document Standard
 
