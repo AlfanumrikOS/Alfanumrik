@@ -161,7 +161,10 @@ function masteryRow(
 ): any {
   return {
     topic_id: `topic-${opts.chapter ?? 5}-${opts.conceptTag ?? 'x'}`,
-    mastery_level: mastery,
+    // Canonical numeric posterior lives in mastery_probability. The selector
+    // reads .mastery_probability (the post-quiz writer stores the BKT posterior
+    // here + p_know; mastery_level is now a TEXT band label, never a number).
+    mastery_probability: mastery,
     next_review_at: opts.dueAt ?? null,
     curriculum_topics: {
       subject_id: 'subj-uuid-1',

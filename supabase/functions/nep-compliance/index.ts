@@ -170,16 +170,18 @@ async function generateHPC(
     .from('concept_mastery')
     .select(`
       topic_id,
-      mastery_level,
+      mastery_probability,
       total_attempts,
       correct_attempts,
       curriculum_topics(title, chapter_number, subject_id, subjects(name, code))
     `)
     .eq('student_id', studentId)
 
+  // mastery_probability is the canonical numeric posterior (0-1);
+  // mastery_level is a TEXT band label and is not read numerically here.
   const masteryList = (masteryRows ?? []) as Array<{
     topic_id: string
-    mastery_level: number
+    mastery_probability: number
     total_attempts: number
     correct_attempts: number
     curriculum_topics: {
@@ -241,7 +243,7 @@ async function generateHPC(
   for (const [subject, masteries] of masteryBySubject) {
     const avgMastery = masteries.length > 0
       ? Math.round(
-          (masteries.reduce((sum, m) => sum + (m.mastery_level ?? 0), 0) / masteries.length) * 100,
+          (masteries.reduce((sum, m) => sum + (m.mastery_probability ?? 0), 0) / masteries.length) * 100,
         )
       : 0
 
@@ -347,14 +349,14 @@ async function generateHPC(
 
   // Mastery milestones (topics with mastery >= 0.9)
   const masteredTopics = masteryList
-    .filter((m) => m.mastery_level >= 0.9 && m.curriculum_topics?.title)
-    .sort((a, b) => b.mastery_level - a.mastery_level)
+    .filter((m) => m.mastery_probability >= 0.9 && m.curriculum_topics?.title)
+    .sort((a, b) => b.mastery_probability - a.mastery_probability)
     .slice(0, 5)
 
   for (const m of masteredTopics) {
     portfolioHighlights.push({
       type: 'mastery',
-      description: `Mastered "${m.curriculum_topics!.title}" (${Math.round(m.mastery_level * 100)}%)`,
+      description: `Mastered "${m.curriculum_topics!.title}" (${Math.round(m.mastery_probability * 100)}%)`,
       date: new Date().toISOString().substring(0, 10), // TODO: Use actual mastery date from updated_at
     })
   }

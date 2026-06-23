@@ -119,7 +119,11 @@ export interface SelectAdaptiveQuestionsResult {
 
 interface ConceptMasteryJoinRow {
   topic_id: string;
-  mastery_level: number;
+  /**
+   * Canonical numeric posterior (0-1) from concept_mastery.mastery_probability.
+   * NOT concept_mastery.mastery_level — that is now a TEXT band label, never a number.
+   */
+  mastery_probability: number;
   next_review_at: string | null;
   // PostgREST returns the embedded relation as an object (one-to-one via !inner)
   // or, depending on FK cardinality inference, as an array. Handle both.
@@ -236,12 +240,12 @@ export async function selectAdaptiveQuestions(
     const { data, error } = await client
       .from('concept_mastery')
       .select(
-        'topic_id, mastery_level, next_review_at, curriculum_topics!inner(subject_id, chapter_number, concept_tag)',
+        'topic_id, mastery_probability, next_review_at, curriculum_topics!inner(subject_id, chapter_number, concept_tag)',
       )
       .eq('student_id', studentId)
       .eq('curriculum_topics.subject_id', subjectId)
-      .lt('mastery_level', 0.95)
-      .order('mastery_level', { ascending: true })
+      .lt('mastery_probability', 0.95)
+      .order('mastery_probability', { ascending: true })
       .limit(20);
     if (error || !Array.isArray(data)) {
       return { questions: [], weakTopicsTargeted: 0 };
@@ -260,7 +264,7 @@ export async function selectAdaptiveQuestions(
     const aDue = a.next_review_at && a.next_review_at <= now ? 1 : 0;
     const bDue = b.next_review_at && b.next_review_at <= now ? 1 : 0;
     if (bDue !== aDue) return bDue - aDue;
-    return a.mastery_level - b.mastery_level;
+    return a.mastery_probability - b.mastery_probability;
   });
 
   // Allocate slots per weak topic, then pull a candidate pool per topic.
@@ -276,7 +280,7 @@ export async function selectAdaptiveQuestions(
 
     const { chapter_number: chapterNum, concept_tag: conceptTag } = normaliseTopicJoin(topic);
     // 2. BLOOM CEILING — cap by mastery (scaffolded progression).
-    const allowedBlooms = getBloomLevelsUpTo(masteryToMaxBloomLevel(topic.mastery_level));
+    const allowedBlooms = getBloomLevelsUpTo(masteryToMaxBloomLevel(topic.mastery_probability));
     const need = Math.min(slotsPerTopic, count - picked.length);
 
     // Candidate pool for this topic. P6: active, MCQ-shaped, valid-only is

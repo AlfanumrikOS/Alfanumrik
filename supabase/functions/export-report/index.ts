@@ -245,7 +245,7 @@ async function generateClassPerformanceReport(
   // Fetch mastery counts
   const { data: masteryRows } = await supabase
     .from('concept_mastery')
-    .select('student_id, mastery_level')
+    .select('student_id, mastery_probability')
     .in('student_id', studentIds)
 
   // Build per-student summary
@@ -263,10 +263,12 @@ async function generateClassPerformanceReport(
     sessionMap.set(s.student_id, arr)
   }
 
+  // mastery_probability is the canonical numeric posterior (0-1);
+  // mastery_level is a TEXT band label and must not be read as a number.
   const masteryMap = new Map<string, number[]>()
   for (const m of (masteryRows ?? [])) {
     const arr = masteryMap.get(m.student_id) ?? []
-    arr.push(m.mastery_level)
+    arr.push(Number(m.mastery_probability) || 0)
     masteryMap.set(m.student_id, arr)
   }
 
@@ -342,6 +344,7 @@ async function generateStudentHpcReport(
     .from('concept_mastery')
     .select(`
       topic_id,
+      mastery_probability,
       mastery_level,
       total_attempts,
       correct_attempts,
@@ -350,7 +353,7 @@ async function generateStudentHpcReport(
       curriculum_topics(title, chapter_number, subject_id, subjects(name, code))
     `)
     .eq('student_id', studentId)
-    .order('mastery_level', { ascending: false })
+    .order('mastery_probability', { ascending: false })
     .limit(100)
 
   const { data: recentSessions } = await supabase
@@ -410,7 +413,7 @@ async function generateStudentHpcReport(
       subject_name: subjectInfo?.name ?? null,
       subject_code: subjectInfo?.code ?? null,
       mastery_level: m.mastery_level,
-      mastery_pct: Math.round(((m.mastery_level as number) ?? 0) * 100),
+      mastery_pct: Math.round((Number(m.mastery_probability) || 0) * 100),
       total_attempts: m.total_attempts,
       correct_attempts: m.correct_attempts,
       last_reviewed_at: m.last_reviewed_at,
@@ -494,14 +497,15 @@ async function generateParentWeeklyReport(
     .from('concept_mastery')
     .select(`
       topic_id,
+      mastery_probability,
       mastery_level,
       updated_at,
       curriculum_topics(title, subjects(name))
     `)
     .eq('student_id', studentId)
     .gte('updated_at', sevenDaysAgo)
-    .gte('mastery_level', 0.65)
-    .order('mastery_level', { ascending: false })
+    .gte('mastery_probability', 0.65)
+    .order('mastery_probability', { ascending: false })
     .limit(10)
 
   // Current streak
@@ -560,7 +564,7 @@ async function generateParentWeeklyReport(
       topic_id: m.topic_id,
       topic_title: topic?.title ?? null,
       subject_name: subject?.name ?? null,
-      mastery_pct: Math.round(((m.mastery_level as number) ?? 0) * 100),
+      mastery_pct: Math.round((Number(m.mastery_probability) || 0) * 100),
       updated_at: m.updated_at,
     }
   })

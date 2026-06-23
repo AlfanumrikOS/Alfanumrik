@@ -214,7 +214,7 @@ async function fetchWeeklyStats(
     // Concept mastery for topics gained/lost
     supabase
       .from('concept_mastery')
-      .select('topic_id, mastery_level, updated_at, topics(title)')
+      .select('topic_id, mastery_probability, mastery_level, updated_at, topics(title)')
       .eq('student_id', studentId)
       .gte('updated_at', weekAgoISO)
       .order('updated_at', { ascending: false })
@@ -261,9 +261,14 @@ async function fetchWeeklyStats(
   const masteryLost: string[] = []
   for (const m of masteryData) {
     const topicTitle = (m.topics as unknown as { title: string } | null)?.title || 'Unknown topic'
-    if ((m.mastery_level || 0) >= 80) {
+    // Canonical numeric posterior lives in mastery_probability (0-1); mastery_level
+    // is now a TEXT band label, not a number. Compare on probability*100 so the
+    // thresholds align with the band semantics (>=0.95 mastered, >=0.70 proficient,
+    // >=0.40 developing). >=80% ≈ mastered-ish; <40% ≈ struggling.
+    const masteryPct = (Number(m.mastery_probability) || 0) * 100
+    if (masteryPct >= 80) {
       masteryGained.push(topicTitle)
-    } else if ((m.mastery_level || 0) < 40) {
+    } else if (masteryPct < 40) {
       masteryLost.push(topicTitle)
     }
   }

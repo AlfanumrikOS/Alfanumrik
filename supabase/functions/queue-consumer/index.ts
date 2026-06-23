@@ -306,6 +306,20 @@ async function processNotificationTask(
 
 // ─── Processor: ai_response_processing ──────────────────────────────────
 
+/**
+ * Derive the categorical mastery band from the canonical numeric posterior (0-1).
+ * Matches the band semantics written by `update_learner_state_post_quiz`:
+ *   >=0.95 mastered, >=0.70 proficient, >=0.40 developing, >0 beginner, else not_started.
+ * `concept_mastery.mastery_level` is a TEXT band label — NEVER a number.
+ */
+function deriveMasteryBand(p: number): string {
+  if (p >= 0.95) return 'mastered'
+  if (p >= 0.7) return 'proficient'
+  if (p >= 0.4) return 'developing'
+  if (p > 0) return 'beginner'
+  return 'not_started'
+}
+
 async function processAiResponseTask(
   supabase: SupabaseClient,
   payload: AiSessionPayload,
@@ -324,14 +338,16 @@ async function processAiResponseTask(
   for (const signal of topic_signals) {
     if (!signal.topic_id || typeof signal.confidence_delta !== 'number') continue
 
+    // Canonical numeric posterior lives in mastery_probability (= p_know), 0-1.
+    // mastery_level is a TEXT band label, never a number.
     const { data: existing } = await supabase
       .from('concept_mastery')
-      .select('id, mastery_level')
+      .select('id, mastery_probability')
       .eq('student_id', student_id)
       .eq('topic_id', signal.topic_id)
       .maybeSingle()
 
-    const currentMastery = (existing?.mastery_level as number) ?? 0.1
+    const currentMastery = (Number(existing?.mastery_probability) || 0) || 0.1
     const newMastery = Math.min(
       1,
       Math.max(0, currentMastery + signal.confidence_delta * 0.15),
@@ -342,7 +358,9 @@ async function processAiResponseTask(
         {
           student_id,
           topic_id: signal.topic_id,
-          mastery_level: newMastery,
+          mastery_probability: newMastery,
+          p_know: newMastery,
+          mastery_level: deriveMasteryBand(newMastery),
           last_reviewed_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
