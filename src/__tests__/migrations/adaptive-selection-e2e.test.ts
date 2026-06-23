@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { hasSupabaseIntegrationEnv } from '../helpers/integration';
+import { hasSupabaseIntegrationEnv, skipIfNoSubstrate } from '../helpers/integration';
 
 /**
  * PHASE 1 adaptive-loop fix — END-TO-END regression (integration lane).
@@ -88,6 +88,12 @@ describeIntegration('Phase-1 adaptive-selection e2e (live RPC against migrated D
   let weakTopicQuestionIds: string[] = []; // question_bank rows on weakTopicId
   let excludedQuestionId: string | null = null; // seeded into quiz_responses
   let freshStudentId: string | null = null; // a different student, no mastery on subject
+  // SEED-DATA gate: false when the live DB lacks the fixtures (active
+  // question_bank rows with a topic having >=2 questions, a resolvable
+  // curriculum_topic, a student). Each test skips gracefully via
+  // skipIfNoSubstrate rather than failing on the substrate-less CI DB. A real DB
+  // ERROR still throws (genuine regression).
+  let available = false;
 
   // Cleanup ledgers — only delete rows THIS test created.
   const cmOwned: Array<{ student_id: string; topic_id: string }> = [];
@@ -113,7 +119,8 @@ describeIntegration('Phase-1 adaptive-selection e2e (live RPC against migrated D
       .limit(500);
     if (qbErr) throw new Error(`question_bank probe failed: ${qbErr.message}`);
     if (!qbRows || qbRows.length === 0) {
-      throw new Error('no active question_bank rows with topic_id — cannot run adaptive e2e');
+      // Substrate absent on this DB (seed-less CI) → tests skip, not fail.
+      return;
     }
 
     // Group by topic_id; pick a topic with the MOST questions (so exclusion still
@@ -131,7 +138,8 @@ describeIntegration('Phase-1 adaptive-selection e2e (live RPC against migrated D
       }
     }
     if (!best || best.ids.length < 2) {
-      throw new Error('need a topic with >= 2 active questions for the exclusion test');
+      // No topic with >=2 active questions on this DB → tests skip, not fail.
+      return;
     }
     weakTopicId = best.topic;
     subjectCode = best.subject;
@@ -145,9 +153,12 @@ describeIntegration('Phase-1 adaptive-selection e2e (live RPC against migrated D
       .from('curriculum_topics')
       .select('id, grade, subject_id, subjects:subject_id(code)')
       .eq('id', weakTopicId)
-      .single();
-    if (ctErr || !ctRow) {
-      throw new Error(`curriculum_topics lookup for weak topic failed: ${ctErr?.message}`);
+      .maybeSingle();
+    if (ctErr) throw new Error(`curriculum_topics lookup failed: ${ctErr.message}`);
+    if (!ctRow) {
+      // The question_bank topic doesn't resolve to a curriculum_topics row on
+      // this DB (partial seed) → tests skip, not fail.
+      return;
     }
     // Align grade/subject to what curriculum_topics says (authoritative for the
     // compute_post_quiz_action join). question_bank.grade should match, but if a
@@ -175,8 +186,9 @@ describeIntegration('Phase-1 adaptive-selection e2e (live RPC against migrated D
         .from('students')
         .select('id, grade')
         .limit(1)
-        .single();
-      if (sErr || !anyStudent) throw new Error(`no student available: ${sErr?.message}`);
+        .maybeSingle();
+      if (sErr) throw new Error(`students probe failed: ${sErr.message}`);
+      if (!anyStudent) return; // no seed student on this DB → tests skip
       studentId = anyStudent.id;
       // If the only student is in a different grade, the adaptive grade filter
       // will exclude the weak topic's questions; the seeding below still proves
@@ -279,6 +291,9 @@ describeIntegration('Phase-1 adaptive-selection e2e (live RPC against migrated D
         qrOwned.push({ id: qrData.id });
       }
     }
+
+    // Full substrate located + seeded — the tests may run their assertions.
+    available = true;
   });
 
   afterAll(async () => {
@@ -294,7 +309,8 @@ describeIntegration('Phase-1 adaptive-selection e2e (live RPC against migrated D
   // ───────────────────────────────────────────────────────────────────────
   // (a) get_adaptive_questions
   // ───────────────────────────────────────────────────────────────────────
-  it('CANARY: get_adaptive_questions does not throw and returns the 7-column shape', async () => {
+  it('CANARY: get_adaptive_questions does not throw and returns the 7-column shape', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no question_bank/curriculum_topics/student fixtures to drive the test');
     const { data, error } = await admin.rpc('get_adaptive_questions', {
       p_student_id: studentId,
       p_subject: subjectCode,
@@ -331,7 +347,8 @@ describeIntegration('Phase-1 adaptive-selection e2e (live RPC against migrated D
     );
   });
 
-  it('ranks the DUE + WEAK topic as a review row at the TOP (priority >= 100, not random)', async () => {
+  it('ranks the DUE + WEAK topic as a review row at the TOP (priority >= 100, not random)', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no question_bank/curriculum_topics/student fixtures to drive the test');
     const { data, error } = await admin.rpc('get_adaptive_questions', {
       p_student_id: studentId,
       p_subject: subjectCode,
@@ -376,7 +393,8 @@ describeIntegration('Phase-1 adaptive-selection e2e (live RPC against migrated D
     );
   });
 
-  it('EXCLUDES a question already in quiz_responses for the student', async () => {
+  it('EXCLUDES a question already in quiz_responses for the student', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no question_bank/curriculum_topics/student fixtures to drive the test');
     if (!excludedQuestionId) {
       // eslint-disable-next-line no-console
       console.warn('[adaptive-e2e] exclusion seed unavailable; sub-assertion skipped');
@@ -405,7 +423,8 @@ describeIntegration('Phase-1 adaptive-selection e2e (live RPC against migrated D
     );
   });
 
-  it('a FRESH no-mastery student still gets >= 1 row (fallback never empty)', async () => {
+  it('a FRESH no-mastery student still gets >= 1 row (fallback never empty)', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no question_bank/curriculum_topics/student fixtures to drive the test');
     if (!freshStudentId) {
       // eslint-disable-next-line no-console
       console.warn('[adaptive-e2e] no second same-grade student; fresh-student assertion skipped');
@@ -430,7 +449,8 @@ describeIntegration('Phase-1 adaptive-selection e2e (live RPC against migrated D
   // ───────────────────────────────────────────────────────────────────────
   // (b) compute_post_quiz_action
   // ───────────────────────────────────────────────────────────────────────
-  it('CANARY: compute_post_quiz_action exists and returns a valid action_type', async () => {
+  it('CANARY: compute_post_quiz_action exists and returns a valid action_type', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no question_bank/curriculum_topics/student fixtures to drive the test');
     const { data, error } = await admin.rpc('compute_post_quiz_action', {
       p_student_id: studentId,
       p_subject: subjectCode,
@@ -448,7 +468,8 @@ describeIntegration('Phase-1 adaptive-selection e2e (live RPC against migrated D
     );
   });
 
-  it('NULL current_retention does NOT false-fire revise (falls through to mastery ladder)', async () => {
+  it('NULL current_retention does NOT false-fire revise (falls through to mastery ladder)', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no question_bank/curriculum_topics/student fixtures to drive the test');
     // Our seeded weak row has current_retention NULL + mastery 0.2. The
     // pre-refinement body would have returned 'revise' for any mastery>0.4 row;
     // the refinement gates revise on current_retention IS NOT NULL. With NULL
@@ -474,7 +495,8 @@ describeIntegration('Phase-1 adaptive-selection e2e (live RPC against migrated D
     console.warn('[adaptive-e2e] no-false-revise PROVEN: NULL retention -> action', action);
   });
 
-  it("error_count_conceptual >= 3 returns 'remediate' (Priority 1)", async () => {
+  it("error_count_conceptual >= 3 returns 'remediate' (Priority 1)", async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no question_bank/curriculum_topics/student fixtures to drive the test');
     // Flip the seeded row to a high conceptual-error count; remediate must win.
     const { error: upErr } = await admin
       .from('concept_mastery')

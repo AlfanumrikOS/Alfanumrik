@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { hasSupabaseIntegrationEnv } from '../helpers/integration';
+import { hasSupabaseIntegrationEnv, skipIfNoSubstrate } from '../helpers/integration';
 
 /**
  * SM-2 interval clamp — END-TO-END regression (integration lane).
@@ -101,6 +101,10 @@ describeIntegration('SM-2 interval clamp e2e (live RPC against migrated DB)', ()
   let studentId: string;
   let topicA: string; // 30-streak / sub-cap / mastery-parity pair
   let topicB: string; // idempotent re-run pair (distinct from A)
+  // SEED-DATA gate: false when the live DB lacks a student or >=2 curriculum_topics.
+  // Each test skips gracefully via skipIfNoSubstrate rather than failing on the
+  // substrate-less CI DB. A real DB ERROR still throws (genuine regression).
+  let available = false;
 
   // Cleanup ledger — only delete rows THIS test created.
   const cmOwned: Array<{ student_id: string; topic_id: string }> = [];
@@ -121,13 +125,15 @@ describeIntegration('SM-2 interval clamp e2e (live RPC against migrated DB)', ()
       { auth: { persistSession: false } },
     );
 
-    // Reuse one existing student.
+    // Reuse one existing student. Substrate-absent (seed-less CI DB) => leave
+    // available=false so each test SKIPS. A real DB ERROR still throws.
     const { data: student, error: sErr } = await admin
       .from('students')
       .select('id, grade')
       .limit(1)
-      .single();
-    if (sErr || !student) throw new Error(`no student available: ${sErr?.message}`);
+      .maybeSingle();
+    if (sErr) throw new Error(`students probe failed: ${sErr.message}`);
+    if (!student) return; // no seed student on this DB → tests skip
     studentId = student.id;
 
     // Reuse two distinct existing curriculum_topics rows as the throwaway pairs.
@@ -135,9 +141,8 @@ describeIntegration('SM-2 interval clamp e2e (live RPC against migrated DB)', ()
       .from('curriculum_topics')
       .select('id')
       .limit(2);
-    if (tErr || !topics || topics.length < 2) {
-      throw new Error(`need >= 2 curriculum_topics rows: ${tErr?.message}`);
-    }
+    if (tErr) throw new Error(`curriculum_topics probe failed: ${tErr.message}`);
+    if (!topics || topics.length < 2) return; // < 2 topics → tests skip
     topicA = topics[0].id;
     topicB = topics[1].id;
 
@@ -147,6 +152,8 @@ describeIntegration('SM-2 interval clamp e2e (live RPC against migrated DB)', ()
     await cleanPair(studentId, topicB);
     cmOwned.push({ student_id: studentId, topic_id: topicA });
     cmOwned.push({ student_id: studentId, topic_id: topicB });
+
+    available = true;
   });
 
   afterAll(async () => {
@@ -161,7 +168,8 @@ describeIntegration('SM-2 interval clamp e2e (live RPC against migrated DB)', ()
   // (b) capped interval + valid bounded timestamptz.
   // (c) sub-cap regression: first two intervals 1 -> 6, monotonic, clamps 365.
   // ───────────────────────────────────────────────────────────────────────
-  it('drives 30 consecutive-correct with NO error; interval caps at 365, monotonic, sub-cap unchanged', async () => {
+  it('drives 30 consecutive-correct with NO error; interval caps at 365, monotonic, sub-cap unchanged', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no student / >=2 curriculum_topics to drive the test');
     await cleanPair(studentId, topicA); // independent of any prior `it`
 
     const intervals: number[] = [];
@@ -241,7 +249,8 @@ describeIntegration('SM-2 interval clamp e2e (live RPC against migrated DB)', ()
   // ───────────────────────────────────────────────────────────────────────
   // (d) mastery is interval-independent — identical with the clamp.
   // ───────────────────────────────────────────────────────────────────────
-  it('BKT mastery is unaffected by the clamp (interval-independent): deterministic per-step mastery', async () => {
+  it('BKT mastery is unaffected by the clamp (interval-independent): deterministic per-step mastery', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no student / >=2 curriculum_topics to drive the test');
     // Re-drive the SAME input on the SAME clean pair and prove the per-step
     // mastery trajectory is deterministic and bounded [0,1]. Because BKT depends
     // only on prior mastery + correctness (never the interval), the clamp cannot
@@ -283,7 +292,8 @@ describeIntegration('SM-2 interval clamp e2e (live RPC against migrated DB)', ()
   // ───────────────────────────────────────────────────────────────────────
   // (e) idempotent re-run.
   // ───────────────────────────────────────────────────────────────────────
-  it('idempotent re-run: re-driving the streak on a clean pair reproduces the same capped terminal state', async () => {
+  it('idempotent re-run: re-driving the streak on a clean pair reproduces the same capped terminal state', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no student / >=2 curriculum_topics to drive the test');
     async function driveTerminal(topicId: string): Promise<RpcResult> {
       await cleanPair(studentId, topicId);
       let r: RpcResult | null = null;

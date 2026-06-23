@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { hasSupabaseIntegrationEnv } from '../helpers/integration';
+import { hasSupabaseIntegrationEnv, skipIfNoSubstrate } from '../helpers/integration';
 
 /**
  * get_dashboard_data bloom + knowledge_gaps derivation fix — END-TO-END
@@ -84,6 +84,10 @@ type DashboardData = Record<string, unknown> & {
 describeIntegration('get_dashboard_data derivation e2e (live RPC vs concept_mastery)', () => {
   let admin: SupabaseClient;
   let backfilledStudentId: string;
+  // SEED-DATA gate: false when no student has practiced concept_mastery rows on
+  // this DB. The backfilled-student test skips gracefully via skipIfNoSubstrate
+  // rather than failing on the substrate-less CI DB. A real DB ERROR still throws.
+  let available = false;
 
   beforeAll(async () => {
     const { createClient } = await import('@supabase/supabase-js');
@@ -105,6 +109,7 @@ describeIntegration('get_dashboard_data derivation e2e (live RPC vs concept_mast
       .limit(1);
     if (prefRows && prefRows.length > 0) {
       backfilledStudentId = prefRows[0].student_id;
+      available = true;
       return;
     }
 
@@ -113,18 +118,20 @@ describeIntegration('get_dashboard_data derivation e2e (live RPC vs concept_mast
       .select('student_id')
       .gt('attempts', 0)
       .limit(1);
-    if (error || !anyRows || anyRows.length === 0) {
-      throw new Error(
-        `no student with practiced concept_mastery rows available: ${error?.message ?? 'none'}`,
-      );
+    if (error) throw new Error(`concept_mastery probe failed: ${error.message}`);
+    if (!anyRows || anyRows.length === 0) {
+      // No backfilled student on this DB (seed-less CI) → tests skip, not fail.
+      return;
     }
     backfilledStudentId = anyRows[0].student_id;
+    available = true;
   });
 
   // ───────────────────────────────────────────────────────────────────────
   // Backfilled student: bloom object + knowledge_gaps array hold the contract.
   // ───────────────────────────────────────────────────────────────────────
-  it('returns all ~11 top-level keys, a non-null bloom OBJECT, and a worst-first 5-field knowledge_gaps array', async () => {
+  it('returns all ~11 top-level keys, a non-null bloom OBJECT, and a worst-first 5-field knowledge_gaps array', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, 'no student with practiced concept_mastery rows to derive from');
     const { data, error } = await admin.rpc('get_dashboard_data', {
       p_student_id: backfilledStudentId,
     });
