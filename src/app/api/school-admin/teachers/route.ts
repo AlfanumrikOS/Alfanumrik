@@ -125,18 +125,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Step 1: Insert teacher row
+    const teacherEmail = body.email.trim().toLowerCase();
     const { data: teacher, error: insertError } = await supabase
       .from('teachers')
       .insert({
         school_id: schoolId,
         name: body.name.trim(),
-        email: body.email.trim().toLowerCase(),
+        email: teacherEmail,
         phone: body.phone?.trim() || null,
         subjects_taught: Array.isArray(body.subjects_taught) ? body.subjects_taught : [],
         grades_taught: gradesTaught,
         is_active: true,
       })
-      .select('id, name, email, phone, subjects_taught, grades_taught, is_active, created_at')
+      .select('id')
       .single();
 
     if (insertError) {
@@ -150,17 +152,90 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Step 2: Generate a teacher invite code (TCH-XXXXXXXX)
+    const rawId = crypto.randomUUID().replace(/-/g, '').toUpperCase();
+    const inviteCode = `TCH-${rawId.substring(0, 8)}`;
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { error: codeInsertError } = await supabase.from('school_invite_codes').insert({
+      school_id: schoolId,
+      code: inviteCode,
+      role_type: 'teacher',
+      max_uses: 1,
+      used_count: 0,
+      expires_at: expiresAt,
+      is_active: true,
+    });
+
+    if (codeInsertError) {
+      logger.warn('school_admin_teacher_invite_code_failed', {
+        error: new Error(codeInsertError.message),
+        route: '/api/school-admin/teachers',
+      });
+    }
+
+    // Step 3: Send Supabase auth invite (P15 degradation — teacher row already committed)
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL ??
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ??
+      process.env.NEXT_PUBLIC_SUPABASE_URL ??
+      'https://app.alfanumrik.com';
+    const inviteLink = `${baseUrl}/auth/callback?inviteCode=${inviteCode}&role=teacher`;
+
+    let inviteSent = false;
+    let warnMessage: string | undefined;
+
+    try {
+      const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(teacherEmail, {
+        redirectTo: inviteLink,
+      });
+      if (inviteError) {
+        // Supabase returns 422 when the email is already registered
+        const msg = inviteError.message ?? '';
+        warnMessage =
+          msg.includes('422') || msg.toLowerCase().includes('already')
+            ? 'email_already_registered'
+            : 'invite_email_failed';
+        logger.warn('school_admin_teacher_invite_email_failed', {
+          warn: warnMessage,
+          route: '/api/school-admin/teachers',
+        });
+      } else {
+        inviteSent = true;
+      }
+    } catch (inviteErr) {
+      warnMessage = 'invite_email_failed';
+      logger.warn('school_admin_teacher_invite_email_threw', {
+        error: inviteErr instanceof Error ? inviteErr : new Error(String(inviteErr)),
+        route: '/api/school-admin/teachers',
+      });
+    }
+
+    // Audit — metadata only, never email (P13)
     void logSchoolAudit({
       schoolId,
       actorId: auth.userId ?? 'unknown',
       action: 'teacher.invited',
       resourceType: 'teacher',
       resourceId: teacher.id,
-      metadata: { email: teacher.email, grades_taught: teacher.grades_taught },
+      metadata: {
+        grades_taught: gradesTaught,
+        invite_sent: inviteSent,
+        ...(warnMessage ? { warn: warnMessage } : {}),
+      },
       ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
     });
 
-    return NextResponse.json({ success: true, data: teacher }, { status: 201 });
+    // Step 4: Return narrow envelope — no email, no full teacher object (P13)
+    const responseData: Record<string, unknown> = {
+      teacher_id: teacher.id,
+      invite_code: inviteCode,
+      invite_link: inviteLink,
+      invite_sent: inviteSent,
+    };
+    if (warnMessage) responseData.warn = warnMessage;
+
+    return NextResponse.json({ success: true, data: responseData }, { status: 201 });
   } catch (err) {
     logger.error('school_admin_teachers_post_failed', {
       error: err instanceof Error ? err : new Error(String(err)),
