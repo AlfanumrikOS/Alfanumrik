@@ -92,20 +92,20 @@ describe('PATCH /api/school-admin/classes/[classId]', () => {
 
   it('returns 403 when not authorized', async () => {
     makeAuthFailed();
-    const res = await PATCH(makeReq({ teacher_id: 'tch-1' }), { params: { classId: 'cls-1' } });
+    const res = await PATCH(makeReq({ teacher_id: 'tch-1' }), { params: Promise.resolve({ classId: 'cls-1' }) });
     expect(res.status).toBe(403);
   });
 
   it('returns 400 when teacher_id is missing', async () => {
     makeAuthPassed();
-    const res = await PATCH(makeReq({}), { params: { classId: 'cls-1' } });
+    const res = await PATCH(makeReq({}), { params: Promise.resolve({ classId: 'cls-1' }) });
     expect(res.status).toBe(400);
   });
 
   it('returns 404 when class does not exist in this school', async () => {
     makeAuthPassed();
     mockClassResult = { data: null, error: null };
-    const res = await PATCH(makeReq({ teacher_id: 'tch-1' }), { params: { classId: 'nonexistent' } });
+    const res = await PATCH(makeReq({ teacher_id: 'tch-1' }), { params: Promise.resolve({ classId: 'nonexistent' }) });
     expect(res.status).toBe(404);
   });
 
@@ -113,14 +113,14 @@ describe('PATCH /api/school-admin/classes/[classId]', () => {
     makeAuthPassed();
     mockTeacherResult = { data: null, error: null };
     const res = await PATCH(makeReq({ teacher_id: 'tch-other-school' }), {
-      params: { classId: 'cls-1' },
+      params: Promise.resolve({ classId: 'cls-1' }),
     });
     expect(res.status).toBe(404);
   });
 
   it('returns 200 with updated class including teacher_id on success', async () => {
     makeAuthPassed();
-    const res = await PATCH(makeReq({ teacher_id: 'tch-1' }), { params: { classId: 'cls-1' } });
+    const res = await PATCH(makeReq({ teacher_id: 'tch-1' }), { params: Promise.resolve({ classId: 'cls-1' }) });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);

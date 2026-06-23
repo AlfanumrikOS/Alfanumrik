@@ -7,23 +7,22 @@ import { logSchoolAudit } from '@/lib/audit';
 /**
  * PATCH /api/school-admin/classes/[classId]
  *
- * Assign or reassign a teacher to a class.
+ * Assign a teacher to a class via the class_teachers junction table.
+ * NOTE: the classes table has NO teacher_id column — assignment lives in class_teachers.
  * Permission: class.manage
  *
  * Body: { teacher_id: string }
- *
- * Cross-school safety: validates both class and teacher belong to the admin's school
- * before writing (P8 tenant isolation).
+ * P8: validates both class and teacher belong to admin school before writing.
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { classId: string } }
+  { params }: { params: Promise<{ classId: string }> }
 ) {
   try {
     const auth = await authorizeSchoolAdmin(request, 'class.manage');
     if (!auth.authorized) return auth.errorResponse!;
 
-    const { classId } = params;
+    const { classId } = await params;
     const schoolId = auth.schoolId!;
     const supabase = getSupabaseAdmin();
 
@@ -32,20 +31,15 @@ export async function PATCH(
     }
 
     const body = await request.json();
-
     if (!body.teacher_id || typeof body.teacher_id !== 'string' || !body.teacher_id.trim()) {
-      return NextResponse.json(
-        { success: false, error: 'teacher_id is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'teacher_id is required' }, { status: 400 });
     }
-
     const teacherId = body.teacher_id.trim();
 
-    // Verify class belongs to this school (P8: tenant isolation)
+    // Verify class belongs to this school (P8 tenant isolation)
     const { data: cls } = await supabase
       .from('classes')
-      .select('id')
+      .select('id, name, grade, section, academic_year, subject, class_code, is_active')
       .eq('id', classId)
       .eq('school_id', schoolId)
       .is('deleted_at', null)
@@ -70,18 +64,19 @@ export async function PATCH(
       );
     }
 
-    // Assign the teacher
-    const { data: updated, error: updateError } = await supabase
-      .from('classes')
-      .update({ teacher_id: teacherId })
-      .eq('id', classId)
-      .eq('school_id', schoolId) // double-check tenant isolation
-      .select('id, name, grade, section, academic_year, subject, class_code, is_active, teacher_id')
+    // UPSERT into class_teachers — insert or reactivate existing assignment
+    const { data: assignment, error: upsertError } = await supabase
+      .from('class_teachers')
+      .upsert(
+        { class_id: classId, teacher_id: teacherId, role: 'teacher', is_active: true },
+        { onConflict: 'class_id,teacher_id', ignoreDuplicates: false }
+      )
+      .select('id, class_id, teacher_id, role, is_active')
       .single();
 
-    if (updateError) {
+    if (upsertError) {
       logger.error('school_admin_class_teacher_assign_failed', {
-        error: new Error(updateError.message),
+        error: new Error(upsertError.message),
         route: '/api/school-admin/classes/[classId]',
       });
       return NextResponse.json(
@@ -101,7 +96,19 @@ export async function PATCH(
       ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
     });
 
-    return NextResponse.json({ success: true, data: updated });
+    return NextResponse.json({
+      success: true,
+      data: {
+        assignment_id: assignment.id,
+        class_id: cls.id,
+        class_name: cls.name,
+        grade: cls.grade,     // P5: grade as string "6"-"12"
+        section: cls.section,
+        teacher_id: teacherId,
+        role: assignment.role,
+        is_active: assignment.is_active,
+      },
+    });
   } catch (err) {
     logger.error('school_admin_class_assign_failed', {
       error: err instanceof Error ? err : new Error(String(err)),
