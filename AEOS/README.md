@@ -1,6 +1,6 @@
 # Alfanumrik Engineering Operating System (AEOS)
 
-> **Version:** 1.1.0 - **Status:** v1.1 operational layer complete (pending release commit) - **Last reconciled:** 2026-06-23
+> **Version:** 2.0.0 - **Status:** v2.0 governed-autonomy layer complete (pending release commit) - **Last reconciled:** 2026-06-23
 > Numbers and inventory below are point-in-time and updated per release.
 
 AEOS is a **versioned internal product** - the engineering constitution that governs every engineering activity performed by Claude Code and future AI agents working on Alfanumrik.
@@ -27,6 +27,9 @@ AEOS/
   runbooks/               # operational intelligence - AWS/GitHub/Supabase ops, SRE, DR (v1.1)
   guides/                 # operational intelligence - optimization + performance tuning (v1.1)
   checklists/             # operational intelligence - consolidated operational checklists (v1.1)
+  autonomy/               # governed autonomy - multi-agent orchestration, planning, verification (v2.0)
+  memory/                 # governed autonomy - engineering memory + knowledge graph (v2.0)
+  enterprise/             # governed autonomy - enterprise governance + executive reporting (v2.0)
 ```
 
 ## Authority Hierarchy
@@ -117,6 +120,30 @@ The v1.1 release adds an operational layer of 12 documents across four new top-l
 ### Checklists (`checklists/`)
 
 - `checklists/operational-checklists.md` - consolidated operational checklists for routine and incident workflows.
+
+## Autonomy Layer (v2.0)
+
+The v2.0 release ("Governed Autonomous Engineering") adds an autonomy layer of 11 documents across three new top-level folders (`autonomy/`, `memory/`, `enterprise/`). It enables governed, multi-agent autonomous engineering with memory, planning, verification, architecture review, and enterprise oversight. These docs are documentation-level bridges to the real agent substrate already living in the repository: the root `agents/` L1-L8 mesh and the `.claude/` agent, skill, and hook system. v1.0 = standards, v1.1 = operations, v2.0 = governed multi-agent autonomy (bridging the repo's real `agents/` L1-L8 mesh and `.claude` agent system), with product invariants P1-P15 always supreme. Where any autonomy guidance and a product invariant or human-approval gate disagree, the invariant and the gate win.
+
+### Autonomy (`autonomy/`)
+
+- `autonomy/multi-agent-orchestration.md` - multi-agent orchestration model: agent roles, ownership boundaries, and handoff protocols.
+- `autonomy/specialized-agents.md` - catalog of specialized agents and their domains, mapped to the real `agents/` L1-L8 mesh and `.claude` agents.
+- `autonomy/agent-governance.md` - guardrails, approval gates, and audit/traceability for autonomous agent actions.
+- `autonomy/autonomous-planning.md` - autonomous planning protocol with explicit acceptance gates before work proceeds.
+- `autonomy/autonomous-verification.md` - autonomous, evidence-based verification gates that must pass before work is considered done.
+- `autonomy/autonomous-architecture-review.md` - autonomous architecture review with explicit acceptance criteria.
+
+### Memory (`memory/`)
+
+- `memory/engineering-memory.md` - engineering memory schema with defined read/write/retention rules.
+- `memory/knowledge-graph.md` - knowledge-graph schema and read/write/retention rules connecting engineering knowledge.
+
+### Enterprise (`enterprise/`)
+
+- `enterprise/enterprise-governance.md` - enterprise governance exposing measurable engineering and operational signals.
+- `enterprise/executive-reporting.md` - executive reporting surfaces for engineering and operational oversight.
+- `enterprise/platform-evolution.md` - platform-evolution guidance for continuous, governed change over time.
 
 ## Document Standard
 

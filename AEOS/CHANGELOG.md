@@ -4,6 +4,20 @@ All notable changes to the Alfanumrik Engineering Operating System (AEOS) are re
 Format is Keep-a-Changelog flavored, using this repository's dated-header style.
 AEOS follows Semantic Versioning; see `ROADMAP.md` for release scope.
 
+## 2026-06-23 - v2.0.0
+
+### Added
+
+- Autonomy layer of 11 documents across three new top-level folders (`autonomy/`, `memory/`, `enterprise/`) - the "Governed Autonomous Engineering" release.
+- Autonomy (`autonomy/`): `multi-agent-orchestration.md`, `specialized-agents.md`, `agent-governance.md`, `autonomous-planning.md`, `autonomous-verification.md`, `autonomous-architecture-review.md`.
+- Memory (`memory/`): `engineering-memory.md`, `knowledge-graph.md`.
+- Enterprise (`enterprise/`): `enterprise-governance.md`, `executive-reporting.md`, `platform-evolution.md`.
+- `VERSION` bumped to 2.0.0 (MAJOR: governed autonomous engineering).
+
+### Notes
+
+- The change is additive and backward-compatible: v1.0 (30 core docs + authority layer + 8 extensions) and v1.1 (12 operational docs) remain intact. The docs bridge to the real agent substrate already in the repository (root `agents/` L1-L8 mesh + `.claude/` agents/skills/hooks). Product invariants P1-P15 and human-approval gates remain supreme above all autonomy. All cross-references validated (0 internal dangling; external refs point to real repository files).
+
 ## 2026-06-23 - v1.1.0
 
 ### Added

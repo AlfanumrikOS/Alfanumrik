@@ -83,7 +83,15 @@ This roadmap defines the three planned releases of AEOS, each with a theme, scop
 - Enterprise governance and executive reporting expose measurable engineering and operational signals.
 - `VERSION`, `CHANGELOG.md`, and `ROADMAP.md` are updated for the 2.0 release, with migration notes for any breaking changes.
 
-**Status:** Planned
+**Status:** Complete (pending release commit)
+
+**Acceptance:** The 11 documents across `autonomy/` (6), `memory/` (2), and `enterprise/` (3) are authored, grounded in the real agent substrate (root `agents/` L1-L8 mesh + `.claude/` agents/skills/hooks), and all cross-references are validated (0 internal dangling; external refs point to real repository files). The change is additive and backward-compatible; product invariants P1-P15 and human-approval gates remain supreme above all autonomy.
+
+---
+
+## Beyond v2.0
+
+AEOS continues to evolve through governed, semantically versioned releases: additive MINOR releases for new capability, PATCH releases for corrections, and MAJOR releases reserved for breaking changes with migration notes. Reality always wins over the docs; each release reconciles inventory, counts, and statuses to the live repository.
 
 ---
 
