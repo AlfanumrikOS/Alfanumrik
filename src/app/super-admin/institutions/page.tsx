@@ -1097,12 +1097,12 @@ function InstitutionsContent() {
         // Store result and switch modal to success view — do NOT close yet.
         // The operator needs to see/copy the invite code before dismissing.
         setProvisionResult({
-          school_id: d?.school_id ?? '',
-          slug: d?.slug ?? '',
-          subdomain: d?.subdomain ?? '',
-          invite_code: d?.invite_code ?? '',
-          admin_invite_sent: !!d?.admin_invite_sent,
-          warn: d?.warn,
+          school_id: d?.data?.school_id ?? '',
+          slug: d?.data?.slug ?? '',
+          subdomain: d?.data?.subdomain ?? '',
+          invite_code: d?.data?.invite_code ?? '',
+          admin_invite_sent: !!d?.data?.admin_invite_sent,
+          warn: d?.data?.warn,
         });
         fetchInstitutions();
         fetchHealth();
