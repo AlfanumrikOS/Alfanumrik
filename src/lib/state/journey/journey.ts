@@ -377,6 +377,15 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
       // Mapping to `null` keeps it off the journey timeline and ensures this
       // projector never derives a mastery-moving milestone from a self-report.
       return null;
+    case 'learner.struggle_observed':
+      // Foxy weak-area loop (PART B2) — ADVISORY, NON-MASTERY observation Foxy
+      // makes mid-turn (repeated hint / repeated wrong / explicit confusion /
+      // long idle / give up). Per the binding assessment learner-state contract
+      // (mirrors learner.learning_action) it MUST NOT feed any mastery surface
+      // and is NOT a learner milestone. It drives Foxy's in-turn adaptation +
+      // analytics only. Mapping to `null` keeps it off the journey timeline and
+      // guarantees this projector never derives a milestone from a struggle signal.
+      return null;
     default: {
       // Exhaustiveness check — the compiler errors here if a new event
       // kind is added to the registry without a projector entry.

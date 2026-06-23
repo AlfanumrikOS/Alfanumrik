@@ -25,7 +25,7 @@
  * at the API boundary).
  */
 
-import React, { memo, useMemo, useState, useCallback, useEffect } from 'react';
+import React, { memo, useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import type { FoxyBlock, FoxyResponse } from '@/lib/foxy/schema';
@@ -42,6 +42,43 @@ import { isFoxyResponse as isFoxyResponseImpl } from '@/lib/foxy/is-foxy-respons
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
+/**
+ * Part B1 — the evidential "Quiz me" contract for the MCQ block in this
+ * response, plus the grade callback the block uses when the item is evidential.
+ * Both are optional: when absent (every non-quiz turn, history, legacy rows) the
+ * MCQ block renders as before (local self-check, no grade call, no mastery claim).
+ */
+export interface QuizMeBinding {
+  evidential: boolean;
+  servedItemId?: string;
+  /** Grade an evidential answer; returns the normalized result (never throws). */
+  onGrade: (input: {
+    servedItemId: string;
+    chosenIndex: number;
+    attemptId: string;
+    responseTimeMs: number;
+  }) => Promise<EvidentialGradeResult>;
+}
+
+/** Normalized grade result the block maps to a bilingual UI state. */
+export type EvidentialGradeResult =
+  | {
+      ok: true;
+      correct: boolean;
+      correctIndex: number;
+      mastery: { conceptId: string; masteryMean: number; attempts: number; mastered: boolean };
+    }
+  | {
+      ok: false;
+      error:
+        | 'already_answered'
+        | 'too_fast'
+        | 'not_evidential'
+        | 'unauthenticated'
+        | 'bad_request'
+        | 'network';
+    };
+
 export interface FoxyStructuredRendererProps {
   /** Validated structured payload from FoxyResponseSchema. */
   response: FoxyResponse;
@@ -49,6 +86,12 @@ export interface FoxyStructuredRendererProps {
   subjectKey?: string;
   /** Invoked when a math block fails to render (renderer surfaces a button). */
   onReportIssue?: () => void;
+  /**
+   * Part B1: when present on a "Quiz me" turn, the MCQ block grades through the
+   * sanctioned mastery pipeline (evidential) or renders practice-only
+   * (non-evidential). Absent → self-check only (unchanged behaviour).
+   */
+  quizMe?: QuizMeBinding;
 }
 
 // ── Bilingual chrome strings ─────────────────────────────────────────────────
@@ -71,6 +114,14 @@ interface Chrome {
   mcqCorrect: string;
   mcqNotQuite: string;
   mcqWhy: string;
+  // Part B1 — evidential "Quiz me" chrome
+  mcqSubmit: string;        // submit button
+  mcqGrading: string;       // in-flight
+  mcqMasteryUpdated: string; // subtle "Foxy strengthened your weak area" affirmation
+  mcqTooFast: string;       // 422 too_fast — gentle, non-punitive
+  mcqAlready: string;       // 409 already_answered
+  mcqRetry: string;         // network/500 retry CTA
+  mcqRetryHint: string;     // non-blocking retry hint line
 }
 
 const CHROME: { en: Chrome; hi: Chrome } = {
@@ -87,6 +138,13 @@ const CHROME: { en: Chrome; hi: Chrome } = {
     mcqCorrect: 'Correct!',
     mcqNotQuite: 'Not quite',
     mcqWhy: 'Why',
+    mcqSubmit: 'Submit answer',
+    mcqGrading: 'Checking…',
+    mcqMasteryUpdated: 'Foxy strengthened this weak area ✨',
+    mcqTooFast: 'Take a moment to read the question, then answer.',
+    mcqAlready: 'You already answered this one.',
+    mcqRetry: 'Try again',
+    mcqRetryHint: "Couldn't submit just now.",
   },
   hi: {
     answer: 'उत्तर',
@@ -105,6 +163,13 @@ const CHROME: { en: Chrome; hi: Chrome } = {
     mcqCorrect: 'सही!',
     mcqNotQuite: 'लगभग',
     mcqWhy: 'कारण',
+    mcqSubmit: 'उत्तर जमा करें',
+    mcqGrading: 'जांच रहे हैं…',
+    mcqMasteryUpdated: 'फॉक्सी ने इस कमज़ोर हिस्से को मज़बूत किया ✨',
+    mcqTooFast: 'प्रश्न को पढ़ने के लिए थोड़ा समय लें, फिर उत्तर दें।',
+    mcqAlready: 'आप इसका उत्तर पहले ही दे चुके हैं।',
+    mcqRetry: 'फिर कोशिश करें',
+    mcqRetryHint: 'अभी उत्तर जमा नहीं हो पाया।',
   },
 };
 
@@ -409,6 +474,8 @@ interface BlockProps {
   cfg: { icon: string; color: string };
   chrome: Chrome;
   onReportIssue?: () => void;
+  /** Part B1: evidential binding for the MCQ block (undefined → self-check). */
+  quizMe?: QuizMeBinding;
 }
 
 function ParagraphBlock({ block }: { block: FoxyBlock }) {
@@ -678,35 +745,127 @@ function DiagramBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) {
   );
 }
 
+/** Crypto-quality uuid for the attempt idempotency key, with a safe fallback. */
+function makeAttemptId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch { /* fall through */ }
+  // RFC4122-shaped fallback (sufficient as an idempotency key; the server is
+  // the authority and dedupes on it).
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 /**
- * McqBlock — formative self-check MCQ (Phase 1 Foxy learning actions).
+ * McqBlock — Foxy "Quiz me" MCQ with two distinct modes:
  *
- * P1/P2/P4 contract: this is SELF-CHECK ONLY. Selecting an option reveals
- * correctness locally — it does NOT submit to /api/tutor/answer or any mastery
- * route, awards no XP, and never touches the scoring pipeline. Only a real
- * "Quiz me" answer feeds mastery, and it does so through the existing
- * concept-check path, never here.
+ *  1. PRACTICE / SELF-CHECK (default — no `quizMe`, OR quizMe.evidential===false):
+ *     SELECT reveals correctness LOCALLY. No grade call, no XP, NO mastery
+ *     claim. Identical to the pre-existing self-check behaviour. This is what
+ *     renders on every non-quiz turn, on history, and on a non-evidential
+ *     "Quiz me" item (P1/P2/P4 honoured — nothing touches the scoring pipeline).
+ *
+ *  2. EVIDENTIAL (quizMe.evidential===true with a servedItemId):
+ *     The student picks an option then SUBMITS. The chosen index is POSTed to
+ *     /api/foxy/quiz-answer, which grades against the SERVER-HELD key and moves
+ *     mastery through the sanctioned tutor_commit_attempt pipeline. The server
+ *     is authoritative for correctness, the 3s floor, idempotency, and mastery.
+ *     On success the block reveals the SERVER's correct_index + explanation and
+ *     a subtle "mastery updated" affirmation — the visible proof Foxy
+ *     strengthened the weak area. Errors degrade gracefully + bilingually and
+ *     never block the chat.
  *
  * A11y: each option is a real <button> with role="radio" + aria-checked so the
- * group is keyboard-operable and screen-reader-announced; the chosen + correct
- * options are flagged after a check so colour is not the only signal.
+ * group is keyboard-operable and screen-reader-announced; correctness uses
+ * an icon as well as colour so colour is not the only signal. Touch targets ≥44px.
  */
-function McqBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) {
-  const [selected, setSelected] = useState<number | null>(null);
-
+function McqBlock({
+  block,
+  chrome,
+  quizMe,
+}: {
+  block: FoxyBlock;
+  chrome: Chrome;
+  quizMe?: QuizMeBinding;
+}) {
   // Defensive: only render if the block is a structurally valid MCQ. The
   // schema already guarantees this at the API boundary, but the renderer must
   // never throw on a malformed historical/legacy row.
-  if (!isFoxyMcqBlock(block)) return null;
+  const validMcq = isFoxyMcqBlock(block);
 
+  const evidential = !!(quizMe?.evidential && quizMe.servedItemId);
+
+  const [selected, setSelected] = useState<number | null>(null);
+  // Wall-clock anchor for response_time_ms — set when the item first renders.
+  const shownAtRef = useRef<number>(Date.now());
+  // Stable attempt id per mounted item (idempotency key reused across retries
+  // of the SAME submission so a retry after a transient 500 stays idempotent).
+  const attemptIdRef = useRef<string>(makeAttemptId());
+
+  // Evidential grading state machine.
+  const [grading, setGrading] = useState(false);
+  type GradedOk = Extract<EvidentialGradeResult, { ok: true }>;
+  const [graded, setGraded] = useState<GradedOk | null>(null);
+  const [softError, setSoftError] = useState<
+    null | 'too_fast' | 'already_answered' | 'not_evidential' | 'network'
+  >(null);
+
+  const submit = useCallback(async () => {
+    if (selected === null || !quizMe?.servedItemId || grading) return;
+    setGrading(true);
+    setSoftError(null);
+    const result = await quizMe.onGrade({
+      servedItemId: quizMe.servedItemId,
+      chosenIndex: selected,
+      attemptId: attemptIdRef.current,
+      responseTimeMs: Date.now() - shownAtRef.current,
+    });
+    setGrading(false);
+    if (result.ok) {
+      setGraded(result);
+      return;
+    }
+    if (result.error === 'too_fast') { setSoftError('too_fast'); return; }
+    if (result.error === 'already_answered') { setSoftError('already_answered'); return; }
+    if (result.error === 'not_evidential' || result.error === 'bad_request' || result.error === 'unauthenticated') {
+      // Cannot move mastery this turn — fall back to local self-check reveal
+      // (practice). No mastery claim is made.
+      setSoftError('not_evidential');
+      return;
+    }
+    // network / 500 → non-blocking retry (the selection is kept).
+    setSoftError('network');
+  }, [selected, quizMe, grading]);
+
+  if (!validMcq) return null;
   const { stem, options, correct_answer_index, explanation } = block;
-  const answered = selected !== null;
-  const isRight = answered && selected === correct_answer_index;
+
+  // ── Resolve which option is "the answer" for the reveal ──
+  // Evidential graded: trust the SERVER's correct_index.
+  // Self-check / non-evidential reveal: use the block's correct_answer_index.
+  const revealedCorrectIndex = graded ? graded.correctIndex : correct_answer_index;
+
+  // "answered" = the reveal is showing. Two ways to reach it:
+  //   - evidential: a successful grade (graded != null)
+  //   - self-check / non-evidential fallback: a local selection in non-evidential
+  //     mode, OR an evidential item that fell back to practice (not_evidential).
+  const selfCheckMode = !evidential || softError === 'not_evidential';
+  const answered = graded != null || (selfCheckMode && selected !== null);
+  const isRight = answered && selected === revealedCorrectIndex;
+
+  // Lock option editing once: grading in-flight, graded, or self-check answered.
+  const locked = grading || graded != null || (selfCheckMode && selected !== null);
 
   return (
     <div
       className="my-3 px-4 py-3 rounded-xl bg-purple-50 border border-purple-200 text-purple-900"
       data-testid="foxy-mcq-block"
+      data-evidential={evidential ? 'true' : 'false'}
     >
       <div className="font-bold text-sm mb-2">{chrome.practice}</div>
       <p className="text-sm leading-relaxed mb-3">
@@ -716,17 +875,17 @@ function McqBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) {
       <div role="radiogroup" aria-label={stem} className="space-y-2">
         {options.map((opt, i) => {
           const isChosen = selected === i;
-          const isCorrect = i === correct_answer_index;
-          // Colour states only resolve AFTER a check.
+          const isCorrect = i === revealedCorrectIndex;
+          // Colour states only resolve AFTER the reveal.
           let cls =
             'w-full text-left px-3 py-2 rounded-lg border text-sm transition-all active:scale-[0.99] flex items-start gap-2 min-h-[44px]';
           if (!answered) {
-            cls += ' bg-white border-purple-200 hover:bg-purple-100/50';
+            cls += isChosen
+              ? ' bg-purple-100 border-purple-400 font-semibold'
+              : ' bg-white border-purple-200 hover:bg-purple-100/50';
           } else if (isCorrect) {
-            // Always highlight the correct option green once checked.
             cls += ' bg-emerald-50 border-emerald-300 text-emerald-900 font-semibold';
           } else if (isChosen) {
-            // Chosen-but-wrong → red.
             cls += ' bg-rose-50 border-rose-300 text-rose-900';
           } else {
             cls += ' bg-white border-purple-200 opacity-70';
@@ -738,8 +897,8 @@ function McqBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) {
               type="button"
               role="radio"
               aria-checked={isChosen}
-              disabled={answered}
-              onClick={() => { if (!answered) setSelected(i); }}
+              disabled={locked}
+              onClick={() => { if (!locked) { setSelected(i); setSoftError(null); } }}
               className={cls}
             >
               <span aria-hidden="true" className="shrink-0 font-bold opacity-70">
@@ -759,6 +918,61 @@ function McqBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) {
         })}
       </div>
 
+      {/* Evidential: explicit Submit (the grade call moves mastery). Hidden in
+          self-check mode (selecting an option reveals immediately) and after a
+          successful grade. */}
+      {evidential && !graded && softError !== 'not_evidential' && (
+        <button
+          type="button"
+          disabled={selected === null || grading}
+          onClick={submit}
+          data-testid="foxy-mcq-submit"
+          className="mt-3 w-full px-4 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-[0.99] min-h-[44px] disabled:opacity-50 disabled:cursor-default bg-purple-600 text-white hover:bg-purple-700"
+        >
+          {grading ? chrome.mcqGrading : chrome.mcqSubmit}
+        </button>
+      )}
+
+      {/* Gentle / non-blocking error states (P7). Never raw error text. */}
+      {softError === 'too_fast' && (
+        <div
+          className="mt-3 px-3 py-2 rounded-lg text-sm bg-amber-50 border border-amber-200 text-amber-900"
+          role="status"
+          aria-live="polite"
+        >
+          {chrome.mcqTooFast}
+        </div>
+      )}
+      {softError === 'already_answered' && (
+        <div
+          className="mt-3 px-3 py-2 rounded-lg text-sm bg-slate-50 border border-slate-200 text-slate-700"
+          role="status"
+          aria-live="polite"
+        >
+          {chrome.mcqAlready}
+        </div>
+      )}
+      {softError === 'network' && (
+        <div
+          className="mt-3 px-3 py-2 rounded-lg text-sm bg-slate-50 border border-slate-200 text-slate-700 flex items-center justify-between gap-3"
+          role="status"
+          aria-live="polite"
+        >
+          <span>{chrome.mcqRetryHint}</span>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={grading}
+            className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-600 text-white hover:bg-purple-700 active:scale-95 disabled:opacity-50 min-h-[36px]"
+          >
+            {grading ? chrome.mcqGrading : chrome.mcqRetry}
+          </button>
+        </div>
+      )}
+
+      {/* Reveal: correct/incorrect + explanation. Shown after a successful
+          evidential grade OR a self-check selection (incl. non-evidential
+          fallback). */}
       {answered && (
         <div
           className="mt-3 px-3 py-2 rounded-lg text-sm"
@@ -776,6 +990,18 @@ function McqBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) {
             <span className="font-semibold">{chrome.mcqWhy}: </span>
             <InlineContent text={explanation} />
           </div>
+
+          {/* Subtle "mastery updated" affirmation — ONLY when mastery actually
+              moved (a successful evidential grade). Never shown in self-check /
+              non-evidential mode, so we never claim mastery moved when it did not. */}
+          {graded && (
+            <div
+              className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-100 text-purple-700 border border-purple-200"
+              data-testid="foxy-mcq-mastery"
+            >
+              {chrome.mcqMasteryUpdated}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -788,6 +1014,7 @@ function BlockRouter({
   cfg,
   chrome,
   onReportIssue,
+  quizMe,
 }: BlockProps) {
   switch (block.type) {
     case 'paragraph':
@@ -816,7 +1043,7 @@ function BlockRouter({
     case 'question':
       return <QuestionBlock block={block} chrome={chrome} />;
     case 'mcq':
-      return <McqBlock block={block} chrome={chrome} />;
+      return <McqBlock block={block} chrome={chrome} quizMe={quizMe} />;
     case 'diagram':
       return <DiagramBlock block={block} chrome={chrome} />;
     case 'code':
@@ -839,6 +1066,7 @@ function FoxyStructuredRendererInner({
   response,
   subjectKey,
   onReportIssue,
+  quizMe,
 }: FoxyStructuredRendererProps) {
   const { isHi } = useAuth();
   const chrome: Chrome = isHi ? CHROME.hi : CHROME.en;
@@ -873,6 +1101,14 @@ function FoxyStructuredRendererInner({
     onReportIssue?.();
   }, [onReportIssue]);
 
+  // Part B1: the evidential binding applies to ONE served item per turn, so it
+  // is wired to the FIRST mcq block only. Any further mcq blocks (rare) render
+  // as self-check practice.
+  const firstMcqIndex = useMemo(
+    () => response.blocks.findIndex((b) => b.type === 'mcq'),
+    [response.blocks],
+  );
+
   return (
     <div className="foxy-structured" data-testid="foxy-structured-renderer">
       <h3
@@ -891,6 +1127,7 @@ function FoxyStructuredRendererInner({
             cfg={cfg}
             chrome={chrome}
             onReportIssue={onReportIssue ? handleReportIssue : undefined}
+            quizMe={i === firstMcqIndex ? quizMe : undefined}
           />
         ))}
       </div>

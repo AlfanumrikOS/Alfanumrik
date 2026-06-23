@@ -27,6 +27,8 @@ import { isFoxyResponse } from '@/lib/foxy/is-foxy-response';
 import { recoverFoxyResponseFromText } from '@/lib/foxy/recover-from-text';
 import { denormalizeFoxyResponse } from '@/lib/foxy/denormalize';
 import type { ChatMessage } from '../_lib/foxy-types';
+import type { QuizMeBinding } from '@/components/foxy/FoxyStructuredRenderer';
+import type { SubmitQuizAnswerInput, SubmitQuizAnswerResult } from '../_hooks/useFoxyChat';
 import { RichContent } from '@/components/foxy/RichContent';
 import { FoxyStructuredRenderer } from '@/components/foxy/FoxyStructuredRenderer';
 import DynamicScaffold from '@/app/foxy/_components/DynamicScaffold';
@@ -61,6 +63,14 @@ export interface MessageListProps {
   onLearningAction?: (msg: ChatMessage, action: LearningActionType) => void;
   /** Local-id set of messages the student tapped "Got it" on (flag ON bar). */
   gotItMessageIds?: Set<number>;
+
+  /**
+   * Part B1: grade an evidential "Quiz me" answer. Wired from the page to
+   * useFoxyChat().submitQuizAnswer. When provided AND a tutor message carries
+   * `quizMe.evidential === true`, the MCQ renderer submits the chosen answer
+   * through the sanctioned mastery pipeline. Absent → all MCQs are self-check.
+   */
+  onSubmitQuizAnswer?: (input: SubmitQuizAnswerInput) => Promise<SubmitQuizAnswerResult>;
 }
 
 export function MessageList({
@@ -80,6 +90,7 @@ export function MessageList({
   learningActionsEnabled,
   onLearningAction,
   gotItMessageIds,
+  onSubmitQuizAnswer,
 }: MessageListProps) {
   return (
     <>
@@ -149,11 +160,28 @@ export function MessageList({
         const legacyTutorContent = (
           <RichContent content={effectiveContent} subjectKey={activeSubject} />
         );
+
+        // Part B1: build the evidential binding for THIS message's MCQ. Present
+        // only when the turn carried a `quizMe` contract AND a grade callback is
+        // wired. The MCQ renderer reads `evidential` to decide whether it grades
+        // through /api/foxy/quiz-answer (moves mastery) or self-checks locally.
+        // `onGrade` is always supplied (no-op safe) so the renderer's type is
+        // satisfied; it is only invoked when `evidential === true`.
+        const quizMeBinding: QuizMeBinding | undefined =
+          msg.quizMe && onSubmitQuizAnswer
+            ? {
+                evidential: msg.quizMe.evidential,
+                servedItemId: msg.quizMe.evidential ? msg.quizMe.servedItemId : undefined,
+                onGrade: onSubmitQuizAnswer,
+              }
+            : undefined;
+
         const tutorContent = useStructured ? (
           <StructuredRenderBoundary fallback={legacyTutorContent}>
             <FoxyStructuredRenderer
               response={effectiveStructured!}
               subjectKey={activeSubject}
+              quizMe={quizMeBinding}
             />
           </StructuredRenderBoundary>
         ) : (

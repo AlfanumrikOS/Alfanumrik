@@ -305,6 +305,7 @@ export default function FoxyPage() {
     nextMessageId,
     sendMessage: sendMessageCore,
     recordLearningAction,
+    submitQuizAnswer,
   } = useFoxyChat();
 
   // Phase 1 post-answer learning actions (ff_foxy_learning_actions_v1). When
@@ -1895,6 +1896,7 @@ export default function FoxyPage() {
               learningActionsEnabled={learningActionsEnabled}
               onLearningAction={handleLearningAction}
               gotItMessageIds={gotItMessageIds}
+              onSubmitQuizAnswer={submitQuizAnswer}
             />
 
             {/* Report-error modal — extracted to ./_components/ReportDialog.tsx */}

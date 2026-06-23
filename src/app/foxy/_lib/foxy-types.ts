@@ -15,6 +15,20 @@ export interface SubjectConfig {
   color: string;
 }
 
+/**
+ * Part B1 — the evidential "Quiz me" contract carried on the POST /api/foxy
+ * response (field `quizMe`), stamped onto the tutor ChatMessage so the MCQ
+ * renderer knows whether answering moves mastery.
+ *   - evidential:true  → a server-issued served-item exists; the renderer POSTs
+ *     the chosen answer to /api/foxy/quiz-answer to commit the graded result
+ *     through the sanctioned mastery pipeline.
+ *   - evidential:false → practice-only. NO grade call, NO mastery claim. The
+ *     MCQ renders self-check (local reveal) exactly as before.
+ */
+export type QuizMeWire =
+  | { evidential: true; servedItemId: string }
+  | { evidential: false; reason?: string | null };
+
 export interface StreamingCallbacks {
   onSession?: (sessionId: string) => void;
   onMetadata?: (meta: { groundingStatus: GroundingStatus; traceId?: string; confidence?: number; citationsCount?: number }) => void;
@@ -98,4 +112,12 @@ export interface ChatMessage {
    * response, in which case the badge element is NOT rendered (zero DOM change).
    */
   badgeState?: 'verified' | 'check_manually' | 'none' | 'out_of_scope';
+  /**
+   * Part B1: evidential "Quiz me" contract. Present ONLY on a tutor turn that
+   * served a "Quiz me" MCQ. Drives whether the MCQ renderer grades through
+   * /api/foxy/quiz-answer (evidential:true → moves mastery) or renders
+   * practice-only self-check (evidential:false → no grade call, no mastery
+   * claim). Absent on every non-quiz turn (the MCQ, if any, is self-check).
+   */
+  quizMe?: QuizMeWire;
 }
