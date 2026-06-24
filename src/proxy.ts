@@ -540,7 +540,9 @@ function isB2CHost(host: string): boolean {
   const h = host.split(':')[0].toLowerCase();
   if (h === 'localhost' || h.startsWith('localhost')) return true;
   if (h.endsWith('.vercel.app')) return true;
-  if (h.endsWith('.cloudfront.net')) return true;       // AWS staging / CloudFront pseudolink
+  if (h.endsWith('.cloudfront.net')) return true;       // AWS CloudFront pseudolinks
+  if (h.endsWith('.elb.amazonaws.com')) return true;   // AWS ALB — origin Host header when CloudFront strips viewer Host
+  if (h.endsWith('.amazonaws.com')) return true;        // Any other AWS-internal hostname (ECS, etc.)
   // Also trust whatever SITE_URL is configured to (works in Node.js / standalone mode)
   const siteUrl = process.env.SITE_URL;
   if (siteUrl) {
