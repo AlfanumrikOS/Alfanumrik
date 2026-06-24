@@ -33,7 +33,7 @@
 -- Guarded with IF to_regclass so it no-ops on a fresh DB.
 -- Owner: architect. CEO-approved, 2026-06-24.
 
-DO $
+DO $$
 BEGIN
   IF to_regclass('public.feature_flags') IS NOT NULL THEN
 
@@ -152,4 +152,4 @@ BEGIN
   ELSE
     RAISE NOTICE 'feature_flags table absent; skipping engagement flag enablement (fresh DB).';
   END IF;
-END $;
+END $$;
