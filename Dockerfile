@@ -67,6 +67,6 @@ EXPOSE 3000
 # Liveness probe — uses node (not curl) since alpine may not have curl installed.
 # ECS target-group health checks /api/v1/health separately; this adds Docker-native
 # container health visibility (e.g. in ECS service events, docker ps).
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 CMD node -e "require('http').get('http://localhost:3000/api/v1/health', r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+HEALTHCHECK --interval=60s --timeout=5s --start-period=60s --retries=3 CMD node -e "require('http').get('http://localhost:3000/api/v1/health', r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 
 CMD ["node", "server.js"]

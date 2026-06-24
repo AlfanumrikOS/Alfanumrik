@@ -2,8 +2,8 @@
   "family": "alfanumrik-web",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
-  "cpu": "1024",
-  "memory": "2048",
+  "cpu": "512",
+  "memory": "1024",
   "executionRoleArn": "arn:aws:iam::032064442164:role/alfa-prod-ecs-execution",
   "taskRoleArn": "arn:aws:iam::032064442164:role/alfa-prod-ecs-task",
   "containerDefinitions": [
@@ -55,7 +55,7 @@
           "CMD-SHELL",
           "node -e \"require('http').get('http://localhost:3000/api/v1/health', r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""
         ],
-        "interval": 30,
+        "interval": 60,
         "timeout": 5,
         "retries": 3,
         "startPeriod": 60
