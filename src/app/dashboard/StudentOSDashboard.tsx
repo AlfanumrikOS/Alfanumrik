@@ -115,15 +115,15 @@ export default function StudentOSDashboard() {
 
   // Compact header rail — greeting + streak + demoted XP + language toggle.
   const headerRail = (
-    <div className="flex items-center gap-3 px-4 py-3 w-full">
+    <div className="flex items-center gap-3 px-4 py-4 w-full">
       <div className="flex-1 min-w-0">
         <p
-          className="text-base font-extrabold truncate"
+          className="text-xl font-extrabold truncate"
           style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}
         >
           {isHi ? `नमस्ते, ${firstName}` : `Hi, ${firstName}`}
         </p>
-        <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+        <p className="text-sm" style={{ color: 'var(--text-3)' }}>
           {isHi ? 'आज क्या सीखें?' : 'What will you master today?'}
         </p>
       </div>
@@ -133,13 +133,17 @@ export default function StudentOSDashboard() {
       {/* XP demoted to a small glanceable chip. */}
       <span
         className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full"
-        style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}
+        style={{
+          background: 'rgba(232,88,28,0.08)',
+          color: 'var(--orange, #E8581C)',
+          border: '1px solid rgba(232,88,28,0.15)',
+        }}
         aria-label={isHi ? `कुल ${totalXp} XP` : `${totalXp} total XP`}
       >
         <span style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono)' }}>
           {totalXp.toLocaleString('en-IN')}
         </span>
-        <span style={{ color: 'var(--text-3)' }}>XP</span>
+        <span style={{ opacity: 0.7 }}>XP</span>
       </span>
 
       <button

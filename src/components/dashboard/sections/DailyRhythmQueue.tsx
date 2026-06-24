@@ -82,10 +82,14 @@ export default function DailyRhythmQueue() {
   if (loading) {
     return (
       <div
-        className="h-32 rounded-3xl animate-pulse mb-4"
-        style={{ background: 'var(--surface-2)' }}
+        className="rounded-3xl border border-purple-200 bg-gradient-to-br from-purple-50 to-orange-50 p-5 mb-4"
         aria-hidden="true"
-      />
+      >
+        <div className="h-4 w-1/2 bg-purple-200/60 rounded-full mb-4 animate-pulse" />
+        {[1, 2, 3].map(i => (
+          <div key={i} className="h-12 bg-white/50 rounded-2xl mb-2 animate-pulse" />
+        ))}
+      </div>
     );
   }
   if (error || !queue) return null;
@@ -141,6 +145,7 @@ interface SynthesisStateLite {
 function RhythmQueueBody({ isHi, srs, zpd, remediation, reflection, reflectionText }: RhythmQueueBodyProps) {
   const [diveState, setDiveState] = useState<DiveStateLite | null>(null);
   const [synthesisState, setSynthesisState] = useState<SynthesisStateLite | null>(null);
+  const [reflOpen, setReflOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -212,15 +217,26 @@ function RhythmQueueBody({ isHi, srs, zpd, remediation, reflection, reflectionTe
       </header>
 
       <ol className="space-y-2 text-sm">
-        <li className="flex items-center justify-between">
-          <span className="text-purple-900">
+        <li
+          className="flex items-center gap-3 rounded-2xl p-3"
+          style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(124,58,237,0.1)' }}
+        >
+          <span
+            className="text-lg w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+            style={{ background: 'rgba(124,58,237,0.08)' }}
+            aria-hidden="true"
+          >
+            🔄
+          </span>
+          <span className="flex-1 text-sm font-semibold text-purple-900">
             {isHi ? 'स्पेस्ड रिव्यू' : 'Spaced reviews'}
             {' · '}
-            <span className="font-semibold">{srs.length}/5</span>
+            <span className="font-bold">{srs.length}/5</span>
           </span>
           <Link
             href="/quiz?mode=srs"
-            className="text-purple-700 underline font-medium"
+            className="px-3 py-1.5 rounded-xl text-xs font-bold text-white shrink-0"
+            style={{ background: '#7C3AED' }}
             data-testid="rhythm-srs-cta"
             onClick={() => {
               trackDashboardCta({
@@ -294,15 +310,26 @@ function RhythmQueueBody({ isHi, srs, zpd, remediation, reflection, reflectionTe
         })}
 
         {zpd && zpd.kind === 'zpd_problem' && (
-          <li className="flex items-center justify-between">
-            <span className="text-purple-900">
+          <li
+            className="flex items-center gap-3 rounded-2xl p-3"
+            style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(124,58,237,0.1)' }}
+          >
+            <span
+              className="text-lg w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+              style={{ background: 'rgba(124,58,237,0.08)' }}
+              aria-hidden="true"
+            >
+              ⚡
+            </span>
+            <span className="flex-1 text-sm font-semibold text-purple-900">
               {zpd.workedExampleFirst
                 ? (isHi ? 'गाइडेड चुनौती' : 'Guided challenge')
                 : (isHi ? 'ZPD चुनौती' : 'ZPD challenge')}
             </span>
             <Link
               href={zpd.questionId && !zpd.questionId.startsWith('__') ? `/quiz?qid=${encodeURIComponent(zpd.questionId)}` : '/quiz'}
-              className="text-purple-700 underline font-medium"
+              className="px-3 py-1.5 rounded-xl text-xs font-bold text-white shrink-0"
+              style={{ background: '#7C3AED' }}
               data-testid="rhythm-zpd-cta"
               onClick={() => {
                 // `questionId` is a uuid (not PII) but we still don't emit
@@ -322,15 +349,27 @@ function RhythmQueueBody({ isHi, srs, zpd, remediation, reflection, reflectionTe
         )}
 
         {synthesisState && (
-          <li className="flex items-center justify-between" data-testid="rhythm-synthesis-cta">
-            <span className="text-purple-900">
+          <li
+            className="flex items-center gap-3 rounded-2xl p-3"
+            style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(124,58,237,0.1)' }}
+            data-testid="rhythm-synthesis-cta"
+          >
+            <span
+              className="text-lg w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+              style={{ background: 'rgba(124,58,237,0.08)' }}
+              aria-hidden="true"
+            >
+              📝
+            </span>
+            <span className="flex-1 text-sm font-semibold text-purple-900">
               {isHi ? 'मासिक सारांश तैयार' : 'Monthly synthesis ready'}
               {' · '}
-              <span className="font-semibold">{synthesisState.isoMonth}</span>
+              <span className="font-bold">{synthesisState.isoMonth}</span>
             </span>
             <Link
               href="/synthesis"
-              className="text-purple-700 underline font-medium"
+              className="px-3 py-1.5 rounded-xl text-xs font-bold text-white shrink-0"
+              style={{ background: '#7C3AED' }}
               onClick={() => {
                 trackDashboardCta({
                   section: 'daily_rhythm_queue',
@@ -345,13 +384,24 @@ function RhythmQueueBody({ isHi, srs, zpd, remediation, reflection, reflectionTe
         )}
 
         {diveState && (
-          <li className="flex items-center justify-between" data-testid="rhythm-dive-cta">
-            <span className="text-purple-900">
+          <li
+            className="flex items-center gap-3 rounded-2xl p-3"
+            style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(124,58,237,0.1)' }}
+            data-testid="rhythm-dive-cta"
+          >
+            <span
+              className="text-lg w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+              style={{ background: 'rgba(124,58,237,0.08)' }}
+              aria-hidden="true"
+            >
+              📚
+            </span>
+            <span className="flex-1 text-sm font-semibold text-purple-900">
               {isHi ? 'इस सप्ताह की डाइव' : "This week's dive"}
               {diveState.state === 'completed' && (
                 <>
                   {' · '}
-                  <span className="font-semibold">
+                  <span className="font-bold">
                     {isHi ? `✓ हो गई · ${diveState.weeklyStreakCount}-सप्ताह की लय` : `✓ done · ${diveState.weeklyStreakCount}-week rhythm`}
                   </span>
                 </>
@@ -359,7 +409,8 @@ function RhythmQueueBody({ isHi, srs, zpd, remediation, reflection, reflectionTe
             </span>
             <Link
               href="/dive"
-              className="text-purple-700 underline font-medium"
+              className="px-3 py-1.5 rounded-xl text-xs font-bold text-white shrink-0"
+              style={{ background: '#7C3AED' }}
               onClick={() => {
                 // `weeklyStreakCount` is intentionally NOT emitted — that's
                 // a learner-state datum that belongs in identify() cohort
@@ -380,20 +431,38 @@ function RhythmQueueBody({ isHi, srs, zpd, remediation, reflection, reflectionTe
 
         {reflection && reflectionText && (
           <li>
-            <details className="group">
-              <summary className="cursor-pointer flex items-center justify-between text-purple-900">
-                <span>{isHi ? 'रिफ्लेक्शन' : 'Reflection'}</span>
-                <span className="text-purple-700 underline text-xs">
-                  {isHi ? 'खोलो' : 'Open'}
-                </span>
-              </summary>
+            <button
+              onClick={() => setReflOpen(r => !r)}
+              className="w-full flex items-center gap-3 rounded-2xl p-3 text-left"
+              style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(124,58,237,0.1)' }}
+              aria-expanded={reflOpen}
+            >
+              <span
+                className="text-lg w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                style={{ background: 'rgba(124,58,237,0.08)' }}
+                aria-hidden="true"
+              >
+                🪞
+              </span>
+              <span className="flex-1 text-sm font-semibold text-purple-900">
+                {isHi ? 'रिफ्लेक्शन' : 'Reflection'}
+              </span>
+              <span
+                className="text-purple-400 text-xs transition-transform duration-200 shrink-0"
+                style={{ transform: reflOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                aria-hidden="true"
+              >
+                ▼
+              </span>
+            </button>
+            {reflOpen && (
               <div
-                className="mt-2 p-3 rounded-lg bg-white text-purple-900 text-sm leading-relaxed"
+                className="mt-2 mx-1 p-4 rounded-xl bg-white text-purple-900 text-sm leading-relaxed"
                 data-testid="rhythm-reflection-prompt"
               >
                 {reflectionText}
               </div>
-            </details>
+            )}
           </li>
         )}
       </ol>

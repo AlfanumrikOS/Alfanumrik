@@ -30,13 +30,15 @@ interface BucketDef {
   labelEn: string;
   labelHi: string;
   color: string;
+  /** Hex color used for card background/border tinting (no CSS var). */
+  hexColor: string;
   /** Ring fill heuristic: share of total this bucket represents. */
 }
 
 const BUCKETS: BucketDef[] = [
-  { key: 'mastered', glyph: '✓', labelEn: 'Mastered', labelHi: 'महारत', color: 'var(--green, #16A34A)' },
-  { key: 'learning', glyph: '◑', labelEn: 'Learning', labelHi: 'सीख रहे', color: 'var(--orange, #E8581C)' },
-  { key: 'needsRevision', glyph: '↻', labelEn: 'Needs revision', labelHi: 'दोहराओ', color: '#8B5CF6' },
+  { key: 'mastered', glyph: '✓', labelEn: 'Mastered', labelHi: 'महारत', color: 'var(--green, #16A34A)', hexColor: '#16A34A' },
+  { key: 'learning', glyph: '◑', labelEn: 'Learning', labelHi: 'सीख रहे', color: 'var(--orange, #E8581C)', hexColor: '#E8581C' },
+  { key: 'needsRevision', glyph: '↻', labelEn: 'Needs revision', labelHi: 'दोहराओ', color: '#8B5CF6', hexColor: '#8B5CF6' },
 ];
 
 export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProps) {
@@ -73,7 +75,7 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
     >
       <h2
         className="text-sm font-bold uppercase tracking-wider mb-4"
-        style={{ color: 'var(--text-3)' }}
+        style={{ color: 'var(--text-1)' }}
       >
         {isHi ? 'महारत का सारांश' : 'Mastery snapshot'}
       </h2>
@@ -121,7 +123,11 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
               <div
                 key={b.key}
                 className="rounded-2xl p-3 flex flex-col items-center text-center"
-                style={{ background: 'var(--surface-2)', minHeight: 96 }}
+                style={{
+                  background: `${b.hexColor}18`,
+                  border: `1px solid ${b.hexColor}30`,
+                  minHeight: 96,
+                }}
                 role="group"
                 aria-label={`${label}: ${value}`}
               >

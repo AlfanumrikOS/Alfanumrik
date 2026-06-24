@@ -1291,7 +1291,7 @@ export default function FoxyPage() {
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-bold truncate">Foxy <span className="text-[10px] font-semibold opacity-60">{isHi ? 'AI ट्यूटर' : 'AI Tutor'}</span></div>
-          <div className="text-[10px] opacity-50 flex gap-2"><span className="hidden sm:inline">{totalXP + xpGained} XP</span><span className="hidden sm:inline">{isHi ? `${streakDays} दिन` : `${streakDays}d streak`}</span><span>{isHi ? `कक्षा ${studentGrade}` : `Gr ${studentGrade}`}</span></div>
+          <div className="text-xs opacity-70 flex gap-2"><span className="hidden sm:inline">{totalXP + xpGained} XP</span><span className="hidden sm:inline">{isHi ? `${streakDays} दिन` : `${streakDays}d streak`}</span><span>{isHi ? `कक्षा ${studentGrade}` : `Gr ${studentGrade}`}</span></div>
         </div>
         <div className="flex items-center gap-1.5">
           {/* Language pills — extracted to ./_components/FoxySettings.tsx */}
@@ -1375,9 +1375,10 @@ export default function FoxyPage() {
                 title={sub.isLocked ? (isHi ? 'अपग्रेड करें' : 'Upgrade to unlock') : sub.name}
                 className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]"
                 style={{
-                  background: isActive ? `${sub.color}15` : 'var(--surface-2)',
-                  border: isActive ? `1.5px solid ${sub.color}40` : '1.5px solid var(--border)',
+                  background: isActive ? `${sub.color}25` : 'var(--surface-2)',
+                  border: isActive ? `2px solid ${sub.color}60` : '1.5px solid var(--border)',
                   color: isActive ? sub.color : 'var(--text-2)',
+                  fontWeight: isActive ? 700 : 600,
                   opacity: sub.isLocked ? 0.55 : 1,
                 }}
               >
@@ -1790,7 +1791,7 @@ export default function FoxyPage() {
             {messages.length === 0 && (
               <div className="text-center py-12 md:py-20 animate-slide-up">
                 <div className="text-6xl md:text-7xl mb-4 animate-float">{FOXY_FACES.idle}</div>
-                <h2 className="text-xl md:text-2xl font-extrabold mb-2" style={{ fontFamily: 'var(--font-display)', background: `linear-gradient(135deg, #E8590C, ${cfg.color})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{getEmptyStateHeading()}</h2>
+                <h2 className="text-2xl md:text-2xl font-extrabold mb-2" style={{ fontFamily: 'var(--font-display)', background: `linear-gradient(135deg, #E8590C, ${cfg?.color || '#7C3AED'})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', color: '#E8590C' }}>{getEmptyStateHeading()}</h2>
                 <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto mb-4 leading-relaxed">
                   {getEmptyStateSubtitle()}
                 </p>

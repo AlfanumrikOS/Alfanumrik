@@ -209,15 +209,16 @@ export default function TodaysMission({
             retry re-runs the SWR fetch when the failure was an error. */}
         {showEmptyState && (
           <div
-            className="rounded-2xl px-4 py-3"
+            className="rounded-2xl px-4 py-4"
             style={{
-              background: 'var(--surface-2)',
-              border: '1px solid var(--border)',
+              background: 'linear-gradient(135deg, rgba(232,88,28,0.06), rgba(245,158,11,0.06))',
+              border: '1.5px solid rgba(232,88,28,0.15)',
             }}
             data-testid="mission-empty-state"
             role="status"
           >
-            <p className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
+            <div className="text-3xl mb-2" aria-hidden="true">🦊</div>
+            <p className="text-base font-bold" style={{ color: 'var(--text-1)' }}>
               {isHi
                 ? 'तुम्हारा सीखने का रास्ता तैयार हो रहा है'
                 : 'Your learning path is getting ready'}
@@ -231,7 +232,7 @@ export default function TodaysMission({
               <button
                 type="button"
                 onClick={() => router.push('/learn')}
-                className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2"
+                className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-bold transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2"
                 style={{
                   background: 'rgb(var(--orange-rgb) / 0.10)',
                   border: '1px solid rgb(var(--orange-rgb) / 0.20)',
