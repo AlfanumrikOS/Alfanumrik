@@ -18,6 +18,7 @@ function FlagsContent() {
   const [editingFlagId, setEditingFlagId] = useState<string | null>(null);
   const [flagScopeRoles, setFlagScopeRoles] = useState('');
   const [flagScopeEnvs, setFlagScopeEnvs] = useState('');
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const fetchFlags = useCallback(async () => {
     setLoading(true);
@@ -29,10 +30,16 @@ function FlagsContent() {
   useEffect(() => { fetchFlags(); }, [fetchFlags]);
 
   const toggleFlag = async (flag: FeatureFlag) => {
-    await apiFetch('/api/super-admin/feature-flags', {
-      method: 'PATCH', body: JSON.stringify({ id: flag.id, updates: { enabled: !flag.enabled } }),
-    });
-    fetchFlags();
+    if (togglingId === flag.id) return;
+    setTogglingId(flag.id);
+    try {
+      await apiFetch('/api/super-admin/feature-flags', {
+        method: 'PATCH', body: JSON.stringify({ id: flag.id, updates: { enabled: !flag.enabled } }),
+      });
+      await fetchFlags();
+    } finally {
+      setTogglingId(null);
+    }
   };
 
   const createFlag = async () => {
@@ -117,12 +124,21 @@ function FlagsContent() {
                 >
                   {editingFlagId === flag.id ? 'Cancel' : 'Scope'}
                 </button>
-                <button onClick={() => toggleFlag(flag)} style={{
-                  padding: '6px 18px', borderRadius: 20, border: 'none', cursor: 'pointer',
-                  fontSize: 12, fontWeight: 700,
-                  background: flag.enabled ? '#16A34A' : '#E5E7EB',
-                  color: flag.enabled ? '#fff' : '#9CA3AF',
-                }}>{flag.enabled ? 'ON' : 'OFF'}</button>
+                <button
+                  onClick={() => toggleFlag(flag)}
+                  disabled={togglingId === flag.id}
+                  style={{
+                    padding: '6px 18px', borderRadius: 20, border: 'none',
+                    cursor: togglingId === flag.id ? 'not-allowed' : 'pointer',
+                    fontSize: 12, fontWeight: 700,
+                    background: flag.enabled ? '#16A34A' : '#E5E7EB',
+                    color: flag.enabled ? '#fff' : '#9CA3AF',
+                    opacity: togglingId === flag.id ? 0.5 : 1,
+                    transition: 'opacity 0.15s',
+                  }}
+                >
+                  {togglingId === flag.id ? '...' : (flag.enabled ? 'ON' : 'OFF')}
+                </button>
                 <button
                   onClick={() => deleteFlag(flag)}
                   className="rounded-md border bg-transparent px-2.5 py-1 text-[11px] font-medium hover:bg-surface-2"

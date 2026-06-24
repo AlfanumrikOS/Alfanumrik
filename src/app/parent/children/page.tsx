@@ -194,7 +194,7 @@ function ChildCard({
   child: ChildData;
   expanded: boolean;
   onToggle: () => void;
-  onViewReport: () => void;
+  onViewReport: (child: ChildData) => void;
   onUnlink: () => void;
   onDownloadData: () => void;
   canViewProgress: boolean;
@@ -281,7 +281,7 @@ function ChildCard({
           </span>
         </div>
         <button
-          onClick={(e) => { e.stopPropagation(); onViewReport(); }}
+          onClick={(e) => { e.stopPropagation(); onViewReport(child); }}
           style={{
             padding: '6px 14px',
             backgroundColor: '#16A34A',
@@ -451,7 +451,7 @@ function ChildCard({
                 maxWidth: '100%',
               }}
             >
-              &#x2B07;&#xFE0F; {t(false, "Download my child's data", 'मेरे बच्चे का डेटा डाउनलोड करें')}
+              &#x2B07;&#xFE0F; {t(isHi, "Download my child's data", 'मेरे बच्चे का डेटा डाउनलोड करें')}
             </button>
           </div>
 
@@ -473,7 +473,7 @@ function ChildCard({
                 gap: 6,
               }}
             >
-              &#x1F517; {t(false, 'Remove Link', 'लिंक हटाएं')}
+              &#x1F517; {t(isHi, 'Remove Link', 'लिंक हटाएं')}
             </button>
           </div>
 
@@ -1077,9 +1077,11 @@ export default function ParentChildrenPage() {
     fetchChildren();
   }, [authLoading, isLoggedIn, guardian, fetchChildren]);
 
-  const handleViewReport = () => {
+  // TODO: /parent/reports needs to consume the `childId` query param to show
+  // the correct child's report (it currently ignores it).
+  const handleViewReport = (child: ChildData) => {
     if (typeof window !== 'undefined') {
-      window.location.href = '/parent/reports';
+      window.location.href = `/parent/reports?childId=${encodeURIComponent(child.id)}`;
     }
   };
 
@@ -1194,7 +1196,7 @@ export default function ParentChildrenPage() {
               onToggle={() =>
                 setExpandedChild(expandedChild === child.id ? null : child.id)
               }
-              onViewReport={handleViewReport}
+              onViewReport={() => handleViewReport(child)}
               onUnlink={() => setUnlinkTarget(child)}
               onDownloadData={() => setDownloadTarget(child)}
               canViewProgress={can('child.view_progress')}

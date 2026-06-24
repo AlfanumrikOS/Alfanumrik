@@ -370,17 +370,18 @@ export default function ProgressPage() {
       setPerfScores((perfRes.data as PerformanceScoreRow[]) ?? []);
       setScoreHistory((histRes.data as ScoreHistoryRow[]) ?? []);
       setCoinBalance(coinRes.data?.balance ?? 0);
-      // Map decay data — resolve topic name from knowledge gaps if available,
-      // otherwise fall back to a human-readable "Topic N" label.
+      // Map decay data — concept_mastery rows have topic_id but no topic name.
+      // The display label is a human-readable "Topic N" fallback; the actual Foxy
+      // route always uses topic_id when available so it carries a real identifier.
+      // TODO(data-gap): add topic_name to concept_mastery or join via a lookup RPC
+      // so the displayed label can show the real concept name.
       const decayRaw = decayRes.data ?? [];
       const decayData = decayRaw.map((d: any, idx: number) => {
-        // Try to resolve from any loaded knowledge-gap data (shares topic_id structure)
-        // Falls back to "Topic N" (1-based) so UUIDs never reach the UI.
-        const resolvedName = `Topic ${idx + 1}`;
         return {
           id: d.id,
           topic_id: d.topic_id,
-          topic: resolvedName,
+          // Display label — topic_id is a UUID, never show it raw; use readable fallback
+          topic: `Topic ${idx + 1}`,
           subject: '',
           mastery_probability: d.mastery_probability ?? 0,
           next_review_at: d.next_review_at,
@@ -694,7 +695,16 @@ export default function ProgressPage() {
                                 variant="soft"
                                 size="sm"
                                 color="var(--orange)"
-                                onClick={() => router.push(`/foxy?topic=${encodeURIComponent(dt.topic)}`)}
+                                onClick={() => {
+                                  // Prefer named topic; fall back to topic_id so Foxy gets a real identifier.
+                                  const isFallbackLabel = /^Topic \d+$/.test(dt.topic);
+                                  const foxyUrl = (!isFallbackLabel)
+                                    ? `/foxy?topic=${encodeURIComponent(dt.topic)}`
+                                    : dt.topic_id
+                                      ? `/foxy?topic_id=${encodeURIComponent(dt.topic_id)}`
+                                      : `/foxy`;
+                                  router.push(foxyUrl);
+                                }}
                                 className="shrink-0"
                               >
                                 {isHi ? 'अभी revision करो' : 'Revise Now'}

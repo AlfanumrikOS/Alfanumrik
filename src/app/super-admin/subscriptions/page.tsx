@@ -258,11 +258,11 @@ function SubscriptionsContent() {
       {/* Subscription Table */}
       <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Student Subscriptions</h2>
       <div className="mb-3 flex gap-1.5">
-        <button onClick={() => setFilterPlan('')} className={filterPlan === '' ? filterBtnActive : filterBtnBase}>All</button>
+        <button onClick={() => { setFilterPlan(''); setUserPage(1); }} className={filterPlan === '' ? filterBtnActive : filterBtnBase}>All</button>
         {plans.map(p => (
           <button
             key={p}
-            onClick={() => setFilterPlan(p)}
+            onClick={() => { setFilterPlan(p); setUserPage(1); }}
             className={`${filterPlan === p ? filterBtnActive : filterBtnBase} text-[11px]`}
           >
             {p.replace(/_/g, ' ')}

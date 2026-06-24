@@ -579,7 +579,7 @@ export default function TeacherStudentsPage() {
   const filtered = allStudents
     .filter((s) => {
       const matchesSearch = !search || s.name.toLowerCase().includes(search.toLowerCase());
-      const matchesClass = selectedClass === 'all'; // Filter by class — no class_id on StudentData yet; shows all when 'all' selected
+      const matchesClass = selectedClass === 'all' || true; // Filter by class — no class_id on StudentData yet; treat all selections as pass-through until class_id is added to StudentData (TODO: wire class_id field)
       const matchesStruggling = !filterStruggling || s.mastery < 50 || s.accuracy < 50;
       return matchesSearch && matchesClass && matchesStruggling;
     })

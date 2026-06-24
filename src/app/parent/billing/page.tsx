@@ -102,6 +102,7 @@ export default function ParentBillingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [cancelConfirmChild, setCancelConfirmChild] = useState<ChildBilling | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -150,15 +151,9 @@ export default function ParentBillingPage() {
     router.push('/pricing');
   };
 
-  const handleCancel = async (child: ChildBilling) => {
-    if (!child.razorpay_subscription_id) return;
-    const confirmMsg = t(
-      isHi,
-      `Cancel ${child.student_name}'s ${child.plan_name} plan? Access continues until ${formatDate(child.current_period_end, isHi)}.`,
-      `${child.student_name} की ${child.plan_name} योजना रद्द करें? ${formatDate(child.current_period_end, isHi)} तक एक्सेस जारी रहेगा।`
-    );
-    if (!window.confirm(confirmMsg)) return;
-
+  // Called after the user confirms in the modal.
+  const executeCancelSubscription = async (child: ChildBilling) => {
+    setCancelConfirmChild(null);
     setCancellingId(child.student_id);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -191,6 +186,12 @@ export default function ParentBillingPage() {
     } finally {
       setCancellingId(null);
     }
+  };
+
+  // Opens the bilingual confirmation modal — replaces window.confirm() (P7/P11).
+  const handleCancel = (child: ChildBilling) => {
+    if (!child.razorpay_subscription_id) return;
+    setCancelConfirmChild(child);
   };
 
   // ─── States ────────────────────────────────────────────────────────────
@@ -278,6 +279,7 @@ export default function ParentBillingPage() {
   ];
 
   return (
+    <>
     <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8" data-testid="parent-billing-page">
       <header className="mb-6">
         <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
@@ -517,5 +519,55 @@ export default function ParentBillingPage() {
         />
       </section>
     </main>
+
+    {/* ─── Cancel-subscription confirmation modal (P7/P11) ─────────────── */}
+    {cancelConfirmChild && (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cancel-modal-title"
+        data-testid="cancel-confirm-modal"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+      >
+        <div className="w-full max-w-sm rounded-2xl border border-orange-100 bg-white p-6 shadow-xl">
+          <h2
+            id="cancel-modal-title"
+            className="mb-2 text-lg font-bold text-slate-900"
+          >
+            {t(isHi, 'Cancel subscription?', 'सदस्यता रद्द करें?')}
+          </h2>
+          <p className="mb-1 text-sm text-slate-700">
+            {t(
+              isHi,
+              `Cancel ${cancelConfirmChild.student_name ?? 'child'}'s ${cancelConfirmChild.plan_name} plan?`,
+              `${cancelConfirmChild.student_name ?? 'बच्चे'} की ${cancelConfirmChild.plan_name} योजना रद्द करें?`
+            )}
+          </p>
+          <p className="mb-5 text-sm text-slate-500">
+            {t(
+              isHi,
+              `Access continues until ${formatDate(cancelConfirmChild.current_period_end, isHi)}.`,
+              `${formatDate(cancelConfirmChild.current_period_end, isHi)} तक एक्सेस जारी रहेगा।`
+            )}
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <button
+              onClick={() => setCancelConfirmChild(null)}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              {t(isHi, 'Keep subscription', 'सदस्यता रखें')}
+            </button>
+            <button
+              onClick={() => executeCancelSubscription(cancelConfirmChild)}
+              data-testid="cancel-confirm-btn"
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+            >
+              {t(isHi, 'Cancel subscription', 'सदस्यता रद्द करें')}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

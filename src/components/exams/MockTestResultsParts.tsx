@@ -17,6 +17,9 @@ import { useState } from 'react';
 import { calculateScorePercent } from '@/lib/scoring';
 import type { ReviewItem, SubmitResult } from './mock-test-types';
 
+// TODO(assessment): set to true and add onClick when /api/review/mark ships — REG candidate.
+const TODO_SHOW_REVISION_MARK = false;
+
 const CARD_STYLE = {
   background: 'var(--surface-1)',
   border: '1px solid var(--border)',
@@ -258,15 +261,17 @@ export function ReviewCard({ item, isHi }: { item: ReviewItem; isHi: boolean }) 
               <p style={{ color: 'var(--text-1)' }}>{item.explanation}</p>
             </div>
           )}
-          {/* TODO(assessment): wire to /api/review/mark when revision review queue lands. */}
-          <button
-            type="button"
-            data-testid="mock-results-review-bookmark"
-            className="text-xs font-semibold rounded-lg px-2.5 py-1.5"
-            style={{ background: 'var(--surface-1)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
-          >
-            {isHi ? 'पुनरीक्षण हेतु चिह्नित करें' : 'Mark this for revision'}
-          </button>
+          {/* TODO(assessment): re-enable when /api/review/mark endpoint ships — REG candidate */}
+          {TODO_SHOW_REVISION_MARK && (
+            <button
+              type="button"
+              data-testid="mock-results-review-bookmark"
+              className="text-xs font-semibold rounded-lg px-2.5 py-1.5"
+              style={{ background: 'var(--surface-1)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
+            >
+              {isHi ? 'पुनरीक्षण हेतु चिह्नित करें' : 'Mark this for revision'}
+            </button>
+          )}
         </div>
       )}
     </div>
