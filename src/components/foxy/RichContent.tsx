@@ -4,7 +4,6 @@ import React, { memo, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
-import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import { useSubjectLookup } from '@/lib/useSubjectLookup';
 
@@ -203,7 +202,7 @@ function SegmentRenderer({ segment, cfg }: { segment: Segment; cfg: { color: str
 function MarkdownBlock({ content, cfg }: { content: string; cfg: { color: string; icon: string } }) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
+      remarkPlugins={[remarkGfm, remarkMath]}
       rehypePlugins={[rehypeKatex]}
       components={{
         // Headings styled with subject color
