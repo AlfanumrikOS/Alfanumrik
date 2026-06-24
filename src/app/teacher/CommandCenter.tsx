@@ -55,7 +55,6 @@ import {
   useAlerts,
   useGradingQueue,
   useStudentMasteryReport,
-  useClassLeaderboard,
 } from '@/lib/teacher/use-teacher-data';
 import { TeacherDashboardSkeleton } from '@/components/Skeleton';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/admin-ui/StatusBadge';
@@ -116,66 +115,6 @@ const SEV_ACCENT: Record<string, string> = {
 // locally so the drill-through can use the id when present without a contract
 // change.
 type HeatmapRowWithId = HeatmapRow & { student_id?: string };
-
-// ─── Class Rankings Widget ───────────────────────────────────────────────────
-function ClassRankingsWidget({ classId, isHi }: { classId: string; isHi: boolean }) {
-  const { data, isLoading } = useClassLeaderboard(classId, true);
-  const [open, setOpen] = useState(true);
-
-  const title = isHi ? '🏆 कक्षा रैंकिंग' : '🏆 Class Rankings';
-  const subtitle = isHi ? 'इस सप्ताह शीर्ष 5' : 'Top 5 this week';
-
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center justify-between"
-      >
-        <div>
-          <h3 className="font-semibold text-white text-sm">{title}</h3>
-          <p className="text-xs text-white/50">{subtitle}</p>
-        </div>
-        <span className="text-white/40 text-xs">{open ? '▲' : '▼'}</span>
-      </button>
-      {open && (
-        <div className="mt-3 space-y-2">
-          {isLoading && (
-            <div className="text-xs text-white/40 text-center py-2">
-              {isHi ? 'लोड हो रहा है...' : 'Loading...'}
-            </div>
-          )}
-          {!isLoading && (!data?.items || data.items.length === 0) && (
-            <div className="text-xs text-white/40 text-center py-2">
-              {isHi ? 'अभी कोई डेटा नहीं' : 'No data yet'}
-            </div>
-          )}
-          {data?.items?.map((row) => (
-            <div key={row.student_id} className="flex items-center gap-2 text-xs">
-              <span
-                className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold flex-shrink-0"
-                style={{
-                  background:
-                    row.rank === 1
-                      ? '#FFD700'
-                      : row.rank === 2
-                      ? '#C0C0C0'
-                      : row.rank === 3
-                      ? '#CD7F32'
-                      : 'rgba(255,255,255,0.1)',
-                  color: row.rank <= 3 ? '#000' : '#fff',
-                }}
-              >
-                {row.rank}
-              </span>
-              <span className="flex-1 truncate text-white/80">{row.name}</span>
-              <span className="text-orange-400 font-semibold">{row.xp_this_period} XP</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ─── Roster mastery heatmap ─────────────────────────────────────────────────
 function RosterHeatmap({
@@ -1209,11 +1148,6 @@ export default function CommandCenter() {
         </Panel>
         </SectionErrorBoundary>
       </div>
-
-      {/* Class Rankings — Top 5 this week */}
-      {effectiveClassId && (
-        <ClassRankingsWidget classId={effectiveClassId} isHi={isHi} />
-      )}
 
       {/* Toast */}
       {toast && (
