@@ -19,7 +19,7 @@ export default function TeacherProfilePage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
 
-  if (authLoading) return <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc' }}><div style={{ fontSize: 48 }}>👩‍🏫</div></div>;
+  if (authLoading) return <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}><div style={{ fontSize: 48 }}>👩‍🏫</div></div>;
   if (!isLoggedIn || (activeRole !== 'teacher' && !teacher)) { router.replace('/login'); return null; }
 
   const startEdit = () => {
@@ -67,7 +67,7 @@ export default function TeacherProfilePage() {
   );
 
   return (
-    <div style={{ minHeight: '100dvh', background: '#f8fafc', paddingBottom: 100 }}>
+    <div style={{ minHeight: '100dvh', background: 'var(--bg)', paddingBottom: 100 }}>
       <div style={{ background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)', padding: '32px 20px 28px', color: '#fff', position: 'relative' }}>
         <button
           onClick={() => router.push('/teacher')}

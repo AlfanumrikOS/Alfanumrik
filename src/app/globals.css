@@ -208,9 +208,25 @@ h1, h2, h3, h4, h5 {
 
 /* ─── Desktop Sidebar Layout (only when sidebar exists) ───── */
 @media (min-width: 1024px) {
-  body:has(.sidebar-nav) {
+  /* :has() guard — Safari < 15.4 + Firefox < 121 fallback */
+  @supports selector(:has(*)) {
+    body:has(.sidebar-nav) {
+      display: flex;
+      flex-direction: row;
+    }
+    body:has(.sidebar-nav) .app-shell {
+      margin-left: var(--sidebar-width);
+      width: calc(100% - var(--sidebar-width));
+    }
+  }
+  /* Fallback for browsers without :has() support */
+  body.has-sidebar {
     display: flex;
     flex-direction: row;
+  }
+  body.has-sidebar .app-shell {
+    margin-left: var(--sidebar-width);
+    width: calc(100% - var(--sidebar-width));
   }
 
   .sidebar-nav {
@@ -220,11 +236,6 @@ h1, h2, h3, h4, h5 {
     bottom: 0;
     width: var(--sidebar-width);
     z-index: 50;
-  }
-
-  body:has(.sidebar-nav) .app-shell {
-    margin-left: var(--sidebar-width);
-    width: calc(100% - var(--sidebar-width));
   }
 
   .pb-nav { padding-bottom: 0 !important; }
@@ -481,8 +492,9 @@ input[type="range"][style*="accentColor"]::-webkit-slider-thumb {
 .gradient-text {
   background: linear-gradient(135deg, var(--orange), var(--gold));
   -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
   background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent; /* Firefox fallback for background-clip: text */
 }
 .gradient-brand { background: linear-gradient(135deg, var(--orange), var(--gold)); }
 .gradient-cool { background: linear-gradient(135deg, var(--teal), #6C5CE7); }
@@ -602,6 +614,15 @@ input[type="range"][style*="accentColor"]::-webkit-slider-thumb {
 }
 
 /* ─── Focus Visible (keyboard nav accessibility) ──────────── */
+/* Fallback for browsers that don't support :focus-visible (Safari < 15.4) */
+@supports not selector(:focus-visible) {
+  :focus {
+    outline: 2px solid var(--orange);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
 :focus-visible {
   outline: 2px solid var(--orange);
   outline-offset: 2px;
@@ -722,12 +743,23 @@ select.input-base option { background: var(--surface-1); color: var(--text-1); }
 
 /* Collapsible sidebar */
 @media (min-width: 1024px) {
-  body:has(.sidebar-nav.sidebar-collapsed) .app-shell {
+  @supports selector(:has(*)) {
+    body:has(.sidebar-nav.sidebar-collapsed) .app-shell {
+      margin-left: 56px;
+      width: calc(100% - 56px);
+      transition: margin-left 0.25s ease, width 0.25s ease;
+    }
+    body:has(.sidebar-nav:not(.sidebar-collapsed)) .app-shell {
+      transition: margin-left 0.25s ease, width 0.25s ease;
+    }
+  }
+  /* Fallback for browsers without :has() support */
+  body.has-sidebar.sidebar-collapsed .app-shell {
     margin-left: 56px;
     width: calc(100% - 56px);
     transition: margin-left 0.25s ease, width 0.25s ease;
   }
-  body:has(.sidebar-nav:not(.sidebar-collapsed)) .app-shell {
+  body.has-sidebar:not(.sidebar-collapsed) .app-shell {
     transition: margin-left 0.25s ease, width 0.25s ease;
   }
 }
@@ -1312,8 +1344,19 @@ img, video, iframe, canvas, svg {
    flickers as the chat scrolls beneath it. Drop the blur + promote the header
    to its own compositing layer on /foxy to eliminate the flicker. Scoped to
    /foxy via the .foxy-shell class on AppShell; other routes keep the blur. */
-html:has(.foxy-shell),
-body:has(.foxy-shell) {
+@supports selector(:has(*)) {
+  html:has(.foxy-shell),
+  body:has(.foxy-shell) {
+    overflow: hidden;
+    height: 100%;
+    position: fixed;
+    width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+/* Fallback for browsers without :has() support */
+html.foxy-body-lock,
+body.foxy-body-lock {
   overflow: hidden;
   height: 100%;
   position: fixed;

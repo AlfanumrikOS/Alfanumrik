@@ -39,7 +39,7 @@ export default function CookieConsent() {
             bottom: 0,
             left: 0,
             right: 0,
-            zIndex: 9999,
+            zIndex: 9999 /* var(--z-skip) */,
             background: 'var(--surface-1, #fff)',
             borderTop: '1px solid var(--border, #e5e7eb)',
             padding: '12px 16px',

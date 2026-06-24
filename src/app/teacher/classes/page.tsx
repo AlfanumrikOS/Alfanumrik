@@ -10,6 +10,7 @@ import { authHeader } from '@/lib/api/auth-header';
 import { usePermissions } from '@/lib/usePermissions';
 import { useClassPulse } from '@/lib/pulse/use-pulse';
 import { StudentPulseList } from '@/components/pulse';
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -410,6 +411,7 @@ export default function TeacherClassesPage() {
 
       {/* Class cards grid */}
       {classes.length > 0 && (
+        <SectionErrorBoundary section="Class Cards">
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
@@ -782,6 +784,7 @@ export default function TeacherClassesPage() {
             );
           })}
         </div>
+        </SectionErrorBoundary>
       )}
 
       {/* Floating Action Button */}

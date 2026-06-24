@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth, type UserRole } from '@/lib/AuthContext';
 import { useDashboardData, useFeatureFlags } from '@/lib/swr';
@@ -51,6 +51,14 @@ export function DesktopSidebar() {
 
   const isActive = (href: string) => pathname === href || (href !== '/' && pathname.startsWith(href));
   const isFocusedFoxy = pathname === '/foxy' || pathname.startsWith('/foxy');
+
+  // Fallback for browsers without :has() support (Safari < 15.4, Firefox < 121).
+  // Only add the class when the sidebar is actually visible (not on /foxy).
+  useEffect(() => {
+    if (isFocusedFoxy) return;
+    document.body.classList.add('has-sidebar');
+    return () => document.body.classList.remove('has-sidebar');
+  }, [isFocusedFoxy]);
 
   if (isFocusedFoxy) return null;
 

@@ -63,7 +63,7 @@ export default function MaintenanceBanner() {
       role="alert"
       aria-label={isHi ? 'रखरखाव सूचना' : 'Maintenance notice'}
       className="w-full bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center justify-center gap-2 text-amber-900 text-xs sm:text-sm font-medium relative"
-      style={{ zIndex: 9998 }}
+      style={{ zIndex: 9998 /* var(--z-skip) - 1: below cookie consent/network/SW banners */ }}
     >
       {/* Warning icon */}
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="flex-shrink-0">

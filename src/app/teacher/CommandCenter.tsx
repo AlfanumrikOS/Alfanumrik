@@ -43,6 +43,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { useTeacherAssignmentLifecycle } from '@/lib/use-teacher-assignment-lifecycle';
 import { useTeacherGradebookDepth } from '@/lib/use-teacher-gradebook-depth';
 import { useTeacherParentComms } from '@/lib/use-teacher-parent-comms';
@@ -187,7 +188,7 @@ function RosterHeatmap({
                 <button
                   type="button"
                   onClick={() => onCellStudent(row as HeatmapRowWithId)}
-                  className="text-left bg-transparent border-none cursor-pointer p-0 hover:text-[#7C3AED]"
+                  className="text-left bg-transparent border-none cursor-pointer p-0 hover:text-[var(--purple)]"
                   style={{ color: 'var(--text-1)' }}
                   title={tt(isHi, 'View student detail', 'छात्र विवरण देखें')}
                 >
@@ -278,7 +279,7 @@ function AlertRow({
               onClick={() => onAssign(alert)}
               disabled={busy}
               data-testid="assign-remediation-btn"
-              className="py-1 px-2.5 bg-[#7C3AED] text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+              className="py-1 px-2.5 bg-[var(--purple)] text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
             >
               {busy
                 ? tt(isHi, 'Assigning…', 'सौंपा जा रहा है…')
@@ -329,7 +330,7 @@ function AlertRow({
         {alert.description}
       </p>
       {alert.recommended_action && (
-        <p className="text-xs m-0 italic" style={{ color: '#7C3AED' }}>
+        <p className="text-xs m-0 italic" style={{ color: 'var(--purple)' }}>
           {tt(isHi, 'Action', 'कार्रवाई')}: {alert.recommended_action}
         </p>
       )}
@@ -408,7 +409,7 @@ export function ActionBar({
           disabled={a.disabled}
           data-testid={a.testid}
           title={a.disabled ? tt(isHi, 'Coming soon', 'जल्द आ रहा है') : undefined}
-          className="py-2 px-3.5 rounded-lg text-[13px] font-semibold cursor-pointer transition-colors hover:border-[#7C3AED] disabled:opacity-40 disabled:cursor-default"
+          className="py-2 px-3.5 rounded-lg text-[13px] font-semibold cursor-pointer transition-colors hover:border-[var(--purple)] disabled:opacity-40 disabled:cursor-default"
           style={{
             background: 'var(--surface-2)',
             color: 'var(--text-1)',
@@ -424,7 +425,7 @@ export function ActionBar({
           {a.badge != null && (
             <span
               data-testid="grading-queue-action-badge"
-              className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[#7C3AED] text-white text-[10px] font-bold align-middle"
+              className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[var(--purple)] text-white text-[10px] font-bold align-middle"
             >
               {a.badge}
             </span>
@@ -926,7 +927,7 @@ export default function CommandCenter() {
               mutateAlerts();
             }}
             className="py-2 px-3 bg-transparent rounded-lg text-[13px] font-semibold cursor-pointer"
-            style={{ color: '#7C3AED', border: '1px solid rgba(124,58,237,0.35)' }}
+            style={{ color: 'var(--purple)', border: '1px solid color-mix(in srgb, var(--purple) 35%, transparent)' }}
           >
             {tt(isHi, 'Refresh', 'रिफ्रेश')}
           </button>
@@ -937,16 +938,17 @@ export default function CommandCenter() {
           The "Awaiting grading" tile is Wave B: it appears only when
           ff_teacher_assignment_lifecycle is ON (otherwise the grid is the
           byte-identical Wave A 4-tile layout). One-tap it to open the queue. */}
+      <SectionErrorBoundary section="Today summary">
       <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3 mb-4">
         <KpiTile
           label={tt(isHi, 'Students', 'छात्र')}
           value={activeClass?.student_count ?? stats?.total_students ?? 0}
-          accent="#7C3AED"
+          accent="var(--purple)"
         />
         <KpiTile
           label={tt(isHi, 'Avg mastery', 'औसत मास्टरी')}
           value={activeClass?.avg_mastery != null ? `${activeClass.avg_mastery}%` : '—'}
-          accent="#7C3AED"
+          accent="var(--purple)"
         />
         <KpiTile
           label={tt(isHi, 'At-risk', 'जोखिम में')}
@@ -964,7 +966,7 @@ export default function CommandCenter() {
             type="button"
             onClick={() => setQueueOpen(true)}
             data-testid="awaiting-grading-tile"
-            className="text-left rounded-xl py-3.5 px-4 cursor-pointer transition-colors hover:border-[#7C3AED]"
+            className="text-left rounded-xl py-3.5 px-4 cursor-pointer transition-colors hover:border-[var(--purple)]"
             style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)' }}
           >
             <p className="text-[11px] m-0 uppercase tracking-wide font-semibold" style={{ color: 'var(--text-3)' }}>
@@ -995,9 +997,11 @@ export default function CommandCenter() {
           onOpenGradingQueue={() => setQueueOpen(true)}
         />
       </div>
+      </SectionErrorBoundary>
 
       {/* Wave B — grading queue surface (lazy-loaded; mounts only when opened) */}
       {gradingQueueEnabled && queueOpen && (
+        <SectionErrorBoundary section="Grading Queue">
         <div className="mb-5">
           <GradingQueue
             items={queueItems}
@@ -1010,11 +1014,13 @@ export default function CommandCenter() {
             onClose={() => setQueueOpen(false)}
           />
         </div>
+        </SectionErrorBoundary>
       )}
 
       {/* Wave C — student mastery report panel (lazy-loaded; mounts only when a
           teacher drills into a heatmap cell/row with the depth flag ON). */}
       {gradebookDepthEnabled && reportOpen && (
+        <SectionErrorBoundary section="Student Mastery Report">
         <div className="mb-5">
           <StudentMasteryReport
             report={report ?? null}
@@ -1033,11 +1039,13 @@ export default function CommandCenter() {
             shareWithParentDone={!!(reportStudent && parentNotifyDone[reportStudent.id])}
           />
         </div>
+        </SectionErrorBoundary>
       )}
 
       {/* Dense two-column body: heatmap (wide) + alerts rail */}
       <div className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-4 items-start">
         {/* Roster mastery heatmap */}
+        <SectionErrorBoundary section="Roster Mastery Heatmap">
         <Panel>
           <PanelHead
             title={tt(isHi, 'Roster mastery heatmap', 'रोस्टर मास्टरी हीटमैप')}
@@ -1077,8 +1085,10 @@ export default function CommandCenter() {
             )}
           </div>
         </Panel>
+        </SectionErrorBoundary>
 
         {/* At-risk alerts rail */}
+        <SectionErrorBoundary section="At-Risk Alerts">
         <Panel>
           <PanelHead
             title={tt(isHi, 'At-risk alerts', 'जोखिम अलर्ट')}
@@ -1122,6 +1132,7 @@ export default function CommandCenter() {
             )}
           </div>
         </Panel>
+        </SectionErrorBoundary>
       </div>
 
       {/* Toast */}

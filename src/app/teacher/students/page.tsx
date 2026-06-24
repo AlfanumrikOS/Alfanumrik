@@ -8,6 +8,7 @@ import { authHeader } from '@/lib/api/auth-header';
 import { usePermissions } from '@/lib/usePermissions';
 import { usePulse } from '@/lib/pulse/use-pulse';
 import { StudentPulse } from '@/components/pulse';
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -878,17 +879,19 @@ export default function TeacherStudentsPage() {
 
       {/* Student Grid */}
       {filtered.length > 0 && (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-            gap: 16,
-          }}
-        >
-          {filtered.map((student) => (
-            <StudentCard key={student.id} student={student} teacherId={teacherId} isHi={isHi} router={router} canViewAnalytics={can('class.view_analytics')} />
-          ))}
-        </div>
+        <SectionErrorBoundary section="Student Grid">
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+              gap: 16,
+            }}
+          >
+            {filtered.map((student) => (
+              <StudentCard key={student.id} student={student} teacherId={teacherId} isHi={isHi} router={router} canViewAnalytics={can('class.view_analytics')} />
+            ))}
+          </div>
+        </SectionErrorBoundary>
       )}
       
     </div>

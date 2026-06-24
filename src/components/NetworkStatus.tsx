@@ -37,7 +37,7 @@ export default function NetworkStatus() {
         top: 0,
         left: 0,
         right: 0,
-        zIndex: 9999,
+        zIndex: 9999 /* var(--z-skip) */,
         background: '#1E293B',
         color: '#E2E8F0',
         padding: '8px 16px',

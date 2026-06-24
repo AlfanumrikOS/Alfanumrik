@@ -24,6 +24,7 @@ import type {
   AnalyticsData,
   FeatureFlag,
 } from './_components/widgets';
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 function ControlRoom() {
   const { apiFetch } = useAdmin();
@@ -40,6 +41,7 @@ function ControlRoom() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Staleness timestamps
   const [statsUpdated, setStatsUpdated] = useState<Date | null>(null);
@@ -52,6 +54,7 @@ function ControlRoom() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
+    setError(null);
     const now = new Date();
     try {
       const [statsRes, deployRes, obsRes, backupRes, deployHistRes, logsRes, analyticsRes, flagsRes] = await Promise.all([
@@ -72,7 +75,7 @@ function ControlRoom() {
       if (logsRes.ok) { const d = await logsRes.json(); setRecentLogs(d.data || []); }
       if (analyticsRes.ok) { setAnalytics(await analyticsRes.json()); setAnalyticsUpdated(now); }
       if (flagsRes.ok) { const d = await flagsRes.json(); setFlags(d.data || []); }
-    } catch { /* */ }
+    } catch (e) { console.error('ControlRoom fetch error:', e); setError(e instanceof Error ? e.message : 'Failed to load dashboard data'); }
     setLoading(false);
   }, [apiFetch]);
 
@@ -95,6 +98,19 @@ function ControlRoom() {
     return <div style={{ color: '#9CA3AF', padding: 40, textAlign: 'center' }}>Loading control room...</div>;
   }
 
+  if (error && !stats) {
+    return (
+      <div style={{ color: '#EF4444', padding: 40, textAlign: 'center' }}>
+        <div style={{ fontSize: 24, marginBottom: 8 }}>&#x26A0;&#xFE0F;</div>
+        <p style={{ fontWeight: 600, marginBottom: 12 }}>Failed to load dashboard data</p>
+        <p style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 16 }}>{error}</p>
+        <button onClick={fetchAll} style={{ padding: '8px 20px', background: '#7C3AED', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div>
       {/* Header */}
@@ -109,60 +125,85 @@ function ControlRoom() {
         </div>
       </div>
 
+      {error && (
+        <div style={{ padding: '10px 14px', marginBottom: 16, background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#DC2626', fontSize: 13 }}>
+          &#x26A0;&#xFE0F; Some data failed to load: {error} &mdash;{' '}
+          <button onClick={fetchAll} style={{ background: 'none', border: 'none', color: '#DC2626', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>Retry</button>
+        </div>
+      )}
+
       {/* System Status Bar */}
       {obsData && (
-        <SystemStatusBar obsData={obsData} lastUpdated={obsUpdated} />
+        <SectionErrorBoundary section="System Status Bar">
+          <SystemStatusBar obsData={obsData} lastUpdated={obsUpdated} />
+        </SectionErrorBoundary>
       )}
 
       {/* Two-Column: Operations + Status */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        <QuickOperations apiFetch={apiFetch} />
-        <LiveStatus
-          stats={stats}
-          flags={flags}
-          analytics={analytics}
-          toggleFlag={toggleFlag}
-          lastUpdated={statsUpdated}
-        />
+        <SectionErrorBoundary section="Quick Operations">
+          <QuickOperations apiFetch={apiFetch} />
+        </SectionErrorBoundary>
+        <SectionErrorBoundary section="Live Status">
+          <LiveStatus
+            stats={stats}
+            flags={flags}
+            analytics={analytics}
+            toggleFlag={toggleFlag}
+            lastUpdated={statsUpdated}
+          />
+        </SectionErrorBoundary>
       </div>
 
       {/* Pending Actions */}
-      <PendingActions obsData={obsData} analytics={analytics} flags={flags} />
+      <SectionErrorBoundary section="Pending Actions">
+        <PendingActions obsData={obsData} analytics={analytics} flags={flags} />
+      </SectionErrorBoundary>
 
       {/* Deploy + Audit + Backups */}
-      <DeployAuditBackups
-        deployInfo={deployInfo}
-        recentLogs={recentLogs}
-        backups={backups}
-        lastUpdated={deployUpdated}
-      />
+      <SectionErrorBoundary section="Deploy Audit and Backups">
+        <DeployAuditBackups
+          deployInfo={deployInfo}
+          recentLogs={recentLogs}
+          backups={backups}
+          lastUpdated={deployUpdated}
+        />
+      </SectionErrorBoundary>
 
       {/* Recent Deployments */}
-      <DeployHistory deployHistory={deployHistory} lastUpdated={deployUpdated} />
+      <SectionErrorBoundary section="Deploy History">
+        <DeployHistory deployHistory={deployHistory} lastUpdated={deployUpdated} />
+      </SectionErrorBoundary>
 
       {/* Learner Health */}
       {analytics && stats && obsData && (
-        <LearnerHealth
-          analytics={analytics}
-          stats={stats}
-          obsData={obsData}
-          lastUpdated={analyticsUpdated}
-        />
+        <SectionErrorBoundary section="Learner Health">
+          <LearnerHealth
+            analytics={analytics}
+            stats={stats}
+            obsData={obsData}
+            lastUpdated={analyticsUpdated}
+          />
+        </SectionErrorBoundary>
       )}
 
       {/* Platform Health Grid */}
       {stats && obsData && (
-        <PlatformHealth
-          stats={stats}
-          obsData={obsData}
-          analytics={analytics}
-          lastUpdated={statsUpdated}
-        />
+        <SectionErrorBoundary section="Platform Health">
+          <PlatformHealth
+            stats={stats}
+            obsData={obsData}
+            analytics={analytics}
+            lastUpdated={statsUpdated}
+          />
+        </SectionErrorBoundary>
       )}
 
       {/* Content + Engagement Row */}
       {analytics && (
-        <ContentEngagement analytics={analytics} lastUpdated={analyticsUpdated} />
+        <SectionErrorBoundary section="Content Engagement">
+          <ContentEngagement analytics={analytics} lastUpdated={analyticsUpdated} />
+        </SectionErrorBoundary>
       )}
     </div>
   );

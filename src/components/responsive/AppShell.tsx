@@ -125,6 +125,20 @@ export function AppShell({
     });
   }, [oneHandKey]);
 
+  // Fallback for browsers without :has() support (Safari < 15.4, Firefox < 121).
+  // When this AppShell is the Foxy shell, add .foxy-body-lock to <body> so the
+  // viewport lock works even without :has() selector support.
+  useEffect(() => {
+    const isFoxy = className?.includes('foxy-shell');
+    if (!isFoxy) return;
+    document.documentElement.classList.add('foxy-body-lock');
+    document.body.classList.add('foxy-body-lock');
+    return () => {
+      document.documentElement.classList.remove('foxy-body-lock');
+      document.body.classList.remove('foxy-body-lock');
+    };
+  }, [className]);
+
   // Compact-on-scroll header. rAF-throttled like the MobileNav scroll
   // listener to keep cheap Android phones smooth.
   useEffect(() => {

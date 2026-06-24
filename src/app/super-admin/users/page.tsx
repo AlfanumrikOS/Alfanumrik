@@ -6,6 +6,7 @@ import Link from 'next/link';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
 import { DataTable, type Column, DetailDrawer, StatusBadge } from '@/components/admin-ui';
 import { toast } from '@/components/ui/toast';
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 interface UserRecord {
   id: string; auth_user_id: string; name: string; email: string; role: string;
@@ -306,58 +307,60 @@ function UsersContent() {
       </div>
 
       {/* User Table */}
-      <DataTable
-        columns={columns}
-        data={users}
-        keyField="id"
-        onRowClick={setSelectedUser}
-        selectable
-        selectedIds={selectedIds}
-        onSelectionChange={setSelectedIds}
-        loading={loading}
-        emptyMessage="No users found"
-      />
+      <SectionErrorBoundary section="User Table">
+        <DataTable
+          columns={columns}
+          data={users}
+          keyField="id"
+          onRowClick={setSelectedUser}
+          selectable
+          selectedIds={selectedIds}
+          onSelectionChange={setSelectedIds}
+          loading={loading}
+          emptyMessage="No users found"
+        />
 
-      {/* Bulk Actions */}
-      {selectedIds.size > 0 && (
-        <div
-          className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-foreground px-5 py-2.5 text-surface-1"
-          style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}
-        >
-          <span className="text-[13px] font-semibold">{selectedIds.size} selected</span>
-          <button onClick={() => setSelectedIds(new Set())} className="rounded border-0 bg-white/20 px-3 py-1 text-xs text-surface-1 cursor-pointer">
-            Clear
-          </button>
-          <button onClick={downloadCSV} className="rounded border-0 bg-surface-1 px-3 py-1 text-xs font-semibold text-foreground cursor-pointer">
-            Export Selected
-          </button>
-        </div>
-      )}
+        {/* Bulk Actions */}
+        {selectedIds.size > 0 && (
+          <div
+            className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-foreground px-5 py-2.5 text-surface-1"
+            style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}
+          >
+            <span className="text-[13px] font-semibold">{selectedIds.size} selected</span>
+            <button onClick={() => setSelectedIds(new Set())} className="rounded border-0 bg-white/20 px-3 py-1 text-xs text-surface-1 cursor-pointer">
+              Clear
+            </button>
+            <button onClick={downloadCSV} className="rounded border-0 bg-surface-1 px-3 py-1 text-xs font-semibold text-foreground cursor-pointer">
+              Export Selected
+            </button>
+          </div>
+        )}
 
-      {/* Pagination */}
-      <div className="flex items-center justify-between px-4 py-3 border-t border-surface-3 text-[13px]">
-        <span className="text-muted-foreground">
-          {userTotal === 0
-            ? 'No users found'
-            : `${(userPage - 1) * PAGE_LIMIT + 1}–${Math.min(userPage * PAGE_LIMIT, userTotal)} of ${userTotal}`}
-        </span>
-        <div className="flex gap-2">
-          <button
-            onClick={() => router.push(`?page=${userPage - 1}`)}
-            disabled={userPage <= 1}
-            className="px-3 py-1.5 rounded-md border border-surface-3 disabled:opacity-40"
-          >
-            Prev
-          </button>
-          <button
-            onClick={() => router.push(`?page=${userPage + 1}`)}
-            disabled={userPage * PAGE_LIMIT >= userTotal}
-            className="px-3 py-1.5 rounded-md border border-surface-3 disabled:opacity-40"
-          >
-            Next
-          </button>
+        {/* Pagination */}
+        <div className="flex items-center justify-between px-4 py-3 border-t border-surface-3 text-[13px]">
+          <span className="text-muted-foreground">
+            {userTotal === 0
+              ? 'No users found'
+              : `${(userPage - 1) * PAGE_LIMIT + 1}–${Math.min(userPage * PAGE_LIMIT, userTotal)} of ${userTotal}`}
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => router.push(`?page=${userPage - 1}`)}
+              disabled={userPage <= 1}
+              className="px-3 py-1.5 rounded-md border border-surface-3 disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <button
+              onClick={() => router.push(`?page=${userPage + 1}`)}
+              disabled={userPage * PAGE_LIMIT >= userTotal}
+              className="px-3 py-1.5 rounded-md border border-surface-3 disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
         </div>
-      </div>
+      </SectionErrorBoundary>
 
       {/* User Detail Drawer */}
       <DetailDrawer open={!!selectedUser} onClose={() => setSelectedUser(null)} title={selectedUser?.name || 'User Details'}>

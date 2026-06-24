@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { getLevelFromScore } from '@/lib/score-config';
 import { REPORT_MONTHS_COUNT } from '@/lib/constants';
 import ParentLabReportWidget from '@/components/parent/ParentLabReportWidget';
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -1759,12 +1760,14 @@ export default function ParentReportsPage() {
 
         {/* ── MONTHLY REPORT VIEW ── */}
         {viewMode === 'monthly' && guardian && student && (
-          <MonthlyReportSection
-            guardianId={guardian.id}
-            studentId={student.id}
-            studentName={student.name}
-            isHi={isHi}
-          />
+          <SectionErrorBoundary section="Monthly Report">
+            <MonthlyReportSection
+              guardianId={guardian.id}
+              studentId={student.id}
+              studentName={student.name}
+              isHi={isHi}
+            />
+          </SectionErrorBoundary>
         )}
 
         {/* ── WEEKLY / RANGE VIEW ── */}
@@ -1790,6 +1793,7 @@ export default function ParentReportsPage() {
         {viewMode === 'weekly' && !loading && !error && (
           <>
             {/* ── 1. PERFORMANCE SUMMARY CARDS ── */}
+            <SectionErrorBoundary section="Performance Summary">
             <div style={{ marginBottom: 20 }}>
               <div style={sectionHeading}>{t(isHi, 'Performance Summary', 'प्रदर्शन सारांश')}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
@@ -1819,8 +1823,10 @@ export default function ParentReportsPage() {
                 />
               </div>
             </div>
+            </SectionErrorBoundary>
 
             {/* ── 1a. STEM LAB ACTIVITY (Tier 2 R7) ── */}
+            <SectionErrorBoundary section="STEM Lab">
             <div id="labs" style={{ marginBottom: 20 }}>
               <div style={sectionHeading}>{t(isHi, 'STEM Lab', 'STEM लैब')}</div>
               <ParentLabReportWidget
@@ -1829,16 +1835,20 @@ export default function ParentReportsPage() {
                 isHi={isHi}
               />
             </div>
+            </SectionErrorBoundary>
 
             {/* ── 1b. PERFORMANCE SCORE TRENDS ── */}
             {scoreTrends.length > 0 && (
+              <SectionErrorBoundary section="Performance Score Trends">
               <div style={{ marginBottom: 20 }}>
                 <div style={sectionHeading}>{t(isHi, 'Performance Score', 'प्रदर्शन स्कोर')}</div>
                 <PerformanceScoreTrends trends={scoreTrends} isHi={isHi} />
               </div>
+              </SectionErrorBoundary>
             )}
 
             {/* ── 2. SUBJECT-WISE PERFORMANCE ── */}
+            <SectionErrorBoundary section="Subject Performance">
             <div style={{ marginBottom: 20 }}>
               <div style={sectionHeading}>{t(isHi, 'Subject Performance', 'विषय प्रदर्शन')}</div>
               {subjects.length > 0 ? (
@@ -1853,38 +1863,49 @@ export default function ParentReportsPage() {
                 </div>
               )}
             </div>
+            </SectionErrorBoundary>
 
             {/* ── 3. WEEKLY ACTIVITY TIMELINE ── */}
             {dailyActivity.length > 0 && (
+              <SectionErrorBoundary section="Weekly Activity">
               <div style={{ marginBottom: 20 }}>
                 <div style={sectionHeading}>{t(isHi, 'Weekly Activity', 'साप्ताहिक गतिविधि')}</div>
                 <WeeklyTimeline days={dailyActivity} mostActiveDay={mostActiveDay} isHi={isHi} />
               </div>
+              </SectionErrorBoundary>
             )}
 
             {/* ── 4. CONCEPT MASTERY MAP ── */}
+            <SectionErrorBoundary section="Concept Mastery">
             <div style={{ marginBottom: 20 }}>
               <div style={sectionHeading}>{t(isHi, 'Concept Mastery', 'अवधारणा महारत')}</div>
               <ConceptMasteryMap concepts={concepts} isHi={isHi} />
             </div>
+            </SectionErrorBoundary>
 
             {/* ── 5. QUIZ HISTORY ── */}
+            <SectionErrorBoundary section="Quiz History">
             <div style={{ marginBottom: 20 }}>
               <div style={sectionHeading}>{t(isHi, 'Quiz History', 'क्विज़ इतिहास')}</div>
               <QuizHistory quizzes={quizzes} isHi={isHi} />
             </div>
+            </SectionErrorBoundary>
 
             {/* ── 5a. ASSIGNMENT SUBMISSIONS ── */}
+            <SectionErrorBoundary section="Assignment Submissions">
             <div style={{ marginBottom: 20 }}>
               <div style={sectionHeading}>{t(isHi, 'Assignments', 'असाइनमेंट')}</div>
               <AssignmentSubmissions studentId={student.id} isHi={isHi} />
             </div>
+            </SectionErrorBoundary>
 
             {/* ── 6. INSIGHTS & RECOMMENDATIONS ── */}
+            <SectionErrorBoundary section="Insights and Recommendations">
             <div style={{ marginBottom: 20 }}>
               <div style={sectionHeading}>{t(isHi, 'For You', 'आपके लिए')}</div>
               <InsightsSection insights={insights} tips={tips} isHi={isHi} />
             </div>
+            </SectionErrorBoundary>
 
             {/* ── 7. PRINT / SHARE ── */}
             <PrintShareSection studentName={student.name} grade={student.grade} reportData={report} isHi={isHi} />

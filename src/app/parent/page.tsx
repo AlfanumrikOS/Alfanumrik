@@ -23,6 +23,7 @@ import {
 // Parent Glance Home — the sole parent UI (legacy 8-tab dashboard removed).
 // Lazy-loaded to keep the first-paint bundle tight.
 const ParentGlanceHome = dynamic(() => import('@/components/parent/ParentGlanceHome'), { ssr: false });
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -542,27 +543,29 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
             />
           </div>
         )}
-        <ParentGlanceHome
-          stats={s}
-          childName={childName}
-          grade={dash.student?.grade || student.grade}
-          subject={dash.subject}
-          dailyActivity={dash.dailyActivity}
-          weekSummary={dash.weekSummary}
-          bktMastery={dash.bktMastery}
-          insights={dash.insights}
-          perfScores={perfScores}
-          labStreak={labStreak}
-          student={student}
-          guardianId={guardian.id}
-          canFetchReport={canFetchMessages}
-          loading={loading}
-          error={dash.error ?? null}
-          onRefresh={load}
-          onLogout={logout}
-          isHi={isHi}
-          t={t}
-        />
+        <SectionErrorBoundary section="Parent Dashboard">
+          <ParentGlanceHome
+            stats={s}
+            childName={childName}
+            grade={dash.student?.grade || student.grade}
+            subject={dash.subject}
+            dailyActivity={dash.dailyActivity}
+            weekSummary={dash.weekSummary}
+            bktMastery={dash.bktMastery}
+            insights={dash.insights}
+            perfScores={perfScores}
+            labStreak={labStreak}
+            student={student}
+            guardianId={guardian.id}
+            canFetchReport={canFetchMessages}
+            loading={loading}
+            error={dash.error ?? null}
+            onRefresh={load}
+            onLogout={logout}
+            isHi={isHi}
+            t={t}
+          />
+        </SectionErrorBoundary>
       </div>
     );
 }

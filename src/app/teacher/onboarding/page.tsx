@@ -17,13 +17,13 @@ const SECTIONS = ['', 'A', 'B', 'C', 'D', 'E'];
 
 const pageStyle: React.CSSProperties = {
   minHeight: '100dvh',
-  backgroundColor: '#FBF8F4',
+  backgroundColor: 'var(--bg)',
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
   justifyContent: 'flex-start',
   padding: '24px 16px 60px',
-  fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
+  // fontFamily removed — global font-sans on <html> (globals.css) handles this
 };
 
 const cardStyle: React.CSSProperties = {
@@ -59,7 +59,7 @@ const labelStyle: React.CSSProperties = {
 const btnPrimary: React.CSSProperties = {
   width: '100%',
   padding: '14px 24px',
-  background: 'linear-gradient(135deg, #F97316, #EA580C)',
+  background: 'linear-gradient(135deg, var(--orange), var(--orange-dark, #EA580C))',
   color: '#fff',
   border: 'none',
   borderRadius: 12,
@@ -80,7 +80,7 @@ function Dots({ step, total }: { step: number; total: number }) {
             width: i < step ? 28 : 10,
             height: 10,
             borderRadius: 5,
-            backgroundColor: i < step ? '#F97316' : '#E8E0D5',
+            backgroundColor: i < step ? 'var(--orange)' : '#E8E0D5',
             transition: 'all 0.3s ease',
           }}
         />
@@ -186,7 +186,7 @@ export default function TeacherOnboardingPage() {
   if (authLoading) {
     return (
       <div style={{ ...pageStyle, justifyContent: 'center' }}>
-        <div style={{ width: 40, height: 40, border: '3px solid #E8E0D5', borderTopColor: '#F97316', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <div style={{ width: 40, height: 40, border: '3px solid #E8E0D5', borderTopColor: 'var(--orange)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
     );
@@ -205,7 +205,7 @@ export default function TeacherOnboardingPage() {
 
       {/* Logo */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 32 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 10, background: 'linear-gradient(135deg,#F97316,#7C3AED)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>A</div>
+        <div style={{ width: 40, height: 40, borderRadius: 10, background: 'linear-gradient(135deg, var(--orange), var(--purple))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>A</div>
         <span style={{ fontSize: 20, fontWeight: 700, color: '#1A1A2E' }}>Alfanumrik</span>
       </div>
 
@@ -226,7 +226,7 @@ export default function TeacherOnboardingPage() {
           </p>
 
           {/* Profile summary */}
-          <div style={{ backgroundColor: '#FBF8F4', borderRadius: 12, padding: '16px 18px', marginBottom: 28, border: '1px solid #E8E0D5' }}>
+          <div style={{ backgroundColor: 'var(--bg)', borderRadius: 12, padding: '16px 18px', marginBottom: 28, border: '1px solid #E8E0D5' }}>
             <p style={{ fontSize: 13, color: '#9CA3AF', margin: '0 0 10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
               {tt(isHi, 'Your Profile', 'आपकी प्रोफ़ाइल')}
             </p>
@@ -314,7 +314,7 @@ export default function TeacherOnboardingPage() {
               disabled={creating || !formName.trim()}
               style={{
                 flex: 2, padding: '12px', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: creating || !formName.trim() ? 'default' : 'pointer',
-                background: creating || !formName.trim() ? '#E8E0D5' : 'linear-gradient(135deg, #F97316, #EA580C)',
+                background: creating || !formName.trim() ? 'var(--surface-2)' : 'linear-gradient(135deg, var(--orange), var(--orange-dark, #EA580C))',
                 color: creating || !formName.trim() ? '#9CA3AF' : '#fff', border: 'none',
               }}
             >
@@ -339,11 +339,11 @@ export default function TeacherOnboardingPage() {
           </p>
 
           {/* Big code display */}
-          <div style={{ backgroundColor: '#FBF8F4', border: '2px dashed #F97316', borderRadius: 16, padding: '28px 20px', textAlign: 'center', marginBottom: 24 }}>
+          <div style={{ backgroundColor: 'var(--bg)', border: '2px dashed var(--orange)', borderRadius: 16, padding: '28px 20px', textAlign: 'center', marginBottom: 24 }}>
             <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 8px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>
               {tt(isHi, 'Class Code', 'कक्षा कोड')}
             </p>
-            <div style={{ fontSize: 40, fontWeight: 800, color: '#F97316', fontFamily: 'monospace', letterSpacing: 6 }}>
+            <div style={{ fontSize: 40, fontWeight: 800, color: 'var(--orange)', fontFamily: 'monospace', letterSpacing: 6 }}>
               {classCode || '------'}
             </div>
           </div>

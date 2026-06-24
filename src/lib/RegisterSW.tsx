@@ -68,7 +68,7 @@ export default function RegisterSW() {
         bottom: 80,
         left: '50%',
         transform: 'translateX(-50%)',
-        zIndex: 9999,
+        zIndex: 9999 /* var(--z-skip) */,
         background: 'var(--text-1, #1a1a1a)',
         color: '#fff',
         padding: '10px 20px',

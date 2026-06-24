@@ -14,7 +14,7 @@ export default function ParentProfilePage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
 
-  if (authLoading) return <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc' }}><div style={{ fontSize: 48 }}>👨‍👩‍👧</div></div>;
+  if (authLoading) return <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}><div style={{ fontSize: 48 }}>👨‍👩‍👧</div></div>;
   if (!isLoggedIn || (activeRole !== 'guardian' && !guardian)) { router.replace('/login'); return null; }
 
   const startEdit = () => {
@@ -54,7 +54,7 @@ export default function ParentProfilePage() {
   const tp = (en: string, hi: string) => isHi ? hi : en;
 
   return (
-    <div style={{ minHeight: '100dvh', background: '#f8fafc', paddingBottom: 100 }}>
+    <div style={{ minHeight: '100dvh', background: 'var(--bg)', paddingBottom: 100 }}>
       <div style={{ background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)', padding: '32px 20px 28px', color: '#fff', position: 'relative' }}>
         <button
           onClick={() => router.push('/parent')}

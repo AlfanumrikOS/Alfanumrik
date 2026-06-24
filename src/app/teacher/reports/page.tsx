@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -41,37 +42,37 @@ async function api(action: string, params: Record<string, unknown> = {}) {
 /* ─── Styles (Atlas warm theme) ─── */
 const pageStyle: React.CSSProperties = {
   minHeight: '100dvh',
-  backgroundColor: '#FBF8F4',
-  color: '#1A1207',
-  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  backgroundColor: 'var(--bg)',
+  color: 'var(--text-1)',
+  // fontFamily removed — global font-sans on <html> (globals.css) handles this
   padding: '24px 20px 80px',
   maxWidth: 900,
   margin: '0 auto',
 };
 
 const cardStyle: React.CSSProperties = {
-  background: '#FFFFFF',
+  background: 'var(--surface-1)',
   borderRadius: 14,
   padding: '18px 20px',
-  border: '1px solid #EDE6DC',
+  border: '1px solid var(--border)',
   marginBottom: 16,
 };
 
 const statCardStyle: React.CSSProperties = {
-  backgroundColor: '#FFFFFF',
+  backgroundColor: 'var(--surface-1)',
   borderRadius: 12,
   padding: '14px 16px',
-  border: '1px solid #EDE6DC',
+  border: '1px solid var(--border)',
 };
 
 const tabBarStyle: React.CSSProperties = {
   display: 'flex',
   gap: 4,
-  backgroundColor: '#FFFFFF',
+  backgroundColor: 'var(--surface-1)',
   borderRadius: 12,
   padding: 4,
   marginBottom: 20,
-  border: '1px solid #EDE6DC',
+  border: '1px solid var(--border)',
 };
 
 const spinnerStyle: React.CSSProperties = {
@@ -739,9 +740,9 @@ export default function TeacherReportsPage() {
       </div>
 
       {/* Tab Content */}
-      {tab === 'overview' && <ClassOverviewTab data={overviewData} isHi={isHi} />}
-      {tab === 'student' && <StudentAnalysisTab students={studentsList} teacherId={teacherId} isHi={isHi} />}
-      {tab === 'trends' && <TrendsTab data={trendsData} isHi={isHi} />}
+      {tab === 'overview' && <SectionErrorBoundary section="Class Overview Tab"><ClassOverviewTab data={overviewData} isHi={isHi} /></SectionErrorBoundary>}
+      {tab === 'student' && <SectionErrorBoundary section="Student Analysis Tab"><StudentAnalysisTab students={studentsList} teacherId={teacherId} isHi={isHi} /></SectionErrorBoundary>}
+      {tab === 'trends' && <SectionErrorBoundary section="Trends Tab"><TrendsTab data={trendsData} isHi={isHi} /></SectionErrorBoundary>}
       
     </div>
   );
