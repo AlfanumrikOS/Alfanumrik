@@ -543,6 +543,7 @@ function isB2CHost(host: string): boolean {
   if (h.endsWith('.cloudfront.net')) return true;       // AWS CloudFront pseudolinks
   if (h.endsWith('.elb.amazonaws.com')) return true;   // AWS ALB — origin Host header when CloudFront strips viewer Host
   if (h.endsWith('.amazonaws.com')) return true;        // Any other AWS-internal hostname (ECS, etc.)
+  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h)) return true; // Raw IP — ALB health checks use private task IP as Host
   // Also trust whatever SITE_URL is configured to (works in Node.js / standalone mode)
   const siteUrl = process.env.SITE_URL;
   if (siteUrl) {
