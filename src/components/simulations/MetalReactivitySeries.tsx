@@ -57,13 +57,13 @@ export default function MetalReactivitySeries() {
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', marginBottom: 8 }}>Displacement Test</div>
           <div style={{ marginBottom: 8 }}>
             <label style={{ fontSize: 12, color: 'var(--text-2)' }}>Metal A (added):</label>
-            <select value={metalA} onChange={e => setMetalA(e.target.value)} style={{ width: '100%', padding: '4px 8px', borderRadius: 6, marginTop: 2, border: '1px solid #ccc', fontSize: 13 }}>
+            <select value={metalA} onChange={e => setMetalA(e.target.value)} style={{ width: '100%', padding: '4px 8px', borderRadius: 6, marginTop: 2, border: '1px solid #ccc', fontSize: 16 }}>
               {METALS.map(m => <option key={m.name} value={m.name}>{m.name} — {m.label}</option>)}
             </select>
           </div>
           <div style={{ marginBottom: 12 }}>
             <label style={{ fontSize: 12, color: 'var(--text-2)' }}>Metal B salt solution:</label>
-            <select value={metalB} onChange={e => setMetalB(e.target.value)} style={{ width: '100%', padding: '4px 8px', borderRadius: 6, marginTop: 2, border: '1px solid #ccc', fontSize: 13 }}>
+            <select value={metalB} onChange={e => setMetalB(e.target.value)} style={{ width: '100%', padding: '4px 8px', borderRadius: 6, marginTop: 2, border: '1px solid #ccc', fontSize: 16 }}>
               {METALS.map(m => <option key={m.name} value={m.name}>{m.name}SO₄ solution</option>)}
             </select>
           </div>

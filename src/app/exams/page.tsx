@@ -274,7 +274,7 @@ export default function ExamsPage() {
       <header className="page-header" style={{ background: 'rgba(251,248,244,0.88)', backdropFilter: 'blur(20px)', borderColor: 'var(--border)' }}>
         <div className="app-container py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">&larr;</button>
+            <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>&larr;</button>
             <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
               {isHi ? 'मेरी परीक्षाएँ' : 'My Exams'}
             </h1>
@@ -300,7 +300,7 @@ export default function ExamsPage() {
               <h2 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>
                 {isHi ? 'नई परीक्षा जोड़ें' : 'Add New Exam'}
               </h2>
-              <button onClick={() => setShowForm(false)} className="text-[var(--text-3)] text-sm">&times;</button>
+              <button onClick={() => setShowForm(false)} className="text-[var(--text-3)] text-sm p-2 rounded-lg" aria-label={isHi ? 'बंद करें' : 'Close'}>&times;</button>
             </div>
 
             {/* Exam Type */}

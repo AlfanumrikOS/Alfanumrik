@@ -130,7 +130,7 @@ export default function QuizSetup({
       <div className="mesh-bg min-h-dvh pb-nav">
         <header className="page-header">
           <div className="page-header-inner flex items-center gap-3">
-            <button onClick={onGoBack} className="text-[var(--text-3)]">&larr;</button>
+            <button onClick={onGoBack} className="text-[var(--text-3)] p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>&larr;</button>
             <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
               {isHi ? 'क्विज़' : 'Quiz'}
             </h1>
@@ -214,7 +214,7 @@ export default function QuizSetup({
     <div className="mesh-bg min-h-dvh pb-nav">
       <header className="page-header">
         <div className="page-header-inner flex items-center gap-3">
-          <button onClick={hasContext && showFullSetup ? () => setShowFullSetup(false) : onGoBack} className="text-[var(--text-3)]">&larr;</button>
+          <button onClick={hasContext && showFullSetup ? () => setShowFullSetup(false) : onGoBack} className="text-[var(--text-3)] p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>&larr;</button>
           <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
             {isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'}
           </h1>

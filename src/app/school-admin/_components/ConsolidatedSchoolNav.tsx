@@ -21,6 +21,7 @@
  *   - P7 bilingual via the `isHi` prop.
  */
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { twMerge } from 'tailwind-merge';
@@ -305,8 +306,7 @@ export default function ConsolidatedSchoolNav({
     return (
       <div className="flex items-center gap-2 border-b border-surface-3 px-3 py-3 min-h-[48px]">
         {logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={logoUrl} alt={brandTitle} className="h-7 w-7 flex-shrink-0 rounded-md object-cover" />
+          <Image src={logoUrl} alt={brandTitle} width={28} height={28} className="h-7 w-7 flex-shrink-0 rounded-md object-cover" />
         ) : (
           <div
             aria-hidden="true"

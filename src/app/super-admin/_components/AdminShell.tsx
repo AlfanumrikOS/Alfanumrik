@@ -182,7 +182,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   if (!accessToken) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-surface-1">
+      <div className="flex min-h-dvh items-center justify-center bg-surface-1">
         <div className="text-sm text-muted-foreground">
           {isHi ? 'सत्र लोड हो रहा है...' : 'Loading session...'}
         </div>
@@ -193,7 +193,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   return (
     <AdminCtx.Provider value={{ accessToken, adminName, supabase, headers, apiFetch }}>
       <div
-        className={`flex min-h-screen bg-surface-1${cosmicEnabled ? ' super-admin-portal' : ''}`}
+        className={`flex min-h-dvh bg-surface-1${cosmicEnabled ? ' super-admin-portal' : ''}`}
         style={cosmicEnabled ? { position: 'relative' } : undefined}
       >
         {/* Cosmic dark canvas — decorative starfield behind the admin chrome.

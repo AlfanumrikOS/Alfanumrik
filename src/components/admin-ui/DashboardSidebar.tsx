@@ -20,6 +20,7 @@
  */
 
 import { useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { twMerge } from 'tailwind-merge';
 
@@ -114,10 +115,11 @@ export default function DashboardSidebar({
     return (
       <div className="flex items-center gap-2 border-b border-surface-3 px-3 py-3 min-h-[48px]">
         {logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <Image
             src={logoUrl}
             alt={brandTitle}
+            width={28}
+            height={28}
             className="h-7 w-7 flex-shrink-0 rounded-md object-cover"
           />
         ) : (

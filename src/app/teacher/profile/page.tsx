@@ -19,7 +19,7 @@ export default function TeacherProfilePage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
 
-  if (authLoading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc' }}><div style={{ fontSize: 48 }}>👩‍🏫</div></div>;
+  if (authLoading) return <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc' }}><div style={{ fontSize: 48 }}>👩‍🏫</div></div>;
   if (!isLoggedIn || (activeRole !== 'teacher' && !teacher)) { router.replace('/login'); return null; }
 
   const startEdit = () => {
@@ -67,7 +67,7 @@ export default function TeacherProfilePage() {
   );
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 100 }}>
+    <div style={{ minHeight: '100dvh', background: '#f8fafc', paddingBottom: 100 }}>
       <div style={{ background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)', padding: '32px 20px 28px', color: '#fff', position: 'relative' }}>
         <button
           onClick={() => router.push('/teacher')}
@@ -129,11 +129,11 @@ export default function TeacherProfilePage() {
             <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: '#1a1a1a' }}>{tt(isHi, 'Edit Profile', 'प्रोफ़ाइल संपादित करें')}</div>
             <div style={{ marginBottom: 12 }}>
               <label htmlFor="teacher-name" style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Name', 'नाम')}</label>
-              <input id="teacher-name" value={name} onChange={e => setName(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e0e0e0', fontSize: 14, outline: 'none' }} />
+              <input id="teacher-name" value={name} onChange={e => setName(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e0e0e0', fontSize: 16, outline: 'none' }} />
             </div>
             <div style={{ marginBottom: 16 }}>
               <label htmlFor="teacher-school" style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>{tt(isHi, 'School Name', 'स्कूल का नाम')}</label>
-              <input id="teacher-school" value={schoolName} onChange={e => setSchoolName(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e0e0e0', fontSize: 14, outline: 'none' }} />
+              <input id="teacher-school" value={schoolName} onChange={e => setSchoolName(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e0e0e0', fontSize: 16, outline: 'none' }} />
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={handleSave} disabled={saving} style={{ padding: '10px 24px', borderRadius: 10, border: 'none', background: '#2563EB', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>

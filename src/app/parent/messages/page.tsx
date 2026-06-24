@@ -160,7 +160,7 @@ function ParentMessagesContent() {
   }, [draftBody, selectedThread, sending, mutateMessages, mutateThreads]);
 
   return (
-    <div className="flex h-[calc(100vh-0px)] w-full flex-col bg-orange-50/30 text-slate-900 md:flex-row">
+    <div className="flex h-dvh w-full flex-col bg-orange-50/30 text-slate-900 md:flex-row">
       <aside
         className={`flex w-full flex-col border-r border-orange-200/60 bg-white md:w-80 md:flex-shrink-0 ${
           selectedThreadId ? 'hidden md:flex' : 'flex'

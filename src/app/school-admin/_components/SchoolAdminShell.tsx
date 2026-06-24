@@ -298,7 +298,7 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
   // must ALWAYS render around children regardless of any atlas flag.
   return (
     <div
-      className={`flex min-h-screen bg-surface-2${cosmicEnabled ? ' school-admin-portal' : ''}`}
+      className={`flex min-h-dvh bg-surface-2${cosmicEnabled ? ' school-admin-portal' : ''}`}
       style={cosmicEnabled ? { position: 'relative' } : undefined}
     >
       {/* Cosmic dark canvas — decorative starfield behind the portal. Hidden in

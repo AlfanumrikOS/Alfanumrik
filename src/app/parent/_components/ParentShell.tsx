@@ -219,7 +219,7 @@ export default function ParentShell({ children }: { children: React.ReactNode })
   };
 
   return (
-    <div className="flex min-h-screen bg-orange-50/30">
+    <div className="flex min-h-dvh bg-orange-50/30">
       <DashboardSidebar
         brandTitle="Alfanumrik"
         brandSubtitle={isHi ? 'अभिभावक' : 'Parent'}

@@ -353,8 +353,9 @@ export const ChatInput = memo(function ChatInput({
       {imagePreview && (
         <div className="px-3 pt-2 flex items-center gap-2">
           <div className="relative">
+            {/* blob: / data: URLs are not supported by next/image — keep native img */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={imagePreview} alt="Attached" className="w-12 h-12 rounded-lg object-cover border" style={{ borderColor: 'var(--border)' }} />
+            <img src={imagePreview} alt="Attached" width={48} height={48} loading="lazy" className="w-12 h-12 rounded-lg object-cover border" style={{ borderColor: 'var(--border)' }} />
             <button
               onClick={() => { setImage(null); setImagePreview(null); if (fileRef.current) fileRef.current.value = ''; }}
               className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-red-500 text-white">

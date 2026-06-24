@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 
 interface TopicDiagram {
   id: string;
@@ -37,19 +38,16 @@ export function DiagramViewer({ diagrams, isHi = false }: DiagramViewerProps) {
         >
           {/* Image with lazy loading */}
           <div
-            className="relative cursor-pointer"
+            className="relative cursor-pointer overflow-hidden transition-all"
+            style={{ maxHeight: expanded === d.id ? 'none' : 300, background: '#fff' }}
             onClick={() => setExpanded(expanded === d.id ? null : d.id)}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <Image
               src={d.image_url}
               alt={d.alt_text || d.caption || 'Diagram'}
-              loading="lazy"
-              className="w-full object-contain transition-all"
-              style={{
-                maxHeight: expanded === d.id ? 'none' : 300,
-                background: '#fff',
-              }}
+              width={800}
+              height={600}
+              className="w-full object-contain"
             />
             {expanded !== d.id && (
               <div

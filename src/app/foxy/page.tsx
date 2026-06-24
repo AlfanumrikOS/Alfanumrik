@@ -1274,11 +1274,11 @@ export default function FoxyPage() {
       {/* ═══ HEADER ═══ */}
       {/* `sticky top-0` is dropped — AppShell.header is itself position:sticky. */}
       <div className="px-3 py-2.5 flex items-center gap-3" style={{ background: 'linear-gradient(135deg, #1a1a2e, #0f3460)', color: '#fff' }}>
-        <button onClick={() => router.push('/dashboard')} className="text-white/60 text-sm">←</button>
+        <button onClick={() => router.push('/dashboard')} className="text-white/60 text-sm p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>←</button>
         {/* Mobile: open conversation history sidebar */}
         <button
           onClick={() => setConversationSidebarOpen(true)}
-          className="lg:hidden w-8 h-8 rounded-lg flex items-center justify-center transition-all active:scale-95"
+          className="lg:hidden w-10 h-10 rounded-lg flex items-center justify-center transition-all active:scale-95"
           style={{ background: 'rgba(255,255,255,0.1)' }}
           aria-label={isHi ? 'चैट हिस्ट्री' : 'Chat history'}
         >
@@ -1303,7 +1303,7 @@ export default function FoxyPage() {
           {osEnabled && (
             <button
               onClick={() => setContextSheetOpen(true)}
-              className="lg:hidden w-7 h-7 rounded-lg flex items-center justify-center text-sm transition-all active:scale-90"
+              className="lg:hidden w-10 h-10 rounded-lg flex items-center justify-center text-sm transition-all active:scale-90"
               style={{ background: 'rgba(255,255,255,0.08)', border: '1.5px solid rgba(255,255,255,0.1)' }}
               aria-label={isHi ? 'संदर्भ पैनल खोलें' : 'Open context panel'}
               title={isHi ? 'तुम्हारा संदर्भ' : 'Your context'}
@@ -1321,7 +1321,7 @@ export default function FoxyPage() {
               aria-label={language === 'hi'
                 ? (voiceMode ? 'वॉइस मोड बंद करें' : 'वॉइस मोड चालू करें')
                 : (voiceMode ? 'Disable voice mode' : 'Enable voice mode')}
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-sm transition-all active:scale-90"
+              className="w-10 h-10 rounded-lg flex items-center justify-center text-sm transition-all active:scale-90"
               style={{
                 background: voiceMode ? 'rgba(232,88,28,0.25)' : 'rgba(255,255,255,0.08)',
                 border: voiceMode ? '1.5px solid rgba(232,88,28,0.5)' : '1.5px solid rgba(255,255,255,0.1)',

@@ -96,7 +96,7 @@ function Footer() {
 
 export default function AboutPage() {
   return (
-    <div style={{ background: 'var(--bg, #FBF8F4)', color: 'var(--text-1, #1a1a1a)', minHeight: '100vh' }}>
+    <div style={{ background: 'var(--bg, #FBF8F4)', color: 'var(--text-1, #1a1a1a)', minHeight: '100dvh' }}>
       <Navbar />
       <Breadcrumbs items={[{ label: 'Home', href: '/welcome' }, { label: 'About' }]} />
 

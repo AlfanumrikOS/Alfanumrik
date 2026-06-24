@@ -5,7 +5,7 @@ export default function Loading() {
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      minHeight: '100vh',
+      minHeight: '100dvh',
       background: 'var(--bg, #FBF8F4)',
       fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
     }}>

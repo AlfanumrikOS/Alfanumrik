@@ -164,7 +164,7 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
   // finish linking after authenticating.
   if (needsSignIn) {
     return (
-      <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen flex items-center justify-center">
+      <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh flex items-center justify-center">
         <div className="max-w-[400px] w-full text-center">
           <div className="text-5xl mb-3">&#x1F510;</div>
           <h1 className="text-[22px] font-bold text-gray-900 mb-2">
@@ -202,7 +202,7 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
   }
 
   return (
-    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen flex items-center justify-center">
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh flex items-center justify-center">
       <div className="max-w-[380px] w-full text-center">
         <div className="text-5xl mb-3">&#x1F9D1;&#x200D;&#x1F393;</div>
         <h1 className="text-[22px] font-bold text-gray-900 mb-1">{t(isHi, 'Parent Dashboard', 'अभिभावक डैशबोर्ड')}</h1>
@@ -256,7 +256,7 @@ function LinkCodeSignInGate({ isHi, childName }: { isHi: boolean; childName: str
   const goSignIn = () => { window.location.href = '/login?role=parent&redirectTo=/parent'; };
   const switchAccount = () => { clearParentSession(); window.location.reload(); };
   return (
-    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen flex items-center justify-center">
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh flex items-center justify-center">
       <div className="max-w-[400px] w-full text-center">
         <div className="text-5xl mb-3">&#x1F510;</div>
         <h1 className="text-[22px] font-bold text-gray-900 mb-2">
@@ -507,7 +507,7 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
   const logout = () => { clearParentSession(); window.location.reload(); };
 
   if (loading) return (
-    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh">
       <div className="text-center py-20 text-gray-500">
         <div className="w-10 h-10 border-[3px] border-orange-200 border-t-orange-500 rounded-full mx-auto mb-4 animate-spin" />
         {t(isHi, `Loading ${student.name}'s progress...`, `${student.name} की प्रगति लोड हो रही है...`)}
@@ -516,7 +516,7 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
   );
 
   if (!dash || dash.error) return (
-    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh">
       <div className="text-center py-[60px] text-red-500">{dash?.error || t(isHi, 'Failed to load dashboard', 'डैशबोर्ड लोड करने में विफल')}</div>
     </div>
   );
@@ -525,7 +525,7 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
   const childName = dash.student?.name || student.name;
 
     return (
-      <div className="bg-[#FFF8F0] min-h-screen">
+      <div className="bg-[#FFF8F0] min-h-dvh">
         {children.length > 1 && (
           <div className="max-w-[600px] mx-auto px-4 pt-2">
             <ChildSelectorPills
@@ -683,7 +683,7 @@ export default function ParentPage() {
   }, [auth.isLoading, auth.guardian, fetchAllChildren, unifiedAuth, resolveGuardianFromJwt]);
 
   if (checking || auth.isLoading) return (
-    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh">
       <div className="text-center py-20 text-gray-500">Loading...</div>
     </div>
   );

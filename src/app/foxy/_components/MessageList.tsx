@@ -21,6 +21,7 @@
  * P10 bundle-budget purpose they did when the page owned them.
  */
 
+import Image from 'next/image';
 import ChatBubble, { type LearningActionType } from '@/components/foxy/ChatBubble';
 import { StructuredRenderBoundary } from '@/components/foxy/StructuredRenderBoundary';
 import { isFoxyResponse } from '@/lib/foxy/is-foxy-response';
@@ -201,8 +202,7 @@ export function MessageList({
                 <div>
                   {msg.imageUrl && (
                     <div className="mb-2 rounded-xl overflow-hidden max-w-[220px]">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={msg.imageUrl} alt={isHi ? 'अपलोड की गई फ़ोटो' : 'Uploaded photo'} className="w-full h-auto rounded-xl" />
+                      <Image src={msg.imageUrl} alt={isHi ? 'अपलोड की गई फ़ोटो' : 'Uploaded photo'} width={400} height={300} className="w-full h-auto rounded-xl" />
                     </div>
                   )}
                   <div className="whitespace-pre-wrap">{msg.content}</div>

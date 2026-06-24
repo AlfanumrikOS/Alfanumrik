@@ -264,10 +264,10 @@ export default function TeacherWorksheetsPage() {
 
   const subjectName = subjects.find(s => s.code === subject)?.name || subject;
 
-  if (authLoading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ fontSize: 48 }}>📝</div></div>;
+  if (authLoading) return <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ fontSize: 48 }}>📝</div></div>;
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 100 }}>
+    <div style={{ minHeight: '100dvh', background: '#f8fafc', paddingBottom: 100 }}>
       {!isPrintView && (
         <>
           {/* Header */}

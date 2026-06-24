@@ -207,7 +207,7 @@ function TeacherMessagesContent() {
   ]);
 
   return (
-    <div className="flex h-[calc(100vh-0px)] w-full flex-col bg-[#FBF8F4] text-[#1A1207] md:flex-row">
+    <div className="flex h-dvh w-full flex-col bg-[#FBF8F4] text-[#1A1207] md:flex-row">
       {/* Thread list */}
       <aside
         className={`flex w-full flex-col border-r border-[#EDE6DC] md:w-80 md:flex-shrink-0 ${

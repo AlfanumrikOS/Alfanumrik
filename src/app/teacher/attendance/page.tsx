@@ -87,7 +87,7 @@ function todayISO(): string {
 
 // ── Style tokens ──────────────────────────────────────────────
 const pageStyle: React.CSSProperties = {
-  minHeight: '100vh',
+  minHeight: '100dvh',
   backgroundColor: '#FBF8F4',
   color: '#1A1207',
   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',

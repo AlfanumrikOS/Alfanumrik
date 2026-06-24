@@ -218,7 +218,7 @@ export default function SnellsLaw() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <div style={{ padding: '8px 12px', background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd' }}>
             <div style={{ fontSize: 10, fontWeight: 600, color: '#0c4a6e', marginBottom: 4 }}>Medium 1 (top)</div>
-            <select value={medium1} onChange={e => setMedium1(e.target.value)} aria-label="Select medium 1 (top)" style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }}>
+            <select value={medium1} onChange={e => setMedium1(e.target.value)} aria-label="Select medium 1 (top)" style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 16 }}>
               {Object.entries(MEDIA).map(([k, v]) => (
                 <option key={k} value={k}>{v.name} (n={v.n})</option>
               ))}
@@ -226,7 +226,7 @@ export default function SnellsLaw() {
           </div>
           <div style={{ padding: '8px 12px', background: '#f5f3ff', borderRadius: 8, border: '1px solid #ddd6fe' }}>
             <div style={{ fontSize: 10, fontWeight: 600, color: '#4c1d95', marginBottom: 4 }}>Medium 2 (bottom)</div>
-            <select value={medium2} onChange={e => setMedium2(e.target.value)} aria-label="Select medium 2 (bottom)" style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }}>
+            <select value={medium2} onChange={e => setMedium2(e.target.value)} aria-label="Select medium 2 (bottom)" style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 16 }}>
               {Object.entries(MEDIA).map(([k, v]) => (
                 <option key={k} value={k}>{v.name} (n={v.n})</option>
               ))}

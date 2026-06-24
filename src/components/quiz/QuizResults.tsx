@@ -312,7 +312,7 @@ export default function QuizResults({
      <SectionErrorBoundary section="Quiz Results">
       <header className="page-header">
         <div className="page-header-inner flex items-center gap-3">
-          <button onClick={onRetry} className="text-[var(--text-3)]">&larr;</button>
+          <button onClick={onRetry} className="text-[var(--text-3)] p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>&larr;</button>
           <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
             {isHi ? 'क्विज़ नतीजे' : 'Quiz Results'}
           </h1>

@@ -16,7 +16,7 @@ const GRADES = [...VALID_GRADES];
 const SECTIONS = ['', 'A', 'B', 'C', 'D', 'E'];
 
 const pageStyle: React.CSSProperties = {
-  minHeight: '100vh',
+  minHeight: '100dvh',
   backgroundColor: '#FBF8F4',
   display: 'flex',
   flexDirection: 'column',

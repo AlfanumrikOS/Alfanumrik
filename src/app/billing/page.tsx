@@ -402,7 +402,7 @@ function formatDate(iso: string): string {
 }
 
 const page: React.CSSProperties = {
-  minHeight: '100vh', padding: '24px 16px', paddingBottom: 100,
+  minHeight: '100dvh', padding: '24px 16px', paddingBottom: 100,
   display: 'flex', flexDirection: 'column', alignItems: 'center',
   background: 'var(--bg, #FBF8F4)', color: 'var(--text-1, #1a1a1a)',
 };

@@ -345,8 +345,9 @@ export default function ScanSolver({ studentId, grade, subject, isHi, onSolveCom
       <div className="space-y-3">
         {previewUrl && (
           <div className="rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+            {/* data: URL from canvas/FileReader — not supported by next/image */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={previewUrl} alt="Captured question" className="w-full h-48 object-contain" style={{ background: 'var(--surface-2)' }} />
+            <img src={previewUrl} alt="Captured question" width={640} height={192} loading="lazy" className="w-full h-48 object-contain" style={{ background: 'var(--surface-2)' }} />
           </div>
         )}
         <div className="flex justify-center gap-3">
@@ -368,8 +369,9 @@ export default function ScanSolver({ studentId, grade, subject, isHi, onSolveCom
       <div className="text-center py-12">
         {previewUrl && (
           <div className="w-28 h-28 mx-auto rounded-xl overflow-hidden mb-4 border" style={{ borderColor: 'var(--border)' }}>
+            {/* data: URL from canvas/FileReader — not supported by next/image */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={previewUrl} alt="Processing" className="w-full h-full object-cover" />
+            <img src={previewUrl} alt="Processing" width={112} height={112} loading="lazy" className="w-full h-full object-cover" />
           </div>
         )}
         <div className="text-4xl animate-float mb-3">{isOcr ? '🔍' : '🧮'}</div>

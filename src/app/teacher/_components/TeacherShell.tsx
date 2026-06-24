@@ -246,7 +246,7 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
 
   return (
     <div
-      className={`flex min-h-screen${cosmicEnabled ? ' teacher-portal' : ''}`}
+      className={`flex min-h-dvh${cosmicEnabled ? ' teacher-portal' : ''}`}
       style={{ background: 'var(--bg)', position: cosmicEnabled ? 'relative' : undefined }}
     >
       {/* Cosmic dark canvas — decorative starfield behind the portal. Hidden in

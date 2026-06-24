@@ -44,7 +44,7 @@ export default function MolarityCalculator() {
               <label style={{ fontSize: 12, color: 'var(--text-2)' }}>Mass: {mass.toFixed(1)} g</label>
               <input type="range" min={1} max={500} step={0.1} value={mass} onChange={e => setMass(+e.target.value)} style={{ width: '100%' }} />
               <label style={{ fontSize: 12, color: 'var(--text-2)' }}>Molar Mass: {molarMass} g/mol</label>
-              <input type="number" value={molarMass} onChange={e => setMolarMass(+e.target.value)} style={{ width: '100%', padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }} />
+              <input type="number" value={molarMass} onChange={e => setMolarMass(+e.target.value)} style={{ width: '100%', padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 16 }} />
             </>
           ) : (
             <>

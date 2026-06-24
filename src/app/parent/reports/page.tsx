@@ -220,7 +220,7 @@ const pageStyle: React.CSSProperties = {
   fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
   color: '#1E293B',
   backgroundColor: '#F0FDF4',
-  minHeight: '100vh',
+  minHeight: '100dvh',
 };
 
 const cardStyle: React.CSSProperties = {

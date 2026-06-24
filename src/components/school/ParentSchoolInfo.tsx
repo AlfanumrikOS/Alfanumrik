@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useAuth } from '@/lib/AuthContext';
 import { useTenant } from '@/lib/tenant-context';
 
@@ -28,10 +29,12 @@ export default function ParentSchoolInfo() {
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {tenant.branding.logoUrl ? (
-          <img
+          <Image
             src={tenant.branding.logoUrl}
             alt={tenant.schoolName || ''}
-            style={{ height: 36, width: 36, borderRadius: 8, objectFit: 'cover' }}
+            width={36}
+            height={36}
+            style={{ borderRadius: 8, objectFit: 'cover' }}
           />
         ) : (
           <div style={{

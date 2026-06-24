@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 
@@ -256,9 +257,12 @@ function BrandingStep({ isHi, onNext, onBack }: BrandingStepProps) {
         {logoUrl && (
           <div className="mt-2 flex items-center gap-2">
             {logoUrl.startsWith('https://') ? (
-              <img
+              <Image
                 src={logoUrl}
                 alt={t(isHi, 'Logo preview', 'लोगो पूर्वावलोकन')}
+                width={40}
+                height={40}
+                unoptimized
                 className="w-10 h-10 rounded-lg object-contain"
                 style={{ border: '1px solid var(--border, #e5e7eb)' }}
                 referrerPolicy="no-referrer"

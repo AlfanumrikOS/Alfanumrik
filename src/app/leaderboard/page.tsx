@@ -350,7 +350,7 @@ export default function LeaderboardPage() {
       <header className="page-header" style={{ background: 'rgba(251,248,244,0.88)', backdropFilter: 'blur(20px)' }}>
         <div className="app-container py-3">
           <div className="flex items-center gap-3">
-            <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">&larr;</button>
+            <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>&larr;</button>
             <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
               🏆 {isHi ? 'रैंकिंग और प्रतियोगिता' : 'Rankings & Compete'}
             </h1>
@@ -739,7 +739,8 @@ export default function LeaderboardPage() {
         {tab === 'compete' && selectedComp && (
           <div className="space-y-3">
             <button onClick={() => setSelectedComp(null)}
-              className="text-xs text-[var(--text-3)] flex items-center gap-1">
+              className="text-xs text-[var(--text-3)] flex items-center gap-1 p-2 rounded-lg"
+              aria-label={isHi ? 'वापस जाएं' : 'Back to competitions'}>
               &larr; {isHi ? 'वापस' : 'Back to competitions'}
             </button>
             <Card accent={selectedComp.accent_color}>

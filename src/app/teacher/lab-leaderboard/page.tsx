@@ -203,7 +203,7 @@ export default function LabLeaderboardPage() {
   // ─── Render ──────────────────────────────────────────────────────
   return (
     <div
-      className="min-h-screen font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif]"
+      className="min-h-dvh font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif]"
       style={{ background: 'var(--bg)', color: 'var(--text-1)' }}
     >
       <div className="max-w-[1100px] mx-auto px-4 sm:px-5 lg:px-8 py-5 lg:py-8 pb-24">

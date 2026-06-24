@@ -486,7 +486,7 @@ export default function ProgressPage() {
     <div className="mesh-bg min-h-dvh pb-nav">
       <header className="page-header">
         <div className="page-header-inner flex items-center gap-3">
-          <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">&larr;</button>
+          <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>&larr;</button>
           <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
             {isHi ? 'प्रगति' : 'Progress'}
           </h1>

@@ -1177,7 +1177,7 @@ function PanelHead({
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="max-w-[1280px] mx-auto px-4 py-5 min-h-screen"
+      className="max-w-[1280px] mx-auto px-4 py-5 min-h-dvh"
       style={{ background: 'var(--bg)', color: 'var(--text-2)' }}
     >
       {children}

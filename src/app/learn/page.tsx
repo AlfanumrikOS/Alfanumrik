@@ -165,8 +165,8 @@ export default function LearnPage() {
           {selectedSubject ? (
             <button
               onClick={() => { setSelectedSubject(null); setChapters([]); }}
-              className="text-[var(--text-3)] text-lg"
-              aria-label={isHi ? 'वापस जाओ' : 'Back'}
+              className="text-[var(--text-3)] text-lg p-2 rounded-lg"
+              aria-label={isHi ? 'वापस जाएं' : 'Go back'}
             >
               ←
             </button>
