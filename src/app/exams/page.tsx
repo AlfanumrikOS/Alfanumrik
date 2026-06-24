@@ -475,9 +475,10 @@ export default function ExamsPage() {
 
         {/* ═══ EXAM LIST ═══ */}
         {loading ? (
-          <div className="text-center py-16">
-            <div className="text-4xl animate-float mb-3">📝</div>
-            <p className="text-sm text-[var(--text-3)]">{isHi ? 'परीक्षाएँ लोड हो रही हैं...' : 'Loading exams...'}</p>
+          <div className="space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-24 bg-[var(--surface-2)] rounded-xl animate-pulse" />
+            ))}
           </div>
         ) : exams.length === 0 && !showForm ? (
           <div className="text-center py-16">

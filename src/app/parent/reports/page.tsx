@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { calculateScorePercent } from '@/lib/scoring';
 import { supabase } from '@/lib/supabase';
@@ -1448,10 +1449,14 @@ function ChildSelector({ childList, selectedId, onSelect }: {
 
 // ============================================================
 // MAIN REPORT PAGE
+// useSearchParams() must live inside a Suspense boundary (Next.js App Router
+// requirement). ParentReportsPage is the inner component; the default export
+// wraps it in <Suspense> following the codebase pattern.
 // ============================================================
-export default function ParentReportsPage() {
+function ParentReportsPage() {
   const auth = useAuth();
   const isHi = auth.isHi ?? false;
+  const searchParams = useSearchParams();
   const [guardian, setGuardian] = useState<ReportParentSession | null>(null);
   const [student, setStudent] = useState<ReportStudentSession | null>(null);
   const [children, setChildren] = useState<Array<{ id: string; name: string; grade?: string }>>([]);
@@ -1508,6 +1513,18 @@ export default function ParentReportsPage() {
     const child = children.find(c => c.id === childId);
     if (child) setStudent({ id: child.id, name: child.name, grade: child.grade || '' });
   };
+
+  // Pre-select the child specified by ?childId= query param (set by "View Full
+  // Report" links on the parent dashboard). Runs once when the children list
+  // populates — safe to depend on `children` because the list is immutable
+  // after the initial fetch.
+  useEffect(() => {
+    if (children.length === 0) return;
+    const childIdParam = searchParams.get('childId');
+    if (!childIdParam) return;
+    const match = children.find(c => c.id === childIdParam);
+    if (match) setStudent({ id: match.id, name: match.name, grade: match.grade || '' });
+  }, [children, searchParams]);
 
   // Auth guard: redirect if not logged in
   useEffect(() => {
@@ -1917,7 +1934,15 @@ export default function ParentReportsPage() {
           </>
         )}
       </div>
-      
+
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100dvh', backgroundColor: '#F0FDF4' }} className="animate-pulse" />}>
+      <ParentReportsPage />
+    </Suspense>
   );
 }

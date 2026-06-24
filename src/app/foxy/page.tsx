@@ -1367,13 +1367,12 @@ export default function FoxyPage() {
                 setShowChapterDD(true);
               }
             };
-            const displayName = sub.name.length > 8 ? sub.name.substring(0, 7) + '.' : sub.name;
             return (
               <button
                 key={sub.code}
                 onClick={handleClick}
                 aria-label={sub.isLocked ? `${sub.name} (locked — tap to upgrade)` : sub.name}
-                title={sub.isLocked ? (isHi ? 'अपग्रेड करें' : 'Upgrade to unlock') : undefined}
+                title={sub.isLocked ? (isHi ? 'अपग्रेड करें' : 'Upgrade to unlock') : sub.name}
                 className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]"
                 style={{
                   background: isActive ? `${sub.color}15` : 'var(--surface-2)',
@@ -1383,7 +1382,11 @@ export default function FoxyPage() {
                 }}
               >
                 <span className="text-sm">{sub.icon}</span>
-                <span className="whitespace-nowrap">{displayName}</span>
+                {/* Show the full subject name — the tab bar is overflow-x-auto so
+                    names scroll naturally. CSS truncation at max-w keeps very long
+                    names tidy without the JS substring hack that made "Mathematics"
+                    appear as "Mathema." */}
+                <span className="whitespace-nowrap max-w-[96px] truncate">{sub.name}</span>
                 {sub.isLocked && (
                   <span aria-hidden="true" className="text-[10px] leading-none">🔒</span>
                 )}

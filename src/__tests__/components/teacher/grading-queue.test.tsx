@@ -177,7 +177,7 @@ describe('GradingQueue', () => {
 describe('ActionBar — Wave B flag gating', () => {
   const router = { push: vi.fn() } as unknown as Parameters<typeof ActionBar>[0]['router'];
 
-  it('keeps the "Grading queue" button DISABLED when the flag is OFF', () => {
+  it('hides the Grading queue button when the flag is OFF', () => {
     const onOpen = vi.fn();
     render(
       <ActionBar
@@ -188,13 +188,11 @@ describe('ActionBar — Wave B flag gating', () => {
         onOpenGradingQueue={onOpen}
       />,
     );
-    const btn = screen.getByTestId('grading-queue-action') as HTMLButtonElement;
-    expect(btn.disabled).toBe(true);
-    // No badge when disabled / no count.
+    // Button is hidden entirely when the flag is OFF (not a disabled tombstone).
+    const btn = screen.queryByTestId('grading-queue-action');
+    expect(btn).toBeNull();
+    // No badge either.
     expect(screen.queryByTestId('grading-queue-action-badge')).toBeNull();
-    // Clicking the disabled placeholder does nothing.
-    fireEvent.click(btn);
-    expect(onOpen).not.toHaveBeenCalled();
   });
 
   it('enables the button + badges the count + opens the queue when the flag is ON', () => {

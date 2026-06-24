@@ -376,12 +376,15 @@ export default function ProgressPage() {
       // TODO(data-gap): add topic_name to concept_mastery or join via a lookup RPC
       // so the displayed label can show the real concept name.
       const decayRaw = decayRes.data ?? [];
-      const decayData = decayRaw.map((d: any, idx: number) => {
+      const decayData = decayRaw.map((d: any) => {
+        // topic_id is a UUID — show first 8 chars as a readable chip.
+        // TODO(data-gap): add topic_name to concept_mastery or join via a lookup RPC
+        // so the displayed label can show the real concept name.
+        const shortId = d.topic_id ? `${String(d.topic_id).substring(0, 8)}…` : '—';
         return {
           id: d.id,
           topic_id: d.topic_id,
-          // Display label — topic_id is a UUID, never show it raw; use readable fallback
-          topic: `Topic ${idx + 1}`,
+          topic: shortId,
           subject: '',
           mastery_probability: d.mastery_probability ?? 0,
           next_review_at: d.next_review_at,
@@ -856,10 +859,43 @@ export default function ProgressPage() {
         )}
 
         {/* ==============================================================
-           COGNITIVE TAB -- Gaps, Velocity, Sessions
+           COGNITIVE TAB -- Bloom Heatmap, Gaps, Velocity, Sessions
            ============================================================== */}
         {activeTab === 'cognitive' && (
           <>
+            {/* Bloom Mastery Heatmap — per-subject or aggregated all-subjects */}
+            {bloomFlattened.length > 0 && (
+              <div>
+                <SectionHeader icon="🧠">
+                  {isHi ? "Bloom's स्तर महारत" : "Bloom's Level Mastery"}
+                </SectionHeader>
+                {/* All-subjects aggregate row */}
+                <Card className="!p-3 space-y-2">
+                  <div className="text-xs font-semibold text-[var(--text-2)] mb-1">
+                    {isHi ? 'सभी विषय (औसत)' : 'All Subjects (avg)'}
+                  </div>
+                  <BloomHeatmap data={bloomFlattened} isHi={isHi} />
+                  <BloomLegend isHi={isHi} />
+                </Card>
+                {/* Per-subject breakdown (when more than one subject) */}
+                {bloomBySubject.size > 1 && (
+                  <div className="space-y-2 mt-2">
+                    {Array.from(bloomBySubject.entries()).map(([subj, rows]) => {
+                      const meta = getSubjectMeta(subj);
+                      return (
+                        <Card key={subj} className="!p-3">
+                          <div className="text-xs font-semibold text-[var(--text-2)] mb-1">
+                            {isHi ? (meta?.name_hi ?? meta?.name ?? subj) : (meta?.name ?? subj)}
+                          </div>
+                          <BloomHeatmap data={rows} isHi={isHi} />
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Learning Velocity */}
             {velocityData.length > 0 && (
               <div>
@@ -956,7 +992,7 @@ export default function ProgressPage() {
             )}
 
             {/* Empty state for cognitive tab */}
-            {velocityData.length === 0 && gapsBySeverity.length === 0 && sessionMetrics.length === 0 && (
+            {bloomFlattened.length === 0 && velocityData.length === 0 && gapsBySeverity.length === 0 && sessionMetrics.length === 0 && (
               <EmptyState
                 icon="📈"
                 title={isHi ? 'प्रगति देखने के लिए सीखना शुरू करो' : 'Start learning to see your progress'}

@@ -163,11 +163,7 @@ function StudentCard({
     setSaving(false);
   };
 
-  const subjects: SubjectBreakdown[] = student.subjects || [
-    { name: 'Math', mastery: Math.round(student.mastery * 0.9), color: '#E8581C' },
-    { name: 'Science', mastery: Math.round(student.mastery * 1.05), color: '#059669' },
-    { name: 'English', mastery: Math.round(student.mastery * 0.85), color: '#7C3AED' },
-  ];
+  const subjects: SubjectBreakdown[] = student.subjects ?? [];
 
   const recentScores = student.recent_scores || [];
   const strengths = student.strengths || [];
@@ -332,27 +328,33 @@ function StudentCard({
         <div style={{ padding: '0 18px 18px', borderTop: '1px solid #F5F0EA' }}>
           {/* Subject Breakdown */}
           <h4 style={{ fontSize: 13, fontWeight: 600, color: '#1A1207', margin: '14px 0 10px' }}>{tt(isHi, 'Subject Breakdown', 'विषयवार विवरण')}</h4>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {subjects.map((subj) => (
-              <div key={subj.name}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, color: '#7D7264' }}>{subj.name}</span>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: subj.color }}>{Math.min(subj.mastery, 100)}%</span>
+          {subjects.length === 0 ? (
+            <p style={{ fontSize: 13, color: '#7D7264', fontStyle: 'italic', margin: 0 }}>
+              {tt(isHi, 'Subject breakdown not yet available', 'विषय डेटा उपलब्ध नहीं')}
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {subjects.map((subj) => (
+                <div key={subj.name}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, color: '#7D7264' }}>{subj.name}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: subj.color }}>{Math.min(subj.mastery, 100)}%</span>
+                  </div>
+                  <div style={{ backgroundColor: '#F5F0EA', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        width: `${Math.min(subj.mastery, 100)}%`,
+                        height: '100%',
+                        backgroundColor: subj.color,
+                        borderRadius: 4,
+                        transition: 'width 0.5s ease',
+                      }}
+                    />
+                  </div>
                 </div>
-                <div style={{ backgroundColor: '#F5F0EA', borderRadius: 4, height: 8, overflow: 'hidden' }}>
-                  <div
-                    style={{
-                      width: `${Math.min(subj.mastery, 100)}%`,
-                      height: '100%',
-                      backgroundColor: subj.color,
-                      borderRadius: 4,
-                      transition: 'width 0.5s ease',
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
 
           {/* Recent Quiz Scores */}
           {recentScores.length > 0 && (

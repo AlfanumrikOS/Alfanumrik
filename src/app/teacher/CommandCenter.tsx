@@ -55,6 +55,7 @@ import {
   useAlerts,
   useGradingQueue,
   useStudentMasteryReport,
+  useClassLeaderboard,
 } from '@/lib/teacher/use-teacher-data';
 import { TeacherDashboardSkeleton } from '@/components/Skeleton';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/admin-ui/StatusBadge';
@@ -110,17 +111,71 @@ const SEV_ACCENT: Record<string, string> = {
   low: 'var(--info, #2563EB)',
 };
 
-const CHAPTER_NAMES: Record<number, string> = {
-  1: 'Forces', 2: 'Motion', 3: 'Light', 4: 'Heat', 5: 'Sound',
-  6: 'Atoms', 7: 'Cells', 8: 'Plants', 9: 'Animals', 10: 'Earth',
-  11: 'Weather', 12: 'Matter',
-};
-
 // The Edge heatmap row carries `student_name`; some deploys additionally stamp
 // `student_id` (the students page reads it defensively too). We widen the type
 // locally so the drill-through can use the id when present without a contract
 // change.
 type HeatmapRowWithId = HeatmapRow & { student_id?: string };
+
+// ─── Class Rankings Widget ───────────────────────────────────────────────────
+function ClassRankingsWidget({ classId, isHi }: { classId: string; isHi: boolean }) {
+  const { data, isLoading } = useClassLeaderboard(classId, true);
+  const [open, setOpen] = useState(true);
+
+  const title = isHi ? '🏆 कक्षा रैंकिंग' : '🏆 Class Rankings';
+  const subtitle = isHi ? 'इस सप्ताह शीर्ष 5' : 'Top 5 this week';
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center justify-between"
+      >
+        <div>
+          <h3 className="font-semibold text-white text-sm">{title}</h3>
+          <p className="text-xs text-white/50">{subtitle}</p>
+        </div>
+        <span className="text-white/40 text-xs">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="mt-3 space-y-2">
+          {isLoading && (
+            <div className="text-xs text-white/40 text-center py-2">
+              {isHi ? 'लोड हो रहा है...' : 'Loading...'}
+            </div>
+          )}
+          {!isLoading && (!data?.items || data.items.length === 0) && (
+            <div className="text-xs text-white/40 text-center py-2">
+              {isHi ? 'अभी कोई डेटा नहीं' : 'No data yet'}
+            </div>
+          )}
+          {data?.items?.map((row) => (
+            <div key={row.student_id} className="flex items-center gap-2 text-xs">
+              <span
+                className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold flex-shrink-0"
+                style={{
+                  background:
+                    row.rank === 1
+                      ? '#FFD700'
+                      : row.rank === 2
+                      ? '#C0C0C0'
+                      : row.rank === 3
+                      ? '#CD7F32'
+                      : 'rgba(255,255,255,0.1)',
+                  color: row.rank <= 3 ? '#000' : '#fff',
+                }}
+              >
+                {row.rank}
+              </span>
+              <span className="flex-1 truncate text-white/80">{row.name}</span>
+              <span className="text-orange-400 font-semibold">{row.xp_this_period} XP</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Roster mastery heatmap ─────────────────────────────────────────────────
 function RosterHeatmap({
@@ -170,10 +225,9 @@ function RosterHeatmap({
                 key={i}
                 className="px-1 py-1.5 font-semibold text-[10px] text-center"
                 style={{ color: 'var(--text-3)', borderBottom: '1px solid var(--border)' }}
-                title={c.title}
+                title={c.title || `Ch. ${c.chapter}`}
               >
-                Ch{c.chapter}
-                {CHAPTER_NAMES[c.chapter] ? `: ${CHAPTER_NAMES[c.chapter].slice(0, 6)}` : ''}
+                {c.title ? c.title.slice(0, 8) : `Ch. ${c.chapter}`}
               </th>
             ))}
           </tr>
@@ -382,22 +436,18 @@ export function ActionBar({
       onClick: () => router.push('/teacher/assignments'),
     },
     // Wave B — grading queue. Enabled only when ff_teacher_assignment_lifecycle
-    // is ON; otherwise it stays the disabled placeholder from Wave A / A4.
-    gradingQueueEnabled
-      ? {
+    // is ON; when OFF the button is omitted entirely so teachers never see a
+    // disabled "soon" tombstone (hidden feature looks better than broken UI).
+    ...(gradingQueueEnabled
+      ? [{
           label: 'Grading queue',
           labelHi: 'ग्रेडिंग कतार',
           onClick: onOpenGradingQueue,
           testid: 'grading-queue-action',
           badge: gradingQueueCount > 0 ? gradingQueueCount : undefined,
-        }
-      : {
-          label: 'Grading queue',
-          labelHi: 'ग्रेडिंग कतार',
-          onClick: () => {},
-          disabled: true,
-          testid: 'grading-queue-action',
-        },
+          disabled: undefined as boolean | undefined,
+        }]
+      : []),
   ];
   return (
     <div className="flex flex-wrap gap-2">
@@ -472,6 +522,7 @@ export default function CommandCenter() {
   const parentCommsEnabled = useTeacherParentComms();
 
   const [activeClassId, setActiveClassId] = useState<string>('');
+  const [heatmapSubject, setHeatmapSubject] = useState<string>('math');
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [assigning, setAssigning] = useState<Record<string, boolean>>({});
 
@@ -511,7 +562,7 @@ export default function CommandCenter() {
   // until a class id is present.
   const effectiveClassId = activeClassId || dash?.classes?.[0]?.id || undefined;
 
-  const { data: heatmap, isLoading: heatmapLoading } = useHeatmap(effectiveClassId, 'math');
+  const { data: heatmap, isLoading: heatmapLoading } = useHeatmap(effectiveClassId, heatmapSubject);
   // Inert until a class scope resolves — never a transient roster-wide read.
   const { data: alertsRes, mutate: mutateAlerts } = useAlerts(effectiveClassId, !!effectiveClassId);
   const { data: queueRes, isLoading: queueSwrLoading, error: queueSwrError, mutate: mutateQueue } =
@@ -1047,18 +1098,42 @@ export default function CommandCenter() {
         {/* Roster mastery heatmap */}
         <SectionErrorBoundary section="Roster Mastery Heatmap">
         <Panel>
-          <PanelHead
-            title={tt(isHi, 'Roster mastery heatmap', 'रोस्टर मास्टरी हीटमैप')}
-            badge={
-              heatmap
-                ? `${heatmap.student_count} ${tt(isHi, 'students', 'छात्र')} × ${heatmap.concept_count} ${tt(
-                    isHi,
-                    'concepts',
-                    'अवधारणाएं',
-                  )}`
-                : undefined
-            }
-          />
+          <div className="flex flex-wrap justify-between items-center gap-2">
+            <PanelHead
+              title={tt(isHi, 'Roster mastery heatmap', 'रोस्टर मास्टरी हीटमैप')}
+              badge={
+                heatmap
+                  ? `${heatmap.student_count} ${tt(isHi, 'students', 'छात्र')} × ${heatmap.concept_count} ${tt(
+                      isHi,
+                      'concepts',
+                      'अवधारणाएं',
+                    )}`
+                  : undefined
+              }
+            />
+            <div className="flex items-center gap-1.5 shrink-0">
+              <label className="text-[10px] uppercase tracking-wide font-bold" style={{ color: 'var(--text-3)' }}>
+                {tt(isHi, 'Subject', 'विषय')}
+              </label>
+              <select
+                value={heatmapSubject}
+                onChange={(e) => setHeatmapSubject(e.target.value)}
+                data-testid="heatmap-subject-selector"
+                className="rounded-md text-[12px] py-1 px-2 outline-none cursor-pointer"
+                style={{
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-1)',
+                }}
+              >
+                <option value="math">{tt(isHi, 'Math', 'गणित')}</option>
+                <option value="science">{tt(isHi, 'Science', 'विज्ञान')}</option>
+                <option value="english">{tt(isHi, 'English', 'अंग्रेज़ी')}</option>
+                <option value="hindi">{tt(isHi, 'Hindi', 'हिंदी')}</option>
+                <option value="social_science">{tt(isHi, 'Soc. Science', 'सामाजिक विज्ञान')}</option>
+              </select>
+            </div>
+          </div>
           <div className="mt-3.5">
             {loadingClass ? (
               <div
@@ -1134,6 +1209,11 @@ export default function CommandCenter() {
         </Panel>
         </SectionErrorBoundary>
       </div>
+
+      {/* Class Rankings — Top 5 this week */}
+      {effectiveClassId && (
+        <ClassRankingsWidget classId={effectiveClassId} isHi={isHi} />
+      )}
 
       {/* Toast */}
       {toast && (

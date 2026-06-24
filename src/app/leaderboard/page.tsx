@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
 import { getLeaderboard, getCompetitions, joinCompetition, getCompetitionLeaderboard, getHallOfFame, supabase } from '@/lib/supabase';
 import { Card, Button, SectionHeader, LoadingFoxy, Avatar, EmptyState } from '@/components/ui';
@@ -29,7 +30,16 @@ interface MasteryLeaderEntry {
 // These types come from dynamic RPC responses with many optional fields
 type RPCRecord = Record<string, any>; // eslint-disable-line
 
-type Tab = 'ranks' | 'compete' | 'fame' | 'titles' | 'streaks' | 'mastery';
+type Tab = 'ranks' | 'compete' | 'fame' | 'titles' | 'streaks' | 'mastery' | 'class';
+
+/** Entry returned by /api/v1/leaderboard/class/[classId] */
+interface ClassLeaderEntry {
+  rank: number;
+  student_id: string;
+  name: string;
+  grade: string;
+  xp_this_period: number;
+}
 
 /** Entry for the streaks leaderboard tab */
 interface StreakLeaderEntry {
@@ -107,6 +117,18 @@ export default function LeaderboardPage() {
   const [masteryEntries, setMasteryEntries] = useState<MasteryLeaderEntry[]>([]);
   const { data: lbFlags } = useFeatureFlags();
   const masteryTabOn = lbFlags?.ff_personalised_compete_v1 === true;
+
+  const classId = (student as any)?.class_id ?? null;
+  const isClassTabActive = tab === 'class';
+  const { data: classData, isLoading: classLoading } = useSWR<{ items: ClassLeaderEntry[] } | null>(
+    classId && isClassTabActive ? `/api/v1/leaderboard/class/${classId}?period=${period}` : null,
+    async (url: string) => {
+      const res = await fetch(url, { credentials: 'same-origin' });
+      if (!res.ok) return null;
+      return res.json() as Promise<{ items: ClassLeaderEntry[] }>;
+    },
+    { refreshInterval: 60000 },
+  );
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/login');
@@ -338,6 +360,7 @@ export default function LeaderboardPage() {
     ...(masteryTabOn
       ? [{ id: 'mastery' as Tab, label: 'Mastery', labelHi: 'महारत', icon: '🎯' }]
       : []),
+    { id: 'class', label: 'My Class', labelHi: 'मेरी कक्षा', icon: '🏫' },
     { id: 'compete', label: 'Compete', labelHi: 'प्रतियोगिता', icon: '⚔️' },
     { id: 'streaks', label: 'Streaks', labelHi: 'स्ट्रीक', icon: '🔥' },
     { id: 'fame', label: 'Hall of Fame', labelHi: 'गौरव गाथा', icon: '👑' },
@@ -362,7 +385,7 @@ export default function LeaderboardPage() {
           >
             {TABS.map(t => (
               <button key={t.id} onClick={() => { setTab(t.id); setSelectedComp(null); }}
-                className="flex-1 min-w-0 py-2 rounded-xl text-xs font-semibold transition-all text-center"
+                className="flex-shrink-0 px-4 py-2 rounded-xl text-xs font-semibold transition-all text-center"
                 style={{
                   background: tab === t.id ? 'rgba(232,88,28,0.1)' : 'var(--surface-2)',
                   border: tab === t.id ? '1.5px solid var(--orange)' : '1.5px solid transparent',
@@ -493,19 +516,23 @@ export default function LeaderboardPage() {
               </div>
             )}
 
-            {/* Top 10 XP Chart — visualizes distribution before the ranked list */}
+            {/* Top 10 chart — XP or Performance Score depending on available data */}
             {!loading && entries.length > 0 && (
               <section className="mb-2">
                 <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--text-3)]">
-                  {isHi ? 'XP के अनुसार शीर्ष 10' : 'Top 10 by XP'}
+                  {usePerformanceScores
+                    ? (isHi ? 'शीर्ष 10 प्रदर्शन स्कोर' : 'Top 10 by Performance Score')
+                    : (isHi ? 'शीर्ष 10 XP' : 'Top 10 by XP')}
                 </h2>
                 <BarChart
                   series={[
                     {
-                      name: 'XP',
+                      name: usePerformanceScores ? (isHi ? 'प्रदर्शन स्कोर' : 'Performance Score') : 'XP',
                       data: entries.slice(0, 10).map((e) => ({
                         x: e.name ?? '?',
-                        y: e.total_xp ?? 0,
+                        y: usePerformanceScores && e.performance_score != null
+                          ? e.performance_score
+                          : (e.total_xp ?? 0),
                       })),
                     },
                   ]}
@@ -1045,10 +1072,95 @@ export default function LeaderboardPage() {
             )}
           </>
         )}
+        {/* ═══ MY CLASS TAB ═══ */}
+        {tab === 'class' && (
+          <>
+            {/* Period filter — reuse same period state */}
+            <div className="flex gap-1.5">
+              {PERIODS.map(p => (
+                <button key={p.id} onClick={() => setPeriod(p.id)}
+                  className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all"
+                  style={{
+                    background: period === p.id ? 'var(--orange)' : 'var(--surface-2)',
+                    color: period === p.id ? '#fff' : 'var(--text-3)',
+                  }}>
+                  {isHi ? p.labelHi : p.label}
+                </button>
+              ))}
+            </div>
+
+            {!classId ? (
+              <div className="text-center py-12">
+                <div className="text-5xl mb-4">🏫</div>
+                <p className="text-sm font-semibold text-[var(--text-2)] mb-1">
+                  {isHi
+                    ? 'आप अभी किसी कक्षा में नहीं हैं।'
+                    : "You're not in a class yet."}
+                </p>
+                <p className="text-xs text-[var(--text-3)]">
+                  {isHi ? 'अपने शिक्षक से कहें।' : 'Ask your teacher to add you.'}
+                </p>
+              </div>
+            ) : classLoading ? (
+              <div className="space-y-3">
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="h-16 rounded-xl animate-pulse" style={{ background: 'var(--surface-2)' }} />
+                ))}
+              </div>
+            ) : !classData?.items || classData.items.length === 0 ? (
+              <EmptyState
+                icon="🏫"
+                title={isHi ? 'अभी कोई रैंकिंग नहीं' : 'No class rankings yet'}
+                description={isHi ? 'क्विज़ खेलो और कक्षा में आगे बढ़ो!' : 'Take quizzes to climb the class rankings!'}
+                action={
+                  <Button onClick={() => router.push('/quiz')}>
+                    {isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'}
+                  </Button>
+                }
+              />
+            ) : (
+              <>
+                <SectionHeader icon="🏫">
+                  {isHi ? `कक्षा रैंकिंग (${classData.items.length})` : `Class Rankings (${classData.items.length})`}
+                </SectionHeader>
+                <div className="space-y-3">
+                  {classData.items.map((entry, idx) => {
+                    const isMe = entry.student_id === student.id;
+                    return (
+                      <Card key={entry.student_id}
+                        className={`!p-4 flex items-center gap-3 ${isMe ? 'ring-2 ring-[var(--orange)]' : ''}`}>
+                        <div className="w-8 text-center flex-shrink-0">
+                          {idx < 3
+                            ? <span className="text-xl">{MEDALS[idx]}</span>
+                            : <span className="text-sm font-bold text-[var(--text-3)]">#{idx + 1}</span>}
+                        </div>
+                        <Avatar name={entry.name ?? '?'} size={36} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold truncate">
+                            {entry.name}
+                            {isMe && <span className="text-xs text-[var(--orange)] ml-1">({isHi ? 'तुम' : 'You'})</span>}
+                          </div>
+                          <div className="text-xs text-[var(--text-3)]">
+                            {isHi ? `कक्षा ${entry.grade}` : `Grade ${entry.grade}`}
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="text-sm font-bold gradient-text">{entry.xp_this_period?.toLocaleString()}</div>
+                          <div className="text-xs text-[var(--text-3)]">XP</div>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </>
+        )}
+
         </SectionErrorBoundary>
       </main>
 
-      
+
     </div>
   );
 }

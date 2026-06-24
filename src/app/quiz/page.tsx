@@ -1241,8 +1241,8 @@ export default function QuizPage() {
               <p className="text-sm" style={{ color: 'var(--text-3)' }}>
                 {isHi ? 'AI शिक्षक तुम्हारे उत्तर की समीक्षा कर रहा है' : 'Our AI teacher is reviewing your response'}
               </p>
-              <div className="mt-4 w-full bg-gray-200 rounded-full h-1">
-                <div className="bg-purple-600 h-1 rounded-full animate-pulse" style={{ width: '60%' }} />
+              <div className="mt-4 w-full bg-purple-100 rounded-full h-1 overflow-hidden">
+                <div className="bg-purple-600 h-1 rounded-full animate-pulse" style={{ width: '100%' }} />
               </div>
             </div>
           </div>

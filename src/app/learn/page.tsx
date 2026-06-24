@@ -20,6 +20,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
+
+const CelebrationOverlay = dynamic(
+  () => import('@/components/quiz/CelebrationOverlay'),
+  { ssr: false },
+);
 import { getChaptersForSubject, supabase } from '@/lib/supabase';
 import {  LoadingFoxy } from '@/components/ui';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
@@ -62,6 +67,9 @@ export default function LearnPage() {
   const [lastStudied, setLastStudied] = useState<{ subject: string; chapter: number; chapterTitle: string; concept: number; timestamp: number } | null>(null);
   const [progressRows, setProgressRows] = useState<Array<{ subject: string; chapter_number: number; is_completed: boolean }>>([]);
   const [subjectTotalChapters, setSubjectTotalChapters] = useState<Record<string, number>>({});
+  const [showChapterCelebration, setShowChapterCelebration] = useState(false);
+  // Track previously-completed keys so we can fire celebration on new completions
+  const [prevCompletedKeys, setPrevCompletedKeys] = useState<Set<string>>(new Set());
 
   // Load last-studied position from localStorage
   useEffect(() => {
@@ -89,9 +97,22 @@ export default function LearnPage() {
       .select('subject, chapter_number, is_completed')
       .eq('student_id', student.id)
       .then(({ data }) => {
-        if (data) setProgressRows(data as any[]);
+        if (data) {
+          const rows = data as Array<{ subject: string; chapter_number: number; is_completed: boolean }>;
+          setProgressRows(rows);
+          // Detect newly-completed chapters and fire celebration
+          const newCompletedKeys = new Set(
+            rows.filter(r => r.is_completed).map(r => `${r.subject}:${r.chapter_number}`),
+          );
+          const hasNewCompletion = [...newCompletedKeys].some(k => !prevCompletedKeys.has(k));
+          if (prevCompletedKeys.size > 0 && hasNewCompletion) {
+            setShowChapterCelebration(true);
+          }
+          setPrevCompletedKeys(newCompletedKeys);
+        }
       });
-  }, [student?.id, pathname]);
+    // TODO: call setShowChapterCelebration(true) when chapter completes via navigation return
+  }, [student?.id, pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!student?.grade) return;
@@ -160,6 +181,14 @@ export default function LearnPage() {
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
+      {showChapterCelebration && (
+        <CelebrationOverlay
+          scorePercent={80}
+          xpEarned={100}
+          isHi={isHi}
+          onDismiss={() => setShowChapterCelebration(false)}
+        />
+      )}
       <header className="page-header">
         <div className="page-header-inner flex items-center gap-3">
           {selectedSubject ? (
@@ -357,11 +386,10 @@ export default function LearnPage() {
               )}
 
               {chaptersLoading ? (
-                <div className="text-center py-10">
-                  <div className="text-3xl animate-float mb-2">📖</div>
-                  <p className="text-sm text-[var(--text-3)]">
-                    {isHi ? 'अध्याय लोड हो रहे हैं...' : 'Loading chapters...'}
-                  </p>
+                <div className="space-y-3">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="h-16 bg-[var(--surface-2)] rounded-xl animate-pulse" />
+                  ))}
                 </div>
 
               ) : chapters.length === 0 ? (
