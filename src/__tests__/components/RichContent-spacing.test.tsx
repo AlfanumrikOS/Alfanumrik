@@ -131,8 +131,8 @@ describe('RichContent — <strong> visual separation', () => {
 // 3. remark-breaks plugin — single newlines render as <br>
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('RichContent — remark-breaks wired into ReactMarkdown', () => {
-  it('renders single newlines as <br> elements (step-card line breaks)', () => {
+describe('RichContent — remark-breaks removed (intentional: fix stray v before blockquotes)', () => {
+  it('single newlines do NOT produce <br> elements (remark-breaks intentionally removed)', () => {
     // Without remark-breaks, single newlines collapse into one paragraph.
     // With remark-breaks, each line is separated by a <br>.
     const stepCard = 'Step 1: Read the problem\nStep 2: Identify the formula\nStep 3: Solve';
@@ -143,7 +143,7 @@ describe('RichContent — remark-breaks wired into ReactMarkdown', () => {
     // remark-breaks transforms each \n into a <br>. We expect at least 2 <br>
     // elements (one between each of the 3 step lines).
     const breaks = container.querySelectorAll('br');
-    expect(breaks.length).toBeGreaterThanOrEqual(2);
+    expect(breaks.length).toBe(0); // remark-breaks removed — single newlines now collapse to space
   });
 });
 
