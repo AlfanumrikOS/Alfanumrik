@@ -228,13 +228,19 @@ export default function LearnPage() {
                     <button
                       key={s.code}
                       onClick={() => setSelectedSubject(s.code)}
-                      className="rounded-2xl p-4 text-left transition-all active:scale-[0.97]"
+                      className="rounded-2xl p-4 text-left transition-all active:scale-[0.97] hover:shadow-md hover:-translate-y-0.5 cursor-pointer relative overflow-hidden"
                       style={{
                         background: isCurrent ? `${s.color}10` : 'var(--surface-1)',
                         border: `1.5px solid ${isCurrent ? s.color : 'var(--border)'}`,
                         boxShadow: isCurrent ? `0 4px 16px ${s.color}20` : '0 2px 8px rgba(0,0,0,0.04)',
                       }}
                     >
+                      {isCurrent && (
+                        <div
+                          className="absolute top-0 left-0 right-0 h-1"
+                          style={{ background: s.color || 'var(--orange)' }}
+                        />
+                      )}
                       <div className="text-3xl mb-2">{s.icon}</div>
                       <div
                         className="text-sm font-bold"
@@ -253,17 +259,17 @@ export default function LearnPage() {
                         const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
                         return (
                           <div className="mt-3">
-                            <div className="w-full bg-gray-200/60 rounded-full h-1 mt-1 overflow-hidden">
+                            <div className="w-full bg-gray-200/80 rounded-full h-1.5 mt-1 overflow-hidden">
                               <div
-                                  className="h-1 rounded-full transition-all duration-500"
+                                  className="h-1.5 rounded-full transition-all duration-500"
                                   style={{
                                     width: `${pct}%`,
                                     backgroundColor: s.color || 'var(--orange)',
                                   }}
                               />
                             </div>
-                            <div className="text-[9px] text-[var(--text-3)] mt-1 flex justify-between">
-                              <span>{pct}% {isHi ? 'पूरा' : 'Done'}</span>
+                            <div className="text-[11px] text-[var(--text-3)] mt-1 flex justify-between">
+                              <span><span className="font-bold">{pct}%</span> {isHi ? 'पूरा' : 'Done'}</span>
                               <span>{completed}/{total} {isHi ? 'अध्याय' : 'Ch'}</span>
                             </div>
                           </div>
@@ -413,7 +419,7 @@ export default function LearnPage() {
                 </div>
 
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {chapters.map((ch) => (
                     <div
                       key={ch.chapter_number}
@@ -428,7 +434,7 @@ export default function LearnPage() {
                         <div
                           className="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0"
                           style={{
-                            background: `${selectedMeta?.color || 'var(--orange)'}12`,
+                            background: `${selectedMeta?.color || 'var(--orange)'}20`,
                             color: selectedMeta?.color || 'var(--orange)',
                           }}
                         >
@@ -438,7 +444,7 @@ export default function LearnPage() {
                         {/* Title */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <div className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
+                            <div className="text-base font-semibold" style={{ color: 'var(--text-1)' }}>
                               {ch.title}
                             </div>
                             {/* Phase 3 of Exam-Ready 360°: per-chapter badge.
@@ -490,7 +496,7 @@ export default function LearnPage() {
                       >
                         <button
                           onClick={() => router.push(`/quiz?subject=${selectedSubject}&chapter=${ch.chapter_number}`)}
-                          className="text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
+                          className="text-xs font-bold px-3 py-2 rounded-lg transition-all active:scale-95"
                           style={{
                             background: `${selectedMeta?.color || 'var(--orange)'}10`,
                             color: selectedMeta?.color || 'var(--orange)',
@@ -501,7 +507,7 @@ export default function LearnPage() {
                         </button>
                         <button
                           onClick={() => router.push(`/foxy?subject=${selectedSubject}&chapter=${ch.chapter_number}&mode=doubt`)}
-                          className="text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
+                          className="text-xs font-bold px-3 py-2 rounded-lg transition-all active:scale-95"
                           style={{
                             background: 'rgba(232,88,28,0.06)',
                             color: 'var(--orange)',

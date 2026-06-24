@@ -55,6 +55,7 @@ import {
   useAlerts,
   useGradingQueue,
   useStudentMasteryReport,
+  useClassLeaderboard,
 } from '@/lib/teacher/use-teacher-data';
 import { TeacherDashboardSkeleton } from '@/components/Skeleton';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/admin-ui/StatusBadge';
@@ -1149,6 +1150,15 @@ export default function CommandCenter() {
         </SectionErrorBoundary>
       </div>
 
+      {/* Class Rankings */}
+      {effectiveClassId && (
+        <SectionErrorBoundary section="Class Rankings">
+          <div className="mt-4">
+            <ClassRankingsWidget classId={effectiveClassId} isHi={isHi} />
+          </div>
+        </SectionErrorBoundary>
+      )}
+
       {/* Toast */}
       {toast && (
         <div
@@ -1163,6 +1173,52 @@ export default function CommandCenter() {
         </div>
       )}
     </Shell>
+  );
+}
+
+
+// ── Class Rankings Widget ──────────────────────────────────────────────
+// Top 5 this week. Collapsible. 5-min refresh. P7: bilingual. P13: name+XP only.
+function ClassRankingsWidget({ classId, isHi }: { classId: string; isHi: boolean }) {
+  const { data, isLoading } = useClassLeaderboard(classId, true);
+  const [open, setOpen] = useState(true);
+  const rankColor = (r: number) =>
+    r === 1 ? '#FFD700' : r === 2 ? '#C0C0C0' : r === 3 ? '#CD7F32' : 'var(--surface-2)';
+  return (
+    <Panel>
+      <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between">
+        <PanelHead title={isHi ? '🏆 कक्षा रैंकिंग' : '🏆 Class Rankings'} />
+        <span className="text-[11px] ml-2" style={{ color: 'var(--text-3)' }}>
+          {isHi ? 'इस सप्ताह शीर्ष 5' : 'Top 5 this week'}{' '}{open ? '▲' : '▼'}
+        </span>
+      </button>
+      {open && (
+        <div className="mt-3 flex flex-col gap-2">
+          {isLoading && (
+            <div className="h-24 rounded-lg animate-pulse" style={{ background: 'var(--surface-2)' }} aria-hidden="true" />
+          )}
+          {!isLoading && (!data?.items || data.items.length === 0) && (
+            <p className="text-[13px] text-center py-4" style={{ color: 'var(--text-3)' }}>
+              {isHi ? 'अभी कोई डेटा नहीं' : 'No data yet'}
+            </p>
+          )}
+          {data?.items?.map((row) => (
+            <div key={row.student_id} className="flex items-center gap-2.5 text-[13px]">
+              <span
+                className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+                style={{ background: rankColor(row.rank), color: row.rank <= 3 ? '#000' : 'var(--text-2)' }}
+              >
+                {row.rank}
+              </span>
+              <span className="flex-1 truncate" style={{ color: 'var(--text-1)' }}>{row.name}</span>
+              <span className="font-semibold tabular-nums" style={{ color: 'var(--orange, #E8581C)' }}>
+                {row.xp_this_period} XP
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Panel>
   );
 }
 

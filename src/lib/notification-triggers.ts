@@ -1151,6 +1151,275 @@ export async function onConcentrationReescalated(
 }
 
 /**
+ * Triggered when a student levels up.
+ * Sends an achievement notification to the student AND fans out to all approved
+ * linked guardians (parent_achievement). Guardian rows are filtered by the
+ * 'achievement' notification preference (defaults true if not set).
+ *
+ * P7: every row carries both `body` (English) and `body_hi` (Hindi).
+ * P13: data fields contain studentId, numbers, and trigger string only — no PII.
+ */
+export async function onLevelUp(
+  studentId: string,
+  opts: {
+    newLevel: number;
+    levelNameEn: string;
+    levelNameHi: string;
+  },
+): Promise<void> {
+  try {
+    const { newLevel, levelNameEn, levelNameHi } = opts;
+    const now = new Date().toISOString();
+    const rows: NotificationRow[] = [];
+
+    // Student notification
+    rows.push({
+      recipient_type: 'student',
+      recipient_id: studentId,
+      type: 'achievement',
+      title: `🎉 Level Up! You are now ${levelNameEn}`,
+      body: `You reached Level ${newLevel}: ${levelNameEn}. Keep going!`,
+      body_hi: `आपने स्तर ${newLevel} पार किया: ${levelNameHi}। बढ़ते रहें!`,
+      data: {
+        trigger: 'level_up',
+        new_level: newLevel,
+      },
+      is_read: false,
+      created_at: now,
+    });
+
+    // Guardian fanout
+    const guardians = await getApprovedGuardians(studentId);
+    let guardianCount = 0;
+    for (const link of guardians) {
+      const guardian = resolveGuardian(link.guardians);
+      if (!guardian?.id) continue;
+      if (!isNotificationEnabled(guardian.notification_preferences, 'achievement')) continue;
+
+      rows.push({
+        recipient_type: 'guardian',
+        recipient_id: guardian.id,
+        type: 'parent_achievement',
+        title: `🌟 ${levelNameEn}!`,
+        body: `Your child just reached Level ${newLevel}: ${levelNameEn} on Alfanumrik! 🎉`,
+        body_hi: `आपके बच्चे ने Alfanumrik पर स्तर ${newLevel}: ${levelNameHi} प्राप्त किया! 🎉`,
+        data: {
+          student_id: studentId,
+          trigger: 'level_up',
+          new_level: newLevel,
+        },
+        is_read: false,
+        created_at: now,
+      });
+      guardianCount++;
+    }
+
+    const { error } = await supabaseAdmin.from('notifications').insert(rows);
+    if (error) {
+      logger.error('notification_triggers: onLevelUp insert failed', {
+        error: new Error(error.message),
+        studentId,
+        newLevel,
+        guardianCount,
+      });
+      return;
+    }
+
+    logger.info('notification_triggers: onLevelUp sent', {
+      studentId,
+      newLevel,
+      guardianCount,
+    });
+  } catch (err) {
+    logger.error('notification_triggers: onLevelUp unexpected error', {
+      error: err instanceof Error ? err : new Error(String(err)),
+      studentId,
+    });
+  }
+}
+
+/**
+ * Triggered when a student completes a chapter.
+ * Sends an achievement notification to the student AND fans out a parent_digest
+ * to all approved linked guardians. Guardian rows are filtered by the
+ * 'parent_digest' notification preference (defaults true if not set).
+ *
+ * P7: every row carries both `body` (English) and `body_hi` (Hindi).
+ * P13: data fields contain studentId, subject string, numbers, and trigger only.
+ */
+export async function onChapterComplete(
+  studentId: string,
+  opts: {
+    subject: string;
+    xpEarned: number;
+  },
+): Promise<void> {
+  try {
+    const { subject, xpEarned } = opts;
+    const now = new Date().toISOString();
+    const rows: NotificationRow[] = [];
+
+    // Student notification
+    rows.push({
+      recipient_type: 'student',
+      recipient_id: studentId,
+      type: 'achievement',
+      title: `📖 Chapter Complete!`,
+      body: `You completed a chapter in ${subject} and earned +${xpEarned} XP!`,
+      body_hi: `${subject} में अध्याय पूरा किया और +${xpEarned} XP अर्जित किए!`,
+      data: {
+        trigger: 'chapter_complete',
+        subject,
+        xp_earned: xpEarned,
+      },
+      is_read: false,
+      created_at: now,
+    });
+
+    // Guardian fanout
+    const guardians = await getApprovedGuardians(studentId);
+    let guardianCount = 0;
+    for (const link of guardians) {
+      const guardian = resolveGuardian(link.guardians);
+      if (!guardian?.id) continue;
+      if (!isNotificationEnabled(guardian.notification_preferences, 'parent_digest')) continue;
+
+      rows.push({
+        recipient_type: 'guardian',
+        recipient_id: guardian.id,
+        type: 'parent_digest',
+        title: `📚 Chapter completed in ${subject}`,
+        body: `Your child completed a chapter in ${subject} today and earned +${xpEarned} XP.`,
+        body_hi: `आपके बच्चे ने आज ${subject} में एक अध्याय पूरा किया और +${xpEarned} XP अर्जित किए।`,
+        data: {
+          student_id: studentId,
+          trigger: 'chapter_complete',
+          subject,
+          xp_earned: xpEarned,
+        },
+        is_read: false,
+        created_at: now,
+      });
+      guardianCount++;
+    }
+
+    const { error } = await supabaseAdmin.from('notifications').insert(rows);
+    if (error) {
+      logger.error('notification_triggers: onChapterComplete insert failed', {
+        error: new Error(error.message),
+        studentId,
+        subject,
+        xpEarned,
+        guardianCount,
+      });
+      return;
+    }
+
+    logger.info('notification_triggers: onChapterComplete sent', {
+      studentId,
+      subject,
+      xpEarned,
+      guardianCount,
+    });
+  } catch (err) {
+    logger.error('notification_triggers: onChapterComplete unexpected error', {
+      error: err instanceof Error ? err : new Error(String(err)),
+      studentId,
+    });
+  }
+}
+
+/**
+ * Triggered when a student hits a streak milestone (e.g. 7, 30, 100 days).
+ * Sends an achievement notification to the student AND fans out a parent_achievement
+ * to all approved linked guardians. Guardian rows are filtered by the
+ * 'streak_milestone' notification preference (defaults true if not set).
+ *
+ * P7: every row carries both `body` (English) and `body_hi` (Hindi).
+ * P13: data fields contain studentId, numbers, and trigger string only — no PII.
+ */
+export async function onStreakMilestone(
+  studentId: string,
+  opts: {
+    days: number;
+    coinsAwarded: number;
+  },
+): Promise<void> {
+  try {
+    const { days, coinsAwarded } = opts;
+    const now = new Date().toISOString();
+    const rows: NotificationRow[] = [];
+
+    // Student notification
+    rows.push({
+      recipient_type: 'student',
+      recipient_id: studentId,
+      type: 'achievement',
+      title: `🔥 ${days}-Day Streak!`,
+      body: `Amazing! You have a ${days}-day learning streak and earned ${coinsAwarded} Foxy Coins!`,
+      body_hi: `शानदार! आपकी ${days} दिन की पढ़ाई की स्ट्रीक है और ${coinsAwarded} फॉक्सी कॉइन मिले!`,
+      data: {
+        trigger: 'streak_milestone',
+        streak_days: days,
+        coins_awarded: coinsAwarded,
+      },
+      is_read: false,
+      created_at: now,
+    });
+
+    // Guardian fanout
+    const guardians = await getApprovedGuardians(studentId);
+    let guardianCount = 0;
+    for (const link of guardians) {
+      const guardian = resolveGuardian(link.guardians);
+      if (!guardian?.id) continue;
+      if (!isNotificationEnabled(guardian.notification_preferences, 'streak_milestone')) continue;
+
+      rows.push({
+        recipient_type: 'guardian',
+        recipient_id: guardian.id,
+        type: 'parent_achievement',
+        title: `🔥 ${days}-Day Streak!`,
+        body: `Your child has maintained a ${days}-day learning streak on Alfanumrik! 🔥`,
+        body_hi: `आपके बच्चे ने Alfanumrik पर ${days} दिन की पढ़ाई की लकीर बनाए रखी है! 🔥`,
+        data: {
+          student_id: studentId,
+          trigger: 'streak_milestone',
+          streak_days: days,
+          coins_awarded: coinsAwarded,
+        },
+        is_read: false,
+        created_at: now,
+      });
+      guardianCount++;
+    }
+
+    const { error } = await supabaseAdmin.from('notifications').insert(rows);
+    if (error) {
+      logger.error('notification_triggers: onStreakMilestone insert failed', {
+        error: new Error(error.message),
+        studentId,
+        days,
+        coinsAwarded,
+        guardianCount,
+      });
+      return;
+    }
+
+    logger.info('notification_triggers: onStreakMilestone sent', {
+      studentId,
+      days,
+      guardianCount,
+    });
+  } catch (err) {
+    logger.error('notification_triggers: onStreakMilestone unexpected error', {
+      error: err instanceof Error ? err : new Error(String(err)),
+      studentId,
+    });
+  }
+}
+
+/**
  * Triggered when a student achieves mastery (>= 80%) on a concept.
  * Only fires if masteryLevel >= 80 (enforced here, not left to the caller).
  */

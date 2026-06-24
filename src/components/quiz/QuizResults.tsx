@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { Card, Button, StatCard } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
@@ -14,6 +15,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useFeatureFlags } from '@/lib/swr';
 import { getLevelFromScore } from '@/lib/score-config';
+import { calculateLevel, getLevelName } from '@/lib/xp-config';
 import { reviewRoute, reviseRoute } from '@/lib/routes/study-menu-routes';
 import NextActionCard from '@/components/quiz/NextActionCard';
 import CelebrationOverlay from '@/components/quiz/CelebrationOverlay';
@@ -21,6 +23,13 @@ import GoalScorecardSentence from '@/components/quiz/GoalScorecardSentence';
 import MisconceptionExplainer from '@/components/quiz/MisconceptionExplainer';
 import { isKnownGoalCode } from '@/lib/goals/goal-profile';
 import type { ErrorType } from '@/lib/cognitive-engine';
+
+// Code-split for P10 bundle budget — LevelUpModal is only needed post-quiz
+// and adds confetti + animation weight that should not be in the initial chunk.
+const LevelUpModal = dynamic(
+  () => import('@/components/achievements/LevelUpModal'),
+  { ssr: false }
+);
 
 interface Question {
   id: string;
@@ -147,6 +156,7 @@ export default function QuizResults({
   const { data: reviseFlags } = useFeatureFlags();
   const [expandedCorrect, setExpandedCorrect] = useState<Set<number>>(new Set());
   const [showCelebration, setShowCelebration] = useState(true);
+  const [showLevelUp, setShowLevelUp] = useState(false);
   const [flashcardCount, setFlashcardCount] = useState(0);
   const [flashcardBanner, setFlashcardBanner] = useState(false);
   const flashcardCreated = useRef(false);
@@ -183,6 +193,20 @@ export default function QuizResults({
     })();
     return () => { active = false; };
   }, []);
+
+  // Level-up detection: compare level before and after this quiz.
+  // student.xp_total is the post-quiz value (auth context updated after submit).
+  // xp_earned gives us the pre-quiz value by subtraction.
+  useEffect(() => {
+    if (results.idempotent_replay) return;
+    const xpAfter = student?.xp_total ?? 0;
+    const xpBefore = xpAfter - (results.xp_earned ?? 0);
+    if (calculateLevel(xpBefore) < calculateLevel(xpAfter)) {
+      // Delay level-up modal until after CelebrationOverlay auto-dismisses (3s)
+      const t = setTimeout(() => setShowLevelUp(true), 3200);
+      return () => clearTimeout(t);
+    }
+  }, [results.idempotent_replay, results.xp_earned, student?.xp_total]);
 
   // Fetch the current Performance Score for this subject after quiz submission
   useEffect(() => {
@@ -307,6 +331,19 @@ export default function QuizResults({
          xpEarned={results.xp_earned}
          isHi={isHi}
          onDismiss={() => setShowCelebration(false)}
+       />
+     )}
+     {/* Level-up modal — fires 3.2s after quiz results mount (200ms after
+         CelebrationOverlay exits). Skipped for idempotent replays.
+         z-[60] sits above CelebrationOverlay's z-50. P13: no PII displayed. */}
+     {showLevelUp && (
+       <LevelUpModal
+         newLevel={calculateLevel(student?.xp_total ?? 0)}
+         levelNameEn={getLevelName(calculateLevel(student?.xp_total ?? 0), false)}
+         levelNameHi={getLevelName(calculateLevel(student?.xp_total ?? 0), true)}
+         xpTotal={student?.xp_total ?? 0}
+         isHi={isHi}
+         onDismiss={() => setShowLevelUp(false)}
        />
      )}
      <SectionErrorBoundary section="Quiz Results">

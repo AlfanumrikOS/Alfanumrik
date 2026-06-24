@@ -66,6 +66,10 @@
     {
       "path": "/api/internal/cron/fix-failed-questions",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/streak-guardian",
+      "schedule": "30 16 * * *"
     }
   ],
   "cleanUrls": true,

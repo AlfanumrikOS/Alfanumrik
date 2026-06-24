@@ -40,6 +40,8 @@ const TYPE_CONFIG: Record<string, { icon: string; color: string; label: string; 
   // First-quiz nudge — sent by daily-cron to students who completed onboarding
   // but never took a quiz. Deep-link: /diagnostic.
   first_quiz_nudge: { icon: '🚀', color: '#F97316', label: 'Get Started', labelHi: 'शुरू करो' },
+  // Loop B engagement — streak about to break (daily-cron early-warning nudge).
+  streak_at_risk: { icon: '🔥', color: '#EF4444', label: 'Streak at Risk', labelHi: 'स्ट्रीक खतरे में' },
 };
 
 interface Notification {

@@ -41,6 +41,7 @@ export interface Student {
   last_device_hash: string | null;
   device_change_count: number | null;
   is_demo: boolean | null;
+  class_id: string | null;
   created_at: string | null;
   updated_at: string | null;
 }

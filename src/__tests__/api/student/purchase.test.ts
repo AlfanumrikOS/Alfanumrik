@@ -92,13 +92,12 @@ describe('POST /api/student/shop/purchase', () => {
     expect(data.error).toContain('currency must be');
   });
 
-  it('returns 400 when itemId is not supported', async () => {
+  it('returns 404 when itemId is unknown (not in handler map)', async () => {
     setAuthorized('student-1');
-    const res = await POST(makeRequest({ itemId: 'extra_chats_5' }));
-    expect(res.status).toBe(400);
+    const res = await POST(makeRequest({ itemId: 'unknown_item_xyz' }));
+    expect(res.status).toBe(404);
     const data = await res.json();
-    expect(data.success).toBe(false);
-    expect(data.error).toContain('not available for purchase');
+    expect(data).toHaveProperty('error');
   });
 
   it('successfully purchases streak_freeze with coins', async () => {

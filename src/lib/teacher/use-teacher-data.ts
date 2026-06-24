@@ -216,3 +216,35 @@ export function useStudentMasteryReport(studentId?: string) {
     TEACHER_SWR_CONFIG,
   );
 }
+
+/** Class leaderboard — top N students by XP this week (or specified period).
+ *  Used by the CommandCenter ClassRankingsWidget. Inert until classId is
+ *  non-null and `enabled` is true. Refreshes every 5 min — the teacher
+ *  dashboard doesn't need real-time leaderboard data. */
+export function useClassLeaderboard(classId: string | null, enabled: boolean) {
+  return useSWR<{
+    items: Array<{
+      rank: number;
+      student_id: string;
+      name: string;
+      grade: string;
+      xp_this_period: number;
+    }>;
+  } | null>(
+    classId && enabled ? `/api/v1/leaderboard/class/${classId}?period=weekly&limit=5` : null,
+    async (url: string) => {
+      const res = await fetch(url, { credentials: 'same-origin' });
+      if (!res.ok) return null;
+      return res.json() as Promise<{
+        items: Array<{
+          rank: number;
+          student_id: string;
+          name: string;
+          grade: string;
+          xp_this_period: number;
+        }>;
+      }>;
+    },
+    { ...TEACHER_SWR_CONFIG, refreshInterval: 300000 }, // 5 min
+  );
+}

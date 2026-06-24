@@ -162,11 +162,44 @@ async function generateParentDigests(supabase: ReturnType<typeof createClient>):
     const list = (ss??[]) as {subject:string;score_percent:number;xp_earned:number}[]
     const idemKey = `daily_digest_${daySlug}_${guardian_id}_${student_id}`
     const base = {recipient_type:'guardian',recipient_id:guardian_id,is_read:false,created_at:new Date().toISOString(),idempotency_key:idemKey}
-    if (!list.length) { const b='Your child did not complete any quizzes yesterday.'; notes.push({...base,type:'parent_digest_no_activity',title:'No study activity yesterday',message:b,body:b,data:{quizzes:0,student_id}}) }
+    const { data: streakRow } = await supabase.from('challenge_streaks').select('current_streak').eq('student_id',student_id).maybeSingle()
+    const currentStreak = (streakRow as {current_streak:number}|null)?.current_streak ?? 0
+    if (!list.length) { const b='Your child did not complete any quizzes yesterday.'; const bhi='आपके बच्चे ने कल कोई प्रश्नोत्तरी पूरी नहीं की।'; notes.push({...base,type:'parent_digest_no_activity',title:'No study activity yesterday',message:b,body:b,body_hi:bhi,data:{quizzes:0,student_id,streak_days:currentStreak}}) }
     else {
       const xp=list.reduce((s,q)=>s+(q.xp_earned??0),0); const sc=Math.round(list.reduce((s,q)=>s+(q.score_percent??0),0)/list.length)
       const sub=[...new Set(list.map(q=>q.subject))].join(', '); const b=`Subjects: ${sub}. Avg score: ${sc}%. XP: +${xp}.`
-      notes.push({...base,type:'parent_digest',title:`Yesterday: ${list.length} quiz${list.length>1?'zes':''} completed`,message:b,body:b,data:{quizzes:list.length,avg_score:sc,total_xp:xp,subjects:sub,student_id}})
+      const bhi=`विषय: ${sub}। औसत अंक: ${sc}%। XP: +${xp}।`
+      notes.push({...base,type:'parent_digest',title:`Yesterday: ${list.length} quiz${list.length>1?'zes':''} completed`,message:b,body:b,body_hi:bhi,data:{quizzes:list.length,avg_score:sc,total_xp:xp,subjects:sub,student_id,streak_days:currentStreak}})
+    }
+  }
+  // WhatsApp delivery for guardians with phone + whatsapp preference
+  for (const {guardian_id,student_id} of links as {guardian_id:string;student_id:string}[]) {
+    const { data: gd } = await supabase.from('guardians').select('phone,notification_preferences').eq('id',guardian_id).maybeSingle()
+    const guardian = gd as {phone:string|null;notification_preferences:Record<string,unknown>|null}|null
+    if (!guardian?.phone || !guardian.notification_preferences?.whatsapp) continue
+    const { data: std } = await supabase.from('students').select('name').eq('id',student_id).maybeSingle()
+    const studentName = ((std as {name:string|null}|null)?.name ?? '').split(' ')[0] || 'Student'
+    const pairNote = notes.find(n => n.recipient_id === guardian_id && (n as any).data?.student_id === student_id)
+    const quizCount = (pairNote as any)?.data?.quizzes ?? 0
+    const avgScore = (pairNote as any)?.data?.avg_score ?? 0
+    const xpEarned = (pairNote as any)?.data?.total_xp ?? 0
+    const streakDays = (pairNote as any)?.data?.streak_days ?? 0
+    if (quizCount === 0) continue // Don't WhatsApp for no-activity days
+    try {
+      await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/whatsapp-notify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+        },
+        body: JSON.stringify({
+          phone: guardian.phone,
+          template: 'weekly_summary',
+          params: [studentName, String(quizCount), String(avgScore), String(xpEarned), String(streakDays)],
+        }),
+      })
+    } catch (waErr) {
+      console.warn(`generateParentDigests: WhatsApp send failed for guardian ${guardian_id}:`, waErr instanceof Error ? waErr.message : String(waErr))
     }
   }
   if (notes.length) {
