@@ -93,7 +93,7 @@ const ROLE_COPY: Record<Role, RoleCopy> = {
       hi: <>नब्बे सेकंड में वर्कशीट बनाइये, WhatsApp पर भेजिए, हर प्रश्न का परिणाम वापस पाइए। NEP-संरेखित रिपोर्ट जो प्रधानाचार्य भी पढ़ें।</>,
     },
     ctaLabel: { en: 'See the teacher portal', hi: 'शिक्षक पोर्टल देखें' },
-    ctaHref: '/login?role=teacher',
+    ctaHref: '/for-teachers',
   },
   school: {
     eyebrow: {

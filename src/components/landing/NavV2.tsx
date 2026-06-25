@@ -327,9 +327,9 @@ export default function NavV2() {
         <div className={s.wrap}>
           <div className={s.issueBarInner}>
             <div className="left">
-              <span>Vol. 1 · Issue 06</span>
+              <span>Vol. 1 · Issue 07</span>
               <span>Bengaluru · Mumbai · Delhi</span>
-              <span>20 Jun 2026</span>
+              <span>{new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
             </div>
             <div className="right">
               <span>CBSE 6 — 12</span>

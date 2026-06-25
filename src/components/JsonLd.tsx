@@ -15,6 +15,14 @@ export default function JsonLd() {
       addressCountry: 'IN',
     },
     sameAs: [],
+    award: 'ISO/IEC 27001:2022 Certified — Information Security Management System',
+    hasCredential: [
+      {
+        '@type': 'EducationalOccupationalCredential',
+        name: 'ISO/IEC 27001:2022 Information Security Management System',
+        credentialCategory: 'certification',
+      },
+    ],
   };
 
   const webAppData = {
@@ -56,6 +64,7 @@ export default function JsonLd() {
       'Gamified Learning with XP & Streaks',
       'Teacher Dashboard',
       'Parent Portal',
+      'ISO 27001 Certified Data Security',
     ],
   };
 

@@ -220,11 +220,21 @@ export default function TrustV2() {
                 )}
               </div>
             </div>
+            <div className={s.recognitionCard}>
+              <div className={s.recognitionLbl}>ISO 27001</div>
+              <div className={s.recognitionMeta}>
+                {t(
+                  'Information Security Management System — independently certified. Your child\'s data is protected to the highest international standard.',
+                  'सूचना सुरक्षा प्रबंधन प्रणाली — स्वतंत्र रूप से प्रमाणित। आपके बच्चे का डेटा सर्वोच्च अंतरराष्ट्रीय मानक पर सुरक्षित है।',
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
         <div className={s.compliance}>
           <span>{t('DPIIT Recognised', 'DPIIT मान्यता प्राप्त')}</span>
+          <span>{t('ISO 27001 Certified', 'ISO 27001 प्रमाणित')}</span>
           <span>DPDPA Aligned</span>
           <span>NCERT Mapped</span>
           <span>{t('End-to-End Encrypted', 'एंड-टू-एंड एन्क्रिप्टेड')}</span>
@@ -243,13 +253,6 @@ export default function TrustV2() {
             '@id': 'https://alfanumrik.com/#webapp',
             name: 'Alfanumrik',
             review: [
-              {
-                '@type': 'Review',
-                author: { '@type': 'Person', name: 'Pradeep Sharma' },
-                reviewBody:
-                  "We built Alfanumrik because our own daughter's report card kept saying \"average\" — a word that hides everything and explains nothing.",
-                reviewRating: { '@type': 'Rating', ratingValue: '5', bestRating: '5' },
-              },
               {
                 '@type': 'Review',
                 author: { '@type': 'Person', name: 'Meera Iyer' },

@@ -32,10 +32,10 @@ const FAQS = [
     aHi: 'तीन फ़र्क़। (i) सत्र छोटे हैं — दस मिनट, दो घंटे की रिकॉर्डेड क्लास नहीं। (ii) फ़ॉक्सी आपके बच्चे की भाषा में जवाब देता है और पाठ्यक्रम के बाहर कुछ नहीं गढ़ता। (iii) हर रविवार का अभिभावक पत्र सच बताता है — न शोर मचाते लीडरबोर्ड, न अतिरिक्त बिक्री।',
   },
   {
-    qEn: 'What does my child get for ₹699/month? Are there any hidden fees?',
-    qHi: '₹699 प्रति माह में क्या मिलेगा? क्या कोई छुपे हुए शुल्क हैं?',
-    aEn: 'Everything. Foxy AI tutor, the mastery x-ray, all 7 subjects (English, Hindi, Maths, Science, Social Science, Sanskrit, Computer), unlimited quizzes, the Sunday parent letter, and the bilingual experience. No franchise fees, no upsells, no "premium content" tier. Cancel anytime, no questions asked.',
-    aHi: 'सब कुछ। फ़ॉक्सी AI शिक्षक, महारत-नक़्शा, सातों विषय (अंग्रेज़ी, हिन्दी, गणित, विज्ञान, सामाजिक, संस्कृत, कंप्यूटर), असीमित क्विज़, रविवार का अभिभावक पत्र, और द्विभाषी अनुभव। कोई फ़्रैंचाइज़ शुल्क नहीं, कोई अतिरिक्त बिक्री नहीं, कोई "प्रीमियम स्तर" नहीं। कभी भी रद्द करें — कोई प्रश्न नहीं।',
+    qEn: 'What plans are available? Are there hidden fees?',
+    qHi: 'कौन-कौन सी योजनाएँ हैं? क्या कोई छुपे हुए शुल्क हैं?',
+    aEn: 'Four plans. Explorer is free forever — 5 Foxy chats and 5 quizzes a day across 2 subjects, no card required. Starter is ₹299/month — 30 chats, 20 quizzes, 4 subjects, STEM Lab. Pro is ₹699/month — 100 chats, unlimited quizzes, all subjects, STEM Lab, parent and teacher dashboards. Unlimited is ₹1,499/month — everything in Pro with no daily caps. All paid plans come with a **7-day money-back guarantee**. No hidden fees, no franchise costs, no premium-content tier. Cancel anytime, one tap, no questions asked.',
+    aHi: 'चार योजनाएँ। Explorer हमेशा मुफ्त है — प्रतिदिन 5 Foxy चैट और 5 क्विज़ (2 विषय), कोई कार्ड नहीं चाहिए। Starter ₹299/माह — 30 चैट, 20 क्विज़, 4 विषय, STEM लैब। Pro ₹699/माह — 100 चैट, असीमित क्विज़, सभी विषय, STEM लैब, अभिभावक और शिक्षक डैशबोर्ड। Unlimited ₹1,499/माह — Pro की सब सुविधाएँ, कोई दैनिक सीमा नहीं। सभी सशुल्क योजनाओं पर **7-दिन की मनी-बैक गारंटी**। कोई छुपे शुल्क नहीं, कोई अतिरिक्त बिक्री नहीं।',
   },
   {
     qEn: 'Does Foxy work in Hindi? My child is more comfortable in Hindi than English.',
@@ -46,8 +46,8 @@ const FAQS = [
   {
     qEn: 'Is there a free trial? Do I need a credit card to start?',
     qHi: 'क्या मुफ़्त ट्रायल है? शुरू करने के लिए क्या क्रेडिट कार्ड चाहिए?',
-    aEn: 'Yes — start free, no card. Your child can run a complete Foxy session, take a quiz, and you can see the parent dashboard before paying anything. We only ask for payment when you decide the product is worth ₹699/month for your family.',
-    aHi: 'हाँ — मुफ़्त शुरू करें, कार्ड नहीं चाहिए। आपका बच्चा एक पूरा फ़ॉक्सी सत्र, एक क्विज़ कर सकता है और आप अभिभावक डैशबोर्ड देख सकते हैं — पैसे देने से पहले। हम तभी भुगतान माँगते हैं जब आप तय करें कि उत्पाद ₹699/माह के लायक़ है।',
+    aEn: 'Yes — the Explorer plan is permanently free, no card needed. Your child gets 5 Foxy chats and 5 quizzes every day across 2 subjects. If you upgrade to a paid plan and are not satisfied within the first 7 days, we refund you in full — no questions asked. We only ask for payment when you decide the product is worth it.',
+    aHi: 'हाँ — Explorer प्लान हमेशा के लिए मुफ्त है, कार्ड नहीं चाहिए। आपके बच्चे को प्रतिदिन 2 विषयों में 5 Foxy चैट और 5 क्विज़ मिलते हैं। अगर आप सशुल्क प्लान लेने के बाद पहले 7 दिनों में संतुष्ट नहीं हैं, तो हम पूरा पैसा वापस करते हैं — बिना कोई प्रश्न पूछे।',
   },
   {
     qEn: 'My child already attends 3 tuition classes. How does Alfanumrik fit in?',
@@ -74,10 +74,10 @@ const FAQS = [
     aHi: 'हाँ। शिक्षकों को सेक्शन-स्तर का डैशबोर्ड मिलता है ब्लूम-स्तर के विश्लेषण के साथ; विद्यालयों को 30 से 3,000 तक सीटें मिलती हैं प्रधानाचार्य-स्तर की दृश्यता, NEP-संरेखित रिपोर्ट, ऑनबोर्डिंग और द्विभाषी सहायता के साथ। देखें /for-teachers और /for-schools।',
   },
   {
-    qEn: 'What happens if I want to cancel my subscription?',
-    qHi: 'अगर मैं सदस्यता रद्द करना चाहूँ तो क्या होगा?',
-    aEn: 'One tap, no questions, no retention agent calling you. Cancellation takes effect at the end of the current billing month — you keep access until then. Your child\'s mastery data is retained for 90 days in case you return; after that, it is permanently deleted on request.',
-    aHi: 'एक टैप, कोई प्रश्न नहीं, कोई फ़ोन नहीं। रद्दीकरण मौजूदा बिलिंग माह के अंत में लागू होता है — तब तक पहुँच बनी रहती है। आपके बच्चे का महारत डेटा 90 दिनों तक रखा जाता है यदि आप लौटें; उसके बाद अनुरोध पर स्थायी रूप से हटा दिया जाता है।',
+    qEn: 'What happens if I want to cancel? What is your refund policy?',
+    qHi: 'अगर मैं रद्द करना चाहूँ तो क्या होगा? आपकी धनवापसी नीति क्या है?',
+    aEn: 'One tap, no questions, no retention agent calling you. For new subscribers, we offer a 7-day full refund — no questions asked. After the guarantee window, cancellation takes effect at the end of the current billing month and you keep access until then. Your child\'s mastery data is retained for 90 days in case you return; after that, it is permanently deleted on request. Read our full refund policy at /refunds.',
+    aHi: 'एक टैप, कोई प्रश्न नहीं। नए ग्राहकों के लिए 7-दिन की पूर्ण धनवापसी है। गारंटी अवधि के बाद रद्दीकरण मौजूदा बिलिंग माह के अंत में लागू होता है और तब तक पहुँच बनी रहती है। आपके बच्चे का डेटा 90 दिनों तक रखा जाता है। पूरी नीति: /refunds।',
   },
 ];
 

@@ -5,12 +5,13 @@ import React from 'react';
 /**
  * Tests for the v2 pricing teaser carousel.
  *
- * Source: src/components/landing-v2/PricingTeaserV2.tsx
+ * Source: src/components/landing/PricingTeaserV2.tsx
  *
  * Covers:
- *   - 3 plans render with the documented prices (Explorer ₹0, Pro ₹699 featured, Family ₹999)
- *   - 3 dot indicators render
- *   - Default active dot is index 1 (Pro centered)
+ *   - 4 plans render with the documented prices
+ *     (Explorer ₹0 free, Starter ₹299, Pro ₹699 featured, Unlimited ₹1499)
+ *   - 4 dot indicators render
+ *   - Default active dot is index 1 (Starter centered)
  *   - Clicking a dot calls scrollIntoView on the corresponding card
  *   - Each dot is a real <button> with aria-label
  *
@@ -18,6 +19,9 @@ import React from 'react';
  *   - The CSS-driven mobile-vs-desktop layout. JSDOM does not compute CSS
  *     scroll-snap or media queries. We test layout behavior in Playwright E2E
  *     (e2e/welcome-v2.spec.ts) where real browsers honour viewport / CSS.
+ *
+ * Updated 2026-06-25: marketing pass changed from 3 plans
+ * (Explorer/Pro/Family) to 4 plans (Explorer/Starter/Pro/Unlimited).
  *
  * Owning agent: testing.
  */
@@ -57,43 +61,51 @@ describe('PricingTeaserV2 — plan content', () => {
   });
   afterEach(() => cleanup());
 
-  it('renders 3 plan articles', () => {
+  it('renders 4 plan articles', () => {
     renderPricing();
     // Plan cards are <article> elements with role="listitem" inside the
     // <div role="list"> track. Use container query — getByRole('list')
     // is ambiguous (each plan also nests a <ul> features list).
     const articles = document.querySelectorAll('article[role="listitem"]');
-    expect(articles).toHaveLength(3);
+    expect(articles).toHaveLength(4);
   });
 
-  it('renders Explorer plan at ₹0', () => {
+  it('renders Explorer plan (Plan i) at ₹0', () => {
     renderPricing();
+    // Price is split across nodes: ₹ text + <em>0</em> + <small>/mo</small>
+    // Query the plan label and the numeric price separately.
     expect(screen.getByText(/Plan i · Explorer/i)).toBeInTheDocument();
-    expect(screen.getByText(/₹0/)).toBeInTheDocument();
+    expect(screen.getByText('0')).toBeInTheDocument();
   });
 
-  it('renders Pro plan at ₹699 and marks it featured', () => {
+  it('renders Starter plan (Plan ii) at ₹299', () => {
     renderPricing();
-    expect(screen.getByText(/Plan ii · Pro/i)).toBeInTheDocument();
-    expect(screen.getByText(/₹699/)).toBeInTheDocument();
-    // The featured plan carries a "Most chosen" tag
-    expect(screen.getByText(/Most chosen/i)).toBeInTheDocument();
+    expect(screen.getByText(/Plan ii · Starter/i)).toBeInTheDocument();
+    expect(screen.getByText('299')).toBeInTheDocument();
   });
 
-  it('renders Family plan at ₹999', () => {
+  it('renders Pro plan (Plan iii) at ₹699 and marks it featured', () => {
     renderPricing();
-    expect(screen.getByText(/Plan iii · Family/i)).toBeInTheDocument();
-    expect(screen.getByText(/₹999/)).toBeInTheDocument();
+    expect(screen.getByText(/Plan iii · Pro/i)).toBeInTheDocument();
+    expect(screen.getByText('699')).toBeInTheDocument();
+    // The featured plan carries a "Most popular" tag
+    expect(screen.getByText(/Most popular/i)).toBeInTheDocument();
   });
 
-  it('Explorer and Pro CTAs link to /login; Family links to /pricing', () => {
+  it('renders Unlimited plan (Plan iv) at ₹1499', () => {
+    renderPricing();
+    expect(screen.getByText(/Plan iv · Unlimited/i)).toBeInTheDocument();
+    expect(screen.getByText('1499')).toBeInTheDocument();
+  });
+
+  it('Explorer, Starter and Pro CTAs link to /login; Unlimited links to /pricing', () => {
     renderPricing();
     const links = screen.getAllByRole('link');
     const hrefs = links
       .map((el) => (el as HTMLAnchorElement).getAttribute('href'))
       .filter(Boolean);
-    // Two of the three plan CTAs go to /login
-    expect(hrefs.filter((h) => h === '/login').length).toBeGreaterThanOrEqual(2);
+    // Three of the four plan CTAs go to /login
+    expect(hrefs.filter((h) => h === '/login').length).toBeGreaterThanOrEqual(3);
     expect(hrefs).toContain('/pricing');
   });
 });
@@ -105,11 +117,11 @@ describe('PricingTeaserV2 — carousel dots', () => {
   });
   afterEach(() => cleanup());
 
-  it('renders exactly 3 dot buttons', () => {
+  it('renders exactly 4 dot buttons', () => {
     renderPricing();
     const dotsList = screen.getByRole('tablist', { name: /Choose plan|योजना चुनें/ });
     const dotBtns = within(dotsList).getAllByRole('button');
-    expect(dotBtns).toHaveLength(3);
+    expect(dotBtns).toHaveLength(4);
   });
 
   it('dots are real <button>s with descriptive aria-label', () => {
@@ -123,13 +135,14 @@ describe('PricingTeaserV2 — carousel dots', () => {
     }
   });
 
-  it('default active dot is index 1 (Pro centered)', () => {
+  it('default active dot is index 1 (Starter centered)', () => {
     renderPricing();
     const dotsList = screen.getByRole('tablist', { name: /Choose plan|योजना चुनें/ });
     const dotBtns = within(dotsList).getAllByRole('button');
     expect(dotBtns[1].className).toMatch(/active/);
     expect(dotBtns[0].className).not.toMatch(/active/);
     expect(dotBtns[2].className).not.toMatch(/active/);
+    expect(dotBtns[3].className).not.toMatch(/active/);
   });
 
   it('clicking a dot scrolls the corresponding card into view', () => {
@@ -137,7 +150,7 @@ describe('PricingTeaserV2 — carousel dots', () => {
     const cards = Array.from(
       document.querySelectorAll('article[role="listitem"]'),
     ) as HTMLElement[];
-    expect(cards).toHaveLength(3);
+    expect(cards).toHaveLength(4);
 
     // Stub scrollIntoView per-card.
     const spies = cards.map((c) => {
@@ -148,10 +161,10 @@ describe('PricingTeaserV2 — carousel dots', () => {
 
     const dotsList = screen.getByRole('tablist', { name: /Choose plan|योजना चुनें/ });
     const dotBtns = within(dotsList).getAllByRole('button');
-    fireEvent.click(dotBtns[2]); // jump to Family
+    fireEvent.click(dotBtns[3]); // jump to Unlimited (last plan)
 
-    expect(spies[2]).toHaveBeenCalledTimes(1);
-    expect(spies[2]).toHaveBeenCalledWith({
+    expect(spies[3]).toHaveBeenCalledTimes(1);
+    expect(spies[3]).toHaveBeenCalledWith({
       behavior: 'smooth',
       inline: 'center',
       block: 'nearest',

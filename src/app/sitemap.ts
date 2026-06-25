@@ -19,14 +19,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${baseUrl}/help`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
 
     // App pages (indexable but auth-gated)
-    { url: `${baseUrl}/quiz`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.7 },
     { url: `${baseUrl}/stem-centre`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.7 },
     { url: `${baseUrl}/dashboard`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.6 },
     { url: `${baseUrl}/foxy`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.6 },
     { url: `${baseUrl}/leaderboard`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.5 },
-    { url: `${baseUrl}/study-plan`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.5 },
     { url: `${baseUrl}/progress`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.5 },
-    { url: `${baseUrl}/review`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.5 },
     { url: `${baseUrl}/exams`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.6 },
     { url: `${baseUrl}/scan`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.5 },
 

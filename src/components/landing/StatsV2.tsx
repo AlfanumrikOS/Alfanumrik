@@ -71,7 +71,7 @@ export default function StatsV2() {
       <div className={s.wrap}>
         <div className={s.statsHead}>
           <span className={s.label}>
-            {t('By the numbers · April 2026', 'आँकड़ों में · अप्रैल 2026')}
+            {t('By the numbers · June 2026', 'आँकड़ों में · जून 2026')}
           </span>
           <h2 id="stats-title">
             {t('Built quietly, used ', 'चुपचाप बनाया, गंभीरता से ')}

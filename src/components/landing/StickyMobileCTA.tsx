@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useLang } from './LangToggle';
+import { useWelcomeV2 } from './WelcomeV2Context';
 
 /**
  * Mobile-only sticky CTA bar.
@@ -11,7 +11,7 @@ import { useLang } from './LangToggle';
  * Uses IntersectionObserver (same pattern as Animations.tsx useInView).
  */
 export function StickyMobileCTA() {
-  const { t } = useLang();
+  const { t } = useWelcomeV2();
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
