@@ -28,7 +28,7 @@ const STATS: Stat[] = [
     ctxHi: '21-दिवसीय उपयोग सर्वेक्षण के आधार पर',
   },
   {
-    num: <>07</>,
+    num: <>16</>,
     lblEn: 'subjects · grades 6—12',
     lblHi: 'विषय · कक्षा 6—12',
     ctxEn: 'English, Hindi, Maths, Science, Social, Sanskrit, Computer',

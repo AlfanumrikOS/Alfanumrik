@@ -37,7 +37,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'Alfanumrik - AI Tutor for CBSE Students | Learn Smarter',
     description:
-      'Meet Foxy, your personal AI tutor that teaches at YOUR level. 7 subjects, Hindi & English. Adaptive learning powered by Bayesian mastery tracking.',
+      'Meet Foxy, your personal AI tutor that teaches at YOUR level. 16 subjects, Hindi & English. Adaptive learning powered by Bayesian mastery tracking.',
     url: 'https://alfanumrik.com',
     locale: 'en_IN',
     type: 'website',
