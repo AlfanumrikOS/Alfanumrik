@@ -50,7 +50,7 @@ export default function FinalCtaV2() {
               })
             }
           >
-            {t('Start a free session', 'मुफ्त सत्र शुरू करें')}
+            {t('Start free tonight', 'आज रात मुफ्त शुरू करें')}
           </Link>
           <Link
             href="/contact"
@@ -69,8 +69,8 @@ export default function FinalCtaV2() {
         </div>
         <div className="fineprint">
           {t(
-            'No credit card · Cancel any moment · Made in Bengaluru, India',
-            'कोई क्रेडिट कार्ड नहीं · कभी भी रद्द करें · बेंगलुरु में बना',
+            '7-day money-back guarantee · No credit card · Made in Bengaluru, India',
+            '7-दिन की मनी-बैक गारंटी · कोई क्रेडिट कार्ड नहीं · बेंगलुरु में बना',
           )}
         </div>
       </div>

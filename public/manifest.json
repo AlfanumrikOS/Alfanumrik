@@ -1,7 +1,7 @@
 {
   "name": "Alfanumrik",
   "short_name": "Alfanumrik",
-  "description": "India's smartest AI-powered adaptive learning platform for CBSE students. Foxy AI Tutor, Bayesian mastery, spaced repetition, gamified learning. Grades 6-12.",
+  "description": "Tonight's homework can be different. Foxy — India's most patient AI tutor for CBSE Grades 6–12, in Hindi and English. Free to start.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -45,11 +45,18 @@
   ],
   "screenshots": [
     {
-      "src": "/icon-512x512.svg",
-      "sizes": "512x512",
+      "src": "/alfanumrik-designs.svg",
+      "sizes": "1200x630",
+      "type": "image/svg+xml",
+      "form_factor": "wide",
+      "label": "Alfanumrik — Tonight's homework can be different"
+    },
+    {
+      "src": "/alfanumrik-designs.svg",
+      "sizes": "390x844",
       "type": "image/svg+xml",
       "form_factor": "narrow",
-      "label": "Alfanumrik Learning Platform"
+      "label": "Foxy AI Tutor — Student Learning View"
     }
   ]
 }

@@ -1,0 +1,392 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1900 900" width="1900" height="900" font-family="Georgia, 'Times New Roman', serif">
+  <defs>
+    <style>
+      .brand-serif { font-family: Georgia, 'Times New Roman', serif; }
+      .brand-sans  { font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; }
+      .brand-mono  { font-family: 'Courier New', Courier, monospace; }
+    </style>
+
+    <!-- Subtle radial vignette for OG image depth -->
+    <radialGradient id="og-vignette" cx="45%" cy="50%" r="75%">
+      <stop offset="0%"  stop-color="#1C1710" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.55"/>
+    </radialGradient>
+
+    <!-- Warm glow behind fox -->
+    <radialGradient id="fox-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#E8581C" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#E8581C" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Card drop shadow filter -->
+    <filter id="card-shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#C8A87A" flood-opacity="0.22"/>
+    </filter>
+
+    <!-- Button shadow -->
+    <filter id="btn-shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#B04010" flood-opacity="0.35"/>
+    </filter>
+
+    <!-- Phone shell shadow -->
+    <filter id="phone-shadow" x="-8%" y="-4%" width="116%" height="108%">
+      <feDropShadow dx="0" dy="12" stdDeviation="20" flood-color="#0E0B07" flood-opacity="0.50"/>
+    </filter>
+  </defs>
+
+
+  <!-- ================================================================
+       CANVAS 1 — OG Social Preview Image  1200 × 630
+       Brand: near-black #0E0B07 · cream #F4ECDB · saffron #E8581C
+       ================================================================ -->
+  <g id="canvas-og">
+
+    <!-- Background -->
+    <rect x="0" y="0" width="1200" height="630" fill="#0E0B07"/>
+
+    <!-- Subtle warm grain texture overlay (horizontal lines) -->
+    <rect x="0" y="0" width="1200" height="630" fill="url(#og-vignette)"/>
+
+    <!-- Subtle horizontal rule below brand area -->
+    <line x1="60" y1="116" x2="340" y2="116" stroke="#E8581C" stroke-width="1.5" opacity="0.6"/>
+
+    <!-- ── Brand name ── -->
+    <text x="60" y="96"
+          class="brand-serif" font-size="42" font-weight="700"
+          fill="#F4ECDB" letter-spacing="-0.5">Alfanumrik</text>
+
+    <!-- Orange brand mark dot -->
+    <circle cx="308" cy="76" r="5.5" fill="#E8581C"/>
+
+    <!-- Tagline badge pill -->
+    <rect x="60" y="126" width="220" height="28" rx="14" fill="#E8581C" opacity="0.15"/>
+    <text x="76" y="144"
+          class="brand-sans" font-size="13" font-weight="600"
+          fill="#E8581C" letter-spacing="0.6">AI Tutor for CBSE India</text>
+
+    <!-- ── Main headline (two lines, ~72px) ── -->
+    <text x="60" y="244"
+          class="brand-serif" font-size="72" font-weight="700"
+          fill="#F4ECDB" letter-spacing="-1">Tonight&#x2019;s homework</text>
+    <text x="60" y="330"
+          class="brand-serif" font-size="72" font-weight="700"
+          fill="#F4ECDB" letter-spacing="-1">can be different.</text>
+
+    <!-- Subtle orange underline accent on second headline line -->
+    <rect x="60" y="340" width="580" height="3" rx="1.5" fill="#E8581C" opacity="0.55"/>
+
+    <!-- ── Sub-copy ── -->
+    <text x="60" y="396"
+          class="brand-serif" font-size="22" font-style="italic"
+          fill="#9C8A78">Foxy &#x2014; India&#x2019;s first patient AI tutor.</text>
+    <text x="60" y="426"
+          class="brand-serif" font-size="22"
+          fill="#9C8A78">CBSE Grades 6&#x2013;12.&#x2003;Hindi &amp; English.</text>
+
+    <!-- ── Three feature bullets ── -->
+    <circle cx="68" cy="476" r="4" fill="#E8581C" opacity="0.8"/>
+    <text x="82" y="480"
+          class="brand-sans" font-size="15" fill="#7A6A5A">Adapts to every student&#x2019;s pace</text>
+
+    <circle cx="68" cy="504" r="4" fill="#E8581C" opacity="0.8"/>
+    <text x="82" y="508"
+          class="brand-sans" font-size="15" fill="#7A6A5A">Aligned to your exact NCERT chapter</text>
+
+    <circle cx="68" cy="532" r="4" fill="#E8581C" opacity="0.8"/>
+    <text x="82" y="536"
+          class="brand-sans" font-size="15" fill="#7A6A5A">Asks questions · never just gives answers</text>
+
+    <!-- ── Bottom CTA strip (mono) ── -->
+    <text x="60" y="600"
+          class="brand-mono" font-size="14"
+          fill="#5C4E43" letter-spacing="0.3">Free to start&#x3000;&#xB7;&#x3000;No card required&#x3000;&#xB7;&#x3000;alfanumrik.com</text>
+
+    <!-- Orange brand accent line — full-width bottom edge -->
+    <rect x="0" y="623" width="1200" height="7" fill="#E8581C"/>
+
+    <!-- ── Orange dot cluster — bottom-left brand mark ── -->
+    <circle cx="66"  cy="558" r="8.5" fill="#E8581C" opacity="0.90"/>
+    <circle cx="90"  cy="571" r="5.5" fill="#E8581C" opacity="0.72"/>
+    <circle cx="112" cy="559" r="4.5" fill="#E8581C" opacity="0.60"/>
+    <circle cx="77"  cy="546" r="3.5" fill="#E8581C" opacity="0.80"/>
+    <circle cx="126" cy="550" r="6.5" fill="#E8581C" opacity="0.50"/>
+    <circle cx="98"  cy="543" r="3.0" fill="#E8581C" opacity="0.95"/>
+    <circle cx="142" cy="562" r="4.0" fill="#E8581C" opacity="0.40"/>
+
+    <!-- ── FOXY FOX ILLUSTRATION ──
+         Head center: (978, 270)  Face: rx=120 ry=135
+         Total fox occupies roughly x 840–1110, y 60–430
+    ── -->
+
+    <!-- Warm glow halo behind fox -->
+    <ellipse cx="978" cy="270" rx="200" ry="220" fill="url(#fox-glow)"/>
+
+    <!-- Right ear (outer orange) -->
+    <polygon points="1008,192  1058,62  1108,192" fill="#E8581C"/>
+    <!-- Left ear (outer orange) -->
+    <polygon points="848,202   896,68   944,202" fill="#E8581C"/>
+
+    <!-- Right inner ear (lighter salmon) -->
+    <polygon points="1021,186  1058,88  1095,186" fill="#F4A574"/>
+    <!-- Left inner ear (lighter salmon) -->
+    <polygon points="862,196   896,94   930,196" fill="#F4A574"/>
+
+    <!-- Fox main face oval -->
+    <ellipse cx="978" cy="272" rx="122" ry="136" fill="#E8581C"/>
+
+    <!-- Forehead patch (slightly lighter warm tone) -->
+    <ellipse cx="978" cy="220" rx="68" ry="52" fill="#F4A574" opacity="0.45"/>
+
+    <!-- Muzzle area (cream) -->
+    <ellipse cx="978" cy="358" rx="74" ry="38" fill="#F4ECDB"/>
+
+    <!-- Muzzle center line (subtle) -->
+    <line x1="978" y1="348" x2="978" y2="370" stroke="#D4C4AC" stroke-width="1.5" opacity="0.7"/>
+
+    <!-- Left eye socket (dark) -->
+    <ellipse cx="934" cy="244" rx="17" ry="21" fill="#0E0B07"/>
+    <!-- Right eye socket (dark) -->
+    <ellipse cx="1022" cy="244" rx="17" ry="21" fill="#0E0B07"/>
+
+    <!-- Left eye iris (warm brown) -->
+    <ellipse cx="934" cy="244" rx="12" ry="15" fill="#3A2010"/>
+    <!-- Right eye iris -->
+    <ellipse cx="1022" cy="244" rx="12" ry="15" fill="#3A2010"/>
+
+    <!-- Eye shines — left -->
+    <ellipse cx="940" cy="237" rx="5" ry="6" fill="#F4ECDB" opacity="0.95"/>
+    <ellipse cx="929" cy="250" rx="2.5" ry="3" fill="#F4ECDB" opacity="0.6"/>
+    <!-- Eye shines — right -->
+    <ellipse cx="1028" cy="237" rx="5" ry="6" fill="#F4ECDB" opacity="0.95"/>
+    <ellipse cx="1017" cy="250" rx="2.5" ry="3" fill="#F4ECDB" opacity="0.6"/>
+
+    <!-- Nose (small inverted triangle) -->
+    <polygon points="978,368  968,382  988,382" fill="#0E0B07"/>
+
+    <!-- Cheek dots (fox markings) -->
+    <circle cx="908" cy="306" r="4" fill="#F4A574" opacity="0.7"/>
+    <circle cx="918" cy="316" r="3" fill="#F4A574" opacity="0.5"/>
+    <circle cx="1048" cy="306" r="4" fill="#F4A574" opacity="0.7"/>
+    <circle cx="1038" cy="316" r="3" fill="#F4A574" opacity="0.5"/>
+
+  </g>
+  <!-- end canvas-og -->
+
+
+  <!-- ================================================================
+       CANVAS 2 — Phone Mockup  390 × 844  (iPhone 14 proportions)
+       Positioned at canvas offset x=1400, y=0
+       ================================================================ -->
+  <g id="canvas-phone" transform="translate(1400, 28)">
+
+    <!-- Phone outer shell (shadow layer) -->
+    <rect x="-20" y="-32" width="430" height="908" rx="48"
+          fill="#0C0A08" filter="url(#phone-shadow)"/>
+
+    <!-- Phone bezel / body -->
+    <rect x="-16" y="-28" width="422" height="900" rx="44" fill="#1A1610"/>
+
+    <!-- Screen clip background (cream) -->
+    <rect x="0" y="0" width="390" height="844" rx="36" fill="#F9F4EC"/>
+
+    <!-- ── STATUS BAR ── -->
+    <rect x="0" y="0" width="390" height="50" rx="36" fill="#0E0B07"/>
+    <rect x="0" y="28" width="390" height="22" fill="#0E0B07"/>
+
+    <!-- Dynamic Island pill -->
+    <rect x="138" y="10" width="114" height="30" rx="15" fill="#040302"/>
+
+    <!-- Time 9:41 -->
+    <text x="22" y="34"
+          class="brand-sans" font-size="15" font-weight="600"
+          fill="#F4ECDB">9:41</text>
+
+    <!-- Battery / signal icons (simplified) -->
+    <rect x="342" y="20" width="32" height="14" rx="3" fill="none" stroke="#F4ECDB" stroke-width="1.5" opacity="0.8"/>
+    <rect x="374" y="24" width="3" height="6" rx="1.5" fill="#F4ECDB" opacity="0.6"/>
+    <rect x="344" y="22" width="22" height="10" rx="2" fill="#F4ECDB" opacity="0.85"/>
+    <circle cx="320" cy="27" r="4" fill="#F4ECDB" opacity="0.7"/>
+    <circle cx="308" cy="27" r="4" fill="#F4ECDB" opacity="0.5"/>
+    <circle cx="296" cy="27" r="4" fill="#F4ECDB" opacity="0.3"/>
+
+    <!-- ── GREETING SECTION ── -->
+    <text x="24" y="88"
+          class="brand-serif" font-size="22" font-weight="700"
+          fill="#0E0B07">Good evening, Ananya.</text>
+
+    <text x="24" y="112"
+          class="brand-sans" font-size="14" font-weight="500"
+          fill="#E8581C">You&#x2019;re on a 6-day streak &#x1F525;</text>
+
+    <!-- ── TONIGHT'S MISSION CARD ── -->
+    <rect x="16" y="132" width="358" height="240" rx="16"
+          fill="#FFFFFF" filter="url(#card-shadow)"/>
+
+    <!-- Left orange accent bar -->
+    <rect x="16" y="132" width="5" height="240" rx="2.5" fill="#E8581C"/>
+
+    <!-- Top-right chapter icon background -->
+    <rect x="310" y="146" width="50" height="50" rx="10" fill="#FFF4EE"/>
+    <!-- Leaf icon (simplified) -->
+    <ellipse cx="335" cy="171" rx="12" ry="16" fill="#5AAF6A" opacity="0.85" transform="rotate(-20 335 171)"/>
+    <line x1="335" y1="182" x2="335" y2="192" stroke="#5AAF6A" stroke-width="2" opacity="0.7"/>
+
+    <!-- Card label -->
+    <text x="32" y="160"
+          class="brand-sans" font-size="10.5" font-weight="700"
+          fill="#E8581C" letter-spacing="1.4">TONIGHT&#x2019;S MISSION</text>
+
+    <!-- Chapter title -->
+    <text x="32" y="190"
+          class="brand-serif" font-size="23" font-weight="700"
+          fill="#0E0B07">Photosynthesis</text>
+
+    <!-- Subject + class badge -->
+    <rect x="32" y="200" width="128" height="24" rx="12" fill="#F0E8DC"/>
+    <text x="96" y="216"
+          class="brand-sans" font-size="12" font-weight="500"
+          fill="#5A4A3A" text-anchor="middle">Biology &#xB7; Class 8</text>
+
+    <!-- Divider line -->
+    <line x1="32" y1="236" x2="358" y2="236" stroke="#F0E8DC" stroke-width="1"/>
+
+    <!-- Mastery row -->
+    <text x="32" y="256"
+          class="brand-sans" font-size="12" font-weight="500"
+          fill="#5A4A3A">Mastery</text>
+    <text x="358" y="256"
+          class="brand-sans" font-size="12" font-weight="700"
+          fill="#E8581C" text-anchor="end">72%</text>
+
+    <!-- Progress bar track -->
+    <rect x="32" y="264" width="318" height="10" rx="5" fill="#F0E8DC"/>
+    <!-- Progress fill 72% (318 × 0.72 = 229) -->
+    <rect x="32" y="264" width="229" height="10" rx="5" fill="#E8581C"/>
+    <!-- Progress glow cap -->
+    <circle cx="261" cy="269" r="7" fill="#E8581C"/>
+    <circle cx="261" cy="269" r="4" fill="#F4A574"/>
+
+    <!-- CTA button -->
+    <rect x="32" y="290" width="168" height="46" rx="12"
+          fill="#E8581C" filter="url(#btn-shadow)"/>
+    <text x="116" y="318"
+          class="brand-sans" font-size="14" font-weight="600"
+          fill="#F4ECDB" text-anchor="middle">Start with Foxy</text>
+
+    <!-- Secondary link -->
+    <text x="214" y="316"
+          class="brand-sans" font-size="13" fill="#E8581C" opacity="0.75">+ View chapter</text>
+
+    <!-- ── RECENT TOPICS SECTION ── -->
+    <text x="24" y="402"
+          class="brand-sans" font-size="15" font-weight="600"
+          fill="#0E0B07">Recent Topics</text>
+
+    <!-- Topic rows -->
+    <!-- Topic 1 -->
+    <rect x="16" y="416" width="358" height="48" rx="12" fill="#FFFFFF" opacity="0.75"/>
+    <rect x="16" y="416" width="4" height="48" rx="2" fill="#5AAF6A"/>
+    <text x="30" y="436"
+          class="brand-sans" font-size="13" font-weight="600" fill="#0E0B07">Light &amp; Sound</text>
+    <text x="30" y="454"
+          class="brand-sans" font-size="11" fill="#9C8A78">Physics &#xB7; Class 8</text>
+    <text x="358" y="444"
+          class="brand-sans" font-size="11" fill="#E8581C" text-anchor="end">88%</text>
+
+    <!-- Topic 2 -->
+    <rect x="16" y="472" width="358" height="48" rx="12" fill="#FFFFFF" opacity="0.75"/>
+    <rect x="16" y="472" width="4" height="48" rx="2" fill="#6B8FD4"/>
+    <text x="30" y="492"
+          class="brand-sans" font-size="13" font-weight="600" fill="#0E0B07">Rational Numbers</text>
+    <text x="30" y="510"
+          class="brand-sans" font-size="11" fill="#9C8A78">Mathematics &#xB7; Class 8</text>
+    <text x="358" y="500"
+          class="brand-sans" font-size="11" fill="#E8581C" text-anchor="end">61%</text>
+
+    <!-- Topic 3 -->
+    <rect x="16" y="528" width="358" height="48" rx="12" fill="#FFFFFF" opacity="0.75"/>
+    <rect x="16" y="528" width="4" height="48" rx="2" fill="#C4824A"/>
+    <text x="30" y="548"
+          class="brand-sans" font-size="13" font-weight="600" fill="#0E0B07">The Mughal Empire</text>
+    <text x="30" y="566"
+          class="brand-sans" font-size="11" fill="#9C8A78">History &#xB7; Class 8</text>
+    <text x="358" y="556"
+          class="brand-sans" font-size="11" fill="#E8581C" text-anchor="end">74%</text>
+
+    <!-- ── FOXY CHAT BUBBLE ── -->
+    <!-- Chat tray background -->
+    <rect x="0" y="688" width="390" height="120" fill="#FFF4EE"/>
+    <!-- Top border -->
+    <line x1="0" y1="688" x2="390" y2="688" stroke="#E8D4B8" stroke-width="1"/>
+
+    <!-- Foxy avatar circle -->
+    <circle cx="44" cy="726" r="28" fill="#E8581C"/>
+    <!-- Fox ears on avatar (mini) -->
+    <polygon points="28,702  36,686  44,702" fill="#E8581C"/>
+    <polygon points="44,702  52,686  60,702" fill="#E8581C"/>
+    <!-- Avatar F letter -->
+    <text x="44" y="734"
+          class="brand-serif" font-size="24" font-weight="700"
+          fill="#F4ECDB" text-anchor="middle">F</text>
+
+    <!-- "Foxy" label -->
+    <text x="82" y="706"
+          class="brand-sans" font-size="11" font-weight="700"
+          fill="#E8581C" letter-spacing="0.4">FOXY</text>
+
+    <!-- Chat message bubble -->
+    <rect x="80" y="712" width="292" height="64" rx="14" fill="#FFFFFF"/>
+    <!-- Bubble tail (triangle pointing left) -->
+    <polygon points="80,726  66,736  80,746" fill="#FFFFFF"/>
+    <text x="96" y="736"
+          class="brand-serif" font-size="16" fill="#0E0B07">Shall we draw the</text>
+    <text x="96" y="758"
+          class="brand-serif" font-size="16" fill="#0E0B07">chloroplast together?</text>
+
+    <!-- ── BOTTOM NAVIGATION BAR ── -->
+    <rect x="0" y="808" width="390" height="36" fill="#F9F4EC"/>
+    <line x1="0" y1="808" x2="390" y2="808" stroke="#E8D4B8" stroke-width="1"/>
+
+    <!-- Home icon -->
+    <polygon points="39,826  33,820  45,820" fill="#9C8A78" opacity="0.6"/>
+    <rect x="36" y="820" width="6" height="8" rx="1" fill="#9C8A78" opacity="0.6"/>
+    <text x="39" y="838"
+          class="brand-sans" font-size="9" fill="#9C8A78" text-anchor="middle">Home</text>
+
+    <!-- Learn icon -->
+    <rect x="110" y="820" width="14" height="10" rx="2" fill="#9C8A78" opacity="0.6"/>
+    <line x1="112" y1="823" x2="122" y2="823" stroke="#F9F4EC" stroke-width="1.5"/>
+    <line x1="112" y1="826" x2="120" y2="826" stroke="#F9F4EC" stroke-width="1.5"/>
+    <text x="117" y="838"
+          class="brand-sans" font-size="9" fill="#9C8A78" text-anchor="middle">Learn</text>
+
+    <!-- Foxy icon (active - orange) -->
+    <circle cx="195" cy="823" r="8" fill="#E8581C"/>
+    <text x="195" y="827"
+          class="brand-sans" font-size="9" font-weight="700"
+          fill="#F4ECDB" text-anchor="middle">F</text>
+    <text x="195" y="838"
+          class="brand-sans" font-size="9" font-weight="700"
+          fill="#E8581C" text-anchor="middle">Foxy</text>
+
+    <!-- Progress icon -->
+    <rect x="263" y="820" width="4" height="10" rx="1" fill="#9C8A78" opacity="0.4"/>
+    <rect x="269" y="822" width="4" height="8"  rx="1" fill="#9C8A78" opacity="0.6"/>
+    <rect x="275" y="818" width="4" height="12" rx="1" fill="#9C8A78" opacity="0.5"/>
+    <text x="273" y="838"
+          class="brand-sans" font-size="9" fill="#9C8A78" text-anchor="middle">Progress</text>
+
+    <!-- More icon (three dots) -->
+    <circle cx="347" cy="825" r="2" fill="#9C8A78" opacity="0.6"/>
+    <circle cx="353" cy="825" r="2" fill="#9C8A78" opacity="0.6"/>
+    <circle cx="359" cy="825" r="2" fill="#9C8A78" opacity="0.6"/>
+    <text x="353" y="838"
+          class="brand-sans" font-size="9" fill="#9C8A78" text-anchor="middle">More</text>
+
+    <!-- Home indicator bar (iPhone-style) -->
+    <rect x="150" y="838" width="90" height="4" rx="2" fill="#0E0B07" opacity="0.2"/>
+
+  </g>
+  <!-- end canvas-phone -->
+
+</svg>

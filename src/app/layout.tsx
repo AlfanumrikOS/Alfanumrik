@@ -42,6 +42,15 @@ export const metadata: Metadata = {
     locale: 'en_IN',
     type: 'website',
     siteName: 'Alfanumrik Adaptive Learning OS',
+    images: [
+      {
+        url: '/api/og',
+        width: 1200,
+        height: 630,
+        alt: 'Alfanumrik — AI Tutor for CBSE India',
+        type: 'image/png',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
@@ -49,6 +58,7 @@ export const metadata: Metadata = {
     description:
       'Foxy AI Tutor teaches CBSE in Hindi and English. Adaptive learning, spaced repetition, gamified practice. Start now.',
     creator: '@alfanumrik',
+    images: ['/api/og'],
   },
   robots: {
     index: true,

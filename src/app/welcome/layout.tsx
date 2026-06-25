@@ -57,12 +57,22 @@ export const metadata: Metadata = {
     alternateLocale: ['hi_IN'],
     type: 'website',
     siteName: 'Alfanumrik',
+    images: [
+      {
+        url: '/api/og',
+        width: 1200,
+        height: 630,
+        alt: 'Alfanumrik — Tonight\'s homework can be different.',
+        type: 'image/png',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Alfanumrik — Structured Learning for CBSE Students',
     description:
       'What if your child walked into every exam prepared? Concept clarity, targeted practice, daily progress. Grades 6–12.',
+    images: ['/api/og'],
   },
   alternates: {
     canonical: 'https://alfanumrik.com/welcome',

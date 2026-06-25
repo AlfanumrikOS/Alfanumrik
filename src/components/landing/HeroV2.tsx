@@ -20,59 +20,55 @@ interface RoleCopy {
 const ROLE_COPY: Record<Role, RoleCopy> = {
   parent: {
     eyebrow: {
-      en: 'The learning workbook · for the home, the class, the phone',
-      hi: 'सीखने की किताब · घर, कक्षा और फ़ोन के लिए',
+      en: 'The learning companion · for the family, the class, the phone',
+      hi: 'सीखने का साथी · परिवार, कक्षा और फ़ोन के लिए',
     },
-    headlineEn: <>Every exam,<br /><em>prepared.</em></>,
-    headlineHi: <>हर परीक्षा,<br /><em>तैयार।</em></>,
-    devaEn: 'हर परीक्षा, तैयारी से।',
-    devaHi: 'हर परीक्षा, तैयारी से।',
+    headlineEn: <>Tonight&#39;s homework<br /><em>can be different.</em></>,
+    headlineHi: <>आज का गृहकार्य<br /><em>अलग हो सकता है।</em></>,
+    devaEn: 'आज का गृहकार्य, अलग।',
+    devaHi: 'आज का गृहकार्य, अलग।',
     lede1: {
-      en: "Alfanumrik is a CBSE-aligned learning OS for grades six through twelve. Foxy, our patient little tutor, walks beside your child through photosynthesis, quadratics and Aryabhata's place-value system — at the pace they can actually hold.",
-      hi: "अल्फ़ान्यूमरिक छठी से बारहवीं तक के सीबीएसई विद्यार्थियों के लिए एक संरचित सीखने का सिस्टम है। फ़ॉक्सी — हमारा धैर्यवान छोटा शिक्षक — आपके बच्चे के साथ उसी रफ़्तार से चलता है, जो वह सच में सम्भाल सके।",
+      en: "Foxy learns how your child thinks — not how a textbook says they should. It walks beside them through photosynthesis, quadratics, and Aryabhata's place-value system at the pace they can actually hold. NCERT-grounded. Bilingual. Patient.",
+      hi: "फ़ॉक्सी सीखता है कि आपका बच्चा कैसे सोचता है — न कि पाठ्यपुस्तक कैसे कहती है। प्रकाश-संश्लेषण, द्विघात समीकरण और आर्यभट्ट की संख्या प्रणाली में उनके साथ चलता है, उनकी अपनी रफ़्तार पर।",
     },
     lede2: {
       en: (
         <>
-          No infinite scrolls. No leaderboards screaming. Just a clean workbook,
-          a kind voice in <span className="deva" lang="hi">हिन्दी</span> or English,
-          and a parent dashboard that finally tells you the truth — what they
-          know, where they slipped, what to do tonight.
+          A Sunday letter arrives every week — no jargon, just the truth about what your child learned and where they slipped. No leaderboard.
+          No noise. One small thing you can do about it tonight.
         </>
       ),
       hi: (
         <>
-          न अंतहीन स्क्रॉल, न शोर मचाते लीडरबोर्ड। बस एक साफ़ किताब,
-          <span className="deva" lang="hi"> हिन्दी </span> या अंग्रेज़ी में
-          एक नर्म आवाज़, और एक अभिभावक डैशबोर्ड जो आख़िरकार सच बताता है —
-          बच्चा क्या जानता है, कहाँ चूका, और आज रात क्या करें।
+          हर रविवार एक पत्र — बिना जटिल शब्दों के, बस सच। बच्चे ने क्या सीखा, कहाँ चूके, और आज रात एक छोटा काम।
+          कोई लीडरबोर्ड नहीं। कोई शोर नहीं।
         </>
       ),
     },
     ctaLabel: {
-      en: "See your child's first session free",
-      hi: 'पहला सत्र मुफ्त में देखिये',
+      en: 'Start free tonight',
+      hi: 'आज रात मुफ्त शुरू करें',
     },
     ctaHref: '/login',
   },
   student: {
     eyebrow: {
-      en: 'A patient tutor · in your pocket · in your language',
-      hi: 'धैर्यवान शिक्षक · आपके फ़ोन में · आपकी भाषा में',
+      en: 'A patient tutor · in your pocket · never sighs',
+      hi: 'धैर्यवान शिक्षक · जेब में · कभी नहीं झिड़कता',
     },
-    headlineEn: <>The chapter,<br /><em>finally clear.</em></>,
-    headlineHi: <>अब समझ में,<br /><em>आ गया।</em></>,
-    devaEn: 'अब समझ में, आ गया।',
-    devaHi: 'अब समझ में, आ गया।',
+    headlineEn: <>The chapter<br /><em>finally clicks.</em></>,
+    headlineHi: <>अध्याय<br /><em>आख़िरकार समझ आया।</em></>,
+    devaEn: 'अध्याय, आख़िरकार।',
+    devaHi: 'अध्याय, आख़िरकार।',
     lede1: {
-      en: 'Foxy answers in Hindi or English, never sighs, never makes you feel small. Ask anything from your NCERT — photosynthesis to quadratics — and get back a question that helps you find the answer yourself.',
-      hi: 'फ़ॉक्सी हिन्दी या अंग्रेज़ी में जवाब देता है, कभी आह नहीं भरता, कभी छोटा महसूस नहीं कराता। NCERT से कुछ भी पूछिए — और जवाब के बजाय वह आपको ख़ुद उत्तर तक पहुँचाने वाला सवाल देता है।',
+      en: "Ask Foxy anything from your NCERT. Get back a question that helps you find the answer yourself — not a copied paragraph from a website. Foxy never sighs. Never makes you feel small. Never checks the time.",
+      hi: "NCERT से कुछ भी पूछो। फ़ॉक्सी एक सवाल देता है जो तुम्हें ख़ुद जवाब तक पहुँचाता है। वेबसाइट से कॉपी किया पैराग्राफ़ नहीं। फ़ॉक्सी कभी झिड़कता नहीं।",
     },
     lede2: {
-      en: <>Ten-minute sessions, a streak that actually means learning, and a mastery map that shows you exactly which topic to revise tonight. No leaderboards. No noise. Just you and the book.</>,
-      hi: <>दस-मिनट के सत्र, एक स्ट्रीक जिसका सच में मतलब है सीखना, और एक माहारत-नक़्शा जो ठीक-ठीक बताता है कि आज रात कौन-सा विषय दोहराना है।</>,
+      en: <>Ten minutes a day. A mastery map that shows exactly which topic to revise tonight. A streak that means learning — not just the app opened.</>,
+      hi: <>रोज़ दस मिनट। एक माहारत-नक़्शा जो बताता है कि आज रात कौन-सा टॉपिक दोहराना है। एक स्ट्रीक जिसका मतलब सीखना है।</>,
     },
-    ctaLabel: { en: 'Try a free Foxy session', hi: 'फ़ॉक्सी का एक मुफ्त सत्र' },
+    ctaLabel: { en: 'Ask Foxy now', hi: 'अभी फ़ॉक्सी से पूछें' },
     ctaHref: '/login',
   },
   teacher: {
@@ -80,37 +76,37 @@ const ROLE_COPY: Record<Role, RoleCopy> = {
       en: 'For the teacher who wants Monday to mean something',
       hi: 'उस शिक्षक के लिए जो चाहता है कि सोमवार मायने रखे',
     },
-    headlineEn: <>Walk in,<br /><em>already prepared.</em></>,
-    headlineHi: <>कक्षा में,<br /><em>पहले से तैयार।</em></>,
-    devaEn: 'सोमवार को, तैयार।',
-    devaHi: 'सोमवार को, तैयार।',
+    headlineEn: <>Monday morning,<br /><em>already briefed.</em></>,
+    headlineHi: <>सोमवार सुबह,<br /><em>पहले से तैयार।</em></>,
+    devaEn: 'सोमवार सुबह, तैयार।',
+    devaHi: 'सोमवार सुबह, तैयार।',
     lede1: {
-      en: "See, before the bell, which child read the chapter and which child only opened it. Bloom's-level dashboards by section. The whole class, mapped to the syllabus, refreshed every Sunday night.",
-      hi: 'घंटी बजने से पहले देखिये कि किस बच्चे ने पाठ पढ़ा और किसने सिर्फ़ खोला। हर सेक्शन का ब्लूम-स्तर डैशबोर्ड। पूरी कक्षा का नक़्शा, हर रविवार रात अपडेट।',
+      en: "See, before the bell rings, which child read the chapter and which child only opened it. Bloom's-level dashboards by section. The whole class mapped to the syllabus — refreshed every Sunday night.",
+      hi: 'घंटी बजने से पहले देखिये — किसने पाठ पढ़ा, किसने सिर्फ़ खोला। हर सेक्शन का ब्लूम-स्तर डैशबोर्ड। पूरी कक्षा का सिलेबस-मैप, हर रविवार रात अपडेट।',
     },
     lede2: {
-      en: <>Set worksheets in 90 seconds, share via WhatsApp, get back per-question diagnostics. NEP-aligned reporting your principal will actually read.</>,
-      hi: <>नब्बे सेकंड में वर्कशीट बनाइये, WhatsApp पर भेजिए, हर प्रश्न का परिणाम वापस पाइए। NEP-संरेखित रिपोर्ट जो प्रधानाचार्य भी पढ़ें।</>,
+      en: <>Worksheets in 90 seconds, shared via WhatsApp, diagnostics back per question. NEP-aligned reports your principal will actually read.</>,
+      hi: <>नब्बे सेकंड में वर्कशीट, WhatsApp पर भेजिए, हर सवाल का परिणाम। NEP-संरेखित रिपोर्ट जो प्रधानाचार्य भी पढ़ें।</>,
     },
-    ctaLabel: { en: 'See the teacher portal', hi: 'शिक्षक पोर्टल देखें' },
+    ctaLabel: { en: 'See teacher portal', hi: 'शिक्षक पोर्टल देखें' },
     ctaHref: '/for-teachers',
   },
   school: {
     eyebrow: {
-      en: 'For principals tired of decks and demos',
-      hi: 'उन प्रधानाचार्यों के लिए जो डेक और डेमो से थक चुके हैं',
+      en: 'For principals tired of dashboards that show nothing useful',
+      hi: 'उन प्रधानाचार्यों के लिए जो बेकार डैशबोर्ड से थक चुके हैं',
     },
-    headlineEn: <>Every section,<br /><em>visible.</em></>,
-    headlineHi: <>हर अनुभाग,<br /><em>स्पष्ट।</em></>,
-    devaEn: 'हर अनुभाग, स्पष्ट।',
-    devaHi: 'हर अनुभाग, स्पष्ट।',
+    headlineEn: <>Every classroom<br /><em>in one view.</em></>,
+    headlineHi: <>हर कक्षा<br /><em>एक नज़र में।</em></>,
+    devaEn: 'हर कक्षा, एक नज़र में।',
+    devaHi: 'हर कक्षा, एक नज़र में।',
     lede1: {
-      en: "Bulk seats from 30 to 3,000. Teacher dashboards by section, principal view across the school, NEP-aligned reporting that maps to the board's rubric.",
-      hi: 'तीस से तीन हज़ार सीटें। हर सेक्शन का शिक्षक डैशबोर्ड, पूरे विद्यालय का प्रधानाचार्य व्यू, NEP-संरेखित रिपोर्ट।',
+      en: "30 to 3,000 seats. Teacher dashboards by section, principal view across the school, NEP-aligned reporting that maps to the board's rubric. Training and onboarding included.",
+      hi: 'तीस से तीन हज़ार सीटें। सेक्शन-वार शिक्षक डैशबोर्ड, पूरे विद्यालय का प्रधानाचार्य व्यू, NEP-संरेखित रिपोर्ट। प्रशिक्षण शामिल।',
     },
     lede2: {
-      en: <>Onboarding and training included. Bilingual support. India-hosted data, DPDPA-compliant, with a real human at the other end of the WhatsApp.</>,
-      hi: <>शुरुआती सहायता और प्रशिक्षण शामिल। द्विभाषी सहायता। डेटा भारत में, DPDPA-संरेखित, और WhatsApp के दूसरी ओर एक असली इंसान।</>,
+      en: <>Bilingual support. India-hosted, DPDPA-compliant, ISO 27001 certified. A real human at the other end of the WhatsApp — not a ticket queue.</>,
+      hi: <>द्विभाषी सहायता। भारत में होस्ट, DPDPA-संरेखित, ISO 27001 प्रमाणित। WhatsApp पर एक असली इंसान।</>,
     },
     ctaLabel: { en: 'Book a school demo', hi: 'विद्यालय डेमो बुक करें' },
     ctaHref: '/for-schools',
