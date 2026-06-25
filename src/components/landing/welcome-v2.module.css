@@ -2726,3 +2726,142 @@
   line-height: 1.55;
   color: var(--ink-soft);
 }
+
+/* ============================================================
+   PHASE 4 — VISUAL UPLIFT
+   Dark hero, rounded corners, card depth, live stats.
+   Append-only. Do not modify any CSS above this line.
+   ============================================================ */
+
+/* ─── HERO: dark background ─── */
+.hero {
+  background: linear-gradient(160deg, #0D0A06 0%, #1C1309 55%, #231A0A 100%);
+  border-bottom: 3px solid var(--saffron);
+}
+
+/* All hero children read light on the dark hero */
+.hero .heroNumeral {
+  opacity: 0.06;
+}
+.hero,
+.hero .heroH {
+  color: var(--cream);
+}
+.hero .heroH :global(.devaLine) {
+  color: rgba(244, 236, 219, 0.72);
+}
+.hero .heroEyebrow :global(span:not(.dot)) {
+  color: rgba(244, 236, 219, 0.62);
+}
+.hero .heroLede :global(p) {
+  color: rgba(244, 236, 219, 0.80);
+}
+.hero .heroFineprint {
+  color: rgba(244, 236, 219, 0.48);
+}
+.hero .heroFineprint :global(.pencil) {
+  color: var(--cream);
+  border-bottom-color: var(--saffron);
+}
+.hero .heroSocial {
+  color: rgba(244, 236, 219, 0.52);
+}
+/* Ghost CTA becomes visible on dark background */
+.hero .btnGhost {
+  border-color: rgba(244, 236, 219, 0.32);
+  color: var(--cream);
+}
+.hero .btnGhost:hover {
+  background: rgba(244, 236, 219, 0.08);
+  border-color: rgba(244, 236, 219, 0.5);
+}
+/* Phone figure: dark frame with warm glow */
+.hero .phoneFigure {
+  background: #1E1510;
+  border-color: rgba(232, 93, 25, 0.28);
+  box-shadow:
+    0 0 0 1px rgba(232, 93, 25, 0.12),
+    0 24px 64px rgba(0, 0, 0, 0.48),
+    0 0 80px rgba(232, 93, 25, 0.08);
+}
+/* Pencil note on dark hero */
+.hero .pencilNote {
+  color: rgba(244, 236, 219, 0.58);
+  border-left-color: var(--saffron);
+}
+@media (min-width: 768px) {
+  .hero .pencilNote {
+    color: rgba(244, 236, 219, 0.58);
+    border-bottom-color: var(--saffron);
+  }
+}
+
+/* ─── GLOBAL: Rounded buttons ─── */
+.btn {
+  border-radius: 8px;
+}
+
+/* ─── SHOWCASE CARDS: depth + rounded corners ─── */
+.showCard {
+  border-radius: 14px;
+  box-shadow:
+    0 2px 12px rgba(14, 11, 7, 0.07),
+    0 1px 3px rgba(14, 11, 7, 0.04);
+}
+.showCard:hover {
+  box-shadow:
+    0 8px 32px rgba(14, 11, 7, 0.11),
+    0 2px 6px rgba(14, 11, 7, 0.06);
+  transform: translateY(-2px);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+/* ─── PRICING CARDS: rounded container ─── */
+.plan {
+  border-radius: 12px;
+}
+@media (min-width: 768px) {
+  /* On desktop plans are in a grid container — round the outer border */
+  .pricingTrack {
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow:
+      0 4px 24px rgba(14, 11, 7, 0.08),
+      0 1px 6px rgba(14, 11, 7, 0.04);
+  }
+  /* Inside the grid, plan corners are clipped by the container overflow */
+  .plan {
+    border-radius: 0;
+  }
+}
+
+/* ─── RECOGNITION GRID: 5 columns for 5 cards ─── */
+@media (min-width: 768px) {
+  .recognitionGrid {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}
+
+/* ─── STATS: always show context, no accordion ─── */
+.statRow :global(.statCtx) {
+  max-height: none !important;
+  margin-top: 8px !important;
+  overflow: visible !important;
+}
+.statRow :global(.chev) {
+  display: none !important;
+}
+/* Stats rows are now display divs — remove button interactivity styling */
+.statRow {
+  cursor: default;
+}
+
+/* ─── FINAL CTA ORNAMENT: slightly more visible ─── */
+.finalCta :global(.ornament) {
+  opacity: 0.09;
+}
+
+/* ─── DROPDOWN PANEL: ensure it appears over dark hero ─── */
+.dropdownPanel {
+  z-index: 70;
+}

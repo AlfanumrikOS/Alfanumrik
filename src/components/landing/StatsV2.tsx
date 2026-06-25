@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useRef, useEffect } from 'react';
 import { useWelcomeV2 } from './WelcomeV2Context';
 import s from './welcome-v2.module.css';
 
@@ -35,17 +35,16 @@ const STATS: Stat[] = [
     ctxHi: 'अंग्रेज़ी, हिन्दी, गणित, विज्ञान, सामाजिक, संस्कृत, कंप्यूटर',
   },
   {
-    num: <>₹<em>699</em></>,
-    lblEn: 'a month, all-in',
-    lblHi: 'प्रति माह, सब कुछ शामिल',
-    ctxEn: 'no upsells, no franchise fees, no coaching auntie',
-    ctxHi: 'कोई अतिरिक्त बिक्री नहीं, कोई फ़्रैंचाइज़ शुल्क नहीं',
+    num: <>₹<em>0</em></>,
+    lblEn: 'to start · Explorer plan',
+    lblHi: 'शुरू करने के लिए · एक्सप्लोरर',
+    ctxEn: 'no card required — upgrade when ready',
+    ctxHi: 'कोई कार्ड नहीं — जब तैयार हों, अपग्रेड करें',
   },
 ];
 
 export default function StatsV2() {
   const { isHi, t } = useWelcomeV2();
-  const [openIdx, setOpenIdx] = useState<number | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -80,28 +79,21 @@ export default function StatsV2() {
           </h2>
         </div>
         <div className={s.statsGrid} ref={gridRef}>
-          {STATS.map((stat, i) => {
-            const isOpen = openIdx === i;
-            return (
-              <button
-                key={i}
-                data-reveal
-                className={`${s.statRow} ${s.reveal}`}
-                type="button"
-                aria-expanded={isOpen}
-                onClick={() => setOpenIdx(isOpen ? null : i)}
-              >
-                <div className="statRowTop">
-                  <span className={`statNum tabular`}>{stat.num}</span>
-                  <span className="statLbl">{t(stat.lblEn, stat.lblHi)}</span>
-                </div>
-                <div className="statCtx">
-                  {t(stat.ctxEn, stat.ctxHi)}
-                  <span className="chev" aria-hidden="true"> →</span>
-                </div>
-              </button>
-            );
-          })}
+          {STATS.map((stat, i) => (
+            <div
+              key={i}
+              data-reveal
+              className={`${s.statRow} ${s.reveal}`}
+            >
+              <div className="statRowTop">
+                <span className="statNum tabular">{stat.num}</span>
+                <span className="statLbl">{t(stat.lblEn, stat.lblHi)}</span>
+              </div>
+              <div className="statCtx">
+                {t(stat.ctxEn, stat.ctxHi)}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </section>
