@@ -1,12 +1,16 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import useSWR from 'swr';
 import { track } from '@/lib/analytics';
+import { useAuth } from '@/lib/AuthContext';
 import {
   buildStarters,
+  type MasteryHints,
   type StarterConfig,
   type StarterIntent,
 } from '@/lib/foxy/starter-intents';
+import type { PersonalizedSuggestions } from '@/app/api/foxy/suggest-prompts/route';
 
 /* ─────────────────────────────────────────────────────────────
    ConversationStarters — Smart topic-aware conversation prompts
@@ -33,6 +37,9 @@ interface ConversationStartersProps {
    *  false so a brand-new chat doesn't show the chip with no context. */
   hasLastTopic?: boolean;
   onSelect: (text: string, intent: StarterIntent) => void;
+  /** When true, renders in a condensed chip strip (first 3 chips only,
+   *  no "More" toggle, smaller styling) for use after conversation starts. */
+  compact?: boolean;
 }
 
 /** Hick's Law: show only 3 primary starters to reduce decision time.
@@ -45,16 +52,50 @@ export function ConversationStarters({
   topicTitle,
   hasLastTopic = false,
   onSelect,
+  compact = false,
 }: ConversationStartersProps) {
   const [showMore, setShowMore] = useState(false);
 
-  const starters = useMemo(
-    () => buildStarters({ subject, topicTitle, hasLastTopic }),
-    [subject, topicTitle, hasLastTopic],
+  // ── IRT-driven personalisation (RCA-FIX RC-17/RC-18, 2026-06-26) ──────────
+  // Fetch mastery hints from the suggest-prompts endpoint. Grade comes from
+  // AuthContext (student?.grade is already the cleaned string e.g. "9"). The
+  // key is null when grade is not yet available — SWR skips the fetch.
+  // refreshInterval: 5 min (matches Cache-Control: private, max-age=300).
+  // On any network/server error the hook returns undefined → falls back to
+  // static chips unchanged (P8 / zero regression risk for new students).
+  const { student } = useAuth();
+  const grade = student?.grade ?? null;
+
+  const swrKey = subject && grade
+    ? `/api/foxy/suggest-prompts?subject=${subject}&grade=${grade}`
+    : null;
+
+  const { data: suggestions } = useSWR<PersonalizedSuggestions | undefined>(
+    swrKey,
+    async (url: string): Promise<PersonalizedSuggestions | undefined> => {
+      const r = await fetch(url);
+      if (!r.ok) return undefined;
+      return r.json() as Promise<PersonalizedSuggestions>;
+    },
+    { refreshInterval: 300_000, revalidateOnFocus: false },
   );
 
-  const visible = showMore ? starters : starters.slice(0, PRIMARY_COUNT);
-  const hasMore = starters.length > PRIMARY_COUNT;
+  // Map PersonalizedSuggestions → MasteryHints (same shape, explicit cast)
+  const masteryHints: MasteryHints | undefined = suggestions ?? undefined;
+
+  const starters = useMemo(
+    () => buildStarters({ subject, topicTitle, hasLastTopic, masteryHints }),
+    // masteryHints is a new object reference when SWR resolves, so including it
+    // in deps is correct — useMemo only re-derives when data actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [subject, topicTitle, hasLastTopic, suggestions],
+  );
+
+  // Compact mode: always show exactly 3 chips, no "More" toggle.
+  const visible = compact
+    ? starters.slice(0, PRIMARY_COUNT)
+    : (showMore ? starters : starters.slice(0, PRIMARY_COUNT));
+  const hasMore = !compact && starters.length > PRIMARY_COUNT;
 
   return (
     <div className="foxy-starters" role="group" aria-label="Conversation starters">
@@ -76,8 +117,8 @@ export function ConversationStarters({
               } catch { /* analytics non-critical */ }
               onSelect(label, s.intent);
             }}
-            className="foxy-starter-chip animate-slide-up"
-            style={{ animationDelay: `${i * 60}ms` }}
+            className={`foxy-starter-chip animate-slide-up shrink-0${compact ? ' text-xs py-1 px-2' : ''}`}
+            style={{ animationDelay: compact ? undefined : `${i * 60}ms` }}
             aria-label={label}
           >
             <span className="mr-1" aria-hidden="true">{s.icon}</span>

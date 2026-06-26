@@ -159,26 +159,35 @@ export const ALL_STARTER_INTENTS: readonly StarterIntent[] = [
 ] as const;
 
 /**
- * Build the visible chip list for a given subject + context.
+ * Mastery hints supplied by the IRT-driven `/api/foxy/suggest-prompts`
+ * endpoint (RCA-FIX RC-17/RC-18, 2026-06-26). When present, `buildStarters`
+ * prepends up to 3 personalised chips before the static universal+subject set.
  *
- * Priority order (so the most-useful chips never get truncated):
- *   1. If a topic is selected, prepend a "Teach me: <topic>" chip.
- *   2. Universal starters (filtered to drop `explain_last` if no last topic).
- *   3. Subject-specific starters.
- *
- * The previous implementation hard-coded a `slice(0, 8)` cap that hid the
- * subject-specific chips on chemistry and biology (which both have 5
- * universal + 3 subject = 8). The new ceiling (12) accommodates every
- * subject we ship, and the UI's "More" toggle still hides everything
- * past the primary 3 by default for Hick's Law compliance.
+ * All fields are optional so a partial response (e.g. only `nextAction`) still
+ * produces useful chips. When the object is absent or all fields are empty the
+ * output is identical to the pre-personalisation behaviour.
  */
-export function buildStarters(opts: {
-  subject: string;
-  topicTitle?: string | null;
-  hasLastTopic: boolean;
-}): StarterConfig[] {
-  const { subject, topicTitle, hasLastTopic } = opts;
+export interface MasteryHints {
+  /** Topics with mastery_probability < 0.6, ordered weakest-first. */
+  weakTopics?: Array<{ title: string; mastery: number }>;
+  /** Topics whose next_review_date has passed, ordered most-overdue-first. */
+  overdueTopics?: Array<{ title: string; daysOverdue: number }>;
+  /** CME recommended next concept (from quiz_sessions.cme_next_action). */
+  nextAction?: { conceptName: string } | null;
+  /** Bloom's complexity hint derived from avg mastery of the above rows. */
+  bloomHint?: 'remember' | 'understand' | 'apply' | 'analyze';
+}
 
+/**
+ * Private helper — static chip logic extracted from the original buildStarters.
+ * Unchanged behaviour: universal starters (filtered by hasLastTopic) followed
+ * by subject-specific starters, with an optional "Teach me: <topic>" prepended.
+ */
+function buildStaticStarters(
+  subject: string,
+  topicTitle?: string | null,
+  hasLastTopic?: boolean,
+): StarterConfig[] {
   const subjectSpecific = SUBJECT_STARTERS[subject] ?? [];
 
   const universals = hasLastTopic
@@ -196,8 +205,80 @@ export function buildStarters(opts: {
     });
   }
 
-  // Soft ceiling: 12 chips. With the largest subject (5 universal + 3
-  // subject + optional "Teach me" topic = 9), we never actually hit it
-  // — but the cap protects us if a future subject grows the list.
-  return starters.slice(0, 12);
+  return starters;
+}
+
+/**
+ * Build the visible chip list for a given subject + context.
+ *
+ * Priority order (so the most-useful chips never get truncated):
+ *   1. Personalised chips from IRT mastery data (up to 3, when masteryHints
+ *      is provided and has data):
+ *      a. CME next action — what the system recommends studying next.
+ *      b. Most-overdue revision topic (spaced-repetition due date passed).
+ *      c. Weakest topic (lowest mastery_probability).
+ *   2. If a topic is selected, prepend a "Teach me: <topic>" chip.
+ *   3. Universal starters (filtered to drop `explain_last` if no last topic).
+ *   4. Subject-specific starters.
+ *
+ * When masteryHints is absent or all arrays are empty the output is identical
+ * to the pre-personalisation behaviour — zero regression risk for new students
+ * or when the suggest-prompts API returns empty data.
+ *
+ * Soft ceiling: 12 chips. The UI's "More" toggle hides everything past the
+ * primary 3 by default for Hick's Law compliance.
+ */
+export function buildStarters(opts: {
+  subject: string;
+  topicTitle?: string | null;
+  hasLastTopic: boolean;
+  /** IRT-driven mastery hints from /api/foxy/suggest-prompts. Optional. */
+  masteryHints?: MasteryHints;
+}): StarterConfig[] {
+  const { subject, topicTitle, hasLastTopic, masteryHints } = opts;
+
+  // ── Personalised chips (prepended when mastery data is available) ───────────
+  const personalizedChips: StarterConfig[] = [];
+
+  // Priority 1: CME next action (what the system recommends studying next)
+  if (masteryHints?.nextAction?.conceptName) {
+    personalizedChips.push({
+      icon: '▶️', // ▶️
+      text: `Continue: ${masteryHints.nextAction.conceptName}`,
+      textHi: `जारी रखें: ${masteryHints.nextAction.conceptName}`,
+      intent: 'teach',
+    });
+  }
+
+  // Priority 2: Overdue revision (spaced repetition due date has passed)
+  const firstOverdue = masteryHints?.overdueTopics?.[0];
+  if (firstOverdue && personalizedChips.length < 2) {
+    const daysText =
+      firstOverdue.daysOverdue === 1 ? '1 day' : `${firstOverdue.daysOverdue} days`;
+    personalizedChips.push({
+      icon: '\u{1F4C5}', // 📅
+      text: `Revise: ${firstOverdue.title} (${daysText} overdue)`,
+      textHi: `दोबारा पढ़ें: ${firstOverdue.title} (${daysText} बाकी)`,
+      intent: 'explain_last',
+    });
+  }
+
+  // Priority 3: Weakest topic (lowest mastery probability)
+  const weakest = masteryHints?.weakTopics?.[0];
+  if (weakest && personalizedChips.length < 3) {
+    const masteryPct = Math.round(weakest.mastery * 100);
+    personalizedChips.push({
+      icon: '\u{1F534}', // 🔴
+      text: `Practice: ${weakest.title} (${masteryPct}% mastered)`,
+      textHi: `अभ्यास: ${weakest.title} (${masteryPct}% माहिर)`,
+      intent: 'quiz',
+    });
+  }
+
+  // ── Static chips (unchanged behaviour) ────────────────────────────────────
+  const staticChips = buildStaticStarters(subject, topicTitle, hasLastTopic);
+
+  // Soft ceiling: 12 chips. Personalised chips land first so they are always
+  // visible before the "More" toggle truncates the tail.
+  return [...personalizedChips, ...staticChips].slice(0, 12);
 }

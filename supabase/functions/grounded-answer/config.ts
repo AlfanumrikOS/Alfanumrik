@@ -59,6 +59,14 @@ export const VALID_CALLERS = [
 
 export const REGISTERED_PROMPT_TEMPLATES = [
   'foxy_tutor_v1',
+  // RCA-FIX RC-1 (2026-06-26): mode-specific prompts replace the monolithic
+  // foxy_tutor_v1 which had three conflicting output-format sections.
+  // learn/explain → teach (Socratic Step Cards, no CBSE evaluator persona)
+  // practice       → exam  (CBSE board format, marks-based)
+  // doubt/homework → doubt (direct Q&A, no Socratic)
+  'foxy_tutor_teach_v1',
+  'foxy_tutor_exam_v1',
+  'foxy_tutor_doubt_v1',
   'quiz_question_generator_v1',
   'quiz_answer_verifier_v1',
   'ncert_solver_v1',

@@ -132,7 +132,7 @@ async function fetchRecentSession(
   studentId: string,
   subject: string
 ): Promise<{ sessionId: string; messages: ChatMessage[] } | null> {
-  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const cutoff = new Date(Date.now() - 240 * 60 * 1000).toISOString(); // RCA-FIX: aligned with server SESSION_IDLE_MINUTES = 240
   const { data: sessions } = await supabase
     .from('foxy_sessions')
     .select('id')
@@ -1430,6 +1430,17 @@ export default function FoxyPage() {
                     <button
                       key={topic.id}
                       onClick={() => {
+                        // RCA-FIX CRITICAL-UX-3: Confirm before clearing active conversation
+                        if (messages.length > 0) {
+                          // TODO(ux-debt): Replace window.confirm with native Dialog component for
+                          // mobile-friendly confirmation (back gesture dismissal). Tracked by quality review 2026-06-26.
+                          const confirmed = window.confirm(
+                            isHi
+                              ? 'नया chapter शुरू करने से यह conversation साफ हो जाएगी। क्या आप sure हैं?'
+                              : 'Switching chapter will clear your current conversation. Continue?'
+                          );
+                          if (!confirmed) return;
+                        }
                         setActiveTopic(topic);
                         setSelectedChapters([topic.id]);
                         setMessages([]);
@@ -1713,7 +1724,20 @@ export default function FoxyPage() {
                 const lvl = mastery?.mastery_level || 'not_started';
                 const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
                 return (
-                  <button key={topic.id} onClick={() => { setActiveTopic(topic); setMessages([]); setChatSessionId(null); setCollapsedAbove(null); setTimeout(() => sendMessage(language === 'hi' ? `मुझे सिखाओ: ${topic.title} (अध्याय ${topic.chapter_number})` : `Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`), 50); }} className="w-full text-left p-2.5 rounded-xl transition-all active:scale-[0.98]" style={{ border: `1px solid ${lc}25`, background: activeTopic?.id === topic.id ? `${lc}10` : 'var(--surface-1)' }}>
+                  <button key={topic.id} onClick={() => {
+                    // RCA-FIX CRITICAL-UX-3: Confirm before clearing active conversation
+                    if (messages.length > 0) {
+                      // TODO(ux-debt): Replace window.confirm with native Dialog component for
+                      // mobile-friendly confirmation (back gesture dismissal). Tracked by quality review 2026-06-26.
+                      const confirmed = window.confirm(
+                        isHi
+                          ? 'नया chapter शुरू करने से यह conversation साफ हो जाएगी। क्या आप sure हैं?'
+                          : 'Switching chapter will clear your current conversation. Continue?'
+                      );
+                      if (!confirmed) return;
+                    }
+                    setActiveTopic(topic); setMessages([]); setChatSessionId(null); setCollapsedAbove(null); setTimeout(() => sendMessage(language === 'hi' ? `मुझे सिखाओ: ${topic.title} (अध्याय ${topic.chapter_number})` : `Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`), 50);
+                  }} className="w-full text-left p-2.5 rounded-xl transition-all active:scale-[0.98]" style={{ border: `1px solid ${lc}25`, background: activeTopic?.id === topic.id ? `${lc}10` : 'var(--surface-1)' }}>
                     <div className="text-[11px] font-bold truncate" style={{ color: 'var(--text-1)' }}>{language === 'hi' ? 'अध्याय' : 'Ch'} {topic.chapter_number}: {topic.title}</div>
                     <div className="flex items-center gap-2 mt-1">
                       <div className="w-14 h-1.5 rounded-full" style={{ background: 'var(--surface-2)' }}><div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: lc }} /></div>
@@ -1931,6 +1955,22 @@ export default function FoxyPage() {
             <div ref={endRef} />
           </div>
 
+          {/* Compact starter chips — always visible after conversation starts so
+              students retain prompt guidance after the empty state disappears.
+              Uses compact=true: 3 chips only, no "More" toggle, smaller styling. */}
+          {messages.length > 0 && (
+            <div className="px-4 py-2 flex gap-2 flex-wrap border-t" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
+              <ConversationStarters
+                subject={activeSubject}
+                language={language}
+                topicTitle={activeTopic?.title}
+                hasLastTopic={true}
+                onSelect={handleStarterClick}
+                compact={true}
+              />
+            </div>
+          )}
+
           {/* Composer + long-conversation nudge — extracted to ./_components/MessageInput.tsx */}
           <MessageInput
             messages={messages}
@@ -1960,6 +2000,7 @@ export default function FoxyPage() {
             studentId={student?.id}
             activeSubjectName={cfg.name}
             activeSubjectIcon={cfg.icon}
+            activeSubject={activeSubject}
             onSuggest={applyMasterySuggestion}
             sheetOpen={contextSheetOpen}
             onSheetClose={() => setContextSheetOpen(false)}

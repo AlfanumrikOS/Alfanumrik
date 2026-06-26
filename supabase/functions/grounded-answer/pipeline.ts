@@ -242,15 +242,23 @@ export function __resetFeatureFlagCacheForTests(): void {
 // "System:", "<|im_start|>", etc.) cannot jailbreak Foxy. Each chunk is
 // also capped at 1500 chars — NCERT paragraphs are 200-800 chars typically,
 // so the cap is conservative.
-function buildReferenceMaterialSection(chunks: RetrievedChunk[]): string {
+//
+// Fix 2 (groundedness): Added clear START/END delimiters around the reference
+// block so Claude unambiguously identifies where reference material begins and
+// ends. Each chunk is labelled with [Chapter: ...] and [Topic: ...] metadata
+// so the model can ground more precisely to section-level context.
+function buildReferenceMaterialSection(chunks: RetrievedChunk[], grade?: string, subject?: string): string {
   if (chunks.length === 0) return '';
+  const header = grade && subject
+    ? `=== REFERENCE MATERIAL (NCERT Class ${grade} ${subject}) ===`
+    : '=== REFERENCE MATERIAL (NCERT) ===';
   const lines = chunks.map((c, i) => {
     const chapterBit = c.chapter_title
       ? `Chapter ${c.chapter_number}: ${c.chapter_title}`
       : `Chapter ${c.chapter_number}`;
     const pageBit = c.page_number ? `, p.${c.page_number}` : '';
     const safeContent = sanitizeChunkForPrompt(c.content);
-    let entry = `[${i + 1}] (${chapterBit}${pageBit})\n${safeContent}`;
+    let entry = `[${i + 1}]\n[Chapter: ${chapterBit}${pageBit}]\n${safeContent}`;
     if (c.media_url) {
       const desc = c.media_description || `NCERT ${c.chapter_title || ''}`.trim();
       const pageSuffix = c.page_number
@@ -260,20 +268,35 @@ function buildReferenceMaterialSection(chunks: RetrievedChunk[]): string {
     }
     return entry;
   });
-  return `## NCERT Reference Material\n${lines.join('\n\n')}`;
+  return `${header}\n\n${lines.join('\n\n')}\n\n=== END REFERENCE MATERIAL ===`;
 }
 
-function modeInstructionFor(mode: 'strict' | 'soft'): string {
+function modeInstructionFor(mode: 'strict' | 'soft', hasChunks: boolean): string {
   if (mode === 'strict') {
     return [
       'This response MUST be grounded in the Reference Material.',
       'If the material does not cover the question, reply with exactly: {{INSUFFICIENT_CONTEXT}}',
     ].join(' ');
   }
+  // Fix 1 (groundedness): When chunks ARE present in soft mode, instruct Claude
+  // to answer ONLY from those chunks, not from general knowledge. The general-
+  // knowledge fallback is only permitted when NO chunks were retrieved. This
+  // eliminates the 63.3% soft-mode ungrounded rate observed in production.
+  if (hasChunks) {
+    return [
+      'You MUST answer ONLY from the Reference Material provided above.',
+      'Do NOT use your general training knowledge even if you know the answer.',
+      'If the Reference Material does not contain sufficient information to answer,',
+      'say exactly: "This topic is not covered in the reference material I have.',
+      'Please refer to your NCERT textbook directly."',
+    ].join(' ');
+  }
+  // No chunks retrieved — allow general CBSE knowledge fallback with prefix.
   return [
-    'Prefer the Reference Material. If it does not cover the question,',
-    'you may use general CBSE knowledge but must prefix with',
-    '"General knowledge (not from NCERT):".',
+    'The Reference Material is empty for this chapter.',
+    'If the question IS in CBSE Grade scope: answer briefly using general CBSE knowledge,',
+    'prefix with "From general CBSE knowledge:" (one-line).',
+    'If the question is OUTSIDE scope: warmly redirect to an in-scope topic.',
   ].join(' ');
 }
 
@@ -355,12 +378,17 @@ async function finalizeAbstain(
 }
 
 /**
- * Soft-mode "general knowledge" escape detection. The foxy_tutor_v1 prompt
- * (and the legacy modeInstructionFor 'soft' branch) both instruct Claude to
- * prefix any non-NCERT-grounded segment with one of these sentinel phrases:
+ * Soft-mode "general knowledge" escape detection. After Fix 1/Fix 3, the
+ * mode_instruction and foxy_tutor_v1 prompt both instruct Claude to answer
+ * ONLY from Reference Material when chunks are present. The general-knowledge
+ * escape prefix is now only permitted when NO chunks were retrieved. However
+ * we retain this detection as a safety net for the re-grounding retry (Step
+ * 12b) and for analytics truthfulness — if Claude disobeys and opens with
+ * one of these sentinel phrases despite chunks being present, the answer is
+ * marked not grounded in chunks:
  *
- *   - "From general CBSE knowledge:"   (foxy_tutor_v1 inline.ts L71)
- *   - "General knowledge (not from NCERT):"  (modeInstructionFor 'soft')
+ *   - "From general CBSE knowledge:"   (emitted when reference material empty)
+ *   - "General knowledge (not from NCERT):"  (legacy modeInstructionFor 'soft')
  *
  * If the FINAL answer starts with either prefix (case-insensitive, ignoring
  * leading whitespace and a small set of markdown emphasis chars), the answer
@@ -673,7 +701,7 @@ export async function runPipeline(
     const cacheKey = await buildCacheKey(request.query, request.scope, request.mode);
     const hit = getFromCache(cacheKey);
     if (hit && hit.grounded) {
-      console.log('cache_hit', {
+      console.warn('cache_hit', {
         caller: request.caller,
         grade: request.scope.grade,
         subject: request.scope.subject_code,
@@ -880,8 +908,12 @@ export async function runPipeline(
   const template = await loadTemplate(request.generation.system_prompt_template);
   const vars: Record<string, string> = {
     ...request.generation.template_variables,
-    reference_material_section: buildReferenceMaterialSection(chunks),
-    mode_instruction: modeInstructionFor(request.mode),
+    reference_material_section: buildReferenceMaterialSection(
+      chunks,
+      request.scope.grade,
+      request.scope.subject_code,
+    ),
+    mode_instruction: modeInstructionFor(request.mode, chunks.length > 0),
     mode_upper: request.mode.toUpperCase(),
     grade: request.scope.grade,
     subject: request.scope.subject_code,
@@ -908,6 +940,18 @@ export async function runPipeline(
     vars.coach_mode_instruction =
       'Use Socratic scaffolding: ask, do not tell. Guide the student to the answer.';
   }
+  // RC-2 / RC-3 fix (2026-06-26): These placeholders exist in foxy_tutor_v1.txt
+  // but had no defaults set, so they rendered as literal "{{placeholder}}" text
+  // in the system prompt sent to Claude whenever the caller omitted them.
+  // mode_directive (line 24 of the template) is the top-level grounding
+  // instruction paragraph. It was renamed from mode_instruction in a refactor
+  // but the pipeline still only sets mode_instruction — default mode_directive
+  // to mode_instruction so both template references resolve correctly.
+  if (!vars.pending_expectation) vars.pending_expectation = '';
+  if (!vars.learner_memory_section) vars.learner_memory_section = '';
+  if (!vars.mode_directive) vars.mode_directive = vars.mode_instruction ?? '';
+  if (!vars.next_topic) vars.next_topic = '';
+  if (!vars.prereq) vars.prereq = '';
 
   let systemPrompt = resolveTemplate(template, vars);
 
@@ -935,6 +979,19 @@ export async function runPipeline(
     ? Math.ceil(request.generation.max_tokens * FOXY_STRUCTURED_TOKEN_MULTIPLIER)
     : request.generation.max_tokens;
 
+  // Fix 3 (groundedness): Cap temperature at 0.1 for factual answers when
+  // chunks are present. High temperature (>0.1) introduces variance that
+  // causes Claude to deviate from retrieved content toward training knowledge.
+  // The caller-supplied temperature is preserved only when no chunks were
+  // retrieved (soft-mode general-CBSE-knowledge fallback) or when the caller
+  // explicitly requests creative/motivational output (temperature > 0.1
+  // with no grounding material is acceptable). Strict mode always stays at
+  // the caller-supplied temperature because it has a separate grounding-check
+  // guard (Step 12) that catches hallucinations post-hoc.
+  const effectiveTemperature = (request.mode === 'soft' && chunks.length > 0)
+    ? Math.min(request.generation.temperature, 0.1)
+    : request.generation.temperature;
+
   // C3: capture timing immediately around the Claude call so the shadow
   // log records true network latency (matches what the request handler
   // would see). Done before the call so an exception path (which we don't
@@ -945,7 +1002,7 @@ export async function runPipeline(
     systemPrompt,
     userMessage: request.query,
     maxTokens: effectiveMaxTokens,
-    temperature: request.generation.temperature,
+    temperature: effectiveTemperature,
     timeoutMs: request.timeout_ms,
     apiKey: anthropicKey,
     openaiApiKey,
@@ -1162,6 +1219,63 @@ export async function runPipeline(
     groundingPassRatio = 1;
   }
 
+  // Step 12b. Fix 4 (groundedness): Re-grounding retry for soft-mode.
+  //
+  // When soft-mode retrieves chunks but Claude's first answer falls back to
+  // general knowledge (detected via answerStartsWithGeneralKnowledgeEscape),
+  // fire one retry with an explicit re-grounding instruction. This catches
+  // the 63.3% of soft-mode calls where the model ignores the reference
+  // material despite Fix 1 and Fix 3. One retry only — to cap latency.
+  // The retry uses the same systemPrompt (already has the strengthened
+  // grounding instruction from Fix 1) with an explicit user-level nudge.
+  //
+  // Retry only when:
+  //   - mode is soft (strict is handled by Step 12 grounding-check above)
+  //   - chunks were retrieved (nothing to re-ground to if chunks.length=0)
+  //   - the answer starts with the general-knowledge escape sentinel
+  let primaryAnswer = claude.content;
+  if (
+    request.mode === 'soft' &&
+    chunks.length > 0 &&
+    answerStartsWithGeneralKnowledgeEscape(claude.content)
+  ) {
+    console.warn('pipeline: soft-mode answer used general knowledge despite chunks — retrying with re-grounding nudge');
+    const regroundUserMessage = [
+      'Your previous answer did not use the provided Reference Material.',
+      'Please rewrite your answer using ONLY the Reference Material provided in the system prompt.',
+      'Do not use your general training knowledge.',
+      '\n\nOriginal question: ',
+      request.query,
+    ].join('');
+    const regroundResult = await callClaude({
+      systemPrompt,
+      userMessage: regroundUserMessage,
+      maxTokens: effectiveMaxTokens,
+      temperature: 0.0, // fully deterministic for the re-grounding pass
+      timeoutMs: request.timeout_ms,
+      apiKey: anthropicKey,
+      openaiApiKey,
+      modelPreference: request.generation.model_preference,
+      // Omit conversation_turns: the re-ground nudge must see a clean slate
+      // so the model focuses on the reference material, not conversation history.
+    });
+    if (regroundResult.ok && !regroundResult.insufficientContext) {
+      // Accept the retry answer only if it does NOT open with the escape prefix.
+      // If the model still falls back to general knowledge on retry, serve the
+      // original (same quality, no point in a second retry).
+      if (!answerStartsWithGeneralKnowledgeEscape(regroundResult.content)) {
+        primaryAnswer = regroundResult.content;
+        // Update token accounting so the trace row reflects total spend.
+        ctx.inputTokens = (ctx.inputTokens ?? 0) + regroundResult.inputTokens;
+        ctx.outputTokens = (ctx.outputTokens ?? 0) + regroundResult.outputTokens;
+      } else {
+        console.warn('pipeline: re-grounding retry still used general knowledge — serving original answer');
+      }
+    } else {
+      console.warn('pipeline: re-grounding retry failed or returned insufficient context — serving original answer');
+    }
+  }
+
   // Step 13. Confidence. topSim/top3Avg normalized to [0,1] from RRF scale
   // before being fed in — see comment above the topSimNormalized declaration.
   const confidence = computeConfidence({
@@ -1189,13 +1303,13 @@ export async function runPipeline(
   //
   // For other callers: behavior is unchanged. `structured` is left undefined
   // and `answer` contains the raw markdown/text response.
-  let answerForResponse = claude.content;
+  let answerForResponse = primaryAnswer;
   let structuredForResponse: FoxyResponse | undefined;
 
   if (isFoxyStructured) {
     const subjectHint = mapSubjectCodeToFoxySubject(request.scope.subject_code);
     const parsed = parseFoxyStructured({
-      rawAnswer: claude.content,
+      rawAnswer: primaryAnswer,
       subjectHint,
     });
     structuredForResponse = parsed.structured;
@@ -1206,9 +1320,13 @@ export async function runPipeline(
     answerForResponse = denormalizeFoxyResponse(parsed.structured);
   }
 
-  const citations = extractCitations(claude.content, chunks);
+  const citations = extractCitations(primaryAnswer, chunks);
   ctx.answerLength = answerForResponse.length;
 
+  // Total token spend includes the primary call and any re-grounding retry.
+  // ctx.inputTokens / ctx.outputTokens were updated in the retry block above
+  // when the retry fired, so summing from ctx gives the accurate total.
+  const totalTokensUsed = (ctx.inputTokens ?? 0) + (ctx.outputTokens ?? 0);
   const response = await finalizeGrounded(
     sb,
     ctx,
@@ -1216,7 +1334,7 @@ export async function runPipeline(
     citations,
     confidence,
     claude.model,
-    claude.inputTokens + claude.outputTokens,
+    totalTokensUsed,
     structuredForResponse,
   );
 

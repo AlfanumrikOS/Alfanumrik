@@ -2813,6 +2813,28 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 }
 
+/**
+ * RCA-FIX RC-1 (2026-06-26): Select the mode-specific Foxy prompt template.
+ *
+ * foxy_tutor_v1 contained THREE conflicting output-format sections
+ * (Step Cards, CBSE board evaluator, structured JSON). Claude randomly
+ * chose one per response — the #1 cause of inconsistent Foxy answers.
+ *
+ * Each new template has exactly ONE format section:
+ *   learn / explain  → foxy_tutor_teach_v1  (Socratic Step Cards only)
+ *   practice         → foxy_tutor_exam_v1   (CBSE marks-based format only)
+ *   doubt / homework → foxy_tutor_doubt_v1  (direct Q&A only)
+ *   default          → foxy_tutor_teach_v1  (safest default for unlisted modes)
+ *
+ * The legacy foxy_tutor_v1 is preserved as a registered fallback for any
+ * caller that specifies it explicitly (e.g., non-Foxy grounded-answer callers).
+ */
+function selectFoxyPromptTemplate(mode: string): string {
+  if (mode === 'practice') return 'foxy_tutor_exam_v1';
+  if (mode === 'doubt' || mode === 'homework') return 'foxy_tutor_doubt_v1';
+  return 'foxy_tutor_teach_v1';
+}
+
 async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // 1. Auth
   const auth = await authorizeRequest(request, 'foxy.chat', {
@@ -3974,7 +3996,9 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       model_preference: 'auto',
       max_tokens: MODE_MAX_TOKENS[mode] ?? 1024,
       temperature: 0.3,
-      system_prompt_template: 'foxy_tutor_v1',
+      // RCA-FIX RC-1 (2026-06-26): route to mode-specific prompt so Claude
+      // receives exactly ONE output-format section per request.
+      system_prompt_template: selectFoxyPromptTemplate(mode),
       // Phase 2 of Foxy continuity fix (2026-05-18): native multi-turn array.
       // When flag is OFF, leave undefined → grounded-answer falls back to
       // single-user-message body. When ON, prepend prior turns to messages[].

@@ -38,6 +38,10 @@ interface MasteryAwarenessProps {
   studentId: string | undefined;
   activeSubjectName: string;
   activeSubjectIcon: string;
+  /** Subject code (e.g. 'science', 'math') used to scope the nudge to the
+   *  current subject. When provided, weakestStartedTopic filters to this
+   *  subject before falling back to cross-subject. */
+  activeSubject?: string;
   /** Called when the student taps the nudge. Parent routes via existing modes. */
   onSuggest: (s: MasterySuggestion) => void;
 }
@@ -47,14 +51,19 @@ export default function MasteryAwareness({
   studentId,
   activeSubjectName,
   activeSubjectIcon,
+  activeSubject,
   onSuggest,
 }: MasteryAwarenessProps) {
-  // Scope the overview to the active subject NAME isn't possible via the RPC
-  // (it takes a subject CODE); we fetch the full overview and pick the weakest
-  // started topic across all subjects, which is the actionable nudge.
   const { data, isLoading, error } = useMasteryOverview(studentId);
   const rows: MasteryOverviewRow[] = Array.isArray(data) ? (data as MasteryOverviewRow[]) : [];
-  const weak = weakestStartedTopic(rows);
+  // RCA-FIX MEDIUM-UX-9: filter to the active subject before selecting the
+  // weakest topic so a student studying Chemistry gets a Chemistry nudge,
+  // not a cross-subject Math nudge. Fall back to the full set if the active
+  // subject has no started topics yet (preserves the useful cross-subject case).
+  const subjectRows = activeSubject
+    ? rows.filter((r) => r.subject === activeSubject)
+    : rows;
+  const weak = weakestStartedTopic(subjectRows.length > 0 ? subjectRows : rows);
 
   if (isLoading && !data) {
     return (

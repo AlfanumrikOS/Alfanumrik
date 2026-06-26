@@ -45,7 +45,7 @@ export function LanguagePicker({ language, isLocked, onLanguageChange }: Languag
           onClick={() => {
             if (!isLocked) onLanguageChange(l.code);
           }}
-          className={`text-[10px] font-bold px-2 py-1 rounded-lg transition-all ${language !== l.code ? 'hidden sm:inline-block' : ''}`}
+          className={`text-[10px] font-bold px-2 py-1 rounded-lg transition-all ${language !== l.code ? 'inline-block' : ''}`}
           style={{
             background: language === l.code ? 'rgba(255,255,255,0.2)' : 'transparent',
             color: language === l.code ? '#fff' : 'rgba(255,255,255,0.4)',
