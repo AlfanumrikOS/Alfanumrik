@@ -46,6 +46,11 @@ vi.mock('@/lib/feature-flags', () => ({
   isFeatureEnabled: (...args: unknown[]) => isFeatureEnabledMock(...args),
   ADAPTIVE_REMEDIATION_FLAGS: { V1: 'ff_adaptive_remediation_v1' },
   ADAPTIVE_LOOPS_BC_FLAGS: { V1: 'ff_adaptive_loops_bc_v1' },
+  // Loop D (blocked_prerequisite, Digital Twin Slice 1) reads its own flag via
+  // DIGITAL_TWIN_FLAGS.V1 in the route's inject phase. Expose it here or the
+  // route throws on `undefined.V1`. These suites never enable it, so Loop D
+  // stays OFF and the B/C assertions are unchanged.
+  DIGITAL_TWIN_FLAGS: { V1: 'ff_digital_twin_v1' },
 }));
 
 const onRemediationAssignedMock = vi.fn().mockResolvedValue(undefined);
@@ -195,9 +200,18 @@ function installHandler(fixture: Fixture): void {
   dbHandler = (call) => fixture[classify(call)] ?? defaultHandler();
 }
 
-/** All flags ON (Loop A + Loops B/C). */
+/** Loop A + Loops B/C ON. Loop D (ff_digital_twin_v1, Digital Twin Slice 1) is
+ *  INTENTIONALLY left OFF here: this suite models only the A/B/C DB surface and
+ *  the admin mock above does not stub the detect_blocked_dependents RPC (Loop D's
+ *  only data source). Blanket-enabling every flag would activate Loop D and 500
+ *  on the unmocked RPC. Loop D's candidate build + arbiter precedence (A>D>C>B)
+ *  are pinned separately by REG-175. */
 function allFlagsOn(): void {
-  isFeatureEnabledMock.mockResolvedValue(true);
+  isFeatureEnabledMock.mockImplementation(
+    async (flagName: string) =>
+      flagName === 'ff_adaptive_remediation_v1' ||
+      flagName === 'ff_adaptive_loops_bc_v1',
+  );
 }
 /** Loops B/C ON, Loop A OFF. */
 function bcOnly(): void {

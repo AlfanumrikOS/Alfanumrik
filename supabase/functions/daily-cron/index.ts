@@ -1140,6 +1140,51 @@ async function triggerAdaptiveRemediation(_supabase: ReturnType<typeof createCli
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Digital Twin + Knowledge Graph (Slice 1) — twin-snapshot builder trigger
+// (THIN, by design). POSTs to the Next.js cron worker
+// /api/cron/build-twin-snapshots with CRON_SECRET (x-cron-secret), mirroring
+// the triggerAdaptiveRemediation fetch-out precedent. ALL twin math lives in
+// the worker route, which imports the cognitive-engine helpers — NO thresholds
+// or formulas are defined/duplicated in Deno.
+//
+// FLAG-GATED at the WORKER: the route gates its entire body on
+// ff_digital_twin_v1 and returns { skipped: 'flag_off', built: 0 } when OFF, so
+// this trigger is a strict no-op end-to-end while the flag is off (no rows
+// written, count 0). We do not re-read the flag in Deno — the route is the
+// single gate authority (same posture as the route-gated adaptive worker).
+// Failures isolated by Promise.allSettled in the main handler. P13: counts only.
+// ──────────────────────────────────────────────────────────────────────────
+async function triggerBuildTwinSnapshots(_supabase: ReturnType<typeof createClient>): Promise<number> {
+  const siteUrl = Deno.env.get('SITE_URL') || 'https://alfanumrik.com'
+  const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
+  if (!cronSecret) {
+    console.warn('triggerBuildTwinSnapshots: CRON_SECRET unavailable — skipping (worker rejects unauthenticated calls)')
+    return 0
+  }
+  try {
+    const res = await fetch(`${siteUrl}/api/cron/build-twin-snapshots`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-cron-secret': cronSecret },
+      body: JSON.stringify({}),
+    })
+    if (!res.ok) {
+      const t = await res.text().catch(() => '')
+      console.warn(`triggerBuildTwinSnapshots: non-OK ${res.status}: ${t.slice(0, 120)}`)
+      return 0
+    }
+    const j = await res.json().catch(() => null) as { data?: { built?: number; skipped?: string | null } } | null
+    const built = j?.data?.built ?? 0
+    // P13: counts only — no student/topic identifiers in logs.
+    console.log(`daily-cron: build_twin_snapshots — built=${built} skipped=${j?.data?.skipped ?? 'none'}`)
+    return built
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e)
+    console.warn(`triggerBuildTwinSnapshots: network error: ${m}`)
+    return 0
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Track A.6 — outbound webhook dispatcher trigger (THIN, by design).
 // POSTs to the webhook-dispatcher Edge Function with CRON_SECRET, mirroring the
 // triggerAdaptiveRemediation fetch-out precedent. ALL signing/SSRF/retry/DLQ
@@ -1643,6 +1688,7 @@ Deno.serve(async (req) => {
       contract_grace_audited: () => auditContractGracePeriods(sb),
       monthly_synthesis_triggered: () => triggerMonthlySynthesis(sb),
       adaptive_remediation_triggered: () => triggerAdaptiveRemediation(sb),
+      twin_snapshots_built: () => triggerBuildTwinSnapshots(sb),
       webhook_deliveries_dispatched: () => triggerWebhookDispatcher(sb),
       foxy_expectations_expired: () => expireStaleFoxyExpectations(sb),
       mol_shadow_pairs_graded: () => gradeMolShadowPairs(sb),

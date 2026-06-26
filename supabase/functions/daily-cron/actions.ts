@@ -23,6 +23,7 @@ export type DailyCronActionName =
   | 'mol_shadow_pairs_graded'
   | 'purge_principal_ai'
   | 'first_quiz_nudges_sent'
+  | 'twin_snapshots_built'
 
 export interface DailyCronActionContext {
   sb: DailyCronClient

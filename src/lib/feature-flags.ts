@@ -1133,6 +1133,28 @@ export const ADAPTIVE_LIVE_SELECTION_FLAGS = {
 } as const;
 
 /**
+ * Digital Twin + Knowledge Graph flag (2026-07-02, Slice 1, CEO-approved).
+ *
+ *  ff_digital_twin_v1 — master switch for the learner digital-twin behaviors
+ *    built on the concept_edges unified prerequisite graph + the
+ *    learner_twin_snapshots / learner_twin_memory substrate and the
+ *    traverse_prerequisites / detect_blocked_dependents RPCs. When OFF, no twin
+ *    surface/consumer runs and the additive concept_edges branch of
+ *    detect_knowledge_gaps + the 'prerequisite_aware' generate_learning_path
+ *    path type are not invoked by flag-gated callers. Default: false.
+ *
+ *    Seeded OFF (is_enabled=false, rollout=0, scoping NULL) by migration
+ *    20260702000700_seed_ff_digital_twin_v1.sql — mirrors the
+ *    ff_adaptive_loops_bc_v1 seed precedent. Data layer: concept_edges
+ *    (20260702000100), learner_twin_snapshots (20260702000200),
+ *    learner_twin_memory (20260702000300). Stays OFF until an operator flips it.
+ */
+export const DIGITAL_TWIN_FLAGS = {
+  /** Digital Twin + Knowledge Graph (Slice 1). Default off. */
+  V1: 'ff_digital_twin_v1',
+} as const;
+
+/**
  * Default values for known flags. `isFeatureEnabled()` already returns false
  * for any flag not present in the DB, but this map is the documented source
  * of truth for SSR behavior before the first DB hit completes.
@@ -1186,6 +1208,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [ADAPTIVE_REMEDIATION_FLAGS.V1]: false, // seeded OFF by 20260619000300_seed_ff_adaptive_remediation_v1.sql
   [ADAPTIVE_LOOPS_BC_FLAGS.V1]: false, // seeded OFF by 20260619000600_seed_ff_adaptive_loops_bc_v1.sql
   [ADAPTIVE_LIVE_SELECTION_FLAGS.V1]: false, // Phase 2 live adaptive selection — seeded OFF in follow-up migration
+  [DIGITAL_TWIN_FLAGS.V1]: false, // seeded OFF by 20260702000700_seed_ff_digital_twin_v1.sql
   [FOXY_LEARNING_ACTIONS_FLAGS.V1]: false, // seeded OFF by 20260619000700_seed_ff_foxy_learning_actions_v1.sql
   [FOXY_MATH_PIPELINE_FLAGS.V1]: false, // seeded OFF by 20260619000800_seed_ff_foxy_math_pipeline_v1.sql
   [FOXY_CURRICULUM_GUARD_FLAGS.V1]: false, // seeded OFF by 20260619001000_seed_ff_foxy_curriculum_guard_v1.sql

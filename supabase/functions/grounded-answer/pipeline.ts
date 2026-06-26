@@ -31,6 +31,12 @@ import { rerankDocuments } from '../_shared/reranking.ts';
 import { applyMMR } from '../_shared/rag/mmr.ts';
 import { sanitizeChunkForPrompt } from '../_shared/rag/sanitize.ts';
 import { isMMRDiversityEnabled } from './_mmr-flag.ts';
+// Digital Twin + Knowledge Graph (Slice 1). Flag-gated cross-subject retrieval
+// widening along EXPLICIT concept_edges transfer edges. Strict no-op when
+// ff_digital_twin_v1 is OFF (default) or no transfer edge exists. NEVER relaxes
+// curriculum_guard / abstain — see transfer-retrieval.ts safety contract.
+import { isDigitalTwinEnabled } from './_twin-flag.ts';
+import { retrieveTransferChunks, mergeTransferChunks } from './transfer-retrieval.ts';
 import { callClaude, type ClaudeResponse } from './claude.ts';
 import {
   runGroundingCheck,
@@ -768,6 +774,24 @@ export async function runPipeline(
   // signal worth diversifying) or when chunks.length <= 1 (nothing to do).
   if (reranked && chunks.length > 1 && (await isMMRDiversityEnabled(sb))) {
     chunks = applyMMR(chunks, 0.7);
+  }
+
+  // Digital Twin Slice 1 (flag-gated, no-op when OFF): widen retrieval along
+  // EXPLICIT concept_edges transfer edges into a DIFFERENT subject (same grade).
+  // Soft-mode only — strict callers keep their single-subject grounding
+  // contract. This NEVER relaxes curriculum_guard / abstain; it only ADDS
+  // curated cross-subject chunks. No-op when the flag is OFF or no transfer
+  // edge exists (the production default).
+  if (request.mode === 'soft' && (await isDigitalTwinEnabled(sb))) {
+    const transferChunks = await retrieveTransferChunks(sb, {
+      query: request.query,
+      embedding,
+      scope: request.scope,
+      minSimilarity,
+    });
+    if (transferChunks.length > 0) {
+      chunks = mergeTransferChunks(chunks, transferChunks);
+    }
   }
 
   ctx.chunks = chunks;
