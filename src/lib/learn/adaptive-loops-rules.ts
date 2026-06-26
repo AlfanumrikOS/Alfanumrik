@@ -123,6 +123,7 @@
  */
 
 import { PULSE_THRESHOLDS } from '../pulse/signals';
+import { predictRetention } from '../cognitive-engine';
 
 // ════════════════════════════════════════════════════════════════════════════
 // CONSTANTS — single source of truth for Loops B & C + the cross-loop ceiling.
@@ -156,6 +157,104 @@ export const ADAPTIVE_LOOPS_BC_RULES = {
   concentration_high_min: PULSE_THRESHOLDS.concentration_high_min,
 } as const;
 
+// ════════════════════════════════════════════════════════════════════════════
+// LOOP D — blocked-prerequisite (Digital Twin + Knowledge Graph, Slice 1)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// ── THE RULE (plain terms) ──────────────────────────────────────────────────
+//
+// A student is BLOCKED on an advanced (dependent) topic when a PREREQUISITE
+// topic — an upstream node in the knowledge graph that the advanced topic builds
+// on — is NOT solid enough to support it, WHILE the dependent topic is actively
+// being attempted or scheduled. "Not solid enough" means the prerequisite is
+// either:
+//   (a) BELOW the mastery floor   — current BKT p_know < mastery_floor (the
+//       student never built durable mastery of the prerequisite), OR
+//   (b) DECAYED below the retention floor — predictRetention(daysSinceStudy,
+//       strength) < decay_floor (the student once knew it but the Ebbinghaus
+//       forgetting curve has dragged predicted recall under the retest line).
+// Either condition alone blocks; failing BOTH is the most severe block. The
+// signal NEVER fires for a dependent topic the student is not currently touching
+// (no nagging about prerequisites for topics they have not reached) and is a
+// pure no-op when the caller's `ff_digital_twin_v1` flag is OFF (the caller gates
+// the flag; these functions are flag-agnostic + side-effect-free).
+//
+// ── THRESHOLDS (both REUSED from existing platform conventions) ──────────────
+//
+// • mastery_floor = PULSE_THRESHOLDS.at_risk_mastery (0.4) — REUSED, not
+//   redefined. 0.4 is the platform-wide "at-risk mastery" line already used by
+//   the mastery-cliff and at-risk-concentration signals. A prerequisite below
+//   0.4 p_know is, by the platform's own definition, an at-risk chapter — it
+//   cannot be trusted to carry an advanced topic. Keeping "blocked-by-mastery"
+//   identical to "at-risk chapter" means a prerequisite that trips Loop C's
+//   per-chapter count is exactly one that can block here — no second, conflicting
+//   mastery line.
+//
+// • decay_floor = 0.5 — the canonical `shouldRetest` threshold from
+//   cognitive-engine.ts (`shouldRetest(...)` fires when predictRetention < 0.5).
+//   It is the platform's existing "predicted recall has dropped low enough that
+//   a retest is warranted" line, rooted in the same Ebbinghaus model. Reusing it
+//   means "blocked-by-decay" is definitionally "shouldRetest says retest this
+//   prerequisite": a prerequisite the student would more-likely-than-not fail to
+//   recall on demand is not a safe foundation. Surfaced here as a named constant
+//   (cognitive-engine exposes 0.5 only as a default parameter, not an exported
+//   symbol) so the SQL RPC `detect_blocked_dependents` and this TS module read
+//   ONE number; if cognitive-engine's retest convention ever moves, update both.
+//
+// • cooldown_days = 7 — mirror of Loop B/C's 7-day per-subject cooldown. After a
+//   terminal blocked-prerequisite row for a subject, wait one school week before
+//   re-flagging that subject so the student/teacher is not re-messaged about the
+//   same structural gap every night.
+//
+// • return_window_days = 7 — mirror of Loop A's 7-day window. Clearing a single
+//   prerequisite chapter is a single-chapter recovery (like Loop A), not a
+//   subject-wide multi-week effort (Loop C's 14). Exported for the cron/RPC
+//   wiring parity; the verify evaluator itself is a later slice.
+//
+// ── LOOP & PRECEDENCE DECISION ───────────────────────────────────────────────
+//
+// blocked_prerequisite is a NEW loop, "D", NOT a reuse of an existing slot: its
+// trigger (a knowledge-graph dependency block), its keying (per dependent
+// chapter), and its remediation (study the PREREQUISITE, not the attempted
+// topic) are all distinct from A/B/C. Folding it into an existing signal would
+// blur three different remediations onto one DB trigger_signal.
+//
+// Precedence: A > D > C > B (the existing A > C > B order is preserved; D is
+// inserted between A and C). Rationale:
+//   • A (fresh mastery-cliff) stays highest — a known-good chapter slipping is
+//     time-sensitive; catch it while fresh before it compounds.
+//   • D sits ABOVE C because a blocked prerequisite is a PRECISE, CAUSAL,
+//     immediately-actionable block: the student is hitting the wall on the
+//     dependent topic TODAY and there is one clear fix (the named prerequisite).
+//     A subject-wide concentration gap (C) is real but diffuse, multi-chapter,
+//     and slower-moving. Unblocking the prerequisite often dissolves part of the
+//     C cluster too, so D-before-C is also the more efficient ordering.
+//   • C then B, unchanged.
+// The arbiter keeps choosing AT MOST ONE candidate per student per night via the
+// unchanged per_student_daily_intervention_ceiling (1); D simply joins the same
+// precedence sort. The anti-storm guarantee is untouched.
+export const BLOCKED_PREREQUISITE_RULES = {
+  /**
+   * Prerequisite mastery floor (BKT p_know, 0..1). REUSED from
+   * PULSE_THRESHOLDS.at_risk_mastery (0.4) — a prerequisite below the platform
+   * at-risk line cannot support a dependent topic. Passed to the SQL RPC
+   * `detect_blocked_dependents(p_student_id, p_decay_floor, p_mastery_floor)` as
+   * p_mastery_floor so SQL + TS share one number.
+   */
+  mastery_floor: PULSE_THRESHOLDS.at_risk_mastery,
+  /**
+   * Prerequisite retention floor (predicted recall, 0..1). The canonical
+   * `shouldRetest` threshold (0.5) from cognitive-engine.ts. A prerequisite with
+   * predictRetention(daysSinceStudy, strength) < this is "retest warranted" and
+   * therefore not a safe foundation. Passed to the SQL RPC as p_decay_floor.
+   */
+  decay_floor: 0.5,
+  /** Per-(student,subject) cooldown after a terminal blocked-prerequisite row. */
+  cooldown_days: 7,
+  /** Verify window (rolling-ms) for a later slice; single-chapter recovery → 7. */
+  return_window_days: 7,
+} as const;
+
 const MS_PER_DAY = 86_400_000;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -163,16 +262,18 @@ const MS_PER_DAY = 86_400_000;
 // ════════════════════════════════════════════════════════════════════════════
 
 /** Which closed loop a candidate / existing row belongs to. */
-export type LoopId = 'A' | 'B' | 'C';
+export type LoopId = 'A' | 'B' | 'C' | 'D';
 
 /**
  * The DB `trigger_signal` value for each loop. Mirrors the
- * `adaptive_interventions_trigger_signal_chk` CHECK (after the B/C extension).
+ * `adaptive_interventions_trigger_signal_chk` CHECK (after the B/C extension and
+ * the Slice-1 Loop D extension — the architect owns that migration).
  */
 export type TriggerSignal =
   | 'mastery_cliff' // Loop A
   | 'inactivity' // Loop B
-  | 'at_risk_concentration'; // Loop C
+  | 'at_risk_concentration' // Loop C
+  | 'blocked_prerequisite'; // Loop D (Digital Twin + Knowledge Graph, Slice 1)
 
 /** The reserved lowercase pseudo-subject for Loop B's sentinel triple. */
 export const INACTIVITY_SENTINEL_SUBJECT = '_inactivity' as const;
@@ -215,6 +316,8 @@ export function triggerSignalForLoop(loop: LoopId): TriggerSignal {
       return 'inactivity';
     case 'C':
       return 'at_risk_concentration';
+    case 'D':
+      return 'blocked_prerequisite';
   }
 }
 
@@ -227,6 +330,8 @@ export function loopForTriggerSignal(signal: TriggerSignal): LoopId {
       return 'B';
     case 'at_risk_concentration':
       return 'C';
+    case 'blocked_prerequisite':
+      return 'D';
   }
 }
 
@@ -771,6 +876,258 @@ export function evaluateConcentrationResolution(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// LOOP D — blocked-prerequisite block classifier + intervention planner (open?)
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * One prerequisite→dependent edge under evaluation for a student. The SQL RPC
+ * `detect_blocked_dependents(p_student_id, p_decay_floor, p_mastery_floor)`
+ * (architect-owned) resolves the knowledge-graph edges and BKT/decay readings;
+ * the worker hands each candidate edge here as a plain, PII-free record. All
+ * masteries are BKT p_know in 0..1 (concept_mastery.p_know / student_skill_state
+ * .p_know). `prereqStrength` is the SM-2 memory-strength multiplier; absent/
+ * non-finite falls back to 1.0 (the predictRetention default).
+ */
+export interface PrerequisiteState {
+  /** Subject the dependent (advanced) chapter belongs to. */
+  subjectCode: string;
+  /** The upstream prerequisite chapter being tested for solidity. */
+  prereqChapterNumber: number;
+  /** The advanced chapter the student is attempting/scheduled on (remediated). */
+  dependentChapterNumber: number;
+  /** Current BKT p_know for the PREREQUISITE chapter (0..1); null if no reading. */
+  prereqPKnow: number | null;
+  /** Whole days since the prerequisite was last studied (for Ebbinghaus decay). */
+  prereqDaysSinceStudy: number | null;
+  /** SM-2 memory-strength for the prerequisite; null/non-finite => 1.0. */
+  prereqStrength?: number | null;
+}
+
+/** Why a prerequisite is (or is not) blocking the dependent topic. */
+export type BlockReason =
+  | 'mastery' // p_know below mastery_floor only
+  | 'decay' // predicted retention below decay_floor only
+  | 'both' // below BOTH floors — most severe
+  | 'none'; // solid on both axes (or unevaluable) — not a block
+
+export interface BlockClassification {
+  blocked: boolean;
+  reason: BlockReason;
+  /** predictRetention reading for the prerequisite (0..1); null if undatable. */
+  retention: number | null;
+  /**
+   * Worst normalized deficit below either floor (0..1; higher = more blocked),
+   * used as the within-loop severity tie-break in the arbiter. 0 when not
+   * blocked.
+   */
+  deficit: number;
+}
+
+/**
+ * Pure predicate: is this prerequisite NOT solid enough to support its dependent
+ * topic? Applies the two canonical floors from BLOCKED_PREREQUISITE_RULES — the
+ * SAME numbers the SQL RPC is parameterized with — so detection is identical in
+ * SQL and TS. Never throws; an unevaluable prerequisite (no p_know AND no
+ * study-recency reading) degrades to NOT blocked (do not fire off missing data).
+ *
+ * Rule: blocked when p_know < mastery_floor (mastery axis) OR
+ * predictRetention(daysSinceStudy, strength) < decay_floor (decay axis). Both
+ * axes failing is the most severe ('both').
+ */
+export function classifyPrerequisiteBlock(
+  state: PrerequisiteState,
+): BlockClassification {
+  const notBlocked: BlockClassification = {
+    blocked: false,
+    reason: 'none',
+    retention: null,
+    deficit: 0,
+  };
+
+  if (state == null) return notBlocked;
+
+  const { mastery_floor, decay_floor } = BLOCKED_PREREQUISITE_RULES;
+
+  // ── Mastery axis ──────────────────────────────────────────────────────────
+  const pKnow = state.prereqPKnow;
+  const masteryReadable = typeof pKnow === 'number' && Number.isFinite(pKnow);
+  const masteryLow = masteryReadable && (pKnow as number) < mastery_floor;
+  const masteryDeficit = masteryLow
+    ? (mastery_floor - (pKnow as number)) / mastery_floor
+    : 0;
+
+  // ── Decay axis ────────────────────────────────────────────────────────────
+  const days = state.prereqDaysSinceStudy;
+  const daysReadable = typeof days === 'number' && Number.isFinite(days) && days >= 0;
+  let retention: number | null = null;
+  if (daysReadable) {
+    const strength =
+      typeof state.prereqStrength === 'number' &&
+      Number.isFinite(state.prereqStrength)
+        ? (state.prereqStrength as number)
+        : 1.0;
+    retention = predictRetention(days as number, strength);
+  }
+  const decayLow = retention !== null && retention < decay_floor;
+  const decayDeficit = decayLow ? (decay_floor - (retention as number)) / decay_floor : 0;
+
+  // Unevaluable on both axes => not blocked (degrade, don't fire off no data).
+  if (!masteryReadable && !daysReadable) return notBlocked;
+
+  const blocked = masteryLow || decayLow;
+  if (!blocked) {
+    return { blocked: false, reason: 'none', retention, deficit: 0 };
+  }
+
+  const reason: BlockReason =
+    masteryLow && decayLow ? 'both' : masteryLow ? 'mastery' : 'decay';
+  const deficit = Math.max(masteryDeficit, decayDeficit);
+
+  return { blocked: true, reason, retention, deficit };
+}
+
+export type LoopDPlanDecision =
+  | 'open' // all guardrails satisfied; open the blocked-prerequisite intervention
+  | 'dependent_inactive' // the dependent topic is not being attempted/scheduled
+  | 'not_blocked' // prerequisite is solid on both axes (or unevaluable)
+  | 'active_exists' // a Loop D row already active for this (subject, dependent ch)
+  | 'cooldown' // a terminal Loop D row for this subject within cooldown_days
+  | 'ceiling_spent'; // the per-student daily ceiling was already spent (A only)
+
+export interface PlanBlockedPrerequisiteInput {
+  /** The prerequisite→dependent edge under evaluation. */
+  prerequisite: PrerequisiteState;
+  /**
+   * Whether the dependent (advanced) topic is currently being ATTEMPTED or
+   * SCHEDULED. The block only matters when the student is actually hitting it;
+   * we never nag about prerequisites for topics not yet reached.
+   */
+  dependentIsActive: boolean;
+  /** This student's non-terminal interventions, across all loops. */
+  activeInterventions: ActiveInterventionRef[];
+  /** This student's recent terminal interventions, across all loops. */
+  recentTerminalInterventions: TerminalInterventionRef[];
+  /**
+   * Whether the per-student daily ceiling was ALREADY spent by a
+   * higher-precedence loop earlier tonight. Loop D is OUTRANKED only by A
+   * (A > D > C > B), so this is true whenever Loop A opened a row for this
+   * student tonight. When true, Loop D defers; the block signal persists.
+   */
+  ceilingAlreadySpent: boolean;
+  /** Current wall clock, ms epoch — passed in so the module stays pure. */
+  nowMs: number;
+}
+
+export interface PlanBlockedPrerequisiteResult {
+  decision: LoopDPlanDecision;
+  /** True only when decision === 'open'. */
+  open: boolean;
+  /** Why the prerequisite blocked (for the snapshot/payload); 'none' unless blocked. */
+  reason: BlockReason;
+  /**
+   * The candidate to hand UNCHANGED to `arbitrateInterventions()` when
+   * decision === 'open'; null otherwise. `chapterNumber` is the DEPENDENT
+   * chapter (the topic remediated/flagged); `severity` is the block deficit so
+   * the worst block wins the within-loop tie-break.
+   */
+  candidate: InterventionCandidate | null;
+}
+
+/**
+ * Decide whether to OPEN a Loop D blocked-prerequisite intervention for a
+ * (student, dependent chapter) tonight, and emit the arbiter candidate. Mirrors
+ * the Loop B/C planners' shape; pure, deterministic, never throws — malformed
+ * inputs degrade to the safest decision (do not open). Flag-agnostic: the caller
+ * is responsible for the `ff_digital_twin_v1` gate; this function has no I/O and
+ * no side effects, so it is a structural no-op when the caller skips it.
+ *
+ * Guardrail precedence (documented; tests pin every boundary):
+ *   1. dependent_inactive — the advanced topic is not being attempted/scheduled.
+ *   2. not_blocked        — the prerequisite is solid on both axes (classify).
+ *   3. active_exists      — a Loop D row is already active for this (subject,
+ *                            dependent chapter).
+ *   4. cooldown           — a terminal Loop D row for this subject within
+ *                            cooldown_days (per-subject, mirrors Loop C cadence).
+ *   5. ceiling_spent      — Loop A already used the student's daily slot (X3).
+ *   6. open               — all gates pass.
+ */
+export function planBlockedPrerequisiteIntervention(
+  input: PlanBlockedPrerequisiteInput,
+): PlanBlockedPrerequisiteResult {
+  const deny = (
+    decision: LoopDPlanDecision,
+    reason: BlockReason = 'none',
+  ): PlanBlockedPrerequisiteResult => ({
+    decision,
+    open: false,
+    reason,
+    candidate: null,
+  });
+
+  if (input == null || input.prerequisite == null) {
+    return deny('not_blocked');
+  }
+
+  // 1. Dependent-topic gate — no block matters if the student is not on it.
+  if (input.dependentIsActive !== true) {
+    return deny('dependent_inactive');
+  }
+
+  // 2. Block classification (the two canonical floors).
+  const classification = classifyPrerequisiteBlock(input.prerequisite);
+  if (!classification.blocked) {
+    return deny('not_blocked');
+  }
+
+  const subject = input.prerequisite.subjectCode;
+  const dependentChapter = input.prerequisite.dependentChapterNumber;
+  const active = input.activeInterventions ?? [];
+
+  // 3. One active blocked-prerequisite row per (student, subject, dependent ch).
+  const hasActive = active.some(
+    (a) =>
+      a.triggerSignal === 'blocked_prerequisite' &&
+      a.subjectCode === subject &&
+      a.chapterNumber === dependentChapter,
+  );
+  if (hasActive) {
+    return deny('active_exists', classification.reason);
+  }
+
+  // 4. Subject cooldown — no new Loop D row for this subject within cooldown_days
+  //    of a terminal one (per-subject, conservative; mirrors Loop C cadence).
+  if (
+    inCooldownForSubject(
+      'blocked_prerequisite',
+      subject,
+      input.recentTerminalInterventions ?? [],
+      BLOCKED_PREREQUISITE_RULES.cooldown_days,
+      input.nowMs,
+    )
+  ) {
+    return deny('cooldown', classification.reason);
+  }
+
+  // 5. Cross-loop daily ceiling — A outranks D (A > D > C > B). If A spent the
+  //    slot, D defers to a subsequent night (the block signal persists).
+  if (input.ceilingAlreadySpent === true) {
+    return deny('ceiling_spent', classification.reason);
+  }
+
+  return {
+    decision: 'open',
+    open: true,
+    reason: classification.reason,
+    candidate: {
+      loop: 'D',
+      subjectCode: subject,
+      chapterNumber: dependentChapter,
+      severity: classification.deficit,
+    },
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // CROSS-LOOP ARBITER — the anti-storm core (spec §5 / Decision X3)
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -806,8 +1163,15 @@ export interface ArbiterResult {
   reason: ArbiterReason;
 }
 
-/** Loop precedence: A (most acute) > C > B (Decision X3). Lower rank wins. */
-const LOOP_PRECEDENCE: Record<LoopId, number> = { A: 0, C: 1, B: 2 };
+/**
+ * Loop precedence: A (most acute) > D (causal block) > C > B (Decision X3 +
+ * Slice-1 Loop D insertion). Lower rank wins. The pre-existing A > C > B order
+ * is preserved exactly; D is inserted between A and C (see the Loop D header for
+ * the pedagogical rationale). The ceiling logic and the sort itself are
+ * unchanged — D simply joins the same precedence comparison, so the anti-storm
+ * ≤1-new-intervention-per-student-per-day guarantee is untouched.
+ */
+const LOOP_PRECEDENCE: Record<LoopId, number> = { A: 0, D: 1, C: 2, B: 3 };
 
 /**
  * Cross-loop arbiter — given the candidates the three loops produced for ONE
@@ -845,7 +1209,8 @@ export function arbitrateInterventions(
 
   const list = (candidates ?? []).filter(
     (c): c is InterventionCandidate =>
-      c != null && (c.loop === 'A' || c.loop === 'B' || c.loop === 'C'),
+      c != null &&
+      (c.loop === 'A' || c.loop === 'B' || c.loop === 'C' || c.loop === 'D'),
   );
   if (list.length === 0) {
     return { selected: null, reason: 'no_candidates' };

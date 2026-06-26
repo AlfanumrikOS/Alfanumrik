@@ -129,6 +129,15 @@ import {
   type OpenExpectation,
   type StructuredAssistantPayload,
 } from '@/lib/learn/foxy-expectations';
+// Digital Twin + Knowledge Graph (Slice 1). Flag-gated by ff_digital_twin_v1
+// (default OFF); helpers are pure imports so OFF stays byte-identical to legacy.
+import {
+  buildTwinContext,
+  renderTwinPromptSection,
+  type TwinContext,
+  type TwinMemoryHighlightInput,
+  type TwinSnapshotInput,
+} from '@/lib/learn/build-twin-context';
 import { z } from 'zod';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -1138,6 +1147,53 @@ async function loadCognitiveContext(
       studentId,
     });
     return EMPTY_COGNITIVE_CONTEXT;
+  }
+}
+
+// ─── Helper: load digital-twin context (Slice 1, flag-gated) ─────────────────
+//
+// Reads the student's most-recent learner_twin_snapshots row plus the most
+// recent learner_twin_memory highlights and folds them into a compact, PII-free
+// TwinContext (see src/lib/learn/build-twin-context.ts). CALLED ONLY when
+// ff_digital_twin_v1 is ON — when OFF the route never invokes this, so there is
+// no extra DB round-trip and behavior is byte-identical to today.
+//
+// Best-effort: any failure returns null so Foxy continues exactly as before.
+// P13: selects IDs + numbers + enum codes only; never names / emails / phones.
+async function loadTwinContextForFoxy(studentId: string): Promise<TwinContext | null> {
+  try {
+    const { data: snapRow } = await supabaseAdmin
+      .from('learner_twin_snapshots')
+      .select(
+        'snapshot_date, mastery_by_topic, decay_state, dominant_error_types, misconception_cluster_ids, cohort_percentile',
+      )
+      .eq('student_id', studentId)
+      .order('snapshot_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!snapRow) return null;
+
+    let highlights: TwinMemoryHighlightInput[] = [];
+    try {
+      const { data: memRows } = await supabaseAdmin
+        .from('learner_twin_memory')
+        .select('summary_code, concept_topic_id, misconception_id')
+        .eq('student_id', studentId)
+        .order('occurred_at', { ascending: false })
+        .limit(10);
+      highlights = (memRows ?? []) as TwinMemoryHighlightInput[];
+    } catch {
+      // Non-fatal — snapshot alone is enough to build context.
+    }
+
+    return buildTwinContext(snapRow as TwinSnapshotInput, highlights);
+  } catch (err) {
+    logger.warn('foxy_twin_snapshot_load_failed', {
+      // P13: no studentId at warn-level here.
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
   }
 }
 
@@ -3246,6 +3302,42 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     openExpectation = await loadOpenExpectation(supabaseAdmin, resolvedSessionId);
   }
 
+  // 7d. Digital Twin + Knowledge Graph (Slice 1) — flag-gated, default OFF.
+  //
+  // When `ff_digital_twin_v1` is OFF (the default) this is a STRICT no-op: no
+  // DB read happens, `twinPromptSection` stays '' and the cognitive_context_
+  // section below is byte-identical to today. When ON AND a snapshot exists, we
+  // append a compact, PII-free LONGITUDINAL LEARNING SIGNALS block (decay,
+  // error tendencies, misconception clusters, cohort percentile, episodic
+  // highlights) to the existing cognitive context — same injection family as
+  // buildCognitivePromptSection, so the P12 grounding/abstain rails are
+  // untouched. P13: IDs / numbers / codes only — never names / emails / phones.
+  let twinPromptSection = '';
+  try {
+    const twinEnabled = await isFeatureEnabled('ff_digital_twin_v1', {
+      role: 'student',
+      userId: auth.userId!,
+    });
+    if (twinEnabled) {
+      const twin = await loadTwinContextForFoxy(studentId);
+      if (twin && !twin.isEmpty) {
+        twinPromptSection = `\n\n${renderTwinPromptSection(twin)}`;
+        logger.info('foxy.twin_context.injected', {
+          // P13: counts only — no studentId, no topic ids, no codes.
+          weakCount: twin.weakTopics.length,
+          decayedCount: twin.decayedTopics.length,
+          highlightCount: twin.highlights.length,
+        });
+      }
+    }
+  } catch (twinErr) {
+    // Non-fatal — Foxy works without twin context.
+    logger.warn('foxy_twin_context_unavailable', {
+      // P13: no studentId at warn-level here.
+      error: twinErr instanceof Error ? twinErr.message : String(twinErr),
+    });
+  }
+
   // 8. Feature-flag gated: use grounded-answer service OR legacy inline flow.
   // `ff_grounded_ai_foxy` is the Phase 3 kill switch. When OFF we fall back to
   // the existing intent-router (src/lib/ai/workflows/*) which has been the
@@ -3917,7 +4009,11 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         academic_goal_section: buildAcademicGoalSection(academicGoal, mode, {
           useExpandedPersona,
         }),
-        cognitive_context_section: buildCognitivePromptSection(cognitiveCtx),
+        // Digital Twin Slice 1: when ff_digital_twin_v1 is ON and a snapshot
+        // exists, `twinPromptSection` carries the LONGITUDINAL LEARNING SIGNALS
+        // block appended to the cognitive context. When OFF (default) it is ''
+        // → byte-identical to today.
+        cognitive_context_section: buildCognitivePromptSection(cognitiveCtx) + twinPromptSection,
         // Phase 2: curated misconception ontology — fires the
         // MISCONCEPTION_REPAIR branch in foxy_tutor_v1 with real data.
         // Empty string when no misconceptions observed (template-safe).

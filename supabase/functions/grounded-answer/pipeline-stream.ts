@@ -54,6 +54,11 @@ import {
 import { fireShadowAndForget, recordShadowTextFromStash } from './mol-shadow.ts';
 import { extractCitations } from './citations.ts';
 import { computeConfidence } from './confidence.ts';
+// Digital Twin + Knowledge Graph (Slice 1). Flag-gated cross-subject retrieval
+// widening — mirrors pipeline.ts. Strict no-op when ff_digital_twin_v1 is OFF
+// (default) or no transfer edge exists. See transfer-retrieval.ts.
+import { isDigitalTwinEnabled } from './_twin-flag.ts';
+import { retrieveTransferChunks, mergeTransferChunks } from './transfer-retrieval.ts';
 import { loadTemplate, resolveTemplate, hashPrompt } from './prompts/index.ts';
 import { FOXY_STRUCTURED_OUTPUT_PROMPT } from './structured-prompt.ts';
 import {
@@ -390,6 +395,22 @@ export async function* runStreamingPipeline(
     }
   } else {
     chunks = rawChunks.slice(0, request.retrieval.match_count);
+  }
+
+  // Digital Twin Slice 1 (flag-gated, no-op when OFF): widen retrieval along
+  // EXPLICIT concept_edges transfer edges into a DIFFERENT subject (same grade).
+  // Soft-mode only. NEVER relaxes curriculum_guard / abstain — only ADDS curated
+  // cross-subject chunks. No-op when the flag is OFF or no transfer edge exists.
+  if (request.mode === 'soft' && (await isDigitalTwinEnabled(sb))) {
+    const transferChunks = await retrieveTransferChunks(sb, {
+      query: request.query,
+      embedding,
+      scope: request.scope,
+      minSimilarity,
+    });
+    if (transferChunks.length > 0) {
+      chunks = mergeTransferChunks(chunks, transferChunks);
+    }
   }
   ctx.chunks = chunks;
 

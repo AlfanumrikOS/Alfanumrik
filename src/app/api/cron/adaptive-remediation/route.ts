@@ -57,6 +57,7 @@ import {
   isFeatureEnabled,
   ADAPTIVE_REMEDIATION_FLAGS,
   ADAPTIVE_LOOPS_BC_FLAGS,
+  DIGITAL_TWIN_FLAGS,
 } from '@/lib/feature-flags';
 import { deriveSignals, PULSE_THRESHOLDS } from '@/lib/pulse/signals';
 import { masteryEventsFromRows, snapshotsFromMasteryRows } from '@/lib/pulse/pulse-server';
@@ -74,14 +75,17 @@ import {
 } from '@/lib/learn/recovery-evaluation';
 import {
   ADAPTIVE_LOOPS_BC_RULES,
+  BLOCKED_PREREQUISITE_RULES,
   planInactivityIntervention,
   planConcentrationIntervention,
+  planBlockedPrerequisiteIntervention,
   arbitrateInterventions,
   INACTIVITY_SENTINEL_SUBJECT,
   INACTIVITY_SENTINEL_CHAPTER,
   type ActiveInterventionRef,
   type TerminalInterventionRef,
   type InterventionCandidate,
+  type BlockReason,
 } from '@/lib/learn/adaptive-loops-rules';
 import {
   evaluateInactivityReturn,
@@ -122,6 +126,16 @@ const BASE_RHYTHM_QUEUE_SIZE = 7;
 /** Stamped into trigger_snapshot so mid-flight threshold changes are auditable. */
 const RULES_VERSION = 'loop-a-v1';
 const RULES_VERSION_BC = 'loops-bc-v1';
+const RULES_VERSION_D = 'loop-d-v1';
+
+/** Loop D: SM-2 strength used when reproducing the snapshot decay in TS. Strength
+ *  1.0 makes predictRetention(days,1)=exp(-days), so days=-ln(decay) reproduces
+ *  the snapshot retention EXACTLY — TS classifyPrerequisiteBlock then mirrors the
+ *  SQL detect_blocked_dependents verdict from the same numbers (no second read). */
+const LOOP_D_STRENGTH = 1.0;
+/** Loop D: a dependent topic counts as "actively attempted" if the student
+ *  touched it within this many days (mirrors the twin-builder active window). */
+const LOOP_D_DEPENDENT_ACTIVE_DAYS = 14;
 
 /** Generic 500 body (architect cond 1): never echo `err.message` to the caller. */
 const GENERIC_500_BODY = 'internal_error';
@@ -244,6 +258,7 @@ interface InjectSummary {
   injectedCliff: number;
   injectedInactivity: number;
   injectedConcentration: number;
+  injectedBlockedPrereq: number;
   deduped: number;
   skippedNullTarget: number;
   blocked: number;
@@ -277,6 +292,7 @@ async function runInjectPhase(
     injectedCliff: 0,
     injectedInactivity: 0,
     injectedConcentration: 0,
+    injectedBlockedPrereq: 0,
     deduped: 0,
     skippedNullTarget: 0,
     blocked: 0,
@@ -293,9 +309,15 @@ async function runInjectPhase(
   const bcGloballyOn = await isFeatureEnabled(ADAPTIVE_LOOPS_BC_FLAGS.V1, {
     environment,
   });
+  // Loop D (blocked_prerequisite, Digital Twin Slice 1) has its OWN independent
+  // kill switch (ff_digital_twin_v1). When OFF, Loop D contributes ZERO
+  // candidates and behavior is byte-identical to today.
+  const twinGloballyOn = await isFeatureEnabled(DIGITAL_TWIN_FLAGS.V1, {
+    environment,
+  });
 
-  // Both loops off → inject is a global no-op (same shape Loop A reported).
-  if (!cliffGloballyOn && !bcGloballyOn) {
+  // ALL inject loops off → inject is a global no-op (same shape Loop A reported).
+  if (!cliffGloballyOn && !bcGloballyOn && !twinGloballyOn) {
     return { ...summary, skipped: 'flag_off' };
   }
 
@@ -449,7 +471,9 @@ async function runInjectPhase(
   // NOT NULL in prod + every legacy Loop A row is mastery_cliff, so this only
   // normalizes the edge case and keeps guardrail 5 / cooldown matching robust).
   const normSignal = (s: string | null | undefined): ActiveInterventionRef['triggerSignal'] =>
-    s === 'inactivity' || s === 'at_risk_concentration' ? s : 'mastery_cliff';
+    s === 'inactivity' || s === 'at_risk_concentration' || s === 'blocked_prerequisite'
+      ? s
+      : 'mastery_cliff';
   const activesByStudent = new Map<string, ActiveInterventionRef[]>();
   for (const r of (activeRes.data ?? []) as Array<{
     student_id: string; subject_code: string; chapter_number: number; trigger_signal: string | null;
@@ -690,7 +714,34 @@ async function runInjectPhase(
       }
     }
 
-    // ── Arbitrate: ONE winner per student per night (ceiling=1, A > C > B). ──
+    // ── Loop D candidate (blocked_prerequisite — Digital Twin Slice 1) ──────
+    // Gated on its OWN flag (ff_digital_twin_v1). When OFF, zero candidates are
+    // produced and the arbiter sees exactly the A/B/C set it would today.
+    const blockedPrereqContexts = new Map<string, BlockedPrereqContext>();
+    if (twinGloballyOn) {
+      const enabledForStudent = await isFeatureEnabled(DIGITAL_TWIN_FLAGS.V1, {
+        userId: student.auth_user_id,
+        role: 'student',
+        environment,
+      });
+      if (enabledForStudent) {
+        const dResult = await buildBlockedPrerequisiteCandidates(
+          admin,
+          summary,
+          student,
+          activeRefs,
+          terminalRefs,
+          nowMs,
+        );
+        for (const c of dResult.candidates) candidates.push(c);
+        for (const [k, v] of dResult.contexts) blockedPrereqContexts.set(k, v);
+      }
+    }
+
+    // ── Arbitrate: ONE winner per student per night (ceiling=1, A > D > C > B). ─
+    // The SAME single arbiter call decides across A/B/C/D, so the anti-storm
+    // ceiling (≤1 new intervention/student/night) and the precedence are
+    // enforced centrally — Loop D never bypasses it.
     if (candidates.length === 0) continue;
     const arb = arbitrateInterventions(candidates, false);
     if (!arb.selected) continue;
@@ -722,6 +773,12 @@ async function runInjectPhase(
         nowMs,
       });
       if (opened) summary.injectedConcentration++;
+    } else if (winner.loop === 'D') {
+      const ctx = blockedPrereqContexts.get(`${winner.subjectCode}:${winner.chapterNumber}`);
+      if (ctx) {
+        const opened = await openBlockedPrerequisiteIntervention(admin, summary, student, ctx, nowMs);
+        if (opened) summary.injectedBlockedPrereq++;
+      }
     }
   }
 
@@ -1017,6 +1074,302 @@ async function openConcentrationIntervention(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// LOOP D — blocked_prerequisite candidate build + intervention open (Slice 1)
+// ════════════════════════════════════════════════════════════════════════════
+
+/** One row from the detect_blocked_dependents(p_student_id, p_decay_floor,
+ *  p_mastery_floor) RPC. IDs + numbers only (P13). */
+interface BlockedDependentRow {
+  blocked_topic_id: string;
+  blocking_prerequisite_id: string;
+  prerequisite_mastery: number | null;
+  prerequisite_decay: number | null;
+  edge_strength: number | null;
+  edge_source: string | null;
+}
+
+/** Everything openBlockedPrerequisiteIntervention needs for the winning Loop D
+ *  candidate, captured at plan time (keyed `${subjectCode}:${dependentChapter}`). */
+interface BlockedPrereqContext {
+  subjectCode: string; // dependent subject, lowercase
+  dependentChapter: number;
+  prereqChapter: number;
+  reason: BlockReason;
+  prereqMastery: number | null;
+  prereqDecay: number | null;
+  edgeStrength: number | null;
+  edgeSource: string | null;
+  severity: number; // classification.deficit — within-loop tie-break
+}
+
+interface CurriculumTopicMetaRow {
+  id: string;
+  subject_id: string | null;
+  chapter_number: number | null;
+}
+
+interface DependentTouchRow {
+  topic_id: string;
+  last_practiced_at: string | null;
+  last_attempted_at: string | null;
+}
+
+/**
+ * Build the Loop D (blocked_prerequisite) arbiter candidates for one student.
+ * Calls the architect-owned detect_blocked_dependents RPC (floors SOURCED from
+ * BLOCKED_PREREQUISITE_RULES — never hardcoded), resolves each blocked edge's
+ * dependent/prerequisite topic to (subject_code, chapter_number) via
+ * curriculum_topics, and runs every edge through the frozen pure planner
+ * planBlockedPrerequisiteIntervention(). Only `open` plans yield a candidate.
+ *
+ * classifyPrerequisiteBlock (inside the planner) is fed from the RPC's OWN
+ * snapshot-derived numbers so the TS verdict mirrors the SQL verdict exactly:
+ * prereqPKnow = prerequisite_mastery, and the decay axis is reproduced by
+ * strength=1 + days=-ln(decay) (predictRetention(days,1) === decay). No second
+ * data source, no divergence from what the RPC decided on.
+ *
+ * Never throws — a failed RPC/lookup degrades to zero candidates (Loop D simply
+ * contributes nothing tonight; A/B/C are unaffected). P13: IDs + numbers only.
+ */
+async function buildBlockedPrerequisiteCandidates(
+  admin: SupabaseClient,
+  summary: InjectSummary,
+  student: StudentRow,
+  activeRefs: ActiveInterventionRef[],
+  terminalRefs: TerminalInterventionRef[],
+  nowMs: number,
+): Promise<{ candidates: InterventionCandidate[]; contexts: Map<string, BlockedPrereqContext> }> {
+  const out = {
+    candidates: [] as InterventionCandidate[],
+    contexts: new Map<string, BlockedPrereqContext>(),
+  };
+
+  const { data: blockedRows, error: rpcErr } = await admin.rpc('detect_blocked_dependents', {
+    p_student_id: student.id,
+    p_decay_floor: BLOCKED_PREREQUISITE_RULES.decay_floor,
+    p_mastery_floor: BLOCKED_PREREQUISITE_RULES.mastery_floor,
+  });
+  if (rpcErr) {
+    summary.errors++;
+    logger.warn('adaptive_remediation: detect_blocked_dependents failed', { error: rpcErr.message });
+    return out;
+  }
+  const edges = (blockedRows ?? []) as BlockedDependentRow[];
+  if (edges.length === 0) return out;
+
+  // Resolve (subject, chapter) for every topic the RPC referenced.
+  const topicIds = [
+    ...new Set(
+      edges.flatMap((e) => [e.blocked_topic_id, e.blocking_prerequisite_id]).filter((x): x is string => !!x),
+    ),
+  ];
+  const { data: topicRows, error: topicErr } = await admin
+    .from('curriculum_topics')
+    .select('id, subject_id, chapter_number')
+    .in('id', topicIds);
+  if (topicErr) {
+    summary.errors++;
+    logger.warn('adaptive_remediation: curriculum_topics lookup failed', { error: topicErr.message });
+    return out;
+  }
+  const topicMeta = new Map<string, CurriculumTopicMetaRow>();
+  for (const t of (topicRows ?? []) as CurriculumTopicMetaRow[]) topicMeta.set(t.id, t);
+
+  const subjectIds = [
+    ...new Set(
+      [...topicMeta.values()].map((t) => t.subject_id).filter((x): x is string => !!x),
+    ),
+  ];
+  const subjectCodeById = new Map<string, string>();
+  if (subjectIds.length > 0) {
+    const { data: subjRows } = await admin.from('subjects').select('id, code').in('id', subjectIds);
+    for (const s of (subjRows ?? []) as Array<{ id: string; code: string | null }>) {
+      if (s.code) subjectCodeById.set(s.id, s.code);
+    }
+  }
+
+  // dependentIsActive proxy: a recent concept_mastery touch on the dependent topic.
+  const dependentTopicIds = [
+    ...new Set(edges.map((e) => e.blocked_topic_id).filter((x): x is string => !!x)),
+  ];
+  const touchByTopic = new Map<string, DependentTouchRow>();
+  if (dependentTopicIds.length > 0) {
+    const { data: cmRows } = await admin
+      .from('concept_mastery')
+      .select('topic_id, last_practiced_at, last_attempted_at')
+      .eq('student_id', student.id)
+      .in('topic_id', dependentTopicIds);
+    for (const r of (cmRows ?? []) as DependentTouchRow[]) touchByTopic.set(r.topic_id, r);
+  }
+  const dependentActiveSinceMs = nowMs - LOOP_D_DEPENDENT_ACTIVE_DAYS * MS_PER_DAY;
+
+  // Best candidate per dependent (subject:chapter) key — keep the worst block.
+  for (const e of edges) {
+    const depMeta = topicMeta.get(e.blocked_topic_id);
+    const preMeta = topicMeta.get(e.blocking_prerequisite_id);
+    if (!depMeta || !preMeta || !depMeta.subject_id) continue;
+    const subjectCode = subjectCodeById.get(depMeta.subject_id);
+    if (!subjectCode) continue;
+    const dependentChapter = depMeta.chapter_number;
+    if (typeof dependentChapter !== 'number' || !Number.isFinite(dependentChapter) || dependentChapter < 1) {
+      continue; // need a real chapter to key the intervention row
+    }
+    const prereqChapter =
+      typeof preMeta.chapter_number === 'number' && Number.isFinite(preMeta.chapter_number)
+        ? preMeta.chapter_number
+        : 0;
+
+    const touch = touchByTopic.get(e.blocked_topic_id);
+    const lastTouchMs = touch
+      ? Math.max(
+          touch.last_practiced_at ? Date.parse(touch.last_practiced_at) : NaN,
+          touch.last_attempted_at ? Date.parse(touch.last_attempted_at) : NaN,
+        )
+      : NaN;
+    const dependentIsActive = Number.isFinite(lastTouchMs) && lastTouchMs >= dependentActiveSinceMs;
+
+    // Reproduce the RPC's snapshot decay in TS (strength=1, days=-ln(decay)).
+    const prereqMastery = finiteOrNull(e.prerequisite_mastery);
+    const prereqDecay = finiteOrNull(e.prerequisite_decay);
+    let prereqDaysSinceStudy: number | null = null;
+    if (prereqDecay != null) {
+      const clamped = Math.min(1, Math.max(1e-6, prereqDecay));
+      prereqDaysSinceStudy = -Math.log(clamped);
+    }
+
+    const subjectLc = subjectCode.toLowerCase();
+    const plan = planBlockedPrerequisiteIntervention({
+      prerequisite: {
+        subjectCode: subjectLc,
+        prereqChapterNumber: prereqChapter,
+        dependentChapterNumber: dependentChapter,
+        prereqPKnow: prereqMastery,
+        prereqDaysSinceStudy,
+        prereqStrength: LOOP_D_STRENGTH,
+      },
+      dependentIsActive,
+      activeInterventions: activeRefs,
+      recentTerminalInterventions: terminalRefs,
+      // The arbiter is the single ceiling authority (A > D > C > B) — pass false.
+      ceilingAlreadySpent: false,
+      nowMs,
+    });
+    if (!plan.open || !plan.candidate) continue;
+
+    const key = `${subjectLc}:${dependentChapter}`;
+    const severity =
+      typeof plan.candidate.severity === 'number' && Number.isFinite(plan.candidate.severity)
+        ? plan.candidate.severity
+        : 0;
+    const existing = out.contexts.get(key);
+    if (existing && existing.severity >= severity) continue; // keep the worst block
+    out.contexts.set(key, {
+      subjectCode: subjectLc,
+      dependentChapter,
+      prereqChapter,
+      reason: plan.reason,
+      prereqMastery,
+      prereqDecay,
+      edgeStrength: finiteOrNull(e.edge_strength),
+      edgeSource: e.edge_source ?? null,
+      severity,
+    });
+  }
+
+  // Emit exactly one candidate per dependent key (the worst block kept above).
+  for (const ctx of out.contexts.values()) {
+    out.candidates.push({
+      loop: 'D',
+      subjectCode: ctx.subjectCode,
+      chapterNumber: ctx.dependentChapter,
+      severity: ctx.severity,
+    });
+  }
+  return out;
+}
+
+/**
+ * Open a Loop D blocked-prerequisite intervention. The row is keyed by the
+ * DEPENDENT (subject, chapter) — the topic the student is stuck on — while the
+ * trigger_snapshot records the blocking PREREQUISITE chapter + reason (what to
+ * revisit). Slice 1 is detection-only: we land the durable active row + a
+ * metadata-only audit trail (P13). The student-facing surfacing and the
+ * blocked_prerequisite verify evaluator land in a later slice; the verify phase
+ * already counts these rows as pending (never mis-routes them). Returns true on
+ * a real insert (not a 23505 dedupe).
+ */
+async function openBlockedPrerequisiteIntervention(
+  admin: SupabaseClient,
+  summary: InjectSummary,
+  student: StudentRow,
+  ctx: BlockedPrereqContext,
+  nowMs: number,
+): Promise<boolean> {
+  const interventionId = randomUUID();
+  const subjectCode = ctx.subjectCode.toLowerCase();
+  const verifyByIso = new Date(
+    nowMs + BLOCKED_PREREQUISITE_RULES.return_window_days * MS_PER_DAY,
+  ).toISOString();
+
+  const snapshot: Record<string, unknown> = {
+    prereqChapterNumber: ctx.prereqChapter,
+    prereqMastery: ctx.prereqMastery,
+    prereqDecay: ctx.prereqDecay,
+    blockReason: ctx.reason,
+    edgeStrength: ctx.edgeStrength,
+    edgeSource: ctx.edgeSource,
+    evaluatedAtIso: new Date(nowMs).toISOString(),
+    rulesVersion: RULES_VERSION_D,
+  };
+
+  const { error: insertErr } = await admin
+    .from('adaptive_interventions')
+    .insert({
+      id: interventionId,
+      student_id: student.id,
+      subject_code: subjectCode,
+      chapter_number: ctx.dependentChapter,
+      trigger_signal: 'blocked_prerequisite',
+      trigger_snapshot: snapshot,
+      status: 'active',
+      verify_by: verifyByIso,
+    });
+  if (insertErr) {
+    if ((insertErr as { code?: string }).code === '23505') {
+      summary.deduped++;
+    } else {
+      summary.errors++;
+      logger.error('adaptive_remediation: blocked_prerequisite intervention insert failed', {
+        studentId: student.id,
+        error: insertErr.message,
+      });
+    }
+    return false;
+  }
+  summary.injected++;
+
+  // Metadata-only audit (REG-127/REG-133 posture) — chapters + reason + version,
+  // never any PII.
+  await auditLog({
+    actor_id: null,
+    actor_role: 'system',
+    action: 'system.blocked_prerequisite_injected',
+    target_entity: 'adaptive_interventions',
+    target_id: interventionId,
+    metadata: {
+      subject_code: subjectCode,
+      dependent_chapter: ctx.dependentChapter,
+      prereq_chapter: ctx.prereqChapter,
+      block_reason: ctx.reason,
+      edge_source: ctx.edgeSource,
+      verify_by: verifyByIso,
+      rules_version: RULES_VERSION_D,
+    },
+  });
+  return true;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // ESCALATION RESOLUTION (shared by Loop A verify + Loop C inject) — VERBATIM
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -1270,8 +1623,15 @@ async function runVerifyPhase(
   // mastery observations.
   const hasConcentration = rows.some((r) => r.trigger_signal === 'at_risk_concentration');
   const hasInactivity = rows.some((r) => r.trigger_signal === 'inactivity');
+  // 'blocked_prerequisite' (Loop D) has NO verify evaluator yet (Slice 1 is
+  // detection-only), so it must NOT make hasCliff true — otherwise the cliff
+  // observation fetch would run just for D rows. The dispatch below routes D
+  // explicitly; anything NOT B/C/D defaults to the cliff branch.
   const hasCliff = rows.some(
-    (r) => r.trigger_signal !== 'at_risk_concentration' && r.trigger_signal !== 'inactivity',
+    (r) =>
+      r.trigger_signal !== 'at_risk_concentration' &&
+      r.trigger_signal !== 'inactivity' &&
+      r.trigger_signal !== 'blocked_prerequisite',
   );
 
   // Loop A + Loop C verify both read mastery (events + projection rollup).
@@ -1367,6 +1727,12 @@ async function runVerifyPhase(
       await verifyInactivityRow(admin, summary, row, student, activityByUser, nowMs, nowIso);
     } else if (row.trigger_signal === 'at_risk_concentration') {
       await verifyConcentrationRow(admin, summary, row, student, subjectSnapshotsByUser, nowMs, nowIso);
+    } else if (row.trigger_signal === 'blocked_prerequisite') {
+      // Loop D (Digital Twin Slice 1) is detection-only: the blocked-prerequisite
+      // verify evaluator lands in a later slice. The row stays active (durable)
+      // and is counted pending — NEVER mis-routed into the mastery-cliff evaluator
+      // (whose snapshot fields it does not carry).
+      summary.pending++;
     } else {
       // mastery_cliff (default — preserves Loop A behavior).
       await verifyCliffRow(admin, summary, row, student, observationsByUser, nowMs, nowIso);

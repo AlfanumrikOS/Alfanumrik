@@ -47,6 +47,12 @@ vi.mock('@/lib/feature-flags', () => ({
   ADAPTIVE_REMEDIATION_FLAGS: { V1: 'ff_adaptive_remediation_v1' },
   // Loops B/C share ONE flag (spec Decision X1), independent of Loop A's.
   ADAPTIVE_LOOPS_BC_FLAGS: { V1: 'ff_adaptive_loops_bc_v1' },
+  // Loop D (blocked_prerequisite, Digital Twin Slice 1) has its OWN flag. The
+  // route reads DIGITAL_TWIN_FLAGS.V1; this mock must expose it or the route's
+  // inject phase throws on `undefined.V1`. `loopAOnlyFlags` returns false for
+  // this flag, so Loop D stays OFF and every existing Loop A/B/C assertion is
+  // unchanged (default-OFF identity).
+  DIGITAL_TWIN_FLAGS: { V1: 'ff_digital_twin_v1' },
 }));
 
 /**
