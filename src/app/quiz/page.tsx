@@ -433,28 +433,28 @@ export default function QuizPage() {
   }
 
   const startQuiz = useCallback(async (opts?: {
-    subject: string;
-    difficulty: number | null;
-    questionCount: number;
-    quizMode: QuizMode;
-    examTimeLimit: number;
-    chapterNumber: number | null;
+    subject?: string;
+    difficulty?: number | null;
+    questionCount?: number;
+    quizMode?: QuizMode;
+    examTimeLimit?: number;
+    chapterNumber?: number | null;
     questionTypes?: string[];
   }) => {
     // When called from QuizSetup, apply the selected options to page state
     const subj = opts?.subject ?? selectedSubject;
-    const diff = opts?.difficulty ?? selectedDifficulty;
+    const diff = opts?.difficulty !== undefined ? opts.difficulty : selectedDifficulty;
     const qCount = opts?.questionCount ?? questionCount;
-    const chapter = opts?.chapterNumber ?? selectedChapter;
+    const chapter = opts?.chapterNumber !== undefined ? opts.chapterNumber : selectedChapter;
     const qTypes = opts?.questionTypes ?? selectedQuestionTypes;
     if (opts) {
-      setSelectedSubject(opts.subject);
-      setSelectedDifficulty(opts.difficulty);
-      setQuestionCount(opts.questionCount);
-      setQuizMode(opts.quizMode);
-      setExamTimeLimit(opts.examTimeLimit);
-      setSelectedChapter(opts.chapterNumber);
-      setSelectedQuestionTypes(opts.questionTypes ?? ['mcq']);
+      if (opts.subject !== undefined) setSelectedSubject(opts.subject);
+      if (opts.difficulty !== undefined) setSelectedDifficulty(opts.difficulty);
+      if (opts.questionCount !== undefined) setQuestionCount(opts.questionCount);
+      if (opts.quizMode !== undefined) setQuizMode(opts.quizMode);
+      if (opts.examTimeLimit !== undefined) setExamTimeLimit(opts.examTimeLimit);
+      if (opts.chapterNumber !== undefined) setSelectedChapter(opts.chapterNumber);
+      if (opts.questionTypes !== undefined) setSelectedQuestionTypes(opts.questionTypes);
     }
     if (!subj || !student) return;
     setLoading(true);
@@ -479,11 +479,6 @@ export default function QuizPage() {
       });
 
       if (!result.success) {
-        // Explicit failure — show message instead of silent partial quiz.
-        // Make the message question-type aware: a Short Answer / Long Answer /
-        // NCERT Exercise pick that returns 0 should not look like "this whole
-        // subject is empty" — the user needs to know *which* type is unavailable
-        // so they can switch to MCQ Only.
         const onlyMcq = qTypes.length === 1 && qTypes[0] === 'mcq';
         const typeLabel = onlyMcq
           ? ''
@@ -496,6 +491,23 @@ export default function QuizPage() {
                 : qTypes[0] === 'ncert'
                   ? (isHi ? ' NCERT ' : ' NCERT ')
                   : '';
+
+        // Auto-reduce: when the pool has ≥5 MCQ questions but fewer than
+        // requested, silently retry with the largest valid count that fits.
+        // Guard (autoCount !== qCount) prevents infinite re-entry.
+        const VALID_COUNTS_ASC = [5, 10, 15, 20] as const;
+        const autoCount = VALID_COUNTS_ASC
+          .filter(n => n <= result.returnedCount)
+          .at(-1);
+
+        if (onlyMcq && autoCount !== undefined && autoCount !== qCount) {
+          // Retry with reduced count — exit the current startQuiz invocation.
+          void startQuiz({ ...(opts ?? {}), questionCount: autoCount });
+          return;
+        }
+
+        // Hard error — auto-reduce not possible (pool < 5, non-MCQ, or already
+        // at the minimum valid count).
         if (result.returnedCount === 0) {
           setNoQuestionsError(true);
           setNoQuestionsMessage(
@@ -1176,9 +1188,10 @@ export default function QuizPage() {
           {isHi ? 'इस विषय में अभी प्रश्न नहीं हैं' : 'No questions available yet'}
         </h2>
         <p className="text-sm text-center max-w-xs" style={{ color: 'var(--text-2)' }}>
-          {isHi
-            ? `${errorSubMeta?.name ?? 'इस विषय'} के लिए पर्याप्त प्रश्न उपलब्ध नहीं हैं। कृपया कोई अन्य विषय या अध्याय चुनें।`
-            : `Not enough questions for ${errorSubMeta?.name ?? 'this subject'} right now. Try a different subject or chapter.`}
+          {noQuestionsMessage ||
+            (isHi
+              ? `${errorSubMeta?.name ?? 'इस विषय'} के लिए पर्याप्त प्रश्न उपलब्ध नहीं हैं। कृपया कोई अन्य विषय या अध्याय चुनें।`
+              : `Not enough questions for ${errorSubMeta?.name ?? 'this subject'} right now. Try a different subject or chapter.`)}
         </p>
         <div className="flex gap-3">
           <Button variant="primary" onClick={() => { setNoQuestionsError(false); }}>

@@ -87,6 +87,13 @@ export interface TodayQueueItem {
    *  Only fields already present on the action are surfaced; absent fields
    *  are omitted (never fabricated). */
   meta?: Record<string, unknown>;
+  /** English chapter title from curriculum_topics. Present for action types
+   *  that reference a specific chapter (start_quiz, continue_lesson,
+   *  revise_decayed_topic, introduce_new_topic). Absent otherwise. */
+  chapterTitle?: string;
+  /** Hindi chapter title (title_hi from curriculum_topics). Present when
+   *  chapterTitle is present and the DB row has a non-null title_hi. */
+  chapterTitleHi?: string;
 }
 
 /** The envelope `GET /api/v2/today` returns. */

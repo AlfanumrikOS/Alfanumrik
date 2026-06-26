@@ -10,12 +10,13 @@
  * Technical terms (XP, CBSE, Bloom's, ZPD) are intentionally NOT translated.
  *
  * Interpolation tokens supported in the strings below:
- *   {subject}   — bilingual subject display name (caller resolves the code)
- *   {dueCount}  — number of due SRS cards
- *   {days}      — days since a topic was last studied
- *   {progress}  — lesson completion percentage (no % sign in the token)
- *   {chapter}   — chapter number (integer, used by new_topic subtitle)
- *   {n}         — generic numeric (used by the minutes badge)
+ *   {subject}      — bilingual subject display name (caller resolves the code)
+ *   {chapterTitle} — chapter title suffix, e.g. " · Nutrition in Plants" (caller builds suffix)
+ *   {dueCount}     — number of due SRS cards
+ *   {days}         — days since a topic was last studied
+ *   {progress}     — lesson completion percentage (no % sign in the token)
+ *   {chapter}      — chapter number (integer, used by new_topic subtitle)
+ *   {n}            — generic numeric (used by the minutes badge)
  *
  * `deepLinkToHref` is the SINGLE place a parsed `TodayDeepLink` ({route, params})
  * becomes a URL string. Components never hand-build query strings.
@@ -98,8 +99,8 @@ const COPY: Record<string, CopyEntry> = {
     hi: 'एक टॉपिक दोहराएँ',
   },
   'today.item.revise_decayed_topic.subtitle': {
-    en: '{subject} · last studied {days} days ago',
-    hi: '{subject} · {days} दिन पहले पढ़ा',
+    en: '{subject}{chapterTitle} · last studied {days} days ago',
+    hi: '{subject}{chapterTitle} · {days} दिन पहले पढ़ा',
   },
 
   // ── Item: weak_topic_zpd ───────────────────────────────────────
@@ -108,8 +109,8 @@ const COPY: Record<string, CopyEntry> = {
     hi: 'आज की चुनौती',
   },
   'today.item.weak_topic_zpd.subtitle': {
-    en: 'Practice {subject} at your level',
-    hi: 'अपने स्तर पर {subject} का अभ्यास',
+    en: 'Practice {subject}{chapterTitle} at your level',
+    hi: 'अपने स्तर पर {subject}{chapterTitle} का अभ्यास',
   },
 
   // ── Item: continue_lesson ──────────────────────────────────────
@@ -118,8 +119,8 @@ const COPY: Record<string, CopyEntry> = {
     hi: 'अपना पाठ जारी रखें',
   },
   'today.item.continue_lesson.subtitle': {
-    en: '{subject} · {progress}% complete',
-    hi: '{subject} · {progress}% पूरा',
+    en: '{subject}{chapterTitle} · {progress}% complete',
+    hi: '{subject}{chapterTitle} · {progress}% पूरा',
   },
 
   // ── Item: weekly_dive_due ──────────────────────────────────────
@@ -148,8 +149,8 @@ const COPY: Record<string, CopyEntry> = {
     hi: 'अपना कमज़ोर टॉपिक अभ्यास करें',
   },
   'today.item.practice_weakest.subtitle': {
-    en: 'Strengthen {subject}',
-    hi: '{subject} मजबूत करें',
+    en: 'Strengthen {subject}{chapterTitle}',
+    hi: '{subject}{chapterTitle} मजबूत करें',
   },
 
   // ── Item: new_topic ────────────────────────────────────────────
