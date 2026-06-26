@@ -3996,9 +3996,9 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       model_preference: 'auto',
       max_tokens: MODE_MAX_TOKENS[mode] ?? 1024,
       temperature: 0.3,
-      // HOTFIX (2026-06-26): foxy_tutor_teach/exam/doubt_v1 not yet on prod Edge Function.
-      // Reverts to foxy_tutor_v1 until force-redeploy completes. See RC-1 comment above.
-      system_prompt_template: 'foxy_tutor_v1',
+      // RCA-FIX RC-1 (2026-06-26): route to mode-specific prompt so Claude
+      // receives exactly ONE output-format section per request.
+      system_prompt_template: selectFoxyPromptTemplate(mode),
       // Phase 2 of Foxy continuity fix (2026-05-18): native multi-turn array.
       // When flag is OFF, leave undefined → grounded-answer falls back to
       // single-user-message body. When ON, prepend prior turns to messages[].
