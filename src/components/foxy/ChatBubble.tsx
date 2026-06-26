@@ -128,7 +128,6 @@ export function ChatBubble({
   saved,
   gotIt,
 }: ChatBubbleProps) {
-  console.time('ChatBubble render');
   const { isHi } = useAuth();
   const isTutor = role === 'tutor';
   const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -146,7 +145,6 @@ export function ChatBubble({
   // Phase 1: the "⋯" overflow menu state for the new learning-action bar.
   const [overflowOpen, setOverflowOpen] = useState(false);
 
-  console.timeEnd('ChatBubble render');
   return (
     <div className="mb-4 w-full animate-slide-up">
       {/* Header row */}
@@ -347,7 +345,7 @@ export function ChatBubble({
           data-testid="report-issue-link"
           className="mt-1 pl-1 text-[10px] text-[var(--text-3)] underline underline-offset-2 transition hover:text-[var(--text-2)]"
         >
-          {isHi ? 'Is jawab mein problem report karein' : 'Report an issue with this answer'}
+          {isHi ? 'इस जवाब में समस्या रिपोर्ट करें' : 'Report an issue with this answer'}
         </button>
       )}
 

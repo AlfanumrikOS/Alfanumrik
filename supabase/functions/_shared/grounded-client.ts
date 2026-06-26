@@ -53,6 +53,13 @@ export interface GroundedRequest {
     temperature: number;
     system_prompt_template: string;
     template_variables: Record<string, string>;
+    /**
+     * Phase 2 Foxy continuity fix (2026-05-18): prior conversation turns passed
+     * natively to Claude for multi-turn coherence. Optional — omitting is
+     * byte-identical to legacy behavior (single user-message body).
+     * Added to shared client 2026-06-26 to match canonical types.ts (RC-16 fix).
+     */
+    conversation_turns?: Array<{ role: 'user' | 'assistant'; content: string }>;
   };
   retrieval: {
     match_count: number;

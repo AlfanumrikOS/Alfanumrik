@@ -28,6 +28,9 @@ import type {
   TodayQueueItem,
 } from '@/lib/today/types';
 
+/** Map of "subjectCode|chapterNumber" → { title, titleHi } from the DB. */
+type ChapterTitleMap = Map<string, { title: string; titleHi: string | null }>;
+
 /**
  * Split a `LearnerAction.url` into a parsed deep link. The url may be an
  * absolute path with an optional querystring (e.g.
@@ -194,6 +197,7 @@ function metaFor(action: LearnerAction): Record<string, unknown> | undefined {
 export function mapActionToTodayItem(
   action: LearnerAction,
   rank: number,
+  chapterTitles?: ChapterTitleMap,
 ): TodayQueueItem {
   const type = itemTypeFor(action);
   const presentation = TYPE_PRESENTATION[type];
@@ -207,6 +211,23 @@ export function mapActionToTodayItem(
 
   const meta = metaFor(action);
 
+  // Resolve chapter title from the pre-fetched map (O(1) lookup, no DB call here).
+  // Only chapter-anchored action types carry a subjectCode + chapterNumber.
+  let chapterTitle: string | undefined;
+  let chapterTitleHi: string | undefined;
+  if (chapterTitles) {
+    // All chapter-anchored action kinds have subjectCode + chapterNumber on their
+    // discriminated union variants. We read them via the action directly.
+    const anchor = action as { subjectCode?: string; chapterNumber?: number };
+    if (anchor.subjectCode !== undefined && anchor.chapterNumber !== undefined) {
+      const entry = chapterTitles.get(`${anchor.subjectCode}|${anchor.chapterNumber}`);
+      if (entry) {
+        chapterTitle = entry.title;
+        chapterTitleHi = entry.titleHi ?? undefined;
+      }
+    }
+  }
+
   const item: TodayQueueItem = {
     type,
     rank,
@@ -219,6 +240,12 @@ export function mapActionToTodayItem(
   };
   if (meta !== undefined) {
     item.meta = meta;
+  }
+  if (chapterTitle !== undefined) {
+    item.chapterTitle = chapterTitle;
+  }
+  if (chapterTitleHi !== undefined) {
+    item.chapterTitleHi = chapterTitleHi;
   }
   return item;
 }

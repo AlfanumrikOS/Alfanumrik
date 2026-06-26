@@ -24,6 +24,8 @@ interface ContextPanelProps {
   studentId: string | undefined;
   activeSubjectName: string;
   activeSubjectIcon: string;
+  /** Subject code forwarded to MasteryAwareness for per-subject nudge scoping. */
+  activeSubject?: string;
   onSuggest: (s: MasterySuggestion) => void;
   /** Mobile bottom-sheet open state (controlled by the Foxy page). */
   sheetOpen: boolean;
@@ -35,6 +37,7 @@ export default function ContextPanel({
   studentId,
   activeSubjectName,
   activeSubjectIcon,
+  activeSubject,
   onSuggest,
   sheetOpen,
   onSheetClose,
@@ -45,6 +48,7 @@ export default function ContextPanel({
       studentId={studentId}
       activeSubjectName={activeSubjectName}
       activeSubjectIcon={activeSubjectIcon}
+      activeSubject={activeSubject}
       onSuggest={onSuggest}
     />
   );

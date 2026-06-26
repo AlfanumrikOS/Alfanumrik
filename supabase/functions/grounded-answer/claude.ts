@@ -225,23 +225,28 @@ function claudeFailureLabel(kind: 'timeout' | 'server_error' | 'unknown'): strin
 }
 
 function resolveModelOrder(pref: 'haiku' | 'sonnet' | 'auto'): ModelTarget[] {
+  // RCA-FIX CRITICAL-1 (2026-06-26): Foxy system prompt, JSON output contract,
+  // and CBSE pedagogy decision tree are calibrated for Claude behavior.
+  // GPT-4o-mini/GPT-4o are fallbacks only — they receive the same prompt verbatim
+  // which causes format/persona deviations. Anthropic models run first; OpenAI
+  // only activates if the Claude call fails (timeout / 5xx / auth).
   if (pref === 'haiku') {
     return [
-      { provider: 'openai', model: GPT_MINI_MODEL },
       { provider: 'anthropic', model: HAIKU_MODEL },
+      { provider: 'openai', model: GPT_MINI_MODEL },
     ];
   }
   if (pref === 'sonnet') {
     return [
-      { provider: 'openai', model: GPT_FULL_MODEL },
       { provider: 'anthropic', model: SONNET_MODEL },
+      { provider: 'openai', model: GPT_FULL_MODEL },
     ];
   }
   return [
-    { provider: 'openai', model: GPT_MINI_MODEL },
-    { provider: 'openai', model: GPT_FULL_MODEL },
     { provider: 'anthropic', model: HAIKU_MODEL },
     { provider: 'anthropic', model: SONNET_MODEL },
+    { provider: 'openai', model: GPT_MINI_MODEL },
+    { provider: 'openai', model: GPT_FULL_MODEL },
   ];
 }
 

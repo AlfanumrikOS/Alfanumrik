@@ -34,7 +34,8 @@ import { checkCoverage } from './coverage.ts';
 import { generateEmbedding } from './embedding.ts';
 import { retrieveChunks, type RetrievedChunk } from './retrieval.ts';
 import { rerankDocuments } from '../_shared/reranking.ts';
-import { callClaudeStream, type ClaudeResponse } from './claude.ts';
+import { sanitizeChunkForPrompt } from '../_shared/rag/sanitize.ts';
+import { callClaude, callClaudeStream, type ClaudeResponse } from './claude.ts';
 // C3 (MOL grounded-answer integration, 2026-05-18). Telemetry-only shadow
 // log of streaming Claude calls. Default-OFF flag, fire-and-forget.
 // TODO(c4-handoff): replace shadow log with a through-MOL routed streaming
@@ -91,6 +92,38 @@ import type {
 const VOYAGE_MODEL_ID = 'voyage-3';
 const RERANK_INITIAL_FETCH = 30;
 
+// ── Feature flag cache (60s TTL, mirrors pipeline.ts isServiceEnabled) ───────
+// ff_grounded_ai_enabled is the global kill switch. The streaming pipeline was
+// previously missing this check (RCA-FIX CRITICAL-4). Operators now have a
+// single flag that disables BOTH blocking and streaming AI response paths.
+interface StreamFlagCache {
+  value: boolean;
+  expiresAt: number;
+}
+let _streamFfCache: StreamFlagCache | null = null;
+const STREAM_FF_CACHE_TTL_MS = 60_000;
+
+// deno-lint-ignore no-explicit-any
+async function isGroundedAiEnabled(sb: any): Promise<boolean> {
+  const now = Date.now();
+  if (_streamFfCache && _streamFfCache.expiresAt > now) return _streamFfCache.value;
+  try {
+    const { data } = await sb
+      .from('feature_flags')
+      .select('is_enabled')
+      .eq('flag_name', 'ff_grounded_ai_enabled')
+      .single();
+    const value = data?.is_enabled === true;
+    _streamFfCache = { value, expiresAt: now + STREAM_FF_CACHE_TTL_MS };
+    return value;
+  } catch (err) {
+    console.warn(`ff_grounded_ai_enabled lookup failed (stream) — ${String(err)}`);
+    // Fail-closed: if we can't read the flag, disable streaming AI responses.
+    _streamFfCache = { value: false, expiresAt: now + STREAM_FF_CACHE_TTL_MS };
+    return false;
+  }
+}
+
 /**
  * Synthetic MOL request_id for the C4.2a shadow wire-up. Same contract as
  * the helper in pipeline.ts. NEVER reused; minted fresh per call.
@@ -107,14 +140,22 @@ function rerankEnabled(): boolean {
   return raw !== 'false' && raw !== '0' && raw !== 'off';
 }
 
-function buildReferenceMaterialSection(chunks: RetrievedChunk[]): string {
+// Fix 2 (groundedness): Added clear START/END delimiters and per-chunk
+// [Chapter: ...] labels — mirrors the updated pipeline.ts version.
+function buildReferenceMaterialSection(chunks: RetrievedChunk[], grade?: string, subject?: string): string {
   if (chunks.length === 0) return '';
+  const header = grade && subject
+    ? `=== REFERENCE MATERIAL (NCERT Class ${grade} ${subject}) ===`
+    : '=== REFERENCE MATERIAL (NCERT) ===';
   const lines = chunks.map((c, i) => {
     const chapterBit = c.chapter_title
       ? `Chapter ${c.chapter_number}: ${c.chapter_title}`
       : `Chapter ${c.chapter_number}`;
     const pageBit = c.page_number ? `, p.${c.page_number}` : '';
-    let entry = `[${i + 1}] (${chapterBit}${pageBit})\n${c.content}`;
+    // RCA-FIX CRITICAL-3 / P12 (2026-06-26): sanitize chunk content before
+    // prompt injection — mirrors pipeline.ts. Strips injection prefixes and
+    // caps at 1500 chars so a malicious or buggy NCERT chunk cannot jailbreak Foxy.
+    let entry = `[${i + 1}]\n[Chapter: ${chapterBit}${pageBit}]\n${sanitizeChunkForPrompt(c.content)}`;
     if (c.media_url) {
       const desc = c.media_description || `NCERT ${c.chapter_title || ''}`.trim();
       const pageSuffix = c.page_number
@@ -124,20 +165,32 @@ function buildReferenceMaterialSection(chunks: RetrievedChunk[]): string {
     }
     return entry;
   });
-  return `## NCERT Reference Material\n${lines.join('\n\n')}`;
+  return `${header}\n\n${lines.join('\n\n')}\n\n=== END REFERENCE MATERIAL ===`;
 }
 
-function modeInstructionFor(mode: 'strict' | 'soft'): string {
+// Fix 1 (groundedness): When chunks are present in soft mode, instruct Claude
+// to answer ONLY from those chunks — mirrors the updated pipeline.ts version.
+function modeInstructionFor(mode: 'strict' | 'soft', hasChunks: boolean): string {
   if (mode === 'strict') {
     return [
       'This response MUST be grounded in the Reference Material.',
       'If the material does not cover the question, reply with exactly: {{INSUFFICIENT_CONTEXT}}',
     ].join(' ');
   }
+  if (hasChunks) {
+    return [
+      'You MUST answer ONLY from the Reference Material provided above.',
+      'Do NOT use your general training knowledge even if you know the answer.',
+      'If the Reference Material does not contain sufficient information to answer,',
+      'say exactly: "This topic is not covered in the reference material I have.',
+      'Please refer to your NCERT textbook directly."',
+    ].join(' ');
+  }
   return [
-    'Prefer the Reference Material. If it does not cover the question,',
-    'you may use general CBSE knowledge but must prefix with',
-    '"General knowledge (not from NCERT):".',
+    'The Reference Material is empty for this chapter.',
+    'If the question IS in CBSE Grade scope: answer briefly using general CBSE knowledge,',
+    'prefix with "From general CBSE knowledge:" (one-line).',
+    'If the question is OUTSIDE scope: warmly redirect to an in-scope topic.',
   ].join(' ');
 }
 
@@ -326,6 +379,23 @@ export async function* runStreamingPipeline(
     }
   }
 
+  // Step 3 (RCA-FIX CRITICAL-4, 2026-06-26): Global kill switch.
+  // Mirrors pipeline.ts Step 3. The streaming pipeline previously skipped this
+  // check — operators can now disable ALL AI responses (blocking + streaming)
+  // via the ff_grounded_ai_enabled flag. Fail-closed: if the flag read fails
+  // (DB unreachable), the pipeline abstains rather than calling Claude.
+  if (!(await isGroundedAiEnabled(sb))) {
+    const traceId = await writeAbstainTrace(sb, ctx, 'upstream_error');
+    yield {
+      kind: 'abstain',
+      abstainReason: 'upstream_error',
+      suggestedAlternatives: [],
+      traceId,
+      latencyMs: Date.now() - startedAt,
+    };
+    return;
+  }
+
   // Step 4. Effective threshold (soft mode only — mirror pipeline.ts).
   const minSimilarity =
     request.retrieval.min_similarity_override ??
@@ -439,8 +509,12 @@ export async function* runStreamingPipeline(
   const template = await loadTemplate(request.generation.system_prompt_template);
   const vars: Record<string, string> = {
     ...request.generation.template_variables,
-    reference_material_section: buildReferenceMaterialSection(chunks),
-    mode_instruction: modeInstructionFor(request.mode),
+    reference_material_section: buildReferenceMaterialSection(
+      chunks,
+      request.scope.grade,
+      request.scope.subject_code,
+    ),
+    mode_instruction: modeInstructionFor(request.mode, chunks.length > 0),
     mode_upper: request.mode.toUpperCase(),
     grade: request.scope.grade,
     subject: request.scope.subject_code,
@@ -458,6 +532,19 @@ export async function* runStreamingPipeline(
     vars.coach_mode_instruction =
       'Use Socratic scaffolding: ask, do not tell. Guide the student to the answer.';
   }
+  // RC-2 / RC-3 fix (2026-06-26): These placeholders exist in foxy_tutor_v1.txt
+  // but had no defaults set in the streaming path, causing literal "{{placeholder}}"
+  // text to reach Claude. Also adds misconception_section which was present in
+  // pipeline.ts but absent here.
+  // mode_directive (line 24 of the template) is the top-level grounding
+  // instruction paragraph — defaulted to mode_instruction so both template
+  // references resolve correctly (mirrors pipeline.ts fix).
+  if (!vars.misconception_section) vars.misconception_section = '';
+  if (!vars.pending_expectation) vars.pending_expectation = '';
+  if (!vars.learner_memory_section) vars.learner_memory_section = '';
+  if (!vars.mode_directive) vars.mode_directive = vars.mode_instruction ?? '';
+  if (!vars.next_topic) vars.next_topic = '';
+  if (!vars.prereq) vars.prereq = '';
 
   let systemPrompt = resolveTemplate(template, vars);
 
@@ -531,6 +618,12 @@ export async function* runStreamingPipeline(
     ? Math.ceil(request.generation.max_tokens * FOXY_STRUCTURED_TOKEN_MULTIPLIER)
     : request.generation.max_tokens;
 
+  // Fix 3 (groundedness): Cap temperature at 0.1 for soft-mode factual answers
+  // when chunks are present — mirrors the blocking pipeline.ts fix.
+  const effectiveTemperature = (request.mode === 'soft' && chunks.length > 0)
+    ? Math.min(request.generation.temperature, 0.1)
+    : request.generation.temperature;
+
   // C3: capture timing immediately before the stream starts. The shadow
   // log records latency from request start to the FINAL event (not first
   // token). That mirrors how mol_request_logs.latency_ms is interpreted
@@ -600,7 +693,7 @@ export async function* runStreamingPipeline(
     systemPrompt,
     userMessage: request.query,
     maxTokens: effectiveMaxTokens,
-    temperature: request.generation.temperature,
+    temperature: effectiveTemperature,
     timeoutMs: request.timeout_ms,
     apiKey: anthropicKey,
     openaiApiKey,
@@ -677,6 +770,57 @@ export async function* runStreamingPipeline(
       latencyMs: Date.now() - startedAt,
     };
     return;
+  }
+
+  // RCA-FIX CRITICAL-2 (2026-06-26): Re-grounding retry for streaming soft-mode.
+  // Mirrors pipeline.ts Step 12b. When chunks are present but Claude's streamed
+  // answer opens with the general-knowledge escape prefix, fire ONE blocking
+  // callClaude retry at temperature=0 with an explicit re-grounding nudge.
+  //
+  // The text_delta events already sent to the browser remain as-is (the student
+  // already saw the streamed text). The `done` event carries the `structured`
+  // payload that the UI renders on swap — so the re-grounded answer takes effect
+  // in the structured renderer even though the raw text was already streamed.
+  //
+  // One retry only — to bound added latency on the `done` event. If the retry
+  // also escapes to general knowledge, we fall through with the original answer.
+  if (
+    request.mode === 'soft' &&
+    chunks.length > 0 &&
+    answerStartsWithGeneralKnowledgeEscape(accumulated)
+  ) {
+    console.warn('pipeline-stream: soft-mode answer used general knowledge despite chunks — retrying with re-grounding nudge');
+    const regroundUserMessage = [
+      'Your previous answer did not use the provided Reference Material.',
+      'Please rewrite your answer using ONLY the Reference Material provided in the system prompt.',
+      'Do not use your general training knowledge.',
+      '\n\nOriginal question: ',
+      request.query,
+    ].join('');
+    const regroundResult = await callClaude({
+      systemPrompt,
+      userMessage: regroundUserMessage,
+      maxTokens: effectiveMaxTokens,
+      temperature: 0.0, // fully deterministic for the re-grounding pass
+      timeoutMs: request.timeout_ms,
+      apiKey: anthropicKey,
+      openaiApiKey,
+      modelPreference: request.generation.model_preference,
+      // Omit conversation_turns: re-ground nudge needs a clean slate so the
+      // model focuses on the reference material, not conversation history.
+    });
+    if (regroundResult.ok && !regroundResult.insufficientContext) {
+      if (!answerStartsWithGeneralKnowledgeEscape(regroundResult.content)) {
+        accumulated = regroundResult.content;
+        // Update token accounting so trace reflects total spend.
+        ctx.inputTokens = (ctx.inputTokens ?? 0) + regroundResult.inputTokens;
+        ctx.outputTokens = (ctx.outputTokens ?? 0) + regroundResult.outputTokens;
+      } else {
+        console.warn('pipeline-stream: re-grounding retry still used general knowledge — serving original answer');
+      }
+    } else {
+      console.warn('pipeline-stream: re-grounding retry failed or returned insufficient context — serving original answer');
+    }
   }
 
   // Compute groundedFromChunks on the FULL accumulated answer (Phase 0 contract).

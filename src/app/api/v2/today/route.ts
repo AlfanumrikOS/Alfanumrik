@@ -36,6 +36,8 @@ import { mapActionToTodayItem } from '@/lib/today/map-action';
 import type { TodayResponse } from '@/lib/today/types';
 import { logger } from '@/lib/logger';
 
+type ChapterTitleMap = Map<string, { title: string; titleHi: string | null }>;
+
 export const dynamic = 'force-dynamic';
 
 const FLAG_NAME = CONSUMER_MINIMALISM_FLAGS.TODAY_HOME_V1;
@@ -84,6 +86,10 @@ export async function GET(request: Request) {
     // routine augmentation reads stay on the RLS-respecting `supabase` client.
     const admin = getSupabaseAdmin();
 
+    const masteryPairs = state.mastery.flatMap(s =>
+      s.chapters.map(c => ({ s: s.subjectCode, c: c.chapterNumber }))
+    );
+
     // Build the small augmentation (due reviews, today's quiz, in-progress
     // lessons, pending teacher remediation). Defensive — failures degrade to
     // "empty", never a 500.
@@ -105,6 +111,26 @@ export async function GET(request: Request) {
       };
     }
 
+    // Chapter titles — parallel round-trip, empty map on failure (graceful degradation).
+    let chapterTitles: ChapterTitleMap = new Map();
+    if (masteryPairs.length > 0) {
+      try {
+        const { data, error } = await supabase.rpc('get_chapter_titles_for_pairs', {
+          p_pairs: masteryPairs,
+        }) as { data: Array<{ subject_code: string; chapter_number: number; title: string; title_hi: string | null }> | null; error: unknown };
+        if (!error && data) {
+          for (const row of data) {
+            chapterTitles.set(`${row.subject_code}|${row.chapter_number}`, {
+              title: row.title,
+              titleHi: row.title_hi,
+            });
+          }
+        }
+      } catch {
+        // Graceful degradation: queue renders without chapter titles.
+      }
+    }
+
     // 4. Resolve the Today queue — all "what next" logic stays here.
     const now = new Date();
     const result = resolveTodayQueue(state, augmentation, { now });
@@ -121,8 +147,8 @@ export async function GET(request: Request) {
     }
 
     // 5. Project primary + queue into render DTOs (1-based rank).
-    const queue = result.queue.map((action, i) => mapActionToTodayItem(action, i + 1));
-    const primary = queue[0] ?? mapActionToTodayItem(result.primary, 1);
+    const queue = result.queue.map((action, i) => mapActionToTodayItem(action, i + 1, chapterTitles));
+    const primary = queue[0] ?? mapActionToTodayItem(result.primary, 1, chapterTitles);
 
     // 6. Assemble the envelope.
     const payload: TodayResponse = {

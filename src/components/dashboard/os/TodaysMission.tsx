@@ -22,6 +22,7 @@ import { todayIcon } from '@/lib/today/icon-map';
 import { todayCopy, deepLinkToHref } from '@/lib/today/copy';
 import { ALWAYS_NATIVE_SCRIPT } from '@/lib/today/render';
 import type { CurriculumTopic } from '@/lib/types';
+import type { TodayQueueItem } from '@/lib/today/types';
 
 interface TodaysMissionProps {
   isHi: boolean;
@@ -41,6 +42,18 @@ function capitalize(s: string | null | undefined): string {
  *  Uses the shared ALWAYS_NATIVE_SCRIPT constant from render.ts (single source of truth). */
 function displaySubjectName(code: string): string {
   return ALWAYS_NATIVE_SCRIPT[code.toLowerCase()] ?? capitalize(code);
+}
+
+/**
+ * Build the " · Chapter Title" suffix for subtitles. Uses Hindi title when
+ * `isHi` is true and a Hindi title is available; falls back to the English
+ * title. Returns '' when no title is present (graceful degradation).
+ */
+function chapterSuffix(item: TodayQueueItem, isHi: boolean): string {
+  const title = isHi
+    ? (item.chapterTitleHi ?? item.chapterTitle)
+    : item.chapterTitle;
+  return title ? ` · ${title}` : '';
 }
 
 export default function TodaysMission({
@@ -170,6 +183,17 @@ export default function TodaysMission({
                     <p className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>
                       {todayCopy(queueData.primary.labelKey, isHi)}
                     </p>
+                    <p className="text-xs truncate" style={{ color: 'var(--text-3)' }}>
+                      {todayCopy(queueData.primary.subtitleKey, isHi, {
+                        subject: displaySubjectName((queueData.primary.meta?.subjectCode as string) ?? subjectCode),
+                        chapterTitle: chapterSuffix(queueData.primary, isHi),
+                        dueCount: String(queueData.primary.meta?.dueCount ?? ''),
+                        days: String(queueData.primary.meta?.daysSinceLastTouch ?? ''),
+                        progress: String(Math.round(((queueData.primary.meta?.progressPct as number) ?? 0) * 100)),
+                        chapter: String(queueData.primary.meta?.chapterNumber ?? ''),
+                        n: String(queueData.primary.estMinutes),
+                      })}
+                    </p>
                     <p className="text-xs" style={{ color: 'var(--text-3)' }}>
                       ~{queueData.primary.estMinutes} {isHi ? 'मिनट' : 'min'}
                     </p>
@@ -190,9 +214,22 @@ export default function TodaysMission({
                     }}
                   >
                     <span className="text-lg" aria-hidden="true">{todayIcon(item.iconHint)}</span>
-                    <span className="text-xs font-semibold flex-1 truncate" style={{ color: 'var(--text-2)' }}>
-                      {todayCopy(item.labelKey, isHi)}
-                    </span>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs font-semibold truncate block" style={{ color: 'var(--text-2)' }}>
+                        {todayCopy(item.labelKey, isHi)}
+                      </span>
+                      <span className="text-[10px] truncate block" style={{ color: 'var(--text-3)' }}>
+                        {todayCopy(item.subtitleKey, isHi, {
+                          subject: displaySubjectName((item.meta?.subjectCode as string) ?? subjectCode),
+                          chapterTitle: chapterSuffix(item, isHi),
+                          dueCount: String(item.meta?.dueCount ?? ''),
+                          days: String(item.meta?.daysSinceLastTouch ?? ''),
+                          progress: String(Math.round(((item.meta?.progressPct as number) ?? 0) * 100)),
+                          chapter: String(item.meta?.chapterNumber ?? ''),
+                          n: String(item.estMinutes),
+                        })}
+                      </span>
+                    </div>
                     <span className="text-xs" style={{ color: 'var(--text-3)' }}>
                       ~{item.estMinutes}m
                     </span>

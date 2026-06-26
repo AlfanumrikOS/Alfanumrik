@@ -340,8 +340,8 @@ export const ChatInput = memo(function ChatInput({
 
         <span className="flex-1" />
         {text.length > 0 && (
-          <span className="text-[10px] text-[var(--text-3)] mr-1">
-            {text.length}/5000
+          <span className={`text-[10px] mr-1 ${text.length > 900 ? 'text-red-500 font-bold' : text.length > 800 ? 'text-orange-500 font-semibold' : 'text-[var(--text-3)]'}`}>
+            {text.length}/1000
           </span>
         )}
         {text.length > 0 && <span className="text-[10px] text-[var(--text-3)] hidden sm:inline mr-1.5">·</span>}
@@ -377,7 +377,7 @@ export const ChatInput = memo(function ChatInput({
           value={text}
           onChange={autoGrow}
           onKeyDown={handleKey}
-          maxLength={5000}
+          maxLength={1000}
           placeholder={
             isListening
               ? (language === 'hi' ? 'सुन रहा हूँ… अब बोलें' : 'Listening… speak now')

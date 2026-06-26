@@ -626,13 +626,13 @@ export function useFoxyChat(): UseFoxyChatResult {
     if (!text.trim() && !image) return;
 
     // Client-side length limit matching server-side MAX_MESSAGE_LENGTH
-    if (text.length > 5000) {
+    if (text.length > 1000) {
       setMessages((p) => [...p, {
         id: nextMessageId(),
         role: 'tutor',
         content: language === 'hi'
-          ? 'संदेश बहुत लंबा है! कृपया 5000 अक्षरों से कम रखें।'
-          : 'Message too long! Please keep it under 5000 characters.',
+          ? 'संदेश बहुत लंबा है! कृपया 1000 अक्षरों से कम रखें।'
+          : 'Message too long! Please keep it under 1,000 characters.',
         timestamp: new Date().toISOString(),
       }]);
       return;
