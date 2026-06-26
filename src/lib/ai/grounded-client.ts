@@ -178,6 +178,7 @@ interface CallOptions {
 }
 
 const DEFAULT_HOP_TIMEOUT_MS = 2000;
+const GROUNDED_ANSWER_SIGNING_PATH = '/functions/v1/grounded-answer';
 
 /**
  * Build an abstain payload in the same shape the service would return on
@@ -216,16 +217,20 @@ export async function callGroundedAnswer(
   if (!supabaseUrl || !serviceKey) {
     // Config missing — treat as upstream_error so caller refunds quota and
     // the student sees a clean "try again" path instead of a 500.
+    // #region agent log
+    fetch('http://127.0.0.1:7895/ingest/41be4ef7-d778-4824-bf36-3a70767bd0a3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'eebea2'},body:JSON.stringify({sessionId:'eebea2',location:'grounded-client.ts:callGroundedAnswer',message:'config missing',data:{hasUrl:!!supabaseUrl,hasServiceKey:!!serviceKey},timestamp:Date.now(),hypothesisId:'B',runId:'pre-fix'})}).catch(()=>{});
+    // #endregion
     return buildHopError('config-missing', Date.now() - startedAt);
   }
 
   const url = `${supabaseUrl}/functions/v1/grounded-answer`;
   const bodyStr = JSON.stringify(request);
-  const signingHeaders = buildInternalCallerHeaders('POST', '/functions/v1/grounded-answer', bodyStr, 'foxy');
+  const signingHeaders = buildInternalCallerHeaders('POST', GROUNDED_ANSWER_SIGNING_PATH, bodyStr, 'foxy');
   if (!signingHeaders) {
     logger.warn('grounded_client.signing_not_configured', {
       detail: 'INTERNAL_CALLER_SIGNING_SECRET is not set — grounded-answer will reject unsigned calls',
     });
+    return buildHopError('config-missing', Date.now() - startedAt);
   }
 
   const controller = new AbortController();
@@ -246,16 +251,27 @@ export async function callGroundedAnswer(
 
     if (res.status >= 500) {
       // Service returned a 5xx — upstream outage. Caller refunds quota.
+      // #region agent log
+      fetch('http://127.0.0.1:7895/ingest/41be4ef7-d778-4824-bf36-3a70767bd0a3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'eebea2'},body:JSON.stringify({sessionId:'eebea2',location:'grounded-client.ts:callGroundedAnswer',message:'hop error 5xx',data:{status:res.status,signingConfigured:!!signingHeaders},timestamp:Date.now(),hypothesisId:'C',runId:'pre-fix'})}).catch(()=>{});
+      // #endregion
       return buildHopError('service-500', Date.now() - startedAt);
     }
 
     if (!res.ok) {
       // 4xx from service (validation / caller misuse). Surface as upstream
       // error with trace for ops to diagnose; still don't throw.
+      // #region agent log
+      fetch('http://127.0.0.1:7895/ingest/41be4ef7-d778-4824-bf36-3a70767bd0a3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'eebea2'},body:JSON.stringify({sessionId:'eebea2',location:'grounded-client.ts:callGroundedAnswer',message:'hop error 4xx',data:{status:res.status,signingConfigured:!!signingHeaders,hopTraceId:`service-${res.status}`},timestamp:Date.now(),hypothesisId:'A',runId:'pre-fix'})}).catch(()=>{});
+      // #endregion
       return buildHopError(`service-${res.status}`, Date.now() - startedAt);
     }
 
     const body = (await res.json()) as GroundedResponse;
+    if (!body.grounded) {
+      // #region agent log
+      fetch('http://127.0.0.1:7895/ingest/41be4ef7-d778-4824-bf36-3a70767bd0a3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'eebea2'},body:JSON.stringify({sessionId:'eebea2',location:'grounded-client.ts:callGroundedAnswer',message:'service abstain',data:{abstainReason:body.abstain_reason,traceId:body.trace_id,signingConfigured:!!signingHeaders},timestamp:Date.now(),hypothesisId:'D',runId:'pre-fix'})}).catch(()=>{});
+      // #endregion
+    }
     return body;
   } catch (err) {
     clearTimeout(timer);
@@ -303,6 +319,9 @@ export async function callGroundedAnswerStream(
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !serviceKey) {
+    // #region agent log
+    fetch('http://127.0.0.1:7895/ingest/41be4ef7-d778-4824-bf36-3a70767bd0a3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'eebea2'},body:JSON.stringify({sessionId:'eebea2',location:'grounded-client.ts:callGroundedAnswerStream',message:'stream config missing',data:{hasUrl:!!supabaseUrl,hasServiceKey:!!serviceKey},timestamp:Date.now(),hypothesisId:'B',runId:'pre-fix'})}).catch(()=>{});
+    // #endregion
     return { ok: false, reason: 'config-missing' };
   }
 
@@ -316,11 +335,12 @@ export async function callGroundedAnswerStream(
   const firstByteTimer = setTimeout(() => controller.abort(), hopTimeoutMs);
 
   const bodyStr = JSON.stringify(request);
-  const signingHeaders = buildInternalCallerHeaders('POST', '/functions/v1/grounded-answer', bodyStr, 'foxy');
+  const signingHeaders = buildInternalCallerHeaders('POST', GROUNDED_ANSWER_SIGNING_PATH, bodyStr, 'foxy');
   if (!signingHeaders) {
     logger.warn('grounded_client.signing_not_configured', {
       detail: 'INTERNAL_CALLER_SIGNING_SECRET is not set — grounded-answer will reject unsigned calls',
     });
+    return { ok: false, reason: 'config-missing' };
   }
 
   try {
@@ -340,7 +360,11 @@ export async function callGroundedAnswerStream(
     if (!res.ok) {
       // Edge function rejected the streaming request before opening the body.
       // Drain any error body and return.
-      try { await res.text(); } catch { /* ignore */ }
+      let errBody = '';
+      try { errBody = await res.text(); } catch { /* ignore */ }
+      // #region agent log
+      fetch('http://127.0.0.1:7895/ingest/41be4ef7-d778-4824-bf36-3a70767bd0a3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'eebea2'},body:JSON.stringify({sessionId:'eebea2',location:'grounded-client.ts:callGroundedAnswerStream',message:'stream hop failed',data:{status:res.status,reason:`service-${res.status}`,signingConfigured:!!signingHeaders,errBody:errBody.slice(0,200)},timestamp:Date.now(),hypothesisId:'A',runId:'pre-fix'})}).catch(()=>{});
+      // #endregion
       return { ok: false, reason: `service-${res.status}` };
     }
 

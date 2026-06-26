@@ -4205,7 +4205,6 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       traceId: grounded.trace_id,
       latencyMs: grounded.meta.latency_ms,
     });
-
     logAudit(auth.userId!, {
       action: 'foxy.chat.abstain',
       resourceType: 'foxy_sessions',

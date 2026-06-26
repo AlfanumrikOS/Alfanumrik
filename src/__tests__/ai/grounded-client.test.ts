@@ -6,7 +6,12 @@
 // distinct trace_id so callers can branch cleanly.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { callGroundedAnswer, type GroundedRequest, type GroundedResponse } from '@/lib/ai/grounded-client';
+import {
+  callGroundedAnswer,
+  callGroundedAnswerStream,
+  type GroundedRequest,
+  type GroundedResponse,
+} from '@/lib/ai/grounded-client';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -51,11 +56,19 @@ function mockHttpResponse(status: number, body: unknown = {}): Response {
   } as unknown as Response;
 }
 
+function wasGroundedAnswerCalled(fetchSpy: ReturnType<typeof vi.spyOn>): boolean {
+  return fetchSpy.mock.calls.some((call: unknown[]) => {
+    const url = call[0];
+    return typeof url === 'string' && url.includes('/functions/v1/grounded-answer');
+  });
+}
+
 // ─── Env setup ───────────────────────────────────────────────────────────────
 
 beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
+  process.env.INTERNAL_CALLER_SIGNING_SECRET = 'test-internal-secret';
 });
 
 afterEach(() => {
@@ -193,11 +206,37 @@ describe('callGroundedAnswer — missing env vars', () => {
 
     const result = await callGroundedAnswer(BASE_REQUEST);
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(wasGroundedAnswerCalled(fetchSpy)).toBe(false);
     expect(result.grounded).toBe(false);
     if (!result.grounded) {
       expect(result.abstain_reason).toBe('upstream_error');
       expect(result.trace_id).toBe('config-missing');
     }
+  });
+
+  it('returns upstream_error with trace_id="config-missing" if INTERNAL_CALLER_SIGNING_SECRET unset', async () => {
+    delete process.env.INTERNAL_CALLER_SIGNING_SECRET;
+    const fetchSpy = vi.spyOn(global, 'fetch');
+
+    const result = await callGroundedAnswer(BASE_REQUEST);
+
+    expect(wasGroundedAnswerCalled(fetchSpy)).toBe(false);
+    expect(result.grounded).toBe(false);
+    if (!result.grounded) {
+      expect(result.abstain_reason).toBe('upstream_error');
+      expect(result.trace_id).toBe('config-missing');
+    }
+  });
+});
+
+describe('callGroundedAnswerStream — missing signing secret', () => {
+  it('returns config-missing before calling grounded-answer when INTERNAL_CALLER_SIGNING_SECRET unset', async () => {
+    delete process.env.INTERNAL_CALLER_SIGNING_SECRET;
+    const fetchSpy = vi.spyOn(global, 'fetch');
+
+    const result = await callGroundedAnswerStream(BASE_REQUEST);
+
+    expect(wasGroundedAnswerCalled(fetchSpy)).toBe(false);
+    expect(result).toEqual({ ok: false, reason: 'config-missing' });
   });
 });

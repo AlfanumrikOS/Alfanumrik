@@ -25,6 +25,9 @@ NEXT_PUBLIC_SUPABASE_URL=https://xyz.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
+# Shared internal-caller signing secret — must match Supabase Edge Function secret
+INTERNAL_CALLER_SIGNING_SECRET=your-shared-internal-caller-secret
+
 # Feature‑flag control (default OFF for safety)
 FF_AGENT_MESH_V1=true
 ```

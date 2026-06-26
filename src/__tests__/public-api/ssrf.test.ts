@@ -188,10 +188,14 @@ describe('Track A.6 SSRF — Node copy and Deno _shared copy are kept in sync', 
   function fnBody(src: string, name: string): string {
     const start = src.indexOf(`function ${name}`);
     if (start === -1) return '';
-    const rest = src.slice(start);
-    const end = rest.search(/\n}\n/);
+    const nextStarts = ['parseIpv4', 'isBlockedIpv4', 'isBlockedIpv6', 'validateWebhookTargetUrl']
+      .filter((n) => n !== name)
+      .map((n) => src.indexOf(`function ${n}`, start + 1))
+      .filter((idx) => idx !== -1);
+    const end = nextStarts.length > 0 ? Math.min(...nextStarts) : src.length;
+    const rest = src.slice(start, end);
     return rest
-      .slice(0, end)
+      .replace(/\/\*[\s\S]*?\*\//g, ' ') // drop block comments
       .split('\n')
       .map((line) => line.replace(/\/\/.*$/, '')) // drop trailing line comments
       .join(' ')

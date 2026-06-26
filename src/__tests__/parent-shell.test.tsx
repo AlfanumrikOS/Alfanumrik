@@ -61,12 +61,7 @@ describe('ParentShell — guardian mode', () => {
     // Wait one tick for the useParentAuth useEffect (async loadParentSession)
     // to resolve. Guardian mode short-circuits before linkCodeChecked but
     // we still wait a tick to let any concurrent state settle.
-    await new Promise(r => setTimeout(r, 10));
-
-    // Scope queries to the desktop sidebar to avoid false-positives if the
-    // mobile drawer ever opens during render. (It doesn't by default —
-    // mobileOpen starts false — but scoping is cheap insurance.)
-    const sidebar = screen.getByTestId('dashboard-sidebar-desktop');
+    const sidebar = await screen.findByTestId('dashboard-sidebar-desktop');
     ['Dashboard', 'Children', 'Calendar', 'Reports', 'Support', 'Profile'].forEach(label => {
       expect(within(sidebar).getByText(label)).toBeInTheDocument();
     });
@@ -101,9 +96,7 @@ describe('ParentShell — link-code mode', () => {
     );
     // useParentAuth's useEffect runs loadParentSession asynchronously — wait
     // a tick (and a re-render) for the link-code session to be detected.
-    await new Promise(r => setTimeout(r, 10));
-
-    const sidebar = screen.getByTestId('dashboard-sidebar-desktop');
+    const sidebar = await screen.findByTestId('dashboard-sidebar-desktop');
     expect(within(sidebar).getByText('Dashboard')).toBeInTheDocument();
     expect(within(sidebar).getByText('Calendar')).toBeInTheDocument();
     expect(within(sidebar).getByText('Reports')).toBeInTheDocument();
@@ -135,7 +128,7 @@ describe('ParentShell — unauthenticated', () => {
     );
     // Wait for the loadParentSession effect to resolve to null and for the
     // shell to settle into its naked-render branch.
-    await new Promise(r => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 10));
 
     expect(container.querySelector('[data-testid="page"]')).toBeInTheDocument();
     expect(container.querySelector('aside')).toBeNull();

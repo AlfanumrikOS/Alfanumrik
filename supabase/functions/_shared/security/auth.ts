@@ -1,4 +1,4 @@
-import { checkBearerToken } from '../auth.ts';
+import { constantTimeEqual } from '../auth.ts';
 import { buildCanonicalInternalRequest, verifyInternalRequestSignature } from './request-signature.ts';
 import type { SecurityPrincipal } from './types.ts';
 
@@ -6,6 +6,66 @@ type SupabaseClientLike = {
   auth: { getUser(token: string): Promise<{ data: { user: { id: string } | null }; error: unknown }> };
   rpc(name: string, args?: Record<string, unknown>): Promise<{ data: unknown; error: unknown }>;
 };
+
+function projectRefFromUrl(): string | null {
+  const url = Deno.env.get('SUPABASE_URL') ?? '';
+  const match = url.match(/https:\/\/([^.]+)\.supabase\.co/);
+  return match?.[1] ?? null;
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+    return JSON.parse(atob(padded));
+  } catch {
+    return null;
+  }
+}
+
+/** Accept legacy JWT service_role keys during Supabase API-key migration. */
+function isLegacyServiceRoleJwtForProject(token: string): boolean {
+  if (!token.startsWith('eyJ')) return false;
+  const payload = decodeJwtPayload(token);
+  if (!payload || payload.role !== 'service_role') return false;
+  const ref = projectRefFromUrl();
+  return ref != null && payload.ref === ref;
+}
+
+function collectServiceAuthTokens(): string[] {
+  const tokens: string[] = [];
+  const primary = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  if (primary) tokens.push(primary);
+  try {
+    const raw = Deno.env.get('SUPABASE_SECRET_KEYS') ?? '';
+    if (raw) {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      for (const value of Object.values(parsed)) {
+        if (typeof value === 'string' && value) tokens.push(value);
+      }
+    }
+  } catch {
+    // Ignore malformed secret-key JSON; fall back to primary + legacy JWT path.
+  }
+  return tokens;
+}
+
+/**
+ * True when Authorization carries an elevated service token our internal
+ * callers use: the edge env service key, any configured sb_secret_* key, or a
+ * legacy service_role JWT for this project. Signature headers are still
+ * required before admitting as internal_service.
+ */
+function checkServiceBearerToken(authHeader: string | null): boolean {
+  if (!authHeader?.startsWith('Bearer ')) return false;
+  const token = authHeader.slice('Bearer '.length);
+  if (collectServiceAuthTokens().some((candidate) => constantTimeEqual(token, candidate))) {
+    return true;
+  }
+  return isLegacyServiceRoleJwtForProject(token);
+}
 
 function normalizeRole(raw: string | null | undefined): SecurityPrincipal['role'] | null {
   switch (raw) {
@@ -29,7 +89,6 @@ export async function resolveSecurityPrincipal(args: {
   requestBodyCaller: string;
 }): Promise<{ ok: true; principal: SecurityPrincipal } | { ok: false; status: number; code: string; message: string }> {
   const authHeader = args.req.headers.get('authorization');
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const timestamp = args.req.headers.get('x-internal-timestamp');
   const signature = args.req.headers.get('x-internal-signature');
   const callerHeader = args.req.headers.get('x-internal-caller') ?? args.requestBodyCaller;
@@ -38,7 +97,7 @@ export async function resolveSecurityPrincipal(args: {
     return { ok: false, status: 401, code: 'deny_auth', message: 'missing authorization header' };
   }
 
-  if (serviceKey && checkBearerToken(authHeader, serviceKey)) {
+  if (checkServiceBearerToken(authHeader)) {
     if (!timestamp || !signature) {
       return { ok: false, status: 401, code: 'deny_signature', message: 'missing internal caller signature' };
     }
