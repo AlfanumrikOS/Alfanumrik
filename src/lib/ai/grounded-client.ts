@@ -26,6 +26,8 @@
 export type { FoxyResponse } from '@/lib/foxy/schema';
 
 import type { FoxyResponse as FoxyResponseShape } from '@/lib/foxy/schema';
+import { buildInternalCallerHeaders } from '@/lib/security/internal-caller-signing';
+import { logger } from '@/lib/logger';
 
 export type Caller =
   | 'foxy'
@@ -218,6 +220,13 @@ export async function callGroundedAnswer(
   }
 
   const url = `${supabaseUrl}/functions/v1/grounded-answer`;
+  const bodyStr = JSON.stringify(request);
+  const signingHeaders = buildInternalCallerHeaders('POST', '/functions/v1/grounded-answer', bodyStr, 'foxy');
+  if (!signingHeaders) {
+    logger.warn('grounded_client.signing_not_configured', {
+      detail: 'INTERNAL_CALLER_SIGNING_SECRET is not set — grounded-answer will reject unsigned calls',
+    });
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), hopTimeoutMs);
@@ -229,8 +238,9 @@ export async function callGroundedAnswer(
       headers: {
         Authorization: `Bearer ${serviceKey}`,
         'Content-Type': 'application/json',
+        ...(signingHeaders ?? {}),
       },
-      body: JSON.stringify(request),
+      body: bodyStr,
     });
     clearTimeout(timer);
 
@@ -305,6 +315,14 @@ export async function callGroundedAnswerStream(
   const controller = new AbortController();
   const firstByteTimer = setTimeout(() => controller.abort(), hopTimeoutMs);
 
+  const bodyStr = JSON.stringify(request);
+  const signingHeaders = buildInternalCallerHeaders('POST', '/functions/v1/grounded-answer', bodyStr, 'foxy');
+  if (!signingHeaders) {
+    logger.warn('grounded_client.signing_not_configured', {
+      detail: 'INTERNAL_CALLER_SIGNING_SECRET is not set — grounded-answer will reject unsigned calls',
+    });
+  }
+
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -313,8 +331,9 @@ export async function callGroundedAnswerStream(
         Authorization: `Bearer ${serviceKey}`,
         'Content-Type': 'application/json',
         'Accept': 'text/event-stream',
+        ...(signingHeaders ?? {}),
       },
-      body: JSON.stringify(request),
+      body: bodyStr,
     });
     clearTimeout(firstByteTimer);
 
