@@ -190,6 +190,11 @@ const REFUND_ABSTAIN_REASONS: AbstainReason[] = [
   'chapter_not_ready',
 ];
 
+const LEGACY_FALLBACK_ABSTAIN_REASONS: AbstainReason[] = [
+  'upstream_error',
+  'circuit_open',
+];
+
 // Quota per plan per day
 const DAILY_QUOTA: Record<string, number> = {
   free: 10,
@@ -2775,6 +2780,94 @@ async function runLegacyFoxyFlow(params: {
   };
 }
 
+async function persistLegacyFoxyResponse(params: {
+  authUserId: string;
+  studentId: string;
+  resolvedSessionId: string;
+  remaining: number;
+  message: string;
+  subject: string;
+  grade: string;
+  chapter: string | null;
+  mode: string;
+  legacy: Awaited<ReturnType<typeof runLegacyFoxyFlow>>;
+  logFoxyAsk: (tokens: number | null) => void;
+}): Promise<Response> {
+  // Persist turns (non-fatal)
+  const now = new Date().toISOString();
+  try {
+    await supabaseAdmin.from('foxy_chat_messages').insert([
+      {
+        session_id: params.resolvedSessionId,
+        student_id: params.studentId,
+        role: 'user',
+        content: params.message,
+        sources: null,
+        tokens_used: null,
+        created_at: now,
+      },
+      {
+        session_id: params.resolvedSessionId,
+        student_id: params.studentId,
+        role: 'assistant',
+        content: params.legacy.response,
+        sources: params.legacy.sources.length > 0 ? params.legacy.sources : null,
+        tokens_used: params.legacy.tokensUsed,
+        created_at: new Date(Date.now() + 1).toISOString(),
+      },
+    ]);
+  } catch (saveErr) {
+    console.warn('[foxy] legacy message save failed:', saveErr instanceof Error ? saveErr.message : String(saveErr));
+  }
+
+  logAudit(params.authUserId, {
+    action: 'foxy.chat',
+    resourceType: 'foxy_sessions',
+    resourceId: params.resolvedSessionId,
+    details: {
+      subject: params.subject,
+      grade: params.grade,
+      chapter: params.chapter,
+      mode: params.mode,
+      intent: params.legacy.intent,
+      tokensUsed: params.legacy.tokensUsed,
+      model: params.legacy.model,
+      traceId: params.legacy.traceId,
+      ragChunksFound: params.legacy.sources.length,
+      flow: 'legacy-intent-router',
+    },
+  });
+
+  // Phase 0: NCERT surfaces (sources, diagrams) are intentionally NOT
+  // returned to the client. Retrieval still happens server-side and
+  // citations are still injected into the system prompt for grounding,
+  // but the student-facing wire shape no longer exposes the raw chunks.
+  //
+  // Phase 0 Fix 0.5: legacy intent-router path. groundedFromChunks is
+  // approximated as `sources.length > 0` — the legacy path doesn't run
+  // the soft-mode escape detection, so this is a conservative proxy
+  // ("we retrieved chunks AND the LLM produced a response").
+  try {
+    params.logFoxyAsk(params.legacy.tokensUsed ?? null);
+  } catch (telemetryErr) {
+    logger.warn('foxy_ask_telemetry_failed', {
+      error: telemetryErr instanceof Error ? telemetryErr.message : String(telemetryErr),
+      studentId: params.studentId,
+    });
+  }
+  return NextResponse.json({
+    success: true,
+    response: params.legacy.response,
+    sessionId: params.resolvedSessionId,
+    quotaRemaining: params.remaining,
+    tokensUsed: params.legacy.tokensUsed,
+    groundingStatus: 'grounded' as const,
+    groundedFromChunks: params.legacy.sources.length > 0,
+    citationsCount: params.legacy.sources.length,
+    traceId: params.legacy.traceId,
+  });
+}
+
 // ─── POST handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest): Promise<Response> {
@@ -3385,71 +3478,18 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         academicGoal,
         history,
       });
-
-      // Persist turns (non-fatal)
-      const now = new Date().toISOString();
-      try {
-        await supabaseAdmin.from('foxy_chat_messages').insert([
-          {
-            session_id: resolvedSessionId,
-            student_id: studentId,
-            role: 'user',
-            content: message,
-            sources: null,
-            tokens_used: null,
-            created_at: now,
-          },
-          {
-            session_id: resolvedSessionId,
-            student_id: studentId,
-            role: 'assistant',
-            content: legacy.response,
-            sources: legacy.sources.length > 0 ? legacy.sources : null,
-            tokens_used: legacy.tokensUsed,
-            created_at: new Date(Date.now() + 1).toISOString(),
-          },
-        ]);
-      } catch (saveErr) {
-        console.warn('[foxy] legacy message save failed:', saveErr instanceof Error ? saveErr.message : String(saveErr));
-      }
-
-      logAudit(auth.userId!, {
-        action: 'foxy.chat',
-        resourceType: 'foxy_sessions',
-        resourceId: resolvedSessionId,
-        details: {
-          subject, grade, chapter, mode,
-          intent: legacy.intent,
-          tokensUsed: legacy.tokensUsed,
-          model: legacy.model,
-          traceId: legacy.traceId,
-          ragChunksFound: legacy.sources.length,
-          flow: 'legacy-intent-router',
-        },
-      });
-
-      // Phase 0: NCERT surfaces (sources, diagrams) are intentionally NOT
-      // returned to the client. Retrieval still happens server-side and
-      // citations are still injected into the system prompt for grounding,
-      // but the student-facing wire shape no longer exposes the raw chunks.
-      // Server-side persistence to foxy_chat_messages.sources is preserved
-      // above for analytics and debug.
-      //
-      // Phase 0 Fix 0.5: legacy intent-router path. groundedFromChunks is
-      // approximated as `sources.length > 0` — the legacy path doesn't run
-      // the soft-mode escape detection, so this is a conservative proxy
-      // ("we retrieved chunks AND the LLM produced a response").
-      logFoxyAsk(legacy.tokensUsed ?? null);
-      return NextResponse.json({
-        success: true,
-        response: legacy.response,
-        sessionId: resolvedSessionId,
-        quotaRemaining: remaining,
-        tokensUsed: legacy.tokensUsed,
-        groundingStatus: 'grounded' as const,
-        groundedFromChunks: legacy.sources.length > 0,
-        citationsCount: legacy.sources.length,
-        traceId: legacy.traceId,
+      return await persistLegacyFoxyResponse({
+        authUserId: auth.userId!,
+        studentId,
+        resolvedSessionId,
+        remaining,
+        message,
+        subject,
+        grade,
+        chapter,
+        mode,
+        legacy,
+        logFoxyAsk,
       });
     } catch (legacyErr) {
       logger.error('foxy_legacy_flow_failed', {
@@ -4192,6 +4232,55 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
 
   // ─── Handle abstain ──────────────────────────────────────────────────────
   if (!grounded.grounded) {
+    if (LEGACY_FALLBACK_ABSTAIN_REASONS.includes(grounded.abstain_reason)) {
+      logger.warn('foxy_grounded_service_fallback', {
+        studentId,
+        subject,
+        grade,
+        chapter,
+        abstainReason: grounded.abstain_reason,
+        traceId: grounded.trace_id,
+        latencyMs: grounded.meta.latency_ms,
+      });
+      try {
+        const legacy = await runLegacyFoxyFlow({
+          studentId,
+          resolvedSessionId,
+          message,
+          subject,
+          grade,
+          chapter,
+          board,
+          mode,
+          academicGoal,
+          history,
+        });
+        return await persistLegacyFoxyResponse({
+          authUserId: auth.userId!,
+          studentId,
+          resolvedSessionId,
+          remaining,
+          message,
+          subject,
+          grade,
+          chapter,
+          mode,
+          legacy,
+          logFoxyAsk,
+        });
+      } catch (legacyErr) {
+        logger.error('foxy_grounded_fallback_failed', {
+          error: legacyErr instanceof Error ? legacyErr : new Error(String(legacyErr)),
+          studentId,
+        });
+        await refundQuota(studentId, 'foxy_chat');
+        return errorJson(
+          'Foxy is temporarily unavailable. Please try again in a moment.',
+          'Foxy abhi available nahi hai. Thodi der mein dobara try karein.',
+          503,
+        );
+      }
+    }
     if (REFUND_ABSTAIN_REASONS.includes(grounded.abstain_reason)) {
       await refundQuota(studentId, 'foxy_chat');
     }
