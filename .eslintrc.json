@@ -26,6 +26,16 @@
   "overrides": [
     {
       "files": [
+        "src/__tests__/**",
+        "src/**/*.test.{ts,tsx}",
+        "src/**/*.spec.{ts,tsx}"
+      ],
+      "rules": {
+        "alfanumrik/no-canonical-write-outside-projector": "off"
+      }
+    },
+    {
+      "files": [
         "src/app/**/*.{ts,tsx}",
         "src/components/**/*.{ts,tsx}"
       ],

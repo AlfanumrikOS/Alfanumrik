@@ -242,6 +242,7 @@ export async function POST(request: Request) {
     : Math.min(currentMean, 0.5);
   const newStreak = body.correct ? currentStreak + 1 : 0;
 
+  // eslint-disable-next-line alfanumrik/no-canonical-write-outside-projector -- see EXCEPTIONS.md E5 (sanctioned Path-C-v2 rollback target)
   const { error: upsertErr } = await sbAdmin.from('concept_mastery').upsert(
     {
       student_id:        studentId,
