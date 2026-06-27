@@ -80,7 +80,7 @@ export default function SynthesisPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [isLoading, isLoggedIn]);
+  }, [isLoading, isLoggedIn, router]);
 
   if (phase.kind === 'loading') {
     return (

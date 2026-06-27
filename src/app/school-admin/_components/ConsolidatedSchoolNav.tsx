@@ -288,7 +288,7 @@ export default function ConsolidatedSchoolNav({
         return true;
       }),
     })).filter((section) => section.items.length > 0);
-  }, [moduleEnablement, rbacEnabled, adminRole, reportsDepthEnabled, principalAiEnabled]);
+  }, [rbacEnabled, adminRole, reportsDepthEnabled, principalAiEnabled]);
 
   // Active = longest matching href across ALL visible items (root-vs-subroute).
   const activeHref = useMemo(() => {

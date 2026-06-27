@@ -383,7 +383,7 @@ function ChapterConceptPageContent() {
 
   useEffect(() => {
     if (student) load();
-  }, [student?.id, load]);
+  }, [student, student?.id, load]);
 
   // P0 defense-in-depth: skeleton-timeout backstop. If we're still in the
   // loading state 8s after it began (e.g. an await silently stalls on a dead
@@ -445,6 +445,9 @@ function ChapterConceptPageContent() {
       }
     })();
     return () => { cancelled = true; };
+    // Fetch flags once per student id; depending on the full `student` object
+    // would re-fire this flag round-trip on every auth-context reference change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [student?.id]);
 
   // Wave 1C: read students.academic_goal once per session so the
@@ -518,6 +521,10 @@ function ChapterConceptPageContent() {
         if (!cancelled) setReadLoading(false);
       });
     return () => { cancelled = true; };
+    // `language` intentionally omitted: this fetch keys on entering read mode and
+    // the readContent/readLoading guards prevent re-fetch. Adding `language` would
+    // cancel an in-flight fetch on a mid-load language toggle and strand readLoading.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, readContent, readLoading, student, subject, chapterNum, telemetryBase]);
 
   // Save current study position for "continue where you left off"

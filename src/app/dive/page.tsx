@@ -85,7 +85,7 @@ export default function DivePage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [isLoading, isLoggedIn]);
+  }, [isLoading, isLoggedIn, router]);
 
   async function handlePickerCommit(payload:
     | { pickerOption: 'phenomenon'; phenomenonSlug: string }

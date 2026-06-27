@@ -255,7 +255,7 @@ export default function ChallengePage() {
 
   useEffect(() => {
     if (student) loadData();
-  }, [student?.id, loadData]);
+  }, [student, student?.id, loadData]);
 
   // ── On solve callback ──
   const handleSolved = useCallback(
