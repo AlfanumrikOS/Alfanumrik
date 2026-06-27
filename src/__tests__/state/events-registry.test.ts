@@ -136,6 +136,24 @@ const VALID_PAYLOADS: Record<DomainEventKind, Record<string, unknown>> = {
     signalType: 'repeated_hint',
     occurredAt: FIXTURE_ISO,
   },
+  // ADR-001 Phase 3c / E10 sunset — resolver answer as a durable event.
+  'learner.next_action_resolved': {
+    studentId: FIXTURE_UUID_B,
+    horizon: 'daily',
+    dayBucket: '2026-05-16',
+    rank: 0,
+    actionKind: 'start_quiz',
+    actionPayload: {
+      kind: 'start_quiz',
+      url: '/quiz?subject=math&chapter=1',
+      subjectCode: 'math',
+      chapterNumber: 1,
+      zpdBin: 2,
+      reason: 'todays_zpd',
+    },
+    generatedAt: FIXTURE_ISO,
+    expiresAt: FIXTURE_ISO,
+  },
   'ai.foxy_session_started': {
     foxySessionId: FIXTURE_UUID_C,
     subjectCode: 'math',

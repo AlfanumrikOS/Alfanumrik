@@ -234,6 +234,49 @@ export const LearnerStruggleObservedSchema = EventBaseSchema.extend({
   }),
 });
 
+// ADR-001 Phase 3c / ADR-005 E10 sunset — the Learner Loop resolver's
+// answer becomes a durable event so a projector (scheduled-actions-writer)
+// can own the canonical write to public.scheduled_actions instead of the
+// route writing it inline. Producer is GET /api/learner/next; the payload
+// mirrors the route's CURRENT scheduled_actions upsert columns 1:1 so the
+// route's optimistic write and the projector's catch-up write are
+// deterministically identical (the deterministic-equivalence property
+// ADR-005 requires of dual writers during the parity phase).
+//
+// `source` is intentionally NOT on the payload: the resolver is the only
+// producer of this event, so the projector hard-codes source='scheduler'
+// (teacher/parent override rows are a different write path, never this
+// event). `rank` is pinned to 0 and `horizon` to 'daily' — the route only
+// ever writes the rank-0 daily slot today (Phase 3c MVP).
+//
+// P13: payload is IDs + enums + the action body the resolver already
+// returns to the client — no PII (the action carries subject/chapter +
+// a deep-link URL, never student-identifiable data).
+export const LearnerNextActionResolvedSchema = EventBaseSchema.extend({
+  kind: z.literal('learner.next_action_resolved'),
+  payload: z.object({
+    // students.id PK — the conflict-key anchor on scheduled_actions.
+    studentId:    uuidLike(),
+    // Phase 3c MVP only writes the daily slot.
+    horizon:      z.literal('daily'),
+    // IST start-of-day, YYYY-MM-DD (the `date` column on scheduled_actions).
+    dayBucket:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    // The resolver only ever writes the primary slot.
+    rank:         z.literal(0),
+    // LearnerAction['kind'] — free-form here (mirrors the free-form text
+    // column) so new action kinds ship without a registry change.
+    actionKind:   z.string().min(1).max(64),
+    // The full LearnerAction body, stored verbatim into the action_payload
+    // jsonb column. Object-shaped; not over-constrained so the union can
+    // grow without touching this schema.
+    actionPayload: z.record(z.string(), z.unknown()),
+    // Mirror the route's generated_at / expires_at columns verbatim so the
+    // projector's row is byte-identical to the route's optimistic write.
+    generatedAt:  isoDatetime(),
+    expiresAt:    isoDatetime(),
+  }),
+});
+
 // ── AI / Foxy events ─────────────────────────────────────────────────
 
 export const FoxySessionStartedSchema = EventBaseSchema.extend({
@@ -745,6 +788,7 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   LearnerConceptCheckAnsweredSchema,
   LearnerLearningActionSchema,
   LearnerStruggleObservedSchema,
+  LearnerNextActionResolvedSchema,
   FoxySessionStartedSchema,
   FoxySessionCompletedSchema,
   ParentLinkedSchema,
@@ -799,6 +843,7 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'learner.concept_check_answered',
   'learner.learning_action',
   'learner.struggle_observed',
+  'learner.next_action_resolved',
   'ai.foxy_session_started',
   'ai.foxy_session_completed',
   'parent.linked_to_learner',
