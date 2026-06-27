@@ -32,6 +32,7 @@ const ConversationManager = dynamic(() => import('@/components/foxy/Conversation
 const ConversationHeader = dynamic(() => import('@/components/foxy/ConversationHeader').then(m => ({ default: m.ConversationHeader })), { ssr: false });
 import { useSELCheckIn, type MoodState } from '@/components/SELCheckIn';
 import { track } from '@/lib/analytics';
+import { normalizeEnrolledGrade } from '@/lib/foxy-scope';
 import {
   LANGS,
   MODES,
@@ -556,7 +557,8 @@ export default function FoxyPage() {
   useEffect(() => {
     if (!authStudent) return;
     setStudent(authStudent); setTotalXP(authStudent.xp_total || 0); setStreakDays(authStudent.streak_days || 0);
-    const grade = (authStudent.grade || '9').replace('Grade ', ''); setStudentGrade(grade);
+    const grade = normalizeEnrolledGrade(authStudent.grade) ?? '9';
+    setStudentGrade(grade);
     setLanguage(authStudent.preferred_language || 'en');
     const saved = typeof window !== 'undefined' ? localStorage.getItem('alfanumrik_subject') : null;
     const subjectKey = saved || authStudent.preferred_subject || 'science';

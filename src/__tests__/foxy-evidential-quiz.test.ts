@@ -54,6 +54,7 @@ describe('parseChapterNumber', () => {
     expect(parseChapterNumber('6')).toBe(6);
     expect(parseChapterNumber('Chapter 12')).toBe(12);
     expect(parseChapterNumber('Chapter 2: Acids')).toBe(2);
+    expect(parseChapterNumber('Ch. 5: Light')).toBe(5);
   });
   it('returns null when no positive number is present', () => {
     expect(parseChapterNumber(null)).toBeNull();

@@ -73,8 +73,11 @@ describe('parseFoxyChapterNumber', () => {
     expect(parseFoxyChapterNumber('Chapter 0')).toBeNull();
   });
 
-  it('caps at 3 digits (chapter > 999 is data corruption)', () => {
-    expect(parseFoxyChapterNumber('Chapter 9999: Foo')).toBe(999);
+  it('rejects out-of-range chapter input (4+ digits are out-of-scope/abusive, not real CBSE chapters)', () => {
+    // Real NCERT chapters are 1-2 digits; "Chapter 9999" is nonsense/abuse.
+    // The parser fails closed (returns null) so Foxy RAG chapter-scope
+    // filtering never accepts out-of-curriculum input.
+    expect(parseFoxyChapterNumber('Chapter 9999: Foo')).toBeNull();
   });
 });
 

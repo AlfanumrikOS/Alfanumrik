@@ -224,6 +224,44 @@ describe('T3 — chapter (strict)', () => {
 
     expect(result.reason).toBe('chapter_not_in_scope');
   });
+
+  it('accepts legacy chapter labels like "Chapter 3" and resolves the matching chapter row', async () => {
+    _callReasoningModel.mockResolvedValue({ content: '{"inScope": true}', model: 'gpt-4o-mini', tokensUsed: 5, tier: 'base' });
+    const supabaseAdmin = makeSupabaseAdmin({
+      students: { data: { grade: '6' } },
+      subjects: { data: { id: 'subj-math', code: 'math' } },
+      chapters: { data: { chapter_number: 3 } },
+      cbse_syllabus: { data: { is_in_scope: true } },
+      curriculum_topics: { data: [{ title: 'Fractions' }] },
+    });
+
+    const result = await validateCurriculumScope(
+      { ...baseInput, chapter: 'Chapter 3' },
+      { supabaseAdmin },
+    );
+
+    expect(result.inScope).toBe(true);
+    expect(result.reason).toBeUndefined();
+  });
+
+  it('accepts abbreviated legacy chapter labels like "Ch. 3"', async () => {
+    _callReasoningModel.mockResolvedValue({ content: '{"inScope": true}', model: 'gpt-4o-mini', tokensUsed: 5, tier: 'base' });
+    const supabaseAdmin = makeSupabaseAdmin({
+      students: { data: { grade: '6' } },
+      subjects: { data: { id: 'subj-math', code: 'math' } },
+      chapters: { data: { chapter_number: 3 } },
+      cbse_syllabus: { data: { is_in_scope: true } },
+      curriculum_topics: { data: [{ title: 'Fractions' }] },
+    });
+
+    const result = await validateCurriculumScope(
+      { ...baseInput, chapter: 'Ch. 3' },
+      { supabaseAdmin },
+    );
+
+    expect(result.inScope).toBe(true);
+    expect(result.reason).toBeUndefined();
+  });
 });
 
 // ─── T4a: deterministic out-of-grade math-domain lexicon (NO LLM) ──────────────

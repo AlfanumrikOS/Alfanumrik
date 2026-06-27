@@ -131,6 +131,7 @@ vi.mock('@/lib/AuthContext', () => ({
 }));
 
 vi.mock('@/lib/supabase', () => {
+  const orCalls: string[] = [];
   const queryBuilder: Record<string, unknown> = {
     select: () => queryBuilder,
     insert: () => queryBuilder,
@@ -145,7 +146,10 @@ vi.mock('@/lib/supabase', () => {
     lte: () => queryBuilder,
     in: () => queryBuilder,
     is: () => queryBuilder,
-    or: () => queryBuilder,
+    or: (clause: string) => {
+      orCalls.push(clause);
+      return queryBuilder;
+    },
     order: () => queryBuilder,
     limit: () => queryBuilder,
     range: () => queryBuilder,
@@ -174,6 +178,7 @@ vi.mock('@/lib/supabase', () => {
       }),
       removeChannel: () => {},
     },
+    __orCalls: orCalls,
   };
 });
 
@@ -320,6 +325,31 @@ describe('Foxy page — regression snapshot (decomposition contract)', () => {
       // We only assert >= 3 to give the decomposed page room to reorganise
       // without breaking the contract.
       expect(container.querySelectorAll('button').length).toBeGreaterThan(2);
+    });
+  });
+
+  it('normalizes a legacy "Grade 9" student row before loading grade-scoped topics', async () => {
+    auth.state = {
+      ...auth.state,
+      student: {
+        ...(auth.state?.student as Record<string, unknown>),
+        grade: 'Grade 9',
+      },
+    };
+    // The vi.mock factory above exposes the recorded `.or(clause)` arguments as
+    // `__orCalls`, but the real `@/lib/supabase` module has no such export, so
+    // cast through `unknown` to the mock-only shape rather than to bare `any`.
+    const supabaseMod = (await import('@/lib/supabase')) as unknown as {
+      __orCalls: string[];
+    };
+    const orCalls = supabaseMod.__orCalls;
+    orCalls.length = 0;
+
+    const { default: FoxyPage } = await import('@/app/foxy/page');
+    render(<FoxyPage />);
+
+    await waitFor(() => {
+      expect(orCalls.some((clause) => clause === 'grade.eq.Grade 9,grade.eq.9')).toBe(true);
     });
   });
 });
