@@ -690,7 +690,13 @@ describe('Section 3: Adaptive Pipeline Integration', () => {
     let foxySource: string;
 
     beforeAll(() => {
-      foxySource = readSource('src/app/api/foxy/route.ts');
+      // H1 REFACTOR M2 extracted the pure prompt-builders (buildSystemPrompt,
+      // buildCognitivePromptSection, FOXY_SAFETY_RAILS, …) into
+      // src/lib/foxy/prompt-sections.ts. Concatenate both so this wiring guard
+      // follows the content to its new home.
+      foxySource =
+        readSource('src/app/api/foxy/route.ts') +
+        readSource('src/lib/foxy/prompt-sections.ts');
     });
 
     it('imports/references cognitive context loading', () => {
@@ -830,7 +836,17 @@ describe('Section 4: Safety Guardrails Health', () => {
   let foxySource: string;
 
   beforeAll(() => {
-    foxySource = fs.readFileSync(path.resolve('src/app/api/foxy/route.ts'), 'utf-8');
+    // H1 REFACTOR extracted route internals into co-located modules:
+    //   M1 → src/app/api/foxy/_lib/constants.ts (DAILY_QUOTA, VALID_GRADES,
+    //        normalizePlan, …)
+    //   M2 → src/lib/foxy/prompt-sections.ts (FOXY_SAFETY_RAILS, the prompt
+    //        builders, …)
+    // Read all three so the guardrail assertions follow the extracted content
+    // wherever it now lives.
+    foxySource =
+      fs.readFileSync(path.resolve('src/app/api/foxy/route.ts'), 'utf-8') +
+      fs.readFileSync(path.resolve('src/app/api/foxy/_lib/constants.ts'), 'utf-8') +
+      fs.readFileSync(path.resolve('src/lib/foxy/prompt-sections.ts'), 'utf-8');
   });
 
   describe('Rate limiting and quota checking', () => {
