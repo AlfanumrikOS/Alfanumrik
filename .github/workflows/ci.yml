@@ -770,7 +770,9 @@ jobs:
             # a `head` that exits early closes the pipe and produces the
             # "echo: write error: Broken pipe" seen in the old loop. Use a
             # plain temp file + curl's own %{http_code} instead.
-            BODY=$(curl -s -m 20 -o /tmp/health-body.txt -w "%{http_code}" \
+            HEADERS_FILE=$(mktemp)
+            BODY_FILE=$(mktemp)
+            BODY=$(curl -sS -m 20 -D "$HEADERS_FILE" -o "$BODY_FILE" -w "%{http_code}" \
               -A "Alfanumrik-CI-HealthCheck/1.0 (+https://alfanumrik.com; vercel-monitoring)" \
               -H "Accept: application/json" \
               -H "x-health-probe: github-actions" \
@@ -783,18 +785,29 @@ jobs:
             # curl-level failure: connection refused / DNS failure / timeout.
             # This is a genuine outage signal — never soft-pass it.
             if [ "$CURL_EXIT" != "0" ]; then
+              if [ "$STATUS" = "000" ] && grep -qiE 'Vercel Security Checkpoint|x-vercel-mitigated: challenge|x-vercel-challenge-token' "$HEADERS_FILE" "$BODY_FILE" 2>/dev/null; then
+                echo "Attempt $i/5 hit Vercel security checkpoint (curl exit $CURL_EXIT) — treating as protection challenge"
+                ALL_PROTECTION=1
+                REAL_FAIL=0
+                LAST_STATUS="429"
+                rm -f "$HEADERS_FILE" "$BODY_FILE"
+                sleep 30
+                continue
+              fi
               echo "Attempt $i/5: curl failed (exit $CURL_EXIT) — connection/DNS/timeout"
               ALL_PROTECTION=0
               REAL_FAIL=1
               LAST_STATUS="curl-exit-$CURL_EXIT"
+              rm -f "$HEADERS_FILE" "$BODY_FILE"
               sleep 15
               continue
             fi
 
             if [ "$STATUS" = "200" ]; then
               echo "Health check passed (attempt $i)"
-              head -c 500 /tmp/health-body.txt || true
+              head -c 500 "$BODY_FILE" || true
               echo ""
+              rm -f "$HEADERS_FILE" "$BODY_FILE"
               exit 0
             fi
 
@@ -826,6 +839,7 @@ jobs:
             else
               sleep 15
             fi
+            rm -f "$HEADERS_FILE" "$BODY_FILE"
           done
 
           # Soft-pass ONLY when every attempt was a deployment-protection

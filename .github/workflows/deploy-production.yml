@@ -495,23 +495,42 @@ jobs:
             local accepted=("$@")
             PROBES=$((PROBES + 1))
             local status
-            status=$(curl -s -o /dev/null -w "%{http_code}" \
+            local curl_exit
+            local headers_file
+            local body_file
+            headers_file=$(mktemp)
+            body_file=$(mktemp)
+            status=$(curl -sS -D "$headers_file" -o "$body_file" -w "%{http_code}" \
               -A "Alfanumrik-CI-PostDeploy/1.0 (+https://alfanumrik.com)" \
               "${BYPASS_HEADER[@]}" \
               "${TARGET_URL}${path}" 2>/dev/null)
+            curl_exit=$?
+            if [ "$curl_exit" -ne 0 ] && [ "$status" = "000" ]; then
+              if grep -qiE 'Vercel Security Checkpoint|x-vercel-mitigated: challenge|x-vercel-challenge-token' "$headers_file" "$body_file" 2>/dev/null; then
+                status="429"
+              else
+                echo "| $label | FAIL (curl-exit-$curl_exit) |" >> "$GITHUB_STEP_SUMMARY"
+                REAL_FAIL=$((REAL_FAIL + 1))
+                rm -f "$headers_file" "$body_file"
+                return 1
+              fi
+            fi
             for code in "${accepted[@]}"; do
               if [ "$status" = "$code" ]; then
                 echo "| $label | $status |" >> $GITHUB_STEP_SUMMARY
+                rm -f "$headers_file" "$body_file"
                 return 0
               fi
             done
             if [ "$status" = "429" ]; then
               echo "| $label | 429 (Vercel checkpoint) |" >> $GITHUB_STEP_SUMMARY
               BYPASS_BLOCKED=$((BYPASS_BLOCKED + 1))
+              rm -f "$headers_file" "$body_file"
               return 0
             fi
             echo "| $label | FAIL ($status) |" >> $GITHUB_STEP_SUMMARY
             REAL_FAIL=$((REAL_FAIL + 1))
+            rm -f "$headers_file" "$body_file"
             return 1
           }
 
