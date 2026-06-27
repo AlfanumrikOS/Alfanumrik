@@ -24,6 +24,7 @@
 
 import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0'
 import { createEmailIdempotencyKey, fetchWithTimeout } from '../_shared/reliability.ts'
+import { buildAuthActionUrl } from '../_shared/auth-email-links.ts'
 
 // Supabase stores the secret as "v1,whsec_<base64>" but standardwebhooks expects "whsec_<base64>"
 const rawHookSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET') || ''
@@ -261,27 +262,17 @@ Deno.serve(async (req: Request) => {
     // (Supabase may send its own project URL which causes "No API key" errors)
     const baseSiteUrl = SITE_URL
 
-    // Build link-based verification URL only (no OTP codes)
-    let actionUrl: string
-    if (token_hash) {
-      actionUrl = `${baseSiteUrl}/auth/confirm?token_hash=${token_hash}&type=${email_action_type}`
-      if (redirect_to) {
-        // redirect_to may be a full URL (e.g. https://alfanumrik.com/auth/callback?type=signup)
-        // The confirm route prepends its own origin, so we must pass only the path portion
-        let nextPath = redirect_to
-        try {
-          const parsed = new URL(redirect_to)
-          nextPath = parsed.pathname + parsed.search
-        } catch {
-          // Already a relative path — use as-is
-        }
-        actionUrl += `&next=${encodeURIComponent(nextPath)}`
-      }
-    } else if (token) {
-      actionUrl = `${baseSiteUrl}/auth/callback?token=${token}&type=${email_action_type}`
-    } else {
-      actionUrl = `${baseSiteUrl}/dashboard`
-    }
+    // Route both token shapes through the same server-side verification path.
+    // The app's /auth/callback handler is PKCE-only; token-based auth links
+    // must go through /auth/confirm so the server can call verifyOtp.
+    const actionUrl = buildAuthActionUrl({
+      baseSiteUrl,
+      emailActionType: email_action_type,
+      token,
+      tokenHash: token_hash,
+      redirectTo: redirect_to,
+      email: user.email,
+    })
 
     let emailContent: { subject: string; html: string; text: string }
     switch (email_action_type) {

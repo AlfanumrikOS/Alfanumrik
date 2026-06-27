@@ -19,8 +19,9 @@
  *
  * 1. PKCE flow (code-based): /auth/callback?code=xxx
  * 2. Token hash flow: /auth/confirm?token_hash=xxx&type=signup
+ * 3. Legacy OTP token flow: /auth/confirm?token=xxx&email=user@example.com&type=signup
  *
- * This route handles the second case. Both must work.
+ * This route handles the verification flows that land on /auth/confirm.
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
@@ -96,6 +97,8 @@ async function registerSessionOnResponse(
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
   const token_hash = searchParams.get('token_hash');
+  const token = searchParams.get('token');
+  const email = searchParams.get('email');
   const type = searchParams.get('type') as 'signup' | 'recovery' | 'email' | 'invite' | null;
   const rawNext = searchParams.get('next') ?? '/dashboard';
   // next may be an absolute URL (e.g. https://alfanumrik.com/auth/callback?type=signup)
@@ -118,6 +121,125 @@ export async function GET(request: NextRequest) {
   if (token_hash && type) {
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase.auth.verifyOtp({ token_hash, type });
+
+    if (!error) {
+      if (type === 'recovery') {
+        // Pass session tokens via URL hash so the client-side Supabase SDK
+        // picks them up via detectSessionInUrl. Without this, the session
+        // lives only in server-side cookies and the browser client (which
+        // uses localStorage) sees no session → "Invalid or Expired Link".
+        const { data: { session: recoverySession } } = await supabase.auth.getSession();
+        if (recoverySession) {
+          const hashParams = new URLSearchParams({
+            access_token: recoverySession.access_token,
+            refresh_token: recoverySession.refresh_token,
+            token_type: 'bearer',
+            type: 'recovery',
+          });
+          return NextResponse.redirect(`${origin}/auth/reset#${hashParams.toString()}`);
+        }
+        return NextResponse.redirect(`${origin}/auth/reset`);
+      }
+      if (type === 'signup') {
+        // Email confirmation for signup — bootstrap profile if needed, same as /auth/callback
+        let redirectRole = 'student';
+        let signupUserId = '';
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            signupUserId = user.id;
+            // R2 (2026-06-10): single canonical metadata→params derivation
+            // (shared with /auth/callback). Fixes teacher subjects_taught/
+            // grades_taught previously dropped (passed null) on this route,
+            // and the per-site grade default drift (now normalizeGrade — P5).
+            const params = profileParamsFromMetadata(user);
+            const email = params.email;
+            const name = params.name;
+            redirectRole = params.role;
+
+            const { data: existingStudent } = await supabase.from('students').select('id').eq('auth_user_id', user.id).single();
+            const { data: existingTeacher } = await supabase.from('teachers').select('id').eq('auth_user_id', user.id).single();
+            const { data: existingGuardian } = await supabase.from('guardians').select('id').eq('auth_user_id', user.id).single();
+            const { data: existingSchoolAdmin } = await supabase.from('school_admins').select('id').eq('auth_user_id', user.id).single();
+            const hasProfile = !!(existingStudent || existingTeacher || existingGuardian || existingSchoolAdmin);
+
+            if (!hasProfile) {
+              if (redirectRole === 'institution_admin') {
+                // R2 (2026-06-10): token_hash-confirmed school-admin signups
+                // previously landed WITHOUT a profile — this branch existed
+                // only in /auth/callback. Shared helper creates the school +
+                // school_admins rows; the sync_school_admin_role trigger
+                // auto-assigns the institution_admin RBAC role.
+                await bootstrapSchoolAdminProfile(
+                  {
+                    authUserId: user.id,
+                    name,
+                    email,
+                    schoolName: params.school_name,
+                    city: params.school_city,
+                    state: params.school_state,
+                    board: params.board,
+                    phone: params.phone,
+                  },
+                  '[Auth Confirm]'
+                );
+              } else {
+                try {
+                  const { getSupabaseAdmin } = await import('@/lib/supabase-admin');
+                  const admin = getSupabaseAdmin();
+                  await admin.rpc('bootstrap_user_profile', {
+                    p_auth_user_id: user.id,
+                    p_role: redirectRole,
+                    p_name: name,
+                    p_email: email,
+                    p_grade: params.grade,
+                    p_board: params.board,
+                    p_school_name: params.school_name,
+                    p_subjects_taught: params.subjects,
+                    p_grades_taught: params.grades_taught,
+                    p_phone: params.phone,
+                    p_link_code: params.link_code,
+                  });
+                } catch (bootstrapErr) {
+                  console.error('[Auth Confirm] Bootstrap failed:', bootstrapErr);
+                }
+              }
+            } else {
+              if (existingSchoolAdmin) redirectRole = 'institution_admin';
+              else if (existingTeacher) redirectRole = 'teacher';
+              else if (existingGuardian) redirectRole = 'parent';
+              else redirectRole = 'student';
+            }
+          }
+        } catch { /* Non-fatal */ }
+
+        const signupResponse = NextResponse.redirect(`${origin}${getRoleDestination(redirectRole)}`);
+        if (signupUserId) {
+          await registerSessionOnResponse(signupResponse, signupUserId, request);
+        }
+        return signupResponse;
+      }
+
+      // Default (non-signup, non-recovery) — register session
+      const defaultResponse = NextResponse.redirect(`${origin}${safeNext}`);
+      try {
+        const { data: { user: defaultUser } } = await supabase.auth.getUser();
+        if (defaultUser) {
+          await registerSessionOnResponse(defaultResponse, defaultUser.id, request);
+        }
+      } catch {
+        // Non-blocking — session registration failure shouldn't break login
+      }
+      return defaultResponse;
+    }
+
+    console.error('[Auth Confirm] Token verification failed:', error.message);
+    return NextResponse.redirect(`${origin}/login?error=verification_failed`);
+  }
+
+  if (token && email && type) {
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase.auth.verifyOtp({ token, email, type });
 
     if (!error) {
       if (type === 'recovery') {

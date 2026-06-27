@@ -246,3 +246,21 @@ describe('/auth/confirm — token_hash flow (P15 rule 3)', () => {
     expect(location(res)).toContain('/teacher');
   });
 });
+
+describe('/auth/confirm — legacy token flow', () => {
+  it('verifies token + email + type and redirects (no 500)', async () => {
+    const { GET } = await import('@/app/auth/confirm/route');
+    holders.verifyOtp.mockResolvedValue({ error: null });
+
+    const res = await GET(makeReq('/auth/confirm?token=legacy-token&email=user%40example.com&type=magic_link&next=/dashboard'));
+
+    expect(holders.verifyOtp).toHaveBeenCalledWith({
+      token: 'legacy-token',
+      email: 'user@example.com',
+      type: 'magic_link',
+    });
+    expect(res.status).toBeGreaterThanOrEqual(300);
+    expect(res.status).toBeLessThan(400);
+    expect(location(res)).toContain('/dashboard');
+  });
+});
