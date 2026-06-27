@@ -135,6 +135,7 @@ export async function GET(_request: Request) {
     if (scheduledFlagOn) {
       const dayBucket = dayBucketIst(now);
       const expiresAt = expiresAtForHorizon('daily', now);
+      // eslint-disable-next-line alfanumrik/no-canonical-write-outside-projector -- see EXCEPTIONS.md E10 (Phase 3c write-through; projector pending)
       const { error: upsertErr } = await supabaseAdmin
         .from('scheduled_actions')
         .upsert({

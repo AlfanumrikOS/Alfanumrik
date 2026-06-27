@@ -38,6 +38,20 @@
  *                                              and ADR-005 §"Use the
  *                                              existing runtime").
  *
+ * Test fixtures (src/__tests__/**, *.test.*, *.spec.*) are turned OFF
+ * for this rule via an .eslintrc.json override — not via this file's
+ * allowlist. Rationale: tests legitimately seed/clean canonical tables
+ * as E2E setup (there is no projector in a test). The rule governs the
+ * production write path, so scoping it out of tests at the config layer
+ * (mirroring every other src-scoped rule in .eslintrc.json) is the
+ * correct, idiomatic boundary. Keeping the in-rule allowlist focused on
+ * the two legitimate PRODUCTION writers keeps the rule logic narrow.
+ *
+ * Per-site PRODUCTION exceptions (e.g. the ADR-sanctioned legacy
+ * rollback block in /api/tutor/answer) are suppressed inline with
+ * `// eslint-disable-next-line ... -- see EXCEPTIONS.md E<n>`, NOT by
+ * widening the allowlist. See README "Suppression".
+ *
  * Severity: warn in .eslintrc.json (ratcheting in), error in
  * .eslintrc.ai-boundary.json (strict mode).
  */

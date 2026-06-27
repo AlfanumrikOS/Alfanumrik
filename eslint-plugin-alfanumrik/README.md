@@ -56,6 +56,13 @@ subscribers directory.
     exception; see
     [`docs/architecture/EXCEPTIONS.md`](../docs/architecture/EXCEPTIONS.md).
 
+- **Test fixtures are out of scope.** `src/__tests__/**`, `*.test.*`,
+  and `*.spec.*` are turned OFF for this rule via an `.eslintrc.json`
+  override (not via the in-rule allowlist). Tests legitimately seed and
+  clean canonical tables as E2E setup — there is no projector in a test.
+  The rule governs the production write path; scoping it out of tests at
+  the config layer mirrors every other src-scoped rule in the config.
+
 - **Severity:**
   - `warn` in `.eslintrc.json` (default lint config — ratcheting in).
   - `error` in `.eslintrc.ai-boundary.json` (stricter parity config).

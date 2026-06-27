@@ -90,11 +90,12 @@ This file is reviewed **quarterly** by the architect, with an off-cycle review w
 - **Owner:** assessment
 - **Justification:** Per [`src/app/api/tutor/answer/route.ts`](../../src/app/api/tutor/answer/route.ts) header comment: "Why the legacy block survives PR 2: it is the rollback target. Removing it would mean an RPC outage downgrades all student writes silently to `/dev/null`."
 - **Compensating control:** triple-flag gate (`ff_event_bus_v1 && ff_projector_runner_v1 && ff_tutor_bkt_v1`) plus `publishResult.published === true` check. On any failure the route emits `tutor_answer_path_c_fallback` PostHog event and ops-critical log.
+- **Lint:** the `alfanumrik/no-canonical-write-outside-projector` rule fires on the legacy `concept_mastery` upsert (`src/app/api/tutor/answer/route.ts:245`). This is the SANCTIONED rollback target, not drift — per the route header and ADR-005 §"The route ↔ projector pairing", the inline write is deliberately retained until this exception sunsets. The sanctioned suppression is an inline `// eslint-disable-next-line alfanumrik/no-canonical-write-outside-projector -- see EXCEPTIONS.md E5` at the upsert site (backend-owned file; pending application). The whole block is deleted when this entry closes, removing both the write and the suppression.
 - **References:**
   - [`src/app/api/tutor/answer/route.ts`](../../src/app/api/tutor/answer/route.ts)
   - [PR #755](https://github.com/AlfanumrikOS/Alfanumrik/pull/755)
   - [`ADR-005-concept-first-adaptive-learning-spine.md`](./ADR-005-concept-first-adaptive-learning-spine.md)
-- **Last reviewed:** 2026-05-16
+- **Last reviewed:** 2026-06-27
 
 ### E6. `mesh-automation.enabled` file flag at repo root
 
@@ -148,10 +149,27 @@ This file is reviewed **quarterly** by the architect, with an off-cycle review w
   - [`DATA_OWNERSHIP_MATRIX.md`](./DATA_OWNERSHIP_MATRIX.md)
 - **Last reviewed:** 2026-05-16
 
+### E10. `/api/learner/next` write-through to `scheduled_actions`
+
+- **Status:** Active
+- **Established:** 2026-06-27 (ADR-005 Cycle 2 H2 lint-violation disposition; the write itself predates this — shipped with ADR-001 Phase 3c)
+- **Sunset deadline:** Condition — a `scheduled-actions-writer` projector subscriber (under `src/lib/state/subscribers/`) consumes a durable `learner.next_action_resolved` event and becomes the canonical writer of `scheduled_actions`; the route's direct `supabaseAdmin.from('scheduled_actions').upsert(...)` is then removed. No fixed date: blocked on the durable-event spine work (ADR-005 Phase 3). Re-review at the next quarterly cadence.
+- **Owner:** architect (projector design + event kind) + backend (route emit/remove)
+- **Justification:** [`src/app/api/learner/next/route.ts:138`](../../src/app/api/learner/next/route.ts) performs a best-effort, flag-gated (`ff_scheduled_actions_v1`) write-through to `scheduled_actions` — a canonical learner-state table per ADR-005 §"The enforceable rule" #1. This is a genuine deviation from the projector-canonical rule (not an operational/log table). It shipped as a deliberate ADR-001 Phase 3c interim: the resolver computes the next action and overwrites the daily row directly because the `scheduled-actions` projector does not exist yet. It is registered here (rather than left as silent drift) so it is deliberate, time-bound, and visible to the quarterly review.
+- **Compensating control:** the write is (a) flag-gated by `ff_scheduled_actions_v1` (OFF ⇒ no write, response identical to Phase 1/2), (b) best-effort — wrapped in try/catch, never blocks or fails the response, (c) deterministic and student-scoped via the `(student_id, horizon, day_bucket, rank)` conflict key (overwrite-within-day), (d) idempotent on re-resolution. No cross-student or cross-domain write. The resolver remains the single source of the action value, so the route and a future projector would compute identical rows (deterministic-equivalence property the ADR requires of dual writers).
+- **Lint:** the `alfanumrik/no-canonical-write-outside-projector` rule fires at `route.ts:138`. The sanctioned suppression is an inline `// eslint-disable-next-line alfanumrik/no-canonical-write-outside-projector -- see EXCEPTIONS.md E10` at the upsert site (backend-owned file; pending application). Do NOT widen the rule allowlist for this — the suppression is per-site and disappears with the projector migration.
+- **References:**
+  - [`src/app/api/learner/next/route.ts`](../../src/app/api/learner/next/route.ts)
+  - [`ADR-001-learner-loop-unification.md`](./ADR-001-learner-loop-unification.md) (Phase 3c write-through)
+  - [`ADR-005-concept-first-adaptive-learning-spine.md`](./ADR-005-concept-first-adaptive-learning-spine.md) §"The enforceable rule" #1
+  - [`src/lib/state/learner-loop/scheduled-actions.ts`](../../src/lib/state/learner-loop/scheduled-actions.ts)
+- **Last reviewed:** 2026-06-27
+
 ## Closed exceptions
 
 *(none yet — register established 2026-05-16)*
 
 ## Change log
 
+- **2026-06-27 v2** — added E10 (`/api/learner/next` `scheduled_actions` write-through) during the ADR-005 Cycle 2 H2 canonical-write lint-violation disposition; annotated E5 with its lint-suppression posture. Test fixtures excluded from the rule via `.eslintrc.json` override (not an EXCEPTIONS entry — tests are not a production write path).
 - **2026-05-16 v1** — register established with E1–E9 derived from existing `RISK_REGISTER.md` entries and Phase-1 audit findings (see chat transcript `2026-05-16-system-audit-phase1`).
