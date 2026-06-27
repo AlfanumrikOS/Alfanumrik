@@ -84,8 +84,32 @@ vi.mock('@/components/InlineSimulation', () => ({
 vi.mock('@/components/SectionErrorBoundary', () => ({
   SectionErrorBoundary: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
+// The page renders ContextPanel + FoxyStudySheet + FoxyToolsSheet (and, inside
+// ContextPanel, MasteryAwareness) — all NON-mocked so their real render is
+// exercised for coverage. Each pulls named exports from '@/components/ui', so
+// this mock must expose every one of them or vitest throws an unhandled
+// "No <X> export is defined on the mock" error mid-render. Transitive set:
+//   - SheetModal  → ContextPanel, FoxyStudySheet, FoxyToolsSheet
+//   - MasteryRing → MasteryAwareness (rendered inside ContextPanel)
+//   - Skeleton    → MasteryAwareness
 vi.mock('@/components/ui', () => ({
   BottomNav: () => <nav data-mock="bottom-nav" />,
+  // Real signature (src/components/ui/index.tsx:1035):
+  // SheetModal({ open, onClose, title, children }) — renders children only while
+  // `open` is truthy, else null. Lightweight stub mirrors that contract.
+  SheetModal: ({
+    open,
+    children,
+  }: {
+    open?: boolean;
+    onClose?: () => void;
+    title?: string;
+    children?: React.ReactNode;
+  }) => (open ? <div data-mock="sheet-modal">{children}</div> : null),
+  MasteryRing: ({ children }: { children?: React.ReactNode }) => (
+    <div data-mock="mastery-ring">{children}</div>
+  ),
+  Skeleton: () => <div data-mock="skeleton" />,
 }));
 
 // ── Lib imports ─────────────────────────────────────────────────────────────
