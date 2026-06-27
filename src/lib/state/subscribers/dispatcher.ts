@@ -38,6 +38,7 @@ import { masteryStateWriter } from './mastery-state-writer';
 import { conceptMasteryProjector } from './concept-mastery-projector';
 import { freeTierProvisioner } from './free-tier-provisioner';
 import { entitlementProjector } from './entitlement-projector';
+import { scheduledActionsWriter } from './scheduled-actions-writer';
 
 export interface DispatchOutcome {
   subscriber: string;
@@ -181,6 +182,10 @@ export const STANDARD_SUBSCRIBERS: ReadonlyArray<AnySubscriber> = [
   toAnySubscriber(freeTierProvisioner),
   // W2.4 — entitlement projector subscribing to billing.invoice_paid
   toAnySubscriber(entitlementProjector),
+  // ADR-001 Phase 3c / ADR-005 E10 sunset — canonical writer of
+  // scheduled_actions, consuming learner.next_action_resolved. Idempotent
+  // overwrite keyed by (student_id, horizon, day_bucket, rank).
+  toAnySubscriber(scheduledActionsWriter),
 ];
 
 /** The production dispatcher. Singleton per process. */

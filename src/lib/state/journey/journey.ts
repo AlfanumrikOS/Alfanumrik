@@ -386,6 +386,14 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
       // analytics only. Mapping to `null` keeps it off the journey timeline and
       // guarantees this projector never derives a milestone from a struggle signal.
       return null;
+    case 'learner.next_action_resolved':
+      // ADR-001 Phase 3c / E10 sunset — the Learner Loop resolver's answer,
+      // consumed by the scheduled-actions-writer projector. This is substrate
+      // observability (it drives the durable scheduled_actions write), NOT a
+      // learner milestone: the resolved action is surfaced as the live "what
+      // next?" CTA, never as a timeline card. Mapping to `null` keeps the
+      // resolver's high-frequency output off the journey.
+      return null;
     default: {
       // Exhaustiveness check — the compiler errors here if a new event
       // kind is added to the registry without a projector entry.

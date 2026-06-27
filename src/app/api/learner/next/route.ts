@@ -42,6 +42,7 @@ import {
   dayBucketIst,
   expiresAtForHorizon,
 } from '@/lib/state/learner-loop/scheduled-actions';
+import { publishEvent } from '@/lib/state/events/publish';
 import { logger } from '@/lib/logger';
 import { capture } from '@/lib/posthog/server';
 
@@ -156,6 +157,35 @@ export async function GET(_request: Request) {
           userId, studentId: state.studentId, error: upsertErr.message,
         });
       }
+
+      // H2b Stage 1 (E10-sunset parity phase) — dual-write the same row as a
+      // domain event ALONGSIDE the inline upsert above. The inline write stays
+      // as the synchronous rollback target until ff_event_bus_v1 +
+      // ff_projector_runner_v1 are both at 100% (E5 precedent); only then does
+      // Stage 2 remove the inline write + its E10 suppression. Best-effort:
+      // publishEvent self-gates on ff_event_bus_v1 (no-op when off) and the
+      // .catch() guarantees a bus outage NEVER affects the response. Service-
+      // role client because the bus is RLS-locked to service_role. Payload
+      // mirrors LearnerNextActionResolvedSchema 1:1 with the upsert columns.
+      const eventId = crypto.randomUUID();
+      await publishEvent(supabaseAdmin, {
+        eventId,
+        kind: 'learner.next_action_resolved',
+        occurredAt: now.toISOString(),
+        actorAuthUserId: userId,
+        tenantId: null,
+        idempotencyKey: `learner.next_action_resolved:${eventId}`,
+        payload: {
+          studentId: state.studentId,
+          horizon: 'daily',
+          dayBucket,
+          rank: 0,
+          actionKind: action.kind,
+          actionPayload: action as unknown as Record<string, unknown>,
+          generatedAt: now.toISOString(),
+          expiresAt,
+        },
+      }).catch(() => {});
     }
   } catch (err) {
     logger.warn('learner/next: scheduled_actions write-through threw', {
