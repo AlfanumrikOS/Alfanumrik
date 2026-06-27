@@ -16,6 +16,7 @@ import { Toaster } from '@/components/ui/toast';
 import { GlobalAppLayout } from '@/components/navigation/GlobalAppLayout';
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://alfanumrik.com'),
   title: {
     default: 'Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students',
     template: '%s | Alfanumrik',

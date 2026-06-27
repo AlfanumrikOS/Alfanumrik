@@ -332,6 +332,34 @@ describe('C. Happy path — body.grade matches db.grade, route proceeds', () => 
   });
 });
 
+// ─── C2. Legacy grade prefix normalization — enrolled "Grade 9" row ────────
+
+describe('C2. Legacy enrolled grade format — "Grade 9" normalizes to "9"', () => {
+  beforeEach(() => {
+    _studentRow = {
+      subscription_plan: 'premium_yearly',
+      account_status: 'active',
+      academic_goal: null,
+      name: null,
+      grade: 'Grade 9',
+    };
+  });
+
+  it('allows the request when the client claims the normalized grade "9"', async () => {
+    const { res } = await postFoxy({ message: 'Explain motion', subject: 'science', grade: '9' });
+    expect(res.status).not.toBe(403);
+    expect(_callGroundedAnswer).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs the normalized enrolled grade rather than the legacy prefixed string', async () => {
+    await postFoxy({ message: 'Explain motion', subject: 'science', grade: '9' });
+    const requestLog = _loggerInfo.mock.calls.find((c) => c[0] === 'foxy.request');
+    expect(requestLog).toBeDefined();
+    const ctx = requestLog![1] as Record<string, unknown>;
+    expect(ctx.grade).toBe('9');
+  });
+});
+
 // ─── D. HARD BLOCK — body.grade in allowed set BUT dbGrade is different ──────
 
 describe('D. GRADE_MISMATCH 403 hard block — body.grade ≠ db.grade (the spoof case)', () => {

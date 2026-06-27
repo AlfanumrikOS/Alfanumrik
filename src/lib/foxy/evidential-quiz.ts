@@ -29,6 +29,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { FoxyMcqBlock } from '@/lib/foxy/schema';
+import { parseFoxyChapterNumber } from '@/lib/foxy/chapter-parser';
 
 /**
  * Minimal row shape we read from chapter_concepts to resolve + (optionally)
@@ -54,11 +55,7 @@ const CHAPTER_CONCEPT_COLUMNS =
  * route's parseFoxyChapterNumber so resolution scopes the same way the prompt does.
  */
 export function parseChapterNumber(chapter: string | null): number | null {
-  if (!chapter) return null;
-  const m = chapter.match(/(?:chapter\s+)?(\d{1,3})\b/i);
-  if (!m) return null;
-  const n = parseInt(m[1], 10);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  return parseFoxyChapterNumber(chapter);
 }
 
 /** Lowercase + collapse whitespace for a forgiving title match. */

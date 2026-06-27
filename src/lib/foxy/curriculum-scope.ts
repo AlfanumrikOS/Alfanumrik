@@ -47,6 +47,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '@/lib/logger';
 import { validateSubjectWrite } from '@/lib/subjects';
 import { callReasoningModel } from '@/lib/ai/clients/reasoning-cascade';
+import { parseFoxyChapterNumber } from '@/lib/foxy/chapter-parser';
 
 export type CurriculumScopeReason =
   | 'grade_mismatch'
@@ -405,9 +406,7 @@ export async function validateCurriculumScope(
     subjectId = null;
   }
 
-  const chapterNum: number | null = /^\d+$/.test(chapter)
-    ? parseInt(chapter, 10)
-    : null;
+  const chapterNum = parseFoxyChapterNumber(chapter);
 
   // Resolve the chapter row for (subject, enrolledGrade) to get a chapter_number
   // we can check against cbse_syllabus.is_in_scope. Match by chapter_number when

@@ -96,11 +96,17 @@ import { normalizeFoxyResponseInline } from '@/lib/foxy/normalize-inline';
 import { recoverFoxyResponseFromText } from '@/lib/foxy/recover-from-text';
 import { denormalizeFoxyResponse } from '@/lib/foxy/denormalize';
 import { gateQuizMeMcq, findSingleMcqBlock } from '@/lib/foxy/quiz-me-oracle-gate';
+import { resolveFoxyEnrollmentScope } from '@/lib/foxy-scope';
 import {
   resolveLeadConceptId,
   serveEvidentialItem,
   payloadFromMcqBlock,
 } from '@/lib/foxy/evidential-quiz';
+import { parseFoxyChapterNumber } from '@/lib/foxy/chapter-parser';
+// Re-export the chapter-parser helper so test modules can import it from the
+// route's public surface (parity with mapFoxyModeToEventMode). chapter-parser.ts
+// remains the single source of truth — this is plumbing only, no behavior change.
+export { parseFoxyChapterNumber };
 import { detectStruggleSignal } from '@/lib/foxy/struggle-detection';
 import type { LlmGrader } from '@/lib/ai/validation/quiz-oracle';
 import { parseLlmGraderResponse } from '@/lib/ai/validation/quiz-oracle';
@@ -426,20 +432,6 @@ export function mapFoxyModeToEventMode(
 ): 'tutor' | 'doubt_solve' | 'revision' {
   if (routeMode === 'revise') return 'revision';
   return 'tutor';
-}
-
-/**
- * Parse a chapter number from the route's `chapter` field, which the UI
- * sends as either a number-as-string, a "Chapter N" prefix, or a free-
- * form title. Returns null when no positive int can be extracted.
- * Pure — exported for tests.
- */
-export function parseFoxyChapterNumber(chapter: string | null): number | null {
-  if (!chapter) return null;
-  const m = chapter.match(/(?:chapter\s+)?(\d{1,3})\b/i);
-  if (!m) return null;
-  const n = parseInt(m[1], 10);
-  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 /* @internal Exported for unit testing only — do NOT import from app code. */
@@ -831,7 +823,7 @@ async function loadCognitiveContext(
     let chapterId: string | null = null;
     if (chapter && subjectId) {
       try {
-        const chapterNum = /^\d+$/.test(chapter) ? parseInt(chapter, 10) : null;
+        const chapterNum = parseFoxyChapterNumber(chapter);
         let chQuery = supabaseAdmin
           .from('chapters')
           .select('id')
@@ -1256,7 +1248,7 @@ async function loadChapterTopicProgress(
     const subjectId = subjectRow?.id ?? null;
     if (!subjectId) return EMPTY_TOPIC_PROGRESS;
 
-    const chapterNum = /^\d+$/.test(chapter) ? parseInt(chapter, 10) : null;
+    const chapterNum = parseFoxyChapterNumber(chapter);
 
     // Ordered topics for this chapter. curriculum_topics.grade is stored
     // without a "Grade " prefix (see loadCognitiveContext); normalise.
@@ -3160,19 +3152,17 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       .select('subscription_plan, account_status, academic_goal, name, grade, onboarding_completed')
       .eq('id', studentId)
       .single();
-    if (studentRow?.subscription_plan) plan = normalizePlan(studentRow.subscription_plan);
+    const enrollmentScope = resolveFoxyEnrollmentScope(studentRow ?? null);
+    plan = enrollmentScope.plan;
     if (studentRow?.academic_goal) academicGoal = studentRow.academic_goal;
     if (studentRow?.name) studentName = studentRow.name as string;
     // P12 string-format normalization: students.grade has two production
     // conventions — bootstrap writes BARE "6" (src/lib/identity/bootstrap-
     // profile.ts via normalizeGrade) while the onboarding page writes
-    // PREFIXED "Grade 6" (src/app/onboarding/page.tsx). Strip the prefix
-    // on read so the gate below compares apples to apples and legacy
-    // onboarded users don't get falsely 403'd.
-    const dbGradeRaw = studentRow?.grade ?? null;
-    dbGrade = typeof dbGradeRaw === 'string'
-      ? dbGradeRaw.replace(/^Grade\s*/i, '').trim()
-      : null;
+    // PREFIXED "Grade 6" (src/app/onboarding/page.tsx). Normalize once in
+    // the shared scope helper so every Foxy surface sees the same enrolled
+    // grade.
+    dbGrade = enrollmentScope.grade;
     dbOnboardingCompleted = studentRow?.onboarding_completed === true;
     if (studentRow?.account_status === 'suspended') {
       return errorJson('Your account is suspended.', 'Aapka account suspend hai.', 403);
@@ -3248,17 +3238,19 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     logger.warn('[foxy] student row has null grade (pre-onboarding)', { userId: auth.userId });
   }
 
+  const enrolledGrade = dbGrade ?? grade;
+
   // P12 per-request observability marker. Placed AFTER the grade check so
   // spoof attempts are not counted as legitimate requests. Fire-and-forget;
   // the structured logger line is kept for log-search continuity, and the
   // metric is the queryable counterpart (now that log-event.ts has shipped).
   // P13: grade only, no PII.
-  logger.info('foxy.request', { route: '/api/foxy', grade, userId: auth.userId });
+  logger.info('foxy.request', { route: '/api/foxy', grade: enrolledGrade, userId: auth.userId });
   void logSystemMetric({
     metric_name: 'foxy_request',
     route: '/api/foxy',
     value: 1,
-    tags: { grade },
+    tags: { grade: enrolledGrade },
   });
 
   // 5. Quota check
@@ -3507,8 +3499,7 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   }
 
   // ─── Grounded-answer service path (default) ──────────────────────────────
-  const chapterNum: number | null =
-    chapter && /^\d+$/.test(chapter) ? parseInt(chapter, 10) : null;
+  const chapterNum = parseFoxyChapterNumber(chapter);
   const chapterTitle: string | null =
     chapter && chapterNum === null ? chapter : null;
 
