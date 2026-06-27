@@ -144,30 +144,37 @@ import {
   type TwinMemoryHighlightInput,
   type TwinSnapshotInput,
 } from '@/lib/learn/build-twin-context';
-import { z } from 'zod';
+// H1 REFACTOR M1 — pure constants/types/helpers extracted to a co-located
+// module. Imported and used identically here; zero behavior change.
+import {
+  VALID_GRADES,
+  VALID_MODES,
+  VALID_COACH_MODES,
+  type CoachMode,
+  FoxyRequestBodySchema,
+  REFUND_ABSTAIN_REASONS,
+  LEGACY_FALLBACK_ABSTAIN_REASONS,
+  DAILY_QUOTA,
+  DEFAULT_QUOTA,
+  UPGRADE_PROMPTS,
+  normalizePlan,
+  type RagSource,
+  type DiagramRef,
+  type ChatMessage,
+  type CognitiveContext,
+  EMPTY_COGNITIVE_CONTEXT,
+  errorJson,
+  mapFoxyModeToEventMode,
+} from './_lib/constants';
+// Re-export the symbols that test modules import from the route's public
+// surface. The new _lib/constants.ts module is the single source of truth —
+// this is plumbing only, no behavior change. (parseFoxyChapterNumber above is
+// re-exported the same way.)
+export type { CognitiveContext };
+export { EMPTY_COGNITIVE_CONTEXT, mapFoxyModeToEventMode };
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
-
-// P12 — Grade-spoof hard block (CEO decision D2, 2026-06-15).
-// Zod schema validates the body's `grade` field is one of the seven CBSE
-// grade strings BEFORE the route resolves studentId or any downstream
-// scope/RAG/prompt assembly. Permissive on every other field — the route's
-// hand-rolled validators below still cover message/subject/mode/etc. The
-// schema's only job is to lock the `grade` shape (P5: grades are strings).
-const FoxyRequestBodySchema = z
-  .object({
-    grade: z.enum(['6', '7', '8', '9', '10', '11', '12']),
-  })
-  .passthrough();
-const VALID_MODES = ['learn', 'explain', 'practice', 'revise'];
-// Phase 2.2: coaching modes — distinct from the UI session mode above.
-// 'answer'   → student wants the answer (used when mastery is high).
-// 'socratic' → guide via questions (default for mid-mastery, the moat).
-// 'review'   → quick recall mode for revision/spaced-repetition entries.
-const VALID_COACH_MODES = ['answer', 'socratic', 'review'] as const;
-type CoachMode = typeof VALID_COACH_MODES[number];
 const MAX_MESSAGE_LENGTH = 1000;
 // Phase 2.4: bumped from 6 → 20 turns. Anthropic prompt caching
 // (cache_control: ephemeral) is applied to the system prompt + first ~10
@@ -185,123 +192,6 @@ const RAG_MATCH_COUNT = 5;
 // "never silently reset, even after 4h" semantics live behind
 // ff_foxy_session_reactivate_v1 in resolveSession().
 const SESSION_IDLE_MINUTES = 240;
-
-// Reasons for which we refund the quota (the student did not actually get
-// served an answer that consumed LLM tokens). Service-side validation errors
-// (scope_mismatch, low_similarity, no_supporting_chunks) are NOT refunded:
-// the service did run retrieval + possibly Claude on the student's behalf.
-const REFUND_ABSTAIN_REASONS: AbstainReason[] = [
-  'upstream_error',
-  'circuit_open',
-  'chapter_not_ready',
-];
-
-const LEGACY_FALLBACK_ABSTAIN_REASONS: AbstainReason[] = [
-  'upstream_error',
-  'circuit_open',
-];
-
-// Quota per plan per day
-const DAILY_QUOTA: Record<string, number> = {
-  free: 10,
-  starter: 30,
-  pro: 100,
-  unlimited: 999999, // effectively unlimited
-};
-const DEFAULT_QUOTA = 10;
-
-// Soft upgrade prompts — shown ONLY when quota is near exhaustion (not on errors)
-const UPGRADE_PROMPTS: Record<string, { threshold: number; message: string; messageHi: string; nextPlan: string }> = {
-  free: {
-    threshold: 8, // show when 8/10 used (2 remaining)
-    message: 'You have {remaining} messages left today. Upgrade to Starter for 30 daily messages!',
-    messageHi: 'आज {remaining} मैसेज बाकी हैं। Starter प्लान लो और 30 रोज़ पाओ!',
-    nextPlan: 'starter',
-  },
-  starter: {
-    threshold: 25, // show when 25/30 used (5 remaining)
-    message: 'You have {remaining} messages left today. Upgrade to Pro for 100 daily messages!',
-    messageHi: 'आज {remaining} मैसेज बाकी हैं। Pro प्लान लो और 100 रोज़ पाओ!',
-    nextPlan: 'pro',
-  },
-  pro: {
-    threshold: 90, // show when 90/100 used (10 remaining)
-    message: 'You have {remaining} messages left today. Upgrade to Unlimited for unlimited messages!',
-    messageHi: 'आज {remaining} मैसेज बाकी हैं। Unlimited प्लान लो!',
-    nextPlan: 'unlimited',
-  },
-  unlimited: {
-    threshold: 999999, // never show
-    message: '',
-    messageHi: '',
-    nextPlan: '',
-  },
-};
-
-// Normalize raw plan codes from the DB to canonical keys.
-// Handles legacy aliases (basic→starter, premium→pro, ultimate→unlimited)
-// and strips monthly/yearly billing-cycle suffixes.
-function normalizePlan(raw: string): string {
-  return (raw || 'free')
-    .replace(/_(monthly|yearly)$/, '')
-    .replace(/^basic$/, 'starter')
-    .replace(/^premium$/, 'pro')
-    .replace(/^ultimate$/, 'unlimited');
-}
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-interface RagSource {
-  chunk_id: string;
-  subject: string;
-  chapter?: string;
-  page_number?: number;
-  similarity: number;
-  content_preview: string;
-  media_url?: string | null;
-}
-
-interface DiagramRef {
-  url: string;
-  title: string;
-  pageNumber?: number;
-  description: string;
-}
-
-interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-// ─── Cognitive Context Types ────────────────────────────────────────────────
-
-export interface CognitiveContext {
-  weakTopics: Array<{ title: string; mastery: number; attempts: number }>;
-  strongTopics: Array<{ title: string; mastery: number }>;
-  knowledgeGaps: Array<{ target: string; prerequisite: string; gapType: string }>;
-  revisionDue: Array<{ title: string; lastReviewed: string; mastery: number }>;
-  recentErrors: Array<{ errorType: string; count: number }>;
-  nextAction: { actionType: string; conceptName: string; reason: string } | null;
-  masteryLevel: 'low' | 'medium' | 'high';
-  // Phase 2: per-LO BKT mastery (finer-grained than topic mastery).
-  // Top 10 weakest LOs (lowest p_know) for the student in this chapter/subject.
-  loSkills: Array<{ loCode: string; loStatement: string; pKnow: number; pSlip: number; theta: number }>;
-  // Phase 2: curated misconceptions observed in this student's recent (30d)
-  // wrong-answer patterns. Top 3 by occurrence count.
-  recentMisconceptions: Array<{ code: string; label: string; count: number; remediationText: string }>;
-}
-
-export const EMPTY_COGNITIVE_CONTEXT: CognitiveContext = {
-  weakTopics: [],
-  strongTopics: [],
-  knowledgeGaps: [],
-  revisionDue: [],
-  recentErrors: [],
-  nextAction: null,
-  masteryLevel: 'medium',
-  loSkills: [],
-  recentMisconceptions: [],
-};
 
 // ─── Helper: structured-payload extraction (defense-in-depth) ───────────────
 //
@@ -402,37 +292,7 @@ function extractValidatedStructured(
   return null;
 }
 
-// ─── Helper: error response ───────────────────────────────────────────────────
-
-function errorJson(
-  message: string,
-  message_hi: string,
-  status: number,
-  extra?: Record<string, unknown>,
-): NextResponse {
-  return NextResponse.json({ success: false, error: message, error_hi: message_hi, ...extra }, { status });
-}
-
 // ─── Helper: get or create session ───────────────────────────────────────────
-
-/**
- * Map the route's foxy mode (the UI-facing vocabulary) to the
- * ai.foxy_session_started event's mode enum. Pure — exported for tests.
- *
- *   'learn' | 'explain' | 'practice' → 'tutor' (all are tutoring shapes)
- *   'revise'                          → 'revision'
- *   anything else                     → 'tutor' (safe default)
- *
- * The event registry's 'doubt_solve' mode is not produced from the
- * route's `mode` parameter alone — the route has a separate intent
- * classifier (classifyIntent). A future PR may pass that through here.
- */
-export function mapFoxyModeToEventMode(
-  routeMode: string,
-): 'tutor' | 'doubt_solve' | 'revision' {
-  if (routeMode === 'revise') return 'revision';
-  return 'tutor';
-}
 
 /* @internal Exported for unit testing only — do NOT import from app code. */
 export async function resolveSession(
