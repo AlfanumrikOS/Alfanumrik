@@ -573,7 +573,7 @@ export default function FoxyPage() {
         setMessages(recent.messages);
       }
     })();
-  }, [authStudent]);
+  }, [authStudent, setChatSessionId, setMessages]);
 
   // Load conversation list
   useEffect(() => {
@@ -619,7 +619,7 @@ export default function FoxyPage() {
     setConversations((prev: ConversationSummary[]) =>
       prev.map((c: ConversationSummary) => ({ ...c, isActive: c.id === sessionId }))
     );
-  }, [activeSubject]);
+  }, [activeSubject, SUBJECTS, setChatSessionId, setMessages, setXpGained]);
 
   // Start a new conversation — clears chat and updates list
   const handleNewConversation = useCallback(() => {
@@ -632,7 +632,7 @@ export default function FoxyPage() {
     setLessonStepsCompleted([]);
     setXpGained(0);
     setConversations((prev: ConversationSummary[]) => prev.map((c: ConversationSummary) => ({ ...c, isActive: false })));
-  }, []);
+  }, [setChatSessionId, setMessages, setXpGained]);
 
   // Refresh conversation list after a message is sent (debounced)
   const refreshConversations = useCallback(() => {
@@ -999,7 +999,7 @@ export default function FoxyPage() {
       }
     }
     try { await supabase.rpc('track_ai_quality', { p_subject: activeSubject, p_is_thumbs_up: isUp }); } catch {}
-  }, [activeSubject]);
+  }, [activeSubject, setMessages]);
 
   // Open report modal
   const openReport = useCallback((msgId: number) => {
@@ -1127,7 +1127,7 @@ export default function FoxyPage() {
       setReportSuccess(true);
     } catch {}
     setReportSubmitting(false);
-  }, [reportModal, student, chatSessionId, reportReason, reportCorrection, activeSubject, studentGrade, activeTopic, sessionMode, language]);
+  }, [reportModal, chatSessionId, reportReason, reportCorrection, activeSubject, studentGrade, activeTopic, sessionMode, language, setMessages]);
 
   const switchSubject = (key: string) => {
     setActiveSubject(key); setActiveTopic(null); setSelectedChapters([]); setShowSubjectDD(false); setCollapsedAbove(null);

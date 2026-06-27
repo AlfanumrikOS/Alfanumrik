@@ -299,6 +299,11 @@ export default function QuizResults({
         console.error('Failed to create flashcards:', err);
       }
     })();
+    // `reviewByQid` is a per-render Map derived from the `serverReview` prop; the
+    // effect is guarded to run once via the flashcardCreated ref, so it reads the
+    // serverReview present at first run. Adding the unstable Map would re-fire the
+    // effect on every render with no behavior change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [student?.id, questions, responses, results.session_id, selectedSubject, isHi]);
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;

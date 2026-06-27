@@ -79,7 +79,7 @@ export default function DiveHistoryPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [isLoading, isLoggedIn]);
+  }, [isLoading, isLoggedIn, router]);
 
   if (phase.kind === 'loading') {
     return (
