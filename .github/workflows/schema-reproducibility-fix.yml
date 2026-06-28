@@ -36,7 +36,13 @@ on:
           - pre-mark-staging
           - pre-mark-prod
           - apply-baseline-staging
+          - repair-prod-drift
           - verify
+      repair_versions:
+        description: 'For step=repair-prod-drift ONLY: space-separated 14-digit migration versions to mark REVERTED in prod schema_migrations (orphan "remote-only" rows that have no local .sql file). Default = the 2026-06-28 board-score ghost versions.'
+        required: false
+        type: string
+        default: '20260628015107 20260628015237'
 
 concurrency:
   group: schema-reproducibility-fix
@@ -1018,6 +1024,131 @@ jobs:
             echo "| Data mutated | NO (schema-only baseline) |"
             echo "| Next step | re-trigger deploy-staging.yml to confirm full chain |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # PHASE 4e — repair-prod-drift
+  #
+  # Use case: prod's `supabase_migrations.schema_migrations` lists one or
+  # more migration versions that have NO corresponding .sql file at the
+  # `supabase/migrations/` root (orphan "remote-only" rows). On the next
+  # deploy, `supabase db push --linked --include-all` aborts its
+  # pre-flight consistency check with:
+  #
+  #   "Remote migration versions not found in local migrations directory.
+  #    ... try repairing the migration history table:
+  #    supabase migration repair --status reverted <versions>"
+  #
+  # Because the migrations job in deploy-production.yml runs BEFORE
+  # deploy-functions, that abort also SKIPS Edge Function deploys — the
+  # AI agents (foxy-tutor, ncert-solver, quiz-generator, cme-engine) and
+  # all non-AI functions stop receiving updates. This is a full-deploy
+  # blocker, not a metadata nuisance.
+  #
+  # First incident: 2026-06-28, board-score (PR #1147). Two ghost versions
+  # 20260628015107 + 20260628015237 were applied to prod during local dev
+  # (`supabase migration new` → direct push) then consolidated into the
+  # single hand-named 20260628000000_board_score_v1.sql before the PR was
+  # opened. The repo never saw the two original files, so prod history
+  # references versions with no local counterpart. The board-score schema
+  # those ghosts created is fully represented by the idempotent
+  # 20260628000000_board_score_v1.sql (CREATE TABLE IF NOT EXISTS + RLS via
+  # DROP POLICY IF EXISTS/CREATE POLICY), so once the ghosts are marked
+  # reverted, the normal `db push` re-applies that file and the end state
+  # is correct with RLS intact. See
+  # docs/runbooks/schema-reconciliation / 2026-05-03-schema-reproducibility
+  # -completion.md §4.B ("Stuck remote-only row").
+  #
+  # What this step does: `supabase migration repair --status reverted` for
+  # each version in `repair_versions`. This is METADATA-ONLY — it deletes
+  # the ledger row(s); it does NOT drop tables, columns, or any schema. It
+  # is fully idempotent: repairing an already-absent version is a no-op.
+  #
+  # Why this lives in this MANUAL ops workflow and NOT in deploy-production:
+  # mutating prod `schema_migrations` must stay operator-gated. Blindly
+  # auto-reverting any "remote-only" version inside the deploy pipeline
+  # could mask a real problem (e.g. a legitimately-applied migration whose
+  # file was deleted by mistake — auto-revert would then make db push try
+  # to re-create live objects). Keep prod-metadata mutation behind a human.
+  # ──────────────────────────────────────────────────────────────────────
+  repair-prod-drift:
+    name: Repair prod migration-history drift (mark orphan versions reverted)
+    if: ${{ inputs.step == 'repair-prod-drift' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: latest
+
+      - name: 30-second safety delay (operator may cancel)
+        run: |
+          echo "About to mark these prod schema_migrations versions REVERTED:"
+          echo "  ${{ inputs.repair_versions }}"
+          echo "This is metadata-only (no schema/data mutation). Pausing 30s…"
+          echo "Cancel via the Actions UI now if these versions are wrong."
+          sleep 30
+          echo "Proceeding."
+
+      - name: Validate input + repair each orphan version
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          REPAIR_VERSIONS: ${{ inputs.repair_versions }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${REPAIR_VERSIONS// /}" ]; then
+            echo "::error::repair_versions is empty — supply space-separated 14-digit versions."
+            exit 1
+          fi
+
+          # Guardrail: every token must be exactly 14 digits (a Supabase
+          # migration version). Refuse anything else so a typo can't reach
+          # the repair command. In particular, refuse the baseline
+          # 00000000000000 — reverting it would break fresh-env bootstrap.
+          for v in $REPAIR_VERSIONS; do
+            if ! echo "$v" | grep -qE '^[0-9]{14}$'; then
+              echo "::error::'$v' is not a 14-digit migration version. Aborting."
+              exit 1
+            fi
+            if [ "$v" = "$BASELINE_VERSION" ]; then
+              echo "::error::Refusing to revert the baseline ($BASELINE_VERSION) — this step is for orphan post-baseline versions only."
+              exit 1
+            fi
+          done
+
+          supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+          echo "## Phase: repair-prod-drift" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version | Action |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+
+          # `migration repair --status reverted` is idempotent: marking an
+          # already-absent version reverted is a no-op. Pass all versions in
+          # one call (the CLI accepts a list).
+          # shellcheck disable=SC2086
+          supabase migration repair --status reverted $REPAIR_VERSIONS
+
+          for v in $REPAIR_VERSIONS; do
+            echo "| \`$v\` | marked reverted |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          # Confirm the abort condition is cleared: a dry-run push must no
+          # longer complain about remote-only versions. It may still report
+          # PENDING local migrations (e.g. 20260628000000_board_score_v1) —
+          # that is expected and is what the next deploy will apply.
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Post-repair \`db push --dry-run\` (must NOT list remote-only versions):" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          supabase db push --linked --include-all --dry-run 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Next step: re-run **deploy-production.yml** (push to main or workflow_dispatch). The Apply Database Migrations step will now apply pending local migrations and Edge Functions will deploy." >> "$GITHUB_STEP_SUMMARY"
 
   # ──────────────────────────────────────────────────────────────────────
   # PHASE 5 — verify (read-only dry-run on both envs)

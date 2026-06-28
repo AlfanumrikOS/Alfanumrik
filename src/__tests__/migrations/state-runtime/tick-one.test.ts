@@ -15,19 +15,52 @@ const ctx: SubscriberContext = {
 // past-run contamination without touching concurrent runs (they use their own IDs).
 const RUN_ID       = crypto.randomUUID().replace(/-/g, '');
 const RUN_ACTOR_ID = crypto.randomUUID();                // unique per-run event tag
-const OFFSET_SEC   = parseInt(RUN_ID.slice(0, 8), 16);  // 0..4294967295 ≈ 136-year spread
-const FUTURE       = Date.now() + 365 * 24 * 3600_000 + OFFSET_SEC * 1000;
-const CURSOR       = new Date(FUTURE - 1000).toISOString();   // 1 s before T1
-const T1           = new Date(FUTURE).toISOString();
-const T2           = new Date(FUTURE + 1000).toISOString();   // T1 + 1 s
+
+// Per-run base, far in the future and randomly offset so concurrent/past runs
+// occupy different ~136-year bands (cross-run separation — same intent as before).
+const RUN_OFFSET_SEC = parseInt(RUN_ID.slice(0, 8), 16); // 0..4294967295 ≈ 136-year spread
+const RUN_BASE_MS    = Date.now() + 365 * 24 * 3600_000 + RUN_OFFSET_SEC * 1000;
 
 const HAPPY = `happy-${RUN_ID.slice(0, 6)}`;
 
+// PER-TEST window, recomputed in beforeEach. `tickOne` selects events purely by
+// `kind` + `occurred_at >= cursor` — an OPEN-ENDED-UPWARD read with NO actor
+// scoping (see src/lib/state/runtime/tick-one.ts). A single window shared across
+// cases is therefore fragile on the shared staging DB: if the delete of a prior
+// case's RUN_ACTOR_ID events lags (replication/visibility delay), those rows are
+// still `>= CURSOR` for the next case and get swept in, inflating the pinned
+// counts (the observed "expected 0, got 1" / "expected 1, got 2" false-reds).
+//
+// Fix: give each case a window that is strictly ABOVE every prior case's events.
+// Because the read is open-ended upward, a STRICTLY-INCREASING per-test cursor is
+// the only thing that guarantees a leftover row falls OUTSIDE (below) this case's
+// window and cannot be selected. (A purely-random per-test offset would NOT close
+// this — ~half the time the prior window lands above the current cursor and its
+// rows are still selected.) A 1 h stride between cases dwarfs any plausible
+// insert/delete latency; the sub-stride random jitter keeps each window unique
+// without breaking the strict ordering the stride guarantees.
+const TEST_STRIDE_MS = 3600_000;            // 1 h between consecutive test windows
+let   windowSeq      = 0;
+let   CURSOR         = '';                   // 1 s before T1
+let   T1             = '';
+let   T2             = '';                   // T1 + 1 s
+
 beforeEach(async () => {
+  // Fresh, strictly-increasing window for THIS test. jitter < stride/2 so the
+  // ordering window_n.T2 < window_{n+1}.CURSOR always holds.
+  windowSeq += 1;
+  const jitterMs = parseInt(crypto.randomUUID().replace(/-/g, '').slice(0, 6), 16) % (TEST_STRIDE_MS / 2);
+  const future   = RUN_BASE_MS + windowSeq * TEST_STRIDE_MS + jitterMs;
+  CURSOR = new Date(future - 1000).toISOString();
+  T1     = new Date(future).toISOString();
+  T2     = new Date(future + 1000).toISOString();
+
   await sb.from('subscriber_offsets').delete().eq('subscriber_name', HAPPY);
   await sb.from('subscriber_retry_state').delete().eq('subscriber_name', HAPPY);
   await sb.from('subscriber_dead_letters').delete().eq('subscriber_name', HAPPY);
   // (a) Delete our own events from the previous test — safe: other runs have different RUN_ACTOR_IDs.
+  //     Kept as defense-in-depth; the per-test strictly-increasing window above is
+  //     what makes the suite robust even if this delete hasn't propagated yet.
   await sb.from('state_events').delete().eq('actor_auth_user_id', RUN_ACTOR_ID);
   // (b) Delete accumulated past-run events (old runs used the default zero UUID) in our range.
   await sb.from('state_events').delete()
