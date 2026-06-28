@@ -73,5 +73,17 @@ See `workflows/_incidents/2026-06-28-prod-migration-drift.md` (full root-cause).
 - type-check **PASS**
 - lint **0 errors**
 
+## Closing note — prod-deploy recovery (2026-06-29)
+
+The production migration-drift incident is **RESOLVED**. The two board-score ghost ledger rows
+(`20260628015107`, `20260628015237`) were reconciled **repo-side** — two no-op placeholder migrations
+at the exact ghost version strings (per `docs/runbooks/migration-placeholders-audit.md`), merged via
+**PR #1153** through normal authorized CI/CD. The operator-gated `repair-prod-drift` step (added by
+**PR #1151** to `schema-reproducibility-fix.yml`) was correctly blocked by the safety classifier and
+was **not needed**. Recovery shipped across **PRs #1151, #1152, #1153**. Verification:
+`deploy-production.yml` run **28335566287** concluded SUCCESS (migrations ✅, Edge Functions ✅ —
+AI agents deploying again, health ✅, verification ✅). **Both main CI and the production deploy are
+green.** Full record: `workflows/_incidents/2026-06-28-prod-migration-drift.md` §0.
+
 ## Next workflow
 **Payments & Subscriptions (P11)** — `PRIORITY-BACKLOG.md` rank 2 (unchanged).

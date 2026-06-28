@@ -3,8 +3,53 @@
 - **Date:** 2026-06-28
 - **Owner:** architect
 - **Severity:** P1 — every production deploy blocked; Edge Function (AI agent) deploys skipped
-- **Status:** Repo-side fix implemented (branch `fix/prod-migration-drift-board-score`). One credentialed operator step remains (see §6).
+- **Status:** **RESOLVED (2026-06-29)** — see §0 below. Production deploys and Edge Function redeploys are green again.
 - **Failing workflow:** `Deploy Production — Alfanumrik` (`.github/workflows/deploy-production.yml`), job **Apply Database Migrations** (run 28330702790).
+
+## 0. RESOLUTION (2026-06-29)
+
+**The incident is RESOLVED. Production deploys + Edge Function redeploys are green.**
+
+- **Root cause recap:** board-score (PR #1147) consolidated its development migrations
+  into the single hand-named `20260628000000_board_score_v1.sql`, leaving two orphan
+  "remote-only" ledger rows on prod (`20260628015107`, `20260628015237`) with no local
+  `.sql` counterpart. `supabase db push` aborted its pre-flight consistency check →
+  **Apply Database Migrations** failed → `deploy-functions` (which declares
+  `needs: [..., migrations]`) was skipped → the Edge Function (AI agent) redeploys
+  stopped. (Full analysis in §1–§2.)
+
+- **The blocked path (NOT used):** the metadata-only `repair-prod-drift` workflow
+  dispatch (added in PR #1151 to `schema-reproducibility-fix.yml`, §4) was correctly
+  **blocked by the safety classifier** — a direct production-DB mutation requires
+  explicit human authorization, which is the intended guardrail.
+
+- **The RESOLUTION actually used — repo-side reconciliation:** instead of mutating
+  prod's `schema_migrations` directly, we followed the codebase's documented
+  **placeholder pattern** (`docs/runbooks/migration-placeholders-audit.md`). Two no-op
+  placeholder migrations were committed at the exact ghost version strings:
+  - `supabase/migrations/20260628015107_reconcile_board_score_ghost.sql`
+  - `supabase/migrations/20260628015237_reconcile_board_score_ghost.sql`
+
+  These were merged via **PR #1153** through the normal authorized CI/CD pipeline
+  (no out-of-band prod credentials, no operator-gated dispatch). Giving the two
+  remote-only versions a local counterpart cleared the CLI consistency-check abort;
+  the idempotent `20260628000000_board_score_v1.sql` then applied as a **no-op**
+  (its tables/policies already existed from the ghost-version dev iterations).
+
+- **Verification:** `deploy-production.yml` run **28335566287** concluded **SUCCESS**:
+  - Apply Database Migrations ✅
+  - Deploy Changed Edge Functions ✅ (AI agents deployed again)
+  - Post-Deploy Health Check ✅
+  - Post-Deploy Verification ✅
+
+- **Note on the operator tool:** the `repair-prod-drift` workflow step (added in
+  PR #1151) **remains available** as a sanctioned operator tool for any future
+  remote-only drift, but it was **not needed** here — the repo-side reconciliation
+  resolved the incident through normal authorized CI/CD.
+
+> Sections §1–§7 below are the original (2026-06-28) root-cause analysis, retained
+> for the record. The remediation actually shipped is the repo-side reconciliation
+> described in §0 above, not the §6 credentialed-operator step.
 
 ## 1. Symptom
 
