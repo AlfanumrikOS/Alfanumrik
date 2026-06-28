@@ -103,7 +103,12 @@ function createMockSupabase(config: {
     return {
       select: vi.fn().mockReturnValue({
         eq: vi.fn().mockReturnValue({
+          // resolveIdentity() switched from .single() to .maybeSingle() (AO-7,
+          // PR #1152) — behavior-preserving against the real Supabase client.
+          // Both terminals must resolve to the SAME { data, error } so the
+          // production .maybeSingle() call isn't undefined → throw.
           single: vi.fn().mockResolvedValue(response),
+          maybeSingle: vi.fn().mockResolvedValue(response),
         }),
       }),
     };
