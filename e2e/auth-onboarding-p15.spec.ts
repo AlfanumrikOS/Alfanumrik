@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 /**
  * P15 Onboarding Integrity — Regression E2E Tests
@@ -7,15 +9,18 @@ import { test, expect } from '@playwright/test';
  * This file is the authoritative E2E regression spec for P15.
  *
  * Coverage:
- *   A. send-auth-email always returns 200  — NOTE: cannot be tested with Playwright
- *      directly because it is a Deno Edge Function with no HTTP surface in the
- *      Next.js test server. Coverage lives in the unit layer instead — see the
- *      `send_auth_email_always_200` test group in `src/__tests__/auth-onboarding.test.ts`.
- *      The key invariant is documented here so the catalog stays consistent:
- *
- *        "send-auth-email MUST return HTTP 200 on ALL code paths, including
- *         non-POST methods, missing webhook secret, verification failure, and
- *         Mailgun send failure. Returning non-200 blocks signup in Supabase Auth."
+ *   A. send-auth-email always returns 200  — NOTE: cannot be exercised over HTTP
+ *      from Playwright because it is a Deno Edge Function with no surface in the
+ *      Next.js test server. The EXECUTABLE behavioral coverage now lives in a
+ *      real Deno test (AO-1):
+ *        supabase/functions/send-auth-email/__tests__/always-200.test.ts
+ *      which captures the Deno.serve() handler and asserts HTTP 200 on all nine
+ *      code paths (non-POST, OPTIONS, missing secret, bad signature, invalid
+ *      payload, Mailgun failure, Mailgun success, no-Mailgun-config, top-level
+ *      throw) plus a non-200-status source canary. The block below is no longer
+ *      a fake `expect(true)` marker — it asserts that real test exists and still
+ *      contains the load-bearing assertions, so deleting the Deno coverage turns
+ *      this E2E red.
  *
  *   B. Student onboarding happy path
  *   C. Teacher role redirected away from /onboarding to /teacher
@@ -62,39 +67,42 @@ test.describe('P15: Onboarding Integrity', () => {
   // ── A. send-auth-email 200 guarantee ──────────────────────────────────────
 
   /**
-   * NOTE: The send-auth-email Edge Function cannot be exercised via Playwright
-   * because it is a Deno Edge Function deployed to Supabase, not exposed through
-   * the Next.js dev server that Playwright hits.
-   *
-   * The invariant is:
-   *   - Non-POST request  → 200 (method not allowed, but must not block auth)
-   *   - Missing secret    → 200 (warning, no email sent, auth proceeds)
-   *   - Bad signature     → 200 (warning, no email sent, auth proceeds)
-   *   - Invalid payload   → 200 (graceful error, auth proceeds)
-   *   - Mailgun failure   → 200 (email not sent, but auth proceeds)
-   *   - Unexpected throw  → 200 (top-level catch, auth proceeds)
-   *
-   * These six paths are tested at the unit level. See:
-   *   src/__tests__/ (add send-auth-email.test.ts when Deno test infra is set up)
-   *
-   * The test block below documents the expectation without making it skippable:
-   * the note IS the test — it triggers a CI failure if someone deletes it.
+   * The send-auth-email Edge Function cannot be exercised via Playwright (Deno
+   * Edge Function, no surface in the Next.js dev server). The behavioral
+   * always-200 assertions live in the Deno test cited above. This test is a
+   * REAL guard — not an `expect(true)` placeholder — that fails if that Deno
+   * coverage is deleted or stripped of its load-bearing assertions, so the
+   * regression catalog can never over-report AO-1 coverage again.
    */
-  test('send-auth-email always-200 contract is documented (unit coverage required)', async () => {
-    // This test acts as a catalog entry marker. The actual HTTP-level assertion
-    // cannot be made against a Deno Edge Function from a Playwright test runner.
-    //
-    // Acceptance criteria (enforced in unit tests):
-    //   1. Non-POST method   → status 200, body.error defined
-    //   2. Missing secret    → status 200, body.warning defined
-    //   3. Bad signature     → status 200, body.warning defined
-    //   4. Invalid payload   → status 200, body.error defined
-    //   5. Mailgun failure   → status 200, body.success === false
-    //   6. Top-level throw   → status 200, body.success === false
-    //
-    // If this test is removed without replacing unit coverage, the regression
-    // catalog entry for `send_auth_email_always_200` will show 0% coverage.
-    expect(true).toBe(true);
+  test('send-auth-email always-200 Deno coverage exists and asserts every path (AO-1)', () => {
+    // Playwright runs from the repo root, so resolve the Deno test from cwd.
+    const denoTestPath = resolve(
+      process.cwd(),
+      'supabase/functions/send-auth-email/__tests__/always-200.test.ts',
+    );
+
+    expect(existsSync(denoTestPath)).toBe(true);
+
+    const src = readFileSync(denoTestPath, 'utf8');
+    // Every path the invariant requires must still be asserted in the Deno test.
+    // These substrings are tied to the Deno.test() titles + key assertions.
+    const requiredAssertions = [
+      'non-POST method returns 200',
+      'OPTIONS preflight returns 200',
+      'missing hook secret returns 200',
+      'invalid webhook signature returns 200',
+      'missing user/email_data returns 200',
+      'Mailgun send failure returns 200',
+      'Mailgun send success returns 200',
+      'missing Mailgun config returns 200',
+      'unexpected throw is caught and returns 200',
+      'no non-200 Response status',
+    ];
+    for (const needle of requiredAssertions) {
+      expect(src, `Deno always-200 test must still cover: "${needle}"`).toContain(needle);
+    }
+    // Guard against the assertion being weakened back to a vacuous marker.
+    expect(src).not.toContain('expect(true).toBe(true)');
   });
 
   // ── B. Student onboarding happy path ─────────────────────────────────────

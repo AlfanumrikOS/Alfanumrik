@@ -118,6 +118,26 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
 
   const activeRoleColor = ROLE_TABS.find(r => r.key === roleTab)?.color ?? '#E8590C';
 
+  // Accessibility: roving-tabindex arrow-key navigation for the role tablist
+  // (WCAG 4.1.2). Moves keyboard FOCUS between tabs only — selection still
+  // happens via the native button activation (Enter/Space → existing onClick),
+  // so no app state/logic changes. Manual-activation pattern.
+  const handleTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) return;
+    e.preventDefault();
+    const current = e.currentTarget;
+    const tabs = Array.from(
+      current.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? []
+    );
+    const idx = tabs.indexOf(current);
+    let next = idx;
+    if (e.key === 'ArrowRight') next = (idx + 1) % tabs.length;
+    else if (e.key === 'ArrowLeft') next = (idx - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = tabs.length - 1;
+    tabs[next]?.focus();
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(''); setLoading(true);
@@ -375,8 +395,13 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
               return (
                 <button
                   key={tab.key}
+                  type="button"
+                  id={`auth-role-tab-${tab.key}`}
                   role="tab"
                   aria-selected={isActive}
+                  aria-controls="auth-form-panel"
+                  tabIndex={isActive ? 0 : -1}
+                  onKeyDown={handleTabKeyDown}
                   onClick={() => { setRoleTab(tab.key); setError(''); setSuccess(''); }}
                   className="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all"
                   style={{
@@ -394,13 +419,19 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
         )}
 
         {/* Form Card */}
-        <div className="rounded-2xl p-6" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
+        <div
+          id="auth-form-panel"
+          role={mode !== 'check-email' ? 'tabpanel' : undefined}
+          aria-labelledby={mode !== 'check-email' ? `auth-role-tab-${roleTab}` : undefined}
+          className="rounded-2xl p-6"
+          style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}
+        >
           <h2 className="text-lg font-bold mb-4 text-center" style={{ color: 'var(--text-1)' }}>
             {mode === 'login' ? t('Welcome Back!', 'फिर से स्वागत है!') : mode === 'signup' ? signupTitle : mode === 'check-email' ? t('Check Your Email', 'अपना ईमेल जाँचें') : t('Reset Password', 'पासवर्ड रीसेट करें')}
           </h2>
 
           {error && (
-            <div role="alert" className="mb-3 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: '1px solid color-mix(in srgb, var(--danger) 25%, transparent)' }}>
+            <div id="auth-error" role="alert" className="mb-3 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: '1px solid color-mix(in srgb, var(--danger) 25%, transparent)' }}>
               {error}
             </div>
           )}
@@ -410,7 +441,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             </div>
           )}
 
-          <form onSubmit={mode === 'login' ? handleLogin : mode === 'signup' ? handleSignup : handleForgot} className="space-y-3">
+          <form onSubmit={mode === 'login' ? handleLogin : mode === 'signup' ? handleSignup : handleForgot} className="space-y-3" aria-describedby={error ? 'auth-error' : undefined}>
             {mode === 'check-email' && (
               <div className="text-center space-y-4 py-2">
                 <div className="text-4xl" aria-hidden="true">📧</div>

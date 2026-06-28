@@ -5245,7 +5245,9 @@ Digital Twin + Knowledge Graph Slice 1 adds REG-175: prerequisite-block
 classifier boundaries + cross-loop arbiter precedence A>D>C>B + buildTwinContext
 purity/PII + flag-OFF gating (28 tests) plus the flag-off identity pins (12
 tests). 40 tests across 2 files.
-**Total catalog: 142 entries (target: 35 — TARGET EXCEEDED).**
+**Total catalog: 142 entries (target: 35 — TARGET EXCEEDED).** *(Superseded:
+REG-176 brought this to 143 and Engineering-Audit Cycle 1's REG-177 to 144 —
+see the authoritative running count in the final "Catalog total" block below.)*
 
 **Total: 141 entries.**
 
@@ -5266,5 +5268,30 @@ tests). 40 tests across 2 files.
 - `src/__tests__/lib/foxy/starter-intents.test.ts` (13 tests)
 - `src/__tests__/api/foxy/suggest-prompts-bloom.test.ts` (20 tests)
 **Related RCA:** RC-1 (three competing output format contracts in one monolithic prompt), RC-17/RC-18 (IRT-driven suggest-prompts + buildStarters personalisation)
+
+---
+
+## Engineering-Audit Cycle 1 — Auth & Onboarding (P15) — 2026-06-28
+
+Source: engineering-audit program, Cycle 1 (Auth & Onboarding). The
+`send-auth-email` Edge Function is a Supabase Send-Email hook: Supabase blocks
+signup whenever the hook returns any non-200 status (P15 rule 1). This cycle
+gave that invariant executable, handler-level coverage.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-177 | `send_auth_email_always_200` | The `send-auth-email` Edge Function returns HTTP 200 on ALL handler code paths — non-POST request, OPTIONS preflight, missing hook secret, invalid webhook signature, invalid payload, Mailgun send failure, Mailgun send success, no-Mailgun-config, and top-level throw — plus a source canary asserting no non-200 status literal exists in the handler. A non-200 from a Supabase Send-Email hook blocks ALL signups (P15 rule 1). | `supabase/functions/send-auth-email/__tests__/always-200.test.ts` (behavioral `Deno.serve` handler-capture); guarded against deletion by `e2e/auth-onboarding-p15.spec.ts` | E |
+
+### Invariants covered by this section
+
+- P15 (onboarding integrity — rule 1: `send-auth-email` MUST return HTTP 200 on
+  every code path so Supabase never blocks signup)
+
+### Catalog total
+
+Pre-REG-177: 143 entries (142 catalogued through REG-175 + REG-176 Foxy
+prompt-template routing). Engineering-Audit Cycle 1 adds REG-177:
+`send-auth-email`-always-200 P15 hook coverage.
+**Total catalog: 144 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
