@@ -109,7 +109,14 @@ export default function OnboardingPage() {
       const { error: updateErr } = await supabase
         .from('students')
         .update({
-          grade: `Grade ${grade}`,
+          // P5: grades are bare strings "6".."12" (e.g. "9"), never prefixed.
+          // `grade` is already a validated bare string from GRADES (see useEffect
+          // pre-fill at line ~67). Writing the canonical bare form keeps this
+          // direct client write consistent with the server bootstrap path and
+          // every reader: TS consumers parseInt(student.grade) / compare
+          // (grade === '11') / interpolate (Class {grade}); the SQL side coerces
+          // via normalize_grade(). The "Grade N" form broke all three.
+          grade,
           board,
           academic_goal: academicGoal || null,
           onboarding_completed: true,

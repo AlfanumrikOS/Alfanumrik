@@ -227,8 +227,16 @@ vi.mock('@/lib/supabase-server', () => ({
     },
     from: (table: string) => {
       const makeSingle = (data: unknown) => {
+        // Both .single() and .maybeSingle() resolve to the SAME { data, error }
+        // the test configured. resolveIdentity() switched from .single() to
+        // .maybeSingle() (AO-7, PR #1152) — behavior-preserving against the real
+        // Supabase client — so the mock query-builder must expose both terminals
+        // with identical semantics, else .maybeSingle() is undefined → throws →
+        // route 500s. Mirroring here gives all current/future tests using this
+        // mock .maybeSingle() for free.
         const singleFn = vi.fn().mockResolvedValue({ data, error: null });
-        const eqFn = vi.fn().mockReturnValue({ single: singleFn });
+        const maybeSingleFn = vi.fn().mockResolvedValue({ data, error: null });
+        const eqFn = vi.fn().mockReturnValue({ single: singleFn, maybeSingle: maybeSingleFn });
         const selectFn = vi.fn().mockReturnValue({ eq: eqFn });
         return { select: selectFn };
       };
