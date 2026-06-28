@@ -196,11 +196,12 @@ export default function OnboardingPage() {
           background: 'var(--surface-1)', border: '1px solid var(--border)',
           boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
         }}>
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} aria-describedby={error ? 'onboarding-error' : undefined}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {/* Grade */}
               <div style={{ animation: 'slideUp 0.4s ease-out 0.1s both' }}>
                 <label
+                  htmlFor="onboarding-grade"
                   style={{
                     display: 'block', fontSize: 13, fontWeight: 600,
                     color: 'var(--text-2)', marginBottom: 6,
@@ -209,6 +210,7 @@ export default function OnboardingPage() {
                   {isHi ? 'आपकी कक्षा' : 'Your Grade'}
                 </label>
                 <select
+                  id="onboarding-grade"
                   value={grade}
                   onChange={e => setGrade(e.target.value)}
                   style={inputStyle}
@@ -224,6 +226,7 @@ export default function OnboardingPage() {
               {/* Board */}
               <div style={{ animation: 'slideUp 0.4s ease-out 0.2s both' }}>
                 <label
+                  htmlFor="onboarding-board"
                   style={{
                     display: 'block', fontSize: 13, fontWeight: 600,
                     color: 'var(--text-2)', marginBottom: 6,
@@ -232,6 +235,7 @@ export default function OnboardingPage() {
                   {isHi ? 'आपका बोर्ड' : 'Your Board'}
                 </label>
                 <select
+                  id="onboarding-board"
                   value={board}
                   onChange={e => setBoard(e.target.value)}
                   style={inputStyle}
@@ -245,6 +249,7 @@ export default function OnboardingPage() {
               {/* Academic Goal (optional) */}
               <div style={{ animation: 'slideUp 0.4s ease-out 0.3s both' }}>
                 <label
+                  id="onboarding-goal-label"
                   style={{
                     display: 'block', fontSize: 13, fontWeight: 600,
                     color: 'var(--text-2)', marginBottom: 6,
@@ -253,6 +258,8 @@ export default function OnboardingPage() {
                   {isHi ? 'आपका लक्ष्य क्या है? (वैकल्पिक)' : "What's your goal? (optional)"}
                 </label>
                 <div
+                  role="group"
+                  aria-labelledby="onboarding-goal-label"
                   style={{
                     display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8,
                   }}
@@ -287,7 +294,7 @@ export default function OnboardingPage() {
 
               {/* Error */}
               {error && (
-                <div role="alert" style={{
+                <div id="onboarding-error" role="alert" style={{
                   fontSize: 13, color: 'var(--danger)', margin: 0,
                   padding: '8px 12px', borderRadius: 12,
                   background: 'var(--danger-light)',

@@ -369,6 +369,55 @@ async function handleBootstrap(
       );
     }
 
+    // 3b. AO-4 (P15 hardening): the bootstrap_user_profile RPC has a DUAL
+    // error channel. Besides RAISING (surfaced above as rpcError), its
+    // invalid-role ELSE branch and its `EXCEPTION WHEN OTHERS` branch RETURN a
+    // logical-error payload `{ status: 'error', error: <message>, ... }`
+    // WITHOUT raising — see 20260610090100_bootstrap_link_code.sql:224-225
+    // (invalid role) and :233-234 (insert failure). Success/idempotent paths
+    // return `{ status: 'success'|'already_completed', profile_id: <uuid>, ... }`
+    // (:316-317 and :177-178), both carrying a non-null profile_id.
+    //
+    // The route previously branched ONLY on rpcError, so an in-body logical
+    // failure returned HTTP 200 `success:true` with profile_id undefined —
+    // silently defeating the P15 3-layer failsafe (the client's AuthContext
+    // runtime fallback never got a chance to recover) and inflating the
+    // `signup_complete` activation metric. Treat a `status:'error'` OR a
+    // missing profile_id as a failure and hand control back to the client's
+    // next failsafe layer with a non-200. We deliberately do NOT retry the RPC
+    // in-route: it is idempotent, so an immediate re-call would just reproduce
+    // the same logical failure; delegating to the client fallback (which can
+    // re-resolve identity and rebuild the profile) is the established P15
+    // recovery path. Happy paths are unchanged.
+    const rpcStatus = typeof result?.status === 'string' ? result.status : undefined;
+    const profileId = result?.profile_id;
+    if (rpcStatus === 'error' || !profileId) {
+      // Best-effort audit. P13: metadata only — role + the RPC's logical
+      // status; never name/email/grade and never the raw SQLERRM string
+      // (which can embed a conflicting column value).
+      const failureCtx = extractAuditContext(request, admin, user.id);
+      await logIdentityEvent(failureCtx, 'bootstrap_failure', {
+        error: rpcStatus === 'error' ? 'rpc_logical_error' : 'missing_profile_id',
+        role,
+        rpc_status: rpcStatus ?? 'unknown',
+      });
+
+      console.error('[Bootstrap] RPC logical failure (no profile created):', {
+        userId: user.id,
+        role,
+        rpcStatus: rpcStatus ?? 'unknown',
+      });
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Profile creation failed. Please try again.',
+          code: 'BOOTSTRAP_FAILED',
+        },
+        { status: 500 }
+      );
+    }
+
     // 4. Log success (best-effort)
     const auditCtx = extractAuditContext(request, admin, user.id);
     await logIdentityEvent(

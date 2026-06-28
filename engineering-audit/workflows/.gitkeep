@@ -1,0 +1,7 @@
+# Workflows
+
+Reusable runbooks and automation for driving the audit loop (e.g. resume scripts,
+per-phase checklists, squad hand-off notes). Currently empty; populate as repeatable
+procedures emerge from running Cycle 1.
+
+This `.gitkeep` keeps the empty directory tracked.
