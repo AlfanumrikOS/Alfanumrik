@@ -75,24 +75,24 @@ export async function resolveIdentity(
         .from('students')
         .select('id, name, grade, auth_user_id, is_demo, account_status')
         .eq('auth_user_id', authUserId)
-        .single(),
+        .maybeSingle(),
       supabase
         .from('teachers')
         .select('id, name, auth_user_id, is_demo')
         .eq('auth_user_id', authUserId)
-        .single(),
+        .maybeSingle(),
       supabase
         .from('guardians')
         .select('id, name, auth_user_id, is_demo')
         .eq('auth_user_id', authUserId)
-        .single(),
+        .maybeSingle(),
       supabase
         .from('onboarding_state')
         .select(
           'step, intended_role, profile_id, error_message, created_at, completed_at'
         )
         .eq('auth_user_id', authUserId)
-        .single(),
+        .maybeSingle(),
     ]);
 
   const student = studentResult.data;

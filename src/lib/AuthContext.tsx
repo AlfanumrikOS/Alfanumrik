@@ -513,11 +513,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // Bootstrap is the first successful server-side write of a profile,
                 // gated by Redis idempotency lock — fires exactly once per new user.
                 try {
-                  const role: 'student' | 'teacher' | 'parent' | 'guardian' =
-                    metaRole === 'teacher' ? 'teacher'
-                      : metaRole === 'parent' || metaRole === 'guardian' ? 'guardian'
-                      : 'student';
-                  track('signup_complete', { role, method: 'email' });
+                  // AO-9: fire `signup_complete` AT MOST ONCE per user.
+                  // `bootstrapAttemptedRef` only dedupes within a single session —
+                  // it is reset to false on every SIGNED_IN and on signOut. So if a
+                  // user's profile row stays missing (e.g. a silent bootstrap
+                  // failure, or a fresh sign-in racing profile creation), this block
+                  // re-enters on each new session, sees res.ok, and re-fires the
+                  // event — over-counting activation. A durable per-user key makes
+                  // the emission idempotent across re-mounts, reloads, and repeated
+                  // sign-ins. The key uses the auth UUID only; the event payload
+                  // carries no PII (P13) and a storage failure must never break the
+                  // funnel (P15) — on storage error we degrade to the prior
+                  // fire-each-time behavior rather than throwing.
+                  const signupFlagKey = `alfanumrik_signup_complete:${user.id}`;
+                  let alreadyFired = false;
+                  try {
+                    alreadyFired = typeof window !== 'undefined'
+                      && window.localStorage.getItem(signupFlagKey) === '1';
+                  } catch { /* storage unavailable — fall through and fire */ }
+                  if (!alreadyFired) {
+                    const role: 'student' | 'teacher' | 'parent' | 'guardian' =
+                      metaRole === 'teacher' ? 'teacher'
+                        : metaRole === 'parent' || metaRole === 'guardian' ? 'guardian'
+                        : 'student';
+                    track('signup_complete', { role, method: 'email' });
+                    try {
+                      if (typeof window !== 'undefined') {
+                        window.localStorage.setItem(signupFlagKey, '1');
+                      }
+                    } catch { /* best-effort: persistence is non-critical */ }
+                  }
                 } catch { /* analytics is non-critical */ }
                 // Re-run fetchUser ONE MORE TIME to pick up newly created profile.
                 // bootstrapAttemptedRef.current is already true, so the recursive call

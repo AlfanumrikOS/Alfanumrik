@@ -187,3 +187,55 @@ independent quality validation.
 - **Un-gating is a follow-up:** ops must seed 3 per-role staging fixtures + secrets (documented in the
   spec header) before the `test.fixme` is lifted. Tracked in Deferred and in `STATUS.md`.
 - **Rollback for AO-1/AO-2:** revert the test/spec files; no app code involved.
+
+---
+
+## Cycle 1 follow-ups (AO-5 / AO-7 / AO-9) — landed 2026-06-29
+
+**Status:** DONE. The three remaining auto-fix-safe Cycle-1 follow-ups landed together.
+**Gates:** `npm run type-check` PASS; `npm run lint` 0 errors.
+
+### AO-5 (assessment) — onboarding writes the canonical grade string ("9"), not "Grade 9" — P5
+- **File changed:** `src/app/onboarding/page.tsx` — now stores the **bare canonical grade string**
+  (e.g. `"9"`) instead of the prefixed `"Grade 9"`, conforming to invariant **P5** (grades are the bare
+  strings `"6"`…`"12"`, never integers and never prefixed).
+- **Reader-safety proof (rigorous, why the change is safe):**
+  - Every TS reader expects the **bare** form — there are **8+ `parseInt` sites** that return `NaN` on
+    `"Grade 9"` (so they were silently mis-reading the prefixed form); `StreamGate` does an **exact
+    string match** that only matched by accident on the prefixed value.
+  - Every SQL reader is **form-invariant** via `normalize_grade()` (it tolerates both forms).
+  - **No reader depends on the "Grade N" prefix.** Removing it strictly improves correctness.
+- **Verdict:** assessment **APPROVE**.
+- **Rollback:** `git revert` of the single onboarding-page edit; no schema/migration.
+
+### AO-7 (backend) — `resolveIdentity()` `.single()` → `.maybeSingle()` (PGRST116 log-noise removal)
+- **File changed:** `src/lib/identity/onboarding.ts` — `resolveIdentity()` switches **four** lookups
+  from `.single()` to `.maybeSingle()` (students / teachers / guardians / onboarding_state).
+- **Why:** `.single()` raises `PGRST116` on the normal **no-row** path (a user who is not yet that role),
+  spamming the logs with a non-error. `.maybeSingle()` returns `null` instead — **behavior-preserving**
+  for the caller (which already handles the null/absent case), it only removes the spurious error noise.
+- **Rollback:** `git revert`; no schema/migration.
+
+### AO-9 (frontend) — durable once-guard on the `signup_complete` analytics emission — P13 / P15
+- **File changed:** `src/lib/AuthContext.tsx` — the single `signup_complete` analytics emission is now
+  wrapped in a **durable per-user once-guard** (a `localStorage` key derived from the auth **UUID**), so
+  it fires **exactly once per signup**, even across sessions/devices-on-same-browser and page reloads.
+- **Invariant posture:**
+  - **P13:** the guard key is the auth UUID only — **no PII** (no name/email/phone/grade).
+  - **P15:** **degrades safely** if `localStorage` is unavailable (private mode / disabled storage) — the
+    event still emits, the funnel never breaks; the guard is best-effort de-duplication, not a gate.
+  - Complements AO-4's transitive fix (AO-4 made the bootstrap 2xx trustworthy so the event no longer
+    fired on a masked failure; AO-9 now also prevents legitimate **re-fires** on repeat mounts/sessions).
+- **Rollback:** `git revert`; no schema/migration.
+
+### New backlog item discovered during AO-5 — AO-10 (grade-coercion / legacy backfill)
+- **Location:** `src/lib/AuthContext.tsx` (~lines 423-424) sets the `student` object from the **raw DB
+  row without grade coercion**. So while AO-5 stops *new* onboarding from writing `"Grade 9"`, any
+  **legacy `"Grade N"` rows already in the DB** still leak the prefixed form to the (bare-expecting) TS
+  readers until backfilled.
+- **Naming smell:** the `normalize_grade` SQL helper is **misnamed vs the TS canonical** — it *adds* the
+  "Grade " prefix rather than normalizing toward the bare form.
+- **Disposition:** broader convergence/backfill item, **co-owned by assessment + architect**. Needs
+  (a) a one-time data backfill of legacy `students.grade` to the bare canonical form, and (b) either
+  renaming/repurposing `normalize_grade` or adding a read-time coercion in AuthContext. Tracked as
+  **AO-10** in `STATUS.md` (NOT fixed this batch).
