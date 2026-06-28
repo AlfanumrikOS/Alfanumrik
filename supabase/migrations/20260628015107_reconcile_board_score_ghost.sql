@@ -1,0 +1,48 @@
+-- lint:allow-placeholder
+-- Intentional no-op (Phase E.2 lint allow-list): there is NO DDL behind this
+-- file — the placeholder IS the fix. The canonical BoardScore™ schema lives in
+-- the consolidated migration 20260628000000_board_score_v1.sql.
+--
+-- 20260628015107_reconcile_board_score_ghost.sql
+--
+-- GHOST-LEDGER RECONCILE — no-op body.
+--
+-- Background: the BoardScore™ feature was first authored as two separate
+-- migrations that were applied DIRECTLY to the production database (versions
+-- 20260628015107 and 20260628015237 are recorded in prod's
+-- supabase_migrations.schema_migrations). Before merge, those two files were
+-- CONSOLIDATED into a single canonical migration,
+-- 20260628000000_board_score_v1.sql, and the original two files were removed
+-- from the repo. Production kept the two ghost ledger rows with no matching
+-- local file.
+--
+-- Symptom: the "Apply Database Migrations" step of deploy-production.yml runs
+--   supabase db push --linked --include-all
+-- which aborts with:
+--   Remote migration versions not found in local migrations directory.
+-- because prod's schema_migrations has rows for 20260628015107 and
+-- 20260628015237 that have no matching local file. Because that step gates
+-- deploy-functions, the Edge Functions stop deploying too.
+--
+-- Fix (same pattern as the PR #748 / #750 phantom-timestamp reconcile — see
+-- the 20260512065502/03_reconcile_phantom.sql siblings and
+-- docs/runbooks/migration-placeholders-audit.md): add a local file at the
+-- exact ghost timestamp with an idempotent no-op body. The Supabase CLI then
+-- sees local == remote for this version and treats it as already applied on
+-- prod (the no-op SQL is NEVER re-run there). On a fresh environment (CI
+-- live-DB tests, new staging, DR) the file applies as a true no-op and records
+-- the version; the real BoardScore™ schema is created by the idempotent
+-- 20260628000000_board_score_v1.sql, which is fully guarded
+-- (CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS / DROP POLICY IF
+-- EXISTS + CREATE POLICY / ON CONFLICT DO NOTHING), so applying it on a prod
+-- that already has the BoardScore™ schema from the ghost migrations is a safe
+-- no-op.
+--
+-- This file creates no tables, so RLS (P8) is N/A.
+--
+-- Companion reconcile: 20260628015237_reconcile_board_score_ghost.sql.
+-- DO NOT delete this file.
+
+SELECT 1 WHERE false;
+-- Intentionally no rows returned. PostgreSQL is happy; supabase_migrations
+-- records the version; no schema or data changes occur on any environment.

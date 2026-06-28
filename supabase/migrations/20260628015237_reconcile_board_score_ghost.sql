@@ -1,0 +1,39 @@
+-- lint:allow-placeholder
+-- Intentional no-op (Phase E.2 lint allow-list): there is NO DDL behind this
+-- file — the placeholder IS the fix. The canonical BoardScore™ schema lives in
+-- the consolidated migration 20260628000000_board_score_v1.sql.
+--
+-- 20260628015237_reconcile_board_score_ghost.sql
+--
+-- GHOST-LEDGER RECONCILE — no-op body. Companion to
+-- 20260628015107_reconcile_board_score_ghost.sql.
+--
+-- Background: the BoardScore™ feature was first authored as two separate
+-- migrations applied DIRECTLY to production (versions 20260628015107 and
+-- 20260628015237 recorded in prod's supabase_migrations.schema_migrations).
+-- Before merge those two files were CONSOLIDATED into a single canonical
+-- migration, 20260628000000_board_score_v1.sql, and removed from the repo.
+-- Production kept both ghost ledger rows with no matching local file.
+--
+-- Symptom: same as the sibling — deploy-production.yml's
+--   supabase db push --linked --include-all
+-- aborts with "Remote migration versions not found in local migrations
+-- directory." The CLI refuses to push while ANY remote version has no local
+-- match; the error usually only names the first ghost (20260628015107), but
+-- this companion version is the same class of mismatch and would block the
+-- push as soon as the first is reconciled.
+--
+-- Fix (PR #748 / #750 phantom-timestamp reconcile pattern; see
+-- docs/runbooks/migration-placeholders-audit.md): a no-op marker at the exact
+-- ghost timestamp. Local file appears, the CLI treats the version as already
+-- applied on prod (the no-op is never re-run). On a fresh environment the file
+-- applies as a true no-op and records the version; the real BoardScore™ schema
+-- is created by the idempotent 20260628000000_board_score_v1.sql.
+--
+-- This file creates no tables, so RLS (P8) is N/A.
+--
+-- DO NOT delete this file.
+
+SELECT 1 WHERE false;
+-- Intentionally no rows returned. PostgreSQL is happy; supabase_migrations
+-- records the version; no schema or data changes occur on any environment.
