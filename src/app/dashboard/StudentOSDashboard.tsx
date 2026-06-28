@@ -12,9 +12,10 @@
  *   2. PRIMARY hero          — <TodaysMission> wrapping the existing
  *                              DailyRhythmQueue as the single dominant CTA.
  *   3. <MasterySnapshot>     — Mastered / Learning / Needs-Revision buckets.
- *   4. <RevisionRail>        — secondary spaced-repetition surface (reuses
+ *   4. <BoardScoreWidget>    — BoardScore™ predictive board-exam marks (ff_board_score_v1).
+ *   5. <RevisionRail>        — secondary spaced-repetition surface (reuses
  *                              ReviewsDueCard + useReviewCards).
- *   5. <SubjectRoadmaps>     — per-subject skill trees (SkillTree primitive).
+ *   6. <SubjectRoadmaps>     — per-subject skill trees (SkillTree primitive).
  *
  * This is a PRESENTATION layer over unchanged engines. No scoring/XP/mastery
  * formula is computed here — every number comes from the existing snapshot /
@@ -43,6 +44,7 @@ import TodaysMission from '@/components/dashboard/os/TodaysMission';
 import MasterySnapshot from '@/components/dashboard/os/MasterySnapshot';
 import RevisionRail from '@/components/dashboard/os/RevisionRail';
 import SubjectRoadmaps from '@/components/dashboard/os/SubjectRoadmaps';
+import BoardScoreWidget from '@/components/dashboard/os/BoardScoreWidget';
 
 export default function StudentOSDashboard() {
   const router = useRouter();
@@ -196,12 +198,16 @@ export default function StudentOSDashboard() {
           <MasterySnapshot isHi={isHi} studentId={student.id} />
         </div>
 
-        {/* 3. Revision rail — inline on mobile/tablet, in the aside on desktop. */}
+        {/* 3. BoardScore™ — self-gating via ff_board_score_v1 (widget renders
+             a 'Coming Soon' teaser when flag is OFF, full prediction when ON). */}
+        <BoardScoreWidget isHi={isHi} studentId={student.id} />
+
+        {/* 4. Revision rail — inline on mobile/tablet, in the aside on desktop. */}
         <div className="student-os-revision-inline xl:hidden">
           <RevisionRail isHi={isHi} studentId={student.id} />
         </div>
 
-        {/* 4. Subject roadmaps — the mastery-centric skill trees. */}
+        {/* 5. Subject roadmaps — the mastery-centric skill trees. */}
         <SubjectRoadmaps
           isHi={isHi}
           studentId={student.id}
