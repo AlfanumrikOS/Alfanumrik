@@ -120,6 +120,7 @@ async function rosterClassId(teacherId: string, studentId: string): Promise<stri
     .select('class_id')
     .eq('student_id', studentId)
     .in('class_id', classIds)
+    .eq('is_active', true)
     .limit(1)
     .maybeSingle();
   if (csErr) {

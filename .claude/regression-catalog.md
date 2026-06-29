@@ -5863,3 +5863,39 @@ the P8 bidirectional recursion-guarded UPDATE-mirror going-forward fix).
 **Total catalog: 167 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Remediation — Tier-2 PR A: Teacher/Enrollment is_active Scoping (P8) — 2026-06-29
+
+The Tier-2 PR A slice adds an `.eq('is_active', true)` filter to the two teacher
+roster lookups that read the `class_students` join through the RLS-BYPASSING
+admin client (`/api/teacher/remediation` + `/api/teacher/parent-notify`), and adds
+`is_active: true` to the `schools/enroll` off-path `class_enrollments` upsert
+conflict payload so a re-enroll RESTORES the active flag (parity with the
+seat-enforced RPC path). On these admin-client reads the filter is the ONLY
+boundary keeping a soft-de-enrolled student off the teacher's roster — there is no
+RLS backstop on a service-role read, so dropping it re-opens the divergence where
+a de-enrolled student stays reachable for remediation / parent-notify.
+
+The unit lane has no live Postgres, so the contract is pinned as comment-stripped
+static-source assertions (same convention as the admin-route auth-gate sweep
+`api/super-admin/admin-route-auth-gate-sweep.test.ts` and the TSB-4 migration-shape
+pin `tsb4-class-membership-softdelete-sync.test.ts`): assert the `is_active` filter
+sits ON the `class_students` query chain (non-vacuous — `.from` + `.select` +
+`.eq('student_id')` + `.in('class_id')` confirmed present), assert the
+`class_enrollments` upsert payload carries `is_active: true`, and GUARD that the
+teacher-auth `class_teachers` lookup is preserved and was NOT itself
+is_active-narrowed (the change is on the STUDENT roster lookup only). Behavioural
+proof (de-enrolled student → 403) deferred to an integration lane.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-201 | `teacher_reads_scope_active_enrollment` | P8: the teacher remediation + parent-notify `class_students` roster lookups filter `.eq('is_active', true)` (a soft-de-enrolled student can't be assigned remediation or trigger parent-notify — these are RLS-bypassed admin-client reads so the filter is the only boundary), and the `schools/enroll` `class_enrollments` upsert restores `is_active: true` on re-enroll (parity with the seat-enforced RPC); guard pins that the teacher-auth `class_teachers` lookup is preserved and NOT is_active-narrowed (change is on the student roster lookup only) | `src/__tests__/api/teacher/active-enrollment-scoping.test.ts` | U | P8 |
+
+### Catalog total
+
+Pre-Tier-2-PR-A: 167 entries (through TSB-4's REG-200 class-membership soft-delete
+sync). Tier-2 PR A adds REG-201 (teacher/enrollment is_active scoping — the P8
+admin-client roster filter + re-enroll active-restore source pin).
+**Total catalog: 168 entries (target: 35 — TARGET EXCEEDED).**
+
+---
