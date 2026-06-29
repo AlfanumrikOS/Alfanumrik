@@ -47,7 +47,7 @@ import { resolve } from 'node:path';
  * counterpart row back. That belongs in the integration lane and is deferred;
  * source pins are the accepted + expected gate for this gated migration content.
  *
- * Owner: testing. Catalog: REG-207.
+ * Owner: testing. Catalog: REG-208.
  */
 
 const POLICY_REL = 'supabase/migrations/20260702050000_class_enrollments_teacher_select_policy.sql';

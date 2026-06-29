@@ -1,6 +1,6 @@
 /**
  * PAY-2 [payments / P11-adjacent] — consumer-pricing source-of-truth drift guard
- * + DB-divergence pin.
+ * + DB-CONVERGENCE pin (REG-207).
  *
  * BACKGROUND. There are FIVE places a consumer plan price lives (see
  * engineering-audit/remediation/pay-2-pricing-source/01-design.md §1):
@@ -14,12 +14,17 @@
  *                                  (WEB checkout reads this)
  *   #5 mobile subscription.dart    `PlanInfo` literals      (INR rupees)
  *
- * Today #1, #2/#3 (server) and #5 all AGREE (unlimited = ₹1499/₹11999). The DB
- * (#4) DIVERGES: migration 20260505155126 set unlimited to ₹1099/₹8799. Because
- * web checkout reads the DB and mobile checkout reads the code, the SAME plan
- * bills DIFFERENTLY by platform. Reconciling that divergence is a CEO-gated
- * PRICING decision; this test does NOT resolve it — it makes it a VISIBLE,
- * CI-tracked fact instead of a silent drift.
+ * RESOLVED 2026-06-30 (PAY-2 convergence). The prior divergence is CLOSED. The
+ * DB (#4) was already ₹1099/₹8799 (migration 20260505155126); the code sources
+ * (#1, #2/#3 server, #5 mobile) have now been converged DOWN to that same
+ * DB-canonical value. Previously #1/#2/#3/#5 read ₹1499/₹11999 while the DB read
+ * ₹1099/₹8799, so the SAME plan billed DIFFERENTLY by platform (web read the DB
+ * = ₹1099; mobile read the code = ₹1499) and the gateway captured ₹1499 while
+ * verify recorded the DB's ₹1099. That live divergence no longer exists: web
+ * charge, mobile charge, mobile display, web display, and DB are now ALL
+ * ₹1099/₹8799. The convergence is customer-FAVORABLE (the unlimited charge was
+ * lowered, never raised). The old ₹1499/₹11999 value is GONE — it is not a
+ * "correct" value anywhere anymore, so pinning to it would be the bug.
  *
  * THIS FILE HAS TWO PARTS:
  *
@@ -33,17 +38,17 @@
  *     the SERVER paisa constant that create-order now charges from.
  *     NON-VACUOUS: asserts >= 3 plans parsed from each side.
  *
- *   PART B — DB-DIVERGENCE PIN (green — it asserts the divergence EXISTS).
+ *   PART B — DB↔CODE CONVERGENCE PIN (green — it asserts the values now MATCH).
  *     Extracts the DB `unlimited` price from migration 20260505155126 and
- *     asserts it DIFFERS from the code `unlimited` price. This pins the KNOWN,
- *     unresolved billing discrepancy so it cannot vanish silently.
+ *     asserts it EQUALS the code `unlimited` price (both ₹1099/₹8799). This pins
+ *     the achieved convergence so a future drift in EITHER direction (code
+ *     creeping back up to ₹1499, or the DB moving) re-breaks the pin.
  *
- *     ⚠️  KNOWN DIVERGENCE PENDING CEO DECISION (PAY-2 Open question #1).
- *     When the CEO picks the canonical `unlimited` price and the DB↔code are
- *     reconciled, PART B's "differs" assertions will start FAILING by design —
- *     that failure is the signal to UPDATE/REMOVE this pin and (if the canonical
- *     value lands in code) tighten it into a "DB === code" parity assertion.
- *     DO NOT silently weaken PART B to make it pass; reconcile the sources.
+ *     ⚠️  PRICING-CHANGE GUARD. The literals below encode the CEO-approved
+ *     canonical `unlimited` price (₹1099/₹8799). If either side moves, PART B
+ *     FAILS by design — that failure is the signal that someone changed a price
+ *     (a CEO-gated decision), NOT a license to relax the assertion. Reconcile
+ *     the sources; do not silently weaken PART B to make it green.
  *
  * TEST-ONLY PIN: never edits plans.ts, pricing.ts, the migration, or the Dart
  * file. It only reads them and asserts relationships.
@@ -182,19 +187,22 @@ describe('PAY-2 Part A: consumer code-pricing source parity (drift guard)', () =
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PART B — DB-DIVERGENCE PIN (green: asserts the KNOWN divergence EXISTS)
+// PART B — DB↔CODE CONVERGENCE PIN (green: asserts the values now MATCH)
 //
-//   ⚠️  KNOWN DIVERGENCE PENDING CEO DECISION (PAY-2 Open question #1).
-//   The DB `unlimited` price (₹1099/₹8799, migration 20260505155126) DIFFERS
-//   from the code `unlimited` price (₹1499/₹11999). Web checkout bills the DB
-//   value; mobile checkout bills the code value — same plan, two prices.
+//   RESOLVED 2026-06-30 (PAY-2 convergence, REG-207).
+//   The DB `unlimited` price (₹1099/₹8799, migration 20260505155126) now EQUALS
+//   the code `unlimited` price (₹1099/₹8799). Web checkout reads the DB; mobile
+//   checkout reads the code — and they are the SAME price again. The earlier
+//   ₹1499/₹11999 code value is GONE (converged DOWN to the DB-canonical figure,
+//   customer-favorable).
 //
-//   When the CEO picks the canonical price and DB↔code are reconciled, these
-//   `not.toBe`/`not.toEqual` assertions will FAIL — that is the SIGNAL to update
-//   or remove this pin (and, if the canonical value lands in code, replace it
-//   with a DB===code parity assertion). DO NOT weaken PART B to keep it green.
+//   This is a CONVERGENCE update, NOT a weakened assertion: the previously
+//   pinned ₹1499/₹11999 no longer exists in any source, so the old `not.toBe`
+//   divergence pin would now be asserting a falsehood. If either side moves
+//   again, these `toBe`/`toEqual` parity assertions FAIL by design — that is the
+//   SIGNAL of a (CEO-gated) price change. DO NOT weaken PART B to keep it green.
 // ─────────────────────────────────────────────────────────────────────────────
-describe('PAY-2 Part B: DB↔code unlimited-price divergence pin (KNOWN, CEO-pending)', () => {
+describe('PAY-2 Part B: DB↔code unlimited-price convergence pin (REG-207)', () => {
   const db = parseDbUnlimitedPrice();
   const code = PRICING.unlimited;
 
@@ -205,21 +213,22 @@ describe('PAY-2 Part B: DB↔code unlimited-price divergence pin (KNOWN, CEO-pen
     expect(db.yearly).toBeGreaterThan(0);
   });
 
-  it('documents the exact known values: DB = ₹1099/₹8799, code = ₹1499/₹11999', () => {
-    // These literals encode the CURRENT KNOWN STATE. If either side moves, this
-    // test breaks and forces a deliberate reconciliation decision (see header).
+  it('documents the converged canonical values: DB === code === ₹1099/₹8799', () => {
+    // These literals encode the CEO-approved CONVERGED canonical price. If either
+    // side moves, this test breaks and forces a deliberate (CEO-gated) pricing
+    // decision (see header). The old ₹1499/₹11999 divergence is closed.
     expect(db).toEqual({ monthly: 1099, yearly: 8799 });
     expect({ monthly: code.monthly, yearly: code.yearly }).toEqual({
-      monthly: 1499,
-      yearly: 11999,
+      monthly: 1099,
+      yearly: 8799,
     });
   });
 
-  it('DB unlimited monthly DIFFERS from code unlimited monthly (divergence exists)', () => {
-    expect(db.monthly).not.toBe(code.monthly);
+  it('DB unlimited monthly EQUALS code unlimited monthly (convergence achieved)', () => {
+    expect(db.monthly).toBe(code.monthly);
   });
 
-  it('DB unlimited yearly DIFFERS from code unlimited yearly (divergence exists)', () => {
-    expect(db.yearly).not.toBe(code.yearly);
+  it('DB unlimited yearly EQUALS code unlimited yearly (convergence achieved)', () => {
+    expect(db.yearly).toBe(code.yearly);
   });
 });

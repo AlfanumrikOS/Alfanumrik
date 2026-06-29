@@ -6132,6 +6132,54 @@ thresholds byte-unchanged; gentle bilingual flagged note; server-authoritative s
 
 ---
 
+## Remediation — PAY-2: Unlimited Price Convergence (P11) — 2026-06-30
+
+The `unlimited` consumer plan price was converged across ALL sources to the
+DB-canonical ₹1099/₹8799. The DB row (`subscription_plans.unlimited`, migration
+`20260505155126`) was ALREADY ₹1099/₹8799; the code sources were converged DOWN
+to match it: web charge + display (`src/lib/plans.ts::PRICING.unlimited` =
+1099/8799), the derived server paisa constant read by `/api/payments/create-order`
+(`src/lib/pricing.ts::CONSUMER_PRICING_PAISA.unlimited` = 109900/879900), and the
+mobile charge + display (`mobile/lib/data/models/subscription.dart` = 1099/8799).
+
+This CLOSES the prior live divergence where mobile/web code charged ₹1499 while
+the DB (web checkout) charged ₹1099 — the SAME plan billed two prices by platform,
+and the gateway captured ₹1499 while verify recorded the DB's ₹1099 (gateway↔ledger
+mismatch). The convergence is customer-FAVORABLE: the unlimited charge was lowered,
+never raised. P11 signature-verification and atomic-write logic are UNTOUCHED — only
+the pricing CONSTANTS moved. The SOT pin (`consumer-pricing-sot-drift.test.ts`
+Part B) was flipped from a DB↔code DIVERGENCE pin (`not.toBe`) to a DB===code
+PARITY pin: this is a legitimate convergence update, NOT a weakened assertion — the
+old ₹1499/₹11999 value no longer exists in any source, so the prior divergence pin
+would now be asserting a falsehood.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-207 | `pay2_unlimited_price_converged_to_db_canonical` | P11: the `unlimited` plan price is converged across ALL sources to the DB-canonical ₹1099/₹8799 (web `plans.ts`, derived paisa `CONSUMER_PRICING_PAISA` read by create-order, mobile `subscription.dart`, and DB `subscription_plans`) — closing the prior live divergence where mobile charged ₹1499 (code) vs web ₹1099 (DB) and the gateway-vs-ledger mismatch (mobile captured ₹1499 but verify recorded ₹1099); the SOT pin now asserts DB===code parity (not divergence); customer-favorable (charge lowered, never raised); P11 signature/atomicity logic untouched | `src/__tests__/payments/consumer-pricing-sot-drift.test.ts` | U | P11 |
+
+### Invariants covered by this section
+
+- P11 (payment integrity) — REG-207 pins single-price convergence: web charge,
+  mobile charge, mobile display, web display, and the DB row are all ₹1099/₹8799.
+  The focused pin `src/__tests__/payments/pay2-unlimited-price-converged.test.ts`
+  asserts `PRICING.unlimited === {1099,8799}`, `CONSUMER_PRICING_PAISA.unlimited
+  === {109900,879900}` (rupees ×100, no rounding drift), and that the code price
+  EQUALS the DB-canonical migration value — so a future drift in EITHER direction
+  (code creeping back to ₹1499, paisa desyncing, or the DB migration moving)
+  re-breaks the pin. starter (299/2399) and pro (699/5599) are pinned UNCHANGED as
+  a guard that ONLY unlimited moved. The SOT `consumer-pricing-sot-drift.test.ts`
+  Part B was flipped divergence→parity in lock-step; signature-verify + atomic
+  subscription-write paths are not touched by this change.
+
+### Catalog total
+
+PAY-2 adds REG-207 (unlimited price convergence to DB-canonical ₹1099/₹8799 —
+DB↔code SOT pin flipped from divergence to parity; focused convergence pin guards
+all four sources + starter/pro-unchanged).
+**Total catalog: 174 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
 ## Remediation — TSB-4: class_enrollments Teacher RLS + Fail-Closed Reconcile (P8) — 2026-06-30
 
 Two TSB-4 READY-NOW migrations close the teacher data-boundary (P8) gap left by the
@@ -6144,53 +6192,41 @@ teacher policy (`class_id IN (SELECT ct.class_id FROM class_teachers ct JOIN tea
 ON t.id=ct.teacher_id WHERE t.auth_user_id=auth.uid())`) — assigned teacher → rows,
 non-assigned teacher → zero; grant-only, additive, idempotent (`DROP POLICY IF EXISTS` →
 `CREATE`), no RLS toggle. (2) `20260702060000_class_membership_isactive_backfill.sql` is a
-one-time FAIL-CLOSED reconcile of the rows that diverged BEFORE the 20260702030000
+one-time FAIL-CLOSED reconcile of rows that diverged BEFORE the 20260702030000
 UPDATE-mirror triggers landed: it flips `class_students.is_active` true→false ONLY where the
 matching `class_enrollments` row is ALREADY inactive (direction A — completing an
 already-authorized de-enroll), closing the live leak where a de-enrolled student stayed
 teacher-visible via `canAccessStudent` (rbac.ts:331). It NEVER reactivates — the reverse
-direction (ce=true/cs=false) is RAISE NOTICE report-only, never auto-applied (re-activating
-would widen authorization). A service-role-only, RLS-enabled backup table
-(`_tsb4_isactive_backfill_backup`) snapshots changed rows for exact rollback. No DROP of the
-roster tables; the `canAccessStudent` / `is_teacher_of` reader is NOT repointed onto
-`class_enrollments` (deferred to the CEO-gated cutover). Migrations-only slice.
+direction (ce=true/cs=false) is RAISE NOTICE report-only. A service-role-only, RLS-enabled
+backup table (`_tsb4_isactive_backfill_backup`) snapshots changed rows for exact rollback.
+No DROP of the roster tables; the `canAccessStudent` / `is_teacher_of` reader is NOT repointed
+onto `class_enrollments` (deferred to the CEO-gated cutover). Migrations-only slice.
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-207 | `tsb4_enrollments_teacher_rls_and_failclosed_reconcile` | P8: `class_enrollments` gains a teacher SELECT RLS policy mirroring `class_students` (closing the discoverable-policy gap where an assigned teacher got zero rows on the canonical roster); a one-time FAIL-CLOSED reconcile flips `class_students.is_active` true→false only where the matching `class_enrollments` row is already inactive (completes authorized de-enrolls, closing the live leak where de-enrolled students stayed teacher-visible via rbac.ts) — never reactivates (no over-grant), reverse direction report-only, backup table RLS-protected, no DROP, canAccessStudent reader NOT repointed (deferred/gated) | `src/__tests__/tsb4-enrollments-rls-reconcile.test.ts` | E | P8 |
+| REG-208 | `tsb4_enrollments_teacher_rls_and_failclosed_reconcile` | P8: `class_enrollments` gains a teacher SELECT RLS policy mirroring `class_students` (closing the discoverable-policy gap where an assigned teacher got zero rows on the canonical roster); a one-time FAIL-CLOSED reconcile flips `class_students.is_active` true→false only where the matching `class_enrollments` row is already inactive (completes authorized de-enrolls, closing the live leak where de-enrolled students stayed teacher-visible via rbac.ts) — never reactivates (no over-grant), reverse direction report-only, backup table RLS-protected, no DROP, canAccessStudent reader NOT repointed (deferred/gated) | `src/__tests__/tsb4-enrollments-rls-reconcile.test.ts` | E | P8 |
 
 ### Invariants covered by this section
 
-- P8 (RLS boundary / teacher data boundary) — REG-207 source-pins (comment-tolerant)
+- P8 (RLS boundary / teacher data boundary) — REG-208 source-pins (comment-tolerant)
   the SHAPE of both migrations: (1) the teacher SELECT policy on `class_enrollments`
   references `class_teachers` / `teachers` / `auth_user_id` / `auth.uid()` in the same
   `class_id IN (...)` subquery as the `class_students` teacher policy, is FOR SELECT,
   and is idempotent (`DROP POLICY IF EXISTS`); (2) the new `_tsb4_isactive_backfill_backup`
-  table ENABLES RLS + a service-role-only policy in the SAME migration (new-table-needs-RLS
-  rule); (3) the KEY safety pin — the reconcile UPDATE sets `is_active = false` ONLY,
-  conditioned on `ce.is_active=false AND cs.is_active=true`, with NO unqualified
-  `is_active = true` assignment anywhere in active SQL (the backfill can only REMOVE
-  visibility, never grant); (4) neither migration DROPs `class_students` / `class_enrollments`;
-  (5) the reader is NOT repointed — neither migration touches `canAccessStudent` /
-  `is_teacher_of`, and `src/lib/rbac.ts` still reads `.from('class_students')` (never
-  `.from('class_enrollments')`). The comment-strip is essential: both ADR headers narrate
-  the deferred/forbidden actions (DROP, reactivate, repoint) in prose.
-- Lane note: this is a SOURCE pin in the normal `npm test` lane (sibling to REG-200's
-  `tsb4-class-membership-softdelete-sync.test.ts`), NOT the `src/__tests__/migrations/**`
-  live-DB integration lane. A behavioural proof (assigned teacher reads rows under RLS;
-  the UPDATE only removes visibility) belongs in the integration lane and is deferred;
-  source pins are the accepted + expected gate for this gated migration content.
+  table ENABLES RLS + a service-role-only policy in the SAME migration; (3) the KEY safety
+  pin — the reconcile UPDATE sets `is_active = false` ONLY, conditioned on
+  `ce.is_active=false AND cs.is_active=true`, with NO unqualified `is_active = true`
+  assignment anywhere in active SQL (the backfill can only REMOVE visibility, never grant);
+  (4) neither migration DROPs `class_students` / `class_enrollments`; (5) the reader is NOT
+  repointed — `src/lib/rbac.ts` still reads `.from('class_students')`.
+- Lane note: SOURCE pin in the normal `npm test` lane (sibling to REG-200's
+  `tsb4-class-membership-softdelete-sync.test.ts`), NOT the live-DB integration lane.
 
 ### Catalog total
 
-Pre-TSB-4-RLS: 173 entries (through SLC-5's REG-206 client anti-cheat advisory convergence).
-TSB-4 RLS + fail-closed reconcile adds REG-207 (class_enrollments teacher SELECT policy
+TSB-4 RLS + fail-closed reconcile adds REG-208 (class_enrollments teacher SELECT policy
 mirroring class_students + one-time fail-closed is_active reconcile that only ever removes
 teacher visibility; backup table RLS-protected; no DROP; reader not repointed).
-NOTE: the task brief assumed this slot was REG-208 (total 174→175), but the catalog head was
-REG-206 / 173 at authoring time (no REG-207 existed), so the genuinely next-free contiguous id
-is REG-207 / total 174 — flagged to the orchestrator to reconcile if a parallel branch also
-claims REG-207.
-**Total catalog: 174 entries (target: 35 — TARGET EXCEEDED).**
+**Total catalog: 175 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
