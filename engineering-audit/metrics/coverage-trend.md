@@ -23,6 +23,7 @@ measured in-session.
 | 2026-06-29 (SAO-1/5 remediation — bulk PII export re-tiering) | **14 SAO-1/5 pins** (`api/super-admin/reports-pii-tier.test.ts` — 4 PII types `students`/`teachers`/`parents`/`audit` require `super_admin`; 2 UUID-only types `quizzes`/`chats` keep `support` floor; unknown `type` → 400 before any gate/DB; gate-before-data per type; missing-type default → `super_admin`) + REG-186 admin-gate sweep = **18/18**; **121/121** broad super-admin; not re-measured globally | not re-measured (targeted super-admin run only) | **165** with REG-198 (P13/P9 — `/api/super-admin/reports` 4 PII report types re-tiered `support` → `super_admin`, CEO-approved safest existing tier; 2 UUID-only types stay `support`; validate-`type`-first fail-closed; no new permission code/role/migration; loosening turns REG-198 red → forces a reviewed decision); REG-186/187 still green; cap target 35 — exceeded | build **PASS** — one server route, read-tier change only (no client bundle / page-budget impact); test-only file | /foxy still largest, 0 pages > 260 kB (no runtime/page change) | local green; type-check PASS, lint 0 errors, build PASS; quality independent **APPROVE** (no conditions); P14 chain (backend+architect+frontend+testing+quality) complete; sweep GREEN |
 | 2026-06-29 (PP-1/3 remediation — parent-link consent, Option B) | **20 PP-1/3 pins** (`parent-login-consent.test.ts` 16 — `parent_login` creates `pending`/`is_verified:false`/`initiated_by='parent_login'`, never `active`; pending grants 403/empty at every parent data handler + `is_guardian_of` false; approved unlocks; re-submit no-downgrade; pending_approval vs approved response shape + PII-free notify; `pending-link-approval.test.tsx` 4 — orphan-guard: `StudentOSDashboard` renders `PendingLinkApproval`, self-hides when empty, approve calls `/api/parent/approve-link`); **484** broad parent sweep PASS; REG-117/188/189/190 intact; not re-measured globally | not re-measured (targeted parent run only) | **166** with REG-199 (P8/P13/P15 — link code → `pending` → student approves → `approved`; consent boundary confirmed at 3 layers; anti-orphan guard pins the live-dashboard approval surface); REG-117/188/189/190 still green; cap target 35 — exceeded | build **PASS** — one Deno Edge Function + 3 small client changes (helper + dashboard mount + parent screen); test files test-only (no shared-chunk / page-budget impact) | /foxy still largest, 0 pages > 260 kB (PendingLinkApproval self-hides when empty) | local green; type-check PASS, lint 0 errors, build PASS; quality independent **APPROVE** (no conditions); P14 chain (backend+frontend+architect+mobile+testing+quality) complete; sweep GREEN |
 | 2026-06-29 (TSB-4 remediation — class-membership soft-delete sync) | **21 TSB-4 `it()` blocks** (`tsb4-class-membership-softdelete-sync.test.ts` — bidirectional soft-delete propagation, recursion-guard one-round-trip termination, idempotency/SECURITY DEFINER posture, DELETE-mirror absence) + canary 23 = **44 green**; not re-measured globally | not re-measured (targeted membership/teacher-boundary run only) | **167** with REG-200 (P8 — soft de-enroll on `class_enrollments` propagates `is_active=false` to `class_students`, the table the `canAccessStudent`/`is_teacher_of` teacher boundary reads; bidirectional recursion-guarded triggers terminate after one round-trip; **closes the Tier-1 remediation backlog**); REG-184/185 still green; cap target 35 — exceeded | **N/A** — migration + test-only change (no client bundle, no TS runtime surface); CI post-merge build is the backstop | /foxy still largest, 0 pages > 260 kB (no runtime/page change) | local green; type-check PASS, lint 0 errors; quality independent **APPROVE** (no conditions); P14 chain (architect + backend + testing + quality) complete; sweep GREEN; **DROP/repoint/backfill cutover deferred CEO-gated** |
+| 2026-06-30 (Post-program remediation wave — Tier-2 reversible set + SLC-4 gated-cap) | per-PR targeted suites green (REG-201 TSB-4 `is_active` filters / REG-202 SAO `message` egress redaction / REG-203 `normalizeGrade` digit-extraction + read-time coercion / REG-204 durable Upstash limiter / REG-205 SLC-4 capped-fallback); not re-measured globally | not re-measured (per-PR targeted runs only) | **172** with REG-201..205 — four MERGED (REG-201 PR A, REG-202 PR B `ad3ba0dc`, REG-203 PR D `f022059b`, REG-204 PR C `b4fe95f6`) + REG-205 (SLC-4) **IN FLIGHT** (CI running, not merged); REG-200 + cycle entries still green; cap target 35 — exceeded | build PASS per-PR where applicable (REG-201/202/203/204 are server-route / Edge-Fn / pure-TS + test-only — no shared-chunk or page-budget impact); SLC-4 build via its own CI | /foxy still largest, 0 pages > 260 kB (no runtime/page change shipped) | four PRs CI-green squash-merged to main with full review chains (domain + testing + quality, + architect/mobile where noted); SLC-4 CI in progress; **PP-1 durable limiter OPERATIONAL ACTIVATION PENDING — set Upstash Edge secrets** |
 | **PROGRAM SUMMARY (Cycles 1-8 — 2026-06-28 → 2026-06-29)** | **8 of 8 ranked workflows audited → hardened → merged** (auth-onboarding, payments-subscriptions, student-learning-core, foxy-ai-rag, teacher-school-b2b, super-admin-observability, parent-portal, cross-cutting) | global coverage not re-measured per-cycle (targeted suites only); threshold 35% upheld | catalog grew **~146 → 160** across the program; **REG-177..193 = 17 new** entries; target 35 — exceeded throughout | shared JS 279.7 / **284** (cap pinned by REG-193); middleware 116.2 / 120 | /foxy largest, 0 pages > 260 kB throughout | all cycles local-green; per-cycle quality/orchestrator APPROVE; residual = post-program remediation backlog (Tier-1 user-gated / Tier-2 reversible / Tier-3 initiatives) — see `PROGRAM-SUMMARY.md` |
 
 ## Notes on the seed row (2026-06-28)
@@ -368,6 +369,40 @@ measured in-session.
   (remediation/parent-notify missing `is_active` filter; `schools/enroll` re-enroll missing `is_active` —
   Tier-2) + the `class_enrollments` leftover-row erasure-completeness item (separate track). See
   `remediation/tsb-4-class-membership-sync/`.
+
+## Notes on the post-program remediation-wave row (2026-06-30 — Tier-2 reversible set + SLC-4 gated-cap)
+- **Post-program remediation, not a cycle.** Drains the `PRIORITY-BACKLOG.md` Tier-2 (reversible /
+  pre-approved) queue plus the first gated-cap slice. Each item shipped on its own CI-green squash-merged PR
+  with a full review chain (domain + testing + quality, + architect/mobile where noted). Branch:
+  `eng-audit/remediation-slc4-fallback-cap-alignment`.
+- **MERGED (4 PRs):**
+  - **PR A** (PR #~1170, REG-201) — TSB-4 backend `is_active` soft-delete filters at the teacher remediation /
+    parent-notify read paths + `schools/enroll` upsert (closes the 2 P8-adjacent scoping gaps). Chain: domain +
+    testing + quality.
+  - **PR B** (`ad3ba0dc`, REG-202) — super-admin observability CSV-export `message` column wrapped in
+    `redactPIIInText` (P13 egress defense-in-depth) + surfaced via the `@/lib/ops-events-redactor` barrel.
+    Chain: backend + architect (P13) + testing + quality.
+  - **PR D** (`f022059b`, REG-203) — `normalizeGrade` now EXTRACTS the digit from legacy "Grade N"/"Class
+    N"/"Nth" (range-validated 6..12) instead of defaulting non-9 prefixed grades to "9" (latent bug);
+    AuthContext applies it at the student-profile read paths (P5 read-time coercion; AO-10 read slice). Chain:
+    frontend + assessment (P5) + testing + quality. **AO-10b row-backfill remains DEFERRED.**
+  - **PR C** (`b4fe95f6`, REG-204) — durable Upstash parent-login rate limiter (`_shared/durable-rate-limiter.ts`,
+    `@upstash/ratelimit@2` + `@upstash/redis@1`, pinned imports, in-memory fail-safe fallback) wired into
+    parent-portal; 5/1h bound unchanged (PP-1; P15/abuse). Chain: backend + architect (APPROVE W/ CONDITIONS —
+    pinned imports; conditions: set Upstash Edge secrets + Deno CI module resolution) + testing + quality.
+    **OPERATIONAL ACTIVATION PENDING:** set `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` as Supabase
+    Edge Function secrets — runs the in-memory fallback (correct, per-instance) until then.
+- **IN FLIGHT (not in the merged set):** **SLC-4** (REG-205) — quiz-submit fallback repointed to the canonical
+  7-param capped ledger writer (`p_session_id`), closing a **LIVE up-to-400/day P2 cap-bypass**: the 6-param
+  overload referenced a non-existent `quiz_sessions.xp_earned` column → `42703` → silent uncapped degrade.
+  Chain: assessment (P2) + mobile (IN SYNC) + testing + quality APPROVE. CI running, not yet merged.
+  Non-blocking cosmetic follow-up: cap-saturated-fallback over-cap badge display.
+- **Catalog:** 167 → **172** (REG-201..205). Authoritative source remains `.claude/regression-catalog.md`
+  (testing owns it).
+- **NEXT-UP (approved, not started):** SLC-5 (client always-submit convergence — pure TS, ready;
+  mastery-inclusion sub-question to surface), SLC-1 read-only XP-inflation quantification (clamp DEFERRED — not
+  safely computable until SLC-4 lands, then surface the numbers), PAY-2 price reconciliation, AO-10b grade
+  row-backfill (idempotent migration), TSB-4 consolidation, Tier-3 (XC-3 / XC-4b / XC-7 / PP-5).
 
 ## How to add a row
 At the end of each cycle's REGRESSION phase, run `npm test`, `npm run test:coverage`,

@@ -5,12 +5,12 @@
 
 | Field | Value |
 |---|---|
-| Program status | **COMPLETE — 8-CYCLE PROGRAM CLOSED (2026-06-29)** |
+| Program status | **COMPLETE — 8-CYCLE PROGRAM CLOSED (2026-06-29); post-program remediation IN PROGRESS — Tier-2 reversible set merged (PR A/B/D/C, 2026-06-29/30); SLC-4 gated-cap wave IN FLIGHT (CI running)** |
 | Current cycle | **Cycle 8 — cross-cutting DONE (XC-1/XC-2 P7 server-notification Hindi to the correct `data.*_hi` shape; XC-6 web↔mobile price parity; XC-5 41-constant score-config parity; XC-4a bundle-cap pin; XC-3/XC-4b/XC-7 tracked as LARGER-PROGRAM initiatives)** |
 | Current workflow | **cross-cutting** (P7 bilingual breadth, P8 RLS breadth, P10 bundle, mobile sync) — **CYCLE 8 LANDED — auto-fix-safe complete; FINAL CYCLE** |
 | Current phase | **ALL 8 PHASES WRITTEN** (MAP → … → REGRESSION); orchestrator self-validated **APPROVE** (type-check/lint/11 tests/code-review; build deferred to CI backstop), P14 chain complete, sweep **GREEN** |
 | Last session | **2026-06-29** |
-| Next action | **PROGRAM COMPLETE + TIER-1 REMEDIATION BACKLOG COMPLETE — no further audit cycles queued.** All 8 ranked workflows audited → hardened → merged; all 7 Tier-1 remediation items DONE (auto-fix-safe slices shipped; genuine product decisions either CEO-resolved or deferred). **TSB-4 auto-fix-safe slice now DONE (soft-delete sync closes the live P8 teacher-boundary divergence, 2026-06-29; REG-200, catalog → 167)** — its DROP/repoint/backfill cutover is the remaining CEO-gated item. The remaining work is the rest of the **post-program remediation backlog** (`PRIORITY-BACKLOG.md`): the **deferred CEO-gated** items (PAY-2 canonical-`unlimited`-price ₹1099-vs-₹1499; SLC-1-backfill historical XP reconciliation; TSB-4 DROP/repoint/backfill cutover), the **Tier-2 reversible-approved** items (SLC-4/5, SAO-* cleanups, PP-1 durable limiter, AO-3/AO-10, + the 2 TSB-4 backend pre-existing items), and the **Tier-3 larger initiatives** (XC-3 RLS defense-in-depth, XC-4b @supabase/* bundle split, XC-7 i18n primitive, PP-5 client migration). PAY-2 L1+L2, SLC-1 going-forward de-dup, FOX-4 govern-with-flag, SAO-1/5, PP-1/3, and TSB-4 slice all LANDED 2026-06-29. See `PROGRAM-SUMMARY.md` for the CEO-facing close-out + consolidated decision register. |
+| Next action | **TIER-2 REVERSIBLE SET MERGED — SLC-4 GATED-CAP WAVE IN FLIGHT.** The post-program remediation backlog is now being drained. **Tier-2 reversible set DONE (all merged to main via their own CI-green squash-merged PRs, full review chains; 2026-06-29/30):** PR A (TSB-4 backend `is_active` soft-delete filters — REG-201), PR B (super-admin observability CSV `message`-column `redactPIIInText` egress + `@/lib/ops-events-redactor` barrel — REG-202), PR D (`normalizeGrade` digit-extraction + AuthContext read-time coercion, AO-10 read slice — REG-203), PR C (durable Upstash parent-login rate limiter, PP-1 — REG-204). **IN FLIGHT (CI running, not merged):** SLC-4 — quiz-submit fallback repointed to the canonical 7-param capped ledger writer (`p_session_id`), closing a LIVE up-to-400/day P2 cap-bypass (REG-205). Catalog 167 → **172** (REG-201..205 added this remediation wave). **NEXT-UP (approved, not started):** SLC-5 (client always-submit convergence; mastery-inclusion sub-question to surface), SLC-1 read-only XP-inflation quantification (clamp DEFERRED until SLC-4 lands), PAY-2 price reconciliation, AO-10b grade row-backfill, TSB-4 consolidation, Tier-3 (XC-3/XC-4b/XC-7/PP-5). The remaining genuine product calls (SLC-1-clamp, PAY-2 canonical price, AO-3 provisioning model, SLC-5 mastery-inclusion) are now CEO-approved-in-principle but the irreversible sub-parts are being handled conservatively — reversible slice shipped, irreversible part surfaced. See `PROGRAM-SUMMARY.md` + `PRIORITY-BACKLOG.md`. |
 | Next workflow | **none — program complete.** Re-entry point for a future pass is the post-program remediation backlog (Tier-1 user decisions first). |
 
 ## How to resume
@@ -111,11 +111,13 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
    `class_enrollments`; add a teacher SELECT RLS policy on `class_enrollments` (none today); a VERIFIED
    one-time BACKFILL of already-divergent historical rows (this going-forward sync does NOT heal pre-existing
    divergence); then DROP the redundant table. Carries P8+P9 chains; DROP is irreversible. **CEO action:**
-   approve/sequence the cutover. **Backend-flagged PRE-EXISTING follow-ups (non-blocking, Tier-2):** (1)
-   `/api/teacher/remediation/route.ts:118` + `/api/teacher/parent-notify/route.ts:105` query `class_students`
-   WITHOUT `.eq('is_active', true)` (a de-enrolled student could still get remediation/parent-notify —
-   P8-adjacent); (2) `schools/enroll` re-enroll upsert omits `is_active` so re-enroll wouldn't flip it back.
-   **Erasure track:** the data-erasure purger hard-deletes `class_students` only; leftover `class_enrollments`
+   approve/sequence the cutover. **Backend-flagged PRE-EXISTING follow-ups — DONE (PR A, 2026-06-29/30;
+   REG-201):** ~~(1) `/api/teacher/remediation/route.ts:118` + `/api/teacher/parent-notify/route.ts:105` query
+   `class_students` WITHOUT `.eq('is_active', true)`; (2) `schools/enroll` re-enroll upsert omits
+   `is_active`.~~ Both shipped — the class-roster `is_active` soft-delete filter is now applied at the teacher
+   remediation / parent-notify read paths + the `schools/enroll` upsert, so a de-enrolled student no longer
+   receives remediation/parent-notify and a re-enroll flips `is_active` back. See the remediation-wave section
+   above. **Erasure track:** the data-erasure purger hard-deletes `class_students` only; leftover `class_enrollments`
    rows (UUID pair, no PII) belong to the erasure-completeness track.
 4. **[Cycle 4] FOX-4 — DONE (govern-with-flag, 2026-06-29).** OpenAI gpt-4o-mini/gpt-4o present in
    `grounded-answer` as a MoL SHADOW comparison (telemetry only; **never** student-facing). Resolved as
@@ -167,6 +169,60 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
   students/teachers/parents/audit. If some staff must retain a PII export, loosening is a one-line
   `REPORT_CONFIG` edit (no migration) but becomes a fresh reviewed decision (REG-198 guards it). See
   `remediation/sao-1-5-pii-export-tier/`.
+- **[PP-1 durable limiter, 2026-06-30] Activate the Upstash parent-login rate limiter (OPEN).** PR C
+  (`b4fe95f6`, REG-204) shipped the durable Upstash-backed limiter wired into parent-portal, but until the
+  Edge secrets are set it runs the **in-memory fallback** (correct + fail-safe, but per-instance, not
+  cross-instance). Ops to set `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` as **Supabase Edge
+  Function secrets** to activate the cross-instance counter. Architect's merge condition (Deno CI module
+  resolution for the pinned `@upstash/ratelimit@2` + `@upstash/redis@1` imports) is satisfied; the secrets are
+  the remaining activation step. No code change needed to activate.
+
+## Current remediation wave — Tier-2 reversible set + SLC-4 gated-cap (2026-06-29/30)
+
+> Post-program remediation, not an audit cycle. Drains the `PRIORITY-BACKLOG.md` Tier-2 (reversible /
+> pre-approved) queue plus the first gated-cap slice. Each item shipped on its own CI-green squash-merged PR
+> with a full review chain (domain + testing + quality, + architect/mobile where noted). Catalog 167 →
+> **172** (REG-201..205); REG-205 is the latest. Branch: `eng-audit/remediation-slc4-fallback-cap-alignment`.
+
+- **MERGED — Tier-2 reversible set (4 PRs, all on main):**
+  - **PR A** (PR #~1170) — **TSB-4 backend `is_active` soft-delete filters (Tier-2 pre-existing items).** Adds
+    the class-roster `is_active` filter at teacher remediation / parent-notify read paths + the `schools/enroll`
+    upsert, so a soft de-enrolled student no longer receives remediation/parent-notify and a re-enroll flips
+    `is_active` back. Closes the 2 P8-adjacent scoping gaps flagged by the TSB-4 boundary-read review. Pinned
+    **REG-201**. Chain: domain + testing + quality.
+  - **PR B** (PR #1173, merged `ad3ba0dc`) — **super-admin observability CSV-export `message`-column egress
+    redaction (P13 defense-in-depth).** The export `message` column is now wrapped in `redactPIIInText`,
+    surfaced via the new `@/lib/ops-events-redactor` barrel — closes the SAO export `message`-column free-form
+    follow-up before any future template can interpolate user PII. Pinned **REG-202**. Chain: backend +
+    architect (P13) + testing + quality.
+  - **PR D** (PR #1174, merged `f022059b`) — **`normalizeGrade` digit-extraction + AuthContext read-time
+    coercion (P5; AO-10 read slice).** `normalizeGrade` now EXTRACTS the digit from legacy "Grade N"/"Class
+    N"/"Nth" (range-validated 6..12) instead of defaulting non-9 prefixed grades to "9" (a latent bug);
+    AuthContext applies it at the student-profile read paths, so legacy prefixed rows coerce to the canonical
+    string on read. Pinned **REG-203**. Chain: frontend + assessment (P5) + testing + quality. **NOTE: the
+    AO-10b row-backfill remains deferred** (read-time coercion ships now; the one-time idempotent migration is
+    next-up).
+  - **PR C** (PR #1175, merged `b4fe95f6`) — **durable Upstash parent-login rate limiter (PP-1; P15/abuse).**
+    New `_shared/durable-rate-limiter.ts` (`@upstash/ratelimit@2` + `@upstash/redis@1`, pinned imports) with an
+    in-memory fallback (fail-safe), wired into parent-portal; the 5/1h bound is UNCHANGED. Moves the legacy
+    in-memory limiter to a cross-instance durable counter. Pinned **REG-204**. Chain: backend + architect
+    (**APPROVE W/ CONDITIONS** — pinned imports; conditions: set Upstash Edge secrets + Deno CI confirmed
+    module resolution) + testing + quality. **OPERATIONAL ACTIVATION PENDING (ops-actions register):** set
+    `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` as Supabase Edge Function secrets — until then it runs
+    the in-memory fallback (correct, per-instance).
+- **IN FLIGHT — SLC-4 (PR open, CI in progress; NOT merged):**
+  - **SLC-4** — quiz-submit fallback repointed to the canonical **7-param capped ledger writer** (`p_session_id`),
+    closing a **LIVE up-to-400/day P2 cap-bypass**: the 6-param overload referenced a non-existent
+    `quiz_sessions.xp_earned` column → `42703` → silent uncapped degrade. Pinned **REG-205**. Chain: assessment
+    (P2) + mobile (**IN SYNC**) + testing + quality **APPROVE**. Non-blocking cosmetic follow-up:
+    cap-saturated-fallback over-cap badge display.
+- **NEXT-UP queue (approved, not yet started):** SLC-5 (client always-submit convergence — pure TS, ready;
+  mastery-inclusion sub-question to surface), SLC-1 read-only XP-inflation quantification (clamp DEFERRED — the
+  value is not safely computable until SLC-4 lands, then surface the numbers), PAY-2 price reconciliation,
+  AO-10b grade row-backfill (idempotent migration), TSB-4 consolidation, Tier-3 (XC-3 / XC-4b / XC-7 / PP-5).
+- Genuine product calls remaining (SLC-1-clamp, PAY-2 canonical price, AO-3 provisioning model, SLC-5
+  mastery-inclusion) are now **CEO-approved-in-principle**, but the irreversible sub-parts are being handled
+  conservatively — the reversible slice ships, the irreversible part is surfaced for a sequenced decision.
 
 ## Current workflow detail — cross-cutting (P7, P8, P10, mobile sync) — CYCLE 8 LANDED (auto-fix-safe complete; FINAL CYCLE)
 
@@ -259,8 +315,11 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
   4. **PP-6 (LOW, behavior-preserving):** converge `canAccessStudent` vs `isGuardianLinkedToStudent`.
   5. **PP-7 (MED, P7):** server-generated parent insights/tips/glance are English-only — candidate for the
      Cycle 8 cross-cutting bilingual work (server keying + frontend render review).
-  6. **PP-1 durable limiter (architect):** the in-memory limiter resets on cold start / isn't cross-instance
-     — track an Upstash/DB-backed counter.
+  6. **PP-1 durable limiter — DONE (PR C, `b4fe95f6`, 2026-06-30; REG-204).** ~~The in-memory limiter resets
+     on cold start / isn't cross-instance — track an Upstash/DB-backed counter.~~ Shipped the durable
+     `_shared/durable-rate-limiter.ts` (Upstash `@upstash/ratelimit@2` + `@upstash/redis@1`, pinned imports,
+     in-memory fail-safe fallback) wired into parent-portal; 5/1h bound unchanged. **OPERATIONAL ACTIVATION
+     PENDING:** set the Upstash Edge secrets (ops-actions register) — runs the in-memory fallback until then.
   7. **Pre-existing Deno errors** at `parent-portal/index.ts:603/605/629/630` — unrelated; separate cleanup.
 - See `workflows/parent-portal/STATUS.md` + `cycles/2026-06-29-parent-portal.md`.
 
@@ -305,8 +364,10 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
      register). See `remediation/sao-1-5-pii-export-tier/`.
   2. **SAO-5 — DONE (folded into SAO-1):** the `audit` report type (admin_name/admin_email surfaced in
      `details`) is now `super_admin`-gated alongside the other PII types.
-  3. **Export `message`-column free-form redaction (MINOR, ops):** controlled developer-authored template
-     scalar today; apply `redactPIIInText` only if a future template interpolates user PII (write-time).
+  3. **Export `message`-column free-form redaction — DONE (PR B, `ad3ba0dc`, 2026-06-29/30; REG-202).**
+     ~~Controlled developer-authored template scalar today; apply `redactPIIInText` only if a future template
+     interpolates user PII.~~ Shipped — the observability CSV-export `message` column is now wrapped in
+     `redactPIIInText` (P13 egress defense-in-depth), surfaced via the new `@/lib/ops-events-redactor` barrel.
   4. **Periodic manual re-read of highest-risk routes (PROCESS):** SAO-7 guards breadth mechanically; manual
      re-read of the highest-PII-sensitivity routes remains good practice.
   5. **SAO-6 (COMPLIANT-BY-DESIGN):** `ip_address` in admin-only RLS-restricted forensic tables — confirm
@@ -506,10 +567,13 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
   2. **AO-2 CI fixtures (pending)** — ops/infra to seed 3 per-role staging fixtures + secrets.
   3. **AO-1 CI enforcement** — architect to wire `always-200.test.ts` into `ci.yml` Deno lane.
   4. **REG-177** — testing to file `send_auth_email_always_200` (P15) in `.claude/regression-catalog.md`.
-  5. **AO-10 (NEW, grade-coercion / legacy backfill — co-owned assessment + architect)** —
-     `src/lib/AuthContext.tsx` (~L423-424) sets `student` from the raw DB row WITHOUT grade coercion, so
-     legacy "Grade N" rows still leak the prefixed form until backfilled; `normalize_grade` is misnamed
-     (it ADDS the prefix). Needs one-time backfill + rename/read-time coercion.
+  5. **AO-10 — read slice DONE (PR D, `f022059b`, 2026-06-29/30; REG-203); AO-10b row-backfill DEFERRED.**
+     ~~`src/lib/AuthContext.tsx` sets `student` from the raw DB row WITHOUT grade coercion, so legacy "Grade
+     N" rows still leak the prefixed form.~~ **LANDED — read-time coercion:** `normalizeGrade` now EXTRACTS
+     the digit from legacy "Grade N"/"Class N"/"Nth" (range-validated 6..12) instead of defaulting non-9
+     prefixed grades to "9" (a latent bug); AuthContext applies it at the student-profile read paths (P5
+     read-time coercion). **AO-10b (the one-time idempotent row-backfill migration) remains deferred** —
+     next-up queue.
   6. **RESOLVED — production migration-drift repair** — fixed via **repo-side reconciliation**
      (two no-op placeholder migrations at the ghost version strings `20260628015107` /
      `20260628015237`, per `docs/runbooks/migration-placeholders-audit.md`), merged via **PR #1153**
@@ -536,13 +600,19 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
 
 ## Backlog pointer
 
-**PROGRAM COMPLETE + TIER-1 REMEDIATION BACKLOG COMPLETE.** All 8 ranked workflows are DONE
-(auto-fix-safe), and all 7 Tier-1 remediation items have shipped their auto-fix-safe slices (PAY-2 L1+L2,
-SLC-1 going-forward de-dup, FOX-4 govern-with-flag, SAO-1/SAO-5 PII-export tiering, PP-1/3 parent-link
-consent, and **TSB-4 soft-delete sync — all LANDED 2026-06-29; REG-194..200**). There is no next audit
-cycle. The re-entry point for future work is the rest of the `PRIORITY-BACKLOG.md` **"Post-program
-remediation backlog"** — the deferred CEO-gated cutovers (PAY-2 canonical `unlimited` price, SLC-1
-historical backfill, TSB-4 DROP/repoint/backfill), the Tier-2 reversible-approved items (SLC-4/5, SAO-*
-cleanups, PP-1 durable limiter, AO-3/AO-10, + the 2 TSB-4 backend pre-existing items), and the Tier-3
-larger initiatives (XC-3 RLS defense-in-depth, XC-4b @supabase/* split, XC-7 i18n primitive, PP-5 client
-migration). See `PROGRAM-SUMMARY.md` for the CEO-facing close-out and the consolidated decision register.
+**PROGRAM COMPLETE + TIER-1 REMEDIATION BACKLOG COMPLETE; TIER-2 REVERSIBLE SET MERGED; SLC-4 GATED-CAP
+WAVE IN FLIGHT.** All 8 ranked workflows are DONE (auto-fix-safe), and all 7 Tier-1 remediation items have
+shipped their auto-fix-safe slices (PAY-2 L1+L2, SLC-1 going-forward de-dup, FOX-4 govern-with-flag,
+SAO-1/SAO-5 PII-export tiering, PP-1/3 parent-link consent, and TSB-4 soft-delete sync — all LANDED
+2026-06-29; REG-194..200). **The Tier-2 reversible set is now MERGED (2026-06-29/30; REG-201..204):** PR A
+(TSB-4 backend `is_active` soft-delete filters — REG-201), PR B (super-admin observability CSV `message`
+egress redaction + `@/lib/ops-events-redactor` barrel — REG-202), PR D (`normalizeGrade` digit-extraction +
+AuthContext read-time coercion, AO-10 read slice — REG-203), PR C (durable Upstash parent-login rate limiter,
+PP-1 — REG-204). **SLC-4 (quiz-submit fallback → canonical 7-param capped ledger writer, closing a LIVE
+up-to-400/day P2 cap-bypass; REG-205) is IN FLIGHT (CI running, not merged).** Catalog 167 → **172**
+(REG-201..205). There is no next audit cycle. The re-entry point for remaining work is the `PRIORITY-BACKLOG.md`
+**"Post-program remediation backlog"** — the deferred CEO-gated cutovers (PAY-2 canonical `unlimited` price,
+SLC-1 historical clamp/backfill, TSB-4 DROP/repoint/backfill), the next-up queue (SLC-5 client always-submit
+convergence + mastery-inclusion, AO-10b grade row-backfill, TSB-4 consolidation), and the Tier-3 larger
+initiatives (XC-3 RLS defense-in-depth, XC-4b @supabase/* split, XC-7 i18n primitive, PP-5 client migration).
+See `PROGRAM-SUMMARY.md` for the CEO-facing close-out and the consolidated decision register.
