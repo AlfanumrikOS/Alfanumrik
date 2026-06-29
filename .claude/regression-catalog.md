@@ -6080,3 +6080,54 @@ display; 200 cap value unchanged).
 **Total catalog: 172 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Remediation — SLC-5: Anti-Cheat Advisory Convergence (P3) — 2026-06-30
+
+The quiz client (`src/app/quiz/page.tsx`) historically treated two of the three P3
+anti-cheat checks as HARD REJECTS: Check 1 (avg time < 3s/question) and Check 3
+(response count ≠ question count) each early-`return`ed a discarded result object
+(`score_percent: 0, xp_earned: 0, session_id: ''`) BEFORE calling
+`submitQuizResults(...)` — so a legitimately-fast or edge-case student's attempt was
+silently destroyed client-side and NO session was ever recorded. But the client is
+not a security boundary (P3/P9): the server RPC (`submit_quiz_results_v2`) already
+re-applies the SAME 3 checks, sets `flagged=true`, zeroes XP, and STILL records the
+session with the REAL `score_percent` (record-but-zero). SLC-5 converges the client
+to ADVISORY-only: Check 1 and Check 3 now keep only a `console.warn` and ALWAYS fall
+through to `submitQuizResults(...)` (Check 2 was already flag-only — unchanged). The
+three thresholds are BYTE-UNCHANGED (`avgTimePerQ < 3`, `mcqResponses.length > 3 &&
+maxSameOption === mcqResponses.length`, `allResponses.length !== questions.length`)
+— only the client RESPONSE changed from reject → advisory-submit. The results state
+gains `flagged?: boolean`; when the server returns `flagged=true` the results screen
+renders a gentle, NON-accusatory bilingual note (EN/HI via `isHi`, P7) explaining no
+XP was awarded while the real server score (P1, no client recompute) stays shown.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-206 | `slc5_client_anticheat_advisory_always_submits` | P3: the quiz client no longer hard-rejects/discards an attempt on the avg-<3s or count-mismatch anti-cheat checks — all 3 checks are advisory and ALWAYS submit to the server, which is the single authority (applies flag + zero-XP + records the session with the REAL score); thresholds byte-unchanged; flagged result renders a gentle bilingual (P7) note with XP=0 and the real server score (P1, no client recompute) | `src/__tests__/quiz/slc5-anticheat-advisory-convergence.test.ts` | E | P3, P7, P1 |
+
+### Invariants covered by this section
+
+- P3 (anti-cheat) — REG-206 pins that the speed (avg<3s) and count-mismatch branches
+  no longer early-`return` a `score_percent:0 / xp_earned:0 / session_id:''` discard,
+  that all 3 advisory branches fall through to `submitQuizResults(` with no `return`
+  between the first check and the submit, and that the 3 threshold conditions remain
+  byte-unchanged (a future threshold or response-semantics change fails the test).
+  The legacy discard pin in `quiz-pattern-flag-intended-behavior.test.ts` (SLC-6) was
+  updated in lock-step to assert the new advisory convergence for speed + count.
+- P7 (bilingual UI) — the flagged note carries BOTH an English and a Hindi
+  (Devanagari) string gated by `isHi`, mentions XP (untranslated technical term), and
+  is NON-accusatory (no "cheat"/"धोखा" language; frames the outcome as "try again").
+- P1 (score accuracy) — the always-submit path assigns the result straight from the
+  server response (`setResults(res)`) with no `calculateScorePercent` / `Math.round((
+  correct/...))` recompute between submit and display; the only client-side score math
+  (`calculateScorePercent`) is scoped to the offline network-error catch.
+
+### Catalog total
+
+Pre-SLC-5: 172 entries (through SLC-4's REG-205 fallback daily-cap alignment).
+SLC-5 adds REG-206 (client anti-cheat advisory convergence — speed + count checks no
+longer discard the attempt; all 3 checks always submit to the authoritative server;
+thresholds byte-unchanged; gentle bilingual flagged note; server-authoritative score).
+**Total catalog: 173 entries (target: 35 — TARGET EXCEEDED).**
+
+---
