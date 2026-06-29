@@ -10,7 +10,7 @@
 | Current workflow | **cross-cutting** (P7 bilingual breadth, P8 RLS breadth, P10 bundle, mobile sync) — **CYCLE 8 LANDED — auto-fix-safe complete; FINAL CYCLE** |
 | Current phase | **ALL 8 PHASES WRITTEN** (MAP → … → REGRESSION); orchestrator self-validated **APPROVE** (type-check/lint/11 tests/code-review; build deferred to CI backstop), P14 chain complete, sweep **GREEN** |
 | Last session | **2026-06-29** |
-| Next action | **PROGRAM COMPLETE — no further audit cycles queued.** All 8 ranked workflows audited → hardened → merged. The remaining work is the **post-program remediation backlog** (`PRIORITY-BACKLOG.md` → "Post-program remediation backlog"): the **Tier-1 user-gated** decisions (PAY-2 pricing source; TSB-4 `class_students`/`class_enrollments` table-drop; FOX-4 OpenAI provider governance; SLC-1 uncapped XP trigger; SAO-1/SAO-5 PII-export tiering; PP-1-consent + PP-3 parent-link consent model), the **Tier-2 reversible-approved** items (SLC-4/5, SAO-* cleanups, PP-* follow-ups, AO-3/AO-10), and the **Tier-3 larger initiatives** (XC-3 RLS defense-in-depth, XC-4b @supabase/* bundle split, XC-7 i18n primitive, PP-5 client migration). See `PROGRAM-SUMMARY.md` for the CEO-facing close-out + consolidated decision register. |
+| Next action | **PROGRAM COMPLETE — no further audit cycles queued.** All 8 ranked workflows audited → hardened → merged. The remaining work is the **post-program remediation backlog** (`PRIORITY-BACKLOG.md` → "Post-program remediation backlog"): the **Tier-1 user-gated** decisions (PAY-2 canonical-`unlimited`-price ₹1099-vs-₹1499 [L1+L2 code-mirror de-dup DONE]; SLC-1-backfill historical XP reconciliation [SLC-1 going-forward de-dup DONE]; TSB-4 `class_students`/`class_enrollments` table-drop; FOX-4 OpenAI provider governance; SAO-1/SAO-5 PII-export tiering; PP-1-consent + PP-3 parent-link consent model), the **Tier-2 reversible-approved** items (SLC-4/5, SAO-* cleanups, PP-* follow-ups, AO-3/AO-10), and the **Tier-3 larger initiatives** (XC-3 RLS defense-in-depth, XC-4b @supabase/* bundle split, XC-7 i18n primitive, PP-5 client migration). See `PROGRAM-SUMMARY.md` for the CEO-facing close-out + consolidated decision register. |
 | Next workflow | **none — program complete.** Re-entry point for a future pass is the post-program remediation backlog (Tier-1 user decisions first). |
 
 ## How to resume
@@ -25,7 +25,8 @@
 > (REG-191/192/193, catalog 160). XC-3 (P8 RLS defense-in-depth), XC-4b (@supabase/* first-paint split),
 > and XC-7 (i18n primitive) are LARGER-PROGRAM initiatives. **There is no next audit cycle.** For a future
 > pass, start from `PROGRAM-SUMMARY.md` and the `PRIORITY-BACKLOG.md` post-program remediation backlog —
-> the Tier-1 user-gated decisions (PAY-2, TSB-4, FOX-4, SLC-1, SAO-1/SAO-5, PP-1-consent/PP-3) come first.
+> the Tier-1 user-gated decisions (PAY-2 canonical-price, SLC-1-backfill, TSB-4, FOX-4, SAO-1/SAO-5,
+> PP-1-consent/PP-3) come first. (PAY-2 L1+L2 and SLC-1 going-forward de-dup both LANDED 2026-06-29.)
 
 ## Program-level RISK register (CEO visibility)
 
@@ -101,9 +102,19 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
    REDUCE some students' displayed XP / level / rank → needs a CEO decision + product-comms plan. Quantify the
    footprint first via the read-only reconciliation query (`05-validation.md` §3 step 1). **CEO action:**
    decide whether to backfill; if yes, sequence the recompute + comms. Successor to SLC-1 (design Q4).
-6. **[Cycle 2] PAY-2 — USER-gated pricing source.** `create-order` hardcoded `PRICING` can diverge from DB
-   `subscription_plans`; dead on web, live only on the (already-broken) mobile path. Any pricing-amount change
-   is user-gated.
+6. **[Cycle 2] PAY-2 — DONE (code-mirror de-dup LANDED 2026-06-29); canonical `unlimited` price USER-GATED.**
+   ~~`create-order` hardcoded `PRICING` can diverge from the code mirror.~~ **LANDED — L1+L2:** `create-order`
+   now imports `CONSUMER_PRICING_PAISA` from `@/lib/pricing` (byte-identical, no amount moved) + a fail-closed
+   400 for an unpriced `plan_code`; testing added the four-way code-mirror parity lock + the DB-divergence pin
+   (**REG-195 / REG-196**, catalog → 163). Gate 5 CLOSED (architect P11 APPROVE + mobile contract APPROVE).
+   See `remediation/pay-2-pricing-source/03-validation.md` + `STATUS.md`.
+   **USER-GATED RESIDUAL — the sharp decision:** the SAME `unlimited` plan is billed differently by platform
+   TODAY — **web checkout reads the DB at ₹1099/mo (₹8799/yr)** while **mobile checkout reads the code mirror
+   at ₹1499/mo (₹11999/yr)**. Full single-source consolidation is BLOCKED until the CEO picks the canonical
+   amount (collapsing either direction moves a real charge → CEO-gated). On decision: reconcile DB↔code,
+   tighten REG-196 from a divergence pin into a `DB === code` parity assertion, and (if ₹1099) reconcile the
+   mobile `payment_history.amount` rows captured at ₹1499 + the MRR estimate. **Live billing-trust /
+   consumer-law (mis-stated-price) exposure.** **CEO action:** confirm `unlimited` = **₹1499 or ₹1099**.
 
 ## Current workflow detail — cross-cutting (P7, P8, P10, mobile sync) — CYCLE 8 LANDED (auto-fix-safe complete; FINAL CYCLE)
 
@@ -396,10 +407,14 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
 - P14 review chain (payment flow) **COMPLETE**: backend (made) → architect (security APPROVE) + testing
   (coverage GREEN) + mobile (downstream review) + frontend (checkout 403/409 SAFE-AS-IS).
 - **Open follow-ups (resume these):**
-  1. **PAY-2 (Medium, GATED — USER APPROVAL)** — `create-order` hardcoded `PRICING` can diverge from DB
-     `subscription_plans`. DEAD on the live web path (web uses `subscribe`); LIVE-referenced only by the
-     mobile app, whose flow is already documented-broken. **Do NOT delete unilaterally** (mobile contract
-     names it); any pricing-amount change is **user-gated**.
+  1. **PAY-2 — L1+L2 DONE (LANDED 2026-06-29); canonical `unlimited` price USER-GATED.** ~~`create-order`
+     hardcoded `PRICING` can diverge from the code mirror.~~ **LANDED:** `create-order` now imports
+     `CONSUMER_PRICING_PAISA` (byte-identical, no amount moved) + fail-closed 400 for an unpriced `plan_code`;
+     testing added the four-way code-mirror parity lock + DB-divergence pin (**REG-195/196**, catalog → 163);
+     Gate 5 CLOSED (architect P11 APPROVE + mobile contract APPROVE). **NEW Tier-1 USER-GATED residual:** the
+     SAME `unlimited` plan is billed ₹1499 on mobile (code mirror) vs ₹1099 on web (DB) TODAY — CEO picks the
+     canonical amount; on decision reconcile DB↔code + tighten REG-196 into a `DB === code` assertion. Live
+     billing-trust / consumer-law exposure. See `remediation/pay-2-pricing-source/`.
   2. **Mobile repoint** — mobile to repoint `create-order` → `subscribe`, unwrap nested `data`, add 409
      mapping (mobile + backend coordination).
   3. **`docs/product/mobile-web-sync.md` doc fix** — stale; says `create-order` route doesn't exist (it
@@ -450,7 +465,7 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
 | Cycle | Workflow | Phase reached | Status | Notes |
 |---|---|---|---|---|
 | 1 | auth-onboarding (P15) | ALL 8 PHASES | **LANDED — partial** | AO-4/8/1/2 + follow-up batch AO-5/7/9 (2026-06-29) landed + APPROVED; AO-3 gated, AO-2 CI fixtures + REG-177 + Deno CI-lane open; NEW AO-10 grade-coercion/backfill; prod migration-drift incident RESOLVED (repo-side reconciliation, PR #1153, deploy 28335566287 green); see `workflows/auth-onboarding/STATUS.md` + `cycles/2026-06-29-auth-onboarding-followups.md` |
-| 2 | payments-subscriptions (P11) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | PAY-1/3/4/5/6/7/8 landed + APPROVED (type-check PASS, lint 0, 236/236 payment tests, build PASS, vercel.json VALID; architect security APPROVE; sweep GREEN); REG-178/179 filing in flight; PAY-2 gated to USER (pricing); mobile-repoint + mobile-web-sync.md doc fix + super-admin display open; see `workflows/payments-subscriptions/STATUS.md` + `cycles/2026-06-29-payments-subscriptions.md` |
+| 2 | payments-subscriptions (P11) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | PAY-1/3/4/5/6/7/8 landed + APPROVED (type-check PASS, lint 0, 236/236 payment tests, build PASS, vercel.json VALID; architect security APPROVE; sweep GREEN); REG-178/179 filing in flight; **PAY-2 L1+L2 LANDED 2026-06-29** (code-mirror de-dup + four-way parity lock + DB-divergence pin, REG-195/196, catalog → 163; Gate 5 closed: architect P11 + mobile contract APPROVE) — **canonical `unlimited` price ₹1099-vs-₹1499 NEW Tier-1 USER-GATED**; mobile-repoint + mobile-web-sync.md doc fix + super-admin display open; see `workflows/payments-subscriptions/STATUS.md` + `cycles/2026-06-29-payments-subscriptions.md` + `remediation/pay-2-pricing-source/` |
 | 3 | student-learning-core (P1-P6,P12) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | SLC-7 (frontend) + SLC-2/3/6/8-pin (testing) landed + APPROVED (type-check PASS, lint 0, 40/40 new + ~1678 broad tests PASS, build PASS, bundle within P10 caps; quality APPROVE; sweep GREEN); REG-180/181 filed (catalog 146 → 148); SLC-1 USER-GATED, SLC-4/5 + SLC-8 cutover gated/cross-agent, SLC-9 backlog; see `workflows/student-learning-core/STATUS.md` + `cycles/2026-06-29-student-learning-core.md` |
 | 4 | foxy-ai-rag (P12,P8,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | FOX-1 (+ Deno twin + injection-pattern refinement) + FOX-2 + FOX-3 + FOX-6 landed + APPROVED (type-check PASS, lint 0, 305/305 vitest + 3/3 Deno PASS, build PASS, bundle within P10 caps; assessment APPROVE WITH CONDITIONS [addressed] + quality APPROVE; sweep GREEN); REG-182/183 filed (catalog 148 → 150); FOX-4 USER-GATED (OpenAI provider governance — MoL shadow, not student-facing), FOX-7-new + streaming-residual + Hindi-tokens follow-ups; live-topology reconciliation recorded (`/api/foxy` is LIVE, `foxy-tutor` Edge Fn gone); see `workflows/foxy-ai-rag/STATUS.md` + `cycles/2026-06-29-foxy-ai-rag.md` |
 | 5 | teacher-school-b2b (P8,P9,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | TSB-1 (backend — CRITICAL cross-tenant leak closed at all 8 grade-fallback sites via auth-derived `resolveTeacherSchoolId`, fail-closed) + TSB-2 (architect — teacher RLS backstop on `public.students`, predicate-identical, no over-grant) + TSB-3-partial + TSB-6 landed + APPROVED (type-check PASS, lint 0, 527/527 vitest incl. 15 TSB-1 + 10 TSB-2 new, build PASS, no bundle impact; quality APPROVE WITH CONDITIONS [migration-ordering — RESOLVED via byte-identical rename `20260629000000`→`20260702010000`]; sweep GREEN); REG-184/185 filed (catalog 150 → 152); TSB-4 USER-GATED (table-drop), TSB-3-full + TSB-5 + 3 pre-existing tracked items follow-ups; see `workflows/teacher-school-b2b/STATUS.md` + `cycles/2026-06-29-teacher-school-b2b.md` |
@@ -462,7 +477,8 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
 
 **PROGRAM COMPLETE.** All 8 ranked workflows are DONE (auto-fix-safe). There is no next audit cycle. The
 re-entry point for future work is the `PRIORITY-BACKLOG.md` **"Post-program remediation backlog"** — the
-Tier-1 user-gated decisions (PAY-2, TSB-4, FOX-4, SLC-1, SAO-1/SAO-5, PP-1-consent/PP-3), the Tier-2
+Tier-1 user-gated decisions (PAY-2 canonical-price, SLC-1-backfill, TSB-4, FOX-4, SAO-1/SAO-5,
+PP-1-consent/PP-3 — PAY-2 L1+L2 and SLC-1 going-forward de-dup both LANDED), the Tier-2
 reversible-approved items, and the Tier-3 larger initiatives (XC-3 RLS defense-in-depth, XC-4b @supabase/*
 split, XC-7 i18n primitive, PP-5 client migration). See `PROGRAM-SUMMARY.md` for the CEO-facing close-out
 and the consolidated decision register.
