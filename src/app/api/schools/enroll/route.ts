@@ -278,6 +278,7 @@ export async function POST(request: Request) {
                     class_id: matchingClass.id,
                     student_id: newStudent.id,
                     enrolled_at: new Date().toISOString(),
+                    is_active: true,
                   },
                   { onConflict: 'class_id,student_id' }
                 );

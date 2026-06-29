@@ -84,7 +84,7 @@ let notifications: Array<Record<string, unknown>>;
 let teachers: Array<{ id: string; auth_user_id: string; school_id: string | null }>;
 let students: Array<{ id: string; name: string; grade: string | null }>;
 let classTeachers: Array<{ teacher_id: string; class_id: string }>;
-let classStudents: Array<{ class_id: string; student_id: string }>;
+let classStudents: Array<{ class_id: string; student_id: string; is_active: boolean }>;
 let links: Array<{ guardian_id: string; student_id: string; status: string; created_at: string }>;
 let remediations: Array<{ id: string; teacher_id: string; student_id: string; chapter_id: string | null; status: string }>;
 let topics: Array<{ id: string; title: string }>;
@@ -103,9 +103,11 @@ function resetStore() {
     { id: STUDENT_NOLINK, name: 'Riya Verma', grade: '8' },
   ];
   classTeachers = [{ teacher_id: TEACHER_ID_A, class_id: CLASS_ID }];
+  // is_active: true — the roster lookup now filters `.eq('is_active', true)`
+  // (Tier-2 PR A). An active enrolment must carry the flag to be reachable.
   classStudents = [
-    { class_id: CLASS_ID, student_id: STUDENT_ID_X },
-    { class_id: CLASS_ID, student_id: STUDENT_NOLINK },
+    { class_id: CLASS_ID, student_id: STUDENT_ID_X, is_active: true },
+    { class_id: CLASS_ID, student_id: STUDENT_NOLINK, is_active: true },
   ];
   links = [
     { guardian_id: GUARDIAN_ID_X, student_id: STUDENT_ID_X, status: 'approved', created_at: '2026-01-01T00:00:00.000Z' },
