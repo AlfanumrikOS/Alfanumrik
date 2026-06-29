@@ -10,7 +10,7 @@
 | Current workflow | **cross-cutting** (P7 bilingual breadth, P8 RLS breadth, P10 bundle, mobile sync) — **CYCLE 8 LANDED — auto-fix-safe complete; FINAL CYCLE** |
 | Current phase | **ALL 8 PHASES WRITTEN** (MAP → … → REGRESSION); orchestrator self-validated **APPROVE** (type-check/lint/11 tests/code-review; build deferred to CI backstop), P14 chain complete, sweep **GREEN** |
 | Last session | **2026-06-29** |
-| Next action | **PROGRAM COMPLETE — no further audit cycles queued.** All 8 ranked workflows audited → hardened → merged. The remaining work is the **post-program remediation backlog** (`PRIORITY-BACKLOG.md` → "Post-program remediation backlog"): the **Tier-1 user-gated** decisions (PAY-2 canonical-`unlimited`-price ₹1099-vs-₹1499 [L1+L2 code-mirror de-dup DONE]; SLC-1-backfill historical XP reconciliation [SLC-1 going-forward de-dup DONE]; TSB-4 `class_students`/`class_enrollments` table-drop; PP-1-consent + PP-3 parent-link consent model) — **SAO-1/SAO-5 PII-export tiering is now DONE (CEO-approved super_admin, 2026-06-29; REG-198)** and **FOX-4 OpenAI provider governance is DONE (govern-with-flag, 2026-06-29)**; the **Tier-2 reversible-approved** items (SLC-4/5, SAO-* cleanups, PP-* follow-ups, AO-3/AO-10), and the **Tier-3 larger initiatives** (XC-3 RLS defense-in-depth, XC-4b @supabase/* bundle split, XC-7 i18n primitive, PP-5 client migration). Backlog order: **PP-1/3, TSB-4, then Tier-2, Tier-3.** See `PROGRAM-SUMMARY.md` for the CEO-facing close-out + consolidated decision register. |
+| Next action | **PROGRAM COMPLETE — no further audit cycles queued.** All 8 ranked workflows audited → hardened → merged. The remaining work is the **post-program remediation backlog** (`PRIORITY-BACKLOG.md` → "Post-program remediation backlog"): the **Tier-1 user-gated** decisions (PAY-2 canonical-`unlimited`-price ₹1099-vs-₹1499 [L1+L2 code-mirror de-dup DONE]; SLC-1-backfill historical XP reconciliation [SLC-1 going-forward de-dup DONE]; TSB-4 `class_students`/`class_enrollments` table-drop) — **PP-1/3 parent-link consent is now DONE (CEO-approved Option B, 2026-06-29; REG-199)**, **SAO-1/SAO-5 PII-export tiering is DONE (CEO-approved super_admin, 2026-06-29; REG-198)** and **FOX-4 OpenAI provider governance is DONE (govern-with-flag, 2026-06-29)**; the **Tier-2 reversible-approved** items (SLC-4/5, SAO-* cleanups, PP-* follow-ups, AO-3/AO-10), and the **Tier-3 larger initiatives** (XC-3 RLS defense-in-depth, XC-4b @supabase/* bundle split, XC-7 i18n primitive, PP-5 client migration). Backlog order: **TSB-4 (last Tier-1), then Tier-2, Tier-3.** See `PROGRAM-SUMMARY.md` for the CEO-facing close-out + consolidated decision register. |
 | Next workflow | **none — program complete.** Re-entry point for a future pass is the post-program remediation backlog (Tier-1 user decisions first). |
 
 ## How to resume
@@ -25,9 +25,9 @@
 > (REG-191/192/193, catalog 160). XC-3 (P8 RLS defense-in-depth), XC-4b (@supabase/* first-paint split),
 > and XC-7 (i18n primitive) are LARGER-PROGRAM initiatives. **There is no next audit cycle.** For a future
 > pass, start from `PROGRAM-SUMMARY.md` and the `PRIORITY-BACKLOG.md` post-program remediation backlog —
-> the Tier-1 user-gated decisions (PAY-2 canonical-price, SLC-1-backfill, TSB-4, SAO-1/SAO-5,
-> PP-1-consent/PP-3) come first. (PAY-2 L1+L2, SLC-1 going-forward de-dup, and FOX-4 govern-with-flag all
-> LANDED 2026-06-29.)
+> the Tier-1 user-gated decisions (PAY-2 canonical-price, SLC-1-backfill, TSB-4) come first. (PAY-2 L1+L2,
+> SLC-1 going-forward de-dup, FOX-4 govern-with-flag, SAO-1/SAO-5 PII-export tiering, and PP-1/3
+> parent-link consent all LANDED 2026-06-29.)
 
 ## Program-level RISK register (CEO visibility)
 
@@ -47,22 +47,26 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
 - **[Cycle 8] XC-7 (P7) — central keyed-resolver i18n primitive + missing-string lint**, the chokepoint
   whose absence produced the XC-1/XC-2 English-only server-notification class.
 
-0. **[Cycle 7] PP-1-consent + PP-3 — USER-gated parent-link consent model (DPDP/child-consent).** The legacy
-   Edge `parent_login` action creates an ACTIVE, fully-equivalent guardian link from possession of a link
-   code ALONE — no student-approval step, no OTP. `canAccessStudent` / `is_guardian_of()` treat that
-   `active` link identically to a student-approved `approved` link, so every downstream child-data boundary
-   opens (progress, accuracy, streaks, chats, attendance, reports). Anyone who learns a child's link code (a
-   tuition centre, a non-custodial adult, a leaked screenshot) and holds an authenticated account can
-   self-attach as a guardian. The Cycle-7 fix added a server-side per-IP brute-force rate limit (5/hour,
-   429) to close enumeration — but the CONSENT gap remains by design. The remediation (have `parent_login`
-   create `pending` links requiring approval/OTP, OR deprecate it now that `/api/v2/parent/*` is canonical)
-   changes the consent/link MODEL → requires **USER APPROVAL**. PP-3 (four parallel link-creation paths +
-   two terminal statuses `active`/`approved` → consolidate onto one consent-respecting choke-point) folds
-   into the same decision; retiring `parent_login` collapses both. The complementary auto-fix-safe half
-   (PP-2 link-code injection guard at all 3 sites + Deno twin; PP-1 rate-limit; PP-4 profile authz gate;
-   PP-5 deny pins) landed Cycle 7 (REG-188/189/190). **CEO action:** approve the consent-model correction
-   (require approval / deprecate `parent_login`); confirm no unauthorized `parent_login` link-creation in
-   audit logs.
+0. **[Cycle 7] PP-1-consent + PP-3 — DONE (CEO-approved Option B, 2026-06-29; REG-199).** ~~USER-gated
+   parent-link consent model (DPDP/child-consent).~~ The legacy Edge `parent_login` action used to create an
+   ACTIVE, fully-equivalent guardian link from possession of a link code ALONE — no student-approval step —
+   so anyone who learned a child's link code could self-attach as a guardian. **RESOLVED:** the CEO APPROVED
+   **Option B** — `handleParentLogin` now creates a **`pending`** (not `active`) link via
+   `.upsert(onConflict:'guardian_id,student_id', ignoreDuplicates:true)`, `is_verified:false`, and the
+   **student/child** must approve (`pending` → `approved`) before any data path opens; responds
+   `{ status:'pending_approval', student_name, link_id }` (no session) for a new/pending link and
+   `{ status:'approved', … }` for an already-linked re-submit (no downgrade); notifies the student PII-free
+   via the `send_notification` RPC (bilingual). The **critical fix** mounted the previously-ORPHANED
+   `PendingLinkApproval` card on the live `StudentOSDashboard.tsx` (without it, linking dead-ended). Consent
+   boundary confirmed at **3 layers** (domain helper `ACTIVE_GUARDIAN_LINK_STATUSES` excludes `pending`;
+   Edge handlers gate on `['active','approved']`; DB RLS `is_guardian_of` counts only `approved`). **NO
+   migration** (`notifications.type` free TEXT; `pending` already valid). Pinned **REG-199** (catalog → 166).
+   P14 chain COMPLETE (backend + frontend + architect APPROVE + mobile APPROVE — no impact + testing + quality
+   APPROVE, no conditions); type-check/lint/build PASS. PP-3 (four parallel link-creation paths) is materially
+   collapsed — the legacy path now flows through the same student-approval choke-point; any further
+   path-consolidation is reversible (Tier-2). Earlier auto-fix-safe half (PP-2/PP-1-rate-limit/PP-4/PP-5)
+   landed Cycle 7 (REG-188/189/190). See `remediation/pp-1-3-consent/`. **CEO action:** none required —
+   consent-model correction shipped; legacy pre-change `active` rows grandfathered (untouched).
 1. **[Cycle 6] SAO-1 / SAO-5 — DONE (CEO-approved `super_admin`, 2026-06-29; REG-198).** ~~USER-gated
    PII-export tiering.~~ The super-admin bulk-export route `/api/super-admin/reports` previously let ANY
    account at the LOWEST `support` admin tier download the entire student roster with emails, every parent
@@ -220,13 +224,13 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
   + the 5-file/71-test suite, coverage GREEN) → quality (independent **APPROVE**); architect noted for the
   gated/RLS follow-ups (PP-5 client migration + PP-1 durable limiter).
 - **Open gated / follow-up items (resume these):**
-  1. **PP-1 consent posture (HIGH, GATED — USER APPROVAL; DPDP/child-consent):** `parent_login` creates an
-     ACTIVE guardian link from a link code ALONE — no approval. The design fix (require approval, or
-     deprecate `parent_login` in favor of OTP/approve-link) changes the consent model → CEO decision. **On
-     the program RISK register (item 0).**
-  2. **PP-3 (MED, GATED — USER APPROVAL):** four parallel link-creation paths + two terminal statuses
-     (`active` vs `approved`) — consolidate onto one consent-respecting choke-point. Retiring `parent_login`
-     collapses PP-1 + PP-3.
+  1. **PP-1 consent posture — DONE (CEO-approved Option B, 2026-06-29; REG-199).** `parent_login` now creates
+     a `pending` link (not `active`); the student/child approves (`pending` → `approved`) before any data
+     path opens; the previously-orphaned `PendingLinkApproval` card is wired into the live dashboard (critical
+     fix). No migration; 3-layer consent boundary confirmed. Catalog → 166. See `remediation/pp-1-3-consent/`.
+  2. **PP-3 — DONE (folded into Option B):** the legacy `parent_login` path now flows through the same
+     student-approval choke-point as the canonical paths. Any further path-consolidation/cleanup is reversible
+     (Tier-2), not a fresh CEO gate.
   3. **PP-5 client migration (architect):** migrate parent child-data routes to RLS-scoped clients
      (defense-in-depth) — only the Foxy-chat route is RLS-backed today (`is_guardian_of`).
   4. **PP-6 (LOW, behavior-preserving):** converge `canAccessStudent` vs `isGuardianLinkedToStudent`.
@@ -499,15 +503,15 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
 | 4 | foxy-ai-rag (P12,P8,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | FOX-1 (+ Deno twin + injection-pattern refinement) + FOX-2 + FOX-3 + FOX-6 landed + APPROVED (type-check PASS, lint 0, 305/305 vitest + 3/3 Deno PASS, build PASS, bundle within P10 caps; assessment APPROVE WITH CONDITIONS [addressed] + quality APPROVE; sweep GREEN); REG-182/183 filed (catalog 148 → 150); **FOX-4 DONE — govern-with-flag (OpenAI MoL shadow confirmed already-governed: default-OFF, never student-facing, PII-safe, cost-capped; no app change; safety invariants pinned REG-197, catalog → 164; see `remediation/fox-4-openai-shadow/`)**, FOX-7-new + streaming-residual + Hindi-tokens follow-ups; live-topology reconciliation recorded (`/api/foxy` is LIVE, `foxy-tutor` Edge Fn gone); see `workflows/foxy-ai-rag/STATUS.md` + `cycles/2026-06-29-foxy-ai-rag.md` |
 | 5 | teacher-school-b2b (P8,P9,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | TSB-1 (backend — CRITICAL cross-tenant leak closed at all 8 grade-fallback sites via auth-derived `resolveTeacherSchoolId`, fail-closed) + TSB-2 (architect — teacher RLS backstop on `public.students`, predicate-identical, no over-grant) + TSB-3-partial + TSB-6 landed + APPROVED (type-check PASS, lint 0, 527/527 vitest incl. 15 TSB-1 + 10 TSB-2 new, build PASS, no bundle impact; quality APPROVE WITH CONDITIONS [migration-ordering — RESOLVED via byte-identical rename `20260629000000`→`20260702010000`]; sweep GREEN); REG-184/185 filed (catalog 150 → 152); TSB-4 USER-GATED (table-drop), TSB-3-full + TSB-5 + 3 pre-existing tracked items follow-ups; see `workflows/teacher-school-b2b/STATUS.md` + `cycles/2026-06-29-teacher-school-b2b.md` |
 | 6 | super-admin-observability (P9,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | SAO-3 (ops — observability-CSV egress `redactPII`) + SAO-2 (ops+frontend — `top_students.email` drop + stale-type cleanup) + SAO-7 (testing — 134-route full-surface gate sweep, 207/207 gate-before-I/O) + SAO-4 (testing — bare-name log canary) landed + APPROVED (type-check PASS, lint 0, 6/6 new + 351/351 broad PASS, build PASS, bundle within P10; quality independent APPROVE; sweep GREEN); REG-186/187 filed (catalog 152 → 154); **SAO-1/SAO-5 now DONE (CEO-approved `super_admin`, 2026-06-29; REG-198, catalog → 165; `remediation/sao-1-5-pii-export-tier/`; ops to notify lower-tier exporters)**, message-redaction + periodic-re-read follow-ups, SAO-6 compliant-by-design; see `workflows/super-admin-observability/STATUS.md` + `cycles/2026-06-29-super-admin-observability.md` |
-| 7 | parent-portal (P8,P13,P15) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | PP-2 (backend — link-code filter-injection guard at all 3 sites via shared `isValidLinkCode` + byte-identical Deno twin) + PP-1 rate-limit half (backend — per-IP 5/hour brute-force bound on the legacy Edge `parent_login`, 429 + Retry-After, pre-DB) + PP-4 (backend — `PATCH /api/parent/profile` authz gate via already-granted `profile.update_own`, self-scope/no-IDOR) + PP-5 deny pins (testing — unlinked-parent 403/no-payload across all 9 child-data routes) landed + APPROVED (type-check PASS, lint 0, 5 new files/71 new tests, 104/104 target + 404/404 broad PASS, build PASS, no bundle impact; quality independent APPROVE; sweep GREEN); REG-188/189/190 filed (catalog 154 → 157); **PP-1 consent posture + PP-3 USER-GATED (parent-link consent/link model — RISK register item 0)**, PP-5 client-migration + PP-6 + PP-7 + durable-limiter follow-ups; see `workflows/parent-portal/STATUS.md` + `cycles/2026-06-29-parent-portal.md` |
+| 7 | parent-portal (P8,P13,P15) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | PP-2 (backend — link-code filter-injection guard at all 3 sites via shared `isValidLinkCode` + byte-identical Deno twin) + PP-1 rate-limit half (backend — per-IP 5/hour brute-force bound on the legacy Edge `parent_login`, 429 + Retry-After, pre-DB) + PP-4 (backend — `PATCH /api/parent/profile` authz gate via already-granted `profile.update_own`, self-scope/no-IDOR) + PP-5 deny pins (testing — unlinked-parent 403/no-payload across all 9 child-data routes) landed + APPROVED (type-check PASS, lint 0, 5 new files/71 new tests, 104/104 target + 404/404 broad PASS, build PASS, no bundle impact; quality independent APPROVE; sweep GREEN); REG-188/189/190 filed (catalog 154 → 157); **PP-1/3 parent-link consent now DONE — CEO-approved Option B, 2026-06-29; link code → `pending` → student approves; orphaned approval card wired; REG-199, catalog → 166; `remediation/pp-1-3-consent/`**, PP-5 client-migration + PP-6 + PP-7 + durable-limiter follow-ups; see `workflows/parent-portal/STATUS.md` + `cycles/2026-06-29-parent-portal.md` |
 | 8 | cross-cutting (P7,P8,P10,mobile sync) | ALL 8 PHASES | **LANDED — auto-fix-safe complete (FINAL CYCLE)** | XC-1/XC-2 (backend — P7 server-notification Hindi: `data.title_hi`/`data.body_hi` on the 3 daily-cron score-milestone producers + relocate the parent-digest's DEAD top-level `body_hi` into `data.body_hi` + add `data.title_hi`) + XC-6 (testing — web↔mobile price parity, REG-191) + XC-5 (testing — 41-constant score-config web↔Flutter parity, REG-192) + XC-4a (testing — bundle-cap pin CAP_SHARED_KB=284 etc., REG-193) landed + APPROVED (type-check PASS, lint 0, 11/11 cross-cutting tests PASS, code review clean; build deferred to CI backstop — transient platform outage; orchestrator self-validated APPROVE; sweep GREEN); REG-191/192/193 filed (catalog 157 → 160); **XC-3 (P8 RLS defense-in-depth, 87% admin-client — LARGER-PROGRAM), XC-4b (@supabase/* first-paint split — LARGER-PROGRAM), XC-7 (i18n primitive — LARGER-PROGRAM)**; see `workflows/cross-cutting/STATUS.md` + `cycles/2026-06-29-cross-cutting.md` + `PROGRAM-SUMMARY.md` |
 
 ## Backlog pointer
 
 **PROGRAM COMPLETE.** All 8 ranked workflows are DONE (auto-fix-safe). There is no next audit cycle. The
 re-entry point for future work is the `PRIORITY-BACKLOG.md` **"Post-program remediation backlog"** — the
-Tier-1 user-gated decisions (PAY-2 canonical-price, SLC-1-backfill, TSB-4, PP-1-consent/PP-3 — PAY-2 L1+L2,
-SLC-1 going-forward de-dup, FOX-4 govern-with-flag, and SAO-1/SAO-5 PII-export tiering all LANDED), the Tier-2
-reversible-approved items, and the Tier-3 larger initiatives (XC-3 RLS defense-in-depth, XC-4b @supabase/*
-split, XC-7 i18n primitive, PP-5 client migration). See `PROGRAM-SUMMARY.md` for the CEO-facing close-out
-and the consolidated decision register.
+Tier-1 user-gated decisions (PAY-2 canonical-price, SLC-1-backfill, TSB-4 — PAY-2 L1+L2, SLC-1
+going-forward de-dup, FOX-4 govern-with-flag, SAO-1/SAO-5 PII-export tiering, and PP-1/3 parent-link consent
+all LANDED), the Tier-2 reversible-approved items, and the Tier-3 larger initiatives (XC-3 RLS
+defense-in-depth, XC-4b @supabase/* split, XC-7 i18n primitive, PP-5 client migration). See
+`PROGRAM-SUMMARY.md` for the CEO-facing close-out and the consolidated decision register.

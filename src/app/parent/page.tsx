@@ -113,6 +113,11 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
   // Function (JWT-required since PR #591) will reject the link-code login. We
   // surface an account-creation CTA instead of a dead "Connection error".
   const [needsSignIn, setNeedsSignIn] = useState(false);
+  // Consent gate (PP-1/3 Option B): when parent_login creates a fresh/pending
+  // guardian↔child link, the Edge function returns { status: 'pending_approval',
+  // student.name } with NO session. We hold that here to show a "waiting for
+  // your child to approve" screen instead of routing into the dashboard.
+  const [pendingApproval, setPendingApproval] = useState<{ childName?: string } | null>(null);
 
   const submit = async () => {
     if (!code.trim()) { setError(t(isHi, 'Please enter link code', 'कृपया लिंक कोड दर्ज करें')); return; }
@@ -149,7 +154,16 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
         setError(lockMsg || res.error);
         return;
       }
-      // Success — clear lockout state
+      // Consent gate: a fresh/pending link returns a pending signal (HTTP 200,
+      // no session). Do NOT store a session or route to the dashboard — show the
+      // waiting screen and let the child approve first (P8/P13).
+      if (res.status === 'pending_approval') {
+        clearLockoutAttempts();
+        setPendingApproval({ childName: res.student_name });
+        return;
+      }
+      // Success (status 'approved' / already-linked re-submit, or legacy shape)
+      // — clear lockout state and proceed to the dashboard as before.
       clearLockoutAttempts();
       await storeParentSession(res.guardian, res.student);
       onLogin(res.guardian, res.student);
@@ -159,6 +173,52 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
       setError(lockMsg || 'Connection error. Please try again.');
     }
   };
+
+  // Consent gate: the link request was created but the child has not approved
+  // yet. Explain what happens next and offer a "Check again" that re-runs the
+  // (idempotent) parent_login — once the child approves, it returns 'approved'
+  // and the fall-through above routes into the dashboard. No data is shown here
+  // because no approved link exists yet (P13).
+  if (pendingApproval) {
+    const childName = pendingApproval.childName || t(isHi, 'your child', 'आपके बच्चे');
+    return (
+      <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh flex items-center justify-center">
+        <div className="max-w-[400px] w-full text-center">
+          <div className="text-5xl mb-3">&#x23F3;</div>
+          <h1 className="text-[22px] font-bold text-gray-900 mb-2">
+            {t(isHi, `Request sent to ${childName}`, `${childName} को अनुरोध भेजा गया`)}
+          </h1>
+          <p className="text-sm text-gray-600 mb-1 leading-relaxed">
+            {t(
+              isHi,
+              'Ask your child to open Alfanumrik and approve your request. Once they approve, your dashboard unlocks automatically.',
+              'अपने बच्चे से Alfanumrik खोलकर आपके अनुरोध को स्वीकार करने को कहें। स्वीकार करते ही आपका डैशबोर्ड अपने आप खुल जाएगा।',
+            )}
+          </p>
+          <p className="text-xs text-gray-400 mb-6 leading-relaxed">
+            {t(
+              isHi,
+              'They will see your request on their dashboard and in their notifications.',
+              'उन्हें आपका अनुरोध उनके डैशबोर्ड और सूचनाओं में दिखेगा।',
+            )}
+          </p>
+          <button
+            onClick={submit}
+            disabled={loading}
+            className={`w-full px-5 py-3 bg-orange-500 text-white border-none rounded-[10px] text-[15px] font-semibold cursor-pointer mb-3 ${loading ? 'opacity-50' : 'opacity-100'}`}
+          >
+            {loading ? t(isHi, 'Checking...', 'जाँच हो रही है...') : t(isHi, 'Check again', 'फिर से जाँचें')}
+          </button>
+          <button
+            onClick={() => { setPendingApproval(null); }}
+            className="text-xs text-gray-400 hover:text-gray-600 underline bg-transparent border-none cursor-pointer"
+          >
+            {t(isHi, 'Back', 'वापस')}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // No Supabase session → show the account path. We preserve the entered link
   // code through sign-in via a returnTo back to /parent so the parent can

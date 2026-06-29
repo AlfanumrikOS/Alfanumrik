@@ -30,10 +30,10 @@
  * Bilingual via AuthContext.isHi. Loading / empty handled per child.
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { getNextTopics } from '@/lib/supabase';
+import { getNextTopics, getPendingParentLinks } from '@/lib/supabase';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { useCosmicLightSurface } from '@/lib/use-cosmic-light-surface';
 import { DashboardSkeleton } from '@/components/Skeleton';
@@ -45,6 +45,7 @@ import MasterySnapshot from '@/components/dashboard/os/MasterySnapshot';
 import RevisionRail from '@/components/dashboard/os/RevisionRail';
 import SubjectRoadmaps from '@/components/dashboard/os/SubjectRoadmaps';
 import BoardScoreWidget from '@/components/dashboard/os/BoardScoreWidget';
+import PendingLinkApproval, { type PendingLink } from '@/components/dashboard/PendingLinkApproval';
 
 export default function StudentOSDashboard() {
   const router = useRouter();
@@ -57,6 +58,7 @@ export default function StudentOSDashboard() {
     language,
     setLanguage,
     activeRole,
+    authUserId,
   } = useAuth();
   const { subjects: allowedSubjects } = useAllowedSubjects();
 
@@ -64,6 +66,22 @@ export default function StudentOSDashboard() {
   useCosmicLightSurface();
 
   const [todaysTopic, setTodaysTopic] = useState<CurriculumTopic | undefined>();
+
+  // Pending guardian-link requests awaiting this student's consent. The card
+  // self-hides when the list is empty (PendingLinkApproval returns null), so
+  // there is zero visual cost when nothing is pending. Fail-soft: a fetch
+  // error leaves the list empty and never blocks the dashboard (P15).
+  const [pendingLinks, setPendingLinks] = useState<PendingLink[]>([]);
+
+  const loadPendingLinks = useCallback(async () => {
+    if (!authUserId) return;
+    const links = await getPendingParentLinks(authUserId);
+    setPendingLinks(links);
+  }, [authUserId]);
+
+  useEffect(() => {
+    void loadPendingLinks();
+  }, [loadPendingLinks]);
 
   // ─── Auth + role redirects (same semantics as the legacy dashboard) ──────
   useEffect(() => {
@@ -181,6 +199,11 @@ export default function StudentOSDashboard() {
       }
     >
       <div className="flex flex-col gap-5 px-4 pt-2 pb-6">
+        {/* 0. Pending parent-link consent — first actionable thing the child
+            sees when a parent has requested a link. Self-hides when empty
+            (bilingual handled inside the component, P7). */}
+        <PendingLinkApproval links={pendingLinks} onApproved={loadPendingLinks} isHi={isHi} />
+
         {/* 1. PRIMARY hero — single dominant CTA. */}
         <TodaysMission
           isHi={isHi}

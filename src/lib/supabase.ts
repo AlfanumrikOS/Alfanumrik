@@ -899,6 +899,33 @@ export async function markNotificationRead(notificationId: string) {
   if (error) console.error('markNotificationRead:', error.message);
 }
 
+// Pending guardian↔child link requests for the signed-in student. Powers the
+// PendingLinkApproval card on the dashboard (consent gate — student approves a
+// parent_login request before any data is shared). Fail-soft: returns [] on
+// error so a hiccup never blocks the dashboard (P15). Maps the RPC's row shape
+// to the PendingLink shape the card consumes.
+export interface PendingParentLink {
+  id: string;
+  parentName: string;
+  requestedAt: string;
+}
+
+export async function getPendingParentLinks(studentAuthId: string): Promise<PendingParentLink[]> {
+  const { data, error } = await supabase.rpc('get_pending_link_requests', { p_student_auth_id: studentAuthId });
+  if (error) {
+    console.error('getPendingParentLinks:', error.message);
+    return [];
+  }
+  const requests =
+    (data as { requests?: Array<{ link_id: string; guardian_name: string | null; requested_at: string }> } | null)
+      ?.requests ?? [];
+  return requests.map((r) => ({
+    id: r.link_id,
+    parentName: r.guardian_name || 'Parent',
+    requestedAt: r.requested_at,
+  }));
+}
+
 export async function getCurriculumBrowser(grade: string, subject?: string) {
   const { data, error } = await supabase.rpc('get_curriculum_browser', { p_grade: grade, p_subject: subject ?? null });
   if (error) console.error('getCurriculumBrowser:', error.message);
