@@ -5629,3 +5629,42 @@ cross-cutting mobile↔web parity + bundle-cap pin). Remediation SLC-1 adds REG-
 **Total catalog: 161 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Remediation — PAY-2: Consumer Pricing Source-of-Truth (P11-adjacent) — 2026-06-29
+
+Source: remediation program, item PAY-2 (consumer pricing source-of-truth).
+Consumer plan prices live in FOUR places that must agree: web `src/lib/plans.ts`
+(`PRICING`, rupees), the server paisa constant `src/lib/pricing.ts`
+(`CONSUMER_PRICING_PAISA`, which the Razorpay create-order route now imports
+instead of inlining its own literals), mobile `mobile/lib/data/models/subscription.dart`
+(rupees), and the live DB `subscription_plans` table (paisa, seeded by migration
+`20260505155126`). PAY-2 collapses the create-order path onto the shared paisa
+constant so the three CODE mirrors are provably consistent, and pins the ONE
+known code↔DB divergence (`unlimited`) as a visible CI fact pending CEO
+reconciliation (PAY-2 open question #1). No price is changed by PAY-2 itself —
+this is a source-of-truth consolidation, not a pricing change (pricing changes
+require user approval).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-195 | `consumer_pricing_code_sot_parity` | P11-adjacent (billing-trust): the consumer pricing CODE mirrors are mutually consistent — web `src/lib/plans.ts` `PRICING` ×100 === `src/lib/pricing.ts` `CONSUMER_PRICING_PAISA` (the constant the Razorpay create-order route now imports) === mobile `mobile/lib/data/models/subscription.dart` ×100, for every plan+period; assertion is non-vacuous (>=3 plans matched on each side). Extends REG-191/XC-6 (mobile↔web parity) to the server paisa constant → a four-way code-mirror lock so any future code drift in any of the three files fails CI. | `src/__tests__/payments/consumer-pricing-sot-drift.test.ts` | E |
+| REG-196 | `consumer_pricing_db_divergence_pin` | P11-adjacent: pins the KNOWN live DB↔code `unlimited` divergence — DB `subscription_plans.unlimited` (₹1099/8799, migration `20260505155126`, web-checkout path) DIFFERS from the code mirror (₹1499/11999, mobile/create-order path). Documents the exact known state as a visible CI fact (NOT a parity assertion), so the divergence is undeniable in the test suite; designed to go RED the moment the CEO reconciles DB↔code (PAY-2 open question #1), at which point it is tightened into a DB===code parity assertion. | `src/__tests__/payments/consumer-pricing-sot-drift.test.ts` | E |
+
+### Invariants covered by this section
+
+- P11 (payment integrity, billing-trust adjacent) — REG-195 locks the three
+  consumer-pricing CODE mirrors (web rupees, server paisa constant now imported
+  by create-order, mobile rupees) into a four-way parity so a checkout never
+  charges a price that disagrees across the codebase; REG-196 makes the single
+  known code↔DB `unlimited` divergence a visible, fail-on-reconcile CI fact
+  rather than a silent drift, pending the CEO's source-of-truth decision (PAY-2
+  open question #1).
+
+### Catalog total
+
+Pre-PAY-2: 161 entries (through Remediation SLC-1's REG-194 single-XP-writer
+de-dup). Remediation PAY-2 adds REG-195 (four-way consumer-pricing code-mirror
+parity lock) and REG-196 (known DB↔code `unlimited` divergence pin, RED-on-reconcile).
+**Total catalog: 163 entries (target: 35 — TARGET EXCEEDED).**
+
+---

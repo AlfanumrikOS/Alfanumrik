@@ -12,6 +12,7 @@ import {
   resolveEffectiveEntitlementForUser,
   isRedundantPurchase,
 } from '@/lib/entitlements/effective-plan';
+import { CONSUMER_PRICING_PAISA, type ConsumerPlanCode } from '@/lib/pricing';
 
 /**
  * Fail-CLOSED GST gate (Track A.3 launch-safety).
@@ -117,14 +118,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Payment gateway not configured' }, { status: 503 });
     }
 
-    // Plan pricing (in paisa — Razorpay uses smallest currency unit)
-    const PRICING: Record<string, { monthly: number; yearly: number }> = {
-      starter:   { monthly: 29900,   yearly: 239900 },   // ₹299/mo, ₹2399/yr
-      pro:       { monthly: 69900,   yearly: 559900 },   // ₹699/mo, ₹5599/yr
-      unlimited: { monthly: 149900,  yearly: 1199900 },  // ₹1499/mo, ₹11999/yr
-    };
-
-    const taxablePaisa = PRICING[plan_code][billing_cycle as 'monthly' | 'yearly'];
+    // Plan pricing (in paisa — Razorpay uses smallest currency unit).
+    //
+    // PAY-2 Layer 1 (amount-preserving de-dup): this route previously held an
+    // INLINE paisa literal (starter 29900/239900, pro 69900/559900, unlimited
+    // 149900/1199900). That literal was a byte-identical mirror of
+    // `CONSUMER_PRICING_PAISA` (= plans.ts PRICING × 100) in `@/lib/pricing`.
+    // We now import the shared constant so create-order (the MOBILE checkout
+    // path) can no longer drift from plans.ts. No amount changed — the charged
+    // paisa values are byte-identical to the prior inline literal.
+    //
+    // ⚠️  PAY-2 PENDING CEO DECISION (NOT resolved here): the DB
+    // `subscription_plans.unlimited` row (web checkout path) was set to
+    // ₹1099/₹8799 by migration 20260505155126, while this code mirror (mobile
+    // path) charges ₹1499/₹11999. That DB↔code `unlimited` divergence is a
+    // pricing decision and is CEO-gated — Layer 1 deliberately does NOT touch
+    // it. See engineering-audit/remediation/pay-2-pricing-source/01-design.md
+    // (Open question #1). This L1 change only de-dups the CODE mirrors, which
+    // already agree.
+    const pricingByCycle = CONSUMER_PRICING_PAISA[plan_code as ConsumerPlanCode];
+    if (!pricingByCycle) {
+      // Defensive: paymentSubscribeSchema already constrains plan_code to the
+      // enum and CONSUMER_PRICING_PAISA carries the same keys, but guard so an
+      // unknown plan_code can never reach the Razorpay order body.
+      return NextResponse.json({ error: 'Plan not available' }, { status: 400 });
+    }
+    const taxablePaisa = pricingByCycle[billing_cycle as 'monthly' | 'yearly'];
 
     // ─── Track A.3: per-state GST on the B2C order ───
     // The listed plan price is the TAXABLE (pre-GST) value. We compute the GST
