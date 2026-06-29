@@ -87,9 +87,20 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
 4. **[Cycle 4] FOX-4 — USER-gated AI provider governance.** OpenAI gpt-4o-mini/gpt-4o present in
    `grounded-answer` as a MoL SHADOW comparison (telemetry only; not student-facing today). Provider PRESENCE
    is user-gated per the constitution. **CEO action:** govern or remove.
-5. **[Cycle 3] SLC-1 — USER-gated XP economy (P2).** A legacy `quiz_sessions` trigger re-awards XP with no
-   daily cap, deduped from the RPC only by a fragile 5-second window — a second uncapped XP writer. Needs
-   architect + assessment joint design. **CEO action:** approve consolidation to one capped writer.
+5. **[Cycle 3] SLC-1 — DONE (going-forward de-dup LANDED 2026-06-29).** The legacy `quiz_sessions` trigger's
+   duplicate uncapped XP / `xp_total` / level / counter writes were removed via migration
+   `20260702020000_slc1_dedupe_quiz_session_xp_trigger.sql` (Option B — `CREATE OR REPLACE`, streak KEPT). The
+   capped `atomic_quiz_profile_update` RPC is now the SOLE XP writer; XP values 10/20/50 + 200/day cap
+   UNCHANGED (pure de-dup). Mobile SAFE; quality APPROVE; P14 chain complete; **REG-194** (catalog → 161). Live-DB
+   single-writer proof DEFERRED to staged rollout (staging→prod, after the pre-fix read-only reconciliation).
+   See `remediation/slc-1-xp-trigger/05-validation.md` + `STATUS.md`.
+5a. **[NEW — from SLC-1] SLC-1-backfill — USER-gated historical XP reconciliation (P2).** The SLC-1 fix stops
+   the double-award GOING FORWARD but does NOT correct already-inflated `students.xp_total` /
+   `student_learning_profiles.xp` / levels / leaderboard standings from the period the double-award was live.
+   Reconciling them against the `xp_transactions` ledger changes STORED economy values and would visibly
+   REDUCE some students' displayed XP / level / rank → needs a CEO decision + product-comms plan. Quantify the
+   footprint first via the read-only reconciliation query (`05-validation.md` §3 step 1). **CEO action:**
+   decide whether to backfill; if yes, sequence the recompute + comms. Successor to SLC-1 (design Q4).
 6. **[Cycle 2] PAY-2 — USER-gated pricing source.** `create-order` hardcoded `PRICING` can diverge from DB
    `subscription_plans`; dead on web, live only on the (already-broken) mobile path. Any pricing-amount change
    is user-gated.
@@ -351,10 +362,13 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
 - P14 review chain (Student Learning Core) **COMPLETE**: assessment (audit) → frontend (impl) + testing
   (coverage GREEN) + quality (independent APPROVE).
 - **Open gated / cross-agent items (resume these):**
-  1. **SLC-1 (High, GATED — USER APPROVAL)** — legacy `quiz_sessions` AFTER-completion trigger re-awards
-     XP (10/20/50) with **no daily cap**, deduped from the RPC only by a fragile 5-second wall-clock window
-     — a second uncapped XP writer. DB trigger + P2 economy change. Needs **architect + assessment** joint
-     design to consolidate to one capped writer. Do NOT change the cap (200) or the earning literals.
+  1. **SLC-1 — DONE (going-forward de-dup LANDED 2026-06-29).** The legacy `quiz_sessions` trigger's duplicate
+     uncapped XP/`xp_total`/level/counter writes were removed (Option B `CREATE OR REPLACE`, streak KEPT) via
+     `20260702020000_slc1_dedupe_quiz_session_xp_trigger.sql`; `atomic_quiz_profile_update` is now the SOLE
+     capped XP writer (XP values + 200 cap UNCHANGED). Mobile SAFE; quality APPROVE; P14 complete; **REG-194**.
+     Live-DB single-writer proof DEFERRED to staged rollout. **NEW USER-GATED successor: SLC-1-backfill** —
+     historical inflated `xp_total`/levels/leaderboard are NOT corrected by this fix (RISK register item 5a).
+     See `remediation/slc-1-xp-trigger/`.
   2. **SLC-4 (Medium, GATED)** — two daily-cap implementations (7-arg IST ledger vs JSONB 6-arg
      `CURRENT_DATE` fallback) + a `score`-vs-`xp_earned` column mismatch. **architect / backend** alignment.
   3. **SLC-5 (Medium, cross-agent)** — server "rejects" flagged submissions by zeroing XP but still records

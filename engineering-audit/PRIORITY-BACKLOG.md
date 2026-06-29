@@ -26,7 +26,7 @@ in `PROGRAM-SUMMARY.md`.
 |---|---|---|
 | 1 | Auth & Onboarding (P15) | DONE — partial (AO-4/8/1/2 + AO-5/7/9; AO-3/AO-10 follow-ups) |
 | 2 | Payments & Subscriptions (P11) | DONE — auto-fix-safe (PAY-1/3/4/5/6/7/8; PAY-2 user-gated) |
-| 3 | Student Learning Core (P1-P6,P12) | DONE — auto-fix-safe (SLC-7/2/3/6/8-pin; SLC-1 user-gated, SLC-4/5 cross-agent) |
+| 3 | Student Learning Core (P1-P6,P12) | DONE — auto-fix-safe (SLC-7/2/3/6/8-pin; **SLC-1 de-dup LANDED 2026-06-29, REG-194**; SLC-1-backfill NEW user-gated; SLC-4/5 cross-agent) |
 | 4 | Foxy AI Tutor & RAG (P12,P8,P13) | DONE — P12 output backstop (FOX-1/2/3/6; FOX-4 user-gated) |
 | 5 | Teacher / School-Admin B2B (P8,P9,P13) | DONE — auto-fix-safe (**TSB-1 critical cross-tenant leak fixed**; TSB-4 user-gated) |
 | 6 | Super-Admin & Observability (P9,P13) | DONE — auto-fix-safe (SAO-3/2/7/4; SAO-1/SAO-5 user-gated) |
@@ -43,7 +43,8 @@ initiative.** Full rationale per item is in `PROGRAM-SUMMARY.md` and each cycle'
 | Item | Cycle | Invariant | Decision needed |
 |---|---|---|---|
 | **PAY-2** | 2 | P11 | `create-order` hardcoded `PRICING` can diverge from DB `subscription_plans` (dead on web, live only on the already-broken mobile path). Any pricing-amount change is user-gated. |
-| **SLC-1** | 3 | P2 | Legacy `quiz_sessions` trigger re-awards XP with NO daily cap (a second uncapped XP writer, deduped only by a fragile 5s window). Consolidate to one capped writer — architect + assessment joint design. |
+| ~~**SLC-1**~~ → **DONE** (2026-06-29) | 3 | P2 | ~~Legacy `quiz_sessions` trigger re-awards XP with NO daily cap.~~ **LANDED — going-forward de-dup:** migration `20260702020000_slc1_dedupe_quiz_session_xp_trigger.sql` (Option B `CREATE OR REPLACE`, streak KEPT) removed the duplicate uncapped writes; `atomic_quiz_profile_update` is now the SOLE capped XP writer (XP values + 200 cap UNCHANGED). Mobile SAFE; quality APPROVE; P14 complete; **REG-194** (catalog → 161). Live-DB proof DEFERRED to staged rollout. See `remediation/slc-1-xp-trigger/`. |
+| **SLC-1-backfill** (NEW — successor to SLC-1) | 3 | P2 | The SLC-1 fix stops the double-award GOING FORWARD; it does NOT correct already-inflated `students.xp_total` / `student_learning_profiles.xp` / levels / leaderboard standings from the period the double-award was live. Reconciling them against the `xp_transactions` ledger changes STORED economy values + visibly REDUCES some students' XP/level/rank → CEO decision + comms plan. Quantify footprint via the read-only reconciliation query first. |
 | **FOX-4** | 4 | P12 | OpenAI gpt-4o-mini/gpt-4o present in `grounded-answer` as a MoL SHADOW comparison (telemetry only; not student-facing). Provider PRESENCE is user-gated — govern or remove. |
 | **TSB-4** | 5 | P8 | Teacher↔student membership modeled in TWO tables (`class_students` vs `class_enrollments`) reconciled by a sync trigger. Picking a canonical table and DROPPing the other is a schema DROP. |
 | **SAO-1 / SAO-5** | 6 | P13 | `/api/super-admin/reports` bulk-exports raw student name+email + parent name+email+PHONE + teacher email (+ audit-log admin PII) at the LOWEST `support` tier. Raising the tier / splitting a PII-export permission is a DPDP-relevant admin access-model change. |
