@@ -6036,4 +6036,47 @@ Upstash `fixedWindow(5,1h)` with transparent same-bound in-memory fallback,
 never-fail-open / never-throw on the request path, fail-closed-before-DB ordering).
 **Total catalog: 171 entries (target: 35 — TARGET EXCEEDED).**
 
+## Remediation — SLC-4: Fallback Daily-Cap Alignment (P2) — 2026-06-30
+
+The quiz-submit client-side fallback in `src/lib/supabase.ts` (`submitQuizResults`,
+~544-606) called the BROKEN 6-param JSONB overload of `atomic_quiz_profile_update`,
+whose daily-cap read referenced a NON-EXISTENT `quiz_sessions.xp_earned` column
+(XP lives in `score`). That raised Postgres 42703 at runtime; the surrounding catch
+then silently degraded to an UNCAPPED `student_learning_profiles` upsert — so the
+fallback path enforced NO 200 XP/day cap and could award a SECOND 200 on top of the
+primary path (up to 400/day, a P2 breach). SLC-4 repoints the fallback to the
+CANONICAL 7-param VOID overload by passing `p_session_id: session?.id ?? null` (the
+7th param forces PostgREST to resolve the ledger-based, IST-boundary, 200/day-capped
+writer — the SAME one the primary v2 path uses). The void overload returns no JSONB,
+so the over-cap UI display (`effective_xp` / `xp_capped`) is RE-DERIVED by reading
+back the AUTHORITATIVE `xp_transactions` ledger row (`reference_id='quiz_<session>'`,
+`.maybeSingle()`) — `effectiveXp = ledgerRow.amount; xpCapped = effectiveXp <
+xpEarnedUncapped` — never a client recompute from the correct-count. The degraded
+uncapped upsert is now reached ONLY on a GENUINE RPC failure (`if (rpcErr) throw
+rpcErr`), not the old swallowed 42703. The 200 cap VALUE is unchanged — alignment only.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-205 | `slc4_fallback_routes_through_capped_ledger_writer` | P2: the quiz-submit fallback in `src/lib/supabase.ts` invokes `atomic_quiz_profile_update` with `p_session_id` (the 7-param void, ledger-based, IST-boundary, 200/day-capped writer — same as primary), closing the prior cap-bypass where the 6-param JSONB overload referenced a non-existent `quiz_sessions.xp_earned` column, raised 42703, and silently degraded to an uncapped upsert (primary+fallback could each award 200/day → up to 400); over-cap UI value re-derived from the authoritative `xp_transactions` ledger row, not client-recomputed; 200 cap value unchanged | `src/__tests__/lib/slc4-fallback-cap-alignment.test.ts` | E | P2 |
+
+### Invariants covered by this section
+
+- P2 (XP economy / daily cap) — REG-205 pins that the client-side quiz-submit
+  fallback flows through the SAME 7-param capped ledger writer as the primary path
+  (comment-stripped source pin that the `atomic_quiz_profile_update` call carries
+  `p_session_id` and that NO bare 6-param JSONB call survives in the submit path),
+  that the over-cap display is re-derived from the authoritative `xp_transactions`
+  ledger row rather than recomputed client-side, that the uncapped degraded upsert
+  is gated behind a re-thrown genuine RPC failure, that the 200/day cap value is
+  unchanged, and (modelled) that primary+fallback can never exceed 200/day.
+
+### Catalog total
+
+Pre-SLC-4: 171 entries (through Tier-2 PR C's REG-204 durable parent-login limiter).
+SLC-4 adds REG-205 (quiz-submit fallback daily-cap alignment — fallback repointed
+to the 7-param capped void overload of `atomic_quiz_profile_update`, closing the
+6-param 42703 → uncapped-upsert → up-to-400/day P2 bypass; ledger-derived over-cap
+display; 200 cap value unchanged).
+**Total catalog: 172 entries (target: 35 — TARGET EXCEEDED).**
+
 ---

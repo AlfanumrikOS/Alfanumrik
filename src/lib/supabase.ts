@@ -541,32 +541,60 @@ export async function submitQuizResults(studentId: string, subject: string, grad
     }).select('id').single();
     if (sessErr) console.error('Fallback: quiz_sessions insert failed:', sessErr.message);
 
-    // 2. Atomically update learning profile and student XP via RPC.
-    // The 6-arg overload returns JSONB:
-    //   { effective_xp, xp_capped, xp_cap_excess, today_earned, daily_cap, ... }
-    // We surface effective_xp + xp_capped + xp_uncapped so the UI can show
-    // "you would have earned X but daily cap is 200".
+    // 2. Atomically update learning profile + student XP via the CANONICAL,
+    // ledger-based, IST-boundary, idempotent, CAPPED writer — the 7-param
+    // void overload of atomic_quiz_profile_update (the SAME writer the primary
+    // v2 path uses). Passing p_session_id routes the fallback through the
+    // single source of truth for the P2 200 XP/day cap: SUM(amount) from
+    // xp_transactions WHERE daily_category='quiz' over the Asia/Kolkata day
+    // boundary, with reference_id='quiz_<session>' giving ON CONFLICT idempotency.
+    //
+    // SLC-4 fix: this previously called the 6-param JSONB overload, whose cap
+    // read SUM(quiz_sessions.xp_earned) — a column that does NOT exist (XP is in
+    // `score`) — raising Postgres 42703 at runtime. The catch below then silently
+    // degraded to an UNCAPPED student_learning_profiles upsert, so the fallback
+    // path enforced NO cap and could award a second 200 XP/day on top of the
+    // primary path (P2 violation). The 7-param overload reads the ledger and
+    // never hits that error, so the cap is now enforced on this path too. The
+    // 200 cap VALUE is unchanged — this is alignment only.
     let effectiveXp = xpEarnedUncapped;
     let xpCapped = false;
     try {
-      const { data: rpcData } = await supabase.rpc('atomic_quiz_profile_update', {
+      const { error: rpcErr } = await supabase.rpc('atomic_quiz_profile_update', {
         p_student_id: studentId,
         p_subject: subject,
         p_xp: xpEarnedUncapped,
         p_total: total,
         p_correct: correct,
         p_time_seconds: time,
+        p_session_id: session?.id ?? null,
       });
-      // rpcData is JSONB on the 6-arg overload. Older overloads return void —
-      // fall back to the locally-computed XP in that case.
-      if (rpcData && typeof rpcData === 'object') {
-        const r = rpcData as Record<string, unknown>;
-        if (typeof r.effective_xp === 'number') effectiveXp = r.effective_xp;
-        if (typeof r.xp_capped === 'boolean') xpCapped = r.xp_capped;
+      if (rpcErr) throw rpcErr;
+
+      // The void overload returns no JSONB, so re-derive the over-cap display
+      // state from the AUTHORITATIVE ledger row this submission just wrote
+      // (single source — never a client recompute). reference_id is unique; an
+      // ON CONFLICT re-submission still leaves the original row to read back.
+      // P1 is untouched here: only the XP-cap display is derived, not the score.
+      if (session?.id) {
+        const { data: ledgerRow } = await supabase
+          .from('xp_transactions')
+          .select('amount')
+          .eq('reference_id', `quiz_${session.id}`)
+          .maybeSingle();
+        if (ledgerRow && typeof ledgerRow.amount === 'number') {
+          effectiveXp = ledgerRow.amount;
+          xpCapped = effectiveXp < xpEarnedUncapped;
+        }
       }
     } catch (atomicErr) {
       console.warn('atomic_quiz_profile_update failed, using non-atomic fallback:', atomicErr);
-      // Last-resort fallback: upsert with ON CONFLICT if the RPC doesn't exist
+      // DEGRADED LAST-RESORT — reached only on a GENUINE RPC failure (RPC missing
+      // or transport error), NOT the now-fixed 42703 missing-column path. This
+      // upsert does NOT write the xp_transactions ledger and does NOT touch
+      // students.xp_total, so it CANNOT enforce the 200/day cap. It exists solely
+      // to avoid losing session counters during a hard RPC outage (P15/availability).
+      // Do NOT expand its use — the capped ledger writer above is the only correct path.
       await supabase.from('student_learning_profiles').upsert({
         student_id: studentId, subject, xp: xpEarnedUncapped,
         total_sessions: 1, total_questions_asked: total,
