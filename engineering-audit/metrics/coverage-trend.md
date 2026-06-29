@@ -14,6 +14,7 @@ measured in-session.
 | 2026-06-29 (Cycle 2 — payments-subscriptions REGRESSION) | payment suite **236/236 PASS** (verify-HMAC-reject + subscribe RBAC gate now pinned + reconcile-atomic-RPC + dedupe-no-op regressions); not re-measured globally this cycle | not re-measured globally this cycle | **146** with REG-178 (`verify_route_hmac_reject`, P11) + REG-179 (`subscribe_rbac_gate_pre_razorpay`, P9/P11) once filed; cap target 35 — exceeded | build PASS (`vercel.json` VALID — 13 crons ≤ 40 Pro limit) | /foxy still largest, 0 pages > 260 kB (config-only PAY-4 change; no bundle impact) | local green; type-check PASS, lint 0 errors; architect security APPROVE + quality APPROVE; REG-178/179 catalog filing in flight |
 | 2026-06-29 (Cycle 3 — student-learning-core REGRESSION) | **40/40 new + ~1678 broad quiz/xp/scoring PASS** (+P1 three-way score-formula parity, +P2 XP earning-literal parity, +P3 pattern-flag asymmetry pin, +submit-idempotency contract pin; SLC-7 P6-gate wiring); not re-measured globally this cycle | not re-measured globally this cycle | **148** with REG-180 (`score_formula_three_way_parity`, P1) + REG-181 (`xp_sql_literal_parity`, P2); REG-45/48/51/53 still green; cap target 35 — exceeded | build PASS — bundle within P10 caps (SLC-7 is a small pure-React change in an existing page; test-only files have no bundle impact) | /foxy still largest, 0 pages > 260 kB | local green; type-check PASS, lint 0 errors; quality APPROVE (one MINOR brace nit fixed); sweep GREEN |
 | 2026-06-29 (Cycle 4 — foxy-ai-rag REGRESSION) | **305/305 vitest + 3/3 Deno PASS** (+P12 live grounded-path output content backstop `screenStudentFacingText` + Deno twin across every student-facing exit, +P12 student-message injection neutralization `neutralizeInjectionAttempt`, +P13 prompt-assembly contract test, +FOX-3 mode-template reconciliation, +Deno HARD_BLOCK_PATTERNS parity); not re-measured globally this cycle | not re-measured globally this cycle | **150** with REG-182 (P12 output backstop) + REG-183 (P12 injection neutralization); REG-37/39/50/54/66/67 still green; cap target 35 — exceeded | build PASS — bundle within P10 caps (server/Deno validation modules; /foxy route already shipped, no new shared chunk) | /foxy still largest, 0 pages > 260 kB | local green; type-check PASS, lint 0 errors; assessment APPROVE WITH CONDITIONS (addressed) + quality independent APPROVE; sweep GREEN |
+| 2026-06-29 (Cycle 5 — teacher-school-b2b REGRESSION) | **527/527 vitest PASS** (+P8/P13 teacher-dashboard grade-fallback tenant-scoping across all 8 query sites via auth-derived `resolveTeacherSchoolId`, fail-closed; +P8 teacher-assigned RLS backstop on `public.students`, predicate-identical to the active `is_teacher_of(id)` branch); 15 TSB-1 + 10 TSB-2 new edge-fn/RLS tests; not re-measured globally this cycle | not re-measured globally this cycle | **152** with REG-184 (P8/P13 teacher tenant-scoping) + REG-185 (P8 teacher RLS backstop); REG-120/121/122/124/128 still green; cap target 35 — exceeded | build PASS — **no bundle impact** (Edge Function + migration only) | /foxy still largest, 0 pages > 260 kB | local green; type-check PASS, lint 0 errors; quality independent **APPROVE WITH CONDITIONS** (migration-ordering — RESOLVED via byte-identical rename `20260629000000`→`20260702010000`); sweep GREEN |
 
 ## Notes on the seed row (2026-06-28)
 - **Test count** 2,511 / 84 files: from `.claude/CLAUDE.md` testing cell. `CLAUDE.md`
@@ -94,6 +95,34 @@ measured in-session.
 - **Topology note:** the constitution's "`/api/foxy` not yet wired to UI" line is STALE — `/api/foxy` is the LIVE
   route; `foxy-tutor` Edge Function no longer exists; `grounded-answer` is the LLM pipeline. Correct on next
   constitution reconciliation.
+
+## Notes on the Cycle-5 row (2026-06-29 — teacher-school-b2b REGRESSION)
+- **527/527 vitest:** the 25 new tests (15 TSB-1 tenant-scoping over the 8 grade-fallback query sites + the
+  fail-closed-on-null-`school_id` branch; 10 TSB-2 teacher SELECT policy assertions — assigned row visible,
+  zero rows for non-assigned / inactive-enrollment, predicate parity, idempotent) plus the broad teacher /
+  RLS suites were re-run by quality — all pass. Global coverage % was not re-measured this cycle (targeted
+  teacher-dashboard / RLS run only).
+- **The 8-site finding:** the audit named 2 grade-fallback sites; backend found **8** (incl. a cross-tenant
+  WRITE in `handleSetGradeBookCell`). Fixing only the named 2 would have left sites 3–8 exploitable by a
+  teacher *with* a school. All 8 are now `school_id`-scoped via the auth-derived `resolveTeacherSchoolId`
+  and fail-closed (empty / 403 / zero) on a null `school_id`.
+- **TSB-2 premise correction:** `public.students` ALREADY had a teacher backstop via `students_select_merged`
+  → `is_teacher_of(id)` (stricter — adds `is_active` guards). The new named policy is predicate-IDENTICAL
+  (PERMISSIVE OR-combine → unchanged row set, provably no over-grant); its value is discoverability +
+  helper-independence. HIGH → reclassified defense-in-depth.
+- **Catalog:** REG-184 (`teacher_dashboard_grade_fallback_tenant_scope`, P8/P13) + REG-185
+  (`teacher_assigned_students_rls`, P8) filed → **152**. Existing B2B/boundary entries REG-120 / REG-121 /
+  REG-122 / REG-124 / REG-128 remain green. Authoritative source remains `.claude/regression-catalog.md`.
+- **Build/bundle:** TSB-1 edits a Deno Edge Function; TSB-2 adds one additive idempotent migration — neither
+  ships in any client bundle. **No bundle impact**, 0 pages over the 260 kB page budget.
+- **Gates / condition:** type-check PASS, lint 0 errors, build PASS; quality independent verdict APPROVE WITH
+  CONDITIONS — the single condition (TSB-2 migration timestamped `20260629000000`, out-of-order before the
+  true latest `20260702000800`) is **RESOLVED** by an architect rename to `20260702010000` (byte-identical
+  content; testing repointed the test reference; re-verified). Sweep GREEN.
+- **Gated / follow-up (not in these numbers):** TSB-4 (dual `class_students`/`class_enrollments` — the table
+  DROP is USER-gated; read-consolidation auto-fix-safe), TSB-3 full convergence (shared Next.js↔Deno authz
+  module — ai/architect), TSB-5 (`ff_school_pulse_v1` render-vs-data comment — ops/frontend), pre-existing
+  TS2352 join-cast cleanup, vacuously-green roster-join walker, Deno pre-warm retry — none implemented.
 
 ## How to add a row
 At the end of each cycle's REGRESSION phase, run `npm test`, `npm run test:coverage`,

@@ -5409,3 +5409,44 @@ P13 prompt-assembly contract).
 **Total catalog: 150 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Engineering-Audit Cycle 5 — Teacher/School-Admin B2B (P8/P13) — 2026-06-29
+
+Source: engineering-audit program, Cycle 5 (Teacher/School-Admin B2B). The
+teacher-dashboard Edge Function resolves students to enrich, count, and grade
+across many code paths; the audit found that several `.from('students')`
+grade-fallback queries were not consistently scoped to the requesting teacher's
+own school, opening a cross-tenant student-PII leak (TSB-1) where a teacher could
+surface grade/roster data for students at another school. This cycle pins every
+such site to the teacher's AUTH-DERIVED `school_id` (same-school only) and makes
+each fail-closed for a school-less teacher, and adds a DB-layer RLS backstop so
+the teacher→student boundary holds even if an application path regresses (TSB-2).
+The `teacher_id` is JWT-bound at dispatch and is never request-supplied.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-184 | `teacher_dashboard_grade_fallback_tenant_scoped` | P8/P13: every teacher-dashboard `.from('students')` grade-fallback query is scoped by the teacher's AUTH-DERIVED `school_id` (same-school only) AND is fail-closed (empty / 403 / studentInClass=false) for a school-less teacher, across all 8 sites (assertTeacherOwnsClass, resolveStudentsForTeacher Path B, dashboard grade count, heatmap, alerts, resolveStudentsForClass, handleGetAttendanceRecord, and the handleSetGradeBookCell cross-tenant WRITE); `teacher_id` is JWT-bound at dispatch, never request-supplied — closes the critical cross-tenant student-PII leak (TSB-1). | `src/__tests__/edge-functions/teacher-dashboard-tenant-scoping.test.ts` | E |
+| REG-185 | `students_teacher_assigned_rls_backstop` | P8: migration `20260702010000_teacher_assigned_students_rls.sql` adds the named "Teachers can view students in their classes" SELECT policy on public.students with the class_students⋈class_teachers⋈teachers roster join resolved from auth.uid() + both is_active guards (non-assigned AND inactive-enrollment teachers → 0 rows), no grade/school over-grant, idempotent + non-destructive — DB-layer defense-in-depth for the teacher→student boundary (TSB-2). | `src/__tests__/rls-teacher-assigned-students.test.ts` | E |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary — every teacher-dashboard grade-fallback `.from('students')`
+  query scoped to the teacher's auth-derived `school_id` and fail-closed for a
+  school-less teacher; `teacher_id` JWT-bound at dispatch, never request-supplied;
+  DB-layer RLS backstop policy resolves the class_students⋈class_teachers⋈teachers
+  roster from auth.uid() with both is_active guards, no grade/school over-grant)
+- P13 (data privacy — same-school-only scoping closes the cross-tenant
+  student-PII leak; no other school's roster/grade data is reachable through any
+  of the 8 audited sites, including the cross-tenant grade-book WRITE)
+
+### Catalog total
+
+Pre-REG-184: 150 entries (through Engineering-Audit Cycle 4's REG-182/REG-183
+Foxy output content backstop + input injection neutralizer). Engineering-Audit
+Cycle 5 adds REG-184 (teacher-dashboard grade-fallback tenant scoping — all 8
+`.from('students')` sites same-school-only + fail-closed, closing TSB-1) and
+REG-185 (students teacher-assigned RLS backstop — DB-layer defense-in-depth,
+TSB-2).
+**Total catalog: 152 entries (target: 35 — TARGET EXCEEDED).**
+
+---
