@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit } from '@/lib/admin-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { redactPII } from '@/lib/ops-events-redactor';
 
 /**
  * GET /api/super-admin/observability/export
@@ -88,7 +89,13 @@ export async function GET(request: NextRequest) {
         escapeCSV(row.message),
         escapeCSV(row.request_id),
         escapeCSV(row.environment),
-        escapeCSV(row.context ? JSON.stringify(row.context) : null),
+        // P13 (SAO-3): defense-in-depth egress redaction. Ops events are
+        // SUPPOSED to be PII-free at write time (logOpsEvent), but this CSV
+        // export is the last line of defense before bulk egress. Deep-redact
+        // context with the shared key-based redactor (redactPII) so a single
+        // mis-instrumented upstream event that put a name/email/phone/token
+        // into context cannot be exfiltrated. Clean data is unchanged.
+        escapeCSV(row.context ? JSON.stringify(redactPII(row.context)) : null),
       ].join(',');
       lines.push(line);
     }

@@ -15,6 +15,7 @@ measured in-session.
 | 2026-06-29 (Cycle 3 — student-learning-core REGRESSION) | **40/40 new + ~1678 broad quiz/xp/scoring PASS** (+P1 three-way score-formula parity, +P2 XP earning-literal parity, +P3 pattern-flag asymmetry pin, +submit-idempotency contract pin; SLC-7 P6-gate wiring); not re-measured globally this cycle | not re-measured globally this cycle | **148** with REG-180 (`score_formula_three_way_parity`, P1) + REG-181 (`xp_sql_literal_parity`, P2); REG-45/48/51/53 still green; cap target 35 — exceeded | build PASS — bundle within P10 caps (SLC-7 is a small pure-React change in an existing page; test-only files have no bundle impact) | /foxy still largest, 0 pages > 260 kB | local green; type-check PASS, lint 0 errors; quality APPROVE (one MINOR brace nit fixed); sweep GREEN |
 | 2026-06-29 (Cycle 4 — foxy-ai-rag REGRESSION) | **305/305 vitest + 3/3 Deno PASS** (+P12 live grounded-path output content backstop `screenStudentFacingText` + Deno twin across every student-facing exit, +P12 student-message injection neutralization `neutralizeInjectionAttempt`, +P13 prompt-assembly contract test, +FOX-3 mode-template reconciliation, +Deno HARD_BLOCK_PATTERNS parity); not re-measured globally this cycle | not re-measured globally this cycle | **150** with REG-182 (P12 output backstop) + REG-183 (P12 injection neutralization); REG-37/39/50/54/66/67 still green; cap target 35 — exceeded | build PASS — bundle within P10 caps (server/Deno validation modules; /foxy route already shipped, no new shared chunk) | /foxy still largest, 0 pages > 260 kB | local green; type-check PASS, lint 0 errors; assessment APPROVE WITH CONDITIONS (addressed) + quality independent APPROVE; sweep GREEN |
 | 2026-06-29 (Cycle 5 — teacher-school-b2b REGRESSION) | **527/527 vitest PASS** (+P8/P13 teacher-dashboard grade-fallback tenant-scoping across all 8 query sites via auth-derived `resolveTeacherSchoolId`, fail-closed; +P8 teacher-assigned RLS backstop on `public.students`, predicate-identical to the active `is_teacher_of(id)` branch); 15 TSB-1 + 10 TSB-2 new edge-fn/RLS tests; not re-measured globally this cycle | not re-measured globally this cycle | **152** with REG-184 (P8/P13 teacher tenant-scoping) + REG-185 (P8 teacher RLS backstop); REG-120/121/122/124/128 still green; cap target 35 — exceeded | build PASS — **no bundle impact** (Edge Function + migration only) | /foxy still largest, 0 pages > 260 kB | local green; type-check PASS, lint 0 errors; quality independent **APPROVE WITH CONDITIONS** (migration-ordering — RESOLVED via byte-identical rename `20260629000000`→`20260702010000`); sweep GREEN |
+| 2026-06-29 (Cycle 6 — super-admin-observability REGRESSION) | **6/6 new (4 SAO-7 + 2 SAO-4) + 351/351 broad super-admin/analytics/observability PASS** (+P9 admin-route auth-gate FULL-SURFACE sweep — 134 routes, 207/207 DB-touching handlers gate-before-I/O, `super-admin/login` sole allowlist; +P13 bare-name log canary — no bare `name`/`email`/`phone` logger key, conservative compound-key exclusion); also SAO-3 observability-CSV egress `redactPII` + SAO-2 `top_students.email` drop; not re-measured globally this cycle | not re-measured globally this cycle | **154** with REG-186 (P9 full-surface gate sweep) + REG-187 (P13 bare-name log canary); REG-49/115/116/119 still green; cap target 35 — exceeded | build PASS — bundle within P10 (analytics/observability server routes + 2 test-only files; **no shared-chunk or page-budget impact**) | /foxy still largest, 0 pages > 260 kB | local green; type-check PASS, lint 0 errors; quality independent **APPROVE**; sweep GREEN |
 
 ## Notes on the seed row (2026-06-28)
 - **Test count** 2,511 / 84 files: from `.claude/CLAUDE.md` testing cell. `CLAUDE.md`
@@ -123,6 +124,32 @@ measured in-session.
   DROP is USER-gated; read-consolidation auto-fix-safe), TSB-3 full convergence (shared Next.js↔Deno authz
   module — ai/architect), TSB-5 (`ff_school_pulse_v1` render-vs-data comment — ops/frontend), pre-existing
   TS2352 join-cast cleanup, vacuously-green roster-join walker, Deno pre-warm retry — none implemented.
+
+## Notes on the Cycle-6 row (2026-06-29 — super-admin-observability REGRESSION)
+- **6/6 new + 351/351 broad:** the two new test files (`admin-route-auth-gate-sweep.test.ts` — 4 tests;
+  `bare-name-log-canary.test.ts` — 2 tests) plus the broad super-admin/analytics/observability suite were
+  re-run by quality — all pass. Global coverage % was not re-measured this cycle (targeted run only).
+- **The 134-route sweep (SAO-7):** the MAP phase proved a `Grep` token match on all 119 super-admin route
+  files but read only ~10 line-by-line. SAO-7 converts that into a 100%-surface invariant — every admin route
+  on disk (super-admin **119** + `v1/admin` **2** + `internal/admin` **13** = **134**) carries a canonical
+  gate token, and **207/207** DB-touching handlers gate BEFORE first DB I/O, with `super-admin/login` the
+  sole allowlisted self-auth exception. Any future mis-ordered/ungated handler now fails PR-CI.
+- **P13 data minimization:** SAO-3 wraps the observability-export `context_json` cell in the canonical
+  `redactPII` (reused, no new scheme) before CSV egress — defense-in-depth, header/columns/order unchanged,
+  clean rows = identity transform. SAO-2 drops gratuitous `email` from the analytics `top_students` payload
+  (confirmed zero UI consume sites) at query+type+map, and frontend removed the two stale `email: string`
+  decls. SAO-4 adds a bare-name logger-key canary without widening the redactor's global key set.
+- **Catalog:** REG-186 (`admin_route_auth_gate_sweep`, P9) + REG-187 (`bare_name_log_canary`, P13) filed →
+  **154**. Existing super-admin/observability entries REG-49 / REG-115 / REG-116 / REG-119 remain green.
+  Authoritative source remains `.claude/regression-catalog.md`.
+- **Build/bundle:** the two changed routes are server-side; the two new files are test-only — no shared-chunk
+  or page-budget impact. 0 pages over the 260 kB page budget.
+- **Gates:** type-check PASS, lint 0 errors, build PASS; quality independent verdict **APPROVE**; sweep GREEN.
+- **Gated / follow-up (not in these numbers):** SAO-1 (bulk PII export at the `support` floor tier —
+  USER-gated, DPDP-relevant admin access-model decision; most consequential Cycle-6 finding, on the program
+  RISK register), SAO-5 (audit-log admin-PII export — folds into SAO-1), the export `message`-column
+  free-form-redaction follow-up (apply `redactPIIInText` only if a future template interpolates user PII),
+  and the periodic manual re-read of the highest-PII-sensitivity routes (process) — none implemented.
 
 ## How to add a row
 At the end of each cycle's REGRESSION phase, run `npm test`, `npm run test:coverage`,

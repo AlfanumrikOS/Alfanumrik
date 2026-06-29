@@ -6,29 +6,39 @@
 | Field | Value |
 |---|---|
 | Program status | **ACTIVE** |
-| Current cycle | **Cycle 5 — teacher-school-b2b DONE (critical cross-tenant leak TSB-1 closed at all 8 sites + TSB-2 RLS backstop; TSB-4 USER-gated table-drop, TSB-3/5 + 3 tracked items follow-ups)** |
-| Current workflow | **teacher-school-b2b** (invariants **P8, P9, P13**) — **CYCLE 5 LANDED — auto-fix-safe complete** |
-| Current phase | **ALL 8 PHASES WRITTEN** (MAP → … → REGRESSION); independent quality verdict **APPROVE WITH CONDITIONS** (migration-ordering — RESOLVED), P14 chain complete, sweep **GREEN** |
+| Current cycle | **Cycle 6 — super-admin-observability DONE (P13 export/analytics minimization SAO-3/SAO-2 + P9 full-surface gate sweep SAO-7 + bare-name log canary SAO-4; SAO-1/SAO-5 PII-export tiering USER-GATED)** |
+| Current workflow | **super-admin-observability** (invariants **P9, P13**) — **CYCLE 6 LANDED — auto-fix-safe complete** |
+| Current phase | **ALL 8 PHASES WRITTEN** (MAP → … → REGRESSION); independent quality verdict **APPROVE**, P14 chain complete, sweep **GREEN** |
 | Last session | **2026-06-29** |
-| Next action | **Start Super-Admin & Observability** — `PRIORITY-BACKLOG.md` rank 6 (invariants **P9, P13**): run MAP → GAP → ROOT-CAUSE → DESIGN → IMPLEMENT for that workflow under `workflows/super-admin-observability/`. **Also resume the gated items: TSB-4 (B2B `class_students`/`class_enrollments` table-drop — USER); FOX-4 (Foxy OpenAI provider governance — USER); the student-learning-core gated items (SLC-1 user-gated; SLC-4/5 cross-agent; SLC-8 cutover); + the payments + auth-onboarding open follow-ups** (see below) when their gates unblock. |
-| Next workflow | **Super-Admin & Observability** (rank 6) |
+| Next action | **Start Parent Portal (dual auth + DPDP)** — `PRIORITY-BACKLOG.md` rank 7 (invariants **P8, P13, P15**): run MAP → GAP → ROOT-CAUSE → DESIGN → IMPLEMENT for that workflow under `workflows/parent-portal/`. **Also resume the gated items: SAO-1/SAO-5 (super-admin PII-export tiering — USER, DPDP-relevant access-model decision); TSB-4 (B2B `class_students`/`class_enrollments` table-drop — USER); FOX-4 (Foxy OpenAI provider governance — USER); the student-learning-core gated items (SLC-1 user-gated; SLC-4/5 cross-agent; SLC-8 cutover); + the payments + auth-onboarding open follow-ups** (see below) when their gates unblock. |
+| Next workflow | **Parent Portal (dual auth + DPDP)** (rank 7) |
 
 ## How to resume
 
-> Open this file, read **Next action**. Teacher / School-Admin B2B Cycle 5 has landed (auto-fix-safe complete —
-> the CRITICAL P8/P13 cross-tenant student-PII leak in the teacher-dashboard grade fallback is closed at all
-> 8 sites + a discoverable teacher RLS backstop on `public.students` is added; the `class_students`/
-> `class_enrollments` table-drop TSB-4 is USER-gated). The next vertical workflow is
-> **Super-Admin & Observability (P9, P13)**; begin its MAP phase and write artifacts under
-> `workflows/super-admin-observability/`. Keep the TSB-4 gate + the Foxy FOX-4 gate + the
+> Open this file, read **Next action**. Super-Admin & Observability Cycle 6 has landed (auto-fix-safe
+> complete — SAO-3 added observability-CSV egress `redactPII`, SAO-2 dropped gratuitous `top_students.email`,
+> SAO-7 made the P9 gate-before-I/O check a 134-route full-surface sweep (207/207), SAO-4 added a bare-name
+> log canary; SAO-1/SAO-5 PII-export tiering is USER-gated). The next vertical workflow is
+> **Parent Portal (dual auth + DPDP) (P8, P13, P15)**; begin its MAP phase and write artifacts under
+> `workflows/parent-portal/`. Keep the SAO-1/SAO-5 gate + the TSB-4 gate + the Foxy FOX-4 gate + the
 > student-learning-core gated items + the payments + auth-onboarding follow-ups visible.
-> NOTE: the Cycle-5 artifacts live under `workflows/teacher-school-b2b/` (the directory name is the short
-> form; earlier STATE.md text used `teacher-school-admin-b2b` — the on-disk path is `teacher-school-b2b`).
 
 ## Program-level RISK register (CEO visibility)
 
 > Surfaced here for founder visibility; each item also lives in its cycle ledger.
 
+0. **[Cycle 6] SAO-1 — USER-gated PII-export tiering (DPDP-relevant access-model decision).** The
+   super-admin bulk-export route `/api/super-admin/reports` lets ANY account at the LOWEST `support` admin
+   tier download the entire student roster with emails, every parent name+email+**PHONE**, and teacher
+   emails (up to 5000 rows, CSV/JSON). The admin-level ladder gates by ACTION-destructiveness, NOT
+   READ-data-sensitivity — so the platform's most PII-heavy export sits at its floor. The export IS gated +
+   audited; the defect is the POLICY mapping of export-type → required level. This is a DPDP-Act
+   minors'-data exposure and a mass-exfiltration vector if one low-tier credential is phished. Raising the
+   tier (or splitting a dedicated PII-export permission) changes the admin ACCESS MODEL → requires **USER
+   APPROVAL**. SAO-5 (audit-log CSV carries admin_name/admin_email in `details` at `support`) folds into the
+   same decision. The complementary ops-owned half (egress redaction SAO-3 + analytics email-drop SAO-2 +
+   full-surface gate sweep SAO-7 + bare-name log canary SAO-4) landed Cycle 6. **CEO action:** approve the
+   tiering correction / PII-export permission split; confirm no low-tier bulk-export abuse in audit logs.
 1. **[Cycle 5] CRITICAL cross-tenant student-PII leak — FOUND & FIXED (TSB-1).** Pre-fix, a teacher with
    `grades_taught` but no class could read (and at one site **write**) names / mastery / XP of **every**
    grade-6–12 student across **ALL schools** via the `teacher-dashboard` Edge Function's tenant-unscoped
@@ -49,6 +59,53 @@
 5. **[Cycle 2] PAY-2 — USER-gated pricing source.** `create-order` hardcoded `PRICING` can diverge from DB
    `subscription_plans`; dead on web, live only on the (already-broken) mobile path. Any pricing-amount change
    is user-gated.
+
+## Current workflow detail — super-admin-observability (P9, P13) — CYCLE 6 LANDED (auto-fix-safe complete)
+
+- Scope: the admin request lifecycle (auth/secret gate → permission check → handler → DB → response) across
+  the full super-admin surface (119 `api/super-admin/**` + 2 `api/v1/admin/**` + 13 `api/internal/admin/**`
+  routes) + the observability pipeline (logger → `redactPII` → sink; analytics event → redact → backends;
+  Sentry `beforeSend` → tunnel; feature-flag evaluation default-OFF). Governed by **P9** (RBAC enforcement)
+  and **P13** (data privacy); P10 cross-checked.
+- Artifacts: `workflows/super-admin-observability/01-map.md` … `08-regression.md` + `STATUS.md` (all written).
+- **Headline:** the mechanism layers are sound (gate-before-I/O on every sampled route, constant-time secret
+  compare, logger/analytics/Sentry `redactPII`, flag default-OFF + fail-safe). The dominant gap is a single
+  POLICY gap — **the admin-level ladder differentiates by ACTION destructiveness, not READ data-sensitivity**
+  — so the most PII-heavy export sits at the floor `support` tier (SAO-1, USER-gated).
+- Landed (APPROVED, auto-fix-safe P13/P9 hardening; **no RBAC role/permission/tier change**):
+  - **SAO-3** (MED, P13) — `src/app/api/super-admin/observability/export/route.ts`: the `context_json` CSV
+    cell is now wrapped in the canonical `redactPII` (from `@/lib/ops-events-redactor`) before egress —
+    defense-in-depth, header/columns/order unchanged, clean rows = identity transform.
+  - **SAO-2** (MED, P13) — `src/app/api/super-admin/analytics/route.ts`: dropped gratuitous `email` from the
+    `top_students` projection (select + row type + map) — confirmed zero UI consume sites; data minimization
+    at the `support` tier. Frontend removed the two stale `email: string` decls (`learning/page.tsx`,
+    `_components/widgets/control-room-types.ts`).
+  - **SAO-7** (MED, P9) — `admin-route-auth-gate-sweep.test.ts`: mechanical 100%-surface sweep — all **134**
+    admin routes carry a canonical gate token; **207/207** DB-touching handlers gate BEFORE first DB I/O;
+    `super-admin/login` is the sole allowlisted self-auth exception. Closes the "only 10/119 sampled" gap.
+    → **REG-186**.
+  - **SAO-4** (LOW-MED, P13) — `bare-name-log-canary.test.ts`: no `logger.*` call passes a bare
+    `name`/`email`/`phone` key (conservative anchor excludes `full_name`/`flag_name`/etc.). → **REG-187**.
+- Gates: type-check **PASS**, lint **0 errors**, **6/6 new** (4 SAO-7 + 2 SAO-4) + **351/351** broad
+  super-admin/analytics/observability tests **PASS**, build **PASS**, bundle within **P10**. Quality verdict
+  **APPROVE**; regression sweep **GREEN**; catalog 152 → **154** (REG-186/187); REG-49/115/116/119 still green.
+- P14 review chain (super-admin reporting / monitoring) **COMPLETE**: ops (impl SAO-3/SAO-2 + PII
+  definitions) + frontend (trimmed-shape render + stale-type cleanup) → testing (SAO-7 sweep + SAO-4 canary,
+  coverage GREEN) + quality (independent **APPROVE**).
+- **Open gated / follow-up items (resume these):**
+  1. **SAO-1 (HIGH, GATED — USER APPROVAL; DPDP-relevant):** `/api/super-admin/reports` bulk-exports raw
+     student name+email + parent name+email+PHONE + teacher email at the LOWEST `support` tier. Raising the
+     tier / splitting a PII-export permission is an admin access-model change → CEO decision. **Most
+     consequential Cycle-6 finding; on the program RISK register (item 0).**
+  2. **SAO-5 (LOW, GATED — folds into SAO-1):** audit-log CSV export carries `admin_name`/`admin_email` in
+     `details` at `support` — same tiering decision.
+  3. **Export `message`-column free-form redaction (MINOR, ops):** controlled developer-authored template
+     scalar today; apply `redactPIIInText` only if a future template interpolates user PII (write-time).
+  4. **Periodic manual re-read of highest-risk routes (PROCESS):** SAO-7 guards breadth mechanically; manual
+     re-read of the highest-PII-sensitivity routes remains good practice.
+  5. **SAO-6 (COMPLIANT-BY-DESIGN):** `ip_address` in admin-only RLS-restricted forensic tables — confirm
+     forensic-table RLS remains admin/service-role-only (architect).
+- See `workflows/super-admin-observability/STATUS.md` + `cycles/2026-06-29-super-admin-observability.md`.
 
 ## Current workflow detail — teacher-school-b2b (P8, P9, P13) — CYCLE 5 LANDED (auto-fix-safe complete)
 
@@ -253,11 +310,14 @@
 | 3 | student-learning-core (P1-P6,P12) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | SLC-7 (frontend) + SLC-2/3/6/8-pin (testing) landed + APPROVED (type-check PASS, lint 0, 40/40 new + ~1678 broad tests PASS, build PASS, bundle within P10 caps; quality APPROVE; sweep GREEN); REG-180/181 filed (catalog 146 → 148); SLC-1 USER-GATED, SLC-4/5 + SLC-8 cutover gated/cross-agent, SLC-9 backlog; see `workflows/student-learning-core/STATUS.md` + `cycles/2026-06-29-student-learning-core.md` |
 | 4 | foxy-ai-rag (P12,P8,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | FOX-1 (+ Deno twin + injection-pattern refinement) + FOX-2 + FOX-3 + FOX-6 landed + APPROVED (type-check PASS, lint 0, 305/305 vitest + 3/3 Deno PASS, build PASS, bundle within P10 caps; assessment APPROVE WITH CONDITIONS [addressed] + quality APPROVE; sweep GREEN); REG-182/183 filed (catalog 148 → 150); FOX-4 USER-GATED (OpenAI provider governance — MoL shadow, not student-facing), FOX-7-new + streaming-residual + Hindi-tokens follow-ups; live-topology reconciliation recorded (`/api/foxy` is LIVE, `foxy-tutor` Edge Fn gone); see `workflows/foxy-ai-rag/STATUS.md` + `cycles/2026-06-29-foxy-ai-rag.md` |
 | 5 | teacher-school-b2b (P8,P9,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | TSB-1 (backend — CRITICAL cross-tenant leak closed at all 8 grade-fallback sites via auth-derived `resolveTeacherSchoolId`, fail-closed) + TSB-2 (architect — teacher RLS backstop on `public.students`, predicate-identical, no over-grant) + TSB-3-partial + TSB-6 landed + APPROVED (type-check PASS, lint 0, 527/527 vitest incl. 15 TSB-1 + 10 TSB-2 new, build PASS, no bundle impact; quality APPROVE WITH CONDITIONS [migration-ordering — RESOLVED via byte-identical rename `20260629000000`→`20260702010000`]; sweep GREEN); REG-184/185 filed (catalog 150 → 152); TSB-4 USER-GATED (table-drop), TSB-3-full + TSB-5 + 3 pre-existing tracked items follow-ups; see `workflows/teacher-school-b2b/STATUS.md` + `cycles/2026-06-29-teacher-school-b2b.md` |
-| 6 | super-admin-observability (P9,P13) | — | NOT STARTED | next workflow (rank 6) |
+| 6 | super-admin-observability (P9,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | SAO-3 (ops — observability-CSV egress `redactPII`) + SAO-2 (ops+frontend — `top_students.email` drop + stale-type cleanup) + SAO-7 (testing — 134-route full-surface gate sweep, 207/207 gate-before-I/O) + SAO-4 (testing — bare-name log canary) landed + APPROVED (type-check PASS, lint 0, 6/6 new + 351/351 broad PASS, build PASS, bundle within P10; quality independent APPROVE; sweep GREEN); REG-186/187 filed (catalog 152 → 154); SAO-1 USER-GATED (PII-export tiering, DPDP-relevant; on RISK register item 0), SAO-5 folds into SAO-1, message-redaction + periodic-re-read follow-ups, SAO-6 compliant-by-design; see `workflows/super-admin-observability/STATUS.md` + `cycles/2026-06-29-super-admin-observability.md` |
+| 7 | parent-portal (P8,P13,P15) | — | NOT STARTED | next workflow (rank 7) |
 
 ## Backlog pointer
 
-Now active: **Super-Admin & Observability (P9, P13)** — `PRIORITY-BACKLOG.md` rank 6. Promote it to IN
-PROGRESS in the backlog when its first phase begins. (Rank 5 Teacher / School-Admin B2B is DONE — auto-fix-safe
-complete; the CRITICAL cross-tenant leak TSB-1 is closed + TSB-2 RLS backstop added; TSB-4 table-drop is
-USER-gated, TSB-3-full + TSB-5 + 3 pre-existing tracked items are follow-ups.)
+Now active: **Parent Portal (dual auth + DPDP) (P8, P13, P15)** — `PRIORITY-BACKLOG.md` rank 7. Promote it to
+IN PROGRESS in the backlog when its first phase begins. (Rank 6 Super-Admin & Observability is DONE —
+auto-fix-safe complete; SAO-3 observability-CSV egress redaction + SAO-2 analytics email-drop + SAO-7
+full-surface P9 gate sweep + SAO-4 bare-name log canary landed (REG-186/187); SAO-1/SAO-5 PII-export tiering
+is USER-gated (DPDP-relevant access-model decision; RISK register item 0), with message-redaction +
+periodic-re-read follow-ups.)

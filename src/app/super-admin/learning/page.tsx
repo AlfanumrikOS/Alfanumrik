@@ -57,7 +57,7 @@ interface AnalyticsData {
   engagement: { date: string; signups: number; quizzes: number; chats: number }[];
   popular_subjects: { subject: string; count: number }[];
   content_stats: { chapters: number; topics: number; questions: number };
-  top_students: { id: string; name: string; email: string; grade: string; xp_total: number; streak_days: number }[];
+  top_students: { id: string; name: string; grade: string; xp_total: number; streak_days: number }[];
   retention: { period: string; count: number }[];
   content_coverage?: { grade: string; subject: string; count: number }[];
 }

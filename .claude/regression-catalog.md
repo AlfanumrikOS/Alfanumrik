@@ -5450,3 +5450,44 @@ TSB-2).
 **Total catalog: 152 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Engineering-Audit Cycle 6 — Super-Admin & Observability (P9/P13) — 2026-06-29
+
+Source: engineering-audit program, Cycle 6 (Super-Admin & Observability). The
+admin surface is large (super-admin 119 + v1/admin 2 + internal/admin 13 = 134
+`route.ts` files) and any single ungated handler is a privilege-escalation hole;
+the audit also found that the key-based `redactPII` redactor only scrubs values
+it can match by KEY, so a `logger.*` call that passes a bare `name`/`email`/`phone`
+object key would leak PII into the observability/analytics pipeline (SAO-4
+caller-discipline gap). This cycle adds two mechanical breadth sweeps: REG-186
+proves every admin route carries a canonical authorization gate token placed
+BEFORE its first DB marker, and REG-187 canaries the admin + observability emit
+libs for bare PII-shaped log keys the redactor would NOT catch.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-186 | `admin_route_gate_sweep` | P9: every admin `route.ts` across the full surface (super-admin 119 + v1/admin 2 + internal/admin 13 = 134) carries a canonical authorization gate token (`authorizeAdmin(` / `authorizeRequest(` / `requireAdminSecret(`), and every DB-touching handler places the gate BEFORE its first DB marker (`.from(`/`.rpc(`/service-client) — proven locally for 207/207 handlers; `super-admin/login` is the only documented self-auth exception (allowlisted). A NEW ungated admin route turns this red. Mechanical breadth complement to REG-116/REG-119 behavioral pins. | `src/__tests__/api/super-admin/admin-route-auth-gate-sweep.test.ts` | E |
+| REG-187 | `bare_name_log_canary` | P13: no `logger.{info,warn,error,debug}` call across the super-admin surface + observability/analytics emit libs passes a bare `name`/`email`/`phone` object key (which the key-based `redactPII` would NOT redact); conservative anchor excludes safe `*_name` keys (full_name/flag_name/school_name/event_name). Closes the SAO-4 caller-discipline gap. | `src/__tests__/api/super-admin/bare-name-log-canary.test.ts` | E |
+
+### Invariants covered by this section
+
+- P9 (RBAC enforcement — every admin `route.ts` across the full 134-file surface
+  carries a canonical authorization gate token, placed before the first DB marker
+  on every DB-touching handler; `super-admin/login` is the only allowlisted
+  self-auth exception; a new ungated admin route fails the sweep)
+- P13 (data privacy — no `logger.*` call on the admin/observability surface emits
+  a bare `name`/`email`/`phone` key the key-based `redactPII` cannot scrub;
+  safe `*_name` keys excluded; closes the SAO-4 caller-discipline gap)
+
+### Catalog total
+
+Pre-REG-186: 152 entries (through Engineering-Audit Cycle 5's REG-184/REG-185
+teacher-dashboard tenant scoping + students teacher-assigned RLS backstop).
+Engineering-Audit Cycle 6 adds REG-186 (admin route auth-gate sweep — all 134
+admin routes carry a canonical gate token before their first DB marker, closing
+the P9 breadth gap) and REG-187 (bare-name log canary — no admin/observability
+`logger.*` call leaks a bare PII-shaped key past the key-based redactor, closing
+the SAO-4 caller-discipline gap).
+**Total catalog: 154 entries (target: 35 — TARGET EXCEEDED).**
+
+---

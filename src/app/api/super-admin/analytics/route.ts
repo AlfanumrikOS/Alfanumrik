@@ -82,8 +82,12 @@ export async function GET(request: NextRequest) {
       supabaseRest('curriculum_topics', `select=id&parent_topic_id=is.null&deleted_at=is.null&limit=0`, 'HEAD'),
       supabaseRest('curriculum_topics', `select=id&deleted_at=is.null&limit=0`, 'HEAD'),
       supabaseRest('question_bank', `select=id&deleted_at=is.null&limit=0`, 'HEAD'),
-      // 8. Top students by XP
-      supabaseRest('students', `select=id,name,email,grade,xp_total,streak_days,avatar_url&is_demo=eq.false&order=xp_total.desc.nullslast&limit=10`),
+      // 8. Top students by XP.
+      // P13 (SAO-2): `email` is intentionally NOT selected — the XP leaderboard
+      // renders rank/name/grade/xp/streak only (no UI consumes top_students.email),
+      // so emailing it down is gratuitous PII surface. Data-minimization: fetch
+      // only what the dashboard renders.
+      supabaseRest('students', `select=id,name,grade,xp_total,streak_days,avatar_url&is_demo=eq.false&order=xp_total.desc.nullslast&limit=10`),
       // 9. Content coverage: active questions by grade and subject
       supabaseRest('question_bank', `select=grade,subject&is_active=eq.true&limit=50000`),
     ]);
@@ -104,7 +108,7 @@ export async function GET(request: NextRequest) {
         safeJson<{ student_id: string }>(active1dRes),
         safeJson<{ student_id: string }>(active7dRes),
         safeJson<{ student_id: string }>(active30dRes),
-        safeJson<{ id: string; name: string; email: string; grade: string; xp_total: number; streak_days: number; avatar_url: string | null }>(topStudentsRes),
+        safeJson<{ id: string; name: string; grade: string; xp_total: number; streak_days: number; avatar_url: string | null }>(topStudentsRes),
         safeJson<{ grade: string; subject: string }>(coverageRes),
       ]);
     // Combine Foxy + legacy chat sessions into a single "chats" series for the
@@ -184,7 +188,7 @@ export async function GET(request: NextRequest) {
     const top_students = (Array.isArray(topStudents) ? topStudents : []).map((s) => ({
       id: s.id,
       name: s.name,
-      email: s.email,
+      // P13 (SAO-2): `email` deliberately omitted — not rendered by any UI.
       grade: s.grade,
       xp_total: s.xp_total ?? 0,
       streak_days: s.streak_days ?? 0,

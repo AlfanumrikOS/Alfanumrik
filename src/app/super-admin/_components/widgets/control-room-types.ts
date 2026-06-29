@@ -59,7 +59,7 @@ export interface AnalyticsData {
   revenue: { plan: string; count: number }[];
   retention: { period: string; count: number }[];
   content_stats: { chapters: number; topics: number; questions: number };
-  top_students: { id: string; name: string; email: string; grade: string; xp_total: number; streak_days: number }[];
+  top_students: { id: string; name: string; grade: string; xp_total: number; streak_days: number }[];
 }
 
 export interface FeatureFlag {
