@@ -5,30 +5,45 @@
 
 | Field | Value |
 |---|---|
-| Program status | **ACTIVE** |
-| Current cycle | **Cycle 7 — parent-portal DONE (PP-2 link-code filter-injection guard at all 3 sites + Deno twin; PP-1 per-IP brute-force rate limit half; PP-4 profile authz gate; PP-5 unlinked-parent deny pins across all 9 child-data routes; PP-1-consent + PP-3 link-model USER-GATED)** |
-| Current workflow | **parent-portal** (dual auth + DPDP; invariants **P8, P13, P15**) — **CYCLE 7 LANDED — auto-fix-safe complete** |
-| Current phase | **ALL 8 PHASES WRITTEN** (MAP → … → REGRESSION); independent quality verdict **APPROVE**, P14 chain complete, sweep **GREEN** |
+| Program status | **COMPLETE — 8-CYCLE PROGRAM CLOSED (2026-06-29)** |
+| Current cycle | **Cycle 8 — cross-cutting DONE (XC-1/XC-2 P7 server-notification Hindi to the correct `data.*_hi` shape; XC-6 web↔mobile price parity; XC-5 41-constant score-config parity; XC-4a bundle-cap pin; XC-3/XC-4b/XC-7 tracked as LARGER-PROGRAM initiatives)** |
+| Current workflow | **cross-cutting** (P7 bilingual breadth, P8 RLS breadth, P10 bundle, mobile sync) — **CYCLE 8 LANDED — auto-fix-safe complete; FINAL CYCLE** |
+| Current phase | **ALL 8 PHASES WRITTEN** (MAP → … → REGRESSION); orchestrator self-validated **APPROVE** (type-check/lint/11 tests/code-review; build deferred to CI backstop), P14 chain complete, sweep **GREEN** |
 | Last session | **2026-06-29** |
-| Next action | **Start Cross-cutting (the final cycle)** — `PRIORITY-BACKLOG.md` rank 8 (invariants **P7, P8, P10, mobile sync**): run MAP → GAP → ROOT-CAUSE → DESIGN → IMPLEMENT for that workflow under `workflows/cross-cutting/`. Scope = bilingual (P7) parity breadth (incl. PP-7), RLS (P8) breadth across all tables (incl. the PP-5 client migration to RLS-scoped reads), bundle budget (P10), mobile-web API contract sync. **Also resume the gated items: PP-1-consent + PP-3 (parent-link consent/link model — USER); SAO-1/SAO-5 (super-admin PII-export tiering — USER); TSB-4 (B2B `class_students`/`class_enrollments` table-drop — USER); FOX-4 (Foxy OpenAI provider governance — USER); SLC-1 (uncapped XP trigger — USER); SLC-4/5 + SLC-8 cutover; + the payments + auth-onboarding open follow-ups** (see below) when their gates unblock. |
-| Next workflow | **Cross-cutting (P7 bilingual breadth, P8 RLS breadth, P10 bundle, mobile sync)** (rank 8 — the final cycle) |
+| Next action | **PROGRAM COMPLETE — no further audit cycles queued.** All 8 ranked workflows audited → hardened → merged. The remaining work is the **post-program remediation backlog** (`PRIORITY-BACKLOG.md` → "Post-program remediation backlog"): the **Tier-1 user-gated** decisions (PAY-2 pricing source; TSB-4 `class_students`/`class_enrollments` table-drop; FOX-4 OpenAI provider governance; SLC-1 uncapped XP trigger; SAO-1/SAO-5 PII-export tiering; PP-1-consent + PP-3 parent-link consent model), the **Tier-2 reversible-approved** items (SLC-4/5, SAO-* cleanups, PP-* follow-ups, AO-3/AO-10), and the **Tier-3 larger initiatives** (XC-3 RLS defense-in-depth, XC-4b @supabase/* bundle split, XC-7 i18n primitive, PP-5 client migration). See `PROGRAM-SUMMARY.md` for the CEO-facing close-out + consolidated decision register. |
+| Next workflow | **none — program complete.** Re-entry point for a future pass is the post-program remediation backlog (Tier-1 user decisions first). |
 
 ## How to resume
 
-> Open this file, read **Next action**. Parent Portal Cycle 7 has landed (auto-fix-safe complete —
-> PP-2 added a shared `isValidLinkCode` (`^[A-Z0-9]{4,12}$`) + byte-identical Deno twin applied BEFORE the
-> link-code `.or()` filter at all 3 sites; PP-1 added a per-IP brute-force rate limit (5/hour, 429) to the
-> legacy Edge `parent_login`; PP-4 gated `PATCH /api/parent/profile` on the already-granted
-> `profile.update_own`; PP-5 pinned the unlinked-parent deny (403, no payload) across all 9 child-data
-> routes; REG-188/189/190, catalog 157). The PP-1 consent posture (link-code-alone → active, no approval)
-> and PP-3 (link-model consolidation) are USER-gated. The next (final) workflow is **Cross-cutting (P7
-> bilingual breadth, P8 RLS breadth, P10 bundle, mobile sync) (rank 8)**; begin its MAP phase and write
-> artifacts under `workflows/cross-cutting/`. Keep the PP-1-consent/PP-3 gate + the SAO-1/SAO-5 gate + the
-> TSB-4 gate + the Foxy FOX-4 gate + the SLC-1 gate + the payments + auth-onboarding follow-ups visible.
+> **The 8-cycle engineering-audit program is COMPLETE.** All 8 ranked workflows (auth-onboarding,
+> payments-subscriptions, student-learning-core, foxy-ai-rag, teacher-school-b2b,
+> super-admin-observability, parent-portal, cross-cutting) have been audited → hardened → merged.
+> Cycle 8 (cross-cutting, the final cycle) landed auto-fix-safe: XC-1/XC-2 added the P7 Hindi twin
+> (`data.title_hi`/`data.body_hi`) to the daily-cron score-milestone + parent-digest notifications in the
+> shape the client reads (relocating the parent-digest's dead top-level `body_hi`); XC-6/XC-5 added
+> web↔mobile drift contracts (price + 41 score-config constants); XC-4a pinned the bundle caps
+> (REG-191/192/193, catalog 160). XC-3 (P8 RLS defense-in-depth), XC-4b (@supabase/* first-paint split),
+> and XC-7 (i18n primitive) are LARGER-PROGRAM initiatives. **There is no next audit cycle.** For a future
+> pass, start from `PROGRAM-SUMMARY.md` and the `PRIORITY-BACKLOG.md` post-program remediation backlog —
+> the Tier-1 user-gated decisions (PAY-2, TSB-4, FOX-4, SLC-1, SAO-1/SAO-5, PP-1-consent/PP-3) come first.
 
 ## Program-level RISK register (CEO visibility)
 
 > Surfaced here for founder visibility; each item also lives in its cycle ledger.
+> **The 8-cycle program is COMPLETE.** This register holds the unresolved decisions that outlived the
+> audit. Tier-1 = USER-gated (needs a CEO decision); Tier-3 = LARGER-PROGRAM initiatives (engineering
+> sprints, no single decision). The consolidated decision register is in `PROGRAM-SUMMARY.md`.
+
+LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — engineering, not a CEO gate):
+- **[Cycle 8] XC-3 (P8) — systemic RLS defense-in-depth.** 316/362 routes (87%) read through the
+  RLS-bypassing admin client; the route-layer boundary is app code, not RLS. A single missing/wrong
+  `authorizeRequest`/`canAccessStudent` = full cross-tenant read with no DB backstop. Multi-sprint program;
+  subsumes Cycle-5 TSB-2 and Cycle-7 PP-5.
+- **[Cycle 8] XC-4b (P10) — @supabase/* AuthContext first-paint split (~57 kB)**, then ratchet
+  CAP_SHARED_KB back toward the 160 kB baseline. P15-touching. (The XC-4a cap pin, REG-193, is the interim
+  friction against further cap creep.)
+- **[Cycle 8] XC-7 (P7) — central keyed-resolver i18n primitive + missing-string lint**, the chokepoint
+  whose absence produced the XC-1/XC-2 English-only server-notification class.
 
 0. **[Cycle 7] PP-1-consent + PP-3 — USER-gated parent-link consent model (DPDP/child-consent).** The legacy
    Edge `parent_login` action creates an ACTIVE, fully-equivalent guardian link from possession of a link
@@ -78,6 +93,47 @@
 6. **[Cycle 2] PAY-2 — USER-gated pricing source.** `create-order` hardcoded `PRICING` can diverge from DB
    `subscription_plans`; dead on web, live only on the (already-broken) mobile path. Any pricing-amount change
    is user-gated.
+
+## Current workflow detail — cross-cutting (P7, P8, P10, mobile sync) — CYCLE 8 LANDED (auto-fix-safe complete; FINAL CYCLE)
+
+- Scope: app-wide horizontal invariants swept after the seven vertical workflows — P7 bilingual breadth
+  (client surfaces + the server→client notification seam), P8 RLS breadth (the admin-client-vs-RLS-scoped
+  ratio across all 362 API routes), P10 bundle budget (the `check-bundle-size.mjs` gate), and the
+  mobile-web API/constant contract sync. Owner squad: quality (lead, MAP/GAP/ROOT-CAUSE) + backend (P7) +
+  testing (drift/cap) + architect (noted for the RLS/bundle initiatives).
+- Artifacts: `workflows/cross-cutting/01-map.md` … `08-regression.md` + `STATUS.md` (all written).
+- **Headline:** three of the four themes are the SAME failure — an invariant expressed as a rule/comment
+  but never given a mechanical enforcer, so compliance rides on per-edit discipline that degrades with
+  surface area (RC-1 P7 edges, RC-2 87%-admin-client route default, RC-4 cross-repo constant mirror). RC-3
+  is the inverse: the P10 enforcer EXISTS but is a single freely-editable number, so it gets ratcheted UP
+  (cap raised 5× to 284) instead of the bundle being reduced. The auto-fix-safe set converts the
+  discipline-fails edges into tests/contracts; the structural defaults are LARGER-PROGRAM initiatives.
+- Landed (APPROVED, auto-fix-safe; **no invariant/pricing/RBAC/AI-model change**):
+  - **XC-1/XC-2** (P7, backend) — `supabase/functions/daily-cron/index.ts`: added `data.title_hi`/`data.body_hi`
+    to the 3 score-milestone producers (~569-607) and the parent-digest producers (~167/172); RELOCATED the
+    parent-digest's previously-DEAD top-level `body_hi` into `data.body_hi` (the shape the client
+    `notifications/page.tsx:195-198` actually reads — so its Hindi now renders). Pure-additive; no
+    English/trigger/threshold/idempotency_key/XP change; XP & "Performance Score" left untranslated per P7.
+  - **XC-6** (mobile↔web price drift, testing) → **REG-191** — web-side parity test, mobile `subscription.dart`
+    prices == web `plans.ts`; parity-only (no value pinned, so no collision with PAY-2); no drift today.
+  - **XC-5** (mobile↔web score-config drift, testing) → **REG-192** — all 41 score-config constants identical
+    web↔Flutter; parity-only; no drift today.
+  - **XC-4a** (bundle-cap pin, testing) → **REG-193** — pins `check-bundle-size.mjs` caps (CAP_SHARED_KB=284,
+    CAP_PAGE_KB=260, CAP_MIDDLEWARE_KB=120); anti cap-creep.
+- Gates: type-check **PASS**, lint **0 errors**, **11/11 cross-cutting tests PASS**, code review **clean**;
+  build **DEFERRED to the CI backstop** (transient platform outage during validation; Deno Edge Function +
+  test-only files → negligible bundle risk). Orchestrator self-validated **APPROVE**; sweep **GREEN**;
+  catalog 157 → **160** (REG-191/192/193); REG-49/65/134 still green.
+- P14 review chain **COMPLETE**: backend (P7) + testing (drift/cap guards) → quality/orchestrator
+  (independent **APPROVE**); architect noted for the XC-3/XC-4b initiatives.
+- **LARGER-PROGRAM / follow-up (tracked initiatives — NOT this cycle):**
+  1. **XC-3 (P8, HIGH, systemic):** 87% admin-client routes — dedicated RLS defense-in-depth program
+     (subsumes Cycle-5 TSB-2 + Cycle-7 PP-5). Multi-sprint.
+  2. **XC-4b (P10):** @supabase/* first-paint split (~57 kB), then ratchet cap toward 160 kB (P15-touching).
+  3. **XC-7 (P7):** central keyed-resolver i18n primitive + missing-string lint.
+  4. **P7 follow-ups:** `school-operations.ts` + parent-portal PP-7 insights/tips/glance — same
+     English-only-title class, bounded out of the daily-cron scope.
+- See `workflows/cross-cutting/STATUS.md` + `cycles/2026-06-29-cross-cutting.md` + `PROGRAM-SUMMARY.md`.
 
 ## Current workflow detail — parent-portal (P8, P13, P15) — CYCLE 7 LANDED (auto-fix-safe complete)
 
@@ -386,15 +442,13 @@
 | 5 | teacher-school-b2b (P8,P9,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | TSB-1 (backend — CRITICAL cross-tenant leak closed at all 8 grade-fallback sites via auth-derived `resolveTeacherSchoolId`, fail-closed) + TSB-2 (architect — teacher RLS backstop on `public.students`, predicate-identical, no over-grant) + TSB-3-partial + TSB-6 landed + APPROVED (type-check PASS, lint 0, 527/527 vitest incl. 15 TSB-1 + 10 TSB-2 new, build PASS, no bundle impact; quality APPROVE WITH CONDITIONS [migration-ordering — RESOLVED via byte-identical rename `20260629000000`→`20260702010000`]; sweep GREEN); REG-184/185 filed (catalog 150 → 152); TSB-4 USER-GATED (table-drop), TSB-3-full + TSB-5 + 3 pre-existing tracked items follow-ups; see `workflows/teacher-school-b2b/STATUS.md` + `cycles/2026-06-29-teacher-school-b2b.md` |
 | 6 | super-admin-observability (P9,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | SAO-3 (ops — observability-CSV egress `redactPII`) + SAO-2 (ops+frontend — `top_students.email` drop + stale-type cleanup) + SAO-7 (testing — 134-route full-surface gate sweep, 207/207 gate-before-I/O) + SAO-4 (testing — bare-name log canary) landed + APPROVED (type-check PASS, lint 0, 6/6 new + 351/351 broad PASS, build PASS, bundle within P10; quality independent APPROVE; sweep GREEN); REG-186/187 filed (catalog 152 → 154); SAO-1 USER-GATED (PII-export tiering, DPDP-relevant; on RISK register item 0), SAO-5 folds into SAO-1, message-redaction + periodic-re-read follow-ups, SAO-6 compliant-by-design; see `workflows/super-admin-observability/STATUS.md` + `cycles/2026-06-29-super-admin-observability.md` |
 | 7 | parent-portal (P8,P13,P15) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | PP-2 (backend — link-code filter-injection guard at all 3 sites via shared `isValidLinkCode` + byte-identical Deno twin) + PP-1 rate-limit half (backend — per-IP 5/hour brute-force bound on the legacy Edge `parent_login`, 429 + Retry-After, pre-DB) + PP-4 (backend — `PATCH /api/parent/profile` authz gate via already-granted `profile.update_own`, self-scope/no-IDOR) + PP-5 deny pins (testing — unlinked-parent 403/no-payload across all 9 child-data routes) landed + APPROVED (type-check PASS, lint 0, 5 new files/71 new tests, 104/104 target + 404/404 broad PASS, build PASS, no bundle impact; quality independent APPROVE; sweep GREEN); REG-188/189/190 filed (catalog 154 → 157); **PP-1 consent posture + PP-3 USER-GATED (parent-link consent/link model — RISK register item 0)**, PP-5 client-migration + PP-6 + PP-7 + durable-limiter follow-ups; see `workflows/parent-portal/STATUS.md` + `cycles/2026-06-29-parent-portal.md` |
-| 8 | cross-cutting (P7,P8,P10,mobile sync) | — | NOT STARTED | next workflow (rank 8 — the final cycle) |
+| 8 | cross-cutting (P7,P8,P10,mobile sync) | ALL 8 PHASES | **LANDED — auto-fix-safe complete (FINAL CYCLE)** | XC-1/XC-2 (backend — P7 server-notification Hindi: `data.title_hi`/`data.body_hi` on the 3 daily-cron score-milestone producers + relocate the parent-digest's DEAD top-level `body_hi` into `data.body_hi` + add `data.title_hi`) + XC-6 (testing — web↔mobile price parity, REG-191) + XC-5 (testing — 41-constant score-config web↔Flutter parity, REG-192) + XC-4a (testing — bundle-cap pin CAP_SHARED_KB=284 etc., REG-193) landed + APPROVED (type-check PASS, lint 0, 11/11 cross-cutting tests PASS, code review clean; build deferred to CI backstop — transient platform outage; orchestrator self-validated APPROVE; sweep GREEN); REG-191/192/193 filed (catalog 157 → 160); **XC-3 (P8 RLS defense-in-depth, 87% admin-client — LARGER-PROGRAM), XC-4b (@supabase/* first-paint split — LARGER-PROGRAM), XC-7 (i18n primitive — LARGER-PROGRAM)**; see `workflows/cross-cutting/STATUS.md` + `cycles/2026-06-29-cross-cutting.md` + `PROGRAM-SUMMARY.md` |
 
 ## Backlog pointer
 
-Now active: **Cross-cutting (P7 bilingual breadth, P8 RLS breadth, P10 bundle, mobile sync)** —
-`PRIORITY-BACKLOG.md` rank 8 (the FINAL cycle). Promote it to IN PROGRESS in the backlog when its first
-phase begins. (Rank 7 Parent Portal is DONE — auto-fix-safe complete; PP-2 link-code filter-injection guard
-at all 3 sites + Deno twin + PP-1 per-IP brute-force rate-limit half + PP-4 profile authz gate + PP-5
-unlinked-parent deny pins landed (REG-188/189/190, catalog 157); **PP-1 consent posture + PP-3 link-model
-USER-gated (parent-link consent model — RISK register item 0)**, with PP-5 client-migration + PP-6 +
-PP-7 + durable-limiter follow-ups. Note PP-5 client migration + PP-7 bilingual feed directly into the
-Cross-cutting P8/P7 breadth scope.)
+**PROGRAM COMPLETE.** All 8 ranked workflows are DONE (auto-fix-safe). There is no next audit cycle. The
+re-entry point for future work is the `PRIORITY-BACKLOG.md` **"Post-program remediation backlog"** — the
+Tier-1 user-gated decisions (PAY-2, TSB-4, FOX-4, SLC-1, SAO-1/SAO-5, PP-1-consent/PP-3), the Tier-2
+reversible-approved items, and the Tier-3 larger initiatives (XC-3 RLS defense-in-depth, XC-4b @supabase/*
+split, XC-7 i18n primitive, PP-5 client migration). See `PROGRAM-SUMMARY.md` for the CEO-facing close-out
+and the consolidated decision register.

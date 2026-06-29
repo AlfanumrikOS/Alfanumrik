@@ -5541,3 +5541,53 @@ on any unlinked deny).
 **Total catalog: 157 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Engineering-Audit Cycle 8 — Cross-cutting (P7/P10/P1-P2/P11-adjacent) — 2026-06-29
+
+Source: engineering-audit program, Cycle 8 (Cross-cutting). The web and mobile
+(Flutter) clients duplicate three classes of constant that have historically been
+kept in sync by comment ("keep in sync with…") rather than by a test. Comment-sync
+silently rots: the next edit that touches only one side ships a divergence that no
+gate catches. This cycle converts three of those comment-sync seams into
+contract-sync — a CI failure on the next unsynced edit. (1) Subscription plan
+prices: Flutter `subscription.dart` mirrors web `plans.ts` PRICING; a drift is a
+P11-adjacent brand/billing-trust risk (the app would quote a price the checkout
+won't honor). (2) Score-config constants: the 41 weights/ceilings/floors/thresholds
+that drive P1 scoring and P2 XP exist on both clients; a one-sided edit would make
+the mobile scorecard disagree with the server. (3) The bundle-size caps in
+`check-bundle-size.mjs`: a silent cap-raise is how P10 erodes, so the caps are
+pinned to a test that forces any future raise into the same P10-approved PR. All
+three entries are parity/pin-only — they do NOT assert any rupee value, constant,
+or kB number is "correct"; they assert the two sides agree (and, for the caps, that
+a raise is deliberate).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-191 | `mobile_web_price_parity` | P11-adjacent: Flutter `mobile/lib/data/models/subscription.dart` plan prices EQUAL web `src/lib/plans.ts` PRICING for every plan, in BOTH directions (no web plan missing from mobile, no mobile plan missing from web); parity-only — does NOT pin any rupee value as "correct"; non-vacuous (asserts >= 2 plans present on each side so an empty parse can't pass); converts the historical comment-sync ("keep in sync with plans.ts") into contract-sync — the next unsynced price edit on either side fails CI. | `src/__tests__/cross-cutting/mobile-web-subscription-price-drift.test.ts` | E |
+| REG-192 | `mobile_web_score_config_parity` | P1/P2: all 41 score-config constants (component weights, Bloom ceilings, retention floors, behavior weights + windows, level thresholds) are identical across web `src/lib/score-config.ts` and Flutter `mobile/lib/core/constants/score_config.dart`; parity-only (does not assert any value is "correct", only that the two clients agree so the mobile scorecard cannot diverge from the server-authoritative P1 score / P2 XP); non-vacuous (asserts >= 20 shared keys so a failed parse can't pass silently). | `src/__tests__/cross-cutting/mobile-web-score-config-drift.test.ts` | E |
+| REG-193 | `bundle_cap_pin` | P10 (anti cap-creep): pins the four caps in `scripts/check-bundle-size.mjs` — `CAP_SHARED_KB=284`, `CAP_PAGE_KB=260`, `CAP_MIDDLEWARE_KB=120`, `SHARED_THRESHOLD_PCT=95` — so any future cap raise must update this pin in the same PR, keeping every P10 budget change deliberate and CEO/P10-approved rather than a silent drift. Pin-only — does NOT itself measure bundle size (CI's bundle-size step does that); it guards the guardrail's own numbers. | `src/__tests__/cross-cutting/bundle-cap-pin.test.ts` | E |
+
+### Invariants covered by this section
+
+- P1 (score accuracy) / P2 (XP economy) — REG-192 pins the mobile score-config
+  twin to the web source so the Flutter client's score/XP math cannot silently
+  diverge from the server-authoritative formula; parity-only, the server remains
+  the single re-deriver.
+- P10 (bundle budget) — REG-193 pins the four bundle caps so a raise is always a
+  deliberate, reviewed edit in the same PR rather than a silent erosion.
+- P11-adjacent (billing trust) — REG-191 pins mobile↔web plan-price parity so the
+  app can never quote a price the Razorpay checkout won't honor; parity-only, no
+  rupee value is asserted "correct".
+- P7 (bilingual UI) — covered indirectly: the cross-cutting drift sweep keeps the
+  mobile and web client constants that feed user-facing surfaces from diverging.
+
+### Catalog total
+
+Pre-REG-191: 157 entries (through Engineering-Audit Cycle 7's REG-188..REG-190
+parent-portal cluster). Engineering-Audit Cycle 8 adds REG-191 (mobile↔web
+subscription-price parity — comment-sync → contract-sync), REG-192 (mobile↔web
+score-config parity — all 41 constants), and REG-193 (bundle-cap pin —
+anti cap-creep on the four `check-bundle-size.mjs` caps).
+**Total catalog: 160 entries (target: 35 — TARGET EXCEEDED).**
+
+---
