@@ -6,18 +6,51 @@
 | Field | Value |
 |---|---|
 | Program status | **ACTIVE** |
-| Current cycle | **Cycle 1 — auth-onboarding DONE (partial; follow-ups open)** |
-| Current workflow | **auth-onboarding** (invariant **P15**) — **CYCLE 1 LANDED — partial** |
-| Current phase | **ALL 8 PHASES WRITTEN** (MAP → … → REGRESSION); validation verdict **APPROVE**, sweep **GREEN** |
+| Current cycle | **Cycle 2 — payments-subscriptions DONE (auto-fix-safe complete; PAY-2 gated, follow-ups open)** |
+| Current workflow | **payments-subscriptions** (invariant **P11**) — **CYCLE 2 LANDED — auto-fix-safe complete** |
+| Current phase | **ALL 8 PHASES WRITTEN** (MAP → … → REGRESSION); validation verdict **APPROVE**, architect security **APPROVE**, sweep **GREEN** |
 | Last session | **2026-06-29** |
-| Next action | **Start Payments & Subscriptions (P11)** — `PRIORITY-BACKLOG.md` rank 2: run MAP → GAP → ROOT-CAUSE → DESIGN → IMPLEMENT for that workflow. **Also resume the auth-onboarding open follow-ups** (see below) when their gates unblock. **The prod migration-drift incident is now RESOLVED** (repo-side reconciliation, PR #1153; deploy 28335566287 green; AI-agent Edge Functions deploying again). |
-| Next workflow | **Payments & Subscriptions (P11)** (rank 2) |
+| Next action | **Start Student Learning Core (Quiz / Scoring / XP)** — `PRIORITY-BACKLOG.md` rank 3 (invariants **P1, P2, P3, P4, P5, P6, P12**): run MAP → GAP → ROOT-CAUSE → DESIGN → IMPLEMENT for that workflow under `workflows/student-learning-core/`. **Also resume the payments + auth-onboarding open follow-ups** (see below) when their gates unblock. |
+| Next workflow | **Student Learning Core (Quiz / Scoring / XP)** (rank 3) |
 
 ## How to resume
 
-> Open this file, read **Next action**. Auth-onboarding Cycle 1 has landed (partial — see open
-> follow-ups). The next vertical workflow is **Payments & Subscriptions (P11)**; begin its MAP phase and
-> write artifacts under `workflows/payments-subscriptions/`. Keep the auth-onboarding follow-ups visible.
+> Open this file, read **Next action**. Payments & Subscriptions Cycle 2 has landed (auto-fix-safe
+> complete — see open follow-ups; PAY-2 user-gated). The next vertical workflow is **Student Learning
+> Core (Quiz / Scoring / XP) (P1-P6, P12)**; begin its MAP phase and write artifacts under
+> `workflows/student-learning-core/`. Keep the payments + auth-onboarding follow-ups visible.
+
+## Current workflow detail — payments-subscriptions (P11) — CYCLE 2 LANDED (auto-fix-safe complete)
+
+- Scope: Razorpay checkout → webhook signature verification → atomic subscription activation →
+  reconcile/expired/pre-debit crons → dedupe/idempotency. Governed by invariant **P11** (P9/P13 cross-checks).
+- Artifacts: `workflows/payments-subscriptions/01-map.md` … `08-regression.md` + `STATUS.md` (all written).
+- Landed (APPROVED, auto-fix-safe): **PAY-1** (`subscribe` RBAC gate, 403 before any Razorpay object),
+  **PAY-8** (409 when no student row resolves), **PAY-3** (reconcile via atomic
+  `atomic_subscription_activation_locked` RPC — no more split-brain), **PAY-7** (missing webhook secret →
+  503 retryable; invalid signature unchanged hard-4xx), **PAY-5** (observable dedupe degradation),
+  **PAY-4** (architect — `payments-health` registered as 13th Vercel cron `*/10 * * * *`), **PAY-6**
+  (testing — verify-HMAC-reject test + extend RBAC pin to `subscribe`).
+- Gates: type-check **PASS**, lint **0 errors**, test **236/236** payment suite, build **PASS**,
+  `vercel.json` **VALID**. Quality **APPROVE** + architect security **APPROVE**; regression sweep **GREEN**.
+- P14 review chain (payment flow) **COMPLETE**: backend (made) → architect (security APPROVE) + testing
+  (coverage GREEN) + mobile (downstream review) + frontend (checkout 403/409 SAFE-AS-IS).
+- **Open follow-ups (resume these):**
+  1. **PAY-2 (Medium, GATED — USER APPROVAL)** — `create-order` hardcoded `PRICING` can diverge from DB
+     `subscription_plans`. DEAD on the live web path (web uses `subscribe`); LIVE-referenced only by the
+     mobile app, whose flow is already documented-broken. **Do NOT delete unilaterally** (mobile contract
+     names it); any pricing-amount change is **user-gated**.
+  2. **Mobile repoint** — mobile to repoint `create-order` → `subscribe`, unwrap nested `data`, add 409
+     mapping (mobile + backend coordination).
+  3. **`docs/product/mobile-web-sync.md` doc fix** — stale; says `create-order` route doesn't exist (it
+     exists but is dead on the web path).
+  4. **Super-admin stuck-payments display (cosmetic)** — read period from
+     `student_subscriptions.current_period_end` since reconcile no longer writes `students.subscription_expiry`.
+  5. **REG-178 / REG-179 filing** — testing to file `verify_route_hmac_reject` (P11) and
+     `subscribe_rbac_gate_pre_razorpay` (P9/P11) into `.claude/regression-catalog.md` (confirm ids with
+     orchestrator if they shift). Catalog 144 → 146 once filed.
+  6. **PAY-9 (Low, optional)** — `razorpay_signature` persisted at rest in `payment_history` (verify path).
+- See `workflows/payments-subscriptions/STATUS.md` + `cycles/2026-06-29-payments-subscriptions.md`.
 
 ## Current workflow detail — auth-onboarding (P15) — CYCLE 1 LANDED (partial)
 
@@ -57,9 +90,11 @@
 | Cycle | Workflow | Phase reached | Status | Notes |
 |---|---|---|---|---|
 | 1 | auth-onboarding (P15) | ALL 8 PHASES | **LANDED — partial** | AO-4/8/1/2 + follow-up batch AO-5/7/9 (2026-06-29) landed + APPROVED; AO-3 gated, AO-2 CI fixtures + REG-177 + Deno CI-lane open; NEW AO-10 grade-coercion/backfill; prod migration-drift incident RESOLVED (repo-side reconciliation, PR #1153, deploy 28335566287 green); see `workflows/auth-onboarding/STATUS.md` + `cycles/2026-06-29-auth-onboarding-followups.md` |
-| 2 | payments-subscriptions (P11) | — | NOT STARTED | next workflow (rank 2) |
+| 2 | payments-subscriptions (P11) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | PAY-1/3/4/5/6/7/8 landed + APPROVED (type-check PASS, lint 0, 236/236 payment tests, build PASS, vercel.json VALID; architect security APPROVE; sweep GREEN); REG-178/179 filing in flight; PAY-2 gated to USER (pricing); mobile-repoint + mobile-web-sync.md doc fix + super-admin display open; see `workflows/payments-subscriptions/STATUS.md` + `cycles/2026-06-29-payments-subscriptions.md` |
+| 3 | student-learning-core (P1-P6,P12) | — | NOT STARTED | next workflow (rank 3) |
 
 ## Backlog pointer
 
-Now active: **Payments & Subscriptions (P11)** — `PRIORITY-BACKLOG.md` rank 2. Promote it to IN PROGRESS
-in the backlog when its first phase begins.
+Now active: **Student Learning Core (Quiz / Scoring / XP) (P1-P6, P12)** — `PRIORITY-BACKLOG.md` rank 3.
+Promote it to IN PROGRESS in the backlog when its first phase begins. (Rank 2 Payments & Subscriptions is
+DONE — auto-fix-safe complete; PAY-2 gated to user.)

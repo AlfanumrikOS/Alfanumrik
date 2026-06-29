@@ -47,6 +47,10 @@
       "schedule": "*/30 * * * *"
     },
     {
+      "path": "/api/cron/payments-health",
+      "schedule": "*/10 * * * *"
+    },
+    {
       "path": "/api/cron/expired-subscriptions",
       "schedule": "15 */6 * * *"
     },

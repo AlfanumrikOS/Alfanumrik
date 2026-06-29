@@ -25,6 +25,16 @@ vi.mock('@/lib/supabase-client', () => ({
   supabase: { auth: { getUser: (...a: unknown[]) => bearerGetUser(...a) } },
 }));
 
+// ── RBAC (PAY-1) ─────────────────────────────────────────────────────────────
+// The route now carries `authorizeRequest('payments.subscribe')` AFTER the
+// getUser() null-check and BEFORE plan selection. These plan-selection-guard tests
+// exercise logic past that gate, so we mock it ALLOWED here; the dedicated PAY-1
+// deny pins live in payments-subscribe-rbac.test.ts. (The unauthenticated test
+// below still returns 401 from getUser() before the gate is ever reached.)
+vi.mock('@/lib/rbac', () => ({
+  authorizeRequest: vi.fn().mockResolvedValue({ authorized: true, errorResponse: undefined }),
+}));
+
 // ── Razorpay ────────────────────────────────────────────────────────────────
 const createRazorpaySubscription = vi.fn();
 const createRazorpayOrder = vi.fn();

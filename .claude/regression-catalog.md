@@ -5295,3 +5295,38 @@ prompt-template routing). Engineering-Audit Cycle 1 adds REG-177:
 **Total catalog: 144 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Engineering-Audit Cycle 2 — Payments & Subscriptions (P11) — 2026-06-29
+
+Source: engineering-audit program, Cycle 2 (Payments & Subscriptions). P11
+forbids granting plan access without a server-verified payment, and P9 requires
+RBAC enforcement before any side effect. This cycle gave both guarantees
+executable, handler-level coverage on the two live web payment entry points:
+the verify route (HMAC re-derivation gate before any plan grant) and the
+subscribe route (RBAC gate before any Razorpay object is minted or service-role
+DB is touched).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-178 | `verify_route_hmac_reject` | The `/api/payments/verify` route re-derives the Razorpay HMAC server-side and treats it as the sole authority for granting a plan. A client-supplied `razorpay_signature` that does NOT match the server-derived HMAC — whether the wrong shared secret was used or the signature is the wrong length — yields HTTP 401 and performs NO `payment_history` insert and NO `activate_subscription_locked` (plan-grant) RPC call (no plan access without a valid signature — P11 rules 1+3). A correctly-derived signature passes the gate and proceeds to the grant path. | `src/__tests__/api/payments/verify-hmac-reject.test.ts` | E |
+| REG-179 | `subscribe_rbac_gate_pre_razorpay` | The live web checkout entry `/api/payments/subscribe` calls `authorizeRequest('payments.subscribe')` as its first gate. On deny it returns the verbatim 403/401 from `authorizeRequest` and short-circuits BEFORE any Razorpay order/subscription object is minted and BEFORE any service-role DB write — the deny path performs zero Razorpay SDK calls and zero privileged DB I/O (P9 RBAC enforcement guarding the P11 payment funnel). | `src/__tests__/api/payments-subscribe-rbac.test.ts` | E |
+
+### Invariants covered by this section
+
+- P11 (payment integrity — never grant plan access without a server-verified
+  signature; the verify route is the gate that re-derives the HMAC and is the
+  sole authority for the `activate_subscription_locked` plan grant)
+- P9 (RBAC enforcement — `/api/payments/subscribe` runs `authorizeRequest`
+  before any Razorpay object is minted or service-role DB is touched; deny
+  short-circuits with the verbatim status)
+
+### Catalog total
+
+Pre-REG-178: 144 entries (through Engineering-Audit Cycle 1's REG-177
+`send-auth-email`-always-200). Engineering-Audit Cycle 2 adds REG-178
+(verify-route HMAC reject — no plan grant without a valid server-derived
+signature) and REG-179 (subscribe-route RBAC gate before any Razorpay/service-
+role side effect).
+**Total catalog: 146 entries (target: 35 — TARGET EXCEEDED).**
+
+---

@@ -486,8 +486,19 @@ export async function POST(request: NextRequest) {
     const signature = request.headers.get('x-razorpay-signature');
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
 
-    if (!webhookSecret || !signature) {
-      return NextResponse.json({ error: 'Not configured' }, { status: 400 });
+    // PAY-7 (P11 retry semantics): split the two failure modes this guard used to
+    // conflate. A missing RAZORPAY_WEBHOOK_SECRET is a SERVER env-misconfig (deploy
+    // / secret-rotation window) — return 503 so Razorpay RETRIES through the window
+    // instead of permanently dropping a genuine event on a 400. A missing signature
+    // HEADER is a malformed/illegitimate REQUEST — keep 400 (no retry). Neither path
+    // processes the event; the invalid-SIGNATURE branch below is unchanged (still a
+    // 4xx reject of a genuinely bad HMAC).
+    if (!webhookSecret) {
+      logger.error('webhook: RAZORPAY_WEBHOOK_SECRET not configured — returning 503 so Razorpay retries');
+      return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 503 });
+    }
+    if (!signature) {
+      return NextResponse.json({ error: 'Missing signature header' }, { status: 400 });
     }
 
     // Verify webhook signature (P11: timing-safe via extracted utility).
@@ -549,10 +560,23 @@ export async function POST(request: NextRequest) {
         p_raw_payload: event,
       });
       if (dedupeErr) {
-        // RPC missing or DB error — log and proceed without dedupe so we
-        // don't lose a real event. payment_history-level dedupe still applies.
+        // PAY-5 (P11 idempotency): the event-level dedupe layer just degraded from
+        // airtight to best-effort. We deliberately PROCEED (failing closed here would
+        // drop a possibly-real event) because every downstream activation is itself
+        // idempotent — `activate_subscription`/`atomic_subscription_activation` upsert
+        // ON CONFLICT (student_id), `payment_history` is unique on razorpay_payment_id,
+        // and `atomic_downgrade_subscription` is a no-op on a stale/already-free row.
+        // So a re-processed event cannot double-grant or double-charge. We emit an
+        // ops-level warn (not just logger.warn) so this silent degradation is OBSERVABLE.
         logger.warn('webhook: record_webhook_event RPC failed; proceeding without event-level dedupe', {
           error: dedupeErr.message, eventType, razorpayEventId,
+        });
+        await logOpsEvent({
+          category: 'payment',
+          severity: 'warning',
+          source: 'webhook/route.ts',
+          message: 'webhook_event_dedupe_unavailable_rpc_error',
+          context: { event_type: eventType, razorpay_event_id: razorpayEventId, error: dedupeErr.message },
         });
       } else {
         const row = Array.isArray(dedupeRows) ? dedupeRows[0] : dedupeRows;
@@ -563,8 +587,21 @@ export async function POST(request: NextRequest) {
         webhookEventRowId = row?.id ?? null;
       }
     } else {
+      // PAY-5 (P11 idempotency): the event lacks account_id/event_id, so we cannot
+      // key event-level dedupe. We still process (Razorpay always populates both in
+      // practice; dropping the event would be worse than re-processing). The same
+      // downstream idempotency described in the dedupeErr branch above makes a
+      // re-processed event safe (ON CONFLICT upserts + unique payment_history +
+      // no-op stale downgrade). Emit an ops-level warn so the gap is observable.
       logger.warn('webhook: missing account_id or event.id; skipping event-level dedupe', {
         hasAccountId: !!accountId, hasEventId: !!razorpayEventId, eventType,
+      });
+      await logOpsEvent({
+        category: 'payment',
+        severity: 'warning',
+        source: 'webhook/route.ts',
+        message: 'webhook_event_dedupe_skipped_missing_identifier',
+        context: { event_type: eventType, has_account_id: !!accountId, has_event_id: !!razorpayEventId },
       });
     }
 

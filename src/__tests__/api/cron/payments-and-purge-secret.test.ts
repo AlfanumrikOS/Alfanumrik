@@ -167,7 +167,7 @@ describe('POST /api/cron/reconcile-payments — CRON_SECRET gate', () => {
     expect(upsertCalls).toHaveLength(0);
   });
 
-  it('reconciles a genuinely stuck payment exactly once (student on free, paid pro)', async () => {
+  it('reconciles a genuinely stuck payment via the atomic RPC, NOT two separate writes (PAY-3, P11 atomicity)', async () => {
     _capturedPayments = {
       data: [{
         id: 'pay-2', student_id: 'stu-2', plan_code: 'pro', billing_cycle: 'monthly',
@@ -185,9 +185,28 @@ describe('POST /api/cron/reconcile-payments — CRON_SECRET gate', () => {
     const body = await res.json();
     expect(body.data.total_stuck).toBe(1);
     expect(body.data.reconciled).toBe(1);
-    // Exactly one student update and one subscription upsert — no double write.
-    expect(updateStudentCalls).toHaveLength(1);
-    expect(upsertCalls).toHaveLength(1);
+
+    // PAY-3 (P11 atomicity): activation goes through the SINGLE-transaction
+    // `atomic_subscription_activation_locked` RPC (the same one the webhook fallback
+    // uses), with the captured payment's args. The advisory-locked RPC commits both
+    // students.subscription_plan and student_subscriptions in one transaction.
+    const activationCalls = rpcCalls.filter(
+      (c) => Array.isArray(c) && c[0] === 'atomic_subscription_activation_locked',
+    );
+    expect(activationCalls).toHaveLength(1);
+    expect((activationCalls[0] as unknown[])[1]).toMatchObject({
+      p_student_id: 'stu-2',
+      p_plan_code: 'pro',
+      p_billing_cycle: 'monthly',
+      p_razorpay_payment_id: 'rzp_pay_2',
+      p_razorpay_subscription_id: null,
+    });
+
+    // The OLD non-atomic two-write path (students.update + student_subscriptions.upsert
+    // performed directly from the cron) MUST be gone — that shape could itself create
+    // the split-brain this cron exists to repair if the 2nd write failed.
+    expect(updateStudentCalls).toHaveLength(0);
+    expect(upsertCalls).toHaveLength(0);
   });
 });
 

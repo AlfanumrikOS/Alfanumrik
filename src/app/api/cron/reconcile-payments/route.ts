@@ -21,10 +21,12 @@ import { logOpsEvent } from '@/lib/ops-events';
  *
  * Auth: CRON_SECRET header.
  *
- * Idempotency: the underlying reconciliation logic is the same upserts that
- * the webhook would have done (students.subscription_plan + student_subscriptions).
- * Running twice on an already-reconciled payment is a no-op (the WHERE filter
- * skips it because subscription_plan now matches plan_code).
+ * Idempotency: reconciliation routes through the same atomic activation RPC the
+ * webhook uses (atomic_subscription_activation_locked — single transaction across
+ * students.subscription_plan + student_subscriptions, with a per-student advisory
+ * lock). Running twice on an already-reconciled payment is a no-op (the WHERE
+ * filter skips it because subscription_plan now matches plan_code; and the RPC
+ * upserts ON CONFLICT (student_id) so even a re-run is idempotent).
  *
  * Safety budget: this route runs every 30 min — we cap the per-invocation
  * batch at 100 stuck payments so a freak large backlog cannot blow past the
@@ -65,13 +67,6 @@ function verifyCronSecret(request: NextRequest): boolean {
 
 // ─── Reconciliation (mirrors super-admin/payment-ops/reconcile) ──────────────
 
-function computeExpiry(paymentCreatedAt: string, billingCycle: string): string {
-  const base = new Date(paymentCreatedAt);
-  const days = billingCycle === 'yearly' ? 365 : 30;
-  base.setDate(base.getDate() + days);
-  return base.toISOString();
-}
-
 async function findStuckPayments(): Promise<StuckPayment[]> {
   const admin = getSupabaseAdmin();
   const { data: capturedPayments, error: phError } = await admin
@@ -101,52 +96,33 @@ async function findStuckPayments(): Promise<StuckPayment[]> {
 
 async function reconcileOne(payment: StuckPayment): Promise<{ studentId: string; ok: boolean; error?: string }> {
   const admin = getSupabaseAdmin();
-  const expiry = computeExpiry(payment.created_at, payment.billing_cycle);
 
-  // 1. Update students table
-  const { error: studentErr } = await admin
-    .from('students')
-    .update({
-      subscription_plan: payment.plan_code,
-      subscription_expiry: expiry,
-    })
-    .eq('id', payment.student_id);
+  // PAY-3 (P11 atomicity): activate via the SAME single-transaction RPC the webhook
+  // uses as its fallback (`atomic_subscription_activation`), instead of the previous
+  // two independent writes (UPDATE students; then UPSERT student_subscriptions). The
+  // old two-write shape could itself create the `students.subscription_plan` /
+  // `student_subscriptions` split-brain this cron exists to REPAIR if the second
+  // write failed after the first succeeded. The RPC upserts BOTH tables in one
+  // transaction AND (via its `_locked` wrapper) takes the per-student advisory lock,
+  // so it can no longer interleave with a concurrent webhook activation for the same
+  // student. WHAT gets reconciled is unchanged (findStuckPayments is untouched); only
+  // the write is now atomic. The RPC derives current_period_end from NOW() exactly as
+  // the webhook's own activation does, so reconcile and webhook stay consistent.
+  // p_razorpay_subscription_id is null here: this self-heal path activates from a
+  // captured payment row and has no recurring-subscription id to carry.
+  const { error: rpcErr } = await admin.rpc('atomic_subscription_activation_locked', {
+    p_student_id: payment.student_id,
+    p_plan_code: payment.plan_code,
+    p_billing_cycle: payment.billing_cycle,
+    p_razorpay_payment_id: payment.razorpay_payment_id,
+    p_razorpay_subscription_id: null,
+  });
 
-  if (studentErr) {
-    return { studentId: payment.student_id, ok: false, error: `students: ${studentErr.message}` };
+  if (rpcErr) {
+    return { studentId: payment.student_id, ok: false, error: `atomic_subscription_activation: ${rpcErr.message}` };
   }
 
-  // 2. Look up plan_id
-  const { data: planRow } = await admin
-    .from('subscription_plans')
-    .select('id')
-    .eq('plan_code', payment.plan_code)
-    .limit(1)
-    .maybeSingle();
-
-  // 3. Upsert student_subscriptions
-  const { error: subErr } = await admin
-    .from('student_subscriptions')
-    .upsert(
-      {
-        student_id: payment.student_id,
-        plan_id: planRow?.id ?? null,
-        plan_code: payment.plan_code,
-        status: 'active',
-        billing_cycle: payment.billing_cycle,
-        current_period_start: payment.created_at,
-        current_period_end: expiry,
-        razorpay_payment_id: payment.razorpay_payment_id,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'student_id' },
-    );
-
-  if (subErr) {
-    return { studentId: payment.student_id, ok: false, error: `student_subscriptions: ${subErr.message}` };
-  }
-
-  // 4. Log ops event
+  // Log ops event
   await logOpsEvent({
     category: 'payment',
     source: 'cron/reconcile-payments',
@@ -159,7 +135,6 @@ async function reconcileOne(payment: StuckPayment): Promise<{ studentId: string;
       razorpay_payment_id: payment.razorpay_payment_id,
       plan_code: payment.plan_code,
       billing_cycle: payment.billing_cycle,
-      expiry,
       trigger: 'cron_30min',
     },
   });

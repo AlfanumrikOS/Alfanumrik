@@ -5,6 +5,7 @@ import { supabase as globalSupabase } from '@/lib/supabase-client';
 import { createRazorpaySubscription, createRazorpayOrder } from '@/lib/razorpay';
 import { logger } from '@/lib/logger';
 import { paymentSubscribeSchema, validateBody } from '@/lib/validation';
+import { authorizeRequest } from '@/lib/rbac';
 import { logOpsEvent } from '@/lib/ops-events';
 import { computeGst, gstToRazorpayNotes, supplierStateCode } from '@/lib/gst';
 import { isFeatureEnabled, PAYMENT_FLAGS } from '@/lib/feature-flags';
@@ -88,6 +89,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // PAY-1 / Gap 2 defense-in-depth (P9/P11): RBAC permission gate on top of
+    // getUser(). `subscribe` is the LIVE order/subscription creator (its siblings
+    // create-order + verify already carry this gate); add the same one here so a
+    // non-student authenticated principal cannot reach the Razorpay creation path.
+    // authorizeRequest() resolves identity from the SAME Bearer header / Supabase
+    // session cookie sources used above; a legitimately logged-in student with the
+    // 'payments.subscribe' grant passes, super_admin/admin bypass automatically.
+    // This DENIES (403) BEFORE any Razorpay object is created and removes none of
+    // the downstream checks. The getUser() block is retained — it supplies the
+    // user.id / user.email metadata used below.
+    const auth = await authorizeRequest(request, 'payments.subscribe');
+    if (!auth.authorized) return auth.errorResponse!;
+
     const rawBody = await request.json();
     const validation = validateBody(paymentSubscribeSchema, rawBody);
     if (!validation.success) return validation.error;
@@ -121,6 +135,29 @@ export async function POST(request: NextRequest) {
       .select('id')
       .eq('auth_user_id', user.id)
       .single();
+
+    // PAY-8 (P11): never mint a Razorpay subscription/order for a principal with no
+    // billable student row. Resolve the student now (auth_user_id, then email
+    // fallback — mirrors the verify route at verify/route.ts) and short-circuit with
+    // a clean 409 BEFORE any Razorpay object is created if none resolves. This
+    // produces NO Razorpay side effect and no orphan object. For a legitimate
+    // student `resolvedStudentId === studentRow.id`, so behavior is unchanged.
+    let resolvedStudentId: string | undefined = studentRow?.id;
+    if (!resolvedStudentId && user.email) {
+      const { data: byEmail } = await admin
+        .from('students')
+        .select('id')
+        .eq('email', user.email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      resolvedStudentId = byEmail?.id;
+    }
+    if (!resolvedStudentId) {
+      return NextResponse.json({
+        error: 'No student profile found for this account. Please complete onboarding before subscribing.',
+      }, { status: 409 });
+    }
 
     if (studentRow) {
       const { data: existingSub } = await admin
@@ -223,27 +260,16 @@ export async function POST(request: NextRequest) {
       //    resolution in the webhook. student_id is canonical; user_id kept for
       //    backward compat with older webhook code paths.
       //
-      //    We need the student_id BEFORE calling Razorpay so we can put it in
-      //    notes. Resolve it here (mirrors verify route: auth_user_id → email fallback).
-      let resolvedStudentId: string | undefined = studentRow?.id;
-      if (!resolvedStudentId && user.email) {
-        const { data: byEmail } = await admin
-          .from('students')
-          .select('id')
-          .eq('email', user.email)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        resolvedStudentId = byEmail?.id;
-      }
-
+      //    student_id was already resolved above (auth_user_id → email fallback)
+      //    and the PAY-8 guard guarantees it is present, so notes.student_id is
+      //    always a real student id here.
       const subscription = await createRazorpaySubscription({
         razorpayPlanId: plan.razorpay_plan_id_monthly,
         totalBillingCycles: 12,
         customerNotify: false,
         notes: {
           // Canonical resolution key — read by webhook first.
-          student_id: resolvedStudentId ?? '',
+          student_id: resolvedStudentId,
           // Legacy keys (still read as fallbacks).
           user_id: user.id,
           plan_code,
@@ -315,7 +341,7 @@ export async function POST(request: NextRequest) {
       amountInr: yearlyChargeInr,
       receipt: `${user.id.substring(0, 8)}_${plan_code}_${Date.now().toString(36)}`,
       notes: {
-        student_id: studentRow?.id ?? '',
+        student_id: resolvedStudentId,
         user_id: user.id,
         plan_code,
         billing_cycle: 'yearly',
