@@ -6,28 +6,47 @@
 | Field | Value |
 |---|---|
 | Program status | **ACTIVE** |
-| Current cycle | **Cycle 6 — super-admin-observability DONE (P13 export/analytics minimization SAO-3/SAO-2 + P9 full-surface gate sweep SAO-7 + bare-name log canary SAO-4; SAO-1/SAO-5 PII-export tiering USER-GATED)** |
-| Current workflow | **super-admin-observability** (invariants **P9, P13**) — **CYCLE 6 LANDED — auto-fix-safe complete** |
+| Current cycle | **Cycle 7 — parent-portal DONE (PP-2 link-code filter-injection guard at all 3 sites + Deno twin; PP-1 per-IP brute-force rate limit half; PP-4 profile authz gate; PP-5 unlinked-parent deny pins across all 9 child-data routes; PP-1-consent + PP-3 link-model USER-GATED)** |
+| Current workflow | **parent-portal** (dual auth + DPDP; invariants **P8, P13, P15**) — **CYCLE 7 LANDED — auto-fix-safe complete** |
 | Current phase | **ALL 8 PHASES WRITTEN** (MAP → … → REGRESSION); independent quality verdict **APPROVE**, P14 chain complete, sweep **GREEN** |
 | Last session | **2026-06-29** |
-| Next action | **Start Parent Portal (dual auth + DPDP)** — `PRIORITY-BACKLOG.md` rank 7 (invariants **P8, P13, P15**): run MAP → GAP → ROOT-CAUSE → DESIGN → IMPLEMENT for that workflow under `workflows/parent-portal/`. **Also resume the gated items: SAO-1/SAO-5 (super-admin PII-export tiering — USER, DPDP-relevant access-model decision); TSB-4 (B2B `class_students`/`class_enrollments` table-drop — USER); FOX-4 (Foxy OpenAI provider governance — USER); the student-learning-core gated items (SLC-1 user-gated; SLC-4/5 cross-agent; SLC-8 cutover); + the payments + auth-onboarding open follow-ups** (see below) when their gates unblock. |
-| Next workflow | **Parent Portal (dual auth + DPDP)** (rank 7) |
+| Next action | **Start Cross-cutting (the final cycle)** — `PRIORITY-BACKLOG.md` rank 8 (invariants **P7, P8, P10, mobile sync**): run MAP → GAP → ROOT-CAUSE → DESIGN → IMPLEMENT for that workflow under `workflows/cross-cutting/`. Scope = bilingual (P7) parity breadth (incl. PP-7), RLS (P8) breadth across all tables (incl. the PP-5 client migration to RLS-scoped reads), bundle budget (P10), mobile-web API contract sync. **Also resume the gated items: PP-1-consent + PP-3 (parent-link consent/link model — USER); SAO-1/SAO-5 (super-admin PII-export tiering — USER); TSB-4 (B2B `class_students`/`class_enrollments` table-drop — USER); FOX-4 (Foxy OpenAI provider governance — USER); SLC-1 (uncapped XP trigger — USER); SLC-4/5 + SLC-8 cutover; + the payments + auth-onboarding open follow-ups** (see below) when their gates unblock. |
+| Next workflow | **Cross-cutting (P7 bilingual breadth, P8 RLS breadth, P10 bundle, mobile sync)** (rank 8 — the final cycle) |
 
 ## How to resume
 
-> Open this file, read **Next action**. Super-Admin & Observability Cycle 6 has landed (auto-fix-safe
-> complete — SAO-3 added observability-CSV egress `redactPII`, SAO-2 dropped gratuitous `top_students.email`,
-> SAO-7 made the P9 gate-before-I/O check a 134-route full-surface sweep (207/207), SAO-4 added a bare-name
-> log canary; SAO-1/SAO-5 PII-export tiering is USER-gated). The next vertical workflow is
-> **Parent Portal (dual auth + DPDP) (P8, P13, P15)**; begin its MAP phase and write artifacts under
-> `workflows/parent-portal/`. Keep the SAO-1/SAO-5 gate + the TSB-4 gate + the Foxy FOX-4 gate + the
-> student-learning-core gated items + the payments + auth-onboarding follow-ups visible.
+> Open this file, read **Next action**. Parent Portal Cycle 7 has landed (auto-fix-safe complete —
+> PP-2 added a shared `isValidLinkCode` (`^[A-Z0-9]{4,12}$`) + byte-identical Deno twin applied BEFORE the
+> link-code `.or()` filter at all 3 sites; PP-1 added a per-IP brute-force rate limit (5/hour, 429) to the
+> legacy Edge `parent_login`; PP-4 gated `PATCH /api/parent/profile` on the already-granted
+> `profile.update_own`; PP-5 pinned the unlinked-parent deny (403, no payload) across all 9 child-data
+> routes; REG-188/189/190, catalog 157). The PP-1 consent posture (link-code-alone → active, no approval)
+> and PP-3 (link-model consolidation) are USER-gated. The next (final) workflow is **Cross-cutting (P7
+> bilingual breadth, P8 RLS breadth, P10 bundle, mobile sync) (rank 8)**; begin its MAP phase and write
+> artifacts under `workflows/cross-cutting/`. Keep the PP-1-consent/PP-3 gate + the SAO-1/SAO-5 gate + the
+> TSB-4 gate + the Foxy FOX-4 gate + the SLC-1 gate + the payments + auth-onboarding follow-ups visible.
 
 ## Program-level RISK register (CEO visibility)
 
 > Surfaced here for founder visibility; each item also lives in its cycle ledger.
 
-0. **[Cycle 6] SAO-1 — USER-gated PII-export tiering (DPDP-relevant access-model decision).** The
+0. **[Cycle 7] PP-1-consent + PP-3 — USER-gated parent-link consent model (DPDP/child-consent).** The legacy
+   Edge `parent_login` action creates an ACTIVE, fully-equivalent guardian link from possession of a link
+   code ALONE — no student-approval step, no OTP. `canAccessStudent` / `is_guardian_of()` treat that
+   `active` link identically to a student-approved `approved` link, so every downstream child-data boundary
+   opens (progress, accuracy, streaks, chats, attendance, reports). Anyone who learns a child's link code (a
+   tuition centre, a non-custodial adult, a leaked screenshot) and holds an authenticated account can
+   self-attach as a guardian. The Cycle-7 fix added a server-side per-IP brute-force rate limit (5/hour,
+   429) to close enumeration — but the CONSENT gap remains by design. The remediation (have `parent_login`
+   create `pending` links requiring approval/OTP, OR deprecate it now that `/api/v2/parent/*` is canonical)
+   changes the consent/link MODEL → requires **USER APPROVAL**. PP-3 (four parallel link-creation paths +
+   two terminal statuses `active`/`approved` → consolidate onto one consent-respecting choke-point) folds
+   into the same decision; retiring `parent_login` collapses both. The complementary auto-fix-safe half
+   (PP-2 link-code injection guard at all 3 sites + Deno twin; PP-1 rate-limit; PP-4 profile authz gate;
+   PP-5 deny pins) landed Cycle 7 (REG-188/189/190). **CEO action:** approve the consent-model correction
+   (require approval / deprecate `parent_login`); confirm no unauthorized `parent_login` link-creation in
+   audit logs.
+1. **[Cycle 6] SAO-1 — USER-gated PII-export tiering (DPDP-relevant access-model decision).** The
    super-admin bulk-export route `/api/super-admin/reports` lets ANY account at the LOWEST `support` admin
    tier download the entire student roster with emails, every parent name+email+**PHONE**, and teacher
    emails (up to 5000 rows, CSV/JSON). The admin-level ladder gates by ACTION-destructiveness, NOT
@@ -39,26 +58,81 @@
    same decision. The complementary ops-owned half (egress redaction SAO-3 + analytics email-drop SAO-2 +
    full-surface gate sweep SAO-7 + bare-name log canary SAO-4) landed Cycle 6. **CEO action:** approve the
    tiering correction / PII-export permission split; confirm no low-tier bulk-export abuse in audit logs.
-1. **[Cycle 5] CRITICAL cross-tenant student-PII leak — FOUND & FIXED (TSB-1).** Pre-fix, a teacher with
+2. **[Cycle 5] CRITICAL cross-tenant student-PII leak — FOUND & FIXED (TSB-1).** Pre-fix, a teacher with
    `grades_taught` but no class could read (and at one site **write**) names / mastery / XP of **every**
    grade-6–12 student across **ALL schools** via the `teacher-dashboard` Edge Function's tenant-unscoped
    grade fallback on the service-role client (RLS bypassed). For a B2B EdTech selling tenant isolation, this
    is a contract-ending, **DPDP-reportable** exposure. Now `school_id`-scoped + fail-closed at all 8 sites
    (REG-184). Trigger condition was realistic (newly-onboarded teacher; `teacher_create_profile` defaults
    `grades_taught = ARRAY['Grade 9']`). **CEO action:** confirm no exploitation in production logs.
-2. **[Cycle 5] TSB-4 — USER-gated table-drop decision.** Teacher↔student membership is modeled in TWO tables
+3. **[Cycle 5] TSB-4 — USER-gated table-drop decision.** Teacher↔student membership is modeled in TWO tables
    (`class_students` vs `class_enrollments`) reconciled by a sync trigger — an incomplete migration. Picking a
    canonical table and dropping the other is a schema DROP requiring **USER approval**. Read-consolidation is
    auto-fix-safe; the DROP is the gated decision. **CEO action:** approve/sequence the cutover.
-3. **[Cycle 4] FOX-4 — USER-gated AI provider governance.** OpenAI gpt-4o-mini/gpt-4o present in
+4. **[Cycle 4] FOX-4 — USER-gated AI provider governance.** OpenAI gpt-4o-mini/gpt-4o present in
    `grounded-answer` as a MoL SHADOW comparison (telemetry only; not student-facing today). Provider PRESENCE
    is user-gated per the constitution. **CEO action:** govern or remove.
-4. **[Cycle 3] SLC-1 — USER-gated XP economy (P2).** A legacy `quiz_sessions` trigger re-awards XP with no
+5. **[Cycle 3] SLC-1 — USER-gated XP economy (P2).** A legacy `quiz_sessions` trigger re-awards XP with no
    daily cap, deduped from the RPC only by a fragile 5-second window — a second uncapped XP writer. Needs
    architect + assessment joint design. **CEO action:** approve consolidation to one capped writer.
-5. **[Cycle 2] PAY-2 — USER-gated pricing source.** `create-order` hardcoded `PRICING` can diverge from DB
+6. **[Cycle 2] PAY-2 — USER-gated pricing source.** `create-order` hardcoded `PRICING` can diverge from DB
    `subscription_plans`; dead on web, live only on the (already-broken) mobile path. Any pricing-amount change
    is user-gated.
+
+## Current workflow detail — parent-portal (P8, P13, P15) — CYCLE 7 LANDED (auto-fix-safe complete)
+
+- Scope: the parent journeys — signup/link (4 paths: A1 approve-link consent / A2 link-code+OTP 2FA / A3
+  emailed invite / A4 legacy Edge `parent_login`) → dashboard (linked children only) → child drill-down
+  (progress/reports/chat/export/erasure scoped to the linked child) → comms (report/WhatsApp/messages/
+  encourage). Governed by **P8** (RLS boundary), **P13** (data privacy), **P15** (onboarding integrity);
+  P9 cross-check. Boundary helpers: `canAccessStudent` (rbac.ts) + `isGuardianLinkedToStudent`
+  (relationship.ts), both enforcing `status IN ('active','approved')`.
+- Artifacts: `workflows/parent-portal/01-map.md` … `08-regression.md` + `STATUS.md` (all written).
+- **Headline:** the portal was built in two eras — a demo/link-code era (Edge `parent-portal`, `active`
+  links, English literals, app-only service-role reads) and a consent/RBAC era (`approve-link`, OTP,
+  `authorizeRequest`, `is_guardian_of()` RLS). The newer era was added ALONGSIDE the older one, leaving a
+  weaker legacy path live (PP-1), duplicated unsafe idioms (PP-2/PP-6), deferred obligations (PP-5/PP-7).
+  No parameter-tampering IDOR on the canonical routes. The single highest-leverage fix — retire/replace the
+  legacy `parent_login` link-create path + converge link creation on one consent-respecting choke-point
+  (collapses PP-1 + PP-3) — changes the consent/link MODEL and is **USER-GATED**.
+- Landed (APPROVED, auto-fix-safe security hardening; **no consent/link-model or RBAC change**):
+  - **PP-2** (MED, P8/P13) — new shared `isValidLinkCode` (`^[A-Z0-9]{4,12}$`) in `src/lib/sanitize.ts` +
+    byte-identical Deno twin `supabase/functions/_shared/link-code.ts`, applied BEFORE the link-code `.or()`
+    filter at all 3 sites (request-otp → enumeration-safe `silentSuccess`; accept-invite → 409; Edge
+    `parent_login` → 200 no-match). Raw payload can't reach the students query; link-code FORMAT unchanged.
+    → **REG-188**.
+  - **PP-1** (HIGH — auto-fix-safe HALF) — added a per-IP server-side rate limit (5/hour, `createRateLimiter`)
+    to the legacy Edge `parent_login` path BEFORE the DB lookup → 429 + Retry-After; mirrors the hardened OTP
+    path. The consent-posture change (link-code-alone → active with NO approval) is deliberately NOT touched
+    — USER-GATED (`TODO(PP-1, USER-GATED)` left in code). → **REG-189**.
+  - **PP-4** (LOW, P9) — `PATCH /api/parent/profile` now gates on `authorizeRequest('profile.update_own')` (a
+    permission ALREADY granted to the parent role — no new RBAC) + self-scoped to `auth.uid()` (no IDOR).
+    → **REG-190** (combined with PP-5).
+  - **PP-5** (MED, P8/P13 pin) — regression tests pin the unlinked-parent deny (403, no child payload) across
+    all 9 child-data routes + the canonical guardian-link boundary. → **REG-190**.
+- Gates: type-check **PASS**, lint **0 errors**, **5 new files / 71 new tests; 104/104 target + 404/404 broad
+  parent/guardian PASS**, build **PASS**, **no bundle impact**. Quality verdict **APPROVE**; regression sweep
+  **GREEN**; catalog 154 → **157** (REG-188/189/190); REG-110/111/117 still green.
+- P14 review chain **COMPLETE**: backend (impl PP-2 + PP-1 rate-limit half + PP-4) + testing (PP-5 deny pins
+  + the 5-file/71-test suite, coverage GREEN) → quality (independent **APPROVE**); architect noted for the
+  gated/RLS follow-ups (PP-5 client migration + PP-1 durable limiter).
+- **Open gated / follow-up items (resume these):**
+  1. **PP-1 consent posture (HIGH, GATED — USER APPROVAL; DPDP/child-consent):** `parent_login` creates an
+     ACTIVE guardian link from a link code ALONE — no approval. The design fix (require approval, or
+     deprecate `parent_login` in favor of OTP/approve-link) changes the consent model → CEO decision. **On
+     the program RISK register (item 0).**
+  2. **PP-3 (MED, GATED — USER APPROVAL):** four parallel link-creation paths + two terminal statuses
+     (`active` vs `approved`) — consolidate onto one consent-respecting choke-point. Retiring `parent_login`
+     collapses PP-1 + PP-3.
+  3. **PP-5 client migration (architect):** migrate parent child-data routes to RLS-scoped clients
+     (defense-in-depth) — only the Foxy-chat route is RLS-backed today (`is_guardian_of`).
+  4. **PP-6 (LOW, behavior-preserving):** converge `canAccessStudent` vs `isGuardianLinkedToStudent`.
+  5. **PP-7 (MED, P7):** server-generated parent insights/tips/glance are English-only — candidate for the
+     Cycle 8 cross-cutting bilingual work (server keying + frontend render review).
+  6. **PP-1 durable limiter (architect):** the in-memory limiter resets on cold start / isn't cross-instance
+     — track an Upstash/DB-backed counter.
+  7. **Pre-existing Deno errors** at `parent-portal/index.ts:603/605/629/630` — unrelated; separate cleanup.
+- See `workflows/parent-portal/STATUS.md` + `cycles/2026-06-29-parent-portal.md`.
 
 ## Current workflow detail — super-admin-observability (P9, P13) — CYCLE 6 LANDED (auto-fix-safe complete)
 
@@ -96,7 +170,7 @@
   1. **SAO-1 (HIGH, GATED — USER APPROVAL; DPDP-relevant):** `/api/super-admin/reports` bulk-exports raw
      student name+email + parent name+email+PHONE + teacher email at the LOWEST `support` tier. Raising the
      tier / splitting a PII-export permission is an admin access-model change → CEO decision. **Most
-     consequential Cycle-6 finding; on the program RISK register (item 0).**
+     consequential Cycle-6 finding; on the program RISK register (item 1).**
   2. **SAO-5 (LOW, GATED — folds into SAO-1):** audit-log CSV export carries `admin_name`/`admin_email` in
      `details` at `support` — same tiering decision.
   3. **Export `message`-column free-form redaction (MINOR, ops):** controlled developer-authored template
@@ -311,13 +385,16 @@
 | 4 | foxy-ai-rag (P12,P8,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | FOX-1 (+ Deno twin + injection-pattern refinement) + FOX-2 + FOX-3 + FOX-6 landed + APPROVED (type-check PASS, lint 0, 305/305 vitest + 3/3 Deno PASS, build PASS, bundle within P10 caps; assessment APPROVE WITH CONDITIONS [addressed] + quality APPROVE; sweep GREEN); REG-182/183 filed (catalog 148 → 150); FOX-4 USER-GATED (OpenAI provider governance — MoL shadow, not student-facing), FOX-7-new + streaming-residual + Hindi-tokens follow-ups; live-topology reconciliation recorded (`/api/foxy` is LIVE, `foxy-tutor` Edge Fn gone); see `workflows/foxy-ai-rag/STATUS.md` + `cycles/2026-06-29-foxy-ai-rag.md` |
 | 5 | teacher-school-b2b (P8,P9,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | TSB-1 (backend — CRITICAL cross-tenant leak closed at all 8 grade-fallback sites via auth-derived `resolveTeacherSchoolId`, fail-closed) + TSB-2 (architect — teacher RLS backstop on `public.students`, predicate-identical, no over-grant) + TSB-3-partial + TSB-6 landed + APPROVED (type-check PASS, lint 0, 527/527 vitest incl. 15 TSB-1 + 10 TSB-2 new, build PASS, no bundle impact; quality APPROVE WITH CONDITIONS [migration-ordering — RESOLVED via byte-identical rename `20260629000000`→`20260702010000`]; sweep GREEN); REG-184/185 filed (catalog 150 → 152); TSB-4 USER-GATED (table-drop), TSB-3-full + TSB-5 + 3 pre-existing tracked items follow-ups; see `workflows/teacher-school-b2b/STATUS.md` + `cycles/2026-06-29-teacher-school-b2b.md` |
 | 6 | super-admin-observability (P9,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | SAO-3 (ops — observability-CSV egress `redactPII`) + SAO-2 (ops+frontend — `top_students.email` drop + stale-type cleanup) + SAO-7 (testing — 134-route full-surface gate sweep, 207/207 gate-before-I/O) + SAO-4 (testing — bare-name log canary) landed + APPROVED (type-check PASS, lint 0, 6/6 new + 351/351 broad PASS, build PASS, bundle within P10; quality independent APPROVE; sweep GREEN); REG-186/187 filed (catalog 152 → 154); SAO-1 USER-GATED (PII-export tiering, DPDP-relevant; on RISK register item 0), SAO-5 folds into SAO-1, message-redaction + periodic-re-read follow-ups, SAO-6 compliant-by-design; see `workflows/super-admin-observability/STATUS.md` + `cycles/2026-06-29-super-admin-observability.md` |
-| 7 | parent-portal (P8,P13,P15) | — | NOT STARTED | next workflow (rank 7) |
+| 7 | parent-portal (P8,P13,P15) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | PP-2 (backend — link-code filter-injection guard at all 3 sites via shared `isValidLinkCode` + byte-identical Deno twin) + PP-1 rate-limit half (backend — per-IP 5/hour brute-force bound on the legacy Edge `parent_login`, 429 + Retry-After, pre-DB) + PP-4 (backend — `PATCH /api/parent/profile` authz gate via already-granted `profile.update_own`, self-scope/no-IDOR) + PP-5 deny pins (testing — unlinked-parent 403/no-payload across all 9 child-data routes) landed + APPROVED (type-check PASS, lint 0, 5 new files/71 new tests, 104/104 target + 404/404 broad PASS, build PASS, no bundle impact; quality independent APPROVE; sweep GREEN); REG-188/189/190 filed (catalog 154 → 157); **PP-1 consent posture + PP-3 USER-GATED (parent-link consent/link model — RISK register item 0)**, PP-5 client-migration + PP-6 + PP-7 + durable-limiter follow-ups; see `workflows/parent-portal/STATUS.md` + `cycles/2026-06-29-parent-portal.md` |
+| 8 | cross-cutting (P7,P8,P10,mobile sync) | — | NOT STARTED | next workflow (rank 8 — the final cycle) |
 
 ## Backlog pointer
 
-Now active: **Parent Portal (dual auth + DPDP) (P8, P13, P15)** — `PRIORITY-BACKLOG.md` rank 7. Promote it to
-IN PROGRESS in the backlog when its first phase begins. (Rank 6 Super-Admin & Observability is DONE —
-auto-fix-safe complete; SAO-3 observability-CSV egress redaction + SAO-2 analytics email-drop + SAO-7
-full-surface P9 gate sweep + SAO-4 bare-name log canary landed (REG-186/187); SAO-1/SAO-5 PII-export tiering
-is USER-gated (DPDP-relevant access-model decision; RISK register item 0), with message-redaction +
-periodic-re-read follow-ups.)
+Now active: **Cross-cutting (P7 bilingual breadth, P8 RLS breadth, P10 bundle, mobile sync)** —
+`PRIORITY-BACKLOG.md` rank 8 (the FINAL cycle). Promote it to IN PROGRESS in the backlog when its first
+phase begins. (Rank 7 Parent Portal is DONE — auto-fix-safe complete; PP-2 link-code filter-injection guard
+at all 3 sites + Deno twin + PP-1 per-IP brute-force rate-limit half + PP-4 profile authz gate + PP-5
+unlinked-parent deny pins landed (REG-188/189/190, catalog 157); **PP-1 consent posture + PP-3 link-model
+USER-gated (parent-link consent model — RISK register item 0)**, with PP-5 client-migration + PP-6 +
+PP-7 + durable-limiter follow-ups. Note PP-5 client migration + PP-7 bilingual feed directly into the
+Cross-cutting P8/P7 breadth scope.)

@@ -36,7 +36,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
-import { normalizeIP } from '@/lib/sanitize';
+import { normalizeIP, isValidLinkCode } from '@/lib/sanitize';
 import { deliverEmail, pickLocaleFromAcceptLanguage } from '@/lib/email-delivery';
 import { checkApiRateLimit } from '@/lib/api-rate-limit';
 import {
@@ -139,6 +139,19 @@ export async function POST(request: NextRequest) {
     );
   }
   const linkCode = linkCodeRaw.trim().toUpperCase();
+
+  // PP-2: strict charset validation BEFORE the code is interpolated into the
+  // PostgREST `.or()` filter below (filter-injection guard). A malformed code
+  // can never match a real student, so treat it exactly like the no-match
+  // path — same silent-success shape, so an attacker can't distinguish a
+  // rejected-format probe from a valid-but-unknown code (enumeration-safe).
+  if (!isValidLinkCode(linkCode)) {
+    await audit(user.id, 'link_code_otp_request_invalid_format', ip, userAgent, {
+      link_code_prefix: linkCode.slice(0, 2),
+      length: linkCode.length,
+    });
+    return silentSuccess();
+  }
 
   // ── 4. Resolve link code → student (best-effort, no leakage) ──────────
   // We accept either students.invite_code OR students.link_code, matching

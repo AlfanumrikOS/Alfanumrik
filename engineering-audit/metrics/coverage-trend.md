@@ -16,6 +16,7 @@ measured in-session.
 | 2026-06-29 (Cycle 4 — foxy-ai-rag REGRESSION) | **305/305 vitest + 3/3 Deno PASS** (+P12 live grounded-path output content backstop `screenStudentFacingText` + Deno twin across every student-facing exit, +P12 student-message injection neutralization `neutralizeInjectionAttempt`, +P13 prompt-assembly contract test, +FOX-3 mode-template reconciliation, +Deno HARD_BLOCK_PATTERNS parity); not re-measured globally this cycle | not re-measured globally this cycle | **150** with REG-182 (P12 output backstop) + REG-183 (P12 injection neutralization); REG-37/39/50/54/66/67 still green; cap target 35 — exceeded | build PASS — bundle within P10 caps (server/Deno validation modules; /foxy route already shipped, no new shared chunk) | /foxy still largest, 0 pages > 260 kB | local green; type-check PASS, lint 0 errors; assessment APPROVE WITH CONDITIONS (addressed) + quality independent APPROVE; sweep GREEN |
 | 2026-06-29 (Cycle 5 — teacher-school-b2b REGRESSION) | **527/527 vitest PASS** (+P8/P13 teacher-dashboard grade-fallback tenant-scoping across all 8 query sites via auth-derived `resolveTeacherSchoolId`, fail-closed; +P8 teacher-assigned RLS backstop on `public.students`, predicate-identical to the active `is_teacher_of(id)` branch); 15 TSB-1 + 10 TSB-2 new edge-fn/RLS tests; not re-measured globally this cycle | not re-measured globally this cycle | **152** with REG-184 (P8/P13 teacher tenant-scoping) + REG-185 (P8 teacher RLS backstop); REG-120/121/122/124/128 still green; cap target 35 — exceeded | build PASS — **no bundle impact** (Edge Function + migration only) | /foxy still largest, 0 pages > 260 kB | local green; type-check PASS, lint 0 errors; quality independent **APPROVE WITH CONDITIONS** (migration-ordering — RESOLVED via byte-identical rename `20260629000000`→`20260702010000`); sweep GREEN |
 | 2026-06-29 (Cycle 6 — super-admin-observability REGRESSION) | **6/6 new (4 SAO-7 + 2 SAO-4) + 351/351 broad super-admin/analytics/observability PASS** (+P9 admin-route auth-gate FULL-SURFACE sweep — 134 routes, 207/207 DB-touching handlers gate-before-I/O, `super-admin/login` sole allowlist; +P13 bare-name log canary — no bare `name`/`email`/`phone` logger key, conservative compound-key exclusion); also SAO-3 observability-CSV egress `redactPII` + SAO-2 `top_students.email` drop; not re-measured globally this cycle | not re-measured globally this cycle | **154** with REG-186 (P9 full-surface gate sweep) + REG-187 (P13 bare-name log canary); REG-49/115/116/119 still green; cap target 35 — exceeded | build PASS — bundle within P10 (analytics/observability server routes + 2 test-only files; **no shared-chunk or page-budget impact**) | /foxy still largest, 0 pages > 260 kB | local green; type-check PASS, lint 0 errors; quality independent **APPROVE**; sweep GREEN |
+| 2026-06-29 (Cycle 7 — parent-portal REGRESSION) | **5 new files / 71 new tests; 104/104 target + 404/404 broad parent/guardian PASS** (+P8/P13 parent link-code PostgREST `.or()` filter-injection guard at all 3 sites via shared `isValidLinkCode` `^[A-Z0-9]{4,12}$` + byte-identical Next.js↔Deno validator-twin parity; +P8/P13 per-IP brute-force rate limit on the legacy Edge `parent_login` — 5/hour, 429 + Retry-After, pre-DB; +P9 `PATCH /api/parent/profile` authz gate via already-granted `profile.update_own` + self-scope/no-IDOR; +P8/P13 unlinked-parent deny — 403/no-payload across all 9 child-data routes + canonical guardian-link boundary); not re-measured globally this cycle | not re-measured globally this cycle | **157** with REG-188 (link-code filter-injection + twin parity) + REG-189 (per-IP rate limit) + REG-190 (profile authz + unlinked-parent deny); REG-110/111/117 still green; cap target 35 — exceeded | build PASS — bundle within P10 (server routes + Edge Function + tiny pure validator + test-only files; **no shared-chunk or page-budget impact**) | /foxy still largest, 0 pages > 260 kB | local green; type-check PASS, lint 0 errors; quality independent **APPROVE**; sweep GREEN |
 
 ## Notes on the seed row (2026-06-28)
 - **Test count** 2,511 / 84 files: from `.claude/CLAUDE.md` testing cell. `CLAUDE.md`
@@ -150,6 +151,38 @@ measured in-session.
   RISK register), SAO-5 (audit-log admin-PII export — folds into SAO-1), the export `message`-column
   free-form-redaction follow-up (apply `redactPIIInText` only if a future template interpolates user PII),
   and the periodic manual re-read of the highest-PII-sensitivity routes (process) — none implemented.
+
+## Notes on the Cycle-7 row (2026-06-29 — parent-portal REGRESSION)
+- **5 new files / 71 new tests:** `parent-link-code-injection.test.ts` (PostgREST `.or()` filter-injection
+  rejected before the lookup at all 3 sites; each site keeps its posture), `parent-link-code-shared-validator.test.ts`
+  (`isValidLinkCode`/`LINK_CODE_RE` accept/reject table + byte-identical Next.js↔Deno twin parity),
+  `parent-login-rate-limit.test.ts` (per-IP 5/hour, 6th → 429 + Retry-After, pre-DB; PII-safe warn),
+  `parent-profile-authz.test.ts` (`profile.update_own` gate + self-scope/no-IDOR; Bearer + cookie superset),
+  `parent-child-data-deny.test.ts` (unlinked-parent 403/no-payload across all 9 child-data routes + canonical
+  guardian boundary). They contribute to the 104/104 target run; the 404/404 broad parent/guardian suite
+  stays green. Global coverage % was not re-measured this cycle (targeted parent/guardian run only).
+- **PP-2 closes the class at all 3 sites:** `link_code`/`invite_code` were interpolated un-escaped into the
+  `.or()` filter at request-otp, accept-invite, and the Edge `parent_login`. The shared validator (`^[A-Z0-9]{4,12}$`)
+  admits no PostgREST metacharacter (`,` `.` `(` `)` `*` `:` quote/whitespace) and runs BEFORE the filter;
+  link-code FORMAT unchanged (valid 6-/8-char codes pass exactly as before). The deploy-boundary forces two
+  byte-identical copies (`src/lib/sanitize.ts` + `supabase/functions/_shared/link-code.ts`), pinned by a
+  twin-parity test.
+- **Catalog:** REG-188 (`parent_link_code_filter_injection`, P8/P13) + REG-189 (`parent_login_rate_limit`,
+  P8/P13) + REG-190 (`parent_profile_authz_and_child_data_deny`, P9 + P8/P13) filed → **157**. Existing
+  parent-funnel entries REG-110 / REG-111 / REG-117 remain green. Authoritative source remains
+  `.claude/regression-catalog.md`.
+- **Build/bundle:** the 4 changed runtime files are server routes + one Deno Edge Function + a tiny pure
+  validator module; the 5 new files are test-only — **no shared-chunk or page-budget impact**. 0 pages over
+  the 260 kB page budget.
+- **Gates:** type-check PASS, lint 0 errors, build PASS; quality independent verdict **APPROVE**; regression
+  sweep GREEN.
+- **Gated / follow-up (not in these numbers):** PP-1 consent posture (legacy `parent_login` grants `active`
+  from a link code ALONE, no approval — USER-gated DPDP/child-consent access-model decision; on the program
+  RISK register item 0), PP-3 (4 parallel link-creation paths → one consent-respecting choke-point —
+  USER-gated; retiring `parent_login` collapses PP-1 + PP-3), PP-5 client migration to RLS-scoped reads
+  (architect; feeds Cross-cutting P8 breadth), PP-6 helper convergence (behavior-preserving), PP-7
+  English-only server insights/tips/glance (Cycle 8 P7 breadth), PP-1 durable Upstash/DB-backed limiter
+  (architect), pre-existing Deno errors at `parent-portal/index.ts:603/605/629/630` — none implemented.
 
 ## How to add a row
 At the end of each cycle's REGRESSION phase, run `npm test`, `npm run test:coverage`,
