@@ -9,7 +9,9 @@ import React from 'react';
  *
  * Covers:
  *   - 4 plans render with the documented prices
- *     (Explorer ₹0 free, Starter ₹299, Pro ₹699 featured, Unlimited ₹1499)
+ *     (Explorer ₹0 free, Starter ₹299, Pro ₹699 featured, Unlimited ₹1099)
+ *     Unlimited derives from PRICING.unlimited.monthly, converged to ₹1099 by
+ *     PAY-2 (REG-207, 2026-06-30); the old ₹1499 teaser value no longer exists.
  *   - 4 dot indicators render
  *   - Default active dot is index 1 (Starter centered)
  *   - Clicking a dot calls scrollIntoView on the corresponding card
@@ -92,10 +94,10 @@ describe('PricingTeaserV2 — plan content', () => {
     expect(screen.getByText(/Most popular/i)).toBeInTheDocument();
   });
 
-  it('renders Unlimited plan (Plan iv) at ₹1499', () => {
+  it('renders Unlimited plan (Plan iv) at ₹1099', () => {
     renderPricing();
     expect(screen.getByText(/Plan iv · Unlimited/i)).toBeInTheDocument();
-    expect(screen.getByText('1499')).toBeInTheDocument();
+    expect(screen.getByText('1099')).toBeInTheDocument();
   });
 
   it('Explorer, Starter and Pro CTAs link to /login; Unlimited links to /pricing', () => {

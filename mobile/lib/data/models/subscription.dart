@@ -95,8 +95,8 @@ class Plans {
       code: 'unlimited',
       name: 'Unlimited',
       icon: '👑',
-      priceMonthly: 1499,
-      priceYearly: 11999,
+      priceMonthly: 1099,
+      priceYearly: 8799,
       benefits: [
         'Unlimited Foxy chats',
         'Unlimited quizzes',
