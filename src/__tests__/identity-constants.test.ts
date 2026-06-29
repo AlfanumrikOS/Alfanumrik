@@ -15,6 +15,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   VALID_ROLES,
   VALID_GRADES,
@@ -275,6 +277,49 @@ describe('normalizeGrade', () => {
     expect(typeof result).toBe('string');
     expect(result).toBe('10');
   });
+
+  // ── Tier-2 PR D: legacy-prefixed extraction (REG-203, P5) ──────
+  // Prior bug: "Grade 11" wrongly defaulted to "9" instead of "11".
+  // normalizeGrade now extracts the first 1-2 digit run and keeps it
+  // only when it lands in 6..12.
+  it('extracts the grade digit from legacy/prefixed strings (truth table)', () => {
+    const cases: Array<[unknown, string]> = [
+      ['9', '9'],          // bare valid string — idempotent fast path
+      ['Grade 11', '11'],  // "Grade N"
+      ['grade 6', '6'],    // lowercase prefix
+      ['Class 7', '7'],    // "Class N"
+      ['Grade-12', '12'],  // hyphen separator
+      ['11th', '11'],      // ordinal suffix
+      [' 8 ', '8'],        // surrounding whitespace
+      [12, '12'],          // in-range number → String
+      ['5', '9'],          // extracted digit out of range (low) → default
+      ['13', '9'],         // extracted digit out of range (high) → default
+      ['0', '9'],          // out of range → default
+      [null, '9'],         // null → default
+      [undefined, '9'],    // undefined → default
+      ['', '9'],           // empty string (no digit) → default
+    ];
+    for (const [input, expected] of cases) {
+      expect(normalizeGrade(input)).toBe(expected);
+    }
+  });
+
+  it('is idempotent on extracted legacy grades', () => {
+    expect(normalizeGrade(normalizeGrade('Grade 11'))).toBe('11');
+    expect(normalizeGrade(normalizeGrade('Class 7'))).toBe('7');
+  });
+
+  it('never leaks a non-VALID_GRADES value (P5 no integer leak)', () => {
+    const inputs: unknown[] = [
+      '9', 'Grade 11', 'grade 6', 'Class 7', 'Grade-12', '11th', ' 8 ',
+      12, '5', '13', '0', null, undefined, '', 'not a grade', {}, [],
+    ];
+    for (const input of inputs) {
+      const out = normalizeGrade(input);
+      expect(typeof out).toBe('string');
+      expect(VALID_GRADES).toContain(out as (typeof VALID_GRADES)[number]);
+    }
+  });
 });
 
 // ── validateRedirectTarget() (open redirect prevention) ──────────
@@ -436,5 +481,57 @@ describe('ADMIN_ROUTE_PREFIXES', () => {
     const prefixes = [...ADMIN_ROUTE_PREFIXES];
     expect(prefixes).toContain('/super-admin');
     expect(prefixes).toContain('/api/super-admin');
+  });
+});
+
+// ── AuthContext source pin (Tier-2 PR D, REG-203, P5) ────────────
+// Pins that AuthContext coerces the loaded grade through normalizeGrade
+// at the student-profile read paths, so the UI can never surface a raw
+// legacy value like "Grade 9" or mis-grade a grade-N student.
+
+describe('AuthContext applies normalizeGrade at student-profile read paths', () => {
+  // Strip line + block comments so we only assert on live code, not docs.
+  function readSourceStripped(relativePath: string): string {
+    const candidates = [
+      join(process.cwd(), relativePath),
+      join(process.cwd(), '..', relativePath),
+    ];
+    let source = '';
+    for (const p of candidates) {
+      try {
+        source = readFileSync(p, 'utf8');
+        break;
+      } catch {
+        /* try next candidate */
+      }
+    }
+    return source
+      .replace(/\/\*[\s\S]*?\*\//g, '') // block comments
+      .replace(/(^|[^:])\/\/.*$/gm, '$1'); // line comments (not URLs)
+  }
+
+  const src = readSourceStripped('src/lib/AuthContext.tsx');
+
+  it('reads the AuthContext source (non-vacuous)', () => {
+    expect(src.length).toBeGreaterThan(1000);
+    expect(src).toContain('setStudent');
+  });
+
+  it('applies grade: normalizeGrade( on the setStudent object-spread', () => {
+    const occurrences = (src.match(/grade:\s*normalizeGrade\(\s*studentData\.grade\s*\)/g) ?? []).length;
+    // Two non-metadata profile-load paths (the metadata path already had it,
+    // for 3 total) — require at least the two added by this PR.
+    expect(occurrences).toBeGreaterThanOrEqual(2);
+  });
+
+  it('never assigns a raw studentData.grade without coercion on a setStudent spread', () => {
+    // Guard against regression: a `...studentData` spread that forgets to
+    // override grade. Every setStudent({ ...studentData ... }) must carry
+    // the normalizeGrade override.
+    const spreads = src.match(/setStudent\(\s*\{\s*\.\.\.studentData[\s\S]*?\}\s*as Student\)/g) ?? [];
+    expect(spreads.length).toBeGreaterThanOrEqual(2);
+    for (const spread of spreads) {
+      expect(spread).toMatch(/grade:\s*normalizeGrade\(/);
+    }
   });
 });
