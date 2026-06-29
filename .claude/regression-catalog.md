@@ -5591,3 +5591,41 @@ anti cap-creep on the four `check-bundle-size.mjs` caps).
 **Total catalog: 160 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Remediation — SLC-1: Quiz-Session XP Trigger De-dup (P2) — 2026-06-29
+
+Source: remediation program, item SLC-1 (single-XP-writer de-dup). Quiz
+completion had TWO XP writers firing in the same transaction: the capped
+`atomic_quiz_profile_update` (the intended sole writer, which enforces the 200
+XP daily cap), AND a second uncapped XP path inside the `fn_quiz_session_sync_profile`
+trigger that fired on `quiz_sessions` insert. The trigger's duplicate
+XP/`xp_total`/`level`/`total_*` writes meant a single quiz could award XP twice
+and bypass the daily cap. SLC-1 removes the duplicate writes from the trigger
+(Option B — keep the streak bookkeeping the trigger uniquely owns) so the capped
+RPC is the SOLE XP writer, with no behavioral change to the XP economy itself
+(no literal or cap redefined — this is a de-dup, not an economy change).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-194 | `slc1_single_xp_writer_dedupe` | P2: the SLC-1 migration `20260702020000_slc1_dedupe_quiz_session_xp_trigger.sql` `CREATE OR REPLACE`s `fn_quiz_session_sync_profile` to REMOVE all duplicate XP/`xp_total`/`level`/`total_*` writes (the live uncapped second XP writer is gone) while KEEPING `streak_days`+`longest_streak` (Option B); preserves SECURITY DEFINER + `SET search_path`; stays `CREATE OR REPLACE` (idempotent, trigger binding untouched, no DROP); the capped `atomic_quiz_profile_update` remains the SOLE XP writer that both v1 `submit_quiz_results` (baseline 7549) and v2 `submit_quiz_results_v2` (baseline 7850) PERFORM — so no completion path loses its only writer (no under-award); no XP literal (10/20/50) or 200 cap redefined (de-dup, not an economy change). Source-level pin; live-DB behavioral "1× not 2×" deferred to an integration lane. | `src/__tests__/slc1-quiz-session-trigger-dedupe.test.ts` | E |
+
+### Invariants covered by this section
+
+- P2 (XP economy) — REG-194 pins the SLC-1 de-dup so the capped
+  `atomic_quiz_profile_update` is the SOLE XP writer on every quiz-completion
+  path (v1 + v2); the trigger no longer double-writes uncapped XP, and no XP
+  literal or the 200 daily cap is redefined (de-dup, not an economy change). The
+  trigger retains the `streak_days`/`longest_streak` bookkeeping it uniquely owns
+  (Option B), preserves SECURITY DEFINER + `SET search_path`, and stays a
+  `CREATE OR REPLACE` (idempotent, trigger binding untouched, no DROP).
+
+### Catalog total
+
+Pre-REG-194: 160 entries (through Engineering-Audit Cycle 8's REG-191..REG-193
+cross-cutting mobile↔web parity + bundle-cap pin). Remediation SLC-1 adds REG-194
+(single-XP-writer de-dup — the uncapped second XP writer inside
+`fn_quiz_session_sync_profile` is removed, leaving the capped
+`atomic_quiz_profile_update` as the sole XP writer, with streak bookkeeping kept).
+**Total catalog: 161 entries (target: 35 — TARGET EXCEEDED).**
+
+---
