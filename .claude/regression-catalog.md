@@ -6131,3 +6131,51 @@ thresholds byte-unchanged; gentle bilingual flagged note; server-authoritative s
 **Total catalog: 173 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Remediation — PAY-2: Unlimited Price Convergence (P11) — 2026-06-30
+
+The `unlimited` consumer plan price was converged across ALL sources to the
+DB-canonical ₹1099/₹8799. The DB row (`subscription_plans.unlimited`, migration
+`20260505155126`) was ALREADY ₹1099/₹8799; the code sources were converged DOWN
+to match it: web charge + display (`src/lib/plans.ts::PRICING.unlimited` =
+1099/8799), the derived server paisa constant read by `/api/payments/create-order`
+(`src/lib/pricing.ts::CONSUMER_PRICING_PAISA.unlimited` = 109900/879900), and the
+mobile charge + display (`mobile/lib/data/models/subscription.dart` = 1099/8799).
+
+This CLOSES the prior live divergence where mobile/web code charged ₹1499 while
+the DB (web checkout) charged ₹1099 — the SAME plan billed two prices by platform,
+and the gateway captured ₹1499 while verify recorded the DB's ₹1099 (gateway↔ledger
+mismatch). The convergence is customer-FAVORABLE: the unlimited charge was lowered,
+never raised. P11 signature-verification and atomic-write logic are UNTOUCHED — only
+the pricing CONSTANTS moved. The SOT pin (`consumer-pricing-sot-drift.test.ts`
+Part B) was flipped from a DB↔code DIVERGENCE pin (`not.toBe`) to a DB===code
+PARITY pin: this is a legitimate convergence update, NOT a weakened assertion — the
+old ₹1499/₹11999 value no longer exists in any source, so the prior divergence pin
+would now be asserting a falsehood.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-207 | `pay2_unlimited_price_converged_to_db_canonical` | P11: the `unlimited` plan price is converged across ALL sources to the DB-canonical ₹1099/₹8799 (web `plans.ts`, derived paisa `CONSUMER_PRICING_PAISA` read by create-order, mobile `subscription.dart`, and DB `subscription_plans`) — closing the prior live divergence where mobile charged ₹1499 (code) vs web ₹1099 (DB) and the gateway-vs-ledger mismatch (mobile captured ₹1499 but verify recorded ₹1099); the SOT pin now asserts DB===code parity (not divergence); customer-favorable (charge lowered, never raised); P11 signature/atomicity logic untouched | `src/__tests__/payments/consumer-pricing-sot-drift.test.ts` | U | P11 |
+
+### Invariants covered by this section
+
+- P11 (payment integrity) — REG-207 pins single-price convergence: web charge,
+  mobile charge, mobile display, web display, and the DB row are all ₹1099/₹8799.
+  The focused pin `src/__tests__/payments/pay2-unlimited-price-converged.test.ts`
+  asserts `PRICING.unlimited === {1099,8799}`, `CONSUMER_PRICING_PAISA.unlimited
+  === {109900,879900}` (rupees ×100, no rounding drift), and that the code price
+  EQUALS the DB-canonical migration value — so a future drift in EITHER direction
+  (code creeping back to ₹1499, paisa desyncing, or the DB migration moving)
+  re-breaks the pin. starter (299/2399) and pro (699/5599) are pinned UNCHANGED as
+  a guard that ONLY unlimited moved. The SOT `consumer-pricing-sot-drift.test.ts`
+  Part B was flipped divergence→parity in lock-step; signature-verify + atomic
+  subscription-write paths are not touched by this change.
+
+### Catalog total
+
+PAY-2 adds REG-207 (unlimited price convergence to DB-canonical ₹1099/₹8799 —
+DB↔code SOT pin flipped from divergence to parity; focused convergence pin guards
+all four sources + starter/pro-unchanged).
+**Total catalog: 174 entries (target: 35 — TARGET EXCEEDED).**
+
+---

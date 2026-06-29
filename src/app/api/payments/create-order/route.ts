@@ -128,14 +128,19 @@ export async function POST(request: NextRequest) {
     // path) can no longer drift from plans.ts. No amount changed — the charged
     // paisa values are byte-identical to the prior inline literal.
     //
-    // ⚠️  PAY-2 PENDING CEO DECISION (NOT resolved here): the DB
-    // `subscription_plans.unlimited` row (web checkout path) was set to
-    // ₹1099/₹8799 by migration 20260505155126, while this code mirror (mobile
-    // path) charges ₹1499/₹11999. That DB↔code `unlimited` divergence is a
-    // pricing decision and is CEO-gated — Layer 1 deliberately does NOT touch
-    // it. See engineering-audit/remediation/pay-2-pricing-source/01-design.md
-    // (Open question #1). This L1 change only de-dups the CODE mirrors, which
-    // already agree.
+    // ✅  PAY-2 RESOLVED (value-only convergence, customer-favorable): the code
+    // `unlimited` price was converged DOWN to the DB-canonical ₹1099/₹8799 set by
+    // migration 20260505155126. plans.ts PRICING.unlimited is now {monthly:1099,
+    // yearly:8799}; CONSUMER_PRICING_PAISA derives ×100 (→ 109900/879900 paisa),
+    // so this route (the MOBILE checkout path) now charges the SAME amount the DB
+    // holds and that payments/verify records in payment_history. The prior
+    // gateway(₹1499)-vs-ledger(₹1099) mismatch is closed; the change only ever
+    // LOWERED the charge (never overcharges). No signature/atomicity/auth logic
+    // touched. FUTURE HARDENING (deferred, not a blocker): have create-order read
+    // `subscription_plans` at runtime so code can never re-diverge — gated on
+    // folding the subscription_plans seed into the migration chain first (the
+    // baseline is schema-only; a runtime DB read would otherwise break fresh
+    // CI/staging/DR DBs). Until then the code constant (== DB) stays the source.
     const pricingByCycle = CONSUMER_PRICING_PAISA[plan_code as ConsumerPlanCode];
     if (!pricingByCycle) {
       // Defensive: paymentSubscribeSchema already constrains plan_code to the

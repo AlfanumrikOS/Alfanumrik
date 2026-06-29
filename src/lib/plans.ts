@@ -94,7 +94,7 @@ export const PLANS: Record<string, PlanConfig> = {
 export const PRICING = {
   starter: { monthly: 299, yearly: 2399 },
   pro: { monthly: 699, yearly: 5599 },
-  unlimited: { monthly: 1499, yearly: 11999 },
+  unlimited: { monthly: 1099, yearly: 8799 },
 } as const;
 
 /** Helper: format INR price with comma separator */
