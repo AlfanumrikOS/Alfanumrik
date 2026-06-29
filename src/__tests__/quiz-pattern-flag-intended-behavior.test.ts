@@ -11,16 +11,19 @@ import * as path from 'path';
  *   2. Pattern (all-same idx, >3 q)  → FLAG  (heuristic, false-positive-prone)
  *   3. Count (responses != questions)→ REJECT
  *
- * So the pattern check is deliberately FLAG-ONLY on BOTH client and server:
- *   - Client (src/app/quiz/page.tsx): speed + count SHORT-CIRCUIT (set score 0,
- *     return BEFORE submit); the pattern check only console.warns and STILL
- *     submits.
+ * The server treats all three checks as FLAG (xp=0, record-but-zero):
  *   - Server (submit_quiz_results_v2): all three checks set v_flagged := true and
  *     zero the XP, but the quiz_sessions row is STILL written (record-but-zero).
+ *   - Client (src/app/quiz/page.tsx): as of SLC-5 (2026-06-30) ALL three checks
+ *     are advisory (console.warn + always submit). Historically speed + count
+ *     short-circuited (score 0, return before submit); that discard was removed
+ *     in SLC-5 because the server is the single authority and the client discard
+ *     silently destroyed a legitimately-fast student's work. See
+ *     slc5-anticheat-advisory-convergence.test.ts for the full SLC-5 pin.
  *
- * This test PINS that intended behavior so a future edit can't quietly turn the
- * pattern check into a hard reject, or turn speed/count into flag-only, without a
- * failing test forcing a conscious decision.
+ * This test PINS the server flag-only behavior + the client advisory convergence
+ * so a future edit can't quietly turn a check into a hard reject (client) or a
+ * RAISE/abort (server) without a failing test forcing a conscious decision.
  *
  * TEST-ONLY structural pin (greps the source). Companion to the executable
  * client-mirror tests in anti-cheat.test.ts / anti-cheat-server-parity.test.ts.
@@ -94,24 +97,47 @@ describe('SLC-6 client: pattern check warns but does NOT short-circuit submissio
     expect(block).not.toMatch(/score_percent\s*:\s*0/);
   });
 
-  it('CONTRAST: the speed branch DOES short-circuit (reject) — return + score 0', () => {
+  // SLC-5 convergence (2026-06-30): the speed + count branches USED to
+  // short-circuit (return + score 0, discarding the attempt). They no longer
+  // do — all three client checks are now ADVISORY (warn + always submit); the
+  // server RPC is the single authority. The two assertions below now PIN that
+  // convergence (no return / no score-0 discard in those branches). The full
+  // SLC-5 behavior is locked in slc5-anticheat-advisory-convergence.test.ts.
+  it('SLC-5: the speed (avg<3s) branch no longer short-circuits — warn only, no return/score-0', () => {
     const flat = src.replace(/\r/g, '');
     const idx = flat.search(/avgTimePerQ\s*<\s*3\s*\)\s*\{/);
     expect(idx).toBeGreaterThanOrEqual(0);
-    const block = flat.slice(idx, idx + 600);
-    expect(block).toMatch(/score_percent\s*:\s*0/);
-    expect(block).toMatch(/\breturn\b/);
+    const open = flat.indexOf('{', idx);
+    const block = balancedBlock(flat, open);
+    expect(block).toMatch(/console\.warn/);
+    expect(block).not.toMatch(/\breturn\b/);
+    expect(block).not.toMatch(/score_percent\s*:\s*0/);
   });
 
-  it('CONTRAST: the count-mismatch branch DOES short-circuit (reject) — return + score 0', () => {
+  it('SLC-5: the count-mismatch branch no longer short-circuits — warn only, no return/score-0', () => {
     const flat = src.replace(/\r/g, '');
     const idx = flat.search(/allResponses\.length\s*!==\s*questions\.length\s*\)\s*\{/);
     expect(idx).toBeGreaterThanOrEqual(0);
-    const block = flat.slice(idx, idx + 600);
-    expect(block).toMatch(/score_percent\s*:\s*0/);
-    expect(block).toMatch(/\breturn\b/);
+    const open = flat.indexOf('{', idx);
+    const block = balancedBlock(flat, open);
+    expect(block).toMatch(/console\.warn/);
+    expect(block).not.toMatch(/\breturn\b/);
+    expect(block).not.toMatch(/score_percent\s*:\s*0/);
   });
 });
+
+/** Balanced-brace block extraction starting at the opening `{` at `open`. */
+function balancedBlock(src: string, open: number): string {
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return src.slice(open, i + 1);
+    }
+  }
+  throw new Error('unbalanced block');
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // 2. SERVER — all three checks FLAG (xp=0) but the row is still recorded.

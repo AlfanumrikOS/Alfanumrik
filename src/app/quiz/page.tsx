@@ -265,6 +265,11 @@ export default function QuizPage() {
     xp_capped?: boolean;
     xp_uncapped?: number;
     idempotent_replay?: boolean;
+    // SLC-5: server anti-cheat verdict. When the authoritative RPC trips any of
+    // the 3 P3 checks it returns flagged=true with the REAL score_percent and
+    // xp_earned=0. The client surfaces a gentle, non-accusatory note (below) and
+    // NEVER overrides the recorded score. Older/fallback paths leave it undefined.
+    flagged?: boolean;
   } | null>(null);
 
   // Network error resilience — retry support for failed submissions
@@ -920,7 +925,18 @@ export default function QuizPage() {
         }
 
         // ── ANTI-CHEAT: Client-side validation before submission (P3) ──
-        // 1. Minimum time: 3 seconds avg per question (bots submit instantly) — REJECT
+        // SLC-5 convergence: the client is NOT a security boundary (P3/P9). The
+        // server RPC (submit_quiz_results / _v2) is the single authority — it
+        // applies the SAME 3 P3 checks, sets `flagged=true`, zeros XP, but still
+        // RECORDS the session with the REAL score_percent. The client therefore
+        // performs these checks ADVISORY-ONLY (warn + telemetry) and ALWAYS
+        // proceeds to submitQuizResults. It must NEVER discard the attempt or
+        // override the score to 0 — doing so silently destroyed a legitimately
+        // fast / edge-case student's work and recorded NO session. Thresholds
+        // are UNCHANGED (avg<3s, all-same-index>3 MCQ, count≠count); only the
+        // client RESPONSE changed from reject → advisory-submit.
+        //
+        // 1. Minimum time: 3 seconds avg per question (bots submit instantly).
         // Applies to ALL response types (MCQ, SA, LA). Pure short-answer or
         // long-answer quizzes contain zero MCQ responses, so the previous
         // guard (mcqResponses.length > 0) silently bypassed the check on
@@ -930,17 +946,9 @@ export default function QuizPage() {
         const totalResponses = allResponses.length;
         const avgTimePerQ = totalResponses > 0 ? timer / totalResponses : 0;
         if (totalResponses > 0 && avgTimePerQ < 3) {
-          console.warn(`[AntiCheat] Quiz completed too fast: ${timer}s for ${totalResponses} questions (avg ${avgTimePerQ.toFixed(1)}s < 3s)`);
-          setResults({
-            total: totalResponses,
-            correct: allResponses.filter(r => r.is_correct).length,
-            score_percent: 0,
-            xp_earned: 0,
-            session_id: '',
-          });
-          setLoading(false);
-          setScreen('results');
-          return;
+          // ADVISORY ONLY — do NOT discard the attempt. The server re-checks
+          // this same condition and is the authority on flag + zero-XP.
+          console.warn(`[AntiCheat] Quiz completed too fast: ${timer}s for ${totalResponses} questions (avg ${avgTimePerQ.toFixed(1)}s < 3s) — submitting; server is authoritative`);
         }
 
         // 2. Detect impossible response patterns — FLAG (warn but still submit)
@@ -953,19 +961,12 @@ export default function QuizPage() {
           console.warn(`[AntiCheat] All MCQ answers were option ${optionCounts.indexOf(maxSameOption)} — pattern gaming`);
         }
 
-        // 3. Verify response count matches question count — REJECT
+        // 3. Verify response count matches question count.
+        // ADVISORY ONLY — do NOT discard the attempt. The server re-checks
+        // jsonb_array_length(p_responses) <> v_total and is the authority on
+        // flag + zero-XP; it still records the session with the real score.
         if (allResponses.length !== questions.length) {
-          console.warn(`[AntiCheat] Response count (${allResponses.length}) != question count (${questions.length})`);
-          setResults({
-            total: questions.length,
-            correct: 0,
-            score_percent: 0,
-            xp_earned: 0,
-            session_id: '',
-          });
-          setLoading(false);
-          setScreen('results');
-          return;
+          console.warn(`[AntiCheat] Response count (${allResponses.length}) != question count (${questions.length}) — submitting; server is authoritative`);
         }
 
         const subMeta = allowedSubjects.find(s => s.code === selectedSubject);
@@ -1797,6 +1798,18 @@ export default function QuizPage() {
           onRetry={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); setNetworkError(null); pendingSubmissionRef.current = null; }}
           onGoHome={() => router.push('/dashboard')}
         />
+        {/* SLC-5: gentle, NON-accusatory note when the server flagged the attempt.
+            The real score_percent is still shown by QuizResults above; this only
+            explains why no XP was awarded. Bilingual per P7. Never punitive. */}
+        {results.flagged && (
+          <div className="fixed bottom-20 left-4 right-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-center z-30 shadow-sm animate-slide-up">
+            <p className="text-sm">
+              {isHi
+                ? 'इस प्रयास की समीक्षा के लिए चिह्नित किया गया, इसलिए कोई XP नहीं मिला। तुम्हारा स्कोर सहेज लिया गया है — दोबारा कोशिश करके XP कमाओ!'
+                : 'This attempt was flagged for review, so no XP was awarded. Your score is saved — try again to earn XP!'}
+            </p>
+          </div>
+        )}
         {networkError && (
           <div className="fixed bottom-20 left-4 right-4 bg-amber-500 text-white rounded-xl p-4 text-center z-40 shadow-lg animate-slide-up">
             <p className="text-sm font-medium mb-2">{networkError}</p>
