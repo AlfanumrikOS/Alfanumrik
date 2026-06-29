@@ -348,7 +348,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .eq('id', rd.student.id)
                 .single();
               if (studentData) {
-                setStudent(studentData as Student);
+                // P5 read-time coercion: legacy rows may hold "Grade 9";
+                // normalizeGrade returns the bare "6".."12" form so the UI
+                // never sees a prefixed/invalid grade. Only the grade field
+                // is touched — all other columns pass through untouched.
+                setStudent({ ...studentData, grade: normalizeGrade(studentData.grade) } as Student);
                 setLanguageState(studentData.preferred_language ?? 'en');
               }
             }
@@ -421,7 +425,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ]);
 
           if (studentData) {
-            setStudent(studentData as Student);
+            // P5 read-time coercion: legacy rows may hold "Grade 9";
+            // normalizeGrade returns the bare "6".."12" form so the UI
+            // never sees a prefixed/invalid grade. Only the grade field
+            // is touched — all other columns pass through untouched.
+            setStudent({ ...studentData, grade: normalizeGrade(studentData.grade) } as Student);
             detectedRoles.push('student');
             detectedPrimary = 'student';
             setLanguageState(studentData.preferred_language ?? 'en');

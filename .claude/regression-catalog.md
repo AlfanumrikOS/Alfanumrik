@@ -5947,3 +5947,52 @@ behavior + barrel export).
 **Total catalog: 169 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Remediation — Tier-2 PR D: Grade Read-Coercion + normalizeGrade Extraction (P5) — 2026-06-30
+
+The Tier-2 PR D slice fixes a P5 grade-format bug at the read boundary. Previously
+`normalizeGrade` (in `src/lib/identity/constants.ts`) only handled bare valid
+strings (`"6".."12"`) and in-range numbers; any legacy/prefixed value such as
+`"Grade 11"`, `"Class 7"`, or `"11th"` fell through to the `"9"` safe default —
+silently MIS-GRADING a grade-11 student as grade 9 in the UI. The function now
+EXTRACTS the first 1–2 digit run via `/\d{1,2}/`, range-validates it to 6..12, and
+keeps it; bare valid strings stay idempotent, in-range numbers stringify, and only
+genuinely invalid / out-of-range / null / undefined / empty input reaches the `"9"`
+default. `AuthContext.tsx` now wraps the loaded grade in `normalizeGrade(studentData.grade)`
+on the `setStudent({ ...studentData, ... })` object-spread at BOTH student-profile
+read paths (the metadata path already had it), so a stored legacy value can never
+surface in the dashboard as `"Grade 9"` or mis-grade the learner.
+
+The extraction truth-table is asserted with direct behavioral unit calls (the
+pre-existing 7 normalizeGrade tests still pass unweakened): `"9"`→`"9"`,
+`"Grade 11"`→`"11"`, `"grade 6"`→`"6"`, `"Class 7"`→`"7"`, `"Grade-12"`→`"12"`,
+`"11th"`→`"11"`, `" 8 "`→`"8"`, `12`(num)→`"12"`, `"5"`→`"9"`, `"13"`→`"9"`,
+`"0"`→`"9"`, `null`→`"9"`, `undefined`→`"9"`, `""`→`"9"`. Idempotency
+(`normalizeGrade(normalizeGrade("Grade 11")) === "11"`) and the P5 no-integer-leak
+invariant (output is always a string in `VALID_GRADES`, even for objects/arrays)
+are pinned. The AuthContext application is pinned as a comment-stripped static-source
+assertion: ≥2 `grade: normalizeGrade(studentData.grade)` occurrences on `setStudent`
+spreads, and a guard that EVERY `setStudent({ ...studentData ... } as Student)` spread
+carries the `normalizeGrade(` override (no raw-grade leak path).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-203 | `normalize_grade_extracts_legacy_prefixed_grade` | P5: `normalizeGrade` extracts the real grade digit from legacy `"Grade N"`/`"Class N"`/`"Nth"` formats (range-validated 6..12) instead of defaulting non-9 prefixed grades to `"9"` (the prior bug), bare `"6".."12"` idempotent, invalid/out-of-range/null → `"9"`; AuthContext applies it at the student-profile read paths so the UI never shows `"Grade 9"` and never mis-grades a grade-N student | `src/__tests__/identity-constants.test.ts` | U | P5 |
+
+### Invariants covered by this section
+
+- P5 (grade format) — REG-203 pins the extraction truth-table (legacy-prefixed
+  formats yield the real digit, range-validated 6..12), idempotency on already-valid
+  grades, the no-integer-leak guarantee (output always a `VALID_GRADES` string), and
+  the AuthContext source pin that the loaded grade is coerced through `normalizeGrade`
+  on every `setStudent` student-profile-read spread.
+
+### Catalog total
+
+Pre-Tier-2-PR-D: 169 entries (through Tier-2 PR B's REG-202 super-admin export
+message redaction). Tier-2 PR D adds REG-203 (grade read-coercion + normalizeGrade
+legacy-extraction — the P5 extraction truth-table + idempotency + no-integer-leak +
+AuthContext read-path source pin).
+**Total catalog: 170 entries (target: 35 — TARGET EXCEEDED).**
+
+---

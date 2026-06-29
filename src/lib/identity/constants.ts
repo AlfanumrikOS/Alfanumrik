@@ -153,14 +153,40 @@ export function isValidBoard(board: unknown): board is ValidBoard {
   return typeof board === 'string' && VALID_BOARDS.includes(board as ValidBoard);
 }
 
-/** Coerce a grade value to a valid string grade (P5 compliance) */
+/**
+ * Coerce a grade value to a valid string grade (P5 compliance).
+ *
+ * Pure, null-safe, and idempotent. Resolution order:
+ *   1. Bare valid string ("6".."12")            → unchanged.
+ *   2. In-range number (6..12)                  → String(n).
+ *   3. String carrying an in-range grade number → the extracted digit string.
+ *      Supported legacy formats include "Grade 11", "grade 11", "Class 11",
+ *      "Grade-7", "11th", " 11 " — the FIRST 1-2 digit run is extracted and
+ *      kept only when it lands in 6..12.
+ *   4. Anything unparseable, out-of-range, null, or undefined → '9' safe
+ *      default (never throws). Steps 1-3 preserve the real grade so this
+ *      default is now only reached for genuinely invalid input.
+ */
 export function normalizeGrade(value: unknown): ValidGrade {
+  // 1. Already-valid bare string grade — idempotent fast path.
   if (typeof value === 'string' && VALID_GRADES.includes(value as ValidGrade)) {
     return value as ValidGrade;
   }
+  // 2. In-range number.
   if (typeof value === 'number' && value >= 6 && value <= 12) {
     return String(value) as ValidGrade;
   }
+  // 3. Extract a grade number embedded in a legacy/prefixed string.
+  if (typeof value === 'string') {
+    const match = value.match(/\d{1,2}/);
+    if (match) {
+      const n = parseInt(match[0], 10);
+      if (n >= 6 && n <= 12) {
+        return String(n) as ValidGrade;
+      }
+    }
+  }
+  // 4. Unparseable / out-of-range / null / undefined.
   return '9'; // safe default
 }
 
