@@ -5751,3 +5751,55 @@ per-type tiering — the P9/P13 gate-before-data + no-floor-inheritance pins).
 **Total catalog: 165 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Remediation — PP-1/3: Parent-Link Consent / Option B (P8/P13/P15) — 2026-06-29
+
+The Cycle-7 audit found that the legacy Edge `parent_login` action granted an
+`active` / `is_verified:true` guardian↔child link from a bare link-code match —
+a link code alone (e.g. leaked to a tuition centre) opened a child's data with
+NO child consent (P8 parent↔child boundary + P13 privacy). CEO-approved Option B
+FLIPS the posture: `parent_login` now creates a `pending` link that the STUDENT
+must approve (via the existing `/api/parent/approve-link` flow) before any data
+is exposed; the parent sees a bilingual "awaiting approval" screen and the
+student is notified PII-free.
+
+Because this is an intentional posture FLIP, there is NO characterization
+tripwire of the old "active-without-approval" behaviour — REG-199 pins the NEW
+consent invariant across all four surfaces (consent posture, no-data-while-
+pending, the anti-orphan dashboard-wiring guard, and the still-green
+student-owned approve-link flip from REG-117). The unit lane has no live DB, so
+the Edge posture is pinned as comment-stripped static-source assertions (same
+convention as `parent-login-rate-limit.test.ts` / REG-198), the no-access
+boundary is pinned via the `ACTIVE_GUARDIAN_LINK_STATUSES` constant + the
+relationship.ts / `canAccessStudent` filters, the anti-orphan guard is a
+source pin on `StudentOSDashboard` (import + `<PendingLinkApproval` JSX), and a
+light jsdom render test proves the wired card itself works (self-hides on empty,
+shows Approve/Reject + parent name when pending, bilingual).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-199 | `parent_login_creates_pending_consent_link` | P8/P13/P15: `parent_login` creates a `pending` (not `active`) guardian_student_links row via ON CONFLICT upsert (no downgrade of an approved link), grants ZERO child data while pending (ACTIVE_GUARDIAN_LINK_STATUSES excludes pending; canAccessStudent denies), responds `pending_approval` with no session, and notifies the student PII-free via send_notification; the student approval surface (`PendingLinkApproval`) is wired into the live `StudentOSDashboard` (anti-orphan guard) and the student-owned approve-link flip (REG-117) is intact. Closes the Cycle-7 finding that a link code alone granted an active guardian link without consent | `src/__tests__/edge-functions/parent-login-consent.test.ts`, `src/__tests__/components/pending-link-approval.test.tsx` (companion render) | U | P8,P13,P15 |
+
+### Invariants covered by this section
+
+- P8 (parent↔child boundary) — REG-199 pins that `handleParentLogin` writes
+  `status:'pending'`/`is_verified:false` on both branches (never
+  `active`/`true`, never a downgrade), and that `ACTIVE_GUARDIAN_LINK_STATUSES`
+  excludes `pending` so the relationship reads + `canAccessStudent`'s parent
+  branch grant no child data until the student approves.
+- P13 (data privacy) — REG-199 pins that the pending response carries only
+  `student_name` + `link_id` (no session/guardian/grade/stats) and the student
+  notification carries no guardian name/email/phone (only the opaque link_id).
+- P15 (onboarding integrity) — REG-199's anti-orphan guard pins that the live
+  `StudentOSDashboard` IMPORTS and RENDERS `PendingLinkApproval`, so the consent
+  request can never silently un-wire and dead-end the parent at "pending".
+
+### Catalog total
+
+Pre-PP-1/3: 165 entries (through Remediation SAO-1/SAO-5's REG-198 super-admin
+PII-export tiering). Remediation PP-1/3 adds REG-199 (parent-link consent /
+Option B — the P8/P13/P15 consent-posture + no-data-while-pending + anti-orphan
+dashboard-wiring pins).
+**Total catalog: 166 entries (target: 35 — TARGET EXCEEDED).**
+
+---

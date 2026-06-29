@@ -21,6 +21,7 @@ measured in-session.
 | 2026-06-29 (SLC-1 remediation — quiz_sessions XP-trigger de-dup) | **17 SLC-1 source-level pins** (`slc1-quiz-session-trigger-dedupe.test.ts` — single-writer / removed-vs-kept statements / streak-preserved / posture) + REG-181 green; **27/27** SLC-1 target, **310/310** broad XP/quiz PASS; not re-measured globally | not re-measured (targeted XP/quiz run only) | **161** with REG-194 (P2 — `atomic_quiz_profile_update` is the SINGLE XP writer; `fn_quiz_session_sync_profile` performs no XP/`xp_total`/counter award + can no longer bypass the 200/day cap; cross-refs REG-48 + REG-181); cap target 35 — exceeded | **N/A** — migration + test-only change (no client bundle, no TS runtime surface); CI post-merge build is the backstop | /foxy still largest, 0 pages > 260 kB (no runtime/page change) | local green; type-check PASS, lint 0 errors; quality independent **APPROVE**; P14 chain (architect+assessment+mobile+testing+quality) complete; **migration not yet committed/applied — live-DB single-writer proof DEFERRED to staged rollout** |
 | 2026-06-29 (PAY-2 remediation — consumer-pricing source-of-truth de-dup) | **10 PAY-2 pins** (`consumer-pricing-sot-drift.test.ts` — Part A four-way code-mirror parity lock `plans.ts×100 == CONSUMER_PRICING_PAISA == mobile×100`; Part B DB-divergence pin documenting `unlimited` DB ₹1099/8799 vs code ₹1499/11999 as a visible CI fact); **14/14** PAY-2 + XC-6 target, **333/333** broad payment/pricing PASS; XC-6 (REG-191) / REG-154 / GST-gate / setup-plans / payment.test still green; not re-measured globally | not re-measured (targeted payment/pricing run only) | **163** with REG-195 (P11-adjacent — four-way consumer-pricing SoT parity lock: web↔server-constant↔mobile) + REG-196 (P11-adjacent — DB-divergence pin, flips to `DB === code` once the canonical `unlimited` price is CEO-decided); cross-refs REG-65 family + XC-6 REG-191; cap target 35 — exceeded | build **PASS** — L1 is a one-import + one-lookup-line change in an existing server route; L2 is test-only (no shared-chunk / page-budget impact) | /foxy still largest, 0 pages > 260 kB (no runtime/page change) | local green; type-check PASS, lint 0 errors; quality **APPROVE WITH CONDITIONS** → condition (close payment-flow Gate 5) MET (architect P11 APPROVE + mobile contract APPROVE); P14 chain complete; sweep GREEN |
 | 2026-06-29 (SAO-1/5 remediation — bulk PII export re-tiering) | **14 SAO-1/5 pins** (`api/super-admin/reports-pii-tier.test.ts` — 4 PII types `students`/`teachers`/`parents`/`audit` require `super_admin`; 2 UUID-only types `quizzes`/`chats` keep `support` floor; unknown `type` → 400 before any gate/DB; gate-before-data per type; missing-type default → `super_admin`) + REG-186 admin-gate sweep = **18/18**; **121/121** broad super-admin; not re-measured globally | not re-measured (targeted super-admin run only) | **165** with REG-198 (P13/P9 — `/api/super-admin/reports` 4 PII report types re-tiered `support` → `super_admin`, CEO-approved safest existing tier; 2 UUID-only types stay `support`; validate-`type`-first fail-closed; no new permission code/role/migration; loosening turns REG-198 red → forces a reviewed decision); REG-186/187 still green; cap target 35 — exceeded | build **PASS** — one server route, read-tier change only (no client bundle / page-budget impact); test-only file | /foxy still largest, 0 pages > 260 kB (no runtime/page change) | local green; type-check PASS, lint 0 errors, build PASS; quality independent **APPROVE** (no conditions); P14 chain (backend+architect+frontend+testing+quality) complete; sweep GREEN |
+| 2026-06-29 (PP-1/3 remediation — parent-link consent, Option B) | **20 PP-1/3 pins** (`parent-login-consent.test.ts` 16 — `parent_login` creates `pending`/`is_verified:false`/`initiated_by='parent_login'`, never `active`; pending grants 403/empty at every parent data handler + `is_guardian_of` false; approved unlocks; re-submit no-downgrade; pending_approval vs approved response shape + PII-free notify; `pending-link-approval.test.tsx` 4 — orphan-guard: `StudentOSDashboard` renders `PendingLinkApproval`, self-hides when empty, approve calls `/api/parent/approve-link`); **484** broad parent sweep PASS; REG-117/188/189/190 intact; not re-measured globally | not re-measured (targeted parent run only) | **166** with REG-199 (P8/P13/P15 — link code → `pending` → student approves → `approved`; consent boundary confirmed at 3 layers; anti-orphan guard pins the live-dashboard approval surface); REG-117/188/189/190 still green; cap target 35 — exceeded | build **PASS** — one Deno Edge Function + 3 small client changes (helper + dashboard mount + parent screen); test files test-only (no shared-chunk / page-budget impact) | /foxy still largest, 0 pages > 260 kB (PendingLinkApproval self-hides when empty) | local green; type-check PASS, lint 0 errors, build PASS; quality independent **APPROVE** (no conditions); P14 chain (backend+frontend+architect+mobile+testing+quality) complete; sweep GREEN |
 | **PROGRAM SUMMARY (Cycles 1-8 — 2026-06-28 → 2026-06-29)** | **8 of 8 ranked workflows audited → hardened → merged** (auth-onboarding, payments-subscriptions, student-learning-core, foxy-ai-rag, teacher-school-b2b, super-admin-observability, parent-portal, cross-cutting) | global coverage not re-measured per-cycle (targeted suites only); threshold 35% upheld | catalog grew **~146 → 160** across the program; **REG-177..193 = 17 new** entries; target 35 — exceeded throughout | shared JS 279.7 / **284** (cap pinned by REG-193); middleware 116.2 / 120 | /foxy largest, 0 pages > 260 kB throughout | all cycles local-green; per-cycle quality/orchestrator APPROVE; residual = post-program remediation backlog (Tier-1 user-gated / Tier-2 reversible / Tier-3 initiatives) — see `PROGRAM-SUMMARY.md` |
 
 ## Notes on the seed row (2026-06-28)
@@ -300,6 +301,40 @@ measured in-session.
   403; quizzes/chats unaffected. Confirm no legitimate non-super-admin export workflow depends on these 4
   types (review recent `report.exported` audit-log rows). On the `STATE.md` ops-actions register. See
   `remediation/sao-1-5-pii-export-tier/`.
+
+## Notes on the PP-1/3 remediation row (2026-06-29 — parent-link consent, Option B)
+- **Post-program remediation, not a cycle.** PP-1-consent / PP-3 was the Cycle-7 USER-gated P8/P13 item; the
+  CEO-approved **Option B** is now LANDED. `supabase/functions/parent-portal/index.ts` `handleParentLogin`
+  creates a **`pending`** (not `active`) `guardian_student_links` row via
+  `.upsert(onConflict:'guardian_id,student_id', ignoreDuplicates:true)`, `is_verified:false`; responds
+  `{ status:'pending_approval', student_name, link_id }` (no session) for a new/pending link and
+  `{ status:'approved', guardian, student }` for an already-linked re-submit (no downgrade); notifies the
+  student PII-free via the `send_notification` RPC (type `parent_link_request`, bilingual `data.*_hi`,
+  best-effort). `src/lib/supabase.ts` adds `getPendingParentLinks()` (calls `get_pending_link_requests`,
+  fail-soft). `src/app/dashboard/StudentOSDashboard.tsx` **mounts the previously-ORPHANED
+  `PendingLinkApproval` card** — the critical fix; without it, linking dead-ended. `src/app/parent/page.tsx`
+  shows a bilingual "awaiting approval" screen on `pending_approval` and the existing dashboard flow on
+  `approved`.
+- **CEO decision (RESOLVED):** the CEO APPROVED Option B (link code → `pending` → student approves →
+  `approved`). No longer a pending gate; Option B is the decided end-state.
+- **3-layer consent boundary:** a `pending` link grants zero access — domain helper
+  (`ACTIVE_GUARDIAN_LINK_STATUSES` excludes `pending`), Edge handlers (`.in('status',['active','approved'])`),
+  and DB RLS (`is_guardian_of` counts only `approved`) all return nothing while pending.
+- **No migration:** `notifications.type` is free TEXT; `pending` is already a valid `chk_link_status` value
+  (and the column default). No new permission code / role.
+- **Catalog:** REG-199 filed → **166**. `parent-login-consent.test.ts` (16) + `pending-link-approval.test.tsx`
+  (4); REG-117 / REG-188 / REG-189 / REG-190 remain green. Authoritative source remains
+  `.claude/regression-catalog.md`. REG-199 also acts as the anti-orphan guard — if `StudentOSDashboard` stops
+  rendering `PendingLinkApproval`, it turns red (the half-built orphan can't silently regress).
+- **Build/bundle:** one Deno Edge Function + three small client changes (helper + dashboard mount + parent
+  screen); test files are test-only — no shared-chunk or page-budget impact. The card self-hides when no
+  requests are pending (zero cost when nothing pending). 0 pages over the 260 kB page budget.
+- **Gates:** type-check PASS, lint 0 errors, build PASS; quality independent verdict **APPROVE** (no
+  conditions); P14 chain (backend + frontend + architect APPROVE [no migration] + mobile APPROVE [no impact] +
+  testing REG-199 + quality) complete; sweep GREEN.
+- **Optional follow-ups (not implemented):** migrate `PendingLinkApproval.tsx` pre-existing inline brand-color
+  styles to Tailwind tokens; a push/in-app nudge to reduce approval-wait friction; future reconciliation of
+  the grandfathered pre-change `active`-status rows (untouched — not required).
 
 ## How to add a row
 At the end of each cycle's REGRESSION phase, run `npm test`, `npm run test:coverage`,

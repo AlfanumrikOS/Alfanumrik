@@ -95,6 +95,88 @@ function getClientIp(req: Request): string {
 // ─── Action Handlers ──────────────────────────────────────────────────────
 
 /**
+ * notifyStudentOfPendingLink — best-effort in-app notification telling the
+ * STUDENT that a parent has requested to link to their account (PP-1/3 consent,
+ * Option B). The student then approves/declines on their dashboard, which is the
+ * PRIMARY discovery path; this notification is a secondary surface.
+ *
+ * Canonical path: the `send_notification` RPC (baseline_from_prod.sql:6950),
+ * which sets recipient_id/recipient_type/notification_type/type/title/body/
+ * message/data correctly AND has built-in 6-hour dedupe (notification_type +
+ * title). We never hand-build the row shape ourselves on the primary path — the
+ * notifications table has NO `student_id` column (recipient_id/recipient_type)
+ * and `message` is NOT NULL. Bilingual title_hi/body_hi + the opaque link_id
+ * ride inside p_data (jsonb). If the RPC is uncallable for any reason we fall
+ * back to a direct insert that sets BOTH `message` and `body` (message is
+ * NOT NULL) plus recipient_id/recipient_type + type + data.
+ *
+ * P13: NO PII — generic copy (no guardian name/email/phone); only the opaque
+ * link_id rides in data. P15: NEVER throws — a notify hiccup must not fail the
+ * parent_login response.
+ */
+async function notifyStudentOfPendingLink(
+  supabase: ReturnType<typeof getServiceClient>,
+  studentId: string,
+  linkId: string
+): Promise<void> {
+  const titleEn = 'A parent wants to link to your account'
+  const bodyEn = 'A parent has requested to link to your account. Approve or decline on your dashboard.'
+  const titleHi = 'एक अभिभावक आपके अकाउंट से जुड़ना चाहता है'
+  const bodyHi = 'एक अभिभावक ने आपके अकाउंट से जुड़ने का अनुरोध किया है। अपने डैशबोर्ड पर स्वीकार या अस्वीकार करें।'
+  // P13: NO guardian PII (name/email/phone) — only the opaque link_id + bilingual copy.
+  const data = {
+    icon: '🔔',
+    link_id: linkId,
+    title_hi: titleHi,
+    message_hi: bodyHi,
+    body_hi: bodyHi,
+    trigger: 'parent_link_request',
+  }
+
+  try {
+    // Primary: canonical RPC. A NULL return (no error) means the 6-hour dedupe
+    // suppressed a duplicate — that is success, so we stop here either way.
+    const { error: rpcError } = await supabase.rpc('send_notification', {
+      p_recipient_id: studentId,
+      p_recipient_type: 'student',
+      p_type: 'parent_link_request',
+      p_title: titleEn,
+      p_body: bodyEn,
+      p_data: data,
+    })
+    if (!rpcError) return
+
+    // Fallback: direct insert. MUST set BOTH `message` and `body` (message is
+    // NOT NULL in prod) + recipient_id/recipient_type + type + data jsonb.
+    const { error: insertError } = await supabase.from('notifications').insert({
+      recipient_type: 'student',
+      recipient_id: studentId,
+      type: 'parent_link_request',
+      title: titleEn,
+      message: bodyEn,
+      body: bodyEn,
+      data,
+      is_read: false,
+      created_at: new Date().toISOString(),
+    })
+    if (insertError) {
+      // P13: log the failure SHAPE only — never the student id, name, or any PII.
+      console.warn(JSON.stringify({
+        action: 'parent_link_request_notify_failed',
+        status: 'warning',
+        reason: insertError.message,
+      }))
+    }
+  } catch (err) {
+    console.warn(JSON.stringify({
+      action: 'parent_link_request_notify_failed',
+      status: 'warning',
+      reason: err instanceof Error ? err.message : 'unknown',
+    }))
+  }
+}
+
+/**
  * parent_login — Authenticate a parent by link code.
  * Looks up guardian_student_links by link_code on the student,
  * or creates a guardian + link if the code matches a student's invite_code.
@@ -185,32 +267,82 @@ async function handleParentLogin(
       guardianId = authGuardian.id
       guardianName = authGuardian.name || parentName
 
-      // Ensure a link exists between this guardian and the student
+      // PP-1/3 consent (Option B): a link-code match proves the PARENT's intent,
+      // not the child's CONSENT. So this creates a PENDING link (not active) that
+      // the STUDENT must approve via /api/parent/approve-link before any data is
+      // exposed. Look up any existing link (status-agnostic) to decide pending vs
+      // already-approved, and to guarantee no duplicate / no downgrade.
       const { data: existingAuthLink } = await supabase
         .from('guardian_student_links')
-        .select('id')
+        .select('id, status')
         .eq('guardian_id', guardianId)
         .eq('student_id', student.id)
         .limit(1)
         .maybeSingle()
 
-      if (!existingAuthLink) {
-        await supabase.from('guardian_student_links').insert({
-          guardian_id: guardianId,
-          student_id: student.id,
-          status: 'active',
-          link_code: linkCode,
-          is_verified: true,
-          linked_at: new Date().toISOString(),
-          initiated_by: 'parent_login',
-        })
+      // Already approved/active (re-submit by an already-linked parent): return
+      // the existing success/session shape UNCHANGED + status:'approved'. Never
+      // downgrade an approved link back to pending.
+      if (existingAuthLink && (existingAuthLink.status === 'approved' || existingAuthLink.status === 'active')) {
+        return jsonResponse(
+          {
+            status: 'approved',
+            guardian: { id: guardianId, name: guardianName },
+            student: { id: student.id, name: student.name, grade: student.grade },
+          },
+          200,
+          {},
+          origin
+        )
       }
 
+      // Otherwise ensure a PENDING link exists. Insert only when none exists; a
+      // re-submit on an existing pending row just returns its id (no duplicate,
+      // no second notification).
+      let linkId = existingAuthLink?.id || ''
+      if (!existingAuthLink) {
+        // Defense-in-depth ON CONFLICT DO NOTHING (the (guardian_id, student_id)
+        // unique key) so a concurrent double-submit can never 23505 or overwrite
+        // an approved row. ignoreDuplicates ⇒ the row is returned ONLY on a
+        // genuine new insert, so we notify the student exactly once.
+        const { data: insertedLink } = await supabase
+          .from('guardian_student_links')
+          .upsert(
+            {
+              guardian_id: guardianId,
+              student_id: student.id,
+              status: 'pending',
+              link_code: linkCode,
+              is_verified: false,
+              linked_at: new Date().toISOString(),
+              initiated_by: 'parent_login',
+            },
+            { onConflict: 'guardian_id,student_id', ignoreDuplicates: true }
+          )
+          .select('id')
+          .maybeSingle()
+
+        if (insertedLink?.id) {
+          linkId = insertedLink.id
+          await notifyStudentOfPendingLink(supabase, student.id, insertedLink.id)
+        } else {
+          // Race: a concurrent submit won the upsert (no row returned). Re-read
+          // the existing link id so the response still carries it.
+          const { data: raceLink } = await supabase
+            .from('guardian_student_links')
+            .select('id')
+            .eq('guardian_id', guardianId)
+            .eq('student_id', student.id)
+            .limit(1)
+            .maybeSingle()
+          linkId = raceLink?.id || ''
+        }
+      }
+
+      // Pending: NO session, NO grade/stats — only the child's name (so the
+      // parent knows the request targets the right child) + the link id (P13).
       return jsonResponse(
-        {
-          guardian: { id: guardianId, name: guardianName },
-          student: { id: student.id, name: student.name, grade: student.grade },
-        },
+        { status: 'pending_approval', student_name: student.name, link_id: linkId },
         200,
         {},
         origin
@@ -263,6 +395,14 @@ async function handleParentLogin(
     guardianName = ''
   }
 
+  // Tracks the new pending link id (set below when a brand-new guardian is
+  // created). When guardianId was already resolved above, it can only be an
+  // existing guardian whose own active/approved link to this student was matched
+  // by auth_user_id (the 2a branch would otherwise have handled it) — in that
+  // case there is nothing to downgrade and we report 'approved'.
+  let pendingLinkId = ''
+  let alreadyLinked = false
+
   if (!guardianId) {
     // Create new guardian and link — set auth_user_id if the caller is authenticated
     const guardianInsert: Record<string, unknown> = { name: parentName, relationship: 'parent' }
@@ -288,23 +428,62 @@ async function handleParentLogin(
     guardianId = newGuardian.id
     guardianName = newGuardian.name
 
-    // Create the link
-    await supabase.from('guardian_student_links').insert({
-      guardian_id: guardianId,
-      student_id: student.id,
-      status: 'active',
-      link_code: linkCode,
-      is_verified: true,
-      linked_at: new Date().toISOString(),
-      initiated_by: 'parent_login',
-    })
+    // PP-1/3 consent (Option B): create the link as PENDING (not active) — the
+    // STUDENT must approve before any data is exposed. Brand-new guardian ⇒ no
+    // prior link; ON CONFLICT DO NOTHING is defense-in-depth against a concurrent
+    // double-submit. Notify the student exactly once (only on a genuine insert).
+    const { data: insertedLink } = await supabase
+      .from('guardian_student_links')
+      .upsert(
+        {
+          guardian_id: guardianId,
+          student_id: student.id,
+          status: 'pending',
+          link_code: linkCode,
+          is_verified: false,
+          linked_at: new Date().toISOString(),
+          initiated_by: 'parent_login',
+        },
+        { onConflict: 'guardian_id,student_id', ignoreDuplicates: true }
+      )
+      .select('id')
+      .maybeSingle()
+
+    if (insertedLink?.id) {
+      pendingLinkId = insertedLink.id
+      await notifyStudentOfPendingLink(supabase, student.id, insertedLink.id)
+    } else {
+      const { data: raceLink } = await supabase
+        .from('guardian_student_links')
+        .select('id')
+        .eq('guardian_id', guardianId)
+        .eq('student_id', student.id)
+        .limit(1)
+        .maybeSingle()
+      pendingLinkId = raceLink?.id || ''
+    }
+  } else {
+    // Existing guardian matched by auth_user_id already holds an active/approved
+    // link to this student. No downgrade — report approved (unchanged shape).
+    alreadyLinked = true
   }
 
+  if (alreadyLinked) {
+    return jsonResponse(
+      {
+        status: 'approved',
+        guardian: { id: guardianId, name: guardianName },
+        student: { id: student.id, name: student.name, grade: student.grade },
+      },
+      200,
+      {},
+      origin
+    )
+  }
+
+  // Pending: NO session, NO grade/stats — only the child's name + link id (P13).
   return jsonResponse(
-    {
-      guardian: { id: guardianId, name: guardianName },
-      student: { id: student.id, name: student.name, grade: student.grade },
-    },
+    { status: 'pending_approval', student_name: student.name, link_id: pendingLinkId },
     200,
     {},
     origin
