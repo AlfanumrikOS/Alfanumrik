@@ -17,7 +17,7 @@ function logDeprecatedEdgeFunctionHit() {
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { isValidLinkCode } from '../_shared/link-code.ts'
-import { createRateLimiter } from '../_shared/rate-limiter.ts'
+import { createDurableRateLimiter } from '../_shared/durable-rate-limiter.ts'
 // P12/P13: never surface stale/invalid subject data to a parent; see
 // docs/superpowers/specs/2026-04-15-subject-governance-design.md §6.2
 // validateSubjectRpc is per-subject; for the list filter we call the RPC
@@ -70,12 +70,13 @@ function istDayOfWeekLabel(d: Date): string {
 // path's per-IP bound (REQUEST_OTP_IP_LIMIT = 5 / hour; see
 // src/app/api/parent/link-code/request-otp/route.ts).
 //
-// Mechanism: the shared in-memory sliding-window limiter the other Edge
-// Functions use — the only limiter reachable from the Deno runtime (the
-// Next.js Upstash-backed checkApiRateLimit lives behind the supabase/ ↔ src/
-// boundary and cannot be imported here). It is per-instance and resets on cold
-// start, but still bounds rapid enumeration through a warm instance. A
-// distributed (Upstash) or DB-backed attempt counter is the durable hardening.
+// Mechanism: a DURABLE cross-instance limiter (createDurableRateLimiter) backed
+// by Upstash Redis when UPSTASH_REDIS_REST_URL/TOKEN secrets are present, with a
+// transparent in-memory sliding-window fallback (same 5/hour bound) when the
+// secrets are absent or Redis errors. Upstash makes the bound durable across
+// Edge instances/cold starts (closing the per-instance reset gap); the in-memory
+// fallback still bounds rapid enumeration through a warm instance and never fails
+// open. See supabase/functions/_shared/durable-rate-limiter.ts.
 //
 // TODO(PP-1, USER-GATED — DO NOT auto-fix): the deeper fix is to retire the
 // link-code-only auto-ACTIVE posture — have parent_login create links as
@@ -85,7 +86,7 @@ function istDayOfWeekLabel(d: Date): string {
 // this change ONLY adds the brute-force rate limit + input validation.
 const PARENT_LOGIN_IP_LIMIT = 5
 const PARENT_LOGIN_IP_WINDOW_MS = 60 * 60 * 1000 // 1 hour — mirrors request-otp per-IP bound
-const parentLoginIpLimiter = createRateLimiter(PARENT_LOGIN_IP_LIMIT, PARENT_LOGIN_IP_WINDOW_MS)
+const parentLoginIpLimiter = createDurableRateLimiter(PARENT_LOGIN_IP_LIMIT, PARENT_LOGIN_IP_WINDOW_MS, 'rl:parent_login')
 
 function getClientIp(req: Request): string {
   const fwd = req.headers.get('x-forwarded-for')
@@ -189,7 +190,7 @@ async function handleParentLogin(
 ): Promise<Response> {
   // PP-1: per-IP brute-force rate limit. Apply BEFORE any DB lookup so a noisy
   // IP can neither tax the cluster nor grind link codes server-side.
-  const rl = parentLoginIpLimiter(`parent_login:${clientIp}`)
+  const rl = await parentLoginIpLimiter(`parent_login:${clientIp}`)
   if (!rl.allowed) {
     // P13: log limits/counts only — never the IP, link code, or any PII.
     console.warn(JSON.stringify({

@@ -5996,3 +5996,44 @@ AuthContext read-path source pin).
 **Total catalog: 170 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Remediation — Tier-2 PR C: Durable Parent-Login Rate Limiter (P15/abuse) — 2026-06-30
+
+The legacy `parent_login` per-IP bound rode the per-instance in-memory limiter
+(`_shared/rate-limiter.ts::createRateLimiter`), which resets on every Edge cold
+start — a brute-forcer who lands on a fresh instance gets a fresh budget. Tier-2
+PR C introduces `_shared/durable-rate-limiter.ts::createDurableRateLimiter`, a
+cross-instance Upstash `Ratelimit.fixedWindow(5, "3600 s")` limiter with a
+TRANSPARENT in-memory fallback (the same `createRateLimiter` 5/1h primitive)
+used when the Upstash Edge secrets are absent OR Redis errors. The limiter must
+never return unlimited (no unconditional `allowed: true`), never throw on the
+request path (the only `await redisLimiter.limit(...)` is inside a try/catch
+that falls through to the in-memory `memCheck`), and the check must stay BEFORE
+any DB lookup in `handleParentLogin` (fail-closed-before-DB). The esm.sh imports
+are pinned by package path (version-tolerant). `parent-login-rate-limit.test.ts`
+line 86 was updated in lockstep: the call-site pin moved from `createRateLimiter`
+to `createDurableRateLimiter(..., 'rl:parent_login')`.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-204 | `durable_parent_login_rate_limiter_failsafe` | P15/abuse-hardening: parent_login uses a cross-instance Upstash `fixedWindow(5, 1h)` limiter that, when the Upstash Edge secrets are absent OR Redis errors, transparently falls back to the in-memory limiter (same 5/1h bound) — never returns unlimited, never throws on the request path, and the check stays BEFORE any DB lookup (fail-closed). Closes the per-instance cold-start reset gap of the prior in-memory-only limiter | `src/__tests__/edge-functions/durable-login-limiter.test.ts` | E | P15 |
+
+### Invariants covered by this section
+
+- P15 (onboarding/abuse path) — REG-204 pins that the parent-login per-IP bound
+  is now durable across Edge cold starts (Upstash `fixedWindow(5, 1h)`), that the
+  fallback to the in-memory limiter preserves the SAME 5/1h bound when secrets are
+  absent OR Redis errors (never fails open, never throws on the request path), and
+  that the limiter check stays strictly before `getServiceClient()`/the students
+  `.or()` lookup in `handleParentLogin` (fail-closed-before-DB). esm.sh import
+  specifiers are pinned by package path, tolerant of an architect `@version` pin.
+
+### Catalog total
+
+Pre-Tier-2-PR-C: 170 entries (through Tier-2 PR D's REG-203 grade read-coercion).
+Tier-2 PR C adds REG-204 (durable parent-login rate limiter fail-safe — durable
+Upstash `fixedWindow(5,1h)` with transparent same-bound in-memory fallback,
+never-fail-open / never-throw on the request path, fail-closed-before-DB ordering).
+**Total catalog: 171 entries (target: 35 — TARGET EXCEEDED).**
+
+---
