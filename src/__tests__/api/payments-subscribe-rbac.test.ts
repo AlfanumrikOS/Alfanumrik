@@ -90,8 +90,20 @@ vi.mock('@/lib/logger', () => ({
 }));
 vi.mock('@/lib/ops-events', () => ({ logOpsEvent: vi.fn() }));
 
+// ── Razorpay lib seam (subscribe route). `subscribe` creates Razorpay objects via
+//    @/lib/razorpay (createRazorpaySubscription / createRazorpayOrder), not a raw
+//    fetch. We spy on both so the DENY tests can prove the RBAC gate short-circuits
+//    BEFORE any Razorpay object is minted (PAY-1 / P9 / P11). ──
+const mockCreateSub = vi.fn();
+const mockCreateOrder = vi.fn();
+vi.mock('@/lib/razorpay', () => ({
+  createRazorpaySubscription: (...a: unknown[]) => mockCreateSub(...a),
+  createRazorpayOrder: (...a: unknown[]) => mockCreateOrder(...a),
+}));
+
 import { POST as createOrder } from '@/app/api/payments/create-order/route';
 import { POST as verify } from '@/app/api/payments/verify/route';
+import { POST as subscribe } from '@/app/api/payments/subscribe/route';
 
 const USER = { id: 'auth-user-123', email: 'student@test.example' };
 
@@ -123,6 +135,14 @@ function allowed() {
 
 function orderReq(body: unknown = { plan_code: 'pro', billing_cycle: 'monthly' }): Request {
   return new Request('http://localhost/api/payments/create-order', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-token' },
+    body: JSON.stringify(body),
+  });
+}
+
+function subscribeReq(body: unknown = { plan_code: 'pro', billing_cycle: 'monthly' }): Request {
+  return new Request('http://localhost/api/payments/subscribe', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-token' },
     body: JSON.stringify(body),
@@ -237,6 +257,40 @@ describe('POST /api/payments/verify — payments.subscribe RBAC gate', () => {
     mockAuthorizeRequest.mockResolvedValue(denied(401));
     const res = await verify(verifyReq() as never);
     expect(res.status).toBe(401);
+    expect(adminAccess.called).toBe(false);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// subscribe (PAY-1) — the LIVE checkout entry point; previously lacked this gate.
+// ═════════════════════════════════════════════════════════════════════════════
+describe('POST /api/payments/subscribe — payments.subscribe RBAC gate (PAY-1)', () => {
+  it('authorizes against the EXACT permission string "payments.subscribe"', async () => {
+    mockAuthorizeRequest.mockResolvedValue(denied(403));
+    await subscribe(subscribeReq() as never);
+    expect(mockAuthorizeRequest).toHaveBeenCalledTimes(1);
+    expect(mockAuthorizeRequest).toHaveBeenCalledWith(expect.anything(), 'payments.subscribe');
+  });
+
+  it('denies (403) and short-circuits BEFORE any Razorpay object is created or admin DB touched', async () => {
+    mockAuthorizeRequest.mockResolvedValue(denied(403));
+    const res = await subscribe(subscribeReq() as never);
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('PERMISSION_DENIED');
+    // No Razorpay subscription/order minted, no service-role DB access — the gate ran
+    // first (P9/P11): a non-student authenticated principal cannot reach the creator.
+    expect(mockCreateSub).not.toHaveBeenCalled();
+    expect(mockCreateOrder).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(adminAccess.called).toBe(false);
+  });
+
+  it('propagates a 401 denial verbatim and never mints a Razorpay object', async () => {
+    mockAuthorizeRequest.mockResolvedValue(denied(401));
+    const res = await subscribe(subscribeReq() as never);
+    expect(res.status).toBe(401);
+    expect(mockCreateSub).not.toHaveBeenCalled();
+    expect(mockCreateOrder).not.toHaveBeenCalled();
     expect(adminAccess.called).toBe(false);
   });
 });

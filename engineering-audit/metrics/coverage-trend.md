@@ -11,6 +11,7 @@ measured in-session.
 |---|---|---|---|---|---|---|
 | 2026-06-28 | 2,511 (84 files) | ~37% global (threshold 35%, to verify) | 142 (target 35 — exceeded) | CAP_SHARED_KB cap 280; single-chunk metric ~168.5 (to verify current) | /foxy ~254 (to verify) | to verify (assume green on main) |
 | 2026-06-28 (Cycle 1 — auth-onboarding REGRESSION) | +27 new assertions this cycle (10 Deno always-200 + 7 AO-4 vitest + 3-role E2E `test.fixme`-gated + fs-guard); targeted run 940/940 + Deno 10/10 | not re-measured globally this cycle | 144 with REG-177 (P15 `send_auth_email_always_200`) once filed; cap target 35 — exceeded | build PASS — shared **279.7 / 284 kB** (CAP_SHARED_KB) | /foxy still largest, 0 pages > 260 kB | local green; middleware 116.2/120 kB; CI Deno-lane wiring of always-200 suite in flight |
+| 2026-06-29 (Cycle 2 — payments-subscriptions REGRESSION) | payment suite **236/236 PASS** (verify-HMAC-reject + subscribe RBAC gate now pinned + reconcile-atomic-RPC + dedupe-no-op regressions); not re-measured globally this cycle | not re-measured globally this cycle | **146** with REG-178 (`verify_route_hmac_reject`, P11) + REG-179 (`subscribe_rbac_gate_pre_razorpay`, P9/P11) once filed; cap target 35 — exceeded | build PASS (`vercel.json` VALID — 13 crons ≤ 40 Pro limit) | /foxy still largest, 0 pages > 260 kB (config-only PAY-4 change; no bundle impact) | local green; type-check PASS, lint 0 errors; architect security APPROVE + quality APPROVE; REG-178/179 catalog filing in flight |
 
 ## Notes on the seed row (2026-06-28)
 - **Test count** 2,511 / 84 files: from `.claude/CLAUDE.md` testing cell. `CLAUDE.md`
@@ -35,6 +36,20 @@ measured in-session.
 - **Build/bundle:** independently re-verified this cycle — shared 279.7 / 284 kB, middleware 116.2 / 120
   kB, 0 pages over the 260 kB page budget. Global coverage % was not re-measured this cycle (targeted
   auth/onboarding/identity run only: 940/940 + Deno 10/10).
+
+## Notes on the Cycle-2 row (2026-06-29 — payments-subscriptions REGRESSION)
+- **Payment suite 236/236:** the targeted payment suite (webhook integration, the new
+  `verify-hmac-reject.test.ts`, extended `payments-subscribe-rbac.test.ts`, reconcile atomic-RPC + dedupe
+  no-op regressions, GST gates) was independently re-run by quality — all pass. Global coverage % was not
+  re-measured this cycle (targeted payment run only).
+- **Catalog:** REG-178 (`verify_route_hmac_reject`, P11) + REG-179 (`subscribe_rbac_gate_pre_razorpay`,
+  P9/P11) being filed by a separate testing task → 146 once landed (confirm ids with orchestrator if they
+  shift). Existing payment-funnel entries REG-46 / REG-47 remain green. Authoritative source remains
+  `.claude/regression-catalog.md`.
+- **Build / config:** `vercel.json` VALID (12 → 13 crons after PAY-4 registered `payments-health` at
+  `*/10 * * * *`; ≤ 40 Pro-plan limit). PAY-4 is config-only — no middleware/bundle/code-path impact.
+- **Gates:** type-check PASS, lint 0 errors, build PASS; architect P14 security review APPROVE + quality
+  independent verdict APPROVE; regression sweep GREEN.
 
 ## How to add a row
 At the end of each cycle's REGRESSION phase, run `npm test`, `npm run test:coverage`,
