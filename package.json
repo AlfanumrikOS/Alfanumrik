@@ -65,7 +65,7 @@
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
     "katex": "^0.16.45",
-    "next": "^16.2.6",
+    "next": "^16.2.9",
     "pdf-parse": "^2.4.5",
     "posthog-js": "^1.372.1",
     "posthog-node": "^5.33.4",
@@ -95,7 +95,7 @@
   ],
   "devDependencies": {
     "@asteasolutions/zod-to-openapi": "^8.5.0",
-    "@next/bundle-analyzer": "^16.2.6",
+    "@next/bundle-analyzer": "^16.2.9",
     "@openapitools/openapi-generator-cli": "^2.34.0",
     "@playwright/test": "^1.60.0",
     "@testing-library/jest-dom": "^6.9.1",
