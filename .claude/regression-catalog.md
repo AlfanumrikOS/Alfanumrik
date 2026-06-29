@@ -5899,3 +5899,51 @@ admin-client roster filter + re-enroll active-restore source pin).
 **Total catalog: 168 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Remediation — Tier-2 PR B: Super-Admin Export Message Redaction (P13) — 2026-06-29
+
+The Tier-2 PR B slice wraps the free-form `message` CSV column of the super-admin
+observability export (`/api/super-admin/observability/export`) in
+`redactPIIInText(...)` before egress, mirroring the SAO-3 defense-in-depth
+treatment of the `context_json` column two lines below. Ops event messages are
+developer-authored templates and PII-free at write time (`logOpsEvent`), so on
+clean rows the redactor is an IDENTITY transform (behavior-preserving) — but this
+CSV is the last line of defense before bulk egress, and a single mis-instrumented
+upstream message carrying an email / Indian phone / Razorpay id would otherwise be
+exfiltrated verbatim. Null/empty `message` is passed through untouched. The change
+also adds `redactPIIInText` to the `src/lib/ops-events-redactor.ts` re-export
+barrel (one line) so the Next.js side imports the shared Deno-compatible redactor.
+
+The route reads through the RLS-bypassing admin client and the unit lane has no
+live Postgres, so the wrapping is pinned as comment-stripped static-source
+assertions (same convention as the admin-route auth-gate sweep and the REG-201
+active-enrollment scoping pin): assert the import is from `@/lib/ops-events-redactor`,
+assert the exact `escapeCSV(row.message ? redactPIIInText(row.message).text :
+row.message)` ternary (null/empty passthrough preserved), and guard that the
+SAO-3 `redactPII(row.context)` sibling is intact. Because `redactPIIInText` is a
+pure function, the BEHAVIORAL lane is covered directly: email / Indian phone /
+Razorpay-id redaction fire, and a clean developer-template message returns
+UNCHANGED (identity transform — proves behavior-preserving on clean rows).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-202 | `super_admin_export_message_pii_redaction` | P13: the super-admin observability CSV export wraps the free-form `message` column in `redactPIIInText` before egress (email/phone/Razorpay-id redacted; clean developer-template rows pass through unchanged — identity transform, null/empty preserved), surfaced via the `@/lib/ops-events-redactor` barrel — defense-in-depth mirroring the SAO-3 `context_json` redaction | `src/__tests__/api/super-admin/observability-export-message-redaction.test.ts` | U | P13 |
+
+### Invariants covered by this section
+
+- P13 (data privacy) — REG-202 pins that the bulk CSV export's free-form `message`
+  column is pattern-redacted (email / Indian phone / Razorpay id) at the egress
+  boundary, that null/empty messages pass through untouched, and that the redactor
+  is an identity transform on the PII-free developer templates ops events carry at
+  write time (behavior-preserving). Surfaced through the `@/lib/ops-events-redactor`
+  barrel; mirrors the SAO-3 `context_json` deep-redaction sibling.
+
+### Catalog total
+
+Pre-Tier-2-PR-B: 168 entries (through Tier-2 PR A's REG-201 teacher/enrollment
+is_active scoping). Tier-2 PR B adds REG-202 (super-admin export message redaction
+— the P13 free-form `message`-column egress-redaction source pin + redactor
+behavior + barrel export).
+**Total catalog: 169 entries (target: 35 — TARGET EXCEEDED).**
+
+---

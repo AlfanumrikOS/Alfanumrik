@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit } from '@/lib/admin-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { redactPII } from '@/lib/ops-events-redactor';
+import { redactPII, redactPIIInText } from '@/lib/ops-events-redactor';
 
 /**
  * GET /api/super-admin/observability/export
@@ -86,7 +86,15 @@ export async function GET(request: NextRequest) {
         escapeCSV(row.severity),
         escapeCSV(row.subject_type),
         escapeCSV(row.subject_id),
-        escapeCSV(row.message),
+        // P13 (SAO residual 2a): defense-in-depth egress redaction for the
+        // free-form `message` column, mirroring the SAO-3 treatment of
+        // `context_json` below. Ops event messages are developer-authored
+        // templates and PII-free at write time (logOpsEvent), but this CSV is
+        // the last line of defense before bulk egress. Run the free-form text
+        // through the pattern-based redactor (redactPIIInText) so a single
+        // mis-instrumented upstream message carrying an email / Indian phone /
+        // Razorpay id cannot be exfiltrated. Identity transform on clean rows.
+        escapeCSV(row.message ? redactPIIInText(row.message).text : row.message),
         escapeCSV(row.request_id),
         escapeCSV(row.environment),
         // P13 (SAO-3): defense-in-depth egress redaction. Ops events are
