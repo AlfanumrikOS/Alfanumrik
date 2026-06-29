@@ -16,6 +16,8 @@ function logDeprecatedEdgeFunctionHit() {
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
+import { isValidLinkCode } from '../_shared/link-code.ts'
+import { createRateLimiter } from '../_shared/rate-limiter.ts'
 // P12/P13: never surface stale/invalid subject data to a parent; see
 // docs/superpowers/specs/2026-04-15-subject-governance-design.md §6.2
 // validateSubjectRpc is per-subject; for the list filter we call the RPC
@@ -58,6 +60,38 @@ function istDayOfWeekLabel(d: Date): string {
   return IST_DAY_LABELS_FROM_SUNDAY[new Date(istMs).getUTCDay()]
 }
 
+// ─── PP-1: server-side brute-force rate limit for parent_login ──────────────
+//
+// The legacy `parent_login` action creates an ACTIVE guardian link from a bare
+// link-code match (6 uppercase hex chars). Until now it had ONLY a client-side
+// lockout (parent-session.ts, sessionStorage) — trivially bypassed by calling
+// this Edge Function directly, leaving the link code brute-forceable
+// server-side. We add a per-IP limit that mirrors the hardened OTP request
+// path's per-IP bound (REQUEST_OTP_IP_LIMIT = 5 / hour; see
+// src/app/api/parent/link-code/request-otp/route.ts).
+//
+// Mechanism: the shared in-memory sliding-window limiter the other Edge
+// Functions use — the only limiter reachable from the Deno runtime (the
+// Next.js Upstash-backed checkApiRateLimit lives behind the supabase/ ↔ src/
+// boundary and cannot be imported here). It is per-instance and resets on cold
+// start, but still bounds rapid enumeration through a warm instance. A
+// distributed (Upstash) or DB-backed attempt counter is the durable hardening.
+//
+// TODO(PP-1, USER-GATED — DO NOT auto-fix): the deeper fix is to retire the
+// link-code-only auto-ACTIVE posture — have parent_login create links as
+// `pending` and require student approval (A1) or OTP (A2) before `active`, OR
+// fully deprecate parent_login now that /api/v2/parent/* is canonical. That
+// changes the CONSENT/LINK MODEL and REQUIRES USER APPROVAL. NOT done here;
+// this change ONLY adds the brute-force rate limit + input validation.
+const PARENT_LOGIN_IP_LIMIT = 5
+const PARENT_LOGIN_IP_WINDOW_MS = 60 * 60 * 1000 // 1 hour — mirrors request-otp per-IP bound
+const parentLoginIpLimiter = createRateLimiter(PARENT_LOGIN_IP_LIMIT, PARENT_LOGIN_IP_WINDOW_MS)
+
+function getClientIp(req: Request): string {
+  const fwd = req.headers.get('x-forwarded-for')
+  return fwd?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown'
+}
+
 // ─── Action Handlers ──────────────────────────────────────────────────────
 
 /**
@@ -68,13 +102,48 @@ function istDayOfWeekLabel(d: Date): string {
 async function handleParentLogin(
   body: Record<string, unknown>,
   origin: string | null,
-  authUserId: string | null = null
+  authUserId: string | null = null,
+  clientIp: string = 'unknown'
 ): Promise<Response> {
+  // PP-1: per-IP brute-force rate limit. Apply BEFORE any DB lookup so a noisy
+  // IP can neither tax the cluster nor grind link codes server-side.
+  const rl = parentLoginIpLimiter(`parent_login:${clientIp}`)
+  if (!rl.allowed) {
+    // P13: log limits/counts only — never the IP, link code, or any PII.
+    console.warn(JSON.stringify({
+      action: 'parent_login_rate_limited',
+      status: 'denied',
+      limit: PARENT_LOGIN_IP_LIMIT,
+      window_ms: PARENT_LOGIN_IP_WINDOW_MS,
+      retry_after_ms: rl.retryAfterMs,
+    }))
+    return jsonResponse(
+      { error: 'Too many attempts. Please try again later.' },
+      429,
+      { 'Retry-After': String(Math.ceil(rl.retryAfterMs / 1000)) },
+      origin
+    )
+  }
+
   const linkCode = String(body.link_code || '').trim().toUpperCase()
   const parentName = String(body.parent_name || 'Parent')
 
   if (!linkCode) {
     return jsonResponse({ error: 'Link code is required' }, 400, {}, origin)
+  }
+
+  // PP-2: strict charset validation BEFORE the code is interpolated into the
+  // PostgREST `.or()` filter below (filter-injection guard). A malformed code
+  // can never match a real student, so return the SAME generic response as a
+  // genuine no-match (no leak about which check failed). Does NOT change the
+  // link-code format itself — server-generated codes are [A-Z0-9]{6,8}.
+  if (!isValidLinkCode(linkCode)) {
+    return jsonResponse(
+      { error: 'Invalid link code. Please check and try again.' },
+      200,
+      {},
+      origin
+    )
   }
 
   const supabase = getServiceClient()
@@ -1151,8 +1220,9 @@ Deno.serve(async (req: Request) => {
 
     if (action === 'parent_login') {
       // Linking flow: guardian row may not yet exist. handleParentLogin
-      // already takes authUserId; pass the JWT-verified value.
-      return await handleParentLogin(body, origin, authUserId)
+      // already takes authUserId; pass the JWT-verified value + client IP
+      // (PP-1 per-IP brute-force rate limit lives inside the handler).
+      return await handleParentLogin(body, origin, authUserId, getClientIp(req))
     }
 
     // For every other action, the caller must already be a registered

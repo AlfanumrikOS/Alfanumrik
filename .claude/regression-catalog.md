@@ -5491,3 +5491,53 @@ the SAO-4 caller-discipline gap).
 **Total catalog: 154 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Engineering-Audit Cycle 7 — Parent Portal (P8/P9/P13) — 2026-06-29
+
+Source: engineering-audit program, Cycle 7 (Parent Portal). The parent portal is
+the cross-role data boundary with the highest blast radius: a parent must reach
+exactly their own linked child's data and nothing else. The audit examined three
+attack surfaces. (1) The link-code path: parent link codes flow into PostgREST
+`.or()` filters at three sites (request-otp, accept-invite, parent-portal login),
+so an unsanitized code is a filter-injection vector that could widen the
+`students` query past the intended row. (2) The legacy Edge `parent_login` path:
+no per-IP throttle in front of the DB lookup invited link-code brute-forcing.
+(3) Parent self-service + child-data routes: the profile PATCH and every
+child-scoped read must gate on a real permission AND a canonical guardian-link
+boundary, never trust a body-supplied id, and never leak a child payload to an
+unlinked parent. This cycle adds three entries pinning each surface.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-188 | `parent_link_code_filter_injection` | P8/P13: `isValidLinkCode` (`^[A-Z0-9]{4,12}$`, TS `src/lib/sanitize.ts` + byte-identical Deno twin `supabase/functions/_shared/link-code.ts`) rejects PostgREST filter-injection payloads (`A,deleted_at.is.null`, `*`, `.eq.`, commas/parens/colons/quotes/whitespace/lowercase/out-of-width) at all 3 link-code `.or()` sites — request-otp (→ enumeration-safe silentSuccess), accept-invite (→ 409), parent-portal handleParentLogin (→ 200 no-match); raw payload never reaches the students query; valid 6/8-char hex still flows. | `src/__tests__/security/parent-link-code-injection.test.ts`, `src/__tests__/api/parent/pp2-filter-injection-routes.test.ts` | E |
+| REG-189 | `parent_login_ip_rate_limit` | P9/P13: the legacy Edge `parent_login` path enforces a per-IP server-side rate limit (5/hour via createRateLimiter) BEFORE the DB lookup → 429 + Retry-After on exceed (brute-force defense; consent-posture change remains USER-GATED); the rate-limit warn log carries limit/window/retry only — no IP/code/email/phone (P13). | `src/__tests__/edge-functions/parent-login-rate-limit.test.ts` | E |
+| REG-190 | `parent_profile_authz_and_child_data_boundary` | P9/P13/P8: `PATCH /api/parent/profile` gates on `authorizeRequest('profile.update_own')` (already-granted parent permission) + self-scoped to auth.uid() (body id/guardian_id cannot retarget — no IDOR); every parent child-data route (9 enumerated: children/[student_id]/{chat,export,erasure-status,request-erasure}, report, billing, calendar, v2/parent/{glance,encourage}) consults a canonical guardian-link boundary + authorizeRequest and denies an unlinked parent 403 with no child payload. | `src/__tests__/api/parent/profile-auth-gate.test.ts`, `src/__tests__/api/parent/pp5-unlinked-deny.test.ts` | E |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary — sanitized link codes cannot widen the `students` `.or()`
+  query past the intended row at any of the 3 link-code sites; every parent
+  child-data route consults a canonical guardian-link boundary so an unlinked
+  parent's query never returns another family's child)
+- P9 (RBAC enforcement — `PATCH /api/parent/profile` gates on the already-granted
+  `profile.update_own` permission and self-scopes to `auth.uid()` so a body-supplied
+  id/guardian_id cannot retarget another parent; the legacy Edge `parent_login`
+  path enforces a per-IP rate limit before the DB lookup; every child-data route
+  pairs the guardian-link boundary with `authorizeRequest`)
+- P13 (data privacy — no child payload on any unlinked-parent deny path; the
+  parent_login rate-limit warn log carries limit/window/retry only, never
+  IP/code/email/phone; link-code request-otp denies are enumeration-safe
+  silentSuccess)
+
+### Catalog total
+
+Pre-REG-188: 154 entries (through Engineering-Audit Cycle 6's REG-186/REG-187
+admin route auth-gate sweep + bare-name log canary). Engineering-Audit Cycle 7
+adds REG-188 (parent link-code filter-injection rejection across all 3 `.or()`
+sites — TS + byte-identical Deno twin), REG-189 (parent_login per-IP rate limit
+before the DB lookup, PII-free warn log), and REG-190 (parent profile PATCH
+authz + self-scope + the 9-route child-data guardian-link boundary, no payload
+on any unlinked deny).
+**Total catalog: 157 entries (target: 35 — TARGET EXCEEDED).**
+
+---

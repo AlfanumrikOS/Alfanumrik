@@ -29,6 +29,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
+import { isValidLinkCode } from '@/lib/sanitize';
 
 function err(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status });
@@ -63,6 +64,14 @@ export async function POST(request: NextRequest) {
     return err('link_code is required', 400);
   }
   const linkCode = linkCodeRaw.trim().toUpperCase();
+
+  // PP-2: strict charset validation BEFORE the code reaches the redeem RPC and
+  // the PostgREST `.or()` student lookup below (filter-injection guard). A
+  // malformed code is rejected with the same generic shape as an invalid /
+  // expired code (no leak about which check failed).
+  if (!isValidLinkCode(linkCode)) {
+    return err('Invalid or expired invite code', 409);
+  }
 
   // ── 3. Verify the caller has a guardian profile ──────────────────────────
   const { data: guardian, error: guardianErr } = await supabaseAdmin

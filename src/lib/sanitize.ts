@@ -32,6 +32,34 @@ export function isValidUUID(id: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 }
 
+/**
+ * Validate a parent/guardian link code (a.k.a. student invite code).
+ *
+ * Codes are server-generated and are always a subset of [A-Z0-9]:
+ *   - students.link_code   = upper(substr(md5(...),1,6))            → 6 uppercase hex chars
+ *   - students.invite_code = upper(encode(gen_random_bytes(4),hex)) → 8 uppercase hex chars
+ *   - generate_parent_link_code() → 6 uppercase hex chars
+ *
+ * This guard is applied BEFORE the value is interpolated into any PostgREST
+ * `.or()` filter (e.g. `invite_code.eq.${code},link_code.eq.${code}`), so a
+ * crafted code containing PostgREST control characters (comma, `.`, `(`, `)`,
+ * `*`, `:`, quotes, whitespace, `.eq.`) can never reach the query and alter it
+ * (PP-2 filter-injection guard). The 4–12 width covers both the 6- and 8-char
+ * formats with margin while admitting no PostgREST metacharacter.
+ *
+ * Pass the value AFTER `.trim().toUpperCase()` normalization (callers already
+ * normalize for correctness; this validates for safety).
+ *
+ * NOTE: an identical twin lives at `supabase/functions/_shared/link-code.ts`
+ * for the Deno/Edge runtime — the supabase/ ↔ src/ tree boundary cannot be
+ * crossed at deploy time, so the two copies MUST be kept in sync.
+ */
+export const LINK_CODE_RE = /^[A-Z0-9]{4,12}$/;
+
+export function isValidLinkCode(code: string): boolean {
+  return LINK_CODE_RE.test(code);
+}
+
 /** Validate grade format (e.g., "6", "7", "8", "9", "10", "11", "12") */
 export function isValidGrade(grade: string | number): boolean {
   const g = typeof grade === 'string' ? parseInt(grade, 10) : grade;
