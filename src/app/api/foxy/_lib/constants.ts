@@ -28,7 +28,15 @@ export const FoxyRequestBodySchema = z
   })
   .passthrough();
 
-export const VALID_MODES = ['learn', 'explain', 'practice', 'revise'];
+// FOX-3 (Cycle 4, assessment-approved): widened to the full documented Foxy mode
+// set so the route no longer coerces doubt/homework/explorer down to 'learn'.
+// `selectFoxyPromptTemplate` (route.ts) maps these as: learn/explain→teach_v1,
+// practice→exam_v1, revise→teach_v1, doubt/homework→doubt_v1 (restores the
+// previously-dead branch), explorer→teach_v1 (default). This is a UX/format
+// reconciliation only — the FOXY_SAFETY_RAILS (CBSE scope, age-appropriateness,
+// grounding) are injected on EVERY path independent of template, so widening the
+// whitelist does not relax safety or scope on any newly-valid mode.
+export const VALID_MODES = ['learn', 'explain', 'practice', 'revise', 'doubt', 'homework', 'explorer'];
 
 // Phase 2.2: coaching modes — distinct from the UI session mode above.
 // 'answer'   → student wants the answer (used when mastery is high).

@@ -6,19 +6,62 @@
 | Field | Value |
 |---|---|
 | Program status | **ACTIVE** |
-| Current cycle | **Cycle 3 — student-learning-core DONE (auto-fix-safe complete; SLC-1/4/5 + SLC-8-cutover gated/cross-agent)** |
-| Current workflow | **student-learning-core** (invariants **P1-P6, P12**) — **CYCLE 3 LANDED — auto-fix-safe complete** |
+| Current cycle | **Cycle 4 — foxy-ai-rag DONE (P12 output backstop complete; FOX-4 user-gated, FOX-7 + streaming-residual + Hindi-tokens follow-ups)** |
+| Current workflow | **foxy-ai-rag** (invariants **P12, P8, P13**) — **CYCLE 4 LANDED — auto-fix-safe complete** |
 | Current phase | **ALL 8 PHASES WRITTEN** (MAP → … → REGRESSION); independent quality verdict **APPROVE**, P14 chain complete, sweep **GREEN** |
 | Last session | **2026-06-29** |
-| Next action | **Start Foxy AI Tutor & RAG** — `PRIORITY-BACKLOG.md` rank 4 (invariants **P12, P8**): run MAP → GAP → ROOT-CAUSE → DESIGN → IMPLEMENT for that workflow under `workflows/foxy-ai-tutor-rag/`. **Also resume the student-learning-core gated items (SLC-1 user-gated; SLC-4/5 cross-agent; SLC-8 cutover) + the payments + auth-onboarding open follow-ups** (see below) when their gates unblock. |
-| Next workflow | **Foxy AI Tutor & RAG** (rank 4) |
+| Next action | **Start Teacher / School-Admin B2B** — `PRIORITY-BACKLOG.md` rank 5 (invariants **P8, P9, P13**): run MAP → GAP → ROOT-CAUSE → DESIGN → IMPLEMENT for that workflow under `workflows/teacher-school-admin-b2b/`. **Also resume the gated items: FOX-4 (Foxy OpenAI provider governance — USER); the student-learning-core gated items (SLC-1 user-gated; SLC-4/5 cross-agent; SLC-8 cutover); + the payments + auth-onboarding open follow-ups** (see below) when their gates unblock. |
+| Next workflow | **Teacher / School-Admin B2B** (rank 5) |
 
 ## How to resume
 
-> Open this file, read **Next action**. Student Learning Core Cycle 3 has landed (auto-fix-safe complete —
-> see open gated items; SLC-1 user-gated). The next vertical workflow is **Foxy AI Tutor & RAG (P12, P8)**;
-> begin its MAP phase and write artifacts under `workflows/foxy-ai-tutor-rag/`. Keep the student-learning-core
-> gated items + the payments + auth-onboarding follow-ups visible.
+> Open this file, read **Next action**. Foxy AI Tutor & RAG Cycle 4 has landed (auto-fix-safe complete —
+> the P12 "no unfiltered LLM output" output backstop now guards every student-facing exit of the live
+> grounded path; FOX-4 OpenAI provider governance is USER-gated). The next vertical workflow is
+> **Teacher / School-Admin B2B (P8, P9, P13)**; begin its MAP phase and write artifacts under
+> `workflows/teacher-school-admin-b2b/`. Keep the Foxy FOX-4 gate + the student-learning-core gated items
+> + the payments + auth-onboarding follow-ups visible.
+
+## Current workflow detail — foxy-ai-rag (P12, P8, P13) — CYCLE 4 LANDED (auto-fix-safe complete)
+
+- Scope: the end-to-end Foxy chat turn (`/api/foxy` → `callGroundedAnswer` → `grounded-answer` Deno RAG
+  pipeline) + sibling AI Edge Functions (ncert-solver, quiz-generator, cme-engine). Governed by **P12** (AI
+  safety), **P8** (RLS on RAG/vector reads), **P13** (no PII to LLM/traces).
+- **Live-topology reconciliation (RECORDED):** the constitution's "`/api/foxy` … not yet wired to UI" note
+  is **STALE** — `/api/foxy/route.ts` is the LIVE production route; the legacy `foxy-tutor` Edge Function no
+  longer exists on disk; `grounded-answer` is the LLM pipeline. Correct on the next constitution
+  reconciliation. See `workflows/foxy-ai-rag/01-map.md` §0.
+- Artifacts: `workflows/foxy-ai-rag/01-map.md` … `08-regression.md` + `STATUS.md` (all written).
+- Landed (APPROVED, auto-fix-safe; **no model/provider/prompt-scope change**): **FOX-1** (HIGH, P12 — added
+  `screenStudentFacingText` (`src/lib/ai/validation/output-screen.ts`) + byte-identical Deno twin
+  (`supabase/functions/grounded-answer/output-screen.ts`); deterministic word-boundary `HARD_BLOCK_PATTERNS`
+  that EXCLUDE curriculum collisions; legacy `validateOutput` runs WARN-only; fail-safe; wired into EVERY
+  student-facing exit — non-streaming `route.ts`, streaming `_lib/streaming.ts`, Deno `pipeline-stream.ts` →
+  REG-182), **FOX-1 refinement** (CS-curriculum exemption — bare `<system>`/`[inst]` PASS, real chat
+  templates BLOCK), **FOX-2** (MED — `neutralizeInjectionAttempt` (`src/lib/ai/validation/input-guard.ts`),
+  fail-open → REG-183), **FOX-3** (LOW, assessment-approved — widened `VALID_MODES` doubt/homework/explorer;
+  safety rails template-independent), **FOX-6** (P13 — prompt-assembly contract test, only scope+UUID).
+- Gates: type-check **PASS**, lint **0 errors**, test **305/305 vitest + 3/3 Deno PASS**, build **PASS**,
+  bundle within **P10** caps. Quality verdict **APPROVE**; regression sweep **GREEN**; catalog 148 → **150**
+  (REG-182/183); existing P12 REG-37/39/50/54/66/67 still green.
+- P14 review chain (AI tutor behavior) **COMPLETE**: ai-engineer (impl) → assessment (CBSE-scope /
+  age-appropriateness correctness: **APPROVE WITH CONDITIONS**, conditions addressed) + testing (coverage
+  GREEN) + quality (independent **APPROVE**).
+- **Open gated / follow-up items (resume these):**
+  1. **FOX-4 (Medium, GATED — USER APPROVAL):** OpenAI gpt-4o-mini/gpt-4o is present in `grounded-answer` as
+     a **MoL SHADOW comparison** (telemetry only; does NOT reach students today — the student-facing answer
+     is always the screened Claude output). Provider PRESENCE is user-gated per the constitution. CEO to
+     formally approve & govern the shadow usage, or remove it.
+  2. **FOX-7 (NEW, MINOR follow-up — ai-engineer):** extend `screenStudentFacingText` to the legacy fallback
+     persist path (`_lib/legacy-flow.ts` / `persistLegacyFoxyResponse`). Reachable on `ff_grounded_ai_foxy`-OFF
+     / grounded-abstain fallback; currently retains the OLDER substring `validateOutput` guard — consistency
+     upgrade, **not an unfiltered hole**.
+  3. **Streaming live-view residual (MINOR):** upstream deltas reach the browser before the completion screen;
+     persisted record + final frame + every non-streamed consumer always safe; gated by `ff_foxy_streaming`.
+     Frontend full-closure (`onAbstain` also clears `structured`) flagged — touches the REG-50-pinned transform.
+  4. **Bilingual Hindi profanity-token coverage (MINOR, tracked):** `HARD_BLOCK_PATTERNS` English-oriented;
+     bounded (acts on model OUTPUT, not student input).
+- See `workflows/foxy-ai-rag/STATUS.md` + `cycles/2026-06-29-foxy-ai-rag.md`.
 
 ## Current workflow detail — student-learning-core (P1-P6, P12) — CYCLE 3 LANDED (auto-fix-safe complete)
 
@@ -130,10 +173,11 @@
 | 1 | auth-onboarding (P15) | ALL 8 PHASES | **LANDED — partial** | AO-4/8/1/2 + follow-up batch AO-5/7/9 (2026-06-29) landed + APPROVED; AO-3 gated, AO-2 CI fixtures + REG-177 + Deno CI-lane open; NEW AO-10 grade-coercion/backfill; prod migration-drift incident RESOLVED (repo-side reconciliation, PR #1153, deploy 28335566287 green); see `workflows/auth-onboarding/STATUS.md` + `cycles/2026-06-29-auth-onboarding-followups.md` |
 | 2 | payments-subscriptions (P11) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | PAY-1/3/4/5/6/7/8 landed + APPROVED (type-check PASS, lint 0, 236/236 payment tests, build PASS, vercel.json VALID; architect security APPROVE; sweep GREEN); REG-178/179 filing in flight; PAY-2 gated to USER (pricing); mobile-repoint + mobile-web-sync.md doc fix + super-admin display open; see `workflows/payments-subscriptions/STATUS.md` + `cycles/2026-06-29-payments-subscriptions.md` |
 | 3 | student-learning-core (P1-P6,P12) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | SLC-7 (frontend) + SLC-2/3/6/8-pin (testing) landed + APPROVED (type-check PASS, lint 0, 40/40 new + ~1678 broad tests PASS, build PASS, bundle within P10 caps; quality APPROVE; sweep GREEN); REG-180/181 filed (catalog 146 → 148); SLC-1 USER-GATED, SLC-4/5 + SLC-8 cutover gated/cross-agent, SLC-9 backlog; see `workflows/student-learning-core/STATUS.md` + `cycles/2026-06-29-student-learning-core.md` |
-| 4 | foxy-ai-tutor-rag (P12,P8) | — | NOT STARTED | next workflow (rank 4) |
+| 4 | foxy-ai-rag (P12,P8,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | FOX-1 (+ Deno twin + injection-pattern refinement) + FOX-2 + FOX-3 + FOX-6 landed + APPROVED (type-check PASS, lint 0, 305/305 vitest + 3/3 Deno PASS, build PASS, bundle within P10 caps; assessment APPROVE WITH CONDITIONS [addressed] + quality APPROVE; sweep GREEN); REG-182/183 filed (catalog 148 → 150); FOX-4 USER-GATED (OpenAI provider governance — MoL shadow, not student-facing), FOX-7-new + streaming-residual + Hindi-tokens follow-ups; live-topology reconciliation recorded (`/api/foxy` is LIVE, `foxy-tutor` Edge Fn gone); see `workflows/foxy-ai-rag/STATUS.md` + `cycles/2026-06-29-foxy-ai-rag.md` |
+| 5 | teacher-school-admin-b2b (P8,P9,P13) | — | NOT STARTED | next workflow (rank 5) |
 
 ## Backlog pointer
 
-Now active: **Foxy AI Tutor & RAG (P12, P8)** — `PRIORITY-BACKLOG.md` rank 4. Promote it to IN PROGRESS in
-the backlog when its first phase begins. (Rank 3 Student Learning Core is DONE — auto-fix-safe complete;
-SLC-1 user-gated, SLC-4/5 + SLC-8 cutover gated/cross-agent.)
+Now active: **Teacher / School-Admin B2B (P8, P9, P13)** — `PRIORITY-BACKLOG.md` rank 5. Promote it to IN
+PROGRESS in the backlog when its first phase begins. (Rank 4 Foxy AI Tutor & RAG is DONE — auto-fix-safe
+complete; FOX-4 user-gated provider governance, FOX-7-new + streaming-residual + Hindi-tokens follow-ups.)

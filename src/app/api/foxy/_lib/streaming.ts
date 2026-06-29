@@ -27,6 +27,9 @@
 
 import { logAudit } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { logger } from '@/lib/logger';
+// FOX-1 (P12): deterministic output content backstop on the streaming path.
+import { screenStudentFacingText } from '@/lib/ai/validation/output-screen';
 import {
   callGroundedAnswerStream,
   type GroundedRequest,
@@ -173,6 +176,13 @@ export async function handleStreamingFoxyTurn(params: {
   // falls back to the legacy aggregate-only feedback path.
   let assistantMessageId: string | null = null;
 
+  // FOX-1 (P12): set when the completed, buffered answer fails the deterministic
+  // content screen. Drives the synthesized `abstain` reconciliation frame +
+  // quota refund in flush(), and forces a SAFE (empty) persisted record so no
+  // non-streamed consumer (session-resume GET, parent portal, analytics) can
+  // ever read the unsafe text.
+  let safetyRedacted = false;
+
   const persistOnDone = async () => {
     // ─── Boundary validation for the streaming `done.structured` payload ────
     // Mirrors the non-streaming path (around line 1700): re-validate the
@@ -206,6 +216,48 @@ export async function handleStreamingFoxyTurn(params: {
       ? denormalizeFoxyResponse(structured)
       : accumulatedText;
 
+    // ── FOX-1 (P12): screen the COMPLETE buffered answer before commit ───────
+    // True mid-stream blocking is infeasible (each delta is re-emitted verbatim
+    // to the browser as it arrives). At MINIMUM we validate the complete
+    // buffered output before the turn is persisted and before any non-streamed
+    // consumer can read it. On a block we persist a SAFE (empty) record instead
+    // of the unsafe text, and flush() emits a synthesized `abstain` frame so the
+    // live client reconciles to the safe abstain UI. P13: category tags only.
+    const screen = screenStudentFacingText(assistantContent, {
+      grade: params.grade,
+      subject: params.subject,
+    });
+    if (!screen.safe) {
+      safetyRedacted = true;
+      logger.warn('foxy.output.safety_blocked', {
+        subject: params.subject,
+        grade: params.grade,
+        mode: params.mode,
+        categories: screen.categories,
+        traceId: lastTraceId,
+        flow: 'grounded-answer-stream',
+      });
+      try {
+        logAudit(params.userId, {
+          action: 'foxy.chat.safety_blocked',
+          resourceType: 'foxy_sessions',
+          resourceId: params.resolvedSessionId,
+          details: {
+            subject: params.subject,
+            grade: params.grade,
+            mode: params.mode,
+            categories: screen.categories,
+            traceId: lastTraceId,
+            flow: 'grounded-answer-stream',
+          },
+        });
+      } catch { /* audit is non-critical */ }
+    }
+    // When redacted we persist an empty, structured-null assistant turn so the
+    // unsafe text never lands in the DB; otherwise persist the validated answer.
+    const persistContent = safetyRedacted ? '' : assistantContent;
+    const persistStructured = safetyRedacted ? null : (structured ?? null);
+
     const sourcesPayload =
       lastCitations.length > 0
         ? lastCitations.map((c) => ({
@@ -227,9 +279,9 @@ export async function handleStreamingFoxyTurn(params: {
         const { error: updateErr } = await supabaseAdmin
           .from('foxy_chat_messages')
           .update({
-            content: assistantContent,
-            structured: structured ?? null,
-            sources: sourcesPayload,
+            content: persistContent,
+            structured: persistStructured,
+            sources: safetyRedacted ? null : sourcesPayload,
             tokens_used: lastTokensUsed,
             pending: false,
           })
@@ -264,12 +316,12 @@ export async function handleStreamingFoxyTurn(params: {
               session_id: params.resolvedSessionId,
               student_id: params.studentId,
               role: 'assistant',
-              content: assistantContent,
+              content: persistContent,
               // CHECK constraint `structured_role_check` permits structured only
               // on assistant rows; the column is nullable so legacy/fallback writes
               // explicitly null. Migration: 20260430010000_foxy_chat_messages_add_structured.
-              structured: structured ?? null,
-              sources: sourcesPayload,
+              structured: persistStructured,
+              sources: safetyRedacted ? null : sourcesPayload,
               tokens_used: lastTokensUsed,
               // B'-5: parity with the blocking path — record coach mode for
               // feedback correlation.
@@ -292,7 +344,9 @@ export async function handleStreamingFoxyTurn(params: {
 
     // Phase 3 (2026-05-18): pending-expectations lifecycle for streaming
     // path. Parity with the blocking flow at the same callsite. Best-effort.
-    if (params.usePendingExpectations) {
+    // FOX-1: skip entirely on a safety-redacted turn — we must NOT derive
+    // next-turn anchors from blocked text.
+    if (params.usePendingExpectations && !safetyRedacted) {
       try {
         if (params.openExpectation) {
           const lifecycle = classifyExpectationLifecycle(
@@ -331,31 +385,35 @@ export async function handleStreamingFoxyTurn(params: {
       }
     }
 
-    try {
-      logAudit(params.userId, {
-        action: 'foxy.chat',
-        resourceType: 'foxy_sessions',
-        resourceId: params.resolvedSessionId,
-        details: {
-          subject: params.subject,
-          grade: params.grade,
-          chapter: params.chapter,
-          mode: params.mode,
-          tokensUsed: lastTokensUsed,
-          model: lastClaudeModel,
-          traceId: lastTraceId,
-          ragChunksFound: lastCitations.length,
-          masteryLevel: params.cognitiveCtx.masteryLevel,
-          flow: 'grounded-answer-stream',
-          groundedFromChunks: lastGroundedFromChunks,
-          // Adoption telemetry parity with the non-streaming branch — `true`
-          // only when the upstream emitted a structured payload AND it passed
-          // boundary validation. Lets ops compare structured-rendering health
-          // across the streaming and blocking flows.
-          structured_present: structured !== null,
-        },
-      });
-    } catch { /* audit log is non-critical */ }
+    // On a safety-redacted turn we already emitted `foxy.chat.safety_blocked`;
+    // do not ALSO emit a normal completion audit.
+    if (!safetyRedacted) {
+      try {
+        logAudit(params.userId, {
+          action: 'foxy.chat',
+          resourceType: 'foxy_sessions',
+          resourceId: params.resolvedSessionId,
+          details: {
+            subject: params.subject,
+            grade: params.grade,
+            chapter: params.chapter,
+            mode: params.mode,
+            tokensUsed: lastTokensUsed,
+            model: lastClaudeModel,
+            traceId: lastTraceId,
+            ragChunksFound: lastCitations.length,
+            masteryLevel: params.cognitiveCtx.masteryLevel,
+            flow: 'grounded-answer-stream',
+            groundedFromChunks: lastGroundedFromChunks,
+            // Adoption telemetry parity with the non-streaming branch — `true`
+            // only when the upstream emitted a structured payload AND it passed
+            // boundary validation. Lets ops compare structured-rendering health
+            // across the streaming and blocking flows.
+            structured_present: structured !== null,
+          },
+        });
+      } catch { /* audit log is non-critical */ }
+    }
   };
 
   const transform = new TransformStream<Uint8Array, Uint8Array>({
@@ -427,7 +485,33 @@ export async function handleStreamingFoxyTurn(params: {
         // closing the feedback loop. The student has already seen all the
         // text by this point; we're only delaying the connection close.
         await persistOnDone();
-        if (assistantMessageId) {
+        if (safetyRedacted) {
+          // FOX-1: the buffered answer failed the content screen AFTER the
+          // upstream `text`/`done` frames were already re-emitted verbatim.
+          // Emit a synthesized `abstain` frame so the live client reconciles to
+          // the safe hard-abstain UI (onAbstain clears the streamed `content`),
+          // and refund the quota — the student did not receive a usable answer.
+          // We do NOT emit `persisted` (no feedback wiring to a redacted turn).
+          // Residual: the live browser may have briefly shown the streamed
+          // tokens before this frame lands; the PERSISTED record + every
+          // non-streamed consumer are guaranteed safe (empty). See
+          // 05-implementation.md "streaming residual".
+          try {
+            controller.enqueue(
+              encoder.encode(
+                `event: abstain\ndata: ${JSON.stringify({
+                  abstainReason: 'upstream_error',
+                  suggestedAlternatives: [],
+                  traceId: lastTraceId,
+                  latencyMs: 0,
+                })}\n\n`,
+              ),
+            );
+          } catch {
+            /* controller closed (rare race) — persisted record is still safe */
+          }
+          await refundQuota(params.studentId, 'foxy_chat');
+        } else if (assistantMessageId) {
           try {
             controller.enqueue(
               encoder.encode(
