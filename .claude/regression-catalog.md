@@ -5803,3 +5803,63 @@ dashboard-wiring pins).
 **Total catalog: 166 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Remediation — TSB-4: Class-Membership Soft-Delete Sync (P8) — 2026-06-29
+
+The engineering audit found a live P8 divergence between the two dual
+class-membership join tables. Both `class_students` and `class_enrollments`
+carry the same natural key `(class_id, student_id)` + an `is_active` soft-delete
+flag, but only their row SETS were kept in sync (the INSERT-only mirror in
+migration `20260620000700`). The school-admin de-enroll path flips
+`is_active=false` on `class_enrollments` ONLY — and nothing propagated that flip
+to `class_students`, the table the LIVE teacher boundary reads
+(`canAccessStudent` / the `is_teacher_of(uuid)` SECURITY DEFINER helper resolve a
+teacher's reachable students through `class_students WHERE is_active = true`). So
+a de-enrolled student stayed `is_active=true` on `class_students` and REMAINED
+VISIBLE to the assigned teacher.
+
+The TSB-4 AUTO-FIX-SAFE slice adds two bidirectional, recursion-guarded
+`AFTER UPDATE OF is_active` triggers (one per direction) that mirror the
+`is_active` flip on the counterpart row, going forward. Recursion terminates
+after exactly one bounce via a DOUBLE guard: trigger-level
+`WHEN (OLD.is_active IS DISTINCT FROM NEW.is_active)` + a row-level
+`WHERE ... AND is_active IS DISTINCT FROM NEW.is_active` (the reverse fire updates
+zero rows → no re-entry). The slice is deliberately narrow — triggers + comments
+only: it does NOT repoint the boundary helpers, add a teacher RLS policy on
+`class_enrollments`, backfill the already-divergent historical rows, or DROP
+either table. The full consolidation (boundary repoint to the canonical-by-intent
+`class_enrollments`, the verified one-time backfill, and the eventual DROP of the
+redundant table) is a SEPARATE, CEO-gated cutover.
+
+The unit lane has no live Postgres, so the trigger contract is pinned as
+comment-stripped static-source assertions (same convention as
+`slc1-quiz-session-trigger-dedupe.test.ts` / REG-194 and the FIX-C INSERT-mirror
+canary `portal-rbac-remediation-migration-canaries.test.ts` / REG-158). The
+live-DB behavioural proof ("de-enroll on `class_enrollments` flips
+`class_students.is_active` to false in one round trip, no trigger storm") is
+deferred to an integration lane.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-200 | `class_membership_softdelete_sync` | P8: migration `20260702030000` adds bidirectional recursion-guarded `AFTER UPDATE OF is_active` triggers between `class_students` and `class_enrollments` so a soft de-enroll propagates to BOTH (closing the divergence where a de-enrolled student stayed `is_active=true` on `class_students`, the table the `canAccessStudent`/`is_teacher_of` teacher boundary reads); guard = trigger `WHEN OLD.is_active IS DISTINCT FROM NEW.is_active` + row `WHERE is_active IS DISTINCT FROM NEW.is_active` (terminates after one round-trip); idempotent (CREATE OR REPLACE + DROP TRIGGER IF EXISTS), SECURITY DEFINER + pinned search_path, NO DROP/RLS change; the DROP + boundary-repoint deferred to a separate CEO-gated cutover | `src/__tests__/tsb4-class-membership-softdelete-sync.test.ts` | E | P8 |
+
+### Invariants covered by this section
+
+- P8 (RLS / teacher-boundary divergence) — REG-200 pins that the soft de-enroll
+  now propagates to `class_students` (the boundary-read table), so a de-enrolled
+  student stops being reachable via `canAccessStudent` / `is_teacher_of`; the
+  double recursion guard (trigger-level WHEN + row-level WHERE) is asserted on
+  BOTH directions; the posture (idempotent, SECURITY DEFINER, pinned search_path)
+  and the additive-only contract (no DROP TABLE/COLUMN, no RLS/policy churn, no
+  boundary-helper redefinition — triggers + comments only) are pinned; and the
+  ADR header's CEO-gated deferral of the DROP + boundary-repoint is pinned so the
+  narrow scope can't silently widen.
+
+### Catalog total
+
+Pre-TSB-4: 166 entries (through Remediation PP-1/3's REG-199 parent-link
+consent). Remediation TSB-4 adds REG-200 (class-membership soft-delete sync —
+the P8 bidirectional recursion-guarded UPDATE-mirror going-forward fix).
+**Total catalog: 167 entries (target: 35 — TARGET EXCEEDED).**
+
+---
