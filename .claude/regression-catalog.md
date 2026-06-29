@@ -5330,3 +5330,39 @@ role side effect).
 **Total catalog: 146 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Engineering-Audit Cycle 3 — Student Learning Core (P1/P2) — 2026-06-29
+
+Source: engineering-audit program, Cycle 3 (Student Learning Core). P1 fixes the
+score formula `score_percent = Math.round((correct / total) * 100)` and P2 fixes
+the quiz-XP earning literals (per-correct=10, high-score-bonus=20,
+perfect-bonus=50). Both invariants are duplicated across a TypeScript source and
+one-or-more SQL RPC bodies, so the risk is silent drift between the layers. This
+cycle gave both guarantees executable, cross-layer parity coverage: the score
+formula is proven identical at all three sites (TS + SQL v1/v2 RPC + the
+display component that only consumes it), and the XP literals are extracted from
+every root migration's quiz-XP PL/pgSQL body and pinned equal to `XP_RULES`.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-180 | `score_formula_three_way_parity` | P1 `score_percent = round((correct/total)*100)` is identical at the TS site (`scoring.ts`), the SQL v1+v2 RPC bodies (canonical `ROUND` present, no precision variant), and is property-proven `Math.round ≡ PG ROUND` on non-negative operands; `QuizResults.tsx` consumes `results.score_percent` and never recomputes the overall score. Drift at any of the three sites (formula change, precision-variant ROUND, or a recompute reintroduced into the display component) fails CI. | `src/__tests__/score-formula-three-way-parity.test.ts` | E |
+| REG-181 | `xp_sql_literal_parity` | P2 quiz-XP earning literals (per-correct=10, high-score-bonus=20, perfect-bonus=50) extracted from every root migration's quiz-XP PL/pgSQL body equal `XP_RULES` (`src/lib/xp-config.ts`). Drift in any v1/v2/trigger or a future RPC redefinition that hardcodes a different literal than the single TS source of truth fails CI. | `src/__tests__/xp-sql-literal-parity.test.ts` | E |
+
+### Invariants covered by this section
+
+- P1 (score accuracy — `Math.round((correct/total)*100)` identical at the TS
+  `scoring.ts` site, the SQL v1+v2 RPC bodies, and the `QuizResults.tsx` display
+  component which only consumes the server `score_percent`, never recomputes)
+- P2 (XP economy — the three quiz-XP earning literals live only in `XP_RULES`;
+  every SQL PL/pgSQL body must match the single TS source of truth)
+
+### Catalog total
+
+Pre-REG-180: 146 entries (through Engineering-Audit Cycle 2's REG-178/REG-179
+payment-funnel pins). Engineering-Audit Cycle 3 adds REG-180 (score-formula
+three-way parity — TS + SQL v1/v2 + display-component consume-only) and REG-181
+(XP SQL-literal parity — quiz-XP earning literals extracted from every root
+migration equal `XP_RULES`).
+**Total catalog: 148 entries (target: 35 — TARGET EXCEEDED).**
+
+---

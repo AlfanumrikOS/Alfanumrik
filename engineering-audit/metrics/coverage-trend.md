@@ -12,6 +12,7 @@ measured in-session.
 | 2026-06-28 | 2,511 (84 files) | ~37% global (threshold 35%, to verify) | 142 (target 35 — exceeded) | CAP_SHARED_KB cap 280; single-chunk metric ~168.5 (to verify current) | /foxy ~254 (to verify) | to verify (assume green on main) |
 | 2026-06-28 (Cycle 1 — auth-onboarding REGRESSION) | +27 new assertions this cycle (10 Deno always-200 + 7 AO-4 vitest + 3-role E2E `test.fixme`-gated + fs-guard); targeted run 940/940 + Deno 10/10 | not re-measured globally this cycle | 144 with REG-177 (P15 `send_auth_email_always_200`) once filed; cap target 35 — exceeded | build PASS — shared **279.7 / 284 kB** (CAP_SHARED_KB) | /foxy still largest, 0 pages > 260 kB | local green; middleware 116.2/120 kB; CI Deno-lane wiring of always-200 suite in flight |
 | 2026-06-29 (Cycle 2 — payments-subscriptions REGRESSION) | payment suite **236/236 PASS** (verify-HMAC-reject + subscribe RBAC gate now pinned + reconcile-atomic-RPC + dedupe-no-op regressions); not re-measured globally this cycle | not re-measured globally this cycle | **146** with REG-178 (`verify_route_hmac_reject`, P11) + REG-179 (`subscribe_rbac_gate_pre_razorpay`, P9/P11) once filed; cap target 35 — exceeded | build PASS (`vercel.json` VALID — 13 crons ≤ 40 Pro limit) | /foxy still largest, 0 pages > 260 kB (config-only PAY-4 change; no bundle impact) | local green; type-check PASS, lint 0 errors; architect security APPROVE + quality APPROVE; REG-178/179 catalog filing in flight |
+| 2026-06-29 (Cycle 3 — student-learning-core REGRESSION) | **40/40 new + ~1678 broad quiz/xp/scoring PASS** (+P1 three-way score-formula parity, +P2 XP earning-literal parity, +P3 pattern-flag asymmetry pin, +submit-idempotency contract pin; SLC-7 P6-gate wiring); not re-measured globally this cycle | not re-measured globally this cycle | **148** with REG-180 (`score_formula_three_way_parity`, P1) + REG-181 (`xp_sql_literal_parity`, P2); REG-45/48/51/53 still green; cap target 35 — exceeded | build PASS — bundle within P10 caps (SLC-7 is a small pure-React change in an existing page; test-only files have no bundle impact) | /foxy still largest, 0 pages > 260 kB | local green; type-check PASS, lint 0 errors; quality APPROVE (one MINOR brace nit fixed); sweep GREEN |
 
 ## Notes on the seed row (2026-06-28)
 - **Test count** 2,511 / 84 files: from `.claude/CLAUDE.md` testing cell. `CLAUDE.md`
@@ -50,6 +51,25 @@ measured in-session.
   `*/10 * * * *`; ≤ 40 Pro-plan limit). PAY-4 is config-only — no middleware/bundle/code-path impact.
 - **Gates:** type-check PASS, lint 0 errors, build PASS; architect P14 security review APPROVE + quality
   independent verdict APPROVE; regression sweep GREEN.
+
+## Notes on the Cycle-3 row (2026-06-29 — student-learning-core REGRESSION)
+- **40/40 new + ~1678 broad:** the four new test files (`score-formula-three-way-parity.test.ts`,
+  `xp-sql-literal-parity.test.ts`, `quiz-pattern-flag-intended-behavior.test.ts`,
+  `quiz-submit-idempotency-contract-pin.test.ts`) plus the broad quiz/xp/scoring suite were re-run by
+  quality — all pass. SLC-7 (wiring the dead P6 `isValidQuestion` gate into `startQuiz`) preserves P1/P4
+  served-count consistency by deriving `mcqIds` + `displayQuestions` + the submitted set from one filtered
+  array (independently re-derived by quality). Global coverage % was not re-measured this cycle (targeted
+  quiz/xp/scoring run only).
+- **Catalog:** REG-180 (`score_formula_three_way_parity`, P1) + REG-181 (`xp_sql_literal_parity`, P2)
+  filed → 148. REG-181 closes the REG-48 cap-only gap (REG-48 guarded the cap; the 10/20/50 earning
+  literals were unguarded). Existing learner-core entries REG-45 / REG-48 / REG-51 / REG-53 remain green.
+  Authoritative source remains `.claude/regression-catalog.md`.
+- **Build/bundle:** SLC-7 is a small pure-React change inside an existing page; the four new files are
+  test-only — no shared-chunk or page-budget impact. 0 pages over the 260 kB page budget.
+- **Gates:** type-check PASS, lint 0 errors, build PASS; quality independent verdict APPROVE (the one MINOR
+  brace nit in the SLC-6 matcher now fixed); regression sweep GREEN.
+- **Gated (not in these numbers):** SLC-1 (uncapped XP trigger — USER-GATED), SLC-4 (dual cap impl), SLC-5
+  (server-records-flagged), SLC-8 cutover (`ff_server_only_quiz_submit`) — cross-agent, not implemented.
 
 ## How to add a row
 At the end of each cycle's REGRESSION phase, run `npm test`, `npm run test:coverage`,

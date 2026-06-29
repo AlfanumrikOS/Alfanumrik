@@ -531,7 +531,43 @@ export default function QuizPage() {
         return;
       }
 
-      const qs = result.questions;
+      // P6 last-line quality gate (SLC-7): filter malformed questions OUT of the
+      // assembled set BEFORE they reach the student. Defense-in-depth behind the
+      // upstream quiz-generator oracle (REG-54) + DB constraints. Filtering only
+      // REMOVES malformed items; it never alters scoring. Because we filter here
+      // — before startQuizSession (mcqIds) snapshots the server shuffle and before
+      // setQuestions renders — the served (filtered) set is the single set that is
+      // shuffled, rendered, answered, counted, and submitted. So P1
+      // (score = round(correct / served * 100)) and the P4 RPC snapshot stay
+      // consistent on the ACTUAL served count.
+      const assembledQs = result.questions;
+      const qs = assembledQs.filter((q: Question) => isValidQuestion(q));
+      const droppedCount = assembledQs.length - qs.length;
+      if (droppedCount > 0) {
+        // Structured, PII-free warning (P13) so content QA can observe malformed
+        // serves. Logs only content-pool descriptors + counts — never any
+        // student-identifiable data.
+        console.warn('[Quiz][P6] Filtered malformed questions before serving', {
+          subject: subj,
+          grade: student.grade,
+          requested: assembledQs.length,
+          served: qs.length,
+          dropped: droppedCount,
+        });
+      }
+
+      // If the gate leaves zero valid questions, do NOT start an empty/broken
+      // quiz — surface a clean bilingual (P7) error/empty state instead.
+      if (qs.length === 0) {
+        setNoQuestionsError(true);
+        setNoQuestionsMessage(
+          isHi
+            ? 'मान्य प्रश्न लोड नहीं हो सके। कृपया फिर से कोशिश करें।'
+            : "Couldn't load valid questions. Please try again."
+        );
+        setLoading(false);
+        return;
+      }
 
       // P0 fix (migration 20260428160000): move shuffle authority to server.
       // For MCQ questions, ask the server to generate the shuffle and snapshot
