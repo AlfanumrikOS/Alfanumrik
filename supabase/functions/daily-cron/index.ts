@@ -164,12 +164,12 @@ async function generateParentDigests(supabase: ReturnType<typeof createClient>):
     const base = {recipient_type:'guardian',recipient_id:guardian_id,is_read:false,created_at:new Date().toISOString(),idempotency_key:idemKey}
     const { data: streakRow } = await supabase.from('challenge_streaks').select('current_streak').eq('student_id',student_id).maybeSingle()
     const currentStreak = (streakRow as {current_streak:number}|null)?.current_streak ?? 0
-    if (!list.length) { const b='Your child did not complete any quizzes yesterday.'; const bhi='आपके बच्चे ने कल कोई प्रश्नोत्तरी पूरी नहीं की।'; notes.push({...base,type:'parent_digest_no_activity',title:'No study activity yesterday',message:b,body:b,body_hi:bhi,data:{quizzes:0,student_id,streak_days:currentStreak}}) }
+    if (!list.length) { const b='Your child did not complete any quizzes yesterday.'; const bhi='आपके बच्चे ने कल कोई प्रश्नोत्तरी पूरी नहीं की।'; notes.push({...base,type:'parent_digest_no_activity',title:'No study activity yesterday',message:b,body:b,data:{quizzes:0,student_id,streak_days:currentStreak,title_hi:'कल कोई अध्ययन गतिविधि नहीं',body_hi:bhi}}) }
     else {
       const xp=list.reduce((s,q)=>s+(q.xp_earned??0),0); const sc=Math.round(list.reduce((s,q)=>s+(q.score_percent??0),0)/list.length)
       const sub=[...new Set(list.map(q=>q.subject))].join(', '); const b=`Subjects: ${sub}. Avg score: ${sc}%. XP: +${xp}.`
       const bhi=`विषय: ${sub}। औसत अंक: ${sc}%। XP: +${xp}।`
-      notes.push({...base,type:'parent_digest',title:`Yesterday: ${list.length} quiz${list.length>1?'zes':''} completed`,message:b,body:b,body_hi:bhi,data:{quizzes:list.length,avg_score:sc,total_xp:xp,subjects:sub,student_id,streak_days:currentStreak}})
+      notes.push({...base,type:'parent_digest',title:`Yesterday: ${list.length} quiz${list.length>1?'zes':''} completed`,message:b,body:b,data:{quizzes:list.length,avg_score:sc,total_xp:xp,subjects:sub,student_id,streak_days:currentStreak,title_hi:`कल: ${list.length} क्विज़ पूरी${list.length>1?'ं':''}`,body_hi:bhi}})
     }
   }
   // WhatsApp delivery for guardians with phone + whatsapp preference
@@ -572,7 +572,14 @@ async function recalculatePerformanceScores(supabase: ReturnType<typeof createCl
           type: 'score_milestone',
           title: `Your ${subject} score dropped by ${Math.round(drop)} points`,
           body: `Your Performance Score went from ${Math.round(prevScore)} to ${Math.round(rounded)}. Review some topics to bring it back up!`,
-          data: { subject, previous: prevScore, current: rounded, change: -drop },
+          // P7 — Hindi twin rides data.title_hi / data.body_hi (the notifications
+          // table has NO top-level *_hi columns; the client reads data.*_hi — see
+          // notifications/page.tsx and notification-triggers.ts house-shape note).
+          data: {
+            subject, previous: prevScore, current: rounded, change: -drop,
+            title_hi: `तुम्हारा ${subject} स्कोर ${Math.round(drop)} अंक गिर गया`,
+            body_hi: `तुम्हारा Performance Score ${Math.round(prevScore)} से ${Math.round(rounded)} हो गया। इसे फिर से बढ़ाने के लिए कुछ टॉपिक दोहराओ!`,
+          },
           is_read: false,
           created_at: new Date().toISOString(),
           idempotency_key: `score_drop_${daySlug}_${studentId}_${subject}`,
@@ -586,7 +593,11 @@ async function recalculatePerformanceScores(supabase: ReturnType<typeof createCl
           type: 'score_milestone',
           title: `Great job! ${subject} score reached ${Math.round(rounded)}`,
           body: `You've crossed 80 in ${subject}. Keep up the excellent work!`,
-          data: { subject, previous: prevScore, current: rounded, milestone: 80 },
+          data: {
+            subject, previous: prevScore, current: rounded, milestone: 80,
+            title_hi: `बहुत बढ़िया! ${subject} स्कोर ${Math.round(rounded)} तक पहुँच गया`,
+            body_hi: `तुमने ${subject} में 80 पार कर लिया। बढ़िया काम जारी रखो!`,
+          },
           is_read: false,
           created_at: new Date().toISOString(),
           idempotency_key: `score_above80_${daySlug}_${studentId}_${subject}`,
@@ -600,7 +611,11 @@ async function recalculatePerformanceScores(supabase: ReturnType<typeof createCl
           type: 'score_milestone',
           title: `${subject} score needs attention`,
           body: `Your score dropped below 50. A quick revision session can help bring it back up!`,
-          data: { subject, previous: prevScore, current: rounded, milestone: 50 },
+          data: {
+            subject, previous: prevScore, current: rounded, milestone: 50,
+            title_hi: `${subject} स्कोर पर ध्यान देने की ज़रूरत है`,
+            body_hi: `तुम्हारा स्कोर 50 से नीचे आ गया। एक छोटा रिवीज़न सेशन इसे फिर से बढ़ाने में मदद कर सकता है!`,
+          },
           is_read: false,
           created_at: new Date().toISOString(),
           idempotency_key: `score_below50_${daySlug}_${studentId}_${subject}`,

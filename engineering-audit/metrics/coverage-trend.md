@@ -17,6 +17,8 @@ measured in-session.
 | 2026-06-29 (Cycle 5 — teacher-school-b2b REGRESSION) | **527/527 vitest PASS** (+P8/P13 teacher-dashboard grade-fallback tenant-scoping across all 8 query sites via auth-derived `resolveTeacherSchoolId`, fail-closed; +P8 teacher-assigned RLS backstop on `public.students`, predicate-identical to the active `is_teacher_of(id)` branch); 15 TSB-1 + 10 TSB-2 new edge-fn/RLS tests; not re-measured globally this cycle | not re-measured globally this cycle | **152** with REG-184 (P8/P13 teacher tenant-scoping) + REG-185 (P8 teacher RLS backstop); REG-120/121/122/124/128 still green; cap target 35 — exceeded | build PASS — **no bundle impact** (Edge Function + migration only) | /foxy still largest, 0 pages > 260 kB | local green; type-check PASS, lint 0 errors; quality independent **APPROVE WITH CONDITIONS** (migration-ordering — RESOLVED via byte-identical rename `20260629000000`→`20260702010000`); sweep GREEN |
 | 2026-06-29 (Cycle 6 — super-admin-observability REGRESSION) | **6/6 new (4 SAO-7 + 2 SAO-4) + 351/351 broad super-admin/analytics/observability PASS** (+P9 admin-route auth-gate FULL-SURFACE sweep — 134 routes, 207/207 DB-touching handlers gate-before-I/O, `super-admin/login` sole allowlist; +P13 bare-name log canary — no bare `name`/`email`/`phone` logger key, conservative compound-key exclusion); also SAO-3 observability-CSV egress `redactPII` + SAO-2 `top_students.email` drop; not re-measured globally this cycle | not re-measured globally this cycle | **154** with REG-186 (P9 full-surface gate sweep) + REG-187 (P13 bare-name log canary); REG-49/115/116/119 still green; cap target 35 — exceeded | build PASS — bundle within P10 (analytics/observability server routes + 2 test-only files; **no shared-chunk or page-budget impact**) | /foxy still largest, 0 pages > 260 kB | local green; type-check PASS, lint 0 errors; quality independent **APPROVE**; sweep GREEN |
 | 2026-06-29 (Cycle 7 — parent-portal REGRESSION) | **5 new files / 71 new tests; 104/104 target + 404/404 broad parent/guardian PASS** (+P8/P13 parent link-code PostgREST `.or()` filter-injection guard at all 3 sites via shared `isValidLinkCode` `^[A-Z0-9]{4,12}$` + byte-identical Next.js↔Deno validator-twin parity; +P8/P13 per-IP brute-force rate limit on the legacy Edge `parent_login` — 5/hour, 429 + Retry-After, pre-DB; +P9 `PATCH /api/parent/profile` authz gate via already-granted `profile.update_own` + self-scope/no-IDOR; +P8/P13 unlinked-parent deny — 403/no-payload across all 9 child-data routes + canonical guardian-link boundary); not re-measured globally this cycle | not re-measured globally this cycle | **157** with REG-188 (link-code filter-injection + twin parity) + REG-189 (per-IP rate limit) + REG-190 (profile authz + unlinked-parent deny); REG-110/111/117 still green; cap target 35 — exceeded | build PASS — bundle within P10 (server routes + Edge Function + tiny pure validator + test-only files; **no shared-chunk or page-budget impact**) | /foxy still largest, 0 pages > 260 kB | local green; type-check PASS, lint 0 errors; quality independent **APPROVE**; sweep GREEN |
+| 2026-06-29 (Cycle 8 — cross-cutting REGRESSION; FINAL) | **3 new files / 11 cross-cutting tests PASS** (+mobile-web price drift contract — Dart `subscription.dart` == web `plans.ts`, parity-only; +mobile-web score-config drift contract — all 41 `score_config.dart` constants == `src/lib/score-config.ts`, parity-only; +bundle-cap pin — CAP_SHARED_KB=284/CAP_PAGE_KB=260/CAP_MIDDLEWARE_KB=120 in `check-bundle-size.mjs`; + P7 server-notification Hindi `data.title_hi`/`data.body_hi` on the daily-cron score-milestone + parent-digest producers, relocating the parent-digest's dead top-level `body_hi`); not re-measured globally this cycle | not re-measured globally this cycle | **160** with REG-191 (price web↔mobile parity) + REG-192 (score-config web↔Flutter parity) + REG-193 (bundle-cap pin); REG-49/65/134 still green; cap target 35 — exceeded | build **DEFERRED to CI backstop** (transient platform outage during validation; Deno Edge Function + test-only files → negligible bundle risk; `check-bundle-size` caps PINNED at CAP_SHARED_KB=284) | /foxy still largest, 0 pages > 260 kB (no runtime change shipped) | local green; type-check PASS, lint 0 errors, 11/11 tests, code review clean; orchestrator self-validated **APPROVE**; sweep GREEN |
+| **PROGRAM SUMMARY (Cycles 1-8 — 2026-06-28 → 2026-06-29)** | **8 of 8 ranked workflows audited → hardened → merged** (auth-onboarding, payments-subscriptions, student-learning-core, foxy-ai-rag, teacher-school-b2b, super-admin-observability, parent-portal, cross-cutting) | global coverage not re-measured per-cycle (targeted suites only); threshold 35% upheld | catalog grew **~146 → 160** across the program; **REG-177..193 = 17 new** entries; target 35 — exceeded throughout | shared JS 279.7 / **284** (cap pinned by REG-193); middleware 116.2 / 120 | /foxy largest, 0 pages > 260 kB throughout | all cycles local-green; per-cycle quality/orchestrator APPROVE; residual = post-program remediation backlog (Tier-1 user-gated / Tier-2 reversible / Tier-3 initiatives) — see `PROGRAM-SUMMARY.md` |
 
 ## Notes on the seed row (2026-06-28)
 - **Test count** 2,511 / 84 files: from `.claude/CLAUDE.md` testing cell. `CLAUDE.md`
@@ -183,6 +185,39 @@ measured in-session.
   (architect; feeds Cross-cutting P8 breadth), PP-6 helper convergence (behavior-preserving), PP-7
   English-only server insights/tips/glance (Cycle 8 P7 breadth), PP-1 durable Upstash/DB-backed limiter
   (architect), pre-existing Deno errors at `parent-portal/index.ts:603/605/629/630` — none implemented.
+
+## Notes on the Cycle-8 row (2026-06-29 — cross-cutting REGRESSION; FINAL)
+- **3 new files / 11 tests:** `subscription-price-drift.test.ts` (XC-6 → REG-191), `score-config-drift.test.ts`
+  (XC-5 → REG-192), `bundle-cap-pin.test.ts` (XC-4a → REG-193). The two drift tests read the real Dart files
+  on disk and assert web↔mobile EQUALITY (parity-only — they pin no absolute value), so a legitimate
+  user-approved price/score-config change passes iff BOTH sides change together, and the price test does NOT
+  collide with the PAY-2 user-gated pricing decision. The P7 change (XC-1/XC-2) is pure-additive `data.*_hi`
+  Hindi strings in the Deno `daily-cron` Edge Function (no client bundle) — it relocates the parent-digest's
+  previously-DEAD top-level `body_hi` into `data.body_hi` (the shape `notifications/page.tsx:195-198` reads)
+  so the Hindi finally renders.
+- **Catalog:** REG-191 (`subscription_price_web_mobile_parity`, P11-adjacent/mobile) + REG-192
+  (`score_config_web_flutter_parity`, mobile/P1-adjacent) + REG-193 (`bundle_cap_pin`, P10) filed → **160**.
+  Existing REG-49 / REG-65 / REG-134 remain green. Authoritative source remains `.claude/regression-catalog.md`.
+- **Build:** DEFERRED to the CI backstop. A transient platform outage during the validation window blocked a
+  clean local `npm run build`; the change is a Deno Edge Function (no client bundle) + three test-only files
+  (no bundle footprint), so CI's post-merge build + `check:bundle-size` is the authoritative gate. The cap
+  numbers are now PINNED (REG-193), so a future cap raise is a conscious reviewed code change.
+- **Gates:** type-check PASS, lint 0 errors, 11/11 cross-cutting tests PASS, code review clean; orchestrator
+  self-validated APPROVE (type-check/lint/11 tests/code-review); sweep GREEN.
+- **LARGER-PROGRAM (not in these numbers):** XC-3 (P8 RLS defense-in-depth, 87% admin-client routes), XC-4b
+  (@supabase/* first-paint split → ratchet cap toward 160 kB), XC-7 (central i18n primitive + missing-string
+  lint), plus the P7 follow-ups (school-operations + parent-portal PP-7 English-only titles) — none implemented.
+
+## Program-summary line (2026-06-29 — 8-CYCLE PROGRAM COMPLETE)
+- **All 8 ranked workflows DONE (auto-fix-safe).** Cycles 1-8: auth-onboarding (P15), payments-subscriptions
+  (P11), student-learning-core (P1-P6,P12), foxy-ai-rag (P12,P8,P13), teacher-school-b2b (P8,P9,P13),
+  super-admin-observability (P9,P13), parent-portal (P8,P13,P15), cross-cutting (P7,P8,P10,mobile sync).
+- **Regression catalog:** grew from ~146 (start of program) to **160** (end) — **REG-177..193 = 17 new entries**
+  filed across the program. Target 35 exceeded throughout. Authoritative source: `.claude/regression-catalog.md`.
+- **Headline fixes:** the CRITICAL TSB-1 cross-tenant student-PII leak (Cycle 5), the P12 Foxy unfiltered-output
+  backstop (Cycle 4), and the P11 payment split-brain/idempotency hardening (Cycle 2).
+- **Residual:** the post-program remediation backlog — Tier-1 user-gated decisions, Tier-2 reversible items,
+  Tier-3 larger initiatives. See `PRIORITY-BACKLOG.md` and `PROGRAM-SUMMARY.md`.
 
 ## How to add a row
 At the end of each cycle's REGRESSION phase, run `npm test`, `npm run test:coverage`,
