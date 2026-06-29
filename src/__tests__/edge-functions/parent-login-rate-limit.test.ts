@@ -83,7 +83,11 @@ describe('PP-1 source contract — limiter runs before any DB lookup', () => {
   it('declares the per-IP limit = 5 over a 1-hour window', () => {
     expect(src).toMatch(/PARENT_LOGIN_IP_LIMIT\s*=\s*5\b/);
     expect(src).toMatch(/PARENT_LOGIN_IP_WINDOW_MS\s*=\s*60\s*\*\s*60\s*\*\s*1000/);
-    expect(src).toMatch(/createRateLimiter\(\s*PARENT_LOGIN_IP_LIMIT\s*,\s*PARENT_LOGIN_IP_WINDOW_MS\s*\)/);
+    // Tier-2 PR C (REG-204): the call site moved from the in-memory
+    // `createRateLimiter(limit, window)` to the DURABLE Upstash-backed
+    // `createDurableRateLimiter(limit, window, prefix)` (same 5/1h bound, now
+    // cross-instance with a transparent in-memory fallback). Pin the new shape.
+    expect(src).toMatch(/createDurableRateLimiter\(\s*PARENT_LOGIN_IP_LIMIT\s*,\s*PARENT_LOGIN_IP_WINDOW_MS\s*,\s*['"]rl:parent_login['"]\s*\)/);
   });
 
   it('checks the limiter BEFORE getServiceClient() and before the students .or() lookup', () => {
