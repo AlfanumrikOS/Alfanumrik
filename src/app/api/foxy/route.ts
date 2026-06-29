@@ -107,6 +107,10 @@ import {
   QUIZ_ORACLE_GRADER_SYSTEM_PROMPT,
   buildQuizOracleGraderUserPrompt,
 } from '@/lib/ai/validation/quiz-oracle-prompts';
+// FOX-1 (P12): deterministic output content backstop on the LIVE grounded path.
+import { screenStudentFacingText } from '@/lib/ai/validation/output-screen';
+// FOX-2 (P12): student-message prompt-injection neutralizer (input-side).
+import { neutralizeInjectionAttempt } from '@/lib/ai/validation/input-guard';
 import { callClaude } from '@/lib/ai';
 import { buildExpandedGoalSection } from '@/lib/goals/goal-personas';
 import { fetchRecentLabContext, type LabContextEntry } from '@/lib/foxy/recent-lab-context';
@@ -571,6 +575,21 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   }
   if (!grade || !VALID_GRADES.includes(grade)) {
     return errorJson('Valid grade (6–12) is required.', 'Grade 6 se 12 ke beech hona chahiye.', 400);
+  }
+
+  // ── FOX-2 (P12): neutralize prompt-injection overrides in the student message ──
+  // The retrieved RAG chunks are already sanitized server-side; the student's
+  // own message was passed verbatim. We strip only assistant-directed override
+  // phrases ("ignore your previous instructions", "reveal your system prompt",
+  // "you are now a ...") — ordinary curriculum questions are left untouched.
+  // `message` (original) is still what we PERSIST + show in the chat bubble;
+  // `safeQuery` is what we send to the model as the user turn. Defense-in-depth
+  // only — the output screen (FOX-1) is the hard backstop regardless of input.
+  const injectionGuard = neutralizeInjectionAttempt(message);
+  const safeQuery = injectionGuard.text;
+  if (injectionGuard.neutralized) {
+    // P13: boolean/category only — NEVER the student's message text or id.
+    logger.warn('foxy.input.injection_neutralized', { subject, grade });
   }
 
   // 4. Resolve student ID and validate subject governance
@@ -1514,7 +1533,9 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   const groundedRequest: GroundedRequest = {
     caller: 'foxy',
     student_id: studentId,
-    query: message,
+    // FOX-2: send the injection-neutralized message to the model (the original
+    // `message` is still persisted + shown in the student's chat bubble).
+    query: safeQuery,
     scope: {
       board: 'CBSE',
       grade,
@@ -2015,6 +2036,60 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   const assistantContent = structured
     ? denormalizeFoxyResponse(structured)
     : grounded.answer;
+
+  // ── FOX-1 (P12): deterministic output content backstop ───────────────────
+  // EVERY student-facing grounded answer passes through the deterministic
+  // content screen before it is persisted or returned. The screen blocks only
+  // on a high-precision profanity / self-harm / injection-token set (it does
+  // NOT over-block legitimate CBSE curriculum — see output-screen.ts). On a
+  // block (or a fail-safe screen error) we DO NOT persist or return the
+  // unsafe text: we serve the existing hard-abstain envelope (response:'',
+  // groundingStatus:'hard-abstain') exactly like a hard-abstain, refund the
+  // quota, and emit category-only telemetry (P13: never the answer text).
+  // We screen BOTH the denormalized rendering AND the raw `answer` (the legacy
+  // string-only `response`), so neither surface can carry unscreened text.
+  const outputScreen = screenStudentFacingText(assistantContent, { grade, subject });
+  const rawAnswerScreen = screenStudentFacingText(grounded.answer, { grade, subject });
+  if (!outputScreen.safe || !rawAnswerScreen.safe) {
+    const screenCategories = [
+      ...new Set([...outputScreen.categories, ...rawAnswerScreen.categories]),
+    ];
+    logger.warn('foxy.output.safety_blocked', {
+      // P13: scope + stable category tags only — NEVER the answer text or id.
+      subject,
+      grade,
+      mode,
+      categories: screenCategories,
+      traceId: grounded.trace_id,
+    });
+    logAudit(auth.userId!, {
+      action: 'foxy.chat.safety_blocked',
+      resourceType: 'foxy_sessions',
+      resourceId: resolvedSessionId,
+      details: {
+        subject,
+        grade,
+        mode,
+        categories: screenCategories,
+        traceId: grounded.trace_id,
+        flow: 'grounded-answer',
+      },
+    });
+    // Refund the quota unit — the student did not receive a usable answer.
+    await refundQuota(studentId, 'foxy_chat');
+    logFoxyAsk(0);
+    return NextResponse.json({
+      success: true,
+      response: '',
+      sessionId: resolvedSessionId,
+      quotaRemaining: typeof remaining === 'number' ? remaining + 1 : remaining,
+      tokensUsed: 0,
+      groundingStatus: 'hard-abstain' as const,
+      abstainReason: 'upstream_error' as const,
+      suggestedAlternatives: [],
+      traceId: grounded.trace_id,
+    });
+  }
 
   // Persist both turns. Capture the assistant row's id so we can return it
   // to the client for B'-5 feedback wiring (👍/👎 needs the DB UUID, not the

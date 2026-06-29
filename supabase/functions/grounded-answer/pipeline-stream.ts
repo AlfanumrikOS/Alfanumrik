@@ -70,6 +70,10 @@ import {
   type FoxyResponse,
 } from './structured-schema.ts';
 import { writeTrace, hashQuery, redactPreview, type TraceRow } from './trace.ts';
+// FOX-1 (P12): deterministic output content backstop (Deno twin of
+// src/lib/ai/validation/output-screen.ts). Screens the COMPLETE buffered answer
+// before the `done` frame is emitted so an unsafe answer becomes an `abstain`.
+import { screenStudentFacingText } from './output-screen.ts';
 import {
   canProceed,
   circuitKey,
@@ -858,6 +862,29 @@ export async function* runStreamingPipeline(
   });
 
   ctx.answerLength = accumulated.length;
+
+  // ── FOX-1 (P12): screen the COMPLETE buffered answer before emitting `done` ──
+  // Mid-stream blocking is infeasible (deltas were already streamed). Screening
+  // the full accumulated text HERE lets us yield `abstain` INSTEAD of `done`,
+  // so the unsafe structured/`done` frame never reaches the Next layer or the
+  // client — the strongest place to stop it. The client's onAbstain handler
+  // clears the streamed `content`, reconciling the bubble to the safe abstain
+  // UI. The already-streamed text deltas are the documented residual. P13:
+  // category tags only, never the answer text.
+  const outScreen = screenStudentFacingText(accumulated);
+  if (!outScreen.safe) {
+    console.warn(
+      `foxy(stream): output_safety_blocked categories=${outScreen.categories.join(',')}`,
+    );
+    yield {
+      kind: 'abstain',
+      abstainReason: 'upstream_error',
+      suggestedAlternatives: [],
+      traceId,
+      latencyMs: Date.now() - startedAt,
+    };
+    return;
+  }
 
   // Parse + validate structured Foxy output ONCE at stream close. Mid-stream
   // we couldn't validate because the JSON was incomplete. On any failure we

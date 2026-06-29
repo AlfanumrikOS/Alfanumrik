@@ -13,6 +13,7 @@ measured in-session.
 | 2026-06-28 (Cycle 1 — auth-onboarding REGRESSION) | +27 new assertions this cycle (10 Deno always-200 + 7 AO-4 vitest + 3-role E2E `test.fixme`-gated + fs-guard); targeted run 940/940 + Deno 10/10 | not re-measured globally this cycle | 144 with REG-177 (P15 `send_auth_email_always_200`) once filed; cap target 35 — exceeded | build PASS — shared **279.7 / 284 kB** (CAP_SHARED_KB) | /foxy still largest, 0 pages > 260 kB | local green; middleware 116.2/120 kB; CI Deno-lane wiring of always-200 suite in flight |
 | 2026-06-29 (Cycle 2 — payments-subscriptions REGRESSION) | payment suite **236/236 PASS** (verify-HMAC-reject + subscribe RBAC gate now pinned + reconcile-atomic-RPC + dedupe-no-op regressions); not re-measured globally this cycle | not re-measured globally this cycle | **146** with REG-178 (`verify_route_hmac_reject`, P11) + REG-179 (`subscribe_rbac_gate_pre_razorpay`, P9/P11) once filed; cap target 35 — exceeded | build PASS (`vercel.json` VALID — 13 crons ≤ 40 Pro limit) | /foxy still largest, 0 pages > 260 kB (config-only PAY-4 change; no bundle impact) | local green; type-check PASS, lint 0 errors; architect security APPROVE + quality APPROVE; REG-178/179 catalog filing in flight |
 | 2026-06-29 (Cycle 3 — student-learning-core REGRESSION) | **40/40 new + ~1678 broad quiz/xp/scoring PASS** (+P1 three-way score-formula parity, +P2 XP earning-literal parity, +P3 pattern-flag asymmetry pin, +submit-idempotency contract pin; SLC-7 P6-gate wiring); not re-measured globally this cycle | not re-measured globally this cycle | **148** with REG-180 (`score_formula_three_way_parity`, P1) + REG-181 (`xp_sql_literal_parity`, P2); REG-45/48/51/53 still green; cap target 35 — exceeded | build PASS — bundle within P10 caps (SLC-7 is a small pure-React change in an existing page; test-only files have no bundle impact) | /foxy still largest, 0 pages > 260 kB | local green; type-check PASS, lint 0 errors; quality APPROVE (one MINOR brace nit fixed); sweep GREEN |
+| 2026-06-29 (Cycle 4 — foxy-ai-rag REGRESSION) | **305/305 vitest + 3/3 Deno PASS** (+P12 live grounded-path output content backstop `screenStudentFacingText` + Deno twin across every student-facing exit, +P12 student-message injection neutralization `neutralizeInjectionAttempt`, +P13 prompt-assembly contract test, +FOX-3 mode-template reconciliation, +Deno HARD_BLOCK_PATTERNS parity); not re-measured globally this cycle | not re-measured globally this cycle | **150** with REG-182 (P12 output backstop) + REG-183 (P12 injection neutralization); REG-37/39/50/54/66/67 still green; cap target 35 — exceeded | build PASS — bundle within P10 caps (server/Deno validation modules; /foxy route already shipped, no new shared chunk) | /foxy still largest, 0 pages > 260 kB | local green; type-check PASS, lint 0 errors; assessment APPROVE WITH CONDITIONS (addressed) + quality independent APPROVE; sweep GREEN |
 
 ## Notes on the seed row (2026-06-28)
 - **Test count** 2,511 / 84 files: from `.claude/CLAUDE.md` testing cell. `CLAUDE.md`
@@ -70,6 +71,29 @@ measured in-session.
   brace nit in the SLC-6 matcher now fixed); regression sweep GREEN.
 - **Gated (not in these numbers):** SLC-1 (uncapped XP trigger — USER-GATED), SLC-4 (dual cap impl), SLC-5
   (server-records-flagged), SLC-8 cutover (`ff_server_only_quiz_submit`) — cross-agent, not implemented.
+
+## Notes on the Cycle-4 row (2026-06-29 — foxy-ai-rag REGRESSION)
+- **305/305 vitest + 3/3 Deno:** the new validation suites (output-screen, input-guard, route non-streaming,
+  streaming.ts, Deno `pipeline-stream`, Deno `output-screen-deno-parity`) plus the FOX-6 prompt-assembly P13
+  contract test were re-run by quality — all pass. The FOX-3 mode widening updated the two `output-screen.test.ts`
+  cases that pinned the OLD injection-token intent to the NEW CS-exemption intent (bare `<system>`/`[inst]` PASS;
+  LLaMA-paired `<s>[INST]…[/INST]</s>` BLOCK) — an intent correction, not a weakened assertion. Global coverage %
+  was not re-measured this cycle (targeted Foxy/RAG/validation run only).
+- **Catalog:** REG-182 (P12 live grounded-path output content backstop) + REG-183 (P12 student-message injection
+  neutralization) filed → **150**. Existing P12 entries REG-37 / REG-39 / REG-50 / REG-54 / REG-66 / REG-67 remain
+  green. Authoritative source remains `.claude/regression-catalog.md`.
+- **Build/bundle:** FOX-1/2 add small server-side TS validation modules + a Deno twin; the `/api/foxy` route was
+  already in the /foxy bundle and gains only two cheap function calls — no new shared chunk, 0 pages over the 260 kB
+  page budget.
+- **Gates:** type-check PASS, lint 0 errors, build PASS; assessment correctness review APPROVE WITH CONDITIONS (CS
+  literal-markup over-block — addressed by the FOX-1 injection-pattern refinement) + quality independent verdict
+  APPROVE; regression sweep GREEN.
+- **Gated / follow-up (not in these numbers):** FOX-4 (OpenAI MoL shadow — USER-gated provider governance; not
+  student-facing today), FOX-7-new (extend the screen to the legacy fallback persist path — ai-engineer), streaming
+  live-view residual (`ff_foxy_streaming`; frontend full-closure), Hindi profanity-token coverage — none implemented.
+- **Topology note:** the constitution's "`/api/foxy` not yet wired to UI" line is STALE — `/api/foxy` is the LIVE
+  route; `foxy-tutor` Edge Function no longer exists; `grounded-answer` is the LLM pipeline. Correct on next
+  constitution reconciliation.
 
 ## How to add a row
 At the end of each cycle's REGRESSION phase, run `npm test`, `npm run test:coverage`,

@@ -5366,3 +5366,46 @@ migration equal `XP_RULES`).
 **Total catalog: 148 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Engineering-Audit Cycle 4 — Foxy AI Tutor & RAG (P12) — 2026-06-29
+
+Source: engineering-audit program, Cycle 4 (Foxy AI & RAG). P12 requires that no
+unfiltered LLM output reaches a student and that hostile student input cannot
+re-steer the model. This cycle gave both guarantees executable, cross-layer
+coverage. The output side is screened at every student-facing grounded exit
+(non-streaming return, persisted structured content, streaming completion frame +
+persisted record) by `screenStudentFacingText` — a hard-blocked answer collapses
+to a safe hard-abstain envelope, refunds the quota, never persists the unsafe
+text, and emits category-only (PII-free) telemetry; the `HARD_BLOCK_PATTERNS`
+list is pinned byte-identical between the TS site and the Deno
+`grounded-answer` Edge Function (22 patterns). The input side strips
+assistant-directed prompt-injection overrides from the student message before
+model assembly while preserving legitimate questions, fails open on non-string
+input, and pins the assembled Foxy prompt to scope + UUID only (no PII).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-182 | `foxy_output_content_backstop` | P12: every student-facing grounded Foxy exit (non-streaming return, persisted structured content, streaming completion frame + persisted record) is screened by `screenStudentFacingText` before the student/store sees it; a hard-blocked answer → safe hard-abstain envelope + quota refund + no unsafe persist + category-only (PII-free) telemetry; legitimate CBSE 6-12 curriculum (class/mass/shell/"sexual reproduction"/alcohols/weapons/retardation/assassination + bare `<system>`/`[inst]` CS markup) is NOT over-blocked; real chat-template injections (`<<SYS>>`, `<|im_start|>`, `<s>[INST]…[/INST]</s>`) BLOCK; fail-safe (validator throw → safe-abstain); TS↔Deno HARD_BLOCK_PATTERNS byte-identical (22 patterns). | `src/__tests__/lib/ai/validation/output-screen*.test.ts`, `src/__tests__/api/foxy/output-safety-backstop.test.ts`, `src/__tests__/api/foxy/mode-acceptance-fox3.test.ts`, `supabase/functions/grounded-answer/__tests__/output-screen.test.ts` | E |
+| REG-183 | `foxy_input_injection_neutralizer` | P12/P13: `neutralizeInjectionAttempt` strips assistant-directed prompt-injection overrides ("ignore previous instructions"/"you are now…"/role tokens) from the student message before model assembly while preserving legitimate questions ("ignore the friction…", "explain photosynthesis"); fail-open on non-string; the assembled Foxy prompt carries only scope + UUID (no studentName/email/phone) — P13 prompt-assembly contract. | `src/__tests__/lib/ai/validation/input-guard.test.ts`, `src/__tests__/api/foxy/output-safety-backstop.test.ts` | E |
+
+### Invariants covered by this section
+
+- P12 (AI safety — no unfiltered LLM output to students: every student-facing
+  grounded Foxy exit is screened by `screenStudentFacingText`; hard-block →
+  safe hard-abstain + quota refund + no unsafe persist; TS↔Deno
+  `HARD_BLOCK_PATTERNS` byte-identical; hostile student input is neutralized
+  before model assembly while legitimate curriculum questions pass)
+- P13 (data privacy — output-backstop telemetry is category-only/PII-free; the
+  assembled Foxy prompt carries only scope + UUID, never studentName/email/phone)
+
+### Catalog total
+
+Pre-REG-182: 148 entries (through Engineering-Audit Cycle 3's REG-180/REG-181
+score-formula + XP-literal parity pins). Engineering-Audit Cycle 4 adds REG-182
+(Foxy output content backstop — every student-facing grounded exit screened,
+hard-block → safe abstain + refund + no unsafe persist + PII-free telemetry,
+TS↔Deno pattern parity) and REG-183 (Foxy input injection neutralizer +
+P13 prompt-assembly contract).
+**Total catalog: 150 entries (target: 35 — TARGET EXCEEDED).**
+
+---
