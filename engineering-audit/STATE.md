@@ -10,7 +10,7 @@
 | Current workflow | **cross-cutting** (P7 bilingual breadth, P8 RLS breadth, P10 bundle, mobile sync) — **CYCLE 8 LANDED — auto-fix-safe complete; FINAL CYCLE** |
 | Current phase | **ALL 8 PHASES WRITTEN** (MAP → … → REGRESSION); orchestrator self-validated **APPROVE** (type-check/lint/11 tests/code-review; build deferred to CI backstop), P14 chain complete, sweep **GREEN** |
 | Last session | **2026-06-29** |
-| Next action | **PROGRAM COMPLETE — no further audit cycles queued.** All 8 ranked workflows audited → hardened → merged. The remaining work is the **post-program remediation backlog** (`PRIORITY-BACKLOG.md` → "Post-program remediation backlog"): the **Tier-1 user-gated** decisions (PAY-2 canonical-`unlimited`-price ₹1099-vs-₹1499 [L1+L2 code-mirror de-dup DONE]; SLC-1-backfill historical XP reconciliation [SLC-1 going-forward de-dup DONE]; TSB-4 `class_students`/`class_enrollments` table-drop; FOX-4 OpenAI provider governance; SAO-1/SAO-5 PII-export tiering; PP-1-consent + PP-3 parent-link consent model), the **Tier-2 reversible-approved** items (SLC-4/5, SAO-* cleanups, PP-* follow-ups, AO-3/AO-10), and the **Tier-3 larger initiatives** (XC-3 RLS defense-in-depth, XC-4b @supabase/* bundle split, XC-7 i18n primitive, PP-5 client migration). See `PROGRAM-SUMMARY.md` for the CEO-facing close-out + consolidated decision register. |
+| Next action | **PROGRAM COMPLETE — no further audit cycles queued.** All 8 ranked workflows audited → hardened → merged. The remaining work is the **post-program remediation backlog** (`PRIORITY-BACKLOG.md` → "Post-program remediation backlog"): the **Tier-1 user-gated** decisions (PAY-2 canonical-`unlimited`-price ₹1099-vs-₹1499 [L1+L2 code-mirror de-dup DONE]; SLC-1-backfill historical XP reconciliation [SLC-1 going-forward de-dup DONE]; TSB-4 `class_students`/`class_enrollments` table-drop; SAO-1/SAO-5 PII-export tiering; PP-1-consent + PP-3 parent-link consent model) — **FOX-4 OpenAI provider governance is now DONE (govern-with-flag, 2026-06-29)**; the **Tier-2 reversible-approved** items (SLC-4/5, SAO-* cleanups, PP-* follow-ups, AO-3/AO-10), and the **Tier-3 larger initiatives** (XC-3 RLS defense-in-depth, XC-4b @supabase/* bundle split, XC-7 i18n primitive, PP-5 client migration). Backlog order: **SAO-1/5, PP-1/3, TSB-4, then Tier-2, Tier-3.** See `PROGRAM-SUMMARY.md` for the CEO-facing close-out + consolidated decision register. |
 | Next workflow | **none — program complete.** Re-entry point for a future pass is the post-program remediation backlog (Tier-1 user decisions first). |
 
 ## How to resume
@@ -25,8 +25,9 @@
 > (REG-191/192/193, catalog 160). XC-3 (P8 RLS defense-in-depth), XC-4b (@supabase/* first-paint split),
 > and XC-7 (i18n primitive) are LARGER-PROGRAM initiatives. **There is no next audit cycle.** For a future
 > pass, start from `PROGRAM-SUMMARY.md` and the `PRIORITY-BACKLOG.md` post-program remediation backlog —
-> the Tier-1 user-gated decisions (PAY-2 canonical-price, SLC-1-backfill, TSB-4, FOX-4, SAO-1/SAO-5,
-> PP-1-consent/PP-3) come first. (PAY-2 L1+L2 and SLC-1 going-forward de-dup both LANDED 2026-06-29.)
+> the Tier-1 user-gated decisions (PAY-2 canonical-price, SLC-1-backfill, TSB-4, SAO-1/SAO-5,
+> PP-1-consent/PP-3) come first. (PAY-2 L1+L2, SLC-1 going-forward de-dup, and FOX-4 govern-with-flag all
+> LANDED 2026-06-29.)
 
 ## Program-level RISK register (CEO visibility)
 
@@ -85,9 +86,14 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
    (`class_students` vs `class_enrollments`) reconciled by a sync trigger — an incomplete migration. Picking a
    canonical table and dropping the other is a schema DROP requiring **USER approval**. Read-consolidation is
    auto-fix-safe; the DROP is the gated decision. **CEO action:** approve/sequence the cutover.
-4. **[Cycle 4] FOX-4 — USER-gated AI provider governance.** OpenAI gpt-4o-mini/gpt-4o present in
-   `grounded-answer` as a MoL SHADOW comparison (telemetry only; not student-facing today). Provider PRESENCE
-   is user-gated per the constitution. **CEO action:** govern or remove.
+4. **[Cycle 4] FOX-4 — DONE (govern-with-flag, 2026-06-29).** OpenAI gpt-4o-mini/gpt-4o present in
+   `grounded-answer` as a MoL SHADOW comparison (telemetry only; **never** student-facing). Resolved as
+   **GOVERN-WITH-FLAG** (keep, not remove): confirmed already double-flag-gated default-OFF, never
+   student-facing, PII-redacted, cost-capped (allow-list + `rollout_pct=0` + ₹10k/day kill-switch). No app
+   change; safety invariants pinned **REG-197** (catalog → 164). Claude remains the sole student-facing
+   model — no provider change, no P12 gate triggered. Design `remediation/fox-4-openai-shadow/01-design.md`
+   + closure `02-validation.md` + `STATUS.md`. **CEO action:** none required — telemetry-only shadow stays
+   default-OFF; runbook `docs/MOL_C4_SHADOW_RUNBOOK.md §6-7`.
 5. **[Cycle 3] SLC-1 — DONE (going-forward de-dup LANDED 2026-06-29).** The legacy `quiz_sessions` trigger's
    duplicate uncapped XP / `xp_total` / level / counter writes were removed via migration
    `20260702020000_slc1_dedupe_quiz_session_xp_trigger.sql` (Option B — `CREATE OR REPLACE`, streak KEPT). The
@@ -335,10 +341,12 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
   age-appropriateness correctness: **APPROVE WITH CONDITIONS**, conditions addressed) + testing (coverage
   GREEN) + quality (independent **APPROVE**).
 - **Open gated / follow-up items (resume these):**
-  1. **FOX-4 (Medium, GATED — USER APPROVAL):** OpenAI gpt-4o-mini/gpt-4o is present in `grounded-answer` as
-     a **MoL SHADOW comparison** (telemetry only; does NOT reach students today — the student-facing answer
-     is always the screened Claude output). Provider PRESENCE is user-gated per the constitution. CEO to
-     formally approve & govern the shadow usage, or remove it.
+  1. **FOX-4 — DONE (govern-with-flag, 2026-06-29):** OpenAI gpt-4o-mini/gpt-4o is present in
+     `grounded-answer` as a **MoL SHADOW comparison** (telemetry only; **never** reaches students — the
+     student-facing answer is always the screened Claude output). Resolved **GOVERN-WITH-FLAG** (keep, not
+     remove): already double-flag-gated default-OFF, never student-facing, PII-safe, cost-capped. No app
+     change; safety invariants pinned **REG-197** (catalog → 164). No P12 model/provider gate triggered
+     (telemetry-only shadow, not a provider change). See `remediation/fox-4-openai-shadow/`.
   2. **FOX-7 (NEW, MINOR follow-up — ai-engineer):** extend `screenStudentFacingText` to the legacy fallback
      persist path (`_lib/legacy-flow.ts` / `persistLegacyFoxyResponse`). Reachable on `ff_grounded_ai_foxy`-OFF
      / grounded-abstain fallback; currently retains the OLDER substring `validateOutput` guard — consistency
@@ -467,7 +475,7 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
 | 1 | auth-onboarding (P15) | ALL 8 PHASES | **LANDED — partial** | AO-4/8/1/2 + follow-up batch AO-5/7/9 (2026-06-29) landed + APPROVED; AO-3 gated, AO-2 CI fixtures + REG-177 + Deno CI-lane open; NEW AO-10 grade-coercion/backfill; prod migration-drift incident RESOLVED (repo-side reconciliation, PR #1153, deploy 28335566287 green); see `workflows/auth-onboarding/STATUS.md` + `cycles/2026-06-29-auth-onboarding-followups.md` |
 | 2 | payments-subscriptions (P11) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | PAY-1/3/4/5/6/7/8 landed + APPROVED (type-check PASS, lint 0, 236/236 payment tests, build PASS, vercel.json VALID; architect security APPROVE; sweep GREEN); REG-178/179 filing in flight; **PAY-2 L1+L2 LANDED 2026-06-29** (code-mirror de-dup + four-way parity lock + DB-divergence pin, REG-195/196, catalog → 163; Gate 5 closed: architect P11 + mobile contract APPROVE) — **canonical `unlimited` price ₹1099-vs-₹1499 NEW Tier-1 USER-GATED**; mobile-repoint + mobile-web-sync.md doc fix + super-admin display open; see `workflows/payments-subscriptions/STATUS.md` + `cycles/2026-06-29-payments-subscriptions.md` + `remediation/pay-2-pricing-source/` |
 | 3 | student-learning-core (P1-P6,P12) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | SLC-7 (frontend) + SLC-2/3/6/8-pin (testing) landed + APPROVED (type-check PASS, lint 0, 40/40 new + ~1678 broad tests PASS, build PASS, bundle within P10 caps; quality APPROVE; sweep GREEN); REG-180/181 filed (catalog 146 → 148); SLC-1 USER-GATED, SLC-4/5 + SLC-8 cutover gated/cross-agent, SLC-9 backlog; see `workflows/student-learning-core/STATUS.md` + `cycles/2026-06-29-student-learning-core.md` |
-| 4 | foxy-ai-rag (P12,P8,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | FOX-1 (+ Deno twin + injection-pattern refinement) + FOX-2 + FOX-3 + FOX-6 landed + APPROVED (type-check PASS, lint 0, 305/305 vitest + 3/3 Deno PASS, build PASS, bundle within P10 caps; assessment APPROVE WITH CONDITIONS [addressed] + quality APPROVE; sweep GREEN); REG-182/183 filed (catalog 148 → 150); FOX-4 USER-GATED (OpenAI provider governance — MoL shadow, not student-facing), FOX-7-new + streaming-residual + Hindi-tokens follow-ups; live-topology reconciliation recorded (`/api/foxy` is LIVE, `foxy-tutor` Edge Fn gone); see `workflows/foxy-ai-rag/STATUS.md` + `cycles/2026-06-29-foxy-ai-rag.md` |
+| 4 | foxy-ai-rag (P12,P8,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | FOX-1 (+ Deno twin + injection-pattern refinement) + FOX-2 + FOX-3 + FOX-6 landed + APPROVED (type-check PASS, lint 0, 305/305 vitest + 3/3 Deno PASS, build PASS, bundle within P10 caps; assessment APPROVE WITH CONDITIONS [addressed] + quality APPROVE; sweep GREEN); REG-182/183 filed (catalog 148 → 150); **FOX-4 DONE — govern-with-flag (OpenAI MoL shadow confirmed already-governed: default-OFF, never student-facing, PII-safe, cost-capped; no app change; safety invariants pinned REG-197, catalog → 164; see `remediation/fox-4-openai-shadow/`)**, FOX-7-new + streaming-residual + Hindi-tokens follow-ups; live-topology reconciliation recorded (`/api/foxy` is LIVE, `foxy-tutor` Edge Fn gone); see `workflows/foxy-ai-rag/STATUS.md` + `cycles/2026-06-29-foxy-ai-rag.md` |
 | 5 | teacher-school-b2b (P8,P9,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | TSB-1 (backend — CRITICAL cross-tenant leak closed at all 8 grade-fallback sites via auth-derived `resolveTeacherSchoolId`, fail-closed) + TSB-2 (architect — teacher RLS backstop on `public.students`, predicate-identical, no over-grant) + TSB-3-partial + TSB-6 landed + APPROVED (type-check PASS, lint 0, 527/527 vitest incl. 15 TSB-1 + 10 TSB-2 new, build PASS, no bundle impact; quality APPROVE WITH CONDITIONS [migration-ordering — RESOLVED via byte-identical rename `20260629000000`→`20260702010000`]; sweep GREEN); REG-184/185 filed (catalog 150 → 152); TSB-4 USER-GATED (table-drop), TSB-3-full + TSB-5 + 3 pre-existing tracked items follow-ups; see `workflows/teacher-school-b2b/STATUS.md` + `cycles/2026-06-29-teacher-school-b2b.md` |
 | 6 | super-admin-observability (P9,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | SAO-3 (ops — observability-CSV egress `redactPII`) + SAO-2 (ops+frontend — `top_students.email` drop + stale-type cleanup) + SAO-7 (testing — 134-route full-surface gate sweep, 207/207 gate-before-I/O) + SAO-4 (testing — bare-name log canary) landed + APPROVED (type-check PASS, lint 0, 6/6 new + 351/351 broad PASS, build PASS, bundle within P10; quality independent APPROVE; sweep GREEN); REG-186/187 filed (catalog 152 → 154); SAO-1 USER-GATED (PII-export tiering, DPDP-relevant; on RISK register item 0), SAO-5 folds into SAO-1, message-redaction + periodic-re-read follow-ups, SAO-6 compliant-by-design; see `workflows/super-admin-observability/STATUS.md` + `cycles/2026-06-29-super-admin-observability.md` |
 | 7 | parent-portal (P8,P13,P15) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | PP-2 (backend — link-code filter-injection guard at all 3 sites via shared `isValidLinkCode` + byte-identical Deno twin) + PP-1 rate-limit half (backend — per-IP 5/hour brute-force bound on the legacy Edge `parent_login`, 429 + Retry-After, pre-DB) + PP-4 (backend — `PATCH /api/parent/profile` authz gate via already-granted `profile.update_own`, self-scope/no-IDOR) + PP-5 deny pins (testing — unlinked-parent 403/no-payload across all 9 child-data routes) landed + APPROVED (type-check PASS, lint 0, 5 new files/71 new tests, 104/104 target + 404/404 broad PASS, build PASS, no bundle impact; quality independent APPROVE; sweep GREEN); REG-188/189/190 filed (catalog 154 → 157); **PP-1 consent posture + PP-3 USER-GATED (parent-link consent/link model — RISK register item 0)**, PP-5 client-migration + PP-6 + PP-7 + durable-limiter follow-ups; see `workflows/parent-portal/STATUS.md` + `cycles/2026-06-29-parent-portal.md` |
@@ -477,8 +485,8 @@ LARGER-PROGRAM initiatives raised by the final cross-cutting cycle (Tier-3 — e
 
 **PROGRAM COMPLETE.** All 8 ranked workflows are DONE (auto-fix-safe). There is no next audit cycle. The
 re-entry point for future work is the `PRIORITY-BACKLOG.md` **"Post-program remediation backlog"** — the
-Tier-1 user-gated decisions (PAY-2 canonical-price, SLC-1-backfill, TSB-4, FOX-4, SAO-1/SAO-5,
-PP-1-consent/PP-3 — PAY-2 L1+L2 and SLC-1 going-forward de-dup both LANDED), the Tier-2
+Tier-1 user-gated decisions (PAY-2 canonical-price, SLC-1-backfill, TSB-4, SAO-1/SAO-5,
+PP-1-consent/PP-3 — PAY-2 L1+L2, SLC-1 going-forward de-dup, and FOX-4 govern-with-flag all LANDED), the Tier-2
 reversible-approved items, and the Tier-3 larger initiatives (XC-3 RLS defense-in-depth, XC-4b @supabase/*
 split, XC-7 i18n primitive, PP-5 client migration). See `PROGRAM-SUMMARY.md` for the CEO-facing close-out
 and the consolidated decision register.
