@@ -69,6 +69,13 @@ export default defineConfig({
           // codepath with fetch-stubbed providers; verifies the prompt-
           // parity + de-dup fixes work together.
           'supabase/functions/grounded-answer/__vitest__/mol-shadow.integration.vitest-harness.ts',
+          // FOX-4 / REG-197 (2026-06-29). Thin governance pin that re-asserts
+          // the two MoL-shadow SAFETY invariants — (i) never student-facing /
+          // output discarded, (ii) flag-OFF/kill-switch ⇒ zero side effects —
+          // under a clear FOX-4 header in the DEFAULT (per-PR-gated) lane. Same
+          // exact-path + three-mock-seam convention as the sibling harness
+          // above; no live key/network/DB.
+          'supabase/functions/grounded-answer/__vitest__/mol-shadow-governance.vitest-harness.ts',
           // C4.2b-ii text capture (2026-05-20). Tests for the text-based
           // PII redactor used by mol_shadow_text_buffer writes.
           'supabase/functions/_shared/__tests__/redact-pii.test.ts',

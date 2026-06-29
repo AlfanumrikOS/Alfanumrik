@@ -5668,3 +5668,43 @@ parity lock) and REG-196 (known DB↔code `unlimited` divergence pin, RED-on-rec
 **Total catalog: 163 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Remediation — FOX-4: MoL OpenAI-Shadow Governance (P12) — 2026-06-29
+
+Source: remediation program, item FOX-4 (govern-with-flag the OpenAI MoL shadow
+in the grounded-answer path). The shadow leg fires an OpenAI generation
+ALONGSIDE the baseline Claude answer purely for offline model comparison — it is
+NEVER student-facing. FOX-4 scoping confirmed the shadow is ALREADY
+well-governed (two default-OFF flags: `ff_grounded_answer_mol_shadow_v1` +
+`ff_mol_shadow_text_capture_v1`) AND its safety harness ALREADY runs in the
+DEFAULT `npm test` lane as a hard per-PR gate (the design's open-question O1 —
+"integration-only, not per-PR enforced" — was STALE/incorrect: the existing
+`mol-shadow.vitest-harness.ts` is enumerated in `vitest.config.ts`'s default-lane
+`include`, NOT behind `RUN_INTEGRATION_TESTS`). FOX-4 is test+doc only — NO
+app-code change. It adds a thin, self-documenting governance harness that
+re-asserts the two load-bearing SAFETY invariants under a clear FOX-4 / REG-197
+header so the govern-with-flag posture cannot regress silently. The harness
+mocks all three seams (OpenAI `generateResponse`, telemetry `recordMolRequest`,
+flag `getFlagEnvelope`) — pure unit, no live key/network/DB.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-197 | `mol_shadow_never_student_facing_flag_off_no_side_effect` | P12: pins the two MoL-shadow safety invariants — (i) the OpenAI shadow is NEVER student-facing (`shadowFireOpenAI` returns void, `molResult.text` discarded, baseline Claude content is the sole returned/streamed answer, fire-and-forget) and (ii) flag-OFF / kill-switch / task-not-allow-listed / sample-miss / flag-read-throws ⇒ ZERO side effects (no `generateResponse` call, no telemetry write). Guards the govern-with-flag posture (`ff_grounded_answer_mol_shadow_v1` + `ff_mol_shadow_text_capture_v1`, both seeded OFF); Claude remains the sole student-facing model. | `supabase/functions/grounded-answer/__vitest__/mol-shadow-governance.vitest-harness.ts` | E |
+
+### Invariants covered by this section
+
+- P12 (AI safety) — REG-197 pins the OpenAI MoL-shadow's two safety guarantees:
+  it never reaches a student (void return, discarded shadow text, baseline
+  Claude is the only answer, fire-and-forget) and it produces zero side effects
+  when its flag is OFF / killed / out-of-scope / sample-missed / flag-read-fails.
+  Claude (Haiku) stays the sole student-facing model; the OpenAI leg is an
+  offline-comparison shadow only.
+
+### Catalog total
+
+Pre-FOX-4: 163 entries (through Remediation PAY-2's REG-195/REG-196 consumer
+pricing source-of-truth). Remediation FOX-4 adds REG-197 (MoL OpenAI-shadow
+governance — the two P12 safety invariants in the default per-PR lane).
+**Total catalog: 164 entries (target: 35 — TARGET EXCEEDED).**
+
+---

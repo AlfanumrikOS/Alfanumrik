@@ -95,9 +95,11 @@ measured in-session.
 - **Gates:** type-check PASS, lint 0 errors, build PASS; assessment correctness review APPROVE WITH CONDITIONS (CS
   literal-markup over-block — addressed by the FOX-1 injection-pattern refinement) + quality independent verdict
   APPROVE; regression sweep GREEN.
-- **Gated / follow-up (not in these numbers):** FOX-4 (OpenAI MoL shadow — USER-gated provider governance; not
-  student-facing today), FOX-7-new (extend the screen to the legacy fallback persist path — ai-engineer), streaming
-  live-view residual (`ff_foxy_streaming`; frontend full-closure), Hindi profanity-token coverage — none implemented.
+- **FOX-4 — DONE (govern-with-flag, 2026-06-29):** OpenAI MoL shadow confirmed already-governed (default-OFF,
+  never student-facing, PII-safe, cost-capped); no app change; safety invariants pinned **REG-197** (catalog → 164).
+  No provider change → no P12 model/provider user-gate. See `remediation/fox-4-openai-shadow/`.
+- **Follow-up (not in these numbers):** FOX-7-new (extend the screen to the legacy fallback persist path — ai-engineer),
+  streaming live-view residual (`ff_foxy_streaming`; frontend full-closure), Hindi profanity-token coverage — none implemented.
 - **Topology note:** the constitution's "`/api/foxy` not yet wired to UI" line is STALE — `/api/foxy` is the LIVE
   route; `foxy-tutor` Edge Function no longer exists; `grounded-answer` is the LLM pipeline. Correct on next
   constitution reconciliation.
