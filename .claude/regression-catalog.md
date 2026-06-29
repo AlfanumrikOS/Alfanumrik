@@ -5708,3 +5708,46 @@ governance — the two P12 safety invariants in the default per-PR lane).
 **Total catalog: 164 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Remediation — SAO-1/SAO-5: Super-Admin PII-Export Tiering (P9/P13) — 2026-06-29
+
+The Cycle-6 audit found `/api/super-admin/reports` gated ALL six export types
+behind a single `authorizeAdmin(request,'support')` call. `support` is the FLOOR
+tier (any active `admin_users` row). Four of the six types egress
+personally-identifiable data at up to 5000 rows — `students` (minors'
+name+email), `teachers` (name+email), `parents` (name+email+PHONE), `audit`
+(admin name+email in `details`). Mass minors'/parent PII export at the lowest
+admin tier is a P9 (RBAC) + P13/DPDP exposure.
+
+The remediation gates each report `type` at its own tier via a `REPORT_CONFIG`
+map: the 4 PII types require `super_admin`; the 2 UUID-only, non-PII types
+(`quizzes`, `chats`) keep the `support` floor. `type` is validated against the
+map FIRST — an unknown type returns 400 BEFORE `authorizeAdmin` or any DB access
+(fail-closed, gate-before-data). The missing-`type` default resolves to
+`students` → `super_admin` (strictly safer than the old `support` default). The
+fix uses only existing tiers — no new permission/role/migration. It is a one-line
+loosening (drop the PII tier) if the CEO later chooses to let some staff retain
+PII export.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-198 | `super_admin_reports_pii_export_tier` | P9/P13: the `/api/super-admin/reports` route gates the 4 PII report types (students/teachers/parents/audit) at `admin_level` super_admin and the 2 UUID-only types (quizzes/chats) at the support floor; `type` is validated before the gate (unknown → 400 before authorizeAdmin or any DB access); gate-before-data ordering; no blanket floor inheritance for PII types (no single `authorizeAdmin(request,'support')`, per-type `config.level`, default `type` resolves to students → super_admin). Closes the Cycle-6 finding that mass minors'/parent PII export sat at the lowest admin tier. Static source-parse pins (comments stripped so the doc-quoted old pattern can't satisfy/break the guard). | `src/__tests__/api/super-admin/reports-pii-tier.test.ts` (14 tests) | U | P9,P13 |
+
+### Invariants covered by this section
+
+- P9 (RBAC enforcement) — REG-198 pins per-type tiering: the 4 PII exports require
+  `super_admin`, the gate is per-type (`config.level`, no blanket `support`
+  inheritance), and an unknown `type` fails closed (400) before the gate or any
+  DB access.
+- P13 (data privacy) — REG-198 pins that the bulk PII exports (minors' + parents'
+  name/email/phone) can no longer be run from the lowest admin tier, and the
+  missing-`type` default resolves to the safest tier.
+
+### Catalog total
+
+Pre-SAO-1/SAO-5: 164 entries (through Remediation FOX-4's REG-197 MoL-shadow
+governance). Remediation SAO-1/SAO-5 adds REG-198 (super-admin PII-export
+per-type tiering — the P9/P13 gate-before-data + no-floor-inheritance pins).
+**Total catalog: 165 entries (target: 35 — TARGET EXCEEDED).**
+
+---
