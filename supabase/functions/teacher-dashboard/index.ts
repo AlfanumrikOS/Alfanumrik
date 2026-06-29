@@ -68,8 +68,42 @@ function getServiceClient() {
 // class roster heatmap or close B's poll by passing B's class_id.
 
 /**
+ * Resolve the AUTHENTICATED teacher's tenant (school_id), used to tenant-scope
+ * every grade-fallback student query (TSB-1, P8/P13).
+ *
+ * `teacherId` is ALWAYS the JWT-bound id: the request dispatcher overwrites
+ * `body.teacher_id` with `resolveTeacherFromJwt`'s Bearer-derived value before
+ * any handler runs, so this lookup is auth-derived and NEVER trusts a
+ * request-supplied id.
+ *
+ * Returns the school_id string, or `null` when the teacher belongs to no
+ * institution (independent / B2C teacher). Callers MUST treat `null` as
+ * FAIL-CLOSED: a grade fallback for a school-less teacher returns NO students.
+ * It must never fan out across all tenants — that is exactly the cross-tenant
+ * leak this guards against.
+ */
+async function resolveTeacherSchoolId(
+  supabase: ReturnType<typeof getServiceClient>,
+  teacherId: string,
+): Promise<string | null> {
+  if (!teacherId) return null
+  try {
+    const { data: teacher } = await supabase
+      .from('teachers')
+      .select('school_id')
+      .eq('id', teacherId)
+      .maybeSingle()
+    const sid = (teacher as { school_id?: string | null } | null)?.school_id
+    return sid ? String(sid) : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Verify that `classId` belongs to `teacherId`, or that the synthetic
- * `grade-<n>` pseudo-class id corresponds to a grade the teacher teaches.
+ * `grade-<n>` pseudo-class id corresponds to a grade the teacher teaches
+ * WITHIN the teacher's own school.
  * Used by handlers that accept a class_id from the request body.
  */
 async function assertTeacherOwnsClass(
@@ -80,15 +114,21 @@ async function assertTeacherOwnsClass(
   if (!classId) return false
 
   // Synthetic id used when the teacher has no class assignments — must
-  // correspond to a grade in the teacher's grades_taught array.
+  // correspond to a grade in the teacher's grades_taught array AND the
+  // teacher must belong to a school. TSB-1 (P8/P13): a teacher with no
+  // school_id (independent/B2C) cannot own a grade pseudo-class, because the
+  // downstream grade fallback has no tenant to scope to and would otherwise
+  // fan out across every school's students. Fail-closed for the null-school
+  // case; the teacher must reach students through an explicit class roster.
   if (classId.startsWith('grade-')) {
     const grade = classId.replace('grade-', '')
     const { data: teacher } = await supabase
       .from('teachers')
-      .select('grades_taught')
+      .select('grades_taught, school_id')
       .eq('id', teacherId)
       .single()
     if (!teacher) return false
+    if (!(teacher as { school_id?: string | null }).school_id) return false
     const grades = Array.isArray(teacher.grades_taught)
       ? teacher.grades_taught.map(String)
       : teacher.grades_taught != null
@@ -146,7 +186,7 @@ async function handleGetDashboard(
   // Fetch teacher profile
   const { data: teacher } = await supabase
     .from('teachers')
-    .select('id, name, school_name, subjects_taught, grades_taught')
+    .select('id, name, school_name, school_id, subjects_taught, grades_taught')
     .eq('id', teacherId)
     .single()
 
@@ -291,14 +331,19 @@ async function handleGetDashboard(
     classes = []
   }
 
-  // If no class assignments found, try to find students by grade
-  if (classes.length === 0 && teacher.grades_taught) {
+  // If no class assignments found, try to find students by grade — scoped to
+  // the teacher's own school (TSB-1, P8/P13). A teacher with no school_id
+  // (independent/B2C) gets NO grade pseudo-classes at all: the count would
+  // otherwise expose how many students each other school has in that grade.
+  const dashSchoolId = (teacher as { school_id?: string | null }).school_id
+  if (classes.length === 0 && teacher.grades_taught && dashSchoolId) {
     const grades = Array.isArray(teacher.grades_taught) ? teacher.grades_taught : [teacher.grades_taught]
     for (const grade of grades) {
       const { count } = await supabase
         .from('students')
         .select('*', { count: 'exact', head: true })
         .eq('grade', String(grade))
+        .eq('school_id', dashSchoolId)
       classes.push({
         id: `grade-${grade}`,
         name: `Grade ${grade}`,
@@ -367,12 +412,21 @@ async function handleGetHeatmap(
 
   let students: Array<{ id: string; name: string | null; grade: string | null }> | null = null
   if (isGradeId && grade) {
-    const { data } = await supabase
-      .from('students')
-      .select('id, name, grade')
-      .eq('grade', grade)
-      .limit(50)
-    students = data
+    // TSB-1 (P8/P13): the grade pseudo-class fans out by grade only — scope it
+    // to the teacher's OWN school. Fail-closed (empty) when the teacher has no
+    // school. assertTeacherOwnsClass already 403s a school-less teacher above;
+    // this is the same-school defense-in-depth so a teacher cannot read OTHER
+    // schools' students in their grade.
+    const schoolId = await resolveTeacherSchoolId(supabase, teacherId)
+    if (schoolId) {
+      const { data } = await supabase
+        .from('students')
+        .select('id, name, grade')
+        .eq('grade', grade)
+        .eq('school_id', schoolId)
+        .limit(50)
+      students = data
+    }
   } else {
     // Roster lives in class_students (no students.class_id column):
     // resolve the class's student ids, then load those students by id.
@@ -487,12 +541,20 @@ async function handleGetAlerts(
   // column): resolve the class's student ids, then load those students.
   let students: Array<{ id: string; name: string | null; grade: string | null }> | null = null
   if (isGradeId && grade) {
-    const { data } = await supabase
-      .from('students')
-      .select('id, name, grade')
-      .eq('grade', grade)
-      .limit(100)
-    students = data
+    // TSB-1 (P8/P13): scope the grade pseudo-class to the teacher's OWN school.
+    // Fail-closed (empty) for a school-less teacher; same-school defense-in-depth
+    // beyond the assertTeacherOwnsClass gate so a teacher cannot read OTHER
+    // schools' students in their grade.
+    const schoolId = await resolveTeacherSchoolId(supabase, teacherId)
+    if (schoolId) {
+      const { data } = await supabase
+        .from('students')
+        .select('id, name, grade')
+        .eq('grade', grade)
+        .eq('school_id', schoolId)
+        .limit(100)
+      students = data
+    }
   } else {
     const { data: roster } = await supabase
       .from('class_students')
@@ -803,10 +865,24 @@ async function handleClosePoll(
 // ─── Reports helpers ────────────────────────────────────────
 // All three Reports actions aggregate over the union of students the
 // teacher owns. A teacher "owns" a student if either (a) the student is
-// in a class assigned to them via class_teachers, or (b) the
-// student's grade is in the teacher's grades_taught. We resolve the
-// student set once and reuse it. Both lookups are RLS-friendly via the
-// service-role client after the JWT binding step.
+// in a class assigned to them via class_teachers, or (b) the student's
+// grade is in the teacher's grades_taught AND the student is in the
+// teacher's own school (tenant-scoped — TSB-1). We resolve the student set
+// once and reuse it. Both lookups run on the service-role client (RLS
+// bypassed) after the JWT binding step, so tenant scope MUST be enforced in
+// app code here.
+//
+// TODO(TSB-3 convergence): this resolver is the Edge-runtime twin of
+// `canAccessStudent` (src/lib/rbac.ts) whose teacher branch is strictly
+// class-roster-only (NO grade fallback). The two boundaries currently differ
+// only by Path B (the school-scoped grade fallback), which is an INTENDED
+// product behavior for newly-onboarded teachers with grades_taught but no
+// class yet. Fully converging onto class-roster-only would remove that
+// fallback (a product-behavior change requiring product sign-off), and the
+// Next.js `src/lib` helper cannot be imported into this Deno function (runtime
+// split). Until a shared authz module bridges the two runtimes, keep Path A
+// roster semantics byte-for-byte aligned with `canAccessStudent` (assigned
+// students only, fail-closed) and keep Path B tenant-scoped as below.
 async function resolveStudentsForTeacher(
   supabase: ReturnType<typeof getServiceClient>,
   teacherId: string,
@@ -857,19 +933,25 @@ async function resolveStudentsForTeacher(
     try {
       const { data: teacher } = await supabase
         .from('teachers')
-        .select('grades_taught')
+        .select('grades_taught, school_id')
         .eq('id', teacherId)
         .maybeSingle()
+      const schoolId = (teacher as { school_id?: string | null } | null)?.school_id
       const grades = Array.isArray(teacher?.grades_taught)
         ? teacher!.grades_taught.map(String)
         : teacher?.grades_taught != null
         ? [String(teacher.grades_taught)]
         : []
-      if (grades.length > 0) {
+      // TSB-1 (P8/P13): scope the grade fallback to the teacher's OWN school.
+      // Fail-closed when the teacher has no school_id — an independent/B2C
+      // teacher gets an EMPTY set here rather than every grade-6–12 student
+      // across all schools. `idx_students_school_grade` covers (school_id, grade).
+      if (schoolId && grades.length > 0) {
         const { data: gradeStudents } = await supabase
           .from('students')
           .select('id, name, grade')
           .in('grade', grades)
+          .eq('school_id', schoolId)
           .is('deleted_at', null)
           .limit(1000)
         for (const s of gradeStudents || []) {
@@ -1997,22 +2079,34 @@ function buildGradeBookColumns(
  * Resolve students for a class. Synthetic grade-<n> pseudo-classes fall back
  * to a grade lookup; real classes roster through the class_students join
  * table (there is no students.class_id column on the live schema).
+ *
+ * `teacherId` is the JWT-bound caller. It is REQUIRED to tenant-scope the
+ * grade pseudo-class fallback (TSB-1, P8/P13): the grade lookup only ever
+ * returns students in the teacher's own school, and returns EMPTY when the
+ * teacher has no school. Every caller already asserts ownership of `classId`
+ * via assertTeacherOwnsClass before reaching here.
  */
 async function resolveStudentsForClass(
   supabase: ReturnType<typeof getServiceClient>,
   classId: string,
+  teacherId: string,
 ): Promise<Array<{ id: string; name: string; grade: string }>> {
   const seen = new Set<string>()
   const out: Array<{ id: string; name: string; grade: string }> = []
 
-  // For synthetic grade-<n> pseudo-classes, fall back to the grade lookup.
+  // For synthetic grade-<n> pseudo-classes, fall back to the grade lookup —
+  // scoped to the teacher's own school. Fail-closed (empty) for a school-less
+  // teacher so the fallback never fans out across tenants.
   if (classId.startsWith('grade-')) {
     const grade = classId.replace('grade-', '')
+    const schoolId = await resolveTeacherSchoolId(supabase, teacherId)
+    if (!schoolId) return out
     try {
       const { data } = await supabase
         .from('students')
         .select('id, name, grade')
         .eq('grade', grade)
+        .eq('school_id', schoolId)
         .is('deleted_at', null)
         .limit(1000)
       for (const s of data || []) {
@@ -2075,7 +2169,7 @@ async function handleGetGradeBook(
     } catch { /* table absent — graceful empty */ }
   }
 
-  const students = await resolveStudentsForClass(supabase, classId)
+  const students = await resolveStudentsForClass(supabase, classId, teacherId)
   if (students.length === 0) {
     return jsonResponse({
       class: { id: classId, name: className || 'Class' },
@@ -2312,14 +2406,22 @@ async function handleSetGradeBookCell(
   let studentInClass = false
   if (classId.startsWith('grade-')) {
     const grade = classId.replace('grade-', '')
-    try {
-      const { data: s } = await supabase
-        .from('students')
-        .select('grade')
-        .eq('id', studentId)
-        .maybeSingle()
-      studentInClass = !!s && String((s as { grade?: string }).grade) === grade
-    } catch { studentInClass = false }
+    // TSB-1 (P8/P13): a grade pseudo-class membership match must be tenant
+    // scoped — the student must share BOTH the grade AND the teacher's school.
+    // Without the school predicate a teacher could write a grade-book cell for
+    // a same-grade student at ANOTHER school. Fail-closed for school-less.
+    const schoolId = await resolveTeacherSchoolId(supabase, teacherId)
+    if (schoolId) {
+      try {
+        const { data: s } = await supabase
+          .from('students')
+          .select('grade')
+          .eq('id', studentId)
+          .eq('school_id', schoolId)
+          .maybeSingle()
+        studentInClass = !!s && String((s as { grade?: string }).grade) === grade
+      } catch { studentInClass = false }
+    }
   } else {
     try {
       const { data: link } = await supabase
@@ -2603,14 +2705,20 @@ async function handleGetAttendanceRecord(
         .map(r => r.students)
         .filter((s): s is RosterStudent => s !== null && !!s.id)
     } else {
-      // Synthetic grade-<n> class: query students by grade
+      // Synthetic grade-<n> class: query students by grade, tenant-scoped to
+      // the teacher's own school (TSB-1, P8/P13). Fail-closed (empty) for a
+      // school-less teacher.
       const grade = classId.replace('grade-', '')
-      const { data: gradeRows } = await supabase
-        .from('students')
-        .select('id, name')
-        .eq('grade', grade)
-        .limit(300)
-      students = ((gradeRows || []) as RosterStudent[]).filter(s => !!s.id)
+      const schoolId = await resolveTeacherSchoolId(supabase, teacherId)
+      if (schoolId) {
+        const { data: gradeRows } = await supabase
+          .from('students')
+          .select('id, name')
+          .eq('grade', grade)
+          .eq('school_id', schoolId)
+          .limit(300)
+        students = ((gradeRows || []) as RosterStudent[]).filter(s => !!s.id)
+      }
     }
   } catch { /* table absent — return empty roster */ }
 
@@ -3045,7 +3153,7 @@ async function handleGetClassMasteryBloomSummary(
     return errorResponse('Class not owned by caller', 403, origin)
   }
 
-  const students = await resolveStudentsForClass(supabase, classId)
+  const students = await resolveStudentsForClass(supabase, classId, teacherId)
   if (students.length === 0) {
     return jsonResponse({
       class_id: classId,
@@ -3317,7 +3425,7 @@ async function handleGetInTheMomentAlerts(
   const owns = await assertTeacherOwnsClass(supabase, teacherId, classId)
   if (!owns) return errorResponse('Unauthorized access to class alerts', 403, origin)
 
-  const students = await resolveStudentsForClass(supabase, classId)
+  const students = await resolveStudentsForClass(supabase, classId, teacherId)
   if (students.length === 0) {
     return jsonResponse([], 200, {}, origin)
   }
@@ -3713,9 +3821,21 @@ Deno.serve(async (req: Request) => {
   }
 })
 
-// TODO (follow-up): per-resource ownership checks.
-// Handlers that accept class_id, student_id, alert_id, poll_id from body
-// should verify each belongs to body.teacher_id before any service-role
-// query touches it. Without this, a teacher could still pass another
-// teacher's class_id / poll_id and operate on it. Tracked in the security
-// audit doc; deserves its own PR with tests.
+// SECURITY NOTE (TSB-6, corrected 2026-06-29): per-resource ownership IS
+// enforced. Every handler that accepts class_id/student_id/alert_id/poll_id
+// from the body checks it before any service-role query: assertTeacherOwnsClass
+// (heatmap, alerts, overview, trends, mastery, attendance, in-the-moment,
+// grade-book), assertTeacherOwnsPoll (close_poll), teacherOwnsAssignment
+// (submissions), and owned-set membership (student report / mastery report).
+// teacher_id itself is JWT-bound at the dispatcher (resolveTeacherFromJwt),
+// never trusted from the body.
+//
+// The real residual cross-tenant risk was NOT a missing per-resource check —
+// it was the grade-fallback student queries running over the service-role
+// client (RLS bypassed) with no school_id predicate (TSB-1). Those are now
+// tenant-scoped via resolveTeacherSchoolId + `.eq('school_id', …)`, fail-closed
+// for school-less teachers. Defense-in-depth follow-ups tracked by the audit:
+//   - TSB-2: add a "Teachers can view students in their classes" RLS policy on
+//     public.students so these service-role reads gain a DB-layer backstop.
+//   - TSB-3: converge this resolver onto canAccessStudent (src/lib/rbac.ts) once
+//     a shared authz module bridges the Next.js/Deno runtime split.

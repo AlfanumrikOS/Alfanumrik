@@ -6,21 +6,99 @@
 | Field | Value |
 |---|---|
 | Program status | **ACTIVE** |
-| Current cycle | **Cycle 4 — foxy-ai-rag DONE (P12 output backstop complete; FOX-4 user-gated, FOX-7 + streaming-residual + Hindi-tokens follow-ups)** |
-| Current workflow | **foxy-ai-rag** (invariants **P12, P8, P13**) — **CYCLE 4 LANDED — auto-fix-safe complete** |
-| Current phase | **ALL 8 PHASES WRITTEN** (MAP → … → REGRESSION); independent quality verdict **APPROVE**, P14 chain complete, sweep **GREEN** |
+| Current cycle | **Cycle 5 — teacher-school-b2b DONE (critical cross-tenant leak TSB-1 closed at all 8 sites + TSB-2 RLS backstop; TSB-4 USER-gated table-drop, TSB-3/5 + 3 tracked items follow-ups)** |
+| Current workflow | **teacher-school-b2b** (invariants **P8, P9, P13**) — **CYCLE 5 LANDED — auto-fix-safe complete** |
+| Current phase | **ALL 8 PHASES WRITTEN** (MAP → … → REGRESSION); independent quality verdict **APPROVE WITH CONDITIONS** (migration-ordering — RESOLVED), P14 chain complete, sweep **GREEN** |
 | Last session | **2026-06-29** |
-| Next action | **Start Teacher / School-Admin B2B** — `PRIORITY-BACKLOG.md` rank 5 (invariants **P8, P9, P13**): run MAP → GAP → ROOT-CAUSE → DESIGN → IMPLEMENT for that workflow under `workflows/teacher-school-admin-b2b/`. **Also resume the gated items: FOX-4 (Foxy OpenAI provider governance — USER); the student-learning-core gated items (SLC-1 user-gated; SLC-4/5 cross-agent; SLC-8 cutover); + the payments + auth-onboarding open follow-ups** (see below) when their gates unblock. |
-| Next workflow | **Teacher / School-Admin B2B** (rank 5) |
+| Next action | **Start Super-Admin & Observability** — `PRIORITY-BACKLOG.md` rank 6 (invariants **P9, P13**): run MAP → GAP → ROOT-CAUSE → DESIGN → IMPLEMENT for that workflow under `workflows/super-admin-observability/`. **Also resume the gated items: TSB-4 (B2B `class_students`/`class_enrollments` table-drop — USER); FOX-4 (Foxy OpenAI provider governance — USER); the student-learning-core gated items (SLC-1 user-gated; SLC-4/5 cross-agent; SLC-8 cutover); + the payments + auth-onboarding open follow-ups** (see below) when their gates unblock. |
+| Next workflow | **Super-Admin & Observability** (rank 6) |
 
 ## How to resume
 
-> Open this file, read **Next action**. Foxy AI Tutor & RAG Cycle 4 has landed (auto-fix-safe complete —
-> the P12 "no unfiltered LLM output" output backstop now guards every student-facing exit of the live
-> grounded path; FOX-4 OpenAI provider governance is USER-gated). The next vertical workflow is
-> **Teacher / School-Admin B2B (P8, P9, P13)**; begin its MAP phase and write artifacts under
-> `workflows/teacher-school-admin-b2b/`. Keep the Foxy FOX-4 gate + the student-learning-core gated items
-> + the payments + auth-onboarding follow-ups visible.
+> Open this file, read **Next action**. Teacher / School-Admin B2B Cycle 5 has landed (auto-fix-safe complete —
+> the CRITICAL P8/P13 cross-tenant student-PII leak in the teacher-dashboard grade fallback is closed at all
+> 8 sites + a discoverable teacher RLS backstop on `public.students` is added; the `class_students`/
+> `class_enrollments` table-drop TSB-4 is USER-gated). The next vertical workflow is
+> **Super-Admin & Observability (P9, P13)**; begin its MAP phase and write artifacts under
+> `workflows/super-admin-observability/`. Keep the TSB-4 gate + the Foxy FOX-4 gate + the
+> student-learning-core gated items + the payments + auth-onboarding follow-ups visible.
+> NOTE: the Cycle-5 artifacts live under `workflows/teacher-school-b2b/` (the directory name is the short
+> form; earlier STATE.md text used `teacher-school-admin-b2b` — the on-disk path is `teacher-school-b2b`).
+
+## Program-level RISK register (CEO visibility)
+
+> Surfaced here for founder visibility; each item also lives in its cycle ledger.
+
+1. **[Cycle 5] CRITICAL cross-tenant student-PII leak — FOUND & FIXED (TSB-1).** Pre-fix, a teacher with
+   `grades_taught` but no class could read (and at one site **write**) names / mastery / XP of **every**
+   grade-6–12 student across **ALL schools** via the `teacher-dashboard` Edge Function's tenant-unscoped
+   grade fallback on the service-role client (RLS bypassed). For a B2B EdTech selling tenant isolation, this
+   is a contract-ending, **DPDP-reportable** exposure. Now `school_id`-scoped + fail-closed at all 8 sites
+   (REG-184). Trigger condition was realistic (newly-onboarded teacher; `teacher_create_profile` defaults
+   `grades_taught = ARRAY['Grade 9']`). **CEO action:** confirm no exploitation in production logs.
+2. **[Cycle 5] TSB-4 — USER-gated table-drop decision.** Teacher↔student membership is modeled in TWO tables
+   (`class_students` vs `class_enrollments`) reconciled by a sync trigger — an incomplete migration. Picking a
+   canonical table and dropping the other is a schema DROP requiring **USER approval**. Read-consolidation is
+   auto-fix-safe; the DROP is the gated decision. **CEO action:** approve/sequence the cutover.
+3. **[Cycle 4] FOX-4 — USER-gated AI provider governance.** OpenAI gpt-4o-mini/gpt-4o present in
+   `grounded-answer` as a MoL SHADOW comparison (telemetry only; not student-facing today). Provider PRESENCE
+   is user-gated per the constitution. **CEO action:** govern or remove.
+4. **[Cycle 3] SLC-1 — USER-gated XP economy (P2).** A legacy `quiz_sessions` trigger re-awards XP with no
+   daily cap, deduped from the RPC only by a fragile 5-second window — a second uncapped XP writer. Needs
+   architect + assessment joint design. **CEO action:** approve consolidation to one capped writer.
+5. **[Cycle 2] PAY-2 — USER-gated pricing source.** `create-order` hardcoded `PRICING` can diverge from DB
+   `subscription_plans`; dead on web, live only on the (already-broken) mobile path. Any pricing-amount change
+   is user-gated.
+
+## Current workflow detail — teacher-school-b2b (P8, P9, P13) — CYCLE 5 LANDED (auto-fix-safe complete)
+
+- Scope: the teacher portal (`src/app/teacher/**`) + school-admin tenant surface (`/api/school-admin/*`) +
+  the `teacher-dashboard` Supabase Edge Function (the primary teacher analytics surface) + the Pulse
+  cross-role boundary (`/api/pulse/*` → `canAccessStudent`). Governed by **P8** (RLS boundary), **P9** (RBAC
+  enforcement), **P13** (data privacy / multi-tenant isolation).
+- Artifacts: `workflows/teacher-school-b2b/01-map.md` … `08-regression.md` + `STATUS.md` (all written).
+- **Headline:** the constitution's "`canAccessStudent` is the single cross-role boundary" is true only for
+  `/api/pulse/*`; the higher-traffic `teacher-dashboard` Edge Function used a parallel, looser, **tenant-
+  unscoped** grade fallback on the service-role client (RLS bypassed) — TSB-1, a CRITICAL cross-tenant leak.
+- Landed (APPROVED, auto-fix-safe security hardening; **no RBAC role/permission change**):
+  - **TSB-1** (CRITICAL, P8/P13) — `supabase/functions/teacher-dashboard/index.ts`: all **8** grade-fallback
+    query sites (the audit named 2; backend found 8, incl. a cross-tenant WRITE in `handleSetGradeBookCell`)
+    now scoped by the teacher's AUTH-DERIVED `school_id` via new helper `resolveTeacherSchoolId`; FAIL-CLOSED
+    (empty / 403 / zero) on a null `school_id` (no null-match leak); `teacher_id` is JWT-bound (dispatcher
+    overwrites `body.teacher_id`), so no IDOR. → **REG-184**.
+  - **TSB-2** (HIGH → reclassified defense-in-depth, P8) — new additive idempotent migration
+    `supabase/migrations/20260702010000_teacher_assigned_students_rls.sql`: a named, discoverable teacher
+    SELECT policy on `public.students`. **Audit-premise correction:** `students` ALREADY had a teacher
+    backstop via `students_select_merged` → `is_teacher_of(id)` (baseline; stricter — adds `is_active`
+    guards). The new policy is predicate-IDENTICAL (PERMISSIVE OR-combine → unchanged row set, provably no
+    over-grant); its value is discoverability + helper-independence, not closing a hole. → **REG-185**.
+  - **TSB-6** (LOW) — replaced the stale per-resource-ownership TODO with an accurate SECURITY NOTE.
+  - **TSB-3** (MED) — partial convergence + precise TODO referencing `canAccessStudent`; Path B is now
+    tenant-scoped + fail-closed (full convergence needs a shared Next.js/Deno authz module — deferred).
+- Gates: type-check **PASS**, lint **0 errors**, **527/527 vitest** (incl. 15 TSB-1 + 10 TSB-2 new), build
+  **PASS**, **no bundle impact** (Edge Function + migration only). Quality verdict **APPROVE WITH CONDITIONS**
+  → condition **RESOLVED**; sweep **GREEN**; catalog 150 → **152** (REG-184/185); REG-120/121/122/124/128
+  still green.
+- **Quality condition (RESOLVED):** the migration was first timestamped `20260629000000` (out-of-order, before
+  the true latest `20260702000800`). Architect **RENAMED** it to `20260702010000` (sorts last; content
+  byte-identical); testing updated the test reference; re-verified.
+- P14 review chain (RBAC/RLS boundary) **COMPLETE**: architect (RLS/boundary + TSB-2 migration) + backend
+  (TSB-1 Edge Function fix) → testing (coverage GREEN) + quality (independent APPROVE WITH CONDITIONS,
+  condition resolved).
+- **Open gated / follow-up items (resume these):**
+  1. **TSB-4 (Medium, GATED — USER APPROVAL for the DROP):** dual `class_students` vs `class_enrollments`
+     join tables (incomplete migration; sync trigger papers over it). Read-consolidation is auto-fix-safe;
+     any table DROP requires USER approval. **Surface to CEO.**
+  2. **TSB-3 full convergence (ai/architect):** shared cross-runtime authz module so `teacher-dashboard`
+     reuses `canAccessStudent` (removing Path B is a product-behavior change).
+  3. **TSB-5 (ops/frontend, LOW):** `ff_school_pulse_v1` is a render guard not a data-access guard — a
+     one-line clarifying comment on the (separate) pulse routes.
+  4. **Pre-existing TS2352** at `teacher-dashboard/index.ts:2704` (untouched join-cast; surfaces under
+     `deno check`, not `tsc`) — separate cleanup PR (architect).
+  5. **Vacuously-green walker** in the OLD `teacher-dashboard-roster-join.test.ts` — harden separately (testing).
+  6. **CI-resilience:** the Deno dependency pre-warm step has no retry (a transient esm.sh 522 red the
+     Cycle-4 pipeline) — candidate retry-with-backoff on `deno cache` (ops/architect).
+- See `workflows/teacher-school-b2b/STATUS.md` + `cycles/2026-06-29-teacher-school-b2b.md`.
 
 ## Current workflow detail — foxy-ai-rag (P12, P8, P13) — CYCLE 4 LANDED (auto-fix-safe complete)
 
@@ -174,10 +252,12 @@
 | 2 | payments-subscriptions (P11) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | PAY-1/3/4/5/6/7/8 landed + APPROVED (type-check PASS, lint 0, 236/236 payment tests, build PASS, vercel.json VALID; architect security APPROVE; sweep GREEN); REG-178/179 filing in flight; PAY-2 gated to USER (pricing); mobile-repoint + mobile-web-sync.md doc fix + super-admin display open; see `workflows/payments-subscriptions/STATUS.md` + `cycles/2026-06-29-payments-subscriptions.md` |
 | 3 | student-learning-core (P1-P6,P12) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | SLC-7 (frontend) + SLC-2/3/6/8-pin (testing) landed + APPROVED (type-check PASS, lint 0, 40/40 new + ~1678 broad tests PASS, build PASS, bundle within P10 caps; quality APPROVE; sweep GREEN); REG-180/181 filed (catalog 146 → 148); SLC-1 USER-GATED, SLC-4/5 + SLC-8 cutover gated/cross-agent, SLC-9 backlog; see `workflows/student-learning-core/STATUS.md` + `cycles/2026-06-29-student-learning-core.md` |
 | 4 | foxy-ai-rag (P12,P8,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | FOX-1 (+ Deno twin + injection-pattern refinement) + FOX-2 + FOX-3 + FOX-6 landed + APPROVED (type-check PASS, lint 0, 305/305 vitest + 3/3 Deno PASS, build PASS, bundle within P10 caps; assessment APPROVE WITH CONDITIONS [addressed] + quality APPROVE; sweep GREEN); REG-182/183 filed (catalog 148 → 150); FOX-4 USER-GATED (OpenAI provider governance — MoL shadow, not student-facing), FOX-7-new + streaming-residual + Hindi-tokens follow-ups; live-topology reconciliation recorded (`/api/foxy` is LIVE, `foxy-tutor` Edge Fn gone); see `workflows/foxy-ai-rag/STATUS.md` + `cycles/2026-06-29-foxy-ai-rag.md` |
-| 5 | teacher-school-admin-b2b (P8,P9,P13) | — | NOT STARTED | next workflow (rank 5) |
+| 5 | teacher-school-b2b (P8,P9,P13) | ALL 8 PHASES | **LANDED — auto-fix-safe complete** | TSB-1 (backend — CRITICAL cross-tenant leak closed at all 8 grade-fallback sites via auth-derived `resolveTeacherSchoolId`, fail-closed) + TSB-2 (architect — teacher RLS backstop on `public.students`, predicate-identical, no over-grant) + TSB-3-partial + TSB-6 landed + APPROVED (type-check PASS, lint 0, 527/527 vitest incl. 15 TSB-1 + 10 TSB-2 new, build PASS, no bundle impact; quality APPROVE WITH CONDITIONS [migration-ordering — RESOLVED via byte-identical rename `20260629000000`→`20260702010000`]; sweep GREEN); REG-184/185 filed (catalog 150 → 152); TSB-4 USER-GATED (table-drop), TSB-3-full + TSB-5 + 3 pre-existing tracked items follow-ups; see `workflows/teacher-school-b2b/STATUS.md` + `cycles/2026-06-29-teacher-school-b2b.md` |
+| 6 | super-admin-observability (P9,P13) | — | NOT STARTED | next workflow (rank 6) |
 
 ## Backlog pointer
 
-Now active: **Teacher / School-Admin B2B (P8, P9, P13)** — `PRIORITY-BACKLOG.md` rank 5. Promote it to IN
-PROGRESS in the backlog when its first phase begins. (Rank 4 Foxy AI Tutor & RAG is DONE — auto-fix-safe
-complete; FOX-4 user-gated provider governance, FOX-7-new + streaming-residual + Hindi-tokens follow-ups.)
+Now active: **Super-Admin & Observability (P9, P13)** — `PRIORITY-BACKLOG.md` rank 6. Promote it to IN
+PROGRESS in the backlog when its first phase begins. (Rank 5 Teacher / School-Admin B2B is DONE — auto-fix-safe
+complete; the CRITICAL cross-tenant leak TSB-1 is closed + TSB-2 RLS backstop added; TSB-4 table-drop is
+USER-gated, TSB-3-full + TSB-5 + 3 pre-existing tracked items are follow-ups.)
