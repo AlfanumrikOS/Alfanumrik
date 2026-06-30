@@ -44,7 +44,12 @@ interface GuardianProfile {
 interface RoleData {
   roles: UserRole[];
   primary_role: UserRole;
-  student: { id: string; name: string; grade: string } | null;
+  // onboarding_completed is carried in the get_user_role RPC payload
+  // (migration 20260610090000, COALESCE(...,false)). It is the authoritative
+  // signal for the dashboard's `student && !student.onboarding_completed`
+  // redirect, so it must survive into the fallback student built below when
+  // the secondary full-row read returns 0 rows.
+  student: { id: string; name: string; grade: string; onboarding_completed: boolean | null } | null;
   teacher: { id: string; name: string } | null;
   guardian: { id: string; name: string } | null;
 }
@@ -342,11 +347,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             // Load student profile if role exists
             if (rd.student) {
-              const { data: studentData } = await supabase
+              // P15-critical: this secondary read MUST use maybeSingle(), not
+              // single(). single() rejects with PGRST116 when 0 rows come back,
+              // and a 0-row result here is a RECOVERABLE edge — a transient
+              // client-RLS / auth.uid() skew on the PostgREST call, replica lag
+              // immediately after signup, etc. — NOT proof the student is gone.
+              // The throw would abort this whole branch, and because the
+              // parallel rescue block below is guarded by `if (!rolesResolved)`
+              // (rolesResolved is already true here), the student would be left
+              // permanently null while isLoggedIn stays true → the dashboard
+              // skeletons forever. We therefore never let a resolved student
+              // role end this branch with a null `student`.
+              let { data: studentData } = await supabase
                 .from('students')
                 .select('*')
                 .eq('id', rd.student.id)
-                .single();
+                .maybeSingle();
+
+              // Defensive re-read by auth_user_id if the PK lookup came back
+              // empty — this is the exact query the parallel fallback block
+              // uses, and it can succeed when the by-id read momentarily did
+              // not (different RLS predicate path). Gives us the full, richest
+              // row whenever possible.
+              if (!studentData) {
+                const reread = await supabase
+                  .from('students')
+                  .select('*')
+                  .eq('auth_user_id', user.id)
+                  .maybeSingle();
+                studentData = reread.data;
+              }
+
               if (studentData) {
                 // P5 read-time coercion: legacy rows may hold "Grade 9";
                 // normalizeGrade returns the bare "6".."12" form so the UI
@@ -354,6 +385,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // is touched — all other columns pass through untouched.
                 setStudent({ ...studentData, grade: normalizeGrade(studentData.grade) } as Student);
                 setLanguageState(studentData.preferred_language ?? 'en');
+              } else {
+                // Both full-row reads returned 0 rows even though get_user_role
+                // resolved a student role. NEVER leave a logged-in student with
+                // a null `student` (P15 — the dashboard would skeleton forever).
+                // Fall back to the RPC's own student payload, which already
+                // carries id/name/grade/onboarding_completed. onboarding_completed
+                // is taken VERBATIM from the RPC (never hardcoded) so the
+                // dashboard's `student && !student.onboarding_completed` redirect
+                // to /onboarding stays correct. The remaining Student columns are
+                // not available here; this is an intentional, documented partial
+                // (it mirrors how the metadata-fallback block below sets reduced
+                // state) and is upgraded to a full row on the next fetchUser /
+                // refreshStudent. grade still passes through normalizeGrade (P5).
+                setStudent({ ...rd.student, grade: normalizeGrade(rd.student.grade) } as Student);
               }
             }
 
