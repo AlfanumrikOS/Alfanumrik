@@ -3,7 +3,7 @@
 **Date filed:** 2026-06-27
 **Owner:** ops
 **Severity:** HIGH (release integrity)
-**Status:** BLOCKED on prerequisite — capability not available on current GitHub plan; remediation is staged and ready to apply once the plan is upgraded.
+**Status:** APPLIED 2026-06-30 — `AlfanumrikOS` upgraded to GitHub Pro, branch protection on `main` enabled with the 5 required status checks below + `enforce_admins:true` + `strict:true`. Verified live (`.protected = true`, contexts match, enforce_admins enabled).
 
 This runbook captures a verified architect finding from the 2026-06-27 release-integrity
 audit so it is durably actionable. It documents why `main` is currently unprotected, the
