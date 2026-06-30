@@ -6389,3 +6389,39 @@ policies are grandfathered and Phase 4 ratchets the ledger down) and reconciles 
 **Total catalog: 179 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## XC-3 Phase 0b + 0c — admin-client allowlist freeze + RLS inventory (2026-06-30)
+
+**Why.** Phase 0a froze the RLS *policy-recursion* class. The same XC-3 audit found two more
+systemic exposures to freeze before any Phase ≥1 migration: (1) **273 of 362** API `route.ts` files
+import the RLS-BYPASSING service-role client `@/lib/supabase-admin` — on those routes RLS is not
+exercised on the request path and a single missed `authorizeRequest()` is an unbounded data leak
+(P8/P9/P13); and (2) the schema's RLS *inventory* posture (every public table RLS-enabled; only the
+two intentional `mass_gen_log`/`school_subscriptions` deny-all tables in the baseline) must not
+silently drift. Phase 0b FREEZES the 273-route admin footprint so it can only ratchet DOWN as
+Phase 2/3 migrate reads onto `supabase-server`; Phase 0c FREEZES the table-level RLS inventory so no
+un-protected or unannounced service-role-only table can be added. Both are source/SQL-text static
+guards in the normal `npm test` lane (no live Postgres), consistent with the Phase 0a sibling.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-213 | `api_admin_client_allowlist_freeze` | P8/P9: enumerates every `route.ts` under `src/app/api` and flags any whose source imports a module specifier ending in `supabase-admin` (covers `@/lib/supabase-admin` AND relative `../../lib/supabase-admin` forms). Loads `scripts/admin-client-allowlist.json` (the architect-owned ledger, 273 entries). ASSERTS `detected \ allowlist === ∅` (a NEW admin-importing route absent from the ledger FAILS — author must either use the RLS-scoped `supabase-server` client or, if service-role is genuinely required, add the route + bump `count` in the same PR), `allowlist \ detected === ∅` (no STALE entry — a migrated/removed route must be pruned so the count ratchets DOWN, never drifts), and pins the count at exactly **273**. Robust to `\\`→`/` path-separator drift; ledger self-consistency (`routes.length === count`) also pinned. Static source scan, no runtime/DB. | `src/__tests__/api-admin-client-allowlist.test.ts` + `scripts/admin-client-allowlist.json` | E | P8, P9 |
+| REG-214 | `rls_inventory_every_table_protected` | P8: parses the full root migration chain (baseline + root `*.sql` in timestamp order; `_legacy/` excluded) into CREATED (public `CREATE TABLE`, `DROP TABLE` removes), RLS (`ALTER … ENABLE ROW LEVEL SECURITY`, `DISABLE` removes) and POLICIED (≥1 surviving `CREATE POLICY`, quoted pg_dump AND unquoted hand-written names, DROPs applied) sets; views/matviews never match (`CREATE TABLE` only); non-public schemas excluded. ASSERTS `CREATED ⊆ RLS` (every public table created in the chain has RLS enabled — no un-protected table can be added; reports the offending name) and `RLS ⊆ CREATED` (no orphan ENABLE). DENY-ALL freeze (RLS-on, ZERO-policy = service-role-only): the **baseline** deny-all set is EXACTLY `{mass_gen_log, school_subscriptions}` (the two intentional ones the audit found — pinned verbatim); those two remain deny-all in the full chain; and the **full effective-chain** deny-all set equals the reviewed `SERVICE_ROLE_ONLY_TABLES` ledger (36 tables — the 2 audit tables plus the agent/AI/queue/log infra that `20260516020000_tighten_rls_policy_always_true.sql` and post-baseline migrations made service-role-only) EXACTLY, so a NEW RLS-on-but-policy-less table (not in the ledger) FAILS and a table that gains policies (left stale in the ledger) also FAILS. Static SQL-text guard, no DB. | `src/__tests__/rls-inventory.test.ts` | E | P8 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) / P9 (RBAC enforcement) — REG-213 freezes the service-role-client blast radius
+  (the dominant data path that bypasses RLS) so it can only shrink; REG-214 freezes the table-level
+  RLS inventory (universal RLS coverage + the exact service-role-only deny-all set). Both are
+  source/SQL-text static guards in the normal `npm test` lane (siblings to REG-210/REG-212). They are
+  the enforcement layer Phase 1 (backstop policies) and Phase 2/3 (route migrations) rely on.
+
+### Catalog total
+
+XC-3 Phase 0b + 0c add REG-213 (admin-client allowlist freeze — the 273-route `supabase-admin`
+footprint is pinned and may only ratchet DOWN) and REG-214 (RLS inventory — every public table is
+RLS-enabled and the deny-all/service-role-only set is frozen: baseline EXACTLY
+`{mass_gen_log, school_subscriptions}`, full chain EXACTLY the 36-table reviewed ledger).
+**Total catalog: 181 entries (target: 35 — TARGET EXCEEDED).**
+
+---
