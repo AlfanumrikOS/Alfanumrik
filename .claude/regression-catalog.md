@@ -6482,3 +6482,45 @@ isolation, idempotent projector; P8 substrate unchanged; gates the ADR-005 Stage
 **Total catalog: 182 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-216 — XC-3 Phase 1: apex `students` school-admin policy delegates to a SECURITY DEFINER helper (first ledger drain 242 → 241)
+
+**Why.** The XC-3 generalized recursion guard (REG-212) freezes the inline cross-table
+RLS surface and forces it to ratchet DOWN, never drift. XC-3 Phase 1 (migration
+`20260702090000_xc3_p1_is_school_admin_of_student_helper.sql`) refactors the LAST latent
+inline cross-table edge on the apex `public.students` table — the policy
+`"School admins can view school students"`, which inlined `FROM public.school_admins`
+inside its `USING` (baseline:19906) — to the new SECURITY DEFINER helper
+`public.is_school_admin_of_student(uuid)`. This is the binding RS-RULE applied to the apex
+table: cross-table authorization must delegate to a SECURITY DEFINER helper (inner reads
+bypass RLS) rather than inline a `FROM`/`JOIN` over a different RLS table. After this change
+`students` carries ZERO inline cross-table edges, and the grandfather ledger drains for the
+FIRST time (242 → 241).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-216 | `rls_students_school_admin_helper_delegation` (within `rls-no-cross-table-recursion.test.ts`) | P8: the apex `students` policy `"School admins can view school students"` no longer inlines `FROM school_admins` — its effective form (migration `20260702090000` supersedes the baseline via DROP+CREATE in the chain reduction) delegates to `public.is_school_admin_of_student(id)`, so the detector flags NO inline cross-table policy on `students` (`detectedRiskKeys()` filtered to `students::` === `[]`). The helper is added to the SECURITY DEFINER roster `H` (`RLS_HELPERS`, length 10 → 11) so a policy CALLING it is recognised as delegating. The grandfather key `students::School admins can view school students` is PRUNED from `GRANDFATHERED_INLINE_POLICIES` (FIRST ratchet-DOWN), and the count pins assert exactly **241** (`GRANDFATHERED_INLINE_POLICIES.size === 241` AND `detectedRiskKeys().length === 241`) — so `detected === allowlist` holds (no stale entry, no new violation). Boundary equivalence: the helper returns `EXISTS` over the SAME join the inline form used (student's `school_id` from `students` ⋈ `school_admins` on `school_id`, caller `auth.uid()` = `sa.auth_user_id`, `sa.is_active = true`) — identical school-scoping + is_active guard + NULL-school_id non-match → no over/under-grant. No recursion: SECURITY DEFINER inner reads of `students` + `school_admins` bypass RLS, so no `students → school_admins → students` cycle can form. Static SQL-text guard, no DB. | `src/__tests__/rls-no-cross-table-recursion.test.ts` + `supabase/migrations/20260702090000_xc3_p1_is_school_admin_of_student_helper.sql` | E | P8 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) — REG-216 is the FIRST behavioral RLS change of XC-3. It proves the
+  apex `students` table is fully helper-delegating (zero inline cross-table edges) and that
+  the school-admin SELECT boundary is byte-for-byte the same visible-row set after the
+  refactor (same tables, same school-scoping, same `is_active` guard). The SECURITY DEFINER
+  helper's inner reads bypass RLS, so the refactor cannot introduce the TSB-4 recursion class
+  it removes.
+- Ledger ratchet (Phase 4 drain mechanic, exercised early in Phase 1) — the
+  `GRANDFATHERED_INLINE_POLICIES` ledger must mirror live debt EXACTLY; pruning the students
+  school-admin key in the same change that refactors the policy keeps `detected === allowlist`
+  and forces the count DOWN (242 → 241). Re-introducing the old inline shape under this name
+  would FAIL the guard (the key is absent from the ledger).
+
+### Catalog total
+
+XC-3 Phase 1 adds REG-216 (apex `students` `"School admins can view school students"` policy
+refactored from inline `FROM school_admins` to the SECURITY DEFINER helper
+`is_school_admin_of_student(id)`; exact boundary equivalence, no recursion, first grandfather
+ledger drain 242 → 241, helper added to set `H`).
+**Total catalog: 183 entries (target: 35 — TARGET EXCEEDED).**
+
+---

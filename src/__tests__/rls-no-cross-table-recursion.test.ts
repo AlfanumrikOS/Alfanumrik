@@ -19,7 +19,8 @@ import { resolve } from 'node:path';
  *
  * REG-210 (`students-rls-no-recursion.test.ts`) guards this for `students` ONLY.
  * The XC-3 audit found the pattern is SYSTEMIC: ~141 baseline policies (242 across
- * the whole effective chain after Phase 0a.1 — see below) inline a cross-table
+ * the whole effective chain after Phase 0a.1, now 241 after the Phase 1 drain —
+ * see below) inline a cross-table
  * subquery that re-enters another
  * table's RLS — every one is a latent edge that can close a TSB-4-style cycle the
  * moment a back-edge is added. We cannot retroactively rewrite all of them now,
@@ -48,11 +49,22 @@ import { resolve } from 'node:path';
  *   3. flags a surviving policy as a RECURSION RISK iff its USING/WITH CHECK
  *      inlines a FROM/JOIN over `b ∈ R, b ≠ policyTable`;
  *   4. asserts the detected risk set is a SUBSET of GRANDFATHERED_INLINE_POLICIES
- *      (the explicit, reviewable debt ledger of the current 242). The guard FAILS
- *      only when a NEW or RENAMED inline cross-table policy appears. Phase 4 drains
+ *      (the explicit, reviewable debt ledger of the current 241). The guard FAILS
+ *      only when a NEW or RENAMED inline cross-table policy appears. Phase 1+ drains
  *      the ledger one table at a time (inline → helper), shrinking this list.
  *
- * PHASE 0a.1 HARDENING (XC-3, this revision)
+ * PHASE 1 RATCHET-DOWN #1 (XC-3, migration 20260702090000)
+ * ========================================================
+ * The apex `students` policy "School admins can view school students" was the last
+ * latent inline cross-table edge ON `students` (it inlined `FROM school_admins`).
+ * Migration 20260702090000 refactored it to the SECURITY DEFINER helper
+ * public.is_school_admin_of_student(id) — the IDENTICAL school-scoping + is_active
+ * boundary, but the helper's inner reads bypass RLS so no recursion can form. The
+ * detector no longer flags it, so its grandfather entry was pruned: the ledger
+ * ratcheted 242 → 241 (the FIRST drain), and `students` now carries ZERO inline
+ * cross-table edges. is_school_admin_of_student joined the helper roster (set H).
+ *
+ * PHASE 0a.1 HARDENING (XC-3, an earlier revision)
  * ==========================================
  * The original CREATE/DROP POLICY name matching saw QUOTED names only
  * (`CREATE POLICY "name" ON …`). Hand-written root migrations sometimes use
@@ -90,6 +102,13 @@ const RLS_HELPERS = [
   'is_teacher_of',
   'is_guardian_of',
   'is_school_admin_of',
+  // XC-3 Phase 1 (20260702090000): student-scoped school-admin helper that
+  // replaced the inline `FROM school_admins` subquery in the students policy
+  // "School admins can view school students". Tagged `-- rls-helper` at its
+  // definition; SECURITY DEFINER so its inner reads of students + school_admins
+  // bypass RLS (no recursion). Listed here so a policy that CALLS it is recognised
+  // as delegating, not inlining.
+  'is_school_admin_of_student',
   'is_admin',
   'get_my_student_id',
   'get_my_student_ids',
@@ -326,7 +345,14 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'student_skill_state::student_skill_state_parent_select',
   'student_skill_state::student_skill_state_student_select',
   'student_skill_state::student_skill_state_teacher_select',
-  'students::School admins can view school students',
+  // XC-3 Phase 1 ratchet-DOWN #1 (migration 20260702090000): the students policy
+  // "School admins can view school students" was refactored from an inline
+  // `FROM school_admins` subquery to the SECURITY DEFINER helper
+  // public.is_school_admin_of_student(id). It no longer inlines a cross-table
+  // FROM/JOIN, so the detector no longer flags it — its grandfather entry is
+  // pruned here so `detected === allowlist` holds. This is the FIRST drain of the
+  // Phase 4 ledger (242 → 241) and leaves the apex students table with ZERO
+  // latent inline cross-table edges.
   'study_plan_tasks::spt_readonly_others',
   'subject_content_readiness_daily::scrd_super_admin_select',
   'support_tickets::Anyone can create tickets',
@@ -534,7 +560,9 @@ describe('generalized RLS recursion guard: parser non-vacuity', () => {
     expect(RLS_HELPERS).toContain('is_teacher_of');
     expect(RLS_HELPERS).toContain('is_guardian_of');
     expect(RLS_HELPERS).toContain('is_school_admin_of');
-    expect(RLS_HELPERS.length).toBe(10);
+    // XC-3 Phase 1: the new student-scoped school-admin helper joined the roster.
+    expect(RLS_HELPERS).toContain('is_school_admin_of_student');
+    expect(RLS_HELPERS.length).toBe(11);
   });
 });
 
@@ -589,15 +617,19 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     ).toEqual([]);
   });
 
-  it('freezes the current blast radius at exactly 242 inline cross-table policies', () => {
+  it('freezes the current blast radius at exactly 241 inline cross-table policies', () => {
     // The audit found ~141 inline policies in the BASELINE; the whole effective
-    // chain (713 policies) carries 242 AFTER Phase 0a.1 widened policy-NAME matching
-    // to also see UNQUOTED-name policies (was 214 with the quoted-only regex; the 28
-    // newly-visible policies all carry unquoted names — see the Phase 0a.1 block in
-    // GRANDFATHERED_INLINE_POLICIES). This pins the number so any drift (up = new
-    // violation, down = un-pruned ledger) trips a guard above.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(242);
-    expect(detectedRiskKeys().length).toBe(242);
+    // chain carried 242 AFTER Phase 0a.1 widened policy-NAME matching to also see
+    // UNQUOTED-name policies (was 214 with the quoted-only regex; the 28 newly-visible
+    // policies all carry unquoted names — see the Phase 0a.1 block in
+    // GRANDFATHERED_INLINE_POLICIES). XC-3 Phase 1 (migration 20260702090000) drained
+    // the FIRST entry — the apex students policy "School admins can view school
+    // students" was refactored to the SECURITY DEFINER helper
+    // is_school_admin_of_student(id), so it is no longer flagged: 242 → 241. This pins
+    // the number so any drift (up = new violation, down = un-pruned ledger) trips a
+    // guard above.
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(241);
+    expect(detectedRiskKeys().length).toBe(241);
   });
 });
 
@@ -624,9 +656,24 @@ describe('generalized RLS recursion guard: students apex is helper-delegating', 
     expect(detectInlineCrossTable('students', stmt)).toEqual([]);
   });
 
-  it('the only grandfathered inline policy ON students is the known school-admin latent edge', () => {
+  it('the apex students table now has ZERO inline cross-table edges (XC-3 Phase 1 drained the last one)', () => {
+    // Before XC-3 Phase 1 the students policy "School admins can view school
+    // students" inlined `FROM school_admins` and was the single grandfathered latent
+    // edge on the apex table. Migration 20260702090000 refactored it to the SECURITY
+    // DEFINER helper is_school_admin_of_student(id), so students now carries NO inline
+    // cross-table policy at all — every cross-table boundary on the apex table
+    // delegates to a helper.
     const studentsRisks = detectedRiskKeys().filter((k) => k.startsWith('students::'));
-    expect(studentsRisks).toEqual(['students::School admins can view school students']);
+    expect(studentsRisks).toEqual([]);
+    // …and the refactored policy delegates to the helper (not inlining), so it is
+    // correctly ABSENT from the ledger — re-introducing the old inline shape under
+    // this same name would FAIL the guard.
+    const stmt = POLICIES.get('students::School admins can view school students')!;
+    expect(stmt).toMatch(/public\.is_school_admin_of_student\s*\(\s*id\s*\)/i);
+    expect(detectInlineCrossTable('students', stmt)).toEqual([]);
+    expect(
+      GRANDFATHERED_INLINE_POLICIES.has('students::School admins can view school students'),
+    ).toBe(false);
   });
 });
 
