@@ -19,8 +19,8 @@ import { resolve } from 'node:path';
  *
  * REG-210 (`students-rls-no-recursion.test.ts`) guards this for `students` ONLY.
  * The XC-3 audit found the pattern is SYSTEMIC: ~141 baseline policies (242 across
- * the whole effective chain after Phase 0a.1, now 241 after the Phase 1 drain —
- * see below) inline a cross-table
+ * the whole effective chain after Phase 0a.1, now 240 after the Phase 1 drain and the
+ * Phase 4 first drain — see below) inline a cross-table
  * subquery that re-enters another
  * table's RLS — every one is a latent edge that can close a TSB-4-style cycle the
  * moment a back-edge is added. We cannot retroactively rewrite all of them now,
@@ -49,7 +49,7 @@ import { resolve } from 'node:path';
  *   3. flags a surviving policy as a RECURSION RISK iff its USING/WITH CHECK
  *      inlines a FROM/JOIN over `b ∈ R, b ≠ policyTable`;
  *   4. asserts the detected risk set is a SUBSET of GRANDFATHERED_INLINE_POLICIES
- *      (the explicit, reviewable debt ledger of the current 241). The guard FAILS
+ *      (the explicit, reviewable debt ledger of the current 240). The guard FAILS
  *      only when a NEW or RENAMED inline cross-table policy appears. Phase 1+ drains
  *      the ledger one table at a time (inline → helper), shrinking this list.
  *
@@ -184,9 +184,20 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'assignments::School admins can view school assignments',
   'assignments::Students can view class assignments',
   'assignments::Teachers can manage own assignments',
-  'at_risk_alerts::Teachers see own at-risk alerts',
+  // (XC-3 Phase 4 first drain removed 'at_risk_alerts::Teachers see own at-risk
+  //  alerts' from here — migration 20260702100000. See the note below.)
   'audit_logs::audit_logs_select',
   'audit_logs::school_admins_see_school_audit_logs',
+  // XC-3 Phase 4 first drain (migration 20260702100000): the at_risk_alerts policy
+  // "Teachers see own at-risk alerts" was refactored from an inline
+  // `FROM public.teachers` subquery to the SECURITY DEFINER helper
+  // public.get_my_teacher_id(). Because teachers.auth_user_id is UNIQUE the inline
+  // IN-subquery returned at most one id, so `teacher_id = get_my_teacher_id()` is the
+  // EXACT boundary equivalent (same table, same auth.uid() filter, no extra guards).
+  // It no longer inlines a cross-table FROM/JOIN, so the detector no longer flags it
+  // — its grandfather entry (formerly 'at_risk_alerts::Teachers see own at-risk
+  // alerts', sorted just above 'audit_logs::…') is therefore pruned so
+  // `detected === allowlist` holds. This is the FIRST Phase 4 drain (241 → 240).
   'backup_status::backup_status_admin',
   'bloom_progression::bloom_own_insert',
   'bloom_progression::bloom_own_select',
@@ -617,7 +628,7 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     ).toEqual([]);
   });
 
-  it('freezes the current blast radius at exactly 241 inline cross-table policies', () => {
+  it('freezes the current blast radius at exactly 240 inline cross-table policies', () => {
     // The audit found ~141 inline policies in the BASELINE; the whole effective
     // chain carried 242 AFTER Phase 0a.1 widened policy-NAME matching to also see
     // UNQUOTED-name policies (was 214 with the quoted-only regex; the 28 newly-visible
@@ -625,11 +636,16 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // GRANDFATHERED_INLINE_POLICIES). XC-3 Phase 1 (migration 20260702090000) drained
     // the FIRST entry — the apex students policy "School admins can view school
     // students" was refactored to the SECURITY DEFINER helper
-    // is_school_admin_of_student(id), so it is no longer flagged: 242 → 241. This pins
-    // the number so any drift (up = new violation, down = un-pruned ledger) trips a
-    // guard above.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(241);
-    expect(detectedRiskKeys().length).toBe(241);
+    // is_school_admin_of_student(id), so it is no longer flagged: 242 → 241. XC-3
+    // Phase 4 then began draining the REMAINING grandfathered inline policies table by
+    // table: migration 20260702100000 refactored the at_risk_alerts policy "Teachers
+    // see own at-risk alerts" from an inline `FROM public.teachers` subquery to the
+    // SECURITY DEFINER helper get_my_teacher_id() (boundary-identical via the UNIQUE
+    // teachers.auth_user_id constraint), so it is no longer flagged: 241 → 240. This
+    // pins the number so any drift (up = new violation, down = un-pruned ledger) trips
+    // a guard above.
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(240);
+    expect(detectedRiskKeys().length).toBe(240);
   });
 });
 
