@@ -18,8 +18,9 @@ import { resolve } from 'node:path';
  * public.is_teacher_of(id) (its inner reads BYPASS RLS — no cycle can form).
  *
  * REG-210 (`students-rls-no-recursion.test.ts`) guards this for `students` ONLY.
- * The XC-3 audit found the pattern is SYSTEMIC: ~141 baseline policies (214 across
- * the whole effective chain) inline a cross-table subquery that re-enters another
+ * The XC-3 audit found the pattern is SYSTEMIC: ~141 baseline policies (242 across
+ * the whole effective chain after Phase 0a.1 — see below) inline a cross-table
+ * subquery that re-enters another
  * table's RLS — every one is a latent edge that can close a TSB-4-style cycle the
  * moment a back-edge is added. We cannot retroactively rewrite all of them now,
  * but we CAN FREEZE the surface so NO NEW or RENAMED policy adds another.
@@ -47,13 +48,28 @@ import { resolve } from 'node:path';
  *   3. flags a surviving policy as a RECURSION RISK iff its USING/WITH CHECK
  *      inlines a FROM/JOIN over `b ∈ R, b ≠ policyTable`;
  *   4. asserts the detected risk set is a SUBSET of GRANDFATHERED_INLINE_POLICIES
- *      (the explicit, reviewable debt ledger of the current 214). The guard FAILS
+ *      (the explicit, reviewable debt ledger of the current 242). The guard FAILS
  *      only when a NEW or RENAMED inline cross-table policy appears. Phase 4 drains
  *      the ledger one table at a time (inline → helper), shrinking this list.
  *
+ * PHASE 0a.1 HARDENING (XC-3, this revision)
+ * ==========================================
+ * The original CREATE/DROP POLICY name matching saw QUOTED names only
+ * (`CREATE POLICY "name" ON …`). Hand-written root migrations sometimes use
+ * UNQUOTED names (`CREATE POLICY my_policy ON public.t …`); those were INVISIBLE to
+ * the detector — a false negative under which a future unquoted-name policy could
+ * inline a cross-table subquery and slip the freeze. The name regex now accepts BOTH
+ * forms (for CREATE and DROP, so DROP-before-CREATE reduction still works). Widening
+ * the regex surfaced 28 previously-hidden unquoted-name inline policies (214 → 242).
+ * ALL 28 are on CHILD tables inlining a PARENT boundary table that does NOT inline
+ * them back — none forms a live recursion cycle (verified reaches-self=false for
+ * each); the change is purely defensive. The 28 are frozen in the Phase 0a.1 block
+ * of GRANDFATHERED_INLINE_POLICIES and proven catchable by a dedicated self-test.
+ *
  * Plan: docs/superpowers/plans/2026-07-02-xc3-systemic-rls-defense-in-depth.md (§5).
  * Incident fix: supabase/migrations/20260702080000_fix_students_rls_infinite_recursion.sql.
- * Owner: testing. Catalog: REG-212. Supersedes the students-only intent of REG-210.
+ * Owner: testing. Catalog: REG-212 (Phase 0a.1 extends its unquoted-name coverage).
+ * Supersedes the students-only intent of REG-210.
  */
 
 // ── repo / file resolution (cwd or one level up, matching the sibling pins) ──
@@ -92,6 +108,43 @@ const RLS_HELPERS = [
 // as it migrates inline policies to SECURITY DEFINER helpers.
 // ════════════════════════════════════════════════════════════════════════════
 const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
+  // ── Phase 0a.1 (XC-3) additions — 28 policies the quoted-only name regex MISSED.
+  //    All defined with UNQUOTED policy names in their root migrations, so the
+  //    original detector never saw them. NONE forms a live recursion cycle: every
+  //    one is on a CHILD table whose USING inlines a PARENT boundary table
+  //    (students / guardians / guardian_student_links / class_students /
+  //    class_teachers / teachers / roles / user_roles / admin_users), and none of
+  //    those parents inlines these child tables back (verified: reaches-self=false
+  //    for all 28). Frozen here as defensive debt, not active cycles. ──
+  'adaptive_interventions::adaptive_interventions_parent_select',
+  'adaptive_interventions::adaptive_interventions_student_select',
+  'adaptive_interventions::adaptive_interventions_teacher_select',
+  'board_score_predictions::board_score_predictions_admin_select',
+  'board_score_predictions::board_score_predictions_guardian_select',
+  'board_score_predictions::board_score_predictions_student_select',
+  'concept_attempts::concept_attempts_read_own',
+  'foxy_message_feedback::foxy_message_feedback_read_self',
+  'foxy_pending_expectations::foxy_pending_expectations_student_read',
+  'foxy_quality_scores::foxy_quality_scores_read_admin',
+  'geographic_metrics::geographic_metrics_admin_select',
+  'learner_twin_memory::learner_twin_memory_parent_select',
+  'learner_twin_memory::learner_twin_memory_student_select',
+  'learner_twin_memory::learner_twin_memory_teacher_select',
+  'learner_twin_snapshots::learner_twin_snapshots_parent_select',
+  'learner_twin_snapshots::learner_twin_snapshots_student_select',
+  'learner_twin_snapshots::learner_twin_snapshots_teacher_select',
+  'mol_feedback::mol_feedback_student_insert',
+  'mol_request_logs::mol_request_logs_admin_read',
+  'mrr_snapshots::mrr_snapshots_admin_select',
+  'parent_cheers::parent_cheers_guardian_select',
+  'school_churn_signals::school_churn_signals_admin_select',
+  'school_health_daily::school_health_daily_admin_select',
+  'school_mrr_daily::school_mrr_daily_admin_select',
+  'teacher_remediation_assignments::teacher_remediation_assignments_student_select',
+  'teacher_remediation_assignments::teacher_remediation_assignments_teacher_insert',
+  'teacher_remediation_assignments::teacher_remediation_assignments_teacher_select',
+  'teacher_remediation_assignments::teacher_remediation_assignments_teacher_update',
+  // ── original quoted-name baseline (214) ──
   'academic_terms::academic_terms_authenticated_select',
   'academic_terms::academic_terms_school_admin_insert',
   'academic_terms::academic_terms_school_admin_update',
@@ -322,10 +375,27 @@ const ENABLE_RE =
   /ALTER\s+TABLE\s+(?:ONLY\s+)?(?:"?public"?\s*\.\s*)?"?([a-z_][a-z0-9_]*)"?\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY/i;
 const DISABLE_RE =
   /ALTER\s+TABLE\s+(?:ONLY\s+)?(?:"?public"?\s*\.\s*)?"?([a-z_][a-z0-9_]*)"?\s+DISABLE\s+ROW\s+LEVEL\s+SECURITY/i;
+// Phase 0a.1 (XC-3): the policy NAME now matches BOTH a quoted identifier
+// (`"my policy"`) AND a bare unquoted identifier (`my_policy`). Hand-written root
+// migrations sometimes use unquoted names; the original quoted-only regex was BLIND
+// to them — a false negative that would let a future unquoted-name policy inline a
+// cross-table subquery and slip past the freeze. Capture group 1 = quoted name (kept
+// verbatim, case-sensitive like Postgres), group 2 = unquoted name (folded to lower
+// case, matching Postgres' unquoted-identifier case folding so DROP↔CREATE by
+// unquoted name still reduce). Table-name capture (group 3) is unchanged. The `i`
+// flag + `\s+` make both robust to case/whitespace/multiline (statements are already
+// whitespace-collapsed before matching).
 const CREATE_RE =
-  /^\s*CREATE\s+POLICY\s+"([^"]+)"\s+ON\s+(?:"?public"?\s*\.\s*)?"?([a-z_][a-z0-9_]*)"?/i;
+  /^\s*CREATE\s+POLICY\s+(?:"([^"]+)"|([a-z_][a-z0-9_$]*))\s+ON\s+(?:"?public"?\s*\.\s*)?"?([a-z_][a-z0-9_]*)"?/i;
 const DROP_RE =
-  /^\s*DROP\s+POLICY\s+(?:IF\s+EXISTS\s+)?"([^"]+)"\s+ON\s+(?:"?public"?\s*\.\s*)?"?([a-z_][a-z0-9_]*)"?/i;
+  /^\s*DROP\s+POLICY\s+(?:IF\s+EXISTS\s+)?(?:"([^"]+)"|([a-z_][a-z0-9_$]*))\s+ON\s+(?:"?public"?\s*\.\s*)?"?([a-z_][a-z0-9_]*)"?/i;
+
+/** Resolve the effective policy name from a CREATE_RE/DROP_RE match: quoted name
+ *  verbatim (group 1), else the unquoted name folded to lower case (group 2) — so a
+ *  DROP by unquoted name reduces the matching CREATE regardless of source casing. */
+function policyName(m: RegExpExecArray): string {
+  return m[1] !== undefined ? m[1] : m[2].toLowerCase();
+}
 
 interface ChainState {
   /** R: tables with effective ENABLE ROW LEVEL SECURITY. */
@@ -365,11 +435,13 @@ function parseChain(): ChainState {
         continue;
       }
       if ((m = CREATE_RE.exec(stmt))) {
-        policies.set(`${m[2].toLowerCase()}::${m[1]}`, stmt);
+        // group 3 = table (lower-cased), policyName(m) = quoted-verbatim or
+        // unquoted-lowered name. Covers both `"..."` and bare-identifier policies.
+        policies.set(`${m[3].toLowerCase()}::${policyName(m)}`, stmt);
         continue;
       }
       if ((m = DROP_RE.exec(stmt))) {
-        policies.delete(`${m[2].toLowerCase()}::${m[1]}`);
+        policies.delete(`${m[3].toLowerCase()}::${policyName(m)}`);
       }
     }
   }
@@ -517,12 +589,15 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     ).toEqual([]);
   });
 
-  it('freezes the current blast radius at exactly 214 inline cross-table policies', () => {
+  it('freezes the current blast radius at exactly 242 inline cross-table policies', () => {
     // The audit found ~141 inline policies in the BASELINE; the whole effective
-    // chain (660 policies / 380 RLS tables) carries 214. This pins that number so
-    // any drift (up = new violation, down = un-pruned ledger) trips a guard above.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(214);
-    expect(detectedRiskKeys().length).toBe(214);
+    // chain (713 policies) carries 242 AFTER Phase 0a.1 widened policy-NAME matching
+    // to also see UNQUOTED-name policies (was 214 with the quoted-only regex; the 28
+    // newly-visible policies all carry unquoted names — see the Phase 0a.1 block in
+    // GRANDFATHERED_INLINE_POLICIES). This pins the number so any drift (up = new
+    // violation, down = un-pruned ledger) trips a guard above.
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(242);
+    expect(detectedRiskKeys().length).toBe(242);
   });
 });
 
@@ -623,5 +698,100 @@ describe('generalized RLS recursion guard: detector self-test', () => {
       ' ',
     );
     expect(detectInlineCrossTable('students', refJoin)).toEqual([]);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 4. UNQUOTED POLICY-NAME SELF-TEST (Phase 0a.1) — proves the widened name regex
+//    now SEES bare-identifier policies that the quoted-only regex would have missed
+//    entirely. The recursion-detection itself is name-agnostic, so the real risk
+//    closed here is the PARSING blind spot: an unquoted-name policy was never even
+//    registered, so it could never be flagged. These tests exercise CREATE_RE /
+//    DROP_RE / policyName directly + the same per-statement reduction parseChain
+//    uses, independent of the live chain.
+// ════════════════════════════════════════════════════════════════════════════
+describe('generalized RLS recursion guard: unquoted policy-name coverage (Phase 0a.1)', () => {
+  // The exact false-negative shape the old guard hid: an UNQUOTED-name policy on
+  // students inlining class_students (a different RLS table) — the TSB-4 class.
+  const UNQUOTED_RECURSIVE = `CREATE POLICY teacher_inline ON public.students FOR SELECT TO authenticated
+    USING ( id IN ( SELECT student_id FROM public.class_students WHERE class_id = 1 ) )`.replace(
+    /\s+/g,
+    ' ',
+  );
+
+  it('CREATE_RE now MATCHES an unquoted policy name and extracts name + table', () => {
+    const m = CREATE_RE.exec(UNQUOTED_RECURSIVE);
+    expect(m).not.toBeNull();
+    expect(policyName(m!)).toBe('teacher_inline'); // group 2 (unquoted), lower-cased
+    expect(m![3].toLowerCase()).toBe('students'); // table is still group 3
+  });
+
+  it('FLAGS the unquoted-name recursive policy as an inline cross-table risk', () => {
+    // Parse the name/table via the regex, then run the detector on the predicate —
+    // i.e. the full parse→detect path the old quoted-only regex short-circuited.
+    const m = CREATE_RE.exec(UNQUOTED_RECURSIVE)!;
+    const table = m[3].toLowerCase();
+    expect(detectInlineCrossTable(table, UNQUOTED_RECURSIVE)).toContain('class_students');
+  });
+
+  it('still MATCHES a quoted policy name (no regression from the widening)', () => {
+    const quoted = `CREATE POLICY "Teachers can view x" ON public.students FOR SELECT
+      USING ( id IN ( SELECT student_id FROM public.class_students ) )`.replace(/\s+/g, ' ');
+    const m = CREATE_RE.exec(quoted);
+    expect(m).not.toBeNull();
+    expect(policyName(m!)).toBe('Teachers can view x'); // group 1 (quoted), verbatim
+    expect(m![3].toLowerCase()).toBe('students');
+  });
+
+  it('DROP by unquoted name reduces the matching CREATE (DROP-before-CREATE still works)', () => {
+    // Mirror parseChain's per-statement reduction for a CREATE then DROP of the SAME
+    // unquoted-name policy: the key must be inserted then deleted, leaving nothing.
+    const drop = `DROP POLICY IF EXISTS teacher_inline ON public.students`.replace(/\s+/g, ' ');
+    const policies = new Map<string, string>();
+
+    const cm = CREATE_RE.exec(UNQUOTED_RECURSIVE)!;
+    policies.set(`${cm[3].toLowerCase()}::${policyName(cm)}`, UNQUOTED_RECURSIVE);
+    expect(policies.has('students::teacher_inline')).toBe(true);
+
+    const dm = DROP_RE.exec(drop)!;
+    expect(policyName(dm)).toBe('teacher_inline');
+    policies.delete(`${dm[3].toLowerCase()}::${policyName(dm)}`);
+    expect(policies.has('students::teacher_inline')).toBe(false);
+  });
+
+  it('folds unquoted-name case so a mixed-case DROP cancels a lower-case CREATE', () => {
+    // Postgres folds unquoted identifiers to lower case; the parser must too, or a
+    // `DROP POLICY Teacher_Inline` would fail to reduce a `CREATE POLICY teacher_inline`.
+    const create = `CREATE POLICY teacher_inline ON public.students USING ( true )`.replace(
+      /\s+/g,
+      ' ',
+    );
+    const dropMixed = `DROP POLICY Teacher_Inline ON public.students`.replace(/\s+/g, ' ');
+    const ck = (() => {
+      const m = CREATE_RE.exec(create)!;
+      return `${m[3].toLowerCase()}::${policyName(m)}`;
+    })();
+    const dk = (() => {
+      const m = DROP_RE.exec(dropMixed)!;
+      return `${m[3].toLowerCase()}::${policyName(m)}`;
+    })();
+    expect(ck).toBe('students::teacher_inline');
+    expect(dk).toBe(ck); // mixed-case DROP resolves to the same key → reduction works
+  });
+
+  it('the 28 Phase 0a.1 unquoted-name policies are present in the live detected set', () => {
+    // Anchor proof that the widening is what surfaced them: each is detected now.
+    const detected = new Set(detectedRiskKeys());
+    for (const k of [
+      'adaptive_interventions::adaptive_interventions_teacher_select',
+      'learner_twin_snapshots::learner_twin_snapshots_teacher_select',
+      'teacher_remediation_assignments::teacher_remediation_assignments_teacher_select',
+      'board_score_predictions::board_score_predictions_student_select',
+      'parent_cheers::parent_cheers_guardian_select',
+    ]) {
+      expect(detected.has(k), `Phase 0a.1 unquoted-name policy "${k}" should be detected`).toBe(
+        true,
+      );
+    }
   });
 });

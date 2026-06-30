@@ -6348,8 +6348,9 @@ and REG-211 (P15 — a resolved student role is always hydrated to a non-null `s
 Source: `docs/superpowers/plans/2026-07-02-xc3-systemic-rls-defense-in-depth.md` §5 (Phase 0a).
 
 **Why.** REG-210 guards the TSB-4 infinite-recursion class for `public.students` ONLY. The XC-3
-audit found the pattern is SYSTEMIC: ~141 of 522 baseline policies (214 across the whole effective
-chain) inline a SECURITY-INVOKER cross-table subquery that re-enters another RLS-enabled table —
+audit found the pattern is SYSTEMIC: ~141 of 522 baseline policies (242 across the whole effective
+chain after the Phase 0a.1 unquoted-name widening — was 214 under the original quoted-only name
+regex) inline a SECURITY-INVOKER cross-table subquery that re-enters another RLS-enabled table —
 every one a latent edge that can close a TSB-4-style `students→…→students` cycle the moment a
 back-edge is added. We cannot retroactively rewrite all of them now, so Phase 0a FREEZES the
 surface: a generalized static guard across ALL tables that fails the moment a NEW or RENAMED policy
@@ -6358,7 +6359,7 @@ DEFINER helper) table by table, ratcheting the count DOWN.
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-212 | `rls_no_cross_table_recursion_generalized` | P8: parses the full root migration chain (baseline + root `*.sql` in timestamp order; `_legacy/` excluded), builds `R` = every table with effective `ENABLE ROW LEVEL SECURITY` (≥270), reduces every CREATE/DROP POLICY on EVERY table to the FINAL effective set (DROPs applied in order), and flags a surviving policy as a recursion risk iff its `USING`/`WITH CHECK` inlines a `FROM`/`JOIN` over `b ∈ R, b ≠ policyTable`. EXEMPT: self-references (`b===T`), foreign-schema relations (`auth.`/`vault.`), non-RLS reference tables, and SECURITY DEFINER helper CALLS (`is_teacher_of`/`is_guardian_of`/`is_school_admin_of`/`is_admin`/`get_my_*`/`get_admin_school_id` — no FROM of their own). FREEZE: the detected risk set MUST be a SUBSET of the hardcoded `GRANDFATHERED_INLINE_POLICIES` ledger (214 keys, `"<table>::<name>"`) — fails ONLY on a NEW/RENAMED inline cross-table policy. Plus: no STALE ledger entries (exact mirror of live debt → Phase-4 ratchet), count pinned at 214, the apex `students` carries only the one known grandfathered latent edge (`School admins can view school students`) while the fixed `Teachers can view students in their classes` + `students_select_merged` delegate to helpers and are NOT flagged (and the teacher-policy name is absent from the ledger, so re-adding the inline shape FAILS). Detector self-test (non-vacuous): FLAGS the old recursive TSB-4 text (inline `class_students`/`class_teachers`/`teachers`) and CLEARS the fixed `is_teacher_of(id)` form, a pure `auth.uid()` predicate, a helper-call combo, and a same-table self-ref; FLAGS an inline `guardian_student_links` join. Static SQL-text guard, no DB. | `src/__tests__/rls-no-cross-table-recursion.test.ts` | E | P8 |
+| REG-212 | `rls_no_cross_table_recursion_generalized` | P8: parses the full root migration chain (baseline + root `*.sql` in timestamp order; `_legacy/` excluded), builds `R` = every table with effective `ENABLE ROW LEVEL SECURITY` (≥270), reduces every CREATE/DROP POLICY on EVERY table to the FINAL effective set (DROPs applied in order), and flags a surviving policy as a recursion risk iff its `USING`/`WITH CHECK` inlines a `FROM`/`JOIN` over `b ∈ R, b ≠ policyTable`. EXEMPT: self-references (`b===T`), foreign-schema relations (`auth.`/`vault.`), non-RLS reference tables, and SECURITY DEFINER helper CALLS (`is_teacher_of`/`is_guardian_of`/`is_school_admin_of`/`is_admin`/`get_my_*`/`get_admin_school_id` — no FROM of their own). FREEZE: the detected risk set MUST be a SUBSET of the hardcoded `GRANDFATHERED_INLINE_POLICIES` ledger (242 keys, `"<table>::<name>"`) — fails ONLY on a NEW/RENAMED inline cross-table policy. Plus: no STALE ledger entries (exact mirror of live debt → Phase-4 ratchet), count pinned at 242, the apex `students` carries only the one known grandfathered latent edge (`School admins can view school students`) while the fixed `Teachers can view students in their classes` + `students_select_merged` delegate to helpers and are NOT flagged (and the teacher-policy name is absent from the ledger, so re-adding the inline shape FAILS). Detector self-test (non-vacuous): FLAGS the old recursive TSB-4 text (inline `class_students`/`class_teachers`/`teachers`) and CLEARS the fixed `is_teacher_of(id)` form, a pure `auth.uid()` predicate, a helper-call combo, and a same-table self-ref; FLAGS an inline `guardian_student_links` join. **Phase 0a.1 (XC-3) hardening:** the CREATE/DROP POLICY name matcher now accepts BOTH quoted (`"my policy"`) AND UNQUOTED (`my_policy`) identifiers — the original quoted-only regex was blind to unquoted-name policies (a false negative). The widening surfaced 28 previously-invisible unquoted-name inline policies (214 → 242), ALL on CHILD tables inlining a PARENT boundary table that does not read them back (none a live cycle; verified reaches-self=false for each) — frozen in the Phase 0a.1 block of the ledger. New self-tests prove an UNQUOTED-name recursive policy (`CREATE POLICY teacher_inline ON public.students USING (… FROM public.class_students …)`) is now matched + flagged, quoted names still match (no regression), DROP-by-unquoted-name still reduces the matching CREATE, and unquoted-name case is folded. Static SQL-text guard, no DB. | `src/__tests__/rls-no-cross-table-recursion.test.ts` | E | P8 |
 
 **Reconciliation of `rls-teacher-assigned-students.test.ts` (REG-209).** That file previously pinned
 the SHAPE of the SUPERSEDED *recursive* TSB-4 policy (`20260702010000`) — it asserted the inline
@@ -6376,15 +6377,17 @@ the inline roster join.
 - P8 (RLS boundary) — REG-212 generalizes REG-210's students-only intent to ALL RLS-enabled tables.
   It is a SOURCE-level static guard in the normal `npm test` lane (sibling to REG-210). The cycle is
   a property of the policy DEFINITION and is provable statically; the live-DB proof is complementary
-  and lives in the integration lane. The guard FREEZES the current 214-policy blast radius so the
+  and lives in the integration lane. The guard FREEZES the current 242-policy blast radius (214 +
+  the 28 unquoted-name policies surfaced by the Phase 0a.1 name-regex widening) so the
   recursion class cannot grow, and the grandfather ledger is the explicit, reviewable debt list that
   Phase 4 drains.
 
 ### Catalog total
 
 XC-3 Phase 0a adds REG-212 (P8 generalized cross-table-recursion freeze — no NEW/RENAMED policy on
-ANY table may inline a `FROM`/`JOIN` over a different RLS-enabled table; the current 214 inline
-policies are grandfathered and Phase 4 ratchets the ledger down) and reconciles the stale
+ANY table may inline a `FROM`/`JOIN` over a different RLS-enabled table; the current 242 inline
+policies — 214 original + 28 surfaced by the Phase 0a.1 unquoted-policy-name widening — are
+grandfathered and Phase 4 ratchets the ledger down) and reconciles the stale
 `rls-teacher-assigned-students.test.ts` (REG-209) onto the fixed `is_teacher_of(id)` end-state.
 **Total catalog: 179 entries (target: 35 — TARGET EXCEEDED).**
 
