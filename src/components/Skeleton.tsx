@@ -32,69 +32,110 @@ function Bone({ width = '100%', height = 16, radius = 8, className = '' }: {
   );
 }
 
-/** Dashboard skeleton — matches the real dashboard layout */
+/**
+ * Dashboard skeleton — mirrors the Alfa OS student dashboard
+ * (StudentOSDashboard + AppShell variant="split"): a compact header rail, the
+ * PRIMARY mission hero, the mastery snapshot, the BoardScore widget, then the
+ * subject roadmaps. Matching the real section order (hero → mastery → board →
+ * roadmaps) eliminates the first-paint layout shift the legacy Atlas skeleton
+ * caused. Warm-cream via the shared surface/border tokens (no dark mode);
+ * the hero placeholder carries a subtle warm wash through the stable
+ * --accent-warm channel (--orange-rgb is violet on the cosmic-light surface).
+ */
 export function DashboardSkeleton() {
   return (
-    <div className="mesh-bg min-h-dvh pb-nav">
-      {/* Header skeleton */}
-      <div className="page-header">
-        <div className="app-container py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Bone width={40} height={40} radius={20} />
-            <div className="space-y-1.5">
-              <Bone width={120} height={14} />
-              <Bone width={80} height={10} />
+    <div className="min-h-dvh" style={{ background: 'var(--bg)' }}>
+      <div className="mx-auto w-full max-w-2xl">
+        {/* Compact header rail — greeting + streak + XP chip + lang toggle. */}
+        <div className="flex items-center gap-3 px-4 py-4 w-full">
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <Bone width={150} height={20} />
+            <Bone width={110} height={12} />
+          </div>
+          <Bone width={48} height={24} radius={12} />
+          <Bone width={56} height={24} radius={12} />
+          <Bone width={36} height={24} radius={12} />
+        </div>
+
+        <div className="flex flex-col gap-5 px-4 pt-2 pb-6">
+          {/* 1. PRIMARY hero — Today's Mission. */}
+          <div
+            className="rounded-3xl p-5 md:p-6 space-y-3"
+            style={{
+              background: 'linear-gradient(135deg, var(--surface-1), rgb(var(--accent-warm-rgb) / 0.05))',
+              border: '1px solid var(--border)',
+              boxShadow: 'var(--shadow-md)',
+            }}
+          >
+            <Bone width={140} height={11} />
+            <Bone width="75%" height={26} />
+            <div className="space-y-2 pt-1">
+              <Bone height={64} radius={16} />
+              <Bone height={48} radius={16} />
             </div>
+            <Bone height={48} radius={16} className="mt-1" />
           </div>
-          <Bone width={40} height={40} radius={12} />
-        </div>
-      </div>
 
-      <div className="app-container py-5 space-y-4">
-        {/* Foxy Banner skeleton */}
-        <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: 'linear-gradient(135deg, #FFF7ED, #FEF3E2)' }}>
-          <Bone width={40} height={40} radius={20} />
-          <div className="flex-1 space-y-1.5">
-            <Bone width="80%" height={14} />
-            <Bone width="40%" height={10} />
-          </div>
-        </div>
-
-        {/* Progress snapshot skeleton */}
-        <div className="rounded-2xl p-4" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
-          <div className="flex justify-between mb-3">
-            <Bone width={120} height={28} />
-            <Bone width={60} height={28} radius={12} />
-          </div>
-          <Bone width="100%" height={8} radius={4} className="mb-3" />
-          <div className="flex justify-between">
-            <Bone width={100} height={12} />
-            <Bone width={80} height={12} />
-          </div>
-        </div>
-
-        {/* Quick actions skeleton */}
-        <div className="grid grid-cols-4 gap-2">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="rounded-2xl p-3 flex flex-col items-center gap-2" style={{ background: 'var(--surface-1)' }}>
-              <Bone width={28} height={28} radius={8} />
-              <Bone width="60%" height={10} />
+          {/* 2. Mastery snapshot. */}
+          <div
+            className="rounded-2xl p-4 space-y-3"
+            style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}
+          >
+            <div className="flex items-center justify-between">
+              <Bone width="40%" height={11} />
+              <Bone width={56} height={20} radius={10} />
             </div>
-          ))}
-        </div>
-
-        {/* Subject cards skeleton */}
-        <Bone width="40%" height={12} className="mb-2" />
-        <div className="grid grid-cols-2 gap-2">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="rounded-xl p-3 flex items-center gap-3" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
-              <Bone width={40} height={40} radius={20} />
-              <div className="flex-1 space-y-1">
-                <Bone width="70%" height={12} />
-                <Bone width="40%" height={10} />
+            <div className="flex items-center gap-3">
+              <Bone width={56} height={56} radius={28} />
+              <div className="flex-1 space-y-2">
+                <Bone width="40%" height={11} />
+                <Bone height={6} radius={3} />
               </div>
             </div>
-          ))}
+            <div className="space-y-2">
+              {[0, 1, 2].map((i) => (
+                <Bone key={i} height={54} radius={12} />
+              ))}
+            </div>
+          </div>
+
+          {/* 3. BoardScore widget — gauge + breakdown rows. */}
+          <div
+            className="rounded-3xl p-5 space-y-4"
+            style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)' }}
+          >
+            <div className="flex items-start justify-between">
+              <div className="space-y-1.5">
+                <Bone width={120} height={14} />
+                <Bone width={160} height={10} />
+              </div>
+              <Bone width={44} height={18} radius={9} />
+            </div>
+            <div className="rounded-2xl p-4 flex items-center gap-4" style={{ background: 'var(--surface-2)' }}>
+              <Bone width={84} height={84} radius={42} />
+              <div className="flex-1 space-y-2 pt-1">
+                <Bone height={22} width="55%" />
+                <Bone height={12} width="40%" />
+                <Bone height={12} width="60%" />
+              </div>
+            </div>
+            <Bone height={6} radius={3} />
+            <div className="space-y-2">
+              {[0, 1, 2].map((i) => (
+                <Bone key={i} height={56} radius={16} />
+              ))}
+            </div>
+          </div>
+
+          {/* 4. Subject roadmaps — section title + skill-tree rows. */}
+          <div className="space-y-3">
+            <Bone width="45%" height={12} />
+            <div className="space-y-2">
+              {[0, 1, 2].map((i) => (
+                <Bone key={i} height={64} radius={16} />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>

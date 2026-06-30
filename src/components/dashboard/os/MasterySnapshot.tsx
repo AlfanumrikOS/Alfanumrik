@@ -20,7 +20,7 @@
  */
 
 import { useMasteryOverview } from '@/lib/swr';
-import { Skeleton } from '@/components/ui';
+import { Skeleton, StatRing } from '@/components/ui';
 import {
   countBuckets,
   type MasteryOverviewRow,
@@ -40,8 +40,15 @@ interface BucketDef {
   /** Optional CTA shown only on needsRevision when count > 0 */
   ctaEn?: string;
   ctaHi?: string;
-  /** Brand hex — proportion bar segment, left border accent, number colour, bg tint */
-  hex: string;
+  /**
+   * Semantic colour token (NOT a literal hex). On the cosmic-light dashboard
+   * these resolve to the scoped, saturated mastery palette:
+   *   mastered      → --green   (#15803D)
+   *   learning      → --accent-warm (#E8581C, the stable warm channel)
+   *   needsRevision → --purple  (#7C3AED, deliberate violet accent)
+   * See the cosmic-light block in globals.css for the scoped re-declarations.
+   */
+  color: string;
 }
 
 const BUCKETS: BucketDef[] = [
@@ -50,14 +57,14 @@ const BUCKETS: BucketDef[] = [
     glyph: '✓',
     labelEn: 'Mastered',
     labelHi: 'महारत हासिल',
-    hex: '#16A34A',
+    color: 'var(--green, #15803D)',
   },
   {
     key: 'learning',
     glyph: '◑',
     labelEn: 'Learning',
     labelHi: 'सीख रहे हैं',
-    hex: '#E8581C',
+    color: 'var(--accent-warm, #E8581C)',
   },
   {
     key: 'needsRevision',
@@ -66,9 +73,15 @@ const BUCKETS: BucketDef[] = [
     labelHi: 'दोहराना जरूरी',
     ctaEn: 'Review now →',
     ctaHi: 'अभी दोहराओ →',
-    hex: '#8B5CF6',
+    color: 'var(--purple, #7C3AED)',
   },
 ];
+
+/** color-mix alpha helper — works for both var() tokens and hex, so the bg
+ *  tints and left-accent borders stay tied to the semantic colour token. */
+function tint(color: string, pct: number): string {
+  return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
+}
 
 export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProps) {
   const { data, isLoading, error } = useMasteryOverview(studentId);
@@ -100,10 +113,18 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
     );
   }
 
+  // Mastered share drives the summary ring (deliberately the positive signal).
+  const masteredPct = total > 0 ? Math.round((counts.mastered / total) * 100) : 0;
+
   return (
     <section
-      className="rounded-2xl p-4"
-      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+      className="os-reveal-card rounded-2xl p-4"
+      style={{
+        ['--reveal-i' as string]: '1',
+        background: 'var(--surface-1)',
+        border: '1px solid var(--border)',
+        boxShadow: 'var(--shadow-sm)',
+      }}
       aria-label={isHi ? 'महारत का सारांश' : 'Mastery snapshot'}
     >
       {/* ── Header ── */}
@@ -152,8 +173,12 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
           </p>
           <a
             href="/quiz"
-            className="inline-block rounded-xl px-4 py-2 text-sm font-semibold transition-colors hover:opacity-90"
-            style={{ background: '#F97316', color: '#fff' }}
+            className="inline-block rounded-xl px-4 py-2 text-sm font-semibold transition-all hover:opacity-90 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+            style={{
+              background: 'linear-gradient(135deg, var(--accent-warm, #E8581C), var(--accent-warm-strong, #C2440F))',
+              color: '#fff',
+              boxShadow: 'var(--shadow-glow)',
+            }}
           >
             {isHi ? 'क्विज़ शुरू करें →' : 'Start a quiz →'}
           </a>
@@ -161,30 +186,53 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
       ) : (
         <>
           {/*
-            Proportion bar — segmented strip encoding the three bucket shares.
-            No gap between segments: the boundary itself is informative.
-            Animates width on data load via CSS transition.
+            Summary ring — the positive "mastered" share as a premium animated
+            StatRing (Sora data-font center). Sits beside the segmented bar so the
+            student gets one hero number plus the full distribution at a glance.
+            The number duplicates the green segment (WCAG 1.4.1 — not colour-only).
           */}
-          <div
-            className="flex rounded-full overflow-hidden mb-4"
-            style={{ height: 6 }}
-            role="presentation"
-            aria-hidden="true"
-          >
-            {BUCKETS.map((b) => {
-              const pct = total > 0 ? (counts[b.key] / total) * 100 : 0;
-              return (
-                <div
-                  key={b.key}
-                  style={{
-                    width: `${pct}%`,
-                    background: b.hex,
-                    minWidth: pct > 0 ? 4 : 0,
-                    transition: 'width 0.5s cubic-bezier(0.4,0,0.2,1)',
-                  }}
-                />
-              );
-            })}
+          <div className="flex items-center gap-3 mb-4">
+            <StatRing value={masteredPct} size={56} strokeWidth={6} color="var(--green, #15803D)">
+              <div className="text-center leading-none">
+                <span
+                  className="block text-sm font-extrabold tabular-nums"
+                  style={{ color: 'var(--green, #15803D)' }}
+                >
+                  {masteredPct}%
+                </span>
+              </div>
+            </StatRing>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold" style={{ color: 'var(--text-2)' }}>
+                {isHi ? 'महारत हासिल' : 'Mastered'}
+              </p>
+              {/*
+                Proportion bar — segmented strip encoding the three bucket shares.
+                No gap between segments: the boundary itself is informative.
+                Animates width on data load via CSS transition.
+              */}
+              <div
+                className="flex rounded-full overflow-hidden mt-1.5"
+                style={{ height: 6 }}
+                role="presentation"
+                aria-hidden="true"
+              >
+                {BUCKETS.map((b) => {
+                  const pct = total > 0 ? (counts[b.key] / total) * 100 : 0;
+                  return (
+                    <div
+                      key={b.key}
+                      style={{
+                        width: `${pct}%`,
+                        background: b.color,
+                        minWidth: pct > 0 ? 4 : 0,
+                        transition: 'width 0.5s cubic-bezier(0.4,0,0.2,1)',
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           {/*
@@ -201,10 +249,10 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
               return (
                 <div
                   key={b.key}
-                  className="flex items-center gap-3 rounded-xl px-3"
+                  className="flex items-center gap-3 rounded-xl px-3 transition-colors"
                   style={{
-                    background: `${b.hex}0e`,
-                    borderLeft: `3px solid ${b.hex}`,
+                    background: tint(b.color, 6),
+                    borderLeft: `3px solid ${b.color}`,
                     paddingTop: hasCta ? '8px' : '10px',
                     paddingBottom: hasCta ? '8px' : '10px',
                   }}
@@ -215,7 +263,7 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
                   <span
                     className="shrink-0 font-extrabold tabular-nums leading-none"
                     style={{
-                      color: b.hex,
+                      color: b.color,
                       fontSize: '1.5rem',
                       lineHeight: 1,
                       minWidth: '2rem',
@@ -239,7 +287,7 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
                       <a
                         href="/quiz"
                         className="text-xs font-semibold mt-0.5 inline-block transition-opacity hover:opacity-70"
-                        style={{ color: b.hex }}
+                        style={{ color: b.color }}
                       >
                         {isHi ? b.ctaHi : b.ctaEn}
                       </a>

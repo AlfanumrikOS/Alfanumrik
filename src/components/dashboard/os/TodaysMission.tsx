@@ -21,8 +21,19 @@ import { useTodayQueue } from '@/lib/today/use-today-queue';
 import { todayIcon } from '@/lib/today/icon-map';
 import { todayCopy, deepLinkToHref } from '@/lib/today/copy';
 import { ALWAYS_NATIVE_SCRIPT } from '@/lib/today/render';
+import { PremiumCard, GlowButton } from '@/components/ui';
 import type { CurriculumTopic } from '@/lib/types';
 import type { TodayQueueItem } from '@/lib/today/types';
+
+/* Stable warm-orange tints. --orange-rgb is remapped to VIOLET under the
+   cosmic-light student surface, so warm tints route through --accent-warm-rgb
+   (re-pinned to burnt orange 232,88,28 in :root AND the cosmic-light block). */
+const WARM_06 = 'rgb(var(--accent-warm-rgb) / 0.06)';
+const WARM_10 = 'rgb(var(--accent-warm-rgb) / 0.10)';
+const WARM_15 = 'rgb(var(--accent-warm-rgb) / 0.15)';
+const WARM_20 = 'rgb(var(--accent-warm-rgb) / 0.20)';
+const WARM_25 = 'rgb(var(--accent-warm-rgb) / 0.25)';
+const WARM = 'var(--accent-warm, #E8581C)';
 
 interface TodaysMissionProps {
   isHi: boolean;
@@ -86,39 +97,45 @@ export default function TodaysMission({
   };
 
   return (
-    <section
-      className="os-mission rounded-3xl p-5 md:p-6 relative overflow-hidden"
-      style={{
-        background: 'var(--surface-1)',
-        border: '1px solid var(--border)',
-        boxShadow: 'var(--shadow-md)',
-      }}
-      aria-label={isHi ? 'आज का मिशन' : "Today's mission"}
+    <PremiumCard
+      glow
+      gradient
+      className="os-mission p-5 md:p-6 rounded-3xl"
     >
-      <p
-        className="text-[11px] font-bold uppercase tracking-[0.14em] mb-1.5"
-        style={{ color: 'var(--orange, #E8581C)' }}
-      >
-        <span aria-hidden="true" className="streak-flame mr-1.5">●</span>
-        {isHi ? 'आज का मिशन' : "Today's mission"}
-        {grade && (
-          <>
-            {' · '}
-            {isHi ? `कक्षा ${grade}` : `Class ${grade}`}
-          </>
-        )}
-      </p>
+      {/* Soft warm corner glow — the hero's signature warmth, kept warm via the
+          stable --accent-warm channel (NOT the violet-remapped --orange-rgb). */}
+      <div
+        className="pointer-events-none absolute -top-12 -left-10 w-48 h-48 rounded-full opacity-70"
+        aria-hidden="true"
+        style={{
+          background: `radial-gradient(circle, ${WARM_15} 0%, transparent 70%)`,
+        }}
+      />
+      <div className="relative" aria-label={isHi ? 'आज का मिशन' : "Today's mission"}>
+        <p
+          className="text-[11px] font-bold uppercase tracking-[0.16em] mb-2"
+          style={{ color: WARM }}
+        >
+          <span aria-hidden="true" className="streak-flame mr-1.5">●</span>
+          {isHi ? 'आज का मिशन' : "Today's mission"}
+          {grade && (
+            <>
+              {' · '}
+              {isHi ? `कक्षा ${grade}` : `Class ${grade}`}
+            </>
+          )}
+        </p>
 
-      <h1
-        className="text-xl md:text-2xl font-extrabold leading-tight"
-        style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}
-      >
-        {todaysTopic?.title
-          ? todaysTopic.title
-          : isHi
-            ? `चलो शुरू करें, ${firstName}`
-            : `Let's get going, ${firstName}`}
-      </h1>
+        <h1
+          className="text-2xl md:text-[1.7rem] font-bold leading-[1.15] tracking-[-0.01em]"
+          style={{ fontFamily: 'var(--font-serif)', color: 'var(--text-1)' }}
+        >
+          {todaysTopic?.title
+            ? todaysTopic.title
+            : isHi
+              ? `चलो शुरू करें, ${firstName}`
+              : `Let's get going, ${firstName}`}
+        </h1>
 
       {/* Learner-loop queue — powered by /api/v2/today */}
       <div className="mt-3 flex flex-col gap-2">
@@ -138,16 +155,16 @@ export default function TodaysMission({
                 onClick={() => router.push(deepLinkToHref(queueData.primary.deepLink))}
                 className="w-full text-center rounded-2xl px-5 py-5 transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
                 style={{
-                  background: 'linear-gradient(135deg, rgba(232,88,28,0.10), rgba(245,158,11,0.10))',
-                  border: '1.5px solid rgba(232,88,28,0.25)',
+                  background: `linear-gradient(135deg, ${WARM_10}, ${WARM_06})`,
+                  border: `1.5px solid ${WARM_25}`,
                 }}
                 data-testid="mission-primary-action"
                 aria-label={isHi ? 'डायग्नोस्टिक शुरू करें' : 'Begin diagnostic'}
               >
                 <div className="text-4xl mb-2" aria-hidden="true">🧭</div>
                 <p
-                  className="text-base font-extrabold mb-1"
-                  style={{ color: 'var(--text-1)', fontFamily: 'var(--font-display)' }}
+                  className="text-lg font-bold mb-1"
+                  style={{ color: 'var(--text-1)', fontFamily: 'var(--font-serif)' }}
                 >
                   {isHi ? 'डायग्नोस्टिक शुरू करें' : 'Start your diagnostic'}
                 </p>
@@ -156,12 +173,15 @@ export default function TodaysMission({
                     ? '10 मिनट · Foxy आपका पर्सनलाइज्ड प्लान बनाएगा'
                     : '10 min · Foxy will personalise your study plan'}
                 </p>
-                <div
+                <span
                   className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold text-white"
-                  style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)' }}
+                  style={{
+                    background: `linear-gradient(135deg, ${WARM}, var(--accent-warm-strong, #C2440F))`,
+                    boxShadow: 'var(--shadow-glow)',
+                  }}
                 >
                   {isHi ? 'शुरू करें' : 'Begin diagnostic'} →
-                </div>
+                </span>
               </button>
             ) : (
               <>
@@ -171,8 +191,9 @@ export default function TodaysMission({
                   onClick={() => router.push(deepLinkToHref(queueData.primary.deepLink))}
                   className="w-full text-left flex items-center gap-3 rounded-2xl px-4 py-3 transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
                   style={{
-                    background: 'rgb(var(--orange-rgb) / 0.06)',
-                    border: '1px solid rgb(var(--orange-rgb) / 0.15)',
+                    background: WARM_06,
+                    border: `1px solid ${WARM_15}`,
+                    boxShadow: 'var(--shadow-sm)',
                   }}
                   data-testid="mission-primary-action"
                 >
@@ -248,8 +269,8 @@ export default function TodaysMission({
           <div
             className="rounded-2xl px-4 py-4"
             style={{
-              background: 'linear-gradient(135deg, rgba(232,88,28,0.06), rgba(245,158,11,0.06))',
-              border: '1.5px solid rgba(232,88,28,0.15)',
+              background: `linear-gradient(135deg, ${WARM_06}, ${WARM_10})`,
+              border: `1.5px solid ${WARM_15}`,
             }}
             data-testid="mission-empty-state"
             role="status"
@@ -271,9 +292,9 @@ export default function TodaysMission({
                 onClick={() => router.push('/learn')}
                 className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-bold transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2"
                 style={{
-                  background: 'rgb(var(--orange-rgb) / 0.10)',
-                  border: '1px solid rgb(var(--orange-rgb) / 0.20)',
-                  color: 'var(--orange, #E8581C)',
+                  background: WARM_10,
+                  border: `1px solid ${WARM_20}`,
+                  color: WARM,
                 }}
                 data-testid="mission-empty-cta"
               >
@@ -296,27 +317,39 @@ export default function TodaysMission({
         )}
       </div>
 
-      {/* Always-present primary CTA — the single dominant action. */}
-      <button
-        type="button"
-        onClick={beginLesson}
-        className="mt-2 inline-flex items-center justify-center gap-2 w-full md:w-auto px-6 rounded-2xl font-bold text-sm text-white transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-        style={{
-          background: 'linear-gradient(135deg, var(--orange, #E8581C), #C9831A)',
-          minHeight: 48,
-        }}
-      >
-        <span>
-          {todaysTopic
-            ? isHi
-              ? `पाठ शुरू करो · ${displaySubjectName(subjectCode)}`
-              : `Begin lesson · ${displaySubjectName(subjectCode)}`
-            : isHi
-              ? 'आज का पाठ चुनो'
-              : "Pick today's lesson"}
-        </span>
-        <span aria-hidden="true">→</span>
-      </button>
-    </section>
+        {/* Always-present primary CTA — the single dominant warm action.
+            GlowButton paints from --orange / --orange-light, which are VIOLET
+            under the cosmic-light surface. We scope-override those two tokens to
+            the stable warm channel on this wrapper ONLY, so the button renders
+            burnt-orange (with its CSS-only shimmer) without touching GlowButton
+            or the global cosmic remap. */}
+        <div
+          className="mt-4"
+          style={{
+            ['--orange' as string]: 'var(--accent-warm, #E8581C)',
+            ['--orange-light' as string]: 'var(--accent-warm-strong, #C2440F)',
+          }}
+        >
+          <GlowButton
+            size="lg"
+            fullWidth
+            onClick={beginLesson}
+            className="md:w-auto"
+            icon={<span aria-hidden="true">▶</span>}
+          >
+            <span>
+              {todaysTopic
+                ? isHi
+                  ? `पाठ शुरू करो · ${displaySubjectName(subjectCode)}`
+                  : `Begin lesson · ${displaySubjectName(subjectCode)}`
+                : isHi
+                  ? 'आज का पाठ चुनो'
+                  : "Pick today's lesson"}
+            </span>
+            <span aria-hidden="true" className="ml-1">→</span>
+          </GlowButton>
+        </div>
+      </div>
+    </PremiumCard>
   );
 }

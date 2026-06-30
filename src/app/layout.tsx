@@ -6,6 +6,7 @@ import type { Metadata, Viewport } from 'next';
 import { AuthProvider } from '@/lib/AuthContext';
 import { CosmicThemeProvider } from '@/lib/cosmic-theme';
 import { cosmicFontVars } from '@/lib/cosmic-fonts';
+import { momentumFontClass, momentumFontVars } from '@/lib/momentum-fonts';
 import { SchoolProvider } from '@/lib/SchoolContext';
 import { TenantConfigProvider } from '@/lib/tenant-domain/client';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -94,7 +95,16 @@ export default function RootLayout({
     // They are consumed exclusively inside the html[data-design="cosmic"] scope
     // in globals.css, so when ff_cosmic_redesign_v1 is OFF (no data-design
     // attribute) they have zero visual effect — the app stays pixel-identical.
-    <html lang="en" className={cosmicFontVars} suppressHydrationWarning>
+    // momentumFontClass mounts the self-hosted next/font variables
+    // (--font-fraunces/--font-jakarta/--font-sora); momentumFontVars maps them
+    // onto the canonical --font-display/--font-body/--font-serif names that
+    // globals.css already consumes, with Devanagari fallbacks for Hindi.
+    <html
+      lang="en"
+      className={`${cosmicFontVars} ${momentumFontClass}`}
+      style={momentumFontVars}
+      suppressHydrationWarning
+    >
       <head>
         {/*
           color-scheme: REVERSED 2026-05-11 — dark mode (#705/#706) caused
@@ -175,14 +185,16 @@ export default function RootLayout({
               "}catch(e){}})();",
           }}
         />
-        <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
-        <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=Sora:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
-          rel="stylesheet"
-        />
+        {/*
+          Fonts are now SELF-HOSTED via next/font/google (see
+          src/lib/momentum-fonts.ts, mounted on <html> above). This removes the
+          render-blocking raw Google Fonts <link rel="stylesheet"> and the
+          fonts.googleapis.com / fonts.gstatic.com preconnect+dns-prefetch hints
+          that only existed to serve it — next/font inlines @font-face with
+          display:swap and serves the files from our own origin (helps P10 +
+          first paint). Re-add origin hints here only if a NEW third-party font
+          origin is introduced.
+        */}
         <JsonLd />
       </head>
       <body>

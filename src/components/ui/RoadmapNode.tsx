@@ -47,11 +47,14 @@ const STATUS_GLYPH: Record<RoadmapNodeStatus, string> = {
 
 // Ring colours mirror the MasteryRing thresholds + dashboard palette. These
 // are the VISUAL reinforcement; the glyph + numeric label carry the meaning so
-// colour is never the sole channel.
+// colour is never the sole channel. Semantic tokens (no literal brand hex):
+//   mastered → --green ; learning → --accent-warm (stable warm channel, since
+//   --orange is violet on the cosmic-light surface) ; needs-revision → --purple
+//   (deliberate violet accent) ; locked → --text-3.
 const STATUS_COLOR: Record<RoadmapNodeStatus, string> = {
-  mastered: 'var(--green, #16A34A)',
-  learning: 'var(--orange, #E8581C)',
-  'needs-revision': '#8B5CF6',
+  mastered: 'var(--green, #15803D)',
+  learning: 'var(--accent-warm, #E8581C)',
+  'needs-revision': 'var(--purple, #7C3AED)',
   locked: 'var(--text-3, #9CA3AF)',
 };
 
@@ -92,7 +95,9 @@ export function RoadmapNode({
         // Inline custom property feeds the CSS-only staggered reveal.
         ['--stagger-i' as string]: String(index),
         background: isLocked ? 'var(--surface-2)' : 'var(--surface-1)',
-        border: `1px solid ${isLocked ? 'var(--border)' : `${color}33`}`,
+        // color-mix keeps the hairline tinted to the status colour for BOTH
+        // var() tokens and hex (the old `${color}33` was invalid for var tokens).
+        border: `1px solid ${isLocked ? 'var(--border)' : `color-mix(in srgb, ${color} 22%, transparent)`}`,
         boxShadow: isLocked ? 'none' : 'var(--shadow-sm)',
         opacity: isLocked ? 0.6 : 1,
         minHeight: 48, // AAA touch target

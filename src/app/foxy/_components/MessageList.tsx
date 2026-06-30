@@ -247,9 +247,9 @@ export function MessageList({
                   disabled={savedMessageIds.has(msg.id)}
                   className="text-[10px] font-bold px-2.5 py-1 rounded-lg transition-all active:scale-95 disabled:cursor-default"
                   style={{
-                    background: savedMessageIds.has(msg.id) ? '#16A34A10' : 'var(--surface-1)',
-                    color: savedMessageIds.has(msg.id) ? '#16A34A' : 'var(--text-3)',
-                    border: `1px solid ${savedMessageIds.has(msg.id) ? '#16A34A30' : 'var(--border)'}`,
+                    background: savedMessageIds.has(msg.id) ? 'color-mix(in srgb, var(--green) 10%, transparent)' : 'var(--surface-1)',
+                    color: savedMessageIds.has(msg.id) ? 'var(--green)' : 'var(--text-3)',
+                    border: `1px solid ${savedMessageIds.has(msg.id) ? 'color-mix(in srgb, var(--green) 30%, transparent)' : 'var(--border)'}`,
                   }}
                 >
                   {savedMessageIds.has(msg.id)
