@@ -6230,3 +6230,55 @@ teacher visibility; backup table RLS-protected; no DROP; reader not repointed).
 **Total catalog: 175 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Remediation — AO-10b: Historical Grade Backfill + Write-Path Default Fix (P5) — 2026-06-30
+
+The AO-10b migration `20260702070000_ao10b_backfill_student_grade_p5.sql` closes the P5
+grade-format gap at the DATA layer (the read layer was already coerced by PR D / AO-10).
+**Part A (data backfill)** rewrites legacy/prefixed `students.grade` values
+("Grade 9", "Class 11", "Grade-7", "11th", " 8 ", …) to the bare in-range digit string using
+`substring(grade from '\d{1,2}')::int::text` — the SAME first-1-2-digit-[6,12] extraction as
+the TypeScript `normalizeGrade` read-coercion (`src/lib/identity/constants.ts:170-191`). It is
+FAIL-SAFE: the UPDATE is gated on `grade NOT IN ('6'..'12')` AND the embedded number
+`BETWEEN 6 AND 12`, so already-bare rows AND ambiguous / out-of-range / no-digit rows
+("Grade 5", "Grade 13", "Grade", NULL-ish) are LEFT UNTOUCHED. It NEVER invents the TS '9'
+safe default at the data layer (that default only applies at read time), and never writes an
+integer (`::int::text` → string). A read-only COUNT pre-flight runs first; an RLS-enabled,
+service-role-only backup table (`_ao10b_grade_backfill_backup`) snapshots every changed row
+for exact rollback; the snapshot INSERT is `NOT EXISTS`-guarded for replay-safety.
+**Part B (write-path fix)** `CREATE OR REPLACE`s the two onboarding RPCs whose baseline
+default literal re-accrued the "Grade N" shape — `create_student_profile` ('Grade 9' → '9')
+and `get_or_create_student` ('Grade 6' → '6') — so new rows are P5-conformant at write time
+and the backfill does not re-accrue. No DROP TABLE/COLUMN; fully idempotent
+(`IF NOT EXISTS`, `DROP POLICY IF EXISTS`, `CREATE OR REPLACE`, snapshot `NOT EXISTS` guard).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-209 | `ao10b_grade_backfill_extraction_and_writepath_defaults` | P5: the AO-10b migration backfills `students.grade` legacy "Grade N"→"N" using the SAME first-1-2-digit-[6,12] extraction as the TS normalizeGrade read-coercion (fail-safe — only clearly-parseable rows touched, ambiguous/out-of-range LEFT untouched, never an integer, RLS-protected reversible backup), and fixes the two onboarding write-path defaults (create_student_profile 'Grade 9'→'9', get_or_create_student 'Grade 6'→'6') so new rows are P5-conformant at write time and the backfill does not re-accrue; no DROP, idempotent | `src/__tests__/ao10b-grade-backfill.test.ts` | E | P5 |
+
+### Invariants covered by this section
+
+- P5 (grade format) — REG-209 source-pins (comment-tolerant) the SHAPE of the migration:
+  (1) EXTRACTION PARITY — the backfill UPDATE writes `substring(grade from '\d{1,2}')::int::text`
+  gated on `grade NOT IN ('6'..'12')` AND the embedded number `BETWEEN 6 AND 12` (already-bare,
+  out-of-range, and no-digit rows excluded), with a read-only two-bucket COUNT pre-flight;
+  (2) NO FORCED DEFAULT AT THE DATA LAYER — no constant `SET grade = '9'`/`'6'`/`'Grade N'`,
+  no COALESCE/CASE fallback that injects a default digit; (3) BACKUP TABLE RLS —
+  `_ao10b_grade_backfill_backup` is `CREATE TABLE IF NOT EXISTS` + `ENABLE ROW LEVEL SECURITY`
+  + service-role-only policy in the same migration; (4) WRITE-PATH DEFAULTS — both RPCs are
+  `CREATE OR REPLACE`d with the bare default and the OLD `'Grade 9'`/`'Grade 6'` literals are
+  gone from executable SQL; (5) NO DROP / IDEMPOTENT; (6) P5 — the SET target ends in `::text`,
+  no bare `::int` write. A behavioural-parity block exercises the live `normalizeGrade`
+  (the read-coercion the SQL mirrors) on the canonical legacy formats.
+- Lane note: SOURCE pin in the normal `npm test` lane (sibling to REG-200/REG-208's TSB-4
+  source pins), NOT the live-DB integration lane — the SQL's actual row-rewrite is proven in
+  the integration lane and deferred.
+
+### Catalog total
+
+AO-10b historical grade backfill + write-path default fix adds REG-209 (P5 data-layer grade
+normalization mirroring the TS normalizeGrade extraction, fail-safe + reversible + idempotent,
+plus the two onboarding RPC default flips that stop re-accrual).
+**Total catalog: 176 entries (target: 35 — TARGET EXCEEDED).**
+
+---
