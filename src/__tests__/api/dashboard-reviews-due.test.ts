@@ -56,7 +56,13 @@ vi.mock('@/lib/logger', () => ({
   },
 }));
 
-// ── supabaseAdmin mock ───────────────────────────────────────────────────────
+// ── supabase-server (RLS-scoped) mock ────────────────────────────────────────
+// XC-3 Phase 2 batch 2 (REG-218): the route now reads through the RLS-respecting
+// createSupabaseServerClient() instead of the RLS-bypassing service-role admin
+// client. The mock returns rows ONLY for what the concept_mastery_own SELECT
+// policy (student_id = get_my_student_id()) admits — exactly what RLS does on
+// the wire. An empty `data` models an RLS DENY (rows exist but the policy hides
+// them from a cross-user / unauthenticated caller).
 let _queryResult: { data: unknown; error: unknown } = { data: [], error: null };
 
 function setQueryResult(result: { data: unknown; error: unknown }) {
@@ -75,10 +81,10 @@ function chainMock() {
   return chain;
 }
 
-vi.mock('@/lib/supabase-admin', () => ({
-  supabaseAdmin: {
+vi.mock('@/lib/supabase-server', () => ({
+  createSupabaseServerClient: vi.fn(async () => ({
     from: () => chainMock(),
-  },
+  })),
 }));
 
 function makeRequest(): Request {
@@ -195,5 +201,66 @@ describe('GET /api/dashboard/reviews-due', () => {
     expect(allLogs).not.toContain('topic_id');
     // dueCount IS allowed in logs (aggregate count is the success metric).
     expect(allLogs).toContain('reviews_due_served');
+  });
+});
+
+// ── XC-3 Phase 2 batch 2 — RLS-at-the-request-path contract (REG-218) ────────
+// Proves the admin→server-client swap preserves the data contract for the OWNER
+// and fails CLOSED (count degrades to 0, no other student's review state leaks)
+// when RLS denies the read. With the service-role admin client this read ALWAYS
+// returned rows regardless of caller; under the RLS-scoped server client the
+// concept_mastery_own policy only admits the calling student's own rows.
+describe('GET /api/dashboard/reviews-due — RLS contract (admin→server migration)', () => {
+  it('authenticated owner: returns their own due-count with the unchanged response shape', async () => {
+    setAuthorized('owner-student-uuid');
+    // concept_mastery_own admits the owner's rows (ascending by next_review_date).
+    setQueryResult({
+      data: [
+        { next_review_date: '2026-06-01', mastery_probability: 0.40 },
+        { next_review_date: '2026-06-15', mastery_probability: 0.70 },
+      ],
+      error: null,
+    });
+
+    const res = await GET(makeRequest());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    // Byte-identical contract: the exact keys the admin-client version returned.
+    expect(body.data).toEqual({
+      dueCount: 2,
+      oldestDueDate: '2026-06-01', // head of the ascending-ordered result
+      estimatedMinutes: 2,          // max(2, ceil(2 * 0.5)) = 2
+    });
+  });
+
+  it('RLS denies the read (cross-user / unauthenticated session): count degrades to 0, no other student leaks', async () => {
+    // authorizeRequest still resolves a studentId (e.g. a stale/forged id), but
+    // the RLS-scoped server client returns NO concept_mastery rows because
+    // concept_mastery_own (student_id = get_my_student_id()) does not admit
+    // them. The route must report 0 due — never another student's review state.
+    setAuthorized('not-the-callers-student-uuid');
+    setQueryResult({ data: [], error: null }); // policy hides every row → RLS deny
+
+    const res = await GET(makeRequest());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toEqual({
+      dueCount: 0,
+      oldestDueDate: null,
+      estimatedMinutes: 2,
+    });
+  });
+
+  it('query/transport error: maps to 500 and does NOT emit a count payload', async () => {
+    setAuthorized('owner-student-uuid');
+    setQueryResult({ data: null, error: { message: 'connection reset' } });
+
+    const res = await GET(makeRequest());
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.data).toBeUndefined();
   });
 });

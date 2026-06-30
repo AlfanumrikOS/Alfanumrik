@@ -6583,3 +6583,76 @@ cross-user-fails-closed contract; admin-client allowlist ratcheted 273 → 272).
 **Total catalog: 184 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-218 — XC-3 Phase 2 (batch 2): student-own read route(s) migrated admin → server; allowlist 272 → 271
+
+**Why.** Continues the Phase 2 ledger DRAIN started by REG-217: swap student-own
+READ routes from the RLS-bypassing admin client (`@/lib/supabase-admin`) onto the
+RLS-respecting server client (`@/lib/supabase-server`) so RLS becomes a real
+second line of defense behind `authorizeRequest()`. The standing risk is the
+dashboard-incident class: a swap turns a working 200 into EMPTY/403 if the SELECT
+policy does not admit exactly what the route reads, OR if a NON-cookie (mobile
+Bearer) caller exists — the server client is cookie-only (`createServerClient` +
+`next/headers cookies()`; it never reads the `Authorization` header), so a Bearer
+caller would NULL `auth.uid()` at the RLS layer and break. Batch 2 therefore
+migrates ONLY routes that are BOTH provably policy-covered AND have no Bearer/mobile
+caller. **Net this batch: 1 route migrated** —
+`src/app/api/dashboard/reviews-due/route.ts`.
+
+**Migrated: `GET /api/dashboard/reviews-due`** (spaced-repetition due-count CTA).
+Single read; `authorizeRequest('progress.view_own', { requireStudentId: true })`
+unchanged; response shape `{ success, data:{ dueCount, oldestDueDate, estimatedMinutes } }`
+byte-identical. Caller transport verified COOKIE-only: the sole caller
+`src/components/dashboard/ReviewsDueCard.tsx` fetches via same-origin SWR `fetch(url)`
+(cookies auto-attached); the `mobile/` tree has ZERO `reviews-due` callers (mobile's
+only REST callers are `/api/student/daily-plan`, `/api/student/subjects`, `/api/foxy`,
+and the generated `/api/v2/*` client). Fail-CLOSED: an RLS deny (no own rows)
+degrades the count to 0 — no other student's review state can leak; a query/transport
+error maps to 500 with no payload.
+
+**RLS coverage proof (the gate against a 200 → empty regression).**
+
+| Read | Filter | Admitting SELECT policy (baseline) | Transport |
+|---|---|---|---|
+| `concept_mastery` | `student_id = studentId`, `next_review_date <= today`, `mastery_probability < 0.95`, `next_review_date >= academicYearStart` | `concept_mastery_own` — `USING (student_id = get_my_student_id())` (baseline `00000000000000`). `studentId` is `auth.studentId` from `authorizeRequest` (`SELECT id FROM students WHERE auth_user_id = authUserId`) — always the caller's OWN id, never arbitrary. For the active OWNER, `get_my_student_id()` (`SELECT id FROM students WHERE auth_user_id = auth.uid() AND is_active = true`) resolves the SAME id → result byte-identical to the admin-client version. | cookie (`ReviewsDueCard.tsx`); no mobile caller |
+
+Equivalence note: `authorizeRequest.studentId` lacks the `is_active = true` filter
+that `get_my_student_id()` carries — a (non-reachable-from-dashboard) INACTIVE
+student would get a fail-CLOSED empty count rather than data, which matches every
+other RLS-respecting learner-state read and never crosses students. Not a
+200 → 403 regression for any active caller.
+
+**Deferrals (proof-or-defer; every candidate under `src/app/api/{student,learner,pulse,dashboard}/**` enumerated):**
+
+| Route | Reason deferred |
+|---|---|
+| `src/app/api/student/daily-plan/route.ts` | **Mobile Bearer caller exists.** `mobile/lib/data/repositories/daily_plan_repository.dart` calls `GET /api/student/daily-plan` with `Authorization: Bearer <jwt>` (auth interceptor, `api_client.dart:83`). The cookie-only server client would NULL `auth.uid()` at RLS → `students_select_merged` denies → 404 `student_not_found` for every mobile caller. RLS coverage IS provable (`students_select_merged` own + `class_students` "Students can view own enrollment" + `classroom_lesson_plans` "Students can view classroom lesson plans" + `curriculum_topics` `topics_read_all`), but the caller-transport check fails. DEFER until a Bearer-aware server client (or mobile cutover) lands. |
+| `src/app/api/learner/next/route.ts` | NOT a read-route migration: its reads already run on `createSupabaseServerClient()`. The `supabase-admin` import is for the gated service-role WRITE-through (`scheduled_actions` upsert + RLS-locked event-bus publish). Legitimately stays on the ledger. |
+| `src/app/api/pulse/me/route.ts` | Routes through the shared `buildSingleStudentPulse()` helper (`src/lib/pulse/pulse-server.ts`) that also backs the CROSS-ROLE pulse routes and is intentionally admin-after-RBAC-gate (REG-121 `canAccessStudent` design); broad multi-table read surface not provable as a single-route swap. DEFER. |
+| `src/app/api/pulse/{class/[classId],school,student/[id]}/route.ts` | Cross-role lenses, not student-own; `canAccessStudent` boundary by design. Out of scope. |
+| `src/app/api/student/subjects/route.ts`, `src/app/api/student/chapters/route.ts` | Reads happen inside SECURITY DEFINER RPCs (`get_available_subjects`, chapter resolver) that bypass RLS regardless of client — swap is a no-op for RLS. Out of scope (and `subjects` also has a mobile caller). |
+| `src/app/api/student/{profile,preferences,scan-upload,shop/purchase,stem-observation,study-plan,exam-simulation,foxy-interaction}` | Not student-own read GETs (PATCH/POST writes or non-read handlers). Out of scope for this read-route batch. |
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-218 | `GET /api/dashboard/reviews-due — RLS contract (admin→server migration)` | P8/P9: with the RLS-scoped server client mocked, an authenticated OWNER receives the byte-identical `{ dueCount, oldestDueDate, estimatedMinutes }` shape (private cache header preserved); an RLS deny (mocked `concept_mastery` read returns no rows for a cross-user/forged `studentId`) degrades to `{ dueCount:0, oldestDueDate:null, estimatedMinutes:2 }` — fails CLOSED, no other student's review state leaks; a query/transport error maps to `500 { success:false }` with NO `data`. The allowlist guard pins the ledger ratchet 272 → 271 (route pruned from `scripts/admin-client-allowlist.json`, `count` + `EXPECTED_COUNT` decremented; `detected === allowlist`). | `src/__tests__/api/dashboard-reviews-due.test.ts`, `src/__tests__/api-admin-client-allowlist.test.ts`, `scripts/admin-client-allowlist.json` | E | P8, P9 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) — `concept_mastery` read now executes on the RLS-respecting
+  `supabase-server` client, covered by `concept_mastery_own`; a non-owner read
+  fails closed (count 0).
+- P9 (RBAC enforcement) — `authorizeRequest(request, 'progress.view_own', { requireStudentId: true })`
+  is unchanged; permission gate + `studentId` resolution untouched.
+- Ledger ratchet (XC-3 Phase 0b mechanic) — `scripts/admin-client-allowlist.json`
+  drains 272 → 271 in the same change, keeping `detected === allowlist`.
+
+### Catalog total
+
+XC-3 Phase 2 batch 2 adds REG-218 (one student-own read route — `dashboard/reviews-due` —
+migrated admin → server with per-table RLS-coverage proof + caller-transport check;
+`daily-plan` DEFERRED on a confirmed mobile Bearer caller; admin-client allowlist
+ratcheted 272 → 271).
+**Total catalog: 185 entries (target: 35 — TARGET EXCEEDED).**
+
+---
