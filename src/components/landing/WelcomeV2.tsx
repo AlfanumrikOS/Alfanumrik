@@ -3,7 +3,6 @@
 import { useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { WelcomeV2Provider, useWelcomeV2 } from './WelcomeV2Context';
-import { LangProvider } from './LangToggle';
 import NavV2 from './NavV2';
 import HeroV2 from './HeroV2';
 import StatsV2 from './StatsV2';
@@ -93,11 +92,15 @@ function ThemedShell() {
 }
 
 export default function WelcomeV2() {
+  // NOTE (Wave 1): the old <LangProvider> (from ./LangToggle) wrapper was
+  // removed — it was vestigial. The entire WelcomeV2 tree reads language from
+  // WelcomeV2Context (useWelcomeV2) only; nothing under this tree calls
+  // useLang(). LangProvider/useLang remain in use by the *legacy* landing
+  // components (Hero.tsx, Footer.tsx, …) and the /for-* and /pricing routes,
+  // which mount their own LangProvider — so the export is untouched.
   return (
-    <LangProvider>
-      <WelcomeV2Provider>
-        <ThemedShell />
-      </WelcomeV2Provider>
-    </LangProvider>
+    <WelcomeV2Provider>
+      <ThemedShell />
+    </WelcomeV2Provider>
   );
 }

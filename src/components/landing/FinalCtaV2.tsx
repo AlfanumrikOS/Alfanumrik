@@ -2,20 +2,22 @@
 
 import Link from 'next/link';
 import { useWelcomeV2 } from './WelcomeV2Context';
+import { useReveal } from './useReveal';
 import { track } from '@/lib/posthog/client';
 import s from './welcome-v2.module.css';
 
 export default function FinalCtaV2() {
   const { isHi, t, role } = useWelcomeV2();
+  const revealRef = useReveal(120);
 
   return (
     <section className={s.finalCta} id="cta" aria-labelledby="final-cta-title">
       <div className="ornament deva" lang="hi" aria-hidden="true">९</div>
-      <div className={s.wrap}>
-        <div className="eye">
+      <div className={s.wrap} ref={revealRef as React.RefObject<HTMLDivElement>}>
+        <div className={`eye ${s.revealUp}`} data-reveal>
           {t('Section vi · the invitation', 'खंड vi · निमंत्रण')}
         </div>
-        <h2 id="final-cta-title">
+        <h2 id="final-cta-title" className={s.revealUp} data-reveal>
           {isHi ? (
             <>
               आज का गृहकार्य <em>अलग</em> हो सकता है।<br />
@@ -37,7 +39,7 @@ export default function FinalCtaV2() {
         <p className="devaSub" lang="hi">
           आज की पढ़ाई थोड़ी बेहतर हो सकती है। अभी शुरू कीजिये।
         </p>
-        <div className="ctaRow">
+        <div className={`ctaRow ${s.revealUp}`} data-reveal>
           <Link
             href="/login"
             className={`${s.btn} ${s.btnPrimary} ${s.btnArrow}`}

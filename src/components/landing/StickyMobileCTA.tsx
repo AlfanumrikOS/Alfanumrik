@@ -16,7 +16,11 @@ export function StickyMobileCTA() {
 
   useEffect(() => {
     const heroCTA = document.getElementById('hero-cta');
-    const finalCTA = document.getElementById('final-cta');
+    // FinalCtaV2 renders id="cta" on its <section> (NavV2 also anchors to
+    // #cta). Earlier this watched "#final-cta" — which never existed — so the
+    // "hide on final CTA" branch never fired and the sticky bar overlapped the
+    // final CTA buttons. Reconciled to the real section id.
+    const finalCTA = document.getElementById('cta');
     if (!heroCTA) return;
 
     let heroOut = false;

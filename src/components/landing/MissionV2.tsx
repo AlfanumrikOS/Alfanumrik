@@ -1,6 +1,7 @@
 'use client';
 
 import { useWelcomeV2 } from './WelcomeV2Context';
+import { useReveal } from './useReveal';
 import s from './welcome-v2.module.css';
 
 interface Principle {
@@ -33,9 +34,10 @@ const PRINCIPLES: Principle[] = [
 
 export default function MissionV2() {
   const { isHi, t } = useWelcomeV2();
+  const revealRef = useReveal();
   return (
     <section className={s.mission} id="mission" aria-labelledby="mission-title">
-      <div className={s.wrap}>
+      <div className={s.wrap} ref={revealRef as React.RefObject<HTMLDivElement>}>
         <div className={s.missionHead}>
           <span className={s.label}>
             {t('Section · the why', 'खंड · हमारा प्रयोजन')}
@@ -48,7 +50,7 @@ export default function MissionV2() {
         </div>
 
         <div className={s.missionGrid}>
-          <article className={s.missionCol}>
+          <article className={`${s.missionCol} ${s.revealUp}`} data-reveal>
             <div className={s.missionRoman}>i.</div>
             <h3>{t('Vision', 'दृष्टिकोण')}</h3>
             <p>
@@ -59,7 +61,7 @@ export default function MissionV2() {
             </p>
           </article>
 
-          <article className={s.missionCol}>
+          <article className={`${s.missionCol} ${s.revealUp}`} data-reveal>
             <div className={s.missionRoman}>ii.</div>
             <h3>{t('Mission', 'मिशन')}</h3>
             <p>
@@ -70,7 +72,7 @@ export default function MissionV2() {
             </p>
           </article>
 
-          <article className={s.missionCol}>
+          <article className={`${s.missionCol} ${s.revealUp}`} data-reveal>
             <div className={s.missionRoman}>iii.</div>
             <h3>{t('Principles', 'सिद्धांत')}</h3>
             <ul className={s.missionList}>

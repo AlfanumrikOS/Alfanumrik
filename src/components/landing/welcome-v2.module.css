@@ -12,6 +12,11 @@
 
 /* ---------- DESIGN TOKENS (light) ---------- */
 .root {
+  /* INTENTIONAL DEVIATION (Alfa Momentum): the marketing surface keeps a
+     warmer "paper" cream (#F4ECDB) than the app shell's #FBF8F4. The deeper
+     warmth is load-bearing for the editorial print identity of the landing
+     page — it reads as a physical workbook page, not an app chrome. Kept on
+     purpose; do NOT reconcile to the app cream. */
   --cream: #F4ECDB;
   --cream-deep: #EADFC6;
   --cream-deeper: #efe6d2;
@@ -19,13 +24,20 @@
   --ink-soft: #2A241B;
   --ink-mute: #5B5141;
   --ink-deep: #1a160f;
-  --saffron: #E8581C;
+  /* TOKEN RECONCILIATION (Wave 1): these brand hexes already MATCH the global
+     canonical values, so they now reference the single source of truth in
+     globals.css instead of re-declaring the literal. Equality verified:
+       --saffron  #E8581C === --orange
+       --leaf     #16A34A === --green
+       --marigold #F5A623 === --gold
+     The -deep/-light shades stay local (no canonical twin). */
+  --saffron: var(--orange, #E8581C);
   --saffron-deep: #C84411;
   --peacock: #0F5C5F;
   --peacock-light: #1d8a4f;
-  --marigold: #F5A623;
+  --marigold: var(--gold, #F5A623);
   --vermilion: #DC2626;
-  --leaf: #16A34A;
+  --leaf: var(--green, #16A34A);
   --indigo: #4338CA;
   --success: #21a838;
   --success-bg: #dff3df;
@@ -41,7 +53,14 @@
   --pad: 20px;
   --tap: 48px;
 
-  --display: var(--font-newsreader, 'Newsreader', Georgia, serif);
+  /* TOKEN RECONCILIATION (Wave 1): the Alfa Momentum display serif is Fraunces
+     (self-hosted via the root layout's --font-serif). The landing now adopts it
+     for brand coherence with the rest of the product. The Devanagari display
+     fallback (--display-hi → Mukta) is preserved unchanged so Hindi headlines
+     stay legible. Newsreader is no longer referenced anywhere on /welcome (the
+     6 prior direct var(--font-newsreader) uses were repointed to var(--display)),
+     so its next/font loader was removed from welcome/layout.tsx for a P10 win. */
+  --display: var(--font-serif, 'Fraunces', Georgia, serif);
   --display-hi: var(--font-mukta, 'Mukta Vaani', 'Noto Sans Devanagari', sans-serif);
   --body: var(--font-inter, 'Inter', system-ui, sans-serif);
   --body-hi: var(--font-mukta, 'Mukta Vaani', 'Noto Sans Devanagari', sans-serif);
@@ -2510,7 +2529,7 @@
   margin-bottom: 32px;
 }
 .missionHead h2 {
-  font-family: var(--font-newsreader), serif;
+  font-family: var(--display);
   font-size: clamp(28px, 4vw, 44px);
   line-height: 1.1;
   font-weight: 500;
@@ -2543,7 +2562,7 @@
   margin-bottom: 6px;
 }
 .missionCol h3 {
-  font-family: var(--font-newsreader), serif;
+  font-family: var(--display);
   font-size: 22px;
   font-weight: 500;
   color: var(--ink);
@@ -2604,7 +2623,7 @@
   max-width: 720px;
 }
 .faqHead h2 {
-  font-family: var(--font-newsreader), serif;
+  font-family: var(--display);
   font-size: clamp(28px, 4vw, 44px);
   line-height: 1.1;
   font-weight: 500;
@@ -2638,7 +2657,7 @@
   padding: 18px 0;
   cursor: pointer;
   list-style: none;
-  font-family: var(--font-newsreader), serif;
+  font-family: var(--display);
   font-size: 17px;
   line-height: 1.4;
   color: var(--ink);
@@ -2655,7 +2674,7 @@
   letter-spacing: 0.5px;
 }
 .faqQText {
-  font-family: var(--font-newsreader), serif;
+  font-family: var(--display);
 }
 .faqQChev {
   font-size: 20px;
@@ -2689,7 +2708,7 @@
   margin-bottom: 20px;
 }
 .recognitionHead h3 {
-  font-family: var(--font-newsreader), serif;
+  font-family: var(--display);
   font-size: 22px;
   font-weight: 500;
   color: var(--ink);
@@ -2864,4 +2883,252 @@
 /* ─── DROPDOWN PANEL: ensure it appears over dark hero ─── */
 .dropdownPanel {
   z-index: 70;
+}
+
+/* ============================================================
+   ALFA MOMENTUM — WAVE 1 (Landing elevation). Append-only.
+   Warm energy made luxe: expressive editorial type, asymmetric
+   composition, crafted CSS-first motion, refined surfaces.
+   Every motion collapses under prefers-reduced-motion (block
+   at the very bottom of this section). Zero raster, zero deps.
+   ============================================================ */
+
+/* ---------- 1. EXPRESSIVE DISPLAY TYPE ----------
+   Fraunces is variable (opsz + ital). Crank optical-size up on
+   the big headlines so the serif reads display-grade (sharper
+   contrast, tighter spacing) rather than text-grade. */
+.heroH,
+.finalCta :global(h2),
+.showcaseHead :global(.left h2),
+.pricingHead :global(h2),
+.statsHead :global(h2),
+.spreadHead :global(h2) {
+  font-optical-sizing: auto;
+  font-variation-settings: 'opsz' 144;
+}
+.heroH :global(em),
+.finalCta :global(h2 em),
+.heroH :global(.devaLine em) {
+  /* Refined italic emphasis: lean on Fraunces' soft optical italic
+     instead of a synthesized slant. */
+  font-variation-settings: 'opsz' 144, 'SOFT' 40;
+}
+
+/* Hero headline: lift the timid floor (was 40px) and tighten leading +
+   tracking so it reads ultra-premium even on a 360px phone. The ceiling
+   stays generous (desktop keeps its big 132px via the existing rule cascade,
+   this only raises the small/mid end). */
+.heroH {
+  font-size: clamp(48px, 9vw + 8px, 132px);
+  line-height: 0.92;
+  letter-spacing: -0.04em;
+}
+@media (min-width: 768px) {
+  .heroH { letter-spacing: -0.045em; }
+}
+
+/* Section headlines: adopt the brief's fluid clamp(48 → 88) family so the
+   conversion-path sections beat a 44px competitor cap. */
+.statsHead :global(h2) {
+  font-size: clamp(34px, 5vw + 12px, 56px);
+  letter-spacing: -0.03em;
+}
+.showcaseHead :global(.left h2),
+.pricingHead :global(h2),
+.spreadHead :global(h2) {
+  font-size: clamp(48px, 6vw, 88px);
+  letter-spacing: -0.035em;
+  line-height: 0.95;
+}
+.finalCta :global(h2) {
+  font-size: clamp(52px, 6.5vw, 100px);
+  line-height: 0.94;
+}
+
+/* ---------- 2. WARM AMBIENT GLOW-MESH (hero) ----------
+   Pure radial-gradient orbs in orange/marigold, very soft, drifting
+   slowly. Sits behind everything in the hero, above the paper. */
+.heroMesh {
+  position: absolute;
+  inset: -20% -10% auto -10%;
+  height: 140%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(42% 38% at 18% 22%,
+      rgb(var(--orange-rgb) / 0.20) 0%, rgb(var(--orange-rgb) / 0) 70%),
+    radial-gradient(36% 34% at 82% 12%,
+      rgba(245, 166, 35, 0.18) 0%, rgba(245, 166, 35, 0) 72%),
+    radial-gradient(48% 44% at 70% 78%,
+      rgb(var(--orange-rgb) / 0.12) 0%, rgb(var(--orange-rgb) / 0) 70%);
+  filter: blur(8px) saturate(1.05);
+  opacity: 0.9;
+  animation: meshDrift 22s ease-in-out infinite alternate;
+}
+@keyframes meshDrift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(-2.5%, 1.5%, 0) scale(1.06); }
+  100% { transform: translate3d(2%, -1.5%, 0) scale(1.03); }
+}
+/* Keep the giant Devanagari numeral as a deliberate signature: lift it a
+   touch and let it sit over the mesh as a crafted print ornament. */
+.heroNumeral {
+  z-index: 0;
+}
+
+/* ---------- 3. SCROLL-REVEAL (section-level) ----------
+   Mirrors StatsV2's IntersectionObserver pattern. The `revealUp` class is
+   added in JSX; `.is-revealed` is toggled by the observer. Subtle stagger
+   via inline --reveal-delay. */
+.revealUp {
+  opacity: 0;
+  transform: translateY(28px);
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+  will-change: opacity, transform;
+}
+.revealUp:global(.is-revealed) {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Opacity-only reveal for elements that already own a static `transform`
+   (e.g. the asymmetric showcase card offsets). Using transform here would
+   stomp the composition offset, so these fade in place. */
+.revealFade {
+  opacity: 0;
+  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+  will-change: opacity;
+}
+.revealFade:global(.is-revealed) {
+  opacity: 1;
+}
+
+/* ---------- 4. SHIMMER SWEEP on primary CTAs ----------
+   A soft warm light sweeps across the button on hover. */
+.btnPrimary {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.btnPrimary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    115deg,
+    transparent 25%,
+    rgba(255, 255, 255, 0.32) 48%,
+    rgba(255, 255, 255, 0.32) 52%,
+    transparent 75%
+  );
+  transform: translateX(-120%);
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.btnPrimary:hover::before,
+.btnPrimary:focus-visible::before {
+  transform: translateX(120%);
+}
+/* Lift the primary CTA shadow so it reads as a premium pressable surface. */
+.btnPrimary {
+  box-shadow: 0 8px 22px rgb(var(--orange-rgb) / 0.28);
+}
+.btnPrimary:hover {
+  box-shadow: 0 12px 30px rgb(var(--orange-rgb) / 0.38);
+}
+
+/* ---------- 5. SPRING HOVER on showcase + plan cards ---------- */
+.showCard,
+.plan {
+  transition:
+    transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-color 0.3s ease;
+}
+.showCard:hover {
+  transform: translateY(-6px);
+  box-shadow:
+    0 18px 40px rgba(14, 11, 7, 0.12),
+    0 2px 8px rgba(14, 11, 7, 0.06);
+}
+@media (min-width: 768px) {
+  /* On desktop the showcase cards already carry translateY offsets for the
+     asymmetric composition — compose the hover lift on top of those without
+     stomping the base offset. */
+  .showCard2:hover { transform: translateY(34px); }
+  .showCard3:hover { transform: translateY(80px); }
+}
+
+/* ---------- 6. REFINED SURFACES ----------
+   Elevate the hero phone mockup + showcase viz panels from wireframe to
+   premium product: layered shadow, hairline borders, subtle glass. */
+.phone {
+  box-shadow:
+    0 2px 4px rgba(14, 11, 7, 0.10),
+    0 18px 50px rgba(14, 11, 7, 0.28),
+    0 40px 90px rgba(14, 11, 7, 0.18),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.phoneFigure {
+  box-shadow: 0 30px 70px -28px rgba(14, 11, 7, 0.30);
+  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.phoneFigure:hover {
+  transform: rotate(-0.4deg) translateY(-4px);
+}
+.phoneScreen :global(.psCard) {
+  box-shadow: 0 4px 14px rgba(14, 11, 7, 0.06);
+  backdrop-filter: saturate(1.1);
+}
+.viz {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 8px 24px -12px rgba(14, 11, 7, 0.18);
+}
+.captionPill {
+  box-shadow: 0 4px 0 var(--ink), 0 10px 24px -8px rgb(var(--orange-rgb) / 0.5);
+}
+
+/* ---------- 7. ASYMMETRIC HAIRLINE / ESCAPING ACCENT ----------
+   A diagonal hairline that escapes the stats section frame — a small
+   crafted asymmetry that signals deliberate editorial composition. */
+.stats {
+  position: relative;
+  overflow: hidden;
+}
+.stats::after {
+  content: '';
+  position: absolute;
+  top: -40px;
+  right: -60px;
+  width: 320px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--saffron));
+  transform: rotate(-18deg);
+  transform-origin: right center;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* ---------- 8. REDUCED-MOTION: collapse every Wave 1 motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .heroMesh { animation: none; }
+  .revealUp,
+  .revealFade {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .btnPrimary::before { transition: none; }
+  .showCard,
+  .plan,
+  .phoneFigure { transition: none; }
+  .showCard:hover,
+  .showCard2:hover,
+  .showCard3:hover { transform: none; }
+  .phoneFigure:hover { transform: rotate(-1deg); }
 }

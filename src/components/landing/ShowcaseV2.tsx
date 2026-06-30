@@ -1,15 +1,17 @@
 'use client';
 
 import { useWelcomeV2 } from './WelcomeV2Context';
+import { useReveal } from './useReveal';
 import s from './welcome-v2.module.css';
 
 export default function ShowcaseV2() {
   const { isHi, t } = useWelcomeV2();
+  const revealRef = useReveal();
 
   return (
     <section className={s.showcase} id="showcase" aria-labelledby="showcase-title">
-      <div className={s.wrap}>
-        <div className={s.showcaseHead}>
+      <div className={s.wrap} ref={revealRef as React.RefObject<HTMLDivElement>}>
+        <div className={`${s.showcaseHead} ${s.revealUp}`} data-reveal>
           <div className="left">
             <div className={s.label}>
               {t('Section iii · the workbench', 'खंड iii · कार्यस्थल')}
@@ -31,7 +33,7 @@ export default function ShowcaseV2() {
         </div>
 
         <div className={s.showGrid}>
-          <article className={`${s.showCard} ${s.showCard1}`} aria-labelledby="card-1-title">
+          <article data-reveal className={`${s.showCard} ${s.showCard1} ${s.revealFade}`} aria-labelledby="card-1-title">
             <div className="lbl">{t('Tool i · the tutor', 'औज़ार i · शिक्षक')}</div>
             <div className="step" aria-hidden="true">i.</div>
             <h3 id="card-1-title">
@@ -57,7 +59,7 @@ export default function ShowcaseV2() {
             </div>
           </article>
 
-          <article className={`${s.showCard} ${s.showCard2}`} aria-labelledby="card-2-title">
+          <article data-reveal className={`${s.showCard} ${s.showCard2} ${s.revealFade}`} aria-labelledby="card-2-title">
             <div className="lbl">{t('Tool ii · the map', 'औज़ार ii · नक़्शा')}</div>
             <div className="step" aria-hidden="true">ii.</div>
             <h3 id="card-2-title">
@@ -100,7 +102,7 @@ export default function ShowcaseV2() {
             </div>
           </article>
 
-          <article className={`${s.showCard} ${s.showCard3}`} aria-labelledby="card-3-title">
+          <article data-reveal className={`${s.showCard} ${s.showCard3} ${s.revealFade}`} aria-labelledby="card-3-title">
             <div className="lbl">{t('Tool iii · the workbook', 'औज़ार iii · कार्यपुस्तिका')}</div>
             <div className="step" aria-hidden="true">iii.</div>
             <h3 id="card-3-title">

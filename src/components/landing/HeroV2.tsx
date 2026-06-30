@@ -123,6 +123,10 @@ export default function HeroV2() {
 
   return (
     <section className={s.hero} aria-labelledby="welcome-v2-hero-title">
+      {/* Alfa Momentum Wave 1: warm ambient glow-mesh (orange/marigold radial
+          orbs, very soft, slow drift). Pure CSS, decorative, motion collapses
+          under prefers-reduced-motion. */}
+      <div className={s.heroMesh} aria-hidden="true" />
       <div className={s.heroNumeral} lang="hi" aria-hidden="true">६</div>
       <div className={s.wrap}>
         <div className={s.heroGrid}>
