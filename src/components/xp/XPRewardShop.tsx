@@ -17,10 +17,10 @@ type RewardItem = typeof COIN_SHOP[number];
 /* ─── Category Colors ────────────────────────────────────── */
 
 const CATEGORY_COLORS: Record<string, string> = {
-  protection: '#3B82F6',
-  boost: '#F59E0B',
-  premium: '#9333EA',
-  reward: '#22C55E',
+  protection: 'var(--teal)',
+  boost: 'var(--gold)',
+  premium: 'var(--purple)',
+  reward: 'var(--green)',
 };
 
 /* ─── Component ──────────────────────────────────────────── */
@@ -69,7 +69,7 @@ export default function XPRewardShop({ balance, isHi, onRedeem }: XPRewardShopPr
           >
             {isHi ? '\u092A\u0941\u0930\u0938\u094D\u0915\u093E\u0930' : 'Rewards'}
           </h3>
-          <Badge color="var(--orange)" size="md">
+          <Badge color="var(--gold)" size="md">
             {balance.toLocaleString()} {isHi ? '\u0915\u0949\u0907\u0928\u094D\u0938' : 'Coins'}
           </Badge>
         </div>
@@ -84,10 +84,10 @@ export default function XPRewardShop({ balance, isHi, onRedeem }: XPRewardShopPr
               <button
                 key={reward.id}
                 onClick={() => setSelectedReward(reward)}
-                className="rounded-xl p-3 text-left transition-all active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
+                className="rounded-xl p-3 text-left transition-all active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-warm)] focus-visible:ring-offset-2"
                 style={{
-                  background: canAfford ? `${catColor}08` : 'var(--surface-2)',
-                  border: `1.5px solid ${canAfford ? `${catColor}30` : 'var(--border)'}`,
+                  background: canAfford ? `color-mix(in srgb, ${catColor} 6%, transparent)` : 'var(--surface-2)',
+                  border: `1.5px solid ${canAfford ? `color-mix(in srgb, ${catColor} 22%, transparent)` : 'var(--border)'}`,
                   opacity: canAfford ? 1 : 0.65,
                 }}
               >
@@ -154,7 +154,7 @@ export default function XPRewardShop({ balance, isHi, onRedeem }: XPRewardShopPr
               <span className="text-sm text-[var(--text-2)]">
                 {isHi ? '\u0932\u093E\u0917\u0924' : 'Cost'}
               </span>
-              <span className="text-sm font-bold" style={{ color: 'var(--orange)' }}>
+              <span className="text-sm font-bold" style={{ color: 'var(--gold)' }}>
                 {selectedReward.cost} {isHi ? '\u0915\u0949\u0907\u0928\u094D\u0938' : 'Coins'}
               </span>
             </div>
@@ -167,7 +167,7 @@ export default function XPRewardShop({ balance, isHi, onRedeem }: XPRewardShopPr
               </span>
               <span
                 className={`text-sm font-bold ${balance >= selectedReward.cost ? '' : 'text-red-600'}`}
-                style={balance >= selectedReward.cost ? { color: 'var(--green, #22C55E)' } : undefined}
+                style={balance >= selectedReward.cost ? { color: 'var(--green)' } : undefined}
               >
                 {balance.toLocaleString()} {isHi ? '\u0915\u0949\u0907\u0928\u094D\u0938' : 'Coins'}
               </span>
@@ -175,7 +175,7 @@ export default function XPRewardShop({ balance, isHi, onRedeem }: XPRewardShopPr
 
             {/* Success/Error state */}
             {redeemResult === 'success' && (
-              <p className="text-center text-sm font-bold" style={{ color: 'var(--green, #22C55E)' }}>
+              <p className="text-center text-sm font-bold" style={{ color: 'var(--green)' }}>
                 {isHi ? '\u0938\u092B\u0932! \u092A\u0941\u0930\u0938\u094D\u0915\u093E\u0930 \u092A\u094D\u0930\u093E\u092A\u094D\u0924 \u0939\u0941\u0906!' : 'Reward redeemed successfully!'}
               </p>
             )}

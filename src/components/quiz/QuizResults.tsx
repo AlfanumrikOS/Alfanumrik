@@ -363,7 +363,10 @@ export default function QuizResults({
       <main className="app-container py-6 space-y-5 max-w-lg mx-auto">
         {/* First Quiz Celebration */}
         {isFirstQuiz && (
-          <div className="bg-gradient-to-br from-purple-500 to-orange-400 rounded-2xl p-6 text-center text-white animate-scale-in">
+          <div
+            className="rounded-2xl p-6 text-center text-white animate-scale-in"
+            style={{ background: 'linear-gradient(135deg, var(--purple), var(--accent-warm))' }}
+          >
             <div className="text-5xl mb-3">🎊</div>
             <h2 className="text-2xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
               {isHi ? 'पहला क्विज़ पूरा!' : 'First Quiz Complete!'}
@@ -388,9 +391,9 @@ export default function QuizResults({
           <div
             className="rounded-xl px-3 py-2 text-center"
             style={{
-              background: 'rgba(59,130,246,0.06)',
-              border: '1px solid rgba(59,130,246,0.18)',
-              color: '#3B82F6',
+              background: 'color-mix(in srgb, var(--teal) 6%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--teal) 18%, transparent)',
+              color: 'var(--teal)',
             }}
             data-testid="quiz-results-replay-banner"
           >
@@ -405,7 +408,12 @@ export default function QuizResults({
             P7: bilingual via isHi. */}
         {results.xp_capped === true && (
           <div
-            className="rounded-xl bg-warm-100 border border-orange-300 text-orange-700 p-3"
+            className="rounded-xl p-3"
+            style={{
+              background: 'color-mix(in srgb, var(--accent-warm) 10%, white)',
+              border: '1px solid color-mix(in srgb, var(--accent-warm) 30%, transparent)',
+              color: 'var(--accent-warm-strong)',
+            }}
             data-testid="quiz-results-xp-cap-banner"
           >
             <p className="text-xs font-semibold leading-relaxed">
@@ -440,9 +448,9 @@ export default function QuizResults({
 
         {/* Stats Grid */}
         <div className="grid-stats">
-          <StatCard icon="✓" value={results.correct} label={isHi ? 'सही' : 'Correct'} color="#16A34A" />
-          <StatCard icon="✗" value={results.total - results.correct} label={isHi ? 'गलत' : 'Wrong'} color="#DC2626" />
-          <StatCard icon="✨" value={`+${results.xp_earned}`} label="XP" color="var(--orange)" />
+          <StatCard icon="✓" value={results.correct} label={isHi ? 'सही' : 'Correct'} color="var(--green)" />
+          <StatCard icon="✗" value={results.total - results.correct} label={isHi ? 'गलत' : 'Wrong'} color="var(--red)" />
+          <StatCard icon="✨" value={`+${results.xp_earned}`} label="XP" color="var(--accent-warm)" />
           <StatCard icon="⏱" value={formatTime(timer)} label={isHi ? 'समय' : 'Time'} color="var(--teal)" />
         </div>
 
@@ -470,12 +478,15 @@ export default function QuizResults({
             return (
               <div
                 className="rounded-2xl p-4 flex items-center gap-3"
-                style={{ background: 'rgba(22,163,74,0.06)', border: '1.5px solid rgba(22,163,74,0.15)' }}
+                style={{
+                  background: 'color-mix(in srgb, var(--green) 6%, transparent)',
+                  border: '1.5px solid color-mix(in srgb, var(--green) 15%, transparent)',
+                }}
               >
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                  style={{ background: 'rgba(22,163,74,0.12)' }}>🚀</div>
+                  style={{ background: 'color-mix(in srgb, var(--green) 12%, transparent)' }}>🚀</div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold" style={{ color: '#16A34A' }}>
+                  <p className="text-sm font-bold" style={{ color: 'var(--green)' }}>
                     {isHi ? 'शानदार! अब Level Up करो' : 'Great score! Ready to level up?'}
                   </p>
                   <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-3)' }}>
@@ -485,7 +496,7 @@ export default function QuizResults({
                 <button
                   onClick={() => router.push('/quiz')}
                   className="flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl transition-all active:scale-95"
-                  style={{ background: '#16A34A', color: '#fff' }}
+                  style={{ background: 'var(--green)', color: '#fff' }}
                 >
                   {isHi ? 'करो →' : 'Go →'}
                 </button>
@@ -495,12 +506,15 @@ export default function QuizResults({
             return (
               <div
                 className="rounded-2xl p-4 flex items-center gap-3"
-                style={{ background: 'rgba(232,88,28,0.06)', border: '1.5px solid rgba(232,88,28,0.15)' }}
+                style={{
+                  background: 'color-mix(in srgb, var(--accent-warm) 6%, transparent)',
+                  border: '1.5px solid color-mix(in srgb, var(--accent-warm) 15%, transparent)',
+                }}
               >
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                  style={{ background: 'rgba(232,88,28,0.12)' }}>🦊</div>
+                  style={{ background: 'color-mix(in srgb, var(--accent-warm) 12%, transparent)' }}>🦊</div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold" style={{ color: 'var(--orange)' }}>
+                  <p className="text-sm font-bold" style={{ color: 'var(--accent-warm)' }}>
                     {isHi ? 'Foxy तुम्हारी मदद कर सकती है!' : 'Foxy can help you improve!'}
                   </p>
                   <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-3)' }}>
@@ -510,7 +524,7 @@ export default function QuizResults({
                 <button
                   onClick={() => router.push(`/foxy?subject=${subjectParam}&mode=doubt`)}
                   className="flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl transition-all active:scale-95"
-                  style={{ background: 'var(--orange)', color: '#fff' }}
+                  style={{ background: 'var(--accent-warm)', color: '#fff' }}
                 >
                   {isHi ? 'पूछो →' : 'Ask →'}
                 </button>
@@ -520,12 +534,15 @@ export default function QuizResults({
             return (
               <div
                 className="rounded-2xl p-4 flex items-center gap-3"
-                style={{ background: 'rgba(59,130,246,0.06)', border: '1.5px solid rgba(59,130,246,0.15)' }}
+                style={{
+                  background: 'color-mix(in srgb, var(--teal) 6%, transparent)',
+                  border: '1.5px solid color-mix(in srgb, var(--teal) 15%, transparent)',
+                }}
               >
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                  style={{ background: 'rgba(59,130,246,0.12)' }}>💪</div>
+                  style={{ background: 'color-mix(in srgb, var(--teal) 12%, transparent)' }}>💪</div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold" style={{ color: '#3B82F6' }}>
+                  <p className="text-sm font-bold" style={{ color: 'var(--teal)' }}>
                     {isHi ? 'अच्छा काम! और अभ्यास करो' : 'Good effort! Keep practicing'}
                   </p>
                   <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-3)' }}>
@@ -535,7 +552,7 @@ export default function QuizResults({
                 <button
                   onClick={onRetry}
                   className="flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl transition-all active:scale-95"
-                  style={{ background: '#3B82F6', color: '#fff' }}
+                  style={{ background: 'var(--teal)', color: '#fff' }}
                 >
                   {isHi ? 'फिर से →' : 'Retry →'}
                 </button>
@@ -618,10 +635,10 @@ export default function QuizResults({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs font-semibold" style={{ color: 'var(--text-2)' }}>MCQ</span>
-                      <span className="text-xs font-bold" style={{ color: mcqPct >= 60 ? '#16A34A' : '#DC2626' }}>{mcqPct}%</span>
+                      <span className="text-xs font-bold" style={{ color: mcqPct >= 60 ? 'var(--green)' : 'var(--red)' }}>{mcqPct}%</span>
                     </div>
                     <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
-                      <div className="h-full rounded-full transition-all" style={{ width: `${mcqPct}%`, background: mcqPct >= 60 ? '#16A34A' : '#DC2626' }} />
+                      <div className="h-full rounded-full transition-all" style={{ width: `${mcqPct}%`, background: mcqPct >= 60 ? 'var(--green)' : 'var(--red)' }} />
                     </div>
                     <span className="text-[10px] text-[var(--text-3)] mt-0.5 block">
                       {mcqCorrect}/{mcqResponses.length} {isHi ? 'सही' : 'correct'}
@@ -636,10 +653,10 @@ export default function QuizResults({
                       <span className="text-xs font-semibold" style={{ color: 'var(--text-2)' }}>
                         {isHi ? 'लिखित' : 'Written'}
                       </span>
-                      <span className="text-xs font-bold" style={{ color: writtenPct >= 60 ? '#16A34A' : '#DC2626' }}>{writtenPct}%</span>
+                      <span className="text-xs font-bold" style={{ color: writtenPct >= 60 ? 'var(--green)' : 'var(--red)' }}>{writtenPct}%</span>
                     </div>
                     <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
-                      <div className="h-full rounded-full transition-all" style={{ width: `${writtenPct}%`, background: writtenPct >= 60 ? '#16A34A' : '#DC2626' }} />
+                      <div className="h-full rounded-full transition-all" style={{ width: `${writtenPct}%`, background: writtenPct >= 60 ? 'var(--green)' : 'var(--red)' }} />
                     </div>
                     <span className="text-[10px] text-[var(--text-3)] mt-0.5 block">
                       {writtenEarned}/{writtenPossible} {isHi ? 'अंक' : 'marks'}
@@ -728,13 +745,13 @@ export default function QuizResults({
             <div
               className="rounded-2xl p-4 flex items-center gap-4"
               style={{
-                background: 'linear-gradient(135deg, rgba(232,88,28,0.06), rgba(245,166,35,0.06))',
-                border: '1.5px solid rgba(232,88,28,0.18)',
+                background: 'linear-gradient(135deg, color-mix(in srgb, var(--accent-warm) 6%, transparent), color-mix(in srgb, var(--gold) 6%, transparent))',
+                border: '1.5px solid color-mix(in srgb, var(--accent-warm) 18%, transparent)',
               }}
             >
               <div
                 className="w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                style={{ background: 'rgba(232,88,28,0.12)' }}
+                style={{ background: 'color-mix(in srgb, var(--accent-warm) 12%, transparent)' }}
               >
                 🦊
               </div>
@@ -751,7 +768,7 @@ export default function QuizResults({
               <button
                 onClick={() => router.push(foxyHref)}
                 className="flex-shrink-0 text-sm font-bold px-4 py-2 rounded-xl transition-all active:scale-95"
-                style={{ background: 'var(--orange)', color: '#fff' }}
+                style={{ background: 'var(--accent-warm)', color: '#fff' }}
               >
                 {isHi ? 'पूछो →' : 'Ask →'}
               </button>
@@ -821,15 +838,15 @@ export default function QuizResults({
                   const misinterpretation = wrongResponses.filter(r => r.error_type === 'misinterpretation').length;
                   const total = wrongResponses.length;
                   const items = [
-                    { label: isHi ? 'लापरवाही' : 'Careless', count: careless, color: '#F59E0B', icon: '⚡' },
-                    { label: isHi ? 'अवधारणा' : 'Conceptual', count: conceptual, color: '#EF4444', icon: '🧠' },
-                    { label: isHi ? 'गलत समझ' : 'Misinterpretation', count: misinterpretation, color: '#8B5CF6', icon: '🔍' },
+                    { label: isHi ? 'लापरवाही' : 'Careless', count: careless, color: 'var(--gold)', icon: '⚡' },
+                    { label: isHi ? 'अवधारणा' : 'Conceptual', count: conceptual, color: 'var(--red)', icon: '🧠' },
+                    { label: isHi ? 'गलत समझ' : 'Misinterpretation', count: misinterpretation, color: 'var(--purple)', icon: '🔍' },
                   ];
                   return items.map(item => (
                     <div key={item.label} className="flex items-center gap-3">
                       <span className="text-xs w-5 text-center">{item.icon}</span>
                       <span className="text-xs font-semibold w-28" style={{ color: item.color }}>{item.label}</span>
-                      <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: `${item.color}15` }}>
+                      <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: `color-mix(in srgb, ${item.color} 12%, transparent)` }}>
                         <div className="h-full rounded-full transition-all" style={{ width: total > 0 ? `${(item.count / total) * 100}%` : '0%', background: item.color }} />
                       </div>
                       <span className="text-[10px] text-[var(--text-3)] w-12 text-right">
@@ -989,8 +1006,8 @@ export default function QuizResults({
                   key={question.id}
                   className="rounded-xl overflow-hidden"
                   style={{
-                    background: correct ? 'rgba(22,163,74,0.04)' : 'rgba(220,38,38,0.04)',
-                    border: `1px solid ${correct ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.2)'}`,
+                    background: correct ? 'color-mix(in srgb, var(--green) 4%, transparent)' : 'color-mix(in srgb, var(--red) 4%, transparent)',
+                    border: `1px solid ${correct ? 'color-mix(in srgb, var(--green) 15%, transparent)' : 'color-mix(in srgb, var(--red) 20%, transparent)'}`,
                   }}
                 >
                   {/* Header row */}
@@ -1009,9 +1026,9 @@ export default function QuizResults({
                     <span
                       className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
                       style={{
-                        background: correct ? '#16A34A'
-                          : (resp?.student_answer_text !== undefined && (resp?.marks_awarded ?? 0) > 0) ? '#F59E0B'
-                          : '#DC2626',
+                        background: correct ? 'var(--green)'
+                          : (resp?.student_answer_text !== undefined && (resp?.marks_awarded ?? 0) > 0) ? 'var(--gold)'
+                          : 'var(--red)',
                         color: '#fff',
                       }}
                     >
@@ -1052,17 +1069,17 @@ export default function QuizResults({
                           <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
                             style={{
                               background: (resp.marks_awarded ?? 0) >= (resp.marks_possible ?? 1)
-                                ? 'rgba(22,163,74,0.08)' : (resp.marks_awarded ?? 0) > 0
-                                ? 'rgba(245,158,11,0.08)' : 'rgba(220,38,38,0.06)',
+                                ? 'color-mix(in srgb, var(--green) 8%, transparent)' : (resp.marks_awarded ?? 0) > 0
+                                ? 'color-mix(in srgb, var(--gold) 8%, transparent)' : 'color-mix(in srgb, var(--red) 6%, transparent)',
                               border: `1px solid ${(resp.marks_awarded ?? 0) >= (resp.marks_possible ?? 1)
-                                ? 'rgba(22,163,74,0.2)' : (resp.marks_awarded ?? 0) > 0
-                                ? 'rgba(245,158,11,0.2)' : 'rgba(220,38,38,0.15)'}`,
+                                ? 'color-mix(in srgb, var(--green) 20%, transparent)' : (resp.marks_awarded ?? 0) > 0
+                                ? 'color-mix(in srgb, var(--gold) 20%, transparent)' : 'color-mix(in srgb, var(--red) 15%, transparent)'}`,
                             }}>
                             <span className="text-sm font-bold"
                               style={{
                                 color: (resp.marks_awarded ?? 0) >= (resp.marks_possible ?? 1)
-                                  ? '#16A34A' : (resp.marks_awarded ?? 0) > 0
-                                  ? '#F59E0B' : '#DC2626',
+                                  ? 'var(--green)' : (resp.marks_awarded ?? 0) > 0
+                                  ? 'var(--gold)' : 'var(--red)',
                               }}>
                               {resp.marks_awarded ?? 0}/{resp.marks_possible ?? 0} {isHi ? 'अंक' : 'marks'}
                             </span>
@@ -1081,7 +1098,7 @@ export default function QuizResults({
                           {/* Model answer (from explanation field) */}
                           {explanation && (
                             <div className="rounded-lg px-3 py-2 text-[11px] leading-relaxed" style={{ background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.12)', color: 'var(--text-2)' }}>
-                              <span className="font-semibold" style={{ color: '#3B82F6' }}>
+                              <span className="font-semibold" style={{ color: 'var(--teal)' }}>
                                 {isHi ? 'आदर्श उत्तर: ' : 'Model Answer: '}
                               </span>
                               {explanation}
@@ -1119,8 +1136,8 @@ export default function QuizResults({
                                 let bg = 'var(--surface-2)';
                                 let borderColor = 'transparent';
                                 let textColor = 'var(--text-3)';
-                                if (isCorrectOpt) { bg = 'rgba(22,163,74,0.1)'; borderColor = '#16A34A'; textColor = '#16A34A'; }
-                                else if (isSelected && !correct) { bg = 'rgba(220,38,38,0.08)'; borderColor = '#DC2626'; textColor = '#DC2626'; }
+                                if (isCorrectOpt) { bg = 'color-mix(in srgb, var(--green) 10%, transparent)'; borderColor = 'var(--green)'; textColor = 'var(--green)'; }
+                                else if (isSelected && !correct) { bg = 'color-mix(in srgb, var(--red) 8%, transparent)'; borderColor = 'var(--red)'; textColor = 'var(--red)'; }
                                 return (
                                   <div
                                     key={oi}
@@ -1164,7 +1181,7 @@ export default function QuizResults({
                       {!correct && (
                         <button
                           className="w-full rounded-lg py-2 px-3 flex items-center justify-center gap-2 text-xs font-semibold transition-colors"
-                          style={{ background: 'var(--orange)', color: '#fff' }}
+                          style={{ background: 'var(--accent-warm)', color: '#fff' }}
                           onClick={(e) => {
                             e.stopPropagation();
                             const subjectParam = selectedSubject || '';

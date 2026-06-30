@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 import { FoxyAvatar } from '@/components/ui';
+import { CELEBRATION_CONFETTI, WARM_CONFETTI, NEUTRAL_BURST } from '@/lib/confetti-palette';
 
 interface CelebrationOverlayProps {
   scorePercent: number;
@@ -51,7 +52,8 @@ export default function CelebrationOverlay({
   const gradeColor =
     scorePercent >= 80 ? 'var(--green)' :
     scorePercent >= 60 ? 'var(--teal)' :
-    scorePercent >= 40 ? 'var(--orange)' : 'var(--red)';
+    // warm channel so the "good" grade band reads warm-orange (not violet) under cosmic
+    scorePercent >= 40 ? 'var(--accent-warm)' : 'var(--red)';
 
   const message = isPerfect
     ? (isHi ? 'PERFECT!' : 'PERFECT!')
@@ -67,16 +69,17 @@ export default function CelebrationOverlay({
   const fireConfetti = useCallback(() => {
     if (typeof window === 'undefined') return;
 
-    const goldColors = ['#FFD700', '#FFA500', '#FF8C00', '#E8581C'];
-    const silverColors = ['#C0C0C0', '#A0A0A0', '#B8B8B8', '#D4D4D4'];
+    // Brand-aligned celebration palette (shared, brand-wide).
+    const goldColors = WARM_CONFETTI;
+    const silverColors = NEUTRAL_BURST;
 
     if (isPerfect) {
-      // Center burst
+      // Center burst — full brand mix (warm + gold + purple + green)
       confetti({
         particleCount: 100,
         spread: 80,
         origin: { y: 0.55 },
-        colors: [...goldColors, '#7C3AED', '#FF6B6B'],
+        colors: CELEBRATION_CONFETTI,
         disableForReducedMotion: true,
       });
       // Side bursts after a short delay
@@ -222,7 +225,7 @@ export default function CelebrationOverlay({
           style={{
             fontFamily: 'var(--font-display)',
             color: '#fff',
-            textShadow: `0 0 40px ${gradeColor}60`,
+            textShadow: `0 0 40px color-mix(in srgb, ${gradeColor} 38%, transparent)`,
           }}
         >
           {displayScore}%
@@ -239,7 +242,7 @@ export default function CelebrationOverlay({
             background: gradeColor,
             color: '#fff',
             fontFamily: 'var(--font-display)',
-            boxShadow: `0 4px 24px ${gradeColor}50`,
+            boxShadow: `0 4px 24px color-mix(in srgb, ${gradeColor} 31%, transparent)`,
           }}
         >
           {grade}
@@ -265,9 +268,10 @@ export default function CelebrationOverlay({
           <span
             className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-bold tabular-nums"
             style={{
-              background: 'rgba(232,88,28,0.2)',
-              border: '1px solid rgba(232,88,28,0.4)',
-              color: 'var(--orange-light)',
+              /* warm channel keeps the XP chip warm under cosmic */
+              background: 'rgb(var(--accent-warm-rgb) / 0.2)',
+              border: '1px solid rgb(var(--accent-warm-rgb) / 0.4)',
+              color: 'var(--accent-warm)',
             }}
           >
             +{displayXP} XP

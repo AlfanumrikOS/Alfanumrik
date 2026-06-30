@@ -59,11 +59,13 @@ export default function XPProgressRing({ totalXp, size = 'md', showLabel = true,
             stroke="var(--surface-2)"
             strokeWidth={dim.stroke}
           />
-          {/* Gradient definition */}
+          {/* Gradient definition — warm-orange → gold ("Alfa Momentum").
+              Uses the stable warm channel + gold token so the XP ring stays
+              warm under cosmic (where --orange remaps to violet). */}
           <defs>
             <linearGradient id={`xp-ring-grad-${size}`} x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#F97316" />
-              <stop offset="100%" stopColor="#F59E0B" />
+              <stop offset="0%" stopColor="var(--accent-warm)" />
+              <stop offset="100%" stopColor="var(--gold)" />
             </linearGradient>
           </defs>
           {/* Progress arc */}
@@ -113,7 +115,7 @@ export default function XPProgressRing({ totalXp, size = 'md', showLabel = true,
             className="font-bold leading-tight"
             style={{
               fontSize: dim.subSize + 2,
-              color: 'var(--orange)',
+              color: 'var(--accent-warm)',
               fontFamily: 'var(--font-display)',
             }}
           >

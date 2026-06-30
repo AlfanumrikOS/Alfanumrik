@@ -25,10 +25,10 @@ type View = 'feed' | 'create' | 'waiting' | 'results';
 const QUESTION_COUNTS = [5, 10, 15] as const;
 
 const STATUS_CONFIG: Record<ChallengeStatus, { label: string; labelHi: string; color: string; icon: string }> = {
-  pending:   { label: 'Waiting',   labelHi: 'प्रतीक्षा',  color: '#D97706', icon: '⏳' },
-  active:    { label: 'In Progress', labelHi: 'चल रहा है', color: '#2563EB', icon: '⚔️' },
-  completed: { label: 'Completed', labelHi: 'पूर्ण',      color: '#16A34A', icon: '✅' },
-  expired:   { label: 'Expired',   labelHi: 'समाप्त',     color: '#9CA3AF', icon: '⌛' },
+  pending:   { label: 'Waiting',   labelHi: 'प्रतीक्षा',  color: 'var(--gold)',  icon: '⏳' },
+  active:    { label: 'In Progress', labelHi: 'चल रहा है', color: 'var(--teal)',  icon: '⚔️' },
+  completed: { label: 'Completed', labelHi: 'पूर्ण',      color: 'var(--green)', icon: '✅' },
+  expired:   { label: 'Expired',   labelHi: 'समाप्त',     color: 'var(--text-3)', icon: '⌛' },
 };
 
 export default function ChallengeMode({ studentId, studentName, grade, isHi }: ChallengeModeProps) {
@@ -310,9 +310,9 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
                 onClick={() => setQuestionCount(count)}
                 className="flex-1 rounded-xl py-3 text-center font-bold text-sm transition-all"
                 style={{
-                  background: questionCount === count ? 'var(--orange)' : 'var(--surface-2)',
+                  background: questionCount === count ? 'var(--accent-warm)' : 'var(--surface-2)',
                   color: questionCount === count ? '#fff' : 'var(--text-2)',
-                  border: `1.5px solid ${questionCount === count ? 'var(--orange)' : 'var(--border)'}`,
+                  border: `1.5px solid ${questionCount === count ? 'var(--accent-warm)' : 'var(--border)'}`,
                 }}
               >
                 {count}
@@ -387,7 +387,7 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
             }
           </h2>
           {won && (
-            <p className="text-sm font-bold mt-1" style={{ color: 'var(--orange)' }}>
+            <p className="text-sm font-bold mt-1" style={{ color: 'var(--accent-warm)' }}>
               +25 XP {isHi ? 'चैलेंज जीत!' : 'Challenge Win!'}
             </p>
           )}
@@ -402,11 +402,14 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
         <Card className="!p-0 overflow-hidden">
           <div className="grid grid-cols-2 divide-x" style={{ borderColor: 'var(--border)' }}>
             {/* My side */}
-            <div className={`p-4 text-center ${won ? 'bg-gradient-to-b from-orange-50 to-transparent' : ''}`}>
+            <div
+              className="p-4 text-center"
+              style={won ? { background: 'linear-gradient(to bottom, color-mix(in srgb, var(--accent-warm) 9%, transparent), transparent)' } : undefined}
+            >
               <Avatar name={myName} size={44} />
               <p className="text-sm font-bold mt-2 truncate">{myName}</p>
               <p className="text-xs text-[var(--text-3)]">{isHi ? 'तुम' : 'You'}</p>
-              <div className="text-3xl font-bold mt-3" style={{ color: 'var(--orange)', fontFamily: 'var(--font-display)' }}>
+              <div className="text-3xl font-bold mt-3" style={{ color: 'var(--accent-warm)', fontFamily: 'var(--font-display)' }}>
                 {myScore ?? '—'}%
               </div>
               {myTime != null && (
@@ -417,11 +420,14 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
             </div>
 
             {/* Their side */}
-            <div className={`p-4 text-center ${!won && !isDraw ? 'bg-gradient-to-b from-purple-50 to-transparent' : ''}`}>
+            <div
+              className="p-4 text-center"
+              style={!won && !isDraw ? { background: 'linear-gradient(to bottom, color-mix(in srgb, var(--purple) 8%, transparent), transparent)' } : undefined}
+            >
               <Avatar name={theirName} size={44} />
               <p className="text-sm font-bold mt-2 truncate">{theirName}</p>
               <p className="text-xs text-[var(--text-3)]">{isHi ? 'प्रतिद्वंदी' : 'Opponent'}</p>
-              <div className="text-3xl font-bold mt-3" style={{ color: 'var(--purple, #7C3AED)', fontFamily: 'var(--font-display)' }}>
+              <div className="text-3xl font-bold mt-3" style={{ color: 'var(--purple)', fontFamily: 'var(--font-display)' }}>
                 {theirScore ?? '—'}%
               </div>
               {theirTime != null && (
@@ -476,8 +482,8 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
 
       {/* Quick Match */}
       <div className="rounded-2xl p-5 mb-4" style={{
-        background: 'linear-gradient(135deg, rgba(232,88,28,0.06), rgba(245,166,35,0.06))',
-        border: '1px solid rgba(232,88,28,0.15)',
+        background: 'linear-gradient(135deg, color-mix(in srgb, var(--accent-warm) 6%, transparent), color-mix(in srgb, var(--gold) 6%, transparent))',
+        border: '1px solid color-mix(in srgb, var(--accent-warm) 15%, transparent)',
       }}>
         <div className="flex items-center gap-3 mb-3">
           <span className="text-2xl">⚔️</span>
@@ -513,11 +519,11 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
           </p>
           <div className="flex gap-4">
             <div className="text-center">
-              <p className="text-lg font-bold" style={{ color: '#16A34A' }}>{myRecord.wins}</p>
+              <p className="text-lg font-bold" style={{ color: 'var(--green)' }}>{myRecord.wins}</p>
               <p className="text-[10px] text-[var(--text-3)]">{isHi ? 'जीत' : 'Won'}</p>
             </div>
             <div className="text-center">
-              <p className="text-lg font-bold" style={{ color: '#DC2626' }}>{myRecord.losses}</p>
+              <p className="text-lg font-bold" style={{ color: 'var(--red)' }}>{myRecord.losses}</p>
               <p className="text-[10px] text-[var(--text-3)]">{isHi ? 'हार' : 'Lost'}</p>
             </div>
             <div className="text-center">
@@ -537,8 +543,8 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
         onClick={() => setView('create')}
         className="w-full rounded-2xl p-5 text-left transition-all active:scale-[0.98]"
         style={{
-          background: 'linear-gradient(135deg, #FFF7ED, #F5E6FF)',
-          border: '1.5px solid rgba(232,88,28,0.2)',
+          background: 'linear-gradient(135deg, color-mix(in srgb, var(--accent-warm) 7%, white), color-mix(in srgb, var(--purple) 8%, white))',
+          border: '1.5px solid color-mix(in srgb, var(--accent-warm) 20%, transparent)',
         }}
       >
         <div className="flex items-center gap-3">
@@ -580,7 +586,7 @@ export default function ChallengeMode({ studentId, studentName, grade, isHi }: C
             </Button>
           </div>
           {joinError && (
-            <p className="text-xs mt-1.5 font-medium" style={{ color: '#DC2626' }} role="alert">
+            <p className="text-xs mt-1.5 font-medium" style={{ color: 'var(--red)' }} role="alert">
               {joinError}
             </p>
           )}
@@ -728,11 +734,11 @@ function ChallengeCard({ challenge, studentId, isHi, onAccept, onView, onShare, 
           {/* Scores for completed */}
           {c.status === 'completed' && c.challenger_score != null && c.opponent_score != null && (
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs font-bold" style={{ color: iAmChallenger ? 'var(--orange)' : 'var(--text-2)' }}>
+              <span className="text-xs font-bold" style={{ color: iAmChallenger ? 'var(--accent-warm)' : 'var(--text-2)' }}>
                 {iAmChallenger ? c.challenger_score : c.opponent_score}%
               </span>
               <span className="text-xs text-[var(--text-3)]">vs</span>
-              <span className="text-xs font-bold" style={{ color: !iAmChallenger ? 'var(--orange)' : 'var(--text-2)' }}>
+              <span className="text-xs font-bold" style={{ color: !iAmChallenger ? 'var(--accent-warm)' : 'var(--text-2)' }}>
                 {iAmChallenger ? c.opponent_score : c.challenger_score}%
               </span>
               {c.winner_id === studentId && (
@@ -745,7 +751,7 @@ function ChallengeCard({ challenge, studentId, isHi, onAccept, onView, onShare, 
             <button
               onClick={(e) => { e.stopPropagation(); onRematch(); }}
               className="text-[10px] font-semibold px-3 py-1 rounded-lg mt-2"
-              style={{ background: 'rgba(232,88,28,0.08)', color: '#E8581C' }}
+              style={{ background: 'color-mix(in srgb, var(--accent-warm) 8%, transparent)', color: 'var(--accent-warm)' }}
             >
               🔄 {isHi ? 'दोबारा मैच' : 'Rematch'}
             </button>
@@ -760,7 +766,7 @@ function ChallengeCard({ challenge, studentId, isHi, onAccept, onView, onShare, 
             </Button>
           )}
           {c.status === 'pending' && iAmChallenger && onShare && (
-            <Button variant="soft" size="sm" color="var(--orange)" onClick={(e) => { e.stopPropagation(); onShare(); }}>
+            <Button variant="soft" size="sm" color="var(--accent-warm)" onClick={(e) => { e.stopPropagation(); onShare(); }}>
               {isHi ? 'शेयर' : 'Share'}
             </Button>
           )}

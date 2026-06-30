@@ -25,12 +25,14 @@ interface XPActivityFeedProps {
 /* ─── Source Config ───────────────────────────────────────── */
 
 const SOURCE_CONFIG: Record<string, { icon: string; color: string; labelEn: string; labelHi: string }> = {
-  quiz: { icon: '\u26A1', color: 'var(--orange)', labelEn: 'Quiz', labelHi: '\u0915\u094D\u0935\u093F\u095B\u093C' },
-  chat: { icon: '\uD83E\uDD8A', color: '#3B82F6', labelEn: 'Chat', labelHi: '\u091A\u0948\u091F' },
-  streak: { icon: '\uD83D\uDD25', color: '#EF4444', labelEn: 'Streak', labelHi: '\u0938\u094D\u091F\u094D\u0930\u0940\u0915' },
-  mastery: { icon: '\uD83C\uDFC6', color: '#9333EA', labelEn: 'Mastery', labelHi: '\u092E\u093E\u0938\u094D\u091F\u0930\u0940' },
-  study: { icon: '\uD83D\uDCC5', color: '#22C55E', labelEn: 'Study', labelHi: '\u0905\u0927\u094D\u092F\u092F\u0928' },
-  challenge: { icon: '\u2694\uFE0F', color: '#F59E0B', labelEn: 'Challenge', labelHi: '\u091A\u0941\u0928\u094C\u0924\u0940' },
+  // quiz \u2192 warm channel (stays warm under cosmic); other sources keep their
+  // distinct categorical hues, routed to semantic tokens where they map.
+  quiz: { icon: '\u26A1', color: 'var(--accent-warm)', labelEn: 'Quiz', labelHi: '\u0915\u094D\u0935\u093F\u095B\u093C' },
+  chat: { icon: '\uD83E\uDD8A', color: 'var(--teal)', labelEn: 'Chat', labelHi: '\u091A\u0948\u091F' },
+  streak: { icon: '\uD83D\uDD25', color: 'var(--red)', labelEn: 'Streak', labelHi: '\u0938\u094D\u091F\u094D\u0930\u0940\u0915' },
+  mastery: { icon: '\uD83C\uDFC6', color: 'var(--purple)', labelEn: 'Mastery', labelHi: '\u092E\u093E\u0938\u094D\u091F\u0930\u0940' },
+  study: { icon: '\uD83D\uDCC5', color: 'var(--green)', labelEn: 'Study', labelHi: '\u0905\u0927\u094D\u092F\u092F\u0928' },
+  challenge: { icon: '\u2694\uFE0F', color: 'var(--gold)', labelEn: 'Challenge', labelHi: '\u091A\u0941\u0928\u094C\u0924\u0940' },
 };
 
 function getSourceConfig(source: string) {
@@ -165,11 +167,11 @@ export default function XPActivityFeed({ studentId, isHi, limit = 20 }: XPActivi
           <span className="text-[var(--text-3)] font-medium">
             {isHi ? '\u0906\u091C \u0915\u094D\u0935\u093F\u095B\u093C XP' : 'Quiz XP today'}
           </span>
-          <span className="font-bold" style={{ color: 'var(--orange)' }}>
+          <span className="font-bold" style={{ color: 'var(--accent-warm)' }}>
             {dailyQuizXp}/{XP_RULES.quiz_daily_cap}
           </span>
         </div>
-        <ProgressBar value={dailyCapPercent} color="var(--orange)" height={6} />
+        <ProgressBar value={dailyCapPercent} color="var(--accent-warm)" height={6} />
       </div>
 
       {/* Transaction list */}
@@ -185,7 +187,10 @@ export default function XPActivityFeed({ studentId, isHi, limit = 20 }: XPActivi
               {/* Source icon */}
               <div
                 className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-base"
-                style={{ background: `${config.color}12`, border: `1px solid ${config.color}20` }}
+                style={{
+                  background: `color-mix(in srgb, ${config.color} 8%, transparent)`,
+                  border: `1px solid color-mix(in srgb, ${config.color} 14%, transparent)`,
+                }}
               >
                 {config.icon}
               </div>

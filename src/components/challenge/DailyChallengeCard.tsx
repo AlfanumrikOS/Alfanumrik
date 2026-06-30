@@ -60,7 +60,7 @@ export default function DailyChallengeCard({
                   {isHi ? 'हल हो गया!' : 'Solved!'}
                 </p>
                 {streak >= 3 && (
-                  <span className="text-xs font-bold" style={{ color: '#F97316' }}>
+                  <span className="text-xs font-bold" style={{ color: 'var(--accent-warm)' }}>
                     {'\uD83D\uDD25'} {streak}
                   </span>
                 )}
@@ -120,8 +120,8 @@ export default function DailyChallengeCard({
       <div
         className="rounded-2xl p-4 transition-all active:scale-[0.98] card-hover"
         style={{
-          background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.06), rgba(124, 58, 237, 0.04))',
-          border: '1.5px solid rgba(249, 115, 22, 0.2)',
+          background: 'linear-gradient(135deg, color-mix(in srgb, var(--accent-warm) 6%, transparent), color-mix(in srgb, var(--purple) 4%, transparent))',
+          border: '1.5px solid color-mix(in srgb, var(--accent-warm) 20%, transparent)',
         }}
       >
         <div className="flex items-center gap-3">
@@ -129,7 +129,7 @@ export default function DailyChallengeCard({
           <div
             className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
             style={{
-              background: 'linear-gradient(135deg, #F97316, #EA580C)',
+              background: 'linear-gradient(135deg, var(--accent-warm), var(--accent-warm-strong))',
             }}
           >
             <span className="text-white text-sm font-bold" aria-hidden="true">{'\u25B6'}</span>
@@ -141,7 +141,7 @@ export default function DailyChallengeCard({
                 {isHi ? 'डेली चैलेंज' : 'Daily Challenge'}
               </p>
               {streak >= 3 && (
-                <span className="text-xs font-bold" style={{ color: '#F97316' }}>
+                <span className="text-xs font-bold" style={{ color: 'var(--accent-warm)' }}>
                   {'\uD83D\uDD25'} {streak}
                 </span>
               )}
@@ -152,7 +152,7 @@ export default function DailyChallengeCard({
             {subjectLabel && !todayTopic && (
               <p className="text-xs text-[var(--text-3)] mt-0.5 truncate">{subjectLabel}</p>
             )}
-            <p className="text-[10px] font-bold mt-0.5" style={{ color: '#F97316' }}>
+            <p className="text-[10px] font-bold mt-0.5" style={{ color: 'var(--accent-warm)' }}>
               {isHi ? 'अभी खेलो!' : 'Solve now!'} {'\u2192'}
             </p>
           </div>
