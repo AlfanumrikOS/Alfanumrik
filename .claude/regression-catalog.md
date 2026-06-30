@@ -6524,3 +6524,62 @@ ledger drain 242 → 241, helper added to set `H`).
 **Total catalog: 183 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-217 — XC-3 Phase 2 (batch 1): first student-own read route migrated admin → server, RLS now enforced at the request path (allowlist 273 → 272)
+
+**Why.** XC-3 Phase 0b froze the RLS-bypassing service-role footprint at 273
+`route.ts` files (REG-213) and forced it to ratchet DOWN only. Phase 2 begins
+DRAINING that ledger by swapping student-own READ routes from the RLS-bypassing
+admin client (`@/lib/supabase-admin`) onto the RLS-respecting server client
+(`@/lib/supabase-server`), so RLS becomes a real second line of defense behind
+`authorizeRequest()`. The risk is the INVERSE of the recent `students`-RLS
+production incident: a swap turns a working 200 into an EMPTY/403 if the SELECT
+policy does not admit exactly what the route reads. Batch 1 therefore migrates a
+single route whose every read is PROVABLY policy-covered:
+`src/app/api/student/daily-lab/route.ts`. It keeps `authorizeRequest`
+(Bearer-or-cookie) for the auth gate + `studentId`; only the three data reads
+move to the cookie-scoped server client (the sole caller, `DailyLabMission.tsx`,
+fetches with `credentials: 'include'`). Response shape is byte-identical.
+
+**RLS coverage proof (the gate that prevents a repeat of the dashboard incident).**
+
+| Read | Filter | Admitting SELECT policy (baseline / migration) |
+|---|---|---|
+| `students` | `id = studentId` | `students_select_merged` — `auth_user_id = auth.uid()` (own row). Post `20260702080000` recursion fix: no `students → class_students → students` cycle. |
+| `interactive_simulations` | `is_active = true` (+ grade/widget/quality) | `sim_read_all` — `USING (is_active = true)`, public active-catalog read. |
+| `experiment_observations` | `student_id = studentId`, `created_at >= now-14d` | `students_read_own_observations` — `student_id = get_student_id_for_auth()` (migration `20260504195900`). |
+
+`daily-plan` was PROVEN covered too (own `students` + `class_students`
+own-enrollment + `classroom_lesson_plans` student-class policy + `topics_read_all`)
+but DEFERRED to a later batch: it touches the exact `students`+`class_students`
+tables from the recent incident (nested RLS), so it stays out of the FIRST
+behavioral batch per the conservative one-incident-adjacent-route rule.
+`subjects` and `chapters` were DEFERRED because their reads happen inside
+SECURITY DEFINER RPCs (`get_available_subjects`, `available_chapters_for_student_subject_v2`)
+that bypass RLS regardless of the client — swapping the client does NOT bring the
+read under RLS, so they are out of scope for this defense-in-depth batch.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-217 | `GET /api/student/daily-lab — RLS contract (admin→server migration)` | P8/P9: with the RLS-scoped server client mocked, an authenticated OWNER receives their Daily Lab with the byte-identical response shape (`simulation_id/title/title_hi/subject/emoji/estimated_minutes/bonus_coins=50/completed_today/deeplink/experiment_id`); a request the SELECT policy does NOT admit (mocked `students` read returns no row — RLS deny for a cross-user/forged `studentId`) yields `400 { success:false, error:'Student profile incomplete' }` with NO simulation payload — i.e. the migration fails CLOSED. The admin-client allowlist guard pins the ledger ratchet 273 → 272 (route pruned from `scripts/admin-client-allowlist.json`, `count` + `EXPECTED_COUNT` decremented; `detected === allowlist`). | `src/__tests__/api/daily-lab.test.ts`, `src/__tests__/api-admin-client-allowlist.test.ts`, `scripts/admin-client-allowlist.json` | E | P8, P9 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) — the route's three student-own/public reads now execute on
+  the RLS-respecting `supabase-server` client; each is covered by an existing
+  SELECT policy (table above), so RLS is a genuine second line of defense behind
+  `authorizeRequest`, and a non-owner read fails closed.
+- P9 (RBAC enforcement) — `authorizeRequest(request, 'stem.observe', { requireStudentId: true })`
+  is unchanged; the permission gate and `studentId` resolution are untouched.
+- Ledger ratchet (XC-3 Phase 0b mechanic) — `scripts/admin-client-allowlist.json`
+  drains 273 → 272 in the same change that migrates the route, keeping
+  `detected === allowlist` and forcing the admin-client count DOWN.
+
+### Catalog total
+
+XC-3 Phase 2 batch 1 adds REG-217 (first student-own read route migrated
+admin → server with full per-table RLS-coverage proof; owner-gets-own-data +
+cross-user-fails-closed contract; admin-client allowlist ratcheted 273 → 272).
+**Total catalog: 184 entries (target: 35 — TARGET EXCEEDED).**
+
+---
