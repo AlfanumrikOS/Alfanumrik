@@ -6709,3 +6709,68 @@ allowlist unchanged).
 **Total catalog: 186 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-220 — XC-3 Phase 2 (batch 3 — Bearer batch): `daily-plan` migrated admin → Bearer-aware RLS route client; mobile Bearer caller now RLS-enforced (allowlist 271 → 270)
+
+**Why.** REG-219 shipped the ENABLER (`createSupabaseRouteClient`) but migrated
+no route. This batch consumes it: `GET /api/student/daily-plan` was DEFERRED by
+REG-218 precisely because it has a mobile Bearer caller
+(`mobile/lib/data/repositories/daily_plan_repository.dart` sends
+`Authorization: Bearer <jwt>` and NO Supabase cookie), so a cookie-only
+`createSupabaseServerClient()` swap would NULL `auth.uid()` at RLS → 404/empty
+for every mobile caller. Swapping it onto the Bearer-aware client forwards the
+caller's JWT under the public anon key (RLS enforced, never service-role) on the
+Bearer path and falls back to the cookie client for web — so RLS becomes a real
+second line of defense behind `authorizeRequest('study_plan.view')` on BOTH
+transports. This is the first route to use the Bearer-aware client.
+
+**What.** `src/app/api/student/daily-plan/route.ts` swaps its 3 reads from
+`supabaseAdmin` (RLS-bypassing service role) to `createSupabaseRouteClient(request)`.
+RLS-coverage PROVEN per read (`studentId` is ALWAYS `auth.studentId` — the caller's
+own id; the route performs NO writes):
+- **students** (`id = studentId`): `students_select_merged` owner branch
+  (`auth_user_id = auth.uid()`).
+- **class_students** (`student_id = studentId, is_active = true`): "Students can
+  view own enrollment" (`student_id ∈ students WHERE auth_user_id = auth.uid()`).
+- **classroom_lesson_plans** (`class_id = classId, date = today`): "Students can
+  view classroom lesson plans" (`class_id ∈` the caller's own `class_students`
+  rows) — `classId` is the caller's own class.
+- **curriculum_topics** (embedded `curriculum_topics(id,title)`): `topics_read_all`
+  (`USING true` — public catalog).
+
+The `students`+`class_students` nested-read recursion incident is FIXED (migration
+`20260702080000` + Phase 1). Caller transport: mobile = Bearer (now RLS-resolved
+via the forwarded JWT); web dashboard `DailyPlanCard` = cookie (server-client
+fallback). Fail-CLOSED: an RLS deny on the `students` read yields `student=null`
+→ `404 { success:false, error:'student_not_found' }`, no plan payload, no 500.
+Query set + response envelope (`{ success, data, flagEnabled, intercepted }`)
+byte-identical; `authorizeRequest('study_plan.view',{requireStudentId:true})`
+unchanged.
+
+**Scan result.** Among mobile Bearer-called student-own reads, `daily-plan` is
+the only clean simple-read GET migrated. DEFERRED: `student/subjects`
+(RPC-internal — `get_available_subjects` + `ops_events` write), `student/profile`
+& `student/preferences` (write routes — POST `students`/`smart_nudges` updates +
+RPCs, web cookie), `/api/v2/*` (separate generated `/v2` contract). N = 1.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-220 | `GET /api/student/daily-plan — Bearer-aware RLS contract (admin→route-client migration)` | P8/P9: (a) the route builds its data client from the Bearer-aware `createSupabaseRouteClient`, called exactly once WITH the request (so the caller's `Authorization: Bearer` JWT is forwarded for RLS) — a regression back to `supabase-admin` OR the cookie-only `createSupabaseServerClient()` (which breaks the mobile Bearer caller) fails this. (b) an authenticated OWNER (flag ON, `board_topper`) receives the byte-identical envelope `{ success, data, flagEnabled, intercepted }` (4-item / 45-min plan). (c) an RLS deny on the `students` read (mocked no-row for a cross-user/forged `studentId`) fails CLOSED with `404 { success:false, error:'student_not_found' }` and NO `data` payload. Existing flag-OFF/ON, classroom-sync, 404, and P13 PII-redaction cases re-pointed to the mocked Bearer-aware client. The allowlist guard pins the ledger ratchet 271 → 270 (route pruned from `scripts/admin-client-allowlist.json`, `count` + `EXPECTED_COUNT` decremented; `detected === allowlist`). | `src/__tests__/api/student/daily-plan.test.ts`, `src/__tests__/api-admin-client-allowlist.test.ts`, `scripts/admin-client-allowlist.json` | E | P8, P9 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) — the route's reads now run under the caller's identity
+  (Bearer JWT or cookie) with RLS enforced; the RLS-bypassing service-role client
+  is removed from this path.
+- P9 (RBAC enforcement) — defense in depth: `authorizeRequest('study_plan.view')`
+  unchanged; RLS is now a real second line for Bearer (mobile) callers too.
+
+### Catalog total
+
+XC-3 Phase 2 batch 3 adds REG-220 (one route — `student/daily-plan` — migrated
+admin → Bearer-aware `createSupabaseRouteClient` with per-table RLS-coverage proof,
+owner byte-identical + RLS-deny fail-closed + Bearer-aware-client assertion;
+mobile Bearer caller now RLS-enforced; admin-client allowlist ratcheted 271 → 270).
+**Total catalog: 187 entries (target: 35 — TARGET EXCEEDED).**
+
+---
