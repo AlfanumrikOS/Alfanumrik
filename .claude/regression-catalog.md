@@ -6656,3 +6656,56 @@ ratcheted 272 → 271).
 **Total catalog: 185 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-219 — XC-3 Phase 2 enabler: Bearer-aware, RLS-respecting route client (unblocks mobile-called migrations)
+
+**Why.** Phase 2 (REG-217/REG-218) drains student-own READ routes off the
+RLS-bypassing service-role admin client onto the RLS-respecting cookie client
+`createSupabaseServerClient()`. But that client is COOKIE-ONLY: it reads the
+Supabase session from `next/headers cookies()` and never inspects the
+`Authorization` header. The Flutter app calls many `student/*` routes with
+`Authorization: Bearer <jwt>` and NO Supabase cookie (e.g. `/api/student/daily-plan`
+via `mobile/lib/data/repositories/daily_plan_repository.dart`), so a cookie-only
+swap NULLs `auth.uid()` at RLS → every SELECT policy denies → 404/empty for every
+mobile caller. That is exactly why REG-218 DEFERRED `daily-plan`. This entry adds
+the ENABLER — a Bearer-aware route client — so those routes can be migrated in a
+later batch. **No route is migrated in this change; the allowlist is unchanged.**
+
+**What.** New `src/lib/supabase-route.ts` exports
+`createSupabaseRouteClient(request)`:
+- **Bearer path** — when the request carries `Authorization: Bearer <jwt>`, builds
+  a client with the PUBLIC anon key (`NEXT_PUBLIC_SUPABASE_ANON_KEY`) and forwards
+  the caller's OWN access token as `global.headers.Authorization`. PostgREST runs
+  the query under the caller's identity, so `auth.uid()` resolves and RLS applies
+  exactly as on the wire. RLS is ENFORCED, not bypassed — the anon key carries no
+  privilege of its own.
+- **Cookie path** — no Bearer → delegates verbatim to the existing
+  `createSupabaseServerClient()` (anon key + session cookie). Also RLS-scoped.
+- **Never service-role.** `SUPABASE_SERVICE_ROLE_KEY` is never read for transport;
+  the only key passed to `createClient` is the anon key. A hard pre-build assertion
+  throws (fail-closed, builds nothing) if the configured anon key were ever to
+  equal the service-role key. The helper does not validate the JWT itself — an
+  invalid/expired/forged token is rejected by Supabase Auth + PostgREST + RLS
+  (`auth.uid()` stays NULL → deny), so the failure mode is fail-closed.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-219 | `createSupabaseRouteClient — Bearer-aware RLS route client` | P8/P9: (a) a request with `Authorization: Bearer X` builds a client whose `global.headers.Authorization` is `Bearer X` and whose transport key is the ANON key (asserted `!== SERVICE_ROLE_KEY`), with `persistSession/autoRefreshToken=false`, and the cookie delegate is NOT called — so RLS `auth.uid()` resolves under the caller's identity; case-insensitive header match pinned. (b) a request with NO Authorization header (or a non-Bearer scheme, or an empty Bearer token) delegates to `createSupabaseServerClient()` and never calls `createClient`. (c) the service-role key is NEVER passed to `createClient` on any Bearer call; a misconfiguration where the anon key equals the service-role key throws (fail-closed) and builds nothing. Libs mocked at the module boundary to inspect exact args. | `src/__tests__/lib/supabase-route-client.test.ts`, `src/lib/supabase-route.ts` | E | P8, P9 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) — the Bearer path is anon-key + caller-JWT, so RLS is the
+  active boundary on both paths; the helper cannot return a service-role
+  (RLS-bypassing) client (assertion-enforced).
+- P9 (RBAC enforcement) — defense in depth: routes still call `authorizeRequest()`
+  for RBAC; this client makes RLS a real second line for Bearer callers too.
+
+### Catalog total
+
+XC-3 Phase 2 enabler adds REG-219 (Bearer-aware RLS route client — forwards the
+caller's Bearer JWT under the public anon key so RLS `auth.uid()` resolves for
+mobile callers, cookie fallback for web, never service-role; no route migrated,
+allowlist unchanged).
+**Total catalog: 186 entries (target: 35 — TARGET EXCEEDED).**
+
+---
