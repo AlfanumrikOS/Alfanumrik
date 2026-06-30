@@ -6845,4 +6845,70 @@ with cross-tenant upper+lower bound proven against `school_admin_can_read_own_co
 admin-client allowlist ratcheted 270 → 269).
 **Total catalog: 188 entries (target: 35 — TARGET EXCEEDED).**
 
+## REG-222 — XC-3 Phase 4 (first drain): `at_risk_alerts::Teachers see own at-risk alerts` inline subquery → `get_my_teacher_id()`; ledger 241 → 240
+
+**Why.** Phase 1 drained the apex `students` school-admin edge (242 → 241), proving
+a single grandfathered inline cross-table policy can be refactored to a SECURITY
+DEFINER helper without shifting its boundary. Phase 4 carries that ratchet through
+the REMAINING grandfathered policies, table by table, so the
+`GRANDFATHERED_INLINE_POLICIES` allowlist shrinks toward zero. This first Phase 4
+slice proves the phase is executable on a NON-apex table by picking the single
+CLEANEST policy whose inline cross-table subquery has an EXACT existing-helper
+equivalent (boundary-preserving, no new helper needed).
+
+**What.** `supabase/migrations/20260702100000_xc3_p4_drain_at_risk_alerts_teacher_select.sql`
+DROPs + re-CREATEs the policy `"Teachers see own at-risk alerts"` ON
+`public.at_risk_alerts`, replacing its inline `FROM public.teachers` subquery with
+the EXISTING SECURITY DEFINER helper `public.get_my_teacher_id()`. Command (`FOR ALL`,
+no `FOR` clause), roles (PUBLIC, no `TO` clause), and check shape (USING only, so
+WITH CHECK keeps defaulting to USING) are preserved EXACTLY.
+
+**Boundary-equivalence PROOF (the gate).** Baseline (00000000000000_baseline_from_prod.sql:20252):
+`USING ( teacher_id IN (SELECT id FROM teachers WHERE auth_user_id = auth.uid()) )`.
+Helper: `get_my_teacher_id()` (baseline:8998) is exactly
+`SELECT id FROM teachers WHERE auth_user_id = auth.uid() LIMIT 1`. The two predicates
+admit the IDENTICAL `at_risk_alerts` rows for EVERY caller because:
+- **Same table, same filter, no extra guards** — both read `public.teachers` and
+  filter ONLY on `auth_user_id = auth.uid()`; neither carries an `is_active`,
+  `deleted_at`, or status guard, so neither narrows nor widens the teacher set.
+- **At-most-one element** — `public.teachers` has a FULL UNIQUE constraint on
+  `auth_user_id` (`teachers_auth_user_id_unique`, baseline:16272), so
+  `{ id : auth_user_id = auth.uid() }` has cardinality 0 or 1. With a 0/1-element
+  set, `teacher_id IN (set)` ≡ `teacher_id = (the element)`; the helper's `LIMIT 1`
+  drops no row (LIMIT 1 only matters at >1, which UNIQUE forbids).
+- **Empty/NULL parity** — caller with no teacher row: inline `IN ()` = FALSE,
+  helper `= NULL` = NULL (not TRUE); a row with `teacher_id IS NULL` (the FK is
+  `ON DELETE SET NULL`): both forms never match. Identical non-match in every case.
+No row becomes newly visible, none is removed — proven for every caller, not just
+the happy path.
+
+**Recursion safety.** `get_my_teacher_id()` is SECURITY DEFINER (baseline:8997), so
+its inner read of `public.teachers` BYPASSES RLS — no `at_risk_alerts → teachers`
+edge remains in the RLS graph, so the latent TSB-4-class cycle the inline form
+could close cannot form. The helper is in the migration-`20260516050000`
+keep-PUBLIC-EXECUTE list (kept precisely because it is referenced inside RLS
+USING/WITH CHECK), so `authenticated` callers can still evaluate the policy — unlike
+the plural `get_my_student_ids()`, which was revoked from PUBLIC and would have
+broken any policy that called it (hence the plural helper, though a byte-exact match
+for student-own inline forms, is NOT a usable drain target).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-222 | `generalized RLS recursion guard` (existing static guard, re-pinned) | P8: the static cross-table-recursion guard parses the full root chain INCLUDING migration `20260702100000`, reduces `at_risk_alerts::Teachers see own at-risk alerts` to its NEW helper-delegating form (`teacher_id = public.get_my_teacher_id()`), and the detector no longer flags it (no inline `FROM`/`JOIN` over a different RLS table). The drained key is PRUNED from `GRANDFATHERED_INLINE_POLICIES`, so (a) `detected ⊆ allowlist` still holds, (b) no STALE allowlist entry remains (`allowlist \ detected === ∅`), and (c) BOTH count pins ratchet 241 → 240 (`GRANDFATHERED_INLINE_POLICIES.size === 240` and `detectedRiskKeys().length === 240`). Re-introducing the old inline `FROM public.teachers` shape under the same name would now FAIL the guard (the name is absent from the ledger). 23/23 in the file pass at 240. Static SQL-text guard, no DB. | `src/__tests__/rls-no-cross-table-recursion.test.ts`, `supabase/migrations/20260702100000_xc3_p4_drain_at_risk_alerts_teacher_select.sql` | E | P8 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) — one more latent inline cross-table edge (a TSB-4-class
+  recursion risk) is removed from the policy surface by delegating to a SECURITY
+  DEFINER helper whose inner reads bypass RLS; the boundary is proven byte-identical.
+
+### Catalog total
+
+XC-3 Phase 4 first drain adds REG-222 (one grandfathered inline policy —
+`at_risk_alerts::Teachers see own at-risk alerts` — refactored from an inline
+`FROM public.teachers` subquery to the existing SECURITY DEFINER helper
+`get_my_teacher_id()`, boundary-identical via the UNIQUE `teachers.auth_user_id`
+constraint; recursion-guard ledger ratcheted 241 → 240).
+**Total catalog: 189 entries (target: 35 — TARGET EXCEEDED).**
+
 ---
