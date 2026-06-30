@@ -108,7 +108,11 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // XC-3 Phase 2 batch 3 — Bearer batch (2026-06-30, REG-220): ratcheted 271 → 270
 // when src/app/api/student/daily-plan/route.ts migrated admin →
 // createSupabaseRouteClient (Bearer-aware RLS client; mobile Bearer caller).
-const EXPECTED_COUNT = 270;
+// XC-3 Phase 3 first slice (2026-06-30, REG-221): ratcheted 270 → 269 when
+// src/app/api/school-admin/contracts/route.ts migrated admin →
+// createSupabaseServerClient (RLS-scoped cookie client; teacher/school-admin
+// read, tenant upper+lower bound proven via school_admin_can_read_own_contracts).
+const EXPECTED_COUNT = 269;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

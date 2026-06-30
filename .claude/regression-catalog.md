@@ -6774,3 +6774,75 @@ mobile Bearer caller now RLS-enforced; admin-client allowlist ratcheted 271 → 
 **Total catalog: 187 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-221 — XC-3 Phase 3 (first slice): teacher/school-admin read route migrated admin → RLS-scoped server client; cross-tenant upper+lower bound proven (allowlist 270 → 269)
+
+**Why.** Phase 3 is HIGHER RISK than Phase 2: the rows are cross-tenant and
+multi-row, so the gate is TENANT-SCOPING CORRECTNESS — a too-LOOSE RLS policy is
+a cross-tenant PII/commercial leak (strictly worse than a 200→empty under-fetch),
+and a too-STRICT one silently empties a working surface. This first slice picks
+the single most provable teacher/school-admin GET: `GET /api/school-admin/contracts`
+— GET-only, single table (`school_contracts`), web cookie caller (no mobile
+Bearer surface for school-admin), flag-gated (`ff_school_contracts_v1`), and the
+route author already documented its reliance on the named SELECT policy.
+
+**What.** `src/app/api/school-admin/contracts/route.ts` swaps its one read from
+`getSupabaseAdmin()` (RLS-bypassing service role) to `createSupabaseServerClient()`
+(RLS-respecting cookie session). `authorizeSchoolAdmin(... institution.view_billing/manage)`
+unchanged; response envelope `{ success, data: { rows, total, page, limit } }`
+byte-identical. Caller transport: school-admin portal is web cookie only
+(grep confirms NO `mobile/` caller and no Bearer-only path), so the cookie client
+is correct; a missing/mismatched session yields `auth.uid()=NULL` → zero rows
+(fail-CLOSED, never a 500, never a payload).
+
+**Tenant bound PROOF — policy `school_admin_can_read_own_contracts`**
+(`supabase/migrations/20260507150000_school_contracts.sql`):
+`FOR SELECT TO authenticated USING (school_id IN (SELECT school_id FROM public.school_admins WHERE auth_user_id = auth.uid()))`.
+- **LOWER BOUND (in-scope visible, no under-fetch):** `auth.schoolId` is resolved
+  by `authorizeSchoolAdmin` from the caller's ACTIVE `school_admins` membership —
+  a SUBSET of the policy's (un-`is_active`-filtered) set — so the caller's own
+  school is always admitted; the route's `.eq('school_id', auth.schoolId)` then
+  returns exactly that school's contracts.
+- **UPPER BOUND (cross-tenant invisible):** the policy admits ONLY
+  `school_id ∈ {caller's school_admins schools}`; any school the caller does not
+  administer is excluded even if a foreign `school_id` reached the query. The
+  `school_admins` SELECT/UPDATE policies all self-scope via `auth_user_id=auth.uid()`
+  and never read `school_contracts` back, so the inline `FROM school_admins` is
+  NOT a recursion cycle (it is already in the Phase-0a `GRANDFATHERED_INLINE_POLICIES`
+  ledger).
+
+**Scan result.** Among teacher/school-admin GET routes, this is the only clean
+GET-only single-table read whose RLS bounds are airtight. DEFERRED: `school-admin/analytics`
+(reads `school_subscriptions`, an intentional deny-all/service-role-only table —
+RLS swap would empty it), `school-admin/students`/`classes` (GET mixed with
+write handlers in the same file — cannot leave the admic-client import / prune
+the allowlist), `teacher/lab-leaderboard` (multi-table + a view of unknown RLS
+posture), `teacher/classes/available` (join-by-secret preview RLS would BLOCK —
+intended), `school-admin/invoices` (no confirmed school-admin SELECT policy on
+`school_invoices`). N = 1.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-221 | `GET /api/school-admin/contracts — RLS tenant-bound contract (admin→server migration)` | P8/P9/P13: with the RLS client emulated as "rows the `school_admin_can_read_own_contracts` policy exposes to THIS caller" (dataset ∩ the auth.uid()-resolved school), (a) LOWER BOUND — an in-scope admin gets the byte-identical `{ success, data:{ rows, total:2, page:1, limit:25 } }` envelope with ONLY their school's rows (a co-resident other-tenant row never appears); (b) UPPER BOUND — a request resolving a foreign `school_id` the caller does not administer returns `{ rows:[], total:0 }` with NOT ONE foreign row in the serialized body (RLS is the independent boundary); a denied caller gets the authz `errorResponse` verbatim with ZERO client builds (no DB touched); (c) regression guard — the route builds `createSupabaseServerClient` and the source imports `@/lib/supabase-server` and NOT `supabase-admin`. The allowlist guard pins the ledger ratchet 270 → 269 (route pruned from `scripts/admin-client-allowlist.json`, `count` + `EXPECTED_COUNT` decremented; `detected === allowlist`). | `src/__tests__/api/school-admin/contracts-rls-contract.test.ts`, `src/__tests__/api-admin-client-allowlist.test.ts`, `scripts/admin-client-allowlist.json` | E | P8, P9, P13 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) — a cross-tenant school-admin read now runs under the
+  caller's identity with the `school_admin_can_read_own_contracts` policy as a
+  real second line of defense behind `authorizeSchoolAdmin`; the RLS-bypassing
+  service-role client is removed from this path.
+- P9 (RBAC enforcement) — `authorizeSchoolAdmin` (RBAC + active-school + Wave-C
+  role narrowing) unchanged; RLS is additive defense in depth.
+- P13 (data privacy) — both tenant bounds proven: a school the caller does not
+  administer is invisible (no cross-tenant commercial-contract leak), and a
+  denied/sessionless caller gets zero rows (fail-closed).
+
+### Catalog total
+
+XC-3 Phase 3 first slice adds REG-221 (one teacher/school-admin read route —
+`school-admin/contracts` — migrated admin → RLS-scoped `createSupabaseServerClient`
+with cross-tenant upper+lower bound proven against `school_admin_can_read_own_contracts`;
+admin-client allowlist ratcheted 270 → 269).
+**Total catalog: 188 entries (target: 35 — TARGET EXCEEDED).**
+
+---
