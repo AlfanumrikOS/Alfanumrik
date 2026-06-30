@@ -6179,3 +6179,54 @@ all four sources + starter/pro-unchanged).
 **Total catalog: 174 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Remediation — TSB-4: class_enrollments Teacher RLS + Fail-Closed Reconcile (P8) — 2026-06-30
+
+Two TSB-4 READY-NOW migrations close the teacher data-boundary (P8) gap left by the
+soft-delete-sync slice (REG-200). (1) `20260702050000_class_enrollments_teacher_select_policy.sql`
+adds the MISSING teacher SELECT policy to `class_enrollments` — the canonical-by-intent
+membership roster that today carries only school-admin / student / service-role policies,
+so an ASSIGNED teacher on the RLS client got ZERO rows. The new
+`class_enrollments_teacher_select` policy is a byte-for-byte mirror of the `class_students`
+teacher policy (`class_id IN (SELECT ct.class_id FROM class_teachers ct JOIN teachers t
+ON t.id=ct.teacher_id WHERE t.auth_user_id=auth.uid())`) — assigned teacher → rows,
+non-assigned teacher → zero; grant-only, additive, idempotent (`DROP POLICY IF EXISTS` →
+`CREATE`), no RLS toggle. (2) `20260702060000_class_membership_isactive_backfill.sql` is a
+one-time FAIL-CLOSED reconcile of rows that diverged BEFORE the 20260702030000
+UPDATE-mirror triggers landed: it flips `class_students.is_active` true→false ONLY where the
+matching `class_enrollments` row is ALREADY inactive (direction A — completing an
+already-authorized de-enroll), closing the live leak where a de-enrolled student stayed
+teacher-visible via `canAccessStudent` (rbac.ts:331). It NEVER reactivates — the reverse
+direction (ce=true/cs=false) is RAISE NOTICE report-only. A service-role-only, RLS-enabled
+backup table (`_tsb4_isactive_backfill_backup`) snapshots changed rows for exact rollback.
+No DROP of the roster tables; the `canAccessStudent` / `is_teacher_of` reader is NOT repointed
+onto `class_enrollments` (deferred to the CEO-gated cutover). Migrations-only slice.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-208 | `tsb4_enrollments_teacher_rls_and_failclosed_reconcile` | P8: `class_enrollments` gains a teacher SELECT RLS policy mirroring `class_students` (closing the discoverable-policy gap where an assigned teacher got zero rows on the canonical roster); a one-time FAIL-CLOSED reconcile flips `class_students.is_active` true→false only where the matching `class_enrollments` row is already inactive (completes authorized de-enrolls, closing the live leak where de-enrolled students stayed teacher-visible via rbac.ts) — never reactivates (no over-grant), reverse direction report-only, backup table RLS-protected, no DROP, canAccessStudent reader NOT repointed (deferred/gated) | `src/__tests__/tsb4-enrollments-rls-reconcile.test.ts` | E | P8 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary / teacher data boundary) — REG-208 source-pins (comment-tolerant)
+  the SHAPE of both migrations: (1) the teacher SELECT policy on `class_enrollments`
+  references `class_teachers` / `teachers` / `auth_user_id` / `auth.uid()` in the same
+  `class_id IN (...)` subquery as the `class_students` teacher policy, is FOR SELECT,
+  and is idempotent (`DROP POLICY IF EXISTS`); (2) the new `_tsb4_isactive_backfill_backup`
+  table ENABLES RLS + a service-role-only policy in the SAME migration; (3) the KEY safety
+  pin — the reconcile UPDATE sets `is_active = false` ONLY, conditioned on
+  `ce.is_active=false AND cs.is_active=true`, with NO unqualified `is_active = true`
+  assignment anywhere in active SQL (the backfill can only REMOVE visibility, never grant);
+  (4) neither migration DROPs `class_students` / `class_enrollments`; (5) the reader is NOT
+  repointed — `src/lib/rbac.ts` still reads `.from('class_students')`.
+- Lane note: SOURCE pin in the normal `npm test` lane (sibling to REG-200's
+  `tsb4-class-membership-softdelete-sync.test.ts`), NOT the live-DB integration lane.
+
+### Catalog total
+
+TSB-4 RLS + fail-closed reconcile adds REG-208 (class_enrollments teacher SELECT policy
+mirroring class_students + one-time fail-closed is_active reconcile that only ever removes
+teacher visibility; backup table RLS-protected; no DROP; reader not repointed).
+**Total catalog: 175 entries (target: 35 — TARGET EXCEEDED).**
+
+---
