@@ -24,9 +24,20 @@ mockFrom.mockImplementation(() => ({ select: mockSelect }));
 const mockLoggerInfo = vi.fn();
 const mockLoggerWarn = vi.fn();
 
+// XC-3 Phase 2 batch 3 — Bearer batch (REG-220): the route now reads through the
+// Bearer-AWARE, RLS-respecting createSupabaseRouteClient() instead of the
+// RLS-bypassing service-role admin client. daily-plan has a mobile Bearer caller,
+// so the client must forward the caller's JWT (Bearer path) or fall back to the
+// cookie client (web) — both RLS-scoped. We mock the helper so we can both drive
+// the read result AND assert the route built its client from this Bearer-aware
+// factory (so a future regression back to admin/cookie-only is caught).
+const mockCreateRouteClient = vi.fn(async () => ({ from: mockFrom }));
+
 vi.mock('@/lib/rbac', () => ({ authorizeRequest: mockAuthorizeRequest }));
 vi.mock('@/lib/feature-flags', () => ({ isFeatureEnabled: mockIsFeatureEnabled }));
-vi.mock('@/lib/supabase-admin', () => ({ supabaseAdmin: { from: mockFrom } }));
+vi.mock('@/lib/supabase-route', () => ({
+  createSupabaseRouteClient: (...args: unknown[]) => mockCreateRouteClient(...(args as [])),
+}));
 vi.mock('@/lib/logger', () => ({
   logger: { info: mockLoggerInfo, warn: mockLoggerWarn, error: vi.fn(), debug: vi.fn() },
 }));
@@ -237,5 +248,66 @@ describe('GET /api/student/daily-plan: P13 PII redaction', () => {
     expect(payload).not.toHaveProperty('email');
     expect(payload).not.toHaveProperty('name');
     expect(payload).not.toHaveProperty('phone');
+  });
+});
+
+// ── XC-3 Phase 2 batch 3 — Bearer-aware RLS contract (REG-220) ───────────────
+// Proves the admin→createSupabaseRouteClient swap (a) preserves the byte-identical
+// envelope for the authenticated OWNER, (b) fails CLOSED (404, no plan payload)
+// when RLS denies the students read, and (c) builds its data client from the
+// Bearer-AWARE factory (so a future regression back to the RLS-bypassing admin
+// client OR the cookie-only server client — which would break the mobile Bearer
+// caller — is caught here).
+describe('GET /api/student/daily-plan — Bearer-aware RLS contract (admin→route-client migration)', () => {
+  it('uses the Bearer-aware createSupabaseRouteClient (NOT admin / NOT cookie-only) and forwards the request', async () => {
+    const req = buildRequest();
+    const { GET } = await import('@/app/api/student/daily-plan/route');
+    await GET(req as never);
+    // The route MUST build its data client from the Bearer-aware factory, passing
+    // the request so the caller's Authorization: Bearer JWT (mobile) is forwarded
+    // to PostgREST for RLS. A swap back to supabase-admin or the cookie-only
+    // createSupabaseServerClient() would NOT call this and would fail this test.
+    expect(mockCreateRouteClient).toHaveBeenCalledTimes(1);
+    expect(mockCreateRouteClient).toHaveBeenCalledWith(req);
+  });
+
+  it('authenticated owner: returns the byte-identical envelope (flag ON, board_topper)', async () => {
+    mockIsFeatureEnabled.mockResolvedValueOnce(true);
+    mockSingle.mockResolvedValueOnce({
+      data: { id: STUDENT_ID, academic_goal: 'board_topper', class_id: null },
+      error: null,
+    });
+    const { GET } = await import('@/app/api/student/daily-plan/route');
+    const res = await GET(buildRequest() as never);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // Exact envelope keys the admin-client version returned — no drift.
+    expect(Object.keys(body).sort()).toEqual(
+      ['data', 'flagEnabled', 'intercepted', 'success'].sort(),
+    );
+    expect(body.success).toBe(true);
+    expect(body.flagEnabled).toBe(true);
+    expect(body.intercepted).toBe(false);
+    expect(body.data.goal).toBe('board_topper');
+    expect(body.data.items.length).toBe(4);
+    expect(body.data.totalMinutes).toBe(45);
+  });
+
+  it('RLS denies the students read (cross-user / unauthenticated): fails CLOSED with 404 and no plan payload', async () => {
+    // Under the RLS-scoped client, a caller whose auth.uid() does not own this
+    // student row gets NO row back (students_select_merged hides it). The route
+    // must 404 'student_not_found' — never fabricate or leak another student's
+    // plan, never 500.
+    mockSingle.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'No rows', code: 'PGRST116' },
+    });
+    const { GET } = await import('@/app/api/student/daily-plan/route');
+    const res = await GET(buildRequest() as never);
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error).toBe('student_not_found');
+    expect(body).not.toHaveProperty('data');
   });
 });

@@ -32,7 +32,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@/lib/rbac';
-import { supabaseAdmin } from '@/lib/supabase-admin';
+import { createSupabaseRouteClient } from '@/lib/supabase-route';
 import { isFeatureEnabled } from '@/lib/feature-flags';
 import { isKnownGoalCode, type GoalCode } from '@/lib/goals/goal-profile';
 import { buildDailyPlanByCode, type DailyPlan } from '@/lib/goals/daily-plan';
@@ -46,8 +46,33 @@ export async function GET(request: NextRequest) {
 
   const studentId = auth.studentId!;
 
+  // XC-3 Phase 2 (batch 3 — Bearer batch): reads run through the Bearer-AWARE,
+  // RLS-respecting route client, NOT the RLS-bypassing service-role admin client.
+  // daily-plan has a mobile Bearer caller (mobile/lib/data/repositories/
+  // daily_plan_repository.dart sends `Authorization: Bearer <jwt>` and NO cookie),
+  // so the cookie-only createSupabaseServerClient() would NULL auth.uid() and RLS
+  // would deny every read → empty/404 for mobile. createSupabaseRouteClient()
+  // forwards the caller's JWT under the anon key (RLS enforced, never service-role)
+  // on the Bearer path and falls back to the cookie client for web. Every read
+  // below is a student-OWN row (or a public catalog) admitted by an existing
+  // SELECT policy (studentId is ALWAYS auth.studentId — the caller's own id):
+  //   - students                : students_select_merged owner branch
+  //                               (auth_user_id = auth.uid()).
+  //   - class_students          : "Students can view own enrollment"
+  //                               (student_id ∈ students WHERE auth_user_id = auth.uid()).
+  //   - classroom_lesson_plans  : "Students can view classroom lesson plans"
+  //                               (class_id ∈ the caller's own class_students rows).
+  //   - curriculum_topics       : topics_read_all (USING true — public catalog),
+  //                               read via the embedded curriculum_topics(id,title).
+  // RLS is therefore a real second line of defense behind authorizeRequest. The
+  // students+class_students nested-read recursion incident is FIXED (migration
+  // 20260702080000 + Phase 1). Fail-CLOSED: an RLS deny on the students read
+  // yields student=null → 404 'student_not_found' (no payload, no 500). See
+  // docs/superpowers/plans/2026-07-02-xc3-systemic-rls-defense-in-depth.md §4.
+  const supabase = await createSupabaseRouteClient(request);
+
   // 1. Read goal and class_id from students table.
-  const { data: student, error: fetchError } = await supabaseAdmin
+  const { data: student, error: fetchError } = await supabase
     .from('students')
     .select('id, academic_goal, class_id')
     .eq('id', studentId)
@@ -78,7 +103,7 @@ export async function GET(request: NextRequest) {
     let classId: string | null = student.class_id || null;
 
     if (!classId) {
-      const { data: cs } = await supabaseAdmin
+      const { data: cs } = await supabase
         .from('class_students')
         .select('class_id')
         .eq('student_id', studentId)
@@ -91,7 +116,7 @@ export async function GET(request: NextRequest) {
 
     if (classId) {
       const todayStr = new Date().toISOString().slice(0, 10);
-      const { data: lessonPlan } = await supabaseAdmin
+      const { data: lessonPlan } = await supabase
         .from('classroom_lesson_plans')
         .select('topic_id, curriculum_topics(id, title)')
         .eq('class_id', classId)

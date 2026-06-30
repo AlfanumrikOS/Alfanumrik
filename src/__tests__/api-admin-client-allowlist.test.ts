@@ -105,7 +105,10 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // src/app/api/student/daily-lab/route.ts migrated admin → supabase-server.
 // XC-3 Phase 2 batch 2 (2026-06-30, REG-218): ratcheted 272 → 271 when
 // src/app/api/dashboard/reviews-due/route.ts migrated admin → supabase-server.
-const EXPECTED_COUNT = 271;
+// XC-3 Phase 2 batch 3 — Bearer batch (2026-06-30, REG-220): ratcheted 271 → 270
+// when src/app/api/student/daily-plan/route.ts migrated admin →
+// createSupabaseRouteClient (Bearer-aware RLS client; mobile Bearer caller).
+const EXPECTED_COUNT = 270;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.
@@ -180,7 +183,7 @@ describe('admin-client allowlist guard: frozen blast radius', () => {
     ).toEqual([]);
   });
 
-  it('pins the admin-client route count at exactly 271 (drift in either direction trips a guard above)', () => {
+  it('pins the admin-client route count at exactly 270 (drift in either direction trips a guard above)', () => {
     const a = loadAllowlist();
     expect(a.count).toBe(EXPECTED_COUNT);
     expect(a.routes.length).toBe(EXPECTED_COUNT);
