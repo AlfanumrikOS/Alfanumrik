@@ -54,9 +54,10 @@ export function bucketMeta(
     case 'ready':
       return { glyph: '✓', label: isHi ? 'परीक्षा के लिए तैयार' : 'Exam-ready', color: 'var(--green, #16A34A)' };
     case 'almost':
-      return { glyph: '◑', label: isHi ? 'लगभग तैयार' : 'Almost there', color: 'var(--orange, #E8581C)' };
+      // Warm channel — must stay burnt-orange under cosmic (where --orange remaps to violet).
+      return { glyph: '◑', label: isHi ? 'लगभग तैयार' : 'Almost there', color: 'var(--accent-warm, #E8581C)' };
     case 'building':
-      return { glyph: '↻', label: isHi ? 'बन रहा है' : 'Building up', color: '#8B5CF6' };
+      return { glyph: '↻', label: isHi ? 'बन रहा है' : 'Building up', color: 'var(--purple, #7C3AED)' };
     case 'not_yet':
     default:
       return { glyph: '○', label: isHi ? 'अभी शुरू करो' : 'Just getting started', color: 'var(--text-3, #9CA3AF)' };

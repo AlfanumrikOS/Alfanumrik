@@ -3689,6 +3689,18 @@ html[data-design="cosmic"] .recharts-text.recharts-label { fill: var(--text-2) !
   --shadow-glow: 0 0 28px rgb(var(--accent-warm-rgb, 232, 88, 28) / 0.22);
 }
 
+/* Wave 4a (Alfa Momentum — Learn/Exams): scope-override --orange + its glow to
+   the STABLE WARM CHANNEL so primitives like GlowButton/PremiumCard (which paint
+   from --orange / --shadow-glow) read burnt-orange-primary under the cosmic-light
+   student surface, where the global remap turns --orange into violet. Apply to a
+   CTA element to keep it warm without touching the primitive or the cosmic remap.
+   Mirrors the .os-mission scope-override pattern (line ~3687). */
+.warm-cta {
+  --orange: var(--accent-warm, #E8581C);
+  --orange-light: var(--accent-warm-strong, #C2440F);
+  --shadow-glow: 0 0 28px rgb(var(--accent-warm-rgb, 232, 88, 28) / 0.22);
+}
+
 /* Wave 2 (Alfa Momentum): tasteful staggered reveal for the secondary dashboard
    cards (mastery snapshot, board score). Each card sets --reveal-i inline; the
    hero (--os-mission) leads, these follow. CSS-only, no library (protects P10). */
