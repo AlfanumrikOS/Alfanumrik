@@ -594,12 +594,17 @@ interface BadgeProps {
 
 export function Badge({ children, color = 'var(--orange)', size = 'sm' }: BadgeProps) {
   const sizeClass = size === 'sm' ? 'text-xs px-2.5 py-0.5' : 'text-sm px-3 py-1';
+  // color-mix tolerates BOTH design tokens (var(--red)) and raw hex (#DC2626),
+  // so callers can pass theme tokens and still get the soft tint + hairline.
+  // (Wave 4b: the legacy `${color}12` concat produced invalid CSS for token
+  // colors — silently transparent — so this also fixes the default var(--orange)
+  // badge's missing tint.)
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full font-semibold ${sizeClass}`}
       style={{
-        background: `${color}12`,
-        border: `1px solid ${color}25`,
+        background: `color-mix(in srgb, ${color} 12%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`,
         color,
       }}
     >

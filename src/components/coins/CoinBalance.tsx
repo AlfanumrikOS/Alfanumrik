@@ -34,8 +34,8 @@ export default function CoinBalance({ balance, recentEarning, isHi }: CoinBalanc
     <div
       className="relative inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full"
       style={{
-        background: 'rgba(245, 158, 11, 0.08)',
-        border: '1px solid rgba(245, 158, 11, 0.20)',
+        background: 'color-mix(in srgb, var(--gold) 8%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--gold) 20%, transparent)',
       }}
       role="status"
       aria-label={
@@ -50,7 +50,7 @@ export default function CoinBalance({ balance, recentEarning, isHi }: CoinBalanc
         style={{
           width: 20,
           height: 20,
-          background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+          background: 'linear-gradient(135deg, var(--gold), color-mix(in srgb, var(--gold) 70%, #000))',
           color: '#FFFFFF',
           fontSize: 11,
         }}
@@ -63,7 +63,7 @@ export default function CoinBalance({ balance, recentEarning, isHi }: CoinBalanc
       <span
         className="text-sm font-bold tabular-nums"
         style={{
-          color: '#D97706',
+          color: 'color-mix(in srgb, var(--gold) 70%, #000)',
           fontFamily: 'var(--font-display)',
         }}
       >
@@ -75,7 +75,7 @@ export default function CoinBalance({ balance, recentEarning, isHi }: CoinBalanc
         <span
           className="absolute -top-3 -right-1 text-xs font-bold pointer-events-none"
           style={{
-            color: '#10B981',
+            color: 'var(--green)',
             animation: 'coinEarningRise 1.5s ease-out forwards',
           }}
           aria-live="polite"
