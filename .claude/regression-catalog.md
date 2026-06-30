@@ -6282,3 +6282,63 @@ plus the two onboarding RPC default flips that stop re-accrual).
 **Total catalog: 176 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Incident — students RLS infinite recursion + P15 null-student hydration — 2026-07-02
+
+A production incident took down EVERY authenticated client read of `public.students`
+(dashboard, `get_mastery_overview`, StreamGate, profile reads) and stranded logged-in
+students on a forever-skeleton dashboard. Two independent root causes, two independent fixes,
+two regression pins.
+
+**Cause 1 (RLS recursion, P8).** Migration `20260702010000_teacher_assigned_students_rls.sql`
+added the policy "Teachers can view students in their classes" ON `public.students` whose
+USING clause INLINED a subquery over `public.class_students`
+(`id IN (SELECT cs.student_id FROM public.class_students cs JOIN class_teachers … JOIN
+teachers …)`). Because that inline subquery reads `class_students` as SECURITY INVOKER,
+`class_students`' baseline policy "Students can view own enrollment" — which reads
+`public.students` back — re-entered the RLS evaluator and Postgres raised
+"infinite recursion detected in policy for relation students". Fix migration
+`20260702080000_fix_students_rls_infinite_recursion.sql` DROPped it and recreated it as
+`USING ( public.is_teacher_of(id) )` — a SECURITY DEFINER helper whose inner reads bypass RLS,
+breaking the cycle. The durable rule: teacher/parent boundaries on `public.students` MUST go
+through the SECURITY DEFINER helpers `public.is_teacher_of(id)` / `public.is_guardian_of(id)`,
+NEVER an inline subquery over another RLS-protected, student-referencing table.
+
+**Cause 2 (P15 null-student hydration).** With every `students` read failing, the
+`get_user_role`-success branch in `src/lib/AuthContext.tsx` hit a `.single()` on the secondary
+profile read, which REJECTS with PGRST116 on 0 rows. The throw aborted the role branch; because
+the parallel rescue is guarded by `if (!rolesResolved)` (already true), `student` was left
+permanently `null` while `isLoggedIn` stayed true → StudentOSDashboard skeletoned forever. The
+fix switches the secondary read to `.maybeSingle()`, adds a defensive `auth_user_id` re-read,
+and — when both come back null — hydrates `student` from the RPC's OWN `rd.student` payload
+(grade normalized via `normalizeGrade` (P5); `onboarding_completed` verbatim so the
+`/onboarding` redirect stays correct). A logged-in student is NEVER left with `student === null`.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-210 | `students_rls_no_inline_recursive_subquery` | P8: parses the root migration chain (baseline + later root migrations, in timestamp order; `_legacy/` excluded), reduces every CREATE/DROP POLICY ON `public.students` to the FINAL effective set (so `20260702080000` supersedes `20260702010000`), and asserts NO surviving policy inlines a FROM/JOIN over an RLS-protected, student-referencing table (`class_students`, `class_teachers`, `guardian_student_links`/`parent_student_links`/`parent_links`, `teacher_remediation_assignments`) — those boundaries must instead delegate to `is_teacher_of(id)`/`is_guardian_of(id)`. Positive-shape pins: the surviving "Teachers can view students in their classes" policy calls `is_teacher_of(id)`; `students_select_merged` uses helpers only. Detector self-test proves it FLAGS the old recursive policy text and CLEARS the fixed helper form (non-vacuous). Static SQL-text guard, no DB. | `src/__tests__/students-rls-no-recursion.test.ts` | E | P8 |
+| REG-211 | `authcontext_p15_null_student_hydration` | P15: mounts the REAL `AuthProvider` (supabase mocked at the module boundary). When `get_user_role` resolves a STUDENT role with an `rd.student` payload BUT both secondary `students` reads (`.maybeSingle()` by id, then defensive re-read by `auth_user_id`) return null/0-rows, the exposed `student` is NON-null (never strands a logged-in student → no forever-skeleton dashboard), carries the RPC grade normalized to bare P5 form (`'Grade 9'`→`'9'`) and `onboarding_completed` VERBATIM (true and false cases). Second branch: when the `auth_user_id` re-read succeeds, `student` hydrates from the FULL row. | `src/__tests__/auth-context-p15-null-student-hydration.test.tsx` | E | P15 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) — REG-210 is a SOURCE-level static guard (normal `npm test` lane, sibling
+  to REG-200/REG-208/REG-209's TSB-4/AO-10b source pins; NOT the gated live-DB
+  `src/__tests__/migrations/**` lane). It pins the INVARIANT (no inline protected-table subquery
+  in any active students policy), not just the one fixed file, so any future migration that
+  reintroduces the recursion pattern fails PR CI. The cycle is a property of the policy
+  DEFINITION and is provable statically; the live-DB proof ("an authenticated student reads
+  their own row without a recursion error") is complementary and lives in the integration lane.
+- P15 (onboarding integrity) — REG-211 exercises the REAL AuthContext code path (full provider
+  render + context probe), not a replicated helper, pinning the `maybeSingle` + RPC-payload
+  fallback that guarantees a resolved student role never ends with `student === null`.
+
+### Catalog total
+
+students RLS infinite-recursion fix + P15 null-student hydration fix add REG-210 (P8 static
+guard — no active `public.students` policy may inline a subquery over an RLS-protected,
+student-referencing table; teacher/parent boundaries go through `is_teacher_of`/`is_guardian_of`)
+and REG-211 (P15 — a resolved student role is always hydrated to a non-null `student`, from the
+`get_user_role` payload when the secondary profile read returns 0 rows).
+**Total catalog: 178 entries (target: 35 — TARGET EXCEEDED).**
+
+---
