@@ -59,6 +59,7 @@ export default function StudentOSDashboard() {
     setLanguage,
     activeRole,
     authUserId,
+    refreshStudent,
   } = useAuth();
   const { subjects: allowedSubjects } = useAllowedSubjects();
 
@@ -66,6 +67,25 @@ export default function StudentOSDashboard() {
   useCosmicLightSurface();
 
   const [todaysTopic, setTodaysTopic] = useState<CurriculumTopic | undefined>();
+
+  // Recovery affordance for the "logged-in but student momentarily null" state
+  // (symptom of an AuthContext race; root cause fixed separately). Re-runs the
+  // profile fetch; falls back to a hard reload if no refresh fn is wired.
+  const [retrying, setRetrying] = useState(false);
+  const handleRetry = useCallback(async () => {
+    setRetrying(true);
+    try {
+      if (typeof refreshStudent === 'function') {
+        await refreshStudent();
+      } else {
+        window.location.reload();
+      }
+    } catch {
+      window.location.reload();
+    } finally {
+      setRetrying(false);
+    }
+  }, [refreshStudent]);
 
   // Pending guardian-link requests awaiting this student's consent. The card
   // self-hides when the list is empty (PendingLinkApproval returns null), so
@@ -120,7 +140,49 @@ export default function StudentOSDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [student?.id, student?.preferred_subject, student?.grade]);
 
-  if (isLoading || !student) return <DashboardSkeleton />;
+  // ─── Explicit loading / error / empty gating (was a single conflated gate) ──
+  // 1. Genuinely loading → skeleton.
+  if (isLoading) return <DashboardSkeleton />;
+
+  // 2. Logged in but profile failed to resolve → actionable recovery surface
+  //    instead of an infinite skeleton (the bug symptom). Bilingual (P7).
+  if (isLoggedIn && !student) {
+    return (
+      <div
+        className="min-h-[60vh] flex flex-col items-center justify-center gap-4 px-6 text-center"
+        role="alert"
+      >
+        <p
+          className="text-base font-semibold max-w-xs"
+          style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}
+        >
+          {isHi
+            ? 'हम आपकी प्रोफ़ाइल लोड नहीं कर पाए। पुनः प्रयास करें।'
+            : "We couldn't load your profile. Tap to retry."}
+        </p>
+        <button
+          type="button"
+          onClick={() => void handleRetry()}
+          disabled={retrying}
+          aria-busy={retrying}
+          className="text-sm font-bold px-5 py-2.5 rounded-full transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-60"
+          style={{ background: 'var(--orange, #E8581C)', color: '#fff', minHeight: 44 }}
+        >
+          {retrying
+            ? isHi
+              ? 'प्रयास हो रहा है…'
+              : 'Retrying…'
+            : isHi
+              ? 'पुनः प्रयास करें'
+              : 'Retry'}
+        </button>
+      </div>
+    );
+  }
+
+  // 3. Not logged in → the redirect effect above is already navigating to
+  //    /login; show the skeleton for that brief window (matches prior behavior).
+  if (!student) return <DashboardSkeleton />;
 
   const firstName = student.name.split(' ')[0] || student.name;
   const streak = snapshot?.current_streak ?? 0;
