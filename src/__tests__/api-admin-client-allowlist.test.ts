@@ -101,7 +101,9 @@ function loadAllowlist(): Allowlist {
 const norm = (p: string) => p.replace(/\\/g, '/');
 
 // The frozen baseline captured 2026-06-30 by scanning the live tree.
-const EXPECTED_COUNT = 273;
+// XC-3 Phase 2 batch 1 (2026-06-30, REG-217): ratcheted 273 → 272 when
+// src/app/api/student/daily-lab/route.ts migrated admin → supabase-server.
+const EXPECTED_COUNT = 272;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.
@@ -176,7 +178,7 @@ describe('admin-client allowlist guard: frozen blast radius', () => {
     ).toEqual([]);
   });
 
-  it('pins the admin-client route count at exactly 273 (drift in either direction trips a guard above)', () => {
+  it('pins the admin-client route count at exactly 272 (drift in either direction trips a guard above)', () => {
     const a = loadAllowlist();
     expect(a.count).toBe(EXPECTED_COUNT);
     expect(a.routes.length).toBe(EXPECTED_COUNT);

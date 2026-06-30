@@ -29,7 +29,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@/lib/rbac';
-import { supabaseAdmin } from '@/lib/supabase-admin';
+import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { logger } from '@/lib/logger';
 import { BUILT_IN_SIMULATIONS_META, type BuiltInSimulationMeta } from '@/components/simulations/metadata';
 import { GUIDED_EXPERIMENTS } from '@/components/stem/experiments';
@@ -166,8 +166,20 @@ export async function GET(request: NextRequest) {
 
   const studentId = auth.studentId!;
 
+  // XC-3 Phase 2 (batch 1): reads run through the RLS-respecting server client
+  // (cookie-scoped to the calling student via authorizeRequest's own auth),
+  // NOT the RLS-bypassing service-role admin client. Every read below is a
+  // student-OWN row (or a public catalog) admitted by an existing SELECT policy:
+  //   - students                : students_select_merged (auth_user_id = auth.uid())
+  //   - interactive_simulations : sim_read_all (is_active = true) — public catalog
+  //   - experiment_observations : students_read_own_observations
+  //                               (student_id = get_student_id_for_auth())
+  // RLS is therefore a real second line of defense behind authorizeRequest. See
+  // docs/superpowers/plans/2026-07-02-xc3-systemic-rls-defense-in-depth.md §4.
+  const supabase = await createSupabaseServerClient();
+
   // 1. Resolve student grade (P5: TEXT '6'..'12').
-  const { data: studentRow, error: studentErr } = await supabaseAdmin
+  const { data: studentRow, error: studentErr } = await supabase
     .from('students')
     .select('grade')
     .eq('id', studentId)
@@ -179,7 +191,7 @@ export async function GET(request: NextRequest) {
   const grade = String(studentRow.grade);
 
   // 2. Pull DB simulations for this grade.
-  const { data: dbSimsRaw } = await supabaseAdmin
+  const { data: dbSimsRaw } = await supabase
     .from('interactive_simulations')
     .select('id,title,subject_code,thumbnail_emoji,estimated_time_minutes')
     .eq('is_active', true)
@@ -192,7 +204,7 @@ export async function GET(request: NextRequest) {
 
   // 3. Pull recent completions (last 14 days) and today's completion flag.
   const since14 = new Date(Date.now() - 14 * 86_400_000).toISOString();
-  const { data: recentObs } = await supabaseAdmin
+  const { data: recentObs } = await supabase
     .from('experiment_observations')
     .select('simulation_id,created_at')
     .eq('student_id', studentId)
