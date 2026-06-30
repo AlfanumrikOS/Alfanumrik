@@ -96,10 +96,11 @@ import {
   payloadFromMcqBlock,
 } from '@/lib/foxy/evidential-quiz';
 import { parseFoxyChapterNumber } from '@/lib/foxy/chapter-parser';
-// Re-export the chapter-parser helper so test modules can import it from the
-// route's public surface (parity with mapFoxyModeToEventMode). chapter-parser.ts
-// remains the single source of truth — this is plumbing only, no behavior change.
-export { parseFoxyChapterNumber };
+// NOTE: this helper (and the other pure helpers below) used to be re-exported
+// from this route file for test modules. Next.js 16 forbids non-handler exports
+// from a route.ts, so the public test/helper surface now lives in
+// ./_lib/test-surface.ts. chapter-parser.ts remains the single source of truth;
+// this route imports it only for its own internal use below.
 import { detectStruggleSignal } from '@/lib/foxy/struggle-detection';
 import type { LlmGrader } from '@/lib/ai/validation/quiz-oracle';
 import { parseLlmGraderResponse } from '@/lib/ai/validation/quiz-oracle';
@@ -159,12 +160,9 @@ import {
   errorJson,
   mapFoxyModeToEventMode,
 } from './_lib/constants';
-// Re-export the symbols that test modules import from the route's public
-// surface. The new _lib/constants.ts module is the single source of truth —
-// this is plumbing only, no behavior change. (parseFoxyChapterNumber above is
-// re-exported the same way.)
-export type { CognitiveContext };
-export { EMPTY_COGNITIVE_CONTEXT, mapFoxyModeToEventMode };
+// (These symbols are re-exported for tests/external callers from
+// ./_lib/test-surface.ts — not from this route file. See the note at the
+// chapter-parser import above.)
 // H1 REFACTOR M3 — quota + tenant-AI-override helpers extracted to a
 // co-located module. Imported and used identically here at the same call
 // sites; zero behavior change. (Service-role Supabase I/O + the
@@ -185,10 +183,8 @@ import {
   buildPriorSessionPromptSection,
   type PriorSessionTurn,
 } from './_lib/session';
-// Re-export resolveSession from the route's public surface — the M4 module is
-// the single source of truth, but two test modules import resolveSession from
-// '@/app/api/foxy/route'. This is plumbing only, no behavior change.
-export { resolveSession };
+// (resolveSession is re-exported for tests from ./_lib/test-surface.ts — not
+// from this route file. See the note at the chapter-parser import above.)
 // H1 REFACTOR M5 — cognitive-context + learner-state loaders extracted to a
 // co-located module. Imported and used identically here at the same call
 // sites; zero behavior change. (Service-role Supabase I/O on the CME tables,
@@ -295,19 +291,9 @@ import {
   type CoachDirective,
   type CoachFeedbackSignal,
 } from '@/lib/foxy/prompt-sections';
-// Re-export the symbols that test modules / external callers import from the
-// route's public surface (parity with the M1 constants re-export above).
-export {
-  buildColdStartPromptSection,
-  buildCognitivePromptSection,
-  selectLeadConcept,
-  buildLeadConceptDirective,
-  isBareOpen,
-  VALID_COACH_DIRECTIVES,
-  COACH_DIRECTIVE_SECTIONS,
-  SINGLE_MCQ_DIRECTIVE,
-} from '@/lib/foxy/prompt-sections';
-export type { LeadConcept, CoachDirective } from '@/lib/foxy/prompt-sections';
+// (These prompt-builder helpers are re-exported for tests/external callers from
+// ./_lib/test-surface.ts — not from this route file. prompt-sections.ts remains
+// the single source of truth; this route imports them only for internal use.)
 
 
 // B'-5 Phase 2: read the last 5 feedback rows for this student joined to

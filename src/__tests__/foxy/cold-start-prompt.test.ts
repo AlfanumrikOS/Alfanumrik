@@ -46,7 +46,7 @@ import {
   buildColdStartPromptSection,
   EMPTY_COGNITIVE_CONTEXT,
   type CognitiveContext,
-} from '@/app/api/foxy/route';
+} from '@/app/api/foxy/_lib/test-surface';
 
 describe('buildColdStartPromptSection', () => {
   it('emits the FIRST-INTERACTION header so the model can recognise the branch', () => {
