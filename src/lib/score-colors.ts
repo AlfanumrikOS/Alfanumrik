@@ -28,3 +28,14 @@ export function getScoreColor(score: number): string {
   if (score >= 35) return 'var(--accent-warm)';   // needs work (stable warm)
   return 'var(--red)';                            // at risk
 }
+
+/**
+ * Quiz-percentage color bands (3-tier). For raw quiz % (correct/total),
+ * NOT Performance Score (which is the 5-tier getScoreColor above).
+ * Thresholds byte-identical to the pre-Wave-6 local parent/reports helper.
+ */
+export function getQuizScoreColor(pct: number): string {
+  if (pct >= 80) return 'var(--green)';
+  if (pct >= 50) return 'var(--gold)';
+  return 'var(--red)';
+}

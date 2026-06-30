@@ -7,6 +7,7 @@ import { calculateScorePercent } from '@/lib/scoring';
 import { supabase } from '@/lib/supabase';
 import { getLevelFromScore } from '@/lib/score-config';
 import { REPORT_MONTHS_COUNT } from '@/lib/constants';
+import { getQuizScoreColor } from '@/lib/score-colors';
 import ParentLabReportWidget from '@/components/parent/ParentLabReportWidget';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 
@@ -169,12 +170,10 @@ async function api(action: string, params: Record<string, unknown> = {}) {
 // ============================================================
 // HELPER FUNCTIONS
 // ============================================================
-function getScoreColor(score: number): string {
-  if (score >= 80) return '#16A34A';
-  if (score >= 50) return '#D97706';
-  return '#EF4444';
-}
-
+// getScoreColor is now imported from '@/lib/score-colors' (Wave 4b single
+// source of truth) — the local 4th copy was removed in Wave 6. Its return
+// values are now design tokens (var(--…)), so tint sites below use color-mix
+// instead of `${color}15` hex-concat.
 function getMasteryColor(level: string): string {
   switch (level) {
     case 'mastered': return '#16A34A';
@@ -317,8 +316,8 @@ function SubjectCard({ subject, isHi = false }: { subject: SubjectData; isHi?: b
         {subject.recentScore != null && (
           <span style={{
             marginLeft: 'auto', fontSize: 12, fontWeight: 600,
-            color: getScoreColor(subject.recentScore),
-            backgroundColor: `${getScoreColor(subject.recentScore)}15`,
+            color: getQuizScoreColor(subject.recentScore),
+            backgroundColor: `color-mix(in srgb, ${getQuizScoreColor(subject.recentScore)} 15%, transparent)`,
             padding: '3px 10px', borderRadius: 20,
           }}>
             {t(isHi, 'Last quiz', 'पिछली क्विज़')}: {subject.recentScore}%
@@ -493,7 +492,7 @@ function QuizHistory({ quizzes, isHi = false }: { quizzes: QuizRecord[]; isHi?: 
       <h3 style={cardTitle}>{t(isHi, 'Recent Quiz History', 'हाल की क्विज़')}</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {quizzes.slice(0, 10).map((q: QuizRecord, i: number) => {
-          const scoreColor = getScoreColor(q.score ?? 0);
+          const scoreColor = getQuizScoreColor(q.score ?? 0);
           return (
             <div key={i} style={{
               display: 'flex', alignItems: 'center', gap: 12,
@@ -511,7 +510,7 @@ function QuizHistory({ quizzes, isHi = false }: { quizzes: QuizRecord[]; isHi?: 
               </div>
               <div style={{
                 fontSize: 18, fontWeight: 800, color: scoreColor,
-                backgroundColor: `${scoreColor}12`,
+                backgroundColor: `color-mix(in srgb, ${scoreColor} 12%, transparent)`,
                 padding: '4px 12px', borderRadius: 10,
               }}>
                 {q.score ?? 0}%
@@ -1818,7 +1817,7 @@ function ParentReportsPage() {
                   icon={'\uD83C\uDFAF'}
                   label={t(isHi, 'Overall Mastery', 'कुल महारत')}
                   value={`${stats.overallMastery ?? stats.accuracy ?? 0}%`}
-                  ringColor={getScoreColor(stats.overallMastery ?? stats.accuracy ?? 0)}
+                  ringColor={getQuizScoreColor(stats.overallMastery ?? stats.accuracy ?? 0)}
                 />
                 <SummaryCard
                   icon={'\uD83D\uDD25'}

@@ -80,7 +80,9 @@ export function FoxyTopBar({
       <div
         className="foxy-os-avatar flex items-center justify-center shrink-0"
         style={{
-          background: 'linear-gradient(135deg, var(--orange), #F59E0B)',
+          // Warm-channel Foxy avatar (stays burnt-orange under cosmic, where
+          // --orange remaps to violet). Wave 6 tokenization.
+          background: 'linear-gradient(135deg, var(--accent-warm), rgb(var(--marigold-rgb)))',
           animation: thinking ? 'pulse 1s infinite' : 'none',
         }}
         aria-hidden="true"

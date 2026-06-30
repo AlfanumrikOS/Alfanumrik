@@ -71,6 +71,31 @@
   --purple-light: #9333EA;
   --pink: #DB2777;
   --red: #DC2626;
+  --marigold-rgb: 245, 166, 35;     /* channel for the --gold/marigold; rgb(var(--marigold-rgb) / <alpha>) */
+
+  /* ─── Base semantic / status tokens (Alfa Momentum, Wave 6) ──────────────
+     These semantic aliases were previously declared ONLY inside the cosmic
+     and/or dark blocks, so on the DEFAULT-LIGHT surface they resolved to
+     nothing — a real latent bug (Foxy ChatBubble reads var(--success)/
+     var(--warning)/var(--danger); DynamicScaffold reads var(--border-base)/
+     var(--surface-sunken); StatRing bands on var(--mastery-*)). Declaring
+     sensible base values here makes those consumers render on light too. The
+     cosmic / cosmic-light / dark blocks still redeclare these under their own
+     selectors, so those scopes keep winning (higher-specificity selectors). */
+  --success: var(--green);          /* positive / verified — green #16A34A */
+  --warning: var(--gold);           /* caution / check-yourself — marigold #F5A623 */
+  --info: var(--teal);              /* informational — teal #0891B2 */
+  --danger: var(--red);             /* destructive / error — red #DC2626 */
+  --primary: var(--orange);         /* brand primary action — burnt-orange (CTA buttons) */
+  --primary-light: var(--orange-light);
+  --primary-hover: var(--accent-warm-strong);
+  --border-base: var(--border);     /* alias of --border for components using the *-base name */
+  --surface-sunken: var(--surface-2); /* slightly recessed surface (inset wells) */
+  /* Mastery banding — matches the cosmic-light student-surface values so
+     StatRing's default low/mid/high bands resolve on non-cosmic surfaces too. */
+  --mastery-low: var(--red);        /* < 40% — at risk */
+  --mastery-mid: var(--gold);       /* 40–69% — developing */
+  --mastery-high: var(--green);     /* >= 70% — strong */
 
   /* Surfaces — warm cream base */
   --bg: #FBF8F4;

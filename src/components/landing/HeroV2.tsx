@@ -137,7 +137,10 @@ export default function HeroV2() {
             </div>
 
             <h1 id="welcome-v2-hero-title" className={s.heroH}>
-              <span>{headline}</span>
+              {/* P7 (Wave 6): tag the Hindi headline span so the browser selects
+                  the Devanagari display fallback (--display-hi → Mukta) — Fraunces
+                  has no Devanagari glyphs. No new font loaded. */}
+              <span lang={isHi ? 'hi' : undefined}>{headline}</span>
               <span className="devaLine" lang="hi">
                 {devaText.split(',').map((seg, i, arr) =>
                   i === arr.length - 1 ? (

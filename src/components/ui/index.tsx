@@ -107,7 +107,15 @@ export function LockedCard({
             </h3>
             <span
               className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-              style={{ background: `${accent}15`, color: accent, border: `1px solid ${accent}30` }}
+              // color-mix tolerates BOTH var() tokens (--purple/--teal) and raw hex,
+              // so the soft tint + hairline render even when accent is a token.
+              // (Wave 6: the legacy `${accent}15`/`${accent}30` concat was silently
+              // transparent for token accents — matches the Badge fix pattern.)
+              style={{
+                background: `color-mix(in srgb, ${accent} 15%, transparent)`,
+                color: accent,
+                border: `1px solid color-mix(in srgb, ${accent} 30%, transparent)`,
+              }}
             >
               <span aria-hidden="true">🔒</span>
               {variant === 'plan' ? 'Premium' : variant === 'grade' ? 'Unlocks later' : 'Locked'}
@@ -350,8 +358,11 @@ export function Button({
     <button
       className={`inline-flex items-center justify-center gap-2 font-semibold transition-all ${BTN_FOCUS} ${sizeMap[size]} ${base} ${className}`}
       style={{
-        background: color ? `${color}12` : 'var(--surface-2)',
-        border: `1.5px solid ${color ?? 'var(--border)'}30`,
+        // color-mix tolerates BOTH var() tokens and raw hex (Wave 6): the legacy
+        // `${color}12` / `${color}30` concat produced invalid CSS — silently
+        // transparent — when callers passed a token like var(--purple).
+        background: color ? `color-mix(in srgb, ${color} 12%, transparent)` : 'var(--surface-2)',
+        border: `1.5px solid ${color ? `color-mix(in srgb, ${color} 30%, transparent)` : 'var(--border)'}`,
         color: color ?? 'var(--text-1)',
         opacity: isDisabled ? 0.6 : 1,
         cursor: isDisabled ? 'not-allowed' : 'pointer',
@@ -1291,6 +1302,8 @@ interface PremiumCardProps {
   /** Spring hover lift (disabled automatically under reduced motion). */
   hoverable?: boolean;
   onClick?: () => void;
+  /** Optional test hook (forwarded to the root element). */
+  'data-testid'?: string;
 }
 
 export function PremiumCard({
@@ -1300,9 +1313,11 @@ export function PremiumCard({
   gradient = false,
   hoverable = false,
   onClick,
+  'data-testid': dataTestId,
 }: PremiumCardProps) {
   return (
     <div
+      data-testid={dataTestId}
       onClick={onClick}
       onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
       role={onClick ? 'button' : undefined}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getScoreColor } from '@/lib/score-colors';
+import { getScoreColor, getQuizScoreColor } from '@/lib/score-colors';
 import { getScoreColor as getScoreColorReExport } from '@/components/score/ScoreCard';
 
 /**
@@ -65,6 +65,84 @@ describe('getScoreColor — band thresholds (single source of truth)', () => {
       expect(idx).toBeGreaterThanOrEqual(last);
       last = idx;
     }
+  });
+});
+
+/**
+ * Pins the quiz-percentage 3-tier color bands (Alfa Momentum Wave 6).
+ *
+ * `getQuizScoreColor(pct)` was added to `src/lib/score-colors.ts` and now backs
+ * all three quiz-%/mastery-% color sites in `src/app/parent/reports/page.tsx`
+ * (recentScore tile, quiz-history rows, Overall Mastery ring). It is a SEPARATE,
+ * coarser mapping from the 5-tier Performance-Score `getScoreColor` above:
+ *   raw quiz %  →  >= 80 green / >= 50 gold / else red   (3 bands)
+ *   perf score  →  90 purple / 75 green / 50 gold / 35 warm / else red (5 bands)
+ * This test locks:
+ *   1. The two band THRESHOLDS (80 / 50), boundary-inclusive (>=).
+ *   2. The returned values are CSS-var design tokens, NOT brand hex.
+ *   3. The two helpers stay DISTINCT (different bands at the same input).
+ */
+describe('getQuizScoreColor — 3-tier quiz-% bands', () => {
+  const GREEN = 'var(--green)';
+  const GOLD = 'var(--gold)';
+  const RED = 'var(--red)';
+
+  it.each([
+    // [pct, expected token, label]
+    [100, GREEN, 'perfect → green'],
+    [80, GREEN, 'lower bound of green (inclusive boundary)'],
+    [79, GOLD, 'just below 80 → gold'],
+    [50, GOLD, 'lower bound of gold (inclusive boundary)'],
+    [49, RED, 'just below 50 → red'],
+    [0, RED, 'zero → red'],
+  ])('pct %i returns %s (%s)', (pct, expected) => {
+    expect(getQuizScoreColor(pct)).toBe(expected);
+  });
+
+  it('only ever yields one of the three quiz-band tokens across 0–100', () => {
+    const allowed = new Set([GREEN, GOLD, RED]);
+    for (let p = 0; p <= 100; p++) {
+      expect(allowed.has(getQuizScoreColor(p))).toBe(true);
+    }
+  });
+
+  it('returns CSS-var tokens, never 6-digit brand hex, across 0–100', () => {
+    const SIX_DIGIT_HEX = /#[0-9a-fA-F]{6}\b/;
+    for (let p = 0; p <= 100; p++) {
+      const color = getQuizScoreColor(p);
+      expect(color).toMatch(/^var\(--[a-z-]+\)$/);
+      expect(color).not.toMatch(SIX_DIGIT_HEX);
+    }
+  });
+
+  it('is monotonic by band — color only improves as pct rises (never regresses)', () => {
+    const rank = [RED, GOLD, GREEN];
+    let last = -1;
+    for (let p = 0; p <= 100; p++) {
+      const idx = rank.indexOf(getQuizScoreColor(p));
+      expect(idx).toBeGreaterThanOrEqual(last);
+      last = idx;
+    }
+  });
+});
+
+describe('getQuizScoreColor vs getScoreColor — distinct helpers', () => {
+  it('the two helpers are different functions', () => {
+    expect(getQuizScoreColor).not.toBe(getScoreColor);
+  });
+
+  it('disagree where the band granularity differs (3-tier vs 5-tier)', () => {
+    // At 90: quiz → green (>=80); perf → purple (>=90). Distinct.
+    expect(getQuizScoreColor(90)).toBe('var(--green)');
+    expect(getScoreColor(90)).toBe('var(--purple)');
+
+    // At 40: quiz → red (<50); perf → needs-work warm (>=35). Distinct.
+    expect(getQuizScoreColor(40)).toBe('var(--red)');
+    expect(getScoreColor(40)).toBe('var(--accent-warm)');
+
+    // At 79: quiz → gold (<80); perf → green (>=75). Distinct.
+    expect(getQuizScoreColor(79)).toBe('var(--gold)');
+    expect(getScoreColor(79)).toBe('var(--green)');
   });
 });
 

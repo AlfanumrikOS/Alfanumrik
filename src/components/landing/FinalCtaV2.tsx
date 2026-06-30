@@ -17,7 +17,10 @@ export default function FinalCtaV2() {
         <div className={`eye ${s.revealUp}`} data-reveal>
           {t('Section vi · the invitation', 'खंड vi · निमंत्रण')}
         </div>
-        <h2 id="final-cta-title" className={s.revealUp} data-reveal>
+        {/* P7 (Wave 6): tag the heading lang so the Hindi headline picks the
+            Devanagari display fallback (--display-hi) — Fraunces lacks Devanagari
+            glyphs. No new font loaded. */}
+        <h2 id="final-cta-title" className={s.revealUp} data-reveal lang={isHi ? 'hi' : undefined}>
           {isHi ? (
             <>
               आज का गृहकार्य <em>अलग</em> हो सकता है।<br />

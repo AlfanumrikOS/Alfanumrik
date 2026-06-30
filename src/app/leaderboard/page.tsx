@@ -1057,6 +1057,7 @@ export default function LeaderboardPage() {
                     <PremiumCard
                       key={entry.student_id}
                       glow={isMe}
+                      data-testid="mastery-leaderboard-row"
                       className={`flex items-center gap-3 !p-3${isMe ? ' warm-cta' : ''}`}
                     >
                       <div
