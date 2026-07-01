@@ -49,7 +49,7 @@ function BehaviorRating({ value, label }: { value: number|null; label: string })
 }
 
 export default function HPCPage() {
-  const { student, isLoading: authLoading, isLoggedIn } = useAuth();
+  const { student, isLoading: authLoading, isLoggedIn, isHi } = useAuth();
   const router = useRouter();
   const [hpc, setHpc] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -100,8 +100,8 @@ export default function HPCPage() {
     return () => { cancelled = true; };
   }, [studentId]);
 
-  if (loading) return (<div style={pageStyle}><div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}><div style={{ width: 40, height: 40, border: '3px solid #1E293B', borderTopColor: '#6366F1', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />Generating Holistic Progress Card...</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>);
-  if (!hpc || hpc.error) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 60, color: '#EF4444' }}>{(hpc?.error as string) || 'Failed to load HPC'}</div></div>;
+  if (loading) return (<div style={pageStyle}><div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}><div style={{ width: 40, height: 40, border: '3px solid #1E293B', borderTopColor: '#6366F1', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />{isHi ? 'समग्र प्रगति कार्ड तैयार हो रहा है...' : 'Generating Holistic Progress Card...'}</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>);
+  if (!hpc || hpc.error) return <div style={pageStyle}><div style={{ textAlign: 'center', padding: 60, color: '#EF4444' }}>{(hpc?.error as string) || (isHi ? 'प्रगति कार्ड लोड नहीं हो सका' : 'Failed to load HPC')}</div></div>;
 
   const stu = hpc.student as Record<string, unknown> | undefined;
   const comp = (hpc.competency_levels || {}) as Record<string, Record<string, string>>;

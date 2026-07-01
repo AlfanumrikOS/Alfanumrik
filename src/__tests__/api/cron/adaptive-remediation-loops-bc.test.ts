@@ -32,7 +32,7 @@
  * The pure modules (signals.ts, adaptive-loops-rules.ts, the two evaluators) are
  * NOT mocked — the route must agree with the frozen guardrail math.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
@@ -292,6 +292,12 @@ function inactivityFixture(overrides: Fixture = {}): Fixture {
 }
 
 describe('Loop B inject — re-engagement nudge', () => {
+  // Freeze time so the route's Date.now() and the assertion's reference point are
+  // identical, eliminating flakiness on slow CI runners (MEDIUM severity).
+  const FIXED_NOW = new Date('2026-01-01T12:00:00Z').getTime();
+  beforeEach(() => { vi.useFakeTimers({ now: FIXED_NOW }); });
+  afterEach(() => { vi.useRealTimers(); });
+
   it("'broken' student → sentinel ('_inactivity',0) row + engagement_nudged event + nudge notification, NO teacher row", async () => {
     installHandler(inactivityFixture());
     const { POST } = await loadRoute();
@@ -306,9 +312,11 @@ describe('Loop B inject — re-engagement nudge', () => {
     expect(row.trigger_signal).toBe('inactivity');
     expect(row.status).toBe('active');
     // verify_by = createdAt + 3 days (Loop B return window).
+    // Use FIXED_NOW (frozen via vi.useFakeTimers) so both the route's Date.now()
+    // and the assertion reference point are identical — no CI-timing skew.
     const verifyByMs = Date.parse(String(row.verify_by));
-    expect(verifyByMs).toBeGreaterThan(Date.now() + 2.9 * DAY);
-    expect(verifyByMs).toBeLessThan(Date.now() + 3.1 * DAY);
+    expect(verifyByMs).toBeGreaterThan(FIXED_NOW + 2.9 * DAY);
+    expect(verifyByMs).toBeLessThan(FIXED_NOW + 3.1 * DAY);
 
     const event = publishEventMock.mock.calls[0][1] as Record<string, unknown>;
     expect(event.kind).toBe('system.engagement_nudged');
@@ -428,6 +436,12 @@ function concentrationFixture(overrides: Fixture = {}): Fixture {
 }
 
 describe('Loop C inject — immediate escalation', () => {
+  // Freeze time so the route's Date.now() and the assertion's reference point are
+  // identical, eliminating flakiness on slow CI runners (MEDIUM severity).
+  const FIXED_NOW = new Date('2026-01-01T12:00:00Z').getTime();
+  beforeEach(() => { vi.useFakeTimers({ now: FIXED_NOW }); });
+  afterEach(() => { vi.useRealTimers(); });
+
   it("'high' band + roster teacher (B2B): teacher assignment + worst-chapter row + escalated_to=teacher + event + audit", async () => {
     installHandler(concentrationFixture({
       class_students: { data: [{ class_id: 'class-1' }] },
@@ -458,9 +472,11 @@ describe('Loop C inject — immediate escalation', () => {
     expect(row.escalated_to).toBe('teacher');
     expect(row.teacher_assignment_id).toBe('tra-1');
     // verify_by = createdAt + 14 days.
+    // Use FIXED_NOW (frozen via vi.useFakeTimers) so both the route's Date.now()
+    // and the assertion reference point are identical — no CI-timing skew.
     const verifyByMs = Date.parse(String(row.verify_by));
-    expect(verifyByMs).toBeGreaterThan(Date.now() + 13.9 * DAY);
-    expect(verifyByMs).toBeLessThan(Date.now() + 14.1 * DAY);
+    expect(verifyByMs).toBeGreaterThan(FIXED_NOW + 13.9 * DAY);
+    expect(verifyByMs).toBeLessThan(FIXED_NOW + 14.1 * DAY);
 
     const event = publishEventMock.mock.calls[0][1] as Record<string, unknown>;
     expect(event.kind).toBe('system.concentration_escalated');

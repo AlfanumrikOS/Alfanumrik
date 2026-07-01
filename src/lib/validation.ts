@@ -185,6 +185,7 @@ export const paymentVerifySchema = z.object({
 export const paymentCancelSchema = z.object({
   immediate: z.boolean().optional().default(false),
   reason: z.string().max(500).optional(),
+  student_id: z.string().uuid().optional(),
 });
 
 // ── Feature Flag ────────────────────────────────────────

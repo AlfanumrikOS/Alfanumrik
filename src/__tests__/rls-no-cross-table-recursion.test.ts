@@ -146,12 +146,20 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'foxy_pending_expectations::foxy_pending_expectations_student_read',
   'foxy_quality_scores::foxy_quality_scores_read_admin',
   'geographic_metrics::geographic_metrics_admin_select',
-  'learner_twin_memory::learner_twin_memory_parent_select',
+  // XC-3 Phase drain (migration 20260702110000): 4 of the original 6 policies on
+  // learner_twin_snapshots and learner_twin_memory were refactored to SECURITY
+  // DEFINER helpers — _parent_select now calls is_guardian_of(student_id) and
+  // _teacher_select calls is_teacher_of(student_id) on both tables. Those 4 entries
+  // are pruned from the ledger (no longer detected). Ledger: 240 → 236.
+  //
+  // The 2 _student_select entries REMAIN in the ledger: the migration replaced
+  // IN(SELECT id FROM students …) with = (SELECT id FROM students … LIMIT 1),
+  // which is a scalar subquery — the predicate still contains "FROM public.students"
+  // so the static detector continues to flag them. They carry no live recursion
+  // risk (students does not reference learner_twin_* in return), but the static
+  // guard cannot distinguish scalar from multi-row subqueries, so they stay frozen.
   'learner_twin_memory::learner_twin_memory_student_select',
-  'learner_twin_memory::learner_twin_memory_teacher_select',
-  'learner_twin_snapshots::learner_twin_snapshots_parent_select',
   'learner_twin_snapshots::learner_twin_snapshots_student_select',
-  'learner_twin_snapshots::learner_twin_snapshots_teacher_select',
   'mol_feedback::mol_feedback_student_insert',
   'mol_request_logs::mol_request_logs_admin_read',
   'mrr_snapshots::mrr_snapshots_admin_select',
@@ -628,7 +636,7 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     ).toEqual([]);
   });
 
-  it('freezes the current blast radius at exactly 240 inline cross-table policies', () => {
+  it('freezes the current blast radius at exactly 236 inline cross-table policies', () => {
     // The audit found ~141 inline policies in the BASELINE; the whole effective
     // chain carried 242 AFTER Phase 0a.1 widened policy-NAME matching to also see
     // UNQUOTED-name policies (was 214 with the quoted-only regex; the 28 newly-visible
@@ -644,8 +652,8 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // teachers.auth_user_id constraint), so it is no longer flagged: 241 → 240. This
     // pins the number so any drift (up = new violation, down = un-pruned ledger) trips
     // a guard above.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(240);
-    expect(detectedRiskKeys().length).toBe(240);
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(236);
+    expect(detectedRiskKeys().length).toBe(236);
   });
 });
 
@@ -847,7 +855,6 @@ describe('generalized RLS recursion guard: unquoted policy-name coverage (Phase 
     const detected = new Set(detectedRiskKeys());
     for (const k of [
       'adaptive_interventions::adaptive_interventions_teacher_select',
-      'learner_twin_snapshots::learner_twin_snapshots_teacher_select',
       'teacher_remediation_assignments::teacher_remediation_assignments_teacher_select',
       'board_score_predictions::board_score_predictions_student_select',
       'parent_cheers::parent_cheers_guardian_select',

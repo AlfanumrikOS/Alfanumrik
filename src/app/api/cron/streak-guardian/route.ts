@@ -14,6 +14,7 @@
 // P13: response body carries only aggregate counts — no student identifiers.
 
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { isFeatureEnabled } from '@/lib/feature-flags';
 
@@ -29,6 +30,16 @@ const STREAK_VISIBILITY_THRESHOLD = 3;
 /** Generic 500 body — never echo internal error details to the caller. */
 const GENERIC_500_BODY = 'internal';
 
+function constantTimeEquals(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    // Use a fixed-length comparison to avoid length-based timing leakage
+    return false;
+  }
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  return crypto.timingSafeEqual(aBuf, bBuf);
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // HANDLER
 // ════════════════════════════════════════════════════════════════════════════
@@ -39,7 +50,8 @@ export async function POST(request: NextRequest): Promise<Response> {
     request.headers.get('x-cron-secret') ??
     request.headers.get('authorization')?.replace('Bearer ', '');
 
-  if (!secret || secret !== process.env.CRON_SECRET) {
+  const expected = process.env.CRON_SECRET;
+  if (!secret || !expected || !constantTimeEquals(secret, expected)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 

@@ -90,6 +90,7 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/login');
@@ -98,11 +99,12 @@ export default function NotificationsPage() {
   const load = useCallback(async () => {
     if (!student) return;
     setLoading(true);
+    setFetchError(null);
     try {
       const data = await getStudentNotifications(student.id, 50);
       setNotifications(data?.notifications ?? []);
       setUnreadCount(data?.unread_count ?? 0);
-    } catch (e) { console.error('Failed to load notifications:', e); setNotifications([]); }
+    } catch (e) { console.error('Failed to load notifications:', e); setNotifications([]); setFetchError(isHi ? 'सूचनाएं लोड नहीं हो सकीं' : 'Failed to load notifications'); }
     setLoading(false);
   }, [student]);
 
@@ -159,6 +161,15 @@ export default function NotificationsPage() {
       </header>
 
       <main className="app-container py-4 space-y-4">
+        {fetchError && (
+          <div className="mx-4 mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 flex items-center gap-2">
+            <span aria-hidden="true">⚠️</span>
+            <span>{fetchError}</span>
+            <button onClick={() => load()} className="ml-auto text-red-700 underline">
+              {isHi ? 'पुनः प्रयास' : 'Retry'}
+            </button>
+          </div>
+        )}
         {loading ? (
           <div className="text-center py-16">
             <div className="text-4xl animate-float mb-3">🔔</div>
