@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { supabase as globalSupabase } from '@/lib/supabase-client';
+import { authorizeRequest } from '@/lib/rbac';
 import { cancelRazorpaySubscription } from '@/lib/razorpay';
 import { logger } from '@/lib/logger';
 import { logOpsEvent } from '@/lib/ops-events';
@@ -48,6 +49,17 @@ export async function POST(request: NextRequest) {
 
     if (!supabaseUrl || !supabaseKey || !serviceKey) {
       return NextResponse.json({ error: 'Not configured' }, { status: 503 });
+    }
+
+    // RBAC: enforce authentication + role gate. Cancel is available to
+    // students (own subscription) and parents/guardians (child's subscription).
+    // We resolve identity here; downstream ownership checks enforce the
+    // student-ownership or guardian-child relationship.
+    const auth = await authorizeRequest(request);
+    if (!auth.authorized) return auth.errorResponse!;
+    const ALLOWED_ROLES: string[] = ['student', 'parent'];
+    if (!auth.roles.some(r => ALLOWED_ROLES.includes(r))) {
+      return NextResponse.json({ error: 'Forbidden', code: 'ROLE_NOT_ALLOWED' }, { status: 403 });
     }
 
     // Auth

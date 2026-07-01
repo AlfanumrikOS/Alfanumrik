@@ -335,8 +335,11 @@ function validateQuestions(questions: QuestionRecord[]): QuestionRecord[] {
       o.includes('it is not important') || o.includes('no board exam')
     )) return false;
 
-    // Reject if fewer than 3 distinct options
-    if (new Set(optTexts).size < 3) return false;
+    // Reject if any option is empty (P6: all 4 options must be non-empty)
+    if (opts.some((o: string) => !o || !o.trim())) return false;
+
+    // Reject if fewer than 4 distinct options (P6: all 4 must be distinct)
+    if (new Set(optTexts).size < 4) return false;
 
     // Reject self-contradicting or unreliable explanations
     if (q.explanation) {
