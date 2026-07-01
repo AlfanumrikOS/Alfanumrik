@@ -44,6 +44,16 @@ vi.mock('@/lib/supabase-client', () => ({
   supabase: { auth: { getUser: (...a: unknown[]) => bearerGetUser(...a) } },
 }));
 
+// ── RBAC / authorizeRequest mock ─────────────────────────────────────────────
+// authorizeRequest() uses next/headers internally (dynamic import) which is
+// unavailable in the Vitest jsdom environment.  We mock the whole module so
+// route tests can focus on route logic; RBAC internals are tested in rbac.test.ts.
+const mockAuthorizeRequest = vi.fn();
+vi.mock('@/lib/rbac', () => ({
+  authorizeRequest: (...a: unknown[]) => mockAuthorizeRequest(...a),
+  PERMISSIONS: { PAYMENTS_SUBSCRIBE: 'payments.subscribe' },
+}));
+
 // ── Guardian-link ownership helper ──────────────────────────────────────────
 const listChildrenForGuardian = vi.fn();
 vi.mock('@/lib/domains/relationship', () => ({
@@ -120,7 +130,14 @@ beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://stub.supabase.co';
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'stub-anon';
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'stub-service';
-  // Default: authenticated as the parent.
+  // Default: authorizeRequest succeeds as the parent.
+  mockAuthorizeRequest.mockResolvedValue({
+    authorized: true,
+    userId: PARENT_AUTH_ID,
+    roles: ['parent'],
+    errorResponse: null,
+  });
+  // Default: authenticated as the parent (SSR client used after authorizeRequest).
   ssrGetUser.mockResolvedValue({ data: { user: { id: PARENT_AUTH_ID, email: 'p@x.com' } } });
   bearerGetUser.mockResolvedValue({ data: { user: null } });
   // Default subscription row is an active pro sub with no razorpay id (so the
@@ -147,6 +164,16 @@ async function loadPOST() {
 
 describe('POST /api/payments/cancel — auth gate', () => {
   it('returns 401 when unauthenticated and never reads a subscription or calls the RPC', async () => {
+    mockAuthorizeRequest.mockResolvedValueOnce({
+      authorized: false,
+      userId: null,
+      roles: [],
+      errorResponse: new Response(
+        JSON.stringify({ error: 'Unauthorized', code: 'UNAUTHENTICATED' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } },
+      ),
+    });
+    // These are harmless given authorizeRequest short-circuits before SSR is reached.
     ssrGetUser.mockResolvedValue({ data: { user: null } });
     bearerGetUser.mockResolvedValue({ data: { user: null } });
 
@@ -223,6 +250,14 @@ describe('POST /api/payments/cancel — guardian ownership check runs BEFORE any
 describe('POST /api/payments/cancel — self-cancel path', () => {
   it('resolves the caller via students.auth_user_id and cancels their own subscription', async () => {
     // No student_id in the body → self path. Authed as the student themselves.
+    mockAuthorizeRequest.mockResolvedValueOnce({
+      authorized: true,
+      userId: SELF_AUTH_ID,
+      roles: ['student'],
+      errorResponse: null,
+    });
+    // SSR client also needs to return SELF_AUTH_ID so the route resolves the
+    // correct student row via from('students').eq('auth_user_id', SELF_AUTH_ID).
     ssrGetUser.mockResolvedValue({ data: { user: { id: SELF_AUTH_ID, email: 's@x.com' } } });
     studentsSingle.mockResolvedValue({ data: { id: SELF_STUDENT_ID }, error: null });
 
@@ -240,6 +275,12 @@ describe('POST /api/payments/cancel — self-cancel path', () => {
   });
 
   it('returns 404 when the caller has no student row (no subscription read, no RPC)', async () => {
+    mockAuthorizeRequest.mockResolvedValueOnce({
+      authorized: true,
+      userId: SELF_AUTH_ID,
+      roles: ['student'],
+      errorResponse: null,
+    });
     ssrGetUser.mockResolvedValue({ data: { user: { id: SELF_AUTH_ID, email: 's@x.com' } } });
     studentsSingle.mockResolvedValue({ data: null, error: null });
 

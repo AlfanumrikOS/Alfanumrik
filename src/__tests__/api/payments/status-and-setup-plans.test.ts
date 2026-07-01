@@ -24,6 +24,16 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// ── RBAC / authorizeRequest mock ─────────────────────────────────────────────
+// authorizeRequest() uses next/headers internally (dynamic import) not
+// available in the Vitest jsdom environment. Mock the module so route tests
+// focus on route logic; RBAC internals are tested in rbac.test.ts.
+const mockAuthorizeRequest = vi.fn();
+vi.mock('@/lib/rbac', () => ({
+  authorizeRequest: (...a: unknown[]) => mockAuthorizeRequest(...a),
+  PERMISSIONS: { PAYMENTS_SUBSCRIBE: 'payments.subscribe' },
+}));
+
 // ── Auth (status route only uses this) ──────────────────────────────────────
 const ssrGetUser = vi.fn();
 vi.mock('@supabase/ssr', () => ({
@@ -107,12 +117,28 @@ beforeEach(() => {
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'stub-service-key';
   ssrGetUser.mockResolvedValue({ data: { user: { id: 'auth-self', email: 'self@x.com' } } });
   bearerGetUser.mockResolvedValue({ data: { user: null } });
+  // Default: authorizeRequest succeeds as the student.
+  mockAuthorizeRequest.mockResolvedValue({
+    authorized: true,
+    userId: 'auth-self',
+    roles: ['student'],
+    errorResponse: null,
+  });
 });
 
 describe('GET /api/payments/status — auth + own-record-only', () => {
   it('returns 401 when unauthenticated', async () => {
     ssrGetUser.mockResolvedValue({ data: { user: null } });
     bearerGetUser.mockResolvedValue({ data: { user: null } });
+    mockAuthorizeRequest.mockResolvedValueOnce({
+      authorized: false,
+      userId: null,
+      roles: [],
+      errorResponse: new Response(
+        JSON.stringify({ error: 'Unauthorized', code: 'UNAUTHENTICATED' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } },
+      ),
+    });
     const { GET } = await import('@/app/api/payments/status/route');
     const res = await GET(makeGet());
     expect(res.status).toBe(401);
