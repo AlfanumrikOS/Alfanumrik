@@ -18,9 +18,13 @@
  *   4. ERROR/404 NOT PINNED — a transient DB error / no-profile branch is not
  *      cached; a subsequent success returns fresh data.
  *
- * Heaviest route under test: /api/v2/student/progress. One more: the
- * /api/dashboard/reviews-due count route. Both share the
- * authorizeRequest → supabase-admin → cacheFetchAsync shape.
+ * Heaviest route under test: /api/v2/student/progress (still on the
+ * service-role supabase-admin client). One more: the
+ * /api/dashboard/reviews-due count route, which XC-3 Phase 2 batch 2
+ * (REG-218) migrated to the RLS-respecting createSupabaseServerClient().
+ * Both share the authorizeRequest → cacheFetchAsync shape; the cache key is
+ * the authenticated student_id either way, so the P13 isolation invariants
+ * hold against whichever data client the route reads through.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -97,8 +101,18 @@ vi.mock('@/lib/supabase-admin', () => ({
     },
     rpc: () => Promise.resolve({ data: [] }),
   }),
-  // dashboard/reviews-due uses the `supabaseAdmin` singleton.
-  supabaseAdmin: {
+}));
+
+// ─────────────────────────────────────────────────────────────────────────
+// dashboard/reviews-due mock harness — XC-3 Phase 2 batch 2 (REG-218): the
+// route migrated from the RLS-bypassing service-role `supabaseAdmin` singleton
+// to the RLS-respecting `createSupabaseServerClient()`. The cache-isolation
+// invariants (REG-115/P13) are unchanged — they are now enforced against the
+// server client. Per-student rows are keyed by the bound student_id and a read
+// spy lets us assert the 30s cache collapses repeat reads.
+// ─────────────────────────────────────────────────────────────────────────
+vi.mock('@/lib/supabase-server', () => ({
+  createSupabaseServerClient: vi.fn(async () => ({
     from: () => {
       const chain: Record<string, unknown> = {};
       let boundStudent = '';
@@ -120,7 +134,7 @@ vi.mock('@/lib/supabase-admin', () => ({
         };
       return chain;
     },
-  },
+  })),
 }));
 
 // reviews-due harness state

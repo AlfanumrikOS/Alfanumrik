@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest } from '@/lib/rbac';
-import { supabaseAdmin } from '@/lib/supabase-admin';
+import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { logger } from '@/lib/logger';
 import { cacheFetchAsync, CACHE_TTL } from '@/lib/cache';
 
@@ -42,6 +42,22 @@ export async function GET(request: Request) {
     // Today's date in YYYY-MM-DD (concept_mastery.next_review_date is DATE).
     const today = new Date().toISOString().slice(0, 10);
 
+    // XC-3 Phase 2 (batch 2): this read runs through the RLS-respecting server
+    // client (cookie-scoped to the calling student via authorizeRequest's own
+    // auth), NOT the RLS-bypassing service-role admin client. RLS is therefore
+    // a real second line of defense behind authorizeRequest. The single read
+    // below is a student-OWN row set admitted by an existing SELECT policy:
+    //   - concept_mastery : concept_mastery_own
+    //                       (student_id = get_my_student_id())
+    // studentId is auth.studentId from authorizeRequest → SELECT id FROM
+    // students WHERE auth_user_id = authUserId; always the caller's own id,
+    // never arbitrary. For the active OWNER, get_my_student_id() resolves the
+    // SAME id, so the result is byte-identical to the admin-client version.
+    // Fail-CLOSED: if RLS hides the rows (cross-user / unauthenticated session)
+    // the count degrades to 0 — no other student's review state can leak.
+    // See docs/superpowers/plans/2026-07-02-xc3-systemic-rls-defense-in-depth.md §4.
+    const supabase = await createSupabaseServerClient();
+
     // Phase 5 perf: this read-only count fires on dashboard mount (alongside the
     // other aggregate calls) and on every SWR refocus. Collapse repeat reads
     // within a 30s window with a SERVER-SIDE cache keyed by student_id + `today`
@@ -67,7 +83,7 @@ export async function GET(request: Request) {
         // Pull due rows. We deliberately select only the columns we need
         // (no topic IDs returned to the client) and order by next_review_date
         // ascending so we can read the oldest from the head of the result.
-        const { data, error } = await supabaseAdmin
+        const { data, error } = await supabase
           .from('concept_mastery')
           .select('next_review_date, mastery_probability')
           .eq('student_id', studentId)

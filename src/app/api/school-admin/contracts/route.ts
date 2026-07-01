@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@/lib/school-admin-auth';
-import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { logger } from '@/lib/logger';
 import { isFeatureEnabled } from '@/lib/feature-flags';
 import { schoolAdminPermissionCode } from '@/lib/school-admin/permission-code';
@@ -55,11 +55,23 @@ export async function GET(request: NextRequest) {
       return err(`Invalid status. Must be one of: ${Array.from(VALID_STATUS).join(', ')}`);
     }
 
-    // Use service-role client; the explicit .eq('school_id', auth.schoolId)
-    // matches the RLS policy semantics. Belt-and-suspenders: even if the
-    // RLS were ever loosened, this route only ever returns this school's
-    // rows.
-    const supabase = getSupabaseAdmin();
+    // XC-3 Phase 3 (first slice): RLS-respecting cookie-session client. The
+    // `school_admin_can_read_own_contracts` SELECT policy on `school_contracts`
+    // (migration 20260507150000) scopes rows to
+    //   school_id IN (SELECT school_id FROM school_admins WHERE auth_user_id = auth.uid())
+    // so the DB is now the authoritative tenant boundary:
+    //   • LOWER BOUND — auth.schoolId is the caller's ACTIVE school_admins
+    //     membership, which is a subset of the policy's (un-is_active-filtered)
+    //     set, so the caller's own contracts remain visible (no under-fetch);
+    //   • UPPER BOUND — any school where the caller is NOT a school_admin is
+    //     excluded by the policy, so a cross-tenant row is invisible even if a
+    //     foreign school_id reached the query.
+    // The explicit .eq('school_id', auth.schoolId) below stays as belt-and-
+    // suspenders (the route still only ever returns this one school's rows);
+    // RLS is the second, independent line of defense. Fail-closed: a missing /
+    // mismatched session yields auth.uid() = NULL → zero rows (never a 500,
+    // never a payload).
+    const supabase = await createSupabaseServerClient();
     let query = supabase
       .from('school_contracts')
       .select(

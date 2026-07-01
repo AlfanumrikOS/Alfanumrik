@@ -37,12 +37,19 @@ vi.mock('@/lib/logger', () => ({
 // ── Frozen wall-clock so deterministic-by-day assertions are stable ──────────
 const FROZEN_NOW = new Date('2026-05-04T12:00:00.000Z'); // 17:30 IST → ymd 2026-05-04
 
-// ── supabaseAdmin mock ───────────────────────────────────────────────────────
+// ── supabase-server (RLS-scoped) mock ────────────────────────────────────────
+// XC-3 Phase 2 batch 1: the route now reads through the RLS-respecting
+// createSupabaseServerClient() instead of the RLS-bypassing service-role admin
+// client. The mock returns rows ONLY when the calling student is admitted by
+// the table's SELECT policy — exactly what RLS does on the wire. Setting
+// `_studentRow = null` simulates an RLS DENY (the row exists but the policy
+// hides it from a non-owner / unauthenticated caller), which is how a
+// cross-user request degrades on the real server client.
 let _studentRow: Record<string, unknown> | null = null;
 let _dbSims: unknown[] = [];
 let _recentObs: unknown[] = [];
 
-vi.mock('@/lib/supabase-admin', () => {
+vi.mock('@/lib/supabase-server', () => {
   const builder = (table: string) => {
     const state: Record<string, unknown> = { table };
     const chain: Record<string, unknown> = {
@@ -67,7 +74,9 @@ vi.mock('@/lib/supabase-admin', () => {
     };
     return chain;
   };
-  return { supabaseAdmin: { from: (t: string) => builder(t) } };
+  return {
+    createSupabaseServerClient: vi.fn(async () => ({ from: (t: string) => builder(t) })),
+  };
 });
 
 function makeRequest(): Request {
@@ -222,6 +231,60 @@ describe('GET /api/student/daily-lab', () => {
     // ONLY the baseline sim available; then the deterministic pick collapses
     // back to it.
     expect(typeof after.completed_today).toBe('boolean');
+  });
+});
+
+// ── XC-3 Phase 2 batch 1 — RLS-at-the-request-path contract (REG-217) ────────
+// Proves the admin→server-client swap preserves the data contract for the
+// OWNER and fails CLOSED (no data) when RLS denies a non-owner. With the
+// service-role admin client these reads ALWAYS returned rows regardless of the
+// caller; under the RLS-scoped server client they only return the calling
+// student's own rows. The mock models that boundary: rows present = policy
+// admits; `_studentRow = null` = policy hides the row (cross-user / unauth).
+describe('GET /api/student/daily-lab — RLS contract (admin→server migration)', () => {
+  it('authenticated owner: returns their own Daily Lab with the unchanged response shape', async () => {
+    setAuthorized('owner-student-uuid');
+    _studentRow = { grade: '10' };           // students_select_merged admits the owner row
+    _dbSims = [];                            // sim_read_all (is_active) — builtin pool suffices
+    _recentObs = [];                         // students_read_own_observations — empty is fine
+
+    const res = await GET(makeRequest());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    // Byte-identical contract: the same keys the admin-client version returned.
+    expect(body.data).toMatchObject({
+      simulation_id: expect.any(String),
+      title: expect.any(String),
+      title_hi: expect.any(String),
+      subject: expect.any(String),
+      emoji: expect.any(String),
+      estimated_minutes: expect.any(Number),
+      bonus_coins: 50,
+      completed_today: expect.any(Boolean),
+    });
+    expect(typeof body.data.deeplink).toBe('string');
+    expect(body.data.deeplink.startsWith('/stem-centre?lab=')).toBe(true);
+    expect('experiment_id' in body.data).toBe(true);
+  });
+
+  it('RLS denies the students read (cross-user / unauthenticated session): no Daily Lab data leaks', async () => {
+    // authorizeRequest still resolves a studentId (e.g. a stale/forged id), but
+    // the RLS-scoped server client returns NO students row because the SELECT
+    // policy (auth_user_id = auth.uid()) does not admit it. The route must then
+    // refuse to emit a mission rather than fall through to data.
+    setAuthorized('not-the-callers-student-uuid');
+    _studentRow = null;                      // policy hides the row → RLS deny
+    _dbSims = [];
+    _recentObs = [];
+
+    const res = await GET(makeRequest());
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error).toBe('Student profile incomplete');
+    // Hard guarantee: no simulation payload on the deny path.
+    expect(body.data).toBeUndefined();
   });
 });
 

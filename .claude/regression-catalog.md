@@ -6342,3 +6342,573 @@ and REG-211 (P15 — a resolved student role is always hydrated to a non-null `s
 **Total catalog: 178 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## XC-3 Phase 0a — Generalized RLS cross-table-recursion guard (2026-07-02)
+
+Source: `docs/superpowers/plans/2026-07-02-xc3-systemic-rls-defense-in-depth.md` §5 (Phase 0a).
+
+**Why.** REG-210 guards the TSB-4 infinite-recursion class for `public.students` ONLY. The XC-3
+audit found the pattern is SYSTEMIC: ~141 of 522 baseline policies (242 across the whole effective
+chain after the Phase 0a.1 unquoted-name widening — was 214 under the original quoted-only name
+regex) inline a SECURITY-INVOKER cross-table subquery that re-enters another RLS-enabled table —
+every one a latent edge that can close a TSB-4-style `students→…→students` cycle the moment a
+back-edge is added. We cannot retroactively rewrite all of them now, so Phase 0a FREEZES the
+surface: a generalized static guard across ALL tables that fails the moment a NEW or RENAMED policy
+adds another inline cross-table subquery. Phase 4 drains the grandfather ledger (inline → SECURITY
+DEFINER helper) table by table, ratcheting the count DOWN.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-212 | `rls_no_cross_table_recursion_generalized` | P8: parses the full root migration chain (baseline + root `*.sql` in timestamp order; `_legacy/` excluded), builds `R` = every table with effective `ENABLE ROW LEVEL SECURITY` (≥270), reduces every CREATE/DROP POLICY on EVERY table to the FINAL effective set (DROPs applied in order), and flags a surviving policy as a recursion risk iff its `USING`/`WITH CHECK` inlines a `FROM`/`JOIN` over `b ∈ R, b ≠ policyTable`. EXEMPT: self-references (`b===T`), foreign-schema relations (`auth.`/`vault.`), non-RLS reference tables, and SECURITY DEFINER helper CALLS (`is_teacher_of`/`is_guardian_of`/`is_school_admin_of`/`is_admin`/`get_my_*`/`get_admin_school_id` — no FROM of their own). FREEZE: the detected risk set MUST be a SUBSET of the hardcoded `GRANDFATHERED_INLINE_POLICIES` ledger (242 keys, `"<table>::<name>"`) — fails ONLY on a NEW/RENAMED inline cross-table policy. Plus: no STALE ledger entries (exact mirror of live debt → Phase-4 ratchet), count pinned at 242, the apex `students` carries only the one known grandfathered latent edge (`School admins can view school students`) while the fixed `Teachers can view students in their classes` + `students_select_merged` delegate to helpers and are NOT flagged (and the teacher-policy name is absent from the ledger, so re-adding the inline shape FAILS). Detector self-test (non-vacuous): FLAGS the old recursive TSB-4 text (inline `class_students`/`class_teachers`/`teachers`) and CLEARS the fixed `is_teacher_of(id)` form, a pure `auth.uid()` predicate, a helper-call combo, and a same-table self-ref; FLAGS an inline `guardian_student_links` join. **Phase 0a.1 (XC-3) hardening:** the CREATE/DROP POLICY name matcher now accepts BOTH quoted (`"my policy"`) AND UNQUOTED (`my_policy`) identifiers — the original quoted-only regex was blind to unquoted-name policies (a false negative). The widening surfaced 28 previously-invisible unquoted-name inline policies (214 → 242), ALL on CHILD tables inlining a PARENT boundary table that does not read them back (none a live cycle; verified reaches-self=false for each) — frozen in the Phase 0a.1 block of the ledger. New self-tests prove an UNQUOTED-name recursive policy (`CREATE POLICY teacher_inline ON public.students USING (… FROM public.class_students …)`) is now matched + flagged, quoted names still match (no regression), DROP-by-unquoted-name still reduces the matching CREATE, and unquoted-name case is folded. Static SQL-text guard, no DB. | `src/__tests__/rls-no-cross-table-recursion.test.ts` | E | P8 |
+
+**Reconciliation of `rls-teacher-assigned-students.test.ts` (REG-209).** That file previously pinned
+the SHAPE of the SUPERSEDED *recursive* TSB-4 policy (`20260702010000`) — it asserted the inline
+`class_students ⋈ class_teachers ⋈ teachers` roster join that `20260702080000` removed, i.e. exactly
+the shape we must never ship again. It is rewritten (coverage preserved, not deleted) to pin the
+FIXED end-state: across the reduced chain the effective `students` teacher backstop delegates to
+`public.is_teacher_of(id)` and inlines NO roster join; `20260702080000` sorts after and supersedes
+`20260702010000`; the three TSB-2 boundary outcomes (assigned ⇒ visible, non-assigned ⇒ 0 rows,
+inactive enrollment ⇒ 0 rows) survive because they are now carried inside the `is_active`-guarded
+`is_teacher_of` helper (baseline definition pinned); and NO surviving `students` policy resurfaces
+the inline roster join.
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) — REG-212 generalizes REG-210's students-only intent to ALL RLS-enabled tables.
+  It is a SOURCE-level static guard in the normal `npm test` lane (sibling to REG-210). The cycle is
+  a property of the policy DEFINITION and is provable statically; the live-DB proof is complementary
+  and lives in the integration lane. The guard FREEZES the current 242-policy blast radius (214 +
+  the 28 unquoted-name policies surfaced by the Phase 0a.1 name-regex widening) so the
+  recursion class cannot grow, and the grandfather ledger is the explicit, reviewable debt list that
+  Phase 4 drains.
+
+### Catalog total
+
+XC-3 Phase 0a adds REG-212 (P8 generalized cross-table-recursion freeze — no NEW/RENAMED policy on
+ANY table may inline a `FROM`/`JOIN` over a different RLS-enabled table; the current 242 inline
+policies — 214 original + 28 surfaced by the Phase 0a.1 unquoted-policy-name widening — are
+grandfathered and Phase 4 ratchets the ledger down) and reconciles the stale
+`rls-teacher-assigned-students.test.ts` (REG-209) onto the fixed `is_teacher_of(id)` end-state.
+**Total catalog: 179 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## XC-3 Phase 0b + 0c — admin-client allowlist freeze + RLS inventory (2026-06-30)
+
+**Why.** Phase 0a froze the RLS *policy-recursion* class. The same XC-3 audit found two more
+systemic exposures to freeze before any Phase ≥1 migration: (1) **273 of 362** API `route.ts` files
+import the RLS-BYPASSING service-role client `@/lib/supabase-admin` — on those routes RLS is not
+exercised on the request path and a single missed `authorizeRequest()` is an unbounded data leak
+(P8/P9/P13); and (2) the schema's RLS *inventory* posture (every public table RLS-enabled; only the
+two intentional `mass_gen_log`/`school_subscriptions` deny-all tables in the baseline) must not
+silently drift. Phase 0b FREEZES the 273-route admin footprint so it can only ratchet DOWN as
+Phase 2/3 migrate reads onto `supabase-server`; Phase 0c FREEZES the table-level RLS inventory so no
+un-protected or unannounced service-role-only table can be added. Both are source/SQL-text static
+guards in the normal `npm test` lane (no live Postgres), consistent with the Phase 0a sibling.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-213 | `api_admin_client_allowlist_freeze` | P8/P9: enumerates every `route.ts` under `src/app/api` and flags any whose source imports a module specifier ending in `supabase-admin` (covers `@/lib/supabase-admin` AND relative `../../lib/supabase-admin` forms). Loads `scripts/admin-client-allowlist.json` (the architect-owned ledger, 273 entries). ASSERTS `detected \ allowlist === ∅` (a NEW admin-importing route absent from the ledger FAILS — author must either use the RLS-scoped `supabase-server` client or, if service-role is genuinely required, add the route + bump `count` in the same PR), `allowlist \ detected === ∅` (no STALE entry — a migrated/removed route must be pruned so the count ratchets DOWN, never drifts), and pins the count at exactly **273**. Robust to `\\`→`/` path-separator drift; ledger self-consistency (`routes.length === count`) also pinned. Static source scan, no runtime/DB. | `src/__tests__/api-admin-client-allowlist.test.ts` + `scripts/admin-client-allowlist.json` | E | P8, P9 |
+| REG-214 | `rls_inventory_every_table_protected` | P8: parses the full root migration chain (baseline + root `*.sql` in timestamp order; `_legacy/` excluded) into CREATED (public `CREATE TABLE`, `DROP TABLE` removes), RLS (`ALTER … ENABLE ROW LEVEL SECURITY`, `DISABLE` removes) and POLICIED (≥1 surviving `CREATE POLICY`, quoted pg_dump AND unquoted hand-written names, DROPs applied) sets; views/matviews never match (`CREATE TABLE` only); non-public schemas excluded. ASSERTS `CREATED ⊆ RLS` (every public table created in the chain has RLS enabled — no un-protected table can be added; reports the offending name) and `RLS ⊆ CREATED` (no orphan ENABLE). DENY-ALL freeze (RLS-on, ZERO-policy = service-role-only): the **baseline** deny-all set is EXACTLY `{mass_gen_log, school_subscriptions}` (the two intentional ones the audit found — pinned verbatim); those two remain deny-all in the full chain; and the **full effective-chain** deny-all set equals the reviewed `SERVICE_ROLE_ONLY_TABLES` ledger (36 tables — the 2 audit tables plus the agent/AI/queue/log infra that `20260516020000_tighten_rls_policy_always_true.sql` and post-baseline migrations made service-role-only) EXACTLY, so a NEW RLS-on-but-policy-less table (not in the ledger) FAILS and a table that gains policies (left stale in the ledger) also FAILS. Static SQL-text guard, no DB. | `src/__tests__/rls-inventory.test.ts` | E | P8 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) / P9 (RBAC enforcement) — REG-213 freezes the service-role-client blast radius
+  (the dominant data path that bypasses RLS) so it can only shrink; REG-214 freezes the table-level
+  RLS inventory (universal RLS coverage + the exact service-role-only deny-all set). Both are
+  source/SQL-text static guards in the normal `npm test` lane (siblings to REG-210/REG-212). They are
+  the enforcement layer Phase 1 (backstop policies) and Phase 2/3 (route migrations) rely on.
+
+### Catalog total
+
+XC-3 Phase 0b + 0c add REG-213 (admin-client allowlist freeze — the 273-route `supabase-admin`
+footprint is pinned and may only ratchet DOWN) and REG-214 (RLS inventory — every public table is
+RLS-enabled and the deny-all/service-role-only set is frozen: baseline EXACTLY
+`{mass_gen_log, school_subscriptions}`, full chain EXACTLY the 36-table reviewed ledger).
+**Total catalog: 181 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## H2b — Event-Sourced Canonical-Write Migration (Stage 1 dual-write parity) — 2026-06-30
+
+ADR-005 begins moving the canonical `scheduled_actions` write OFF the `/api/learner/next`
+route and ONTO an event-sourced projector. Slice H2b ships the **Stage 1 dual-write parity
+phase** (merged via PR #1141 + #1144 follow-ups): a new event kind
+`learner.next_action_resolved` (`src/lib/state/events/registry.ts`), a new projector
+`scheduledActionsWriter` (`src/lib/state/subscribers/scheduled-actions-writer.ts`) that OWNS
+the `scheduled_actions` upsert once cutover completes, and a dual-write at the route. The route
+(`src/app/api/learner/next/route.ts`) RETAINS its synchronous inline `scheduled_actions` upsert
+(the existing E10 write) AND, best-effort, ALSO `publishEvent('learner.next_action_resolved')`
+gated behind `ff_event_bus_v1`. This is the PARITY phase: the inline write stays authoritative
+while the projector is proven to produce a byte-identical row before Stage 2 cuts over to
+projector-only. P8 is UNCHANGED — `scheduled_actions` keeps its existing table/RLS posture;
+no new table, no RLS toggle. The projector and the inline write target the SAME row via the
+SAME conflict key, so the substrate's data-ownership boundary is untouched during parity.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-215 | `h2b_next_action_resolved_dualwrite_parity` | ADR-005 / P8: the `/api/learner/next` route DUAL-WRITES during Stage 1 — the synchronous inline `scheduled_actions` upsert (retained, E10) PLUS a best-effort `publishEvent('learner.next_action_resolved')` gated by `ff_event_bus_v1`. PARITY is pinned end-to-end: the published event, fed through the REAL `scheduledActionsWriter` projector, projects to a row BYTE-EQUAL to the inline upsert (same conflict key, 1:1 column mapping, `source` hard-coded scheduler). Flag-gating: flag ON → exactly one inline upsert AND one publishEvent; flag OFF → ZERO inline upserts and ZERO publishEvents, response byte-unchanged. Bus-outage isolation: an async `publishEvent` rejection is swallowed (best-effort) — the route still returns 200 with the resolver payload, so the event bus can never degrade the live next-action path. Projector independently pinned: binds to `learner.next_action_resolved`, idempotent on re-delivery (identical event → identical row), `dryRun` no-op, throws on substrate upsert error (retry), safe no-op on malformed payload. P8 substrate (scheduled_actions table/RLS) unchanged — no new table, no RLS toggle. | `src/__tests__/api/learner/next/route.test.ts` + `src/lib/state/subscribers/scheduled-actions-writer.test.ts` | E | P8 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary / canonical-write substrate) — REG-215 pins that H2b leaves the
+  `scheduled_actions` table and its RLS posture untouched: the new projector writes the SAME
+  row via the SAME upsert conflict key as the route's inline write (no new table, no RLS
+  toggle, no second source of truth). The dual-write is additive parity, not a substrate change.
+- ADR-005 (canonical write route → projector) — the byte-equal projection assertion is the
+  GATE on the Stage 2 cutover. The published event, run through the REAL `scheduledActionsWriter`,
+  must produce a row identical to the inline upsert; any column-mapping, conflict-key, or
+  `source` drift between the two writers fails REG-215 and blocks cutover.
+- Dual-write resilience (async-dispatch-aware) — the event publish is best-effort and
+  flag-gated: an event-bus rejection cannot 500 the live next-action route, and
+  `ff_event_bus_v1=OFF` makes the publish a no-op with a byte-unchanged response. The inline
+  write remains the sole authority throughout Stage 1.
+
+### Stage 2 sunset condition
+
+REG-215 is the PARITY guard for the dual-write phase ONLY. It may be retired (the inline
+E10 write deleted and this entry closed) once, and only once: (1) `ff_event_bus_v1` AND
+`ff_projector_runner_v1` are both ramped to 100%, AND (2) production parity between the
+inline write and the projector-produced row has been confirmed over the bake window. Until
+all three hold, the inline `scheduled_actions` upsert stays authoritative and REG-215 stays
+green. Deleting the inline write or closing E10 before that is a blocking regression.
+
+### Catalog total
+
+H2b Stage 1 dual-write parity adds REG-215 (event-sourced canonical-write migration —
+`learner.next_action_resolved` event + `scheduledActionsWriter` projector + route dual-write;
+byte-equal projection through the real projector, flag-gating ON/OFF, best-effort bus-outage
+isolation, idempotent projector; P8 substrate unchanged; gates the ADR-005 Stage 2 cutover).
+**Total catalog: 182 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-216 — XC-3 Phase 1: apex `students` school-admin policy delegates to a SECURITY DEFINER helper (first ledger drain 242 → 241)
+
+**Why.** The XC-3 generalized recursion guard (REG-212) freezes the inline cross-table
+RLS surface and forces it to ratchet DOWN, never drift. XC-3 Phase 1 (migration
+`20260702090000_xc3_p1_is_school_admin_of_student_helper.sql`) refactors the LAST latent
+inline cross-table edge on the apex `public.students` table — the policy
+`"School admins can view school students"`, which inlined `FROM public.school_admins`
+inside its `USING` (baseline:19906) — to the new SECURITY DEFINER helper
+`public.is_school_admin_of_student(uuid)`. This is the binding RS-RULE applied to the apex
+table: cross-table authorization must delegate to a SECURITY DEFINER helper (inner reads
+bypass RLS) rather than inline a `FROM`/`JOIN` over a different RLS table. After this change
+`students` carries ZERO inline cross-table edges, and the grandfather ledger drains for the
+FIRST time (242 → 241).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-216 | `rls_students_school_admin_helper_delegation` (within `rls-no-cross-table-recursion.test.ts`) | P8: the apex `students` policy `"School admins can view school students"` no longer inlines `FROM school_admins` — its effective form (migration `20260702090000` supersedes the baseline via DROP+CREATE in the chain reduction) delegates to `public.is_school_admin_of_student(id)`, so the detector flags NO inline cross-table policy on `students` (`detectedRiskKeys()` filtered to `students::` === `[]`). The helper is added to the SECURITY DEFINER roster `H` (`RLS_HELPERS`, length 10 → 11) so a policy CALLING it is recognised as delegating. The grandfather key `students::School admins can view school students` is PRUNED from `GRANDFATHERED_INLINE_POLICIES` (FIRST ratchet-DOWN), and the count pins assert exactly **241** (`GRANDFATHERED_INLINE_POLICIES.size === 241` AND `detectedRiskKeys().length === 241`) — so `detected === allowlist` holds (no stale entry, no new violation). Boundary equivalence: the helper returns `EXISTS` over the SAME join the inline form used (student's `school_id` from `students` ⋈ `school_admins` on `school_id`, caller `auth.uid()` = `sa.auth_user_id`, `sa.is_active = true`) — identical school-scoping + is_active guard + NULL-school_id non-match → no over/under-grant. No recursion: SECURITY DEFINER inner reads of `students` + `school_admins` bypass RLS, so no `students → school_admins → students` cycle can form. Static SQL-text guard, no DB. | `src/__tests__/rls-no-cross-table-recursion.test.ts` + `supabase/migrations/20260702090000_xc3_p1_is_school_admin_of_student_helper.sql` | E | P8 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) — REG-216 is the FIRST behavioral RLS change of XC-3. It proves the
+  apex `students` table is fully helper-delegating (zero inline cross-table edges) and that
+  the school-admin SELECT boundary is byte-for-byte the same visible-row set after the
+  refactor (same tables, same school-scoping, same `is_active` guard). The SECURITY DEFINER
+  helper's inner reads bypass RLS, so the refactor cannot introduce the TSB-4 recursion class
+  it removes.
+- Ledger ratchet (Phase 4 drain mechanic, exercised early in Phase 1) — the
+  `GRANDFATHERED_INLINE_POLICIES` ledger must mirror live debt EXACTLY; pruning the students
+  school-admin key in the same change that refactors the policy keeps `detected === allowlist`
+  and forces the count DOWN (242 → 241). Re-introducing the old inline shape under this name
+  would FAIL the guard (the key is absent from the ledger).
+
+### Catalog total
+
+XC-3 Phase 1 adds REG-216 (apex `students` `"School admins can view school students"` policy
+refactored from inline `FROM school_admins` to the SECURITY DEFINER helper
+`is_school_admin_of_student(id)`; exact boundary equivalence, no recursion, first grandfather
+ledger drain 242 → 241, helper added to set `H`).
+**Total catalog: 183 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-217 — XC-3 Phase 2 (batch 1): first student-own read route migrated admin → server, RLS now enforced at the request path (allowlist 273 → 272)
+
+**Why.** XC-3 Phase 0b froze the RLS-bypassing service-role footprint at 273
+`route.ts` files (REG-213) and forced it to ratchet DOWN only. Phase 2 begins
+DRAINING that ledger by swapping student-own READ routes from the RLS-bypassing
+admin client (`@/lib/supabase-admin`) onto the RLS-respecting server client
+(`@/lib/supabase-server`), so RLS becomes a real second line of defense behind
+`authorizeRequest()`. The risk is the INVERSE of the recent `students`-RLS
+production incident: a swap turns a working 200 into an EMPTY/403 if the SELECT
+policy does not admit exactly what the route reads. Batch 1 therefore migrates a
+single route whose every read is PROVABLY policy-covered:
+`src/app/api/student/daily-lab/route.ts`. It keeps `authorizeRequest`
+(Bearer-or-cookie) for the auth gate + `studentId`; only the three data reads
+move to the cookie-scoped server client (the sole caller, `DailyLabMission.tsx`,
+fetches with `credentials: 'include'`). Response shape is byte-identical.
+
+**RLS coverage proof (the gate that prevents a repeat of the dashboard incident).**
+
+| Read | Filter | Admitting SELECT policy (baseline / migration) |
+|---|---|---|
+| `students` | `id = studentId` | `students_select_merged` — `auth_user_id = auth.uid()` (own row). Post `20260702080000` recursion fix: no `students → class_students → students` cycle. |
+| `interactive_simulations` | `is_active = true` (+ grade/widget/quality) | `sim_read_all` — `USING (is_active = true)`, public active-catalog read. |
+| `experiment_observations` | `student_id = studentId`, `created_at >= now-14d` | `students_read_own_observations` — `student_id = get_student_id_for_auth()` (migration `20260504195900`). |
+
+`daily-plan` was PROVEN covered too (own `students` + `class_students`
+own-enrollment + `classroom_lesson_plans` student-class policy + `topics_read_all`)
+but DEFERRED to a later batch: it touches the exact `students`+`class_students`
+tables from the recent incident (nested RLS), so it stays out of the FIRST
+behavioral batch per the conservative one-incident-adjacent-route rule.
+`subjects` and `chapters` were DEFERRED because their reads happen inside
+SECURITY DEFINER RPCs (`get_available_subjects`, `available_chapters_for_student_subject_v2`)
+that bypass RLS regardless of the client — swapping the client does NOT bring the
+read under RLS, so they are out of scope for this defense-in-depth batch.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-217 | `GET /api/student/daily-lab — RLS contract (admin→server migration)` | P8/P9: with the RLS-scoped server client mocked, an authenticated OWNER receives their Daily Lab with the byte-identical response shape (`simulation_id/title/title_hi/subject/emoji/estimated_minutes/bonus_coins=50/completed_today/deeplink/experiment_id`); a request the SELECT policy does NOT admit (mocked `students` read returns no row — RLS deny for a cross-user/forged `studentId`) yields `400 { success:false, error:'Student profile incomplete' }` with NO simulation payload — i.e. the migration fails CLOSED. The admin-client allowlist guard pins the ledger ratchet 273 → 272 (route pruned from `scripts/admin-client-allowlist.json`, `count` + `EXPECTED_COUNT` decremented; `detected === allowlist`). | `src/__tests__/api/daily-lab.test.ts`, `src/__tests__/api-admin-client-allowlist.test.ts`, `scripts/admin-client-allowlist.json` | E | P8, P9 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) — the route's three student-own/public reads now execute on
+  the RLS-respecting `supabase-server` client; each is covered by an existing
+  SELECT policy (table above), so RLS is a genuine second line of defense behind
+  `authorizeRequest`, and a non-owner read fails closed.
+- P9 (RBAC enforcement) — `authorizeRequest(request, 'stem.observe', { requireStudentId: true })`
+  is unchanged; the permission gate and `studentId` resolution are untouched.
+- Ledger ratchet (XC-3 Phase 0b mechanic) — `scripts/admin-client-allowlist.json`
+  drains 273 → 272 in the same change that migrates the route, keeping
+  `detected === allowlist` and forcing the admin-client count DOWN.
+
+### Catalog total
+
+XC-3 Phase 2 batch 1 adds REG-217 (first student-own read route migrated
+admin → server with full per-table RLS-coverage proof; owner-gets-own-data +
+cross-user-fails-closed contract; admin-client allowlist ratcheted 273 → 272).
+**Total catalog: 184 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-218 — XC-3 Phase 2 (batch 2): student-own read route(s) migrated admin → server; allowlist 272 → 271
+
+**Why.** Continues the Phase 2 ledger DRAIN started by REG-217: swap student-own
+READ routes from the RLS-bypassing admin client (`@/lib/supabase-admin`) onto the
+RLS-respecting server client (`@/lib/supabase-server`) so RLS becomes a real
+second line of defense behind `authorizeRequest()`. The standing risk is the
+dashboard-incident class: a swap turns a working 200 into EMPTY/403 if the SELECT
+policy does not admit exactly what the route reads, OR if a NON-cookie (mobile
+Bearer) caller exists — the server client is cookie-only (`createServerClient` +
+`next/headers cookies()`; it never reads the `Authorization` header), so a Bearer
+caller would NULL `auth.uid()` at the RLS layer and break. Batch 2 therefore
+migrates ONLY routes that are BOTH provably policy-covered AND have no Bearer/mobile
+caller. **Net this batch: 1 route migrated** —
+`src/app/api/dashboard/reviews-due/route.ts`.
+
+**Migrated: `GET /api/dashboard/reviews-due`** (spaced-repetition due-count CTA).
+Single read; `authorizeRequest('progress.view_own', { requireStudentId: true })`
+unchanged; response shape `{ success, data:{ dueCount, oldestDueDate, estimatedMinutes } }`
+byte-identical. Caller transport verified COOKIE-only: the sole caller
+`src/components/dashboard/ReviewsDueCard.tsx` fetches via same-origin SWR `fetch(url)`
+(cookies auto-attached); the `mobile/` tree has ZERO `reviews-due` callers (mobile's
+only REST callers are `/api/student/daily-plan`, `/api/student/subjects`, `/api/foxy`,
+and the generated `/api/v2/*` client). Fail-CLOSED: an RLS deny (no own rows)
+degrades the count to 0 — no other student's review state can leak; a query/transport
+error maps to 500 with no payload.
+
+**RLS coverage proof (the gate against a 200 → empty regression).**
+
+| Read | Filter | Admitting SELECT policy (baseline) | Transport |
+|---|---|---|---|
+| `concept_mastery` | `student_id = studentId`, `next_review_date <= today`, `mastery_probability < 0.95`, `next_review_date >= academicYearStart` | `concept_mastery_own` — `USING (student_id = get_my_student_id())` (baseline `00000000000000`). `studentId` is `auth.studentId` from `authorizeRequest` (`SELECT id FROM students WHERE auth_user_id = authUserId`) — always the caller's OWN id, never arbitrary. For the active OWNER, `get_my_student_id()` (`SELECT id FROM students WHERE auth_user_id = auth.uid() AND is_active = true`) resolves the SAME id → result byte-identical to the admin-client version. | cookie (`ReviewsDueCard.tsx`); no mobile caller |
+
+Equivalence note: `authorizeRequest.studentId` lacks the `is_active = true` filter
+that `get_my_student_id()` carries — a (non-reachable-from-dashboard) INACTIVE
+student would get a fail-CLOSED empty count rather than data, which matches every
+other RLS-respecting learner-state read and never crosses students. Not a
+200 → 403 regression for any active caller.
+
+**Deferrals (proof-or-defer; every candidate under `src/app/api/{student,learner,pulse,dashboard}/**` enumerated):**
+
+| Route | Reason deferred |
+|---|---|
+| `src/app/api/student/daily-plan/route.ts` | **Mobile Bearer caller exists.** `mobile/lib/data/repositories/daily_plan_repository.dart` calls `GET /api/student/daily-plan` with `Authorization: Bearer <jwt>` (auth interceptor, `api_client.dart:83`). The cookie-only server client would NULL `auth.uid()` at RLS → `students_select_merged` denies → 404 `student_not_found` for every mobile caller. RLS coverage IS provable (`students_select_merged` own + `class_students` "Students can view own enrollment" + `classroom_lesson_plans` "Students can view classroom lesson plans" + `curriculum_topics` `topics_read_all`), but the caller-transport check fails. DEFER until a Bearer-aware server client (or mobile cutover) lands. |
+| `src/app/api/learner/next/route.ts` | NOT a read-route migration: its reads already run on `createSupabaseServerClient()`. The `supabase-admin` import is for the gated service-role WRITE-through (`scheduled_actions` upsert + RLS-locked event-bus publish). Legitimately stays on the ledger. |
+| `src/app/api/pulse/me/route.ts` | Routes through the shared `buildSingleStudentPulse()` helper (`src/lib/pulse/pulse-server.ts`) that also backs the CROSS-ROLE pulse routes and is intentionally admin-after-RBAC-gate (REG-121 `canAccessStudent` design); broad multi-table read surface not provable as a single-route swap. DEFER. |
+| `src/app/api/pulse/{class/[classId],school,student/[id]}/route.ts` | Cross-role lenses, not student-own; `canAccessStudent` boundary by design. Out of scope. |
+| `src/app/api/student/subjects/route.ts`, `src/app/api/student/chapters/route.ts` | Reads happen inside SECURITY DEFINER RPCs (`get_available_subjects`, chapter resolver) that bypass RLS regardless of client — swap is a no-op for RLS. Out of scope (and `subjects` also has a mobile caller). |
+| `src/app/api/student/{profile,preferences,scan-upload,shop/purchase,stem-observation,study-plan,exam-simulation,foxy-interaction}` | Not student-own read GETs (PATCH/POST writes or non-read handlers). Out of scope for this read-route batch. |
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-218 | `GET /api/dashboard/reviews-due — RLS contract (admin→server migration)` | P8/P9: with the RLS-scoped server client mocked, an authenticated OWNER receives the byte-identical `{ dueCount, oldestDueDate, estimatedMinutes }` shape (private cache header preserved); an RLS deny (mocked `concept_mastery` read returns no rows for a cross-user/forged `studentId`) degrades to `{ dueCount:0, oldestDueDate:null, estimatedMinutes:2 }` — fails CLOSED, no other student's review state leaks; a query/transport error maps to `500 { success:false }` with NO `data`. The allowlist guard pins the ledger ratchet 272 → 271 (route pruned from `scripts/admin-client-allowlist.json`, `count` + `EXPECTED_COUNT` decremented; `detected === allowlist`). | `src/__tests__/api/dashboard-reviews-due.test.ts`, `src/__tests__/api-admin-client-allowlist.test.ts`, `scripts/admin-client-allowlist.json` | E | P8, P9 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) — `concept_mastery` read now executes on the RLS-respecting
+  `supabase-server` client, covered by `concept_mastery_own`; a non-owner read
+  fails closed (count 0).
+- P9 (RBAC enforcement) — `authorizeRequest(request, 'progress.view_own', { requireStudentId: true })`
+  is unchanged; permission gate + `studentId` resolution untouched.
+- Ledger ratchet (XC-3 Phase 0b mechanic) — `scripts/admin-client-allowlist.json`
+  drains 272 → 271 in the same change, keeping `detected === allowlist`.
+
+### Catalog total
+
+XC-3 Phase 2 batch 2 adds REG-218 (one student-own read route — `dashboard/reviews-due` —
+migrated admin → server with per-table RLS-coverage proof + caller-transport check;
+`daily-plan` DEFERRED on a confirmed mobile Bearer caller; admin-client allowlist
+ratcheted 272 → 271).
+**Total catalog: 185 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-219 — XC-3 Phase 2 enabler: Bearer-aware, RLS-respecting route client (unblocks mobile-called migrations)
+
+**Why.** Phase 2 (REG-217/REG-218) drains student-own READ routes off the
+RLS-bypassing service-role admin client onto the RLS-respecting cookie client
+`createSupabaseServerClient()`. But that client is COOKIE-ONLY: it reads the
+Supabase session from `next/headers cookies()` and never inspects the
+`Authorization` header. The Flutter app calls many `student/*` routes with
+`Authorization: Bearer <jwt>` and NO Supabase cookie (e.g. `/api/student/daily-plan`
+via `mobile/lib/data/repositories/daily_plan_repository.dart`), so a cookie-only
+swap NULLs `auth.uid()` at RLS → every SELECT policy denies → 404/empty for every
+mobile caller. That is exactly why REG-218 DEFERRED `daily-plan`. This entry adds
+the ENABLER — a Bearer-aware route client — so those routes can be migrated in a
+later batch. **No route is migrated in this change; the allowlist is unchanged.**
+
+**What.** New `src/lib/supabase-route.ts` exports
+`createSupabaseRouteClient(request)`:
+- **Bearer path** — when the request carries `Authorization: Bearer <jwt>`, builds
+  a client with the PUBLIC anon key (`NEXT_PUBLIC_SUPABASE_ANON_KEY`) and forwards
+  the caller's OWN access token as `global.headers.Authorization`. PostgREST runs
+  the query under the caller's identity, so `auth.uid()` resolves and RLS applies
+  exactly as on the wire. RLS is ENFORCED, not bypassed — the anon key carries no
+  privilege of its own.
+- **Cookie path** — no Bearer → delegates verbatim to the existing
+  `createSupabaseServerClient()` (anon key + session cookie). Also RLS-scoped.
+- **Never service-role.** `SUPABASE_SERVICE_ROLE_KEY` is never read for transport;
+  the only key passed to `createClient` is the anon key. A hard pre-build assertion
+  throws (fail-closed, builds nothing) if the configured anon key were ever to
+  equal the service-role key. The helper does not validate the JWT itself — an
+  invalid/expired/forged token is rejected by Supabase Auth + PostgREST + RLS
+  (`auth.uid()` stays NULL → deny), so the failure mode is fail-closed.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-219 | `createSupabaseRouteClient — Bearer-aware RLS route client` | P8/P9: (a) a request with `Authorization: Bearer X` builds a client whose `global.headers.Authorization` is `Bearer X` and whose transport key is the ANON key (asserted `!== SERVICE_ROLE_KEY`), with `persistSession/autoRefreshToken=false`, and the cookie delegate is NOT called — so RLS `auth.uid()` resolves under the caller's identity; case-insensitive header match pinned. (b) a request with NO Authorization header (or a non-Bearer scheme, or an empty Bearer token) delegates to `createSupabaseServerClient()` and never calls `createClient`. (c) the service-role key is NEVER passed to `createClient` on any Bearer call; a misconfiguration where the anon key equals the service-role key throws (fail-closed) and builds nothing. Libs mocked at the module boundary to inspect exact args. | `src/__tests__/lib/supabase-route-client.test.ts`, `src/lib/supabase-route.ts` | E | P8, P9 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) — the Bearer path is anon-key + caller-JWT, so RLS is the
+  active boundary on both paths; the helper cannot return a service-role
+  (RLS-bypassing) client (assertion-enforced).
+- P9 (RBAC enforcement) — defense in depth: routes still call `authorizeRequest()`
+  for RBAC; this client makes RLS a real second line for Bearer callers too.
+
+### Catalog total
+
+XC-3 Phase 2 enabler adds REG-219 (Bearer-aware RLS route client — forwards the
+caller's Bearer JWT under the public anon key so RLS `auth.uid()` resolves for
+mobile callers, cookie fallback for web, never service-role; no route migrated,
+allowlist unchanged).
+**Total catalog: 186 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-220 — XC-3 Phase 2 (batch 3 — Bearer batch): `daily-plan` migrated admin → Bearer-aware RLS route client; mobile Bearer caller now RLS-enforced (allowlist 271 → 270)
+
+**Why.** REG-219 shipped the ENABLER (`createSupabaseRouteClient`) but migrated
+no route. This batch consumes it: `GET /api/student/daily-plan` was DEFERRED by
+REG-218 precisely because it has a mobile Bearer caller
+(`mobile/lib/data/repositories/daily_plan_repository.dart` sends
+`Authorization: Bearer <jwt>` and NO Supabase cookie), so a cookie-only
+`createSupabaseServerClient()` swap would NULL `auth.uid()` at RLS → 404/empty
+for every mobile caller. Swapping it onto the Bearer-aware client forwards the
+caller's JWT under the public anon key (RLS enforced, never service-role) on the
+Bearer path and falls back to the cookie client for web — so RLS becomes a real
+second line of defense behind `authorizeRequest('study_plan.view')` on BOTH
+transports. This is the first route to use the Bearer-aware client.
+
+**What.** `src/app/api/student/daily-plan/route.ts` swaps its 3 reads from
+`supabaseAdmin` (RLS-bypassing service role) to `createSupabaseRouteClient(request)`.
+RLS-coverage PROVEN per read (`studentId` is ALWAYS `auth.studentId` — the caller's
+own id; the route performs NO writes):
+- **students** (`id = studentId`): `students_select_merged` owner branch
+  (`auth_user_id = auth.uid()`).
+- **class_students** (`student_id = studentId, is_active = true`): "Students can
+  view own enrollment" (`student_id ∈ students WHERE auth_user_id = auth.uid()`).
+- **classroom_lesson_plans** (`class_id = classId, date = today`): "Students can
+  view classroom lesson plans" (`class_id ∈` the caller's own `class_students`
+  rows) — `classId` is the caller's own class.
+- **curriculum_topics** (embedded `curriculum_topics(id,title)`): `topics_read_all`
+  (`USING true` — public catalog).
+
+The `students`+`class_students` nested-read recursion incident is FIXED (migration
+`20260702080000` + Phase 1). Caller transport: mobile = Bearer (now RLS-resolved
+via the forwarded JWT); web dashboard `DailyPlanCard` = cookie (server-client
+fallback). Fail-CLOSED: an RLS deny on the `students` read yields `student=null`
+→ `404 { success:false, error:'student_not_found' }`, no plan payload, no 500.
+Query set + response envelope (`{ success, data, flagEnabled, intercepted }`)
+byte-identical; `authorizeRequest('study_plan.view',{requireStudentId:true})`
+unchanged.
+
+**Scan result.** Among mobile Bearer-called student-own reads, `daily-plan` is
+the only clean simple-read GET migrated. DEFERRED: `student/subjects`
+(RPC-internal — `get_available_subjects` + `ops_events` write), `student/profile`
+& `student/preferences` (write routes — POST `students`/`smart_nudges` updates +
+RPCs, web cookie), `/api/v2/*` (separate generated `/v2` contract). N = 1.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-220 | `GET /api/student/daily-plan — Bearer-aware RLS contract (admin→route-client migration)` | P8/P9: (a) the route builds its data client from the Bearer-aware `createSupabaseRouteClient`, called exactly once WITH the request (so the caller's `Authorization: Bearer` JWT is forwarded for RLS) — a regression back to `supabase-admin` OR the cookie-only `createSupabaseServerClient()` (which breaks the mobile Bearer caller) fails this. (b) an authenticated OWNER (flag ON, `board_topper`) receives the byte-identical envelope `{ success, data, flagEnabled, intercepted }` (4-item / 45-min plan). (c) an RLS deny on the `students` read (mocked no-row for a cross-user/forged `studentId`) fails CLOSED with `404 { success:false, error:'student_not_found' }` and NO `data` payload. Existing flag-OFF/ON, classroom-sync, 404, and P13 PII-redaction cases re-pointed to the mocked Bearer-aware client. The allowlist guard pins the ledger ratchet 271 → 270 (route pruned from `scripts/admin-client-allowlist.json`, `count` + `EXPECTED_COUNT` decremented; `detected === allowlist`). | `src/__tests__/api/student/daily-plan.test.ts`, `src/__tests__/api-admin-client-allowlist.test.ts`, `scripts/admin-client-allowlist.json` | E | P8, P9 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) — the route's reads now run under the caller's identity
+  (Bearer JWT or cookie) with RLS enforced; the RLS-bypassing service-role client
+  is removed from this path.
+- P9 (RBAC enforcement) — defense in depth: `authorizeRequest('study_plan.view')`
+  unchanged; RLS is now a real second line for Bearer (mobile) callers too.
+
+### Catalog total
+
+XC-3 Phase 2 batch 3 adds REG-220 (one route — `student/daily-plan` — migrated
+admin → Bearer-aware `createSupabaseRouteClient` with per-table RLS-coverage proof,
+owner byte-identical + RLS-deny fail-closed + Bearer-aware-client assertion;
+mobile Bearer caller now RLS-enforced; admin-client allowlist ratcheted 271 → 270).
+**Total catalog: 187 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-221 — XC-3 Phase 3 (first slice): teacher/school-admin read route migrated admin → RLS-scoped server client; cross-tenant upper+lower bound proven (allowlist 270 → 269)
+
+**Why.** Phase 3 is HIGHER RISK than Phase 2: the rows are cross-tenant and
+multi-row, so the gate is TENANT-SCOPING CORRECTNESS — a too-LOOSE RLS policy is
+a cross-tenant PII/commercial leak (strictly worse than a 200→empty under-fetch),
+and a too-STRICT one silently empties a working surface. This first slice picks
+the single most provable teacher/school-admin GET: `GET /api/school-admin/contracts`
+— GET-only, single table (`school_contracts`), web cookie caller (no mobile
+Bearer surface for school-admin), flag-gated (`ff_school_contracts_v1`), and the
+route author already documented its reliance on the named SELECT policy.
+
+**What.** `src/app/api/school-admin/contracts/route.ts` swaps its one read from
+`getSupabaseAdmin()` (RLS-bypassing service role) to `createSupabaseServerClient()`
+(RLS-respecting cookie session). `authorizeSchoolAdmin(... institution.view_billing/manage)`
+unchanged; response envelope `{ success, data: { rows, total, page, limit } }`
+byte-identical. Caller transport: school-admin portal is web cookie only
+(grep confirms NO `mobile/` caller and no Bearer-only path), so the cookie client
+is correct; a missing/mismatched session yields `auth.uid()=NULL` → zero rows
+(fail-CLOSED, never a 500, never a payload).
+
+**Tenant bound PROOF — policy `school_admin_can_read_own_contracts`**
+(`supabase/migrations/20260507150000_school_contracts.sql`):
+`FOR SELECT TO authenticated USING (school_id IN (SELECT school_id FROM public.school_admins WHERE auth_user_id = auth.uid()))`.
+- **LOWER BOUND (in-scope visible, no under-fetch):** `auth.schoolId` is resolved
+  by `authorizeSchoolAdmin` from the caller's ACTIVE `school_admins` membership —
+  a SUBSET of the policy's (un-`is_active`-filtered) set — so the caller's own
+  school is always admitted; the route's `.eq('school_id', auth.schoolId)` then
+  returns exactly that school's contracts.
+- **UPPER BOUND (cross-tenant invisible):** the policy admits ONLY
+  `school_id ∈ {caller's school_admins schools}`; any school the caller does not
+  administer is excluded even if a foreign `school_id` reached the query. The
+  `school_admins` SELECT/UPDATE policies all self-scope via `auth_user_id=auth.uid()`
+  and never read `school_contracts` back, so the inline `FROM school_admins` is
+  NOT a recursion cycle (it is already in the Phase-0a `GRANDFATHERED_INLINE_POLICIES`
+  ledger).
+
+**Scan result.** Among teacher/school-admin GET routes, this is the only clean
+GET-only single-table read whose RLS bounds are airtight. DEFERRED: `school-admin/analytics`
+(reads `school_subscriptions`, an intentional deny-all/service-role-only table —
+RLS swap would empty it), `school-admin/students`/`classes` (GET mixed with
+write handlers in the same file — cannot leave the admic-client import / prune
+the allowlist), `teacher/lab-leaderboard` (multi-table + a view of unknown RLS
+posture), `teacher/classes/available` (join-by-secret preview RLS would BLOCK —
+intended), `school-admin/invoices` (no confirmed school-admin SELECT policy on
+`school_invoices`). N = 1.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-221 | `GET /api/school-admin/contracts — RLS tenant-bound contract (admin→server migration)` | P8/P9/P13: with the RLS client emulated as "rows the `school_admin_can_read_own_contracts` policy exposes to THIS caller" (dataset ∩ the auth.uid()-resolved school), (a) LOWER BOUND — an in-scope admin gets the byte-identical `{ success, data:{ rows, total:2, page:1, limit:25 } }` envelope with ONLY their school's rows (a co-resident other-tenant row never appears); (b) UPPER BOUND — a request resolving a foreign `school_id` the caller does not administer returns `{ rows:[], total:0 }` with NOT ONE foreign row in the serialized body (RLS is the independent boundary); a denied caller gets the authz `errorResponse` verbatim with ZERO client builds (no DB touched); (c) regression guard — the route builds `createSupabaseServerClient` and the source imports `@/lib/supabase-server` and NOT `supabase-admin`. The allowlist guard pins the ledger ratchet 270 → 269 (route pruned from `scripts/admin-client-allowlist.json`, `count` + `EXPECTED_COUNT` decremented; `detected === allowlist`). | `src/__tests__/api/school-admin/contracts-rls-contract.test.ts`, `src/__tests__/api-admin-client-allowlist.test.ts`, `scripts/admin-client-allowlist.json` | E | P8, P9, P13 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) — a cross-tenant school-admin read now runs under the
+  caller's identity with the `school_admin_can_read_own_contracts` policy as a
+  real second line of defense behind `authorizeSchoolAdmin`; the RLS-bypassing
+  service-role client is removed from this path.
+- P9 (RBAC enforcement) — `authorizeSchoolAdmin` (RBAC + active-school + Wave-C
+  role narrowing) unchanged; RLS is additive defense in depth.
+- P13 (data privacy) — both tenant bounds proven: a school the caller does not
+  administer is invisible (no cross-tenant commercial-contract leak), and a
+  denied/sessionless caller gets zero rows (fail-closed).
+
+### Catalog total
+
+XC-3 Phase 3 first slice adds REG-221 (one teacher/school-admin read route —
+`school-admin/contracts` — migrated admin → RLS-scoped `createSupabaseServerClient`
+with cross-tenant upper+lower bound proven against `school_admin_can_read_own_contracts`;
+admin-client allowlist ratcheted 270 → 269).
+**Total catalog: 188 entries (target: 35 — TARGET EXCEEDED).**
+
+## REG-222 — XC-3 Phase 4 (first drain): `at_risk_alerts::Teachers see own at-risk alerts` inline subquery → `get_my_teacher_id()`; ledger 241 → 240
+
+**Why.** Phase 1 drained the apex `students` school-admin edge (242 → 241), proving
+a single grandfathered inline cross-table policy can be refactored to a SECURITY
+DEFINER helper without shifting its boundary. Phase 4 carries that ratchet through
+the REMAINING grandfathered policies, table by table, so the
+`GRANDFATHERED_INLINE_POLICIES` allowlist shrinks toward zero. This first Phase 4
+slice proves the phase is executable on a NON-apex table by picking the single
+CLEANEST policy whose inline cross-table subquery has an EXACT existing-helper
+equivalent (boundary-preserving, no new helper needed).
+
+**What.** `supabase/migrations/20260702100000_xc3_p4_drain_at_risk_alerts_teacher_select.sql`
+DROPs + re-CREATEs the policy `"Teachers see own at-risk alerts"` ON
+`public.at_risk_alerts`, replacing its inline `FROM public.teachers` subquery with
+the EXISTING SECURITY DEFINER helper `public.get_my_teacher_id()`. Command (`FOR ALL`,
+no `FOR` clause), roles (PUBLIC, no `TO` clause), and check shape (USING only, so
+WITH CHECK keeps defaulting to USING) are preserved EXACTLY.
+
+**Boundary-equivalence PROOF (the gate).** Baseline (00000000000000_baseline_from_prod.sql:20252):
+`USING ( teacher_id IN (SELECT id FROM teachers WHERE auth_user_id = auth.uid()) )`.
+Helper: `get_my_teacher_id()` (baseline:8998) is exactly
+`SELECT id FROM teachers WHERE auth_user_id = auth.uid() LIMIT 1`. The two predicates
+admit the IDENTICAL `at_risk_alerts` rows for EVERY caller because:
+- **Same table, same filter, no extra guards** — both read `public.teachers` and
+  filter ONLY on `auth_user_id = auth.uid()`; neither carries an `is_active`,
+  `deleted_at`, or status guard, so neither narrows nor widens the teacher set.
+- **At-most-one element** — `public.teachers` has a FULL UNIQUE constraint on
+  `auth_user_id` (`teachers_auth_user_id_unique`, baseline:16272), so
+  `{ id : auth_user_id = auth.uid() }` has cardinality 0 or 1. With a 0/1-element
+  set, `teacher_id IN (set)` ≡ `teacher_id = (the element)`; the helper's `LIMIT 1`
+  drops no row (LIMIT 1 only matters at >1, which UNIQUE forbids).
+- **Empty/NULL parity** — caller with no teacher row: inline `IN ()` = FALSE,
+  helper `= NULL` = NULL (not TRUE); a row with `teacher_id IS NULL` (the FK is
+  `ON DELETE SET NULL`): both forms never match. Identical non-match in every case.
+No row becomes newly visible, none is removed — proven for every caller, not just
+the happy path.
+
+**Recursion safety.** `get_my_teacher_id()` is SECURITY DEFINER (baseline:8997), so
+its inner read of `public.teachers` BYPASSES RLS — no `at_risk_alerts → teachers`
+edge remains in the RLS graph, so the latent TSB-4-class cycle the inline form
+could close cannot form. The helper is in the migration-`20260516050000`
+keep-PUBLIC-EXECUTE list (kept precisely because it is referenced inside RLS
+USING/WITH CHECK), so `authenticated` callers can still evaluate the policy — unlike
+the plural `get_my_student_ids()`, which was revoked from PUBLIC and would have
+broken any policy that called it (hence the plural helper, though a byte-exact match
+for student-own inline forms, is NOT a usable drain target).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-222 | `generalized RLS recursion guard` (existing static guard, re-pinned) | P8: the static cross-table-recursion guard parses the full root chain INCLUDING migration `20260702100000`, reduces `at_risk_alerts::Teachers see own at-risk alerts` to its NEW helper-delegating form (`teacher_id = public.get_my_teacher_id()`), and the detector no longer flags it (no inline `FROM`/`JOIN` over a different RLS table). The drained key is PRUNED from `GRANDFATHERED_INLINE_POLICIES`, so (a) `detected ⊆ allowlist` still holds, (b) no STALE allowlist entry remains (`allowlist \ detected === ∅`), and (c) BOTH count pins ratchet 241 → 240 (`GRANDFATHERED_INLINE_POLICIES.size === 240` and `detectedRiskKeys().length === 240`). Re-introducing the old inline `FROM public.teachers` shape under the same name would now FAIL the guard (the name is absent from the ledger). 23/23 in the file pass at 240. Static SQL-text guard, no DB. | `src/__tests__/rls-no-cross-table-recursion.test.ts`, `supabase/migrations/20260702100000_xc3_p4_drain_at_risk_alerts_teacher_select.sql` | E | P8 |
+
+### Invariants covered by this section
+
+- P8 (RLS boundary) — one more latent inline cross-table edge (a TSB-4-class
+  recursion risk) is removed from the policy surface by delegating to a SECURITY
+  DEFINER helper whose inner reads bypass RLS; the boundary is proven byte-identical.
+
+### Catalog total
+
+XC-3 Phase 4 first drain adds REG-222 (one grandfathered inline policy —
+`at_risk_alerts::Teachers see own at-risk alerts` — refactored from an inline
+`FROM public.teachers` subquery to the existing SECURITY DEFINER helper
+`get_my_teacher_id()`, boundary-identical via the UNIQUE `teachers.auth_user_id`
+constraint; recursion-guard ledger ratcheted 241 → 240).
+**Total catalog: 189 entries (target: 35 — TARGET EXCEEDED).**
+
+---
