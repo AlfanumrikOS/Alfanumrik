@@ -21,10 +21,19 @@ module.exports = {
       fontFamily: {
         sans: ['Plus Jakarta Sans', 'Sora', 'system-ui', 'sans-serif'],
         heading: ['Sora', 'Plus Jakarta Sans', 'sans-serif'],
+        // Alfa Momentum triad (Wave 0). `display` = premium editorial
+        // headlines (Fraunces); Fraunces lacks Devanagari glyphs, so the
+        // sans fallbacks keep Hindi (isHi) headings legible. `data` = the
+        // numeric/stat/XP/score voice (Sora). `heading` kept for back-compat.
+        display: ['Fraunces', 'Georgia', 'serif'],
+        data: ['Sora', 'system-ui', 'sans-serif'],
       },
       colors: {
         brand: {
-          orange: '#F97316',
+          // Unified to the real runtime token (--orange in globals.css). The
+          // old #F97316 was config-only drift; #E8581C is the canonical brand
+          // signal across the app. (Alfa Momentum Wave 0.)
+          orange: '#E8581C',
           purple: '#7C3AED',
           cream: '#FBF8F4',
           warm: '#FEF3E2',

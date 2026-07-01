@@ -52,34 +52,23 @@ export function LoadingState({ primaryLabel, showElapsed = true }: LoadingStateP
       aria-live="polite"
       className="flex items-start gap-3 px-4 py-3"
     >
-      <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+      <div className="foxy-typing-avatar w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0">
         <span className="text-lg animate-pulse" aria-hidden>🦊</span>
       </div>
-      <div
-        className="bg-orange-50 rounded-xl px-4 py-3 max-w-[80%]"
-        style={{ border: '1px solid var(--border)' }}
-      >
-        <div className="flex gap-1.5" aria-hidden>
-          <span
-            className="w-2 h-2 bg-orange-400 rounded-full animate-bounce"
-            style={{ animationDelay: '0ms' }}
-          />
-          <span
-            className="w-2 h-2 bg-orange-400 rounded-full animate-bounce"
-            style={{ animationDelay: '150ms' }}
-          />
-          <span
-            className="w-2 h-2 bg-orange-400 rounded-full animate-bounce"
-            style={{ animationDelay: '300ms' }}
-          />
+      <div className="foxy-typing rounded-xl px-4 py-3 max-w-[80%]">
+        <div className="flex gap-1.5 items-center h-2" aria-hidden>
+          <span className="foxy-typing-dot" />
+          <span className="foxy-typing-dot" />
+          <span className="foxy-typing-dot" />
         </div>
-        <p className="text-xs text-orange-700 mt-1.5" data-testid="foxy-loading-primary">
+        <p className="text-xs mt-1.5" style={{ color: 'var(--accent-warm-strong)' }} data-testid="foxy-loading-primary">
           {label}
           {showElapsed && <>... {elapsed}s</>}
         </p>
         {isLongWait && (
           <p
-            className="text-[11px] text-orange-600 mt-1"
+            className="text-[11px] mt-1"
+            style={{ color: 'var(--accent-warm)' }}
             data-testid="foxy-loading-long-wait"
           >
             {longWaitMessage}

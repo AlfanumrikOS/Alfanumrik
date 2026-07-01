@@ -1272,7 +1272,7 @@ function istDateStringFromInstant(d: Date): string {
   return new Date(istMs).toISOString().slice(0, 10);
 }
 
-function normalizeChild(raw: RawChildResponse): ChildData {
+function normalizeChild(raw: RawChildResponse, index = 0): ChildData {
   const student = raw.student || raw;
   const stats = raw.stats || {};
   const today = istDateStringFromInstant(new Date());
@@ -1323,7 +1323,7 @@ function normalizeChild(raw: RawChildResponse): ChildData {
       }));
 
   return {
-    id: student.id || raw.id || String(Math.random()),
+    id: student.id || raw.id || 'unknown-' + index,
     name: student.name || raw.name || 'Child',
     grade: student.grade || raw.grade || '?',
     stats: {

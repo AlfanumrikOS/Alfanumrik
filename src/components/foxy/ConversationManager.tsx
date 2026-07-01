@@ -165,7 +165,8 @@ export function ConversationManager({
           }}
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.97]"
           style={{
-            background: 'linear-gradient(135deg, #E8590C, #F59E0B)',
+            // Warm-channel Foxy chrome (stays burnt-orange under cosmic). Wave 6.
+            background: 'linear-gradient(135deg, var(--accent-warm), rgb(var(--marigold-rgb)))',
           }}
         >
           <span>+</span>
@@ -241,6 +242,11 @@ export function ConversationManager({
             const subCfg = resolved
               ? { name: resolved.name, icon: resolved.icon, color: resolved.color }
               : undefined;
+            // Wave 6: brand-orange fallback routed through the warm channel
+            // (stays burnt-orange under cosmic). subAccent is either the
+            // resolved subject hex or the warm token; tints below use color-mix
+            // so the token fallback renders correctly.
+            const subAccent = subCfg?.color || 'var(--accent-warm)';
             const isCollapsed = collapsedSubjects.has(group.subject);
             const totalConvs = Object.values(group.chapters).reduce((sum, c) => sum + c.length, 0);
             const isActiveSubject = group.subject === activeSubject;
@@ -252,14 +258,14 @@ export function ConversationManager({
                   onClick={() => toggleSubject(group.subject)}
                   className="w-full flex items-center gap-2 px-2 py-2 rounded-xl transition-all active:scale-[0.98]"
                   style={{
-                    background: isActiveSubject ? `${subCfg?.color || '#E8590C'}08` : 'transparent',
+                    background: isActiveSubject ? `color-mix(in srgb, ${subAccent} 8%, transparent)` : 'transparent',
                   }}
                 >
                   <div
                     className="w-6 h-6 rounded-lg flex items-center justify-center text-xs shrink-0"
                     style={{
-                      background: `${subCfg?.color || '#E8590C'}15`,
-                      color: subCfg?.color || '#E8590C',
+                      background: `color-mix(in srgb, ${subAccent} 15%, transparent)`,
+                      color: subAccent,
                     }}
                   >
                     {subCfg?.icon || '\uD83D\uDCDA'}
@@ -286,7 +292,7 @@ export function ConversationManager({
 
                 {/* Chapter groups and conversations */}
                 {!isCollapsed && (
-                  <div className="ml-3 border-l-2 pl-2" style={{ borderColor: `${subCfg?.color || '#E8590C'}20` }}>
+                  <div className="ml-3 border-l-2 pl-2" style={{ borderColor: `color-mix(in srgb, ${subAccent} 20%, transparent)` }}>
                     {Object.entries(group.chapters).map(([chapterKey, convs]) => (
                       <div key={chapterKey} className="mb-1.5">
                         {/* Chapter sub-header */}
@@ -307,10 +313,10 @@ export function ConversationManager({
                                 className="w-full text-left px-2 py-2 rounded-lg transition-all active:scale-[0.98]"
                                 style={{
                                   background: isActive
-                                    ? `${subCfg?.color || '#E8590C'}12`
+                                    ? `color-mix(in srgb, ${subAccent} 12%, transparent)`
                                     : 'transparent',
                                   border: isActive
-                                    ? `1px solid ${subCfg?.color || '#E8590C'}25`
+                                    ? `1px solid color-mix(in srgb, ${subAccent} 25%, transparent)`
                                     : '1px solid transparent',
                                 }}
                               >

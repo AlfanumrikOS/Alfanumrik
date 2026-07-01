@@ -46,6 +46,23 @@
   --orange: #E8581C;
   --orange-rgb: 232, 88, 28;        /* use as rgb(var(--orange-rgb) / <alpha>) for opacity stacks */
   --orange-light: #FF7A3D;
+  /* STABLE WARM CHANNEL (Alfa Momentum, Wave 2).
+     --orange-rgb is REMAPPED to violet (139,126,255) under the cosmic-LIGHT
+     student surface (see html[data-design="cosmic"] at ~L2862), so
+     rgb(var(--orange-rgb)/α) renders VIOLET there, not warm orange. This token
+     stays burnt-orange (232,88,28) on EVERY surface, giving a stable channel for
+     warm-orange alpha tints on the dashboard. Use rgb(var(--accent-warm-rgb)/α)
+     wherever a warm-orange tint must remain warm regardless of design scope.
+     Re-declared identically inside the cosmic-light block so it is NOT remapped. */
+  --accent-warm-rgb: 232, 88, 28;
+  /* Solid warm-channel stops (Alfa Momentum, Wave 3 — Foxy). These were
+     previously only declared inside the cosmic-LIGHT block; declaring them
+     here in :root too means `var(--accent-warm)` / `var(--accent-warm-strong)`
+     resolve to the SAME burnt-orange on every surface (default-light, dark,
+     cosmic) — so the Foxy mascot/avatar identity stays warm even when --orange
+     is remapped to violet under data-design="cosmic". */
+  --accent-warm: #E8581C;
+  --accent-warm-strong: #C2440F;   /* darker warm stop for CTA / avatar gradients */
   --gold: #F5A623;
   --teal: #0891B2;
   --green: #16A34A;
@@ -54,6 +71,31 @@
   --purple-light: #9333EA;
   --pink: #DB2777;
   --red: #DC2626;
+  --marigold-rgb: 245, 166, 35;     /* channel for the --gold/marigold; rgb(var(--marigold-rgb) / <alpha>) */
+
+  /* ─── Base semantic / status tokens (Alfa Momentum, Wave 6) ──────────────
+     These semantic aliases were previously declared ONLY inside the cosmic
+     and/or dark blocks, so on the DEFAULT-LIGHT surface they resolved to
+     nothing — a real latent bug (Foxy ChatBubble reads var(--success)/
+     var(--warning)/var(--danger); DynamicScaffold reads var(--border-base)/
+     var(--surface-sunken); StatRing bands on var(--mastery-*)). Declaring
+     sensible base values here makes those consumers render on light too. The
+     cosmic / cosmic-light / dark blocks still redeclare these under their own
+     selectors, so those scopes keep winning (higher-specificity selectors). */
+  --success: var(--green);          /* positive / verified — green #16A34A */
+  --warning: var(--gold);           /* caution / check-yourself — marigold #F5A623 */
+  --info: var(--teal);              /* informational — teal #0891B2 */
+  --danger: var(--red);             /* destructive / error — red #DC2626 */
+  --primary: var(--orange);         /* brand primary action — burnt-orange (CTA buttons) */
+  --primary-light: var(--orange-light);
+  --primary-hover: var(--accent-warm-strong);
+  --border-base: var(--border);     /* alias of --border for components using the *-base name */
+  --surface-sunken: var(--surface-2); /* slightly recessed surface (inset wells) */
+  /* Mastery banding — matches the cosmic-light student-surface values so
+     StatRing's default low/mid/high bands resolve on non-cosmic surfaces too. */
+  --mastery-low: var(--red);        /* < 40% — at risk */
+  --mastery-mid: var(--gold);       /* 40–69% — developing */
+  --mastery-high: var(--green);     /* >= 70% — strong */
 
   /* Surfaces — warm cream base */
   --bg: #FBF8F4;
@@ -526,6 +568,53 @@ input[type="range"][style*="accentColor"]::-webkit-slider-thumb {
 /* pulse — used by Foxy avatar + mode-bar glows */
 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
 
+/* ─── Alfa Momentum keyframes (Wave 0) ─────────────────────────
+   Centralized BODIES for the gamification animations that
+   tailwind.config.js declares under theme.extend.animation but whose
+   keyframes were missing globally (previously injected ad-hoc inside
+   challenge/QuizResults/ExperimentCelebration). With these present the
+   `animate-{scale-in,bounce-in,level-up,xp-burst,streak-pulse,
+   mastery-fill,score-reveal}` utilities work app-wide. The ad-hoc inline
+   copies are intentionally left in place (additive; dedup is a later wave).
+   Spring easing lives in the config animation strings, not here. */
+@keyframes scale-in {
+  0%   { transform: scale(0.92); opacity: 0; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+@keyframes bounce-in {
+  0%   { transform: scale(0.8);  opacity: 0; }
+  60%  { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+/* level-up: a confident lift + settle for level/milestone reveals */
+@keyframes levelUp {
+  0%   { transform: translateY(8px) scale(0.94); opacity: 0; }
+  55%  { transform: translateY(-4px) scale(1.06); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+/* xp-burst: XP value pops then settles (paired with a +XP rise elsewhere) */
+@keyframes xpBurst {
+  0%   { transform: scale(0.6); opacity: 0; }
+  45%  { transform: scale(1.18); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+/* streak-pulse: gentle breathing glow for an active streak (infinite) */
+@keyframes streakPulse {
+  0%, 100% { transform: scale(1);    filter: drop-shadow(0 0 0 rgba(245, 166, 35, 0)); }
+  50%      { transform: scale(1.06); filter: drop-shadow(0 0 6px rgba(245, 166, 35, 0.45)); }
+}
+/* mastery-fill: drives a ring/bar fill via CSS var --fill-to (default 100%) */
+@keyframes masteryFill {
+  0%   { stroke-dashoffset: var(--fill-from, 100%); opacity: 0.6; }
+  100% { stroke-dashoffset: var(--fill-to, 0); opacity: 1; }
+}
+/* score-reveal: the headline score number arrives with a spring */
+@keyframes scoreReveal {
+  0%   { transform: scale(0.7) translateY(6px); opacity: 0; }
+  60%  { transform: scale(1.08) translateY(0); opacity: 1; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
 /* ─── Animation Classes ───────────────────────────────────── */
 .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) both; }
 .animate-slide-down { animation: slideDown 0.3s ease both; }
@@ -568,7 +657,11 @@ input[type="range"][style*="accentColor"]::-webkit-slider-thumb {
     scroll-behavior: auto !important;
   }
   .animate-float, .animate-shimmer, .animate-spin-slow,
-  .typing-dot, .streak-flame, .xp-rise {
+  .typing-dot, .streak-flame, .xp-rise,
+  /* Alfa Momentum (Wave 0): kill the looping streak glow; the spring-in
+     reveals (scale/bounce/level/xp/score/mastery) are already collapsed to
+     ~0ms by the * rule above, so they settle instantly without motion. */
+  .animate-streak-pulse {
     animation: none !important;
   }
   .card-hover:hover { transform: none; }
@@ -1394,6 +1487,113 @@ body.foxy-body-lock {
 }
 .foxy-subject-tabs::-webkit-scrollbar {
   display: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Foxy — "Alfa Momentum" Wave 3 premium chrome (presentation-only).
+   Additive utility classes used by /foxy/page.tsx + the Foxy components.
+   Every value is tokenized (warm-channel / surface / border / text). No
+   logic, no layout structure change — these only elevate look & feel.
+   Cosmic-safe: the mascot warm tint rides --accent-warm-rgb (NOT --orange),
+   so it stays burnt-orange under data-design="cosmic". Motion is collapsed
+   by the global prefers-reduced-motion rule at the top of this file.
+   ───────────────────────────────────────────────────────────────────── */
+
+/* Premium header band — refined dark treatment with a faint warm sheen.
+   Replaces the raw `linear-gradient(135deg,#1a1a2e,#0f3460)` inline hex
+   with a tokenized, cohesive Alfa-Momentum dark that carries a subtle warm
+   glow at the leading edge so it reads as "Foxy" not "generic admin dark". */
+.foxy-header-premium {
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgb(var(--accent-warm-rgb) / 0.20) 0%, transparent 46%),
+    linear-gradient(135deg, #241a2e 0%, #16263f 100%);
+  border-bottom: 1px solid rgb(var(--accent-warm-rgb) / 0.18);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* Warm mascot/avatar gradient — stable burnt-orange on every surface. */
+.foxy-avatar-warm {
+  background: linear-gradient(135deg, var(--accent-warm), var(--gold));
+  box-shadow: 0 2px 10px rgb(var(--accent-warm-rgb) / 0.32);
+}
+
+/* Premium subject / mode pill base. The active tint is supplied per-pill via
+   the --pill-tint custom property (set inline from the subject brand color),
+   so we keep the per-subject identity but route it through color-mix for a
+   refined, consistent surface instead of raw `${color}25` hex concatenation. */
+.foxy-pill {
+  transition:
+    background 0.2s var(--ease-atlas),
+    border-color 0.2s var(--ease-atlas),
+    color 0.2s var(--ease-atlas),
+    transform 0.12s var(--ease-atlas),
+    box-shadow 0.2s var(--ease-atlas);
+}
+.foxy-pill:active { transform: scale(0.97); }
+.foxy-pill-active {
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--pill-tint, var(--accent-warm)) 22%, transparent);
+}
+
+/* Premium chat bubble surfaces. Tutor = clean elevated surface; user = a warm
+   tinted surface so the conversation reads as a two-voice premium thread. */
+.foxy-bubble-tutor {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.foxy-bubble-user {
+  background: color-mix(in srgb, var(--bubble-tint, var(--accent-warm)) 7%, var(--surface-1));
+  border: 1.5px solid color-mix(in srgb, var(--bubble-tint, var(--accent-warm)) 22%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Premium typing indicator — replaces the bg-orange-* / animate-bounce dots
+   with warm-channel dots on a soft warm surface (cosmic-safe). */
+.foxy-typing {
+  background: color-mix(in srgb, var(--accent-warm) 8%, var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--accent-warm) 16%, var(--border));
+}
+.foxy-typing-avatar {
+  background: color-mix(in srgb, var(--accent-warm) 14%, var(--surface-1));
+}
+.foxy-typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--accent-warm);
+  animation: foxy-typing-bounce 1.1s var(--ease-atlas) infinite;
+}
+.foxy-typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.foxy-typing-dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes foxy-typing-bounce {
+  0%, 70%, 100% { transform: translateY(0); opacity: 0.55; }
+  35%           { transform: translateY(-4px); opacity: 1; }
+}
+
+/* Premium empty-state mascot float (gentler, calmer than .animate-float). */
+.foxy-hero-mascot {
+  animation: foxy-hero-float 5.5s var(--ease-atlas) infinite;
+  filter: drop-shadow(0 10px 22px rgb(var(--accent-warm-rgb) / 0.18));
+}
+@keyframes foxy-hero-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+
+/* Lesson-step progress segment — premium fill with a soft glow when active. */
+.foxy-step-seg {
+  transition: background 0.3s var(--ease-atlas), box-shadow 0.3s var(--ease-atlas);
+}
+
+/* prefers-reduced-motion safety for the Wave 3 keyframes (the global block at
+   the top already zeroes animation-duration via the universal selector; this
+   makes the intent explicit for the named Foxy animations). */
+@media (prefers-reduced-motion: reduce) {
+  .foxy-typing-dot,
+  .foxy-hero-mascot {
+    animation: none !important;
+  }
+  .foxy-hero-mascot { filter: none; }
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -2912,6 +3112,39 @@ html[data-design="cosmic"][data-theme="light"] {
     radial-gradient(900px 500px at 12% -10%, rgba(124,92,255,0.16), transparent 60%),
     radial-gradient(700px 500px at 105% 10%, rgba(34,211,238,0.12), transparent 60%),
     var(--bg);
+
+  /* ── ALFA MOMENTUM — WARM + STATUS CHANNELS (Wave 2, dashboard) ──────────
+     The base cosmic block (html[data-design="cosmic"]) deliberately remaps
+     --orange / --orange-rgb to VIOLET (139,126,255) and the mastery/status
+     family to dark-mode PASTELS (mint/coral/saffron/violet). On the warm-cream
+     cosmic-LIGHT student dashboard those pastels are too light to read and the
+     violet --orange breaks the "burnt-orange is THE brand signal" language.
+
+     These re-declarations are ADDITIVE and SCOPED to the cosmic-light surface
+     ONLY (this selector). They do NOT touch the dark cosmic surfaces (Foxy /
+     Learn keep their violet+pastel ambiance) and they do NOT alter the global
+     --orange-rgb remap — that stays violet, which is why the warm tints below
+     route through the dedicated --accent-warm-rgb channel instead.
+
+     Burnt-orange #E8581C is the brand signal for PRIMARY actions + gamification;
+     violet (--purple / --orange-rgb) stays the deliberate AI/cosmic accent. */
+
+  /* Stable warm channel — NOT remapped to violet here (cf. base cosmic block). */
+  --accent-warm-rgb: 232, 88, 28;
+  --accent-warm: #E8581C;
+  --accent-warm-strong: #C2440F;   /* darker warm stop for CTA gradients */
+
+  /* Semantic mastery/status palette — saturated for the cream light surface
+     (the inherited mint/coral/saffron pastels wash out on #F4F1EA). */
+  --green: #15803D;        /* mastered / strong */
+  --green-rgb: 21, 128, 61;
+  --red: #DC2626;          /* critical / danger */
+  --danger: #DC2626;
+  --purple: #7C3AED;       /* needs-revision / weak — deliberate violet accent */
+  --purple-rgb: 124, 58, 237;
+  --mastery-low: #DC2626;
+  --mastery-mid: #E8581C;
+  --mastery-high: #15803D;
 }
 
 /* ── 4. Theme overrides: HIGH CONTRAST (.theme-hc → data-theme="hc") ────────
@@ -3470,9 +3703,41 @@ html[data-design="cosmic"] .recharts-text.recharts-label { fill: var(--text-2) !
   animation-delay: calc(min(var(--stagger-i, 0), 8) * 0.05s);
 }
 .os-mission { animation: osReveal 0.4s var(--ease-atlas, cubic-bezier(.22,1,.36,1)) both; }
+
+/* Wave 2: the hero PremiumCard paints its glow ring + focus ring from --orange
+   and --shadow-glow, both of which are VIOLET under the cosmic-light student
+   surface. Scope-override them to the stable warm channel on the hero ONLY so
+   the mission card reads burnt-orange-primary (not accidentally violet) without
+   touching PremiumCard or the global cosmic remap. */
+.os-mission {
+  --orange: var(--accent-warm, #E8581C);
+  --shadow-glow: 0 0 28px rgb(var(--accent-warm-rgb, 232, 88, 28) / 0.22);
+}
+
+/* Wave 4a (Alfa Momentum — Learn/Exams): scope-override --orange + its glow to
+   the STABLE WARM CHANNEL so primitives like GlowButton/PremiumCard (which paint
+   from --orange / --shadow-glow) read burnt-orange-primary under the cosmic-light
+   student surface, where the global remap turns --orange into violet. Apply to a
+   CTA element to keep it warm without touching the primitive or the cosmic remap.
+   Mirrors the .os-mission scope-override pattern (line ~3687). */
+.warm-cta {
+  --orange: var(--accent-warm, #E8581C);
+  --orange-light: var(--accent-warm-strong, #C2440F);
+  --shadow-glow: 0 0 28px rgb(var(--accent-warm-rgb, 232, 88, 28) / 0.22);
+}
+
+/* Wave 2 (Alfa Momentum): tasteful staggered reveal for the secondary dashboard
+   cards (mastery snapshot, board score). Each card sets --reveal-i inline; the
+   hero (--os-mission) leads, these follow. CSS-only, no library (protects P10). */
+.os-reveal-card {
+  animation: osReveal 0.44s var(--ease-atlas, cubic-bezier(.22,1,.36,1)) both;
+  animation-delay: calc(0.06s + min(var(--reveal-i, 0), 6) * 0.07s);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .os-skill-tree .os-roadmap-node,
-  .os-mission {
+  .os-mission,
+  .os-reveal-card {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;

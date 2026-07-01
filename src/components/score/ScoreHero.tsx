@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getScoreColor } from './ScoreCard';
+import { getScoreColor } from '@/lib/score-colors';
 
 /* ─── Props ─────────────────────────────────────────────── */
 

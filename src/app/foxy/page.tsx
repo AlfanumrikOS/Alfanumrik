@@ -1275,7 +1275,7 @@ export default function FoxyPage() {
     <>
       {/* ═══ HEADER ═══ */}
       {/* `sticky top-0` is dropped — AppShell.header is itself position:sticky. */}
-      <div className="px-3 py-2.5 flex items-center gap-3" style={{ background: 'linear-gradient(135deg, #1a1a2e, #0f3460)', color: '#fff' }}>
+      <div className="foxy-header-premium px-3 py-2.5 flex items-center gap-3" style={{ color: '#fff' }}>
         <button onClick={() => router.push('/dashboard')} className="text-white/60 text-sm p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>←</button>
         {/* Mobile: open conversation history sidebar */}
         <button
@@ -1288,7 +1288,7 @@ export default function FoxyPage() {
             <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
         </button>
-        <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0" style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)', animation: foxyState === 'thinking' ? 'pulse 1s infinite' : 'none' }}>
+        <div className="foxy-avatar-warm w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0" style={{ animation: foxyState === 'thinking' ? 'pulse 1s infinite' : 'none' }}>
           {FOXY_FACES[foxyState]}
         </div>
         <div className="flex-1 min-w-0">
@@ -1325,8 +1325,8 @@ export default function FoxyPage() {
                 : (voiceMode ? 'Disable voice mode' : 'Enable voice mode')}
               className="w-10 h-10 rounded-lg flex items-center justify-center text-sm transition-all active:scale-90"
               style={{
-                background: voiceMode ? 'rgba(232,88,28,0.25)' : 'rgba(255,255,255,0.08)',
-                border: voiceMode ? '1.5px solid rgba(232,88,28,0.5)' : '1.5px solid rgba(255,255,255,0.1)',
+                background: voiceMode ? 'rgb(var(--accent-warm-rgb) / 0.25)' : 'rgba(255,255,255,0.08)',
+                border: voiceMode ? '1.5px solid rgb(var(--accent-warm-rgb) / 0.5)' : '1.5px solid rgba(255,255,255,0.1)',
                 animation: isSpeaking ? 'pulse 1s infinite' : 'none',
               }}
             >
@@ -1375,10 +1375,11 @@ export default function FoxyPage() {
                 onClick={handleClick}
                 aria-label={sub.isLocked ? `${sub.name} (locked — tap to upgrade)` : sub.name}
                 title={sub.isLocked ? (isHi ? 'अपग्रेड करें' : 'Upgrade to unlock') : sub.name}
-                className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]"
+                className={`foxy-pill shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold ${isActive ? 'foxy-pill-active' : ''}`}
                 style={{
-                  background: isActive ? `${sub.color}25` : 'var(--surface-2)',
-                  border: isActive ? `2px solid ${sub.color}60` : '1.5px solid var(--border)',
+                  ['--pill-tint' as string]: sub.color,
+                  background: isActive ? `color-mix(in srgb, ${sub.color} 16%, var(--surface-1))` : 'var(--surface-2)',
+                  border: isActive ? `2px solid color-mix(in srgb, ${sub.color} 55%, transparent)` : '1.5px solid var(--border)',
                   color: isActive ? sub.color : 'var(--text-2)',
                   fontWeight: isActive ? 700 : 600,
                   opacity: sub.isLocked ? 0.55 : 1,
@@ -1501,9 +1502,9 @@ export default function FoxyPage() {
                   };
               return (
                 <div key={step} className="flex-1 flex flex-col items-center gap-0.5">
-                  <div className="w-full h-1.5 rounded-full" style={{
-                    background: isCompleted ? cfg.color : isCurrent ? `${cfg.color}60` : 'var(--surface-2)',
-                    transition: 'all 0.3s ease',
+                  <div className="foxy-step-seg w-full h-1.5 rounded-full" style={{
+                    background: isCompleted ? cfg.color : isCurrent ? `color-mix(in srgb, ${cfg.color} 55%, transparent)` : 'var(--surface-2)',
+                    boxShadow: isCurrent ? `0 0 8px color-mix(in srgb, ${cfg.color} 45%, transparent)` : 'none',
                   }} />
                   <span className="text-[8px] font-bold truncate" style={{
                     color: isCompleted ? cfg.color : isCurrent ? cfg.color : 'var(--text-3)',
@@ -1520,7 +1521,7 @@ export default function FoxyPage() {
               <button
                 onClick={advanceLessonStep}
                 className="px-3 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
-                style={{ background: `${cfg.color}15`, color: cfg.color, border: `1px solid ${cfg.color}30` }}
+                style={{ background: `color-mix(in srgb, ${cfg.color} 14%, transparent)`, color: cfg.color, border: `1px solid color-mix(in srgb, ${cfg.color} 30%, transparent)` }}
               >
                 {lessonStep === 'spaced_revision'
                   ? (language === 'hi' ? '✓ पूरा हुआ' : '✓ Complete')
@@ -1530,7 +1531,7 @@ export default function FoxyPage() {
           </div>
           {/* Predict-before-reveal for active recall step */}
           {showPredictionInput && !predictionSubmitted && (
-            <div className="mt-2 p-3 rounded-xl" style={{ background: `${cfg.color}06`, border: `1px solid ${cfg.color}20` }}>
+            <div className="mt-2 p-3 rounded-xl" style={{ background: `color-mix(in srgb, ${cfg.color} 6%, var(--surface-1))`, border: `1px solid color-mix(in srgb, ${cfg.color} 22%, transparent)` }}>
               <p className="text-xs font-semibold mb-1.5" style={{ color: cfg.color }}>
                 🧠 {language === 'hi' ? 'पहले अपना अनुमान लिखो:' : 'Write your prediction first:'}
               </p>
@@ -1561,7 +1562,7 @@ export default function FoxyPage() {
             </div>
           )}
           {showPredictionInput && predictionSubmitted && (
-            <div className="mt-2 text-[10px] font-semibold" style={{ color: '#16A34A' }}>
+            <div className="mt-2 text-[10px] font-semibold" style={{ color: 'var(--green)' }}>
               ✓ {language === 'hi' ? 'अनुमान जमा हो गया! Foxy का जवाब देखो।' : 'Prediction submitted! See Foxy\'s answer below.'}
             </div>
           )}
@@ -1816,8 +1817,8 @@ export default function FoxyPage() {
             {/* Empty state with ConversationStarters */}
             {messages.length === 0 && (
               <div className="text-center py-12 md:py-20 animate-slide-up">
-                <div className="text-6xl md:text-7xl mb-4 animate-float">{FOXY_FACES.idle}</div>
-                <h2 className="text-2xl md:text-2xl font-extrabold mb-2" style={{ fontFamily: 'var(--font-display)', background: `linear-gradient(135deg, #E8590C, ${cfg?.color || '#7C3AED'})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', color: '#E8590C' }}>{getEmptyStateHeading()}</h2>
+                <div className="foxy-hero-mascot text-6xl md:text-7xl mb-4">{FOXY_FACES.idle}</div>
+                <h2 className="text-2xl md:text-2xl font-extrabold mb-2" style={{ fontFamily: 'var(--font-display)', background: `linear-gradient(135deg, var(--accent-warm), ${cfg?.color || 'var(--purple)'})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', color: 'var(--accent-warm)' }}>{getEmptyStateHeading()}</h2>
                 <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto mb-4 leading-relaxed">
                   {getEmptyStateSubtitle()}
                 </p>
@@ -1828,9 +1829,9 @@ export default function FoxyPage() {
                     onClick={() => setShowChapterDD(true)}
                     className="mb-6 px-5 py-3 rounded-2xl text-sm font-bold transition-all active:scale-[0.97]"
                     style={{
-                      background: `${cfg.color}12`,
+                      background: `color-mix(in srgb, ${cfg.color} 12%, var(--surface-1))`,
                       color: cfg.color,
-                      border: `1.5px solid ${cfg.color}30`,
+                      border: `1.5px solid color-mix(in srgb, ${cfg.color} 30%, transparent)`,
                     }}
                   >
                     {cfg.icon} {language === 'hi' ? '\u0905\u0927\u094D\u092F\u093E\u092F \u091A\u0941\u0928\u094B' : 'Select a Chapter to Start'}
@@ -1841,7 +1842,7 @@ export default function FoxyPage() {
                     knowledge gap (NOT dashboard — dashboard entry uses the
                     Phase 1.2 friendly greeting above, no Start-button banner). */}
                 {urlContext && !isDashboardEntry && (
-                  <div className="mx-auto max-w-sm mb-6 p-4 rounded-2xl text-left" style={{ background: `${cfg.color}10`, border: `1.5px solid ${cfg.color}30` }}>
+                  <div className="mx-auto max-w-sm mb-6 p-4 rounded-2xl text-left" style={{ background: `color-mix(in srgb, ${cfg.color} 10%, var(--surface-1))`, border: `1.5px solid color-mix(in srgb, ${cfg.color} 30%, transparent)` }}>
                     <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: cfg.color }}>
                       {language === 'hi' ? '📍 इस विषय से शुरू करो' : '📍 Continuing from'}
                     </div>
@@ -1900,7 +1901,7 @@ export default function FoxyPage() {
                 />
 
                 {activeTopic && (
-                  <button onClick={() => setShowChapterDD(true)} className="mt-6 px-5 py-2.5 rounded-xl text-sm font-bold" style={{ background: `${cfg.color}10`, color: cfg.color, border: `1.5px solid ${cfg.color}30` }}>
+                  <button onClick={() => setShowChapterDD(true)} className="mt-6 px-5 py-2.5 rounded-xl text-sm font-bold" style={{ background: `color-mix(in srgb, ${cfg.color} 10%, var(--surface-1))`, color: cfg.color, border: `1.5px solid color-mix(in srgb, ${cfg.color} 30%, transparent)` }}>
                     {cfg.icon} {language === 'hi' ? `\u0905\u0928\u094D\u092F ${topics.length} \u0905\u0927\u094D\u092F\u093E\u092F \u0926\u0947\u0916\u094B` : `Browse ${topics.length} Chapters`}
                   </button>
                 )}

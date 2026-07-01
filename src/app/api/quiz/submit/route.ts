@@ -208,7 +208,7 @@ export async function POST(request: NextRequest) {
       p_session_id: body.sessionId,
       p_student_id: body.studentId,
       p_subject: body.subject ?? 'unknown',
-      p_grade: body.grade ?? '0',
+      p_grade: body.grade ?? 'unknown',
       p_topic: body.topic ?? null,
       p_chapter: body.chapter ?? null,
       p_responses: rpcResponses,

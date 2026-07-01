@@ -27,7 +27,7 @@ import {
   isBareOpen,
   EMPTY_COGNITIVE_CONTEXT,
   type CognitiveContext,
-} from '@/app/api/foxy/route';
+} from '@/app/api/foxy/_lib/test-surface';
 
 function ctx(over: Partial<CognitiveContext> = {}): CognitiveContext {
   return { ...EMPTY_COGNITIVE_CONTEXT, ...over };

@@ -32,8 +32,8 @@ const CATEGORY_DISPLAY: Array<{
   labelHi: string;
   icon: string;
 }> = [
-  { key: 'quiz', cap: XP_RULES.quiz_daily_cap, color: 'var(--orange)', labelEn: 'Quiz', labelHi: '\u0915\u094D\u0935\u093F\u095B\u093C', icon: '\u26A1' },
-  { key: 'chat', cap: XP_RULES.foxy_chat_daily_cap, color: '#3B82F6', labelEn: 'Chat', labelHi: '\u091A\u0948\u091F', icon: '\uD83E\uDD8A' },
+  { key: 'quiz', cap: XP_RULES.quiz_daily_cap, color: 'var(--accent-warm)', labelEn: 'Quiz', labelHi: '\u0915\u094D\u0935\u093F\u095B\u093C', icon: '\u26A1' },
+  { key: 'chat', cap: XP_RULES.foxy_chat_daily_cap, color: 'var(--teal)', labelEn: 'Chat', labelHi: '\u091A\u0948\u091F', icon: '\uD83E\uDD8A' },
 ];
 
 /* ─── Component ──────────────────────────────────────────── */
@@ -181,7 +181,7 @@ export default function XPDailyStatus({ studentId, streak, isHi }: XPDailyStatus
         </span>
         <span
           className="text-lg font-bold"
-          style={{ color: 'var(--orange)', fontFamily: 'var(--font-display)' }}
+          style={{ color: 'var(--accent-warm)', fontFamily: 'var(--font-display)' }}
         >
           {totalToday} XP
         </span>
@@ -196,7 +196,7 @@ export default function XPDailyStatus({ studentId, streak, isHi }: XPDailyStatus
         </p>
       )}
       {remaining === 0 && (
-        <p className="text-xs text-center font-bold" style={{ color: 'var(--green, #22C55E)' }}>
+        <p className="text-xs text-center font-bold" style={{ color: 'var(--green)' }}>
           {isHi ? '\u0936\u093E\u0928\u0926\u093E\u0930! \u0906\u091C \u0915\u093E \u0932\u0915\u094D\u0937\u094D\u092F \u092A\u0942\u0930\u093E \u0939\u0941\u0906!' : 'Awesome! You hit your daily goal!'}
         </p>
       )}

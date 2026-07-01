@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { useWelcomeV2 } from './WelcomeV2Context';
+import { useReveal } from './useReveal';
 import { track as trackEvent } from '@/lib/posthog/client';
 import { PRICING } from '@/lib/plans';
 import s from './welcome-v2.module.css';
@@ -114,6 +115,7 @@ const PLANS: Plan[] = [
 export default function PricingTeaserV2() {
   const { isHi, t, role } = useWelcomeV2();
   const trackRef = useRef<HTMLDivElement | null>(null);
+  const revealRef = useReveal();
   const [activeIdx, setActiveIdx] = useState(1); // featured Pro plan as default
 
   useEffect(() => {
@@ -157,10 +159,10 @@ export default function PricingTeaserV2() {
 
   return (
     <section className={s.pricing} id="pricing" aria-labelledby="pricing-title">
-      <div className={s.wrap}>
-        <div className={s.pricingHead}>
+      <div className={s.wrap} ref={revealRef as React.RefObject<HTMLDivElement>}>
+        <div className={`${s.pricingHead} ${s.revealUp}`} data-reveal>
           <h2 id="pricing-title">
-            {t('Three ', 'तीन ')}
+            {t('Four ', 'चार ')}
             <em>{t('plans', 'योजनाएँ')}</em>
             {t(', no asterisks.', ', कोई शर्त नहीं।')}
           </h2>
@@ -174,7 +176,8 @@ export default function PricingTeaserV2() {
           {PLANS.map((plan, i) => (
             <article
               key={i}
-              className={`${s.plan} ${plan.featured ? s.planFeatured : ''}`}
+              data-reveal
+              className={`${s.plan} ${plan.featured ? s.planFeatured : ''} ${s.revealUp}`}
               aria-labelledby={`plan-${i}-title`}
               role="listitem"
             >

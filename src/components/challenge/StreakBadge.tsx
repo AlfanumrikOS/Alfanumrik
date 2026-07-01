@@ -61,8 +61,8 @@ export default function StreakBadge({ streak, badges, isHi, size = 'md' }: Strea
     <div
       className={config.container}
       style={size !== 'sm' ? {
-        background: 'rgba(249, 115, 22, 0.08)',
-        border: '1px solid rgba(249, 115, 22, 0.2)',
+        background: 'rgb(var(--accent-warm-rgb) / 0.08)',
+        border: '1px solid rgb(var(--accent-warm-rgb) / 0.2)',
       } : undefined}
       role="status"
       aria-label={
@@ -77,7 +77,7 @@ export default function StreakBadge({ streak, badges, isHi, size = 'md' }: Strea
       </span>
 
       {/* Day count */}
-      <span className={config.countSize} style={{ color: '#F97316' }}>
+      <span className={config.countSize} style={{ color: 'var(--accent-warm)' }}>
         {streak}
       </span>
 

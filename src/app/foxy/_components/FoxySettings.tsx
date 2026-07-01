@@ -86,11 +86,12 @@ export function ModePicker({ sessionMode, color, isHi, onSwitchMode }: ModePicke
           <button
             key={m.id}
             onClick={() => onSwitchMode(m.id)}
-            className="shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1"
+            className={`foxy-pill shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 ${isActive ? 'foxy-pill-active' : ''}`}
             style={{
-              background: isActive ? `${color}15` : 'transparent',
+              ['--pill-tint' as string]: color,
+              background: isActive ? `color-mix(in srgb, ${color} 14%, var(--surface-1))` : 'transparent',
               color: isActive ? color : 'var(--text-3)',
-              border: isActive ? `1px solid ${color}30` : '1px solid transparent',
+              border: isActive ? `1px solid color-mix(in srgb, ${color} 32%, transparent)` : '1px solid transparent',
             }}
           >
             <span>{m.icon}</span>
@@ -101,11 +102,12 @@ export function ModePicker({ sessionMode, color, isHi, onSwitchMode }: ModePicke
       {/* Lesson mode — advanced, shown as small pill */}
       <button
         onClick={() => onSwitchMode('lesson')}
-        className="shrink-0 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1"
+        className={`foxy-pill shrink-0 px-2 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 ${sessionMode === 'lesson' ? 'foxy-pill-active' : ''}`}
         style={{
-          background: sessionMode === 'lesson' ? `${color}15` : 'transparent',
+          ['--pill-tint' as string]: color,
+          background: sessionMode === 'lesson' ? `color-mix(in srgb, ${color} 14%, var(--surface-1))` : 'transparent',
           color: sessionMode === 'lesson' ? color : 'var(--text-3)',
-          border: sessionMode === 'lesson' ? `1px solid ${color}30` : '1px solid transparent',
+          border: sessionMode === 'lesson' ? `1px solid color-mix(in srgb, ${color} 32%, transparent)` : '1px solid transparent',
         }}
       >
         <span>{'🎓'}</span>

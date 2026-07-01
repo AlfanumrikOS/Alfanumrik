@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { supabase as globalSupabase } from '@/lib/supabase-client';
+import { authorizeRequest, PERMISSIONS } from '@/lib/rbac';
 import { logger } from '@/lib/logger';
 
 /**
@@ -12,39 +11,20 @@ import { logger } from '@/lib/logger';
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseKey || !serviceKey) {
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
       return NextResponse.json({ error: 'Not configured' }, { status: 503 });
     }
 
-    const supabase = createServerClient(supabaseUrl, supabaseKey, {
-      cookies: {
-        getAll() { return request.cookies.getAll().map(c => ({ name: c.name, value: c.value })); },
-        setAll() {},
-      },
-    });
-
-    let user = (await supabase.auth.getUser()).data.user;
-    if (!user) {
-      const authHeader = request.headers.get('Authorization');
-      if (authHeader?.startsWith('Bearer ')) {
-        const token = authHeader.substring(7);
-        user = (await globalSupabase.auth.getUser(token)).data.user;
-      }
-    }
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await authorizeRequest(request, PERMISSIONS.PAYMENTS_SUBSCRIBE);
+    if (!auth.authorized) return auth.errorResponse!;
+    const authUserId = auth.userId!;
 
     const admin = supabaseAdmin;
 
     const { data: studentRow } = await admin
       .from('students')
       .select('id, subscription_plan')
-      .eq('auth_user_id', user.id)
+      .eq('auth_user_id', authUserId)
       .maybeSingle();
 
     if (!studentRow) {

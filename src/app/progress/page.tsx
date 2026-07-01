@@ -9,7 +9,7 @@ import { getStudentProfiles, getSubjects, getBloomProgression, getLearningVeloci
 import { BLOOM_CONFIG, BLOOM_LEVELS, BLOOM_ORDER, getHighestMasteredBloom, predictMasteryDate } from '@/lib/cognitive-engine';
 import { getLevelFromScore } from '@/lib/score-config';
 import type { BloomLevel, KnowledgeGap, LearningVelocity, CognitiveSessionMetrics, StudentLearningProfile, Subject } from '@/lib/types';
-import { Card, Badge, ProgressBar, SectionHeader, StatCard, MasteryRing, LoadingFoxy, Button, EmptyState } from '@/components/ui';
+import { Card, Badge, ProgressBar, SectionHeader, StatCard, MasteryRing, LoadingFoxy, Button, EmptyState, PremiumCard, GlowButton } from '@/components/ui';
 import { LineChart } from '@/components/admin-ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import ScoreHero from '@/components/score/ScoreHero';
@@ -52,10 +52,10 @@ interface DecayTopic {
 
 /* ── Helpers ── */
 const SEVERITY_COLORS: Record<string, string> = {
-  critical: '#DC2626',
-  high: '#F59E0B',
-  medium: '#3B82F6',
-  low: '#6B7280',
+  critical: 'var(--red)',
+  high: 'var(--gold)',
+  medium: 'var(--teal)',
+  low: 'var(--text-3)',
 };
 
 const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -86,7 +86,7 @@ function ScoreTrendSparkline({ datapoints, isHi }: { datapoints: ScoreHistoryRow
   const delta = Math.round(last - first);
   const isUp = delta > 0;
   const isFlat = delta === 0;
-  const deltaColor = isUp ? '#10B981' : isFlat ? '#6B7280' : '#EF4444';
+  const deltaColor = isUp ? 'var(--green)' : isFlat ? 'var(--text-3)' : 'var(--red)';
 
   const seriesName = isHi ? 'अंक' : 'Score';
   const series = [{
@@ -205,14 +205,14 @@ function SessionMetricCard({ session, isHi }: { session: CognitiveSessionMetrics
     : null;
 
   return (
-    <Card className="!p-3">
+    <PremiumCard className="!p-3">
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-semibold text-[var(--text-2)]">
           {(session.questions_in_zpd ?? 0) + (session.questions_too_easy ?? 0) + (session.questions_too_hard ?? 0)} {isHi ? 'प्रश्न' : 'questions'}
         </span>
         <div className="flex items-center gap-2">
           {session.fatigue_detected && (
-            <Badge color="#EF4444" size="sm">{isHi ? 'थकान' : 'Low Energy'}</Badge>
+            <Badge color="var(--red)" size="sm">{isHi ? 'थकान' : 'Low Energy'}</Badge>
           )}
           {dur != null && (
             <span className="text-[10px] text-[var(--text-3)]">{dur}m</span>
@@ -232,7 +232,7 @@ function SessionMetricCard({ session, isHi }: { session: CognitiveSessionMetrics
               className="h-full rounded-full"
               style={{
                 width: `${zpdAcc}%`,
-                background: zpdAcc >= 70 ? 'var(--green)' : zpdAcc >= 40 ? 'var(--orange)' : '#EF4444',
+                background: zpdAcc >= 70 ? 'var(--green)' : zpdAcc >= 40 ? 'var(--accent-warm)' : 'var(--red)',
               }}
             />
           </div>
@@ -242,12 +242,12 @@ function SessionMetricCard({ session, isHi }: { session: CognitiveSessionMetrics
       {/* ZPD Distribution */}
       {(session.questions_in_zpd ?? 0) + (session.questions_too_easy ?? 0) + (session.questions_too_hard ?? 0) > 0 && (
         <div className="flex gap-0.5">
-          {session.questions_in_zpd ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: '#16A34A', minWidth: 16 }} title={`In ZPD: ${session.questions_in_zpd}`}>{session.questions_in_zpd}</div> : null}
-          {session.questions_too_easy ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: '#3B82F6', minWidth: 16 }} title={`Too Easy: ${session.questions_too_easy}`}>{session.questions_too_easy}</div> : null}
-          {session.questions_too_hard ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: '#EF4444', minWidth: 16 }} title={`Too Hard: ${session.questions_too_hard}`}>{session.questions_too_hard}</div> : null}
+          {session.questions_in_zpd ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: 'var(--green)', minWidth: 16 }} title={`In ZPD: ${session.questions_in_zpd}`}>{session.questions_in_zpd}</div> : null}
+          {session.questions_too_easy ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: 'var(--teal)', minWidth: 16 }} title={`Too Easy: ${session.questions_too_easy}`}>{session.questions_too_easy}</div> : null}
+          {session.questions_too_hard ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: 'var(--red)', minWidth: 16 }} title={`Too Hard: ${session.questions_too_hard}`}>{session.questions_too_hard}</div> : null}
         </div>
       )}
-    </Card>
+    </PremiumCard>
   );
 }
 
@@ -490,7 +490,7 @@ export default function ProgressPage() {
       <header className="page-header">
         <div className="page-header-inner flex items-center gap-3">
           <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>&larr;</button>
-          <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+          <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-serif)' }}>
             {isHi ? 'प्रगति' : 'Progress'}
           </h1>
           {/* Foxy Coins in header */}
@@ -504,25 +504,43 @@ export default function ProgressPage() {
 
       <main className="app-container py-6 space-y-4">
         <SectionErrorBoundary section="Progress">
-        {/* ── Tab Switcher ── */}
+        {/* ── Tab Switcher (premium pills) ── */}
         <div className="flex gap-2">
           <button
             onClick={() => setActiveTab('overview')}
-            className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
-            style={{
-              background: activeTab === 'overview' ? 'var(--orange)' : 'var(--surface-2)',
-              color: activeTab === 'overview' ? '#fff' : 'var(--text-3)',
-            }}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-[0.98]"
+            style={
+              activeTab === 'overview'
+                ? {
+                    background: 'linear-gradient(135deg, var(--accent-warm), var(--accent-warm-strong))',
+                    color: '#fff',
+                    boxShadow: '0 4px 14px rgb(var(--accent-warm-rgb) / 0.30)',
+                  }
+                : {
+                    background: 'var(--surface-2)',
+                    color: 'var(--text-3)',
+                    border: '1px solid var(--border)',
+                  }
+            }
           >
             {isHi ? 'सारांश' : 'Overview'}
           </button>
           <button
             onClick={() => setActiveTab('cognitive')}
-            className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
-            style={{
-              background: activeTab === 'cognitive' ? 'var(--purple)' : 'var(--surface-2)',
-              color: activeTab === 'cognitive' ? '#fff' : 'var(--text-3)',
-            }}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-[0.98]"
+            style={
+              activeTab === 'cognitive'
+                ? {
+                    background: 'linear-gradient(135deg, var(--purple), var(--purple-light))',
+                    color: '#fff',
+                    boxShadow: '0 4px 14px rgb(var(--purple-rgb) / 0.30)',
+                  }
+                : {
+                    background: 'var(--surface-2)',
+                    color: 'var(--text-3)',
+                    border: '1px solid var(--border)',
+                  }
+            }
           >
             {isHi ? 'गहन विश्लेषण' : 'Deep Analysis'}
           </button>
@@ -564,9 +582,9 @@ export default function ProgressPage() {
                   </p>
                 </div>
                 <div className="flex gap-3 mt-5 justify-center">
-                  <Button variant="primary" size="md" onClick={() => router.push('/quiz')}>
+                  <GlowButton size="md" className="warm-cta" onClick={() => router.push('/quiz')}>
                     {isHi ? 'पहला क्विज़ लो' : 'Take First Quiz'}
-                  </Button>
+                  </GlowButton>
                   <Button variant="ghost" size="md" onClick={() => router.push('/foxy')}>
                     {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
                   </Button>
@@ -577,7 +595,7 @@ export default function ProgressPage() {
                 {/* ===========================================================
                     PERFORMANCE SCORE HERO -- Overall Score (0-100)
                     =========================================================== */}
-                <Card className="!p-4">
+                <PremiumCard gradient glow className="warm-cta !p-4">
                   {perfLoading ? (
                     <div className="flex flex-col items-center py-6">
                       <div className="w-20 h-20 rounded-full animate-pulse" style={{ background: 'var(--surface-2)' }} />
@@ -593,7 +611,7 @@ export default function ProgressPage() {
                     <div className="text-center py-4">
                       <MasteryRing value={accuracy} size={80} strokeWidth={6}>
                         <div className="text-center">
-                          <div className="text-lg font-bold" style={{ color: accuracy >= 70 ? 'var(--green)' : accuracy >= 40 ? 'var(--orange)' : '#DC2626' }}>{accuracy}%</div>
+                          <div className="text-lg font-bold" style={{ color: accuracy >= 70 ? 'var(--green)' : accuracy >= 40 ? 'var(--accent-warm)' : 'var(--red)' }}>{accuracy}%</div>
                         </div>
                       </MasteryRing>
                       <p className="text-sm font-semibold mt-2" style={{ fontFamily: 'var(--font-display)' }}>
@@ -616,14 +634,18 @@ export default function ProgressPage() {
                         </p>
                         <a
                           href="/quiz"
-                          className="inline-block mt-2 rounded-lg px-3 py-1.5 text-xs font-semibold bg-orange-500 text-white hover:bg-orange-600 transition-colors"
+                          className="inline-block mt-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors"
+                          style={{
+                            background: 'var(--accent-warm)',
+                            boxShadow: '0 2px 8px rgb(var(--accent-warm-rgb) / 0.28)',
+                          }}
                         >
                           {isHi ? 'अभी क्विज़ लो →' : 'Take a quiz now →'}
                         </a>
                       </div>
                     </div>
                   )}
-                </Card>
+                </PremiumCard>
 
                 {/* ===========================================================
                     SUBJECT SCORE CARDS -- ScoreCard per subject
@@ -675,7 +697,7 @@ export default function ProgressPage() {
                         const retentionPct = Math.round((dt.mastery_probability ?? 0) * 100);
                         const isLow = retentionPct < 30;
                         return (
-                          <Card key={dt.id} className="!p-3">
+                          <PremiumCard key={dt.id} className="!p-3">
                             <div className="flex items-center gap-3">
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-semibold truncate">{dt.topic}</div>
@@ -685,11 +707,11 @@ export default function ProgressPage() {
                                       className="h-full rounded-full transition-all"
                                       style={{
                                         width: `${retentionPct}%`,
-                                        background: isLow ? '#EF4444' : '#F59E0B',
+                                        background: isLow ? 'var(--red)' : 'var(--gold)',
                                       }}
                                     />
                                   </div>
-                                  <span className="text-[10px] font-semibold shrink-0" style={{ color: isLow ? '#EF4444' : '#F59E0B' }}>
+                                  <span className="text-[10px] font-semibold shrink-0" style={{ color: isLow ? 'var(--red)' : 'var(--gold)' }}>
                                     {retentionPct}% {isHi ? 'याद' : 'retained'}
                                   </span>
                                 </div>
@@ -697,7 +719,7 @@ export default function ProgressPage() {
                               <Button
                                 variant="soft"
                                 size="sm"
-                                color="var(--orange)"
+                                color="var(--accent-warm)"
                                 onClick={() => {
                                   // Prefer named topic; fall back to topic_id so Foxy gets a real identifier.
                                   const isFallbackLabel = /^Topic \d+$/.test(dt.topic);
@@ -713,7 +735,7 @@ export default function ProgressPage() {
                                 {isHi ? 'अभी revision करो' : 'Revise Now'}
                               </Button>
                             </div>
-                          </Card>
+                          </PremiumCard>
                         );
                       })}
                     </div>
@@ -752,7 +774,7 @@ export default function ProgressPage() {
                               </div>
                             </div>
                             <div className="text-right">
-                              <div className="text-sm font-bold" style={{ color: meta?.color ?? 'var(--orange)' }}>{correctPct}%</div>
+                              <div className="text-sm font-bold" style={{ color: meta?.color ?? 'var(--accent-warm)' }}>{correctPct}%</div>
                             </div>
                           </Card>
                         );
@@ -773,7 +795,7 @@ export default function ProgressPage() {
                           : predictMasteryDate(rate, rate);
 
                         return (
-                          <Card key={v.id} className="!p-3">
+                          <PremiumCard key={v.id} className="!p-3">
                             <div className="flex items-center gap-3">
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-semibold truncate">{v.subject}</div>
@@ -790,7 +812,7 @@ export default function ProgressPage() {
                                 </div>
                               </div>
                             </div>
-                          </Card>
+                          </PremiumCard>
                         );
                       })}
                     </div>
@@ -801,10 +823,10 @@ export default function ProgressPage() {
                 {totalXp > 0 && (
                   <div>
                     <SectionHeader icon="⭐">{isHi ? 'XP सारांश' : 'XP Summary'}</SectionHeader>
-                    <Card className="!p-3">
+                    <PremiumCard className="!p-3">
                       <div className="grid grid-cols-3 gap-3 text-center">
                         <div>
-                          <div className="text-lg font-bold" style={{ color: 'var(--orange)' }}>{totalXp.toLocaleString()}</div>
+                          <div className="text-lg font-bold" style={{ color: 'var(--accent-warm)' }}>{totalXp.toLocaleString()}</div>
                           <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'कुल XP' : 'Total XP'}</div>
                         </div>
                         <div>
@@ -816,7 +838,7 @@ export default function ProgressPage() {
                           <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'सत्र' : 'Sessions'}</div>
                         </div>
                       </div>
-                    </Card>
+                    </PremiumCard>
                   </div>
                 )}
               </>
@@ -947,12 +969,12 @@ export default function ProgressPage() {
               ) : (
                 <div className="space-y-2">
                   {gapsBySeverity.map((gap) => (
-                    <Card key={gap.id} className="!p-3">
+                    <PremiumCard key={gap.id} className="!p-3">
                       <div className="flex items-start gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="text-xs font-semibold truncate">{gap.topic_title ?? gap.target_concept_name}</span>
-                            <Badge color={SEVERITY_COLORS[gap.severity ?? 'medium'] ?? '#6B7280'} size="sm">
+                            <Badge color={SEVERITY_COLORS[gap.severity ?? 'medium'] ?? 'var(--text-3)'} size="sm">
                               {gap.severity ?? 'medium'}
                             </Badge>
                             <span className="text-[10px] text-[var(--text-3)] px-1.5 py-0.5 rounded-md" style={{ background: 'var(--surface-2)' }}>
@@ -966,14 +988,14 @@ export default function ProgressPage() {
                         <Button
                           variant="soft"
                           size="sm"
-                          color="var(--orange)"
+                          color="var(--accent-warm)"
                           onClick={() => router.push(`/foxy?topic=${encodeURIComponent(gap.topic_title ?? gap.target_concept_name)}`)}
                           className="shrink-0"
                         >
                           {isHi ? 'ठीक करो' : 'Fix'}
                         </Button>
                       </div>
-                    </Card>
+                    </PremiumCard>
                   ))}
                 </div>
               )}

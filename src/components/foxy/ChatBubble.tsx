@@ -151,8 +151,7 @@ export function ChatBubble({
       <div className="flex items-center gap-2 mb-1.5">
         {isTutor ? (
           <div
-            className="w-7 h-7 rounded-full flex items-center justify-center text-sm shrink-0"
-            style={{ background: 'linear-gradient(135deg, #E8590C, #F59E0B)' }}
+            className="foxy-avatar-warm w-7 h-7 rounded-full flex items-center justify-center text-sm shrink-0"
           >
             🦊
           </div>
@@ -193,13 +192,16 @@ export function ChatBubble({
       {/* Message body — suppressed on hard-abstain since content is empty */}
       {!showHardAbstainCard && (
         <div
-          className="w-full rounded-2xl px-4 py-3 text-sm leading-relaxed overflow-hidden min-w-0"
+          className={`w-full rounded-2xl px-4 py-3 text-sm leading-relaxed overflow-hidden min-w-0 ${isTutor ? 'foxy-bubble-tutor' : 'foxy-bubble-user'}`}
           style={{
-            background: isTutor ? 'var(--surface-1)' : `${color}08`,
+            // User bubble routes its subject-brand tint through the premium
+            // surface class via --bubble-tint (color-mix in CSS). Tutor bubble
+            // keeps the reported-danger border override inline.
+            ['--bubble-tint' as string]: color,
             color: 'var(--text-1)',
-            border: isTutor
-              ? reported ? '1.5px solid color-mix(in srgb, var(--danger) 25%, transparent)' : '1px solid var(--border)'
-              : `1.5px solid ${color}20`,
+            ...(isTutor && reported
+              ? { border: '1.5px solid color-mix(in srgb, var(--danger) 25%, transparent)' }
+              : {}),
           }}
         >
           {showBadge && (

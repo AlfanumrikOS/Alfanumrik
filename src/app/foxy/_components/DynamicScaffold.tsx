@@ -16,9 +16,8 @@ export default function DynamicScaffold({ action }: { action: UiActionPayload })
           {Array.from({ length: denominator }).map((_, i) => (
             <div
               key={i}
-              className={`flex-1 border-r border-[var(--border-base)] last:border-r-0 transition-colors duration-500 ${
-                i < numerator ? 'bg-blue-500' : 'bg-transparent'
-              }`}
+              className="flex-1 border-r border-[var(--border-base)] last:border-r-0 transition-colors duration-500"
+              style={{ background: i < numerator ? 'var(--teal)' : 'transparent' }}
             />
           ))}
         </div>
@@ -44,12 +43,18 @@ export default function DynamicScaffold({ action }: { action: UiActionPayload })
               const isHighlighted = (highlight_points as number[]).includes(val);
               return (
                 <div key={val} className="relative flex flex-col items-center">
-                  <div className={`w-0.5 h-3 ${isHighlighted ? 'bg-blue-500 h-4' : 'bg-[var(--text-3)]'}`} />
-                  <span className={`absolute top-5 text-xs font-medium ${isHighlighted ? 'text-blue-500' : 'text-[var(--text-3)]'}`}>
+                  <div
+                    className={`w-0.5 ${isHighlighted ? 'h-4' : 'h-3'}`}
+                    style={{ background: isHighlighted ? 'var(--teal)' : 'var(--text-3)' }}
+                  />
+                  <span
+                    className="absolute top-5 text-xs font-medium"
+                    style={{ color: isHighlighted ? 'var(--teal)' : 'var(--text-3)' }}
+                  >
                     {val}
                   </span>
                   {isHighlighted && (
-                    <div className="absolute -top-3 w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                    <div className="absolute -top-3 w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--teal)' }} />
                   )}
                 </div>
               );

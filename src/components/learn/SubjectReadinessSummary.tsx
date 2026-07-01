@@ -28,11 +28,14 @@ interface BucketStyle {
   labelHi: string;
 }
 
+// Status palette is mapped to cosmic-aware semantic tokens (no hardcoded brand/
+// status hex). Foreground = the semantic token; background = a soft color-mix
+// tint of the same token onto surface-1 so it adapts across light + cosmic.
 const BUCKETS: Record<'ready' | 'almost' | 'building' | 'not_yet', BucketStyle> = {
-  ready:    { fg: '#027A48', bg: '#ECFDF3', icon: '✅', labelEn: 'Ready',    labelHi: 'तैयार' },
-  almost:   { fg: '#175CD3', bg: '#EFF8FF', icon: '⚡', labelEn: 'Almost',   labelHi: 'लगभग' },
-  building: { fg: '#B54708', bg: '#FFFAEB', icon: '🛠', labelEn: 'Building', labelHi: 'बन रहा' },
-  not_yet:  { fg: '#B42318', bg: '#FEF3F2', icon: '🌱', labelEn: 'Not Yet',  labelHi: 'अभी नहीं' },
+  ready:    { fg: 'var(--green)', bg: 'color-mix(in srgb, var(--green) 12%, var(--surface-1))', icon: '✅', labelEn: 'Ready',    labelHi: 'तैयार' },
+  almost:   { fg: 'var(--teal)',  bg: 'color-mix(in srgb, var(--teal) 12%, var(--surface-1))',  icon: '⚡', labelEn: 'Almost',   labelHi: 'लगभग' },
+  building: { fg: 'var(--gold)',  bg: 'color-mix(in srgb, var(--gold) 14%, var(--surface-1))',  icon: '🛠', labelEn: 'Building', labelHi: 'बन रहा' },
+  not_yet:  { fg: 'var(--red)',   bg: 'color-mix(in srgb, var(--red) 10%, var(--surface-1))',   icon: '🌱', labelEn: 'Not Yet',  labelHi: 'अभी नहीं' },
 };
 
 function SubjectReadinessSummaryInner({
@@ -129,7 +132,7 @@ function SubjectReadinessSummaryInner({
               style={{
                 background: style.bg,
                 color: style.fg,
-                border: `1px solid ${style.fg}25`,
+                border: `1px solid color-mix(in srgb, ${style.fg} 25%, transparent)`,
               }}
             >
               <span aria-hidden="true">{style.icon}</span>

@@ -246,8 +246,8 @@ export const ChatInput = memo(function ChatInput({
       {/* Pulse animation for mic button */}
       <style>{`
         @keyframes mic-pulse {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(232, 88, 28, 0.4); }
-          50%       { box-shadow: 0 0 0 10px rgba(232, 88, 28, 0); }
+          0%, 100% { box-shadow: 0 0 0 0 rgb(var(--accent-warm-rgb) / 0.4); }
+          50%       { box-shadow: 0 0 0 10px rgb(var(--accent-warm-rgb) / 0); }
         }
         .mic-pulsing { animation: mic-pulse 1.2s ease-in-out infinite; }
       `}</style>
@@ -315,11 +315,13 @@ export const ChatInput = memo(function ChatInput({
             onClick={toggleVoice}
             className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1${isListening ? ' mic-pulsing' : ''}`}
             style={{
+              // Warm channel (stays burnt-orange under cosmic, where --orange
+              // remaps to violet) for the active mic state. Wave 6 tokenization.
               background: isListening
-                ? 'linear-gradient(135deg, #E8590C22, #F59E0B22)'
+                ? 'linear-gradient(135deg, rgb(var(--accent-warm-rgb) / 0.13), rgb(var(--marigold-rgb) / 0.13))'
                 : 'var(--surface-2)',
-              color: isListening ? '#E8590C' : 'var(--text-3)',
-              border: `1px solid ${isListening ? '#E8590C40' : 'var(--border)'}`,
+              color: isListening ? 'var(--accent-warm)' : 'var(--text-3)',
+              border: `1px solid ${isListening ? 'rgb(var(--accent-warm-rgb) / 0.25)' : 'var(--border)'}`,
             }}
             aria-label={isListening ? 'Stop listening' : 'Start voice input'}
             title={isListening ? 'Stop' : 'Voice input'}
@@ -389,7 +391,7 @@ export const ChatInput = memo(function ChatInput({
           className="flex-1 min-w-0 text-sm rounded-2xl px-4 py-2.5 resize-none outline-none leading-relaxed"
           style={{
             background: 'var(--surface-2)',
-            border: `1.5px solid ${isListening ? '#E8590C40' : pointMode ? `${cfg.color}40` : 'var(--border)'}`,
+            border: `1.5px solid ${isListening ? 'rgb(var(--accent-warm-rgb) / 0.25)' : pointMode ? `${cfg.color}40` : 'var(--border)'}`,
             fontFamily: 'var(--font-body)',
             maxHeight: 200,
             minHeight: pointMode ? 80 : 52,

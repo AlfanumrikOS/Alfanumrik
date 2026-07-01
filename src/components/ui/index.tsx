@@ -107,7 +107,15 @@ export function LockedCard({
             </h3>
             <span
               className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-              style={{ background: `${accent}15`, color: accent, border: `1px solid ${accent}30` }}
+              // color-mix tolerates BOTH var() tokens (--purple/--teal) and raw hex,
+              // so the soft tint + hairline render even when accent is a token.
+              // (Wave 6: the legacy `${accent}15`/`${accent}30` concat was silently
+              // transparent for token accents — matches the Badge fix pattern.)
+              style={{
+                background: `color-mix(in srgb, ${accent} 15%, transparent)`,
+                color: accent,
+                border: `1px solid color-mix(in srgb, ${accent} 30%, transparent)`,
+              }}
             >
               <span aria-hidden="true">🔒</span>
               {variant === 'plan' ? 'Premium' : variant === 'grade' ? 'Unlocks later' : 'Locked'}
@@ -350,8 +358,11 @@ export function Button({
     <button
       className={`inline-flex items-center justify-center gap-2 font-semibold transition-all ${BTN_FOCUS} ${sizeMap[size]} ${base} ${className}`}
       style={{
-        background: color ? `${color}12` : 'var(--surface-2)',
-        border: `1.5px solid ${color ?? 'var(--border)'}30`,
+        // color-mix tolerates BOTH var() tokens and raw hex (Wave 6): the legacy
+        // `${color}12` / `${color}30` concat produced invalid CSS — silently
+        // transparent — when callers passed a token like var(--purple).
+        background: color ? `color-mix(in srgb, ${color} 12%, transparent)` : 'var(--surface-2)',
+        border: `1.5px solid ${color ? `color-mix(in srgb, ${color} 30%, transparent)` : 'var(--border)'}`,
         color: color ?? 'var(--text-1)',
         opacity: isDisabled ? 0.6 : 1,
         cursor: isDisabled ? 'not-allowed' : 'pointer',
@@ -594,12 +605,17 @@ interface BadgeProps {
 
 export function Badge({ children, color = 'var(--orange)', size = 'sm' }: BadgeProps) {
   const sizeClass = size === 'sm' ? 'text-xs px-2.5 py-0.5' : 'text-sm px-3 py-1';
+  // color-mix tolerates BOTH design tokens (var(--red)) and raw hex (#DC2626),
+  // so callers can pass theme tokens and still get the soft tint + hairline.
+  // (Wave 4b: the legacy `${color}12` concat produced invalid CSS for token
+  // colors — silently transparent — so this also fixes the default var(--orange)
+  // badge's missing tint.)
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full font-semibold ${sizeClass}`}
       style={{
-        background: `${color}12`,
-        border: `1px solid ${color}25`,
+        background: `color-mix(in srgb, ${color} 12%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`,
         color,
       }}
     >
@@ -1259,6 +1275,214 @@ export function ResponsiveTable<T>({
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ALFA MOMENTUM PRIMITIVES (Wave 0)
+   New, additive premium primitives. Token-driven (CSS vars only, zero
+   hardcoded hex), bilingual-safe (all copy comes from the caller — no
+   hardcoded English), and reduced-motion-aware (they lean on the global
+   prefers-reduced-motion block in globals.css + spring keyframes added
+   there in Wave 0). Existing Wonder Blocks above are untouched.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── PremiumCard ─────────────────────────────────────────────
+   Refined surface card: layered shadow, hairline warm border, optional
+   orange glow + subtle gradient wash, spring hover lift. */
+interface PremiumCardProps {
+  children: ReactNode;
+  className?: string;
+  /** Soft orange glow ring around the card. */
+  glow?: boolean;
+  /** Subtle warm gradient wash across the surface. */
+  gradient?: boolean;
+  /** Spring hover lift (disabled automatically under reduced motion). */
+  hoverable?: boolean;
+  onClick?: () => void;
+  /** Optional test hook (forwarded to the root element). */
+  'data-testid'?: string;
+}
+
+export function PremiumCard({
+  children,
+  className = '',
+  glow = false,
+  gradient = false,
+  hoverable = false,
+  onClick,
+  'data-testid': dataTestId,
+}: PremiumCardProps) {
+  return (
+    <div
+      data-testid={dataTestId}
+      onClick={onClick}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      className={`relative overflow-hidden rounded-2xl p-5 ${hoverable ? 'card-hover cursor-pointer' : ''} ${onClick ? 'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2' : ''} ${className}`}
+      style={{
+        background: gradient
+          ? 'linear-gradient(135deg, var(--surface-1) 0%, var(--surface-2) 100%)'
+          : 'var(--surface-1)',
+        // Hairline warm border + layered depth shadow, all token-driven.
+        border: '1px solid var(--border)',
+        boxShadow: glow
+          ? 'var(--shadow-md), 0 0 0 1px color-mix(in srgb, var(--orange) 18%, transparent), var(--shadow-glow)'
+          : 'var(--shadow-md)',
+      }}
+    >
+      {gradient && (
+        <div
+          className="pointer-events-none absolute inset-0 opacity-60"
+          aria-hidden="true"
+          style={{
+            background:
+              'radial-gradient(ellipse at top right, color-mix(in srgb, var(--orange) 12%, transparent) 0%, transparent 60%)',
+          }}
+        />
+      )}
+      <div className="relative">{children}</div>
+    </div>
+  );
+}
+
+/* ─── GlowButton ──────────────────────────────────────────────
+   Orange-gradient CTA with a CSS-only shimmer sweep on hover and an
+   optional icon slot. Sizes sm/md/lg. All copy/icon supplied by caller. */
+interface GlowButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  size?: 'sm' | 'md' | 'lg';
+  /** Optional leading icon node (emoji, svg, etc.). */
+  icon?: ReactNode;
+  fullWidth?: boolean;
+  loading?: boolean;
+}
+
+export function GlowButton({
+  size = 'md',
+  icon,
+  fullWidth,
+  loading,
+  children,
+  className = '',
+  disabled,
+  ...props
+}: GlowButtonProps) {
+  const sizeMap = {
+    sm: 'text-sm px-4 py-2.5 rounded-lg gap-1.5',
+    md: 'text-sm px-6 py-3 rounded-xl gap-2',
+    lg: 'text-base px-8 py-4 rounded-2xl gap-2.5',
+  };
+  const isDisabled = disabled || loading;
+  return (
+    <button
+      className={`group relative inline-flex items-center justify-center overflow-hidden font-bold transition-transform active:scale-[0.98] ${BTN_FOCUS} ${sizeMap[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
+      style={{
+        background: 'linear-gradient(135deg, var(--orange) 0%, var(--orange-light) 100%)',
+        color: '#fff',
+        border: '1px solid color-mix(in srgb, var(--orange) 70%, #000)',
+        boxShadow: isDisabled ? 'none' : 'var(--shadow-glow)',
+        opacity: isDisabled ? 0.6 : 1,
+        cursor: isDisabled ? 'not-allowed' : 'pointer',
+      }}
+      aria-disabled={isDisabled ? true : undefined}
+      aria-busy={loading ? true : undefined}
+      disabled={isDisabled}
+      {...props}
+    >
+      {/* CSS-only shimmer sweep — hidden until hover, collapses under reduced
+          motion via the global animate-shimmer override in globals.css. */}
+      <span
+        aria-hidden="true"
+        className="animate-shimmer pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+        style={{
+          background:
+            'linear-gradient(110deg, transparent 25%, color-mix(in srgb, #fff 35%, transparent) 50%, transparent 75%)',
+          backgroundSize: '200% auto',
+        }}
+      />
+      {loading ? (
+        <span
+          className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent"
+          aria-hidden="true"
+        />
+      ) : (
+        icon && <span aria-hidden="true" className="relative inline-flex">{icon}</span>
+      )}
+      <span className="relative">{children}</span>
+    </button>
+  );
+}
+
+/* ─── StatRing ────────────────────────────────────────────────
+   Animated circular progress ring for XP / mastery / score. Composes the
+   MasteryRing geometry, adds the mastery-fill stroke motion + a score-reveal
+   pop on the numeric center, which uses the `data` (Sora) font. Caller owns
+   any label text (bilingual-safe). */
+interface StatRingProps {
+  /** 0–100 progress. */
+  value: number;
+  size?: number;
+  strokeWidth?: number;
+  /** Ring color token; defaults to a mastery-banded color. */
+  color?: string;
+  /** Override the center content (e.g. "1,240 XP"). Defaults to "{value}%". */
+  children?: ReactNode;
+  /** Animate the number with the score-reveal spring. Default true. */
+  animateValue?: boolean;
+}
+
+export function StatRing({
+  value,
+  size = 72,
+  strokeWidth = 6,
+  color,
+  children,
+  animateValue = true,
+}: StatRingProps) {
+  const pct = Math.min(100, Math.max(0, value));
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (pct / 100) * circumference;
+  const ringColor =
+    color ?? (pct < 40 ? 'var(--mastery-low)' : pct < 70 ? 'var(--mastery-mid)' : 'var(--mastery-high)');
+
+  return (
+    <div
+      className="relative inline-flex items-center justify-center"
+      style={{ width: size, height: size }}
+      role="img"
+      aria-label={`${Math.round(pct)}%`}
+    >
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }} aria-hidden="true">
+        <circle
+          cx={size / 2} cy={size / 2} r={radius}
+          fill="none" stroke="var(--surface-2)" strokeWidth={strokeWidth}
+        />
+        <circle
+          cx={size / 2} cy={size / 2} r={radius}
+          fill="none" stroke={ringColor} strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          // Drive the fill via the centralized mastery-fill motion; the
+          // transition handles incremental value changes, the keyframe handles
+          // mount. Both collapse to ~0ms under reduced motion.
+          className="animate-mastery-fill"
+          style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(0.4,0,0.2,1)' }}
+        />
+      </svg>
+      <div
+        className={`absolute inset-0 flex items-center justify-center ${animateValue ? 'animate-score-reveal' : ''}`}
+        style={{ fontFamily: 'var(--font-display)' }}
+      >
+        {children ?? (
+          <span className="text-sm font-extrabold tabular-nums" style={{ color: ringColor }}>
+            {Math.round(pct)}%
+          </span>
+        )}
       </div>
     </div>
   );

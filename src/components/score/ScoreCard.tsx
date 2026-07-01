@@ -1,21 +1,13 @@
 'use client';
 
 import { getLevelFromScore } from '@/lib/score-config';
+import { getScoreColor } from '@/lib/score-colors';
 import { ProgressBar } from '@/components/ui';
 
-/* ─── Score Color Mapping ───────────────────────────────── */
-
-/**
- * Returns the display color for a Performance Score (0-100).
- * Color bands match CBSE-style grade boundaries.
- */
-function getScoreColor(score: number): string {
-  if (score >= 90) return '#7C3AED'; // purple — exceptional
-  if (score >= 75) return '#10B981'; // green — proficient
-  if (score >= 50) return '#F59E0B'; // yellow — developing
-  if (score >= 35) return '#F97316'; // orange — needs work
-  return '#EF4444';                  // red — at risk
-}
+/* ─── Score Color Mapping ───────────────────────────────────
+   getScoreColor now lives in the shared `@/lib/score-colors` module
+   (Alfa Momentum Wave 4b de-dup). Re-exported below for back-compat with
+   ScoreHero, which imports it from this file. */
 
 /* ─── Trend Arrow ───────────────────────────────────────── */
 
@@ -36,7 +28,7 @@ function TrendArrow({ delta }: { delta: number }) {
   }
 
   const isUp = delta > 0;
-  const color = isUp ? '#10B981' : '#EF4444';
+  const color = isUp ? 'var(--green)' : 'var(--red)';
   const label = isUp ? `Up ${delta} points` : `Down ${Math.abs(delta)} points`;
 
   return (

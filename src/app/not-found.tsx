@@ -1,8 +1,17 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
 export default function NotFound() {
+  const [isHi, setIsHi] = useState(false);
+
+  useEffect(() => {
+    try {
+      setIsHi(localStorage.getItem('alfanumrik_lang') === 'hi');
+    } catch { /* ignore */ }
+  }, []);
+
   return (
     <div style={pageStyle}>
       <div style={containerStyle}>
@@ -11,38 +20,49 @@ export default function NotFound() {
           <span style={codeStyle}>404</span>
         </div>
 
-        <h1 style={headingStyle}>Page Not Found</h1>
+        <h1 style={headingStyle}>
+          {isHi ? 'पृष्ठ नहीं मिला' : 'Page Not Found'}
+        </h1>
         <p style={descriptionStyle}>
-          Foxy couldn&apos;t find the page you&apos;re looking for.
-          It might have been moved or doesn&apos;t exist.
+          {isHi
+            ? 'फॉक्सी को वह पृष्ठ नहीं मिला जो आप ढूंढ रहे हैं। यह हटाया गया या मौजूद नहीं है।'
+            : "Foxy couldn’t find the page you’re looking for. It might have been moved or doesn’t exist."}
         </p>
 
         <div style={suggestionsStyle}>
-          <p style={suggestionTitleStyle}>What you can do:</p>
+          <p style={suggestionTitleStyle}>
+            {isHi ? 'आप क्या कर सकते हैं:' : 'What you can do:'}
+          </p>
           <ul style={listStyle}>
-            <li style={listItemStyle}>Check the URL and try again</li>
-            <li style={listItemStyle}>Return to the dashboard to continue learning</li>
-            <li style={listItemStyle}>Contact support if you think this is a mistake</li>
+            <li style={listItemStyle}>
+              {isHi ? 'URL जांचें और पुनः प्रयास करें' : 'Check the URL and try again'}
+            </li>
+            <li style={listItemStyle}>
+              {isHi ? 'सीखना जारी रखने के लिए डैशबोर्ड पर जाएं' : 'Return to the dashboard to continue learning'}
+            </li>
+            <li style={listItemStyle}>
+              {isHi ? 'यदि आपको लगता है यह गलती है तो सहायता से संपर्क करें' : 'Contact support if you think this is a mistake'}
+            </li>
           </ul>
         </div>
 
-        <Link href="/dashboard" aria-label="Go back to dashboard" style={{ textDecoration: 'none' }}>
+        <Link href="/dashboard" aria-label={isHi ? 'डैशबोर्ड पर वापस जाएं' : 'Go back to dashboard'} style={{ textDecoration: 'none' }}>
           <button style={buttonStyle}>
-            Back to Dashboard
+            {isHi ? 'डैशबोर्ड पर जाएं' : 'Back to Dashboard'}
           </button>
         </Link>
 
         <nav style={alternativeLinksStyle} aria-label="Additional navigation">
           <Link href="/welcome" style={linkStyle}>
-            Home
+            {isHi ? 'होम पर जाएं' : 'Home'}
           </Link>
           <span style={separatorStyle} aria-hidden="true">&bull;</span>
           <Link href="/help" style={linkStyle}>
-            Help
+            {isHi ? 'सहायता' : 'Help'}
           </Link>
           <span style={separatorStyle} aria-hidden="true">&bull;</span>
           <a href="mailto:support@alfanumrik.com" style={linkStyle}>
-            Support
+            {isHi ? 'सहायता' : 'Support'}
           </a>
         </nav>
       </div>

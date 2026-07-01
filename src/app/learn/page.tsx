@@ -26,7 +26,7 @@ const CelebrationOverlay = dynamic(
   { ssr: false },
 );
 import { getChaptersForSubject, supabase } from '@/lib/supabase';
-import {  LoadingFoxy } from '@/components/ui';
+import {  LoadingFoxy, PremiumCard, GlowButton, LockedCard } from '@/components/ui';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { getPlanConfig } from '@/lib/plans';
@@ -200,7 +200,7 @@ export default function LearnPage() {
               ←
             </button>
           ) : null}
-          <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+          <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-serif)' }}>
             {selectedSubject
               ? `${selectedMeta?.icon} ${selectedMeta?.name}`
               : (isHi ? '📚 विषय' : '📚 Subjects')}
@@ -228,11 +228,15 @@ export default function LearnPage() {
                     <button
                       key={s.code}
                       onClick={() => setSelectedSubject(s.code)}
-                      className="rounded-2xl p-4 text-left transition-all active:scale-[0.97] hover:shadow-md hover:-translate-y-0.5 cursor-pointer relative overflow-hidden"
+                      className="card-hover rounded-2xl p-4 text-left transition-all active:scale-[0.97] cursor-pointer relative overflow-hidden"
                       style={{
-                        background: isCurrent ? `${s.color}10` : 'var(--surface-1)',
-                        border: `1.5px solid ${isCurrent ? s.color : 'var(--border)'}`,
-                        boxShadow: isCurrent ? `0 4px 16px ${s.color}20` : '0 2px 8px rgba(0,0,0,0.04)',
+                        background: isCurrent
+                          ? `color-mix(in srgb, ${s.color} 8%, var(--surface-1))`
+                          : 'var(--surface-1)',
+                        border: `1px solid ${isCurrent ? s.color : 'var(--border)'}`,
+                        boxShadow: isCurrent
+                          ? `var(--shadow-md), 0 0 0 1px color-mix(in srgb, ${s.color} 20%, transparent)`
+                          : 'var(--shadow-md)',
                       }}
                     >
                       {isCurrent && (
@@ -259,7 +263,7 @@ export default function LearnPage() {
                         const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
                         return (
                           <div className="mt-3">
-                            <div className="w-full bg-gray-200/80 rounded-full h-1.5 mt-1 overflow-hidden">
+                            <div className="w-full rounded-full h-1.5 mt-1 overflow-hidden" style={{ background: 'var(--surface-2)' }}>
                               <div
                                   className="h-1.5 rounded-full transition-all duration-500"
                                   style={{
@@ -279,35 +283,22 @@ export default function LearnPage() {
                   );
                 })}
 
-                {/* ── Locked subjects ── */}
+                {/* ── Locked subjects ── (uses the LockedCard primitive; tap → /pricing) */}
                 {lockedSubjects.map(s => (
-                  <button
+                  <LockedCard
                     key={s.code}
-                    onClick={() => router.push('/pricing')}
-                    className="rounded-2xl p-4 text-left transition-all active:scale-[0.97] relative overflow-hidden"
-                    style={{
-                      background: 'var(--surface-1)',
-                      border: '1.5px solid var(--border)',
-                      opacity: 0.55,
-                    }}
-                  >
-                    {/* Lock badge */}
-                    <div
-                      className="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-md"
-                      style={{ background: 'rgba(0,0,0,0.08)', color: 'var(--text-3)' }}
-                    >
-                      🔒
-                    </div>
-                    <div className="text-3xl mb-2 grayscale">{s.icon}</div>
-                    <div className="text-sm font-bold" style={{ color: 'var(--text-2)' }}>
-                      {s.name}
-                    </div>
-                    <div className="text-[10px] font-semibold mt-1" style={{ color: 'var(--orange)' }}>
-                      {isHi
-                        ? `${plan.nextPlanLabel?.replace(' →', '') || 'अपग्रेड करो'} →`
-                        : `Upgrade to unlock →`}
-                    </div>
-                  </button>
+                    variant="plan"
+                    icon={s.icon}
+                    title={s.name}
+                    reason={isHi
+                      ? `${plan.nextPlanLabel?.replace(' →', '') || 'अपग्रेड'} पर अनलॉक करो`
+                      : 'Unlock with an upgrade'}
+                    actionLabel={isHi
+                      ? `${plan.nextPlanLabel?.replace(' →', '') || 'अपग्रेड करो'}`
+                      : 'Upgrade to unlock'}
+                    onAction={() => router.push('/pricing')}
+                    className="p-4"
+                  />
                 ))}
 
               </div>
@@ -318,9 +309,9 @@ export default function LearnPage() {
                   onClick={() => router.push('/pricing')}
                   className="w-full mt-4 py-3 px-4 rounded-2xl text-sm font-bold flex items-center justify-between transition-all active:scale-[0.98]"
                   style={{
-                    background: 'linear-gradient(135deg, rgba(232,88,28,0.08), rgba(245,158,11,0.08))',
-                    border: '1.5px solid rgba(232,88,28,0.2)',
-                    color: 'var(--orange)',
+                    background: 'linear-gradient(135deg, rgb(var(--accent-warm-rgb) / 0.08), rgb(var(--accent-warm-rgb) / 0.04))',
+                    border: '1px solid rgb(var(--accent-warm-rgb) / 0.2)',
+                    color: 'var(--accent-warm)',
                   }}
                 >
                   <span>
@@ -371,23 +362,23 @@ export default function LearnPage() {
                   onClick={() => router.push(`/learn/${lastStudied.subject}/${lastStudied.chapter}`)}
                   className="w-full rounded-xl p-4 mb-4 flex items-center gap-3 transition-all active:scale-[0.98]"
                   style={{
-                    background: 'linear-gradient(135deg, rgba(232,88,28,0.06), rgba(245,166,35,0.06))',
-                    border: '1px solid rgba(232,88,28,0.15)',
+                    background: 'linear-gradient(135deg, rgb(var(--accent-warm-rgb) / 0.06), rgb(var(--accent-warm-rgb) / 0.03))',
+                    border: '1px solid rgb(var(--accent-warm-rgb) / 0.15)',
                   }}
                 >
                   <span className="text-xl">📖</span>
                   <div className="flex-1 min-w-0 text-left">
-                    <div className="text-xs text-orange-600 font-semibold">
+                    <div className="text-xs font-semibold" style={{ color: 'var(--accent-warm)' }}>
                       {isHi ? 'जहां छोड़ा था वहीं से शुरू करो' : 'Continue where you left off'}
                     </div>
-                    <div className="text-sm font-medium text-gray-800 truncate mt-0.5">
+                    <div className="text-sm font-medium truncate mt-0.5" style={{ color: 'var(--text-1)' }}>
                       {lastStudied.chapterTitle}
                     </div>
-                    <div className="text-[10px] text-gray-400 mt-0.5">
+                    <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-3)' }}>
                       {isHi ? `अवधारणा ${lastStudied.concept + 1}` : `Concept ${lastStudied.concept + 1}`}
                     </div>
                   </div>
-                  <span className="text-gray-400">→</span>
+                  <span style={{ color: 'var(--text-3)' }}>→</span>
                 </button>
               )}
 
@@ -409,13 +400,13 @@ export default function LearnPage() {
                       ? 'Foxy से इस विषय के बारे में पूछो'
                       : 'Ask Foxy to teach you this subject'}
                   </p>
-                  <button
+                  <GlowButton
+                    className="warm-cta"
+                    icon="🦊"
                     onClick={() => router.push(`/foxy?subject=${selectedSubject}&mode=learn`)}
-                    className="px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-95"
-                    style={{ background: selectedMeta?.color || 'var(--orange)' }}
                   >
-                    🦊 {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
-                  </button>
+                    {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
+                  </GlowButton>
                 </div>
 
               ) : (
@@ -457,7 +448,14 @@ export default function LearnPage() {
                               const isCompleted = progressRows.some(row => row.subject === selectedSubject && row.chapter_number === ch.chapter_number && row.is_completed);
                               if (isCompleted) {
                                 return (
-                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-green-50 text-green-700 border border-green-200">
+                                  <span
+                                    className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+                                    style={{
+                                      background: 'color-mix(in srgb, var(--green) 12%, var(--surface-1))',
+                                      color: 'var(--green)',
+                                      border: '1px solid color-mix(in srgb, var(--green) 25%, transparent)',
+                                    }}
+                                  >
                                     {isHi ? '✓ पूरा हुआ' : '✓ Completed'}
                                   </span>
                                 );
@@ -509,9 +507,9 @@ export default function LearnPage() {
                           onClick={() => router.push(`/foxy?subject=${selectedSubject}&chapter=${ch.chapter_number}&mode=doubt`)}
                           className="text-xs font-bold px-3 py-2 rounded-lg transition-all active:scale-95"
                           style={{
-                            background: 'rgba(232,88,28,0.06)',
-                            color: 'var(--orange)',
-                            border: '1px solid rgba(232,88,28,0.15)',
+                            background: 'rgb(var(--accent-warm-rgb) / 0.06)',
+                            color: 'var(--accent-warm)',
+                            border: '1px solid rgb(var(--accent-warm-rgb) / 0.15)',
                           }}
                         >
                           🦊 {isHi ? 'Foxy से पूछो' : 'Ask Foxy'}

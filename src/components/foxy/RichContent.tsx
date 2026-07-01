@@ -173,7 +173,13 @@ function SegmentRenderer({ segment, cfg }: { segment: Segment; cfg: { color: str
     return (
       <div
         className="my-2 px-3 py-2.5 rounded-xl text-xs"
-        style={{ background: '#fffbeb', border: '1px solid #f59e0b30', color: '#92400e' }}
+        // Wave 6: amber exam-tip callout routed through the --warning/--gold
+        // status token (theme-aware) instead of raw #f59e0b / #fffbeb / #92400e.
+        style={{
+          background: 'color-mix(in srgb, var(--warning) 12%, var(--surface-1))',
+          border: '1px solid color-mix(in srgb, var(--warning) 30%, transparent)',
+          color: 'color-mix(in srgb, var(--warning) 55%, var(--text-1))',
+        }}
       >
         <span className="font-extrabold">Exam Tip: </span>{segment.content}
       </div>

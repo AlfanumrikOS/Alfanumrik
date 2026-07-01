@@ -16,14 +16,24 @@ function authHeader(): string {
 }
 
 async function rzpFetch<T = Record<string, unknown>>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${RAZORPAY_BASE}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': authHeader(),
-      ...options?.headers,
-    },
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  let res: Response;
+  try {
+    res = await fetch(`${RAZORPAY_BASE}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': authHeader(),
+        ...options?.headers,
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Razorpay API error ${res.status}: ${text}`);

@@ -12,6 +12,7 @@ import {
 import { CHALLENGE_COINS } from '@/lib/challenge-config';
 import { onCorrectAnswer, onWrongAnswer, createFeedbackState } from '@/lib/feedback-engine';
 import { playSound } from '@/lib/sounds';
+import { CHAIN_CONFETTI } from '@/lib/confetti-palette';
 
 /* ═══════════════════════════════════════════════════════════════
    ConceptChain — Core Drag-and-Drop Card Sequencing Game
@@ -222,39 +223,37 @@ export default function ConceptChain({
               className={[
                 'flex items-center gap-3 rounded-xl p-3.5 transition-all cursor-grab active:cursor-grabbing select-none',
                 isLocked ? 'opacity-70 cursor-default' : '',
-                isSelected ? 'ring-2 ring-[#F97316] ring-offset-2' : '',
+                isSelected ? 'ring-2 ring-offset-2' : '',
                 isWrong && showWrongPulse ? 'animate-pulse' : '',
                 solved ? 'cursor-default' : '',
               ].join(' ')}
               style={{
+                // @ts-expect-error -- CSS custom property for Tailwind ring color (warm channel)
+                '--tw-ring-color': 'var(--accent-warm)',
                 background: isLocked
                   ? 'var(--surface-2)'
                   : solved
-                    ? 'rgba(34, 197, 94, 0.06)'
+                    ? 'color-mix(in srgb, var(--green) 6%, transparent)'
                     : 'var(--surface-1)',
                 border: `2px solid ${
-                  isWrong && isDistractor
-                    ? '#DC2626'
-                    : isWrong
-                      ? '#DC2626'
-                      : isSelected
-                        ? '#F97316'
-                        : isLocked
-                          ? 'rgba(124, 58, 237, 0.2)'
-                          : solved
-                            ? 'rgba(34, 197, 94, 0.3)'
-                            : 'var(--border)'
+                  isWrong
+                    ? 'var(--red)'
+                    : isSelected
+                      ? 'var(--accent-warm)'
+                      : isLocked
+                        ? 'color-mix(in srgb, var(--purple) 20%, transparent)'
+                        : solved
+                          ? 'color-mix(in srgb, var(--green) 30%, transparent)'
+                          : 'var(--border)'
                 }`,
                 borderLeftWidth: 4,
-                borderLeftColor: isWrong && isDistractor
-                  ? '#DC2626'
-                  : isWrong
-                    ? '#DC2626'
-                    : isLocked
-                      ? '#7C3AED'
-                      : solved
-                        ? '#22C55E'
-                        : '#7C3AED',
+                borderLeftColor: isWrong
+                  ? 'var(--red)'
+                  : isLocked
+                    ? 'var(--purple)'
+                    : solved
+                      ? 'var(--green)'
+                      : 'var(--purple)',
                 touchAction: 'manipulation',
                 minHeight: 48,
               }}
@@ -275,7 +274,7 @@ export default function ConceptChain({
               {isWrong && isDistractor && (
                 <span
                   className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
-                  style={{ background: 'rgba(220, 38, 38, 0.1)', color: '#DC2626' }}
+                  style={{ background: 'color-mix(in srgb, var(--red) 10%, transparent)', color: 'var(--red)' }}
                 >
                   {isHi ? 'अतिरिक्त' : 'Extra'}
                 </span>
@@ -303,7 +302,7 @@ export default function ConceptChain({
               style={{
                 width: 8 + Math.random() * 8,
                 height: 8 + Math.random() * 8,
-                background: ['#F97316', '#7C3AED', '#22C55E', '#FBBF24', '#3B82F6'][i % 5],
+                background: CHAIN_CONFETTI[i % CHAIN_CONFETTI.length],
                 left: `${5 + Math.random() * 90}%`,
                 top: -20,
                 opacity: 0.9,
@@ -325,12 +324,12 @@ export default function ConceptChain({
       {/* Solved: explanation + coins */}
       {solved && (
         <div className="rounded-xl p-4 space-y-3 animate-fade-in" style={{
-          background: 'rgba(34, 197, 94, 0.06)',
-          border: '1px solid rgba(34, 197, 94, 0.2)',
+          background: 'color-mix(in srgb, var(--green) 6%, transparent)',
+          border: '1px solid color-mix(in srgb, var(--green) 20%, transparent)',
         }}>
           <div className="flex items-center gap-2">
             <span className="text-lg" aria-hidden="true">{'\u2705'}</span>
-            <span className="text-sm font-bold text-[#16A34A]">
+            <span className="text-sm font-bold" style={{ color: 'var(--green)' }}>
               {isHi ? 'सही जवाब!' : 'Correct!'}
             </span>
           </div>
@@ -341,7 +340,7 @@ export default function ConceptChain({
 
           <div className="flex items-center gap-2">
             <span className="text-sm" aria-hidden="true">{'\u{1FA99}'}</span>
-            <span className="text-sm font-bold" style={{ color: '#F97316' }}>
+            <span className="text-sm font-bold" style={{ color: 'var(--gold)' }}>
               +{CHALLENGE_COINS.solve} {isHi ? 'सिक्के' : 'coins'}
             </span>
           </div>

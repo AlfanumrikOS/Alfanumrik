@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import { Inter, Newsreader, Mukta, JetBrains_Mono } from 'next/font/google';
+import { Inter, Mukta, JetBrains_Mono } from 'next/font/google';
 import JsonLd from '@/components/JsonLd';
 
 /* ────────────────────────────────────────────────────────────────
@@ -17,13 +17,12 @@ const inter = Inter({
   display: 'swap',
 });
 
-const newsreader = Newsreader({
-  subsets: ['latin'],
-  weight: ['400', '500', '600'],
-  style: ['normal', 'italic'],
-  variable: '--font-newsreader',
-  display: 'swap',
-});
+// Newsreader removed (Alfa Momentum Wave 1): the landing display serif is now
+// Fraunces, self-hosted via the root layout (--font-serif). The welcome CSS
+// module's --display token references --font-serif and every former direct
+// var(--font-newsreader) use was repointed to var(--display), so Newsreader has
+// zero consumers on /welcome. Dropping the loader trims one self-hosted font
+// family (multiple weights + italics) from the landing route — a P10 win.
 
 // Mukta has the Devanagari subset (Mukta Vaani exists too, but next/font's
 // Mukta_Vaani type only exposes latin/gujarati subsets). Mukta is the same
@@ -86,10 +85,10 @@ export const metadata: Metadata = {
 
 export default function WelcomeLayout({ children }: { children: ReactNode }) {
   // Compose the font CSS-variable classes on a wrapper so child components
-  // can resolve var(--font-newsreader) / var(--font-mukta) / etc.
+  // can resolve var(--font-inter) / var(--font-mukta) / var(--font-jetbrains).
+  // (The display serif now comes from the root layout's --font-serif/Fraunces.)
   const fontVars = [
     inter.variable,
-    newsreader.variable,
     mukta.variable,
     jetbrains.variable,
   ].join(' ');

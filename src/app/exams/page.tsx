@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy, Badge } from '@/components/ui';
+import { ProgressBar, SectionHeader, LoadingFoxy, PremiumCard, GlowButton } from '@/components/ui';
 import { toast } from '@/components/ui/toast';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
@@ -38,10 +38,13 @@ interface CurriculumTopic {
 }
 
 /* ─── Constants ─── */
+// Colors are cosmic-aware tokens. unit_test rides the STABLE WARM CHANNEL
+// (--accent-warm) so it stays burnt-orange under the cosmic student surface,
+// where --orange remaps to violet. half_yearly = --purple, annual = --teal.
 const EXAM_TYPES = [
-  { id: 'unit_test', label: 'Unit Test', labelHi: 'इकाई परीक्षा', icon: '📝', color: '#E8581C' },
-  { id: 'half_yearly', label: 'Half-Yearly', labelHi: 'अर्धवार्षिक', icon: '📋', color: '#7C3AED' },
-  { id: 'annual', label: 'Annual', labelHi: 'वार्षिक', icon: '🎓', color: '#0891B2' },
+  { id: 'unit_test', label: 'Unit Test', labelHi: 'इकाई परीक्षा', icon: '📝', color: 'var(--accent-warm)' },
+  { id: 'half_yearly', label: 'Half-Yearly', labelHi: 'अर्धवार्षिक', icon: '📋', color: 'var(--purple)' },
+  { id: 'annual', label: 'Annual', labelHi: 'वार्षिक', icon: '🎓', color: 'var(--teal)' },
 ];
 
 export default function ExamsPage() {
@@ -271,22 +274,23 @@ export default function ExamsPage() {
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
       {/* Header */}
-      <header className="page-header" style={{ background: 'rgba(251,248,244,0.88)', backdropFilter: 'blur(20px)', borderColor: 'var(--border)' }}>
+      <header className="page-header" style={{ background: 'color-mix(in srgb, var(--surface-1) 88%, transparent)', backdropFilter: 'blur(20px)', borderColor: 'var(--border)' }}>
         <div className="app-container py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>&larr;</button>
-            <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+            <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-serif)' }}>
               {isHi ? 'मेरी परीक्षाएँ' : 'My Exams'}
             </h1>
           </div>
           {!showForm && (
-            <button
+            <GlowButton
+              size="sm"
+              className="warm-cta"
+              icon="+"
               onClick={() => setShowForm(true)}
-              className="text-xs px-3 py-1.5 rounded-lg font-semibold"
-              style={{ background: 'var(--orange)', color: '#fff' }}
             >
-              + {isHi ? 'परीक्षा जोड़ें' : 'Add Exam'}
-            </button>
+              {isHi ? 'परीक्षा जोड़ें' : 'Add Exam'}
+            </GlowButton>
           )}
         </div>
       </header>
@@ -295,9 +299,9 @@ export default function ExamsPage() {
         <SectionErrorBoundary section="Exams">
         {/* ═══ ADD EXAM FORM ═══ */}
         {showForm && (
-          <Card accent="var(--orange)">
+          <PremiumCard gradient className="warm-cta">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+              <h2 className="text-base font-bold" style={{ fontFamily: 'var(--font-serif)' }}>
                 {isHi ? 'नई परीक्षा जोड़ें' : 'Add New Exam'}
               </h2>
               <button onClick={() => setShowForm(false)} className="text-[var(--text-3)] text-sm p-2 rounded-lg" aria-label={isHi ? 'बंद करें' : 'Close'}>&times;</button>
@@ -315,7 +319,7 @@ export default function ExamsPage() {
                     onClick={() => setExamType(t.id)}
                     className="rounded-xl p-3 text-center transition-all"
                     style={{
-                      background: examType === t.id ? `${t.color}15` : 'var(--surface-2)',
+                      background: examType === t.id ? `color-mix(in srgb, ${t.color} 12%, var(--surface-1))` : 'var(--surface-2)',
                       border: examType === t.id ? `2px solid ${t.color}` : '1.5px solid var(--border)',
                     }}
                   >
@@ -430,7 +434,7 @@ export default function ExamsPage() {
                         key={ch.chapter_number}
                         className="flex items-center gap-2 rounded-lg p-2"
                         style={{
-                          background: selectedChapters[ch.chapter_number] ? 'rgba(232,88,28,0.06)' : 'transparent',
+                          background: selectedChapters[ch.chapter_number] ? 'rgb(var(--accent-warm-rgb) / 0.06)' : 'transparent',
                         }}
                       >
                         <input
@@ -460,17 +464,18 @@ export default function ExamsPage() {
             )}
 
             {/* Save Button */}
-            <Button
+            <GlowButton
               fullWidth
+              className="warm-cta"
               onClick={handleSave}
+              loading={saving}
               disabled={saving || !examName.trim() || !selectedSubject || !examDate}
-              color="var(--orange)"
             >
               {saving
                 ? (isHi ? 'सेव हो रहा है...' : 'Saving...')
                 : (isHi ? 'परीक्षा सेव करें' : 'Save Exam')}
-            </Button>
-          </Card>
+            </GlowButton>
+          </PremiumCard>
         )}
 
         {/* ═══ EXAM LIST ═══ */}
@@ -483,7 +488,7 @@ export default function ExamsPage() {
         ) : exams.length === 0 && !showForm ? (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">📋</div>
-            <h3 className="text-lg font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
+            <h3 className="text-lg font-bold mb-2" style={{ fontFamily: 'var(--font-serif)' }}>
               {isHi ? 'कोई परीक्षा नहीं' : 'No Exams Yet'}
             </h3>
             <p className="text-sm text-[var(--text-3)] mb-4 max-w-xs mx-auto">
@@ -491,9 +496,9 @@ export default function ExamsPage() {
                 ? 'अपनी परीक्षाएँ जोड़ें और ट्रैक करें'
                 : 'Add your exams to track preparation and get study plans'}
             </p>
-            <Button onClick={() => setShowForm(true)} color="var(--orange)">
-              + {isHi ? 'पहली परीक्षा जोड़ें' : 'Add First Exam'}
-            </Button>
+            <GlowButton className="warm-cta inline-flex" icon="+" onClick={() => setShowForm(true)}>
+              {isHi ? 'पहली परीक्षा जोड़ें' : 'Add First Exam'}
+            </GlowButton>
           </div>
         ) : (
           <>
@@ -510,20 +515,39 @@ export default function ExamsPage() {
               const predicted = getPredictedScore(exam.exam_chapters, exam.total_marks);
               const typeConfig = EXAM_TYPES.find(t => t.id === exam.exam_type);
 
+              const accentColor = subMeta?.color || 'var(--accent-warm)';
               return (
-                <Card key={exam.id} accent={subMeta?.color || 'var(--orange)'}>
+                <PremiumCard key={exam.id} hoverable className="warm-cta">
+                  {/* Subject accent bar (data-prop color; warm fallback under cosmic) */}
+                  <div
+                    className="absolute top-0 left-0 right-0 h-1"
+                    style={{ background: accentColor }}
+                    aria-hidden="true"
+                  />
                   {/* Header row */}
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-2.5 flex-1 min-w-0">
                       <span className="text-2xl flex-shrink-0">{subMeta?.icon || '📚'}</span>
                       <div className="min-w-0">
-                        <h3 className="text-sm font-bold truncate" style={{ fontFamily: 'var(--font-display)' }}>
+                        <h3 className="text-sm font-bold truncate" style={{ fontFamily: 'var(--font-serif)' }}>
                           {exam.exam_name}
                         </h3>
                         <div className="flex items-center gap-2 mt-0.5">
-                          <Badge color={typeConfig?.color || 'var(--orange)'} size="sm">
-                            {typeConfig?.icon} {isHi ? typeConfig?.labelHi : typeConfig?.label}
-                          </Badge>
+                          {(() => {
+                            const tc = typeConfig?.color || 'var(--accent-warm)';
+                            return (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-full font-semibold text-xs px-2.5 py-0.5"
+                                style={{
+                                  background: `color-mix(in srgb, ${tc} 12%, transparent)`,
+                                  border: `1px solid color-mix(in srgb, ${tc} 25%, transparent)`,
+                                  color: tc,
+                                }}
+                              >
+                                {typeConfig?.icon} {isHi ? typeConfig?.labelHi : typeConfig?.label}
+                              </span>
+                            );
+                          })()}
                           <span className="text-[10px] text-[var(--text-3)]">
                             {subMeta?.name}
                           </span>
@@ -531,15 +555,18 @@ export default function ExamsPage() {
                       </div>
                     </div>
 
-                    {/* Countdown */}
+                    {/* Countdown — color thresholds map to semantic tokens */}
                     <div className="text-right flex-shrink-0 ml-2">
                       <div
-                        className="text-xl font-bold"
-                        style={{ color: daysLeft <= 3 ? '#EF4444' : daysLeft <= 7 ? '#F59E0B' : '#16A34A' }}
+                        className="text-2xl font-extrabold tabular-nums leading-none"
+                        style={{
+                          fontFamily: 'var(--font-serif)',
+                          color: daysLeft <= 3 ? 'var(--red)' : daysLeft <= 7 ? 'var(--gold)' : 'var(--green)',
+                        }}
                       >
                         {daysLeft > 0 ? daysLeft : 0}
                       </div>
-                      <div className="text-[10px] text-[var(--text-3)]">
+                      <div className="text-[10px] text-[var(--text-3)] mt-0.5">
                         {isHi ? 'दिन बाकी' : 'days left'}
                       </div>
                     </div>
@@ -548,7 +575,7 @@ export default function ExamsPage() {
                   {/* Progress */}
                   <ProgressBar
                     value={chaptersProgress}
-                    color={subMeta?.color || 'var(--orange)'}
+                    color={accentColor}
                     label={isHi ? `${exam.exam_chapters?.length || 0} अध्याय` : `${exam.exam_chapters?.length || 0} chapters`}
                     showPercent
                   />
@@ -564,20 +591,28 @@ export default function ExamsPage() {
                   <div className="flex gap-2 mt-3 flex-wrap">
                     <button
                       onClick={() => router.push(`/study-plan?exam_id=${exam.id}`)}
-                      className="text-xs px-3 py-1.5 rounded-lg font-semibold"
-                      style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.2)', color: '#7C3AED' }}
+                      className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all active:scale-95"
+                      style={{
+                        background: 'rgb(var(--purple-rgb) / 0.1)',
+                        border: '1px solid rgb(var(--purple-rgb) / 0.2)',
+                        color: 'var(--purple)',
+                      }}
                     >
                       📅 {isHi ? 'स्टडी प्लान' : 'Study Plan'}
                     </button>
                     <button
                       onClick={() => router.push(`/quiz?mode=exam&exam_id=${exam.id}`)}
-                      className="text-xs px-3 py-1.5 rounded-lg font-semibold"
-                      style={{ background: 'rgba(232,88,28,0.1)', border: '1px solid rgba(232,88,28,0.2)', color: 'var(--orange)' }}
+                      className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all active:scale-95"
+                      style={{
+                        background: 'rgb(var(--accent-warm-rgb) / 0.1)',
+                        border: '1px solid rgb(var(--accent-warm-rgb) / 0.2)',
+                        color: 'var(--accent-warm)',
+                      }}
                     >
                       {isHi ? 'परीक्षा मोड' : 'Exam Mode'}
                     </button>
                   </div>
-                </Card>
+                </PremiumCard>
               );
             })}
           </>

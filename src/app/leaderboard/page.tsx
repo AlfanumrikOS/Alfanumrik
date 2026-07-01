@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
 import { getLeaderboard, getCompetitions, joinCompetition, getCompetitionLeaderboard, getHallOfFame, supabase } from '@/lib/supabase';
-import { Card, Button, SectionHeader, LoadingFoxy, Avatar, EmptyState } from '@/components/ui';
+import { Card, Button, SectionHeader, LoadingFoxy, Avatar, EmptyState, PremiumCard, GlowButton } from '@/components/ui';
 import { BarChart } from '@/components/admin-ui';
 import { getLevelFromScore } from '@/lib/score-config';
+import { getScoreColor } from '@/lib/score-colors';
 import type { LeaderboardEntry } from '@/lib/types';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import StreakBadge from '@/components/challenge/StreakBadge';
@@ -64,19 +65,17 @@ const PERIODS = [
   { id: 'all', label: 'All Time', labelHi: 'कुल' },
 ] as const;
 
-/**
- * Color for a Performance Score (0-100), matching ScoreCard bands.
- */
-function getScoreColor(score: number): string {
-  if (score >= 90) return '#7C3AED'; // purple
-  if (score >= 75) return '#10B981'; // green
-  if (score >= 50) return '#F59E0B'; // yellow
-  if (score >= 35) return '#F97316'; // orange
-  return '#EF4444';                  // red
-}
+/* getScoreColor now lives in the shared `@/lib/score-colors` module
+   (Alfa Momentum Wave 4b de-dup) — band thresholds 90/75/50/35 unchanged. */
 
 const MEDALS = ['🥇', '🥈', '🥉'];
-const RANK_COLORS = ['#F5A623', '#9CA3AF', '#CD7F32'];
+// Medal identity preserved: gold (--gold), silver + bronze are neutral metal
+// tones tokenized via the theme channel (no brand-hex bypass under cosmic).
+const RANK_COLORS = [
+  'var(--gold)',                                              // 🥇 gold
+  'color-mix(in srgb, var(--text-3) 55%, #fff)',             // 🥈 silver
+  'color-mix(in srgb, var(--gold) 55%, var(--text-1))',      // 🥉 bronze
+];
 const COMP_ICONS: Record<string, string> = {
   weekly_challenge: '🏅', monthly_olympiad: '🏆', subject_sprint: '🚀',
   streak_war: '🔥', quiz_blitz: '⚡', seasonal_mega: '🌟',
@@ -86,14 +85,32 @@ const COMP_LABELS: Record<string, string> = {
   streak_war: 'Streak War', quiz_blitz: 'Quiz Blitz', seasonal_mega: 'Mega Event',
 };
 const STATUS_BADGE: Record<string, { bg: string; color: string; label: string; labelHi: string }> = {
-  live: { bg: 'rgba(22,163,74,0.1)', color: '#16A34A', label: 'LIVE', labelHi: 'लाइव' },
-  upcoming: { bg: 'rgba(245,166,35,0.1)', color: '#D97706', label: 'UPCOMING', labelHi: 'आगामी' },
-  completed: { bg: 'rgba(156,163,175,0.1)', color: '#6B7280', label: 'ENDED', labelHi: 'समाप्त' },
+  live: { bg: 'color-mix(in srgb, var(--green) 10%, transparent)', color: 'var(--green)', label: 'LIVE', labelHi: 'लाइव' },
+  upcoming: { bg: 'color-mix(in srgb, var(--gold) 10%, transparent)', color: 'color-mix(in srgb, var(--gold) 80%, #000)', label: 'UPCOMING', labelHi: 'आगामी' },
+  completed: { bg: 'color-mix(in srgb, var(--text-3) 10%, transparent)', color: 'var(--text-3)', label: 'ENDED', labelHi: 'समाप्त' },
 };
 const FAME_ICONS: Record<string, string> = {
   competition_winner: '🏆', weekly_topper: '🏅', monthly_topper: '👑',
   streak_champion: '🔥', quiz_master: '⚡', overall_topper: '🌟',
 };
+
+/* Unified premium tab loader — replaces the five inconsistent emoji-float
+   spinners + the lone full-screen LoadingFoxy that the tabs used to mix.
+   Foxy floats over a soft warm-tinted card so every tab loads the same way.
+   Bilingual-safe: the caller passes the already-localized label. */
+function TabLoader({ label }: { label: string }) {
+  return (
+    <div
+      className="rounded-2xl py-12 px-6 flex flex-col items-center text-center"
+      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)' }}
+      role="status"
+      aria-label={label}
+    >
+      <span className="text-4xl animate-float" aria-hidden="true">🦊</span>
+      <p className="text-sm text-[var(--text-3)] mt-3">{label}</p>
+    </div>
+  );
+}
 
 export default function LeaderboardPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
@@ -370,11 +387,11 @@ export default function LeaderboardPage() {
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
       {/* Header */}
-      <header className="page-header" style={{ background: 'rgba(251,248,244,0.88)', backdropFilter: 'blur(20px)' }}>
+      <header className="page-header" style={{ background: 'color-mix(in srgb, var(--surface-1) 88%, transparent)', backdropFilter: 'blur(20px)' }}>
         <div className="app-container py-3">
           <div className="flex items-center gap-3">
             <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>&larr;</button>
-            <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+            <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-serif)' }}>
               🏆 {isHi ? 'रैंकिंग और प्रतियोगिता' : 'Rankings & Compete'}
             </h1>
           </div>
@@ -385,11 +402,12 @@ export default function LeaderboardPage() {
           >
             {TABS.map(t => (
               <button key={t.id} onClick={() => { setTab(t.id); setSelectedComp(null); }}
-                className="flex-shrink-0 px-4 py-2 rounded-xl text-xs font-semibold transition-all text-center"
+                className="flex-shrink-0 px-4 py-2 rounded-xl text-xs font-bold transition-all text-center active:scale-[0.97]"
                 style={{
-                  background: tab === t.id ? 'rgba(232,88,28,0.1)' : 'var(--surface-2)',
-                  border: tab === t.id ? '1.5px solid var(--orange)' : '1.5px solid transparent',
-                  color: tab === t.id ? 'var(--orange)' : 'var(--text-3)',
+                  background: tab === t.id ? 'rgb(var(--accent-warm-rgb) / 0.10)' : 'var(--surface-2)',
+                  border: tab === t.id ? '1.5px solid var(--accent-warm)' : '1.5px solid transparent',
+                  color: tab === t.id ? 'var(--accent-warm)' : 'var(--text-3)',
+                  boxShadow: tab === t.id ? '0 2px 10px rgb(var(--accent-warm-rgb) / 0.16)' : undefined,
                 }}>
                 {t.icon} {isHi ? t.labelHi : t.label}
               </button>
@@ -408,11 +426,16 @@ export default function LeaderboardPage() {
             <div className="flex gap-1.5">
               {PERIODS.map(p => (
                 <button key={p.id} onClick={() => setPeriod(p.id)}
-                  className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all"
-                  style={{
-                    background: period === p.id ? 'var(--orange)' : 'var(--surface-2)',
-                    color: period === p.id ? '#fff' : 'var(--text-3)',
-                  }}>
+                  className="flex-1 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
+                  style={
+                    period === p.id
+                      ? {
+                          background: 'linear-gradient(135deg, var(--accent-warm), var(--accent-warm-strong))',
+                          color: '#fff',
+                          boxShadow: '0 3px 12px rgb(var(--accent-warm-rgb) / 0.28)',
+                        }
+                      : { background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }
+                  }>
                   {isHi ? p.labelHi : p.label}
                 </button>
               ))}
@@ -420,18 +443,25 @@ export default function LeaderboardPage() {
 
             {/* My Rank — Not in leaderboard */}
             {myRank < 0 && !loading && entries.length > 0 && (
-              <div className="bg-gradient-to-r from-purple-50 to-orange-50 border border-purple-200 rounded-xl p-4">
+              <div
+                className="rounded-2xl p-4"
+                style={{
+                  background:
+                    'linear-gradient(135deg, color-mix(in srgb, var(--purple) 8%, var(--surface-1)), rgb(var(--accent-warm-rgb) / 0.06))',
+                  border: '1px solid color-mix(in srgb, var(--purple) 20%, transparent)',
+                }}
+              >
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600">{isHi ? 'तुम्हारा रैंक' : 'Your Rank'}</p>
-                    <p className="text-2xl font-bold text-purple-700">#---</p>
+                    <p className="text-sm text-[var(--text-3)]">{isHi ? 'तुम्हारा रैंक' : 'Your Rank'}</p>
+                    <p className="text-2xl font-bold" style={{ color: 'var(--purple)' }}>#---</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm text-gray-600">XP</p>
+                    <p className="text-sm text-[var(--text-3)]">XP</p>
                     <p className="text-lg font-semibold">{student?.xp_total ?? 0}</p>
                   </div>
                 </div>
-                <p className="text-xs text-gray-500 mt-2">
+                <p className="text-xs text-[var(--text-3)] mt-2">
                   {isHi ? 'क्विज़ दो और लीडरबोर्ड पर आओ!' : 'Take quizzes to climb the leaderboard!'}
                 </p>
               </div>
@@ -439,10 +469,10 @@ export default function LeaderboardPage() {
 
             {/* My Rank Highlight */}
             {myRank >= 0 && (
-              <Card accent="var(--orange)" className="!p-4">
+              <PremiumCard glow gradient className="warm-cta !p-4">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold text-white"
-                    style={{ background: 'linear-gradient(135deg, var(--orange), var(--gold))' }}>
+                    style={{ background: 'linear-gradient(135deg, var(--accent-warm), var(--gold))' }}>
                     #{myRank + 1}
                   </div>
                   <div className="flex-1">
@@ -475,7 +505,7 @@ export default function LeaderboardPage() {
                   </div>
                   <span className="text-3xl">{myRank < 3 ? MEDALS[myRank] : ''}</span>
                 </div>
-              </Card>
+              </PremiumCard>
             )}
 
             {/* Top 3 Podium */}
@@ -491,12 +521,16 @@ export default function LeaderboardPage() {
                     <div key={idx} className="flex flex-col items-center" style={{ width: idx === 0 ? '40%' : '30%' }}>
                       <div className={`text-${idx === 0 ? '3xl' : '2xl'} mb-1`}>{MEDALS[idx]}</div>
                       <Avatar name={e.name || e.student_name || ''} size={idx === 0 ? 48 : 36} />
-                      <div className={`text-xs font-bold mt-1 truncate max-w-full text-center ${isMe ? 'text-[var(--orange)]' : ''}`}>
+                      <div className="text-xs font-bold mt-1 truncate max-w-full text-center" style={isMe ? { color: 'var(--accent-warm)' } : undefined}>
                         {e.name}{isMe ? (isHi ? ' (तुम)' : ' (You)') : ''}
                       </div>
                       <div className="text-xs text-[var(--text-3)]">Gr {e.grade}</div>
                       <div className={`w-full ${height} rounded-t-xl mt-2 flex flex-col items-center justify-end pb-2`}
-                        style={{ background: `${RANK_COLORS[idx]}20`, border: `1.5px solid ${RANK_COLORS[idx]}40` }}>
+                        style={{
+                          background: `color-mix(in srgb, ${RANK_COLORS[idx]} 16%, var(--surface-1))`,
+                          border: `1.5px solid color-mix(in srgb, ${RANK_COLORS[idx]} 40%, transparent)`,
+                          boxShadow: idx === 0 ? '0 6px 18px color-mix(in srgb, var(--gold) 22%, transparent)' : undefined,
+                        }}>
                         {hasPerf ? (
                           <>
                             <span className="text-lg font-bold" style={{ color: getScoreColor(e.performance_score!) }}>
@@ -543,10 +577,7 @@ export default function LeaderboardPage() {
 
             {/* Full List */}
             {loading ? (
-              <div className="text-center py-12">
-                <div className="text-4xl animate-float mb-3">🏆</div>
-                <p className="text-sm text-[var(--text-3)]">{isHi ? 'लोड हो रहा है...' : 'Loading rankings...'}</p>
-              </div>
+              <TabLoader label={isHi ? 'लोड हो रहा है...' : 'Loading rankings...'} />
             ) : entries.length === 0 ? (
               <EmptyState
                 icon="🏆"
@@ -568,8 +599,9 @@ export default function LeaderboardPage() {
                     const isMe = entry.student_id === student.id;
                     const hasPerf = usePerformanceScores && entry.performance_score != null;
                     return (
-                      <Card key={entry.student_id}
-                        className={`!p-4 flex items-center gap-3 ${isMe ? 'ring-2 ring-[var(--orange)]' : ''}`}>
+                      <PremiumCard key={entry.student_id}
+                        glow={isMe}
+                        className={`!p-4 flex items-center gap-3${isMe ? ' warm-cta' : ''}`}>
                         <div className="w-8 text-center flex-shrink-0">
                           {idx < 3 ? <span className="text-xl">{MEDALS[idx]}</span>
                             : <span className="text-sm font-bold text-[var(--text-3)]">#{idx + 1}</span>}
@@ -578,7 +610,7 @@ export default function LeaderboardPage() {
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-semibold truncate">
                             {entry.name}
-                            {isMe && <span className="text-xs text-[var(--orange)] ml-1">({isHi ? 'तुम' : 'You'})</span>}
+                            {isMe && <span className="text-xs ml-1" style={{ color: 'var(--accent-warm)' }}>({isHi ? 'तुम' : 'You'})</span>}
                           </div>
                           <div className="text-xs text-[var(--text-3)]">
                             Gr {entry.grade}
@@ -618,7 +650,7 @@ export default function LeaderboardPage() {
                             </>
                           )}
                         </div>
-                      </Card>
+                      </PremiumCard>
                     );
                   })}
                 </div>
@@ -631,10 +663,7 @@ export default function LeaderboardPage() {
         {tab === 'compete' && !selectedComp && (
           <>
             {loading ? (
-              <div className="text-center py-12">
-                <div className="text-4xl animate-float mb-3">⚔️</div>
-                <p className="text-sm text-[var(--text-3)]">{isHi ? 'प्रतियोगिताएँ लोड हो रही हैं...' : 'Loading competitions...'}</p>
-              </div>
+              <TabLoader label={isHi ? 'प्रतियोगिताएँ लोड हो रही हैं...' : 'Loading competitions...'} />
             ) : competitions.length === 0 ? (
               <div className="text-center py-12">
                 <div className="text-5xl mb-4">🎯</div>
@@ -673,9 +702,9 @@ export default function LeaderboardPage() {
 
                         {/* Prizes */}
                         <div className="flex items-center gap-3 mt-3">
-                          <span className="text-xs font-semibold" style={{ color: '#F5A623' }}>🥇 {comp.bonus_xp_1} XP</span>
-                          <span className="text-xs font-semibold" style={{ color: '#9CA3AF' }}>🥈 {comp.bonus_xp_2} XP</span>
-                          <span className="text-xs font-semibold" style={{ color: '#CD7F32' }}>🥉 {comp.bonus_xp_3} XP</span>
+                          <span className="text-xs font-semibold" style={{ color: RANK_COLORS[0] }}>🥇 {comp.bonus_xp_1} XP</span>
+                          <span className="text-xs font-semibold" style={{ color: RANK_COLORS[1] }}>🥈 {comp.bonus_xp_2} XP</span>
+                          <span className="text-xs font-semibold" style={{ color: RANK_COLORS[2] }}>🥉 {comp.bonus_xp_3} XP</span>
                         </div>
 
                         <div className="flex items-center gap-2 mt-3">
@@ -686,7 +715,7 @@ export default function LeaderboardPage() {
                                 style={{ background: `${comp.accent_color}15`, border: `1.5px solid ${comp.accent_color}`, color: comp.accent_color }}>
                                 {isHi ? '📊 रैंकिंग देखो' : '📊 View Ranking'}
                               </button>
-                              <span className="text-xs font-semibold" style={{ color: '#16A34A' }}>
+                              <span className="text-xs font-semibold" style={{ color: 'var(--green)' }}>
                                 ✓ {isHi ? 'शामिल हो' : 'Joined'}
                                 {comp.my_rank && ` · Rank #${comp.my_rank}`}
                               </span>
@@ -712,7 +741,7 @@ export default function LeaderboardPage() {
                 {competitions.filter(c => !c.is_featured || c.status !== 'live').map(comp => {
                   const sb = STATUS_BADGE[comp.status] || STATUS_BADGE.upcoming;
                   return (
-                    <Card key={comp.id} className="!p-4">
+                    <PremiumCard key={comp.id} className="!p-4">
                       <div className="flex items-start gap-3">
                         <span className="text-2xl flex-shrink-0">{comp.banner_emoji}</span>
                         <div className="flex-1 min-w-0">
@@ -729,7 +758,7 @@ export default function LeaderboardPage() {
                           <div className="flex items-center gap-3 mt-2">
                             <span className="text-xs text-[var(--text-3)]">🥇 {comp.bonus_xp_1} XP</span>
                             <span className="text-xs text-[var(--text-3)]">👥 {comp.participant_count}</span>
-                            {comp.is_joined && <span className="text-xs font-bold" style={{ color: '#16A34A' }}>✓ Joined</span>}
+                            {comp.is_joined && <span className="text-xs font-bold" style={{ color: 'var(--green)' }}>✓ Joined</span>}
                           </div>
                           <div className="mt-2">
                             {comp.status === 'live' && !comp.is_joined && (
@@ -754,7 +783,7 @@ export default function LeaderboardPage() {
                           </div>
                         </div>
                       </div>
-                    </Card>
+                    </PremiumCard>
                   );
                 })}
               </div>
@@ -778,7 +807,7 @@ export default function LeaderboardPage() {
                     {isHi && selectedComp.title_hi ? selectedComp.title_hi : selectedComp.title}
                   </h3>
                   <div className="flex items-center gap-3 mt-1">
-                    <span className="text-xs font-semibold" style={{ color: '#F5A623' }}>🥇 {selectedComp.prize_1_title}</span>
+                    <span className="text-xs font-semibold" style={{ color: RANK_COLORS[0] }}>🥇 {selectedComp.prize_1_title}</span>
                     <span className="text-xs text-[var(--text-3)]">👥 {selectedComp.participant_count}</span>
                   </div>
                 </div>
@@ -800,8 +829,9 @@ export default function LeaderboardPage() {
                 {compLeaderboard.map((entry, idx) => {
                   const isMe = entry.student_id === student.id;
                   return (
-                    <Card key={entry.student_id}
-                      className={`!p-4 flex items-center gap-3 ${isMe ? 'ring-2 ring-[var(--orange)]' : ''}`}>
+                    <PremiumCard key={entry.student_id}
+                      glow={isMe}
+                      className={`!p-4 flex items-center gap-3${isMe ? ' warm-cta' : ''}`}>
                       <div className="w-8 text-center flex-shrink-0">
                         {idx < 3 ? <span className="text-xl">{MEDALS[idx]}</span>
                           : <span className="text-sm font-bold text-[var(--text-3)]">#{idx + 1}</span>}
@@ -810,7 +840,7 @@ export default function LeaderboardPage() {
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-semibold truncate">
                           {entry.name}
-                          {isMe && <span className="text-xs text-[var(--orange)] ml-1">({isHi ? 'तुम' : 'You'})</span>}
+                          {isMe && <span className="text-xs ml-1" style={{ color: 'var(--accent-warm)' }}>({isHi ? 'तुम' : 'You'})</span>}
                         </div>
                         <div className="text-xs text-[var(--text-3)]">
                           Gr {entry.grade}{entry.school ? ` · ${entry.school}` : ''}
@@ -822,7 +852,7 @@ export default function LeaderboardPage() {
                         </div>
                         <div className="text-xs text-[var(--text-3)]">{entry.accuracy}%</div>
                       </div>
-                    </Card>
+                    </PremiumCard>
                   );
                 })}
               </div>
@@ -834,10 +864,7 @@ export default function LeaderboardPage() {
         {tab === 'fame' && (
           <>
             {loading ? (
-              <div className="text-center py-12">
-                <div className="text-4xl animate-float mb-3">👑</div>
-                <p className="text-sm text-[var(--text-3)]">{isHi ? 'गौरव गाथा लोड हो रही है...' : 'Loading Hall of Fame...'}</p>
-              </div>
+              <TabLoader label={isHi ? 'गौरव गाथा लोड हो रही है...' : 'Loading Hall of Fame...'} />
             ) : fame.length === 0 ? (
               <div className="text-center py-12">
                 <div className="text-5xl mb-4">👑</div>
@@ -857,19 +884,19 @@ export default function LeaderboardPage() {
               <div className="space-y-3">
                 <SectionHeader icon="👑">{isHi ? 'शानदार विजेता' : 'Champions & Winners'}</SectionHeader>
                 {fame.map(entry => (
-                  <Card key={entry.id} className="!p-4">
+                  <PremiumCard key={entry.id} className="!p-4">
                     <div className="flex items-center gap-3">
                       <span className="text-3xl flex-shrink-0">{entry.rank <= 3 ? MEDALS[entry.rank - 1] : FAME_ICONS[entry.achievement_type] || '🏆'}</span>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-bold">{entry.student_name}</div>
-                        <div className="text-xs font-semibold" style={{ color: 'var(--orange)' }}>{entry.title}</div>
+                        <div className="text-xs font-semibold" style={{ color: 'var(--accent-warm)' }}>{entry.title}</div>
                         <div className="text-xs text-[var(--text-3)] mt-0.5">
                           Grade {entry.grade} · {entry.month_year} · {entry.subject || 'All Subjects'}
                           {entry.xp_bonus > 0 && ` · +${entry.xp_bonus} XP`}
                         </div>
                       </div>
                     </div>
-                  </Card>
+                  </PremiumCard>
                 ))}
               </div>
             )}
@@ -880,10 +907,7 @@ export default function LeaderboardPage() {
         {tab === 'titles' && (
           <>
             {loading ? (
-              <div className="text-center py-12">
-                <div className="text-4xl animate-float mb-3">🎖️</div>
-                <p className="text-sm text-[var(--text-3)]">{isHi ? 'लोड हो रहा है...' : 'Loading...'}</p>
-              </div>
+              <TabLoader label={isHi ? 'लोड हो रहा है...' : 'Loading...'} />
             ) : titles.length === 0 ? (
               <div className="text-center py-12">
                 <div className="text-5xl mb-4">🎖️</div>
@@ -908,11 +932,19 @@ export default function LeaderboardPage() {
               <div className="space-y-3">
                 <SectionHeader icon="🎖️">{isHi ? `मेरे खिताब (${titles.length})` : `My Titles (${titles.length})`}</SectionHeader>
                 <div className="grid grid-cols-2 gap-3">
-                  {titles.map(t => (
+                  {titles.map(t => {
+                    // Tier color identity preserved: gold/silver/bronze via the
+                    // RANK_COLORS metal tones, other tiers via the purple accent.
+                    const tierColor =
+                      t.tier === 'gold' ? RANK_COLORS[0]
+                      : t.tier === 'silver' ? RANK_COLORS[1]
+                      : t.tier === 'bronze' ? RANK_COLORS[2]
+                      : 'var(--purple)';
+                    return (
                     <div key={t.id} className="rounded-2xl p-4 text-center"
                       style={{
-                        background: t.tier === 'gold' ? 'rgba(245,166,35,0.08)' : t.tier === 'silver' ? 'rgba(156,163,175,0.08)' : t.tier === 'bronze' ? 'rgba(205,127,50,0.08)' : 'rgba(124,58,237,0.08)',
-                        border: `1.5px solid ${t.tier === 'gold' ? 'rgba(245,166,35,0.3)' : t.tier === 'silver' ? 'rgba(156,163,175,0.3)' : t.tier === 'bronze' ? 'rgba(205,127,50,0.3)' : 'rgba(124,58,237,0.3)'}`,
+                        background: `color-mix(in srgb, ${tierColor} 8%, var(--surface-1))`,
+                        border: `1.5px solid color-mix(in srgb, ${tierColor} 30%, transparent)`,
                       }}>
                       <div className="text-3xl mb-2">{t.icon || '🏆'}</div>
                       <div className="text-xs font-bold">{isHi && t.title_hi ? t.title_hi : t.title}</div>
@@ -921,7 +953,8 @@ export default function LeaderboardPage() {
                         {new Date(t.earned_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -932,10 +965,7 @@ export default function LeaderboardPage() {
         {tab === 'streaks' && (
           <>
             {loading ? (
-              <div className="text-center py-12">
-                <div className="text-4xl animate-float mb-3">🔥</div>
-                <p className="text-sm text-[var(--text-3)]">{isHi ? 'स्ट्रीक लोड हो रही हैं...' : 'Loading streaks...'}</p>
-              </div>
+              <TabLoader label={isHi ? 'स्ट्रीक लोड हो रही हैं...' : 'Loading streaks...'} />
             ) : streakEntries.length === 0 ? (
               <EmptyState
                 icon="🔥"
@@ -956,8 +986,9 @@ export default function LeaderboardPage() {
                   {streakEntries.map((entry, idx) => {
                     const isMe = entry.student_id === student.id;
                     return (
-                      <Card key={entry.student_id}
-                        className={`!p-4 flex items-center gap-3 ${isMe ? 'ring-2 ring-[var(--orange)]' : ''}`}>
+                      <PremiumCard key={entry.student_id}
+                        glow={isMe}
+                        className={`!p-4 flex items-center gap-3${isMe ? ' warm-cta' : ''}`}>
                         <div className="w-8 text-center flex-shrink-0">
                           {idx < 3 ? <span className="text-xl">{MEDALS[idx]}</span>
                             : <span className="text-sm font-bold text-[var(--text-3)]">#{idx + 1}</span>}
@@ -966,14 +997,14 @@ export default function LeaderboardPage() {
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-semibold truncate">
                             {entry.student_name}
-                            {isMe && <span className="text-xs text-[var(--orange)] ml-1">({isHi ? 'तुम' : 'You'})</span>}
+                            {isMe && <span className="text-xs ml-1" style={{ color: 'var(--accent-warm)' }}>({isHi ? 'तुम' : 'You'})</span>}
                           </div>
                           <div className="mt-1">
                             <StreakBadge streak={entry.current_streak} badges={entry.badges} isHi={isHi} size="sm" />
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0">
-                          <div className="text-lg font-bold" style={{ color: '#F97316' }}>
+                          <div className="text-lg font-bold" style={{ color: 'var(--accent-warm)' }}>
                             {isHi ? `${entry.current_streak} दिन` : `Day ${entry.current_streak}`}
                           </div>
                           {entry.best_streak > entry.current_streak && (
@@ -982,7 +1013,7 @@ export default function LeaderboardPage() {
                             </div>
                           )}
                         </div>
-                      </Card>
+                      </PremiumCard>
                     );
                   })}
                 </div>
@@ -1003,7 +1034,7 @@ export default function LeaderboardPage() {
                 : 'Ranked by what you actually know, not raw XP'}
             </p>
             {loading ? (
-              <LoadingFoxy />
+              <TabLoader label={isHi ? 'लोड हो रहा है...' : 'Loading...'} />
             ) : masteryEntries.length === 0 ? (
               <EmptyState
                 icon="🎯"
@@ -1023,11 +1054,11 @@ export default function LeaderboardPage() {
                   const rankColor =
                     entry.rank <= 3 ? RANK_COLORS[entry.rank - 1] : 'var(--text-3)';
                   return (
-                    <Card
+                    <PremiumCard
                       key={entry.student_id}
-                      className={`flex items-center gap-3 !p-3${isMe ? ' ring-2 ring-[var(--orange)]' : ''}`}
-                      accent={isMe ? 'var(--orange)' : undefined}
+                      glow={isMe}
                       data-testid="mastery-leaderboard-row"
+                      className={`flex items-center gap-3 !p-3${isMe ? ' warm-cta' : ''}`}
                     >
                       <div
                         className="w-10 text-center font-bold text-sm flex-shrink-0"
@@ -1040,7 +1071,7 @@ export default function LeaderboardPage() {
                         <p className="text-sm font-semibold truncate">
                           {entry.name}{isMe && ' '}
                           {isMe && (
-                            <span className="text-[10px] font-bold" style={{ color: 'var(--orange)' }}>
+                            <span className="text-[10px] font-bold" style={{ color: 'var(--accent-warm)' }}>
                               {isHi ? '(तुम)' : '(you)'}
                             </span>
                           )}
@@ -1065,7 +1096,7 @@ export default function LeaderboardPage() {
                           {isHi ? 'मास्ट्री' : 'mastery'}
                         </div>
                       </div>
-                    </Card>
+                    </PremiumCard>
                   );
                 })}
               </div>
@@ -1079,11 +1110,16 @@ export default function LeaderboardPage() {
             <div className="flex gap-1.5">
               {PERIODS.map(p => (
                 <button key={p.id} onClick={() => setPeriod(p.id)}
-                  className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all"
-                  style={{
-                    background: period === p.id ? 'var(--orange)' : 'var(--surface-2)',
-                    color: period === p.id ? '#fff' : 'var(--text-3)',
-                  }}>
+                  className="flex-1 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
+                  style={
+                    period === p.id
+                      ? {
+                          background: 'linear-gradient(135deg, var(--accent-warm), var(--accent-warm-strong))',
+                          color: '#fff',
+                          boxShadow: '0 3px 12px rgb(var(--accent-warm-rgb) / 0.28)',
+                        }
+                      : { background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }
+                  }>
                   {isHi ? p.labelHi : p.label}
                 </button>
               ))}
@@ -1127,8 +1163,9 @@ export default function LeaderboardPage() {
                   {classData.items.map((entry, idx) => {
                     const isMe = entry.student_id === student.id;
                     return (
-                      <Card key={entry.student_id}
-                        className={`!p-4 flex items-center gap-3 ${isMe ? 'ring-2 ring-[var(--orange)]' : ''}`}>
+                      <PremiumCard key={entry.student_id}
+                        glow={isMe}
+                        className={`!p-4 flex items-center gap-3${isMe ? ' warm-cta' : ''}`}>
                         <div className="w-8 text-center flex-shrink-0">
                           {idx < 3
                             ? <span className="text-xl">{MEDALS[idx]}</span>
@@ -1138,7 +1175,7 @@ export default function LeaderboardPage() {
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-semibold truncate">
                             {entry.name}
-                            {isMe && <span className="text-xs text-[var(--orange)] ml-1">({isHi ? 'तुम' : 'You'})</span>}
+                            {isMe && <span className="text-xs ml-1" style={{ color: 'var(--accent-warm)' }}>({isHi ? 'तुम' : 'You'})</span>}
                           </div>
                           <div className="text-xs text-[var(--text-3)]">
                             {isHi ? `कक्षा ${entry.grade}` : `Grade ${entry.grade}`}
@@ -1148,7 +1185,7 @@ export default function LeaderboardPage() {
                           <div className="text-sm font-bold gradient-text">{entry.xp_this_period?.toLocaleString()}</div>
                           <div className="text-xs text-[var(--text-3)]">XP</div>
                         </div>
-                      </Card>
+                      </PremiumCard>
                     );
                   })}
                 </div>

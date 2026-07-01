@@ -50,8 +50,8 @@ export default function ShareResultCard({
       <div
         className="rounded-2xl p-5 space-y-3"
         style={{
-          background: 'linear-gradient(135deg, #FFF7ED, #F5E6FF, #FFF7ED)',
-          border: '1.5px solid rgba(249, 115, 22, 0.2)',
+          background: 'linear-gradient(135deg, color-mix(in srgb, var(--accent-warm) 7%, white), color-mix(in srgb, var(--purple) 8%, white), color-mix(in srgb, var(--accent-warm) 7%, white))',
+          border: '1.5px solid color-mix(in srgb, var(--accent-warm) 20%, transparent)',
         }}
       >
         {/* Title */}
@@ -80,8 +80,8 @@ export default function ShareResultCard({
               key={i}
               className="inline-block w-7 h-7 rounded-md text-center leading-7 text-sm"
               style={{
-                background: 'rgba(34, 197, 94, 0.15)',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
+                background: 'color-mix(in srgb, var(--green) 15%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--green) 30%, transparent)',
               }}
               aria-hidden="true"
             >
@@ -100,7 +100,7 @@ export default function ShareResultCard({
 
         {/* Streak */}
         {streak >= 1 && (
-          <p className="text-sm font-bold" style={{ color: '#F97316' }}>
+          <p className="text-sm font-bold" style={{ color: 'var(--accent-warm)' }}>
             {'\uD83D\uDD25'} {isHi ? `\u0926\u093F\u0928 ${streak}` : `Day ${streak}`}
           </p>
         )}

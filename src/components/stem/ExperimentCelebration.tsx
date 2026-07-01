@@ -199,12 +199,10 @@ export default function ExperimentCelebration({
     showViva && result.viva.score !== null && result.viva.max
       ? Math.round((result.viva.score / result.viva.max) * 100)
       : 0;
-  const vivaRing =
-    vivaPct >= 80
-      ? 'ring-green-400 text-green-700 bg-green-50'
-      : vivaPct >= 50
-      ? 'ring-yellow-400 text-yellow-700 bg-yellow-50'
-      : 'ring-red-400 text-red-700 bg-red-50';
+  /* Viva ring tint via semantic tokens (green / gold / red) using color-mix
+     so the ring reads on-brand. Presentation only — thresholds unchanged. */
+  const vivaRingToken =
+    vivaPct >= 80 ? 'var(--green)' : vivaPct >= 50 ? 'var(--gold)' : 'var(--red)';
 
   /* ── i18n labels (literals — DO NOT machine translate) ── */
   const L = {
@@ -246,35 +244,21 @@ export default function ExperimentCelebration({
     },
   };
 
-  /* ── Breakdown chips (only render non-zero) ── */
-  const chips: Array<{ label: string; value: number; tone: string }> = [];
+  /* ── Breakdown chips (only render non-zero) ──
+     Semantic-token tints via color-mix: base→warm, viva→purple,
+     firstToday→teal, streak→gold. Values come from the RPC, never recomputed. */
+  const chips: Array<{ label: string; value: number; token: string }> = [];
   if (result.breakdown.base > 0) {
-    chips.push({
-      label: L.base,
-      value: result.breakdown.base,
-      tone: 'bg-orange-100 text-orange-700',
-    });
+    chips.push({ label: L.base, value: result.breakdown.base, token: 'var(--accent-warm)' });
   }
   if (result.breakdown.viva_bonus > 0) {
-    chips.push({
-      label: L.viva,
-      value: result.breakdown.viva_bonus,
-      tone: 'bg-purple-100 text-purple-700',
-    });
+    chips.push({ label: L.viva, value: result.breakdown.viva_bonus, token: 'var(--purple)' });
   }
   if (result.breakdown.first_today > 0) {
-    chips.push({
-      label: L.firstToday,
-      value: result.breakdown.first_today,
-      tone: 'bg-blue-100 text-blue-700',
-    });
+    chips.push({ label: L.firstToday, value: result.breakdown.first_today, token: 'var(--teal)' });
   }
   if (result.breakdown.streak_bonus > 0) {
-    chips.push({
-      label: L.streak,
-      value: result.breakdown.streak_bonus,
-      tone: 'bg-pink-100 text-pink-700',
-    });
+    chips.push({ label: L.streak, value: result.breakdown.streak_bonus, token: 'var(--gold)' });
   }
 
   return (
@@ -320,14 +304,21 @@ export default function ExperimentCelebration({
         role="dialog"
         aria-modal="true"
         aria-labelledby="celebration-title"
-        className="relative w-full sm:max-w-md md:max-w-lg bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border-2 border-orange-200 max-h-[92vh] overflow-y-auto animate-scale-in"
+        className="relative w-full sm:max-w-md md:max-w-lg bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[92vh] overflow-y-auto animate-scale-in"
+        style={{ border: '2px solid color-mix(in srgb, var(--accent-warm) 22%, transparent)' }}
       >
-        {/* ── Hero ── */}
-        <div className="px-5 pt-6 pb-4 sm:px-7 sm:pt-8 text-center bg-gradient-to-b from-orange-50 to-white rounded-t-3xl">
+        {/* ── Hero — warm wash via the stable warm channel ── */}
+        <div
+          className="px-5 pt-6 pb-4 sm:px-7 sm:pt-8 text-center rounded-t-3xl"
+          style={{ background: 'linear-gradient(to bottom, color-mix(in srgb, var(--accent-warm) 9%, white), white)' }}
+        >
           <div className="text-5xl sm:text-6xl mb-3 select-none" aria-hidden="true">
             {heroEmoji}
           </div>
-          <p className="text-[11px] uppercase tracking-wider text-orange-600 font-semibold mb-1">
+          <p
+            className="text-[11px] uppercase tracking-wider font-semibold mb-1"
+            style={{ color: 'var(--accent-warm)' }}
+          >
             {isGuided ? L.guided : L.simple}
           </p>
           <h2
@@ -335,17 +326,29 @@ export default function ExperimentCelebration({
             className="text-lg sm:text-xl font-bold text-gray-900 font-[Sora] leading-snug"
           >
             {L.youCompleted}:{' '}
-            <span className="text-orange-600">{experimentTitle}</span>
+            <span style={{ color: 'var(--accent-warm)' }}>{experimentTitle}</span>
           </h2>
         </div>
 
-        {/* ── Coin reward card ── */}
+        {/* ── Coin reward card — refined warm-tinted panel, gold coin total ── */}
         <div className="px-5 sm:px-7 pt-2">
-          <div className="bg-orange-50 rounded-2xl border border-orange-200 p-4 sm:p-5">
-            <p className="text-[11px] uppercase tracking-wider text-orange-700 font-semibold mb-1 text-center">
+          <div
+            className="rounded-2xl p-4 sm:p-5"
+            style={{
+              background: 'color-mix(in srgb, var(--accent-warm) 7%, white)',
+              border: '1px solid color-mix(in srgb, var(--accent-warm) 20%, transparent)',
+            }}
+          >
+            <p
+              className="text-[11px] uppercase tracking-wider font-semibold mb-1 text-center"
+              style={{ color: 'var(--accent-warm)' }}
+            >
               {L.rewardEarned}
             </p>
-            <p className="text-3xl sm:text-4xl font-bold text-orange-600 text-center font-[Sora]">
+            <p
+              className="text-3xl sm:text-4xl font-bold text-center font-[Sora]"
+              style={{ color: 'var(--gold)' }}
+            >
               <span aria-hidden="true">🪙</span> {L.coins(result.coinsAwarded)}
             </p>
 
@@ -354,7 +357,11 @@ export default function ExperimentCelebration({
                 {chips.map((c) => (
                   <span
                     key={c.label}
-                    className={`text-[11px] px-2 py-1 rounded-full font-medium ${c.tone}`}
+                    className="text-[11px] px-2 py-1 rounded-full font-semibold"
+                    style={{
+                      background: `color-mix(in srgb, ${c.token} 14%, transparent)`,
+                      color: `color-mix(in srgb, ${c.token} 78%, black)`,
+                    }}
                   >
                     {c.label} +{c.value}
                   </span>
@@ -370,14 +377,23 @@ export default function ExperimentCelebration({
           </div>
         </div>
 
-        {/* ── Lab streak card ── */}
+        {/* ── Lab streak card — warm streak wash, gold→warm "new best" badge ── */}
         <div className="px-5 sm:px-7 pt-3">
-          <div className="relative bg-gradient-to-br from-pink-50 to-orange-50 rounded-2xl border border-orange-200 p-4 flex items-center gap-3">
+          <div
+            className="relative rounded-2xl p-4 flex items-center gap-3"
+            style={{
+              background: 'linear-gradient(135deg, color-mix(in srgb, var(--gold) 9%, white), color-mix(in srgb, var(--accent-warm) 8%, white))',
+              border: '1px solid color-mix(in srgb, var(--accent-warm) 20%, transparent)',
+            }}
+          >
             <div className="text-3xl sm:text-4xl flex-shrink-0" aria-hidden="true">
               🔥
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[11px] uppercase tracking-wider text-pink-700 font-semibold">
+              <p
+                className="text-[11px] uppercase tracking-wider font-semibold"
+                style={{ color: 'var(--accent-warm)' }}
+              >
                 {L.labStreak}
               </p>
               <p className="text-xl sm:text-2xl font-bold text-gray-900 font-[Sora]">
@@ -385,7 +401,10 @@ export default function ExperimentCelebration({
               </p>
             </div>
             {result.streak.is_new_record && result.streak.current > 1 && (
-              <span className="ml-2 text-[10px] sm:text-xs px-2 py-1 rounded-full font-bold bg-gradient-to-r from-yellow-400 to-orange-500 text-white shadow-md whitespace-nowrap">
+              <span
+                className="ml-2 text-[10px] sm:text-xs px-2 py-1 rounded-full font-bold text-white shadow-md whitespace-nowrap"
+                style={{ background: 'linear-gradient(to right, var(--gold), var(--accent-warm))' }}
+              >
                 {L.newRecord}
               </span>
             )}
@@ -397,7 +416,13 @@ export default function ExperimentCelebration({
           <div className="px-5 sm:px-7 pt-3">
             <div className="bg-white rounded-2xl border border-gray-200 p-4 flex items-center gap-3">
               <div
-                className={`flex-shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-full ring-4 ${vivaRing} flex items-center justify-center font-bold text-base sm:text-lg`}
+                className="flex-shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-full ring-4 flex items-center justify-center font-bold text-base sm:text-lg"
+                style={{
+                  // @ts-expect-error -- CSS custom property for Tailwind ring color
+                  '--tw-ring-color': `color-mix(in srgb, ${vivaRingToken} 55%, transparent)`,
+                  background: `color-mix(in srgb, ${vivaRingToken} 10%, white)`,
+                  color: `color-mix(in srgb, ${vivaRingToken} 78%, black)`,
+                }}
                 aria-label={`${L.vivaScore} ${vivaPct} percent`}
               >
                 {vivaPct}%
@@ -417,12 +442,19 @@ export default function ExperimentCelebration({
         {/* ── Foxy conclusion grading (Tier 3 R10) ── */}
         {gradingState !== 'idle' && gradingState !== 'error' && (
           <div className="px-5 sm:px-7 pt-3">
-            <div className="bg-gradient-to-br from-purple-50 to-orange-50 rounded-2xl border border-purple-200 p-4">
+            <div
+              className="rounded-2xl p-4"
+              style={{
+                background: 'linear-gradient(135deg, color-mix(in srgb, var(--purple) 8%, white), color-mix(in srgb, var(--accent-warm) 7%, white))',
+                border: '1px solid color-mix(in srgb, var(--purple) 22%, transparent)',
+              }}
+            >
               {gradingState === 'loading' && (
                 <p
                   role="status"
                   aria-live="polite"
-                  className="text-sm text-purple-700 text-center font-medium animate-pulse"
+                  className="text-sm text-center font-medium animate-pulse"
+                  style={{ color: 'color-mix(in srgb, var(--purple) 78%, black)' }}
                 >
                   {L.foxyReading}
                 </p>
@@ -433,16 +465,25 @@ export default function ExperimentCelebration({
                     <div className="flex items-center gap-2 min-w-0">
                       <span aria-hidden="true" className="text-2xl">🦊</span>
                       <div className="min-w-0">
-                        <p className="text-sm font-bold text-purple-900 font-[Sora] truncate">
+                        <p
+                          className="text-sm font-bold font-[Sora] truncate"
+                          style={{ color: 'color-mix(in srgb, var(--purple) 82%, black)' }}
+                        >
                           {L.tierLabel(grading.tier)}
                         </p>
-                        <p className="text-[11px] uppercase tracking-wider text-purple-600 font-semibold">
+                        <p
+                          className="text-[11px] uppercase tracking-wider font-semibold"
+                          style={{ color: 'color-mix(in srgb, var(--purple) 70%, black)' }}
+                        >
                           {L.conclusionScore}: {grading.total}/12
                         </p>
                       </div>
                     </div>
                     {bonusCoins > 0 && (
-                      <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-orange-500 text-white shadow whitespace-nowrap">
+                      <span
+                        className="text-xs px-2.5 py-1 rounded-full font-bold text-white shadow whitespace-nowrap"
+                        style={{ background: 'var(--gold)' }}
+                      >
                         🪙 {L.bonusCoins(bonusCoins)}
                       </span>
                     )}
@@ -461,9 +502,8 @@ export default function ExperimentCelebration({
           <p className="text-[11px] text-gray-400 text-center">
             {L.coinBalance}:{' '}
             <span
-              className={`font-semibold text-gray-600 transition-all duration-500 ${
-                bonusCoins > 0 ? 'text-orange-600' : ''
-              }`}
+              className="font-semibold transition-all duration-500"
+              style={{ color: bonusCoins > 0 ? 'var(--gold)' : '#4B5563' }}
             >
               🪙 {animatedBalance}
             </span>
@@ -475,14 +515,22 @@ export default function ExperimentCelebration({
           <button
             ref={continueBtnRef}
             onClick={onClose}
-            className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-sm font-semibold transition-colors active:scale-[0.98] min-h-[44px]"
+            className="w-full py-3 text-white rounded-xl text-sm font-semibold transition-all active:scale-[0.98] min-h-[44px]"
+            style={{
+              background: 'linear-gradient(135deg, var(--accent-warm), var(--accent-warm-strong))',
+              boxShadow: '0 4px 18px rgb(var(--accent-warm-rgb) / 0.28)',
+            }}
           >
             {L.continueBtn}
           </button>
           {onNextLab && (
             <button
               onClick={onNextLab}
-              className="w-full py-3 bg-white text-orange-600 border-2 border-orange-200 hover:bg-orange-50 rounded-xl text-sm font-semibold transition-colors active:scale-[0.98] min-h-[44px]"
+              className="w-full py-3 bg-white rounded-xl text-sm font-semibold transition-colors active:scale-[0.98] min-h-[44px]"
+              style={{
+                color: 'var(--accent-warm)',
+                border: '2px solid color-mix(in srgb, var(--accent-warm) 22%, transparent)',
+              }}
             >
               {L.tryAnother}
             </button>

@@ -166,7 +166,7 @@ export default function StudentOSDashboard() {
           disabled={retrying}
           aria-busy={retrying}
           className="text-sm font-bold px-5 py-2.5 rounded-full transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-60"
-          style={{ background: 'var(--orange, #E8581C)', color: '#fff', minHeight: 44 }}
+          style={{ background: 'var(--accent-warm, #E8581C)', color: '#fff', minHeight: 44 }}
         >
           {retrying
             ? isHi
@@ -212,13 +212,14 @@ export default function StudentOSDashboard() {
 
       <StreakBadge count={streak} compact />
 
-      {/* XP demoted to a small glanceable chip. */}
+      {/* XP demoted to a small glanceable warm chip. Warm tints route through
+          the stable --accent-warm channel (--orange-rgb is violet here). */}
       <span
         className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full"
         style={{
-          background: 'rgba(232,88,28,0.08)',
-          color: 'var(--orange, #E8581C)',
-          border: '1px solid rgba(232,88,28,0.15)',
+          background: 'rgb(var(--accent-warm-rgb) / 0.08)',
+          color: 'var(--accent-warm, #E8581C)',
+          border: '1px solid rgb(var(--accent-warm-rgb) / 0.18)',
         }}
         aria-label={isHi ? `कुल ${totalXp} XP` : `${totalXp} total XP`}
       >

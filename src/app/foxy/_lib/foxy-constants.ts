@@ -32,8 +32,23 @@ export const MODES = [
 
 export const FOXY_FACES: Record<string, string> = { idle: '🦊', thinking: '🤔', happy: '😄' };
 
+/**
+ * MASTERY_COLORS — Foxy chapter-mastery band colours.
+ *
+ * Consumed as JS hex VALUES inside inline `style={{ ... }}` (page.tsx chapter
+ * dropdown), NOT as CSS classes, so we keep them as plain hex strings. The
+ * 5-band structure is unchanged; the values are re-aligned (Alfa Momentum
+ * Wave 3) to the platform's semantic palette so a chapter's mastery pill in
+ * Foxy reads consistently with the dashboard mastery bands and the design
+ * tokens in globals.css. Mapping (hex chosen to MATCH the token it mirrors):
+ *   not_started  → neutral tertiary text  (--text-3  #7D7264)
+ *   beginner     → warning / saffron      (--gold    #F5A623)
+ *   developing   → info / teal            (--teal    #0891B2)
+ *   proficient   → purple accent          (--purple  #7C3AED)
+ *   mastered     → success / green        (--green   #16A34A)
+ */
 export const MASTERY_COLORS: Record<string, string> = {
-  not_started: '#9ca3af', beginner: '#F59E0B', developing: '#3B82F6', proficient: '#8B5CF6', mastered: '#10B981',
+  not_started: '#7D7264', beginner: '#F5A623', developing: '#0891B2', proficient: '#7C3AED', mastered: '#16A34A',
 };
 
 export const REPORT_REASONS = [

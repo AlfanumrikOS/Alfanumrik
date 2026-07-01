@@ -166,7 +166,7 @@ export default function ClassChallengeBoard({
               key={solver.studentId}
               className="flex items-center gap-3 px-3.5 py-2.5"
               style={{
-                background: isCurrentStudent ? 'rgba(249, 115, 22, 0.06)' : 'transparent',
+                background: isCurrentStudent ? 'color-mix(in srgb, var(--accent-warm) 6%, transparent)' : 'transparent',
                 borderBottom: idx < solvers.length - 1 ? '1px solid var(--border)' : 'none',
               }}
             >
@@ -175,7 +175,7 @@ export default function ClassChallengeBoard({
 
               {/* Name */}
               <span className={`text-sm flex-1 min-w-0 truncate ${isCurrentStudent ? 'font-bold' : 'font-medium'}`} style={{
-                color: isCurrentStudent ? '#F97316' : 'var(--text-1)',
+                color: isCurrentStudent ? 'var(--accent-warm)' : 'var(--text-1)',
               }}>
                 {solver.name}
                 {isCurrentStudent && (

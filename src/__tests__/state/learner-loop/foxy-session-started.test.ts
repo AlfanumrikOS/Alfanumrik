@@ -16,7 +16,7 @@ import { randomUUID } from 'node:crypto';
 import {
   mapFoxyModeToEventMode,
   parseFoxyChapterNumber,
-} from '../../../app/api/foxy/route';
+} from '../../../app/api/foxy/_lib/test-surface';
 import {
   DomainEventSchema,
   FoxySessionStartedSchema,

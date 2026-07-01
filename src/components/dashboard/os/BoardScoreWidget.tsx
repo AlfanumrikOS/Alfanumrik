@@ -5,7 +5,7 @@
  *
  * Fetches the student's latest board_score_predictions from GET /api/board-score
  * and renders:
- *   - A circular gauge showing overall predicted %, powered by <MasteryRing>
+ *   - A circular gauge showing overall predicted %, powered by <StatRing>
  *   - Subject tabs (when multiple subjects exist)
  *   - Coverage progress bar
  *   - Chapter breakdown with status icons + mastery bars (WCAG 1.4.1 — icon+label,
@@ -18,7 +18,18 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { MasteryRing, Skeleton } from '@/components/ui';
+import { StatRing, Skeleton } from '@/components/ui';
+
+/* color-mix alpha helper — keeps tints tied to semantic tokens (works for both
+   var() tokens and hex). */
+function tint(color: string, pct: number): string {
+  return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
+}
+
+/* Stable warm-orange tints — --orange-rgb is remapped to VIOLET on this
+   cosmic-light surface, so warm tints route through --accent-warm-rgb. */
+const WARM = 'var(--accent-warm, #E8581C)';
+const WARM_STRONG = 'var(--accent-warm-strong, #C2440F)';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -65,11 +76,13 @@ interface BoardScorePrediction {
 
 // ─── Status display config (icon + label ensures WCAG 1.4.1 compliance) ────────
 
+// Semantic status palette (no literal brand hex): strong→green, moderate→warm
+// (stable channel), weak→purple (deliberate violet accent), critical→danger.
 const STATUS_CFG = {
-  strong:   { icon: '✓', en: 'Strong',   hi: 'मजबूत',  color: 'var(--green, #16A34A)' },
-  moderate: { icon: '≈', en: 'Moderate', hi: 'मध्यम',  color: 'var(--orange, #E8581C)' },
-  weak:     { icon: '!', en: 'Weak',     hi: 'कमजोर',  color: '#8B5CF6' },
-  critical: { icon: '✕', en: 'Critical', hi: 'गंभीर',  color: '#DC2626' },
+  strong:   { icon: '✓', en: 'Strong',   hi: 'मजबूत',  color: 'var(--green, #15803D)' },
+  moderate: { icon: '≈', en: 'Moderate', hi: 'मध्यम',  color: 'var(--accent-warm, #E8581C)' },
+  weak:     { icon: '!', en: 'Weak',     hi: 'कमजोर',  color: 'var(--purple, #7C3AED)' },
+  critical: { icon: '✕', en: 'Critical', hi: 'गंभीर',  color: 'var(--danger, #DC2626)' },
 } as const;
 
 // ─── Props ─────────────────────────────────────────────────────────────────────
@@ -219,8 +232,8 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
           <button
             type="button"
             onClick={() => void fetchScores()}
-            className="text-xs font-bold underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2 rounded"
-            style={{ color: 'var(--orange)' }}
+            className="text-xs font-bold underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 rounded"
+            style={{ color: WARM }}
           >
             {T.retry}
           </button>
@@ -273,11 +286,11 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
     ),
   );
 
-  // Gauge colour
+  // Gauge colour — semantic tokens (mastered green / warm / danger).
   const gaugeColor =
-    overallPct >= 75 ? 'var(--green, #16A34A)'
-    : overallPct >= 50 ? 'var(--orange, #E8581C)'
-    : '#DC2626';
+    overallPct >= 75 ? 'var(--green, #15803D)'
+    : overallPct >= 50 ? WARM
+    : 'var(--danger, #DC2626)';
 
   // Chapter list — sorted by chapter_number (keys are stringified numbers)
   const chapterEntries = Object.entries(sel.chapter_scores ?? {})
@@ -286,8 +299,13 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
 
   return (
     <section
-      className="rounded-3xl p-5"
-      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+      className="os-reveal-card rounded-3xl p-5"
+      style={{
+        ['--reveal-i' as string]: '2',
+        background: 'var(--surface-1)',
+        border: '1px solid var(--border)',
+        boxShadow: 'var(--shadow-md)',
+      }}
       aria-label={isHi ? 'बोर्ड स्कोर पूर्वानुमान' : 'Board Score Prediction'}
     >
       {/* ── Header ─────────────────────────────────────────────────────────── */}
@@ -302,7 +320,7 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
         </div>
         <span
           className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
-          style={{ background: 'rgba(22,163,74,0.12)', color: 'var(--green, #16A34A)' }}
+          style={{ background: tint('var(--green, #15803D)', 12), color: 'var(--green, #15803D)' }}
         >
           CBSE
         </span>
@@ -311,20 +329,23 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
       {/* ── Overall score gauge ─────────────────────────────────────────────── */}
       <div
         className="rounded-2xl p-4 flex items-center gap-4 mb-4"
-        style={{ background: 'var(--surface-2)' }}
+        style={{
+          background: 'var(--surface-2)',
+          border: `1px solid ${tint(gaugeColor, 18)}`,
+        }}
         role="group"
         aria-label={isHi ? 'कुल अनुमानित स्कोर' : 'Overall predicted score'}
       >
-        <MasteryRing value={overallPct} size={80} strokeWidth={7} color={gaugeColor}>
-          <div className="text-center leading-tight">
-            <div
-              className="text-sm font-bold"
-              style={{ color: gaugeColor, fontVariantNumeric: 'tabular-nums' }}
+        <StatRing value={overallPct} size={84} strokeWidth={7} color={gaugeColor}>
+          <div className="text-center leading-none" style={{ fontFamily: 'var(--font-display)' }}>
+            <span
+              className="block text-base font-extrabold tabular-nums"
+              style={{ color: gaugeColor }}
             >
               {overallPct}%
-            </div>
+            </span>
           </div>
-        </MasteryRing>
+        </StatRing>
 
         <div className="flex-1 min-w-0">
           <div
@@ -344,7 +365,7 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
             </span>
           </p>
           {sel.coverage_pct < 60 && (
-            <p className="text-xs mt-1 font-semibold" style={{ color: 'var(--orange, #E8581C)' }}>
+            <p className="text-xs mt-1 font-semibold" style={{ color: WARM }}>
               {T.lowCoverage}
             </p>
           )}
@@ -369,11 +390,11 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
                   setSelectedIdx(i);
                   setShowAllChapters(false);
                 }}
-                className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
+                className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
                 style={{
-                  background: active ? 'var(--orange)' : 'var(--surface-2)',
+                  background: active ? WARM : 'var(--surface-2)',
                   color: active ? '#fff' : 'var(--text-2)',
-                  border: `1px solid ${active ? 'var(--orange)' : 'var(--border)'}`,
+                  border: `1px solid ${active ? WARM : 'var(--border)'}`,
                 }}
               >
                 {p.subject_label || p.subject_code}
@@ -405,7 +426,7 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
             className="h-full rounded-full"
             style={{
               width: `${sel.coverage_pct}%`,
-              background: sel.coverage_pct >= 60 ? 'var(--green, #16A34A)' : 'var(--orange, #E8581C)',
+              background: sel.coverage_pct >= 60 ? 'var(--green, #15803D)' : WARM,
               transition: 'width 1s cubic-bezier(0.4,0,0.2,1)',
             }}
           />
@@ -429,14 +450,17 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
                 <div
                   key={chNum}
                   className="rounded-2xl px-3 py-2.5"
-                  style={{ background: 'var(--surface-2)' }}
+                  style={{
+                    background: 'var(--surface-2)',
+                    borderLeft: `3px solid ${cfg.color}`,
+                  }}
                   role="listitem"
                 >
                   {/* Row: icon + name + marks + badge */}
                   <div className="flex items-center gap-2 mb-1.5">
                     <span
                       className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold flex-shrink-0"
-                      style={{ background: `${cfg.color}18`, color: cfg.color }}
+                      style={{ background: tint(cfg.color, 14), color: cfg.color }}
                       aria-hidden="true"
                     >
                       {cfg.icon}
@@ -455,7 +479,7 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
                     </span>
                     <span
                       className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
-                      style={{ background: `${cfg.color}15`, color: cfg.color }}
+                      style={{ background: tint(cfg.color, 13), color: cfg.color }}
                     >
                       {isHi ? cfg.hi : cfg.en}
                     </span>
@@ -484,8 +508,8 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
             <button
               type="button"
               onClick={() => setShowAllChapters((v) => !v)}
-              className="mt-2 text-xs font-bold w-full text-center py-1.5 rounded-xl transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
-              style={{ color: 'var(--orange)', background: 'rgba(232,88,28,0.06)' }}
+              className="mt-2 text-xs font-bold w-full text-center py-1.5 rounded-xl transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+              style={{ color: WARM, background: 'rgb(var(--accent-warm-rgb) / 0.06)' }}
             >
               {showAllChapters
                 ? T.showLess
@@ -511,12 +535,19 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
                 <div
                   key={item.chapter_number}
                   className="rounded-2xl px-3 py-2.5 flex items-start gap-2.5"
-                  style={{ background: 'var(--surface-2)' }}
+                  style={{
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--border)',
+                    boxShadow: 'var(--shadow-sm)',
+                  }}
                   role="listitem"
                 >
                   <span
                     className="flex-shrink-0 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center"
-                    style={{ background: 'var(--orange)', color: '#fff' }}
+                    style={{
+                      background: `linear-gradient(135deg, ${WARM}, ${WARM_STRONG})`,
+                      color: '#fff',
+                    }}
                     aria-hidden="true"
                   >
                     {i + 1}
@@ -547,10 +578,11 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
       {ctaGain > 0 && (
         <a
           href="/answer-checker"
-          className="flex items-start gap-3 rounded-2xl p-4 transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
+          className="flex items-start gap-3 rounded-2xl p-4 transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
           style={{
-            background: 'linear-gradient(135deg, #FFF7ED, #FEF3E2)',
-            border: '1.5px solid rgba(232,88,28,0.2)',
+            // Warm wash via the stable channel (was hardcoded #FFF7ED/#FEF3E2).
+            background: 'linear-gradient(135deg, rgb(var(--accent-warm-rgb) / 0.10), rgb(var(--accent-warm-rgb) / 0.04))',
+            border: '1.5px solid rgb(var(--accent-warm-rgb) / 0.20)',
             textDecoration: 'none',
             display: 'flex',
           }}
@@ -568,7 +600,7 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
                 : <>Your predicted score is <strong>{overallPct}%</strong>. Gain <strong>{ctaGain} more marks</strong> by improving your written answers — try AnswerChecker™.</>
               }
             </p>
-            <p className="text-xs font-bold mt-1.5" style={{ color: 'var(--orange)' }}>
+            <p className="text-xs font-bold mt-1.5" style={{ color: WARM }}>
               {T.tryAC}
             </p>
           </div>

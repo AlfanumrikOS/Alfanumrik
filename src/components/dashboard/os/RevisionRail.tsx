@@ -47,8 +47,9 @@ export default function RevisionRail({ isHi, studentId }: RevisionRailProps) {
           <span
             className="text-xs font-bold px-2 py-0.5 rounded-full"
             style={{
-              background: 'rgba(232,88,28,0.1)',
-              color: 'var(--orange, #E8581C)',
+              // Warm tint via the stable channel (--orange-rgb is violet here).
+              background: 'rgb(var(--accent-warm-rgb) / 0.10)',
+              color: 'var(--accent-warm, #E8581C)',
               fontVariantNumeric: 'tabular-nums',
             }}
           >

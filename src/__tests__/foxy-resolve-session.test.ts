@@ -148,9 +148,11 @@ beforeEach(async () => {
   vi.clearAllMocks();
   mockPublishEvent.mockResolvedValue(undefined);
 
-  // Import (or re-import) the route module fresh each test so module-level
-  // state (none currently) is isolated.
-  const mod = await import('@/app/api/foxy/route');
+  // Import (or re-import) the route's public test surface fresh each test so
+  // module-level state (none currently) is isolated. resolveSession is
+  // re-exported from ./_lib/test-surface (Next.js 16 forbids non-handler
+  // exports from route.ts itself).
+  const mod = await import('@/app/api/foxy/_lib/test-surface');
   resolveSession = mod.resolveSession;
 });
 

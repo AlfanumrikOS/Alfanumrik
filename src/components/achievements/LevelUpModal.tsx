@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 import { FoxyAvatar } from '@/components/ui';
+import { WARM_CONFETTI, PURPLE_CONFETTI } from '@/lib/confetti-palette';
 
 interface LevelUpModalProps {
   newLevel: number;       // 1-10
@@ -44,8 +45,9 @@ export default function LevelUpModal({
   const fireConfetti = useCallback(() => {
     if (typeof window === 'undefined') return;
 
-    const goldColors = ['#FFD700', '#FFA500', '#F97316', '#E8581C'];
-    const purpleColors = ['#7C3AED', '#9333EA', '#A855F7', '#C084FC'];
+    // Brand-aligned celebration palette (shared, brand-wide).
+    const goldColors = WARM_CONFETTI;
+    const purpleColors = PURPLE_CONFETTI;
     const allColors = [...goldColors, ...purpleColors];
 
     // Center burst
@@ -157,13 +159,15 @@ export default function LevelUpModal({
         <FoxyAvatar state="happy" size="lg" />
       </div>
 
-      {/* Level badge — brand-exact gradient uses inline style (purple-600 → orange-500
-          approximates but doesn't match #7C3AED/#F97316 exactly; inline preserves
-          production fidelity). Runtime opacity/transform are also inline. */}
+      {/* Level badge — refined purple → warm gradient via design tokens.
+          --purple → --accent-warm keeps the warm stop on-brand under cosmic
+          (where --orange remaps to violet). Premium soft purple glow.
+          Runtime opacity/transform stay inline (Tailwind can't express them). */}
       <div
-        className="inline-flex items-center gap-2 rounded-full px-5 py-2 mb-5 text-sm font-bold text-white shadow-[0_4px_24px_rgba(124,58,237,0.4)]"
+        className="inline-flex items-center gap-2 rounded-full px-5 py-2 mb-5 text-sm font-bold text-white"
         style={{
-          background: 'linear-gradient(135deg, #7C3AED, #F97316)',
+          background: 'linear-gradient(135deg, var(--purple), var(--accent-warm))',
+          boxShadow: '0 6px 28px rgb(var(--purple-rgb) / 0.38)',
           /* Tailwind cannot express runtime-conditional transitions — inline required */
           opacity: phase === 'enter' ? 0 : 1,
           transform: phase === 'enter' ? 'translateY(-8px) scale(0.9)' : 'translateY(0) scale(1)',
@@ -175,10 +179,12 @@ export default function LevelUpModal({
         <span>Lv.{newLevel} &mdash; {levelName}</span>
       </div>
 
-      {/* Title */}
+      {/* Title — warm glow via the stable warm channel (not --orange, which
+          remaps to violet under cosmic). */}
       <h2
-        className="text-4xl font-bold text-white mb-2 drop-shadow-[0_0_40px_rgba(249,115,22,0.6)]"
+        className="text-4xl font-bold text-white mb-2"
         style={{
+          textShadow: '0 0 40px rgb(var(--accent-warm-rgb) / 0.55)',
           fontFamily: 'var(--font-display)',
           /* Tailwind cannot express runtime-conditional transitions — inline required */
           opacity: phase === 'enter' ? 0 : 1,
@@ -213,7 +219,14 @@ export default function LevelUpModal({
         }}
       >
         <span
-          className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-bold tabular-nums bg-orange-500/20 border border-orange-500/40 text-orange-300"
+          className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-bold tabular-nums"
+          style={{
+            background: 'rgb(var(--accent-warm-rgb) / 0.22)',
+            border: '1px solid rgb(var(--accent-warm-rgb) / 0.42)',
+            /* warm channel keeps the chip text warm under cosmic (--orange-light
+               remaps to violet there). */
+            color: 'var(--accent-warm)',
+          }}
         >
           <span>{isHi ? 'कुल XP:' : 'Total XP:'}</span>
           <span>{displayXP.toLocaleString()}</span>

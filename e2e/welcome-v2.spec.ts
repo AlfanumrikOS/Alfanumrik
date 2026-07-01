@@ -238,30 +238,41 @@ test.describe('Welcome v2 — pricing layout', () => {
     const dots = page.getByRole('tablist', { name: /Choose plan|योजना चुनें/ });
     await expect(dots).toBeVisible();
     const dotBtns = dots.locator('button');
-    await expect(dotBtns).toHaveCount(3);
+    // Four plans → four carousel dots (Explorer, Starter, Pro, Unlimited).
+    await expect(dotBtns).toHaveCount(4);
 
     // The track should have horizontal overflow (scroll-snap-type: x mandatory).
     // We assert via computed style on a track child container.
-    const track = page.locator('[role="list"]').filter({ hasText: /Plan i|Plan ii|Plan iii/ }).first();
+    const track = page.locator('[role="list"]').filter({ hasText: /Plan i|Plan ii|Plan iii|Plan iv/ }).first();
     const overflowX = await track.evaluate((el) => getComputedStyle(el).overflowX);
     expect(['auto', 'scroll']).toContain(overflowX);
   });
 
-  test('tablet (768): all 3 plan cards visible side-by-side', async ({ page }) => {
+  test('tablet (768): all 4 plan cards visible side-by-side', async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 1024 });
     await page.goto('/welcome?v=2');
-    // All three plan cards visible without scrolling.
+    // All four plan cards visible. Assert on the stable plan-label pattern
+    // ("Plan {i..iv} · {Name}") sourced from PLANS in PricingTeaserV2.
     await expect(page.locator('text=Plan i · Explorer').first()).toBeVisible();
-    await expect(page.locator('text=Plan ii · Pro').first()).toBeVisible();
-    await expect(page.locator('text=Plan iii · Family').first()).toBeVisible();
+    await expect(page.locator('text=Plan ii · Starter').first()).toBeVisible();
+    await expect(page.locator('text=Plan iii · Pro').first()).toBeVisible();
+    await expect(page.locator('text=Plan iv · Unlimited').first()).toBeVisible();
+    // Structural pin: exactly four plan cards render (role="listitem").
+    await expect(page.locator('[role="listitem"]')).toHaveCount(4);
   });
 
-  test('desktop (1920): 3 cards in grid, dots optionally hidden', async ({ page }) => {
+  test('desktop (1920): 4 cards in grid, Pro is the featured plan', async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto('/welcome?v=2');
+    // Four cards render as a grid at desktop width.
+    await expect(page.locator('[role="listitem"]')).toHaveCount(4);
+    // Free Explorer card shows ₹0 (the only stable hardcoded price — it is not
+    // sourced from PRICING and will not drift with pricing changes).
     await expect(page.locator('text=₹0').first()).toBeVisible();
-    await expect(page.locator('text=₹699').first()).toBeVisible();
-    await expect(page.locator('text=₹999').first()).toBeVisible();
+    // Pro is the featured ("Most popular") plan. Assert the badge, not a ₹ value
+    // (paid prices come from PRICING and drift — that drift broke this spec
+    // before, so we pin the featured plan structurally instead).
+    await expect(page.getByText(/Most popular|सबसे लोकप्रिय/).first()).toBeVisible();
   });
 });
 

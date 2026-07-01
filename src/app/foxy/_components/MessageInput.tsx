@@ -50,9 +50,9 @@ export function MessageInput({
       {studentTurnCount >= 15 && (
         <div
           className="mx-3 mb-2 p-2.5 rounded-xl text-xs flex items-center justify-between gap-2"
-          style={{ background: '#F97316' + '0D', border: '1px solid #F97316' + '25' }}
+          style={{ background: 'rgb(var(--accent-warm-rgb) / 0.05)', border: '1px solid rgb(var(--accent-warm-rgb) / 0.20)' }}
         >
-          <span style={{ color: '#C2410C' }}>
+          <span style={{ color: 'var(--accent-warm-strong)' }}>
             {isHi
               ? '🦊 नई चैट शुरू करो ताकि Foxy बेहतर जवाब दे सके!'
               : '🦊 Start a new chat so Foxy can give better answers!'}
@@ -60,7 +60,7 @@ export function MessageInput({
           <button
             onClick={onNewConversation}
             className="shrink-0 px-3 py-1.5 rounded-full text-[10px] font-bold text-white transition-all active:scale-95"
-            style={{ background: '#F97316' }}
+            style={{ background: 'var(--accent-warm)' }}
           >
             {isHi ? 'नई चैट' : 'New Chat'}
           </button>

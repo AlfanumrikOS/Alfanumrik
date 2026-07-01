@@ -45,7 +45,21 @@ export function statusLabel(status: RoadmapNodeStatus, isHi: boolean): string {
   }
 }
 
-/** Glyph + bilingual label for an overall readiness bucket (never colour-only). */
+/**
+ * Glyph + bilingual label for an overall readiness bucket (never colour-only).
+ *
+ * UNIFIED READINESS PALETTE (Alfa Momentum, Wave 6) — single mapping shared by
+ * all three readiness surfaces (this bucketMeta + SubjectReadinessSummary +
+ * ChapterReadinessBadge). Chosen mapping, ordered by severity (best → worst):
+ *   ready    → --green  (exam-ready, strongest)
+ *   almost   → --teal   (near, informational)
+ *   building → --gold   (in progress, caution)
+ *   not_yet  → --red    (just started, weakest)
+ * This replaces the prior bucketMeta divergence (almost→--accent-warm,
+ * building→--purple, not_yet→--text-3) so the badges and the overall banner no
+ * longer disagree. Severity ordering preserved: green best, red worst — no
+ * inversion. All tokens are cosmic-aware (they remap under data-design=cosmic).
+ */
 export function bucketMeta(
   bucket: ReadinessBucket,
   isHi: boolean,
@@ -54,12 +68,12 @@ export function bucketMeta(
     case 'ready':
       return { glyph: '✓', label: isHi ? 'परीक्षा के लिए तैयार' : 'Exam-ready', color: 'var(--green, #16A34A)' };
     case 'almost':
-      return { glyph: '◑', label: isHi ? 'लगभग तैयार' : 'Almost there', color: 'var(--orange, #E8581C)' };
+      return { glyph: '◑', label: isHi ? 'लगभग तैयार' : 'Almost there', color: 'var(--teal, #0891B2)' };
     case 'building':
-      return { glyph: '↻', label: isHi ? 'बन रहा है' : 'Building up', color: '#8B5CF6' };
+      return { glyph: '↻', label: isHi ? 'बन रहा है' : 'Building up', color: 'var(--gold, #F5A623)' };
     case 'not_yet':
     default:
-      return { glyph: '○', label: isHi ? 'अभी शुरू करो' : 'Just getting started', color: 'var(--text-3, #9CA3AF)' };
+      return { glyph: '○', label: isHi ? 'अभी शुरू करो' : 'Just getting started', color: 'var(--red, #DC2626)' };
   }
 }
 
