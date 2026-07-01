@@ -132,6 +132,7 @@ export default function LeaderboardPage() {
   // ff_personalised_compete_v1 is on (server's /api/v1/leaderboard/mastery
   // also 404s when off). Falls through to legacy tabs when flag is off.
   const [masteryEntries, setMasteryEntries] = useState<MasteryLeaderEntry[]>([]);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const { data: lbFlags } = useFeatureFlags();
   const masteryTabOn = lbFlags?.ff_personalised_compete_v1 === true;
 
@@ -154,6 +155,7 @@ export default function LeaderboardPage() {
   // Load rankings — tries Performance Score system first, falls back to XP
   const loadRanks = useCallback(async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       // Step 1: Load XP-based rankings (existing system, always works)
       const xpData = await getLeaderboard(period, 50);
@@ -241,7 +243,7 @@ export default function LeaderboardPage() {
         setEntries(xpEntries);
         setUsePerformanceScores(false);
       }
-    } catch (e) { console.error('Failed to load rankings:', e); setEntries([]); setUsePerformanceScores(false); }
+    } catch (e) { console.error('Failed to load rankings:', e); setEntries([]); setUsePerformanceScores(false); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data'); }
     setLoading(false);
   }, [period]);
 
@@ -249,20 +251,22 @@ export default function LeaderboardPage() {
   const loadCompetitions = useCallback(async () => {
     if (!student) return;
     setLoading(true);
+    setFetchError(null);
     try {
       const data = await getCompetitions(student.id);
       setCompetitions(Array.isArray(data) ? data : []);
-    } catch { setCompetitions([]); }
+    } catch { setCompetitions([]); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data'); }
     setLoading(false);
   }, [student]);
 
   // Load hall of fame
   const loadFame = useCallback(async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const data = await getHallOfFame(30);
       setFame(Array.isArray(data) ? data : []);
-    } catch { setFame([]); }
+    } catch { setFame([]); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data'); }
     setLoading(false);
   }, []);
 
@@ -270,10 +274,11 @@ export default function LeaderboardPage() {
   const loadTitles = useCallback(async () => {
     if (!student) return;
     setLoading(true);
+    setFetchError(null);
     try {
       const { data } = await supabase.from('student_titles').select('*').eq('student_id', student.id).eq('is_active', true).order('earned_at', { ascending: false }).limit(50);
       setTitles(data ?? []);
-    } catch { setTitles([]); }
+    } catch { setTitles([]); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data'); }
     setLoading(false);
   }, [student]);
 
@@ -281,6 +286,7 @@ export default function LeaderboardPage() {
   const loadStreaks = useCallback(async () => {
     if (!student) return;
     setLoading(true);
+    setFetchError(null);
     try {
       const { data } = await supabase
         .from('challenge_streaks')
@@ -302,7 +308,7 @@ export default function LeaderboardPage() {
       } else {
         setStreakEntries([]);
       }
-    } catch { setStreakEntries([]); }
+    } catch { setStreakEntries([]); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data'); }
     setLoading(false);
   }, [student]);
 
@@ -310,6 +316,7 @@ export default function LeaderboardPage() {
   // or no profile; treat as empty (UI renders the empty state).
   const loadMastery = useCallback(async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const res = await fetch('/api/v1/leaderboard/mastery?limit=50', {
         credentials: 'same-origin',
@@ -324,6 +331,7 @@ export default function LeaderboardPage() {
       }
     } catch {
       setMasteryEntries([]);
+      setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data');
     }
     setLoading(false);
   }, []);
@@ -418,6 +426,18 @@ export default function LeaderboardPage() {
 
       <main className="app-container py-4 space-y-3">
         <SectionErrorBoundary section="Leaderboard">
+
+        {fetchError && (
+          <div className="mx-4 mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 flex items-center gap-2">
+            <span aria-hidden="true">⚠️</span>
+            <span className="flex-1">{fetchError}</span>
+            <button
+              onClick={() => setFetchError(null)}
+              className="ml-auto text-red-700 font-bold"
+              aria-label={isHi ? 'बंद करें' : 'Dismiss'}
+            >✕</button>
+          </div>
+        )}
 
         {/* ═══ RANKINGS TAB ═══ */}
         {tab === 'ranks' && (

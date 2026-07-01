@@ -1,18 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { authorizeRequest } from '@/lib/rbac';
 
 const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY;
 // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): this embedding proxy predates grounded-answer; delete once all callers route through the service.
 const VOYAGE_ENDPOINT = 'https://api.voyageai.com/v1/embeddings';
 
 export async function POST(request: NextRequest) {
-  // Auth guard: only authenticated users may call Voyage API via this proxy.
-  // Prevents external callers from burning Voyage quota.
-  const supabase = await createSupabaseServerClient();
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  // Auth guard: only users with foxy.chat permission may call Voyage API via this
+  // proxy. Prevents teachers, parents, and other non-student roles from consuming
+  // paid Voyage quota (P9).
+  const auth = await authorizeRequest(request, 'foxy.chat');
+  if (!auth.authorized) return auth.errorResponse!;
 
   try {
     const { text } = await request.json();

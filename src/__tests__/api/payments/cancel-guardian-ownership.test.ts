@@ -77,7 +77,11 @@ vi.mock('@/lib/validation', () => ({
   paymentCancelSchema: {},
   validateBody: (_schema: unknown, body: any) => ({
     success: true,
-    data: { immediate: body?.immediate ?? false, reason: body?.reason ?? null },
+    data: {
+      immediate: body?.immediate ?? false,
+      reason: body?.reason ?? null,
+      student_id: body?.student_id ?? undefined,
+    },
   }),
 }));
 

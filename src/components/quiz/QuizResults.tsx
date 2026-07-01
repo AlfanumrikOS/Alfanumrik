@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { Card, Button, StatCard } from '@/components/ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
@@ -375,12 +376,12 @@ export default function QuizResults({
               {isHi ? 'तुमने शुरुआत की — यही सबसे ज़रूरी कदम है!' : "You've started — that's the most important step!"}
             </p>
             <div className="flex gap-3 justify-center">
-              <a href="/foxy" className="px-4 py-2 bg-white/20 rounded-lg text-sm backdrop-blur-sm hover:bg-white/30 transition-colors">
+              <Link href="/foxy" className="px-4 py-2 bg-white/20 rounded-lg text-sm backdrop-blur-sm hover:bg-white/30 transition-colors">
                 {isHi ? '🦊 फॉक्सी से बात करो' : '🦊 Chat with Foxy'}
-              </a>
-              <a href="/learn" className="px-4 py-2 bg-white/20 rounded-lg text-sm backdrop-blur-sm hover:bg-white/30 transition-colors">
+              </Link>
+              <Link href="/learn" className="px-4 py-2 bg-white/20 rounded-lg text-sm backdrop-blur-sm hover:bg-white/30 transition-colors">
                 {isHi ? '📚 पढ़ना शुरू करो' : '📚 Start Learning'}
-              </a>
+              </Link>
             </div>
           </div>
         )}

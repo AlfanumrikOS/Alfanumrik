@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { supabase as globalSupabase } from '@/lib/supabase-client';
 import { authorizeRequest } from '@/lib/rbac';
 import { cancelRazorpaySubscription } from '@/lib/razorpay';
 import { logger } from '@/lib/logger';
@@ -43,14 +41,6 @@ import { listChildrenForGuardian } from '@/lib/domains/relationship';
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseKey || !serviceKey) {
-      return NextResponse.json({ error: 'Not configured' }, { status: 503 });
-    }
-
     // RBAC: enforce authentication + role gate. Cancel is available to
     // students (own subscription) and parents/guardians (child's subscription).
     // We resolve identity here; downstream ownership checks enforce the
@@ -61,24 +51,9 @@ export async function POST(request: NextRequest) {
     if (!auth.roles.some(r => ALLOWED_ROLES.includes(r))) {
       return NextResponse.json({ error: 'Forbidden', code: 'ROLE_NOT_ALLOWED' }, { status: 403 });
     }
-
-    // Auth
-    const supabase = createServerClient(supabaseUrl, supabaseKey, {
-      cookies: {
-        getAll() { return request.cookies.getAll().map(c => ({ name: c.name, value: c.value })); },
-        setAll() {},
-      },
-    });
-
-    let user = (await supabase.auth.getUser()).data.user;
-    if (!user) {
-      const authHeader = request.headers.get('Authorization');
-      if (authHeader?.startsWith('Bearer ')) {
-        const token = authHeader.substring(7);
-        user = (await globalSupabase.auth.getUser(token)).data.user;
-      }
-    }
-    if (!user) {
+    // authorizeRequest guarantees userId is non-null when authorized === true,
+    // but guard defensively in case of future refactors.
+    if (!auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -88,25 +63,21 @@ export async function POST(request: NextRequest) {
     const { immediate = false, reason = null } = validation.data;
 
     // Optional body.student_id lets a verified guardian cancel a child's
-    // subscription. Cast safely — paymentCancelSchema may not declare it yet,
-    // so we read from the raw body. Ownership is enforced via
-    // listChildrenForGuardian before any DB write touches that student.
-    const requestedStudentId =
-      typeof (rawBody as { student_id?: unknown })?.student_id === 'string'
-        ? (rawBody as { student_id: string }).student_id
-        : null;
+    // subscription. Ownership is enforced via listChildrenForGuardian before
+    // any DB write touches that student. UUID format is validated by Zod.
+    const requestedStudentId = validation.data.student_id ?? null;
 
     const admin = supabaseAdmin;
 
     // Resolve which student's subscription we're cancelling.
-    //   Self-cancel (student is the caller)  → look up students.auth_user_id = user.id
+    //   Self-cancel (student is the caller)  → look up students.auth_user_id = auth.userId
     //   Guardian-cancel (parent on behalf)   → body.student_id MUST be in the
     //     caller's linked-children set (listChildrenForGuardian). Cross-guardian
     //     attempts get the same 404 as "not your child" — no enumeration.
     let resolvedStudentId: string | null = null;
 
     if (requestedStudentId) {
-      const childrenRes = await listChildrenForGuardian(user.id);
+      const childrenRes = await listChildrenForGuardian(auth.userId!);
       if (childrenRes.ok) {
         // ChildSummary.studentId — see src/lib/domains/types.ts:647-657
         const matches = childrenRes.data.some(
@@ -120,7 +91,7 @@ export async function POST(request: NextRequest) {
       const { data: selfStudentRow } = await admin
         .from('students')
         .select('id')
-        .eq('auth_user_id', user.id)
+        .eq('auth_user_id', auth.userId!)
         .single();
       if (selfStudentRow) {
         resolvedStudentId = selfStudentRow.id as string;

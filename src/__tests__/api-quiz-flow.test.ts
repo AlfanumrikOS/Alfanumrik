@@ -52,7 +52,10 @@ function validateQuestions(questions: QuestionRecord[]): QuestionRecord[] {
       o.includes('it is not important') || o.includes('no board exam')
     )) return false;
 
-    if (new Set(optTexts).size < 3) return false;
+    // Reject if any option is empty (P6: all 4 options must be non-empty)
+    if (opts.some((o: string) => !o || !o.trim())) return false;
+    // Reject if fewer than 4 distinct options (P6: all options must be distinct)
+    if (new Set(optTexts).size < 4) return false;
 
     if (q.explanation) {
       const expl = q.explanation.toLowerCase();
@@ -209,9 +212,16 @@ describe('Quiz Flow — validateQuestions (P6: Question Quality)', () => {
     expect(result).toHaveLength(0);
   });
 
-  it('rejects duplicate options — fewer than 3 distinct (P6: reject_duplicate_options)', () => {
+  it('rejects duplicate options — fewer than 4 distinct (P6: reject_duplicate_options)', () => {
     const result = validateQuestions([makeQuestion({
       options: ['Same', 'Same', 'Same', 'Different'],
+    })]);
+    expect(result).toHaveLength(0);
+  });
+
+  it('rejects 3 distinct options with 1 duplicate (requires all 4 to be distinct)', () => {
+    const result = validateQuestions([makeQuestion({
+      options: ['Apple', 'Banana', 'Cherry', 'Apple'], // 3 distinct
     })]);
     expect(result).toHaveLength(0);
   });

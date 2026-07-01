@@ -46,9 +46,9 @@ function validateQuestion(q: Partial<QuestionRecord>): boolean {
   // correct_answer_index bounds
   if (q.correct_answer_index == null || q.correct_answer_index < 0 || q.correct_answer_index > 3) return false;
 
-  // Reject fewer than 3 distinct options (allows at most 1 duplicate)
+  // Reject if any option is empty (already done above), then require all 4 to be distinct
   const optTexts = opts.map(o => o.toLowerCase().trim());
-  if (new Set(optTexts).size < 3) return false;
+  if (new Set(optTexts).size < 4) return false;
 
   // Explanation checks
   if (!q.explanation || q.explanation.length < 20) return false;
@@ -131,7 +131,7 @@ describe('P6: Exactly 4 Options Required', () => {
 // ─── Duplicate Option Detection ──────────────────────────────────────────────
 
 describe('P6: Distinct Options', () => {
-  it('reject_duplicate_options: fewer than 3 distinct options rejected', () => {
+  it('reject_duplicate_options: fewer than 4 distinct options rejected', () => {
     const q = validQuestion();
     q.options = ['4', '4', '4', '6']; // Only 2 distinct
     expect(validateQuestion(q)).toBe(false);
@@ -143,10 +143,10 @@ describe('P6: Distinct Options', () => {
     expect(validateQuestion(q)).toBe(false);
   });
 
-  it('accepts 3 distinct options (1 duplicate allowed)', () => {
+  it('rejects 3 distinct options (1 duplicate) — all 4 must be distinct', () => {
     const q = validQuestion();
-    q.options = ['Apple', 'Banana', 'Cherry', 'Apple']; // 3 distinct
-    expect(validateQuestion(q)).toBe(true);
+    q.options = ['Apple', 'Banana', 'Cherry', 'Apple']; // 3 distinct — rejected
+    expect(validateQuestion(q)).toBe(false);
   });
 
   it('accepts 4 fully distinct options', () => {

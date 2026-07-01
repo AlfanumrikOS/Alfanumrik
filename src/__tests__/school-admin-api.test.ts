@@ -328,7 +328,7 @@ describe('School Admin Classes API', () => {
 
       const { PATCH } = await import('@/app/api/school-admin/classes/route');
       const req = makeRequest('/api/school-admin/classes', 'PATCH', {
-        id: 'cls-1',
+        id: '11111111-1111-4111-8111-111111111111',
         updates: {
           school_id: 'hacker-school', // not in whitelist -- stripped
           grade: '10', // not in whitelist -- stripped
@@ -349,7 +349,7 @@ describe('School Admin Classes API', () => {
 
       const { PATCH } = await import('@/app/api/school-admin/classes/route');
       const req = makeRequest('/api/school-admin/classes', 'PATCH', {
-        id: 'cls-1',
+        id: '11111111-1111-4111-8111-111111111111',
         updates: {
           name: 'Updated Name',
         },

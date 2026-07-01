@@ -198,6 +198,7 @@ export async function POST(request: NextRequest) {
     const authString = Buffer.from(`${razorpayKey}:${razorpaySecret}`).toString('base64');
     const orderRes = await fetch('https://api.razorpay.com/v1/orders', {
       method: 'POST',
+      signal: AbortSignal.timeout(10_000),
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Basic ${authString}`,
@@ -218,9 +219,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!orderRes.ok) {
-      const err = await orderRes.text();
-      console.error('Razorpay order creation failed:', orderRes.status, err);
-      console.error('Razorpay key used:', razorpayKey?.substring(0, 12) + '...');
+      logger.error('create-order: Razorpay API failed', { status: orderRes.status });
       return NextResponse.json({ error: 'Payment gateway error. Please try again.' }, { status: 502 });
     }
 
@@ -252,7 +251,7 @@ export async function POST(request: NextRequest) {
       billing_cycle,
     });
   } catch (err) {
-    console.error('Create order error:', err);
+    logger.error('create-order: unexpected error', { error: err instanceof Error ? err : new Error(String(err)) });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

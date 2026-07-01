@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
         'Authorization': `Bearer ${SB_SERVICE}`,
       },
       body: JSON.stringify({ triggered_by: 'vercel-cron' }),
+      signal: AbortSignal.timeout(25_000),
     });
     results.daily_cron_status = cronRes.status;
     if (cronRes.ok) {

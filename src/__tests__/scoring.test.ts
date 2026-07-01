@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { XP_RULES } from '@/lib/xp-config';
 
 /**
  * Quiz Scoring Regression Tests
@@ -7,7 +8,7 @@ import { describe, it, expect } from 'vitest';
  * Source of truth: src/lib/xp-rules.ts
  *
  * P1: score_percent = Math.round((correct / total) * 100)
- * P2: xp_earned = correct * 10 + (score >= 80 ? 20 : 0) + (score === 100 ? 50 : 0)
+ * P2: xp_earned = correct * XP_RULES.quiz_per_correct + (score >= 80 ? XP_RULES.quiz_high_score_bonus : 0) + (score === 100 ? XP_RULES.quiz_perfect_bonus : 0)
  */
 
 // ─── Score Percentage (P1) ───────────────────────────────────
@@ -49,17 +50,14 @@ describe('Score Percentage (P1)', () => {
 // ─── XP Calculation (P2) ─────────────────────────────────────
 
 describe('XP Calculation (P2)', () => {
-  // Must match src/lib/xp-rules.ts: XP_RULES
-  const XP_PER_CORRECT = 10;
-  const HIGH_SCORE_BONUS = 20;  // >= 80%
-  const PERFECT_BONUS = 50;      // === 100%
-  const DAILY_CAP = 200;
+  // Constants come from XP_RULES in src/lib/xp-config.ts (canonical P2 source).
+  // Importing live values here means this test will catch drift if the config changes.
 
   function calcXP(correct: number, total: number): number {
     const scorePct = total > 0 ? Math.round((correct / total) * 100) : 0;
-    return correct * XP_PER_CORRECT
-      + (scorePct >= 80 ? HIGH_SCORE_BONUS : 0)
-      + (scorePct === 100 ? PERFECT_BONUS : 0);
+    return correct * XP_RULES.quiz_per_correct
+      + (scorePct >= 80 ? XP_RULES.quiz_high_score_bonus : 0)
+      + (scorePct === 100 ? XP_RULES.quiz_perfect_bonus : 0);
   }
 
   it('xp_basic: 7/10 = 70% → 7*10 = 70 XP (no bonus)', () => {
@@ -88,8 +86,9 @@ describe('XP Calculation (P2)', () => {
   });
 
   it('xp_daily_cap: cap is 200', () => {
-    // Verify the cap value matches xp-rules.ts
-    expect(DAILY_CAP).toBe(200);
+    // Assert the live constant matches the P2-mandated value.
+    // If xp-config.ts changes quiz_daily_cap, this test catches it.
+    expect(XP_RULES.quiz_daily_cap).toBe(200);
   });
 
   it('xp_cap_boundary: 200 XP should be allowed, 201 should not', () => {
@@ -98,7 +97,7 @@ describe('XP Calculation (P2)', () => {
     const quiz1 = calcXP(10, 10); // 170
     const quiz2 = calcXP(10, 10); // 170
     const uncapped = quiz1 + quiz2; // 340
-    const capped = Math.min(uncapped, DAILY_CAP);
+    const capped = Math.min(uncapped, XP_RULES.quiz_daily_cap);
     expect(capped).toBe(200);
   });
 });
