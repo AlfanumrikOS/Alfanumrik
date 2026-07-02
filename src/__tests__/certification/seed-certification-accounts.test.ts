@@ -15,6 +15,7 @@ import {
   upsertDemoAccountsRow,
   upsertSchoolRow,
   seedCertificationAccounts,
+  type MissionRole,
   type SupabaseLike,
   type QueryResult,
 } from '../../../scripts/seed-certification-accounts';
@@ -167,6 +168,102 @@ describe('REG-228 — account-shape helpers match the runbook marker conventions
       expect(row.is_demo).toBe(true);
       expect(row.email).toBe(shape.email);
       expect(row.name).toBe(shape.name);
+    }
+  });
+
+  it('guardians row does NOT contain is_active (Stage 2 field fix — guardians has no such column)', () => {
+    // Regression: the guardians base table has NO is_active column (verified
+    // against 00000000000000_baseline_from_prod.sql; no migration ever adds
+    // it — 20260325100000 explicitly notes "Guardians ... (no is_active
+    // column)"). A prior blanket `common` spread stamped is_active on every
+    // row, so the guardians insert Stage-2 field-failed with "Could not find
+    // the 'is_active' column of 'guardians'". The row must omit is_active
+    // entirely (NOT set it false — the column does not exist at all).
+    const parentDef = MISSION_ROLES.find((d) => d.role === 'parent')!;
+    expect(parentDef.table).toBe('guardians');
+    const shape = buildAccountShape('deadbeef', 'parent', 1);
+    const row = buildBaseTableRow(parentDef, shape, 'auth-1', null);
+    expect('is_active' in row).toBe(false);
+    // The demo marker is still present — guardians DOES have is_demo (added by
+    // 20260515000001 / 20260603150000), so parent accounts stay traceable.
+    expect(row.is_demo).toBe(true);
+    // And the find-or-create identity columns the seed relies on are present.
+    expect(row.auth_user_id).toBe('auth-1');
+    expect(row.name).toBe(shape.name);
+    expect(row.email).toBe(shape.email);
+  });
+
+  it('per-table column-correctness: is_active is present on the four tables that have it, absent on guardians', () => {
+    // Exhaustive pin so the next schema-shape regression is caught at unit
+    // time, not on a live re-run. is_active exists on students/teachers/
+    // school_admins/admin_users, but NOT on guardians.
+    const tablesWithIsActive = new Set(['students', 'teachers', 'school_admins', 'admin_users']);
+    for (const def of MISSION_ROLES) {
+      const shape = buildAccountShape('deadbeef', def.role, 1);
+      const row = buildBaseTableRow(def, shape, 'auth-1', def.schoolScoped ? 'school-1' : null);
+      if (def.table === 'guardians') {
+        expect('is_active' in row).toBe(false);
+      } else if (tablesWithIsActive.has(def.table)) {
+        expect(row.is_active).toBe(true);
+      }
+    }
+  });
+
+  it('per-table column-correctness: only tables that own each field carry it (no cross-table column bleed)', () => {
+    // school_id belongs to students/teachers/school_admins only; admin_level
+    // to admin_users only; grade/board/preferred_subject to students only.
+    // guardians and admin_users must never carry school_id; non-admin tables
+    // must never carry admin_level.
+    const rowFor = (role: MissionRole) => {
+      const def = MISSION_ROLES.find((d) => d.role === role)!;
+      const shape = buildAccountShape('deadbeef', role, 1);
+      return buildBaseTableRow(def, shape, 'auth-1', def.schoolScoped ? 'school-1' : null);
+    };
+
+    // school_id: present only where the base table has it AND the role is school-scoped.
+    expect('school_id' in rowFor('student')).toBe(true);
+    expect('school_id' in rowFor('teacher')).toBe(true);
+    expect('school_id' in rowFor('school_admin')).toBe(true);
+    expect('school_id' in rowFor('parent')).toBe(false); // guardians: no school_id
+    expect('school_id' in rowFor('super_admin')).toBe(false); // admin_users: no school_id
+
+    // admin_level: only on admin_users-backed roles.
+    expect('admin_level' in rowFor('super_admin')).toBe(true);
+    expect('admin_level' in rowFor('content_author')).toBe(true);
+    expect('admin_level' in rowFor('support_staff')).toBe(true);
+    expect('admin_level' in rowFor('student')).toBe(false);
+    expect('admin_level' in rowFor('teacher')).toBe(false);
+    expect('admin_level' in rowFor('parent')).toBe(false);
+    expect('admin_level' in rowFor('school_admin')).toBe(false);
+
+    // students-only academic columns never leak onto other tables.
+    for (const role of ['teacher', 'parent', 'school_admin', 'super_admin'] as const) {
+      expect('grade' in rowFor(role)).toBe(false);
+      expect('board' in rowFor(role)).toBe(false);
+      expect('preferred_subject' in rowFor(role)).toBe(false);
+    }
+  });
+
+  it('every base-table row provides all NOT-NULL-without-default columns that table requires', () => {
+    // The columns each table declares NOT NULL with no DB default (per the
+    // pg_dump baseline). If the seed omits one, the live insert fails — this
+    // pins them so a future edit that drops one is caught at unit time.
+    const requiredByTable: Record<string, string[]> = {
+      students: ['name', 'grade'],
+      teachers: ['name', 'email'],
+      guardians: ['name'],
+      school_admins: ['auth_user_id', 'school_id'],
+      admin_users: ['name', 'email'],
+    };
+    for (const def of MISSION_ROLES) {
+      const shape = buildAccountShape('deadbeef', def.role, 1);
+      // Pass a non-null schoolId so school-scoped required school_id is satisfied.
+      const row = buildBaseTableRow(def, shape, 'auth-1', 'school-1');
+      for (const col of requiredByTable[def.table]) {
+        expect(col in row).toBe(true);
+        expect(row[col]).not.toBeNull();
+        expect(row[col]).not.toBeUndefined();
+      }
     }
   });
 

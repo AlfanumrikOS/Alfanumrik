@@ -242,24 +242,78 @@ export function buildSchoolShape(runIdShort: string, seq = 1): SchoolShape {
   return { name: `${SCHOOL_NAME_PREFIX} cert-${runIdShort}-school-${n}` };
 }
 
-/** Base-table row for a given role. Every row carries is_demo=true + the name/email markers. */
+/**
+ * Base-table row for a given role. Every row carries is_demo=true + the
+ * name/email markers.
+ *
+ * SCHEMA-SHAPE CONTRACT (exhaustive pass, 2026-07-02 — do NOT reintroduce a
+ * blanket `common` spread that assumes a column exists on every table).
+ * Column existence was audited against the authoritative pg_dump baseline
+ * `supabase/migrations/00000000000000_baseline_from_prod.sql` PLUS the
+ * additive migrations that ran after it. The five base tables do NOT share a
+ * uniform column set:
+ *
+ *   column         students  teachers  guardians  school_admins  admin_users
+ *   ------------   --------  --------  ---------  -------------  -----------
+ *   auth_user_id      ✓         ✓          ✓            ✓ (NN)        ✓
+ *   name              ✓ (NN)    ✓ (NN)     ✓ (NN)       ✓             ✓ (NN)
+ *   email             ✓         ✓ (NN)     ✓            ✓             ✓ (NN)
+ *   is_demo           ✓         ✓ [m1]     ✓ [m1]       ✓ [m2]        ✓ [m2]
+ *   is_active         ✓         ✓          — MISSING    ✓ (NN)        ✓
+ *   school_id         ✓         ✓          —            ✓ (NN)        —
+ *   admin_level       —         —          —            —            ✓ (NN,def)
+ *
+ *   [m1] added by 20260515000001 / 20260603150000 (teachers + guardians)
+ *   [m2] added by 20260528000001 (admin_users + school_admins + schools)
+ *
+ * KEY FINDING — `guardians` has NO `is_active` column (never existed in the
+ * baseline; no migration ever adds it; explicitly noted in
+ * 20260325100000_enforce_unique_auth_user_id.sql: "Guardians ... (no
+ * is_active column)"). Spreading a shared object containing `is_active` into
+ * the guardians row is exactly the Stage-2 field failure this pass removes
+ * ("Could not find the 'is_active' column of 'guardians'"). So `is_active`
+ * lives ONLY on the four tables that actually have it, never on guardians.
+ *
+ * `is_demo` IS universal across all five (verified above) — the parent/guardian
+ * demo marker is intact; guardians is fully traceable via is_demo + email
+ * domain + name marker.
+ *
+ * NOT-NULL-without-default columns each table requires, all satisfied here:
+ *   students: name, grade                (preferred_language/account_status/
+ *                                          is_demo are NN but DEFAULTed)
+ *   teachers: name, email
+ *   guardians: name                      (email is nullable)
+ *   school_admins: auth_user_id, school_id  (role/is_active/is_demo NN+DEFAULT)
+ *   admin_users: name, email             (role/admin_level/is_demo NN+DEFAULT)
+ *
+ * CAVEAT (flagged, not silently patched): school_admins.school_id is NOT NULL
+ * with no default. It is satisfied on the default run (a synthetic school is
+ * seeded first). Under `--no-school`, rowSchoolId is null for the
+ * school-scoped school_admin and its insert WILL fail the NOT NULL — a
+ * school_admin cannot exist without a school by design. This is a latent
+ * limitation of `--no-school`, not a column-shape bug in this row builder.
+ */
 export function buildBaseTableRow(
   def: RoleDef,
   shape: AccountShape,
   authUserId: string,
   schoolId: string | null,
 ): Record<string, unknown> {
+  // Columns that exist on EVERY one of the five base tables (verified above).
   const common = {
     auth_user_id: authUserId,
     name: shape.name,
     email: shape.email,
     is_demo: true,
-    is_active: true,
   };
+  // `is_active` exists on every base table EXCEPT guardians — so it is added
+  // here for the four tables that have it, and deliberately omitted from the
+  // guardians row below.
+  const commonWithIsActive = { ...common, is_active: true };
   switch (def.table) {
     case 'students':
       return {
-        ...common,
+        ...commonWithIsActive,
         grade: '10',
         board: 'CBSE',
         school_id: schoolId,
@@ -280,13 +334,15 @@ export function buildBaseTableRow(
         preferred_subject: null,
       };
     case 'teachers':
-      return { ...common, school_id: schoolId };
+      return { ...commonWithIsActive, school_id: schoolId };
     case 'guardians':
+      // NO is_active — the guardians table has no such column. Only the
+      // universal columns (auth_user_id, name, email, is_demo) apply.
       return { ...common };
     case 'school_admins':
-      return { ...common, school_id: schoolId };
+      return { ...commonWithIsActive, school_id: schoolId };
     case 'admin_users':
-      return { ...common, admin_level: def.adminLevel };
+      return { ...commonWithIsActive, admin_level: def.adminLevel };
     default: {
       const exhaustive: never = def.table;
       throw new Error(`Unhandled base table: ${exhaustive}`);
