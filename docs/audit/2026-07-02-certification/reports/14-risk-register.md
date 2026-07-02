@@ -130,3 +130,24 @@ applies the corrected chain, production is missing the 170000 security revoke - 
 primary 6/7-arg overloads DO carry the ownership check, which is applied and live). Recommend
 confirming a production deploy applies 20260702151000/160000/170000/180000/190000 as a priority
 follow-up, independent of the rest of the certification.
+
+## Update 2026-07-02 (Stage 2 browser journeys executed live)
+
+The 7-role browser journey suite ran against the staging-backed Vercel Preview (via automation
+bypass, all Supabase env corrected). Final: 27 passed, 8 skipped (payments gated on the deferred
+Razorpay item + 2 "blocked past dashboard" steps for the portal-less roles), 1 intentionally RED.
+Two findings:
+
+| ID | Finding | Severity | Status |
+|---|---|---|---|
+| CERT-FE-01 (NEW) | The Foxy AI-tutor page (/foxy) has NO role gate - its only guard redirects unauthenticated users. An authenticated TEACHER reaches the student AI tutor page and it renders, contradicting Wave 1 report 04's claim that teachers have no Foxy access ("intentional scope boundary"). Live-confirmed. Page-level reachability only; whether the Foxy API serves a teacher-role session is not yet assessed. | Medium (access-control / scope-boundary) | OPEN - recorded, journey test held intentionally RED. Fix is a gated product decision (role-gate /foxy, or declare non-student Foxy access in-scope + update report 04) for assessment + architect + ai-engineer. Product code unchanged. |
+| CERT-07 (Wave 1) | content_author and support_staff RBAC roles have no dedicated frontend portal; a session holding only one is silently misrouted to the student /dashboard. | Medium (product gap) | **Now LIVE-CONFIRMED** - the browser journey for both roles logged in on the real Preview and landed on /dashboard exactly as the Wave 1 static analysis predicted. Upgraded from static-only to live-proven. |
+
+Also fixed during this run: 6 test-spec issues (a cookie-consent banner overlaying the sidebar
+logout button on a fresh context; the student Sign Out living on /profile; super_admin needing
+its own console login path rather than the shared /login form). All fixes are in
+e2e/certification/**; no product code changed. Full triage:
+docs/audit/2026-07-02-certification/evidence/stage-2-local-integration/journey-run-01/findings.md.
+
+Minor awareness observation (not a recorded defect): the shared /login form silently sends a
+super_admin to the student /dashboard rather than the console - low severity, flagged only.
