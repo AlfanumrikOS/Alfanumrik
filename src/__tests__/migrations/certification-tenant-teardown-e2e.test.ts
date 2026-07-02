@@ -364,6 +364,24 @@ describeIntegration('REG-229 — purge_certification_tenant (live RPC against mi
         });
         expect(demoAcctErr, demoAcctErr?.message).toBeNull();
 
+        // ── Real auth user for the two audit/actor FK columns below ──
+        // school_audit_log.actor_id is `NOT NULL REFERENCES auth.users(id)`
+        // (migration 20260416230000_phase3_audit_invoices_usage.sql:9), and
+        // payment_reconciliation_queue.submitted_by_user_id is a NOT NULL uuid
+        // that "references auth.users implicitly" (migration
+        // 20260507140000_payment_reconciliation_queue.sql:37). A fabricated
+        // random UUID in either trips a 23503 at INSERT before the teardown RPC
+        // is ever exercised. Both denote the operator/actor who performed the
+        // action, so one real auth identity satisfies both. It is a standalone
+        // auth.users row (never inserted into any base table the purge deletes),
+        // so the purge leaves it untouched and it is removed in `finally` via
+        // deleteAuthUsers — matching every other auth id this test creates.
+        const operatorAuthId = await createAuthUser(
+          admin,
+          `${marker}-operator@certification.alfanumrik.invalid`,
+        );
+        createdAuthIds.push(operatorAuthId);
+
         // ── Seed the 4 defensively-cleaned school-scoped child tables ──
         const { error: alertErr } = await admin.from('school_alert_rules').insert({
           school_id: schoolId,
@@ -374,7 +392,8 @@ describeIntegration('REG-229 — purge_certification_tenant (live RPC against mi
 
         const { error: auditErr } = await admin.from('school_audit_log').insert({
           school_id: schoolId,
-          actor_id: randomUUID(),
+          // actor_id -> auth.users(id), NOT NULL (see operatorAuthId note above).
+          actor_id: operatorAuthId,
           action: 'reg229_test_seed',
         });
         expect(auditErr, auditErr?.message).toBeNull();
@@ -468,7 +487,9 @@ describeIntegration('REG-229 — purge_certification_tenant (live RPC against mi
           received_amount_inr: 100,
           payment_method: 'bank_transfer',
           reference_number: `${marker}-utr`,
-          submitted_by_user_id: randomUUID(),
+          // submitted_by_user_id -> auth.users implicitly, NOT NULL (see the
+          // operatorAuthId note above). A fabricated UUID risks 23503 here.
+          submitted_by_user_id: operatorAuthId,
         });
         expect(prqErr, prqErr?.message).toBeNull();
 
@@ -828,6 +849,11 @@ describeIntegration('REG-229 — purge_certification_run (live RPC against migra
       let demoAdminAuthId = '';
       let survivorAdminAuthId = '';
       let survivorGuardianAuthId = '';
+      // Standalone auth identity for school_audit_log.actor_id (see note at its
+      // creation below). NOT one of the 7 seeded accounts and NOT surfaced by
+      // the teardown — it is never inserted into guardians/admin_users/
+      // demo_accounts, so it does not appear in standalone_auth_user_ids.
+      let operatorAuthId = '';
 
       try {
         // ── Create the real auth.users identities the base-table FKs require
@@ -854,6 +880,15 @@ describeIntegration('REG-229 — purge_certification_run (live RPC against migra
           `cert-${runShort}-parent-002@not-certification.example.com`,
         );
         createdAuthIds.push(survivorGuardianAuthId);
+        // Real auth user for school_audit_log.actor_id below —
+        // `NOT NULL REFERENCES auth.users(id)` (migration
+        // 20260416230000_phase3_audit_invoices_usage.sql:9). A fabricated random
+        // UUID trips 23503 at INSERT. Distinct cert-domain email so the test
+        // stays re-runnable; it is a bare auth.users identity (never inserted
+        // into any base table the run purge sweeps), so it is neither deleted
+        // nor surfaced by the teardown and is cleaned up in `finally`.
+        operatorAuthId = await createAuthUser(admin, emailFor('audit_actor'));
+        createdAuthIds.push(operatorAuthId);
 
         // ── School-scoped tenant (delegated to purge_certification_tenant) ──
         const { data: school, error: schoolErr } = await admin
@@ -918,7 +953,8 @@ describeIntegration('REG-229 — purge_certification_run (live RPC against migra
 
         const { error: auditErr } = await admin.from('school_audit_log').insert({
           school_id: schoolId,
-          actor_id: randomUUID(),
+          // actor_id -> auth.users(id), NOT NULL (see operatorAuthId note above).
+          actor_id: operatorAuthId,
           action: 'reg229_run_test_seed',
         });
         expect(auditErr, auditErr?.message).toBeNull();
