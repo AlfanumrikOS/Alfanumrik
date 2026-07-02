@@ -42,3 +42,7 @@ Defect 3 from the evidence file — the missing `ON DELETE CASCADE` on `students
 - Sentry fix: confirm a staging (Vercel Preview) build reports `environment: preview` on both client and server events, and that no other Sentry behavior (PII redaction, `beforeSend` filtering, sampling rates) regressed.
 - Traceability runbook: build the actual seeding script against `docs/runbooks/certification-traffic-traceability.md` and confirm every signal (email domain, `is_demo`, name marker, `demo_accounts` registry row) is written exactly as specified, and that the reporting-isolation claim (`is_demo=eq.false` filters in `stats`/`analytics` routes) holds against seeded data.
 - Architect's FK/teardown fix: once landed, verify a full seed → certify → teardown cycle on staging leaves zero rows behind (the leak-check query in the traceability runbook), including the school_admin branch's teacher-cleanup gap noted above.
+
+## See also
+
+- `docs/runbooks/certification-rollback-procedure.md` — the operational teardown/incident-response procedure this remediation wave's `purge_certification_tenant` function enables, including the operator-facing wrapper script (`scripts/teardown-certification-tenant.ts`), the "if in doubt, stop" risk framing, and the zero-residual-rows verification query.

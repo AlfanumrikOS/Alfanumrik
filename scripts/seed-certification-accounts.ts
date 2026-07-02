@@ -50,15 +50,36 @@
  * (different email/name markers), so multiple certification runs never
  * collide with each other.
  *
- * Run:
- *   npx tsx scripts/seed-certification-accounts.ts
- *   npx tsx scripts/seed-certification-accounts.ts --run-id=<uuid>
- *   npx tsx scripts/seed-certification-accounts.ts --no-school
- *   npx tsx scripts/seed-certification-accounts.ts --dry-run
+ * USAGE
+ * ============================================================
+ *   npx tsx scripts/seed-certification-accounts.ts                  # real run, fresh run-id
+ *   npx tsx scripts/seed-certification-accounts.ts --run-id=<uuid>  # real run, reuse a run-id (idempotent)
+ *   npx tsx scripts/seed-certification-accounts.ts --no-school      # skip the synthetic school + school-scoped rows
+ *   npx tsx scripts/seed-certification-accounts.ts --dry-run        # print what WOULD be created; no I/O at all
+ *   npx tsx scripts/seed-certification-accounts.ts --dry-run --run-id=<uuid>  # dry-run with a fixed run-id
+ *
+ * `--dry-run` never touches the network or reads NEXT_PUBLIC_SUPABASE_URL /
+ * SUPABASE_SERVICE_ROLE_KEY — it only computes and prints the exact
+ * email/name/role shapes this run would produce (see `buildAccountShape`/
+ * `buildSchoolShape`, both pure). Safe to run with zero env vars configured.
  *
  * Requires (unless --dry-run):
  *   NEXT_PUBLIC_SUPABASE_URL
  *   SUPABASE_SERVICE_ROLE_KEY
+ *
+ * PRODUCTION-REFERENCE GUARD (fail-closed, safety-critical)
+ * ============================================================
+ * Before any write, the script extracts the Supabase project ref (subdomain)
+ * from NEXT_PUBLIC_SUPABASE_URL and refuses to run — exits non-zero, writes
+ * nothing — unless it can POSITIVELY confirm that ref is NOT the known
+ * production ref (`PROD_PROJECT_REF` below, same literal value the
+ * fail-closed wall in `.github/workflows/staging-adaptive-drill.yml` uses).
+ * An unparseable/unrecognized URL shape is ALSO refused — "cannot confirm
+ * it's safe" is treated identically to "confirmed unsafe", never as
+ * "probably fine". See `assertNotProductionProjectRef()`. This guard cannot
+ * be bypassed by any CLI flag, including `--dry-run` is exempt only because
+ * it never reads the env vars in the first place — a real run always passes
+ * through the guard.
  *
  * Teardown: once a synthetic school is seeded (default), the entire tenant
  * — including every account this script created under it — can be removed
@@ -77,6 +98,71 @@ import { randomUUID } from 'crypto';
 
 export const CERTIFICATION_EMAIL_DOMAIN = 'certification.alfanumrik.invalid';
 export const SCHOOL_NAME_PREFIX = '[CERTIFICATION]';
+
+// ─── Production-reference guard (fail-closed) ──────────────────────────────
+//
+// Same literal ref the fail-closed wall in
+// .github/workflows/staging-adaptive-drill.yml uses as its "PROD_PROJECT_REF"
+// negative-assertion target. Duplicated here deliberately (not imported —
+// this is a standalone Node script with no shared-constants module and no
+// access to GitHub Actions secrets/env at authoring time); if the production
+// project is ever migrated, BOTH this constant and the workflow's must be
+// updated together.
+
+export const PROD_PROJECT_REF = 'shktyoxqhundlvkiwguu';
+
+/**
+ * Extract the Supabase project ref (subdomain) from a Supabase URL, e.g.
+ * `https://abcdefghijklmnop.supabase.co` -> `abcdefghijklmnop`. Returns null
+ * for any URL that doesn't match the expected shape exactly — deliberately
+ * strict (no partial/fuzzy matching) so an unusual or malformed URL can never
+ * be silently coerced into "looks fine".
+ */
+export function extractProjectRef(supabaseUrl: string): string | null {
+  const match = supabaseUrl.trim().match(/^https:\/\/([a-z0-9-]+)\.supabase\.co\/?$/i);
+  return match ? match[1].toLowerCase() : null;
+}
+
+export interface ProdRefGuardResult {
+  ok: boolean;
+  projectRef: string | null;
+  reason?: string;
+}
+
+/**
+ * Fail-closed production-reference guard. Mirrors the same-run fail-closed
+ * posture in `.github/workflows/staging-adaptive-drill.yml` (compare the
+ * resolved ref against the known PROD ref; refuse on a match). Extended here
+ * to ALSO refuse when the ref cannot be determined at all — "unable to
+ * positively confirm this is not production" is treated identically to
+ * "confirmed production", never as "probably safe". Pure function — no I/O,
+ * directly unit-testable.
+ */
+export function assertNotProductionProjectRef(supabaseUrl: string): ProdRefGuardResult {
+  const ref = extractProjectRef(supabaseUrl);
+  if (!ref) {
+    return {
+      ok: false,
+      projectRef: ref,
+      reason:
+        `Could not positively confirm the target Supabase project from the configured URL ` +
+        `("${supabaseUrl}"). Refusing to run (fail-closed) — this script only accepts a URL of ` +
+        `the exact shape https://<project-ref>.supabase.co.`,
+    };
+  }
+  if (ref === PROD_PROJECT_REF) {
+    return {
+      ok: false,
+      projectRef: ref,
+      reason:
+        `Resolved project ref ("${ref}") matches the known PRODUCTION project ref ` +
+        `(${PROD_PROJECT_REF}). Refusing to run (fail-closed). Certification seeding must never ` +
+        `write to production — see docs/audit/2026-07-02-certification/release-candidate/` +
+        `RC-2026-07-02-baseline.md, "Environment assumptions" item 1.`,
+    };
+  }
+  return { ok: true, projectRef: ref };
+}
 
 // ─── Mission roles ──────────────────────────────────────────────────────
 
@@ -540,6 +626,19 @@ async function main(): Promise<void> {
     process.exit(1);
     return;
   }
+
+  // Fail-closed production-reference guard — see the module doc comment.
+  // This can never be skipped or overridden by a flag; every non-dry-run
+  // invocation passes through it before any Supabase client is constructed.
+  const guard = assertNotProductionProjectRef(url);
+  if (!guard.ok) {
+    // eslint-disable-next-line no-console
+    console.error(`REFUSING TO RUN — production-reference guard failed.\n${guard.reason}`);
+    process.exit(1);
+    return;
+  }
+  // eslint-disable-next-line no-console
+  console.log(`Production-reference guard passed. Target project ref: ${guard.projectRef}`);
 
   const sb = createClient(url, key, { auth: { persistSession: false } }) as unknown as SupabaseLike;
   const result = await seedCertificationAccounts(sb, {

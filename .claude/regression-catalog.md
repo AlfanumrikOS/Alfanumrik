@@ -7117,4 +7117,55 @@ execution).
 
 ---
 
+## 2026-07-02 — Stage 2/3 preparation quality-review follow-up — REG-230
+
+Source: `docs/audit/2026-07-02-certification/evidence/wave-2-environment-readiness/04-stage2-3-preparation-quality-review.md`
+Finding Q-3 (MAJOR). Quality reviewed the Stage 2/3 preparation artifacts
+(REG-228/229's scripts plus the new certification Playwright specs) and
+proved both scripts' production-reference fail-closed guards correct by
+running adversarial inputs (uppercase project ref, surrounding whitespace, a
+port suffix, and a subdomain-masquerade shape) against a disposable,
+non-committed Vitest scratch file — then deleted it. That verdict was
+APPROVE WITH CONDITIONS: the manual proof had to become permanent, committed
+regression coverage before either script is trusted for a real invocation.
+This entry closes that condition. It also closes the companion Finding Q-2
+(MAJOR): `scripts/teardown-certification-tenant.ts` had no importer anywhere
+in the codebase and `tsconfig.json` excludes `scripts` wholesale, so
+`npm run type-check` never actually compiled the file carrying the
+safety-critical guard — importing from it in the new test file pulls it into
+the compiled program, the same mechanism that already covered
+`seed-certification-accounts.ts` via `e2e/certification/helpers/cert-gate.ts`.
+Also applied the accompanying MINOR fix (Q-1): the teardown script's
+`extractProjectRef` now calls `.toLowerCase()` explicitly on the returned ref
+instead of relying on the WHATWG URL API's implicit hostname lowercasing —
+correct either way, but now auditable-parity with its sibling in the seed
+script.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-230 | `production_reference_guard_fail_closed` | Both certification scripts' production-reference guards — `assertNotProductionProjectRef`/`extractProjectRef` in `scripts/seed-certification-accounts.ts` and `extractProjectRef` (+ the identical inline equality predicate `main()` applies) in `scripts/teardown-certification-tenant.ts` — against the exact adversarial set quality used, for BOTH implementations independently (they are not byte-identical parsers): an uppercase production ref is blocked (case-normalized before compare); a production ref with surrounding whitespace is blocked (trimmed/stripped before compare); a production ref with a nonstandard port is blocked — the seed script's stricter https-only regex fails closed via "unparseable" for this input while the teardown script's URL-API parser still positively extracts and matches the ref, a confirmed behavioral difference that is pinned explicitly rather than glossed over; a different, non-prod ref that merely contains the prod ref as a substring/prefix (`my-shktyoxqhundlvkiwguu-staging`) is correctly NOT blocked by either parser (no false-positive over-block of a legitimate staging URL); the literal subdomain-suffix masquerade shape quality used (`shktyoxqhundlvkiwguu.supabase.co.evil.com`) fails closed (returns null — unparseable, not a positive prod match) on both parsers; a genuine non-prod staging-shaped URL passes cleanly on both; and a fully unparseable/ambiguous URL (`https://supabase.co`, `not-a-url`) fails closed on both, never "probably fine". Also pins that both scripts share the byte-identical `PROD_PROJECT_REF`/`KNOWN_PROD_PROJECT_REF` literal. | `src/__tests__/certification/production-reference-guard.test.ts` (18 tests) | E |
+
+### Invariants covered by this section
+
+- Operational-integrity (certification-specific, same class as REG-227..229)
+  — REG-230 closes the last open condition on the Stage 2/3 preparation
+  artifacts' APPROVE WITH CONDITIONS verdict: the guard mechanism explicitly
+  billed as the thing standing between a certification run and a live write
+  to production now has committed, adversarial-input regression coverage
+  instead of a one-off manual check that was deleted after use.
+- P8-adjacent (fail-closed boundary posture) — both guards are proven to
+  treat "cannot positively confirm this is not production" identically to
+  "confirmed production" (never "probably fine"), and proven to NOT
+  over-block a legitimately different non-prod project ref merely because it
+  shares a substring with the production ref.
+
+### Catalog total
+
+Pre-REG-230: 196 entries (through REG-229, certification-tenant teardown).
+Today's follow-up wave adds REG-230 (production-reference fail-closed guard
+coverage for both certification scripts).
+**Total catalog: 197 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
 ---
