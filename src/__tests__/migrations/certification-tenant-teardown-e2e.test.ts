@@ -137,6 +137,52 @@ async function schoolExists(admin: SupabaseClient, schoolId: string): Promise<bo
   return data != null;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Real auth.users fixtures.
+//
+// Several base tables enforce `auth_user_id -> auth.users(id)` on the live DB:
+// on the prod baseline `students.auth_user_id` (ON DELETE SET NULL) and
+// `school_admins.auth_user_id` (ON DELETE CASCADE) both REFERENCE
+// auth.users(id). A base row seeded with a FABRICATED random UUID therefore
+// fails at INSERT with a 23503 FK violation before the teardown function is
+// ever exercised. The fix mirrors `scripts/seed-certification-accounts.ts`'s
+// `findOrCreateAuthUser`: create a REAL auth user via the GoTrue admin API and
+// use the RETURNED id as `auth_user_id`. All auth-backed base rows (students,
+// teachers, school_admins, guardians, admin_users) get this treatment for
+// parity + FK-drift safety, and because the run-teardown surfaces the deleted
+// guardian/admin auth_user_ids — those must be the REAL created ids for the
+// `standalone_auth_user_ids` assertion to hold.
+//
+// CRITICAL: the teardown RPCs delete BASE rows and SURFACE auth ids but never
+// delete auth.users themselves (confirmed in both migrations). So every id
+// created here MUST be deleted in the test's finally block via
+// `deleteAuthUsers()` — otherwise a leaked cert-domain identity makes a re-run's
+// createUser fail with "already registered", breaking idempotency of the test.
+async function createAuthUser(admin: SupabaseClient, email: string): Promise<string> {
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    password: randomUUID(),
+    email_confirm: true,
+  });
+  if (error) throw new Error(`createUser failed for ${email}: ${error.message}`);
+  if (!data.user) throw new Error(`createUser returned no user for ${email}`);
+  return data.user.id;
+}
+
+// Best-effort GoTrue cleanup of the auth.users rows a test created. Tolerant of
+// an already-absent id (e.g. a school_admins CASCADE may have removed it, or a
+// prior partial run deleted it) so the test stays re-runnable.
+async function deleteAuthUsers(admin: SupabaseClient, ids: readonly string[]): Promise<void> {
+  for (const id of ids) {
+    if (!id) continue;
+    try {
+      await admin.auth.admin.deleteUser(id);
+    } catch {
+      // best-effort — a missing prior identity must not fail the test
+    }
+  }
+}
+
 describeIntegration('REG-229 — purge_certification_tenant (live RPC against migrated DB)', () => {
   let admin: SupabaseClient;
   let available = false;
@@ -246,6 +292,9 @@ describeIntegration('REG-229 — purge_certification_tenant (live RPC against mi
       // for admin_impersonation_sessions.admin_id, not a demo-tenant row).
       // Tracked here so the finally-block always cleans it up, pass or fail.
       let adminUserId: string | null = null;
+      // Real auth.users ids this test creates — deleted in `finally` (the
+      // teardown removes base rows but never auth.users).
+      const createdAuthIds: string[] = [];
 
       try {
         // ── Seed a demo school ──
@@ -258,7 +307,12 @@ describeIntegration('REG-229 — purge_certification_tenant (live RPC against mi
         const schoolId = (school as { id: string }).id;
 
         // ── Seed a demo student (registered in demo_accounts) ──
-        const studentAuthId = randomUUID();
+        // Real auth user — students.auth_user_id REFERENCES auth.users(id).
+        const studentAuthId = await createAuthUser(
+          admin,
+          `${marker}-student@certification.alfanumrik.invalid`,
+        );
+        createdAuthIds.push(studentAuthId);
         const { data: student, error: studentErr } = await admin
           .from('students')
           .insert({
@@ -278,7 +332,11 @@ describeIntegration('REG-229 — purge_certification_tenant (live RPC against mi
         // ── Seed a demo teacher (NOT registered in demo_accounts — proves the
         //    defensive direct-sweep branch, since not every demo row is
         //    guaranteed a registry row per the traceability runbook) ──
-        const teacherAuthId = randomUUID();
+        const teacherAuthId = await createAuthUser(
+          admin,
+          `${marker}-teacher@certification.alfanumrik.invalid`,
+        );
+        createdAuthIds.push(teacherAuthId);
         const { error: teacherErr } = await admin.from('teachers').insert({
           auth_user_id: teacherAuthId,
           name: `${marker}-teacher`,
@@ -527,6 +585,11 @@ describeIntegration('REG-229 — purge_certification_tenant (live RPC against mi
         if (adminUserId) {
           await admin.from('admin_users').delete().eq('id', adminUserId);
         }
+        // Delete the auth.users identities this test created (student, teacher).
+        // The purge deletes their base rows but never auth.users, so leaving
+        // them would leak cert-domain identities and break a re-run's
+        // createUser with "already registered".
+        await deleteAuthUsers(admin, createdAuthIds);
       }
     });
 
@@ -744,16 +807,47 @@ describeIntegration('REG-229 — purge_certification_run (live RPC against migra
       let survivorGuardianId: string | null = null;
       let guardianId: string | null = null;
 
-      // Known auth ids surfaced for GoTrue cleanup (assertion 4).
-      const studentAuthId = randomUUID();
-      const teacherAuthId = randomUUID();
-      const schoolAdminAuthId = randomUUID();
-      const guardianAuthId = randomUUID();
-      const demoAdminAuthId = randomUUID();
-      const survivorAdminAuthId = randomUUID();
-      const survivorGuardianAuthId = randomUUID();
+      // Real auth.users ids — created inside `try` (so a mid-setup failure
+      // still reaches the finally-block auth cleanup) and stored on each base
+      // row. The guardian + demo-admin ids are additionally SURFACED by the
+      // teardown in `standalone_auth_user_ids`, so they must be the REAL
+      // created ids for assertion (4) to hold. Every id is deleted in
+      // `finally` — the teardown never deletes auth.users itself.
+      const createdAuthIds: string[] = [];
+      let studentAuthId = '';
+      let teacherAuthId = '';
+      let schoolAdminAuthId = '';
+      let guardianAuthId = '';
+      let demoAdminAuthId = '';
+      let survivorAdminAuthId = '';
+      let survivorGuardianAuthId = '';
 
       try {
+        // ── Create the real auth.users identities the base-table FKs require
+        //    (students.auth_user_id + school_admins.auth_user_id both REFERENCE
+        //    auth.users(id) on the prod baseline; the rest get the same
+        //    treatment for parity + FK-drift safety, mirroring the seed
+        //    script's findOrCreateAuthUser). Each base row below stores the
+        //    RETURNED id, and each id is cleaned up in `finally`. Emails match
+        //    the corresponding base row's email exactly. ──
+        studentAuthId = await createAuthUser(admin, emailFor('student'));
+        createdAuthIds.push(studentAuthId);
+        teacherAuthId = await createAuthUser(admin, emailFor('teacher'));
+        createdAuthIds.push(teacherAuthId);
+        schoolAdminAuthId = await createAuthUser(admin, emailFor('school_admin'));
+        createdAuthIds.push(schoolAdminAuthId);
+        guardianAuthId = await createAuthUser(admin, emailFor('parent'));
+        createdAuthIds.push(guardianAuthId);
+        demoAdminAuthId = await createAuthUser(admin, emailFor('super_admin'));
+        createdAuthIds.push(demoAdminAuthId);
+        survivorAdminAuthId = await createAuthUser(admin, emailFor('super_admin', '002'));
+        createdAuthIds.push(survivorAdminAuthId);
+        survivorGuardianAuthId = await createAuthUser(
+          admin,
+          `cert-${runShort}-parent-002@not-certification.example.com`,
+        );
+        createdAuthIds.push(survivorGuardianAuthId);
+
         // ── School-scoped tenant (delegated to purge_certification_tenant) ──
         const { data: school, error: schoolErr } = await admin
           .from('schools')
@@ -1100,6 +1194,13 @@ describeIntegration('REG-229 — purge_certification_run (live RPC against migra
           await admin.from('schools').delete().eq('id', realSchoolId);
         }
         await admin.from('schools').delete().like('name', schoolNamePattern);
+        // Finally, delete every auth.users identity this test created — both
+        // the accounts the teardown surfaces (guardian + demo admin) and the
+        // ones it never touches (the two guarded survivors, plus the
+        // school-scoped student/teacher/school_admin). The teardown never
+        // deletes auth.users, so skipping this would leak cert-domain
+        // identities and break a re-run's createUser with "already registered".
+        await deleteAuthUsers(admin, createdAuthIds);
       }
     });
 

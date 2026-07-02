@@ -114,3 +114,19 @@ supersedes the prior "pending verification" framing throughout the executive pac
 docs/audit/2026-07-02-certification/executive/04-outstanding-release-blockers.md and
 12-ERG-1-executive-release-gate.md as describing the pre-confirmation state; this update is the
 current, authoritative status.
+
+## Update 2026-07-02 (Stage 2 execution) - CERT-21 duplicate migration version (elevated)
+
+| ID | Risk | Business impact | Blocks release? | Owner | Status |
+|---|---|---|---|---|---|
+| CERT-21 | Two migration files shared version 20260702150000 (schema_migrations PK collision), silently halting the migration chain. Read-only migration-list on prod confirmed FIVE migrations unapplied on production as a result: the p3w2_8 flag seed, the concept-mastery index (160000), the security revoke 20260702170000_p3w1_5b_revoke_orphan_atomic_quiz_5arg (170000), and both teardown functions (180000/190000). | HIGH - a committed security-hardening migration (revoke EXECUTE on the orphaned vulnerable quiz RPC overload, REG-226/commit c2cde8c8) has NOT been applied to production; a fresh-env rebuild also fails at this version (schema-reproducibility broken). | Was effectively blocking correct prod schema state; the FIX is now committed | architect (fixed) | FIX COMMITTED + STAGING-VERIFIED. Rename resolved the collision; staging sync then applied all 5 previously-blocked migrations cleanly (empirically confirming they had never applied). Prod remediation: the fixed chain rides the next deploy-production run - MUST be confirmed applied on prod. Repair runbook: docs/runbooks/2026-07-02-cert21-duplicate-migration-version-repair.md |
+
+Severity note: CERT-21 is the highest-impact finding of the certification program. It was invisible
+to Stage 1 static analysis (the migration FILES were correct; the defect was that a version
+collision three files upstream prevented them from ever applying) and only surfaced when a real
+db push hit a real migration-history table during Stage 2. Until the next production deploy
+applies the corrected chain, production is missing the 170000 security revoke - the orphaned
+5-arg atomic_quiz_profile_update overload retains EXECUTE on prod (a defense-in-depth gap; the
+primary 6/7-arg overloads DO carry the ownership check, which is applied and live). Recommend
+confirming a production deploy applies 20260702151000/160000/170000/180000/190000 as a priority
+follow-up, independent of the rest of the certification.
