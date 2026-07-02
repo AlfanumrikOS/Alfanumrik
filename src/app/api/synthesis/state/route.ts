@@ -61,21 +61,25 @@ export async function GET(_request: Request) {
   });
   if (!flagOn) return NextResponse.json({ error: 'not_found' }, { status: 404 });
 
-  // Look up student name + grade for the prompt builder.
+  // Look up student name + grade for the prompt builder. students.id is a
+  // surrogate uuid distinct from the auth uid — resolve it via auth_user_id
+  // (same pattern as /api/dive/state, /api/dive/history, /api/dive/artifact).
   const { data: studentRow } = await supabase
     .from('students')
     .select('id, name, grade')
-    .eq('id', userId)
+    .eq('auth_user_id', userId)
     .maybeSingle();
   if (!studentRow) {
     return NextResponse.json({ error: 'no_student_profile' }, { status: 404 });
   }
+  const studentDbId = (studentRow as { id: string }).id;
 
-  // Latest synthesis row (RLS enforces student_id = self).
+  // Latest synthesis row (RLS enforces student_id = self; explicit filter
+  // uses the resolved surrogate id, not the auth uid).
   const { data: rowData, error: rowErr } = await supabase
     .from('monthly_synthesis_runs')
     .select('id, synthesis_month, bundle, summary_text_en, summary_text_hi, parent_share_status, parent_share_sent_at, created_at')
-    .eq('student_id', userId)
+    .eq('student_id', studentDbId)
     .order('synthesis_month', { ascending: false })
     .limit(1)
     .maybeSingle();

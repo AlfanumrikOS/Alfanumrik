@@ -1447,6 +1447,7 @@ function ChapterConceptPageContent() {
 
                       {(!productiveFailureActive || isAnswered) && diagram && diagram.image_url && (
                         <div className="rounded-xl overflow-hidden mb-3" style={{ border: '1px solid var(--border)' }}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={diagram.image_url}
                             alt={diagram.alt_text || topic.title}

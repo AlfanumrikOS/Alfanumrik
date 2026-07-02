@@ -6912,3 +6912,52 @@ constraint; recursion-guard ledger ratcheted 241 → 240).
 **Total catalog: 189 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Pedagogy v2 Wave 3 critical-bug fix (synthesis surrogate-id) + Dive/Synthesis/OAuth route-contract pins — 2026-07-02 — REG-223..REG-225
+
+Source: today's engineering work. `GET /api/synthesis/state` resolved the
+caller's `students` row via `.eq('id', authUid)` instead of
+`.eq('auth_user_id', authUid)`. `students.id` is a surrogate uuid distinct
+from the Supabase auth uid, so the old form never matched any real row —
+every student hit `no_student_profile` and Pedagogy v2 Wave 3 (monthly
+Curiosity Synthesis) was completely dead in production for every student,
+despite the builder Edge Function correctly writing rows. The fix aligns
+`/api/synthesis/state` with the same `auth_user_id` → `students.id`
+resolution pattern already used by `/api/dive/state`, `/api/dive/history`,
+and `/api/dive/artifact`. This pass also closes the test-coverage gap on the
+rest of the Pedagogy v2 Wave 2/3 dive+synthesis route surface and adds
+first-time coverage for the OAuth partner-integration surface
+(`/api/oauth/authorize`, `/api/oauth/token`).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-223 | `synthesis_state_surrogate_id_resolution` | `GET /api/synthesis/state` MUST resolve the caller's surrogate `students.id` via `.eq('auth_user_id', authUid)` BEFORE querying `monthly_synthesis_runs.student_id` — never `.eq('id', authUid)`, which always misses (the CRITICAL bug fixed today, universally 404-ing `no_student_profile` for every student). Enforced via an argument-sensitive mock: a row resolves ONLY when the query column is `auth_user_id`; any other column (including `id`) returns `{data: null}`, so a regression fails loudly (`no_student_profile` 404 on what should be a 200) instead of silently matching the wrong row. A dedicated test asserts every `students` `.eq()` call used `auth_user_id` (never `id`) and every downstream `monthly_synthesis_runs` `.eq()` call used the resolved surrogate `student_id` (never the raw auth uid). Also pins: bilingual `summaryTextEn`/`summaryTextHi` on the `state:'ready'` row including the Claude lazy-fill path (P7), the lazy-fill persisting via `supabaseAdmin` exactly once, graceful `''` fallback (200, not 500) when the Claude lazy-fill call throws, and a P13 no-PII pin on the `no_student_profile` 404 body. Writer-side key consistency (both writers key `monthly_synthesis_runs.student_id` by the surrogate id, never the auth uid) cross-checked against `supabase/functions/daily-cron/` (`triggerMonthlySynthesis` step) and `supabase/functions/monthly-synthesis-builder/`. | `src/__tests__/api/synthesis/synthesis-routes.test.ts` | E |
+| REG-224 | `pedagogy_v2_dive_synthesis_route_contracts` | The full Pedagogy v2 weekly Curiosity Dive route surface — `POST /api/dive/start`, `POST /api/dive/artifact`, `GET /api/dive/state`, `GET /api/dive/history` — and `POST /api/synthesis/parent-share` are pinned end-to-end: 401 when unauthenticated, 404 when `ff_pedagogy_v2_weekly_dive`/`ff_pedagogy_v2_monthly_synthesis` is off, 400 with a specific `error` code per invalid-body branch (missing/blank picker fields, malformed JSON, invalid `pickerOption`), 404 `student_profile_not_found`/graceful empty-array degradation depending on route, and 409 `already_saved_this_week` on a PG `23505` duplicate-artifact insert (not a generic 500). `GET /api/dive/history`'s `?limit` handling is pinned precisely: defaults to 20 when absent, passes an explicit `?limit=5` straight through, and — critically — FALLS BACK to the default 20 (does NOT clamp to a max of 60) when `?limit=100` exceeds the max, guarding against a "fix" that silently changes this to clamp-to-max behavior. `POST /api/synthesis/parent-share` additionally pins the cross-student ownership boundary: a synthesis row whose linked `students.auth_user_id` does not match the caller returns 403 `forbidden` before any WhatsApp send or status write (P8), and every denial body (401/403/404) carries no PII keys (P13). | `src/__tests__/api/dive/dive-routes.test.ts` (35 tests), `src/__tests__/api/synthesis/synthesis-routes.test.ts` (shared file, parent-share block) | E |
+| REG-225 | `oauth_partner_surface_contracts` | `GET /api/oauth/authorize` and `POST /api/oauth/token` (the OAuth2 partner-integration surface, service-role `getSupabaseAdmin()` — never the RLS-scoped server client) are pinned: missing required param → 400 `invalid_request`; unknown/inactive/pending-review `client_id` → 400 `invalid_client`/`app_not_approved`; a `redirect_uri` outside the app's registered allowlist → 400 `invalid_redirect_uri` (never silently accepted); unknown/inactive requested scope → 400 `invalid_scope`; a valid request echoes `state` and PKCE `code_challenge`/`code_challenge_method` verbatim and returns the scope's `display_name_hi` Hindi field in the consent payload (P7 — the consent screen must never fall back to English-only). On the token endpoint: missing/unsupported `grant_type` → 400; wrong client credentials → 401 `invalid_client` (via `secureEqual` constant-time comparison, not `===`); a valid `refresh_token` grant returns fresh `access_token`/`refresh_token`/`token_type: 'Bearer'`/`expires_in: 3600` and the response ALWAYS carries `Cache-Control: no-store` (on both success and every error branch) so tokens are never cached; a refresh token that is expired, revoked, or bound to a different `app_id` is rejected with `invalid_grant`, never silently honored; form-urlencoded request bodies are accepted identically to JSON. Every `invalid_client` denial body carries no PII keys (P13). | `src/__tests__/api/oauth/oauth-routes.test.ts` (26 tests) | E |
+
+### Invariants covered by this section
+
+- P1-class data-integrity (the reader/writer surrogate-id contract) — REG-223
+  closes a universal-outage-class bug where a reader used the wrong join key
+  against a writer that was always correct; the regression guard makes any
+  future `id` vs `auth_user_id` drift in `/api/synthesis/state` fail loudly.
+- P7 (bilingual UI) — REG-223 pins `summaryTextEn`/`summaryTextHi` on every
+  synthesis-state response path (cached and lazy-filled); REG-225 pins
+  `display_name_hi` in the OAuth consent-scope payload.
+- P8 (RLS boundary / cross-tenant ownership) — REG-224 pins the parent-share
+  cross-student ownership check (a synthesis row cannot be shared by anyone
+  other than its owning student).
+- P13 (data privacy) — REG-223, REG-224, and REG-225 each pin that their
+  respective denial response bodies (401/403/404) contain no PII keys
+  (no `email`, `phone`, or `name`).
+
+### Catalog total
+
+Pre-REG-223: 189 entries (through XC-3 Phase 4 first drain, REG-222).
+Today's Pedagogy v2 Wave 3 critical-bug fix + route-contract hardening adds
+REG-223 (synthesis-state surrogate-id resolution — the CRITICAL fix),
+REG-224 (dive + synthesis parent-share route contracts, 35+ tests), and
+REG-225 (OAuth partner-surface contracts, 26 tests).
+**Total catalog: 192 entries (target: 35 — TARGET EXCEEDED).**
+
+---

@@ -76,15 +76,19 @@ function emit(entry: LogEntry): void {
 
   switch (entry.level) {
     case 'error':
+      // eslint-disable-next-line no-console
       console.error(output);
       break;
     case 'warn':
+      // eslint-disable-next-line no-console
       console.warn(output);
       break;
     case 'debug':
+      // eslint-disable-next-line no-console
       console.debug(output);
       break;
     default:
+      // eslint-disable-next-line no-console
       console.log(output);
   }
 }
