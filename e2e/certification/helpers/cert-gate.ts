@@ -179,7 +179,43 @@ export function roleDef(role: MissionRole): RoleDef {
   return def;
 }
 
-// ─── Login helper ───────────────────────────────────────────────────────
+// ─── Cookie-consent banner suppression ────────────────────────────────────
+
+/**
+ * Pre-seed the cookie-consent choice so the global consent banner
+ * (`src/components/CookieConsent.tsx`) never mounts during a journey.
+ *
+ * WHY THIS EXISTS (Cluster A of journey-run-01): the consent banner renders
+ * `position: fixed; bottom: 0; left: 0; right: 0; z-index: 9999` and contains
+ * a `<p>` of copy. On a fresh browser context there is no stored consent, so
+ * `consent === 'pending'` and the banner overlays the entire bottom edge of
+ * the viewport — including the sidebar-footer **Logout** button that every
+ * portal shell renders bottom-left. Playwright then reports
+ * `<p>…</p> from <div>…</div> subtree intercepts pointer events` and the
+ * logout click never lands. A real user dismisses the consent banner (a
+ * one-time consent gate) before interacting with page chrome; a faithful
+ * journey must do the same. Pre-seeding `'essential'` models a returning user
+ * who already chose essential-only cookies — it does not enable analytics and
+ * changes nothing else about the run.
+ *
+ * `addInitScript` injects the localStorage write BEFORE any page script runs
+ * on every navigation in this page's context, so the banner's mount-time
+ * `useEffect` reads a non-'pending' value and the banner is never rendered —
+ * deterministic, with no click-race against the banner's async mount.
+ *
+ * Must be called BEFORE the first `page.goto(...)`.
+ */
+export async function suppressCookieConsentBanner(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem('alfanumrik_cookie_consent', 'essential');
+    } catch {
+      /* localStorage unavailable in this context — nothing to seed */
+    }
+  });
+}
+
+// ─── Login helpers ────────────────────────────────────────────────────────
 
 /**
  * Drive the real /login form as a seeded certification account. Login on
@@ -187,6 +223,13 @@ export function roleDef(role: MissionRole): RoleDef {
  * role tabs on AuthScreen only apply to SIGNUP); the resulting redirect
  * destination is what each spec asserts on to prove (or document the
  * absence of) a role's dedicated portal.
+ *
+ * NOTE: super_admin accounts do NOT belong here. The shared /login form
+ * routes by `activeRole` via `getRoleDestination`, which has no super_admin
+ * mapping (defaults to the student destination), and AuthContext never
+ * resolves an `admin_users`-only identity into a portal role. The super-admin
+ * console has its own login at /super-admin/login — use
+ * `loginAsSuperAdminConsole` for that role.
  *
  * Throws (does not skip) if no run id is configured — a spec reaching this
  * point already passed the `certificationSuiteEnabled()` gate, so a missing
@@ -206,9 +249,43 @@ export async function loginAsCertificationAccount(
         'CERTIFICATION_RUN_ID_SHORT before running this suite.',
     );
   }
+  await suppressCookieConsentBanner(page);
   await page.goto('/login');
   await page.getByLabel(/^email/i).fill(account.email);
   await page.getByLabel('Password', { exact: true }).fill(account.password);
   await page.getByRole('button', { name: /^log in$|^sign in$/i }).click();
+  return account;
+}
+
+/**
+ * Drive the dedicated super-admin console login at /super-admin/login as the
+ * seeded super_admin account. This is the REAL super-admin auth path: the page
+ * POSTs to /api/super-admin/login (per-IP rate limit + per-email lockout →
+ * Supabase Auth → admin_users membership check), hydrates the supabase-js
+ * client with the returned session, then redirects to /super-admin. The
+ * shared /login form cannot route a super_admin to the panel (see the note on
+ * `loginAsCertificationAccount`), so certification super-admin journeys must
+ * authenticate here.
+ *
+ * The console login inputs are not label-associated (`<label>` siblings with
+ * no htmlFor/id), so target them by input type rather than by accessible name.
+ */
+export async function loginAsSuperAdminConsole(
+  page: Page,
+  seq = 1,
+): Promise<CertificationAccount> {
+  const account = certificationAccountFor('super_admin', seq);
+  if (!account) {
+    throw new Error(
+      'No certification run id configured. Set CERTIFICATION_RUN_ID (the full UUID printed by ' +
+        'scripts/seed-certification-accounts.ts at the start of its run) or ' +
+        'CERTIFICATION_RUN_ID_SHORT before running this suite.',
+    );
+  }
+  await suppressCookieConsentBanner(page);
+  await page.goto('/super-admin/login');
+  await page.locator('input[type="email"]').fill(account.email);
+  await page.locator('input[type="password"]').fill(account.password);
+  await page.getByRole('button', { name: /sign in/i }).click();
   return account;
 }

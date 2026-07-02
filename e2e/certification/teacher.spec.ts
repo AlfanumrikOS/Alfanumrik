@@ -45,17 +45,34 @@ test.describe('Certification journey — Teacher', () => {
     await expect(page.getByText(/application error/i)).toHaveCount(0);
   });
 
-  test('AI Tutor — BLOCKED by design: teacher role has no Foxy access (report 04, not a defect)', async ({
+  test('AI Tutor — teacher role SHOULD be blocked from Foxy (report 04) — RED: CERT-FE-01 real finding', async ({
     page,
   }) => {
-    // Report 04: "teachers do not have Foxy access; confirmed this is an
-    // intentional scope boundary, not a defect." This assertion is
-    // INTENTIONAL — /foxy must NOT render the student chat UI for a teacher
-    // session. A future product decision to grant teachers Foxy access
-    // should be a deliberate, reviewed change to this test.
+    // Report 04 claimed: "teachers do not have Foxy access; confirmed this is
+    // an intentional scope boundary, not a defect." The live journey against
+    // the Vercel Preview DISPROVES the enforcement half of that claim.
+    //
+    // EXPECTED-RED / KNOWN FINDING (CERT-FE-01, see journey-run-01/findings.md):
+    // /foxy has NO role gate. Its only client guard
+    // (src/app/foxy/page.tsx:535) redirects when NOT logged in; there is no
+    // wrong-role redirect, and middleware route protection was removed
+    // (src/proxy.ts Layer 0.9). So an authenticated teacher session stays on
+    // /foxy and renders the student chat UI. Fixing this is a gated product
+    // change (needs assessment/architect review); this test stays RED to
+    // document the gap rather than papering over it.
+    //
+    // The previous version of this test raced: it navigated to /foxy before
+    // the teacher session was established, so it sometimes caught an
+    // unauthenticated login screen at /foxy instead of a real teacher session.
+    // We now establish the teacher session first (wait for /teacher) so the
+    // assertion is a faithful probe of an AUTHENTICATED teacher reaching /foxy.
     await loginAsCertificationAccount(page, 'teacher');
+    await page.waitForURL(/\/(teacher|onboarding)/, { timeout: 15_000 });
     await page.goto('/foxy');
     await page.waitForLoadState('domcontentloaded');
+    // Give the client-side auth guard a beat to fire a wrong-role redirect if
+    // one existed (it does not today — that is the finding).
+    await page.waitForTimeout(1_500);
     expect(page.url()).not.toMatch(/\/foxy$/);
   });
 

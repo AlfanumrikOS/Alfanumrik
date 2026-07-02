@@ -1,0 +1,16 @@
+    TimeoutError: locator.click: Timeout 10000ms exceeded.
+    [2m    - locator resolved to <button type="button" class="w-full rounded-md py-1.5 text-[11px] font-medium">Logout</button>[22m
+    [2m      - <p>…</p> from <div>…</div> subtree intercepts pointer events[22m
+    [2m      - <p>…</p> from <div>…</div> subtree intercepts pointer events[22m
+    [2m       - <p>…</p> from <div>…</div> subtree intercepts pointer events[22m
+        at D:\Alfa_local\Alfanumrik\e2e\certification\teacher.spec.ts:89:24
+  7 failed
+    e2e\certification\parent.spec.ts:65:7 › Certification journey — Parent › Logout — signing out returns the parent to a logged-out route 
+    e2e\certification\student.spec.ts:122:7 › Certification journey — Student › Logout — signing out returns the student to a logged-out route 
+    e2e\certification\super-admin.spec.ts:28:7 › Certification journey — Super Administrator › Registration / Auth / Authz — seeded super_admin account logs in and lands on a post-auth route 
+    e2e\certification\super-admin.spec.ts:41:7 › Certification journey — Super Administrator › Dashboard / Reports / Analytics — /super-admin renders real content (PARTIAL: panel doc is stale, not a page defect) 
+    e2e\certification\super-admin.spec.ts:68:7 › Certification journey — Super Administrator › Logout — signing out returns the super admin to a logged-out route 
+    e2e\certification\teacher.spec.ts:48:7 › Certification journey — Teacher › AI Tutor — BLOCKED by design: teacher role has no Foxy access (report 04, not a defect) 
+    e2e\certification\teacher.spec.ts:85:7 › Certification journey — Teacher › Logout — signing out returns the teacher to a logged-out route 
+  8 skipped
+  21 passed (2.5m)

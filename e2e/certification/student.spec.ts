@@ -122,6 +122,13 @@ test.describe('Certification journey — Student', () => {
   test('Logout — signing out returns the student to a logged-out route', async ({ page }) => {
     await loginAsCertificationAccount(page, 'student');
     await page.waitForURL(/\/(dashboard|onboarding|foxy|learn)/, { timeout: 15_000 });
+    // The student portal does NOT expose logout in the dashboard sidebar — the
+    // Sign Out control lives on the Profile page (src/app/profile/page.tsx,
+    // "Danger Zone"), reached via the sidebar's collapsed Account → Profile
+    // entry. Navigate there before signing out, mirroring the real student
+    // logout path. (handleSignOut → signOut() → router.replace('/login').)
+    await page.goto('/profile');
+    await page.waitForLoadState('domcontentloaded');
     const logoutButton = page.getByRole('button', { name: /log ?out|sign ?out/i }).first();
     await logoutButton.click({ timeout: 10_000 });
     await page.waitForURL(/\/(login|welcome|$)/, { timeout: 15_000 });
