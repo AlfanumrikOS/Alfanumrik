@@ -72,7 +72,7 @@ let _shuffleRows: { data: Array<{ question_id: string; shuffle_map: number[] }> 
 
 function adminFromMock(table: string) {
   const chain: Record<string, unknown> = {};
-  for (const m of ['select', 'eq', 'in', 'order', 'limit']) {
+  for (const m of ['select', 'eq', 'in', 'order', 'limit', 'is']) {
     chain[m] = () => chain;
   }
   chain.maybeSingle = () =>

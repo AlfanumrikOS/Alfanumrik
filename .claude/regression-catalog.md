@@ -6961,3 +6961,59 @@ REG-225 (OAuth partner-surface contracts, 26 tests).
 **Total catalog: 192 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## 2026-07-02 — Phase 3 Wave 1 #5: quiz-RPC cross-student ownership check (SD-SWEEP, most severe Phase 2 finding)
+
+Source: Phase 2 security audit SD-SWEEP (`docs/audit/2026-07-02-validation/10-security-audit.md`)
+found three `SECURITY DEFINER` RPCs — `submit_quiz_results` (legacy v1),
+`atomic_quiz_profile_update` (6-arg, `RETURNS jsonb`), and `atomic_quiz_profile_update`
+(7-arg, `RETURNS void`, carries `p_session_id`) — all took a caller-supplied
+`p_student_id` with **no internal ownership check** and had never had `EXECUTE`
+revoked from `authenticated` (only `anon` was revoked). Any authenticated JWT
+holder could call one of these directly via PostgREST with an **arbitrary**
+`p_student_id` and forge quiz sessions / XP / streak / learning-profile rows
+onto another student's account — a critical cross-student data-forgery
+vulnerability. Fixed in migration `20260702150000_p3w1_5_quiz_rpc_ownership_check.sql`
+by adding the identical `auth.uid()`-scoped ownership check already proven safe
+in `submit_quiz_results_v2`, as the first statement after `BEGIN` in all three
+functions (fails closed before any write), with a `service_role`/`auth.uid() IS
+NULL` exemption so integration/server-side callers are unaffected. P1 (score
+formula), P2 (XP formula + 200 daily cap), P3 (anti-cheat flag-then-zero-XP),
+and P4 (atomic submission) bodies are byte-identical outside the new check —
+independently verified line-by-line by assessment against each function's
+current live definition, not just the architect's self-report.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-226 | `quiz_rpc_ownership_check` | All three previously-exploitable SECURITY DEFINER RPCs (`submit_quiz_results` v1, `atomic_quiz_profile_update` 6-arg, `atomic_quiz_profile_update` 7-arg) carry the `auth.uid() IS NOT NULL AND NOT EXISTS (SELECT 1 FROM students WHERE id = p_student_id AND auth_user_id = auth.uid())` ownership check, positioned strictly BEFORE the first `INSERT`/`UPDATE` in each function body (a regex-position check on the migration source, not a live-DB call — no Supabase integration credentials exist in CI for this lane). Pins exactly 3 occurrences (none omitted, none duplicated across the two overloads), each unconditionally gated on `auth.uid() IS NOT NULL` (so a future edit that drops the service-role exemption — which would break the `atomic-quiz-xp-42p10-e2e` integration test's service-role caller — fails loudly), and pins arity disambiguation (`p_session_id` absent = 6-arg body, `p_session_id UUID DEFAULT NULL` present = 7-arg body) so a partial "cleanup" that patches one overload but not its sibling is caught. Also freezes P1 (`ROUND((v_correct::NUMERIC / v_total) * 100)`), P2 (`correct*10` + 80%→+20 + 100%→+50, the 200 daily-cap literal in both overloads), and the `PERFORM atomic_quiz_profile_update(...)` v1→shared-XP-path delegation as unchanged by this fix — proving the vulnerability closure is purely additive. Also pins: `BEGIN;`/`COMMIT;` transaction wrapper present, no `DROP TABLE`/`DROP COLUMN`/`DROP FUNCTION`/`DROP INDEX`/`DROP TRIGGER` anywhere in the migration, and migration-header provenance naming the SD-SWEEP finding. | `src/__tests__/regressions/reg-226-quiz-rpc-ownership-check.test.ts` | E |
+
+### Invariants covered by this section
+
+- P8/P9 (RLS boundary / RBAC enforcement — cross-tenant authorization bypass
+  class) — REG-226 closes and pins the platform's most severe Phase 2 finding:
+  any authenticated user could forge another student's quiz/XP records via a
+  direct PostgREST RPC call, bypassing every app-layer check.
+- P1/P2/P3/P4 (score formula, XP economy, anti-cheat, atomic submission) — not
+  changed by this fix; REG-226 exists specifically to prove they weren't, by
+  freezing their literal SQL fragments alongside the new check.
+
+### Follow-up (not yet closed, tracked here for continuity)
+
+The 5-argument overload of `atomic_quiz_profile_update`
+(`p_student_id, p_xp, p_correct, p_total, p_subject`) shares the identical
+defect class (`SECURITY DEFINER`, caller-supplied `p_student_id`, no ownership
+check, `EXECUTE` not revoked from `authenticated`) but has **no live
+application caller** as of this migration — it was deliberately left unfixed
+(flagged in the migration header) rather than silently expanding scope further
+without a dedicated review. Recommended as a standalone follow-up ticket
+(candidate fix: `REVOKE EXECUTE ... FROM authenticated` outright, since no
+legitimate caller exists to preserve).
+
+### Catalog total
+
+Pre-REG-226: 192 entries (through REG-225, OAuth partner-surface contracts).
+Today's Phase 3 Wave 1 #5 critical-vulnerability fix adds REG-226 (quiz-RPC
+cross-student ownership check — the platform's most severe Phase 2 finding).
+**Total catalog: 193 entries (target: 35 — TARGET EXCEEDED).**
+
+---

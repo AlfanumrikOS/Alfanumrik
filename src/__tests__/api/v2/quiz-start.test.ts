@@ -24,7 +24,7 @@ vi.mock('@/lib/supabase-admin', () => ({
   getSupabaseAdmin: () => ({
     from: () => {
       const chain: Record<string, unknown> = {};
-      for (const m of ['select', 'eq']) chain[m] = () => chain;
+      for (const m of ['select', 'eq', 'is']) chain[m] = () => chain;
       chain.maybeSingle = () => Promise.resolve(_studentLookup);
       return chain;
     },
