@@ -94,3 +94,18 @@ inheriting them:
   closed.
 - Any new migration landing after the one named above - re-run the Wave 1 migration inventory
   sweep for the delta rather than assuming the certified 351-migration state still applies.
+
+## Addendum - Stage 2/3 tooling preparation (same day, after this baseline was captured)
+
+Commit cd8c35a2 (feat(certification): prepare Stage 2/3 tooling, not yet executed) landed after
+this baseline was captured. It adds certification tooling (Playwright specs, seed/teardown
+scripts, runbooks, templates) but does not change any application behavior the platform serves
+to real users - the baseline's certified test/build/bundle state above is unaffected. When
+Stage 2/3 actually executes, it should be understood as certifying the platform state at
+commit 15742a1c using tooling as of commit cd8c35a2, and this distinction should be preserved
+in whatever evidence-collection record Stage 2/3 produces.
+
+Program status at the time of this addendum: paused, pending CERT-17 (a human with hosting-
+platform dashboard access must confirm and, if necessary, correct what the deployed staging
+website's environment variables actually resolve to). No certification tenant has been
+provisioned. No seed or teardown script has been executed against any target.
