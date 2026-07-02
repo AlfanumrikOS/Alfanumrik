@@ -9,6 +9,8 @@ import {
   buildBaseTableRow,
   buildDemoAccountsRow,
   findOrCreateAuthUser,
+  findAuthUserIdByEmail,
+  isEmailAlreadyRegisteredError,
   upsertBaseTableRow,
   upsertDemoAccountsRow,
   upsertSchoolRow,
@@ -49,8 +51,13 @@ import {
 // maybeSingle()` finds the first match. This is intentionally simple — it
 // exists to prove find-or-create semantics, not to emulate PostgREST.
 
-function makeFakeSupabase(): { sb: SupabaseLike; tables: Record<string, Record<string, unknown>[]> } {
+function makeFakeSupabase(): {
+  sb: SupabaseLike;
+  tables: Record<string, Record<string, unknown>[]>;
+  authUsers: Array<{ id: string; email: string }>;
+} {
   const tables: Record<string, Record<string, unknown>[]> = {};
+  const authUsers: Array<{ id: string; email: string }> = [];
   let nextId = 1;
 
   function tableRows(name: string): Record<string, unknown>[] {
@@ -92,14 +99,31 @@ function makeFakeSupabase(): { sb: SupabaseLike; tables: Record<string, Record<s
     auth: {
       admin: {
         async createUser(params: { email: string }) {
+          // Emulate auth.users' unique-email constraint: a second create for
+          // the same email fails exactly as Supabase does, exercising the
+          // partial-failure recovery path in findOrCreateAuthUser.
+          if (authUsers.some((u) => u.email === params.email)) {
+            return {
+              data: { user: null },
+              error: { message: 'A user with this email address has already been registered' },
+            };
+          }
           const id = `auth-${nextId++}`;
+          authUsers.push({ id, email: params.email });
           return { data: { user: { id } }, error: null };
+        },
+        async listUsers(listParams?: { page?: number; perPage?: number }) {
+          const page = listParams?.page ?? 1;
+          const perPage = listParams?.perPage ?? 200;
+          const start = (page - 1) * perPage;
+          const users = authUsers.slice(start, start + perPage);
+          return { data: { users }, error: null };
         },
       },
     },
   };
 
-  return { sb, tables };
+  return { sb, tables, authUsers };
 }
 
 describe('REG-228 — account-shape helpers match the runbook marker conventions exactly', () => {
@@ -144,6 +168,22 @@ describe('REG-228 — account-shape helpers match the runbook marker conventions
       expect(row.email).toBe(shape.email);
       expect(row.name).toBe(shape.name);
     }
+  });
+
+  it('students row pins preferred_subject to explicit NULL (Stage 2 FK-violation field fix)', () => {
+    // Regression: students.preferred_subject has a DB default of 'Mathematics'
+    // AND an FK (students_preferred_subject_fkey) into the subjects reference
+    // table. Relying on the default couples the seed to whatever subjects the
+    // target environment happens to have seeded — it FK-violated on the
+    // staging project (Stage 2 field-caught). The row must send an explicit
+    // NULL (always a valid FK value) rather than omit the key (which would let
+    // the coupled default apply) or set a real subject (which just moves the
+    // coupling). Do NOT change this to 'math'/'Mathematics'/any real subject.
+    const studentDef = MISSION_ROLES.find((d) => d.role === 'student')!;
+    const shape = buildAccountShape('deadbeef', 'student', 1);
+    const row = buildBaseTableRow(studentDef, shape, 'auth-1', 'school-1');
+    expect('preferred_subject' in row).toBe(true);
+    expect(row.preferred_subject).toBeNull();
   });
 
   it('admin_users-backed roles carry the correct admin_level', () => {
@@ -258,6 +298,76 @@ describe('REG-228 — idempotent find-or-create primitives (fake client, no live
     const second = await findOrCreateAuthUser(sb, 'teachers', email, 'pw');
     expect(second.created).toBe(false);
     expect(second.authUserId).toBe(first.authUserId);
+  });
+
+  it('findOrCreateAuthUser: recovers a half-created account (auth user exists, NO base-table row) via listUsers instead of throwing', async () => {
+    // Reproduces the exact Stage-2 staging wedge: a prior run created the auth
+    // user (line ~393) but FAILED before/at the base-table insert (the
+    // preferred_subject FK error). On the re-run the base-table lookup finds
+    // nothing (correct — the base row really was never written), createUser
+    // then reports the email already registered, and WITHOUT recovery the
+    // account can never be repaired. The fix pages listUsers to reuse the
+    // existing auth user id and returns created:false so the caller can create
+    // the missing base row and heal the account.
+    const { sb, tables, authUsers } = makeFakeSupabase();
+    const email = 'cert-4e6979d0-student-001@certification.alfanumrik.invalid';
+
+    // First (aborted) run: auth user created, but the students base row was
+    // NEVER written. Simulate by creating only the auth user.
+    const priorRun = await sb.auth.admin.createUser({
+      email,
+      password: 'pw',
+      email_confirm: true,
+    });
+    const wedgedAuthId = priorRun.data.user!.id;
+    expect(tables.students ?? []).toHaveLength(0); // no base row exists
+    expect(authUsers).toHaveLength(1);
+
+    // Re-run: must NOT throw, must return the SAME auth user id, created:false.
+    const recovered = await findOrCreateAuthUser(sb, 'students', email, 'pw');
+    expect(recovered.created).toBe(false);
+    expect(recovered.authUserId).toBe(wedgedAuthId);
+
+    // And the caller can now heal the account by creating the missing base row.
+    const healed = await upsertBaseTableRow(sb, 'students', email, {
+      email,
+      auth_user_id: recovered.authUserId,
+      is_demo: true,
+    });
+    expect(healed.created).toBe(true);
+    expect(tables.students).toHaveLength(1);
+
+    // No duplicate auth user was ever created during recovery.
+    expect(authUsers).toHaveLength(1);
+  });
+
+  it('findOrCreateAuthUser: still throws on a NON-duplicate createUser error (does not swallow real failures)', async () => {
+    const { sb } = makeFakeSupabase();
+    const email = 'cert-deadbeef-parent-001@certification.alfanumrik.invalid';
+    // Override createUser to return an unrelated failure.
+    sb.auth.admin.createUser = async () => ({
+      data: { user: null },
+      error: { message: 'database connection reset' },
+    });
+    await expect(findOrCreateAuthUser(sb, 'guardians', email, 'pw')).rejects.toThrow(/database connection reset/);
+  });
+
+  it('findAuthUserIdByEmail: pages past the first page to find a later user, and returns null when absent', async () => {
+    const { sb, authUsers } = makeFakeSupabase();
+    // Seed 250 users so the target lives on page 2 (perPage default 200).
+    for (let i = 0; i < 250; i++) {
+      authUsers.push({ id: `auth-seed-${i}`, email: `seed-${i}@certification.alfanumrik.invalid` });
+    }
+    const target = authUsers[210];
+    expect(await findAuthUserIdByEmail(sb, target.email)).toBe(target.id);
+    expect(await findAuthUserIdByEmail(sb, 'nobody@certification.alfanumrik.invalid')).toBeNull();
+  });
+
+  it('isEmailAlreadyRegisteredError matches the known Supabase wordings defensively, rejects unrelated errors', () => {
+    expect(isEmailAlreadyRegisteredError('A user with this email address has already been registered')).toBe(true);
+    expect(isEmailAlreadyRegisteredError('User already registered')).toBe(true);
+    expect(isEmailAlreadyRegisteredError('email_exists')).toBe(true);
+    expect(isEmailAlreadyRegisteredError('database connection reset')).toBe(false);
   });
 
   it('upsertDemoAccountsRow: second call with the same email does not duplicate the registry row', async () => {

@@ -258,7 +258,27 @@ export function buildBaseTableRow(
   };
   switch (def.table) {
     case 'students':
-      return { ...common, grade: '10', board: 'CBSE', school_id: schoolId, onboarding_completed: true };
+      return {
+        ...common,
+        grade: '10',
+        board: 'CBSE',
+        school_id: schoolId,
+        onboarding_completed: true,
+        // Explicitly NULL — do NOT "helpfully" set this to a real subject.
+        // The students.preferred_subject column has a DB default of
+        // 'Mathematics' AND a foreign key (students_preferred_subject_fkey)
+        // into the subjects reference table. That default is only a valid FK
+        // target in an environment whose subjects reference data happens to
+        // contain a matching row (true on prod, NOT true on the staging
+        // project — Stage 2 field-caught this as an FK-violation insert
+        // failure). A NULL foreign-key value is always valid regardless of
+        // what reference data the target environment seeded, so seeding NULL
+        // decouples this script from any environment's subject-seed state.
+        // (Note the pre-existing internal inconsistency: several RPCs use
+        // COALESCE(preferred_subject, 'math') — convention 'math' — while the
+        // column default is 'Mathematics'. Not this script's to reconcile.)
+        preferred_subject: null,
+      };
     case 'teachers':
       return { ...common, school_id: schoolId };
     case 'guardians':
@@ -341,19 +361,85 @@ export interface SupabaseLike {
         email_confirm: boolean;
         user_metadata?: Record<string, unknown>;
       }): Promise<{ data: { user: { id: string } | null }; error: { message: string } | null }>;
+      // Used only on the partial-failure recovery path in
+      // `findOrCreateAuthUser`: if `createUser` reports the email already
+      // exists (an auth user was created by a prior aborted run but its
+      // base-table row was never written), we page through `listUsers` to
+      // recover that user's id. Paginated in supabase-js v2 (pinned ^2.108.x).
+      listUsers(params?: { page?: number; perPage?: number }): Promise<{
+        data: { users: Array<{ id: string; email?: string | null }> } | null;
+        error: { message: string } | null;
+      }>;
     };
   };
+}
+
+/**
+ * Match Supabase's "email already exists" error defensively — the exact
+ * wording varies across gotrue/supabase-js versions (e.g. "A user with this
+ * email address has already been registered", "User already registered",
+ * "email_exists"). We only recover on this specific class of error; any other
+ * createUser failure still throws.
+ */
+export function isEmailAlreadyRegisteredError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes('already been registered') ||
+    m.includes('already registered') ||
+    m.includes('email address has already') ||
+    m.includes('email_exists') ||
+    m.includes('email exists')
+  );
+}
+
+/**
+ * Page through `auth.admin.listUsers` to find the auth user id for `email`.
+ * Returns null if no user matches. Used only to recover from a partial-failure
+ * re-run (see `findOrCreateAuthUser`); a certification seed's auth.users set is
+ * small, so a bounded page walk is well within budget.
+ */
+export async function findAuthUserIdByEmail(sb: SupabaseLike, email: string): Promise<string | null> {
+  const target = email.trim().toLowerCase();
+  const perPage = 200;
+  const maxPages = 100; // hard bound: up to 20k users — far beyond any seed
+  for (let page = 1; page <= maxPages; page++) {
+    const { data, error } = await sb.auth.admin.listUsers({ page, perPage });
+    if (error) {
+      throw new Error(`listUsers failed while recovering ${email}: ${error.message}`);
+    }
+    const users = data?.users ?? [];
+    const match = users.find((u) => (u.email ?? '').trim().toLowerCase() === target);
+    if (match) {
+      return match.id;
+    }
+    if (users.length < perPage) {
+      break; // last (partial) page reached; email is genuinely not present
+    }
+  }
+  return null;
 }
 
 // ─── Idempotent find-or-create primitives ──────────────────────────────────
 
 /**
  * Find an existing base-table row by email; if found, reuse its
- * `auth_user_id`. Otherwise create a fresh Supabase Auth user. Looking up
- * the BASE TABLE (not `auth.users`) is deliberate: it is the row this
- * script's own idempotency depends on, and it avoids needing an
- * email-filtered `listUsers` call (not reliably available across
- * supabase-js versions).
+ * `auth_user_id`. Otherwise create a fresh Supabase Auth user.
+ *
+ * The base-table-first lookup is the fast, common idempotency path: it is the
+ * row this script's own idempotency depends on, and it avoids a `listUsers`
+ * call on the happy re-run.
+ *
+ * PARTIAL-FAILURE RECOVERY: the base-table lookup alone is NOT sufficient for
+ * idempotency. If a prior run created the auth user (below) but aborted BEFORE
+ * writing the base-table row (e.g. a downstream insert FK-violated), a re-run
+ * finds no base row, falls through to `createUser`, and Supabase rejects the
+ * duplicate email — wedging that account permanently. So when `createUser`
+ * reports the email already exists, we RECOVER by paging `listUsers` for the
+ * pre-existing auth user and return its id with `created: false`. The caller
+ * then proceeds to create the missing base-table row, healing the half-created
+ * account. (This supersedes the old "we deliberately avoid listUsers" note:
+ * listUsers is paginated and reliable in the pinned supabase-js ^2.108.x, and
+ * it is only invoked on the rare recovery path, never on the happy path.)
  */
 export async function findOrCreateAuthUser(
   sb: SupabaseLike,
@@ -376,8 +462,23 @@ export async function findOrCreateAuthUser(
     email_confirm: true,
     user_metadata: { is_demo: true, is_certification: true },
   });
-  if (error || !data.user) {
-    throw new Error(`createUser failed for ${email}: ${error?.message ?? 'no user returned'}`);
+  if (error) {
+    // Partial-failure recovery: the auth user exists from a prior aborted run
+    // but no base-table row was ever written. Reuse the existing auth user so
+    // the caller can create the missing base row and heal the account.
+    if (isEmailAlreadyRegisteredError(error.message)) {
+      const recoveredId = await findAuthUserIdByEmail(sb, email);
+      if (recoveredId) {
+        return { authUserId: recoveredId, created: false };
+      }
+      throw new Error(
+        `createUser reported ${email} already registered, but listUsers found no matching auth user (unrecoverable)`,
+      );
+    }
+    throw new Error(`createUser failed for ${email}: ${error.message}`);
+  }
+  if (!data.user) {
+    throw new Error(`createUser failed for ${email}: no user returned`);
   }
   return { authUserId: data.user.id, created: true };
 }
