@@ -1,8 +1,26 @@
--- Migration: 20260702150000_p3w2_8_backfill_legacy_only_flag_seeds.sql
+-- Migration: 20260702151000_p3w2_8_backfill_legacy_only_flag_seeds.sql
 -- Purpose: Phase 3 Wave 2 #8 (S2, P11-adjacent). Backfill the 4 feature-flag
 --          rows that were ONLY ever seeded under supabase/migrations/_legacy/
 --          — a directory `supabase db push` never applies (root-migrations-only
 --          convention; see docs/audit/2026-07-02-discovery/03-data-infra.md).
+--
+-- ─── Version-collision fix (2026-07-02, CERT-21) ────────────────────────────
+-- This file was ORIGINALLY committed as
+--   20260702150000_p3w2_8_backfill_legacy_only_flag_seeds.sql
+-- which collided on the version prefix 20260702150000 with
+--   20260702150000_p3w1_5_quiz_rpc_ownership_check.sql.
+-- Supabase's supabase_migrations.schema_migrations uses `version` as its PK, so
+-- only ONE of the two could ever be recorded. On both prod and staging the
+-- ownership-check file (p3w1_5) sorted first, applied, and claimed version
+-- 20260702150000; THIS flag-seed file then failed its bookkeeping INSERT with
+-- 23505 (duplicate key) and was never recorded — so the 4 flags below were
+-- never backfilled on any fresh/synced environment, and every migration after
+-- it (160000/170000/180000/190000) was blocked from reaching staging/prod.
+-- Renamed to the distinct, later version 20260702151000 (still ordered before
+-- 20260702160000) so it now applies cleanly on the next push. Because this file
+-- is fully idempotent (to_regclass guard + ON CONFLICT (flag_name) DO NOTHING)
+-- the rename-driven re-apply is a guaranteed no-op wherever the rows already
+-- exist. Repair runbook: docs/runbooks/2026-07-02-cert21-duplicate-migration-version-repair.md
 --
 --   Confirmed by Phase 2 validation audit
 --   docs/audit/2026-07-02-validation/11-api-contracts.md (C-1, finding #4):
@@ -66,7 +84,7 @@
 -- operator or a previously-applied _legacy migration already set. No schema
 -- changes. Pure data seed. No new tables -> RLS N/A.
 --
--- Owner: architect. Added: 2026-07-02 (Phase 3 Wave 2 #8).
+-- Owner: architect. Added: 2026-07-02 (Phase 3 Wave 2 #8). Renamed 2026-07-02 (CERT-21).
 --
 -- ─── Reversible (manual DOWN) ──────────────────────────────────────────────
 --   DELETE FROM feature_flags WHERE flag_name IN (
