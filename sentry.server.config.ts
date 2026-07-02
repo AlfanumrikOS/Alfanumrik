@@ -11,7 +11,12 @@ Sentry.init({
   // Sentry spend by 10x and typically exceeds free-tier transaction limits.
   tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
 
-  environment: process.env.NODE_ENV || 'development',
+  // Vercel Preview deployments (staging) set NODE_ENV='production' during
+  // `next build`, identical to a real production build — VERCEL_ENV is the
+  // only value Vercel varies per environment. Matches the pattern used by
+  // src/lib/feature-flags.ts, src/app/api/v1/health/route.ts, and 35+ other
+  // server-side environment-sensitive call sites.
+  environment: process.env.VERCEL_ENV || process.env.NODE_ENV || 'development',
 
   // Filter noisy, non-actionable errors (parity with client config).
   ignoreErrors: [
