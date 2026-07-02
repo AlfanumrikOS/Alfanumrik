@@ -6,6 +6,18 @@
 > performance target (P10) and the reason caching/round-trip count matters more here than raw
 > compute cost.
 >
+> **Phase 3 remediation correction (2026-07-02, orchestrator):** F3's claim that
+> `experiment_observations` has no supporting index (row 10 in the P-2 table, and the
+> P-5.1/summary framing) is a **false positive**. The index
+> (`idx_experiment_obs_student` on `(student_id, created_at DESC)`) already exists —
+> created in `supabase/migrations/20260504195900_ensure_experiment_observations.sql`
+> lines 106-107. This audit's original read of that file stopped at the `CREATE TABLE`
+> block (lines 39-56) and missed the `CREATE INDEX` statement further down in the same
+> file. The genuinely real half of F3 — the unbounded `.limit()`-less read — was fixed
+> in commit `65b4fd84` (Phase 3 Wave 3 #12), which bounds the query at 2000 rows without
+> adding a duplicate/redundant index. Left the tables below as originally written for
+> audit-trail fidelity; this note is the correction of record.
+>
 > Scope note: **sampled, not exhaustive.** The hot paths named in the task brief (quiz submission,
 > dashboard, pulse, leaderboard, progress, daily-cron, adaptive-remediation cron) were read in full
 > or near-full. Middleware (`src/proxy.ts`) was read in full. The remaining ~280 API routes were
