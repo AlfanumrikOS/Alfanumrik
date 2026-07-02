@@ -35,6 +35,19 @@ import {
  * from collection) — `--list` only parses/enumerates tests, it never
  * launches a browser or contacts a URL.
  *
+ * ── SSO-protected Vercel Preview targets ────────────────────────────────
+ * When `CERTIFICATION_BASE_URL` points at a Vercel Preview deployment that
+ * has Vercel Authentication (SSO / Deployment Protection) enabled, requests
+ * are bounced to Vercel's login wall and the journeys can't reach the app.
+ * To pass the wall, ALSO set `CERTIFICATION_BYPASS_SECRET` to the project's
+ * "Protection Bypass for Automation" secret (Vercel dashboard → Settings →
+ * Deployment Protection → Protection Bypass for Automation). When set,
+ * `playwright.config.ts` sends `x-vercel-protection-bypass: <secret>` plus
+ * `x-vercel-set-bypass-cookie: true` on every request (the cookie lets the
+ * multi-page journeys keep bypassing after the first navigation). This
+ * secret is ADDITIVE — it enables nothing by itself; the
+ * CERTIFICATION_RUN_ENABLED + CERTIFICATION_BASE_URL gates still apply.
+ *
  * ── Account targeting ───────────────────────────────────────────────────
  * Accounts are derived, not guessed, from the SAME pure functions
  * `scripts/seed-certification-accounts.ts` uses to create them
@@ -54,6 +67,16 @@ export type { MissionRole, RoleDef };
 
 export const CERTIFICATION_RUN_ENABLED = process.env.CERTIFICATION_RUN_ENABLED === 'true';
 export const CERTIFICATION_BASE_URL = process.env.CERTIFICATION_BASE_URL ?? '';
+
+/**
+ * Vercel "Protection Bypass for Automation" secret. Exported for documentation
+ * and in case a spec needs it to authenticate a raw `request` (Playwright's
+ * APIRequestContext) that doesn't inherit `playwright.config.ts`'s
+ * `extraHTTPHeaders`. NOT a gate — it enables nothing on its own; the
+ * CERTIFICATION_RUN_ENABLED + CERTIFICATION_BASE_URL gates still apply. Empty
+ * string when unset (normal/local runs), so no header is ever sent then.
+ */
+export const CERTIFICATION_BYPASS_SECRET = process.env.CERTIFICATION_BYPASS_SECRET ?? '';
 
 /** Second, EXPLICIT guard required in addition to the above for the payments spec — see CERT-17. */
 export const CERTIFICATION_PAYMENTS_CONFIRMED_SAFE =
