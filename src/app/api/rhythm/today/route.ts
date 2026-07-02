@@ -203,11 +203,13 @@ async function buildRhythmQueue(
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
   userId: string,
 ): Promise<unknown | null> {
-  // Load student row (A1 + A2 audit findings encoded here).
+  // Load student row (A1 + A2 audit findings encoded here). students.id is a
+  // surrogate uuid distinct from the auth uid — resolve it via auth_user_id
+  // (same pattern as /api/dive/state, /api/dive/history, /api/synthesis/state).
   const { data: studentRow, error: studentErr } = await supabase
     .from('students')
     .select('id, grade, academic_goal, preferred_subject')
-    .eq('id', userId)
+    .eq('auth_user_id', userId)
     .maybeSingle();
 
   if (studentErr) {
@@ -272,8 +274,10 @@ async function buildRhythmQueue(
   }
 
   // Load due reviews (A4). RPC returns rows already filtered to due-for-review.
+  // concept_mastery.student_id FKs students.id (the surrogate), not the auth
+  // uid — pass the resolved studentRow.id, same as /api/dive/state.
   const { data: dueRowsRaw, error: dueErr } = await supabase.rpc('get_due_reviews', {
-    p_student_id: userId,
+    p_student_id: studentRow.id,
     p_subject_code: null,
     p_limit: 20,
   });
@@ -341,8 +345,10 @@ async function buildRhythmQueue(
   // placeholder ZPD item.
   let candidatePool: CandidateProblem[] = [];
   if (subjectCode) {
+    // Pass the resolved surrogate students.id, not the auth uid — same
+    // dual-key mismatch class as get_due_reviews above.
     const { data: zpdRows, error: zpdErr } = await supabase.rpc('get_adaptive_questions', {
-      p_student_id: userId,
+      p_student_id: studentRow.id,
       p_subject: subjectCode,
       p_limit: 50,
       p_include_review: false,
