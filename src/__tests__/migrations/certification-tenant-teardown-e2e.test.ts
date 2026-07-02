@@ -322,6 +322,13 @@ describeIntegration('REG-229 — purge_certification_tenant (live RPC against mi
             grade: '10',
             board: 'CBSE',
             school_id: schoolId,
+            // Explicit null: the DB column default is 'Mathematics', which has
+            // NO matching row in the `subjects` reference table on staging, so
+            // letting the default apply trips `students_preferred_subject_fkey`
+            // (23503) at INSERT — before the teardown RPC is ever exercised. A
+            // null FK is always valid. Mirrors the same fix in
+            // scripts/seed-certification-accounts.ts.
+            preferred_subject: null,
             is_demo: true,
           })
           .select('id')
@@ -866,6 +873,12 @@ describeIntegration('REG-229 — purge_certification_run (live RPC against migra
             grade: '10',
             board: 'CBSE',
             school_id: schoolId,
+            // Explicit null — see the identical note in the tenant suite above.
+            // The DB default 'Mathematics' has no matching `subjects` row on
+            // staging, so it would trip `students_preferred_subject_fkey`
+            // (23503) at INSERT. A null FK is always valid. Mirrors
+            // scripts/seed-certification-accounts.ts.
+            preferred_subject: null,
             is_demo: true,
           })
           .select('id')
