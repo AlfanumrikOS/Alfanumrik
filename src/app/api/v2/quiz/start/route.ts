@@ -68,6 +68,8 @@ export async function POST(request: NextRequest) {
       .from('students')
       .select('id')
       .eq('auth_user_id', auth.userId)
+      .eq('is_active', true)
+      .is('deleted_at', null)
       .maybeSingle();
     if (!studentRow?.id) {
       return v2Error('No student profile linked to this account', 403, 'NO_STUDENT_PROFILE');

@@ -156,6 +156,8 @@ async function resolveStudent(
       .from('students')
       .select('id, grade')
       .eq('id', studentId)
+      .eq('is_active', true)
+      .is('deleted_at', null)
       .single();
 
     if (error || !student) {
@@ -168,6 +170,8 @@ async function resolveStudent(
       .from('students')
       .select('id, grade')
       .eq('auth_user_id', authUserId)
+      .eq('is_active', true)
+      .is('deleted_at', null)
       .single();
 
     if (error || !student) {
