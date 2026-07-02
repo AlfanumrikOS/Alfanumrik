@@ -1,0 +1,5 @@
+
+> alfanumrik-frontend@2.0.0 lint
+> eslint src/ --ext .ts,.tsx
+
+EXIT_CODE=0

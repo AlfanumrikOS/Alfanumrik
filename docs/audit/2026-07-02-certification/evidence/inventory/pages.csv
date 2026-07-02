@@ -1,0 +1,178 @@
+path,portal,tier,auth_gated,e2e_spec_match,bilingual_evidence,verdict
+/,public/marketing,Tier 2,public,yes (/),no isHi in page.tsx (may be in nested component - not verified),OK
+/about,public/marketing,Tier 2,public,yes (/about),no isHi in page.tsx (may be in nested component - not verified),OK
+/auth/reset,auth,Tier 0,public (pre-session),no,isHi in page.tsx,OK
+/billing,student,Tier 0,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",yes (/billing),isHi in page.tsx,OK
+/careers,public/marketing,Tier 2,public,no,no isHi in page.tsx (may be in nested component - not verified),OK
+/challenge,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/contact,public/marketing,Tier 2,public,no,no isHi in page.tsx (may be in nested component - not verified),OK
+/dashboard,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",yes (/dashboard),no isHi in page.tsx (may be in nested component - not verified),OK
+/demo,public/marketing,Tier 2,public,no,isHi in page.tsx,OK
+/dev/cosmic-preview,dev-orphan,Tier 2,public (no gate observed),no,isHi in page.tsx,OK
+/diagnostic,student,Tier 0,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/dive,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/dive/history,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/exam-briefing,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/exam-prep,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/exams,student,Tier 0,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/exams/mock,student,Tier 0,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,no isHi in page.tsx (may be in nested component - not verified),OK
+/exams/mock/[paperId],student,Tier 0,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/exams/mock/[paperId]/results,student,Tier 0,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/for-parents,public/marketing,Tier 2,public,yes (/for-parents),no isHi in page.tsx (may be in nested component - not verified),OK
+/for-schools,public/marketing,Tier 2,public,yes (/for-schools),no isHi in page.tsx (may be in nested component - not verified),OK
+/for-teachers,public/marketing,Tier 2,public,yes (/for-teachers),no isHi in page.tsx (may be in nested component - not verified),OK
+/foxy,student,Tier 0,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",yes (/foxy),isHi in page.tsx,OK
+/help,public/marketing,Tier 2,public,yes (/help),isHi in page.tsx,OK
+/hpc,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/internal/admin,internal-admin,Tier 1,"secret-gated (sessionStorage, not Supabase session)",no,no isHi in page.tsx (may be in nested component - not verified),OK
+/join,public/marketing,Tier 2,public,no,isHi in page.tsx,OK
+/lab-notebook/[studentId],student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/leaderboard,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/learn,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/learn/[subject]/[chapter],student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/learn/foxy-test,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,no isHi in page.tsx (may be in nested component - not verified),OK
+/library,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/login,public/marketing,Tier 0,public,yes (/login),isHi in page.tsx,OK
+/mock-exam,student,Tier 0,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/mock-exam/results,student,Tier 0,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/notifications,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/onboarding,auth,Tier 0,authed,yes (/onboarding),isHi in page.tsx,OK
+/parent,parent,Tier 1,"role-gated (exempt at exact path, hosts own login)",no,isHi in page.tsx,OK
+/parent/attendance,parent,Tier 1,role-gated (guardian/admin/super_admin),no,isHi in page.tsx,OK
+/parent/billing,parent,Tier 0,role-gated (guardian/admin/super_admin),no,isHi in page.tsx,OK
+/parent/calendar,parent,Tier 1,role-gated (guardian/admin/super_admin),no,isHi in page.tsx,OK
+/parent/children,parent,Tier 1,role-gated (guardian/admin/super_admin),yes (/parent/children),isHi in page.tsx,OK
+/parent/consent,parent,Tier 1,role-gated (guardian/admin/super_admin),no,isHi in page.tsx,OK
+/parent/messages,parent,Tier 2,role-gated (guardian/admin/super_admin),no,isHi in page.tsx,OK
+/parent/notifications,parent,Tier 1,role-gated (guardian/admin/super_admin),no,isHi in page.tsx,OK
+/parent/profile,parent,Tier 2,role-gated (guardian/admin/super_admin),yes (/parent/profile),isHi in page.tsx,OK
+/parent/reports,parent,Tier 1,role-gated (guardian/admin/super_admin),yes (/parent/reports),isHi in page.tsx,OK
+/parent/support,parent,Tier 2,role-gated (guardian/admin/super_admin),no,isHi in page.tsx,OK
+/practice,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/press,public/marketing,Tier 2,public,no,no isHi in page.tsx (may be in nested component - not verified),OK
+/pricing,public/marketing,Tier 2,public,yes (/pricing),no isHi in page.tsx (may be in nested component - not verified),OK
+/privacy,public/marketing,Tier 2,public,yes (/privacy),no isHi in page.tsx (may be in nested component - not verified),OK
+/product,public/marketing,Tier 2,public,yes (/product),no isHi in page.tsx (may be in nested component - not verified),OK
+/profile,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/progress,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",yes (/progress),isHi in page.tsx,OK
+/pyq,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/quiz,student,Tier 0,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",yes (/quiz),isHi in page.tsx,OK
+/quiz/ncert,student,Tier 0,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/refresh,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",yes (/refresh),isHi in page.tsx,OK
+/refunds,public/marketing,Tier 2,public,no,no isHi in page.tsx (may be in nested component - not verified),OK
+/reports,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/research,public/marketing,Tier 2,public,no,no isHi in page.tsx (may be in nested component - not verified),OK
+/revision,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/scan,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/school-admin,school-admin,Tier 1,role-gated (institution_admin/admin/super_admin),yes (/school-admin),no isHi in page.tsx (may be in nested component - not verified),OK
+/school-admin/ai-assistant,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),no,isHi in page.tsx,OK
+/school-admin/ai-config,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),no,isHi in page.tsx,OK
+/school-admin/announcements,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),no,isHi in page.tsx,OK
+/school-admin/api-keys,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),no,isHi in page.tsx,OK
+/school-admin/audit-log,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),no,isHi in page.tsx,OK
+/school-admin/billing,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),yes (/school-admin/billing),isHi in page.tsx,OK
+/school-admin/branding,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),no,isHi in page.tsx,OK
+/school-admin/classes,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),yes (/school-admin/classes),isHi in page.tsx,OK
+/school-admin/content,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),no,isHi in page.tsx,OK
+/school-admin/enroll,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),no,isHi in page.tsx,OK
+/school-admin/exams,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),no,isHi in page.tsx,OK
+/school-admin/invite-codes,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),no,isHi in page.tsx,OK
+/school-admin/modules,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),no,isHi in page.tsx,OK
+/school-admin/parents,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),no,isHi in page.tsx,OK
+/school-admin/rbac,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),no,isHi in page.tsx,OK
+/school-admin/reports,school-admin,Tier 1,role-gated (institution_admin/admin/super_admin),no,isHi in page.tsx,OK
+/school-admin/reports-depth,school-admin,Tier 1,role-gated (institution_admin/admin/super_admin),no,isHi in page.tsx,OK
+/school-admin/setup,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),no,isHi in page.tsx,OK
+/school-admin/staff,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),no,isHi in page.tsx,OK
+/school-admin/students,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),yes (/school-admin/students),isHi in page.tsx,OK
+/school-admin/teachers,school-admin,Tier 2,role-gated (institution_admin/admin/super_admin),yes (/school-admin/teachers),isHi in page.tsx,OK
+/schools,public/marketing,Tier 2,public,yes (/schools),no isHi in page.tsx (may be in nested component - not verified),OK
+/security,public/marketing,Tier 2,public,no,no isHi in page.tsx (may be in nested component - not verified),OK
+/settings,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/settings/account/delete,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",yes (/settings/account/delete),isHi in page.tsx,OK
+/simulations,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/stem-centre,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/study-plan,student,"Tier 0 (dead route, 301-shadowed)","authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",yes (/study-plan),isHi in page.tsx,OK
+/super-admin,super-admin,Tier 1,role-gated (admin/super_admin),yes (/super-admin),no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/alerts,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/alfabot,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/alfabot/[sessionId],super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/analytics,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/analytics-b2b,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/bulk-actions,super-admin,Tier 2,role-gated (admin/super_admin),yes (/super-admin/bulk-actions),no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/bulk-upload,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/bulk-upload/schools,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/cms,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/command-center,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/content,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/demo,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/diagnostics,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/entitlements,super-admin,Tier 2,role-gated (admin/super_admin),no,isHi in page.tsx,OK
+/super-admin/flags,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/foxy-quality,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/goal-profiles,super-admin,Tier 2,role-gated (admin/super_admin),no,isHi in page.tsx,OK
+/super-admin/grounding/ai-issues,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/grounding/coverage,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/grounding/health,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/grounding/traces,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/grounding/verification-queue,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/health,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/institutions,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/intelligence,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/intelligence/geography,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/intelligence/revenue,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/intelligence/schools,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/intelligence/schools/[id],super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/invoices,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/learning,super-admin,Tier 1,role-gated (admin/super_admin),yes (/super-admin/learning),no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/login,super-admin,Tier 0,public (credential entry),yes (/super-admin/login),no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/logs,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/marking-integrity,super-admin,Tier 1,role-gated (admin/super_admin),no,isHi in page.tsx,OK
+/super-admin/marking-integrity/[studentId],super-admin,Tier 1,role-gated (admin/super_admin),no,isHi in page.tsx,OK
+/super-admin/misconceptions,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/module-overrides,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/mol-shadow,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/oauth-apps,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/observability,super-admin,Tier 1,role-gated (admin/super_admin),yes (/super-admin/observability),no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/observability/channels,super-admin,Tier 1,role-gated (admin/super_admin),yes (/super-admin/observability/channels),no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/observability/rules,super-admin,Tier 1,role-gated (admin/super_admin),yes (/super-admin/observability/rules),no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/oracle-health,super-admin,Tier 1,role-gated (admin/super_admin),no,isHi in page.tsx,OK
+/super-admin/rbac,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/readiness-rubric,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/reports,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/sla,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/students/[id],super-admin,Tier 1,role-gated (admin/super_admin),yes (/super-admin/students/00000000-0000-0000-0000-000000000000),no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/subjects,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/subjects/grade-map,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/subjects/plan-access,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/subjects/violations,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/subscribers,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/subscriptions,super-admin,Tier 2,role-gated (admin/super_admin),yes (/super-admin/subscriptions),no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/support,super-admin,Tier 2,role-gated (admin/super_admin),yes (/super-admin/support),no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/users,super-admin,Tier 2,role-gated (admin/super_admin),yes (/super-admin/users),no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/view-as/[studentId]/dashboard,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/view-as/[studentId]/foxy,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/view-as/[studentId]/progress,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/view-as/[studentId]/quizzes,super-admin,Tier 1,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/super-admin/workbench,super-admin,Tier 2,role-gated (admin/super_admin),no,no isHi in page.tsx (may be in nested component - not verified),OK
+/support,support,Tier 1,"authed (useAuth(), no useRequireAuth redirect observed)",no,isHi in page.tsx,OK
+/support/[ticket_id],support,Tier 1,"authed (useAuth(), no useRequireAuth redirect observed)",no,isHi in page.tsx,OK
+/support/new,support,Tier 1,"authed (useAuth(), no useRequireAuth redirect observed)",no,isHi in page.tsx,OK
+/synthesis,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",yes (/synthesis),isHi in page.tsx,OK
+/teacher,teacher,Tier 1,role-gated (teacher/admin/super_admin),yes (/teacher),no isHi in page.tsx (may be in nested component - not verified),OK
+/teacher/assignments,teacher,Tier 2,role-gated (teacher/admin/super_admin),no,isHi in page.tsx,OK
+/teacher/attendance,teacher,Tier 1,role-gated (teacher/admin/super_admin),no,isHi in page.tsx,OK
+/teacher/classes,teacher,Tier 2,role-gated (teacher/admin/super_admin),no,isHi in page.tsx,OK
+/teacher/grade-book,teacher,Tier 1,role-gated (teacher/admin/super_admin),no,isHi in page.tsx,OK
+/teacher/lab-leaderboard,teacher,Tier 1,role-gated (teacher/admin/super_admin),no,isHi in page.tsx,OK
+/teacher/messages,teacher,Tier 2,role-gated (teacher/admin/super_admin),no,isHi in page.tsx,OK
+/teacher/onboarding,teacher,Tier 0,role-gated (teacher/admin/super_admin),no,isHi in page.tsx,OK
+/teacher/profile,teacher,Tier 2,role-gated (teacher/admin/super_admin),no,isHi in page.tsx,OK
+/teacher/reports,teacher,Tier 1,role-gated (teacher/admin/super_admin),no,isHi in page.tsx,OK
+/teacher/students,teacher,Tier 1,role-gated (teacher/admin/super_admin),yes (/teacher/students),isHi in page.tsx,OK
+/teacher/submissions,teacher,Tier 2,role-gated (teacher/admin/super_admin),no,isHi in page.tsx,OK
+/teacher/worksheets,teacher,Tier 2,role-gated (teacher/admin/super_admin),no,isHi in page.tsx,OK
+/terms,public/marketing,Tier 2,public,yes (/terms),no isHi in page.tsx (may be in nested component - not verified),OK
+/today,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",yes (/today),isHi in page.tsx,OK
+/tutor,student,Tier 1,"authed (client-side AuthContext/useRequireAuth, no proxy.ts session check)",no,isHi in page.tsx,OK
+/welcome,public/marketing,Tier 2,public,yes (/welcome),no isHi in page.tsx (may be in nested component - not verified),OK

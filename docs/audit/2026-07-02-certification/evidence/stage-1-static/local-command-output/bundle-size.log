@@ -1,0 +1,49 @@
+=== Bundle Size Report (gzipped) ===
+
+Shared JS (chunks loaded by >= 95% of 112 rendered pages)
+            71.1 kB  static/chunks/0mu37qzymw588.js
+            58.2 kB  static/chunks/0k0xm-ot9nql_.js
+            38.7 kB  static/chunks/03~yq9q893hmn.js
+            28.7 kB  static/chunks/0vkea0d60xssu.js
+            11.6 kB  static/chunks/04.jga45w72bw.js
+            10.7 kB  static/chunks/18bin1ywp9ulf.js
+            8.6 kB  static/chunks/11mxb08.r.cu9.js
+            8.3 kB  static/chunks/0kp3j9o~lmr4f.js
+            8.1 kB  static/chunks/02qm690gf3y6p.js
+            7.2 kB  static/chunks/0lbzbz47-mayp.js
+            6.2 kB  static/chunks/0gaxws57cdcvk.js
+            5.1 kB  static/chunks/07qf1i37zcnwi.js
+            4.2 kB  static/chunks/turbopack-0w96afl89u647.js
+            4.1 kB  static/chunks/01skgd_.ew6m0.js
+            3.6 kB  static/chunks/0f1eyfr7a~ph7.js
+            3.3 kB  static/chunks/08c3d0x-ofhn8.js
+            1.1 kB  static/chunks/0u8-6~xj016o2.js
+            1.1 kB  static/chunks/05xmeap792p~m.js
+  TOTAL: 279.9 kB / 284 kB --- PASS
+
+Middleware (real chunks referenced by stub)
+            0.4 kB  server\chunks\[root-of-the-server]__0fyutcq._.js
+            115.8 kB  server\chunks\[root-of-the-server]__0hp996.._.js
+  TOTAL: 116.2 kB / 120 kB --- PASS
+
+Per-page bundles (page-specific cost, excluding shared; cap 260 kB)
+  Top 15 heaviest:
+  [ok  ]  198.1 kB  /super-admin/entitlements
+  [ok  ]  159.6 kB  /progress
+  [ok  ]  144.3 kB  /leaderboard
+  [ok  ]  139.9 kB  /super-admin/institutions
+  [ok  ]  138.9 kB  /school-admin
+  [ok  ]  137.8 kB  /internal/admin
+  [ok  ]  137.5 kB  /super-admin
+  [ok  ]  137.4 kB  /super-admin/subscriptions
+  [ok  ]  137.1 kB  /super-admin/command-center
+  [ok  ]  135.2 kB  /super-admin/intelligence/schools
+  [ok  ]  134.9 kB  /super-admin/users
+  [ok  ]  134.6 kB  /super-admin/intelligence/schools/[id]
+  [ok  ]  134.5 kB  /super-admin/grounding/health
+  [ok  ]  134.4 kB  /super-admin/alfabot
+  [ok  ]  134.3 kB  /super-admin/demo
+  (179 pages measured, 0 over cap)
+
+All bundles within P10 budget.
+EXIT_CODE=0
