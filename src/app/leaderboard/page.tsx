@@ -245,7 +245,7 @@ export default function LeaderboardPage() {
       }
     } catch (e) { console.error('Failed to load rankings:', e); setEntries([]); setUsePerformanceScores(false); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data'); }
     setLoading(false);
-  }, [period]);
+  }, [period, isHi]);
 
   // Load competitions
   const loadCompetitions = useCallback(async () => {
@@ -257,7 +257,7 @@ export default function LeaderboardPage() {
       setCompetitions(Array.isArray(data) ? data : []);
     } catch { setCompetitions([]); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data'); }
     setLoading(false);
-  }, [student]);
+  }, [student, isHi]);
 
   // Load hall of fame
   const loadFame = useCallback(async () => {
@@ -268,7 +268,7 @@ export default function LeaderboardPage() {
       setFame(Array.isArray(data) ? data : []);
     } catch { setFame([]); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data'); }
     setLoading(false);
-  }, []);
+  }, [isHi]);
 
   // Load my titles
   const loadTitles = useCallback(async () => {
@@ -280,7 +280,7 @@ export default function LeaderboardPage() {
       setTitles(data ?? []);
     } catch { setTitles([]); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data'); }
     setLoading(false);
-  }, [student]);
+  }, [student, isHi]);
 
   // Load streaks leaderboard
   const loadStreaks = useCallback(async () => {
@@ -310,7 +310,7 @@ export default function LeaderboardPage() {
       }
     } catch { setStreakEntries([]); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data'); }
     setLoading(false);
-  }, [student]);
+  }, [student, isHi]);
 
   // Phase 5 follow-on — mastery leaderboard fetcher. 404 = flag off
   // or no profile; treat as empty (UI renders the empty state).
@@ -334,7 +334,7 @@ export default function LeaderboardPage() {
       setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data');
     }
     setLoading(false);
-  }, []);
+  }, [isHi]);
 
   useEffect(() => {
     if (!student) return;

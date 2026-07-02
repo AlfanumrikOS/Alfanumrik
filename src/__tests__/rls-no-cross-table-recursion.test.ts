@@ -152,14 +152,12 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   // _teacher_select calls is_teacher_of(student_id) on both tables. Those 4 entries
   // are pruned from the ledger (no longer detected). Ledger: 240 → 236.
   //
-  // The 2 _student_select entries REMAIN in the ledger: the migration replaced
-  // IN(SELECT id FROM students …) with = (SELECT id FROM students … LIMIT 1),
-  // which is a scalar subquery — the predicate still contains "FROM public.students"
-  // so the static detector continues to flag them. They carry no live recursion
-  // risk (students does not reference learner_twin_* in return), but the static
-  // guard cannot distinguish scalar from multi-row subqueries, so they stay frozen.
-  'learner_twin_memory::learner_twin_memory_student_select',
-  'learner_twin_snapshots::learner_twin_snapshots_student_select',
+  // XC-3 Phase drain (migration 20260702130000): the remaining 2 _student_select
+  // entries are pruned. The scalar subquery (= (SELECT id FROM public.students …
+  // LIMIT 1)) is replaced by a call to the EXISTING SECURITY DEFINER helper
+  // public.get_my_student_id() (already on the roster — no new helper minted) — the
+  // policy USING predicate now contains no FROM/JOIN at all, so the static detector
+  // no longer flags them. Ledger: 236 → 234.
   'mol_feedback::mol_feedback_student_insert',
   'mol_request_logs::mol_request_logs_admin_read',
   'mrr_snapshots::mrr_snapshots_admin_select',
@@ -636,7 +634,7 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     ).toEqual([]);
   });
 
-  it('freezes the current blast radius at exactly 236 inline cross-table policies', () => {
+  it('freezes the current blast radius at exactly 234 inline cross-table policies', () => {
     // The audit found ~141 inline policies in the BASELINE; the whole effective
     // chain carried 242 AFTER Phase 0a.1 widened policy-NAME matching to also see
     // UNQUOTED-name policies (was 214 with the quoted-only regex; the 28 newly-visible
@@ -645,15 +643,20 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // the FIRST entry — the apex students policy "School admins can view school
     // students" was refactored to the SECURITY DEFINER helper
     // is_school_admin_of_student(id), so it is no longer flagged: 242 → 241. XC-3
-    // Phase 4 then began draining the REMAINING grandfathered inline policies table by
+    // Phase 4 began draining the REMAINING grandfathered inline policies table by
     // table: migration 20260702100000 refactored the at_risk_alerts policy "Teachers
     // see own at-risk alerts" from an inline `FROM public.teachers` subquery to the
     // SECURITY DEFINER helper get_my_teacher_id() (boundary-identical via the UNIQUE
-    // teachers.auth_user_id constraint), so it is no longer flagged: 241 → 240. This
-    // pins the number so any drift (up = new violation, down = un-pruned ledger) trips
-    // a guard above.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(236);
-    expect(detectedRiskKeys().length).toBe(236);
+    // teachers.auth_user_id constraint): 241 → 240. Migration 20260702110000 drained
+    // 4 Digital Twin policies (_parent_select and _teacher_select on both
+    // learner_twin_snapshots and learner_twin_memory) to is_guardian_of() and
+    // is_teacher_of() helpers: 240 → 236. Migration 20260702130000 drained the
+    // remaining 2 Digital Twin _student_select policies to the EXISTING SECURITY
+    // DEFINER helper public.get_my_student_id() (already on the roster — no new
+    // helper minted): 236 → 234. This pins the number so any drift (up = new
+    // violation, down = un-pruned ledger) trips a guard above.
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(234);
+    expect(detectedRiskKeys().length).toBe(234);
   });
 });
 
