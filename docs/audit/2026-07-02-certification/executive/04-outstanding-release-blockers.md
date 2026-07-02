@@ -29,3 +29,13 @@ The 12 Should-Fix items from Wave 1 and the risk-register entries in this execut
 inputs the Executive Release Board will weigh when it eventually renders a release decision -
 none of them prevent the certification program itself from proceeding to Stage 2/3 once CERT-17
 closes.
+
+## Update 2026-07-02 (later same day) - confirmed with direct evidence
+
+CERT-17 is no longer "unverified" - it has been checked directly against the live Vercel project
+and is CONFIRMED FAILING: Preview's Supabase connection resolves to the production project, and
+its payment-provider key is in live mode. Full evidence: evidence/wave-2-environment-readiness/
+05-CERT-17-confirmed-evidence.md. See 12-ERG-1-executive-release-gate.md for the updated,
+item-by-item gate status. This is now treated as an urgent operational-security item in its own
+right, not only a certification-program blocker - see the recommended immediate actions in that
+gate document.

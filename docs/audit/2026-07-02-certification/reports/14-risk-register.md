@@ -92,3 +92,25 @@ certification) remains OPEN and is NOT resolvable within this engineering wave -
 human with Vercel dashboard access. This continues to block Path B (browser-driven journey
 certification) specifically. It does not block Path A (database/workflow-level certification),
 which is now unblocked pending final go-ahead to provision the certification tenant.
+
+## Update 2026-07-02 (later same day) - CERT-17 CONFIRMED FAIL with direct evidence
+
+CERT-17 is no longer "open, pending human verification" - it is now CONFIRMED FAILING, verified
+directly against the live Vercel project. Preview's Supabase URL resolves to the production
+project reference, and Preview's Razorpay key is in live mode, not test mode. Full evidence:
+evidence/wave-2-environment-readiness/05-CERT-17-confirmed-evidence.md.
+
+Reclassifying CERT-17 from Should-Fix-Before-Release (its prior provisional tag) to **Blocker**,
+and treating it as broader than a certification-program blocker: this is a standing operational-
+security exposure that predates and is independent of this certification program. The deployed
+staging website has been live-configured to use production Supabase and live Razorpay credentials
+for an unknown period. Recommend immediate remediation (repoint Preview's environment variables
+to the staging Supabase project and a Razorpay test-mode key) ahead of and independent of the
+certification program resuming, plus a brief incident-style review of what, if anything, has
+actually been exercised against the staging URL while it was misconfigured this way.
+
+Certification tenant provisioning does NOT proceed. Program remains paused. This finding
+supersedes the prior "pending verification" framing throughout the executive package - treat
+docs/audit/2026-07-02-certification/executive/04-outstanding-release-blockers.md and
+12-ERG-1-executive-release-gate.md as describing the pre-confirmation state; this update is the
+current, authoritative status.

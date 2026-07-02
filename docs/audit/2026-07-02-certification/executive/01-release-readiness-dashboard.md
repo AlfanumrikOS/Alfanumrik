@@ -37,3 +37,11 @@ is not proven, at a glance, without reading 18 report files.
 
 "Alfanumrik Phase 4 certification: engineering work complete and committed, paused pending one
 external verification (staging environment configuration) before live testing can begin."
+
+## Update 2026-07-02 (later same day)
+
+CERT-17 moved from "open, pending human verification" to **CONFIRMED FAILING**, verified directly
+against the live Vercel project (see evidence/wave-2-environment-readiness/05-CERT-17-confirmed-evidence.md).
+Program status unchanged: still PAUSED. Certification tenant provisioning still NOT STARTED. This
+finding also stands independently of the certification program as an urgent operational item -
+see 12-ERG-1-executive-release-gate.md for recommended immediate remediation steps.

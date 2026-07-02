@@ -55,3 +55,4 @@ data/NCERT*/
 # Temporary investigation / one-off verification scripts
 scripts/_tmp_*.mjs
 scripts/_tmp_*.ts
+.env*

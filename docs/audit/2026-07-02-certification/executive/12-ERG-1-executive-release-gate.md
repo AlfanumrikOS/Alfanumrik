@@ -1,22 +1,28 @@
 # ERG-1 - Executive Release Gate
 
-Status: **OPEN.** This gate must close before Stage 2 (live seeded certification testing) may
-begin. No item below may be checked without linked evidence - an unchecked item with no evidence
-is the honest default, not a failure of process.
+Status: **OPEN - CONFIRMED FAILING.** Updated 2026-07-02 with direct evidence obtained via the
+Vercel CLI. Two of the ten items below are not merely unverified - they are now confirmed
+failing with first-party evidence. Full detail: evidence/wave-2-environment-readiness/05-CERT-17-confirmed-evidence.md.
+This gate must close before Stage 2 (live seeded certification testing) may begin. No item below
+may be checked without linked evidence - an unchecked item with no evidence is the honest
+default, not a failure of process.
 
-- [ ] Preview uses staging Supabase - NOT VERIFIED. Evidence needed: hosting-dashboard screenshot
-      or export showing the Preview environment's Supabase URL variable resolves to the staging
-      project reference, not the production one.
+- [ ] Preview uses staging Supabase - **CONFIRMED FAILING.** Direct evidence via a live pull of
+      Preview's environment configuration: the public Supabase connection URL resolves to
+      the production project reference (host: shktyoxqhundlvkiwguu.supabase.co), not the known
+      staging reference (gzpxqklxwzishrkiaatd). Verified 2026-07-02.
 - [ ] Preview uses staging storage - NOT VERIFIED. Evidence needed: confirmation of which storage
       bucket/project the Preview environment's file-storage configuration targets, if the
       platform uses Supabase Storage or an equivalent distinct from the main database connection.
-- [ ] Preview uses staging service-role credential - NOT VERIFIED. Evidence needed: confirmation
-      the Preview environment's elevated database credential is scoped to the staging project,
-      not shared with production (this is the single highest-priority item - it gates database
-      write safety for any browser-driven action).
-- [ ] Preview uses Razorpay test mode - NOT VERIFIED. Evidence needed: confirmation the Preview
-      environment's payment-provider key ID begins with the test-mode prefix, not the live-mode
-      prefix.
+- [ ] Preview uses staging service-role credential - **CONFIRMED FAILING** (derived from the
+      connection-URL finding above - an elevated database credential scoped to the same
+      environment-variable set as a production-pointed connection URL cannot itself be
+      staging-scoped; the elevated credential's own value was not independently read this pass,
+      to avoid unnecessary exposure of a live, high-privilege secret, but the connection-URL
+      evidence alone is sufficient to fail this item).
+- [ ] Preview uses Razorpay test mode - **CONFIRMED FAILING.** Direct evidence: Preview's
+      payment-provider key id begins with the live-mode prefix, not the test-mode prefix.
+      Verified 2026-07-02.
 - [ ] Preview uses approved AI configuration - NOT VERIFIED. Note: AI providers have no sandbox
       tier industry-wide, so "approved AI configuration" here means confirming which API keys and
       usage-cap settings apply to Preview traffic, and getting explicit sign-off that the
@@ -54,3 +60,14 @@ executing the prepared Stage 2/3 tooling (Playwright journeys, seed script, API 
 for real, collecting evidence into the existing templates, then running the teardown script and
 its integration test for the first time against a live database, then convening the Executive
 Release Board with real Stage 2/3 evidence in hand.
+
+## What must happen before that, given the confirmed failure above
+
+This is no longer purely a certification-program blocker. The deployed staging website has been
+live-configured to use production Supabase and live payment-provider credentials, which means it
+has been capable of writing to production data and processing real payments for however long
+this configuration has existed - independent of whether certification ever runs. Recommend, in
+order: (1) an immediate review of whether the staging URL has actually been used by anyone while
+misconfigured this way, and what if any real-world effect that had; (2) repointing Preview's
+environment variables to the staging Supabase project and a test-mode payment key; (3) only then
+re-attempting this gate's connection-URL, elevated-credential, and payment-mode items.
