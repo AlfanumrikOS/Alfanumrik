@@ -69,14 +69,20 @@ class ApiConstants {
   // `check_and_record_usage` with the same `foxy_chat` feature key, so
   // students who upgrade their app mid-day do not get a fresh counter.
   //
-  // Rollback path: ship a new APK with `--dart-define=FOXY_ENDPOINT=edge`.
-  // The 'edge' branch is preserved indefinitely for old builds in the wild.
-  // The Edge Function is NOT yet decommissioned; ai-engineer owns deletion
-  // in a separate PR after the new path has been on >95% of active
-  // installs for 2 weeks.
+  // Rollback path (HISTORICAL — NO LONGER VALID): shipping a new APK with
+  // `--dart-define=FOXY_ENDPOINT=edge` used to be a valid rollback. As of
+  // 2026-07-01 the `foxy-tutor` Edge Function has been RETIRED and removed
+  // from `supabase/functions/` — this is no longer a usable rollback
+  // target; a build pointed at 'edge' would fail to reach any backend.
+  // The 'edge' branch stays compiled in only so already-installed APKs
+  // still configured to it (older default, or a prior manual rollback)
+  // fail predictably at the network call rather than crash. Do NOT build
+  // or ship a new APK with FOXY_ENDPOINT=edge. Removing this dead code
+  // path entirely is a separate, larger change — out of scope here.
+  // See docs/audit/2026-07-02-discovery/05-mobile.md (§4e).
   //
   // Values: 'edge' | 'api'.
-  // Set via `--dart-define=FOXY_ENDPOINT=edge` at build time to roll back.
+  // 'edge' is dead (see above) — do not set FOXY_ENDPOINT=edge on new builds.
   static const String foxyEndpoint = String.fromEnvironment(
     'FOXY_ENDPOINT',
     defaultValue: 'api',
