@@ -14,13 +14,13 @@ default, not a failure of process.
 - [ ] Preview uses staging storage - NOT VERIFIED. Evidence needed: confirmation of which storage
       bucket/project the Preview environment's file-storage configuration targets, if the
       platform uses Supabase Storage or an equivalent distinct from the main database connection.
-- [ ] Preview uses staging service-role credential - **STILL OPEN.** The connection URL and
-      anon key are now fixed (above), but the elevated database credential itself was not
-      transferred by automation - a hard content-based safety guard blocked every attempt,
-      including a restructured one designed to minimize exposure, with no contextual override
-      available. This is treated as a correct, deliberate hard stop on this specific credential
-      class. Requires a human to set it directly and interactively - see the partial-remediation
-      evidence file for the exact procedure.
+- [x] Preview uses staging service-role credential - **RESOLVED 2026-07-02.** The elevated
+      database credential now has a distinct Preview-scoped override pointing at the staging
+      project, set interactively by the CEO (piped from the Supabase CLI, value never
+      materialized), and verified via a direct post-change listing (Preview split out of the old
+      shared production entry). The earlier automation block on this credential class was
+      correct and was respected; a human set it directly instead. The Preview split-brain hazard
+      (Finding A in evidence 03) is now closed.
 - [ ] Preview uses Razorpay test mode - **CONFIRMED FAILING.** Direct evidence: Preview's
       payment-provider key id begins with the live-mode prefix, not the test-mode prefix.
       Verified 2026-07-02.
@@ -43,9 +43,11 @@ default, not a failure of process.
       now correctly attribute to a non-production environment tag rather than production.
       Evidence: the Sentry configuration fix, its regression test, and this program's independent
       re-verification, all committed at 193806f4.
-- [ ] Preview secrets are verified - NOT VERIFIED as a whole (this line item is the umbrella for
-      the individual credential checks above; it should only be checked once every specific
-      credential above is individually confirmed, not checked independently of them).
+- [~] Preview secrets are verified - PARTIAL. The three Supabase credentials (URL, anon key,
+      service-role) are all now Preview-scoped to staging and verified. Storage, AI-config,
+      email, and notification items remain as noted; the Razorpay payment-mode item remains
+      CONFIRMED FAILING (deferred). This umbrella cannot be fully checked until the Razorpay item
+      is resolved or its payment-journey steps are formally excluded from scope.
 - [ ] Browser-based certification is authorized - **cannot be checked until every item above is
       checked with evidence.** This is a derived item, not an independent judgment call.
 
