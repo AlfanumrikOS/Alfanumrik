@@ -7265,8 +7265,10 @@ join. No schema/index change. New pins: Section 5b source pin for the
 composite key + absence of `topic: q.bloom_level`
 (`src/__tests__/adaptive-differential.test.ts`); behavioral pins (composite
 key contains the question id; two distinct wrong questions same bloom → two
-cards; same question twice → one card; topic never null) in
-`src/__tests__/components/quiz/QuizResults.flashcard-grade.test.tsx`
+cards; same question twice → one card; topic never null; batch-then-retry ×
+new-key interaction — one row's composite key 23505s on the retake race →
+batch aborts, row retry keeps the OTHER card, banner counts exactly 1, no
+warn) in `src/__tests__/components/quiz/QuizResults.flashcard-grade.test.tsx`
 (REG-235's file). The other two writers are intentionally unaffected:
 `/api/learner/cards/create` omits `topic` (NULL — student-created cards stay
 outside `idx_src_u` by design) and the Foxy save-flashcard route keeps its
@@ -7345,7 +7347,10 @@ capped students at 6 lifetime review cards and NULL-bloom cards escaped dedupe).
 REG-235's payload-key allowlist is unchanged (`topic` stays a pinned key);
 `QuizResults.flashcard-grade.test.tsx` gains a per-question-dedupe describe
 block pinning the composite value, distinct-cards-per-question, retake dedupe,
-and topic-never-null. The other two writers' contracts are untouched.
+topic-never-null, and the batch-then-retry × new-key interaction (one row's
+composite key 23505s → batch aborts, row retry keeps the other card,
+`created` counts only survivors). The other two writers' contracts are
+untouched.
 
 ### Catalog total
 

@@ -49,6 +49,12 @@ const insertState = {
   payloads: [] as Record<string, unknown>[],
   // Error returned by that insert (supabase-js returns errors, never throws)
   error: null as { code: string; message: string } | null,
+  // Per-row errors keyed by source_id — simulates the DB partial unique
+  // index idx_src_u rejecting SPECIFIC rows. A batch insert containing any
+  // conflicting row aborts atomically (PostgREST semantics); a single-row
+  // insert fails only if its own key conflicts. Exercises the REG-234
+  // batch-then-retry path with the per-question composite topic key.
+  rowErrors: {} as Record<string, { code: string; message: string }>,
 };
 
 const loggerState = {
@@ -120,7 +126,18 @@ vi.mock('@/lib/supabase', () => {
         if (table === 'spaced_repetition_cards') {
           const rows = Array.isArray(payload) ? payload : [payload];
           insertState.payloads.push(...(rows as Record<string, unknown>[]));
-          return { data: null, error: insertState.error };
+          if (insertState.error) return { data: null, error: insertState.error };
+          // Per-row conflict: any conflicting row aborts the whole batch
+          // (PostgREST inserts are atomic); a single-row insert fails only
+          // on its own key.
+          const conflicting = rows.find(
+            r => insertState.rowErrors[(r as Record<string, unknown>).source_id as string],
+          );
+          if (conflicting) {
+            const key = (conflicting as Record<string, unknown>).source_id as string;
+            return { data: null, error: insertState.rowErrors[key] };
+          }
+          return { data: null, error: null };
         }
         return { data: null, error: null };
       }),
@@ -245,6 +262,7 @@ beforeEach(() => {
   authState.student = { id: 'stu-1', name: 'Asha', grade: '8', academic_goal: null };
   insertState.payloads = [];
   insertState.error = null;
+  insertState.rowErrors = {};
   loggerState.warns = [];
   queryState.existingFrontTexts = [];
   queryState.existingSourceIds = [];
@@ -364,6 +382,46 @@ describe('QuizResults — per-question SRS dedupe key (fix/srs-dedupe-per-questi
     expect(insertState.payloads[0].topic).toBe('math:2:q2');
     // The race path (dedupe read misses, DB catches it) is the 23505-benign
     // test below — together they pin "same question twice = one card".
+  });
+
+  it('REG-234 batch-then-retry with the new key: one row 23505s (retake race on its composite topic) → batch aborts, row retry keeps the OTHER card, banner reports exactly 1', async () => {
+    // The client-side dedupe read missed q1 (race: another tab/attempt just
+    // wrote it), so BOTH cards are attempted. The DB partial unique index
+    // idx_src_u rejects q1's composite per-question key; PostgREST aborts
+    // the whole 2-row batch on that one conflict.
+    insertState.rowErrors = {
+      q1: {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "idx_src_u"',
+      },
+    };
+    render(<QuizResults {...makeProps()} />);
+
+    // 2 batch rows + 2 row-by-row retry attempts.
+    await waitFor(() => {
+      expect(insertState.payloads).toHaveLength(4);
+    });
+    // Batch carried both composite per-question keys…
+    expect(insertState.payloads.slice(0, 2).map(c => c.topic)).toEqual([
+      'math:1:q1',
+      'math:2:q2',
+    ]);
+    // …and the retry re-attempted each row individually in order.
+    expect(insertState.payloads[2].source_id).toBe('q1');
+    expect(insertState.payloads[3].source_id).toBe('q2');
+
+    // q1's 23505 is expected dedupe (same question wrong twice = one card,
+    // DB-enforced side of the contract) — benign, never warned.
+    expect(loggerState.warns).toHaveLength(0);
+
+    // q2 survived the retry: created = 1, banner is singular ("1 flashcard",
+    // not "2 flashcards" — the conflicting row must not be counted).
+    await waitFor(() => {
+      expect(
+        screen.getByText(/1 flashcard created from your mistakes/i),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/2 flashcards/i)).not.toBeInTheDocument();
   });
 
   it('topic is never null/undefined for quiz-wrong cards (the NULL-topic dedupe escape is closed)', async () => {
