@@ -7324,3 +7324,50 @@ non-duplicate insert errors and explicit benign handling of 23505).
 **Total catalog: 202 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Knowledge Intelligence Wave 1 — chapter_asset_inventory substrate + chunk-pass audit engine (2026-07-03)
+
+Source: commits `34e9cbff` (migration `20260703000300_chapter_asset_inventory.sql`
++ shape test) and `413ae6f4` (pure audit-engine modules under
+`scripts/knowledge-audit/` + 4 test files + the vitest normal-lane carve-out),
+branch `feat/wave0-light-dark-machinery`. Testing-agent verification pass
+2026-07-03 strengthened 7 previously-untested guard branches (0/0 + non-finite
+coverage denominators, the MAX_MINOR_INDEX 99 ceiling and minor≥1 floor — the
+pre-existing "Fig 4.2019" case is rejected by the regex word-boundary, NOT the
+ceiling, verified empirically — the MAX_EXERCISE_QUESTION 80 ceiling, the
+300-char note truncation, and non-array evidence tolerance).
+
+**Why.** `chapter_asset_inventory` is the substrate every later Knowledge
+Intelligence wave writes into: one row per (cbse_syllabus chapter × dimension)
+across the 31-dimension educational-completeness model, written exclusively by
+service-role audit workers. The chunk-pass parser is the trust boundary between
+a hallucination-capable model and that inventory — if evidence ids, counts, or
+expected-count heuristics can be inflated or can smuggle chunk text, every
+downstream gap query and generation decision is poisoned. A silent widening of
+the dimension enum, a dropped RLS policy, or a lane regression that stops these
+pure tests running per-PR would all be invisible without a pin.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-236 | `chapter_asset_inventory 31-dimension substrate + audit-engine parser/coverage invariants` (5 files) | (a) **Migration shape** (house REG-125 tokenizer canary, no DB): the `dimension` CHECK enumerates EXACTLY the 31 educational-completeness values (no silent add/remove/rename); RLS ENABLED in the SAME migration with an explicit deny-all policy for `anon, authenticated` (P8 — service-role-only posture); `UNIQUE (syllabus_id, dimension)` upsert target; FK `syllabus_id → cbse_syllabus(id) ON DELETE CASCADE` verified against the baseline; `audit_method` CHECK = exactly the 5 provenance values; `coverage_pct` bounded NULL-or-0..100; strictly additive (no DROP/DELETE/UPDATE/TRUNCATE in executable SQL). (b) **Parser fail-closed tolerance**: unparseable model output → `ok:false`; all 31 dimensions normalized with 0-fill + note; `found_count` clamped (negative→0, float→floored, non-numeric→0, numeric string accepted); evidence ids restricted to the input chunk-id set — hallucinated ids DROPPED with a note — capped at 5, and rows carry ids only, never chunk text (P13); dimension notes truncated ≤300 chars; `suspected_missing` string-coerced, blank-dropped, capped at 50 entries / 200 chars. (c) **Coverage math**: null on null/zero/negative/non-finite denominator (0/0 is null, never NaN); 2dp; clamped to 100 (matches the DB CHECK); negative found → 0. (d) **Heuristic false-positive guards**: MAX_MINOR_INDEX 99 ceiling + minor≥1 floor (a 3-digit OCR minor like "Fig. 4.150" or a "4.0" artifact cannot inflate expected counts); dominant-major grouping rejects minority cross-chapter references; exercise counts require the numbering series to start ≤2 AND respect the MAX_EXERCISE_QUESTION 80 ceiling (a stray line-start "99." cannot fabricate 99 questions); scan filter specs pin `grade` as a P5 string. (e) **Lane**: these pure tests run in the default per-PR `npm test` lane via the `vitest.config.ts` `!(knowledge-audit)` extglob carve-out while every other `scripts/**`/`migrations/**` integration test stays integration-only (verified empirically with `vitest list` under both configs on vitest 4.1.8/picomatch 4, Windows). | `src/__tests__/regressions/chapter-asset-inventory-migration.test.ts`, `src/__tests__/scripts/knowledge-audit/parse-response.test.ts`, `coverage.test.ts`, `prompt.test.ts`, `pilot-check.test.ts` | E | P5, P8, P13 |
+
+### Invariants covered by this section
+
+- P5 (grade format) — `buildQuestionBankFilterSpec` / `buildGeneratedContentFilterSpec`
+  pin `grade` as the string `"6"`, never an integer, in every scan spec.
+- P8 (RLS boundary) — RLS enabled + deny-all policy in the SAME migration file;
+  service_role is the only writer/reader (house posture, cf. synthetic_monitor_results).
+- P13 (data privacy) — inventory `evidence` is chunk-ids-only (foreign ids dropped,
+  length-bounded); notes truncated so chunk text can never ride along; the table
+  comment itself declares no content/PII, and the row-assembly test asserts every
+  evidence entry is an id-shaped short string.
+
+### Catalog total
+
+Pre-REG-236: 202 entries (through REG-235, Wave 0 Task 0.7).
+Wave 1 verification adds REG-236 (chapter_asset_inventory 31-dimension CHECK +
+deny-all RLS + audit-engine parser/coverage invariants — evidence carries ids
+only, P13 — plus the vitest lane carve-out pin).
+**Total catalog: 203 entries (target: 35 — TARGET EXCEEDED).**
+
+---

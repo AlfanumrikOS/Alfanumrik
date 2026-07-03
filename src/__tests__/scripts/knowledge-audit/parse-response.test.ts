@@ -155,6 +155,37 @@ describe('parseAuditResponse', () => {
     expect(long && long.length).toBeLessThanOrEqual(200);
   });
 
+  // Strengthened 2026-07-03 (testing review): the 300-char note truncation
+  // (P13-adjacent — notes must never smuggle long chunk text into the
+  // inventory) and non-array evidence tolerance were previously untested.
+  it('truncates dimension notes to 300 chars with an ellipsis (notes never carry chunk text)', () => {
+    const longNote = 'x'.repeat(500);
+    const raw = JSON.stringify({
+      dimensions: { activities: { found_count: 1, evidence_chunk_ids: ['c-1'], notes: longNote } },
+    });
+    const r = parseAuditResponse(raw, VALID_IDS);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.dimensions.activities.notes.length).toBeLessThanOrEqual(300);
+    expect(r.dimensions.activities.notes.endsWith('…')).toBe(true);
+  });
+
+  it('tolerates non-array evidence_chunk_ids (string / object) by emitting an empty evidence list', () => {
+    const raw = JSON.stringify({
+      dimensions: {
+        activities: { found_count: 2, evidence_chunk_ids: 'c-1', notes: '' },
+        diagrams: { found_count: 1, evidence_chunk_ids: { id: 'c-2' }, notes: '' },
+      },
+    });
+    const r = parseAuditResponse(raw, VALID_IDS);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.dimensions.activities.evidence_chunk_ids).toEqual([]);
+    expect(r.dimensions.diagrams.evidence_chunk_ids).toEqual([]);
+    // counts survive independently of evidence shape
+    expect(r.dimensions.activities.found_count).toBe(2);
+  });
+
   it('handles a fully-empty but valid object (all 31 dims 0-filled)', () => {
     const r = parseAuditResponse('{}', VALID_IDS);
     expect(r.ok).toBe(true);

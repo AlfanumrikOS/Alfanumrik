@@ -49,6 +49,18 @@ describe('computeCoverage', () => {
   it('treats negative found as 0', () => {
     expect(computeCoverage(-3, 6)).toBe(0);
   });
+
+  // Strengthened 2026-07-03 (testing review): the exact 0/0 pair and
+  // non-finite denominators were previously untested — pin the
+  // division-by-zero guard directly.
+  it('0/0 is null (no denominator), never NaN', () => {
+    expect(computeCoverage(0, 0)).toBeNull();
+  });
+
+  it('non-finite expected (NaN / Infinity) is null', () => {
+    expect(computeCoverage(5, NaN)).toBeNull();
+    expect(computeCoverage(5, Infinity)).toBeNull();
+  });
 });
 
 describe('maxSeriesIndex / numbering-gap heuristics', () => {
@@ -69,6 +81,23 @@ describe('maxSeriesIndex / numbering-gap heuristics', () => {
   it('ignores OCR junk minor indices above the sanity ceiling', () => {
     const text = 'Fig. 4.2019 is OCR junk. Fig. 4.2 is real.';
     expect(maxSeriesIndex(text, /\bFig(?:ure)?\.?\s*(\d{1,2})\.(\d{1,3})\b/gi)).toBe(2);
+  });
+
+  // Strengthened 2026-07-03 (testing review): "4.2019" is rejected by the
+  // regex word-boundary (backtracking can never satisfy \b), NOT by the
+  // MAX_MINOR_INDEX ceiling — verified empirically. The two tests below hit
+  // the ceiling / floor branches themselves, which were previously untested.
+  it('MAX_MINOR_INDEX ceiling: a 3-digit minor like "4.150" matches the regex but is rejected by the ceiling', () => {
+    const junkOnly = 'Fig. 4.150 is OCR junk with no real figures.';
+    expect(maxSeriesIndex(junkOnly, /\bFig(?:ure)?\.?\s*(\d{1,2})\.(\d{1,3})\b/gi)).toBeNull();
+    const mixed = 'Fig. 4.150 is OCR junk. Fig. 4.3 is real.';
+    expect(maxSeriesIndex(mixed, /\bFig(?:ure)?\.?\s*(\d{1,2})\.(\d{1,3})\b/gi)).toBe(3);
+  });
+
+  it('minor index 0 ("Activity 4.0") is rejected (series indices start at 1)', () => {
+    const text = 'Activity 4.0 is a numbering artifact. Activity 4.2 is real.';
+    expect(maxSeriesIndex(text, /\bActivity\s+(\d{1,2})\.(\d{1,3})\b/gi)).toBe(2);
+    expect(maxSeriesIndex('Activity 4.0 alone', /\bActivity\s+(\d{1,2})\.(\d{1,3})\b/gi)).toBeNull();
   });
 });
 
@@ -121,6 +150,16 @@ describe('deriveExpectedExercises (question-number continuity)', () => {
 
   it('returns null when no exercise chunks exist', () => {
     expect(deriveExpectedExercises([chunk('c1', 'pure prose, no questions')])).toBeNull();
+  });
+
+  // Strengthened 2026-07-03 (testing review): the MAX_EXERCISE_QUESTION
+  // ceiling (80) was previously untested — the existing "42." case is caught
+  // by chunk filtering, not by the ceiling.
+  it('MAX_EXERCISE_QUESTION ceiling: a line-start "99." inside an exercise chunk cannot inflate the count', () => {
+    const chunks = [
+      chunk('ex', 'EXERCISES\n1. What is matter?\n2. Name materials.\n99. OCR page-number junk.', 'exercise'),
+    ];
+    expect(deriveExpectedExercises(chunks)).toBe(2);
   });
 });
 
