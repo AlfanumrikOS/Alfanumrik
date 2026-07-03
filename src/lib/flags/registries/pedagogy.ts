@@ -185,6 +185,32 @@ export const ADAPTIVE_LIVE_SELECTION_FLAGS = {
 } as const;
 
 /**
+ * IRT question-selection ACTIVATION flag (2026-07-03; flag itself seeded by the
+ * Foxy-moat Phase 4 migration 20260428000600_select_questions_by_irt_info.sql).
+ *
+ *  ff_irt_question_selection — gates every consumer that lets NIGHTLY-CALIBRATED
+ *    2PL parameters (irt_a/irt_b with irt_calibration_n >= 30) change question
+ *    RANKING: the select_questions_by_irt_info SQL RPC path, the quiz-generator
+ *    Edge Function branch, and the fisher_info branch of the live web selector
+ *    (computeSelectionScore via selectAdaptiveQuestions / getQuizQuestionsV2).
+ *
+ *    Rationale (OEF staged-ramp rule): the repaired IRT calibrator progressively
+ *    stamps calibration onto live items. Without this gate, items crossing
+ *    n >= 30 would silently flip from proxy_distance to fisher_info ranking for
+ *    the ff_adaptive_live_selection_v1 cohort with NO flag flip. IRT-scored
+ *    serving must instead be a deliberate, evidence-backed ramp of THIS flag.
+ *
+ *    Evaluated per-student via isFeatureEnabled with userId = students.id so
+ *    percentage rollout hashes deterministically per student. FAIL-CLOSED
+ *    everywhere: flag missing / read error / evaluation false → proxy_distance
+ *    ranking (calibrated items score exactly like uncalibrated ones).
+ */
+export const IRT_SELECTION_FLAGS = {
+  /** fisher_info ranking activation for calibrated items. Fail-closed. */
+  QUESTION_SELECTION: 'ff_irt_question_selection',
+} as const;
+
+/**
  * Digital Twin + Knowledge Graph flag (2026-07-02, Slice 1, CEO-approved).
  *
  *  ff_digital_twin_v1 — master switch for the learner digital-twin behaviors

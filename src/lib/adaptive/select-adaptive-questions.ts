@@ -21,6 +21,11 @@
 //      When the item is uncalibrated (irt_calibration_n < 30) this falls back
 //      to the irt_difficulty proxy distance to theta; when no theta is known
 //      it degrades gracefully (theta defaults to 0 = average ability).
+//      Calibrated items only use fisher_info ranking when the caller passes
+//      allowFisherInfo: true (= ff_irt_question_selection genuinely enabled
+//      for this student); otherwise they rank via the same proxy distance,
+//      so accumulating calibration data cannot change live ranking without a
+//      deliberate flag ramp. Fail-closed default: false.
 //
 // IMPORTANT — this is a CANDIDATE PROVIDER, not a hard filter. It returns
 // weak-topic-targeted candidate rows; the caller (getQuizQuestionsV2) layers
@@ -108,6 +113,22 @@ export interface SelectAdaptiveQuestionsParams {
   irtTheta?: number | null;
   /** Question IDs already chosen this session — never re-surface these. */
   excludeIds?: string[];
+  /**
+   * fisher_info ACTIVATION gate (ff_irt_question_selection, OEF staged ramp).
+   *
+   * Default FALSE — fail-closed. The nightly IRT calibrator stamps
+   * irt_a/irt_b/irt_calibration_n on live items; without this gate,
+   * computeSelectionScore would auto-switch those items to fisher_info ranking
+   * as soon as calibration_n crosses 30, silently changing live ranking for
+   * the ff_adaptive_live_selection_v1 cohort with no flag flip.
+   *
+   * The LIVE caller (getQuizQuestionsV2) evaluates ff_irt_question_selection
+   * per-student (is_enabled + scoping + deterministic percentage rollout via
+   * the student id) and passes the result here. When false/omitted, calibrated
+   * items rank via the irt_difficulty proxy exactly like uncalibrated ones.
+   * This module never reads flags itself — it stays a pure, injectable selector.
+   */
+  allowFisherInfo?: boolean;
 }
 
 export interface SelectAdaptiveQuestionsResult {
@@ -206,6 +227,10 @@ export async function selectAdaptiveQuestions(
 ): Promise<SelectAdaptiveQuestionsResult> {
   const { studentId, subject, grade, count } = params;
   const theta = params.irtTheta ?? 0; // 0 = average ability when uncalibrated
+  // Fail-closed: fisher_info ranking only when the caller AFFIRMATIVELY passes
+  // true (i.e. ff_irt_question_selection evaluated genuinely enabled for this
+  // student). Omitted / undefined / flag-read failure → proxy ranking.
+  const allowFisherInfo = params.allowFisherInfo === true;
   const excludeIds = new Set<string>(params.excludeIds ?? []);
   const now = new Date().toISOString();
 
@@ -338,7 +363,10 @@ export async function selectAdaptiveQuestions(
     //    P6-shape guard.
     const ranked = rows
       .filter((q) => q && typeof q.id === 'string' && !usedIds.has(q.id) && isUsableCandidate(q))
-      .map((q) => ({ q, score: computeSelectionScore(theta, toIrtItemParams(q)).score }))
+      .map((q) => ({
+        q,
+        score: computeSelectionScore(theta, toIrtItemParams(q), { allowFisherInfo }).score,
+      }))
       .sort((a, b) => b.score - a.score);
 
     let pickedThisTopic = 0;

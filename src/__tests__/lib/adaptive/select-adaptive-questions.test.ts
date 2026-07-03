@@ -487,6 +487,9 @@ describe('selectAdaptiveQuestions — assertion 6 (IRT-proxy ranking)', () => {
     // A calibrated item peaked at theta=0 (b=0, n>=30) should outrank a
     // calibrated item peaked far away (b=2.5) — the +0.5 calibrated bonus is
     // equal so the discriminating factor is Fisher info at theta.
+    // allowFisherInfo: true — the fisher_info branch is now an explicit opt-in
+    // gated by ff_irt_question_selection (see the activation-gate describe
+    // below); this test exercises the OPEN-gate ranking.
     const { client } = makeFakeClient({
       subject: { data: { id: 'subj-uuid-1' }, error: null },
       mastery: { data: [masteryRow(0.6, { chapter: 5, conceptTag: 'fractions' })], error: null },
@@ -512,8 +515,91 @@ describe('selectAdaptiveQuestions — assertion 6 (IRT-proxy ranking)', () => {
         error: null,
       }),
     });
-    const res = await selectAdaptiveQuestions(client, { ...BASE_PARAMS, count: 1 });
+    const res = await selectAdaptiveQuestions(client, {
+      ...BASE_PARAMS,
+      count: 1,
+      allowFisherInfo: true,
+    });
     expect(res.questions[0].id).toBe('near-cal'); // higher Fisher info at theta=0
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// fisher_info ACTIVATION gate — ff_irt_question_selection (OEF staged ramp)
+//
+// The repaired IRT calibrator will begin stamping irt_a/irt_b/irt_calibration_n
+// on live items. Until ff_irt_question_selection is deliberately ramped, that
+// accumulating calibration data must NOT change live ranking: with the gate
+// closed (params.allowFisherInfo omitted or false), calibrated items rank via
+// proxy_distance exactly like uncalibrated ones. The selector never reads the
+// flag itself — the live caller (getQuizQuestionsV2) evaluates it and passes
+// the result; the selector default is FALSE (fail-closed).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('selectAdaptiveQuestions — fisher_info activation gate (allowFisherInfo)', () => {
+  // A pool where fisher and proxy rankings DIVERGE at theta = 1:
+  //   'cal-mismatch' — calibrated (a=2, b=1, n=50) but proxy anchor far from
+  //     theta (irt_difficulty = -1.0):
+  //       fisher score = a^2/4 + 0.5 = 1.5   (would win with the gate OPEN)
+  //       proxy  score = 1/(1+|1-(-1)|) = 1/3 (loses with the gate CLOSED)
+  //   'proxy-near' — uncalibrated, irt_difficulty = 1.0:
+  //       proxy score = 1/(1+0) = 1.0
+  const divergingPool = () => ({
+    data: [
+      makeQuestion({
+        id: 'cal-mismatch',
+        bloom_level: 'remember',
+        irt_a: 2.0,
+        irt_b: 1.0,
+        irt_calibration_n: 50,
+        irt_difficulty: -1.0,
+      }),
+      makeQuestion({
+        id: 'proxy-near',
+        bloom_level: 'remember',
+        irt_a: null,
+        irt_b: null,
+        irt_calibration_n: 0,
+        irt_difficulty: 1.0,
+      }),
+    ],
+    error: null,
+  });
+
+  function gateClient() {
+    return makeFakeClient({
+      subject: { data: { id: 'subj-uuid-1' }, error: null },
+      mastery: { data: [masteryRow(0.6, { chapter: 5, conceptTag: 'fractions' })], error: null },
+      questionBank: divergingPool,
+    });
+  }
+
+  it('allowFisherInfo OMITTED (fail-closed default): calibrated item ranks by proxy_distance — proxy-near wins', async () => {
+    const { client } = gateClient();
+    const res = await selectAdaptiveQuestions(client, { ...BASE_PARAMS, count: 2, irtTheta: 1 });
+    expect(res.questions.map((q: any) => q.id)).toEqual(['proxy-near', 'cal-mismatch']);
+  });
+
+  it('allowFisherInfo: false (flag off / flag-read failure): identical proxy ranking — calibration data changes NOTHING', async () => {
+    const { client } = gateClient();
+    const res = await selectAdaptiveQuestions(client, {
+      ...BASE_PARAMS,
+      count: 2,
+      irtTheta: 1,
+      allowFisherInfo: false,
+    });
+    expect(res.questions.map((q: any) => q.id)).toEqual(['proxy-near', 'cal-mismatch']);
+  });
+
+  it('allowFisherInfo: true (flag genuinely enabled): fisher_info activates — cal-mismatch wins', async () => {
+    const { client } = gateClient();
+    const res = await selectAdaptiveQuestions(client, {
+      ...BASE_PARAMS,
+      count: 2,
+      irtTheta: 1,
+      allowFisherInfo: true,
+    });
+    expect(res.questions.map((q: any) => q.id)).toEqual(['cal-mismatch', 'proxy-near']);
   });
 });
 
