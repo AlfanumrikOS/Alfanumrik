@@ -287,10 +287,15 @@ describe('QuizResults — auto flashcard insert payload (Wave 0 Task 0.7b)', () 
       // Exact key allowlist — every key exists in the production table
       // (baseline migration 00000000000000_baseline_from_prod.sql ~13552);
       // phantom columns must never be sent.
+      // `chapter_title` added deliberately (srs-dedupe humane-label fix):
+      // it is a real production column (nullable text, baseline ~13552) and
+      // both review-card display paths prefer it over the machine `topic`
+      // dedupe key — without it students would see `math:5:uuid` labels.
       expect(Object.keys(card).sort()).toEqual([
         'back_text',
         'card_type',
         'chapter_number',
+        'chapter_title',
         'front_text',
         'grade',
         'hint',
@@ -316,6 +321,11 @@ describe('QuizResults — auto flashcard insert payload (Wave 0 Task 0.7b)', () 
       // Per-question SRS dedupe: topic is the composite key, never null.
       expect(typeof card.topic).toBe('string');
       expect((card.topic as string).length).toBeGreaterThan(0);
+      // Humane display title: "Chapter N" from the question's chapter_number
+      // — NEVER the composite dedupe key and NEVER a question id/uuid.
+      expect(card.chapter_title).toMatch(/^Chapter \d+$/);
+      expect(card.chapter_title).not.toContain(':');
+      expect(card.chapter_title as string).not.toContain(card.source_id as string);
     }
 
     // Success path still surfaces the existing banner
@@ -422,6 +432,24 @@ describe('QuizResults — per-question SRS dedupe key (fix/srs-dedupe-per-questi
       ).toBeInTheDocument();
     });
     expect(screen.queryByText(/2 flashcards/i)).not.toBeInTheDocument();
+  });
+
+  it('chapter_title falls back to the subject name when chapter_number is missing — never the composite key', async () => {
+    const props = makeProps();
+    // chapter_number 0 is the falsy "missing" case (the writer uses the same
+    // `q.chapter_number || undefined` truthiness for the chapter_number column).
+    props.questions = props.questions.map(q => ({ ...q, chapter_number: 0 }));
+    render(<QuizResults {...props} />);
+
+    await waitFor(() => {
+      expect(insertState.payloads).toHaveLength(2);
+    });
+    for (const card of insertState.payloads) {
+      // Humane fallback: the subject name (assessment-specified), not
+      // "Chapter 0", not null, and never the machine topic key.
+      expect(card.chapter_title).toBe('math');
+      expect(card.chapter_title).not.toBe(card.topic);
+    }
   });
 
   it('topic is never null/undefined for quiz-wrong cards (the NULL-topic dedupe escape is closed)', async () => {

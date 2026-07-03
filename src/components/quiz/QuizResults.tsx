@@ -305,6 +305,17 @@ export default function QuizResults({
               // created. P5: grade is always a string "6"-"12" from the auth profile.
               grade: student.grade,
               chapter_number: q.chapter_number || undefined,
+              // Humane display title (writer half of the srs-dedupe label
+              // fix). Both review-card display paths prefer `chapter_title`
+              // over `topic` — and `topic` below is now a MACHINE dedupe key
+              // that must never reach a student's screen. No chapter TITLE is
+              // in scope on the quiz surface (questions carry only
+              // chapter_number), so write "Chapter N", falling back to the
+              // subject. The display-side humaneCardLabel fallback in
+              // src/lib/srs-card-label.ts covers legacy rows without it.
+              chapter_title: q.chapter_number
+                ? `Chapter ${q.chapter_number}`
+                : selectedSubject,
               // Per-question dedupe key (assessment-required). `topic` used to
               // be q.bloom_level which — combined with the DB's partial unique
               // index idx_src_u (student_id, topic, card_type) WHERE topic IS
