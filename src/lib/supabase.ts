@@ -19,6 +19,7 @@ import {
   selectAdaptiveQuestions,
   type AdaptiveClient,
 } from './adaptive/select-adaptive-questions';
+import { humaneCardLabel } from './srs-card-label';
 
 // Re-export from the canonical client module — new code uses supabase-client.ts
 export { supabase, supabaseUrl, supabaseAnonKey } from './supabase-client';
@@ -817,7 +818,16 @@ export async function getReviewCards(studentId: string, limit = 10) {
     .order('next_review_date')
     .limit(limit);
   if (cards && cards.length > 0) {
-    return cards.map(c => ({ ...c, topic: c.topic, chapter_title: c.chapter_title || c.topic }));
+    // Display hardening: quiz-review cards write `topic` as the machine
+    // composite dedupe key (subject:chapter:question_id). When chapter_title
+    // is missing (legacy rows), humaneCardLabel converts the composite key to
+    // `subject · Chapter N` and passes human-readable topics (Foxy cards)
+    // through untouched — a student must never see the raw key/uuid.
+    return cards.map(c => ({
+      ...c,
+      topic: c.topic,
+      chapter_title: c.chapter_title || humaneCardLabel(c.topic),
+    }));
   }
   // Final fallback: concept_mastery (limited columns)
   const { data } = await supabase.from('concept_mastery')
