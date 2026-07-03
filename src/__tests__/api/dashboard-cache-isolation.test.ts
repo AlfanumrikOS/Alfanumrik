@@ -254,14 +254,15 @@ describe('Phase 5 cache isolation — /api/v2/student/progress', () => {
 
 describe('Phase 5 cache isolation — /api/dashboard/reviews-due', () => {
   it('does NOT leak student A cached count to student B', async () => {
-    // A has 3 due rows, B has 1.
+    // A has 3 due rows, B has 1. Fixtures use next_review_at (timestamptz) —
+    // the real SM-2 schedule; next_review_date is a deprecated ghost column.
     reviewsRowsByStudent[STUDENT_A] = [
-      { next_review_date: '2026-04-10', mastery_probability: 0.4 },
-      { next_review_date: '2026-04-11', mastery_probability: 0.5 },
-      { next_review_date: '2026-04-12', mastery_probability: 0.6 },
+      { next_review_at: '2026-04-10T08:00:00+00:00', mastery_probability: 0.4 },
+      { next_review_at: '2026-04-11T08:00:00+00:00', mastery_probability: 0.5 },
+      { next_review_at: '2026-04-12T08:00:00+00:00', mastery_probability: 0.6 },
     ];
     reviewsRowsByStudent[STUDENT_B] = [
-      { next_review_date: '2026-04-20', mastery_probability: 0.3 },
+      { next_review_at: '2026-04-20T08:00:00+00:00', mastery_probability: 0.3 },
     ];
 
     authAs(STUDENT_A);
@@ -277,7 +278,7 @@ describe('Phase 5 cache isolation — /api/dashboard/reviews-due', () => {
 
   it('a denied request returns the auth error, not a prior cached count', async () => {
     reviewsRowsByStudent[STUDENT_A] = [
-      { next_review_date: '2026-04-10', mastery_probability: 0.4 },
+      { next_review_at: '2026-04-10T08:00:00+00:00', mastery_probability: 0.4 },
     ];
     authAs(STUDENT_A);
     expect((await reviewsGET(reviewsReq())).status).toBe(200);
@@ -292,7 +293,7 @@ describe('Phase 5 cache isolation — /api/dashboard/reviews-due', () => {
 
   it('collapses a repeat call within the 30s TTL to a single DB fetch', async () => {
     reviewsRowsByStudent[STUDENT_A] = [
-      { next_review_date: '2026-04-10', mastery_probability: 0.4 },
+      { next_review_at: '2026-04-10T08:00:00+00:00', mastery_probability: 0.4 },
     ];
     authAs(STUDENT_A);
 
@@ -312,8 +313,8 @@ describe('Phase 5 cache isolation — /api/dashboard/reviews-due', () => {
 
     reviewsErrorFor.delete(STUDENT_A);
     reviewsRowsByStudent[STUDENT_A] = [
-      { next_review_date: '2026-04-10', mastery_probability: 0.4 },
-      { next_review_date: '2026-04-11', mastery_probability: 0.5 },
+      { next_review_at: '2026-04-10T08:00:00+00:00', mastery_probability: 0.4 },
+      { next_review_at: '2026-04-11T08:00:00+00:00', mastery_probability: 0.5 },
     ];
     const okRes = await reviewsGET(reviewsReq());
     expect(okRes.status).toBe(200);

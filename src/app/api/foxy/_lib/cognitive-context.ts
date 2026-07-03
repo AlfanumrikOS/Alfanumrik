@@ -14,7 +14,12 @@
  * The query shapes, filters, fallback/empty handling, and the returned
  * `CognitiveContext` / `ChapterTopicProgress` / `TwinContext` assembly are
  * byte-identical to the originals (pinned by the route characterization tests
- * plus the cognitive / cold-start / lead-concept / progression tests).
+ * plus the cognitive / cold-start / lead-concept / progression tests), with
+ * two deliberate post-extraction fixes: (a) the overdue-review query reads the
+ * real SM-2 column `next_review_at` (timestamptz) instead of the ghost
+ * `next_review_date` DATE column, and (b) `nextAction` is derived locally via
+ * the pure `deriveNextAction` ladder instead of the retired cme-engine
+ * `get_next_action` network call (which 401'd on every request).
  *
  * Shared types/values live in their existing homes: `CognitiveContext` +
  * `EMPTY_COGNITIVE_CONTEXT` come from `./constants` (M1); the digital-twin
@@ -105,6 +110,111 @@ export function classifyExpectationLifecycle(
   return 'unresolved';
 }
 
+// ─── CME next-action priority ladder (local, pure) ──────────────────────────
+//
+// Replaces the retired network call to the cme-engine Edge Function
+// `get_next_action` (which authenticated with a service-role key against a
+// user-JWT `auth.getUser()` check → 401 on every call, silently swallowed, so
+// nextAction was ALWAYS null; it also read `cme_concept_state`, a table with
+// no remaining writer). Derives the same recommendation locally from data
+// loadCognitiveContext already loads, mirroring cme-engine's documented
+// 5-priority order (supabase/functions/cme-engine/index.ts selectNextAction):
+//   (1) prerequisite / knowledge gap      → 'remediate'
+//   (2) forgetting risk (overdue review)  → 'revise'
+//   (3) repeated conceptual errors (>=3)  → 're_teach'
+//   (4) next unmastered concept           → 'practice' / 'challenge'
+//   (5) nothing actionable                → null (the prompt's cold-start /
+//       consolidation rails handle the no-signal case — exam-prep default)
+//
+// Pure over already-loaded data — no I/O. Output shape is exactly
+// CognitiveContext['nextAction'] so route.ts (cme_action_log insert,
+// foxy_sessions.last_cme_action, audit details) and prompt-sections.ts
+// (selectLeadConcept step 3, RECOMMENDED ACTION block) need no changes.
+
+export interface NextActionInputs {
+  /** Unresolved knowledge gaps (loadCognitiveContext shape). */
+  knowledgeGaps: Array<{ target: string; prerequisite: string; gapType: string }>;
+  /** Overdue reviews (next_review_at <= now); mastery is the 0-100 integer. */
+  revisionDue: Array<{ title: string; lastReviewed: string; mastery: number }>;
+  /** 30d cme_error_log counts by error_type. */
+  recentErrors: Array<{ errorType: string; count: number }>;
+  /** Subject-filtered concept_mastery rows: title + raw mastery_probability (0-1). */
+  masteryTopics: Array<{ title: string; masteryProbability: number }>;
+}
+
+// Mirrors cme-engine selectNextAction cutoffs: >=3 conceptual errors triggers
+// re-teach; mastery_mean < 0.6 → practice; < 0.85 → challenge; >= 0.85 mastered.
+const RETEACH_CONCEPTUAL_ERROR_MIN = 3;
+const NEXT_CONCEPT_PRACTICE_THRESHOLD = 0.6;
+const NEXT_CONCEPT_MASTERED_THRESHOLD = 0.85;
+
+export function deriveNextAction(
+  input: NextActionInputs,
+): { actionType: string; conceptName: string; reason: string } | null {
+  // (1) Prerequisite / knowledge gap — remediate the prerequisite when named,
+  // else the gap's target concept.
+  const gap = input.knowledgeGaps.find(
+    (g) => ((g.prerequisite || g.target) ?? '').trim().length > 0,
+  );
+  if (gap) {
+    return {
+      actionType: 'remediate',
+      conceptName: (gap.prerequisite || gap.target).trim(),
+      reason: 'Prerequisite gap needs remediation before advancing',
+    };
+  }
+
+  // (2) Forgetting risk — overdue review, weakest mastery first; tie-break on
+  // oldest next_review_at (ISO strings compare lexicographically).
+  const overdue = [...input.revisionDue]
+    .filter((r) => r.title.trim().length > 0)
+    .sort((a, b) => a.mastery - b.mastery || a.lastReviewed.localeCompare(b.lastReviewed))[0];
+  if (overdue) {
+    return {
+      actionType: 'revise',
+      conceptName: overdue.title,
+      reason: 'Previously learned concept fading — revision needed',
+    };
+  }
+
+  // Unmastered concepts, lowest mastery first (defensive sort — callers pass
+  // rows already ordered ascending by mastery_probability).
+  const unmastered = input.masteryTopics
+    .filter(
+      (t) => t.title.trim().length > 0 && t.masteryProbability < NEXT_CONCEPT_MASTERED_THRESHOLD,
+    )
+    .sort((a, b) => a.masteryProbability - b.masteryProbability);
+
+  // (3) Repeated conceptual errors → re-teach the weakest known concept.
+  const conceptual = input.recentErrors.find((e) => e.errorType === 'conceptual');
+  if (conceptual && conceptual.count >= RETEACH_CONCEPTUAL_ERROR_MIN && unmastered.length > 0) {
+    return {
+      actionType: 're_teach',
+      conceptName: unmastered[0].title,
+      reason: 'Repeated conceptual errors — needs a different explanation approach',
+    };
+  }
+
+  // (4) Next unmastered concept — lowest mastery_probability below threshold.
+  if (unmastered.length > 0) {
+    const next = unmastered[0];
+    return next.masteryProbability < NEXT_CONCEPT_PRACTICE_THRESHOLD
+      ? {
+          actionType: 'practice',
+          conceptName: next.title,
+          reason: 'Partially learned — needs more practice',
+        }
+      : {
+          actionType: 'challenge',
+          conceptName: next.title,
+          reason: 'Approaching mastery — increasing difficulty',
+        };
+  }
+
+  // (5) No actionable signal → null (exam-prep / cold-start rails apply).
+  return null;
+}
+
 // ─── Helper: load cognitive context from CME tables ─────────────────────────
 
 export async function loadCognitiveContext(
@@ -161,13 +271,16 @@ export async function loadCognitiveContext(
         .eq('is_resolved', false)
         .limit(5),
 
+      // Overdue reviews: use next_review_at (timestamptz — the column the real
+      // SM-2 scheduler writes), NOT next_review_date (a ghost DATE column with
+      // a CURRENT_DATE + 1 default that nothing updates).
       supabaseAdmin
         .from('concept_mastery')
-        .select('mastery_probability, next_review_date, topic_id, curriculum_topics(title)')
+        .select('mastery_probability, next_review_at, topic_id, curriculum_topics(title)')
         .eq('student_id', studentId)
-        .not('next_review_date', 'is', null)
-        .lte('next_review_date', new Date().toISOString().split('T')[0])
-        .order('next_review_date', { ascending: true })
+        .not('next_review_at', 'is', null)
+        .lte('next_review_at', new Date().toISOString())
+        .order('next_review_at', { ascending: true })
         .limit(5),
 
       supabaseAdmin
@@ -239,7 +352,7 @@ export async function loadCognitiveContext(
 
     const revisionDue = (revisionRes.data ?? []).map((r: any) => ({
       title: r.curriculum_topics?.title ?? 'Unknown',
-      lastReviewed: r.next_review_date ?? '',
+      lastReviewed: r.next_review_at ?? '',
       mastery: Math.round((r.mastery_probability ?? 0) * 100),
     }));
 
@@ -396,40 +509,24 @@ export async function loadCognitiveContext(
     const masteryLevel: CognitiveContext['masteryLevel'] =
       avgMastery < 0.4 ? 'low' : avgMastery < 0.7 ? 'medium' : 'high';
 
-    // CME next-action (non-blocking)
+    // CME next-action — derived locally from the signals loaded above (see
+    // deriveNextAction). No network call: the old cme-engine `get_next_action`
+    // fetch 401'd on every request (service-role key vs user-JWT auth) and read
+    // the writer-less cme_concept_state table. Fail-soft: any error leaves
+    // nextAction null and Foxy works without a recommendation.
     let nextAction: CognitiveContext['nextAction'] = null;
-    if (subjectId) {
-      try {
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-        if (supabaseUrl && serviceKey) {
-          const cmeRes = await fetch(`${supabaseUrl}/functions/v1/cme-engine`, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${serviceKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              action: 'get_next_action',
-              student_id: studentId,
-              subject_id: subjectId,
-            }),
-            signal: AbortSignal.timeout(3000),
-          });
-          if (cmeRes.ok) {
-            const cmeData = await cmeRes.json();
-            if (cmeData.type) {
-              nextAction = {
-                actionType: cmeData.type,
-                conceptName: cmeData.title ?? cmeData.concept_id ?? '',
-                reason: cmeData.reason ?? '',
-              };
-            }
-          }
-        }
-      } catch {
-        // CME failure is non-fatal — Foxy still works without next-action
-      }
+    try {
+      nextAction = deriveNextAction({
+        knowledgeGaps,
+        revisionDue,
+        recentErrors,
+        masteryTopics: subjectMastery.map((m: any) => ({
+          title: m.curriculum_topics?.title ?? '',
+          masteryProbability: m.mastery_probability ?? 0,
+        })),
+      });
+    } catch {
+      // non-fatal — Foxy still works without next-action
     }
 
     return {

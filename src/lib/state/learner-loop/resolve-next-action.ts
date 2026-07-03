@@ -75,7 +75,10 @@ export interface PendingTeacherRemediation {
 
 export interface LoopAugmentation {
   /** Number of flashcards due today across all sources. Reads from
-   *  `review_cards` filtered on `next_review_date <= today`. */
+   *  `spaced_repetition_cards` (the live SM-2 flashcard table behind the
+   *  `/review` → `/refresh?tab=flashcards` deck), mirroring the
+   *  `get_review_cards` RPC filter: `is_active = true AND
+   *  next_review_date <= CURRENT_DATE`. */
   dueReviewCount: number;
   /** Has the learner completed at least one quiz session today (IST)?
    *  Reads from `quiz_sessions` for backwards compatibility with the
@@ -348,8 +351,8 @@ export function isMonthEndDayIst(now: Date): boolean {
  * Fetch the small set of additional inputs the resolver needs beyond
  * StudentState. Reads only — never writes. Defensive on every concern:
  * a flaky downstream table degrades the corresponding branch (e.g. if
- * `review_cards` is unreachable, `dueReviewCount` is 0 and the resolver
- * just falls through to the next branch).
+ * `spaced_repetition_cards` is unreachable, `dueReviewCount` is 0 and the
+ * resolver just falls through to the next branch).
  */
 export async function buildLoopAugmentation(
   sb: SupabaseClient,
@@ -372,11 +375,20 @@ export async function buildLoopAugmentation(
 
   // Run the reads in parallel — they are independent.
   const [dueCardsRes, todayQuizRes, inProgressRes, pendingTeacherRemediation, unstartedRes] = await Promise.all([
+    // Due-review count — reads the LIVE SM-2 flashcard table (the deck the
+    // `review_due_cards` branch's `/review` CTA lands on, via the permanent
+    // `/review` → `/refresh?tab=flashcards` redirect). Filter mirrors the
+    // `get_review_cards` RPC byte-for-byte in intent: student's own active
+    // cards with `next_review_date <= CURRENT_DATE` (UTC date — the RPC's
+    // CURRENT_DATE on a UTC-tz Postgres). NOTE: the historical `review_cards`
+    // table never existed; counting it always errored → 0 and permanently
+    // dead-lettered the review branch.
     sb
-      .from('review_cards')
+      .from('spaced_repetition_cards')
       .select('id', { count: 'exact', head: true })
       .eq('student_id', studentId)
-      .lte('next_review_date', new Date(now).toISOString())
+      .eq('is_active', true)
+      .lte('next_review_date', new Date(now).toISOString().slice(0, 10))
       .limit(1),
     sb
       .from('quiz_sessions')

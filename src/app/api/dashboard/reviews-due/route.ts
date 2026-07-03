@@ -8,10 +8,16 @@ import { cacheFetchAsync, CACHE_TTL } from '@/lib/cache';
  * GET /api/dashboard/reviews-due — Spaced-repetition prompt counts for the
  * student dashboard (Phase 2.D of Foxy moat plan).
  *
- * Returns the number of concept_mastery rows whose next_review_date has come
- * due (<= today) and which the student has not already trivially mastered
+ * Returns the number of concept_mastery rows whose next_review_at has come
+ * due (<= now()) and which the student has not already trivially mastered
  * (mastery_probability < 0.95). The dashboard surfaces this as a "you have N
  * reviews due — takes ~M minutes" CTA that links to /review?due_only=1.
+ *
+ * Due-schedule source of truth: `concept_mastery.next_review_at` (timestamptz),
+ * written by the live SM-2 in update_learner_state_post_quiz on every quiz.
+ * Do NOT read `next_review_date` — that DATE column is a deprecated ghost
+ * (default CURRENT_DATE + 1, never updated by any function/cron/app code), so
+ * it marks every touched concept "due" one day after first attempt, forever.
  *
  * Permission: progress.view_own (the student's own learning state).
  *
@@ -39,7 +45,7 @@ export async function GET(request: Request) {
       );
     }
 
-    // Today's date in YYYY-MM-DD (concept_mastery.next_review_date is DATE).
+    // Today's date in YYYY-MM-DD (UTC) — used only for the per-day cache key.
     const today = new Date().toISOString().slice(0, 10);
 
     // XC-3 Phase 2 (batch 2): this read runs through the RLS-respecting server
@@ -81,16 +87,26 @@ export async function GET(request: Request) {
           : `${currentYear - 1}-04-01`;
 
         // Pull due rows. We deliberately select only the columns we need
-        // (no topic IDs returned to the client) and order by next_review_date
+        // (no topic IDs returned to the client) and order by next_review_at
         // ascending so we can read the oldest from the head of the result.
+        //
+        // Due = next_review_at <= now(). `next_review_at` (timestamptz) is the
+        // REAL SM-2 schedule, written by update_learner_state_post_quiz on
+        // every quiz. The sibling `next_review_date` DATE column is a
+        // deprecated ghost — never written by any function, cron, or app code;
+        // its CURRENT_DATE + 1 default made every touched concept look "due"
+        // one day after first attempt, forever. Do not repoint back to it.
+        // Rows with NULL next_review_at (never scheduled) are correctly
+        // excluded by the lte filter.
+        const nowIso = new Date().toISOString();
         const { data, error } = await supabase
           .from('concept_mastery')
-          .select('next_review_date, mastery_probability')
+          .select('next_review_at, mastery_probability')
           .eq('student_id', studentId)
-          .lte('next_review_date', today)
+          .lte('next_review_at', nowIso)
           .lt('mastery_probability', 0.95)
-          .gte('next_review_date', academicYearStart)
-          .order('next_review_date', { ascending: true });
+          .gte('next_review_at', academicYearStart)
+          .order('next_review_at', { ascending: true });
 
         if (error) {
           // Throw so the failure is NOT cached — the catch below maps to a 500.
@@ -99,7 +115,12 @@ export async function GET(request: Request) {
 
         const rows = data ?? [];
         const dueCount = rows.length;
-        const oldestDueDate = dueCount > 0 ? (rows[0].next_review_date as string | null) : null;
+        // Contract: oldestDueDate stays ISO YYYY-MM-DD (date part of the
+        // timestamptz, UTC) — same shape consumers already parse.
+        const oldestDueDate =
+          dueCount > 0 && rows[0].next_review_at
+            ? (rows[0].next_review_at as string).slice(0, 10)
+            : null;
         // 30s per review item, floor 2 min.
         const estimatedMinutes = Math.max(2, Math.ceil(dueCount * 0.5));
         return { dueCount, oldestDueDate, estimatedMinutes };

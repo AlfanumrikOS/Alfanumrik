@@ -130,8 +130,11 @@ describe('GET /api/dashboard/reviews-due', () => {
 
   it('returns dueCount=1 with floor 2-min estimate for a single due item', async () => {
     setAuthorized();
+    // Real SM-2 schedule column: next_review_at (timestamptz). The DATE column
+    // next_review_date is a deprecated ghost (never written) — the route must
+    // not read it.
     setQueryResult({
-      data: [{ next_review_date: '2026-04-20', mastery_probability: 0.6 }],
+      data: [{ next_review_at: '2026-04-20T09:30:00+00:00', mastery_probability: 0.6 }],
       error: null,
     });
 
@@ -148,7 +151,7 @@ describe('GET /api/dashboard/reviews-due', () => {
     setAuthorized();
     // 11 items → ceil(5.5) = 6 minutes
     const rows = Array.from({ length: 11 }, (_, i) => ({
-      next_review_date: `2026-04-${String(10 + i).padStart(2, '0')}`,
+      next_review_at: `2026-04-${String(10 + i).padStart(2, '0')}T06:00:00+00:00`,
       mastery_probability: 0.5,
     }));
     setQueryResult({ data: rows, error: null });
@@ -175,8 +178,8 @@ describe('GET /api/dashboard/reviews-due', () => {
     setAuthorized('student-PII-uuid');
     setQueryResult({
       data: [
-        { next_review_date: '2026-04-20', mastery_probability: 0.42 },
-        { next_review_date: '2026-04-21', mastery_probability: 0.81 },
+        { next_review_at: '2026-04-20T09:30:00+00:00', mastery_probability: 0.42 },
+        { next_review_at: '2026-04-21T09:30:00+00:00', mastery_probability: 0.81 },
       ],
       error: null,
     });
@@ -213,11 +216,11 @@ describe('GET /api/dashboard/reviews-due', () => {
 describe('GET /api/dashboard/reviews-due — RLS contract (admin→server migration)', () => {
   it('authenticated owner: returns their own due-count with the unchanged response shape', async () => {
     setAuthorized('owner-student-uuid');
-    // concept_mastery_own admits the owner's rows (ascending by next_review_date).
+    // concept_mastery_own admits the owner's rows (ascending by next_review_at).
     setQueryResult({
       data: [
-        { next_review_date: '2026-06-01', mastery_probability: 0.40 },
-        { next_review_date: '2026-06-15', mastery_probability: 0.70 },
+        { next_review_at: '2026-06-01T10:00:00+00:00', mastery_probability: 0.40 },
+        { next_review_at: '2026-06-15T10:00:00+00:00', mastery_probability: 0.70 },
       ],
       error: null,
     });
