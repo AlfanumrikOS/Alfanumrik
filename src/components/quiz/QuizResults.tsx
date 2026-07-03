@@ -13,6 +13,7 @@ import {
 } from '@/lib/cognitive-engine';
 import { shareResult, quizShareMessage } from '@/lib/share';
 import { useAuth } from '@/lib/AuthContext';
+import { logger } from '@/lib/logger';
 import { supabase } from '@/lib/supabase';
 import { useFeatureFlags } from '@/lib/swr';
 import { getLevelFromScore } from '@/lib/score-config';
@@ -244,7 +245,12 @@ export default function QuizResults({
 
   // Auto-create flashcards from wrong answers
   useEffect(() => {
-    if (flashcardCreated.current || !student?.id) return;
+    // Wave 0 Task 0.7b: `grade` and `subject` are NOT-NULL columns on
+    // spaced_repetition_cards — without either, every insert 23502s, so
+    // skip (without latching the ref) until both are available.
+    // grade comes from the auth profile (P5: string "6"-"12", normalized
+    // in AuthContext); subject is the quiz's selectedSubject prop.
+    if (flashcardCreated.current || !student?.id || !student.grade || !selectedSubject) return;
     flashcardCreated.current = true;
 
     const wrongIndices = responses
@@ -277,27 +283,51 @@ export default function QuizResults({
               ?? (q.correct_answer_index >= 0 ? (opts[q.correct_answer_index] || '') : '');
             const explanation = isHi && q.explanation_hi ? q.explanation_hi : (q.explanation || '');
             return {
-              student_id: student.id,
+              student_id: student.id, // RLS sr_own: must be the caller's own student id
               card_type: 'review',
-              subject: selectedSubject || undefined,
+              subject: selectedSubject, // NOT-NULL — guarded above
+              grade: student.grade, // NOT-NULL, P5: string "6"-"12" from auth profile
               chapter_number: q.chapter_number || undefined,
               topic: q.bloom_level || undefined,
-              front_text: q.question_text,
-              back_text: `${correctAnswer}${explanation ? `\n\n${explanation}` : ''}`,
+              front_text: q.question_text.slice(0, 1000),
+              back_text: `${correctAnswer}${explanation ? `\n\n${explanation}` : ''}`.slice(0, 4000),
               hint: q.hint || undefined,
               source: 'quiz_wrong_answer',
               source_id: results.session_id || undefined,
             };
-          });
+          })
+          // NOT-NULL columns must be non-empty — drop malformed cards
+          .filter(c => c.front_text.trim().length > 0 && c.back_text.trim().length > 0);
 
         if (cardsToInsert.length > 0) {
-          await supabase.from('spaced_repetition_cards').insert(cardsToInsert);
-          setFlashcardCount(cardsToInsert.length);
-          setFlashcardBanner(true);
+          // Insert one card at a time: the unique partial index on
+          // (student_id, topic, card_type) WHERE topic IS NOT NULL means a
+          // single duplicate would abort a batch insert and drop every
+          // other card with it.
+          let created = 0;
+          for (const card of cardsToInsert) {
+            const { error } = await supabase.from('spaced_repetition_cards').insert(card);
+            if (!error) {
+              created += 1;
+              continue;
+            }
+            // 23505 = unique violation → the card already exists. Expected
+            // dedupe, benign — stay silent.
+            if (error.code === '23505') continue;
+            // P13: pg error code only — never card text or student identifiers.
+            logger.warn('spaced_repetition_cards insert failed', { code: error.code });
+          }
+          if (created > 0) {
+            setFlashcardCount(created);
+            setFlashcardBanner(true);
+          }
         }
       } catch (err) {
-        // Non-critical — flashcard creation should not block results display
-        console.error('Failed to create flashcards:', err);
+        // Non-critical — flashcard creation must never block the results
+        // screen. P13: error code only, no card text or student PII.
+        logger.warn('flashcard creation failed', {
+          code: (err as { code?: string } | null)?.code ?? 'unknown',
+        });
       }
     })();
     // `reviewByQid` is a per-render Map derived from the `serverReview` prop; the
@@ -305,7 +335,7 @@ export default function QuizResults({
     // serverReview present at first run. Adding the unstable Map would re-fire the
     // effect on every render with no behavior change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [student?.id, questions, responses, results.session_id, selectedSubject, isHi]);
+  }, [student?.id, student?.grade, questions, responses, results.session_id, selectedSubject, isHi]);
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
