@@ -7344,13 +7344,25 @@ QuizResults writer's `topic` value changed from `bloom_level` to the composite
 per-question key ``${subject}:${chapter ?? 'na'}:${question_id}`` (see the
 REG-234 amendment above for the full rationale — the bloom key + `idx_src_u`
 capped students at 6 lifetime review cards and NULL-bloom cards escaped dedupe).
-REG-235's payload-key allowlist is unchanged (`topic` stays a pinned key);
+REG-235's payload-key allowlist CHANGED in the humane-label follow-up
+(commit `d4e326fa`): it gained `chapter_title` — a real production column
+(nullable text, baseline `00000000000000_baseline_from_prod.sql` ~13552)
+deliberately added to the QuizResults writer so review-card display paths
+never fall back to the machine dedupe key (`topic` also stays a pinned key;
+the QuizResults writer sets `chapter_title` to `"Chapter N"` or the subject
+name, never the composite / a question uuid). The same commit hardened the
+display side: `humaneCardLabel` (`src/lib/srs-card-label.ts`) converts a
+composite-key `topic` to `subject · Chapter N` for legacy rows missing
+`chapter_title` (wired into `getReviewCards` in `src/lib/supabase.ts` and
+`QuickRecallSection.tsx`), pinned by two new suites —
+`src/__tests__/lib/srs-card-label.test.ts` and
+`src/__tests__/components/refresh/QuickRecallSection.label.test.tsx`.
 `QuizResults.flashcard-grade.test.tsx` gains a per-question-dedupe describe
 block pinning the composite value, distinct-cards-per-question, retake dedupe,
 topic-never-null, and the batch-then-retry × new-key interaction (one row's
 composite key 23505s → batch aborts, row retry keeps the other card,
-`created` counts only survivors). The other two writers' contracts are
-untouched.
+`created` counts only survivors), plus humane `chapter_title` shape pins.
+The other two writers' contracts are untouched.
 
 ### Catalog total
 
