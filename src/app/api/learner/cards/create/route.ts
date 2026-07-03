@@ -58,6 +58,33 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Grade lookup: `spaced_repetition_cards.grade` is NOT NULL with no default
+  // (baseline schema), so the insert MUST carry the student's grade (P5: a
+  // string "6".."12"). Omitting it made every manual card creation fail.
+  const { data: studentRow, error: studentErr } = await supabaseAdmin
+    .from('students')
+    .select('grade')
+    .eq('id', studentId)
+    .single();
+
+  if (studentErr) {
+    logger.warn('cards.create: student grade lookup failed', {
+      code: studentErr.code,
+      message: studentErr.message,
+    });
+    return NextResponse.json({ ok: false, error: 'student_lookup_failed' }, { status: 500 });
+  }
+
+  const grade = typeof studentRow?.grade === 'string' ? studentRow.grade.trim() : '';
+  if (!grade) {
+    // Defensive: never silently default a grade (P5). Surface a clear error
+    // so the client can prompt the student to complete their profile.
+    return NextResponse.json(
+      { ok: false, error: 'grade_missing', detail: 'Student profile has no grade set; cannot create a card.' },
+      { status: 400 },
+    );
+  }
+
   // Daily-cap check: how many cards has this student created in the last 24h?
   const sinceIso = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
   const { count: existingCount, error: countErr } = await supabaseAdmin
@@ -85,6 +112,7 @@ export async function POST(request: NextRequest) {
   const row = {
     student_id: studentId,
     subject: body.subjectCode,
+    grade, // NOT NULL, string per P5
     chapter_title: null,
     front_text: body.frontText,
     back_text: body.backText,
@@ -109,7 +137,12 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (insertErr) {
-    logger.warn('cards.create: insert failed', { error: insertErr.message });
+    // P13: log the Postgres error code + constraint-level message only —
+    // never card text (row values live in `details`, which we do not log).
+    logger.warn('cards.create: insert failed', {
+      code: insertErr.code,
+      message: insertErr.message,
+    });
     return NextResponse.json({ ok: false, error: 'insert_failed' }, { status: 500 });
   }
 
