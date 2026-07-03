@@ -164,6 +164,48 @@ describe('POST /api/learner/cards/create', () => {
     // insert fail silently (Wave 0 Task 0.7a root cause).
     expect(row.grade).toBe('10');
     expect(typeof row.grade).toBe('string');
+    // P5 shape pin: a string "6".."12" — the /^([6-9]|1[0-2])$/ shape would
+    // fail for the number 10 (toMatch throws on non-strings), so this line
+    // also re-proves grade is never a number.
+    expect(row.grade).toMatch(/^([6-9]|1[0-2])$/);
+  });
+
+  it('sends ONLY real schema columns (exact key allowlist — no phantom columns)', async () => {
+    const res = await POST(mkReq({
+      subjectCode: 'physics',
+      frontText: 'What is force?',
+      backText: 'Mass times acceleration',
+      hint: 'F = ma',
+    }));
+    expect(res.status).toBe(200);
+    const row = insertMock.mock.calls[0][0] as Record<string, unknown>;
+    // Every key below exists in the production table (baseline migration
+    // 00000000000000_baseline_from_prod.sql ~line 13552). Any new/renamed key
+    // in the route MUST be schema-verified before this list is updated.
+    expect(Object.keys(row).sort()).toEqual([
+      'back_text',
+      'chapter_title',
+      'correct_reviews',
+      'created_at',
+      'ease_factor',
+      'front_text',
+      'grade',
+      'hint',
+      'interval_days',
+      'last_review_date',
+      'next_review_date',
+      'repetition_count',
+      'source',
+      'streak',
+      'student_id',
+      'subject',
+      'total_reviews',
+      'updated_at',
+    ]);
+    // Phantom columns from the pre-fix era must never reappear.
+    expect(row).not.toHaveProperty('question');
+    expect(row).not.toHaveProperty('answer');
+    expect(row).not.toHaveProperty('difficulty');
   });
 
   it('returns 400 with a clear error when the student profile has no grade', async () => {
@@ -194,6 +236,9 @@ describe('POST /api/learner/cards/create', () => {
     expect(logger.warn).toHaveBeenCalled();
     const [, meta] = vi.mocked(logger.warn).mock.calls[0];
     expect(meta).toMatchObject({ code: '23502' });
+    // P13 key-level pin: the logged object carries ONLY the pg error code +
+    // constraint-level message — never front_text/back_text/question keys.
+    expect(Object.keys(meta as Record<string, unknown>).sort()).toEqual(['code', 'message']);
     // P13: card text must not leak into logs.
     expect(JSON.stringify(meta)).not.toContain('What is force');
   });

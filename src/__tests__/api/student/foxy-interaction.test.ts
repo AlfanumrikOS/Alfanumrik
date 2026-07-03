@@ -118,6 +118,9 @@ describe('POST /api/student/foxy-interaction — save_flashcard', () => {
     expect(row.subject).toBe('science');
     expect(row.grade).toBe('9');
     expect(typeof row.grade).toBe('string'); // P5
+    // P5 shape pin: string "6".."12" — toMatch throws on non-strings, so this
+    // also re-proves grade can never regress to a number.
+    expect(row.grade).toMatch(/^([6-9]|1[0-2])$/);
     expect(row.front_text).toBe('What do plants need for photosynthesis?');
     expect(row.back_text).toBe('Sunlight, water and carbon dioxide');
     expect(row.source).toBe('foxy_chat');
@@ -166,6 +169,12 @@ describe('POST /api/student/foxy-interaction — save_flashcard', () => {
     expect(logger.warn).toHaveBeenCalled();
     const [, meta] = vi.mocked(logger.warn).mock.calls[0];
     expect(meta).toMatchObject({ code: '23502' });
+    // P13 key-level pin: the logged object carries ONLY pg error code +
+    // constraint message + routing context (studentId is a UUID, subject a
+    // code) — never front_text/back_text/question/answer keys.
+    expect(Object.keys(meta as Record<string, unknown>).sort()).toEqual(
+      ['code', 'message', 'studentId', 'subject'],
+    );
     // P13: no card text in logs.
     expect(JSON.stringify(meta)).not.toContain('Secret card text');
   });

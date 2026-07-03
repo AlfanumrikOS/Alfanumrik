@@ -234,8 +234,26 @@ describe('QuizResults — auto flashcard insert payload (Wave 0 Task 0.7b)', () 
     expect(insertState.payloads).toHaveLength(2);
 
     for (const card of insertState.payloads) {
-      // P5: grade is a string "6"-"12", sourced from useAuth().student.grade
+      // Exact key allowlist — every key exists in the production table
+      // (baseline migration 00000000000000_baseline_from_prod.sql ~13552);
+      // phantom columns must never be sent.
+      expect(Object.keys(card).sort()).toEqual([
+        'back_text',
+        'card_type',
+        'chapter_number',
+        'front_text',
+        'grade',
+        'hint',
+        'source',
+        'source_id',
+        'student_id',
+        'subject',
+        'topic',
+      ]);
+      // P5: grade is a string "6"-"12", sourced from useAuth().student.grade.
+      // toMatch throws on non-strings, so this also pins "never a number".
       expect(card.grade).toBe('8');
+      expect(card.grade).toMatch(/^([6-9]|1[0-2])$/);
       // RLS sr_own: student_id must be the caller's own student id
       expect(card.student_id).toBe('stu-1');
       // Remaining NOT-NULL columns must be present and non-empty
@@ -296,6 +314,12 @@ describe('QuizResults — flashcard insert error handling', () => {
     await waitFor(() => {
       expect(loggerState.warns.length).toBeGreaterThan(0);
     });
+
+    // P13 key-level pin: every warned meta object carries EXACTLY the pg
+    // error code key — never front_text/back_text/question keys or values.
+    for (const [, meta] of loggerState.warns) {
+      expect(Object.keys(meta as Record<string, unknown>)).toEqual(['code']);
+    }
 
     const serialized = JSON.stringify(loggerState.warns);
     // Carries the pg error code…

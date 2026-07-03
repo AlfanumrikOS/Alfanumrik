@@ -6920,4 +6920,54 @@ XC-3 Phase 4 first drain adds REG-222 (one grandfathered inline policy —
 constraint; recursion-guard ledger ratcheted 241 → 240).
 **Total catalog: 189 entries (target: 35 — TARGET EXCEEDED).**
 
+## REG-223 — Wave 0 Task 0.7: every `spaced_repetition_cards` writer supplies all NOT-NULL columns (grade as P5 string) + insert failures are never silently swallowed
+
+**Why.** Production `spaced_repetition_cards` sat at 0 rows for months because all
+three writers violated the real schema and swallowed the resulting errors: the
+Foxy save-flashcard route inserted phantom columns (`question`/`answer`/`difficulty`
+— none exist in the table) and omitted the NOT-NULL `grade`/`front_text`/`back_text`;
+the manual `/api/learner/cards/create` route omitted NOT-NULL `grade`; and the
+QuizResults auto-flashcard effect omitted `grade` AND wrapped the insert in a
+try/catch that treated every failure as "non-critical" — so every 23502 vanished
+without a log line. The SRS feature was structurally dead while appearing healthy.
+
+**What.** Three writer fixes (commits `a92dfeaf` backend + `8a8d7542` frontend):
+`src/app/api/student/foxy-interaction/route.ts` rewritten to the REAL schema
+(front_text/back_text/grade; phantom columns removed; 23505 on the partial unique
+index `idx_src_u` → explicit 409 `duplicate_card`; other errors → `logger.warn`
+with pg `code`+`message` only, then 500). `src/app/api/learner/cards/create/route.ts`
+now looks up the student's grade (P5 string, never defaulted — missing grade is an
+explicit 400 `grade_missing`) and includes it in the insert row. `QuizResults.tsx`
+guards the effect on `student.grade` + `selectedSubject` WITHOUT latching the
+run-once ref (so a late-arriving grade still creates cards), adds `grade` to every
+card payload, inserts one card at a time (a single 23505 dup can no longer abort
+the whole batch), treats 23505 as benign-silent, and warns with `{ code }` ONLY on
+other codes — never card text or student identifiers (P13).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-223 | `spaced_repetition_cards writer schema conformance + silent-failure elimination` (3 files) | P5/P6-adjacent/P13: for EVERY writer of `spaced_repetition_cards` — (a) the insert payload carries all NOT-NULL columns (`student_id`, `subject`, `grade`, `front_text`, `back_text` non-empty), with `grade` a STRING matching `/^([6-9]\|1[0-2])$/` (never a number — `toMatch` throws on non-strings); (b) the payload key set is pinned to an EXACT allowlist of real schema columns (baseline `00000000000000_baseline_from_prod.sql` ~13552) — the phantom `question`/`answer`/`difficulty` columns can never reappear; (c) a missing profile grade is an explicit 400 (never a silently-defaulted grade); (d) insert failures are NEVER swallowed — non-23505 codes produce `logger.warn` whose logged-object KEYS are pinned (`['code','message']` server, `['code']` client — no front_text/back_text/question keys) and whose serialized payload never contains card text or student name/id (P13); (e) 23505 (dup on `idx_src_u`) is benign — 409 `duplicate_card` on the Foxy route, silent skip-and-continue per-card in QuizResults with no false "created" banner and no warn; (f) the QuizResults effect does not latch its run-once ref when grade/subject are missing, and the results screen always still renders (card creation is non-blocking). | `src/__tests__/api/student/foxy-interaction.test.ts`, `src/__tests__/api/learner/cards/create.test.ts`, `src/__tests__/components/quiz/QuizResults.flashcard-grade.test.tsx` | E | P5, P13 |
+
+### Invariants covered by this section
+
+- P5 (grade format) — every writer sends grade as a string `"6"`-`"12"` (regex
+  shape-pinned, never a number, never silently defaulted); sourced from the
+  `students` profile server-side and `useAuth().student.grade` client-side.
+- P13 (data privacy) — insert-failure logs are key-allowlisted to pg error
+  code (+ constraint message / routing UUIDs server-side); card text
+  (front_text/back_text/question) and student name never reach the logger.
+- Operational integrity (silent-failure elimination) — a schema-violating
+  insert can never again fail invisibly: every non-duplicate error path emits
+  a `logger.warn` with the pg code, and duplicates are handled explicitly
+  (409 / benign per-card skip) instead of aborting or masking the batch.
+
+### Catalog total
+
+Wave 0 Task 0.7 adds REG-223 (all three `spaced_repetition_cards` writers —
+Foxy save-flashcard, manual card create, QuizResults auto-flashcards — pinned to
+the real schema via exact payload-key allowlists with grade as a P5 regex-shaped
+string, plus silent-failure elimination: key-allowlisted `logger.warn` on
+non-duplicate insert errors and explicit benign handling of 23505).
+**Total catalog: 190 entries (target: 35 — TARGET EXCEEDED).**
+
 ---
