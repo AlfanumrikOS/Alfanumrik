@@ -17,14 +17,9 @@ Nightly reconciliation of grounding coverage. Spec §8.2.
 - Yesterday lookup takes the **second-most-recent** snapshot when today's row already exists, preserving regression math across reruns.
 - Auto-disable only touches pairs that are still `enabled=true`, so repeating the run is a no-op.
 
-## Schedule (ops/user action required)
+## Schedule
 
-Not scheduled automatically. Configure once after deploy:
-
-```bash
-# 03:00 IST every night = 21:30 UTC
-supabase functions schedule coverage-audit --cron "30 21 * * *"
-```
+Triggered nightly by the **daily-cron fan-out** step (`coverage_audit_triggered`, action handler `triggerCoverageAudit` in `supabase/functions/daily-cron/index.ts`), which runs at 18:30 UTC / 00:00 IST. **Do NOT also schedule this function separately** (`supabase functions schedule` / pg_cron) — double-scheduling multiplies LLM spend and races the fan-out run.
 
 ## Local dev
 
