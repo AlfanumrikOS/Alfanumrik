@@ -60,18 +60,67 @@ export async function POST(request: NextRequest) {
     const guard = await guardSubject(studentId, subject);
     if (guard) return guard;
 
+    // `spaced_repetition_cards.grade` is NOT NULL with no default (baseline
+    // schema) — the insert MUST carry the student's grade (P5: string "6".."12").
+    const { data: studentRow, error: studentErr } = await supabaseAdmin
+      .from('students')
+      .select('grade')
+      .eq('id', studentId)
+      .single();
+
+    if (studentErr) {
+      logger.warn('foxy_flashcard_student_lookup_failed', {
+        code: studentErr.code,
+        message: studentErr.message,
+        studentId,
+      });
+      return err('Failed to load student profile', 500);
+    }
+
+    const grade = typeof studentRow?.grade === 'string' ? studentRow.grade.trim() : '';
+    if (!grade) {
+      // Defensive: never silently default a grade (P5).
+      return err('Student profile has no grade set; cannot save flashcard', 400);
+    }
+
+    // Real schema columns only: front_text/back_text are the NOT-NULL card
+    // faces (the previous `question`/`answer`/`difficulty` columns do not
+    // exist in the table — every insert failed silently before this fix).
+    const frontText =
+      typeof question === 'string' && question.trim()
+        ? question.substring(0, 2000)
+        : `Review: ${subject}${typeof topic === 'string' && topic ? ` — ${topic}` : ''}`;
+
     const { error } = await supabaseAdmin.from('spaced_repetition_cards').insert({
       student_id: studentId,
       subject,
+      grade,
       topic: typeof topic === 'string' ? topic : null,
-      question: typeof question === 'string' ? question : `Review: ${subject}${topic ? ` — ${topic}` : ''}`,
-      answer: (answer as string).substring(0, 2000),
+      front_text: frontText,
+      back_text: (answer as string).substring(0, 2000),
       source: 'foxy_chat',
-      difficulty: 2,
+      // card_type, ease_factor, interval_days, repetition_count and
+      // next_review_date all have DB defaults — intentionally not set here.
     });
 
     if (error) {
-      logger.error('foxy_flashcard_insert_failed', { error: new Error(error.message), studentId, subject });
+      // Partial unique index idx_src_u (student_id, topic, card_type) WHERE
+      // topic IS NOT NULL: a repeat save of the same topic is a duplicate,
+      // not a server fault — surface it explicitly.
+      if (error.code === '23505') {
+        return NextResponse.json(
+          { success: false, error: 'duplicate_card' },
+          { status: 409 },
+        );
+      }
+      // P13: log the Postgres error code + constraint-level message only —
+      // never card text (row values live in `details`, which we do not log).
+      logger.warn('foxy_flashcard_insert_failed', {
+        code: error.code,
+        message: error.message,
+        studentId,
+        subject,
+      });
       return err('Failed to save flashcard', 500);
     }
 

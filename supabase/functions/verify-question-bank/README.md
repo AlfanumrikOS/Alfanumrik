@@ -21,14 +21,9 @@ Retroactive verifier cron. Drains `question_bank.verification_state = 'legacy_un
 - `claim_verification_batch` uses `FOR UPDATE SKIP LOCKED`, so two concurrent Supabase cron invocations **never** see the same rows.
 - If a worker crashes mid-batch, the claim token expires after 10 minutes and the next run re-claims via the `verification_state='pending' AND verification_claim_expires_at < now()` branch.
 
-## Schedule (ops/user action required)
+## Schedule
 
-This function is **not scheduled automatically** — schedule it after deploying:
-
-```bash
-# Every 30 minutes, at minutes :00 and :30
-supabase functions schedule verify-question-bank --cron "*/30 * * * *"
-```
+Triggered nightly by the **daily-cron fan-out** step (`question_bank_verify_triggered`, action handler `triggerVerifyQuestionBank` in `supabase/functions/daily-cron/index.ts`), which runs at 18:30 UTC / 00:00 IST — so in practice every run is the off-peak batch (1000). **Do NOT also schedule this function separately** (`supabase functions schedule` / pg_cron) — double-scheduling multiplies LLM spend and races the fan-out run.
 
 ## Local dev
 

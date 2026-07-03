@@ -128,6 +128,16 @@ const CRITICAL_STEPS: ReadonlyArray<readonly [string, string]> = [
   // (spec §9). Asserted thin below (contract 4c).
   ['adaptive_remediation_triggered', 'triggerAdaptiveRemediation'],
   ['purge_principal_ai', 'purgePrincipalAiTranscripts'],
+  // Wave 0 Task 0.2 (Learning Intelligence) — the coverage-audit and
+  // verify-question-bank Edge Functions were fully implemented but scheduled
+  // NOWHERE (not in vercel.json crons, not in this fan-out, no pg_cron row).
+  // These thin Edge-to-Edge triggers (mirroring the triggerWebhookDispatcher
+  // precedent: x-cron-secret + service-role bearer for the platform gateway)
+  // are the ONLY thing that makes them run nightly. Deleting either step
+  // silently stops grounding-coverage drift detection / the legacy_unverified
+  // question-bank drain.
+  ['coverage_audit_triggered', 'triggerCoverageAudit'],
+  ['question_bank_verify_triggered', 'triggerVerifyQuestionBank'],
 ];
 
 for (const [stepName, fnName] of CRITICAL_STEPS) {
@@ -222,6 +232,44 @@ Deno.test('daily-cron contract 4c: adaptive-remediation trigger is THIN and unga
     !body.includes('PULSE_THRESHOLDS') && !body.includes('ADAPTIVE_REMEDIATION_RULES'),
     'no cliff/recovery threshold logic may live in the Deno trigger',
   );
+});
+
+Deno.test('daily-cron contract 4d: coverage-audit + question-bank-verify triggers are THIN, dual-authenticated, ungated, and fail-soft', () => {
+  // Wave 0 Task 0.2 — these two Edge-to-Edge fetch-outs are the ONLY nightly
+  // scheduling for the coverage-audit / verify-question-bank Edge Functions
+  // (no vercel.json cron, no pg_cron row). Their failure mode is SILENT: the
+  // fail-soft catch logs a warn and returns 0, so a dropped auth header would
+  // 401 the target every night without a 207 or a red test — unless pinned
+  // here (same rationale as contract 4c for the adaptive-remediation trigger).
+  for (const [fnName, targetPath] of [
+    ['triggerCoverageAudit', '/functions/v1/coverage-audit'],
+    ['triggerVerifyQuestionBank', '/functions/v1/verify-question-bank'],
+  ] as const) {
+    const fnIdx = SRC.indexOf(`async function ${fnName}`);
+    assert(fnIdx > 0, `expected ${fnName} to remain defined`);
+    const body = SRC.slice(fnIdx, SRC.indexOf('\n}', fnIdx) + 2);
+    // Thin fetch-out to the target Edge Function — the step's entire job.
+    assertStringIncludes(body, targetPath);
+    // Dual auth: x-cron-secret (CRON_SECRET) for the target's cron gate PLUS a
+    // service-role bearer for the platform gateway on the Edge-to-Edge hop.
+    // Dropping either header makes the target reject nightly and the fail-soft
+    // catch swallows it — a silent scheduling loss.
+    assertStringIncludes(body, "'x-cron-secret'");
+    assertStringIncludes(body, "'Authorization'");
+    assertStringIncludes(body, 'SUPABASE_SERVICE_ROLE_KEY');
+    // THIN by design: all audit/verification math lives in the target. The Deno
+    // side must never read the DB (the _supabase param is deliberately unused)
+    // and must never flag-gate the trigger (the targets are idempotent — an
+    // empty backlog / same-day snapshot upsert is a natural no-op).
+    assert(
+      !body.includes('.from(') && !body.includes('feature_flags'),
+      `${fnName} must stay thin and ungated in Deno — no DB reads, no flag gate (the target owns idempotency)`,
+    );
+    // Fail-soft posture: missing env or a network error returns 0 (skipped),
+    // never throws — the step must not poison the nightly run.
+    assertStringIncludes(body, 'catch');
+    assertStringIncludes(body, 'return 0');
+  }
 });
 
 Deno.test('daily-cron contract 4b: contract-lifecycle steps are gated behind ff_school_contracts_v1', () => {

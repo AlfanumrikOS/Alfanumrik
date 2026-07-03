@@ -165,6 +165,9 @@ const AUDIT_DENY_ALL = ['mass_gen_log', 'school_subscriptions'];
 // rag_retrieval_logs, rag_content_audit, question_bank_fix_history), and a handful
 // of builder/lab/mock tables read only via the service role. Any NEW table that
 // lands here without an entry trips the freeze below and must be a reviewed choice.
+// chapter_asset_inventory: 31-dimension educational-completeness inventory —
+// migration 20260703000300; deny-all reviewed 2026-07-03 (architect+quality,
+// Wave 1); dashboard access via service-role API routes only.
 const SERVICE_ROLE_ONLY_TABLES = [
   'agent_prompts',
   'agent_runs',
@@ -174,6 +177,7 @@ const SERVICE_ROLE_ONLY_TABLES = [
   'alfabot_leads',
   'alfabot_messages',
   'alfabot_sessions',
+  'chapter_asset_inventory',
   'contract_number_sequences',
   'cycle_evaluations',
   'cycles',

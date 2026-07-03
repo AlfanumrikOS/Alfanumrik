@@ -19,6 +19,27 @@ const INTEGRATION_TEST_PATTERNS = [
   'src/__tests__/scripts/**',
 ];
 
+// Wave 1 knowledge-audit carve-out (Task 1.2, 2026-07-03): the tests under
+// `src/__tests__/scripts/knowledge-audit/**` are PURE (prompt builder, parser
+// tolerance/clamping, coverage math, expected-count heuristics, agreement
+// matrix — no DB, no network, no env). They live next to the other script
+// tests for discoverability, but they belong in the NORMAL per-PR lane, so the
+// integration-lane directory prefix above is split here: knowledge-audit/** is
+// excluded from the integration lane and carved OUT of the normal lane's
+// integration exclusion (see NORMAL_LANE_INTEGRATION_EXCLUDES below).
+const PURE_SCRIPT_TEST_GLOB = 'src/__tests__/scripts/knowledge-audit/**/*.{test,spec}.{ts,tsx}';
+
+// Normal-lane exclusion for the integration directories, with the pure
+// knowledge-audit subtree carved back out. `!(knowledge-audit)` is a picomatch
+// extglob: any scripts/ SUBDIRECTORY except knowledge-audit stays integration-
+// only, and the root-level pattern keeps loose files (e.g.
+// backfill-cbse-syllabus.test.ts) integration-only too.
+const NORMAL_LANE_INTEGRATION_EXCLUDES = [
+  'src/__tests__/migrations/**',
+  'src/__tests__/scripts/*.{test,spec}.{ts,tsx}',
+  'src/__tests__/scripts/!(knowledge-audit)/**',
+];
+
 // B1 RAG eval-harness (Task 8, 2026-06-13, architect-reviewed): the LIVE-DB
 // runner entry is NARROWLY matched as `src/__tests__/eval/**/*.integration.test.ts`
 // — ONLY the `*.integration.test.ts` file (run-eval.integration.test.ts) joins
@@ -98,10 +119,14 @@ export default defineConfig({
           'supabase/functions/bulk-jee-neet-import/__tests__/index.test.ts',
         ],
     exclude: isIntegrationRun
-      ? ['node_modules/**']
+      ? [
+          'node_modules/**',
+          // pure knowledge-audit tests run in the normal lane only (see carve-out above)
+          PURE_SCRIPT_TEST_GLOB,
+        ]
       : [
           'node_modules/**',
-          ...INTEGRATION_TEST_PATTERNS,
+          ...NORMAL_LANE_INTEGRATION_EXCLUDES,
           ...INTEGRATION_TEST_FILE_GLOBS,
           // B1 RAG eval-harness (Task 8): belt-and-braces — explicitly drop ANY
           // `*.integration.test.ts` from the normal lane. INTEGRATION_TEST_FILE_GLOBS

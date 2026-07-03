@@ -43,9 +43,11 @@ export function irt2plFisherInfo(theta: number, a: number, b: number): number {
  * Combined selection score matching the SQL RPC's logic.
  * Used in tests to verify SQL ↔ TS parity.
  *
- * - When (a, b) are calibrated (n >= 30, both non-null):
+ * - When (a, b) are calibrated (n >= 30, both non-null) AND the fisher_info
+ *   branch is allowed (see SelectionScoreOptions below — defaults to allowed,
+ *   the SQL-twin behavior):
  *     score = Fisher info + 0.5 (calibrated-item bonus)
- * - When only irt_difficulty (proxy) is available:
+ * - When only irt_difficulty (proxy) is available (or fisher_info is gated off):
  *     score = 1 / (1 + |theta - difficulty|)
  * - Otherwise:
  *     score = 0.1 (last-resort floor)
@@ -64,11 +66,37 @@ export interface SelectionScore {
   path: SelectionPath;
 }
 
+export interface SelectionScoreOptions {
+  /**
+   * ACTIVATION GATE for the fisher_info branch (ff_irt_question_selection).
+   *
+   * Defaults to TRUE — the SQL-twin behavior: the select_questions_by_irt_info
+   * RPC always ranks calibrated items by Fisher information, and the parity
+   * tests in src/__tests__/lib/irt/fisher-info.test.ts prove this function
+   * against it with no options passed. (The SQL RPC itself is only reachable
+   * behind ff_irt_question_selection, so the flag gate lives OUTSIDE it there;
+   * this default mirrors that: gate outside, math inside.)
+   *
+   * LIVE callers on always-on paths (select-adaptive-questions.ts via
+   * getQuizQuestionsV2) MUST pass the flag-derived value instead: when false,
+   * calibrated items are scored via proxy_distance exactly like uncalibrated
+   * ones, so accumulating nightly-calibration data can never change live
+   * ranking without a deliberate ff_irt_question_selection ramp (Outcome
+   * Evidence Framework staged-ramp rule).
+   *
+   * This function stays PURE — it never reads flags itself. The caller
+   * evaluates the flag (fail-closed) and passes the result here.
+   */
+  allowFisherInfo?: boolean;
+}
+
 export function computeSelectionScore(
   theta: number,
   item: IrtItemParams,
+  opts?: SelectionScoreOptions,
 ): SelectionScore {
-  if (item.irt_calibration_n >= 30 && item.irt_a != null && item.irt_b != null) {
+  const allowFisherInfo = opts?.allowFisherInfo ?? true;
+  if (allowFisherInfo && item.irt_calibration_n >= 30 && item.irt_a != null && item.irt_b != null) {
     return {
       score: irt2plFisherInfo(theta, item.irt_a, item.irt_b) + 0.5,
       path: 'fisher_info',

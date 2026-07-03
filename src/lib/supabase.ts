@@ -10,7 +10,11 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { XP_RULES } from './xp-config';
 import { calculateScorePercent, calculateQuizXP } from './scoring';
-import { ADAPTIVE_LIVE_SELECTION_FLAGS } from './feature-flags';
+import {
+  ADAPTIVE_LIVE_SELECTION_FLAGS,
+  IRT_SELECTION_FLAGS,
+  isFeatureEnabled,
+} from './feature-flags';
 import {
   selectAdaptiveQuestions,
   type AdaptiveClient,
@@ -1463,6 +1467,30 @@ export async function getQuizQuestionsV2(
     try {
       const flags = await getFeatureFlags();
       if (flags[ADAPTIVE_LIVE_SELECTION_FLAGS.V1]) {
+        // ── fisher_info ACTIVATION gate (ff_irt_question_selection, OEF ramp) ──
+        // The nightly IRT calibrator stamps irt_a/irt_b/irt_calibration_n onto
+        // live items. Without this gate, items crossing n >= 30 would silently
+        // flip from proxy_distance to fisher_info ranking for this (live,
+        // 10%-ramped) cohort with NO flag flip. IRT-scored serving must instead
+        // be a deliberate, evidence-backed ramp of ff_irt_question_selection.
+        //
+        // Evaluated per-student via isFeatureEnabled — NOT getFeatureFlags(),
+        // which ignores rollout_percentage — with userId = students.id so
+        // percentage ramps hash deterministically per student, and role =
+        // 'student' for role scoping. FAIL-CLOSED: flag missing / read error /
+        // evaluation false → allowFisherInfo stays false → calibrated items
+        // rank via the irt_difficulty proxy exactly like uncalibrated ones
+        // (byte-identical to today's ranking). A flag-read failure must never
+        // skip the adaptive provider itself — only close this gate.
+        let allowFisherInfo = false;
+        try {
+          allowFisherInfo = await isFeatureEnabled(
+            IRT_SELECTION_FLAGS.QUESTION_SELECTION,
+            { userId: studentId, role: 'student' },
+          );
+        } catch {
+          allowFisherInfo = false; // fail-closed: proxy_distance ranking
+        }
         const { questions: adaptiveRows, weakTopicsTargeted } = await selectAdaptiveQuestions(
           supabase as unknown as AdaptiveClient,
           {
@@ -1472,6 +1500,7 @@ export async function getQuizQuestionsV2(
             count,
             irtTheta,
             excludeIds: [],
+            allowFisherInfo,
           },
         );
         if (Array.isArray(adaptiveRows) && adaptiveRows.length > 0 && weakTopicsTargeted > 0) {

@@ -36,6 +36,20 @@ vi.mock('@/lib/adaptive/select-adaptive-questions', () => ({
   selectAdaptiveQuestions: (...args: unknown[]) => selectAdaptiveQuestionsMock(...args),
 }));
 
+// ── Mock: isFeatureEnabled (fisher_info activation gate reads) ───────────────
+// getQuizQuestionsV2 evaluates ff_irt_question_selection per-student through
+// isFeatureEnabled (rollout-aware) before handing allowFisherInfo to the
+// selector. Partial mock: everything else in the feature-flags barrel (flag-name
+// registries etc.) stays real.
+const isFeatureEnabledMock = vi.fn();
+vi.mock('@/lib/feature-flags', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/feature-flags')>();
+  return {
+    ...actual,
+    isFeatureEnabled: (...args: unknown[]) => isFeatureEnabledMock(...args),
+  };
+});
+
 // ── Mock: supabase singleton ─────────────────────────────────────────────────
 // A configurable fake covering every surface getQuizQuestionsV2 touches:
 //   auth.getUser()                              → resolveStudentId
@@ -155,6 +169,8 @@ function resetState() {
   state.ragQuestions = null;
   selectAdaptiveQuestionsMock.mockReset();
   selectAdaptiveQuestionsMock.mockResolvedValue({ questions: [], weakTopicsTargeted: 0 });
+  isFeatureEnabledMock.mockReset();
+  isFeatureEnabledMock.mockResolvedValue(false); // ff_irt_question_selection default OFF (fail-closed)
 }
 
 beforeEach(resetState);
@@ -238,6 +254,76 @@ describe('getQuizQuestionsV2 — assertion 4 (BLOCKING) cold-start', () => {
     const out = await getQuizQuestionsV2('math', '7', 10, 'mixed', null, ['mcq']);
     expect(out.some((q: any) => q.id === 'stray')).toBe(false);
     expect(out.map((q: any) => q.id)).toEqual(state.edgeQuestions.map((q: any) => q.id));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// fisher_info ACTIVATION gate — ff_irt_question_selection wiring (OEF ramp)
+//
+// The repaired IRT calibrator will begin populating irt_a/irt_b/calibration_n
+// on live items. IRT-scored serving must require a deliberate flag ramp:
+// getQuizQuestionsV2 evaluates ff_irt_question_selection per-student (rollout-
+// aware, deterministic by studentId) and passes allowFisherInfo to the
+// selector. Fail-closed on every failure path.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('getQuizQuestionsV2 — fisher_info activation gate (ff_irt_question_selection)', () => {
+  it('IRT flag OFF: selector receives allowFisherInfo: false (calibrated items keep proxy ranking)', async () => {
+    state.flagEnabled = true; // adaptive live selection ON for the cohort
+    state.edgeQuestions = questionRows(10, 'edge');
+    isFeatureEnabledMock.mockResolvedValue(false);
+
+    await getQuizQuestionsV2('math', '7', 10, 'mixed', null, ['mcq']);
+
+    expect(selectAdaptiveQuestionsMock).toHaveBeenCalledTimes(1);
+    expect(selectAdaptiveQuestionsMock.mock.calls[0][1]).toMatchObject({
+      allowFisherInfo: false,
+    });
+  });
+
+  it('IRT flag ON for this student: allowFisherInfo: true, evaluated per-student for rollout determinism', async () => {
+    state.flagEnabled = true;
+    state.edgeQuestions = questionRows(10, 'edge');
+    isFeatureEnabledMock.mockResolvedValue(true);
+
+    await getQuizQuestionsV2('math', '7', 10, 'mixed', null, ['mcq']);
+
+    expect(selectAdaptiveQuestionsMock).toHaveBeenCalledTimes(1);
+    expect(selectAdaptiveQuestionsMock.mock.calls[0][1]).toMatchObject({
+      allowFisherInfo: true,
+    });
+    // Rollout semantics: the flag MUST be evaluated with the student's id so
+    // percentage ramps hash deterministically per student (and with the
+    // student role for role scoping).
+    expect(isFeatureEnabledMock).toHaveBeenCalledWith(
+      'ff_irt_question_selection',
+      expect.objectContaining({ userId: 'student-1', role: 'student' }),
+    );
+  });
+
+  it('flag read FAILURE: fail-closed to allowFisherInfo: false — selection still runs, quiz unharmed', async () => {
+    state.flagEnabled = true;
+    state.edgeQuestions = questionRows(10, 'edge');
+    isFeatureEnabledMock.mockRejectedValue(new Error('flags service down'));
+
+    const out = await getQuizQuestionsV2('math', '7', 10, 'mixed', null, ['mcq']);
+
+    // The adaptive provider is NOT skipped — only the fisher gate closes.
+    expect(selectAdaptiveQuestionsMock).toHaveBeenCalledTimes(1);
+    expect(selectAdaptiveQuestionsMock.mock.calls[0][1]).toMatchObject({
+      allowFisherInfo: false,
+    });
+    expect(out).toHaveLength(10);
+  });
+
+  it('adaptive live-selection flag OFF: the IRT flag is never even evaluated', async () => {
+    state.flagEnabled = false;
+    state.edgeQuestions = questionRows(10, 'edge');
+
+    await getQuizQuestionsV2('math', '7', 10, 'mixed', null, ['mcq']);
+
+    expect(selectAdaptiveQuestionsMock).not.toHaveBeenCalled();
+    expect(isFeatureEnabledMock).not.toHaveBeenCalled();
   });
 });
 

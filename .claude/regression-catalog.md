@@ -3413,9 +3413,18 @@ The canary asserts four classes of invariant:
    `x-cron-secret` compare BEFORE any work begins; a missing/wrong secret short-circuits
    (no step runs). Removing or moving the gate after the first step turns it red.
 
-2. **Step-name → helper integrity (14 critical pairs).** Each load-bearing step name
-   is wired to its implementing helper; deleting or renaming either half breaks the
-   pin. This is the guard against a step silently vanishing from the nightly run.
+2. **Step-name → helper integrity (17 critical pairs — amended 2026-07-03, Wave 0
+   Task 0.2).** Each load-bearing step name is wired to its implementing helper;
+   deleting or renaming either half breaks the pin. This is the guard against a step
+   silently vanishing from the nightly run. The Wave 0 amendment adds the
+   `coverage_audit_triggered`/`triggerCoverageAudit` and
+   `question_bank_verify_triggered`/`triggerVerifyQuestionBank` pairs — these thin
+   Edge-to-Edge fetch-outs are the ONLY nightly scheduling for the coverage-audit and
+   verify-question-bank Edge Functions, and their fail-soft catch makes a dropped
+   auth header a SILENT loss, so contract 4d additionally pins each trigger's target
+   path, dual auth (`x-cron-secret` + service-role bearer for the platform gateway),
+   thin/ungated posture (no DB reads, no flag gate in Deno), and fail-soft
+   never-throw (`catch` + `return 0`).
 
 3. **`Promise.allSettled` per-step error isolation.** Steps run under `allSettled`, so
    a single step's rejection is isolated (partial failure → HTTP 207, never a 5xx
@@ -3429,7 +3438,7 @@ The canary asserts four classes of invariant:
 
 | # | Test name | Asserts | Location | Status |
 |---|---|---|---|---|
-| REG-118 | `daily_cron_contract_canary` | Static-source canary (22 Deno tests) pinning daily-cron's load-bearing invariants: fail-closed CRON_SECRET auth gate (constant-time `x-cron-secret` compare) before any work; 14 critical step-name→helper pairs present (deleting/renaming any turns it red); `Promise.allSettled` per-step error isolation (partial failure → 207, never a 5xx collapse); and flag-gating of the monthly-synthesis (`ff_pedagogy_v2_monthly_synthesis`) and school-contract (`ff_school_contracts_v1`) steps. Runs in the CI `edge-function-tests` Deno job. | `supabase/functions/daily-cron/__tests__/contract.test.ts` | E |
+| REG-118 | `daily_cron_contract_canary` | Static-source canary (27 Deno tests — amended 2026-07-03, Wave 0 Task 0.2) pinning daily-cron's load-bearing invariants: fail-closed CRON_SECRET auth gate (constant-time `x-cron-secret` compare) before any work; 17 critical step-name→helper pairs present (deleting/renaming any turns it red — incl. the Wave 0 `coverage_audit_triggered`/`question_bank_verify_triggered` pairs, the sole nightly scheduling for those two Edge Functions); `Promise.allSettled` per-step error isolation (partial failure → 207, never a 5xx collapse); flag-gating of the monthly-synthesis (`ff_pedagogy_v2_monthly_synthesis`) and school-contract (`ff_school_contracts_v1`) steps; and contract 4d pinning the two Wave 0 fetch-out triggers as thin, dual-authenticated (`x-cron-secret` + service-role bearer), ungated, and fail-soft (a dropped header would otherwise 401 silently every night). Runs in the CI `edge-function-tests` Deno job. | `supabase/functions/daily-cron/__tests__/contract.test.ts` | E |
 
 ### Invariants covered by this section
 
@@ -6911,8 +6920,6 @@ XC-3 Phase 4 first drain adds REG-222 (one grandfathered inline policy —
 constraint; recursion-guard ledger ratcheted 241 → 240).
 **Total catalog: 189 entries (target: 35 — TARGET EXCEEDED).**
 
----
-
 ## Pedagogy v2 Wave 3 critical-bug fix (synthesis surrogate-id) + Dive/Synthesis/OAuth route-contract pins — 2026-07-02 — REG-223..REG-225
 
 Source: today's engineering work. `GET /api/synthesis/state` resolved the
@@ -7252,5 +7259,115 @@ deep links).
 **Total catalog: 201 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-235 — Wave 0 Task 0.7: every `spaced_repetition_cards` writer supplies all NOT-NULL columns (grade as P5 string) + insert failures are never silently swallowed
+
+(Originally drafted as REG-223 on the Wave 0 branch; renumbered to REG-235 at
+merge time — main had already assigned REG-223..REG-234 to the Pedagogy v2
+surrogate-id fix, OAuth pins, quiz-RPC ownership check, and the adaptive-pipeline
+repair wave. REG-235 is the next truly-free id.)
+
+**Why.** Production `spaced_repetition_cards` sat at 0 rows for months because all
+three writers violated the real schema and swallowed the resulting errors: the
+Foxy save-flashcard route inserted phantom columns (`question`/`answer`/`difficulty`
+— none exist in the table) and omitted the NOT-NULL `grade`/`front_text`/`back_text`;
+the manual `/api/learner/cards/create` route omitted NOT-NULL `grade`; and the
+QuizResults auto-flashcard effect omitted `grade` AND wrapped the insert in a
+try/catch that treated every failure as "non-critical" — so every 23502 vanished
+without a log line. The SRS feature was structurally dead while appearing healthy.
+
+**What.** Three writer fixes (commits `a92dfeaf` backend + `8a8d7542` frontend):
+`src/app/api/student/foxy-interaction/route.ts` rewritten to the REAL schema
+(front_text/back_text/grade; phantom columns removed; 23505 on the partial unique
+index `idx_src_u` → explicit 409 `duplicate_card`; other errors → `logger.warn`
+with pg `code`+`message` only, then 500). `src/app/api/learner/cards/create/route.ts`
+now looks up the student's grade (P5 string, never defaulted — missing grade is an
+explicit 400 `grade_missing`) and includes it in the insert row. `QuizResults.tsx`
+guards the effect on `student.grade` + `selectedSubject` WITHOUT latching the
+run-once ref (so a late-arriving grade still creates cards), adds `grade` to every
+card payload, and — after the merge with main's REG-234 SRS-chain repair —
+batch-inserts first, then retries row-by-row when the batch hits the partial
+unique index `idx_src_u` (PostgREST upsert cannot target a partial index; a
+single conflicting row would otherwise abort the whole batch), treats 23505 as
+benign-silent per card, and warns with `{ code }` ONLY on other codes — never
+card text or student identifiers (P13).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-235 | `spaced_repetition_cards writer schema conformance + silent-failure elimination` (3 files) | P5/P6-adjacent/P13: for EVERY writer of `spaced_repetition_cards` — (a) the insert payload carries all NOT-NULL columns (`student_id`, `subject`, `grade`, `front_text`, `back_text` non-empty), with `grade` a STRING matching `/^([6-9]\|1[0-2])$/` (never a number — `toMatch` throws on non-strings); (b) the payload key set is pinned to an EXACT allowlist of real schema columns (baseline `00000000000000_baseline_from_prod.sql` ~13552) — the phantom `question`/`answer`/`difficulty` columns can never reappear; (c) a missing profile grade is an explicit 400 (never a silently-defaulted grade); (d) insert failures are NEVER swallowed — non-23505 codes produce `logger.warn` whose logged-object KEYS are pinned (`['code','message']` server, `['code']` client — no front_text/back_text/question keys) and whose serialized payload never contains card text or student name/id (P13); (e) 23505 (dup on `idx_src_u`) is benign — 409 `duplicate_card` on the Foxy route, silent skip-and-continue per-card in the QuizResults row-by-row retry with no false "created" banner and no warn; (f) the QuizResults effect does not latch its run-once ref when grade/subject are missing, and the results screen always still renders (card creation is non-blocking). | `src/__tests__/api/student/foxy-interaction.test.ts`, `src/__tests__/api/learner/cards/create.test.ts`, `src/__tests__/components/quiz/QuizResults.flashcard-grade.test.tsx` | E | P5, P13 |
+
+### Invariants covered by this section
+
+- P5 (grade format) — every writer sends grade as a string `"6"`-`"12"` (regex
+  shape-pinned, never a number, never silently defaulted); sourced from the
+  `students` profile server-side and `useAuth().student.grade` client-side.
+- P13 (data privacy) — insert-failure logs are key-allowlisted to pg error
+  code (+ constraint message / routing UUIDs server-side); card text
+  (front_text/back_text/question) and student name never reach the logger.
+- Operational integrity (silent-failure elimination) — a schema-violating
+  insert can never again fail invisibly: every non-duplicate error path emits
+  a `logger.warn` with the pg code, and duplicates are handled explicitly
+  (409 / benign per-card skip in the row-retry path) instead of aborting or
+  masking the batch. Complements REG-234 (SRS chain repair): REG-234 pins the
+  batch-then-row-retry shape and source_id/grade presence at the source level;
+  REG-235 pins the behavioral payload/allowlist/logging contract for all
+  three writers.
+
+### Catalog total
+
+Pre-REG-235: 201 entries (through REG-234, adaptive-pipeline repair wave).
+Wave 0 Task 0.7 adds REG-235 (all three `spaced_repetition_cards` writers —
+Foxy save-flashcard, manual card create, QuizResults auto-flashcards — pinned to
+the real schema via exact payload-key allowlists with grade as a P5 regex-shaped
+string, plus silent-failure elimination: key-allowlisted `logger.warn` on
+non-duplicate insert errors and explicit benign handling of 23505).
+**Total catalog: 202 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## Knowledge Intelligence Wave 1 — chapter_asset_inventory substrate + chunk-pass audit engine (2026-07-03)
+
+Source: commits `34e9cbff` (migration `20260703000300_chapter_asset_inventory.sql`
++ shape test) and `413ae6f4` (pure audit-engine modules under
+`scripts/knowledge-audit/` + 4 test files + the vitest normal-lane carve-out),
+branch `feat/wave0-light-dark-machinery`. Testing-agent verification pass
+2026-07-03 strengthened 7 previously-untested guard branches (0/0 + non-finite
+coverage denominators, the MAX_MINOR_INDEX 99 ceiling and minor≥1 floor — the
+pre-existing "Fig 4.2019" case is rejected by the regex word-boundary, NOT the
+ceiling, verified empirically — the MAX_EXERCISE_QUESTION 80 ceiling, the
+300-char note truncation, and non-array evidence tolerance).
+
+**Why.** `chapter_asset_inventory` is the substrate every later Knowledge
+Intelligence wave writes into: one row per (cbse_syllabus chapter × dimension)
+across the 31-dimension educational-completeness model, written exclusively by
+service-role audit workers. The chunk-pass parser is the trust boundary between
+a hallucination-capable model and that inventory — if evidence ids, counts, or
+expected-count heuristics can be inflated or can smuggle chunk text, every
+downstream gap query and generation decision is poisoned. A silent widening of
+the dimension enum, a dropped RLS policy, or a lane regression that stops these
+pure tests running per-PR would all be invisible without a pin.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-236 | `chapter_asset_inventory 31-dimension substrate + audit-engine parser/coverage invariants` (5 files) | (a) **Migration shape** (house REG-125 tokenizer canary, no DB): the `dimension` CHECK enumerates EXACTLY the 31 educational-completeness values (no silent add/remove/rename); RLS ENABLED in the SAME migration with an explicit deny-all policy for `anon, authenticated` (P8 — service-role-only posture); `UNIQUE (syllabus_id, dimension)` upsert target; FK `syllabus_id → cbse_syllabus(id) ON DELETE CASCADE` verified against the baseline; `audit_method` CHECK = exactly the 5 provenance values; `coverage_pct` bounded NULL-or-0..100; strictly additive (no DROP/DELETE/UPDATE/TRUNCATE in executable SQL). (b) **Parser fail-closed tolerance**: unparseable model output → `ok:false`; all 31 dimensions normalized with 0-fill + note; `found_count` clamped (negative→0, float→floored, non-numeric→0, numeric string accepted); evidence ids restricted to the input chunk-id set — hallucinated ids DROPPED with a note — capped at 5, and rows carry ids only, never chunk text (P13); dimension notes truncated ≤300 chars; `suspected_missing` string-coerced, blank-dropped, capped at 50 entries / 200 chars. (c) **Coverage math**: null on null/zero/negative/non-finite denominator (0/0 is null, never NaN); 2dp; clamped to 100 (matches the DB CHECK); negative found → 0. (d) **Heuristic false-positive guards**: MAX_MINOR_INDEX 99 ceiling + minor≥1 floor (a 3-digit OCR minor like "Fig. 4.150" or a "4.0" artifact cannot inflate expected counts); dominant-major grouping rejects minority cross-chapter references; exercise counts require the numbering series to start ≤2 AND respect the MAX_EXERCISE_QUESTION 80 ceiling (a stray line-start "99." cannot fabricate 99 questions); scan filter specs pin `grade` as a P5 string. (e) **Lane**: these pure tests run in the default per-PR `npm test` lane via the `vitest.config.ts` `!(knowledge-audit)` extglob carve-out while every other `scripts/**`/`migrations/**` integration test stays integration-only (verified empirically with `vitest list` under both configs on vitest 4.1.8/picomatch 4, Windows). | `src/__tests__/regressions/chapter-asset-inventory-migration.test.ts`, `src/__tests__/scripts/knowledge-audit/parse-response.test.ts`, `coverage.test.ts`, `prompt.test.ts`, `pilot-check.test.ts` | E | P5, P8, P13 |
+
+### Invariants covered by this section
+
+- P5 (grade format) — `buildQuestionBankFilterSpec` / `buildGeneratedContentFilterSpec`
+  pin `grade` as the string `"6"`, never an integer, in every scan spec.
+- P8 (RLS boundary) — RLS enabled + deny-all policy in the SAME migration file;
+  service_role is the only writer/reader (house posture, cf. synthetic_monitor_results).
+- P13 (data privacy) — inventory `evidence` is chunk-ids-only (foreign ids dropped,
+  length-bounded); notes truncated so chunk text can never ride along; the table
+  comment itself declares no content/PII, and the row-assembly test asserts every
+  evidence entry is an id-shaped short string.
+
+### Catalog total
+
+Pre-REG-236: 202 entries (through REG-235, Wave 0 Task 0.7).
+Wave 1 verification adds REG-236 (chapter_asset_inventory 31-dimension CHECK +
+deny-all RLS + audit-engine parser/coverage invariants — evidence carries ids
+only, P13 — plus the vitest lane carve-out pin).
+**Total catalog: 203 entries (target: 35 — TARGET EXCEEDED).**
 
 ---

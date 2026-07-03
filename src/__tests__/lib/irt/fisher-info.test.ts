@@ -182,3 +182,72 @@ describe('computeSelectionScore — proxy_distance ranks seeded bands distinctly
     expect(b).toBe(c);
   });
 });
+
+// ─── fisher_info ACTIVATION gate (ff_irt_question_selection, OEF ramp) ───────
+// The repaired IRT calibrator will start stamping irt_a/irt_b/irt_calibration_n
+// on live items. The LIVE selection path must not auto-switch calibrated items
+// to fisher_info ranking without a deliberate flag ramp, so computeSelectionScore
+// takes an explicit opts.allowFisherInfo gate. The function stays PURE (never
+// reads flags itself) and the DEFAULT stays the SQL-twin behavior so the parity
+// blocks above prove SQL ↔ TS equivalence unchanged.
+describe('computeSelectionScore — opts.allowFisherInfo activation gate', () => {
+  // Calibrated item that ALSO carries a proxy anchor (the realistic post-seed +
+  // post-calibration shape: every item has irt_difficulty; calibrated ones gain
+  // irt_a/irt_b/irt_calibration_n on top).
+  const calibratedWithProxy = {
+    irt_a: 1.5,
+    irt_b: 0.0,
+    irt_calibration_n: 50,
+    irt_difficulty: 0.8,
+  };
+
+  it('DEFAULT (no opts) preserves the SQL-twin behavior: calibrated → fisher_info', () => {
+    const r = computeSelectionScore(0, calibratedWithProxy);
+    expect(r.path).toBe('fisher_info');
+    expect(r.score).toBeCloseTo(0.5625 + 0.5, 4);
+  });
+
+  it('allowFisherInfo: true is byte-equivalent to the default (explicit opt-in)', () => {
+    const gated = computeSelectionScore(0, calibratedWithProxy, { allowFisherInfo: true });
+    const dflt = computeSelectionScore(0, calibratedWithProxy);
+    expect(gated).toEqual(dflt);
+    expect(gated.path).toBe('fisher_info');
+  });
+
+  it('allowFisherInfo: false → calibrated item scores via proxy_distance EXACTLY like an uncalibrated item (no ranking change vs today)', () => {
+    const gated = computeSelectionScore(0.3, calibratedWithProxy, { allowFisherInfo: false });
+    expect(gated.path).toBe('proxy_distance');
+    // Identical score to the same item with calibration stripped: accumulating
+    // calibration data cannot move an item's rank while the flag is off.
+    const uncalibratedTwin = computeSelectionScore(0.3, {
+      irt_a: null,
+      irt_b: null,
+      irt_calibration_n: 0,
+      irt_difficulty: 0.8,
+    });
+    expect(gated.score).toBe(uncalibratedTwin.score);
+    expect(gated.score).toBeCloseTo(1 / (1 + Math.abs(0.3 - 0.8)), 6);
+  });
+
+  it('allowFisherInfo: false + calibrated but NO proxy anchor → uncalibrated floor (never fisher_info)', () => {
+    const r = computeSelectionScore(0, {
+      irt_a: 1.5,
+      irt_b: 0.0,
+      irt_calibration_n: 50,
+      irt_difficulty: null,
+    }, { allowFisherInfo: false });
+    expect(r.path).toBe('uncalibrated');
+    expect(r.score).toBe(0.1);
+  });
+
+  it('allowFisherInfo: false leaves proxy/uncalibrated items completely untouched', () => {
+    const proxyItem = { irt_a: null, irt_b: null, irt_calibration_n: 5, irt_difficulty: 0.0 };
+    expect(computeSelectionScore(0.5, proxyItem, { allowFisherInfo: false })).toEqual(
+      computeSelectionScore(0.5, proxyItem),
+    );
+    const bare = { irt_a: null, irt_b: null, irt_calibration_n: 0, irt_difficulty: null };
+    expect(computeSelectionScore(0.5, bare, { allowFisherInfo: false })).toEqual(
+      computeSelectionScore(0.5, bare),
+    );
+  });
+});

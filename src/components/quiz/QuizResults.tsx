@@ -13,6 +13,7 @@ import {
 } from '@/lib/cognitive-engine';
 import { shareResult, quizShareMessage } from '@/lib/share';
 import { useAuth } from '@/lib/AuthContext';
+import { logger } from '@/lib/logger';
 import { supabase } from '@/lib/supabase';
 import { useFeatureFlags } from '@/lib/swr';
 import { getLevelFromScore } from '@/lib/score-config';
@@ -244,7 +245,12 @@ export default function QuizResults({
 
   // Auto-create flashcards from wrong answers
   useEffect(() => {
-    if (flashcardCreated.current || !student?.id) return;
+    // Wave 0 Task 0.7b: `grade` and `subject` are NOT-NULL columns on
+    // spaced_repetition_cards — without either, every insert 23502s, so
+    // skip (without latching the ref) until both are available.
+    // grade comes from the auth profile (P5: string "6"-"12", normalized
+    // in AuthContext); subject is the quiz's selectedSubject prop.
+    if (flashcardCreated.current || !student?.id || !student.grade || !selectedSubject) return;
     flashcardCreated.current = true;
 
     const wrongIndices = responses
@@ -291,17 +297,17 @@ export default function QuizResults({
               ?? (q.correct_answer_index >= 0 ? (opts[q.correct_answer_index] || '') : '');
             const explanation = isHi && q.explanation_hi ? q.explanation_hi : (q.explanation || '');
             return {
-              student_id: student.id,
+              student_id: student.id, // RLS sr_own: must be the caller's own student id
               card_type: 'review',
-              subject: selectedSubject || undefined,
+              subject: selectedSubject, // NOT-NULL — guarded above
               // `grade` is NOT NULL with no DB default — omitting it made
               // every insert fail silently, so quiz-derived cards were never
-              // created. P5: grade is always a string "6"-"12".
+              // created. P5: grade is always a string "6"-"12" from the auth profile.
               grade: student.grade,
               chapter_number: q.chapter_number || undefined,
               topic: q.bloom_level || undefined,
-              front_text: q.question_text,
-              back_text: `${correctAnswer}${explanation ? `\n\n${explanation}` : ''}`,
+              front_text: q.question_text.slice(0, 1000),
+              back_text: `${correctAnswer}${explanation ? `\n\n${explanation}` : ''}`.slice(0, 4000),
               hint: q.hint || undefined,
               source: 'quiz_wrong_answer',
               // The quiz-generator review-fill reader resolves source_id as a
@@ -309,7 +315,9 @@ export default function QuizResults({
               // so this card can actually resurface its question when due.
               source_id: q.id || undefined,
             };
-          });
+          })
+          // NOT-NULL columns must be non-empty — drop malformed cards
+          .filter(c => c.front_text.trim().length > 0 && c.back_text.trim().length > 0);
 
         if (cardsToInsert.length > 0) {
           const { error: batchError } = await supabase
@@ -327,7 +335,15 @@ export default function QuizResults({
               const { error: rowError } = await supabase
                 .from('spaced_repetition_cards')
                 .insert(card);
-              if (!rowError) created++;
+              if (!rowError) {
+                created++;
+                continue;
+              }
+              // 23505 = unique violation → the card already exists. Expected
+              // dedupe, benign — stay silent.
+              if (rowError.code === '23505') continue;
+              // P13: pg error code only — never card text or student identifiers.
+              logger.warn('spaced_repetition_cards insert failed', { code: rowError.code });
             }
           }
           if (created > 0) {
@@ -336,8 +352,11 @@ export default function QuizResults({
           }
         }
       } catch (err) {
-        // Non-critical — flashcard creation should not block results display
-        console.error('Failed to create flashcards:', err);
+        // Non-critical — flashcard creation must never block the results
+        // screen. P13: error code only, no card text or student PII.
+        logger.warn('flashcard creation failed', {
+          code: (err as { code?: string } | null)?.code ?? 'unknown',
+        });
       }
     })();
     // `reviewByQid` is a per-render Map derived from the `serverReview` prop; the
