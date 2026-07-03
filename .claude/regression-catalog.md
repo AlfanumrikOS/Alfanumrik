@@ -3413,9 +3413,18 @@ The canary asserts four classes of invariant:
    `x-cron-secret` compare BEFORE any work begins; a missing/wrong secret short-circuits
    (no step runs). Removing or moving the gate after the first step turns it red.
 
-2. **Step-name → helper integrity (14 critical pairs).** Each load-bearing step name
-   is wired to its implementing helper; deleting or renaming either half breaks the
-   pin. This is the guard against a step silently vanishing from the nightly run.
+2. **Step-name → helper integrity (17 critical pairs — amended 2026-07-03, Wave 0
+   Task 0.2).** Each load-bearing step name is wired to its implementing helper;
+   deleting or renaming either half breaks the pin. This is the guard against a step
+   silently vanishing from the nightly run. The Wave 0 amendment adds the
+   `coverage_audit_triggered`/`triggerCoverageAudit` and
+   `question_bank_verify_triggered`/`triggerVerifyQuestionBank` pairs — these thin
+   Edge-to-Edge fetch-outs are the ONLY nightly scheduling for the coverage-audit and
+   verify-question-bank Edge Functions, and their fail-soft catch makes a dropped
+   auth header a SILENT loss, so contract 4d additionally pins each trigger's target
+   path, dual auth (`x-cron-secret` + service-role bearer for the platform gateway),
+   thin/ungated posture (no DB reads, no flag gate in Deno), and fail-soft
+   never-throw (`catch` + `return 0`).
 
 3. **`Promise.allSettled` per-step error isolation.** Steps run under `allSettled`, so
    a single step's rejection is isolated (partial failure → HTTP 207, never a 5xx
@@ -3429,7 +3438,7 @@ The canary asserts four classes of invariant:
 
 | # | Test name | Asserts | Location | Status |
 |---|---|---|---|---|
-| REG-118 | `daily_cron_contract_canary` | Static-source canary (22 Deno tests) pinning daily-cron's load-bearing invariants: fail-closed CRON_SECRET auth gate (constant-time `x-cron-secret` compare) before any work; 14 critical step-name→helper pairs present (deleting/renaming any turns it red); `Promise.allSettled` per-step error isolation (partial failure → 207, never a 5xx collapse); and flag-gating of the monthly-synthesis (`ff_pedagogy_v2_monthly_synthesis`) and school-contract (`ff_school_contracts_v1`) steps. Runs in the CI `edge-function-tests` Deno job. | `supabase/functions/daily-cron/__tests__/contract.test.ts` | E |
+| REG-118 | `daily_cron_contract_canary` | Static-source canary (27 Deno tests — amended 2026-07-03, Wave 0 Task 0.2) pinning daily-cron's load-bearing invariants: fail-closed CRON_SECRET auth gate (constant-time `x-cron-secret` compare) before any work; 17 critical step-name→helper pairs present (deleting/renaming any turns it red — incl. the Wave 0 `coverage_audit_triggered`/`question_bank_verify_triggered` pairs, the sole nightly scheduling for those two Edge Functions); `Promise.allSettled` per-step error isolation (partial failure → 207, never a 5xx collapse); flag-gating of the monthly-synthesis (`ff_pedagogy_v2_monthly_synthesis`) and school-contract (`ff_school_contracts_v1`) steps; and contract 4d pinning the two Wave 0 fetch-out triggers as thin, dual-authenticated (`x-cron-secret` + service-role bearer), ungated, and fail-soft (a dropped header would otherwise 401 silently every night). Runs in the CI `edge-function-tests` Deno job. | `supabase/functions/daily-cron/__tests__/contract.test.ts` | E |
 
 ### Invariants covered by this section
 
