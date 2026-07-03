@@ -1,0 +1,579 @@
+import { describe, it, expect, vi } from 'vitest';
+import {
+  MISSION_ROLES,
+  CERTIFICATION_EMAIL_DOMAIN,
+  SCHOOL_NAME_PREFIX,
+  runIdShortOf,
+  buildAccountShape,
+  buildSchoolShape,
+  buildBaseTableRow,
+  buildDemoAccountsRow,
+  findOrCreateAuthUser,
+  findAuthUserIdByEmail,
+  isEmailAlreadyRegisteredError,
+  upsertBaseTableRow,
+  upsertDemoAccountsRow,
+  upsertSchoolRow,
+  seedCertificationAccounts,
+  type MissionRole,
+  type SupabaseLike,
+  type QueryResult,
+} from '../../../scripts/seed-certification-accounts';
+
+/**
+ * REG-228 — certification-account seeding script: shape conventions +
+ * idempotency (Environment Readiness remediation wave, 2026-07-02).
+ *
+ * Verifies `scripts/seed-certification-accounts.ts` against the exact
+ * traceability convention specified in
+ * `docs/runbooks/certification-traffic-traceability.md`:
+ *   - email:  cert-<run_id_short>-<role>-<n>@certification.alfanumrik.invalid
+ *   - name:   cert-<run_id_short>-<role>-<n>
+ *   - school: [CERTIFICATION] cert-<run_id_short>-school-<n>
+ *   - is_demo = true on every base-table row
+ *   - one demo_accounts registry row per top-level account, EXCEPT the two
+ *     roles (content_author, support_staff) that have no CHECK-legal
+ *     demo_accounts.role value — a documented, deliberate limitation, not
+ *     an oversight (see the module doc in the script).
+ *
+ * No live database is used — this suite is entirely PURE-FUNCTION +
+ * FAKE-CLIENT (an in-memory object satisfying the script's narrow
+ * `SupabaseLike` surface), consistent with how the rest of this codebase's
+ * Vitest suite avoids live DB calls in the default (non-integration) lane.
+ * This file intentionally lives OUTSIDE `src/__tests__/scripts/` because
+ * that directory is bound to the `RUN_INTEGRATION_TESTS=1` lane in
+ * `vitest.config.ts` — these tests must run on every normal `npm test`.
+ *
+ * REGRESSION CATALOG: REG-228.
+ */
+
+// ─── A minimal in-memory fake satisfying SupabaseLike ──────────────────────
+// Table state is a plain array of rows; `insert` appends, `select().eq().
+// maybeSingle()` finds the first match. This is intentionally simple — it
+// exists to prove find-or-create semantics, not to emulate PostgREST.
+
+function makeFakeSupabase(): {
+  sb: SupabaseLike;
+  tables: Record<string, Record<string, unknown>[]>;
+  authUsers: Array<{ id: string; email: string }>;
+} {
+  const tables: Record<string, Record<string, unknown>[]> = {};
+  const authUsers: Array<{ id: string; email: string }> = [];
+  let nextId = 1;
+
+  function tableRows(name: string): Record<string, unknown>[] {
+    if (!tables[name]) tables[name] = [];
+    return tables[name];
+  }
+
+  const sb: SupabaseLike = {
+    from(table: string) {
+      return {
+        select(_cols: string) {
+          return {
+            eq(col: string, val: string) {
+              return {
+                async maybeSingle(): Promise<QueryResult<Record<string, unknown>>> {
+                  const row = tableRows(table).find((r) => r[col] === val);
+                  return { data: row ?? null, error: null };
+                },
+              };
+            },
+          };
+        },
+        insert<T extends object>(row: T) {
+          return {
+            select(_cols: string) {
+              return {
+                async single(): Promise<QueryResult<Record<string, unknown>>> {
+                  const id = `id-${nextId++}`;
+                  const stored = { ...row, id } as Record<string, unknown>;
+                  tableRows(table).push(stored);
+                  return { data: { id }, error: null };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+    auth: {
+      admin: {
+        async createUser(params: { email: string }) {
+          // Emulate auth.users' unique-email constraint: a second create for
+          // the same email fails exactly as Supabase does, exercising the
+          // partial-failure recovery path in findOrCreateAuthUser.
+          if (authUsers.some((u) => u.email === params.email)) {
+            return {
+              data: { user: null },
+              error: { message: 'A user with this email address has already been registered' },
+            };
+          }
+          const id = `auth-${nextId++}`;
+          authUsers.push({ id, email: params.email });
+          return { data: { user: { id } }, error: null };
+        },
+        async listUsers(listParams?: { page?: number; perPage?: number }) {
+          const page = listParams?.page ?? 1;
+          const perPage = listParams?.perPage ?? 200;
+          const start = (page - 1) * perPage;
+          const users = authUsers.slice(start, start + perPage);
+          return { data: { users }, error: null };
+        },
+      },
+    },
+  };
+
+  return { sb, tables, authUsers };
+}
+
+describe('REG-228 — account-shape helpers match the runbook marker conventions exactly', () => {
+  it('runIdShortOf extracts the first 8 lowercase hex chars, hyphens stripped', () => {
+    expect(runIdShortOf('A1B2C3D4-e5f6-7890-abcd-ef1234567890')).toBe('a1b2c3d4');
+  });
+
+  it('buildAccountShape produces cert-<run_id_short>-<role>-<n>@certification.alfanumrik.invalid', () => {
+    const shape = buildAccountShape('a1b2c3d4', 'student', 1);
+    expect(shape.email).toBe('cert-a1b2c3d4-student-001@certification.alfanumrik.invalid');
+    expect(shape.name).toBe('cert-a1b2c3d4-student-001');
+  });
+
+  it('the email local-part and name marker match byte-for-byte (runbook requirement)', () => {
+    const shape = buildAccountShape('deadbeef', 'teacher', 7);
+    const [localPart] = shape.email.split('@');
+    expect(localPart).toBe(shape.name);
+  });
+
+  it('the email domain is the exact reserved .invalid marker', () => {
+    const shape = buildAccountShape('deadbeef', 'parent', 1);
+    expect(shape.email.endsWith(`@${CERTIFICATION_EMAIL_DOMAIN}`)).toBe(true);
+    expect(CERTIFICATION_EMAIL_DOMAIN).toBe('certification.alfanumrik.invalid');
+  });
+
+  it('sequence numbers are zero-padded to 3 digits so same-role accounts never collide', () => {
+    expect(buildAccountShape('deadbeef', 'student', 1).email).toContain('-student-001@');
+    expect(buildAccountShape('deadbeef', 'student', 42).email).toContain('-student-042@');
+  });
+
+  it('buildSchoolShape produces "[CERTIFICATION] cert-<run_id_short>-school-<n>"', () => {
+    const school = buildSchoolShape('deadbeef', 1);
+    expect(school.name).toBe('[CERTIFICATION] cert-deadbeef-school-001');
+    expect(school.name.startsWith(SCHOOL_NAME_PREFIX)).toBe(true);
+  });
+
+  it('buildBaseTableRow always stamps is_demo = true regardless of role/table', () => {
+    for (const def of MISSION_ROLES) {
+      const shape = buildAccountShape('deadbeef', def.role, 1);
+      const row = buildBaseTableRow(def, shape, 'auth-1', def.schoolScoped ? 'school-1' : null);
+      expect(row.is_demo).toBe(true);
+      expect(row.email).toBe(shape.email);
+      expect(row.name).toBe(shape.name);
+    }
+  });
+
+  it('guardians row does NOT contain is_active (Stage 2 field fix — guardians has no such column)', () => {
+    // Regression: the guardians base table has NO is_active column (verified
+    // against 00000000000000_baseline_from_prod.sql; no migration ever adds
+    // it — 20260325100000 explicitly notes "Guardians ... (no is_active
+    // column)"). A prior blanket `common` spread stamped is_active on every
+    // row, so the guardians insert Stage-2 field-failed with "Could not find
+    // the 'is_active' column of 'guardians'". The row must omit is_active
+    // entirely (NOT set it false — the column does not exist at all).
+    const parentDef = MISSION_ROLES.find((d) => d.role === 'parent')!;
+    expect(parentDef.table).toBe('guardians');
+    const shape = buildAccountShape('deadbeef', 'parent', 1);
+    const row = buildBaseTableRow(parentDef, shape, 'auth-1', null);
+    expect('is_active' in row).toBe(false);
+    // The demo marker is still present — guardians DOES have is_demo (added by
+    // 20260515000001 / 20260603150000), so parent accounts stay traceable.
+    expect(row.is_demo).toBe(true);
+    // And the find-or-create identity columns the seed relies on are present.
+    expect(row.auth_user_id).toBe('auth-1');
+    expect(row.name).toBe(shape.name);
+    expect(row.email).toBe(shape.email);
+  });
+
+  it('per-table column-correctness: is_active is present on the four tables that have it, absent on guardians', () => {
+    // Exhaustive pin so the next schema-shape regression is caught at unit
+    // time, not on a live re-run. is_active exists on students/teachers/
+    // school_admins/admin_users, but NOT on guardians.
+    const tablesWithIsActive = new Set(['students', 'teachers', 'school_admins', 'admin_users']);
+    for (const def of MISSION_ROLES) {
+      const shape = buildAccountShape('deadbeef', def.role, 1);
+      const row = buildBaseTableRow(def, shape, 'auth-1', def.schoolScoped ? 'school-1' : null);
+      if (def.table === 'guardians') {
+        expect('is_active' in row).toBe(false);
+      } else if (tablesWithIsActive.has(def.table)) {
+        expect(row.is_active).toBe(true);
+      }
+    }
+  });
+
+  it('per-table column-correctness: only tables that own each field carry it (no cross-table column bleed)', () => {
+    // school_id belongs to students/teachers/school_admins only; admin_level
+    // to admin_users only; grade/board/preferred_subject to students only.
+    // guardians and admin_users must never carry school_id; non-admin tables
+    // must never carry admin_level.
+    const rowFor = (role: MissionRole) => {
+      const def = MISSION_ROLES.find((d) => d.role === role)!;
+      const shape = buildAccountShape('deadbeef', role, 1);
+      return buildBaseTableRow(def, shape, 'auth-1', def.schoolScoped ? 'school-1' : null);
+    };
+
+    // school_id: present only where the base table has it AND the role is school-scoped.
+    expect('school_id' in rowFor('student')).toBe(true);
+    expect('school_id' in rowFor('teacher')).toBe(true);
+    expect('school_id' in rowFor('school_admin')).toBe(true);
+    expect('school_id' in rowFor('parent')).toBe(false); // guardians: no school_id
+    expect('school_id' in rowFor('super_admin')).toBe(false); // admin_users: no school_id
+
+    // admin_level: only on admin_users-backed roles.
+    expect('admin_level' in rowFor('super_admin')).toBe(true);
+    expect('admin_level' in rowFor('content_author')).toBe(true);
+    expect('admin_level' in rowFor('support_staff')).toBe(true);
+    expect('admin_level' in rowFor('student')).toBe(false);
+    expect('admin_level' in rowFor('teacher')).toBe(false);
+    expect('admin_level' in rowFor('parent')).toBe(false);
+    expect('admin_level' in rowFor('school_admin')).toBe(false);
+
+    // students-only academic columns never leak onto other tables.
+    for (const role of ['teacher', 'parent', 'school_admin', 'super_admin'] as const) {
+      expect('grade' in rowFor(role)).toBe(false);
+      expect('board' in rowFor(role)).toBe(false);
+      expect('preferred_subject' in rowFor(role)).toBe(false);
+    }
+  });
+
+  it('every base-table row provides all NOT-NULL-without-default columns that table requires', () => {
+    // The columns each table declares NOT NULL with no DB default (per the
+    // pg_dump baseline). If the seed omits one, the live insert fails — this
+    // pins them so a future edit that drops one is caught at unit time.
+    const requiredByTable: Record<string, string[]> = {
+      students: ['name', 'grade'],
+      teachers: ['name', 'email'],
+      guardians: ['name'],
+      school_admins: ['auth_user_id', 'school_id'],
+      admin_users: ['name', 'email'],
+    };
+    for (const def of MISSION_ROLES) {
+      const shape = buildAccountShape('deadbeef', def.role, 1);
+      // Pass a non-null schoolId so school-scoped required school_id is satisfied.
+      const row = buildBaseTableRow(def, shape, 'auth-1', 'school-1');
+      for (const col of requiredByTable[def.table]) {
+        expect(col in row).toBe(true);
+        expect(row[col]).not.toBeNull();
+        expect(row[col]).not.toBeUndefined();
+      }
+    }
+  });
+
+  it('students row pins preferred_subject to explicit NULL (Stage 2 FK-violation field fix)', () => {
+    // Regression: students.preferred_subject has a DB default of 'Mathematics'
+    // AND an FK (students_preferred_subject_fkey) into the subjects reference
+    // table. Relying on the default couples the seed to whatever subjects the
+    // target environment happens to have seeded — it FK-violated on the
+    // staging project (Stage 2 field-caught). The row must send an explicit
+    // NULL (always a valid FK value) rather than omit the key (which would let
+    // the coupled default apply) or set a real subject (which just moves the
+    // coupling). Do NOT change this to 'math'/'Mathematics'/any real subject.
+    const studentDef = MISSION_ROLES.find((d) => d.role === 'student')!;
+    const shape = buildAccountShape('deadbeef', 'student', 1);
+    const row = buildBaseTableRow(studentDef, shape, 'auth-1', 'school-1');
+    expect('preferred_subject' in row).toBe(true);
+    expect(row.preferred_subject).toBeNull();
+  });
+
+  it('admin_users-backed roles carry the correct admin_level', () => {
+    const superAdminDef = MISSION_ROLES.find((d) => d.role === 'super_admin')!;
+    const contentDef = MISSION_ROLES.find((d) => d.role === 'content_author')!;
+    const supportDef = MISSION_ROLES.find((d) => d.role === 'support_staff')!;
+
+    const shapeSuper = buildAccountShape('deadbeef', 'super_admin', 1);
+    const shapeContent = buildAccountShape('deadbeef', 'content_author', 1);
+    const shapeSupport = buildAccountShape('deadbeef', 'support_staff', 1);
+
+    expect(buildBaseTableRow(superAdminDef, shapeSuper, 'a', null).admin_level).toBe('super_admin');
+    expect(buildBaseTableRow(contentDef, shapeContent, 'a', null).admin_level).toBe('content_manager');
+    expect(buildBaseTableRow(supportDef, shapeSupport, 'a', null).admin_level).toBe('support');
+  });
+
+  it('7 mission roles are declared, matching the certification plan exactly', () => {
+    const roles = MISSION_ROLES.map((d) => d.role).sort();
+    expect(roles).toEqual(
+      ['content_author', 'parent', 'school_admin', 'student', 'super_admin', 'support_staff', 'teacher'].sort(),
+    );
+  });
+
+  it('content_author and support_staff are marked hasPortal=false (Wave 1 finding, seeded anyway)', () => {
+    const content = MISSION_ROLES.find((d) => d.role === 'content_author')!;
+    const support = MISSION_ROLES.find((d) => d.role === 'support_staff')!;
+    expect(content.hasPortal).toBe(false);
+    expect(support.hasPortal).toBe(false);
+    // Every other role DOES have a portal today.
+    for (const def of MISSION_ROLES) {
+      if (def.role === 'content_author' || def.role === 'support_staff') continue;
+      expect(def.hasPortal).toBe(true);
+    }
+  });
+});
+
+describe('REG-228 — demo_accounts registry row shape + the documented CHECK-constraint limitation', () => {
+  it('buildDemoAccountsRow produces the exact runbook shape for CHECK-legal roles', () => {
+    const def = MISSION_ROLES.find((d) => d.role === 'student')!;
+    const shape = buildAccountShape('deadbeef', 'student', 1);
+    const row = buildDemoAccountsRow(def, shape, 'auth-1', 'school-1', 'operator-1');
+    expect(row).toEqual({
+      auth_user_id: 'auth-1',
+      role: 'student',
+      persona: null,
+      display_name: shape.name,
+      email: shape.email,
+      school_id: 'school-1',
+      is_active: true,
+      created_by: 'operator-1',
+    });
+  });
+
+  it('display_name and email match the base-table row byte-for-byte (runbook requirement)', () => {
+    const def = MISSION_ROLES.find((d) => d.role === 'teacher')!;
+    const shape = buildAccountShape('deadbeef', 'teacher', 3);
+    const baseRow = buildBaseTableRow(def, shape, 'auth-2', 'school-1');
+    const demoRow = buildDemoAccountsRow(def, shape, 'auth-2', 'school-1', null);
+    expect(demoRow!.display_name).toBe(baseRow.name);
+    expect(demoRow!.email).toBe(baseRow.email);
+  });
+
+  it('returns null for content_author and support_staff (no CHECK-legal role value) — never mislabels them super_admin', () => {
+    const contentDef = MISSION_ROLES.find((d) => d.role === 'content_author')!;
+    const supportDef = MISSION_ROLES.find((d) => d.role === 'support_staff')!;
+    const shapeContent = buildAccountShape('deadbeef', 'content_author', 1);
+    const shapeSupport = buildAccountShape('deadbeef', 'support_staff', 1);
+
+    expect(buildDemoAccountsRow(contentDef, shapeContent, 'auth-3', null, null)).toBeNull();
+    expect(buildDemoAccountsRow(supportDef, shapeSupport, 'auth-4', null, null)).toBeNull();
+  });
+
+  it('only registers a demo_accounts role value that is CHECK-legal (student|teacher|parent|school_admin|super_admin)', () => {
+    const legal = new Set(['student', 'teacher', 'parent', 'school_admin', 'super_admin']);
+    for (const def of MISSION_ROLES) {
+      const shape = buildAccountShape('deadbeef', def.role, 1);
+      const row = buildDemoAccountsRow(def, shape, 'auth-x', null, null);
+      if (row) {
+        expect(legal.has(row.role)).toBe(true);
+      }
+    }
+  });
+});
+
+describe('REG-228 — idempotent find-or-create primitives (fake client, no live DB)', () => {
+  it('upsertBaseTableRow: second call with the same email reuses the row, does not duplicate', async () => {
+    const { sb, tables } = makeFakeSupabase();
+    const email = 'cert-deadbeef-student-001@certification.alfanumrik.invalid';
+    const row = { email, name: 'x', is_demo: true, is_active: true };
+
+    const first = await upsertBaseTableRow(sb, 'students', email, row);
+    const second = await upsertBaseTableRow(sb, 'students', email, row);
+
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
+    expect(second.id).toBe(first.id);
+    expect(tables.students).toHaveLength(1);
+  });
+
+  it('findOrCreateAuthUser: second call with the same email reuses the existing auth_user_id', async () => {
+    const { sb, tables } = makeFakeSupabase();
+    const email = 'cert-deadbeef-teacher-001@certification.alfanumrik.invalid';
+
+    // First call: no existing row -> creates a fresh auth user.
+    const first = await findOrCreateAuthUser(sb, 'teachers', email, 'pw');
+    expect(first.created).toBe(true);
+
+    // Simulate the base-table row now existing with that auth_user_id (as the
+    // real orchestrator would have written via upsertBaseTableRow).
+    tables.teachers = [{ email, auth_user_id: first.authUserId, id: 'row-1' }];
+
+    const second = await findOrCreateAuthUser(sb, 'teachers', email, 'pw');
+    expect(second.created).toBe(false);
+    expect(second.authUserId).toBe(first.authUserId);
+  });
+
+  it('findOrCreateAuthUser: recovers a half-created account (auth user exists, NO base-table row) via listUsers instead of throwing', async () => {
+    // Reproduces the exact Stage-2 staging wedge: a prior run created the auth
+    // user (line ~393) but FAILED before/at the base-table insert (the
+    // preferred_subject FK error). On the re-run the base-table lookup finds
+    // nothing (correct — the base row really was never written), createUser
+    // then reports the email already registered, and WITHOUT recovery the
+    // account can never be repaired. The fix pages listUsers to reuse the
+    // existing auth user id and returns created:false so the caller can create
+    // the missing base row and heal the account.
+    const { sb, tables, authUsers } = makeFakeSupabase();
+    const email = 'cert-4e6979d0-student-001@certification.alfanumrik.invalid';
+
+    // First (aborted) run: auth user created, but the students base row was
+    // NEVER written. Simulate by creating only the auth user.
+    const priorRun = await sb.auth.admin.createUser({
+      email,
+      password: 'pw',
+      email_confirm: true,
+    });
+    const wedgedAuthId = priorRun.data.user!.id;
+    expect(tables.students ?? []).toHaveLength(0); // no base row exists
+    expect(authUsers).toHaveLength(1);
+
+    // Re-run: must NOT throw, must return the SAME auth user id, created:false.
+    const recovered = await findOrCreateAuthUser(sb, 'students', email, 'pw');
+    expect(recovered.created).toBe(false);
+    expect(recovered.authUserId).toBe(wedgedAuthId);
+
+    // And the caller can now heal the account by creating the missing base row.
+    const healed = await upsertBaseTableRow(sb, 'students', email, {
+      email,
+      auth_user_id: recovered.authUserId,
+      is_demo: true,
+    });
+    expect(healed.created).toBe(true);
+    expect(tables.students).toHaveLength(1);
+
+    // No duplicate auth user was ever created during recovery.
+    expect(authUsers).toHaveLength(1);
+  });
+
+  it('findOrCreateAuthUser: still throws on a NON-duplicate createUser error (does not swallow real failures)', async () => {
+    const { sb } = makeFakeSupabase();
+    const email = 'cert-deadbeef-parent-001@certification.alfanumrik.invalid';
+    // Override createUser to return an unrelated failure.
+    sb.auth.admin.createUser = async () => ({
+      data: { user: null },
+      error: { message: 'database connection reset' },
+    });
+    await expect(findOrCreateAuthUser(sb, 'guardians', email, 'pw')).rejects.toThrow(/database connection reset/);
+  });
+
+  it('findAuthUserIdByEmail: pages past the first page to find a later user, and returns null when absent', async () => {
+    const { sb, authUsers } = makeFakeSupabase();
+    // Seed 250 users so the target lives on page 2 (perPage default 200).
+    for (let i = 0; i < 250; i++) {
+      authUsers.push({ id: `auth-seed-${i}`, email: `seed-${i}@certification.alfanumrik.invalid` });
+    }
+    const target = authUsers[210];
+    expect(await findAuthUserIdByEmail(sb, target.email)).toBe(target.id);
+    expect(await findAuthUserIdByEmail(sb, 'nobody@certification.alfanumrik.invalid')).toBeNull();
+  });
+
+  it('isEmailAlreadyRegisteredError matches the known Supabase wordings defensively, rejects unrelated errors', () => {
+    expect(isEmailAlreadyRegisteredError('A user with this email address has already been registered')).toBe(true);
+    expect(isEmailAlreadyRegisteredError('User already registered')).toBe(true);
+    expect(isEmailAlreadyRegisteredError('email_exists')).toBe(true);
+    expect(isEmailAlreadyRegisteredError('database connection reset')).toBe(false);
+  });
+
+  it('upsertDemoAccountsRow: second call with the same email does not duplicate the registry row', async () => {
+    const { sb, tables } = makeFakeSupabase();
+    const row = {
+      auth_user_id: 'auth-1',
+      role: 'student' as const,
+      persona: null,
+      display_name: 'cert-deadbeef-student-001',
+      email: 'cert-deadbeef-student-001@certification.alfanumrik.invalid',
+      school_id: null,
+      is_active: true as const,
+      created_by: null,
+    };
+
+    await upsertDemoAccountsRow(sb, row);
+    await upsertDemoAccountsRow(sb, row);
+
+    expect(tables.demo_accounts).toHaveLength(1);
+  });
+
+  it('upsertSchoolRow: second call with the same name does not duplicate the school', async () => {
+    const { sb, tables } = makeFakeSupabase();
+    const name = '[CERTIFICATION] cert-deadbeef-school-001';
+
+    const first = await upsertSchoolRow(sb, name);
+    const second = await upsertSchoolRow(sb, name);
+
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
+    expect(tables.schools).toHaveLength(1);
+  });
+});
+
+describe('REG-228 — seedCertificationAccounts end-to-end orchestration is idempotent per run id', () => {
+  it('calling the full orchestrator twice with the SAME run id creates rows once, reuses them the second time', async () => {
+    const { sb, tables } = makeFakeSupabase();
+    const runId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
+    const first = await seedCertificationAccounts(sb, { runId });
+    const second = await seedCertificationAccounts(sb, { runId });
+
+    // Every account is present both times, same run id/short.
+    expect(first.runId).toBe(runId);
+    expect(second.runId).toBe(runId);
+    expect(first.accounts).toHaveLength(MISSION_ROLES.length);
+    expect(second.accounts).toHaveLength(MISSION_ROLES.length);
+
+    // First call created every row; second call created none.
+    expect(first.accounts.every((a) => a.baseRowCreated)).toBe(true);
+    expect(second.accounts.every((a) => a.baseRowCreated === false)).toBe(true);
+
+    // No table has duplicate rows after the second call.
+    expect(tables.students).toHaveLength(1);
+    expect(tables.teachers).toHaveLength(1);
+    expect(tables.guardians).toHaveLength(1);
+    expect(tables.school_admins).toHaveLength(1);
+    // admin_users holds 3 rows: super_admin, content_author, support_staff.
+    expect(tables.admin_users).toHaveLength(3);
+    expect(tables.schools).toHaveLength(1);
+
+    // demo_accounts only gets the 5 CHECK-legal roles, never content_author/support_staff.
+    expect(tables.demo_accounts).toHaveLength(5);
+    const demoRoles = tables.demo_accounts.map((r) => r.role).sort();
+    expect(demoRoles).toEqual(['parent', 'school_admin', 'student', 'super_admin', 'teacher']);
+  });
+
+  it('calling the orchestrator with a DIFFERENT run id creates an entirely independent, non-colliding row set', async () => {
+    const { sb, tables } = makeFakeSupabase();
+
+    await seedCertificationAccounts(sb, { runId: '11111111-1111-1111-1111-111111111111' });
+    await seedCertificationAccounts(sb, { runId: '22222222-2222-2222-2222-222222222222' });
+
+    // Two independent schools, two independent students, etc. — no collision.
+    expect(tables.schools).toHaveLength(2);
+    expect(tables.students).toHaveLength(2);
+    expect(tables.demo_accounts).toHaveLength(10);
+
+    const emails = tables.students.map((r) => r.email);
+    expect(new Set(emails).size).toBe(2); // both unique
+  });
+
+  it('every seeded account role appears exactly once per run', async () => {
+    const { sb } = makeFakeSupabase();
+    const result = await seedCertificationAccounts(sb, { runId: 'cccccccc-cccc-cccc-cccc-cccccccccccc' });
+    const roles = result.accounts.map((a) => a.role).sort();
+    expect(roles).toEqual(MISSION_ROLES.map((d) => d.role).slice().sort());
+  });
+
+  it('seedSchool: false skips school seeding and leaves every account school_id null even for school-scoped roles', async () => {
+    const { sb, tables } = makeFakeSupabase();
+    const result = await seedCertificationAccounts(sb, {
+      runId: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+      seedSchool: false,
+    });
+    expect(result.schoolId).toBeNull();
+    expect(tables.schools ?? []).toHaveLength(0);
+
+    const student = tables.students[0];
+    expect(student.school_id).toBeNull();
+  });
+
+  it('runId defaults to a fresh UUID when not supplied (no crash, distinct across calls)', async () => {
+    const { sb: sb1 } = makeFakeSupabase();
+    const { sb: sb2 } = makeFakeSupabase();
+    const r1 = await seedCertificationAccounts(sb1, {});
+    const r2 = await seedCertificationAccounts(sb2, {});
+    expect(r1.runId).toBeTruthy();
+    expect(r2.runId).toBeTruthy();
+    expect(r1.runId).not.toBe(r2.runId);
+  });
+});

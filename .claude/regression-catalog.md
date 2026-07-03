@@ -7017,3 +7017,155 @@ cross-student ownership check — the platform's most severe Phase 2 finding).
 **Total catalog: 193 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## 2026-07-02 — Environment Readiness remediation wave (certification-on-staging) — REG-227..REG-229
+
+Source: `docs/audit/2026-07-02-certification/evidence/stage-1-static/code-trace-notes/environment-readiness-ops.md`
+(ops Environment Readiness Assessment ahead of authorizing a certification run
+against staging) and its consolidated fix record
+`docs/runbooks/2026-07-02-environment-readiness-remediation.md`. Three
+independently-confirmed defects, three fixes, three regression tests.
+
+1. **Sentry environment-tagging defect (confirmed, safety-relevant).** All
+   three Sentry init files keyed `environment:` off `process.env.NODE_ENV`
+   only. `next build` always sets `NODE_ENV=production` for a
+   production-mode build regardless of Vercel deploy target — `VERCEL_ENV`
+   is the only value Vercel varies. Since staging deploys as a genuine Vercel
+   Preview (`deploy-staging.yml`), every staging Sentry event — including any
+   error thrown by certification testing — was tagged `environment:
+   production`, byte-identical to a real production incident. Fixed by
+   reading `NEXT_PUBLIC_VERCEL_ENV`/`VERCEL_ENV` first (matching 35+ other
+   call sites), falling back to `NODE_ENV` only for pure local dev.
+2. **No canonical certification-traffic traceability convention.** Specified
+   in `docs/runbooks/certification-traffic-traceability.md` (four required
+   signals: `@certification.alfanumrik.invalid` email domain, `is_demo=true`,
+   a `cert-<run_id_short>-<role>-<n>` name/`display_name` marker, and a
+   `demo_accounts` registry row) and implemented by
+   `scripts/seed-certification-accounts.ts`, which seeds one account per
+   certification mission role (7 roles, including `content_author` and
+   `support_staff` — real RBAC roles with no dedicated frontend portal per
+   this session's Wave 1 findings, seeded anyway so Stage 2 can prove that
+   gap live) idempotently (find-or-create, parameterized by a per-run id).
+3. **No single-operation teardown path for a school-scoped certification
+   tenant.** `students.school_id`/`teachers.school_id` reference
+   `schools(id)` with no `ON DELETE CASCADE` (deliberately — a real safety
+   property, not a bug), so hard-deleting a `schools` row with any linked
+   student/teacher failed with Postgres 23503. Fixed by architect via
+   migration `20260702180000_certification_tenant_teardown.sql`, adding
+   `purge_certification_tenant(p_school_id)` — a guarded, `is_demo=true`-only,
+   single-call teardown of an entire tenant — and extending
+   `purge_demo_account_by_id`'s `school_admin` branch to also purge teachers
+   (a gap the traceability runbook had flagged and manually worked around).
+   **Same-day correction:** a quality review of the first version of this
+   migration found its non-cascading-child-table inventory stale, missing 4
+   genuinely-blocking tables that exist in this repo today
+   (`foxy_chat_messages`, `foxy_sessions`, `ai_workflow_traces`,
+   `admin_impersonation_sessions` — per-student) plus 2 tenant-level/B2B
+   tables (`payment_reconciliation_queue`, `school_contracts`). The migration
+   was extended in place (same file, "Corrected FK inventory" section) to
+   clear all 7 blocking items before the parent-row deletes, and REG-229's
+   test fixture was extended to match — see the table below for the current
+   (13-table) scope.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-227 | `sentry_environment_tag_resolution` | All three Sentry init files (`sentry.client.config.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts`) resolve `environment:` via `VERCEL_ENV`/`NEXT_PUBLIC_VERCEL_ENV` FIRST, falling back to `NODE_ENV` only when unset — pinned both as a static source-parse (the exact expression string, and a negative assertion that the pre-fix NODE_ENV-only shape never reappears) and as semantic behavior via a byte-identical locally-reproduced resolver function exercised with `vi.stubEnv`: a Preview-deployment-shaped env (`VERCEL_ENV`/`NEXT_PUBLIC_VERCEL_ENV='preview'`, `NODE_ENV='production'`) resolves to `'preview'`, NOT `'production'` — the exact certification-on-staging safety scenario. Also pins that the `beforeSend` production-only drop guard (`if (NODE_ENV !== 'production') return null`) is unchanged by this fix — only the tag, not the send/drop decision. | `src/__tests__/sentry/environment-tag-resolution.test.ts` (11 tests) | E |
+| REG-228 | `certification_account_seeding_idempotent_shape` | `scripts/seed-certification-accounts.ts`'s pure shape helpers (`buildAccountShape`, `buildSchoolShape`, `buildBaseTableRow`, `buildDemoAccountsRow`) produce the traceability runbook's exact marker conventions byte-for-byte (`cert-<run_id_short>-<role>-<n>@certification.alfanumrik.invalid`, matching `name`/`display_name`, `is_demo=true` on every base-table row, `[CERTIFICATION] cert-<run_id_short>-school-<n>` for the synthetic school) for all 7 mission roles (student/teacher/parent/school_admin/super_admin/content_author/support_staff); pins that `content_author`/`support_staff` are seeded with `hasPortal=false` (Wave 1 finding — no frontend portal exists, proved live in Stage 2) while every other role is `hasPortal=true`; pins that `buildDemoAccountsRow` returns `null` (never mislabels as `role='super_admin'`) for the two roles with no CHECK-legal `demo_accounts.role` value, a documented limitation. Idempotency is proven against an in-memory fake client (no live DB, consistent with the rest of the unit lane): calling the find-or-create primitives (`findOrCreateAuthUser`, `upsertBaseTableRow`, `upsertDemoAccountsRow`, `upsertSchoolRow`) and the full `seedCertificationAccounts` orchestrator TWICE with the SAME run id creates every row exactly once (second call reports `created: false` for all 7 accounts, zero new rows in any table); a DIFFERENT run id produces a fully independent, non-colliding row set. | `src/__tests__/certification/seed-certification-accounts.test.ts` (23 tests) | E |
+| REG-229 | `purge_certification_tenant_teardown` + `purge_certification_run_teardown` | Covers BOTH certification-teardown functions. **(A) `purge_certification_tenant(p_school_id)`** (migration `20260702180000_certification_tenant_teardown.sql`, corrected post-quality-review to close 4 genuinely-blocking tables the original version missed — see the migration's "Corrected FK inventory" section): (1) raises an exception (`ERRCODE 42501`) and touches ZERO rows when called against a school where `is_demo IS NOT TRUE` (including `is_demo IS NULL`) — the target school row survives completely untouched; (2) a school_id that never existed, and a second/third call on an already-torn-down tenant, both return the idempotent no-op shape (`success:true, already_absent:true`) with no error; (3) a full happy-path run seeds a demo school + a `demo_accounts`-registered student (registry-path branch) + a non-registered teacher (defensive direct-sweep branch) + rows in all 13 tables the corrected migration touches — the 4 original defensively-cleaned school-scoped child tables (`school_alert_rules`, `school_audit_log`, `school_invoices`, `school_seat_usage`), PLUS the 6 tables added by the correction: the 4 per-student RESTRICT/no-cascade child tables (`foxy_chat_messages`, `foxy_sessions`, `ai_workflow_traces`, `admin_impersonation_sessions` — corrected FK inventory items 1-4) and the 2 tenant-level/B2B RESTRICT tables (`payment_reconciliation_queue`, `school_contracts` — items 5-7) — calls the RPC once, and asserts ZERO rows remain across every one of those 13 tables plus `demo_accounts` and the `schools` row itself, then re-calls it twice more confirming the zero-row state is stable. The `payment_reconciliation_queue` fixture's `invoice_id` is deliberately linked to the SAME `school_invoices` row being torn down, so the zero-row assertion also proves delete ORDER (item 6's chained RESTRICT against `school_invoices` — the migration clears `payment_reconciliation_queue` before `school_invoices`; a reversed order would 23503 the whole RPC call and fail every assertion in the block, not just leave a stray row). **(B) `purge_certification_run(p_run_id_short)`** (migration `20260702190000_certification_run_teardown.sql`, the single-call FULL-run teardown that DELEGATES the school-scoped part to `purge_certification_tenant` and adds the standalone-account cleanup the tenant function does not cover): (1) INPUT FORMAT GUARD — a `p_run_id_short` that is not exactly 8 lowercase hex chars raises the migration's documented `ERRCODE 22023` (invalid_parameter_value, "must be exactly 8 lowercase hex characters"), asserted for both a too-long (10-hex) and a non-hex value, with `data` null (no rows touched); (2) DELEGATED TENANT TEARDOWN + STANDALONE CLEANUP — one call on a fully-seeded run (a `[CERTIFICATION]` demo school + school-scoped student/teacher/school_admin + representative tenant child tables + standalone demo guardian + standalone demo admin_users super_admin with all 4 admin child tables it clears — `admin_announcements`, `admin_audit_log`, `admin_impersonation_sessions`, `admin_support_notes` — + a real non-demo school whose `schools.paused_by_super_admin_id` points at the demo admin + 3 `demo_accounts` rows) leaves ZERO rows across every school-scoped AND standalone table, deletes the `schools` demo row, and proves the `paused_by_super_admin_id` NULL path (the real school SURVIVES with its pointer nulled, never deleted); (3) is_demo + DOMAIN DOUBLE GUARD — a NON-demo admin_users row (cert email domain, `is_demo=false`) and a NON-cert-domain guardian row (`is_demo=true`) that match the run marker in every way except the guard both SURVIVE untouched (mirrors the tenant suite's real-school guard proof); (4) auth-USER SURFACING — the returned `standalone_auth_user_ids` array equals `[guardianAuthId, adminAuthId]` (guardian ids first per `v_guardian_auth_ids || v_admin_auth_ids`), and the two survivors' auth ids are NEVER surfaced (function surfaces ids for GoTrue cleanup, does not itself delete auth.users); (5) IDEMPOTENCY — second/third calls return `success:true, already_absent:true` with every `*_purged` counter 0 and empty `standalone_auth_user_ids`, deleting nothing, and a never-seeded run returns the same no-op shape on the very first call. Return-shape field names (`success`, `run_id_short`, `already_absent`, `schools_purged`, `schools_purged_count`, `guardians_purged`, `admin_users_purged`, `demo_accounts_purged`, `standalone_auth_user_ids`) and table/column names are asserted against the migration's actual code, not assumed. LANE: integration (`RUN_INTEGRATION_TESTS=1`), self-skips cleanly without live Supabase credentials — see the file's "STAGE-2 COVERAGE NOTE" for exactly what is proven vs. still pending live execution. | `src/__tests__/migrations/certification-tenant-teardown-e2e.test.ts` (8 tests: 4 tenant + 4 run; integration lane) | E |
+
+### Invariants covered by this section
+
+- P13 (data privacy / operational-integrity) — REG-227 closes a genuine
+  monitoring-pollution defect: certification-caused staging errors would have
+  been indistinguishable from real production incidents in Sentry's
+  `environment` filter, defeating the on-call signal.
+- P8 (RLS boundary) — REG-229 pins that `purge_certification_tenant` is
+  structurally incapable of reaching a non-demo school (the `is_demo`
+  guard is inside the function body, not just the `GRANT`), so it can never
+  become a general-purpose school-deletion backdoor even from a service-role
+  caller pointed at the wrong id.
+- Operational-integrity (new class, certification-specific) — REG-228 closes
+  the traceability gap the ops Environment Readiness Assessment found (the
+  one existing staging E2E seed does not set `is_demo` at all and is
+  indistinguishable from a real student); REG-229 closes the corresponding
+  teardown gap (no single-operation way to remove a school-scoped tenant with
+  seeded students/teachers attached — contradicted by the super-admin
+  institutions route's own now-corrected code comment).
+
+### Known gap, explicitly not closed by this wave
+
+REG-229's live-DB execution is deferred to Stage 2 of the certification plan
+— see the "STAGE-2 COVERAGE NOTE" inside
+`src/__tests__/migrations/certification-tenant-teardown-e2e.test.ts` for the
+precise scope of what is proven (the migration is structurally sound and the
+regression test is written and ready) vs. what remains outstanding (an actual
+`RUN_INTEGRATION_TESTS=1` run against live staging, and a full seed
+(`scripts/seed-certification-accounts.ts`) → certify → teardown cycle with
+the runbook's mandatory post-teardown leak check). Environment Readiness
+criterion 5 ("test data can be cleaned up") should be recorded as PARTIALLY
+resolved until that Stage-2 run happens, not fully resolved.
+
+### Catalog total
+
+Pre-REG-227: 193 entries (through REG-226, quiz-RPC ownership check).
+Today's Environment Readiness remediation wave adds REG-227 (Sentry
+environment-tag resolution), REG-228 (certification-account seeding
+idempotent shape), and REG-229 (certification-tenant teardown — regression
+test written and self-skipping cleanly this session pending Stage-2 live-DB
+execution).
+**Total catalog: 196 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## 2026-07-02 — Stage 2/3 preparation quality-review follow-up — REG-230
+
+Source: `docs/audit/2026-07-02-certification/evidence/wave-2-environment-readiness/04-stage2-3-preparation-quality-review.md`
+Finding Q-3 (MAJOR). Quality reviewed the Stage 2/3 preparation artifacts
+(REG-228/229's scripts plus the new certification Playwright specs) and
+proved both scripts' production-reference fail-closed guards correct by
+running adversarial inputs (uppercase project ref, surrounding whitespace, a
+port suffix, and a subdomain-masquerade shape) against a disposable,
+non-committed Vitest scratch file — then deleted it. That verdict was
+APPROVE WITH CONDITIONS: the manual proof had to become permanent, committed
+regression coverage before either script is trusted for a real invocation.
+This entry closes that condition. It also closes the companion Finding Q-2
+(MAJOR): `scripts/teardown-certification-tenant.ts` had no importer anywhere
+in the codebase and `tsconfig.json` excludes `scripts` wholesale, so
+`npm run type-check` never actually compiled the file carrying the
+safety-critical guard — importing from it in the new test file pulls it into
+the compiled program, the same mechanism that already covered
+`seed-certification-accounts.ts` via `e2e/certification/helpers/cert-gate.ts`.
+Also applied the accompanying MINOR fix (Q-1): the teardown script's
+`extractProjectRef` now calls `.toLowerCase()` explicitly on the returned ref
+instead of relying on the WHATWG URL API's implicit hostname lowercasing —
+correct either way, but now auditable-parity with its sibling in the seed
+script.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-230 | `production_reference_guard_fail_closed` | Both certification scripts' production-reference guards — `assertNotProductionProjectRef`/`extractProjectRef` in `scripts/seed-certification-accounts.ts` and `extractProjectRef` (+ the identical inline equality predicate `main()` applies) in `scripts/teardown-certification-tenant.ts` — against the exact adversarial set quality used, for BOTH implementations independently (they are not byte-identical parsers): an uppercase production ref is blocked (case-normalized before compare); a production ref with surrounding whitespace is blocked (trimmed/stripped before compare); a production ref with a nonstandard port is blocked — the seed script's stricter https-only regex fails closed via "unparseable" for this input while the teardown script's URL-API parser still positively extracts and matches the ref, a confirmed behavioral difference that is pinned explicitly rather than glossed over; a different, non-prod ref that merely contains the prod ref as a substring/prefix (`my-shktyoxqhundlvkiwguu-staging`) is correctly NOT blocked by either parser (no false-positive over-block of a legitimate staging URL); the literal subdomain-suffix masquerade shape quality used (`shktyoxqhundlvkiwguu.supabase.co.evil.com`) fails closed (returns null — unparseable, not a positive prod match) on both parsers; a genuine non-prod staging-shaped URL passes cleanly on both; and a fully unparseable/ambiguous URL (`https://supabase.co`, `not-a-url`) fails closed on both, never "probably fine". Also pins that both scripts share the byte-identical `PROD_PROJECT_REF`/`KNOWN_PROD_PROJECT_REF` literal. | `src/__tests__/certification/production-reference-guard.test.ts` (18 tests) | E |
+
+### Invariants covered by this section
+
+- Operational-integrity (certification-specific, same class as REG-227..229)
+  — REG-230 closes the last open condition on the Stage 2/3 preparation
+  artifacts' APPROVE WITH CONDITIONS verdict: the guard mechanism explicitly
+  billed as the thing standing between a certification run and a live write
+  to production now has committed, adversarial-input regression coverage
+  instead of a one-off manual check that was deleted after use.
+- P8-adjacent (fail-closed boundary posture) — both guards are proven to
+  treat "cannot positively confirm this is not production" identically to
+  "confirmed production" (never "probably fine"), and proven to NOT
+  over-block a legitimately different non-prod project ref merely because it
+  shares a substring with the production ref.
+
+### Catalog total
+
+Pre-REG-230: 196 entries (through REG-229, certification-tenant teardown).
+Today's follow-up wave adds REG-230 (production-reference fail-closed guard
+coverage for both certification scripts).
+**Total catalog: 197 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+---

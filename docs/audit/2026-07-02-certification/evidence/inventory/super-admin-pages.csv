@@ -1,0 +1,63 @@
+path,manages,tier,verdict
+/super-admin,control room: platform stat totals + deploy/backup/audit widgets,Tier 1,"NOT VERIFIED this pass (page renders via ops-owned stats/observability/deploy APIs, not individually re-checked; see ops-findings.md 1.1)"
+/super-admin/login,admin session authentication (session-based, no query-param secret per ADMIN_OPERATIONS.md),Tier 0,"VERIFIED: src/app/api/super-admin/login/route.ts is the auth gateway itself; entry point for every other Tier-0 action"
+/super-admin/users,user directory: ban/unban/role changes,Tier 0,"VERIFIED: src/app/api/super-admin/users/route.ts GET requires authorizeAdmin(request,'support'); PATCH (mutation) requires authorizeAdmin(request,'super_admin')"
+/super-admin/rbac,role/permission assignment,Tier 0,"VERIFIED: src/app/api/super-admin/rbac/route.ts GET requires 'support', mutation requires 'super_admin'; logAdminAudit imported"
+/super-admin/oauth-apps,OAuth app review workflow (approve/reject/suspend),Tier 0,"VERIFIED gate exists but PERMISSIVE: POST (approve_app/reject_app/suspend_app) requires only authorizeAdmin(request,'support') -- the lowest admin tier -- for a REG-119-named high-blast-radius surface (OAuth apps). logAdminAudit is called. Recommend architect confirm 'support' tier is intentional for app suspend/approve."
+/super-admin/view-as/[studentId]/dashboard,student impersonation view (dashboard surface),Tier 0,"NOT VERIFIED this pass (page); backing route src/app/api/super-admin/students/[id]/impersonate/route.ts POST requires authorizeAdmin(request,'super_admin'), PATCH requires 'admin' -- verified"
+/super-admin/view-as/[studentId]/foxy,student impersonation view (Foxy surface),Tier 0,NOT VERIFIED this pass -- shares impersonate route auth verified above
+/super-admin/view-as/[studentId]/progress,student impersonation view (progress surface),Tier 0,NOT VERIFIED this pass -- shares impersonate route auth verified above
+/super-admin/view-as/[studentId]/quizzes,student impersonation view (quiz history surface),Tier 0,NOT VERIFIED this pass -- shares impersonate route auth verified above
+/super-admin/students/[id],student profile detail + notes,Tier 0,"NOT VERIFIED this pass (page); students/[id]/profile, /notes routes not individually spot-checked"
+/super-admin/entitlements,per-institution/plan feature entitlement grants,Tier 0,NOT VERIFIED this pass -- plan-access-adjacent grant surface, not spot-checked
+/super-admin/subjects/plan-access,plan x subject access matrix + max_subjects cap,Tier 0,"VERIFIED: src/app/api/super-admin/subjects/plan-access/route.ts GET/PUT/DELETE all require authorizeRequest(request,'super_admin.subjects.manage') via RBAC lib (not admin-auth.ts -- a second, equally valid auth code path)"
+/super-admin/bulk-actions,bulk plan-change / suspend-restore / notify / resend-invites across many students,Tier 0,"NOT VERIFIED this pass (page); src/app/api/super-admin/bulk-actions/plan-change/route.ts is pinned by REG-47 (atomic_plan_change + advisory lock) per constitution -- not re-read this pass"
+/super-admin/institutions,school directory + pause/resume/provision/verify-domain,Tier 0,"NOT VERIFIED this pass -- tenant-level provisioning is high blast radius (pause/resume suspends a whole school's access)"
+/super-admin/subscriptions,subscription/payment analytics,Tier 0,"NOT VERIFIED this pass (page); classified Tier 0 not Tier 1 because domain ownership matrix (super-admin-reporting skill) marks this ops+backend payment data with override capability implied"
+/super-admin/subscribers,domain-event subscriber health + dead-letter retry/replay,Tier 0,"VERIFIED: src/app/api/super-admin/subscribers/[name]/dead-letters/[event_id]/retry/route.ts POST requires authorizeAdmin(request,'support') -- lowest tier -- for a REG-119-named high-blast-radius action (dead-letter replay). REG-119 catalog entry states all 7 named routes 'already ship a working auth gate' and pins the exact tier as intentional; flagging for independent confirmation that 'support' is the deliberately-approved tier, not a drift."
+/super-admin/flags,feature flag CRUD (global/role/env/institution/rollout-% targeting),Tier 0,"VERIFIED: src/app/api/super-admin/feature-flags/route.ts POST/PATCH/DELETE all require authorizeAdmin(request,'super_admin'); logAdminAudit fires on every mutation (feature_flag.created/updated/deleted) -- satisfies the 'flag change must be logged to audit trail' rejection condition"
+/super-admin/analytics-b2b,B2B analytics dashboard,Tier 1,NOT VERIFIED this pass
+/super-admin/intelligence,B2B intelligence overview dashboard,Tier 1,NOT VERIFIED this pass
+/super-admin/intelligence/geography,B2B geographic distribution analytics,Tier 1,NOT VERIFIED this pass
+/super-admin/intelligence/revenue,B2B revenue analytics,Tier 1,NOT VERIFIED this pass
+/super-admin/intelligence/schools,B2B per-school analytics list,Tier 1,NOT VERIFIED this pass
+/super-admin/intelligence/schools/[id],B2B per-school analytics detail,Tier 1,NOT VERIFIED this pass
+/super-admin/invoices,billing invoice viewer,Tier 1,"NOT VERIFIED this pass -- classified Tier 1 (viewing); would be Tier 0 if the page exposes void/regenerate mutations, not confirmed"
+/super-admin/analytics,engagement/revenue/retention analytics dashboard,Tier 1,NOT VERIFIED this pass
+/super-admin/learning,learning analytics (mastery, Bloom's, XP velocity),Tier 1,"NOT VERIFIED this pass -- learner-KPI definitions require assessment sign-off per super-admin-reporting skill, not re-checked"
+/super-admin/goal-profiles,goal profile preview tool,Tier 2,NOT VERIFIED this pass
+/super-admin/foxy-quality,AI response quality dashboard,Tier 1,NOT VERIFIED this pass
+/super-admin/grounding/ai-issues,RAG/AI issue tracker,Tier 1,NOT VERIFIED this pass
+/super-admin/grounding/coverage,RAG NCERT coverage dashboard,Tier 1,NOT VERIFIED this pass
+/super-admin/grounding/health,RAG pipeline health dashboard,Tier 1,NOT VERIFIED this pass
+/super-admin/grounding/traces,RAG retrieval trace viewer,Tier 1,NOT VERIFIED this pass
+/super-admin/grounding/verification-queue,AI answer verification queue (content QA workflow),Tier 2,NOT VERIFIED this pass
+/super-admin/oracle-health,AI oracle grader health dashboard,Tier 1,NOT VERIFIED this pass
+/super-admin/mol-shadow,MoL (Python AI) shadow-mode comparison dashboard,Tier 1,NOT VERIFIED this pass
+/super-admin/module-overrides,per-institution AI module override config,Tier 2,NOT VERIFIED this pass
+/super-admin/misconceptions,misconception ontology curator (content QA),Tier 2,NOT VERIFIED this pass
+/super-admin/alfabot,AlfaBot landing-widget session analytics + denylist mgmt,Tier 1,NOT VERIFIED this pass
+/super-admin/alfabot/[sessionId],AlfaBot session transcript detail,Tier 1,NOT VERIFIED this pass
+/super-admin/diagnostics,system diagnostics (task queue, deploy history, backup status),Tier 1,NOT VERIFIED this pass
+/super-admin/health,system health dashboard,Tier 1,"NOT VERIFIED this pass (page); backing endpoint /api/v1/health independently read and verified -- see ops-findings.md Task 2"
+/super-admin/observability,alerting/observability main dashboard,Tier 1,NOT VERIFIED this pass
+/super-admin/observability/channels,alert delivery channel config (Slack/email/webhook targets),Tier 1,NOT VERIFIED this pass
+/super-admin/observability/rules,alert rule threshold config,Tier 1,NOT VERIFIED this pass
+/super-admin/sla,SLA compliance dashboard,Tier 1,NOT VERIFIED this pass
+/super-admin/readiness-rubric,release readiness rubric dashboard,Tier 1,NOT VERIFIED this pass
+/super-admin/reports,CSV/JSON data exports (students/teachers/parents/quizzes/chats/audit logs; up to 5000 rows per ADMIN_OPERATIONS.md),Tier 1,"NOT VERIFIED this pass -- PII-export risk (P13) applies to this page per super-admin-reporting skill; user approval required for any export containing student PII, not re-confirmed this pass"
+/super-admin/support,support ticket / user-activity lookup / password reset / resend-invite,Tier 1,"NOT VERIFIED this pass -- support ticket PII-exposure boundary (rejection condition: 'Support ticket system exposes student PII to unauthorized roles') not re-checked"
+/super-admin/logs,audit trail viewer,Tier 1,NOT VERIFIED this pass
+/super-admin/alerts,alert config/history,Tier 1,NOT VERIFIED this pass
+/super-admin/demo,demo account creation,Tier 2,"NOT VERIFIED this pass -- rejection condition requires demo/test accounts be clearly marked distinguishable from real users; not re-confirmed this pass"
+/super-admin/cms,topic/question/asset CRUD (content management),Tier 2,NOT VERIFIED this pass
+/super-admin/content,content seeding + bulk content ops,Tier 2,NOT VERIFIED this pass
+/super-admin/subjects,subject directory,Tier 2,NOT VERIFIED this pass
+/super-admin/subjects/grade-map,subject-to-grade mapping config,Tier 2,NOT VERIFIED this pass
+/super-admin/subjects/violations,content/curriculum-scope violation review,Tier 2,NOT VERIFIED this pass
+/super-admin/marking-integrity,forensic quiz-marking-authenticity dashboard,Tier 1,NOT VERIFIED this pass
+/super-admin/marking-integrity/[studentId],per-student forensic marking detail,Tier 1,NOT VERIFIED this pass
+/super-admin/bulk-upload,bulk student/user upload tool,Tier 2,NOT VERIFIED this pass
+/super-admin/bulk-upload/schools,bulk school onboarding tool,Tier 2,NOT VERIFIED this pass
+/super-admin/command-center,aggregated control-room view (reuses other pages' data),Tier 1,NOT VERIFIED this pass
+/super-admin/workbench,multi-entity admin workbench (users/institutions/content mutation surface),Tier 0,"NOT VERIFIED this pass -- per super-admin-reporting skill ownership matrix this page touches 'all entity tables', warranting Tier 0 classification pending route-level confirmation"

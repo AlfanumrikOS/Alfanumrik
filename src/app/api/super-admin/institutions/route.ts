@@ -194,14 +194,35 @@ export async function PATCH(request: NextRequest) {
 //
 // Hard delete (?id=<uuid>&force=true): only allowed when the row is already
 // soft-deleted (deleted_at IS NOT NULL). This is the "expunge" path for
-// support tickets — empty test schools, GDPR-style scrub requests. Cascades
-// via existing FKs (students, school_subscriptions, etc. have
-// `ON DELETE CASCADE` referencing schools).
+// support tickets — empty test schools, GDPR-style scrub requests.
+//
+// IMPORTANT — this does NOT fully cascade. Several FKs referencing schools
+// (school_admins, classes, school_announcements, school_api_keys,
+// school_exams, school_invite_codes, school_questions, school_subscriptions)
+// do have `ON DELETE CASCADE`, but `students.school_id` and
+// `teachers.school_id` deliberately do NOT (confirmed against
+// supabase/migrations/00000000000000_baseline_from_prod.sql — both are plain
+// `REFERENCES schools(id)`, i.e. Postgres default `NO ACTION`). This is by
+// design, not an oversight: a blanket cascade on those two FKs would mean any
+// accidental/malicious deletion of a real school row silently destroys every
+// student and teacher record under it with no recovery path. So this route
+// will FAIL with a Postgres foreign-key-violation error (surfaced as-is via
+// `hardRes.status`/body below) if the school still has any linked
+// students/teachers — that failure is intentional, not a bug.
+//
+// For demo/certification-flagged tenants (schools.is_demo = true) there is a
+// dedicated, guarded teardown path instead of this endpoint:
+// `purge_certification_tenant(p_school_id uuid)` (migration
+// 20260702180000_certification_tenant_teardown.sql). It purges every demo
+// student/teacher under the tenant in the correct order, then deletes the
+// schools row — and hard-refuses to run against any school where
+// is_demo is not true, so it cannot be used as a workaround for this route's
+// real-school safety check.
 //
 // The UI-prompt-style retype-name guard belongs in the super-admin page,
 // not here — the API just needs to be callable from a confirmation modal.
 export async function DELETE(request: NextRequest) {
-  // Cascades to everything under the tenant. super_admin only.
+  // Does NOT cascade to students/teachers — see the FK note above. super_admin only.
   const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
