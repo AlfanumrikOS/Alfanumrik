@@ -94,7 +94,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [SCHOOL_PULSE_FLAGS.V1]: false, // seeded OFF by 20260619000100_seed_ff_school_pulse_v1.sql
   [ADAPTIVE_REMEDIATION_FLAGS.V1]: false, // seeded OFF by 20260619000300_seed_ff_adaptive_remediation_v1.sql
   [ADAPTIVE_LOOPS_BC_FLAGS.V1]: false, // seeded OFF by 20260619000600_seed_ff_adaptive_loops_bc_v1.sql
-  [ADAPTIVE_LIVE_SELECTION_FLAGS.V1]: false, // Phase 2 live adaptive selection — seeded OFF in follow-up migration
+  [ADAPTIVE_LIVE_SELECTION_FLAGS.V1]: true, // enabled: 20260702210000_enable_ff_adaptive_live_selection_v1.sql (seeded OFF by 20260622090000)
   [DIGITAL_TWIN_FLAGS.V1]: false, // seeded OFF by 20260702000700_seed_ff_digital_twin_v1.sql
   [FOXY_LEARNING_ACTIONS_FLAGS.V1]: false, // seeded OFF by 20260619000700_seed_ff_foxy_learning_actions_v1.sql
   [FOXY_MATH_PIPELINE_FLAGS.V1]: false, // seeded OFF by 20260619000800_seed_ff_foxy_math_pipeline_v1.sql

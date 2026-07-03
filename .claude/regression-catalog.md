@@ -6920,7 +6920,352 @@ XC-3 Phase 4 first drain adds REG-222 (one grandfathered inline policy —
 constraint; recursion-guard ledger ratcheted 241 → 240).
 **Total catalog: 189 entries (target: 35 — TARGET EXCEEDED).**
 
-## REG-223 — Wave 0 Task 0.7: every `spaced_repetition_cards` writer supplies all NOT-NULL columns (grade as P5 string) + insert failures are never silently swallowed
+## Pedagogy v2 Wave 3 critical-bug fix (synthesis surrogate-id) + Dive/Synthesis/OAuth route-contract pins — 2026-07-02 — REG-223..REG-225
+
+Source: today's engineering work. `GET /api/synthesis/state` resolved the
+caller's `students` row via `.eq('id', authUid)` instead of
+`.eq('auth_user_id', authUid)`. `students.id` is a surrogate uuid distinct
+from the Supabase auth uid, so the old form never matched any real row —
+every student hit `no_student_profile` and Pedagogy v2 Wave 3 (monthly
+Curiosity Synthesis) was completely dead in production for every student,
+despite the builder Edge Function correctly writing rows. The fix aligns
+`/api/synthesis/state` with the same `auth_user_id` → `students.id`
+resolution pattern already used by `/api/dive/state`, `/api/dive/history`,
+and `/api/dive/artifact`. This pass also closes the test-coverage gap on the
+rest of the Pedagogy v2 Wave 2/3 dive+synthesis route surface and adds
+first-time coverage for the OAuth partner-integration surface
+(`/api/oauth/authorize`, `/api/oauth/token`).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-223 | `synthesis_state_surrogate_id_resolution` | `GET /api/synthesis/state` MUST resolve the caller's surrogate `students.id` via `.eq('auth_user_id', authUid)` BEFORE querying `monthly_synthesis_runs.student_id` — never `.eq('id', authUid)`, which always misses (the CRITICAL bug fixed today, universally 404-ing `no_student_profile` for every student). Enforced via an argument-sensitive mock: a row resolves ONLY when the query column is `auth_user_id`; any other column (including `id`) returns `{data: null}`, so a regression fails loudly (`no_student_profile` 404 on what should be a 200) instead of silently matching the wrong row. A dedicated test asserts every `students` `.eq()` call used `auth_user_id` (never `id`) and every downstream `monthly_synthesis_runs` `.eq()` call used the resolved surrogate `student_id` (never the raw auth uid). Also pins: bilingual `summaryTextEn`/`summaryTextHi` on the `state:'ready'` row including the Claude lazy-fill path (P7), the lazy-fill persisting via `supabaseAdmin` exactly once, graceful `''` fallback (200, not 500) when the Claude lazy-fill call throws, and a P13 no-PII pin on the `no_student_profile` 404 body. Writer-side key consistency (both writers key `monthly_synthesis_runs.student_id` by the surrogate id, never the auth uid) cross-checked against `supabase/functions/daily-cron/` (`triggerMonthlySynthesis` step) and `supabase/functions/monthly-synthesis-builder/`. | `src/__tests__/api/synthesis/synthesis-routes.test.ts` | E |
+| REG-224 | `pedagogy_v2_dive_synthesis_route_contracts` | The full Pedagogy v2 weekly Curiosity Dive route surface — `POST /api/dive/start`, `POST /api/dive/artifact`, `GET /api/dive/state`, `GET /api/dive/history` — and `POST /api/synthesis/parent-share` are pinned end-to-end: 401 when unauthenticated, 404 when `ff_pedagogy_v2_weekly_dive`/`ff_pedagogy_v2_monthly_synthesis` is off, 400 with a specific `error` code per invalid-body branch (missing/blank picker fields, malformed JSON, invalid `pickerOption`), 404 `student_profile_not_found`/graceful empty-array degradation depending on route, and 409 `already_saved_this_week` on a PG `23505` duplicate-artifact insert (not a generic 500). `GET /api/dive/history`'s `?limit` handling is pinned precisely: defaults to 20 when absent, passes an explicit `?limit=5` straight through, and — critically — FALLS BACK to the default 20 (does NOT clamp to a max of 60) when `?limit=100` exceeds the max, guarding against a "fix" that silently changes this to clamp-to-max behavior. `POST /api/synthesis/parent-share` additionally pins the cross-student ownership boundary: a synthesis row whose linked `students.auth_user_id` does not match the caller returns 403 `forbidden` before any WhatsApp send or status write (P8), and every denial body (401/403/404) carries no PII keys (P13). | `src/__tests__/api/dive/dive-routes.test.ts` (35 tests), `src/__tests__/api/synthesis/synthesis-routes.test.ts` (shared file, parent-share block) | E |
+| REG-225 | `oauth_partner_surface_contracts` | `GET /api/oauth/authorize` and `POST /api/oauth/token` (the OAuth2 partner-integration surface, service-role `getSupabaseAdmin()` — never the RLS-scoped server client) are pinned: missing required param → 400 `invalid_request`; unknown/inactive/pending-review `client_id` → 400 `invalid_client`/`app_not_approved`; a `redirect_uri` outside the app's registered allowlist → 400 `invalid_redirect_uri` (never silently accepted); unknown/inactive requested scope → 400 `invalid_scope`; a valid request echoes `state` and PKCE `code_challenge`/`code_challenge_method` verbatim and returns the scope's `display_name_hi` Hindi field in the consent payload (P7 — the consent screen must never fall back to English-only). On the token endpoint: missing/unsupported `grant_type` → 400; wrong client credentials → 401 `invalid_client` (via `secureEqual` constant-time comparison, not `===`); a valid `refresh_token` grant returns fresh `access_token`/`refresh_token`/`token_type: 'Bearer'`/`expires_in: 3600` and the response ALWAYS carries `Cache-Control: no-store` (on both success and every error branch) so tokens are never cached; a refresh token that is expired, revoked, or bound to a different `app_id` is rejected with `invalid_grant`, never silently honored; form-urlencoded request bodies are accepted identically to JSON. Every `invalid_client` denial body carries no PII keys (P13). | `src/__tests__/api/oauth/oauth-routes.test.ts` (26 tests) | E |
+
+### Invariants covered by this section
+
+- P1-class data-integrity (the reader/writer surrogate-id contract) — REG-223
+  closes a universal-outage-class bug where a reader used the wrong join key
+  against a writer that was always correct; the regression guard makes any
+  future `id` vs `auth_user_id` drift in `/api/synthesis/state` fail loudly.
+- P7 (bilingual UI) — REG-223 pins `summaryTextEn`/`summaryTextHi` on every
+  synthesis-state response path (cached and lazy-filled); REG-225 pins
+  `display_name_hi` in the OAuth consent-scope payload.
+- P8 (RLS boundary / cross-tenant ownership) — REG-224 pins the parent-share
+  cross-student ownership check (a synthesis row cannot be shared by anyone
+  other than its owning student).
+- P13 (data privacy) — REG-223, REG-224, and REG-225 each pin that their
+  respective denial response bodies (401/403/404) contain no PII keys
+  (no `email`, `phone`, or `name`).
+
+### Catalog total
+
+Pre-REG-223: 189 entries (through XC-3 Phase 4 first drain, REG-222).
+Today's Pedagogy v2 Wave 3 critical-bug fix + route-contract hardening adds
+REG-223 (synthesis-state surrogate-id resolution — the CRITICAL fix),
+REG-224 (dive + synthesis parent-share route contracts, 35+ tests), and
+REG-225 (OAuth partner-surface contracts, 26 tests).
+**Total catalog: 192 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## 2026-07-02 — Phase 3 Wave 1 #5: quiz-RPC cross-student ownership check (SD-SWEEP, most severe Phase 2 finding)
+
+Source: Phase 2 security audit SD-SWEEP (`docs/audit/2026-07-02-validation/10-security-audit.md`)
+found three `SECURITY DEFINER` RPCs — `submit_quiz_results` (legacy v1),
+`atomic_quiz_profile_update` (6-arg, `RETURNS jsonb`), and `atomic_quiz_profile_update`
+(7-arg, `RETURNS void`, carries `p_session_id`) — all took a caller-supplied
+`p_student_id` with **no internal ownership check** and had never had `EXECUTE`
+revoked from `authenticated` (only `anon` was revoked). Any authenticated JWT
+holder could call one of these directly via PostgREST with an **arbitrary**
+`p_student_id` and forge quiz sessions / XP / streak / learning-profile rows
+onto another student's account — a critical cross-student data-forgery
+vulnerability. Fixed in migration `20260702150000_p3w1_5_quiz_rpc_ownership_check.sql`
+by adding the identical `auth.uid()`-scoped ownership check already proven safe
+in `submit_quiz_results_v2`, as the first statement after `BEGIN` in all three
+functions (fails closed before any write), with a `service_role`/`auth.uid() IS
+NULL` exemption so integration/server-side callers are unaffected. P1 (score
+formula), P2 (XP formula + 200 daily cap), P3 (anti-cheat flag-then-zero-XP),
+and P4 (atomic submission) bodies are byte-identical outside the new check —
+independently verified line-by-line by assessment against each function's
+current live definition, not just the architect's self-report.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-226 | `quiz_rpc_ownership_check` | All three previously-exploitable SECURITY DEFINER RPCs (`submit_quiz_results` v1, `atomic_quiz_profile_update` 6-arg, `atomic_quiz_profile_update` 7-arg) carry the `auth.uid() IS NOT NULL AND NOT EXISTS (SELECT 1 FROM students WHERE id = p_student_id AND auth_user_id = auth.uid())` ownership check, positioned strictly BEFORE the first `INSERT`/`UPDATE` in each function body (a regex-position check on the migration source, not a live-DB call — no Supabase integration credentials exist in CI for this lane). Pins exactly 3 occurrences (none omitted, none duplicated across the two overloads), each unconditionally gated on `auth.uid() IS NOT NULL` (so a future edit that drops the service-role exemption — which would break the `atomic-quiz-xp-42p10-e2e` integration test's service-role caller — fails loudly), and pins arity disambiguation (`p_session_id` absent = 6-arg body, `p_session_id UUID DEFAULT NULL` present = 7-arg body) so a partial "cleanup" that patches one overload but not its sibling is caught. Also freezes P1 (`ROUND((v_correct::NUMERIC / v_total) * 100)`), P2 (`correct*10` + 80%→+20 + 100%→+50, the 200 daily-cap literal in both overloads), and the `PERFORM atomic_quiz_profile_update(...)` v1→shared-XP-path delegation as unchanged by this fix — proving the vulnerability closure is purely additive. Also pins: `BEGIN;`/`COMMIT;` transaction wrapper present, no `DROP TABLE`/`DROP COLUMN`/`DROP FUNCTION`/`DROP INDEX`/`DROP TRIGGER` anywhere in the migration, and migration-header provenance naming the SD-SWEEP finding. | `src/__tests__/regressions/reg-226-quiz-rpc-ownership-check.test.ts` | E |
+
+### Invariants covered by this section
+
+- P8/P9 (RLS boundary / RBAC enforcement — cross-tenant authorization bypass
+  class) — REG-226 closes and pins the platform's most severe Phase 2 finding:
+  any authenticated user could forge another student's quiz/XP records via a
+  direct PostgREST RPC call, bypassing every app-layer check.
+- P1/P2/P3/P4 (score formula, XP economy, anti-cheat, atomic submission) — not
+  changed by this fix; REG-226 exists specifically to prove they weren't, by
+  freezing their literal SQL fragments alongside the new check.
+
+### Follow-up (not yet closed, tracked here for continuity)
+
+The 5-argument overload of `atomic_quiz_profile_update`
+(`p_student_id, p_xp, p_correct, p_total, p_subject`) shares the identical
+defect class (`SECURITY DEFINER`, caller-supplied `p_student_id`, no ownership
+check, `EXECUTE` not revoked from `authenticated`) but has **no live
+application caller** as of this migration — it was deliberately left unfixed
+(flagged in the migration header) rather than silently expanding scope further
+without a dedicated review. Recommended as a standalone follow-up ticket
+(candidate fix: `REVOKE EXECUTE ... FROM authenticated` outright, since no
+legitimate caller exists to preserve).
+
+### Catalog total
+
+Pre-REG-226: 192 entries (through REG-225, OAuth partner-surface contracts).
+Today's Phase 3 Wave 1 #5 critical-vulnerability fix adds REG-226 (quiz-RPC
+cross-student ownership check — the platform's most severe Phase 2 finding).
+**Total catalog: 193 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## 2026-07-02 — Environment Readiness remediation wave (certification-on-staging) — REG-227..REG-229
+
+Source: `docs/audit/2026-07-02-certification/evidence/stage-1-static/code-trace-notes/environment-readiness-ops.md`
+(ops Environment Readiness Assessment ahead of authorizing a certification run
+against staging) and its consolidated fix record
+`docs/runbooks/2026-07-02-environment-readiness-remediation.md`. Three
+independently-confirmed defects, three fixes, three regression tests.
+
+1. **Sentry environment-tagging defect (confirmed, safety-relevant).** All
+   three Sentry init files keyed `environment:` off `process.env.NODE_ENV`
+   only. `next build` always sets `NODE_ENV=production` for a
+   production-mode build regardless of Vercel deploy target — `VERCEL_ENV`
+   is the only value Vercel varies. Since staging deploys as a genuine Vercel
+   Preview (`deploy-staging.yml`), every staging Sentry event — including any
+   error thrown by certification testing — was tagged `environment:
+   production`, byte-identical to a real production incident. Fixed by
+   reading `NEXT_PUBLIC_VERCEL_ENV`/`VERCEL_ENV` first (matching 35+ other
+   call sites), falling back to `NODE_ENV` only for pure local dev.
+2. **No canonical certification-traffic traceability convention.** Specified
+   in `docs/runbooks/certification-traffic-traceability.md` (four required
+   signals: `@certification.alfanumrik.invalid` email domain, `is_demo=true`,
+   a `cert-<run_id_short>-<role>-<n>` name/`display_name` marker, and a
+   `demo_accounts` registry row) and implemented by
+   `scripts/seed-certification-accounts.ts`, which seeds one account per
+   certification mission role (7 roles, including `content_author` and
+   `support_staff` — real RBAC roles with no dedicated frontend portal per
+   this session's Wave 1 findings, seeded anyway so Stage 2 can prove that
+   gap live) idempotently (find-or-create, parameterized by a per-run id).
+3. **No single-operation teardown path for a school-scoped certification
+   tenant.** `students.school_id`/`teachers.school_id` reference
+   `schools(id)` with no `ON DELETE CASCADE` (deliberately — a real safety
+   property, not a bug), so hard-deleting a `schools` row with any linked
+   student/teacher failed with Postgres 23503. Fixed by architect via
+   migration `20260702180000_certification_tenant_teardown.sql`, adding
+   `purge_certification_tenant(p_school_id)` — a guarded, `is_demo=true`-only,
+   single-call teardown of an entire tenant — and extending
+   `purge_demo_account_by_id`'s `school_admin` branch to also purge teachers
+   (a gap the traceability runbook had flagged and manually worked around).
+   **Same-day correction:** a quality review of the first version of this
+   migration found its non-cascading-child-table inventory stale, missing 4
+   genuinely-blocking tables that exist in this repo today
+   (`foxy_chat_messages`, `foxy_sessions`, `ai_workflow_traces`,
+   `admin_impersonation_sessions` — per-student) plus 2 tenant-level/B2B
+   tables (`payment_reconciliation_queue`, `school_contracts`). The migration
+   was extended in place (same file, "Corrected FK inventory" section) to
+   clear all 7 blocking items before the parent-row deletes, and REG-229's
+   test fixture was extended to match — see the table below for the current
+   (13-table) scope.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-227 | `sentry_environment_tag_resolution` | All three Sentry init files (`sentry.client.config.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts`) resolve `environment:` via `VERCEL_ENV`/`NEXT_PUBLIC_VERCEL_ENV` FIRST, falling back to `NODE_ENV` only when unset — pinned both as a static source-parse (the exact expression string, and a negative assertion that the pre-fix NODE_ENV-only shape never reappears) and as semantic behavior via a byte-identical locally-reproduced resolver function exercised with `vi.stubEnv`: a Preview-deployment-shaped env (`VERCEL_ENV`/`NEXT_PUBLIC_VERCEL_ENV='preview'`, `NODE_ENV='production'`) resolves to `'preview'`, NOT `'production'` — the exact certification-on-staging safety scenario. Also pins that the `beforeSend` production-only drop guard (`if (NODE_ENV !== 'production') return null`) is unchanged by this fix — only the tag, not the send/drop decision. | `src/__tests__/sentry/environment-tag-resolution.test.ts` (11 tests) | E |
+| REG-228 | `certification_account_seeding_idempotent_shape` | `scripts/seed-certification-accounts.ts`'s pure shape helpers (`buildAccountShape`, `buildSchoolShape`, `buildBaseTableRow`, `buildDemoAccountsRow`) produce the traceability runbook's exact marker conventions byte-for-byte (`cert-<run_id_short>-<role>-<n>@certification.alfanumrik.invalid`, matching `name`/`display_name`, `is_demo=true` on every base-table row, `[CERTIFICATION] cert-<run_id_short>-school-<n>` for the synthetic school) for all 7 mission roles (student/teacher/parent/school_admin/super_admin/content_author/support_staff); pins that `content_author`/`support_staff` are seeded with `hasPortal=false` (Wave 1 finding — no frontend portal exists, proved live in Stage 2) while every other role is `hasPortal=true`; pins that `buildDemoAccountsRow` returns `null` (never mislabels as `role='super_admin'`) for the two roles with no CHECK-legal `demo_accounts.role` value, a documented limitation. Idempotency is proven against an in-memory fake client (no live DB, consistent with the rest of the unit lane): calling the find-or-create primitives (`findOrCreateAuthUser`, `upsertBaseTableRow`, `upsertDemoAccountsRow`, `upsertSchoolRow`) and the full `seedCertificationAccounts` orchestrator TWICE with the SAME run id creates every row exactly once (second call reports `created: false` for all 7 accounts, zero new rows in any table); a DIFFERENT run id produces a fully independent, non-colliding row set. | `src/__tests__/certification/seed-certification-accounts.test.ts` (23 tests) | E |
+| REG-229 | `purge_certification_tenant_teardown` + `purge_certification_run_teardown` | Covers BOTH certification-teardown functions. **(A) `purge_certification_tenant(p_school_id)`** (migration `20260702180000_certification_tenant_teardown.sql`, corrected post-quality-review to close 4 genuinely-blocking tables the original version missed — see the migration's "Corrected FK inventory" section): (1) raises an exception (`ERRCODE 42501`) and touches ZERO rows when called against a school where `is_demo IS NOT TRUE` (including `is_demo IS NULL`) — the target school row survives completely untouched; (2) a school_id that never existed, and a second/third call on an already-torn-down tenant, both return the idempotent no-op shape (`success:true, already_absent:true`) with no error; (3) a full happy-path run seeds a demo school + a `demo_accounts`-registered student (registry-path branch) + a non-registered teacher (defensive direct-sweep branch) + rows in all 13 tables the corrected migration touches — the 4 original defensively-cleaned school-scoped child tables (`school_alert_rules`, `school_audit_log`, `school_invoices`, `school_seat_usage`), PLUS the 6 tables added by the correction: the 4 per-student RESTRICT/no-cascade child tables (`foxy_chat_messages`, `foxy_sessions`, `ai_workflow_traces`, `admin_impersonation_sessions` — corrected FK inventory items 1-4) and the 2 tenant-level/B2B RESTRICT tables (`payment_reconciliation_queue`, `school_contracts` — items 5-7) — calls the RPC once, and asserts ZERO rows remain across every one of those 13 tables plus `demo_accounts` and the `schools` row itself, then re-calls it twice more confirming the zero-row state is stable. The `payment_reconciliation_queue` fixture's `invoice_id` is deliberately linked to the SAME `school_invoices` row being torn down, so the zero-row assertion also proves delete ORDER (item 6's chained RESTRICT against `school_invoices` — the migration clears `payment_reconciliation_queue` before `school_invoices`; a reversed order would 23503 the whole RPC call and fail every assertion in the block, not just leave a stray row). **(B) `purge_certification_run(p_run_id_short)`** (migration `20260702190000_certification_run_teardown.sql`, the single-call FULL-run teardown that DELEGATES the school-scoped part to `purge_certification_tenant` and adds the standalone-account cleanup the tenant function does not cover): (1) INPUT FORMAT GUARD — a `p_run_id_short` that is not exactly 8 lowercase hex chars raises the migration's documented `ERRCODE 22023` (invalid_parameter_value, "must be exactly 8 lowercase hex characters"), asserted for both a too-long (10-hex) and a non-hex value, with `data` null (no rows touched); (2) DELEGATED TENANT TEARDOWN + STANDALONE CLEANUP — one call on a fully-seeded run (a `[CERTIFICATION]` demo school + school-scoped student/teacher/school_admin + representative tenant child tables + standalone demo guardian + standalone demo admin_users super_admin with all 4 admin child tables it clears — `admin_announcements`, `admin_audit_log`, `admin_impersonation_sessions`, `admin_support_notes` — + a real non-demo school whose `schools.paused_by_super_admin_id` points at the demo admin + 3 `demo_accounts` rows) leaves ZERO rows across every school-scoped AND standalone table, deletes the `schools` demo row, and proves the `paused_by_super_admin_id` NULL path (the real school SURVIVES with its pointer nulled, never deleted); (3) is_demo + DOMAIN DOUBLE GUARD — a NON-demo admin_users row (cert email domain, `is_demo=false`) and a NON-cert-domain guardian row (`is_demo=true`) that match the run marker in every way except the guard both SURVIVE untouched (mirrors the tenant suite's real-school guard proof); (4) auth-USER SURFACING — the returned `standalone_auth_user_ids` array equals `[guardianAuthId, adminAuthId]` (guardian ids first per `v_guardian_auth_ids || v_admin_auth_ids`), and the two survivors' auth ids are NEVER surfaced (function surfaces ids for GoTrue cleanup, does not itself delete auth.users); (5) IDEMPOTENCY — second/third calls return `success:true, already_absent:true` with every `*_purged` counter 0 and empty `standalone_auth_user_ids`, deleting nothing, and a never-seeded run returns the same no-op shape on the very first call. Return-shape field names (`success`, `run_id_short`, `already_absent`, `schools_purged`, `schools_purged_count`, `guardians_purged`, `admin_users_purged`, `demo_accounts_purged`, `standalone_auth_user_ids`) and table/column names are asserted against the migration's actual code, not assumed. LANE: integration (`RUN_INTEGRATION_TESTS=1`), self-skips cleanly without live Supabase credentials — see the file's "STAGE-2 COVERAGE NOTE" for exactly what is proven vs. still pending live execution. | `src/__tests__/migrations/certification-tenant-teardown-e2e.test.ts` (8 tests: 4 tenant + 4 run; integration lane) | E |
+
+### Invariants covered by this section
+
+- P13 (data privacy / operational-integrity) — REG-227 closes a genuine
+  monitoring-pollution defect: certification-caused staging errors would have
+  been indistinguishable from real production incidents in Sentry's
+  `environment` filter, defeating the on-call signal.
+- P8 (RLS boundary) — REG-229 pins that `purge_certification_tenant` is
+  structurally incapable of reaching a non-demo school (the `is_demo`
+  guard is inside the function body, not just the `GRANT`), so it can never
+  become a general-purpose school-deletion backdoor even from a service-role
+  caller pointed at the wrong id.
+- Operational-integrity (new class, certification-specific) — REG-228 closes
+  the traceability gap the ops Environment Readiness Assessment found (the
+  one existing staging E2E seed does not set `is_demo` at all and is
+  indistinguishable from a real student); REG-229 closes the corresponding
+  teardown gap (no single-operation way to remove a school-scoped tenant with
+  seeded students/teachers attached — contradicted by the super-admin
+  institutions route's own now-corrected code comment).
+
+### Known gap, explicitly not closed by this wave
+
+REG-229's live-DB execution is deferred to Stage 2 of the certification plan
+— see the "STAGE-2 COVERAGE NOTE" inside
+`src/__tests__/migrations/certification-tenant-teardown-e2e.test.ts` for the
+precise scope of what is proven (the migration is structurally sound and the
+regression test is written and ready) vs. what remains outstanding (an actual
+`RUN_INTEGRATION_TESTS=1` run against live staging, and a full seed
+(`scripts/seed-certification-accounts.ts`) → certify → teardown cycle with
+the runbook's mandatory post-teardown leak check). Environment Readiness
+criterion 5 ("test data can be cleaned up") should be recorded as PARTIALLY
+resolved until that Stage-2 run happens, not fully resolved.
+
+### Catalog total
+
+Pre-REG-227: 193 entries (through REG-226, quiz-RPC ownership check).
+Today's Environment Readiness remediation wave adds REG-227 (Sentry
+environment-tag resolution), REG-228 (certification-account seeding
+idempotent shape), and REG-229 (certification-tenant teardown — regression
+test written and self-skipping cleanly this session pending Stage-2 live-DB
+execution).
+**Total catalog: 196 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## 2026-07-02 — Stage 2/3 preparation quality-review follow-up — REG-230
+
+Source: `docs/audit/2026-07-02-certification/evidence/wave-2-environment-readiness/04-stage2-3-preparation-quality-review.md`
+Finding Q-3 (MAJOR). Quality reviewed the Stage 2/3 preparation artifacts
+(REG-228/229's scripts plus the new certification Playwright specs) and
+proved both scripts' production-reference fail-closed guards correct by
+running adversarial inputs (uppercase project ref, surrounding whitespace, a
+port suffix, and a subdomain-masquerade shape) against a disposable,
+non-committed Vitest scratch file — then deleted it. That verdict was
+APPROVE WITH CONDITIONS: the manual proof had to become permanent, committed
+regression coverage before either script is trusted for a real invocation.
+This entry closes that condition. It also closes the companion Finding Q-2
+(MAJOR): `scripts/teardown-certification-tenant.ts` had no importer anywhere
+in the codebase and `tsconfig.json` excludes `scripts` wholesale, so
+`npm run type-check` never actually compiled the file carrying the
+safety-critical guard — importing from it in the new test file pulls it into
+the compiled program, the same mechanism that already covered
+`seed-certification-accounts.ts` via `e2e/certification/helpers/cert-gate.ts`.
+Also applied the accompanying MINOR fix (Q-1): the teardown script's
+`extractProjectRef` now calls `.toLowerCase()` explicitly on the returned ref
+instead of relying on the WHATWG URL API's implicit hostname lowercasing —
+correct either way, but now auditable-parity with its sibling in the seed
+script.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-230 | `production_reference_guard_fail_closed` | Both certification scripts' production-reference guards — `assertNotProductionProjectRef`/`extractProjectRef` in `scripts/seed-certification-accounts.ts` and `extractProjectRef` (+ the identical inline equality predicate `main()` applies) in `scripts/teardown-certification-tenant.ts` — against the exact adversarial set quality used, for BOTH implementations independently (they are not byte-identical parsers): an uppercase production ref is blocked (case-normalized before compare); a production ref with surrounding whitespace is blocked (trimmed/stripped before compare); a production ref with a nonstandard port is blocked — the seed script's stricter https-only regex fails closed via "unparseable" for this input while the teardown script's URL-API parser still positively extracts and matches the ref, a confirmed behavioral difference that is pinned explicitly rather than glossed over; a different, non-prod ref that merely contains the prod ref as a substring/prefix (`my-shktyoxqhundlvkiwguu-staging`) is correctly NOT blocked by either parser (no false-positive over-block of a legitimate staging URL); the literal subdomain-suffix masquerade shape quality used (`shktyoxqhundlvkiwguu.supabase.co.evil.com`) fails closed (returns null — unparseable, not a positive prod match) on both parsers; a genuine non-prod staging-shaped URL passes cleanly on both; and a fully unparseable/ambiguous URL (`https://supabase.co`, `not-a-url`) fails closed on both, never "probably fine". Also pins that both scripts share the byte-identical `PROD_PROJECT_REF`/`KNOWN_PROD_PROJECT_REF` literal. | `src/__tests__/certification/production-reference-guard.test.ts` (18 tests) | E |
+
+### Invariants covered by this section
+
+- Operational-integrity (certification-specific, same class as REG-227..229)
+  — REG-230 closes the last open condition on the Stage 2/3 preparation
+  artifacts' APPROVE WITH CONDITIONS verdict: the guard mechanism explicitly
+  billed as the thing standing between a certification run and a live write
+  to production now has committed, adversarial-input regression coverage
+  instead of a one-off manual check that was deleted after use.
+- P8-adjacent (fail-closed boundary posture) — both guards are proven to
+  treat "cannot positively confirm this is not production" identically to
+  "confirmed production" (never "probably fine"), and proven to NOT
+  over-block a legitimately different non-prod project ref merely because it
+  shares a substring with the production ref.
+
+### Catalog total
+
+Pre-REG-230: 196 entries (through REG-229, certification-tenant teardown).
+Today's follow-up wave adds REG-230 (production-reference fail-closed guard
+coverage for both certification scripts).
+**Total catalog: 197 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## 2026-07-03 — Adaptive-pipeline repair wave: differential-experience invariant — REG-231..REG-234
+
+Source: the 2026-07-02 forensic audit of the adaptive pipeline. Four
+independent defects made the pipeline silently INERT — a struggling learner
+and a thriving learner received byte-identical experiences:
+
+1. **Personalization inversion (quiz-generator, Deno):** a calibrated IRT
+   theta set `difficulty` via the ZPD banding, and the pipeline's
+   `difficulty == null` guards then DISABLED review-fill (step 1) and
+   adaptive selection (step 2) — precisely the students WITH signal lost the
+   adaptive path. Also `selectAdaptiveQuestions` read
+   `concept_mastery.mastery_level` as if numeric; since migration
+   `20260623000000` that column is a TEXT band label
+   ('mastered'/'proficient'/…), so the `< 0.95` filter/sort were nonsense.
+2. **Ghost due-schedule column:** `concept_mastery.next_review_date` is a
+   DATE column with a `CURRENT_DATE + 1` default that NOTHING ever writes —
+   every reader keyed on it saw every touched concept "due" one day after
+   first attempt, forever (SRS degenerated into "any previously touched
+   topic"). Readers affected: Foxy cognitive-context overdue-reviews, the
+   dashboard reviews-due route, the revision overview route, and the
+   `get_adaptive_questions` SQL due-predicate. The real SM-2 schedule lives
+   in `next_review_at` (timestamptz), written by
+   `update_learner_state_post_quiz` on every quiz.
+3. **Dead nextAction:** Foxy's `nextAction` came from a cme-engine
+   `get_next_action` network call that 401'd on EVERY request (service-role
+   key against a user-JWT `auth.getUser()` check), silently swallowed —
+   nextAction was always null. Replaced by the pure, local
+   `deriveNextAction` 5-priority ladder over data `loadCognitiveContext`
+   already loads.
+4. **Broken SRS chain:** QuizResults wrong-answer flashcard inserts silently
+   failed (the NOT-NULL `grade` column was omitted) and wrote
+   `results.session_id` into `source_id` (unresolvable as a
+   `question_bank.id`, so a due card could never resurface its question);
+   the learner-loop due count read the NONEXISTENT `review_cards` table
+   (always errored → 0 → the `review_due_cards` branch was permanently
+   dead).
+
+The repair wave fixed all four; these entries pin the fixes AND the umbrella
+invariant that the fixes exist to serve: **two learners with different
+knowledge states must get measurably different experiences.**
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-231 | `adaptive_differential_experience` | The umbrella differential invariant, proven pure-function-level (no live DB) for synthetic WEAK (low `mastery_probability`, overdue reviews, >=3 conceptual errors, low theta) vs STRONG (all >= 0.85, nothing due, no errors) learners across all three adaptive surfaces: (a) `deriveNextAction` — WEAK gets an actionable intervention from {remediate, revise, re_teach, practice} while STRONG gets `null`, and a strong-but-short-of-mastery learner (0.6 <= m < 0.85) gets `challenge`, never remediation; the 5-priority ladder order is pinned (knowledge gap > overdue review > >=3 conceptual errors > next unmastered) plus every threshold boundary (0.59 practice / 0.6 challenge / 0.84 challenge / 0.85 exactly → mastered → null; 3 conceptual errors re_teach, 2 fall through; re_teach requires an unmastered concept; non-conceptual error types never re_teach; overdue picks weakest mastery first with oldest-`next_review_at` tie-break; gap remediates the prerequisite, falling back to the target when prerequisite is blank). (b) learner-loop `resolveNextLearnerAction` — three learners resolve to THREE distinct actions: empty mastery → `cold_start_diagnostic`, rich mastery + dueReviewCount >= REVIEW_STACKING_THRESHOLD → `review_due_cards` (boundary: threshold-1 does NOT fire), rich mastery + nothing due → `start_quiz` on the WEAKEST chapter (`todays_zpd`); two rich learners with different weakest chapters get different quiz URLs. (c) `selectAdaptiveQuestions` (now flag-ON) — a 0.2-mastery profile and a 0.8-mastery profile yield DISJOINT candidate sets (different chapters, different Bloom composition: weak capped at remember/understand, stronger reaching above), and a fully-mastered learner yields zero adaptive candidates; `FLAG_DEFAULTS[ff_adaptive_live_selection_v1] === true` is pinned. | `src/__tests__/adaptive-differential.test.ts` (Sections 1-3, 21 tests) | E |
+| REG-232 | `theta_difficulty_inversion_fix` | The quiz-generator personalization inversion stays fixed (SOURCE PINS — the Edge Function is Deno and cannot be imported into Vitest; interim pending Deno-level tests): `const difficultyExplicitlyRequested = difficulty != null` is captured BEFORE the theta→difficulty ZPD banding (`!difficultyExplicitlyRequested && abilityEstimate != null`); the review-fill step (`if (!difficultyExplicitlyRequested) {`) and the adaptive-selection step (`if (!difficultyExplicitlyRequested && adaptiveSlots > 0)`) are guarded by CALLER intent, never by `difficulty == null` (the inverted shape is absent from executable code); `selectAdaptiveQuestions` reads the canonical numeric `mastery_probability` (`.lt('mastery_probability', 0.95)` + `.order('mastery_probability'…)`) and the TEXT band `mastery_level` is absent from executable code. Companion app-TS pins: `getQuizQuestionsV2`'s theta read filters `student_learning_profiles` by `(student_id, subject)` — without the subject filter a 2+-subject student made `maybeSingle()` error and theta silently stayed null (`src/lib/supabase.ts`); the app-TS selector's mastery query records `mastery_probability < 0.95` (behavioral, via the fake-client filter log). | `src/__tests__/adaptive-differential.test.ts` (Sections 4 + 5a + the Section-3 column pin, 6 tests) | E |
+| REG-233 | `ghost_next_review_date_repoint` | Every `concept_mastery` due-schedule reader queries the REAL SM-2 column `next_review_at` (timestamptz, written by `update_learner_state_post_quiz`) and never the ghost `next_review_date` DATE column (`CURRENT_DATE + 1` default, no writer — made every touched concept perpetually "due"): `src/app/api/foxy/_lib/cognitive-context.ts` (overdue-reviews query), `src/app/api/dashboard/reviews-due/route.ts`, `src/app/api/revision/overview/route.ts` (all three: `next_review_at` present in executable code, no quoted `next_review_date` column reference outside comments — pins scoped to concept_mastery readers; `spaced_repetition_cards.next_review_date` is a REAL column on a different table and stays legitimate); migration `20260702200000` repoints the `get_adaptive_questions` due predicate to `next_review_at <= now()` (NULL = never scheduled = not due). Also pins that cognitive-context exports the pure `deriveNextAction` ladder and that the retired 401-dead cme-engine `get_next_action` network call (`functions/v1/cme-engine`) is absent — behavioral coverage of the ladder itself lives in REG-231(a). Contract shapes of the two routes (dueCount/oldestDueDate/estimatedMinutes; overview buckets keyed by the UTC date part) are preserved and covered by their existing updated tests (`src/__tests__/api/dashboard-reviews-due.test.ts`). | `src/__tests__/adaptive-differential.test.ts` (Section 5d, 5 tests) | E |
+| REG-234 | `srs_chain_repair` | The wrong-answer→flashcard→review-quiz SRS chain is wired end-to-end: (a) QuizResults card writes carry `source_id = question.id` (a resolvable `question_bank.id` — never `results.session_id`), carry `grade: student.grade` (NOT-NULL column whose omission silently failed every insert; P5 string), dedupe by question text AND by `(source='quiz_wrong_answer', source_id)`, and retry row-by-row when the batch insert hits the partial-unique-index conflict (`idx_src_u` — PostgREST upsert cannot target a partial index, one conflicting row aborted the whole batch) (`src/components/quiz/QuizResults.tsx`); (b) learner-loop `buildLoopAugmentation` counts dues from the LIVE `spaced_repetition_cards` table (`is_active = true`, `next_review_date <= today`, mirroring the `get_review_cards` RPC) and the nonexistent `review_cards` table never comes back (`src/lib/state/learner-loop/resolve-next-action.ts`) — behavioral proof that the un-dead `review_due_cards` branch fires at threshold lives in REG-231(b); (c) the quiz page consumes the adaptive deep links that close the loop: `?qid=<uuid>` behind a strict UUID guard pins a P6-validated question first, `?mode=srs` builds a review quiz from due cards' `source_id`s (`.eq('source','quiz_wrong_answer')`, `.not('source_id','is',null)`), both fire exactly once via `deepLinkFiredRef` and every failure falls back fail-soft to the normal setup screen (`catch` → `setLoading(false)`, no error surface); `pinnedQuestions`/`pinnedOnly` plumbing routes through the NORMAL pipeline (P6 gate, server shuffle, anti-cheat, atomic submit untouched — deep links only choose WHICH questions are served) (`src/app/quiz/page.tsx`). | `src/__tests__/adaptive-differential.test.ts` (Sections 5b + 5c + 5e, 11 tests) | E |
+
+### Invariants covered by this section
+
+- **Differential-experience (P-learner-state umbrella)** — REG-231 is the
+  first catalog entry that asserts the adaptive pipeline's reason to exist:
+  distinct knowledge states MUST produce distinct recommendations, distinct
+  quiz targets, and distinct candidate sets. Any future regression that
+  re-flattens the pipeline (a guard inversion, a ghost column, a dead
+  network call, a silent insert failure) breaks at least one differential
+  assertion even if every component test still passes in isolation.
+- P6 Question quality — REG-234(c): deep-linked questions pass the same
+  `isValidQuestion` P6 gate as pool questions; REG-231(c): every adaptive
+  candidate remains MCQ-shaped (main coverage in
+  `select-adaptive-questions.test.ts`).
+- P5 Grade format — REG-234(a): the repaired card insert writes
+  `student.grade` (string) verbatim.
+- P1/P2/P3/P4-adjacent — REG-234(c) pins that deep links only change WHICH
+  questions are served; scoring, XP, anti-cheat, and atomic submission flow
+  through the unchanged pipeline.
+- Operational-integrity — REG-232's source pins are explicitly INTERIM
+  (Deno-level tests for quiz-generator remain a gap, same class as the
+  REG-118 static-source canary); REG-231's Section-3 pin of
+  `FLAG_DEFAULTS[ff_adaptive_live_selection_v1] === true` documents the
+  2026-07-02 enable migration `20260702210000` so a silent default flip is
+  caught in PR CI.
+
+### Catalog total
+
+Pre-REG-231: 197 entries (through REG-230, production-reference guard).
+Today's adaptive-pipeline repair wave adds REG-231 (umbrella
+differential-experience invariant), REG-232 (theta/difficulty inversion +
+canonical mastery column), REG-233 (ghost `next_review_date` repoint), and
+REG-234 (SRS chain repair: source_id + grade + spaced_repetition_cards +
+deep links).
+**Total catalog: 201 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-235 — Wave 0 Task 0.7: every `spaced_repetition_cards` writer supplies all NOT-NULL columns (grade as P5 string) + insert failures are never silently swallowed
+
+(Originally drafted as REG-223 on the Wave 0 branch; renumbered to REG-235 at
+merge time — main had already assigned REG-223..REG-234 to the Pedagogy v2
+surrogate-id fix, OAuth pins, quiz-RPC ownership check, and the adaptive-pipeline
+repair wave. REG-235 is the next truly-free id.)
 
 **Why.** Production `spaced_repetition_cards` sat at 0 rows for months because all
 three writers violated the real schema and swallowed the resulting errors: the
@@ -6940,13 +7285,16 @@ now looks up the student's grade (P5 string, never defaulted — missing grade i
 explicit 400 `grade_missing`) and includes it in the insert row. `QuizResults.tsx`
 guards the effect on `student.grade` + `selectedSubject` WITHOUT latching the
 run-once ref (so a late-arriving grade still creates cards), adds `grade` to every
-card payload, inserts one card at a time (a single 23505 dup can no longer abort
-the whole batch), treats 23505 as benign-silent, and warns with `{ code }` ONLY on
-other codes — never card text or student identifiers (P13).
+card payload, and — after the merge with main's REG-234 SRS-chain repair —
+batch-inserts first, then retries row-by-row when the batch hits the partial
+unique index `idx_src_u` (PostgREST upsert cannot target a partial index; a
+single conflicting row would otherwise abort the whole batch), treats 23505 as
+benign-silent per card, and warns with `{ code }` ONLY on other codes — never
+card text or student identifiers (P13).
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-223 | `spaced_repetition_cards writer schema conformance + silent-failure elimination` (3 files) | P5/P6-adjacent/P13: for EVERY writer of `spaced_repetition_cards` — (a) the insert payload carries all NOT-NULL columns (`student_id`, `subject`, `grade`, `front_text`, `back_text` non-empty), with `grade` a STRING matching `/^([6-9]\|1[0-2])$/` (never a number — `toMatch` throws on non-strings); (b) the payload key set is pinned to an EXACT allowlist of real schema columns (baseline `00000000000000_baseline_from_prod.sql` ~13552) — the phantom `question`/`answer`/`difficulty` columns can never reappear; (c) a missing profile grade is an explicit 400 (never a silently-defaulted grade); (d) insert failures are NEVER swallowed — non-23505 codes produce `logger.warn` whose logged-object KEYS are pinned (`['code','message']` server, `['code']` client — no front_text/back_text/question keys) and whose serialized payload never contains card text or student name/id (P13); (e) 23505 (dup on `idx_src_u`) is benign — 409 `duplicate_card` on the Foxy route, silent skip-and-continue per-card in QuizResults with no false "created" banner and no warn; (f) the QuizResults effect does not latch its run-once ref when grade/subject are missing, and the results screen always still renders (card creation is non-blocking). | `src/__tests__/api/student/foxy-interaction.test.ts`, `src/__tests__/api/learner/cards/create.test.ts`, `src/__tests__/components/quiz/QuizResults.flashcard-grade.test.tsx` | E | P5, P13 |
+| REG-235 | `spaced_repetition_cards writer schema conformance + silent-failure elimination` (3 files) | P5/P6-adjacent/P13: for EVERY writer of `spaced_repetition_cards` — (a) the insert payload carries all NOT-NULL columns (`student_id`, `subject`, `grade`, `front_text`, `back_text` non-empty), with `grade` a STRING matching `/^([6-9]\|1[0-2])$/` (never a number — `toMatch` throws on non-strings); (b) the payload key set is pinned to an EXACT allowlist of real schema columns (baseline `00000000000000_baseline_from_prod.sql` ~13552) — the phantom `question`/`answer`/`difficulty` columns can never reappear; (c) a missing profile grade is an explicit 400 (never a silently-defaulted grade); (d) insert failures are NEVER swallowed — non-23505 codes produce `logger.warn` whose logged-object KEYS are pinned (`['code','message']` server, `['code']` client — no front_text/back_text/question keys) and whose serialized payload never contains card text or student name/id (P13); (e) 23505 (dup on `idx_src_u`) is benign — 409 `duplicate_card` on the Foxy route, silent skip-and-continue per-card in the QuizResults row-by-row retry with no false "created" banner and no warn; (f) the QuizResults effect does not latch its run-once ref when grade/subject are missing, and the results screen always still renders (card creation is non-blocking). | `src/__tests__/api/student/foxy-interaction.test.ts`, `src/__tests__/api/learner/cards/create.test.ts`, `src/__tests__/components/quiz/QuizResults.flashcard-grade.test.tsx` | E | P5, P13 |
 
 ### Invariants covered by this section
 
@@ -6959,15 +7307,20 @@ other codes — never card text or student identifiers (P13).
 - Operational integrity (silent-failure elimination) — a schema-violating
   insert can never again fail invisibly: every non-duplicate error path emits
   a `logger.warn` with the pg code, and duplicates are handled explicitly
-  (409 / benign per-card skip) instead of aborting or masking the batch.
+  (409 / benign per-card skip in the row-retry path) instead of aborting or
+  masking the batch. Complements REG-234 (SRS chain repair): REG-234 pins the
+  batch-then-row-retry shape and source_id/grade presence at the source level;
+  REG-235 pins the behavioral payload/allowlist/logging contract for all
+  three writers.
 
 ### Catalog total
 
-Wave 0 Task 0.7 adds REG-223 (all three `spaced_repetition_cards` writers —
+Pre-REG-235: 201 entries (through REG-234, adaptive-pipeline repair wave).
+Wave 0 Task 0.7 adds REG-235 (all three `spaced_repetition_cards` writers —
 Foxy save-flashcard, manual card create, QuizResults auto-flashcards — pinned to
 the real schema via exact payload-key allowlists with grade as a P5 regex-shaped
 string, plus silent-failure elimination: key-allowlisted `logger.warn` on
 non-duplicate insert errors and explicit benign handling of 23505).
-**Total catalog: 190 entries (target: 35 — TARGET EXCEEDED).**
+**Total catalog: 202 entries (target: 35 — TARGET EXCEEDED).**
 
 ---

@@ -1,0 +1,181 @@
+================================================================
+Mobile agent — Stage 1 static verification
+Command: flutter --version
+================================================================
+Flutter 3.41.9 • channel stable • https://github.com/flutter/flutter.git
+Framework • revision 00b0c91f06 (9 weeks ago) • 2026-04-29 10:03:19 -0700
+Engine • hash 9161402dc0e134b3fb5adee5046b6e84b1a5e1c1 (revision 42d3d75a56) (2 months ago) • 2026-04-28 17:31:55.000Z
+Tools • Dart 3.11.5 • DevTools 2.54.2
+
+================================================================
+Command: cd mobile && flutter pub get
+(Full dependency list omitted for brevity; final lines shown)
+================================================================
+  win32 5.13.0 (6.3.0 available)
+  xml 6.5.0 (7.0.1 available)
+  yet_another_json_isolate 2.1.0 (2.1.1 available)
+Got dependencies!
+94 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+
+================================================================
+Command: cd mobile && flutter analyze
+================================================================
+Analyzing mobile...                                             
+No issues found! (ran in 23.3s)
+
+================================================================
+Command: cd mobile && flutter test
+Note: pure unit/widget tests only. No live backend calls — all
+server interactions are mocked/faked (see test names below, e.g.
+OfflineQuizSubmitter fakes, parseApiResponseForTest helpers, etc).
+No .env/live Supabase/Razorpay credentials were provided or used.
+================================================================
+00:00 +0: loading D:/Alfa_local/Alfanumrik/mobile/test/data/models/daily_plan_test.dart
+00:00 +0: D:/Alfa_local/Alfanumrik/mobile/test/data/models/daily_plan_test.dart: DailyPlanItemKind.fromString resolves all 6 kinds
+00:00 +1: D:/Alfa_local/Alfanumrik/mobile/test/data/models/daily_plan_test.dart: DailyPlanItemKind.fromString returns null for null/unknown
+00:00 +2: D:/Alfa_local/Alfanumrik/mobile/test/data/models/daily_plan_test.dart: DailyPlanItem.fromJson parses a complete item
+00:00 +3: D:/Alfa_local/Alfanumrik/mobile/test/data/models/daily_plan_test.dart: DailyPlanItem.fromJson throws on unknown kind
+00:00 +4: D:/Alfa_local/Alfanumrik/mobile/test/data/models/daily_plan_test.dart: DailyPlan.fromJson decodes a board_topper plan payload
+00:00 +5: D:/Alfa_local/Alfanumrik/mobile/test/data/models/daily_plan_test.dart: DailyPlan.fromJson decodes empty plan
+00:00 +6: D:/Alfa_local/Alfanumrik/mobile/test/data/models/daily_plan_test.dart: DailyPlan.fromJson handles missing fields
+00:00 +7: D:/Alfa_local/Alfanumrik/mobile/test/data/models/daily_plan_test.dart: DailyPlan.fromJson DailyPlan.empty factory
+00:00 +8: D:/Alfa_local/Alfanumrik/mobile/test/data/models/daily_plan_test.dart: DailyPlanResponse.fromJson decodes full envelope
+00:00 +9: D:/Alfa_local/Alfanumrik/mobile/test/data/models/daily_plan_test.dart: DailyPlanResponse.fromJson decodes flag-off envelope
+00:02 +10: D:/Alfa_local/Alfanumrik/mobile/test/data/models/goal_profile_test.dart: GoalCode.fromCode resolves all 6 known codes
+00:02 +11: D:/Alfa_local/Alfanumrik/mobile/test/data/models/goal_profile_test.dart: GoalCode.fromCode returns null for null/empty/unknown
+00:02 +12: D:/Alfa_local/Alfanumrik/mobile/test/data/models/goal_profile_test.dart: GoalCode.fromCode round trip via enum.code
+00:02 +13: D:/Alfa_local/Alfanumrik/mobile/test/data/models/goal_profile_test.dart: goalProfiles map contains all 6 GoalCode values
+00:02 +14: D:/Alfa_local/Alfanumrik/mobile/test/data/models/goal_profile_test.dart: goalProfiles map improve_basics contract
+00:02 +15: D:/Alfa_local/Alfanumrik/mobile/test/data/models/goal_profile_test.dart: goalProfiles map board_topper contract
+00:02 +16: D:/Alfa_local/Alfanumrik/mobile/test/data/models/goal_profile_test.dart: goalProfiles map olympiad contract
+00:02 +17: D:/Alfa_local/Alfanumrik/mobile/test/data/models/goal_profile_test.dart: goalProfiles map every difficultyMix sums to 1.0
+00:02 +18: D:/Alfa_local/Alfanumrik/mobile/test/data/models/goal_profile_test.dart: goalProfiles map every bloomBand within 1..6 with min<=max
+00:02 +19: D:/Alfa_local/Alfanumrik/mobile/test/data/models/goal_profile_test.dart: goalProfiles map every profile has non-empty en + hi labels and callouts
+00:02 +20: D:/Alfa_local/Alfanumrik/mobile/test/data/models/goal_profile_test.dart: goalProfiles map hi labels and callouts use Devanagari script
+00:02 +21: D:/Alfa_local/Alfanumrik/mobile/test/data/models/goal_profile_test.dart: resolveGoalProfile returns profile for known code
+00:02 +22: D:/Alfa_local/Alfanumrik/mobile/test/data/models/goal_profile_test.dart: resolveGoalProfile returns null for null/empty/unknown
+00:03 +23: D:/Alfa_local/Alfanumrik/mobile/test/data/models/offline_quiz_models_test.dart: OfflineTodayBundle round-trips through JSON and re-pins correctIndex to -1 (P6)
+00:03 +24: D:/Alfa_local/Alfanumrik/mobile/test/data/models/offline_quiz_models_test.dart: OfflineTodayBundle isAttemptable requires a session id and at least one question
+00:03 +25: D:/Alfa_local/Alfanumrik/mobile/test/data/models/offline_quiz_models_test.dart: QueuedQuizAttempt round-trips through JSON verbatim (incl. shuffleMaps + key)
+00:03 +26: D:/Alfa_local/Alfanumrik/mobile/test/data/models/offline_quiz_models_test.dart: QueuedQuizAttempt withDrainAttempt bumps ONLY the counter — key + capturedAt + timings unchanged (P2 immutable idempotency key)
+00:05 +27: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/chat_repository_test.dart: ApiConstants.foxyEndpoint defaults to "api" — mobile uses the Next.js /api/foxy route
+00:05 +28: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/chat_repository_test.dart: ChatRepository.resolveFoxyUrlForTest endpointMode "edge" returns the foxy-tutor Edge Function URL
+00:05 +29: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/chat_repository_test.dart: ChatRepository.resolveFoxyUrlForTest endpointMode "api" returns the Next.js /api/foxy URL
+00:05 +30: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/chat_repository_test.dart: ChatRepository.resolveFoxyUrlForTest unknown endpointMode falls back to legacy edge URL
+00:05 +31: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/chat_repository_test.dart: ChatRepository.parseEdgeResponseForTest (legacy foxy-tutor shape) parses { reply, xp_earned, session_id } success body
+00:05 +32: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/chat_repository_test.dart: ChatRepository.parseEdgeResponseForTest (legacy foxy-tutor shape) returns null when reply field is missing
+00:05 +33: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/chat_repository_test.dart: ChatRepository.parseApiResponseForTest (new /api/foxy shape) parses grounded { success, response, sessionId, ... } success body
+00:05 +34: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/chat_repository_test.dart: ChatRepository.parseApiResponseForTest (new /api/foxy shape) hard-abstain body returns a safe "I don't know" message instead of an error
+00:05 +35: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/chat_repository_test.dart: ChatRepository.parseApiResponseForTest (new /api/foxy shape) returns null on malformed body (missing response field)
+00:05 +36: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/chat_repository_test.dart: ChatRepository.parseApiResponseForTest (new /api/foxy shape) handles upgradePrompt-bearing response without breaking
+00:07 +37: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_drain_service_test.dart: classify (discard-vs-retry matrix) success → success (records idempotent_replay reason)
+00:07 +38: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_drain_service_test.dart: classify (discard-vs-retry matrix) 409 / 422 / 400 → discard (un-replayable)
+00:07 +39: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_drain_service_test.dart: classify (discard-vs-retry matrix) 503 / 5xx → retain (transient)
+00:07 +40: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_drain_service_test.dart: classify (discard-vs-retry matrix) null status (network/timeout) → retain
+00:07 +41: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_drain_service_test.dart: drain success removes the attempt from the queue and surfaces the score
+00:07 +42: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_drain_service_test.dart: drain 409 session_not_started DISCARDS (does not infinitely retry)
+00:07 +43: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_drain_service_test.dart: drain 422 REPLAY_TOO_STALE / SHUFFLE_MAP_MISMATCH DISCARDS
+00:07 +44: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_drain_service_test.dart: drain 503 RETAINS the attempt and the idempotency key is UNCHANGED across drains (P2 — never regenerate the key)
+00:07 +45: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_drain_service_test.dart: drain drains FIFO and stops at the first transient failure (resumes next reconnect)
+00:07 +46: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_drain_service_test.dart: drain serializes: a re-entrant drain while one is in flight is a no-op
+00:08 +47: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_quiz_store_test.dart: today bundle put then get round-trips by subject
+00:09 +48: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_quiz_store_test.dart: today bundle putBundle overwrites the same subject (freshest wins)
+00:09 +49: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_quiz_store_test.dart: today bundle getBundle returns null for an unknown subject
+00:09 +50: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_quiz_store_test.dart: submission queue enqueue preserves FIFO insertion order
+00:09 +51: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_quiz_store_test.dart: submission queue remove deletes by localId and preserves remaining order
+00:09 +52: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_quiz_store_test.dart: submission queue update replaces in place and keeps order (drainAttempt bump)
+00:09 +53: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_quiz_store_test.dart: submission queue enqueue is idempotent on localId (no duplicates)
+00:10 +54: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_submit_request_test.dart: QuizRepository.buildOfflineSubmitRequest sets attemptMode=offline_replay and the offline fields
+00:10 +55: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_submit_request_test.dart: QuizRepository.buildOfflineSubmitRequest capturedAt is parsed from the stored ISO-8601 (captured once)
+00:10 +56: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_submit_request_test.dart: QuizRepository.buildOfflineSubmitRequest clientCapturedTotalSeconds EQUALS totalTimeSeconds (P3 cross-check)
+00:10 +57: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_submit_request_test.dart: QuizRepository.buildOfflineSubmitRequest forwards per-question times verbatim (P3 — no recompute at drain)
+00:10 +58: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_submit_request_test.dart: QuizRepository.buildOfflineSubmitRequest OMITS shuffleMapsClientGradedAgainst when the bundle had none (P6 — server verifies via its own snapshot)
+00:10 +59: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/offline_submit_request_test.dart: QuizRepository.buildOfflineSubmitRequest POPULATES shuffleMapsClientGradedAgainst when the bundle carried it
+00:14 +60: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizRepository.parseStartSessionResponse (start_quiz_session shape) parses a typical { session_id, questions:[...] } success body
+00:14 +61: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizRepository.parseStartSessionResponse (start_quiz_session shape) returns null when raw payload is not a Map
+00:14 +62: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizRepository.parseStartSessionResponse (start_quiz_session shape) returns null when session_id is missing or empty
+00:14 +63: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizRepository.parseStartSessionResponse (start_quiz_session shape) returns null when questions field is not a list
+00:14 +64: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizRepository.parseStartSessionResponse (start_quiz_session shape) skips malformed question entries silently
+00:14 +65: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizRepository.mapResponsesForV2 (v2 wire shape) rewrites selected_option → selected_displayed_index
+00:14 +66: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizRepository.mapResponsesForV2 (v2 wire shape) passes through selected_displayed_index when already present
+00:14 +67: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizRepository.mapResponsesForV2 (v2 wire shape) defaults missing index to -1 (unanswered sentinel)
+00:14 +68: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizRepository.mapResponsesForV2 (v2 wire shape) preserves optional written-answer companion fields
+00:14 +69: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizRepository.mapResponsesForV1 (legacy fallback wire shape) rewrites selected_displayed_index → selected_option
+00:14 +70: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizRepository.mapResponsesForV1 (legacy fallback wire shape) passes through selected_option when already present
+00:14 +71: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizRepository.mapResponsesForV1 (legacy fallback wire shape) defaults missing index to -1 (unanswered sentinel, matches v2)
+00:14 +72: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizResult.fromRpc (v1/v2 dispatch on response payload shape) parses a v1 response (no questions array) → empty review
+00:14 +73: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizResult.fromRpc (v1/v2 dispatch on response payload shape) parses a v2 response (with questions array) → populated review
+00:14 +74: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizResult.fromRpc (v1/v2 dispatch on response payload shape) tolerates Map<dynamic, dynamic> review rows from supabase_flutter
+00:14 +75: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizResult.fromRpc (v1/v2 dispatch on response payload shape) flagged + zero xp on cheat detection (mirrors P3 server policy)
+00:14 +76: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizQuestion.fromServerSession exposes server-shuffled options without the correct index
+00:14 +77: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_test.dart: QuizQuestion.fromServerSession handles malformed options_displayed by yielding an empty list
+00:15 +78: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_v2_test.dart: QuizRepository.buildV2SubmitItems (POST /v2/quiz/submit items) forwards the tapped index + REAL time_spent without transform
+00:16 +79: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_v2_test.dart: QuizRepository.buildV2SubmitItems (POST /v2/quiz/submit items) accepts the v1 field name selected_option as input
+00:16 +80: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_v2_test.dart: QuizRepository.buildV2SubmitItems (POST /v2/quiz/submit items) defaults a skipped question to -1 (unanswered sentinel)
+00:16 +81: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_v2_test.dart: QuizQuestion.fromV2Question (GET /v2/quiz/questions DTO) maps options and hides the correct index (-1 sentinel, P1+P6)
+00:16 +82: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_v2_test.dart: QuizQuestion.fromV2Question (GET /v2/quiz/questions DTO) falls back bloom_level to "remember" when absent
+00:16 +83: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_v2_test.dart: QuizQuestion.fromV2StartQuestion (POST /v2/quiz/start DTO) uses server-shuffled options_displayed; correct index stays -1
+00:16 +84: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_v2_test.dart: QuizResult.fromV2 (POST /v2/quiz/submit result — server-authoritative) reads score / xp / correct / total / flagged VERBATIM (P1+P2)
+00:16 +85: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_v2_test.dart: QuizResult.fromV2 (POST /v2/quiz/submit result — server-authoritative) maps the per-question review rows from the generic JSON map
+00:16 +86: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_v2_test.dart: QuizResult.fromV2 (POST /v2/quiz/submit result — server-authoritative) flagged + zero xp surfaces as-is (P3 server policy)
+00:16 +87: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_v2_test.dart: QuizResult.fromV2 (POST /v2/quiz/submit result — server-authoritative) surfaces idempotent_replay so the UI skips XP re-animation
+00:16 +88: D:/Alfa_local/Alfanumrik/mobile/test/data/repositories/quiz_repository_v2_test.dart: QuizResult.fromV2 (POST /v2/quiz/submit result — server-authoritative) surfaces xp_capped when the daily cap fired
+00:17 +89: D:/Alfa_local/Alfanumrik/mobile/test/providers/leaderboard_period_test.dart: LeaderboardPeriod.wire maps to the contract query values
+00:17 +90: D:/Alfa_local/Alfanumrik/mobile/test/providers/leaderboard_period_test.dart: LeaderboardPeriod.wire covers exactly the three contract periods
+00:19 +91: D:/Alfa_local/Alfanumrik/mobile/test/providers/parent_provider_test.dart: outcomeFromStatus — mirrors POST /v2/parent/encourage contract 200 → success
+00:19 +92: D:/Alfa_local/Alfanumrik/mobile/test/providers/parent_provider_test.dart: outcomeFromStatus — mirrors POST /v2/parent/encourage contract 201 → success
+00:19 +93: D:/Alfa_local/Alfanumrik/mobile/test/providers/parent_provider_test.dart: outcomeFromStatus — mirrors POST /v2/parent/encourage contract 429 → rateLimited (already cheered recently)
+00:19 +94: D:/Alfa_local/Alfanumrik/mobile/test/providers/parent_provider_test.dart: outcomeFromStatus — mirrors POST /v2/parent/encourage contract 403 → forbidden (not linked / no parent profile)
+00:19 +95: D:/Alfa_local/Alfanumrik/mobile/test/providers/parent_provider_test.dart: outcomeFromStatus — mirrors POST /v2/parent/encourage contract 400 (unknown message_key) → error
+00:19 +96: D:/Alfa_local/Alfanumrik/mobile/test/providers/parent_provider_test.dart: outcomeFromStatus — mirrors POST /v2/parent/encourage contract 500 → error
+00:19 +97: D:/Alfa_local/Alfanumrik/mobile/test/providers/parent_provider_test.dart: outcomeFromStatus — mirrors POST /v2/parent/encourage contract 502 → error
+00:19 +98: D:/Alfa_local/Alfanumrik/mobile/test/providers/parent_provider_test.dart: outcomeFromStatus — mirrors POST /v2/parent/encourage contract null (network failure) → error
+00:19 +99: D:/Alfa_local/Alfanumrik/mobile/test/providers/parent_provider_test.dart: encourageMessage — bilingual (P7), no PII (P13) success resolves non-empty en + hi and they differ
+00:19 +100: D:/Alfa_local/Alfanumrik/mobile/test/providers/parent_provider_test.dart: encourageMessage — bilingual (P7), no PII (P13) rateLimited resolves non-empty en + hi and they differ
+00:19 +101: D:/Alfa_local/Alfanumrik/mobile/test/providers/parent_provider_test.dart: encourageMessage — bilingual (P7), no PII (P13) forbidden resolves non-empty en + hi and they differ
+00:19 +102: D:/Alfa_local/Alfanumrik/mobile/test/providers/parent_provider_test.dart: encourageMessage — bilingual (P7), no PII (P13) error resolves non-empty en + hi and they differ
+00:19 +103: D:/Alfa_local/Alfanumrik/mobile/test/providers/parent_provider_test.dart: encourageMessage — bilingual (P7), no PII (P13) success copy reads as a confirmation
+00:19 +104: D:/Alfa_local/Alfanumrik/mobile/test/providers/parent_provider_test.dart: encourageMessage — bilingual (P7), no PII (P13) rateLimited copy references trying again later
+00:19 +105: D:/Alfa_local/Alfanumrik/mobile/test/providers/parent_provider_test.dart: encourageMessage — bilingual (P7), no PII (P13) messages contain no interpolation tokens (no leaked PII slots)
+00:20 +106: D:/Alfa_local/Alfanumrik/mobile/test/providers/role_provider_test.dart: mapPrimaryRole — object shape { primary_role } guardian → UserRole.guardian
+00:20 +107: D:/Alfa_local/Alfanumrik/mobile/test/providers/role_provider_test.dart: mapPrimaryRole — object shape { primary_role } student → UserRole.student
+00:20 +108: D:/Alfa_local/Alfanumrik/mobile/test/providers/role_provider_test.dart: mapPrimaryRole — object shape { primary_role } teacher → UserRole.unknown (not surfaced on mobile; never guardian)
+00:20 +109: D:/Alfa_local/Alfanumrik/mobile/test/providers/role_provider_test.dart: mapPrimaryRole — object shape { primary_role } none → UserRole.unknown
+00:20 +110: D:/Alfa_local/Alfanumrik/mobile/test/providers/role_provider_test.dart: mapPrimaryRole — object shape { primary_role } ignores extra roles[] field, reads primary_role only
+00:20 +111: D:/Alfa_local/Alfanumrik/mobile/test/providers/role_provider_test.dart: mapPrimaryRole — defensive shapes bare string "guardian" → UserRole.guardian
+00:20 +112: D:/Alfa_local/Alfanumrik/mobile/test/providers/role_provider_test.dart: mapPrimaryRole — defensive shapes bare string "student" → UserRole.student
+00:20 +113: D:/Alfa_local/Alfanumrik/mobile/test/providers/role_provider_test.dart: mapPrimaryRole — defensive shapes null → UserRole.unknown
+00:21 +114: D:/Alfa_local/Alfanumrik/mobile/test/providers/role_provider_test.dart: mapPrimaryRole — defensive shapes empty map → UserRole.unknown
+00:21 +115: D:/Alfa_local/Alfanumrik/mobile/test/providers/role_provider_test.dart: mapPrimaryRole — defensive shapes unexpected type (int) → UserRole.unknown
+00:21 +116: D:/Alfa_local/Alfanumrik/mobile/test/providers/role_provider_test.dart: mapPrimaryRole — defensive shapes primary_role of wrong type → UserRole.unknown
+00:23 +117: D:/Alfa_local/Alfanumrik/mobile/test/services/subjects_provider_test.dart: Subject.fromJson parses the /api/student/subjects shape
+00:23 +118: D:/Alfa_local/Alfanumrik/mobile/test/services/subjects_provider_test.dart: Subject.fromJson falls back to name when nameHi is missing
+00:23 +119: D:/Alfa_local/Alfanumrik/mobile/test/services/subjects_provider_test.dart: subjectsProvider returns parsed Subject objects from the service
+00:23 +120: D:/Alfa_local/Alfanumrik/mobile/test/services/subjects_provider_test.dart: subjectsProvider propagates errors from the service
+00:24 +121: D:/Alfa_local/Alfanumrik/mobile/test/ui/parent/cheer_presets_test.dart: cheer presets — web sync contract exposes exactly the 8 web message_keys (no more, no fewer)
+00:24 +122: D:/Alfa_local/Alfanumrik/mobile/test/ui/parent/cheer_presets_test.dart: cheer presets — web sync contract message_keys are unique
+00:24 +123: D:/Alfa_local/Alfanumrik/mobile/test/ui/parent/cheer_presets_test.dart: cheer presets — web sync contract default key is great_work and is a valid preset
+00:25 +124: D:/Alfa_local/Alfanumrik/mobile/test/ui/parent/cheer_presets_test.dart: cheer presets — web sync contract every preset has non-empty bilingual labels + icon (P7)
+00:25 +125: D:/Alfa_local/Alfanumrik/mobile/test/ui/parent/cheer_presets_test.dart: cheer presets — web sync contract title(isHi) selects the correct language
+00:27 +126: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayCopy — shared chrome heading is bilingual
+00:27 +127: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayCopy — shared chrome focus is bilingual
+00:27 +128: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayCopy — shared chrome minutes badge interpolates {n} in both languages
+00:27 +129: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayCopy — shared chrome empty state is bilingual
+00:27 +130: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayCopy — all 9 item types have label + subtitle in both languages resume_in_progress label/subtitle resolve (not the raw key) in en + hi
+00:27 +131: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayCopy — all 9 item types have label + subtitle in both languages cold_start_diagnostic label/subtitle resolve (not the raw key) in en + hi
+00:27 +132: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayCopy — all 9 item types have label + subtitle in both languages srs_due label/subtitle resolve (not the raw key) in en + hi
+00:27 +133: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayCopy — all 9 item types have label + subtitle in both languages revise_decayed_topic label/subtitle resolve (not the raw key) in en + hi
+00:27 +134: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayCopy — all 9 item types have label + subtitle in both languages weak_topic_zpd label/subtitle resolve (not the raw key) in en + hi
+00:27 +135: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayCopy — all 9 item types have label + subtitle in both languages continue_lesson label/subtitle resolve (not the raw key) in en + hi
+00:27 +136: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayCopy — all 9 item types have label + subtitle in both languages weekly_dive_due label/subtitle resolve (not the raw key) in en + hi
+00:27 +137: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayCopy — all 9 item types have label + subtitle in both languages monthly_synthesis_due label/subtitle resolve (not the raw key) in en + hi
+00:27 +138: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayCopy — all 9 item types have label + subtitle in both languages practice_weakest label/subtitle resolve (not the raw key) in en + hi
+00:27 +139: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayCopy — interpolation substitutes {subject}
+00:27 +140: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayCopy — interpolation substitutes {dueCount} including zero
+00:27 +141: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayCopy — interpolation leaves unsupplied tokens untouched
+00:27 +142: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayCopy — interpolation unknown key returns the key itself (visible failure)
+00:27 +143: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayIcon maps known hints to glyphs
+00:27 +144: D:/Alfa_local/Alfanumrik/mobile/test/ui/today/today_copy_test.dart: todayIcon unknown hint falls back to spark glyph
+00:28 +145: D:/Alfa_local/Alfanumrik/mobile/test/widget_test.dart: App theme builds and a frame renders
+00:31 +146: All tests passed!

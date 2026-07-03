@@ -1,0 +1,306 @@
+
+> alfanumrik-frontend@2.0.0 test:coverage
+> vitest run --coverage
+
+
+ RUN  v4.1.8 D:/Alfa_local/Alfanumrik
+      Coverage enabled with v8
+
+Not implemented: navigation to another Document
+Not implemented: navigation to another Document
+Not implemented: navigation to another Document
+Error: structured renderer exploded
+    at Boom (D:/Alfa_local/Alfanumrik/src/__tests__/foxy/structured-rendering.test.tsx:178:9)
+    at renderWithHooks (D:\Alfa_local\Alfanumrik\node_modules\react-dom\cjs\react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (D:\Alfa_local\Alfanumrik\node_modules\react-dom\cjs\react-dom.development.js:20103:13)
+    at beginWork (D:\Alfa_local\Alfanumrik\node_modules\react-dom\cjs\react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (D:\Alfa_local\Alfanumrik\node_modules\react-dom\cjs\react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (D:\Alfa_local\Alfanumrik\node_modules\jsdom\lib\generated\idl\EventListener.js:26:30)
+    at innerInvokeEventListeners (D:\Alfa_local\Alfanumrik\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:360:16)
+    at invokeEventListeners (D:\Alfa_local\Alfanumrik\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (D:\Alfa_local\Alfanumrik\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:243:9)
+    at HTMLUnknownElementImpl.dispatchEvent (D:\Alfa_local\Alfanumrik\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:114:17)
+Error: structured renderer exploded
+    at Boom (D:/Alfa_local/Alfanumrik/src/__tests__/foxy/structured-rendering.test.tsx:178:9)
+    at renderWithHooks (D:\Alfa_local\Alfanumrik\node_modules\react-dom\cjs\react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (D:\Alfa_local\Alfanumrik\node_modules\react-dom\cjs\react-dom.development.js:20103:13)
+    at beginWork (D:\Alfa_local\Alfanumrik\node_modules\react-dom\cjs\react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (D:\Alfa_local\Alfanumrik\node_modules\react-dom\cjs\react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (D:\Alfa_local\Alfanumrik\node_modules\jsdom\lib\generated\idl\EventListener.js:26:30)
+    at innerInvokeEventListeners (D:\Alfa_local\Alfanumrik\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:360:16)
+    at invokeEventListeners (D:\Alfa_local\Alfanumrik\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (D:\Alfa_local\Alfanumrik\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:243:9)
+    at HTMLUnknownElementImpl.dispatchEvent (D:\Alfa_local\Alfanumrik\node_modules\jsdom\lib\jsdom\living\events\EventTarget-impl.js:114:17)
+
+ Test Files  875 passed | 4 skipped (879)
+      Tests  14241 passed | 118 skipped (14359)
+   Start at  12:37:14
+   Duration  977.06s (transform 183.45s, setup 2107.79s, import 2220.72s, tests 1034.13s, environment 10920.10s)
+
+ % Coverage report from v8
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |    69.2 |    61.16 |   70.85 |   71.15 |                   
+ lib               |   60.39 |    53.12 |   63.35 |   62.48 |                   
+  AuthContext.tsx  |   48.11 |    38.82 |   52.63 |   50.68 | ...36-767,792-849 
+  ...gProvider.tsx |       0 |        0 |       0 |       0 | 1-74              
+  RegisterSW.tsx   |       0 |        0 |       0 |       0 | 1-87              
+  ...olContext.tsx |       0 |        0 |       0 |       0 | 1-81              
+  ...t-throttle.ts |   78.94 |    66.66 |      75 |   86.66 | 31-32             
+  ...uth-server.ts |       0 |        0 |       0 |       0 | 38-157            
+  admin-auth.ts    |   77.19 |    62.93 |   81.25 |   78.09 | ...99-205,327-379 
+  ...n-throttle.ts |       0 |        0 |       0 |       0 | 18-77             
+  admin-session.ts |   72.72 |     62.5 |     100 |     100 | 10,15-20          
+  analytics.ts     |      30 |    31.25 |      25 |   35.29 | 157-159,178-226   
+  ...y-detector.ts |   97.77 |    78.57 |     100 |    97.5 | 99                
+  anti-cheat.ts    |     100 |    92.85 |     100 |     100 | 24                
+  ...ey-manager.ts |   68.18 |    45.45 |     100 |   68.18 | ...23-224,229-232 
+  ...rate-limit.ts |       0 |        0 |       0 |       0 | 18-81             
+  ...-ownership.ts |       0 |      100 |       0 |       0 | 12-30             
+  ...t-pipeline.ts |     100 |    97.36 |     100 |     100 | 220               
+  audit.ts         |   96.29 |    75.67 |     100 |   96.29 | 192               
+  cache.ts         |   94.11 |    78.12 |   93.75 |   93.58 | 53-58             
+  ...nge-config.ts |   85.71 |       90 |     100 |   88.88 | 178-179           
+  ...nge-engine.ts |   98.79 |    88.88 |     100 |     100 | 101,278           
+  ...nge-streak.ts |     100 |    94.73 |     100 |     100 | 80                
+  ...ive-engine.ts |     100 |     98.3 |     100 |     100 | ...1206,1219,1573 
+  cosmic-fonts.ts  |       0 |      100 |     100 |       0 | 32-76             
+  cosmic-theme.tsx |   72.59 |       60 |   80.64 |   78.89 | ...66-368,372-376 
+  ...ure-purger.ts |   82.97 |    73.91 |   64.28 |   91.66 | 71-72,104         
+  ...l-delivery.ts |   79.31 |    70.21 |   85.71 |   81.48 | ...92-197,212-216 
+  ...-templates.ts |     100 |    93.75 |     100 |     100 | 97                
+  env.ts           |    92.1 |    86.44 |      85 |   91.54 | ...36,139,230,285 
+  exam-engine.ts   |     100 |    94.82 |     100 |     100 | 72,194,211        
+  feature-flags.ts |     100 |    93.33 |     100 |     100 | 95,102            
+  ...FlagsCache.ts |       0 |        0 |       0 |       0 | 8-27              
+  foxy-scope.ts    |     100 |    86.36 |     100 |     100 | 32,41             
+  ...nt-qa-gate.ts |       0 |        0 |       0 |       0 | 48-166            
+  ...e-detector.ts |       0 |        0 |       0 |       0 | 35-612            
+  ...g-monitors.ts |       0 |        0 |       0 |       0 | 48-805            
+  link-code-otp.ts |      90 |       75 |     100 |   94.73 | 88                
+  logger.ts        |   86.66 |    80.76 |   84.61 |   92.68 | 36,152,156        
+  ...hon-client.ts |   10.81 |     9.09 |       0 |   13.33 | 108-183           
+  ...re-helpers.ts |   88.28 |    87.67 |     100 |   89.13 | ...81-183,229-230 
+  ...ntum-fonts.ts |       0 |      100 |     100 |       0 | 19-50             
+  ncert-solver.ts  |       0 |        0 |       0 |       0 | 73-306            
+  ...n-triggers.ts |   57.27 |    39.47 |   77.27 |   62.58 | ...1325,1415-1484 
+  offlineStore.ts  |   52.27 |    46.66 |      50 |   56.41 | ...85,119,136-143 
+  ops-events.ts    |    90.9 |    89.28 |      75 |    90.9 | 59,69             
+  ...rification.ts |   83.33 |      100 |     100 |   83.33 | 31                
+  ...ance-score.ts |     100 |    95.83 |     100 |     100 | 492               
+  plan-gate.ts     |   82.92 |    69.11 |     100 |   84.61 | ...90,231,353-358 
+  ...hog-client.ts |      65 |    70.58 |   78.57 |   64.58 | ...14-115,125-126 
+  ...-assembler.ts |      75 |    64.47 |     100 |    75.4 | ...06,242,263-272 
+  quiz-engine.ts   |   90.96 |    89.03 |   96.29 |   93.02 | 243-251           
+  quiz-scoring.ts  |   84.21 |    89.65 |     100 |    92.3 | 43                
+  razorpay.ts      |      60 |    34.78 |    37.5 |   65.21 | ...,38-39,117-189 
+  ...-approvals.ts |   63.15 |       50 |     100 |   63.15 | ...07-311,316-320 
+  ...-authority.ts |   78.94 |    70.73 |      75 |   78.37 | ...60-164,216-220 
+  ...delegation.ts |   82.41 |    67.14 |     100 |    81.6 | ...50,384,392-397 
+  ...-elevation.ts |   79.24 |     67.5 |     100 |   78.84 | ...30,255,281-285 
+  ...ersonation.ts |   78.68 |    72.54 |     100 |   78.68 | ...77-281,306-311 
+  rbac.ts          |   77.77 |    77.55 |   88.23 |   76.39 | ...44-451,558-570 
+  redis.ts         |   42.85 |       40 |   66.66 |   41.17 | 22-23,40-56       
+  ...admin-auth.ts |     100 |    96.42 |     100 |     100 | 324               
+  ...l-api-auth.ts |       0 |        0 |       0 |       0 | 48-81             
+  school-cache.ts  |       0 |        0 |       0 |       0 | 36-201            
+  ...ovisioning.ts |   77.91 |     62.4 |   92.85 |   78.34 | ...53,707,731-734 
+  score-config.ts  |     100 |    83.33 |     100 |     100 | 170               
+  sounds.ts        |       0 |        0 |       0 |       0 | 1-190             
+  ...base-admin.ts |   71.42 |       50 |      60 |   72.72 | 44-50,71,94-99    
+  ...ase-client.ts |    92.3 |       75 |     100 |   91.66 | 30                
+  ...base-route.ts |   94.44 |     87.5 |     100 |   93.75 | 92                
+  ...ase-server.ts |       0 |        0 |       0 |       0 | 21-40             
+  supabase.ts      |   20.94 |    16.69 |    17.7 |   24.03 | ...1669,1680-1725 
+  swr.tsx          |   11.84 |    15.78 |    5.88 |   12.67 | ...88-184,254-337 
+  ...nt-context.ts |      75 |      100 |      50 |      75 | 10                
+  tenant.ts        |   98.52 |    94.33 |     100 |     100 | 146-148,264       
+  usage.ts         |      98 |    96.96 |     100 |     100 | 206               
+  ...atlas-flag.ts |    6.81 |        0 |       0 |    9.09 | 64-146            
+  ...ht-surface.ts |   84.21 |    57.14 |     100 |   93.75 | 46                
+  ...tions-flag.ts |   52.83 |    21.42 |   72.72 |      65 | 58,67-88,115-116  
+  ...xy-os-flag.ts |   75.47 |    57.14 |   81.81 |      85 | 57,76-78,113-114  
+  ...ce-os-flag.ts |   46.55 |    44.44 |      40 |   47.82 | 59,73-80,119-148  
+  ...incipal-ai.ts |   89.47 |    78.94 |     100 |   96.77 | 46                
+  ...on-os-flag.ts |   46.55 |    44.44 |      40 |   47.82 | 59,73-80,119-148  
+  ...admin-rbac.ts |   73.68 |     42.1 |     100 |   80.64 | 50-57             
+  ...admin-role.ts |       0 |        0 |       0 |       0 | 43-101            
+  ...and-center.ts |       0 |        0 |       0 |       0 | 32-100            
+  ...ovisioning.ts |   73.68 |     42.1 |     100 |   80.64 | 49-56             
+  ...pulse-flag.ts |   73.68 |     42.1 |     100 |   80.64 | 54-61             
+  ...orts-depth.ts |   73.68 |     42.1 |     100 |   80.64 | 50-57             
+  ...ts-os-flag.ts |   50.94 |    57.14 |   36.36 |      55 | 58,72-79,107-127  
+  ...-lifecycle.ts |   71.05 |    36.84 |     100 |   80.64 | 44-51             
+  ...book-depth.ts |   73.68 |     42.1 |     100 |   80.64 | 45-52             
+  ...rent-comms.ts |   73.68 |     42.1 |     100 |   80.64 | 49-56             
+  ...st-os-flag.ts |   46.55 |    44.44 |      40 |   47.82 | 59,73-80,119-148  
+  ...edChapters.ts |       0 |        0 |       0 |       0 | 11-84             
+  ...edSubjects.ts |   56.52 |       50 |      75 |      50 | 11-21             
+  ...rReadiness.ts |       0 |        0 |       0 |       0 | 12-95             
+  ...ermissions.ts |    7.61 |     1.44 |   10.52 |     8.6 | 58-212            
+  ...equireAuth.ts |    7.14 |        0 |       0 |    7.69 | 15-36             
+  ...jectLookup.ts |       0 |        0 |       0 |       0 | 2-18              
+  ...tReadiness.ts |       0 |        0 |       0 |       0 | 10-72             
+  ...edSubjects.ts |       0 |        0 |       0 |       0 | 7-27              
+  ...ature-flag.ts |    92.3 |    83.33 |     100 |      95 | 75                
+  ...hon-client.ts |   96.07 |    80.19 |   91.66 |   97.87 | 207,290           
+  voice.ts         |   68.54 |    61.42 |   60.37 |   72.64 | ...65-666,671,678 
+ lib/adaptive      |   92.59 |     78.5 |     100 |   97.72 |                   
+  ...-questions.ts |   92.59 |     78.5 |     100 |   97.72 | 186,310           
+ lib/alfabot       |   10.56 |     7.86 |      25 |    9.73 |                   
+  client.ts        |       0 |        0 |       0 |       0 | 62-294            
+  pricing.ts       |   73.33 |       70 |   66.66 |   69.23 | 77-80             
+ lib/api/v2        |     100 |       75 |     100 |     100 |                   
+  envelope.ts      |     100 |       75 |     100 |     100 | 41                
+ ...chapter-reader |      68 |    63.82 |   42.85 |   69.04 |                   
+  deck-reducer.ts  |      88 |    86.95 |     100 |     100 | 35,55-63          
+  ...from-table.ts |   43.47 |    41.66 |      20 |      35 | 74-98,119-135     
+ lib/demo          |      96 |     87.5 |     100 |     100 |                   
+  ...emo-school.ts |     100 |     87.5 |     100 |     100 | 52                
+  personas.ts      |   93.33 |     87.5 |     100 |     100 | 31                
+ lib/dpdp          |   80.76 |    76.19 |     100 |   81.81 |                   
+  consent.ts       |   80.76 |    76.19 |     100 |   81.81 | ...53-258,280-284 
+ lib/entitlements  |   90.41 |    85.23 |   95.34 |   91.12 |                   
+  catalog.ts       |     100 |    97.36 |     100 |     100 | 110               
+  ...ctive-plan.ts |    97.8 |    92.64 |     100 |    97.5 | 242,288           
+  resolver.ts      |   81.08 |    75.96 |      90 |      83 | ...36,340-341,477 
+ lib/events        |     100 |    82.35 |     100 |     100 |                   
+  index.ts         |     100 |    82.35 |     100 |     100 | 173,196-209       
+ lib/foxy          |   82.27 |    73.35 |   89.89 |   84.71 |                   
+  ...ulum-scope.ts |    92.3 |    78.94 |     100 |      93 | ...30-432,454,487 
+  denormalize.ts   |      55 |    35.55 |     100 |   61.11 | 96-116            
+  ...ntial-quiz.ts |    90.9 |       75 |     100 |   96.42 | 135               
+  ...lab-prompt.ts |     100 |    83.33 |     100 |     100 | 49-50,57          
+  ...y-response.ts |   86.66 |       90 |     100 |     100 | 21,25             
+  ...ize-inline.ts |   97.08 |    94.82 |     100 |      97 | 224-225,274       
+  ...t-sections.ts |    67.4 |    64.39 |   70.58 |   69.51 | ...05-422,623-655 
+  quality-eval.ts  |   65.57 |    70.45 |   77.77 |   70.37 | 122-162           
+  ...racle-gate.ts |    91.3 |    69.23 |     100 |     100 | 36-43,69-71       
+  ...ab-context.ts |   94.87 |    92.68 |     100 |   96.87 | 140               
+  schema.ts        |    75.5 |    61.78 |   83.33 |   77.34 | ...14-617,678-684 
+  ...-detection.ts |   96.15 |    84.61 |     100 |     100 | 57,64-65,108      
+  ...oard-inset.ts |    92.5 |    81.25 |     100 |     100 | 62,65,104         
+ lib/goals         |    98.8 |    97.72 |     100 |   99.28 |                   
+  goal-profile.ts  |     100 |    92.85 |     100 |     100 | 203               
+  ...ce-weights.ts |   95.83 |    96.82 |     100 |   96.96 | 126               
+ lib/learn         |   91.31 |    82.45 |   89.09 |   93.51 |                   
+  ...oops-rules.ts |   94.41 |    87.75 |   95.83 |   94.93 | ...1089,1094,1108 
+  ...in-context.ts |   89.33 |     67.6 |    90.9 |     100 | ...92-198,242-273 
+  ...evaluation.ts |   94.44 |     92.1 |     100 |     100 | 165,169-171       
+  ...chestrator.ts |   91.11 |     87.5 |     100 |    92.5 | 114-115,147       
+  ...ws-adapter.ts |     100 |       75 |     100 |     100 | 64                
+  ...terContent.ts |   91.11 |    72.72 |     100 |   92.68 | 83-86             
+  ...pectations.ts |   87.76 |    77.48 |     100 |   89.43 | ...90-494,520-524 
+  ...ong-memory.ts |   69.23 |     61.4 |   41.17 |   72.85 | ...88-189,208-238 
+  ...evaluation.ts |     100 |    95.45 |     100 |     100 | 150               
+  ...evaluation.ts |     100 |    97.91 |     100 |     100 | 225               
+  ...ue-adapter.ts |     100 |    91.48 |     100 |     100 | 303,330-338,368   
+  ...chestrator.ts |     100 |    88.88 |     100 |     100 | 61,114            
+  weekly-streak.ts |   96.77 |       90 |     100 |     100 | 47                
+  ...emediation.ts |     100 |       80 |     100 |     100 | 42,59             
+ lib/math          |   83.87 |    63.33 |      75 |   89.28 |                   
+  ncert-prompts.ts |   83.87 |    63.33 |      75 |   89.28 | 184,227-235       
+ lib/modules       |    91.2 |    86.04 |      90 |    90.9 |                   
+  registry.ts      |   89.23 |    83.87 |    87.5 |   89.09 | ...97,310,365-367 
+  route-guard.ts   |   96.15 |    91.66 |     100 |   95.45 | 166               
+ lib/monitoring    |   53.33 |     62.5 |      75 |   53.33 |                   
+  log-event.ts     |   53.33 |     62.5 |      75 |   53.33 | 22-30,40-41,50-61 
+ lib/notifications |   91.89 |    89.28 |     100 |   93.93 |                   
+  ...n-reminder.ts |   91.89 |    89.28 |     100 |   93.93 | 138,159           
+ lib/posthog       |   40.24 |    29.41 |   41.37 |   42.22 |                   
+  ...bot-events.ts |       0 |      100 |     100 |       0 | 34-153            
+  client.ts        |    38.8 |    24.48 |   38.46 |   44.23 | ...79-187,207-271 
+  dashboard-cta.ts |     100 |       25 |     100 |     100 | 52-54             
+  server.ts        |    38.2 |    33.33 |      40 |   37.33 | ...38-242,267-330 
+ lib/public-api    |   91.24 |    84.92 |   94.11 |   91.37 |                   
+  auth.ts          |    91.3 |    83.33 |    87.5 |    90.9 | 163-166,181-182   
+  ssrf.ts          |   87.87 |    87.83 |     100 |    87.5 | 71-76,93          
+  ...ok-enqueue.ts |     100 |    77.27 |     100 |     100 | ...07-110,133-139 
+ lib/pulse         |   56.83 |    44.39 |   44.18 |   57.81 |                   
+  pulse-server.ts  |   28.34 |    18.51 |   23.07 |   28.69 | ...67-362,400-500 
+  signals.ts       |   96.51 |    97.14 |     100 |    97.4 | 337-338           
+  use-pulse.ts     |   66.66 |    33.33 |   42.85 |   73.68 | 76-104            
+ lib/qb-fixer      |     100 |    83.33 |     100 |     100 |                   
+  claim.ts         |     100 |       70 |     100 |     100 | 31-41             
+ lib/quiz          |   84.96 |    62.58 |   63.33 |    86.8 |                   
+  ...-telemetry.ts |    93.5 |    83.87 |   85.71 |   95.83 | 155,267-268       
+  ...de-effects.ts |   76.31 |    47.05 |   56.52 |   77.77 | ...07-426,447-451 
+ lib/rag           |   96.46 |    91.79 |   91.66 |   98.16 |                   
+  pack-manifest.ts |   98.11 |    94.04 |     100 |   98.11 | 168               
+  ...ity-oracle.ts |    92.3 |    83.33 |      80 |   97.22 | 95                
+ lib/routes        |   33.33 |      100 |   33.33 |   33.33 |                   
+  ...enu-routes.ts |   33.33 |      100 |   33.33 |   33.33 | 20-24             
+ lib/school        |   24.24 |    15.38 |      50 |      25 |                   
+  ...ing-invite.ts |   24.24 |    15.38 |      50 |      25 | ...2,55-63,93-130 
+ lib/school-admin  |   85.97 |    71.97 |   86.04 |   87.64 |                   
+  bulk-roster.ts   |      85 |    70.34 |   93.33 |   88.09 | 299,394-408       
+  ...er-context.ts |   89.79 |    86.11 |      70 |   91.66 | 72,84,127-131     
+  ...ssion-code.ts |     100 |       80 |     100 |     100 | 65                
+  ...ting-types.ts |     100 |    83.33 |     100 |     100 | 149               
+  ...n-context.tsx |   66.66 |      100 |       0 |   66.66 | 36                
+  ...nforcement.ts |   82.82 |    65.55 |    92.3 |   83.33 | ...76,299,306-338 
+ lib/sentry        |      95 |    88.37 |   66.66 |   98.14 |                   
+  admin-query.ts   |   94.23 |    86.48 |      50 |   97.95 | 147               
+ lib/state         |   56.02 |     48.8 |   68.18 |   57.14 |                   
+  orchestrator.ts  |    9.72 |        0 |       0 |   10.44 | 102-303           
+  ...tor-bridge.ts |      30 |    16.66 |      50 |   31.57 | ...91-109,124-130 
+  ...te-builder.ts |   94.73 |    65.43 |     100 |   97.14 | 192,406           
+  student-state.ts |   95.65 |     87.5 |     100 |     100 | 230               
+ lib/state/context |   85.59 |    57.14 |   85.71 |   86.72 |                   
+  builder.ts       |   85.13 |    51.42 |   77.77 |   85.91 | ...38,142,175-183 
+  ...ext-bridge.ts |   86.36 |    71.42 |     100 |   88.09 | ...73,176,206,214 
+ lib/state/events  |   94.73 |    53.84 |     100 |   94.59 |                   
+  publish.ts       |      84 |    53.84 |     100 |      84 | 49,116-119        
+ lib/state/journey |   52.45 |    28.94 |   71.42 |   50.87 |                   
+  journey.ts       |   52.45 |    28.94 |   71.42 |   50.87 | ...70,388-402,421 
+ ...e/learner-loop |   82.16 |    68.32 |    93.1 |   84.09 |                   
+  ...on-display.ts |   90.47 |    87.23 |     100 |   92.68 | 271,280,288       
+  ...ext-action.ts |   75.25 |    54.81 |   90.24 |   77.09 | ...57,932,953-954 
+  types.ts         |      80 |       70 |     100 |      90 | 282               
+ lib/state/rules   |   74.64 |    63.63 |   74.07 |   73.72 |                   
+  client.ts        |       0 |        0 |       0 |       0 | 1-108             
+  engine.ts        |   72.41 |       80 |    62.5 |   77.27 | ...47,159,162,184 
+  service.ts       |   96.07 |    86.66 |     100 |   95.65 | 186,194           
+  stdlib.ts        |      90 |     86.2 |     100 |   92.85 | 134,164           
+ lib/state/runtime |   31.64 |    20.56 |   26.08 |   32.88 |                   
+  ...t-listener.ts |   58.18 |     47.5 |   36.36 |      62 | 104-113,220-243   
+  flag.ts          |   76.92 |       40 |      50 |   76.92 | 16,30-31          
+  offsets.ts       |      25 |        0 |       0 |      25 | 38-78             
+  retry-state.ts   |       0 |        0 |       0 |       0 | 11-79             
+  tick-all.ts      |      40 |       25 |     100 |      40 | 38,47-54          
+  tick-one.ts      |    3.17 |        0 |       0 |    3.38 | 46-161            
+ ...state/services |   98.21 |       75 |     100 |   98.07 |                   
+  ...on-service.ts |     100 |       75 |     100 |     100 | 123,140-141       
+  registry.ts      |   92.85 |       75 |     100 |   92.85 | 40                
+ ...te/subscribers |      80 |    72.22 |      75 |   83.67 |                   
+  dispatcher.ts    |   43.75 |       30 |   42.85 |   48.78 | 119-169           
+  ...ate-writer.ts |   83.33 |       75 |     100 |   88.23 | 82-90             
+  subscriber.ts    |      50 |        0 |      50 |      50 | 95                
+ lib/super-admin   |   94.82 |    89.06 |     100 |   94.11 |                   
+  intelligence.ts  |   92.85 |    76.66 |     100 |   91.66 | 48-52,140         
+ lib/teacher       |   89.28 |       75 |   77.77 |   92.15 |                   
+  heat-scale.ts    |   92.85 |      100 |     100 |   91.66 | 56                
+  ...acher-data.ts |   88.09 |       70 |   73.33 |    92.3 | 176,192,212       
+ lib/tenant-config |   91.48 |    81.81 |   88.88 |      95 |                   
+  index.ts         |   91.48 |    81.81 |   88.88 |      95 | 153,209           
+ lib/tenant-domain |   95.94 |    94.23 |   94.73 |   96.77 |                   
+  client.tsx       |   98.21 |    91.17 |     100 |     100 | 127,140,187       
+  index.ts         |   88.88 |      100 |      80 |   86.66 | 161-166           
+ lib/today         |   81.14 |    79.41 |   88.88 |   85.84 |                   
+  copy.ts          |      60 |    66.66 |     100 |    62.5 | 217-223           
+  icon-map.ts      |     100 |       50 |     100 |     100 | 28                
+  map-action.ts    |     100 |    96.29 |     100 |     100 | 142-143           
+  render.ts        |   80.76 |    71.42 |     100 |     100 | 35-62             
+  ...oday-queue.ts |       0 |        0 |       0 |       0 | 1-36              
+ lib/vercel        |   85.71 |    73.91 |      75 |   89.47 |                   
+  domains.ts       |   85.71 |    73.91 |      75 |   89.47 | 171,186,204-205   
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 69.2% ( 9289/13423 )
+Branches     : 61.16% ( 6213/10158 )
+Functions    : 70.85% ( 1529/2158 )
+Lines        : 71.15% ( 8417/11829 )
+================================================================================
+EXIT_CODE=0

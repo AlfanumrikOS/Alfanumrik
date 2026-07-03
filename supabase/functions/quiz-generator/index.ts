@@ -125,7 +125,13 @@ interface ResponseSoFar {
 
 interface ConceptMasteryRow {
   topic_id: string
-  mastery_level: number
+  /**
+   * Canonical numeric posterior (0-1) from concept_mastery.mastery_probability.
+   * NOT concept_mastery.mastery_level — that is now a TEXT band label
+   * ('mastered'/'proficient'/'developing'/'beginner') since migration
+   * 20260623000000_backfill_canonical_mastery_columns.sql.
+   */
+  mastery_probability: number
   next_review_at: string | null
   curriculum_topics: {
     subject_id: string
@@ -168,7 +174,8 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 /**
- * Map a mastery_level [0, 1] to a target difficulty bucket.
+ * Map a mastery probability [0, 1] (concept_mastery.mastery_probability) to a
+ * target difficulty bucket.
  *   < 0.3  => easy   (1)
  *   < 0.65 => medium (2)
  *   else   => hard   (3)
@@ -180,7 +187,7 @@ function masteryToDifficulty(mastery: number): number {
 }
 
 /**
- * Map a mastery_level to a minimum Bloom's taxonomy level.
+ * Map a mastery probability to a minimum Bloom's taxonomy level.
  * Enforces scaffolded progression: students must demonstrate
  * lower-level mastery before being tested at higher levels.
  *
@@ -208,7 +215,7 @@ function getBloomLevelsAtOrAbove(minLevel: string): string[] {
 }
 
 /**
- * Map a mastery_level to a maximum allowed Bloom's taxonomy level (ceiling).
+ * Map a mastery probability to a maximum allowed Bloom's taxonomy level (ceiling).
  * Students with low mastery are capped at lower-order Bloom levels to enforce
  * scaffolded progression:
  *   mastery < 0.3  → only 'remember', 'understand'
@@ -432,14 +439,14 @@ async function selectAdaptiveQuestions(
     .from('concept_mastery')
     .select(`
       topic_id,
-      mastery_level,
+      mastery_probability,
       next_review_at,
       curriculum_topics!inner(subject_id, chapter_number, concept_tag)
     `)
     .eq('student_id', studentId)
     .eq('curriculum_topics.subject_id', subjectId)
-    .lt('mastery_level', 0.95)
-    .order('mastery_level', { ascending: true })
+    .lt('mastery_probability', 0.95)
+    .order('mastery_probability', { ascending: true })
     .limit(20)
 
   if (masteryError) {
@@ -454,7 +461,7 @@ async function selectAdaptiveQuestions(
     const aDue = a.next_review_at && a.next_review_at <= now ? 1 : 0
     const bDue = b.next_review_at && b.next_review_at <= now ? 1 : 0
     if (bDue !== aDue) return bDue - aDue // due-first
-    return a.mastery_level - b.mastery_level // then lowest mastery first
+    return a.mastery_probability - b.mastery_probability // then lowest mastery first
   })
 
   const questions: QuestionRow[] = []
@@ -469,10 +476,10 @@ async function selectAdaptiveQuestions(
 
     const chapterNum = topic.curriculum_topics?.chapter_number
     const conceptTag = topic.curriculum_topics?.concept_tag
-    const targetDifficulty = masteryToDifficulty(topic.mastery_level)
+    const targetDifficulty = masteryToDifficulty(topic.mastery_probability)
     // Use ceiling-based Bloom enforcement: students with low mastery
     // are capped at lower-order levels (scaffolded progression)
-    const maxBloom = masteryToMaxBloomLevel(topic.mastery_level)
+    const maxBloom = masteryToMaxBloomLevel(topic.mastery_probability)
     const allowedBlooms = getBloomLevelsUpTo(maxBloom)
     const need = Math.min(slotsPerTopic, count - questions.length)
 
@@ -1123,8 +1130,14 @@ Deno.serve(async (req) => {
     // Map to question_bank difficulty (1=easy, 2=medium, 3=hard) with ±0.5 tolerance
     // band so the student gets questions slightly above their current level (ZPD).
     let difficulty: number | null = body.difficulty ?? null
+    // Track whether the CALLER explicitly requested a difficulty. Only an
+    // explicit request disables the adaptive path (review-fill + weak-topic
+    // selection). A theta-derived band must NOT disable adaptivity — it only
+    // biases the random/fallback fill. (Fixes the personalization inversion
+    // where students WITH a calibrated theta lost the adaptive path entirely.)
+    const difficultyExplicitlyRequested = difficulty != null
     const abilityEstimate: number | null = body.ability_estimate ?? null
-    if (difficulty == null && abilityEstimate != null) {
+    if (!difficultyExplicitlyRequested && abilityEstimate != null) {
       // Map IRT theta to difficulty band (ZPD = one step above current ability)
       if (abilityEstimate < -1.0) {
         difficulty = 1  // Below average → easy (build confidence, then push)
@@ -1134,8 +1147,10 @@ Deno.serve(async (req) => {
         difficulty = 3  // Above average → hard (keep challenged)
       }
       // Note: difficulty is used for random/fallback path only.
-      // selectAdaptiveQuestions uses per-topic mastery_level which is more precise.
-      // Setting difficulty here biases the fallback and review-fill paths.
+      // selectAdaptiveQuestions uses per-topic mastery_probability which is
+      // more precise. Setting difficulty here biases ONLY the random/fallback
+      // fill — review-fill and adaptive selection still run (see
+      // difficultyExplicitlyRequested guards below).
     }
 
     if (!subject) {
@@ -1208,11 +1223,12 @@ Deno.serve(async (req) => {
 
     // ── Step 1: Fetch due review questions (spaced repetition) ───────────────
     // Review questions fill up to 50% of the requested count.
-    // Only used when difficulty is not forced (adaptive mode).
+    // Skipped only when the CALLER explicitly forced a difficulty — a
+    // theta-derived difficulty band does NOT disable spaced repetition.
     let reviewQuestions: QuestionRow[] = []
     let reviewTopicCount = 0
 
-    if (difficulty == null) {
+    if (!difficultyExplicitlyRequested) {
       const reviewSlots = Math.floor(count * 0.5)
       const review = await fetchDueReviewQuestions(
         supabase,
@@ -1238,7 +1254,7 @@ Deno.serve(async (req) => {
 
     const adaptiveSlots = count - reviewQuestions.length
 
-    if (difficulty == null && adaptiveSlots > 0) {
+    if (!difficultyExplicitlyRequested && adaptiveSlots > 0) {
       // Phase 4: when ff_irt_question_selection is on, use Fisher-info
       // ranking via select_questions_by_irt_info RPC. Falls back to the
       // legacy mastery-driven flow when the flag is off (default) or when

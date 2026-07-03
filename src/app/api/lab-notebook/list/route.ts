@@ -32,6 +32,9 @@ import { authorizeRequest } from '@/lib/rbac';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { logger } from '@/lib/logger';
 
+// See the perf-bounding comment at the experiment_observations query below.
+const RECENT_OBSERVATIONS_LIMIT = 2000;
+
 interface NotebookStudent {
   student_id: string;
   name: string;
@@ -167,6 +170,24 @@ export async function GET(request: NextRequest) {
     // ── Pull experiment counts + last activity in a single query ─────
     // Use the streak rollup table for total_experiments and an aggregate
     // for last_activity. Keeps the query surface to two cheap reads.
+    //
+    // Perf bounding (Phase 3 Wave 3 #12 / audit finding F3): this
+    // experiment_observations read only needs the single most-recent row
+    // per student_id (see the `lastByStudent` fold below, which keeps the
+    // first-seen row per student out of a `created_at DESC`-ordered result).
+    // Without a cap the query reads every observation ever logged by every
+    // student in the caller's roster, which grows unboundedly as students
+    // accumulate lab history. There is no client-supplied page-size param
+    // on this route (it returns a per-student summary, not a raw list), so
+    // — following the DEFAULT_LIMIT/MAX_LIMIT convention used by sibling
+    // list routes (e.g. src/app/api/dive/history/route.ts) — this is a
+    // single fixed ceiling on the underlying scan rather than a
+    // request-tunable value. `.order()` runs before `.limit()`, so the cap
+    // still keeps the globally most-recent rows; if a student's true most
+    // recent observation falls outside the cap (only possible on very
+    // large rosters with heavy recent activity concentrated in other
+    // students), `last_activity_at` falls back to the streak rollup's
+    // `last_activity_date` below rather than being wrong or missing.
     const [streakRes, lastActivityRes] = await Promise.all([
       supabaseAdmin
         .from('student_lab_streaks')
@@ -176,7 +197,8 @@ export async function GET(request: NextRequest) {
         .from('experiment_observations')
         .select('student_id, created_at')
         .in('student_id', studentIds)
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        .limit(RECENT_OBSERVATIONS_LIMIT),
     ]);
 
     const streakMap = new Map<string, { count: number; lastDate: string | null }>();

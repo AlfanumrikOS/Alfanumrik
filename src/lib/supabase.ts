@@ -1428,10 +1428,16 @@ export async function getQuizQuestionsV2(
   // information gain and keeping the student in ZPD.
   let irtTheta: number | null = null;
   try {
+    // student_learning_profiles is keyed (student_id, subject) — without the
+    // subject filter a student with profiles in 2+ subjects makes
+    // maybeSingle() error and theta silently stays null. Filter by THIS
+    // quiz's subject; if no per-subject row exists yet, theta stays null
+    // (same fail-soft behavior as before).
     const { data: profileData } = await supabase
       .from('student_learning_profiles')
       .select('irt_theta')
       .eq('student_id', studentId)
+      .eq('subject', subject)
       .maybeSingle();
     if (profileData?.irt_theta != null) {
       irtTheta = profileData.irt_theta as number;

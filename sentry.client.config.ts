@@ -12,7 +12,13 @@ Sentry.init({
   replaysSessionSampleRate: 0.01,
   replaysOnErrorSampleRate: 1.0,
 
-  environment: process.env.NODE_ENV || 'development',
+  // Vercel Preview deployments (staging) set NODE_ENV='production' during
+  // `next build`, identical to a real production build — VERCEL_ENV is the
+  // only value Vercel varies per environment. NEXT_PUBLIC_VERCEL_ENV is the
+  // client-readable mirror (VERCEL_ENV itself is not exposed to the browser
+  // bundle without the NEXT_PUBLIC_ prefix). Matches the pattern used by
+  // src/app/layout.tsx and 35+ other environment-sensitive call sites.
+  environment: process.env.NEXT_PUBLIC_VERCEL_ENV || process.env.NODE_ENV || 'development',
 
   // Filter noisy errors that aren't actionable
   ignoreErrors: [

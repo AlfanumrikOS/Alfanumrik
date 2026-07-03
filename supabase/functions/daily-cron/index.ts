@@ -147,61 +147,145 @@ async function recalculateLeaderboards(supabase: ReturnType<typeof createClient>
   return entries.length
 }
 
+// Bulk .in() reader used by generateParentDigests, chunked at 200 ids/request
+// to mirror the house pattern already used for large candidate sets elsewhere
+// in this file (see nudgeFirstQuizStudents). Chunks are fetched concurrently
+// via Promise.all rather than sequentially — at current guardian-link volume
+// this is a single chunk (one round trip), but it stays correct if the
+// candidate set grows past 200.
+async function fetchInBatches<T>(
+  supabase: ReturnType<typeof createClient>,
+  table: string,
+  selectCols: string,
+  idColumn: string,
+  ids: string[],
+  applyFilters?: (query: any) => any,
+): Promise<T[]> {
+  const BATCH = 200
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += BATCH) chunks.push(ids.slice(i, i + BATCH))
+  const results = await Promise.all(chunks.map(async (batch) => {
+    let query = supabase.from(table).select(selectCols).in(idColumn, batch)
+    if (applyFilters) query = applyFilters(query)
+    const { data, error } = await query
+    if (error) throw new Error(`generateParentDigests ${table}: ${error.message}`)
+    return (data ?? []) as T[]
+  }))
+  return results.flat()
+}
+
+// Phase 3 Wave 3 #11 (perf, audit F2): was two full sequential per-guardian-link
+// loops — for N links, ~4 sequential DB round trips per link (2 per loop) plus
+// up to N sequential external WhatsApp fetches. Rewritten to bulk .in() reads +
+// Promise.all, keyed by the same student_id/guardian_id sets already collected
+// from the initial guardian_student_links read, following the same pattern as
+// pulse-server.ts's buildClassPulseItems and student-state-builder.ts (bulk
+// reads via Promise.all, grouped client-side into Maps, one non-awaited pass
+// to build the response). Net effect: O(4N) sequential round trips -> O(1)
+// (4 bulk reads, parallelized) for the DB side; the WhatsApp fetch fan-out
+// stays per-recipient (external HTTP can't be batched into one SQL query) but
+// is now fired in bounded-concurrency chunks via Promise.all instead of fully
+// sequential awaits. Output (which parents get which digest content, and who
+// gets a WhatsApp send) is unchanged — this is a fetch-strategy-only change.
 async function generateParentDigests(supabase: ReturnType<typeof createClient>): Promise<number> {
   const { data: links, error: le } = await supabase.from('guardian_student_links').select('guardian_id,student_id').in('status',['approved','active'])
   if (le) throw new Error(`generateParentDigests: ${le.message}`)
   if (!links?.length) return 0
+  const linkRows = links as {guardian_id:string;student_id:string}[]
   const y = new Date(); y.setUTCDate(y.getUTCDate()-1); y.setUTCHours(0,0,0,0)
   // D6 fix: per-recipient/per-day idempotency_key gates duplicate inserts when
   // the cron retries (Vercel retry policy or 207-partial re-run). Migration
   // 20260505100100 adds a partial unique index on (recipient_id,type,idempotency_key).
   const daySlug = todayUtcSlug()
+
+  const studentIds = [...new Set(linkRows.map(l => l.student_id))]
+  const guardianIds = [...new Set(linkRows.map(l => l.guardian_id))]
+
+  type QuizRow = {student_id:string;subject:string;score_percent:number;xp_earned:number}
+  type StreakRow = {student_id:string;current_streak:number}
+  type GuardianRow = {id:string;phone:string|null;notification_preferences:Record<string,unknown>|null}
+  type StudentRow = {id:string;name:string|null}
+
+  const [quizRows, streakRows, guardianRows, studentRows] = await Promise.all([
+    fetchInBatches<QuizRow>(supabase,'quiz_sessions','student_id,subject,score_percent,xp_earned','student_id',studentIds,
+      q => q.eq('is_completed',true).gte('created_at',y.toISOString())),
+    fetchInBatches<StreakRow>(supabase,'challenge_streaks','student_id,current_streak','student_id',studentIds),
+    fetchInBatches<GuardianRow>(supabase,'guardians','id,phone,notification_preferences','id',guardianIds),
+    fetchInBatches<StudentRow>(supabase,'students','id,name','id',studentIds),
+  ])
+
+  const quizzesByStudent = new Map<string, {subject:string;score_percent:number;xp_earned:number}[]>()
+  for (const q of quizRows) { const arr = quizzesByStudent.get(q.student_id) ?? []; arr.push(q); quizzesByStudent.set(q.student_id, arr) }
+  const streakByStudent = new Map<string, number>()
+  for (const s of streakRows) streakByStudent.set(s.student_id, s.current_streak ?? 0)
+  const guardianById = new Map<string, GuardianRow>()
+  for (const g of guardianRows) guardianById.set(g.id, g)
+  const studentNameById = new Map<string, string>()
+  for (const s of studentRows) studentNameById.set(s.id, s.name ?? '')
+
   const notes: Record<string,unknown>[] = []
-  for (const {guardian_id,student_id} of links as {guardian_id:string;student_id:string}[]) {
-    const { data: ss } = await supabase.from('quiz_sessions').select('id,subject,score_percent,xp_earned').eq('student_id',student_id).eq('is_completed',true).gte('created_at',y.toISOString())
-    const list = (ss??[]) as {subject:string;score_percent:number;xp_earned:number}[]
+  const noteByPair = new Map<string, Record<string,unknown>>()
+  for (const {guardian_id,student_id} of linkRows) {
+    const list = quizzesByStudent.get(student_id) ?? []
     const idemKey = `daily_digest_${daySlug}_${guardian_id}_${student_id}`
     const base = {recipient_type:'guardian',recipient_id:guardian_id,is_read:false,created_at:new Date().toISOString(),idempotency_key:idemKey}
-    const { data: streakRow } = await supabase.from('challenge_streaks').select('current_streak').eq('student_id',student_id).maybeSingle()
-    const currentStreak = (streakRow as {current_streak:number}|null)?.current_streak ?? 0
-    if (!list.length) { const b='Your child did not complete any quizzes yesterday.'; const bhi='आपके बच्चे ने कल कोई प्रश्नोत्तरी पूरी नहीं की।'; notes.push({...base,type:'parent_digest_no_activity',title:'No study activity yesterday',message:b,body:b,data:{quizzes:0,student_id,streak_days:currentStreak,title_hi:'कल कोई अध्ययन गतिविधि नहीं',body_hi:bhi}}) }
-    else {
+    const currentStreak = streakByStudent.get(student_id) ?? 0
+    let note: Record<string,unknown>
+    if (!list.length) {
+      const b='Your child did not complete any quizzes yesterday.'; const bhi='आपके बच्चे ने कल कोई प्रश्नोत्तरी पूरी नहीं की।'
+      note = {...base,type:'parent_digest_no_activity',title:'No study activity yesterday',message:b,body:b,data:{quizzes:0,student_id,streak_days:currentStreak,title_hi:'कल कोई अध्ययन गतिविधि नहीं',body_hi:bhi}}
+    } else {
       const xp=list.reduce((s,q)=>s+(q.xp_earned??0),0); const sc=Math.round(list.reduce((s,q)=>s+(q.score_percent??0),0)/list.length)
       const sub=[...new Set(list.map(q=>q.subject))].join(', '); const b=`Subjects: ${sub}. Avg score: ${sc}%. XP: +${xp}.`
       const bhi=`विषय: ${sub}। औसत अंक: ${sc}%। XP: +${xp}।`
-      notes.push({...base,type:'parent_digest',title:`Yesterday: ${list.length} quiz${list.length>1?'zes':''} completed`,message:b,body:b,data:{quizzes:list.length,avg_score:sc,total_xp:xp,subjects:sub,student_id,streak_days:currentStreak,title_hi:`कल: ${list.length} क्विज़ पूरी${list.length>1?'ं':''}`,body_hi:bhi}})
+      note = {...base,type:'parent_digest',title:`Yesterday: ${list.length} quiz${list.length>1?'zes':''} completed`,message:b,body:b,data:{quizzes:list.length,avg_score:sc,total_xp:xp,subjects:sub,student_id,streak_days:currentStreak,title_hi:`कल: ${list.length} क्विज़ पूरी${list.length>1?'ं':''}`,body_hi:bhi}}
     }
+    notes.push(note)
+    noteByPair.set(`${guardian_id}::${student_id}`, note)
   }
-  // WhatsApp delivery for guardians with phone + whatsapp preference
-  for (const {guardian_id,student_id} of links as {guardian_id:string;student_id:string}[]) {
-    const { data: gd } = await supabase.from('guardians').select('phone,notification_preferences').eq('id',guardian_id).maybeSingle()
-    const guardian = gd as {phone:string|null;notification_preferences:Record<string,unknown>|null}|null
+
+  // WhatsApp delivery for guardians with phone + whatsapp preference. The
+  // guardian/student lookups above are now Map reads (no per-link query);
+  // the actual send is still one external HTTP call per recipient (can't be
+  // batched into SQL) but is fired in bounded-concurrency chunks below
+  // instead of fully sequential awaits.
+  const waTargets: {guardian_id:string;phone:string;studentName:string;quizCount:number;avgScore:number;xpEarned:number;streakDays:number}[] = []
+  for (const {guardian_id,student_id} of linkRows) {
+    const guardian = guardianById.get(guardian_id)
     if (!guardian?.phone || !guardian.notification_preferences?.whatsapp) continue
-    const { data: std } = await supabase.from('students').select('name').eq('id',student_id).maybeSingle()
-    const studentName = ((std as {name:string|null}|null)?.name ?? '').split(' ')[0] || 'Student'
-    const pairNote = notes.find(n => n.recipient_id === guardian_id && (n as any).data?.student_id === student_id)
+    const studentName = (studentNameById.get(student_id) ?? '').split(' ')[0] || 'Student'
+    const pairNote = noteByPair.get(`${guardian_id}::${student_id}`)
     const quizCount = (pairNote as any)?.data?.quizzes ?? 0
     const avgScore = (pairNote as any)?.data?.avg_score ?? 0
     const xpEarned = (pairNote as any)?.data?.total_xp ?? 0
     const streakDays = (pairNote as any)?.data?.streak_days ?? 0
     if (quizCount === 0) continue // Don't WhatsApp for no-activity days
-    try {
-      await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/whatsapp-notify`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-        },
-        body: JSON.stringify({
-          phone: guardian.phone,
-          template: 'weekly_summary',
-          params: [studentName, String(quizCount), String(avgScore), String(xpEarned), String(streakDays)],
-        }),
-      })
-    } catch (waErr) {
-      console.warn(`generateParentDigests: WhatsApp send failed for guardian ${guardian_id}:`, waErr instanceof Error ? waErr.message : String(waErr))
-    }
+    waTargets.push({guardian_id,phone:guardian.phone,studentName,quizCount,avgScore,xpEarned,streakDays})
   }
+
+  const WA_CONCURRENCY = 20
+  for (let i = 0; i < waTargets.length; i += WA_CONCURRENCY) {
+    const batch = waTargets.slice(i, i + WA_CONCURRENCY)
+    await Promise.all(batch.map(async (t) => {
+      try {
+        await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/whatsapp-notify`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+          },
+          body: JSON.stringify({
+            phone: t.phone,
+            template: 'weekly_summary',
+            params: [t.studentName, String(t.quizCount), String(t.avgScore), String(t.xpEarned), String(t.streakDays)],
+          }),
+        })
+      } catch (waErr) {
+        console.warn(`generateParentDigests: WhatsApp send failed for guardian ${t.guardian_id}:`, waErr instanceof Error ? waErr.message : String(waErr))
+      }
+    }))
+  }
+
   if (notes.length) {
     // ignoreDuplicates: true silently no-ops on conflict (recipient_id,type,idempotency_key)
     // — re-runs do not insert duplicate parent_digest rows.

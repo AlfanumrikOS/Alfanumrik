@@ -425,6 +425,7 @@ function OAuthAppsContent() {
 
               {selectedApp.logo_url && (
                 <div style={{ marginBottom: 12 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={selectedApp.logo_url}
                     alt={`${selectedApp.name} logo`}

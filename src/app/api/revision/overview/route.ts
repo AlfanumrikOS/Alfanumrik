@@ -9,7 +9,14 @@ import { logger } from '@/lib/logger';
  *
  * Buckets the student's due / soon-due review items into overdue, dueToday,
  * and upcoming (today+1 .. today+7), mirroring the scoping of the sibling
- * /api/dashboard/reviews-due route:
+ * /api/dashboard/reviews-due route.
+ *
+ * Due-schedule source of truth: `concept_mastery.next_review_at` (timestamptz),
+ * written by the live SM-2 in update_learner_state_post_quiz on every quiz.
+ * Do NOT read `next_review_date` — that DATE column is a deprecated ghost
+ * (default CURRENT_DATE + 1, never updated by any function/cron/app code).
+ * Buckets are keyed by the UTC date part of next_review_at, so the response
+ * contract (dueDate: 'YYYY-MM-DD') is unchanged. Same scoping as the sibling:
  *   - same auth (progress.view_own, requireStudentId), same student-id source
  *   - same mastery_probability < 0.95 filter ("not trivially mastered")
  *   - same academic-year lower bound so archived rows aren't surfaced
@@ -48,7 +55,8 @@ const MINUTES_PER_ITEM = 1.5;
 
 interface ConceptMasteryRow {
   topic_id: string;
-  next_review_date: string | null;
+  /** Real SM-2 schedule (timestamptz ISO string). NOT the ghost next_review_date. */
+  next_review_at: string | null;
   mastery_probability: number | null;
   curriculum_topics: {
     title: string | null;
@@ -97,9 +105,12 @@ export async function GET(request: Request) {
       );
     }
 
-    // Today's date in YYYY-MM-DD (concept_mastery.next_review_date is DATE).
+    // Today's date in YYYY-MM-DD (UTC) — buckets key off the UTC date part of
+    // concept_mastery.next_review_at (timestamptz).
     const today = new Date().toISOString().slice(0, 10);
-    const upcomingEnd = addDays(today, UPCOMING_DAYS);
+    // Exclusive upper bound: start of day (today + UPCOMING_DAYS + 1), so the
+    // ENTIRE today+7 day is included when comparing against a timestamptz.
+    const upcomingEndExclusive = addDays(today, UPCOMING_DAYS + 1);
 
     // Current academic year window. Indian CBSE academic year runs
     // April → March. Same lower bound as /api/dashboard/reviews-due so older,
@@ -114,16 +125,24 @@ export async function GET(request: Request) {
     // Single read: everything from academic-year start through today+7, not
     // trivially mastered. Title + subject embedded via existing FKs
     // (concept_mastery.topic_id → curriculum_topics.id → subjects.id). No PII.
+    //
+    // Schedule column: next_review_at (timestamptz) — the REAL SM-2 schedule
+    // written by update_learner_state_post_quiz on every quiz. The sibling
+    // `next_review_date` DATE column is a deprecated ghost (never written by
+    // any function, cron, or app code; its CURRENT_DATE + 1 default made every
+    // touched concept look "due" one day after first attempt, forever). Do not
+    // repoint back to it. NULL next_review_at (never scheduled) is excluded by
+    // the range filters.
     const { data, error } = await supabaseAdmin
       .from('concept_mastery')
       .select(
-        'topic_id, next_review_date, mastery_probability, curriculum_topics!inner(title, title_hi, subjects!inner(code))'
+        'topic_id, next_review_at, mastery_probability, curriculum_topics!inner(title, title_hi, subjects!inner(code))'
       )
       .eq('student_id', studentId)
       .lt('mastery_probability', 0.95)
-      .gte('next_review_date', academicYearStart)
-      .lte('next_review_date', upcomingEnd)
-      .order('next_review_date', { ascending: true });
+      .gte('next_review_at', academicYearStart)
+      .lt('next_review_at', upcomingEndExclusive)
+      .order('next_review_at', { ascending: true });
 
     if (error) {
       logger.error('revision_overview_query_failed', {
@@ -145,7 +164,9 @@ export async function GET(request: Request) {
     const subjectDueCount = new Map<string, number>();
 
     for (const row of rows) {
-      const dueDate = row.next_review_date;
+      // Bucket by the UTC date part of the timestamptz — keeps the response
+      // contract's dueDate: 'YYYY-MM-DD' shape unchanged for consumers.
+      const dueDate = row.next_review_at ? row.next_review_at.slice(0, 10) : null;
       if (!dueDate) continue;
 
       const topic = row.curriculum_topics;
@@ -163,15 +184,15 @@ export async function GET(request: Request) {
       };
 
       if (diff > 0) {
-        // overdue: next_review_date < today
+        // overdue: next_review_at's date < today
         if (overdueItems.length < ITEM_CAP) overdueItems.push(item);
         subjectDueCount.set(subject, (subjectDueCount.get(subject) ?? 0) + 1);
       } else if (diff === 0) {
-        // dueToday: next_review_date == today
+        // dueToday: next_review_at's date == today
         if (dueTodayItems.length < ITEM_CAP) dueTodayItems.push(item);
         subjectDueCount.set(subject, (subjectDueCount.get(subject) ?? 0) + 1);
       } else {
-        // upcoming: today < next_review_date <= today+7
+        // upcoming: today < next_review_at's date <= today+7
         if (upcomingItems.length < ITEM_CAP) upcomingItems.push(item);
         upcomingByDay.set(dueDate, (upcomingByDay.get(dueDate) ?? 0) + 1);
       }

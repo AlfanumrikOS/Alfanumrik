@@ -84,6 +84,7 @@ export function DesktopSidebar() {
       <div>
         <button
           onClick={() => router.push('/dashboard')}
+          aria-label={isHi ? 'डैशबोर्ड पर जाएं' : 'Go to Dashboard'}
           className="flex items-center gap-2.5 px-3 mb-6 transition-opacity hover:opacity-80"
         >
           <span className="text-2xl">🦊</span>

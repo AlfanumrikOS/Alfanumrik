@@ -1,0 +1,29 @@
+function_name,has_auth_check,mechanism,tier,verdict
+daily-cron,yes,"verifyInternalCronRequest (_shared/security/internal-cron-auth.ts) — CRON_SECRET header OR signed-internal-caller HMAC; auth before dispatch",0,OK
+queue-consumer,yes,"verifyInternalCronRequest — checked at index.ts:584 before dequeue work",0,OK
+projector-runner,yes,"verifyInternalCronRequest at index.ts:64 before any projector work",1,OK
+projector-health-check,yes,"verifyInternalCronRequest at index.ts:169 before health checks",1,OK
+synthetic-host-monitor,yes,"verifyInternalCronRequest at index.ts:461",1,OK
+data-erasure-purger,yes,"verifyInternalCronRequest at index.ts:220 before purge work",0,OK
+monthly-synthesis-builder,yes,"verifyInternalCronRequest at index.ts:232 (x-cron-secret / signed-internal, same convention as daily-cron)",1,OK
+account-purge,yes,"CRON_SECRET (x-cron-secret) OR Authorization Bearer SERVICE_ROLE_KEY, constant-time compare at index.ts:413",0,OK
+alert-deliverer,yes,"Accepts service-role Bearer, CRON_SECRET, or pg_cron internal header (index.ts:9-18) — multi-carrier fail-closed gate",1,OK
+webhook-dispatcher,yes,"x-cron-secret | Authorization Bearer | ?token=, constant-time compare against CRON_SECRET (index.ts:86-89)",1,OK
+send-pre-debit-notice,yes,"CRON_SECRET compare at index.ts:306",0,OK
+send-renewal-reminder,yes,"checkBearerToken(Authorization, SUPABASE_SERVICE_ROLE_KEY) at index.ts:270 via _shared/auth.ts — resolves prior discovery-doc 'unclear' classification",0,OK
+coverage-audit,yes,"CRON_SECRET / Bearer compare at index.ts:227-230",1,OK
+board-score,yes,"Per-action gate: action=compute requires checkBearerToken(SERVICE_ROLE_KEY) at index.ts:434 before any student-row write; action=get requires student Bearer JWT (RLS-scoped client) at index.ts:470",0,OK
+grade-experiment-conclusion,yes,"Bearer JWT -> resolves to students.id (same pattern as foxy-tutor), checked at index.ts:216 before scoring logic",1,OK
+identity,yes,"Bearer JWT required, resolved at index.ts:53 before identity resolution (Microservice #1 for JWT->student-identity)",1,OK
+session-guard,yes,"Bearer JWT -> supabase.auth.getUser(token) at index.ts:16-19, before any session-table read/write",1,OK
+scan-ocr,yes,"Bearer JWT checked at index.ts:168-176 before student-row lookup (comment notes 'admission already validated the JWT' upstream at the Next.js caller too)",1,OK
+export-report,yes,"Bearer JWT required at index.ts:591-599 before RLS-scoped client construction",1,OK
+parent-portal,yes,"Authorization Bearer resolved at index.ts:1389 -- JWT's own user.id overrides any client-supplied guardian_id/auth_user_id (P13 hardening noted in-file at :1380-1388)",1,OK
+teacher-dashboard,yes,"JWT-bound teacher_id via resolveTeacherFromJwt; dispatcher overwrites any client-supplied body.teacher_id with the Bearer-derived value before per-resource ownership helpers run (index.ts:63-75, 741)",1,OK
+whatsapp-notify,yes,"Authorization header required (service-role or user token) at index.ts:7,190; paired Next.js caller (notifications/whatsapp) additionally signs with buildInternalCallerHeaders",1,OK
+invoice-generator,yes,"checkBearerToken(Authorization, SUPABASE_SERVICE_ROLE_KEY) at index.ts:326 via _shared/auth.ts (service-role-only, server-to-server)",1,OK
+extract-diagrams,yes,"admitAiRoute (_shared/security/ai-admission.ts, Platform Security Layer principal resolution) at index.ts:590/603 — in-file doc comment claims 'x-admin-key header matching ADMIN_API_KEY' but NO such literal check exists in the handler; actual gate is the shared AI-admission spine. Doc-vs-code drift, not a missing-auth gap (admitAiRoute is a real, centrally-audited check).",2,OK-with-doc-drift-note
+extract-ncert-questions,yes,"admitAiRoute at index.ts:906 — same doc-comment drift as extract-diagrams ('x-admin-key' claimed, admitAiRoute is what actually runs). NOTE: a Python-proxy short-circuit (shouldProxyToPython, index.ts:868-879) runs BEFORE admitAiRoute and forwards the raw request to the Python service on that path, bypassing the Deno-side admission check entirely when ff_python_extract_ncert_questions_v1 is on — auth in that branch is deferred to the Python service, not independently verified in this pass (out of backend's normal review surface; flagged for ai-engineer/architect).",2,REVIEW-python-proxy-bypasses-admission-check
+send-auth-email,yes,"standardwebhooks HMAC signature verification (Webhook(hookSecret).verify()) at index.ts:243-244 against SEND_EMAIL_HOOK_SECRET — this is the Supabase Auth 'Send Email' GoTrue hook, MUST return HTTP 200 on every path per P15 (confirmed: all error branches return 200, never blocks signup)",0,OK
+send-welcome-email,yes,"Authorization Bearer required at index.ts:233-239 (user-scoped client with caller's JWT); P13 comment confirms sends only to the JWT user's own verified email",0,OK
+send-transactional-email,yes,"Bearer-token auth (service-role only) at index.ts:621, deployed with --no-verify-jwt and validates the bearer manually per in-file doc (index.ts:15-17) so Vercel API routes can invoke without minting JWTs",1,OK

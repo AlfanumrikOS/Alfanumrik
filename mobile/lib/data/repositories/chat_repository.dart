@@ -119,9 +119,16 @@ class ChatRepository {
 
   // ─── Legacy path: foxy-tutor Edge Function ──────────────────────────────────
   //
-  // DEPRECATED. FTS-only retrieval, weaker P12 rails. Kept as fallback while
-  // mobile clients in the wild are still on this path. Will be removed in a
-  // future PR after >95% of active clients migrate to the 'api' path.
+  // DEPRECATED AND DEAD SERVER-SIDE: the `foxy-tutor` Edge Function was
+  // retired 2026-07-01 and no longer exists under `supabase/functions/`.
+  // This branch is only reachable via `--dart-define=FOXY_ENDPOINT=edge`
+  // (not the default, which is 'api') and, if invoked, will fail because
+  // the target no longer exists. It is NOT a usable fallback or rollback
+  // path anymore — see the comment on `ApiConstants.foxyEndpoint`. Kept
+  // compiled in only so already-installed APKs still pointed at 'edge'
+  // fail predictably at the network call rather than crash; do not build
+  // new APKs with FOXY_ENDPOINT=edge. Removing this dead code path
+  // entirely is a separate, larger change — out of scope here.
   Future<ApiResult<ChatMessage>> _sendViaEdge({
     required String sessionId,
     required String studentId,

@@ -309,6 +309,18 @@ export default function QuizPage() {
   const [initialMode, setInitialMode] = useState<QuizMode>('cognitive');
   const [initialCount, setInitialCount] = useState<number>(10);
   const [initialChapter, setInitialChapter] = useState<number | null>(null);
+  // Adaptive deep-links emitted by Daily Rhythm / adaptive surfaces:
+  //   /quiz?qid=<question_bank id> → start a quiz with that question first
+  //   /quiz?mode=srs               → review quiz sourced from due SRS cards
+  // Both are fail-soft: any fetch failure / empty result falls back to the
+  // normal setup screen. Neither link carries a subject param, so the
+  // handler derives it from the fetched question / due cards.
+  const [deepLink, setDeepLink] = useState<
+    | { kind: 'qid'; qid: string }
+    | { kind: 'srs'; subject: string | null }
+    | null
+  >(null);
+  const deepLinkFiredRef = useRef(false);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -321,6 +333,13 @@ export default function QuizPage() {
     const mode = params.get('mode');
     if (mode === 'cognitive') { setQuizMode('cognitive'); setInitialMode('cognitive'); }
     if (mode === 'exam') { setQuizMode('exam'); setInitialMode('exam'); }
+    const qid = params.get('qid');
+    const QID_UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    if (qid && QID_UUID_RE.test(qid)) {
+      setDeepLink({ kind: 'qid', qid });
+    } else if (mode === 'srs') {
+      setDeepLink({ kind: 'srs', subject: subj });
+    }
     const countParam = params.get('count');
     if (countParam) {
       const c = parseInt(countParam, 10);
@@ -445,6 +464,15 @@ export default function QuizPage() {
     examTimeLimit?: number;
     chapterNumber?: number | null;
     questionTypes?: string[];
+    /**
+     * Adaptive deep-link support (?qid= / ?mode=srs): pre-fetched, P6-valid
+     * question_bank rows to serve FIRST in the quiz. Everything downstream
+     * (P6 gate, server shuffle snapshot, anti-cheat, atomic submit) is the
+     * normal pipeline — deep links only change WHICH questions are served.
+     */
+    pinnedQuestions?: Question[];
+    /** When true, serve ONLY pinnedQuestions (SRS review quiz) — skip pool assembly. */
+    pinnedOnly?: boolean;
   }) => {
     // When called from QuizSetup, apply the selected options to page state
     const subj = opts?.subject ?? selectedSubject;
@@ -469,21 +497,33 @@ export default function QuizPage() {
       const diffModeMap: Record<string, string> = { '1': 'easy', '2': 'medium', '3': 'hard' };
       const diffMode = diff != null ? (diffModeMap[String(diff)] || 'mixed') : (opts?.quizMode === 'cognitive' ? 'progressive' : 'mixed');
 
+      // Adaptive deep-link pinning: pre-validated question_bank rows served
+      // FIRST. `pinnedOnly` (SRS review deep link) means the pinned set IS
+      // the quiz — skip pool assembly entirely.
+      const pinned = (opts?.pinnedQuestions ?? []).filter(p => isValidQuestion(p));
+      const pinnedOnly = Boolean(opts?.pinnedOnly) && pinned.length > 0;
+
       // Guaranteed Count Assembler — ensures exact requested count or explicit failure.
       // Honor the user's question-type selection from QuizSetup (MCQ Only / Short Answer
       // / Long Answer / Mixed / NCERT Exercise). Hardcoding ['mcq'] silently dropped
       // the picker selection — reported 2026-05-09.
-      const result = await assembleQuiz({
-        subject: subj,
-        grade: student.grade,
-        requestedCount: qCount,
-        difficulty: diffMode,
-        chapter: chapter ?? null,
-        questionTypes: qTypes && qTypes.length > 0 ? qTypes : ['mcq'],
-        mode: opts?.quizMode ?? quizMode,
-      });
+      const result = pinnedOnly
+        ? { success: true, questions: [] as Question[], returnedCount: pinned.length }
+        : await assembleQuiz({
+            subject: subj,
+            grade: student.grade,
+            requestedCount: qCount,
+            difficulty: diffMode,
+            chapter: chapter ?? null,
+            questionTypes: qTypes && qTypes.length > 0 ? qTypes : ['mcq'],
+            mode: opts?.quizMode ?? quizMode,
+          });
 
-      if (!result.success) {
+      // Deep-link fail-soft: when a pinned question exists, tolerate a
+      // partial/failed pool fill instead of surfacing the count error — the
+      // pinned question always leads and the quiz starts with whatever the
+      // pool could supply.
+      if (!result.success && pinned.length === 0) {
         const onlyMcq = qTypes.length === 1 && qTypes[0] === 'mcq';
         const typeLabel = onlyMcq
           ? ''
@@ -545,7 +585,12 @@ export default function QuizPage() {
       // shuffled, rendered, answered, counted, and submitted. So P1
       // (score = round(correct / served * 100)) and the P4 RPC snapshot stay
       // consistent on the ACTUAL served count.
-      const assembledQs = result.questions;
+      // Pinned questions lead; pool questions fill the remaining slots
+      // (deduped by id, capped at the requested count).
+      const pinnedIds = new Set(pinned.map(p => p.id));
+      const assembledQs = pinned.length > 0
+        ? [...pinned, ...result.questions.filter((q: Question) => !pinnedIds.has(q.id))].slice(0, qCount)
+        : result.questions;
       const qs = assembledQs.filter((q: Question) => isValidQuestion(q));
       const droppedCount = assembledQs.length - qs.length;
       if (droppedCount > 0) {
@@ -639,6 +684,113 @@ export default function QuizPage() {
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSubject, student, questionCount, selectedDifficulty, selectedChapter, selectedQuestionTypes, isHi, router]);
+
+  // ── Adaptive deep-link consumer (?qid= / ?mode=srs) ────────────────────────
+  // Fires ONCE (deepLinkFiredRef) when the student profile is loaded and we
+  // are still on the setup screen with no quiz load in flight. Both branches
+  // are fail-soft: any fetch error, P6 validation failure, or empty due-card
+  // set clears the spinner and leaves the student on the normal setup screen
+  // (no error banner). Scoring/XP/anti-cheat are untouched — deep links only
+  // choose WHICH questions startQuiz serves through its normal pipeline.
+  useEffect(() => {
+    if (!deepLink || deepLinkFiredRef.current) return;
+    if (isLoading || !student) return;          // readiness: profile loaded
+    if (screen !== 'select' || loading) return; // readiness: still on setup, idle
+    deepLinkFiredRef.current = true;
+
+    const QB_COLUMNS =
+      'id, subject, question_text, question_hi, question_type, options, ' +
+      'correct_answer_index, explanation, explanation_hi, hint, difficulty, ' +
+      'bloom_level, chapter_number';
+
+    (async () => {
+      setLoading(true);
+      try {
+        if (deepLink.kind === 'qid') {
+          // Single-question deep link: fetch the row (RLS-respecting client),
+          // validate P6 shape, then start a quiz with it pinned first and the
+          // remaining slots filled by the normal assembler for its subject.
+          const { data: row } = await supabase
+            .from('question_bank')
+            .select(QB_COLUMNS)
+            .eq('id', deepLink.qid)
+            .eq('is_active', true)
+            .maybeSingle();
+          const pinnedQ = row as (Question & { subject?: string | null }) | null;
+          if (!pinnedQ || !pinnedQ.subject || !isValidQuestion(pinnedQ)) {
+            setLoading(false); // fail-soft → normal setup screen
+            return;
+          }
+          const chapterNum =
+            typeof pinnedQ.chapter_number === 'number' && pinnedQ.chapter_number > 0
+              ? pinnedQ.chapter_number
+              : null;
+          setInitialSubject(pinnedQ.subject);
+          if (chapterNum != null) setInitialChapter(chapterNum);
+          await startQuiz({
+            subject: pinnedQ.subject,
+            chapterNumber: chapterNum,
+            pinnedQuestions: [pinnedQ],
+          });
+          return;
+        }
+
+        // kind === 'srs' — review quiz sourced from due SRS cards born from
+        // wrong quiz answers. Mirrors the get_review_cards / listDueCards due
+        // filter: own active cards, next_review_date <= today, with a
+        // question_bank source_id to resolve.
+        const todayIso = new Date().toISOString().slice(0, 10);
+        let cardsQuery = supabase
+          .from('spaced_repetition_cards')
+          .select('source_id, subject')
+          .eq('student_id', student.id)
+          .eq('is_active', true)
+          .eq('source', 'quiz_wrong_answer')
+          .not('source_id', 'is', null)
+          .lte('next_review_date', todayIso)
+          .order('next_review_date', { ascending: true })
+          .limit(50);
+        if (deepLink.subject) cardsQuery = cardsQuery.eq('subject', deepLink.subject);
+        const { data: cards } = await cardsQuery;
+        const dueCards = (cards ?? []) as Array<{ source_id: string | null; subject: string | null }>;
+        // A quiz session has a single subject — honor the URL filter when
+        // present, else use the earliest-due card's subject.
+        const srsSubject = deepLink.subject ?? dueCards.find(c => c.subject)?.subject ?? null;
+        if (!srsSubject) { setLoading(false); return; }
+        const dueIds: string[] = [];
+        for (const c of dueCards) {
+          if (c.subject !== srsSubject || !c.source_id) continue;
+          if (!dueIds.includes(c.source_id)) dueIds.push(c.source_id);
+          if (dueIds.length >= questionCount) break; // cap at page count default
+        }
+        if (dueIds.length === 0) { setLoading(false); return; }
+        const { data: rows } = await supabase
+          .from('question_bank')
+          .select(QB_COLUMNS)
+          .in('id', dueIds)
+          .eq('is_active', true);
+        const byId = new Map(
+          ((rows ?? []) as unknown as Question[]).filter(r => isValidQuestion(r)).map(r => [r.id, r])
+        );
+        // Preserve due order (earliest review first).
+        const reviewQs = dueIds
+          .map(id => byId.get(id))
+          .filter((r): r is Question => Boolean(r));
+        if (reviewQs.length === 0) { setLoading(false); return; }
+        setInitialSubject(srsSubject);
+        await startQuiz({
+          subject: srsSubject,
+          chapterNumber: null,
+          pinnedQuestions: reviewQs,
+          pinnedOnly: true,
+        });
+      } catch {
+        // Fail-soft: clear the spinner, stay on the normal setup screen.
+        setLoading(false);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fire-once consumer guarded by deepLinkFiredRef; isValidQuestion/questionCount are stable per render
+  }, [deepLink, isLoading, student, screen, loading, startQuiz]);
 
   // parseOptions is now a module-level function (used by shuffle logic)
 

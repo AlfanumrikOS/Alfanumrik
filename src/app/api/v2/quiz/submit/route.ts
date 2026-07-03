@@ -127,6 +127,8 @@ export async function POST(request: NextRequest) {
     .from('students')
     .select('id')
     .eq('auth_user_id', auth.userId)
+    .eq('is_active', true)
+    .is('deleted_at', null)
     .maybeSingle();
 
   if (!studentRow?.id) {

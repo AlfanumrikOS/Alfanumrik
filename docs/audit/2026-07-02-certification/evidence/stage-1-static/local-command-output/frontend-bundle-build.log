@@ -1,0 +1,632 @@
+
+> alfanumrik-frontend@2.0.0 build
+> node scripts/auth-guard.js && next build
+
+🔒 Auth Flow Guard — Pre-deploy Check
+
+
+✅ Auth Flow Guard — All checks passed. Safe to deploy.
+
+▲ Next.js 16.2.6 (Turbopack)
+- Environments: .env.local
+- Experiments (use with caution):
+  · optimizePackageImports
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 58s
+  Running TypeScript ...
+  Finished TypeScript in 2.2min ...
+  Collecting page data using 19 workers ...
+  Generating static pages using 19 workers (0/380) ...
+  Generating static pages using 19 workers (95/380) 
+  Generating static pages using 19 workers (190/380) 
+  Generating static pages using 19 workers (285/380) 
+✓ Generating static pages using 19 workers (380/380) in 4.3s
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ○ /about
+├ ƒ /api/alfabot
+├ ƒ /api/alfabot/inquiry
+├ ƒ /api/alfabot/lead
+├ ƒ /api/auth/bootstrap
+├ ƒ /api/auth/onboarding-status
+├ ƒ /api/auth/repair
+├ ƒ /api/auth/session
+├ ƒ /api/billing/coverage
+├ ƒ /api/billing/tax-config
+├ ƒ /api/board-score
+├ ƒ /api/client-error
+├ ƒ /api/concept-engine
+├ ƒ /api/cron/account-purge
+├ ƒ /api/cron/adaptive-remediation
+├ ƒ /api/cron/board-score
+├ ƒ /api/cron/build-twin-snapshots
+├ ƒ /api/cron/daily
+├ ƒ /api/cron/daily-cron
+├ ƒ /api/cron/evaluate-alerts
+├ ƒ /api/cron/expired-subscriptions
+├ ƒ /api/cron/foxy-quality-sample
+├ ƒ /api/cron/goal-daily-plan-reminder
+├ ƒ /api/cron/irt-calibrate
+├ ƒ /api/cron/payments-health
+├ ƒ /api/cron/pre-debit-notice
+├ ƒ /api/cron/reconcile-payments
+├ ƒ /api/cron/reverify-domains
+├ ƒ /api/cron/school-operations
+├ ƒ /api/cron/streak-guardian
+├ ƒ /api/dashboard/reviews-due
+├ ƒ /api/diagnostic/complete
+├ ƒ /api/diagnostic/start
+├ ƒ /api/dive/artifact
+├ ƒ /api/dive/history
+├ ƒ /api/dive/start
+├ ƒ /api/dive/state
+├ ƒ /api/embedding
+├ ƒ /api/error-report
+├ ƒ /api/exam/chapters
+├ ƒ /api/exams/papers
+├ ƒ /api/exams/papers/[id]
+├ ƒ /api/exams/papers/[id]/submit
+├ ƒ /api/exams/sync-mastery
+├ ƒ /api/feature-flags/check
+├ ƒ /api/feature-flags/voice
+├ ƒ /api/foxy
+├ ƒ /api/foxy/feedback
+├ ƒ /api/foxy/learning-action
+├ ƒ /api/foxy/quiz-answer
+├ ƒ /api/foxy/remediation
+├ ƒ /api/foxy/suggest-prompts
+├ ƒ /api/health
+├ ƒ /api/internal/admin/ai-monitor
+├ ƒ /api/internal/admin/bulk-action
+├ ƒ /api/internal/admin/command-center
+├ ƒ /api/internal/admin/content
+├ ƒ /api/internal/admin/feature-flags
+├ ƒ /api/internal/admin/logs
+├ ƒ /api/internal/admin/reports
+├ ƒ /api/internal/admin/revenue
+├ ƒ /api/internal/admin/schools
+├ ƒ /api/internal/admin/stats
+├ ƒ /api/internal/admin/support
+├ ƒ /api/internal/admin/users
+├ ƒ /api/internal/admin/users/[id]
+├ ƒ /api/internal/agents/chapter-explorer
+├ ƒ /api/internal/cron/fix-failed-questions
+├ ƒ /api/lab-notebook/list
+├ ƒ /api/learn/remediation
+├ ƒ /api/learner/cards/create
+├ ƒ /api/learner/lesson/progress
+├ ƒ /api/learner/next
+├ ƒ /api/learner/queue-from-scan
+├ ƒ /api/learner/review/grade
+├ ƒ /api/learner/revise-stack
+├ ƒ /api/learner/scheduled
+├ ƒ /api/learner/weak-topics
+├ ƒ /api/mol/feedback
+├ ƒ /api/notifications/whatsapp
+├ ƒ /api/oauth/authorize
+├ ƒ /api/oauth/token
+├ ƒ /api/og
+├ ƒ /api/parent/accept-invite
+├ ƒ /api/parent/approve-link
+├ ƒ /api/parent/billing
+├ ƒ /api/parent/calendar
+├ ƒ /api/parent/children/[student_id]/chat
+├ ƒ /api/parent/children/[student_id]/erasure-status
+├ ƒ /api/parent/children/[student_id]/export
+├ ƒ /api/parent/children/[student_id]/request-erasure
+├ ƒ /api/parent/consent
+├ ƒ /api/parent/link-code/redeem
+├ ƒ /api/parent/link-code/request-otp
+├ ƒ /api/parent/messages
+├ ƒ /api/parent/messages/threads
+├ ƒ /api/parent/messages/threads/[id]/messages
+├ ƒ /api/parent/notifications
+├ ƒ /api/parent/notifications/[id]/read
+├ ƒ /api/parent/notifications/mark-all-read
+├ ƒ /api/parent/profile
+├ ƒ /api/parent/report
+├ ƒ /api/payments/cancel
+├ ƒ /api/payments/create-order
+├ ƒ /api/payments/setup-plans
+├ ƒ /api/payments/status
+├ ƒ /api/payments/subscribe
+├ ƒ /api/payments/verify
+├ ƒ /api/payments/webhook
+├ ƒ /api/practice/history
+├ ƒ /api/public/v1/classes
+├ ƒ /api/public/v1/marketplace/listings
+├ ƒ /api/public/v1/openapi
+├ ƒ /api/public/v1/reports
+├ ƒ /api/public/v1/students
+├ ƒ /api/pulse/class/[classId]
+├ ƒ /api/pulse/me
+├ ƒ /api/pulse/school
+├ ƒ /api/pulse/student/[id]
+├ ƒ /api/quiz
+├ ƒ /api/quiz/ncert-questions
+├ ƒ /api/quiz/submit
+├ ƒ /api/revision/overview
+├ ƒ /api/rhythm/remediation/[id]/resolve
+├ ƒ /api/rhythm/today
+├ ƒ /api/scan-solve
+├ ƒ /api/school-admin/ai-assistant
+├ ƒ /api/school-admin/analytics
+├ ƒ /api/school-admin/announcements
+├ ƒ /api/school-admin/api-keys
+├ ƒ /api/school-admin/audit-log
+├ ƒ /api/school-admin/branding
+├ ƒ /api/school-admin/classes
+├ ƒ /api/school-admin/classes-at-risk
+├ ƒ /api/school-admin/classes/[classId]
+├ ƒ /api/school-admin/classes/bulk-create
+├ ƒ /api/school-admin/classes/enrollments
+├ ƒ /api/school-admin/content
+├ ƒ /api/school-admin/content/bulk
+├ ƒ /api/school-admin/contracts
+├ ƒ /api/school-admin/data-export
+├ ƒ /api/school-admin/exams
+├ ƒ /api/school-admin/gst-details
+├ ƒ /api/school-admin/integrations/install
+├ ƒ /api/school-admin/integrations/uninstall
+├ ƒ /api/school-admin/invite-codes
+├ ƒ /api/school-admin/invoices
+├ ƒ /api/school-admin/modules
+├ ƒ /api/school-admin/overview
+├ ƒ /api/school-admin/parents
+├ ƒ /api/school-admin/rbac
+├ ƒ /api/school-admin/reports
+├ ƒ /api/school-admin/reports/bloom
+├ ƒ /api/school-admin/reports/export
+├ ƒ /api/school-admin/reports/mastery
+├ ƒ /api/school-admin/roster/validate
+├ ƒ /api/school-admin/staff
+├ ƒ /api/school-admin/students
+├ ƒ /api/school-admin/students/bulk-import
+├ ƒ /api/school-admin/subscription
+├ ƒ /api/school-admin/teacher-engagement
+├ ƒ /api/school-admin/teachers
+├ ƒ /api/school-admin/teachers/bulk-import
+├ ƒ /api/school-admin/tenant-config
+├ ƒ /api/school-admin/webhooks
+├ ƒ /api/school-config
+├ ƒ /api/school-config/manifest
+├ ƒ /api/schools/claim-admin
+├ ƒ /api/schools/enroll
+├ ƒ /api/schools/join
+├ ƒ /api/schools/setup/classes
+├ ƒ /api/schools/setup/invite-codes
+├ ƒ /api/schools/setup/profile
+├ ƒ /api/schools/trial
+├ ƒ /api/state/decisions
+├ ƒ /api/student/chapters
+├ ƒ /api/student/daily-lab
+├ ƒ /api/student/daily-lab/claim
+├ ƒ /api/student/daily-plan
+├ ƒ /api/student/exam-simulation
+├ ƒ /api/student/foxy-interaction
+├ ƒ /api/student/grade-conclusion
+├ ƒ /api/student/preferences
+├ ƒ /api/student/profile
+├ ƒ /api/student/scan-upload
+├ ƒ /api/student/shop/purchase
+├ ƒ /api/student/stem-observation
+├ ƒ /api/student/study-plan
+├ ƒ /api/student/subjects
+├ ƒ /api/students/[id]/invite-guardian
+├ ƒ /api/super-admin/ai/[fn]
+├ ƒ /api/super-admin/ai/oracle-health
+├ ƒ /api/super-admin/alerts
+├ ƒ /api/super-admin/alfabot/denylist
+├ ƒ /api/super-admin/alfabot/sessions
+├ ƒ /api/super-admin/alfabot/sessions/[sessionId]
+├ ƒ /api/super-admin/alfabot/stats
+├ ƒ /api/super-admin/analytics
+├ ƒ /api/super-admin/analytics-v2
+├ ƒ /api/super-admin/analytics-v2/b2b
+├ ƒ /api/super-admin/analytics/posthog-summary
+├ ƒ /api/super-admin/billing/tax-config
+├ ƒ /api/super-admin/bulk-actions/notify
+├ ƒ /api/super-admin/bulk-actions/plan-change
+├ ƒ /api/super-admin/bulk-actions/resend-invites
+├ ƒ /api/super-admin/bulk-actions/suspend-restore
+├ ƒ /api/super-admin/bulk-upload
+├ ƒ /api/super-admin/cms
+├ ƒ /api/super-admin/content
+├ ƒ /api/super-admin/content-coverage
+├ ƒ /api/super-admin/contracts
+├ ƒ /api/super-admin/contracts/[id]
+├ ƒ /api/super-admin/contracts/[id]/renew
+├ ƒ /api/super-admin/db-performance
+├ ƒ /api/super-admin/debug/whoami
+├ ƒ /api/super-admin/demo-accounts
+├ ƒ /api/super-admin/demo-accounts/[id]/resend-credentials
+├ ƒ /api/super-admin/deploy
+├ ƒ /api/super-admin/entitlements
+├ ƒ /api/super-admin/feature-flags
+├ ƒ /api/super-admin/foxy-quality
+├ ƒ /api/super-admin/goal-profiles
+├ ƒ /api/super-admin/grounding/ai-issues
+├ ƒ /api/super-admin/grounding/coverage
+├ ƒ /api/super-admin/grounding/health
+├ ƒ /api/super-admin/grounding/traces
+├ ƒ /api/super-admin/grounding/verification-queue
+├ ƒ /api/super-admin/health
+├ ƒ /api/super-admin/improvement
+├ ƒ /api/super-admin/improvement/deploy
+├ ƒ /api/super-admin/improvement/learning-monitors
+├ ƒ /api/super-admin/improvement/learning-quality
+├ ƒ /api/super-admin/improvement/qa-gate
+├ ƒ /api/super-admin/improvement/staging
+├ ƒ /api/super-admin/institutions
+├ ƒ /api/super-admin/institutions/[id]/admins
+├ ƒ /api/super-admin/institutions/[id]/pause
+├ ƒ /api/super-admin/institutions/[id]/resume
+├ ƒ /api/super-admin/institutions/attach-vercel-domain
+├ ƒ /api/super-admin/institutions/billing
+├ ƒ /api/super-admin/institutions/bulk-onboard
+├ ƒ /api/super-admin/institutions/health
+├ ƒ /api/super-admin/institutions/provision
+├ ƒ /api/super-admin/institutions/verify-domain
+├ ƒ /api/super-admin/intelligence/geography
+├ ƒ /api/super-admin/intelligence/overview
+├ ƒ /api/super-admin/intelligence/revenue
+├ ƒ /api/super-admin/intelligence/school/[id]
+├ ƒ /api/super-admin/intelligence/schools
+├ ƒ /api/super-admin/invoices
+├ ƒ /api/super-admin/login
+├ ƒ /api/super-admin/logs
+├ ƒ /api/super-admin/marking-integrity
+├ ƒ /api/super-admin/marking-integrity/[studentId]
+├ ƒ /api/super-admin/marking-path-mix
+├ ƒ /api/super-admin/misconceptions
+├ ƒ /api/super-admin/module-overrides
+├ ƒ /api/super-admin/mol-shadow
+├ ƒ /api/super-admin/oauth-apps
+├ ƒ /api/super-admin/observability
+├ ƒ /api/super-admin/observability/channels
+├ ƒ /api/super-admin/observability/channels/[id]
+├ ƒ /api/super-admin/observability/channels/[id]/test
+├ ƒ /api/super-admin/observability/events
+├ ƒ /api/super-admin/observability/events/[id]
+├ ƒ /api/super-admin/observability/export
+├ ƒ /api/super-admin/observability/rules
+├ ƒ /api/super-admin/observability/rules/[id]
+├ ƒ /api/super-admin/observability/rules/[id]/test
+├ ƒ /api/super-admin/observability/snapshot
+├ ƒ /api/super-admin/oracle-health
+├ ƒ /api/super-admin/payment-ops/reconcile
+├ ƒ /api/super-admin/payment-ops/stats
+├ ƒ /api/super-admin/payment-ops/stuck
+├ ƒ /api/super-admin/platform-ops
+├ ƒ /api/super-admin/projectors/replay
+├ ƒ /api/super-admin/rbac
+├ ƒ /api/super-admin/readiness-rubric
+├ ƒ /api/super-admin/reconciliation
+├ ƒ /api/super-admin/reconciliation/[id]/approve
+├ ƒ /api/super-admin/reconciliation/[id]/reject
+├ ƒ /api/super-admin/reports
+├ ƒ /api/super-admin/roles
+├ ƒ /api/super-admin/seat-usage
+├ ƒ /api/super-admin/sessions
+├ ƒ /api/super-admin/sla
+├ ƒ /api/super-admin/stats
+├ ƒ /api/super-admin/strategic-reports/bloom-by-grade
+├ ƒ /api/super-admin/strategic-reports/cohort-retention
+├ ƒ /api/super-admin/students/[id]/dashboard
+├ ƒ /api/super-admin/students/[id]/foxy-history
+├ ƒ /api/super-admin/students/[id]/impersonate
+├ ƒ /api/super-admin/students/[id]/notes
+├ ƒ /api/super-admin/students/[id]/profile
+├ ƒ /api/super-admin/students/[id]/progress
+├ ƒ /api/super-admin/students/[id]/quiz-history
+├ ƒ /api/super-admin/students/[id]/subjects
+├ ƒ /api/super-admin/subjects
+├ ƒ /api/super-admin/subjects/[code]
+├ ƒ /api/super-admin/subjects/grade-map
+├ ƒ /api/super-admin/subjects/plan-access
+├ ƒ /api/super-admin/subjects/violations
+├ ƒ /api/super-admin/subscribers
+├ ƒ /api/super-admin/subscribers/[name]/dead-letters
+├ ƒ /api/super-admin/subscribers/[name]/dead-letters/[event_id]/retry
+├ ƒ /api/super-admin/subscribers/[name]/replay
+├ ƒ /api/super-admin/support
+├ ƒ /api/super-admin/test-accounts
+├ ƒ /api/super-admin/users
+├ ƒ /api/support/ai-issue
+├ ƒ /api/support/ticket
+├ ƒ /api/support/tickets
+├ ƒ /api/support/tickets/[id]
+├ ƒ /api/synthesis/parent-share
+├ ƒ /api/synthesis/state
+├ ƒ /api/teacher/assignments
+├ ƒ /api/teacher/classes
+├ ƒ /api/teacher/classes/[id]
+├ ƒ /api/teacher/classes/[id]/archive
+├ ƒ /api/teacher/classes/available
+├ ƒ /api/teacher/join-class
+├ ƒ /api/teacher/lab-leaderboard
+├ ƒ /api/teacher/messages
+├ ƒ /api/teacher/messages/threads
+├ ƒ /api/teacher/messages/threads/[id]/messages
+├ ƒ /api/teacher/modules
+├ ƒ /api/teacher/parent-notify
+├ ƒ /api/teacher/profile
+├ ƒ /api/teacher/remediation
+├ ƒ /api/teacher/students/[id]/notes
+├ ƒ /api/teacher/subjects
+├ ƒ /api/tenant/config
+├ ƒ /api/tutor/answer
+├ ƒ /api/tutor/next
+├ ƒ /api/v1/account/delete
+├ ƒ /api/v1/admin/audit-logs
+├ ƒ /api/v1/admin/roles
+├ ƒ /api/v1/chapter-readiness
+├ ƒ /api/v1/child/[id]/progress
+├ ƒ /api/v1/child/[id]/report
+├ ƒ /api/v1/class/[id]/analytics
+├ ƒ /api/v1/exam/create
+├ ƒ /api/v1/health
+├ ƒ /api/v1/leaderboard
+├ ƒ /api/v1/leaderboard/class/[classId]
+├ ƒ /api/v1/leaderboard/mastery
+├ ƒ /api/v1/performance
+├ ƒ /api/v1/school/reports
+├ ƒ /api/v1/school/students
+├ ƒ /api/v1/study-plan
+├ ƒ /api/v1/subject-readiness
+├ ƒ /api/v1/upload-assignment
+├ ƒ /api/v2/learn/concept
+├ ƒ /api/v2/learn/curriculum
+├ ƒ /api/v2/parent/children
+├ ƒ /api/v2/parent/encourage
+├ ƒ /api/v2/parent/glance
+├ ƒ /api/v2/quiz/questions
+├ ƒ /api/v2/quiz/start
+├ ƒ /api/v2/quiz/submit
+├ ƒ /api/v2/student/leaderboard
+├ ƒ /api/v2/student/profile
+├ ƒ /api/v2/student/progress
+├ ƒ /api/v2/today
+├ ƒ /auth/callback
+├ ƒ /auth/confirm
+├ ○ /auth/reset
+├ ○ /billing
+├ ○ /careers
+├ ○ /challenge
+├ ○ /contact
+├ ○ /dashboard
+├ ○ /demo
+├ ○ /dev/cosmic-preview
+├ ○ /diagnostic
+├ ○ /dive
+├ ○ /dive/history
+├ ○ /exam-briefing
+├ ○ /exam-prep
+├ ○ /exams
+├ ○ /exams/mock
+├ ƒ /exams/mock/[paperId]
+├ ƒ /exams/mock/[paperId]/results
+├ ○ /for-parents
+├ ○ /for-schools
+├ ○ /for-teachers
+├ ○ /foxy
+├ ○ /help
+├ ○ /hpc
+├ ○ /internal/admin
+├ ○ /join
+├ ƒ /lab-notebook/[studentId]
+├ ○ /leaderboard
+├ ○ /learn
+├ ƒ /learn/[subject]/[chapter]
+├ ○ /learn/foxy-test
+├ ○ /library
+├ ○ /login
+├ ○ /mock-exam
+├ ○ /mock-exam/results
+├ ○ /notifications
+├ ○ /onboarding
+├ ○ /parent
+├ ○ /parent/attendance
+├ ○ /parent/billing
+├ ○ /parent/calendar
+├ ○ /parent/children
+├ ○ /parent/consent
+├ ○ /parent/messages
+├ ○ /parent/notifications
+├ ○ /parent/profile
+├ ○ /parent/reports
+├ ○ /parent/support
+├ ○ /practice
+├ ○ /press
+├ ○ /pricing
+├ ○ /privacy
+├ ○ /product
+├ ○ /profile
+├ ○ /progress
+├ ○ /pyq
+├ ○ /quiz
+├ ○ /quiz/ncert
+├ ○ /refresh
+├ ○ /refunds
+├ ○ /reports
+├ ○ /research
+├ ○ /revision
+├ ○ /scan
+├ ○ /school-admin
+├ ○ /school-admin/ai-assistant
+├ ○ /school-admin/ai-config
+├ ○ /school-admin/announcements
+├ ○ /school-admin/api-keys
+├ ○ /school-admin/audit-log
+├ ○ /school-admin/billing
+├ ○ /school-admin/branding
+├ ○ /school-admin/classes
+├ ○ /school-admin/content
+├ ○ /school-admin/enroll
+├ ○ /school-admin/exams
+├ ○ /school-admin/invite-codes
+├ ○ /school-admin/modules
+├ ○ /school-admin/parents
+├ ○ /school-admin/rbac
+├ ○ /school-admin/reports
+├ ○ /school-admin/reports-depth
+├ ○ /school-admin/setup
+├ ○ /school-admin/staff
+├ ○ /school-admin/students
+├ ○ /school-admin/teachers
+├ ○ /schools
+├ ○ /security
+├ ○ /settings
+├ ○ /settings/account/delete
+├ ○ /simulations
+├ ○ /sitemap.xml
+├ ○ /stem-centre
+├ ○ /study-plan
+├ ƒ /super-admin
+├ ƒ /super-admin/alerts
+├ ƒ /super-admin/alfabot
+├ ƒ /super-admin/alfabot/[sessionId]
+├ ƒ /super-admin/analytics
+├ ƒ /super-admin/analytics-b2b
+├ ƒ /super-admin/bulk-actions
+├ ƒ /super-admin/bulk-upload
+├ ƒ /super-admin/bulk-upload/schools
+├ ƒ /super-admin/cms
+├ ƒ /super-admin/command-center
+├ ƒ /super-admin/content
+├ ƒ /super-admin/demo
+├ ƒ /super-admin/diagnostics
+├ ƒ /super-admin/entitlements
+├ ƒ /super-admin/flags
+├ ƒ /super-admin/foxy-quality
+├ ƒ /super-admin/goal-profiles
+├ ƒ /super-admin/grounding/ai-issues
+├ ƒ /super-admin/grounding/coverage
+├ ƒ /super-admin/grounding/health
+├ ƒ /super-admin/grounding/traces
+├ ƒ /super-admin/grounding/verification-queue
+├ ƒ /super-admin/health
+├ ƒ /super-admin/institutions
+├ ƒ /super-admin/intelligence
+├ ƒ /super-admin/intelligence/geography
+├ ƒ /super-admin/intelligence/revenue
+├ ƒ /super-admin/intelligence/schools
+├ ƒ /super-admin/intelligence/schools/[id]
+├ ƒ /super-admin/invoices
+├ ƒ /super-admin/learning
+├ ƒ /super-admin/login
+├ ƒ /super-admin/logs
+├ ƒ /super-admin/marking-integrity
+├ ƒ /super-admin/marking-integrity/[studentId]
+├ ƒ /super-admin/misconceptions
+├ ƒ /super-admin/module-overrides
+├ ƒ /super-admin/mol-shadow
+├ ƒ /super-admin/oauth-apps
+├ ƒ /super-admin/observability
+├ ƒ /super-admin/observability/channels
+├ ƒ /super-admin/observability/rules
+├ ƒ /super-admin/oracle-health
+├ ƒ /super-admin/rbac
+├ ƒ /super-admin/readiness-rubric
+├ ƒ /super-admin/reports
+├ ƒ /super-admin/sla
+├ ƒ /super-admin/students/[id]
+├ ƒ /super-admin/subjects
+├ ƒ /super-admin/subjects/grade-map
+├ ƒ /super-admin/subjects/plan-access
+├ ƒ /super-admin/subjects/violations
+├ ƒ /super-admin/subscribers
+├ ƒ /super-admin/subscriptions
+├ ƒ /super-admin/support
+├ ƒ /super-admin/users
+├ ƒ /super-admin/view-as/[studentId]/dashboard
+├ ƒ /super-admin/view-as/[studentId]/foxy
+├ ƒ /super-admin/view-as/[studentId]/progress
+├ ƒ /super-admin/view-as/[studentId]/quizzes
+├ ƒ /super-admin/workbench
+├ ○ /support
+├ ƒ /support/[ticket_id]
+├ ○ /support/new
+├ ○ /synthesis
+├ ○ /teacher
+├ ○ /teacher/assignments
+├ ○ /teacher/attendance
+├ ○ /teacher/classes
+├ ○ /teacher/grade-book
+├ ○ /teacher/lab-leaderboard
+├ ○ /teacher/messages
+├ ○ /teacher/onboarding
+├ ○ /teacher/profile
+├ ○ /teacher/reports
+├ ○ /teacher/students
+├ ○ /teacher/submissions
+├ ○ /teacher/worksheets
+├ ○ /terms
+├ ○ /today
+├ ○ /tutor
+└ ○ /welcome
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+EXITCODE:0
+
+==================================================================
+=== node scripts/check-bundle-size.mjs (run immediately after the build above, same working tree, same commit) ===
+==================================================================
+=== Bundle Size Report (gzipped) ===
+
+Shared JS (chunks loaded by >= 95% of 112 rendered pages)
+            71.1 kB  static/chunks/0mu37qzymw588.js
+            58.2 kB  static/chunks/0k0xm-ot9nql_.js
+            38.7 kB  static/chunks/03~yq9q893hmn.js
+            28.7 kB  static/chunks/0vkea0d60xssu.js
+            11.6 kB  static/chunks/04.jga45w72bw.js
+            10.7 kB  static/chunks/18bin1ywp9ulf.js
+            8.6 kB  static/chunks/11mxb08.r.cu9.js
+            8.3 kB  static/chunks/0kp3j9o~lmr4f.js
+            8.1 kB  static/chunks/02qm690gf3y6p.js
+            7.2 kB  static/chunks/0lbzbz47-mayp.js
+            6.2 kB  static/chunks/0gaxws57cdcvk.js
+            5.1 kB  static/chunks/07qf1i37zcnwi.js
+            4.2 kB  static/chunks/turbopack-0w96afl89u647.js
+            4.1 kB  static/chunks/01skgd_.ew6m0.js
+            3.6 kB  static/chunks/0f1eyfr7a~ph7.js
+            3.3 kB  static/chunks/08c3d0x-ofhn8.js
+            1.1 kB  static/chunks/0u8-6~xj016o2.js
+            1.1 kB  static/chunks/05xmeap792p~m.js
+  TOTAL: 279.9 kB / 284 kB --- PASS
+
+Middleware (real chunks referenced by stub)
+            0.4 kB  server\chunks\[root-of-the-server]__0fyutcq._.js
+            115.8 kB  server\chunks\[root-of-the-server]__0hp996.._.js
+  TOTAL: 116.2 kB / 120 kB --- PASS
+
+Per-page bundles (page-specific cost, excluding shared; cap 260 kB)
+  Top 15 heaviest:
+  [ok  ]  198.1 kB  /super-admin/entitlements
+  [ok  ]  159.6 kB  /progress
+  [ok  ]  144.3 kB  /leaderboard
+  [ok  ]  139.9 kB  /super-admin/institutions
+  [ok  ]  138.9 kB  /school-admin
+  [ok  ]  137.8 kB  /internal/admin
+  [ok  ]  137.5 kB  /super-admin
+  [ok  ]  137.4 kB  /super-admin/subscriptions
+  [ok  ]  137.1 kB  /super-admin/command-center
+  [ok  ]  135.2 kB  /super-admin/intelligence/schools
+  [ok  ]  134.9 kB  /super-admin/users
+  [ok  ]  134.6 kB  /super-admin/intelligence/schools/[id]
+  [ok  ]  134.5 kB  /super-admin/grounding/health
+  [ok  ]  134.4 kB  /super-admin/alfabot
+  [ok  ]  134.3 kB  /super-admin/demo
+  (179 pages measured, 0 over cap)
+
+All bundles within P10 budget.
+EXIT:0

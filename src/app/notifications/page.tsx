@@ -106,7 +106,7 @@ export default function NotificationsPage() {
       setUnreadCount(data?.unread_count ?? 0);
     } catch (e) { console.error('Failed to load notifications:', e); setNotifications([]); setFetchError(isHi ? 'सूचनाएं लोड नहीं हो सकीं' : 'Failed to load notifications'); }
     setLoading(false);
-  }, [student]);
+  }, [student, isHi]);
 
   useEffect(() => { if (student) load(); }, [student, load]);
 

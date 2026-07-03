@@ -70,7 +70,7 @@ let _studentLookup: { data: { id: string } | null; error: null } = {
 
 function adminFromMock() {
   const chain: any = {};
-  for (const m of ['select', 'eq', 'in', 'order', 'limit']) {
+  for (const m of ['select', 'eq', 'in', 'order', 'limit', 'is']) {
     chain[m] = (..._args: unknown[]) => chain;
   }
   chain.maybeSingle = () => Promise.resolve(_studentLookup);

@@ -71,22 +71,33 @@ interface LaneQuery {
   eqs: Array<[string, unknown]>;
 }
 
+/** The authenticated auth.uid() — deliberately DIFFERENT from the surrogate
+ *  students.id ('stu-1') below, so any query that leaks the raw auth uid
+ *  into a students.id / *.student_id filter is immediately distinguishable
+ *  from a query using the resolved surrogate id. */
+const AUTH_USER_ID = 'auth-user-1';
+const SURROGATE_STUDENT_ID = 'stu-1';
+
 const dbState = {
   studentRow: {
-    id: 'stu-1',
+    id: SURROGATE_STUDENT_ID,
     grade: '9',
     academic_goal: null as string | null,
     preferred_subject: 'math' as string | null,
   } as Record<string, unknown> | null,
   interventions: { data: [] as unknown, error: null as unknown },
   laneQueries: [] as LaneQuery[],
+  // Argument-sensitive mock instrumentation (regression guard for the
+  // students.id vs students.auth_user_id bug — see REG suite below).
+  studentEqCalls: [] as Array<[string, unknown]>,
+  rpcCalls: [] as Array<[string, unknown]>,
 };
 
 function makeClient() {
   return {
     auth: {
       getUser: async () => ({
-        data: { user: { id: 'auth-user-1' } },
+        data: { user: { id: AUTH_USER_ID } },
         error: null,
       }),
     },
@@ -94,8 +105,22 @@ function makeClient() {
       if (table === 'students') {
         const chain = {
           select: () => chain,
-          eq: () => chain,
-          maybeSingle: async () => ({ data: dbState.studentRow, error: null }),
+          // Argument-sensitive: only `.eq('auth_user_id', AUTH_USER_ID)` can
+          // ever resolve a row. A regression to `.eq('id', userId)` (the
+          // students.id vs auth_user_id bug this suite guards against) makes
+          // this return no row, and every downstream assertion (queue items,
+          // rpc student_id args, lane queries) fails loudly instead of
+          // silently matching against the wrong column.
+          eq: (col: string, val: unknown) => {
+            dbState.studentEqCalls.push([col, val]);
+            const isCorrectQuery = col === 'auth_user_id' && val === AUTH_USER_ID;
+            return {
+              maybeSingle: async () =>
+                isCorrectQuery
+                  ? { data: dbState.studentRow, error: null }
+                  : { data: null, error: null },
+            };
+          },
         };
         return chain;
       }
@@ -121,7 +146,10 @@ function makeClient() {
       // fixtures below (preferred_subject set, no due topics) — fail loudly.
       throw new Error(`unexpected table in rhythm lane test: ${table}`);
     },
-    rpc: async (_name: string) => ({ data: [], error: null }),
+    rpc: async (name: string, args: unknown) => {
+      dbState.rpcCalls.push([name, args]);
+      return { data: [], error: null };
+    },
   };
 }
 
@@ -168,8 +196,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   dbState.laneQueries = [];
   dbState.interventions = { data: [], error: null };
+  dbState.studentEqCalls = [];
+  dbState.rpcCalls = [];
   dbState.studentRow = {
-    id: 'stu-1',
+    id: SURROGATE_STUDENT_ID,
     grade: '9',
     academic_goal: null,
     preferred_subject: 'math',
@@ -257,7 +287,7 @@ describe('GET /api/rhythm/today — lane caps, ordering, splice position', () =>
     expect(dbState.laneQueries).toHaveLength(1);
     expect(dbState.laneQueries[0].eqs).toEqual(
       expect.arrayContaining([
-        ['student_id', 'stu-1'],
+        ['student_id', SURROGATE_STUDENT_ID],
         ['status', 'active'],
       ]),
     );
@@ -291,5 +321,87 @@ describe('GET /api/rhythm/today — lane failures degrade, never 500', () => {
     const { status, items } = await getItems();
     expect(status).toBe(200);
     expect(items).toEqual(baseline);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// REGRESSION — students lookup keys on auth_user_id, never id (Phase 3 Wave 1)
+//
+// The bug: buildRhythmQueue() used to resolve the student row via
+// `.eq('id', userId)` (the raw auth uid), which happened to work only when
+// students.id === auth.uid() by coincidence, and threaded that SAME raw auth
+// uid into get_due_reviews/get_adaptive_questions's p_student_id param. Both
+// FK to students.id, a surrogate uuid DISTINCT from auth_user_id in general —
+// so the queue silently went dark (RPCs return zero rows against a uid that
+// matches no student_id) with no error surfaced anywhere. The fix resolves
+// students.id via `.eq('auth_user_id', userId)` first and threads the
+// RESOLVED SURROGATE id into every downstream student-scoped query.
+//
+// These tests are only able to catch a regression because the students-table
+// mock above is ARGUMENT-SENSITIVE: it resolves a row ONLY for
+// `.eq('auth_user_id', AUTH_USER_ID)` and returns null for any other column
+// (including a reverted `.eq('id', AUTH_USER_ID)`). A revert therefore makes
+// buildRhythmQueue() see no student row → GET 404s with 'no_student_profile'
+// instead of 200, and the RPC-argument assertions below never even get to
+// run against real data.
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('GET /api/rhythm/today — REGRESSION: Daily Rhythm dark when students queried by auth uid', () => {
+  it('students lookup uses .eq("auth_user_id", authUid) — never .eq("id", ...)', async () => {
+    const { status } = await getItems();
+    expect(status).toBe(200);
+
+    expect(dbState.studentEqCalls.length).toBeGreaterThan(0);
+    expect(dbState.studentEqCalls.every(([col]) => col === 'auth_user_id')).toBe(true);
+    expect(dbState.studentEqCalls.some(([col]) => col === 'id')).toBe(false);
+    expect(dbState.studentEqCalls).toContainEqual(['auth_user_id', AUTH_USER_ID]);
+  });
+
+  it('get_due_reviews receives p_student_id === resolved surrogate students.id, not the auth uid', async () => {
+    const { status } = await getItems();
+    expect(status).toBe(200);
+
+    const dueReviewsCall = dbState.rpcCalls.find(([name]) => name === 'get_due_reviews');
+    expect(dueReviewsCall).toBeDefined();
+    const args = dueReviewsCall?.[1] as { p_student_id?: string };
+    expect(args.p_student_id).toBe(SURROGATE_STUDENT_ID);
+    expect(args.p_student_id).not.toBe(AUTH_USER_ID);
+  });
+
+  it('get_adaptive_questions receives p_student_id === resolved surrogate students.id, not the auth uid', async () => {
+    const { status } = await getItems();
+    expect(status).toBe(200);
+
+    const zpdCall = dbState.rpcCalls.find(([name]) => name === 'get_adaptive_questions');
+    expect(zpdCall).toBeDefined();
+    const args = zpdCall?.[1] as { p_student_id?: string };
+    expect(args.p_student_id).toBe(SURROGATE_STUDENT_ID);
+    expect(args.p_student_id).not.toBe(AUTH_USER_ID);
+  });
+
+  it('REGRESSION GUARD: a revert to .eq("id", authUid) would 404 instead of resolving the queue', async () => {
+    // Sanity-check the mock's teeth directly: querying by the WRONG column
+    // (the pre-fix behaviour) must resolve to no row, proving that if the
+    // route regressed to `.eq('id', userId)` this suite's happy-path
+    // assertions above would fail loudly (404 'no_student_profile') rather
+    // than silently passing against a coincidentally-matching id.
+    const client = makeClient() as unknown as {
+      from: (table: string) => {
+        select: () => { eq: (col: string, val: unknown) => { maybeSingle: () => Promise<{ data: unknown; error: unknown }> } };
+      };
+    };
+    const wrongColumnResult = await client
+      .from('students')
+      .select()
+      .eq('id', AUTH_USER_ID)
+      .maybeSingle();
+    expect(wrongColumnResult.data).toBeNull();
+
+    const correctColumnResult = await client
+      .from('students')
+      .select()
+      .eq('auth_user_id', AUTH_USER_ID)
+      .maybeSingle();
+    expect(correctColumnResult.data).toEqual(dbState.studentRow);
   });
 });
