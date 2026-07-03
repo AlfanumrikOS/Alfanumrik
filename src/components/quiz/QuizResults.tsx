@@ -305,7 +305,20 @@ export default function QuizResults({
               // created. P5: grade is always a string "6"-"12" from the auth profile.
               grade: student.grade,
               chapter_number: q.chapter_number || undefined,
-              topic: q.bloom_level || undefined,
+              // Per-question dedupe key (assessment-required). `topic` used to
+              // be q.bloom_level which — combined with the DB's partial unique
+              // index idx_src_u (student_id, topic, card_type) WHERE topic IS
+              // NOT NULL — capped every student at 6 lifetime review cards
+              // across ALL subjects (one per Bloom level, first-writer-wins),
+              // while NULL-bloom cards escaped dedupe entirely (unbounded
+              // duplicates on retakes). The composite subject:chapter:question
+              // key restores true per-item spaced repetition: every distinct
+              // wrong question gets its own card; the same question wrong
+              // twice stays one card via the same index (23505 benign path
+              // below). Always non-null, so the NULL-topic escape is closed.
+              // Bloom level is intentionally dropped from the row — it is
+              // recoverable via the source_id → question_bank.bloom_level join.
+              topic: `${selectedSubject}:${q.chapter_number ?? 'na'}:${q.id}`,
               front_text: q.question_text.slice(0, 1000),
               back_text: `${correctAnswer}${explanation ? `\n\n${explanation}` : ''}`.slice(0, 4000),
               hint: q.hint || undefined,
@@ -327,9 +340,10 @@ export default function QuizResults({
           if (batchError) {
             // idx_src_u is a PARTIAL unique index (student_id, topic,
             // card_type) WHERE topic IS NOT NULL — PostgREST upsert cannot
-            // target a partial index, and one conflicting row (e.g. two wrong
-            // answers sharing a bloom-level topic) aborts the whole batch.
-            // Retry row-by-row and keep whatever the constraint allows.
+            // target a partial index, and one conflicting row (e.g. a retake
+            // racing the client-side dedupe read on the same per-question
+            // topic key) aborts the whole batch. Retry row-by-row and keep
+            // whatever the constraint allows.
             created = 0;
             for (const card of cardsToInsert) {
               const { error: rowError } = await supabase

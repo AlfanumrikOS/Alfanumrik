@@ -7248,6 +7248,30 @@ knowledge states must get measurably different experiences.**
   2026-07-02 enable migration `20260702210000` so a silent default flip is
   caught in PR CI.
 
+**Amendment 2026-07-03 (branch `fix/srs-dedupe-per-question`, assessment-mandated "restore complete SRS"):**
+REG-234(a)'s QuizResults card write now uses a per-question composite dedupe
+key — ``topic = `${subject}:${chapter ?? 'na'}:${question_id}` `` — instead of
+the original `topic = bloom_level`. The bloom key, combined with the DB's
+partial unique index `idx_src_u (student_id, topic, card_type) WHERE topic IS
+NOT NULL` (first-writer-wins), capped every student at **6 lifetime review
+cards across ALL subjects** (one per Bloom level), while NULL-bloom cards
+escaped dedupe entirely (unbounded duplicates on retakes). The composite key
+restores true per-item spaced repetition: every distinct wrong question = its
+own card; the same question wrong twice = one card (client source_id dedupe +
+the existing 23505-benign row-retry path). Topic is now always non-null for
+quiz-wrong cards, closing the NULL-topic escape. Bloom level is dropped from
+the card row — recoverable via the `source_id → question_bank.bloom_level`
+join. No schema/index change. New pins: Section 5b source pin for the
+composite key + absence of `topic: q.bloom_level`
+(`src/__tests__/adaptive-differential.test.ts`); behavioral pins (composite
+key contains the question id; two distinct wrong questions same bloom → two
+cards; same question twice → one card; topic never null) in
+`src/__tests__/components/quiz/QuizResults.flashcard-grade.test.tsx`
+(REG-235's file). The other two writers are intentionally unaffected:
+`/api/learner/cards/create` omits `topic` (NULL — student-created cards stay
+outside `idx_src_u` by design) and the Foxy save-flashcard route keeps its
+accepted topic-level dedupe.
+
 ### Catalog total
 
 Pre-REG-231: 197 entries (through REG-230, production-reference guard).
@@ -7312,6 +7336,16 @@ card text or student identifiers (P13).
   batch-then-row-retry shape and source_id/grade presence at the source level;
   REG-235 pins the behavioral payload/allowlist/logging contract for all
   three writers.
+
+**Amendment 2026-07-03 (branch `fix/srs-dedupe-per-question`):** the
+QuizResults writer's `topic` value changed from `bloom_level` to the composite
+per-question key ``${subject}:${chapter ?? 'na'}:${question_id}`` (see the
+REG-234 amendment above for the full rationale — the bloom key + `idx_src_u`
+capped students at 6 lifetime review cards and NULL-bloom cards escaped dedupe).
+REG-235's payload-key allowlist is unchanged (`topic` stays a pinned key);
+`QuizResults.flashcard-grade.test.tsx` gains a per-question-dedupe describe
+block pinning the composite value, distinct-cards-per-question, retake dedupe,
+and topic-never-null. The other two writers' contracts are untouched.
 
 ### Catalog total
 

@@ -14,6 +14,16 @@
  *   3. Any other insert error → logger.warn with the pg error code ONLY
  *      (P13: no card text, no student identifiers), and the results
  *      screen still renders (card creation is non-blocking).
+ *   4. Per-question SRS dedupe key (fix/srs-dedupe-per-question): `topic`
+ *      is the composite `${subject}:${chapter}:${question_id}` — NEVER the
+ *      bloom level and NEVER null. The old `topic = bloom_level` key,
+ *      combined with the DB partial unique index idx_src_u
+ *      (student_id, topic, card_type) WHERE topic IS NOT NULL, capped every
+ *      student at 6 lifetime review cards across ALL subjects (one per
+ *      Bloom level, first-writer-wins) while NULL-bloom cards escaped
+ *      dedupe entirely. Two distinct wrong questions must always produce
+ *      two cards; the same question wrong twice stays one card (client
+ *      source_id dedupe + 23505-benign race path).
  *
  * Mocking style follows `QuizResults.goal-flag.test.tsx` — hoisted mock
  * factories closing over module-level mutable state.
@@ -43,6 +53,13 @@ const insertState = {
 
 const loggerState = {
   warns: [] as unknown[][],
+};
+
+// Rows the client-side dedupe reads see as already existing in
+// spaced_repetition_cards (byText / bySource queries in QuizResults).
+const queryState = {
+  existingFrontTexts: [] as string[],
+  existingSourceIds: [] as string[],
 };
 
 // ─── Mocks ────────────────────────────────────────────────────────────
@@ -91,8 +108,12 @@ vi.mock('@/lib/sounds', () => ({
 // returns insertState.error; every other query resolves empty.
 vi.mock('@/lib/supabase', () => {
   function makeChain(table: string) {
+    let selectedCols = '';
     const chain: Record<string, unknown> = {
-      select: vi.fn(() => chain),
+      select: vi.fn((cols?: string) => {
+        selectedCols = typeof cols === 'string' ? cols : '';
+        return chain;
+      }),
       eq: vi.fn(() => chain),
       in: vi.fn(() => chain),
       insert: vi.fn(async (payload: unknown) => {
@@ -105,8 +126,17 @@ vi.mock('@/lib/supabase', () => {
       }),
       single: vi.fn(async () => ({ data: null, error: null })),
       maybeSingle: vi.fn(async () => ({ data: null, error: null })),
-      then: (resolve: (r: unknown) => unknown) =>
-        Promise.resolve({ data: [], error: null }).then(resolve),
+      then: (resolve: (r: unknown) => unknown) => {
+        let data: Record<string, unknown>[] = [];
+        if (table === 'spaced_repetition_cards') {
+          if (selectedCols === 'front_text') {
+            data = queryState.existingFrontTexts.map(t => ({ front_text: t }));
+          } else if (selectedCols === 'source_id') {
+            data = queryState.existingSourceIds.map(id => ({ source_id: id }));
+          }
+        }
+        return Promise.resolve({ data, error: null }).then(resolve);
+      },
     };
     return chain;
   }
@@ -216,6 +246,8 @@ beforeEach(() => {
   insertState.payloads = [];
   insertState.error = null;
   loggerState.warns = [];
+  queryState.existingFrontTexts = [];
+  queryState.existingSourceIds = [];
   vi.clearAllMocks();
 });
 
@@ -263,6 +295,9 @@ describe('QuizResults — auto flashcard insert payload (Wave 0 Task 0.7b)', () 
       expect((card.front_text as string).trim().length).toBeGreaterThan(0);
       expect(typeof card.back_text).toBe('string');
       expect((card.back_text as string).trim().length).toBeGreaterThan(0);
+      // Per-question SRS dedupe: topic is the composite key, never null.
+      expect(typeof card.topic).toBe('string');
+      expect((card.topic as string).length).toBeGreaterThan(0);
     }
 
     // Success path still surfaces the existing banner
@@ -280,6 +315,74 @@ describe('QuizResults — auto flashcard insert payload (Wave 0 Task 0.7b)', () 
     // No insert can satisfy the NOT-NULL subject column — no attempt made
     expect(insertState.payloads).toHaveLength(0);
     expect(loggerState.warns).toHaveLength(0);
+  });
+});
+
+describe('QuizResults — per-question SRS dedupe key (fix/srs-dedupe-per-question)', () => {
+  it('writes topic = `${subject}:${chapter}:${question_id}` — the composite key contains the question id', async () => {
+    render(<QuizResults {...makeProps()} />);
+
+    await waitFor(() => {
+      expect(insertState.payloads).toHaveLength(2);
+    });
+    const topics = insertState.payloads.map(c => c.topic);
+    // Exact composite shape: subject : chapter_number : question_bank id
+    expect(topics).toEqual(['math:1:q1', 'math:2:q2']);
+  });
+
+  it('two DIFFERENT wrong questions with the SAME bloom level → two cards with distinct topics (old bloom key would have collapsed them into one)', async () => {
+    const props = makeProps();
+    // Force the collision the old key produced: same bloom_level, same chapter.
+    props.questions = props.questions.map(q => ({
+      ...q,
+      bloom_level: 'remember',
+      chapter_number: 1,
+    }));
+    render(<QuizResults {...props} />);
+
+    await waitFor(() => {
+      expect(insertState.payloads).toHaveLength(2);
+    });
+    const topics = insertState.payloads.map(c => c.topic as string);
+    // Distinct per-question keys despite identical bloom + chapter.
+    expect(new Set(topics).size).toBe(2);
+    expect(topics).toEqual(['math:1:q1', 'math:1:q2']);
+    // The bloom level must never be the dedupe key again.
+    expect(topics).not.toContain('remember');
+  });
+
+  it('same question wrong twice (retake) → one card: client source_id dedupe skips the existing card', async () => {
+    // q1 already has a card from a previous attempt.
+    queryState.existingSourceIds = ['q1'];
+    render(<QuizResults {...makeProps()} />);
+
+    await waitFor(() => {
+      expect(insertState.payloads).toHaveLength(1);
+    });
+    // Only q2's card is inserted; q1 is deduped client-side.
+    expect(insertState.payloads[0].source_id).toBe('q2');
+    expect(insertState.payloads[0].topic).toBe('math:2:q2');
+    // The race path (dedupe read misses, DB catches it) is the 23505-benign
+    // test below — together they pin "same question twice = one card".
+  });
+
+  it('topic is never null/undefined for quiz-wrong cards (the NULL-topic dedupe escape is closed)', async () => {
+    const props = makeProps();
+    // Old code wrote `topic: q.bloom_level || undefined` — an empty bloom
+    // produced a NULL topic, which idx_src_u's WHERE topic IS NOT NULL
+    // predicate exempted from dedupe (unbounded duplicates on retakes).
+    props.questions = props.questions.map(q => ({ ...q, bloom_level: '' }));
+    render(<QuizResults {...props} />);
+
+    await waitFor(() => {
+      expect(insertState.payloads).toHaveLength(2);
+    });
+    for (const card of insertState.payloads) {
+      expect(card.topic).not.toBeNull();
+      expect(card.topic).not.toBeUndefined();
+      expect(typeof card.topic).toBe('string');
+      expect((card.topic as string).length).toBeGreaterThan(0);
+    }
   });
 });
 
