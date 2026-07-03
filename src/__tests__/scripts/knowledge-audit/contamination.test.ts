@@ -16,6 +16,7 @@ import {
   detectContamination,
   FOREIGN_SERIES_MIN_MEMBERS,
   isRepeatedPhraseTitle,
+  TITLE_OVERLAP_MIN_RATIO,
   titleTokenOverlap,
 } from '../../../../scripts/knowledge-audit/contamination';
 import { runStructuralScan, type SeriesMeta } from '../../../../scripts/knowledge-audit/structural-scan';
@@ -150,6 +151,33 @@ describe('signal (c): title garble', () => {
       chunks,
     });
     expect(match.contaminated).toBe(false);
+  });
+
+  // Boundary pin added 2026-07-03 (testing review): the flag fires strictly
+  // BELOW the ratio, so overlap exactly at TITLE_OVERLAP_MIN_RATIO is clean.
+  it(`threshold boundary: overlap exactly at ${TITLE_OVERLAP_MIN_RATIO} is clean; just below flags`, () => {
+    const chunks = [chunk('c1', 'The motion of objects is studied in this chapter.')];
+    // 4 content tokens (motion/force/energy/work), 1 present → exactly 0.25 → clean
+    expect(titleTokenOverlap('Motion Force Energy Work', chunks)).toBe(TITLE_OVERLAP_MIN_RATIO);
+    const atBoundary = detectContamination({
+      chapterNumber: 8,
+      chapterTitle: 'Motion Force Energy Work',
+      series: [],
+      summaryBlockCount: 1,
+      chunks,
+    });
+    expect(atBoundary.contaminated).toBe(false);
+    // 5 content tokens, 1 present → 0.2 < 0.25 → flags
+    expect(titleTokenOverlap('Motion Force Energy Work Power', chunks)).toBe(0.2);
+    const belowBoundary = detectContamination({
+      chapterNumber: 8,
+      chapterTitle: 'Motion Force Energy Work Power',
+      series: [],
+      summaryBlockCount: 1,
+      chunks,
+    });
+    expect(belowBoundary.contaminated).toBe(true);
+    expect(belowBoundary.evidence).toContain('chapter title tokens absent from chunk text');
   });
 
   it('titles with fewer than 2 content tokens yield null overlap (not enough signal — never flags)', () => {

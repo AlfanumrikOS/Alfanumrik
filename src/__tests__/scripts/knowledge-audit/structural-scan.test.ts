@@ -253,6 +253,19 @@ describe('exercises: found-counter vs continuity expectation (machinery moved fr
     expect(deriveExpectedExercises(chunks)).toBe(2);
   });
 
+  // Finding-level pin added 2026-07-03 (testing review): truncation must
+  // SURFACE in the runStructuralScan output itself — found_count is the
+  // distinct-present count (never silently equal to the continuity
+  // expectation) and the notes carry the expected denominator.
+  it('runStructuralScan surfaces truncation in the exercises FINDING (found 4, notes carry "continuity expects 7")', () => {
+    const scan = runStructuralScan(
+      [chunk('ex', 'EXERCISES\n1. Q one.\n2. Q two.\n3. Q three.\n7. Q seven.', 'exercise')],
+      6,
+    );
+    expect(scan.findings.exercises.found_count).toBe(4);
+    expect(scan.findings.exercises.notes).toMatch(/continuity expects 7/);
+  });
+
   it('scanExerciseSets exposes per-set numbers keyed by merged header labels', () => {
     const scan = scanExerciseSets([
       chunk('it', 'Intext Questions\n1. Define.\n2. State.', null),

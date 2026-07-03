@@ -116,19 +116,45 @@ describe('parseSemanticBatchResponse', () => {
     expect(r.dimensions.topics.items).toHaveLength(200);
   });
 
-  it('drops evidence ids not in THIS batch and caps at 5 (defense against hallucinated evidence)', () => {
+  // Re-pinned at v1 strength 2026-07-03 (testing review): the original v2 test
+  // only asserted every-id-is-valid + length ≤ 5, which a parser dropping ALL
+  // evidence would satisfy. Exact equality pins both the drop AND the keep.
+  it('drops evidence ids not in THIS batch and RETAINS the valid ids in order (defense against hallucinated evidence)', () => {
     const r = parsedOrThrow(
       JSON.stringify({
         dimensions: {
-          definitions: {
-            items: ['x'],
-            evidence_chunk_ids: ['c-1', 'HALLUCINATED-9', 'c-2', 'c-3', 'c-1', 'c-2', 'c-3'],
-          },
+          definitions: { items: ['x'], evidence_chunk_ids: ['c-1', 'HALLUCINATED-9', 'c-2'] },
         },
       }),
     );
-    expect(r.dimensions.definitions.evidence_chunk_ids.every((id) => VALID_IDS.includes(id))).toBe(true);
-    expect(r.dimensions.definitions.evidence_chunk_ids.length).toBeLessThanOrEqual(5);
+    expect(r.dimensions.definitions.evidence_chunk_ids).toEqual(['c-1', 'c-2']);
+  });
+
+  it('caps evidence at 5 ids per batch (first 5 valid ids kept)', () => {
+    const many = ['c-1', 'c-2', 'c-3', 'c-4', 'c-5', 'c-6', 'c-7'];
+    const r = parsedOrThrow(
+      JSON.stringify({ dimensions: { definitions: { items: ['x'], evidence_chunk_ids: many } } }),
+      many,
+    );
+    expect(r.dimensions.definitions.evidence_chunk_ids).toEqual(['c-1', 'c-2', 'c-3', 'c-4', 'c-5']);
+  });
+
+  // Re-pinned from v1 parse-response.test.ts (retired): non-array evidence
+  // shapes must degrade to [] without poisoning the items lane.
+  it('tolerates non-array evidence_chunk_ids (string / object) by emitting an empty evidence list', () => {
+    const r = parsedOrThrow(
+      JSON.stringify({
+        dimensions: {
+          definitions: { items: ['a'], evidence_chunk_ids: 'c-1' },
+          concepts: { items: ['b'], evidence_chunk_ids: { id: 'c-2' } },
+        },
+      }),
+    );
+    expect(r.dimensions.definitions.evidence_chunk_ids).toEqual([]);
+    expect(r.dimensions.concepts.evidence_chunk_ids).toEqual([]);
+    // items survive independently of evidence shape
+    expect(r.dimensions.definitions.items).toEqual(['a']);
+    expect(r.dimensions.concepts.items).toEqual(['b']);
   });
 
   it('tolerates a bare items ARRAY for a dimension (no {items, evidence} wrapper)', () => {
