@@ -254,17 +254,31 @@ export default function QuizResults({
 
     (async () => {
       try {
-        // Check for existing cards to avoid duplicates
+        // Check for existing cards to avoid duplicates. Match by question
+        // text (covers legacy cards) AND by question-bank source_id (covers
+        // re-takes after a question's text was edited) so re-taking a quiz
+        // never duplicates a card for the same question.
         const questionTexts = wrongIndices.map(i => questions[i].question_text);
-        const { data: existing } = await supabase
-          .from('spaced_repetition_cards')
-          .select('front_text')
-          .eq('student_id', student.id)
-          .in('front_text', questionTexts);
-        const existingSet = new Set((existing ?? []).map(c => c.front_text));
+        const questionIds = wrongIndices.map(i => questions[i].id).filter(Boolean);
+        const [byText, bySource] = await Promise.all([
+          supabase
+            .from('spaced_repetition_cards')
+            .select('front_text')
+            .eq('student_id', student.id)
+            .in('front_text', questionTexts),
+          supabase
+            .from('spaced_repetition_cards')
+            .select('source_id')
+            .eq('student_id', student.id)
+            .eq('source', 'quiz_wrong_answer')
+            .in('source_id', questionIds),
+        ]);
+        const existingSet = new Set((byText.data ?? []).map(c => c.front_text));
+        const existingSourceSet = new Set((bySource.data ?? []).map(c => c.source_id));
 
         const cardsToInsert = wrongIndices
-          .filter(i => !existingSet.has(questions[i].question_text))
+          .filter(i => !existingSet.has(questions[i].question_text)
+            && !existingSourceSet.has(questions[i].id))
           .map(i => {
             const q = questions[i];
             const r = responses[i];
@@ -280,20 +294,46 @@ export default function QuizResults({
               student_id: student.id,
               card_type: 'review',
               subject: selectedSubject || undefined,
+              // `grade` is NOT NULL with no DB default — omitting it made
+              // every insert fail silently, so quiz-derived cards were never
+              // created. P5: grade is always a string "6"-"12".
+              grade: student.grade,
               chapter_number: q.chapter_number || undefined,
               topic: q.bloom_level || undefined,
               front_text: q.question_text,
               back_text: `${correctAnswer}${explanation ? `\n\n${explanation}` : ''}`,
               hint: q.hint || undefined,
               source: 'quiz_wrong_answer',
-              source_id: results.session_id || undefined,
+              // The quiz-generator review-fill reader resolves source_id as a
+              // question_bank.id. Write the QUESTION id (not the session id)
+              // so this card can actually resurface its question when due.
+              source_id: q.id || undefined,
             };
           });
 
         if (cardsToInsert.length > 0) {
-          await supabase.from('spaced_repetition_cards').insert(cardsToInsert);
-          setFlashcardCount(cardsToInsert.length);
-          setFlashcardBanner(true);
+          const { error: batchError } = await supabase
+            .from('spaced_repetition_cards')
+            .insert(cardsToInsert);
+          let created = cardsToInsert.length;
+          if (batchError) {
+            // idx_src_u is a PARTIAL unique index (student_id, topic,
+            // card_type) WHERE topic IS NOT NULL — PostgREST upsert cannot
+            // target a partial index, and one conflicting row (e.g. two wrong
+            // answers sharing a bloom-level topic) aborts the whole batch.
+            // Retry row-by-row and keep whatever the constraint allows.
+            created = 0;
+            for (const card of cardsToInsert) {
+              const { error: rowError } = await supabase
+                .from('spaced_repetition_cards')
+                .insert(card);
+              if (!rowError) created++;
+            }
+          }
+          if (created > 0) {
+            setFlashcardCount(created);
+            setFlashcardBanner(true);
+          }
         }
       } catch (err) {
         // Non-critical — flashcard creation should not block results display
@@ -305,7 +345,7 @@ export default function QuizResults({
     // serverReview present at first run. Adding the unstable Map would re-fire the
     // effect on every render with no behavior change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [student?.id, questions, responses, results.session_id, selectedSubject, isHi]);
+  }, [student?.id, student?.grade, questions, responses, selectedSubject, isHi]);
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 

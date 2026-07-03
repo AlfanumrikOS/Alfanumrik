@@ -7168,4 +7168,89 @@ coverage for both certification scripts).
 
 ---
 
+## 2026-07-03 — Adaptive-pipeline repair wave: differential-experience invariant — REG-231..REG-234
+
+Source: the 2026-07-02 forensic audit of the adaptive pipeline. Four
+independent defects made the pipeline silently INERT — a struggling learner
+and a thriving learner received byte-identical experiences:
+
+1. **Personalization inversion (quiz-generator, Deno):** a calibrated IRT
+   theta set `difficulty` via the ZPD banding, and the pipeline's
+   `difficulty == null` guards then DISABLED review-fill (step 1) and
+   adaptive selection (step 2) — precisely the students WITH signal lost the
+   adaptive path. Also `selectAdaptiveQuestions` read
+   `concept_mastery.mastery_level` as if numeric; since migration
+   `20260623000000` that column is a TEXT band label
+   ('mastered'/'proficient'/…), so the `< 0.95` filter/sort were nonsense.
+2. **Ghost due-schedule column:** `concept_mastery.next_review_date` is a
+   DATE column with a `CURRENT_DATE + 1` default that NOTHING ever writes —
+   every reader keyed on it saw every touched concept "due" one day after
+   first attempt, forever (SRS degenerated into "any previously touched
+   topic"). Readers affected: Foxy cognitive-context overdue-reviews, the
+   dashboard reviews-due route, the revision overview route, and the
+   `get_adaptive_questions` SQL due-predicate. The real SM-2 schedule lives
+   in `next_review_at` (timestamptz), written by
+   `update_learner_state_post_quiz` on every quiz.
+3. **Dead nextAction:** Foxy's `nextAction` came from a cme-engine
+   `get_next_action` network call that 401'd on EVERY request (service-role
+   key against a user-JWT `auth.getUser()` check), silently swallowed —
+   nextAction was always null. Replaced by the pure, local
+   `deriveNextAction` 5-priority ladder over data `loadCognitiveContext`
+   already loads.
+4. **Broken SRS chain:** QuizResults wrong-answer flashcard inserts silently
+   failed (the NOT-NULL `grade` column was omitted) and wrote
+   `results.session_id` into `source_id` (unresolvable as a
+   `question_bank.id`, so a due card could never resurface its question);
+   the learner-loop due count read the NONEXISTENT `review_cards` table
+   (always errored → 0 → the `review_due_cards` branch was permanently
+   dead).
+
+The repair wave fixed all four; these entries pin the fixes AND the umbrella
+invariant that the fixes exist to serve: **two learners with different
+knowledge states must get measurably different experiences.**
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-231 | `adaptive_differential_experience` | The umbrella differential invariant, proven pure-function-level (no live DB) for synthetic WEAK (low `mastery_probability`, overdue reviews, >=3 conceptual errors, low theta) vs STRONG (all >= 0.85, nothing due, no errors) learners across all three adaptive surfaces: (a) `deriveNextAction` — WEAK gets an actionable intervention from {remediate, revise, re_teach, practice} while STRONG gets `null`, and a strong-but-short-of-mastery learner (0.6 <= m < 0.85) gets `challenge`, never remediation; the 5-priority ladder order is pinned (knowledge gap > overdue review > >=3 conceptual errors > next unmastered) plus every threshold boundary (0.59 practice / 0.6 challenge / 0.84 challenge / 0.85 exactly → mastered → null; 3 conceptual errors re_teach, 2 fall through; re_teach requires an unmastered concept; non-conceptual error types never re_teach; overdue picks weakest mastery first with oldest-`next_review_at` tie-break; gap remediates the prerequisite, falling back to the target when prerequisite is blank). (b) learner-loop `resolveNextLearnerAction` — three learners resolve to THREE distinct actions: empty mastery → `cold_start_diagnostic`, rich mastery + dueReviewCount >= REVIEW_STACKING_THRESHOLD → `review_due_cards` (boundary: threshold-1 does NOT fire), rich mastery + nothing due → `start_quiz` on the WEAKEST chapter (`todays_zpd`); two rich learners with different weakest chapters get different quiz URLs. (c) `selectAdaptiveQuestions` (now flag-ON) — a 0.2-mastery profile and a 0.8-mastery profile yield DISJOINT candidate sets (different chapters, different Bloom composition: weak capped at remember/understand, stronger reaching above), and a fully-mastered learner yields zero adaptive candidates; `FLAG_DEFAULTS[ff_adaptive_live_selection_v1] === true` is pinned. | `src/__tests__/adaptive-differential.test.ts` (Sections 1-3, 21 tests) | E |
+| REG-232 | `theta_difficulty_inversion_fix` | The quiz-generator personalization inversion stays fixed (SOURCE PINS — the Edge Function is Deno and cannot be imported into Vitest; interim pending Deno-level tests): `const difficultyExplicitlyRequested = difficulty != null` is captured BEFORE the theta→difficulty ZPD banding (`!difficultyExplicitlyRequested && abilityEstimate != null`); the review-fill step (`if (!difficultyExplicitlyRequested) {`) and the adaptive-selection step (`if (!difficultyExplicitlyRequested && adaptiveSlots > 0)`) are guarded by CALLER intent, never by `difficulty == null` (the inverted shape is absent from executable code); `selectAdaptiveQuestions` reads the canonical numeric `mastery_probability` (`.lt('mastery_probability', 0.95)` + `.order('mastery_probability'…)`) and the TEXT band `mastery_level` is absent from executable code. Companion app-TS pins: `getQuizQuestionsV2`'s theta read filters `student_learning_profiles` by `(student_id, subject)` — without the subject filter a 2+-subject student made `maybeSingle()` error and theta silently stayed null (`src/lib/supabase.ts`); the app-TS selector's mastery query records `mastery_probability < 0.95` (behavioral, via the fake-client filter log). | `src/__tests__/adaptive-differential.test.ts` (Sections 4 + 5a + the Section-3 column pin, 6 tests) | E |
+| REG-233 | `ghost_next_review_date_repoint` | Every `concept_mastery` due-schedule reader queries the REAL SM-2 column `next_review_at` (timestamptz, written by `update_learner_state_post_quiz`) and never the ghost `next_review_date` DATE column (`CURRENT_DATE + 1` default, no writer — made every touched concept perpetually "due"): `src/app/api/foxy/_lib/cognitive-context.ts` (overdue-reviews query), `src/app/api/dashboard/reviews-due/route.ts`, `src/app/api/revision/overview/route.ts` (all three: `next_review_at` present in executable code, no quoted `next_review_date` column reference outside comments — pins scoped to concept_mastery readers; `spaced_repetition_cards.next_review_date` is a REAL column on a different table and stays legitimate); migration `20260702200000` repoints the `get_adaptive_questions` due predicate to `next_review_at <= now()` (NULL = never scheduled = not due). Also pins that cognitive-context exports the pure `deriveNextAction` ladder and that the retired 401-dead cme-engine `get_next_action` network call (`functions/v1/cme-engine`) is absent — behavioral coverage of the ladder itself lives in REG-231(a). Contract shapes of the two routes (dueCount/oldestDueDate/estimatedMinutes; overview buckets keyed by the UTC date part) are preserved and covered by their existing updated tests (`src/__tests__/api/dashboard-reviews-due.test.ts`). | `src/__tests__/adaptive-differential.test.ts` (Section 5d, 5 tests) | E |
+| REG-234 | `srs_chain_repair` | The wrong-answer→flashcard→review-quiz SRS chain is wired end-to-end: (a) QuizResults card writes carry `source_id = question.id` (a resolvable `question_bank.id` — never `results.session_id`), carry `grade: student.grade` (NOT-NULL column whose omission silently failed every insert; P5 string), dedupe by question text AND by `(source='quiz_wrong_answer', source_id)`, and retry row-by-row when the batch insert hits the partial-unique-index conflict (`idx_src_u` — PostgREST upsert cannot target a partial index, one conflicting row aborted the whole batch) (`src/components/quiz/QuizResults.tsx`); (b) learner-loop `buildLoopAugmentation` counts dues from the LIVE `spaced_repetition_cards` table (`is_active = true`, `next_review_date <= today`, mirroring the `get_review_cards` RPC) and the nonexistent `review_cards` table never comes back (`src/lib/state/learner-loop/resolve-next-action.ts`) — behavioral proof that the un-dead `review_due_cards` branch fires at threshold lives in REG-231(b); (c) the quiz page consumes the adaptive deep links that close the loop: `?qid=<uuid>` behind a strict UUID guard pins a P6-validated question first, `?mode=srs` builds a review quiz from due cards' `source_id`s (`.eq('source','quiz_wrong_answer')`, `.not('source_id','is',null)`), both fire exactly once via `deepLinkFiredRef` and every failure falls back fail-soft to the normal setup screen (`catch` → `setLoading(false)`, no error surface); `pinnedQuestions`/`pinnedOnly` plumbing routes through the NORMAL pipeline (P6 gate, server shuffle, anti-cheat, atomic submit untouched — deep links only choose WHICH questions are served) (`src/app/quiz/page.tsx`). | `src/__tests__/adaptive-differential.test.ts` (Sections 5b + 5c + 5e, 11 tests) | E |
+
+### Invariants covered by this section
+
+- **Differential-experience (P-learner-state umbrella)** — REG-231 is the
+  first catalog entry that asserts the adaptive pipeline's reason to exist:
+  distinct knowledge states MUST produce distinct recommendations, distinct
+  quiz targets, and distinct candidate sets. Any future regression that
+  re-flattens the pipeline (a guard inversion, a ghost column, a dead
+  network call, a silent insert failure) breaks at least one differential
+  assertion even if every component test still passes in isolation.
+- P6 Question quality — REG-234(c): deep-linked questions pass the same
+  `isValidQuestion` P6 gate as pool questions; REG-231(c): every adaptive
+  candidate remains MCQ-shaped (main coverage in
+  `select-adaptive-questions.test.ts`).
+- P5 Grade format — REG-234(a): the repaired card insert writes
+  `student.grade` (string) verbatim.
+- P1/P2/P3/P4-adjacent — REG-234(c) pins that deep links only change WHICH
+  questions are served; scoring, XP, anti-cheat, and atomic submission flow
+  through the unchanged pipeline.
+- Operational-integrity — REG-232's source pins are explicitly INTERIM
+  (Deno-level tests for quiz-generator remain a gap, same class as the
+  REG-118 static-source canary); REG-231's Section-3 pin of
+  `FLAG_DEFAULTS[ff_adaptive_live_selection_v1] === true` documents the
+  2026-07-02 enable migration `20260702210000` so a silent default flip is
+  caught in PR CI.
+
+### Catalog total
+
+Pre-REG-231: 197 entries (through REG-230, production-reference guard).
+Today's adaptive-pipeline repair wave adds REG-231 (umbrella
+differential-experience invariant), REG-232 (theta/difficulty inversion +
+canonical mastery column), REG-233 (ghost `next_review_date` repoint), and
+REG-234 (SRS chain repair: source_id + grade + spaced_repetition_cards +
+deep links).
+**Total catalog: 201 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
 ---
