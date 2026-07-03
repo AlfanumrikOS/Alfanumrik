@@ -24,6 +24,8 @@ export type DailyCronActionName =
   | 'purge_principal_ai'
   | 'first_quiz_nudges_sent'
   | 'twin_snapshots_built'
+  | 'coverage_audit_triggered'
+  | 'question_bank_verify_triggered'
 
 export interface DailyCronActionContext {
   sb: DailyCronClient

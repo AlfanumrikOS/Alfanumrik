@@ -1246,6 +1246,104 @@ async function triggerWebhookDispatcher(_supabase: ReturnType<typeof createClien
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Wave 0 Task 0.2 — grounding coverage-audit trigger (THIN, by design).
+// POSTs to the coverage-audit Edge Function, mirroring the
+// triggerWebhookDispatcher Edge-to-Edge precedent. The target accepts
+// x-cron-secret (CRON_SECRET) OR a service-role bearer; we send both — the
+// bearer also satisfies the platform gateway for Edge-to-Edge invocation.
+// ALL audit math (rag_status recompute, snapshot diff, verified-ratio
+// auto-disable, trace purge) lives in the target — nothing is duplicated
+// here. Deliberately NOT flag-gated: the target is a read-mostly nightly
+// audit with its own idempotent upsert (onConflict: snapshot_date).
+// Failures isolated by Promise.allSettled in the main handler.
+// P13: counts-only logging.
+// ──────────────────────────────────────────────────────────────────────────
+async function triggerCoverageAudit(_supabase: ReturnType<typeof createClient>): Promise<number> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
+  const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
+  if (!supabaseUrl || !cronSecret) {
+    console.warn('triggerCoverageAudit: SUPABASE_URL or CRON_SECRET unavailable — skipping (target rejects unauthenticated calls)')
+    return 0
+  }
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/coverage-audit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-cron-secret': cronSecret,
+        // Edge-to-Edge invocation needs the platform anon/service auth header.
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''}`,
+      },
+      body: JSON.stringify({}),
+    })
+    if (!res.ok) {
+      const t = await res.text().catch(() => '')
+      console.warn(`triggerCoverageAudit: non-OK ${res.status}: ${t.slice(0, 120)}`)
+      return 0
+    }
+    const j = await res.json().catch(() => null) as { regressions?: number; auto_disabled?: number } | null
+    const regressions = j?.regressions ?? 0
+    const autoDisabled = j?.auto_disabled ?? 0
+    // P13: counts only — no grade/subject identifiers in logs.
+    console.log(`daily-cron: coverage_audit — regressions=${regressions} auto_disabled=${autoDisabled}`)
+    return 1 // one completed audit run (0 = skipped/failed)
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e)
+    console.warn(`triggerCoverageAudit: network error: ${m}`)
+    return 0
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Wave 0 Task 0.2 — question-bank retro-verifier trigger (THIN, by design).
+// POSTs to the verify-question-bank Edge Function, mirroring the
+// triggerWebhookDispatcher Edge-to-Edge precedent. The target authenticates
+// via verifyInternalCronRequest, whose x-cron-secret (CRON_SECRET) fast path
+// is checked FIRST — no internal-caller signature is needed on this hop; the
+// service-role bearer rides along for the platform gateway. ALL batch-size /
+// throttle / claim / verdict math lives in the target (claim RPC + TTL make
+// repeated runs idempotent). Deliberately NOT flag-gated here: the target
+// drains only rows already in verification_state='legacy_unverified' — an
+// empty backlog is a natural no-op. Failures isolated by Promise.allSettled
+// in the main handler. P13: counts-only logging.
+// ──────────────────────────────────────────────────────────────────────────
+async function triggerVerifyQuestionBank(_supabase: ReturnType<typeof createClient>): Promise<number> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
+  const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
+  if (!supabaseUrl || !cronSecret) {
+    console.warn('triggerVerifyQuestionBank: SUPABASE_URL or CRON_SECRET unavailable — skipping (target rejects unauthenticated calls)')
+    return 0
+  }
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/verify-question-bank`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-cron-secret': cronSecret,
+        // Edge-to-Edge invocation needs the platform anon/service auth header.
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''}`,
+      },
+      body: JSON.stringify({}),
+    })
+    if (!res.ok) {
+      const t = await res.text().catch(() => '')
+      console.warn(`triggerVerifyQuestionBank: non-OK ${res.status}: ${t.slice(0, 120)}`)
+      return 0
+    }
+    const j = await res.json().catch(() => null) as { claimed?: number; verified?: number; failed?: number } | null
+    const claimed = j?.claimed ?? 0
+    const verified = j?.verified ?? 0
+    // P13: counts only — no question ids in logs.
+    console.log(`daily-cron: verify_question_bank — claimed=${claimed} verified=${verified}`)
+    return claimed
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e)
+    console.warn(`triggerVerifyQuestionBank: network error: ${m}`)
+    return 0
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Phase 3-C — Contract lifecycle automation
 // All three steps are no-ops when ff_school_contracts_v1 is OFF.
 // Failures isolated by Promise.allSettled in the main handler.
@@ -1705,6 +1803,8 @@ Deno.serve(async (req) => {
       adaptive_remediation_triggered: () => triggerAdaptiveRemediation(sb),
       twin_snapshots_built: () => triggerBuildTwinSnapshots(sb),
       webhook_deliveries_dispatched: () => triggerWebhookDispatcher(sb),
+      coverage_audit_triggered: () => triggerCoverageAudit(sb),
+      question_bank_verify_triggered: () => triggerVerifyQuestionBank(sb),
       foxy_expectations_expired: () => expireStaleFoxyExpectations(sb),
       mol_shadow_pairs_graded: () => gradeMolShadowPairs(sb),
       purge_principal_ai: () => purgePrincipalAiTranscripts(sb),

@@ -128,6 +128,16 @@ const CRITICAL_STEPS: ReadonlyArray<readonly [string, string]> = [
   // (spec §9). Asserted thin below (contract 4c).
   ['adaptive_remediation_triggered', 'triggerAdaptiveRemediation'],
   ['purge_principal_ai', 'purgePrincipalAiTranscripts'],
+  // Wave 0 Task 0.2 (Learning Intelligence) — the coverage-audit and
+  // verify-question-bank Edge Functions were fully implemented but scheduled
+  // NOWHERE (not in vercel.json crons, not in this fan-out, no pg_cron row).
+  // These thin Edge-to-Edge triggers (mirroring the triggerWebhookDispatcher
+  // precedent: x-cron-secret + service-role bearer for the platform gateway)
+  // are the ONLY thing that makes them run nightly. Deleting either step
+  // silently stops grounding-coverage drift detection / the legacy_unverified
+  // question-bank drain.
+  ['coverage_audit_triggered', 'triggerCoverageAudit'],
+  ['question_bank_verify_triggered', 'triggerVerifyQuestionBank'],
 ];
 
 for (const [stepName, fnName] of CRITICAL_STEPS) {
