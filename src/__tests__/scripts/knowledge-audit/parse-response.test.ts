@@ -137,6 +137,52 @@ describe('parseAuditResponse', () => {
     expect(missing.ok && !missing.metadataGarbled).toBe(true);
   });
 
+  // Assessment condition 1 (2026-07-03): contamination fields are parsed and
+  // normalized exactly like metadata_garbled — default false / [].
+  it('parses content_contaminated + contamination_evidence when present', () => {
+    const r = parseAuditResponse(
+      minimalResponse({
+        content_contaminated: true,
+        contamination_evidence: ['second SUMMARY block', 'foreign major-number series 13.x'],
+      }),
+      VALID_IDS,
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.contentContaminated).toBe(true);
+    expect(r.contaminationEvidence).toEqual(['second SUMMARY block', 'foreign major-number series 13.x']);
+  });
+
+  it('defaults content_contaminated=false and contamination_evidence=[] when the model omits them', () => {
+    const r = parseAuditResponse(minimalResponse(), VALID_IDS);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.contentContaminated).toBe(false);
+    expect(r.contaminationEvidence).toEqual([]);
+  });
+
+  it('coerces content_contaminated "true" string; treats other truthy junk as false', () => {
+    const asString = parseAuditResponse(minimalResponse({ content_contaminated: 'true' }), VALID_IDS);
+    expect(asString.ok && asString.contentContaminated).toBe(true);
+    const junk = parseAuditResponse(minimalResponse({ content_contaminated: 'severe' }), VALID_IDS);
+    expect(junk.ok && !junk.contentContaminated).toBe(true);
+  });
+
+  it('sanitizes contamination_evidence: strings only, blanks dropped, capped at 50, labels truncated to 200', () => {
+    const entries = ['second SUMMARY block', '', 7, 'z'.repeat(500), ...Array.from({ length: 60 }, (_, i) => `signal ${i}`)];
+    const r = parseAuditResponse(minimalResponse({ content_contaminated: true, contamination_evidence: entries }), VALID_IDS);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.contaminationEvidence.length).toBeLessThanOrEqual(50);
+    expect(r.contaminationEvidence[0]).toBe('second SUMMARY block');
+    expect(r.contaminationEvidence).toContain('7'); // coerced, non-blank
+    const long = r.contaminationEvidence.find((s) => s.startsWith('zzz'));
+    expect(long && long.length).toBeLessThanOrEqual(200);
+    // non-array evidence tolerated as empty
+    const nonArray = parseAuditResponse(minimalResponse({ contamination_evidence: 'not an array' }), VALID_IDS);
+    expect(nonArray.ok && nonArray.contaminationEvidence).toEqual([]);
+  });
+
   it('sanitizes suspected_missing: strings only, blanks dropped, entries capped, labels truncated', () => {
     const entries = [
       'Fig. 4.2 missing (numbering gap)',

@@ -13,6 +13,9 @@
  * - evidence_chunk_ids is a subset of the input chunk ids (foreign ids are
  *   DROPPED with a note — defense against hallucinated evidence), capped at 5.
  * - notes never carry chunk text longer than a short label (truncated).
+ * - chapter-level contamination fields (content_contaminated /
+ *   contamination_evidence) are normalized alongside metadata_garbled —
+ *   defaulting to false / [] when the model omits them.
  *
  * No I/O, no network. Unit-tested in
  * src/__tests__/scripts/knowledge-audit/parse-response.test.ts.
@@ -29,6 +32,10 @@ export interface ParsedAudit {
   ok: true;
   dimensions: Record<Dimension, DimensionFinding>;
   metadataGarbled: boolean;
+  /** Chapter mixes foreign-chapter/book content (count-as-is + flag, never abstain). */
+  contentContaminated: boolean;
+  /** Short labels only (e.g. "second SUMMARY block") — never passage text (P13). */
+  contaminationEvidence: string[];
   suspectedMissing: string[];
 }
 
@@ -120,15 +127,20 @@ export function parseAuditResponse(raw: string, validChunkIds: string[]): ParseR
   }
 
   const metadataGarbled = obj.metadata_garbled === true || obj.metadata_garbled === 'true';
+  const contentContaminated = obj.content_contaminated === true || obj.content_contaminated === 'true';
 
-  let suspectedMissing: string[] = [];
-  if (Array.isArray(obj.suspected_missing)) {
-    suspectedMissing = (obj.suspected_missing as unknown[])
-      .map((x) => String(x ?? '').trim())
-      .filter(Boolean)
-      .slice(0, MAX_SUSPECTED_ENTRIES)
-      .map((s) => (s.length > MAX_SUSPECTED_LABEL_CHARS ? `${s.slice(0, MAX_SUSPECTED_LABEL_CHARS - 1)}…` : s));
-  }
+  const suspectedMissing = sanitizeLabelArray(obj.suspected_missing);
+  const contaminationEvidence = sanitizeLabelArray(obj.contamination_evidence);
 
-  return { ok: true, dimensions, metadataGarbled, suspectedMissing };
+  return { ok: true, dimensions, metadataGarbled, contentContaminated, contaminationEvidence, suspectedMissing };
+}
+
+/** Normalize a label array: strings only, blanks dropped, capped, truncated. */
+function sanitizeLabelArray(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return (raw as unknown[])
+    .map((x) => String(x ?? '').trim())
+    .filter(Boolean)
+    .slice(0, MAX_SUSPECTED_ENTRIES)
+    .map((s) => (s.length > MAX_SUSPECTED_LABEL_CHARS ? `${s.slice(0, MAX_SUSPECTED_LABEL_CHARS - 1)}…` : s));
 }

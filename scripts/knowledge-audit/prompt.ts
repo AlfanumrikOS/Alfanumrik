@@ -4,7 +4,8 @@
  * Builds the LLM prompt for the chunk-pass knowledge audit: given the ordered
  * chunk texts (id + text + type) for ONE chapter plus the known concept list,
  * produce a strict-JSON evidence-grounded count for each of the 22 CHUNK_PASS
- * dimensions, plus chapter-level `metadata_garbled` and `suspected_missing`.
+ * dimensions, plus chapter-level `metadata_garbled`, `content_contaminated`
+ * (+ `contamination_evidence`) and `suspected_missing`.
  *
  * DESIGN PRINCIPLES (P12 / evidence-grounded counting):
  * - Count ONLY what is present in the provided chunks. The prompt explicitly
@@ -41,7 +42,7 @@ const DIMENSION_RULES: Record<(typeof CHUNK_PASS_DIMENSIONS)[number], string> = 
   topics:
     'topics: count major numbered sections of the chapter (the "N.M" level, e.g. "4.1", "4.2").',
   subtopics:
-    'subtopics: count sub-sections below the topic level (the "N.M.K" level, e.g. "4.2.1") or clearly-marked sub-headers inside a topic.',
+    'subtopics: count named sub-section headings below the topic level, whether numbered (the "N.M.K" level, e.g. "4.2.1") or not — new-generation NCERT (Curiosity) books carry NO N.M.K numbering, so count sub-headings by typography/structure (a short title line introducing a sub-section). When the book genuinely has none, report 0 with the note "book has no numbered subtopics".',
   concepts:
     'concepts: count distinct named concepts actually developed in the text (use the KNOWN CONCEPTS list as a cross-check, but count what the CHUNKS develop — a known concept absent from the chunks must NOT be counted; list it in suspected_missing instead).',
   learning_objectives:
@@ -61,7 +62,7 @@ const DIMENSION_RULES: Record<(typeof CHUNK_PASS_DIMENSIONS)[number], string> = 
   solved_examples:
     'solved_examples: of the examples, count ONLY those whose worked solution with steps is PRESENT in the chunks (e.g. "Solution:" followed by working). An example statement without its solution text does NOT count as a solved example.',
   exercises:
-    'exercises: count INDIVIDUAL questions in end-of-chapter "Exercises" / "Questions" sections (numbered items 1., 2., 3. ...). Count the questions, not the section. In-text "check your progress" questions belong here only if they are in a marked question block.',
+    'exercises: count INDIVIDUAL questions across ALL question sets — mid-chapter "Exercise N.M" sets, end-of-chapter "Exercises" / "Questions" / "Let us enhance our learning" sections, AND "Intext Questions" blocks — as ONE total question count. Each set restarts its numbering at 1, so SUM across sets (Exercise 6.1 with 6 questions + Exercise 6.2 with 6 questions = 12, not 6). Give the per-set breakdown in notes. Count the questions, not the sections.',
   activities:
     'activities: count DISTINCT "Activity N.M" items (e.g. Activity 4.1, Activity 4.2). A later reference back to an activity does NOT count again — distinct activity numbers only.',
   real_world_applications:
@@ -75,7 +76,7 @@ const DIMENSION_RULES: Record<(typeof CHUNK_PASS_DIMENSIONS)[number], string> = 
   captions:
     'captions: count figure/table caption lines ("Fig. 4.2: ..." caption text, "Table 4.1: ..." titles).',
   summary:
-    'summary: if a "Summary" / "What you have learnt" section is present, count its bullet/point items; if present but unstructured report 1; if absent report 0.',
+    'summary: count the number of "Summary" / "What you have learnt" BLOCKS present (normally 0 or 1 — a count of 2 or more is a contamination signal; also set content_contaminated). Report the block\'s bullet/point count in notes, NOT in found_count.',
   keywords:
     'keywords: count terms in an explicit "Keywords"/"New terms" list, or bolded newly-introduced terms if no list exists.',
 };
@@ -85,7 +86,7 @@ export function buildOutputContract(): string {
   const dims = CHUNK_PASS_DIMENSIONS.map(
     (d) => `"${d}":{"found_count":0,"evidence_chunk_ids":[],"notes":""}`,
   ).join(',');
-  return `{"dimensions":{${dims}},"metadata_garbled":false,"suspected_missing":[]}`;
+  return `{"dimensions":{${dims}},"metadata_garbled":false,"content_contaminated":false,"contamination_evidence":[],"suspected_missing":[]}`;
 }
 
 export function buildAuditSystemPrompt(ctx: AuditPromptContext): string {
@@ -97,6 +98,7 @@ export function buildAuditSystemPrompt(ctx: AuditPromptContext): string {
     'ABSOLUTE COUNTING RULES:',
     '- Count ONLY what is present in the provided chunk texts. NEVER infer counts from the chapter title, the known-concept list alone, or your own knowledge of NCERT books. If it is not in the chunks, it was not found.',
     '- Distinct-item counting: a numbered item (Activity 4.1, Fig. 4.2, Example 3, Table 4.1) counts ONCE no matter how many times it is mentioned or referenced.',
+    '- Chunks OVERLAP: the ingestion uses sliding-window chunking, so the SAME passage may appear in 2-3 consecutive chunks. Count each distinct item/passage ONCE across ALL chunks. This is especially binding for unnumbered dimensions (definitions, common_mistakes, real_world_applications, image_explanations, learning_objectives, summary bullets): repeated identical or near-identical text is the SAME instance, never a new one.',
     '- evidence_chunk_ids: for each dimension, list UP TO 5 chunk ids (from the ids given in the user message) where instances of that dimension appear. IDs ONLY — never quote chunk text in any field.',
     '- notes: one short sentence max (counting caveats only — no quoted content).',
     '- If a dimension has zero instances in the chunks, report found_count 0 (with an optional note). Reporting an honest 0 is correct; guessing is a failure.',
@@ -106,6 +108,8 @@ export function buildAuditSystemPrompt(ctx: AuditPromptContext): string {
     '',
     'CHAPTER-LEVEL FIELDS:',
     '- metadata_garbled: true if the chunk texts are substantially OCR-corrupted/unreadable (replacement characters, shattered script, scrambled ordering) such that counts are unreliable; false otherwise.',
+    '- content_contaminated: true if the chunks mix in material from a DIFFERENT chapter or book. What contamination looks like: more than one "Summary" / "What you have learnt" block; a figure/example/table/exercise series whose MAJOR number differs from this chapter (e.g. Fig. 13.x or Example 13.x inside Chapter 6); running page-headers naming a different book or subject; an abrupt subject shift mid-chapter (e.g. geometry text suddenly becomes mensuration). Still COUNT everything you find (counts are evidence) — contamination is a flag, not a reason to abstain.',
+    '- contamination_evidence: when content_contaminated is true, an array of SHORT LABELS naming the signals — e.g. "second SUMMARY block", "foreign major-number series 13.x", "multiple running headers", "abrupt subject shift". Labels only — never passage text. Empty array when false.',
     '- suspected_missing: an array of SHORT LABELS for assets the text REFERENCES but which are absent from the chunks — e.g. "Activity 4.5 referenced but not present", "Fig. 4.2 missing (numbering gap 4.1 -> 4.3)", "Exercise section truncated after Q7". Labels only — never include passage text.',
     '',
     'OUTPUT FORMAT: Return ONLY a single JSON object, no markdown fences, no commentary, with EXACTLY this shape (every dimension key present):',

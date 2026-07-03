@@ -20,6 +20,11 @@
  * P13: evidence stores chunk IDs only — NEVER chunk text. suspected_missing
  * stores short labels only. No PII exists anywhere in this pipeline.
  *
+ * CONTAMINATION: chapters the model flags as content_contaminated keep their
+ * counts (count-as-is + flag, never abstain) and additionally emit one JSONL
+ * line to scripts/knowledge-audit/output/hygiene-queue.jsonl — the input to
+ * future syllabus-row-split / re-ingest corpus-hygiene work.
+ *
  * USAGE:
  *   npx tsx scripts/knowledge-audit/run-audit.ts --grade 6 --subject science --chapter 4
  *   npx tsx scripts/knowledge-audit/run-audit.ts --grade 6 --subject science            (all chapters of subject)
@@ -41,8 +46,8 @@
 import { config as loadEnv } from 'dotenv';
 loadEnv({ path: '.env.local' });
 
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 import {
   ALL_DIMENSIONS,
@@ -87,6 +92,27 @@ const PG_HEADERS = {
 };
 
 const FIXTURE_PATH = join('scripts', 'knowledge-audit', 'fixtures', 'pilot-ground-truth-v1.json');
+
+/**
+ * Corpus-hygiene queue: one JSONL line per contaminated chapter — the input to
+ * future syllabus-row-split / re-ingest work. Labels + ids only (P13).
+ */
+const HYGIENE_QUEUE_PATH = join('scripts', 'knowledge-audit', 'output', 'hygiene-queue.jsonl');
+
+function appendHygieneQueue(entry: {
+  syllabus_id: string;
+  grade: string; // P5: string grade
+  subject: string;
+  chapter_number: number;
+  evidence: string[];
+}): void {
+  try {
+    mkdirSync(dirname(HYGIENE_QUEUE_PATH), { recursive: true });
+    appendFileSync(HYGIENE_QUEUE_PATH, `${JSON.stringify(entry)}\n`, 'utf8');
+  } catch (e) {
+    console.error(`    hygiene-queue append failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -301,7 +327,8 @@ async function executeScanSpec(spec: ScanSpec): Promise<{ found: number; evidenc
       headers: { Prefer: 'count=exact' },
     });
     if (r.status !== 200 && r.status !== 206) {
-      return { found: 0, evidence: [], note: `scan failed on ${step.table} (HTTP ${r.status}) — recorded 0` };
+      // keep the spec's standing caveat (e.g. the competency dead-source note)
+      return { found: 0, evidence: [], note: `${spec.note ? `${spec.note} | ` : ''}scan failed on ${step.table} (HTTP ${r.status}) — recorded 0` };
     }
     const rows = JSON.parse(r.body) as Array<{ id: string }>;
     const contentRange = r.headers.get('content-range'); // e.g. "0-4/123"
@@ -389,6 +416,19 @@ async function auditChapter(args: Args, ch: SyllabusChapter, fixture: GroundTrut
   if (!parsed || !parsed.ok) {
     out.reasons.push('unparseable model response after retries');
     return out;
+  }
+
+  // Contamination is a first-class finding: counts stay (evidence), the chapter
+  // is flagged and queued for corpus-hygiene work (syllabus-row split / re-ingest).
+  if (parsed.contentContaminated) {
+    console.error(`    CONTAMINATED: ${parsed.contaminationEvidence.join('; ') || '(no evidence labels)'} — queued to ${HYGIENE_QUEUE_PATH}`);
+    appendHygieneQueue({
+      syllabus_id: ch.id,
+      grade: ch.grade,
+      subject: ch.subject_code,
+      chapter_number: ch.chapter_number,
+      evidence: parsed.contaminationEvidence,
+    });
   }
 
   // Assemble all 31 rows

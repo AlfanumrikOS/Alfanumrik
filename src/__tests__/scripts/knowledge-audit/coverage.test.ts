@@ -10,7 +10,9 @@ import {
   buildChunkPassRows,
   buildGeneratedContentFilterSpec,
   buildQuestionBankFilterSpec,
+  COMPETENCY_DEAD_SOURCE_NOTE,
   computeCoverage,
+  CONTAMINATED_LABEL,
   deriveExpectedCounts,
   deriveExpectedExercises,
   GARBLED_LABEL,
@@ -161,6 +163,45 @@ describe('deriveExpectedExercises (question-number continuity)', () => {
     ];
     expect(deriveExpectedExercises(chunks)).toBe(2);
   });
+
+  // Assessment condition 4c (2026-07-03): question SETS restart numbering at 1,
+  // so the chapter expectation SUMS across distinct sets — not max of one pool.
+  it('SUMS across distinct Exercise N.M sets (6.1 with 6 Qs + 6.2 with 6 Qs -> 12, not 6)', () => {
+    const chunks = [
+      chunk('ex1', 'EXERCISE 6.1\n1. Q\n2. Q\n3. Q\n4. Q\n5. Q\n6. Q', 'exercise'),
+      chunk('ex2', 'EXERCISE 6.2\n1. Q\n2. Q\n3. Q\n4. Q\n5. Q\n6. Q', 'exercise'),
+    ];
+    expect(deriveExpectedExercises(chunks)).toBe(12);
+  });
+
+  it('Intext Questions count as their own set and are summed with end-of-chapter Exercises', () => {
+    const chunks = [
+      chunk('it', 'Intext Questions\n1. Define molarity.\n2. State Henry law.', null),
+      chunk('ex', 'EXERCISES\n1. Q\n2. Q\n3. Q\n4. Q\n5. Q', 'exercise'),
+    ];
+    expect(deriveExpectedExercises(chunks)).toBe(7);
+  });
+
+  it('"Let us enhance our learning" (new-NCERT exercises name) is recognised as a question set', () => {
+    const chunks = [chunk('c1', 'Let us enhance our learning\n1. Q one.\n2. Q two.\n3. Q three.', null)];
+    expect(deriveExpectedExercises(chunks)).toBe(3);
+  });
+
+  it('overlap-duplicated set headers MERGE by label instead of double-counting (same EXERCISE 6.1 stored twice)', () => {
+    const chunks = [
+      chunk('a', 'EXERCISE 6.1\n1. Q\n2. Q\n3. Q', 'exercise'),
+      chunk('b', 'EXERCISE 6.1\n2. Q\n3. Q\n4. Q', 'exercise'), // sliding-window overlap
+    ];
+    expect(deriveExpectedExercises(chunks)).toBe(4);
+  });
+
+  it('an unreliable set (numbering not starting near 1) is skipped without poisoning reliable sets', () => {
+    const chunks = [
+      chunk('ex1', 'EXERCISE 6.1\n1. Q\n2. Q\n3. Q', 'exercise'),
+      chunk('ex2', 'EXERCISE 6.2\n9. stray\n12. stray', 'exercise'),
+    ];
+    expect(deriveExpectedExercises(chunks)).toBe(3);
+  });
 });
 
 describe('buildQuestionBankFilterSpec (pure query builder)', () => {
@@ -192,6 +233,22 @@ describe('buildQuestionBankFilterSpec (pure query builder)', () => {
     expect(buildQuestionBankFilterSpec('competency_questions', REF).steps[0].filters).toContainEqual({
       column: 'cbse_question_type', op: 'ilike', value: '%competency%',
     });
+  });
+
+  // Assessment condition 3 (2026-07-03): the competency scan is a DEAD SOURCE
+  // today — the honest caveat must ship with every row (mind_maps style).
+  it('competency_questions carries the dead-source note on every spec (0 is unfalsifiable)', () => {
+    const spec = buildQuestionBankFilterSpec('competency_questions', REF);
+    expect(spec.note).toBe(COMPETENCY_DEAD_SOURCE_NOTE);
+    expect(spec.note).toMatch(/no writer currently populates cbse_question_type/);
+    expect(spec.note).toMatch(/0 is unfalsifiable/);
+    expect(spec.note).toMatch(/cbse_competency_map/);
+    // the scan itself is kept (future-proof wiring)
+    expect(spec.steps).toHaveLength(1);
+    // no other question-bank dimension gets the note
+    for (const dim of ['hots_questions', 'case_based_questions', 'assertion_reason_questions', 'pyqs'] as const) {
+      expect(buildQuestionBankFilterSpec(dim, REF).note).toBeUndefined();
+    }
   });
 });
 
@@ -290,5 +347,63 @@ describe('buildChunkPassRows (row assembly, P13)', () => {
     if (!garbled.ok) throw new Error('fixture parse failed');
     const rows = buildChunkPassRows({ syllabusId: 'syl-1', parsed: garbled, chunks });
     expect(rows.every((r) => r.suspected_missing.includes(GARBLED_LABEL))).toBe(true);
+  });
+
+  // Assessment condition 1 (2026-07-03): contamination = count-as-is + flag.
+  // Counts stay as evidence; every row is tainted with CONTAMINATED_LABEL; and
+  // coverage_pct is NULLed for the series-numbered dimensions whose N.M
+  // denominators a foreign chapter pollutes.
+  describe('content_contaminated handling', () => {
+    const contaminated = parseAuditResponse(
+      JSON.stringify({
+        dimensions: {
+          activities: { found_count: 2, evidence_chunk_ids: ['c-1'], notes: '' },
+          diagrams: { found_count: 2, evidence_chunk_ids: ['c-2'], notes: '' },
+          definitions: { found_count: 5, evidence_chunk_ids: ['c-1'], notes: '' },
+        },
+        metadata_garbled: false,
+        content_contaminated: true,
+        contamination_evidence: ['second SUMMARY block', 'foreign major-number series 13.x'],
+        suspected_missing: [],
+      }),
+      ['c-1', 'c-2'],
+    );
+    if (!contaminated.ok) throw new Error('fixture parse failed');
+
+    it('taints every chunk-pass row with CONTAMINATED_LABEL while counts remain', () => {
+      const rows = buildChunkPassRows({ syllabusId: 'syl-1', parsed: contaminated, chunks });
+      expect(rows.every((r) => r.suspected_missing.includes(CONTAMINATED_LABEL))).toBe(true);
+      expect(rows.find((r) => r.dimension === 'activities')!.found_count).toBe(2);
+      expect(rows.find((r) => r.dimension === 'diagrams')!.found_count).toBe(2);
+      expect(rows.find((r) => r.dimension === 'definitions')!.found_count).toBe(5);
+    });
+
+    it('NULLs coverage_pct for series-numbered dimensions but keeps expected_count as evidence', () => {
+      const rows = buildChunkPassRows({ syllabusId: 'syl-1', parsed: contaminated, chunks });
+      for (const dim of ['diagrams', 'activities', 'tables', 'examples', 'exercises'] as const) {
+        expect(rows.find((r) => r.dimension === dim)!.coverage_pct).toBeNull();
+      }
+      // the denominators themselves stay recorded (trust drops, evidence remains)
+      const diagrams = rows.find((r) => r.dimension === 'diagrams')!;
+      expect(diagrams.expected_count).toBe(3); // Fig 4.1 -> 4.3 gap in the fixture chunks
+      expect(diagrams.found_count).toBe(2);
+    });
+
+    it('uncontaminated chapters keep series coverage (regression guard on the clean path)', () => {
+      const rows = buildChunkPassRows({ syllabusId: 'syl-1', parsed, chunks });
+      expect(rows.find((r) => r.dimension === 'diagrams')!.coverage_pct).toBe(66.67);
+      expect(rows.every((r) => !r.suspected_missing.includes(CONTAMINATED_LABEL))).toBe(true);
+    });
+
+    it('garbled + contaminated stack both labels', () => {
+      const both = parseAuditResponse(
+        JSON.stringify({ dimensions: {}, metadata_garbled: true, content_contaminated: true }),
+        ['c-1'],
+      );
+      if (!both.ok) throw new Error('fixture parse failed');
+      const rows = buildChunkPassRows({ syllabusId: 'syl-1', parsed: both, chunks });
+      expect(rows.every((r) => r.suspected_missing.includes(GARBLED_LABEL))).toBe(true);
+      expect(rows.every((r) => r.suspected_missing.includes(CONTAMINATED_LABEL))).toBe(true);
+    });
   });
 });

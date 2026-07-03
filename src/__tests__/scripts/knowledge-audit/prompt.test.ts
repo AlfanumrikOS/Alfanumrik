@@ -94,6 +94,60 @@ describe('buildAuditSystemPrompt', () => {
     const parsed = JSON.parse(contract);
     expect(Object.keys(parsed.dimensions)).toHaveLength(22);
   });
+
+  // Assessment condition 1 (2026-07-03): contamination is a first-class
+  // chapter-level output mirroring metadata_garbled — count-as-is + flag.
+  it('output contract carries content_contaminated (default false) + contamination_evidence (default [])', () => {
+    const contract = buildOutputContract();
+    expect(contract).toContain('"content_contaminated":false');
+    expect(contract).toContain('"contamination_evidence":[]');
+    const parsed = JSON.parse(contract);
+    expect(parsed.content_contaminated).toBe(false);
+    expect(parsed.contamination_evidence).toEqual([]);
+  });
+
+  it('teaches the model what contamination looks like, and to count-as-is + flag (never abstain)', () => {
+    expect(prompt).toMatch(/content_contaminated/);
+    expect(prompt).toMatch(/more than one "Summary"/i);
+    expect(prompt).toMatch(/MAJOR number differs from this chapter/i);
+    expect(prompt).toMatch(/running page-headers naming a different book/i);
+    expect(prompt).toMatch(/abrupt subject shift/i);
+    expect(prompt).toMatch(/contamination is a flag, not a reason to abstain/i);
+    // evidence stays short labels only (P13)
+    expect(prompt).toMatch(/second SUMMARY block/);
+    expect(prompt).toMatch(/foreign major-number series 13\.x/);
+    expect(prompt).toMatch(/multiple running headers/);
+  });
+
+  // Assessment condition 2 (2026-07-03): the corpus stores each passage 2-3x
+  // (sliding-window chunking) — dedup across chunks is an explicit rule.
+  it('instructs overlap-dedup: same passage across chunks counts ONCE, binding for unnumbered dimensions', () => {
+    expect(prompt).toMatch(/Chunks OVERLAP/i);
+    expect(prompt).toMatch(/ONCE across ALL chunks/i);
+    for (const d of ['definitions', 'common_mistakes', 'real_world_applications', 'image_explanations', 'learning_objectives']) {
+      expect(prompt).toMatch(new RegExp(`OVERLAP[\\s\\S]*${d}`));
+    }
+  });
+
+  // Assessment condition 4 (2026-07-03): prompt↔fixture convention alignment.
+  it('summary counts BLOCKS (0/1 normal, 2+ = contamination signal) with bullets relegated to notes', () => {
+    expect(prompt).toMatch(/summary: count the number of "Summary" \/ "What you have learnt" BLOCKS/);
+    expect(prompt).toMatch(/2 or more is a contamination signal/i);
+    expect(prompt).toMatch(/bullet\/point count in notes, NOT in found_count/i);
+  });
+
+  it('subtopics counts named sub-section headings numbered or not (Curiosity books have no N.M.K numbering)', () => {
+    expect(prompt).toMatch(/new-generation NCERT \(Curiosity\) books carry NO N\.M\.K numbering/i);
+    expect(prompt).toMatch(/book has no numbered subtopics/);
+  });
+
+  it('exercises counts ALL question sets (mid-chapter + end-of-chapter + Intext Questions) summed, breakdown in notes', () => {
+    expect(prompt).toMatch(/count INDIVIDUAL questions across ALL question sets/i);
+    expect(prompt).toMatch(/Intext Questions/);
+    expect(prompt).toMatch(/Let us enhance our learning/);
+    expect(prompt).toMatch(/Exercise 6\.1 with 6 questions \+ Exercise 6\.2 with 6 questions = 12, not 6/);
+    expect(prompt).toMatch(/per-set breakdown in notes/i);
+  });
 });
 
 describe('buildAuditUserMessage', () => {

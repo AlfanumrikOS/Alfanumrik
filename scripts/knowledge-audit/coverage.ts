@@ -16,7 +16,9 @@
  *   builders returning a declarative filter spec (no I/O) that run-audit.ts
  *   executes against PostgREST. Keeping them pure makes the routing unit-testable.
  * - buildChunkPassRows: assembles the 22 chunk_pass InventoryRows from a
- *   parsed model response (evidence ids only — P13).
+ *   parsed model response (evidence ids only — P13). Garbled/contaminated
+ *   chapters keep their counts but carry taint labels; contamination also
+ *   NULLs coverage_pct on the series-numbered dimensions.
  *
  * No I/O, no network. Unit-tested in
  * src/__tests__/scripts/knowledge-audit/coverage.test.ts.
@@ -86,30 +88,76 @@ const SERIES_PATTERNS: Partial<Record<Dimension, RegExp>> = {
   examples: /\bExample\s+(\d{1,2})\.(\d{1,3})\b/gi,
 };
 
-/** Is this chunk plausibly part of an end-of-chapter exercise block? */
+/** Is this chunk plausibly part of an exercise / question-set block? */
 function isExerciseChunk(c: AuditChunk): boolean {
   if (c.content_type && /exercise|question/i.test(c.content_type)) return true;
-  return /\bEXERCISES?\b/i.test(c.chunk_text.slice(0, 400)) || /\bExercises\b/.test(c.chunk_text);
+  return (
+    /\bEXERCISES?\b/i.test(c.chunk_text.slice(0, 400)) ||
+    /\bExercises\b/.test(c.chunk_text) ||
+    /\bIntext\s+Questions?\b/i.test(c.chunk_text) ||
+    /\bLet us enhance our learning\b/i.test(c.chunk_text)
+  );
 }
 
 /**
- * Exercise question count via numbering continuity: within exercise-flagged
- * chunks, find line-start question numbers ("7." / "7)") and return the max
- * plausible question number. Requires the series to start near 1 (Q1 or Q2
- * observed) so a stray "42." in prose can't fabricate 42 questions.
+ * Question-set header line: mid-chapter "Exercise N.M", end-of-chapter
+ * "Exercises" / "Let us enhance our learning", or NCERT "Intext Questions".
+ */
+const SET_HEADER_RE = /\bEXERCISES?\b(?:\s+(\d{1,2}\.\d{1,3}))?|\bIntext\s+Questions?\b|\bLet us enhance our learning\b/i;
+
+function setKeyForHeader(m: RegExpMatchArray): string {
+  if (m[1]) return `exercise ${m[1]}`; // e.g. "exercise 6.1" / "exercise 6.2"
+  const label = m[0].toLowerCase();
+  if (label.includes('intext')) return 'intext questions';
+  if (label.includes('enhance')) return 'let us enhance our learning';
+  return 'exercises';
+}
+
+/**
+ * Expected chapter question count via per-set numbering continuity.
+ *
+ * NCERT chapters carry MULTIPLE question sets (mid-chapter Exercise N.M sets,
+ * the end-of-chapter Exercises, Intext Questions) and EACH SET restarts its
+ * numbering at 1 — so the chapter expectation is the SUM of per-set maxima
+ * (Exercise 6.1 with 6 Qs + Exercise 6.2 with 6 Qs → 12, not max 6).
+ *
+ * Sets are keyed by their header label so overlap-duplicated chunks (the same
+ * "EXERCISE 6.1" block stored 2-3x by sliding-window chunking) MERGE into one
+ * set instead of double-counting. Within a set the old safety rules hold: the
+ * series must start near 1 (min ≤ 2 — a stray "42." can't fabricate
+ * 42 questions) and minors above MAX_EXERCISE_QUESTION are OCR junk.
  */
 export function deriveExpectedExercises(chunks: AuditChunk[]): number | null {
   const exerciseText = chunks.filter(isExerciseChunk).map((c) => c.chunk_text).join('\n');
   if (!exerciseText) return null;
-  const nums: number[] = [];
-  for (const m of exerciseText.matchAll(/^\s{0,4}(\d{1,2})[.)]\s+/gm)) {
-    const n = parseInt(m[1], 10);
-    if (n >= 1 && n <= MAX_EXERCISE_QUESTION) nums.push(n);
+
+  const setNums = new Map<string, number[]>();
+  let currentKey = 'default';
+  for (const line of exerciseText.split('\n')) {
+    const header = line.match(SET_HEADER_RE);
+    if (header) {
+      currentKey = setKeyForHeader(header);
+      if (!setNums.has(currentKey)) setNums.set(currentKey, []);
+      continue;
+    }
+    const q = line.match(/^\s{0,4}(\d{1,2})[.)]\s+/);
+    if (!q) continue;
+    const n = parseInt(q[1], 10);
+    if (n < 1 || n > MAX_EXERCISE_QUESTION) continue;
+    const arr = setNums.get(currentKey) ?? [];
+    arr.push(n);
+    setNums.set(currentKey, arr);
   }
-  if (nums.length === 0) return null;
-  const min = Math.min(...nums);
-  if (min > 2) return null; // series doesn't start at the top — unreliable
-  return Math.max(...nums);
+
+  let total = 0;
+  let anyReliable = false;
+  for (const nums of setNums.values()) {
+    if (nums.length === 0) continue;
+    if (Math.min(...nums) > 2) continue; // set doesn't start at the top — unreliable
+    total += Math.max(...nums);
+    anyReliable = true;
+  }
+  return anyReliable ? total : null;
 }
 
 /**
@@ -166,13 +214,25 @@ export interface ChapterRef {
 const HOTS_BLOOMS = ['analyze', 'evaluate', 'create'];
 
 /**
+ * Honest dead-source caveat for the competency scan (same style as mind_maps):
+ * the scan is kept because it is the correct future wiring, but today it can
+ * only ever return 0 — the 0 proves nothing.
+ */
+export const COMPETENCY_DEAD_SOURCE_NOTE =
+  'no writer currently populates cbse_question_type with competency values — 0 is unfalsifiable; repoint at cbse_competency_map linkage in a follow-up';
+
+/**
  * question_bank scan specs (audit_method='question_bank_scan'):
  * - hots_questions:            bloom_level ∈ {analyze, evaluate, create}
  * - case_based_questions:      question_type_v2 = 'case_based'
  * - assertion_reason_questions: question_type_v2 = 'assertion_reason'
  * - competency_questions:      cbse_question_type ilike '%competency%'
  *                              (value variants unpinned in schema — ilike is
- *                              robust to 'competency' / 'competency_based')
+ *                              robust to 'competency' / 'competency_based').
+ *                              DEAD SOURCE today: no writer populates the
+ *                              column with competency values, so every row
+ *                              ships with COMPETENCY_DEAD_SOURCE_NOTE (the
+ *                              scan is kept as the future-proof wiring)
  * - pyqs:                      board_relevance = 'board_appeared'
  *                              (chk_board_relevance: board_appeared = actual
  *                              previous-year board questions)
@@ -197,6 +257,7 @@ export function buildQuestionBankFilterSpec(
   return {
     dimension,
     auditMethod: 'question_bank_scan',
+    ...(dimension === 'competency_questions' ? { note: COMPETENCY_DEAD_SOURCE_NOTE } : {}),
     steps: [
       {
         table: 'question_bank',
@@ -336,11 +397,31 @@ export function routeSuspectedMissing(entries: string[]): Map<Dimension, string[
 
 export const GARBLED_LABEL = 'metadata_garbled: chunk source appears OCR-corrupted; counts unreliable';
 
+export const CONTAMINATED_LABEL =
+  'CONTAMINATED: chunk source mixes foreign-chapter/book content; counts kept as evidence but series coverage untrusted';
+
+/**
+ * Series-numbered dimensions whose expected-count heuristics ride NCERT N.M
+ * numbering continuity. Under contamination the numbering namespace is polluted
+ * by foreign chapters (e.g. Fig. 13.x inside ch6), so coverage_pct over these
+ * denominators is untrustworthy — the counts REMAIN (evidence), the trust drops.
+ */
+const SERIES_NUMBERED_DIMENSIONS: ReadonlySet<Dimension> = new Set([
+  'diagrams',
+  'activities',
+  'tables',
+  'examples',
+  'exercises',
+]);
+
 /**
  * Assemble the 22 chunk_pass InventoryRows for one chapter from the parsed
  * model response. Evidence = chunk ids only (P13). When metadata_garbled is
  * true, every chunk-pass row carries the GARBLED_LABEL in suspected_missing so
- * gap queries can't mistake corrupt-source zeros for genuine absence.
+ * gap queries can't mistake corrupt-source zeros for genuine absence. When
+ * content_contaminated is true, every row likewise carries CONTAMINATED_LABEL
+ * (count-as-is + flag — never abstain) and coverage_pct is NULLed for the
+ * series-numbered dimensions whose denominators contamination poisons.
  */
 export function buildChunkPassRows(args: {
   syllabusId: string;
@@ -354,12 +435,14 @@ export function buildChunkPassRows(args: {
     const expected = deriveExpectedCounts(chunks, dimension);
     const suspected = [...(routed.get(dimension) ?? [])];
     if (parsed.metadataGarbled) suspected.push(GARBLED_LABEL);
+    if (parsed.contentContaminated) suspected.push(CONTAMINATED_LABEL);
+    const coverageUntrusted = parsed.contentContaminated && SERIES_NUMBERED_DIMENSIONS.has(dimension);
     return {
       syllabus_id: syllabusId,
       dimension,
       expected_count: expected,
       found_count: finding.found_count,
-      coverage_pct: computeCoverage(finding.found_count, expected),
+      coverage_pct: coverageUntrusted ? null : computeCoverage(finding.found_count, expected),
       evidence: finding.evidence_chunk_ids,
       audit_method: 'chunk_pass' as const,
       suspected_missing: suspected,

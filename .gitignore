@@ -56,3 +56,8 @@ data/NCERT*/
 scripts/_tmp_*.mjs
 scripts/_tmp_*.ts
 .env*
+
+# Knowledge-audit run artifacts — corpus-hygiene queue (JSONL) written by
+# scripts/knowledge-audit/run-audit.ts for contaminated chapters. Operational
+# output, not source.
+scripts/knowledge-audit/output/
