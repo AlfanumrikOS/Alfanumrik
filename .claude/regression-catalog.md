@@ -7337,6 +7337,28 @@ pre-existing "Fig 4.2019" case is rejected by the regex word-boundary, NOT the
 ceiling, verified empirically — the MAX_EXERCISE_QUESTION 80 ceiling, the
 300-char note truncation, and non-array evidence tolerance).
 
+**Engine v2 redesign (2026-07-03, branch `feat/knowledge-audit-v2-deterministic`):
+the Wave 1 pilot gate FAILED (33% accuracy on the clean chapter, 0/4
+contamination detections — single-pass LLM enumeration over 20k-84k-token
+contexts returns near-empty skeletons). The engine was rebuilt
+deterministic-first: 12 STRUCTURAL dimensions are now counted EXACTLY in code
+(`structural-scan.ts`, regex + dedupe-by-identifier, overlap-safe, inline/
+OCR-flattened matching); contamination is computed in code
+(`contamination.ts`, foreign-major series ≥3 members / ≥2 summary blocks /
+title garble); the LLM pass is scoped to the 10 SEMANTIC dimensions in ≤15-chunk
+batches returning ITEMS (≤40-char labels) that are normalize-deduped code-side
+(`prompt.ts` v2 + `parse-semantic.ts`). `parse-response.ts` (v1 single-pass
+count parser) and its test file were RETIRED — the REG-236 pin's parser clauses
+now live in `parse-semantic.test.ts` (evidence-id restriction + caps +
+suspected_missing hygiene persist; count-clamping is obsolete because counts
+are derived from deduped labels, never returned by the model). New offline
+accuracy anchors: authored synthetic mini-chapters under
+`scripts/knowledge-audit/fixtures/synthetic-chunks/` with EXACT-count
+assertions in `structural-scan.test.ts` + `contamination.test.ts`. Known
+limitation (documented in `contamination.ts`): SAME-major cross-book merges
+(the g9 "Lines and Angles"/"Perimeter and Area" both-6.x case) remain
+undetectable; heading-set bimodality is out of scope for v2.**
+
 **Why.** `chapter_asset_inventory` is the substrate every later Knowledge
 Intelligence wave writes into: one row per (cbse_syllabus chapter × dimension)
 across the 31-dimension educational-completeness model, written exclusively by
@@ -7349,7 +7371,7 @@ pure tests running per-PR would all be invisible without a pin.
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-236 | `chapter_asset_inventory 31-dimension substrate + audit-engine parser/coverage invariants` (5 files) | (a) **Migration shape** (house REG-125 tokenizer canary, no DB): the `dimension` CHECK enumerates EXACTLY the 31 educational-completeness values (no silent add/remove/rename); RLS ENABLED in the SAME migration with an explicit deny-all policy for `anon, authenticated` (P8 — service-role-only posture); `UNIQUE (syllabus_id, dimension)` upsert target; FK `syllabus_id → cbse_syllabus(id) ON DELETE CASCADE` verified against the baseline; `audit_method` CHECK = exactly the 5 provenance values; `coverage_pct` bounded NULL-or-0..100; strictly additive (no DROP/DELETE/UPDATE/TRUNCATE in executable SQL). (b) **Parser fail-closed tolerance**: unparseable model output → `ok:false`; all 31 dimensions normalized with 0-fill + note; `found_count` clamped (negative→0, float→floored, non-numeric→0, numeric string accepted); evidence ids restricted to the input chunk-id set — hallucinated ids DROPPED with a note — capped at 5, and rows carry ids only, never chunk text (P13); dimension notes truncated ≤300 chars; `suspected_missing` string-coerced, blank-dropped, capped at 50 entries / 200 chars. (c) **Coverage math**: null on null/zero/negative/non-finite denominator (0/0 is null, never NaN); 2dp; clamped to 100 (matches the DB CHECK); negative found → 0. (d) **Heuristic false-positive guards**: MAX_MINOR_INDEX 99 ceiling + minor≥1 floor (a 3-digit OCR minor like "Fig. 4.150" or a "4.0" artifact cannot inflate expected counts); dominant-major grouping rejects minority cross-chapter references; exercise counts require the numbering series to start ≤2 AND respect the MAX_EXERCISE_QUESTION 80 ceiling (a stray line-start "99." cannot fabricate 99 questions); scan filter specs pin `grade` as a P5 string. (e) **Lane**: these pure tests run in the default per-PR `npm test` lane via the `vitest.config.ts` `!(knowledge-audit)` extglob carve-out while every other `scripts/**`/`migrations/**` integration test stays integration-only (verified empirically with `vitest list` under both configs on vitest 4.1.8/picomatch 4, Windows). | `src/__tests__/regressions/chapter-asset-inventory-migration.test.ts`, `src/__tests__/scripts/knowledge-audit/parse-response.test.ts`, `coverage.test.ts`, `prompt.test.ts`, `pilot-check.test.ts` | E | P5, P8, P13 |
+| REG-236 | `chapter_asset_inventory 31-dimension substrate + audit-engine parser/coverage invariants` (7 files — engine v2) | (a) **Migration shape** (house REG-125 tokenizer canary, no DB): the `dimension` CHECK enumerates EXACTLY the 31 educational-completeness values (no silent add/remove/rename); RLS ENABLED in the SAME migration with an explicit deny-all policy for `anon, authenticated` (P8 — service-role-only posture); `UNIQUE (syllabus_id, dimension)` upsert target; FK `syllabus_id → cbse_syllabus(id) ON DELETE CASCADE` verified against the baseline; `audit_method` CHECK = exactly the 5 provenance values; `coverage_pct` bounded NULL-or-0..100; strictly additive (no DROP/DELETE/UPDATE/TRUNCATE in executable SQL). (b) **Parser fail-closed tolerance**: unparseable model output → `ok:false`; all 31 dimensions normalized with 0-fill + note; `found_count` clamped (negative→0, float→floored, non-numeric→0, numeric string accepted); evidence ids restricted to the input chunk-id set — hallucinated ids DROPPED with a note — capped at 5, and rows carry ids only, never chunk text (P13); dimension notes truncated ≤300 chars; `suspected_missing` string-coerced, blank-dropped, capped at 50 entries / 200 chars. (c) **Coverage math**: null on null/zero/negative/non-finite denominator (0/0 is null, never NaN); 2dp; clamped to 100 (matches the DB CHECK); negative found → 0. (d) **Heuristic false-positive guards**: MAX_MINOR_INDEX 99 ceiling + minor≥1 floor (a 3-digit OCR minor like "Fig. 4.150" or a "4.0" artifact cannot inflate expected counts); dominant-major grouping rejects minority cross-chapter references; exercise counts require the numbering series to start ≤2 AND respect the MAX_EXERCISE_QUESTION 80 ceiling (a stray line-start "99." cannot fabricate 99 questions); scan filter specs pin `grade` as a P5 string. (e) **Lane**: these pure tests run in the default per-PR `npm test` lane via the `vitest.config.ts` `!(knowledge-audit)` extglob carve-out while every other `scripts/**`/`migrations/**` integration test stays integration-only (verified empirically with `vitest list` under both configs on vitest 4.1.8/picomatch 4, Windows). | `src/__tests__/regressions/chapter-asset-inventory-migration.test.ts`, `src/__tests__/scripts/knowledge-audit/parse-semantic.test.ts` (replaced `parse-response.test.ts` — engine v2), `structural-scan.test.ts`, `contamination.test.ts`, `coverage.test.ts`, `prompt.test.ts`, `pilot-check.test.ts` | E | P5, P8, P13 |
 
 ### Invariants covered by this section
 

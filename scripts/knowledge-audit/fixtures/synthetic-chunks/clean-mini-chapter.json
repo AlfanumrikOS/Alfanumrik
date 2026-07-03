@@ -1,0 +1,58 @@
+{
+  "description": "Synthetic CLEAN NCERT-style mini-chapter (grade 6 science style, chapter 4). OCR-FLATTENED text: structural markers (headings, Fig captions, Activity/Table/Example labels, SUMMARY, Keywords) appear INLINE mid-line, as prod rag_content_chunks store them. Chunks OVERLAP (c2 repeats c1's tail, c4 repeats c3's tail, c7 repeats c6's summary+keywords block) to prove dedupe-by-identifier. Question numbering keeps line starts — the one place newlines are genuinely needed. Authored ground truth in `truth`.",
+  "chapter_number": 4,
+  "chapter_title": "Materials Around Us",
+  "chunks": [
+    {
+      "chunk_id": "clean-c1",
+      "chunk_text": "4.1 Objects Around Us We see so many objects around us. All objects are made of one or more materials. Activity 4.1 Collect twenty objects from your surroundings and list the materials they are made of. Fig. 4.1: Objects made of wood. Wood, metal and glass are common materials.",
+      "content_type": "concept"
+    },
+    {
+      "chunk_id": "clean-c2",
+      "chunk_text": "Fig. 4.1: Objects made of wood. Wood, metal and glass are common materials. Activity 4.2 Group the collected objects on the basis of the material they are made of. Table 4.1 Objects and the materials they are made of. Example 4.1 A spoon and a tumbler are made of steel. Classify them. Solution: Both are made of metal, so both belong to the metals group.",
+      "content_type": "concept"
+    },
+    {
+      "chunk_id": "clean-c3",
+      "chunk_text": "4.2 Properties of Materials Materials differ in their properties. 4.2.1 Appearance Freshly cut surfaces of some materials have lustre. Fig. 4.2: Lustre on a freshly cut metal surface. Example 4.2 Name two materials with lustre.",
+      "content_type": "concept"
+    },
+    {
+      "chunk_id": "clean-c4",
+      "chunk_text": "Fig. 4.2: Lustre on a freshly cut metal surface. Fig. 4.3: Some objects float on water while others sink. Table 4.2 Solubility of some common materials in water. Activity 4.3 Take a beaker filled with water and drop small objects into it.",
+      "content_type": "activity"
+    },
+    {
+      "chunk_id": "clean-c5",
+      "chunk_text": "Intext Questions\n1. Name two objects made from wood.\n2. Why is glass used for windows?\n3. List two materials that are soluble in water.",
+      "content_type": "exercise"
+    },
+    {
+      "chunk_id": "clean-c6",
+      "chunk_text": "Fig. 4.4: Sorting materials into groups makes it easier to study them. SUMMARY Objects around us are made of a large variety of materials. Materials are grouped together for convenience. Keywords Lustre / Transparency / Soluble / Insoluble / Materials Let us enhance our learning\n1. Name five objects made from paper.\n2. Select the materials that are transparent.\n3. Why are handles of cooking pans made of plastic?\n4. Give two more materials with lustre.",
+      "content_type": "exercise"
+    },
+    {
+      "chunk_id": "clean-c7",
+      "chunk_text": "SUMMARY Objects around us are made of a large variety of materials. Materials are grouped together for convenience. Keywords Lustre / Transparency / Soluble / Insoluble / Materials",
+      "content_type": "revision"
+    }
+  ],
+  "truth": {
+    "pages": 0,
+    "headings": 2,
+    "subtopics": 1,
+    "examples": 2,
+    "solved_examples": 1,
+    "exercises": 7,
+    "exercises_expected": 7,
+    "activities": 3,
+    "tables": 2,
+    "diagrams": 4,
+    "captions": 4,
+    "summary": 1,
+    "keywords": 5,
+    "contaminated": false
+  }
+}

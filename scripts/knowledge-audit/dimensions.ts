@@ -48,6 +48,52 @@ export const CHUNK_PASS_DIMENSIONS = [
   'keywords',
 ] as const;
 
+/**
+ * v2 split of the 22 chunk-pass dimensions (engine redesign after the Wave 1
+ * pilot-gate failure — 33% accuracy, 0/4 contamination detections):
+ *
+ * - STRUCTURAL_DIMENSIONS (12): counted EXACTLY by the deterministic
+ *   cross-chunk scanner (structural-scan.ts) — NCERT numbered-series markers
+ *   (Fig./Table/Activity/Example N.M), exercise question numbering, N.M
+ *   headings, summary/keyword blocks. No LLM involvement; overlap-safe by
+ *   identifier dedupe.
+ * - SEMANTIC_DIMENSIONS (10): require semantic judgement — enumerated by the
+ *   batched LLM pass (≤15 chunks/call) which returns ITEMS (short labels),
+ *   deduped code-side across batches (prompt.ts + parse-semantic.ts).
+ *
+ * Both lanes still upsert with audit_method='chunk_pass'.
+ */
+export const STRUCTURAL_DIMENSIONS = [
+  'pages',
+  'headings',
+  'subtopics',
+  'examples',
+  'solved_examples',
+  'exercises',
+  'activities',
+  'tables',
+  'diagrams',
+  'captions',
+  'summary',
+  'keywords',
+] as const;
+
+export const SEMANTIC_DIMENSIONS = [
+  'topics',
+  'concepts',
+  'learning_objectives',
+  'definitions',
+  'formulae',
+  'prerequisites',
+  'common_mistakes',
+  'difficulty_mapping',
+  'real_world_applications',
+  'image_explanations',
+] as const;
+
+export type StructuralDimension = (typeof STRUCTURAL_DIMENSIONS)[number];
+export type SemanticDimension = (typeof SEMANTIC_DIMENSIONS)[number];
+
 export const QUESTION_BANK_SCAN_DIMENSIONS = [
   'hots_questions',
   'case_based_questions',
