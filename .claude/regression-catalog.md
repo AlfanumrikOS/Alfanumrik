@@ -7396,3 +7396,55 @@ only, P13 — plus the vitest lane carve-out pin).
 **Total catalog: 203 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Premium-UI Phase 1 — design-system token contract (2026-07-04)
+
+Source: commit `e8b3c032` (`feat(design-system): unified token foundation —
+radius/spacing/semantic fixes, AA contrast, P7 Devanagari`) on branch
+`feat/premium-ui-ux-rebuild`. Phase 1 introduced a runtime CSS-var token layer
+that `tailwind.config.js` maps utilities onto (`rounded-* → var(--radius-*)`,
+`bg-secondary/text-xp/bg-streak/bg-level-up/bg-danger-light → var(--secondary)`
+etc., `shadow-* → var(--shadow-*)`, `p-sp-* → var(--space-*)`, `brand.orange →
+var(--orange)`), darkened `--text-3` to `#6B6053` and added the AA-safe CTA
+gradient stops `--btn-primary-from/to` (`#CB4710`/`#C2440F`), a 12px
+arbitrary-type floor, and Devanagari font fallbacks (P7).
+
+**Why.** The token layer is a silent-failure trap. Before Phase 1 the
+`--radius-*` and `--space-*` tokens were REFERENCED by `tailwind.config.js` but
+never DEFINED, so `rounded-xl` (used ~670×) and friends computed to the
+undefined-token fallback (`border-radius: 0`) — ~1,916 elements rendered
+square app-wide with zero build/type/lint error and zero unit-test failure.
+The same class of bug hid `bg-secondary` / `text-xp` / `shadow-md` as no-ops.
+This is invisible to the JSDOM unit layer (it does not evaluate CSS custom-
+property resolution or the cascade), so the ONLY place it can be pinned is a
+real browser computing styles. A future edit that drops a token from `:root`,
+regresses `--text-3`/CTA contrast below WCAG AA, unpoints `brand.orange`, or
+lets sub-12px arbitrary type through would re-introduce a silent, app-wide
+visual/accessibility regression — exactly what DD-01's harness guards.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-237 | `design-system token contract resolves — no silent no-op utilities; AA on text-3 + primary CTA` (Playwright computed-style probe) | Device-independent computed-style probing on the public no-auth surfaces `/` (→ welcome), `/pricing`, `/login` at mobile **375px** and desktop **1280px**: (a) **no silent no-op utilities** — every `tailwind.config.js`-referenced CSS var resolves on the DEFAULT (non-cosmic) `:root`: all 23 color tokens (`--orange`, `--primary{,-light,-hover}`, `--secondary`, `--success/--warning/--info/--danger/--danger-light`, `--surface-1..3`, `--text-1..3`, `--xp-color`, `--streak-color`, `--mastery-low/mid/high`, `--level-up`) resolve to a real (non-transparent) color; all 5 `--radius-sm..2xl` resolve to a NON-ZERO radius (the ~1,916-corner square→rounded flip); all 4 `--shadow-sm/md/lg/glow` ≠ `none`; all 9 `--space-1..16` resolve to non-zero padding — each probed by applying `var(--token)` to a real element and reading the fully-resolved computed value (catches both undefined AND resolves-to-nothing var() chains). (b) **end-to-end tailwind wiring** — a real `.rounded-xl` element computes `border-radius: 12px` (not `0`), proving the utility→var mapping, not just the raw var. (c) **AA contrast (≥4.5:1)** computed in-page via sRGB relative luminance: `--text-3` (#6B6053) on `--surface-3` (#EDE6DC); `--btn-primary-from` (#CB4710) on white; `--btn-primary-to` (#C2440F) on white. (d) **brand.orange maps to `var(--orange)`** → resolves to burnt-orange `rgb(232, 88, 28)`. (e) **type floor** — a `.text-[9px]` element computes `font-size: 12px` (sub-12px arbitrary type floors up). (f) **no horizontal overflow** — `documentElement.scrollWidth ≤ clientWidth` (+1px sub-pixel tolerance) at both widths. Pin type is a Playwright computed-style probe BY NECESSITY: the JSDOM unit layer cannot evaluate CSS-var resolution/cascade, so this contract is unpinnable at the unit tier. Full-page screenshots are captured as artifacts (`test-results/visual/`) but are NOT the gate — the assertions are deterministic/device-independent. Authed student surfaces (`/dashboard`, `/quiz`, `/foxy` — the radius flip's highest blast radius) are covered best-effort in an OPT-IN (`VISUAL_AUTHED=1`), non-gating describe via a mocked session; real content QA there needs a seeded student session (documented manual steps). | `e2e/visual-regression/design-system-tokens.spec.ts` (npm script `test:e2e:visual` runs the public-surface gate) | E | P7 (Devanagari fallback stack), UX/a11y (WCAG AA) |
+
+### Invariants covered by this section
+
+- P7 (bilingual UI) — the token layer carries the Devanagari font-fallback
+  stacks Phase 1 appended to every family; the harness pins that the token
+  contract those stacks ride on resolves rather than falling back to nothing.
+- UX / accessibility (WCAG AA) — `--text-3`-on-`--surface-3` and both primary-
+  CTA gradient stops on white are pinned ≥4.5:1; the 12px type floor keeps
+  micro-labels legible on budget phones in harsh sunlight (the stated design
+  rationale). Not a numbered P-invariant, but a release-gating UX contract.
+
+### Catalog total
+
+Pre-REG-237: 203 entries (through REG-236, Knowledge Intelligence Wave 1).
+Premium-UI Phase 1 adds REG-237 (design-system token contract — every
+tailwind-referenced CSS var resolves on the default `:root` so no
+`rounded-*`/`bg-secondary`/`text-xp` computes to the undefined-token fallback;
+`--text-3` + both CTA stops clear WCAG AA; `brand.orange → var(--orange)`;
+sub-12px arbitrary type floors to 12px — Playwright computed-style probe,
+unpinnable at the JSDOM unit tier).
+**Total catalog: 204 entries (target: 35 — TARGET EXCEEDED).**
+
+---
