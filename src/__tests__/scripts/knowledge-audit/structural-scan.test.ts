@@ -48,11 +48,13 @@ const contaminated = loadFixture('contaminated-mini-chapter.json');
 const newSyllabus = loadFixture('new-syllabus-mini-chapter.json');
 
 describe('dimension partition (v2 split)', () => {
-  it('STRUCTURAL (12) + SEMANTIC (10) exactly partition the 22 chunk-pass dimensions', () => {
+  it('STRUCTURAL (12) + SEMANTIC (8) exactly partition the 20 chunk-pass dimensions', () => {
+    // 2026-07-04: topics + concepts moved off the semantic lane onto the
+    // deterministic generated_content_scan SSoT lane. semantic 10→8, chunk_pass 22→20.
     expect(STRUCTURAL_DIMENSIONS).toHaveLength(12);
-    expect(SEMANTIC_DIMENSIONS).toHaveLength(10);
+    expect(SEMANTIC_DIMENSIONS).toHaveLength(8);
     const union = new Set([...STRUCTURAL_DIMENSIONS, ...SEMANTIC_DIMENSIONS]);
-    expect(union.size).toBe(22);
+    expect(union.size).toBe(20);
     expect([...union].sort()).toEqual([...CHUNK_PASS_DIMENSIONS].sort());
   });
 });

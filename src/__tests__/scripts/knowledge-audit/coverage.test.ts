@@ -293,13 +293,62 @@ describe('buildGeneratedContentFilterSpec (pure query builder)', () => {
     expect(buildGeneratedContentFilterSpec('flashcards', REF).steps[0].table).toBe('spaced_repetition_cards');
   });
 
-  it('concept_graph_links -> two-step curriculum_topics projection into concept_edges either-endpoint match', () => {
-    const spec = buildGeneratedContentFilterSpec('concept_graph_links', REF);
+  // Assessment adjudication (2026-07-04): concepts = deterministic SSoT count of
+  // chapter_concepts — identical filter SHAPE to revision_notes (subject CODE
+  // column, no join). Both dims count the same curated rows.
+  it('concepts -> chapter_concepts SSoT, subject-CODE scoped (identical shape to revision_notes)', () => {
+    const spec = buildGeneratedContentFilterSpec('concepts', REF);
+    expect(spec.auditMethod).toBe('generated_content_scan');
+    expect(spec.steps).toHaveLength(1);
+    expect(spec.steps[0].table).toBe('chapter_concepts');
+    const filters = spec.steps[0].filters;
+    expect(filters).toContainEqual({ column: 'grade', op: 'eq', value: '6' });
+    expect(filters).toContainEqual({ column: 'subject', op: 'eq', value: 'science' });
+    expect(filters).toContainEqual({ column: 'chapter_number', op: 'eq', value: 4 });
+    expect(filters).toContainEqual({ column: 'is_active', op: 'eq', value: true });
+    // no subject_id / join step — chapter_concepts stores the code directly
+    expect(spec.steps.some((s) => s.table === 'subjects')).toBe(false);
+    // concepts and revision_notes produce the SAME step shape
+    expect(spec.steps).toEqual(buildGeneratedContentFilterSpec('revision_notes', REF).steps);
+  });
+
+  // Assessment adjudication (2026-07-04): topics = deterministic SSoT count of
+  // curriculum_topics, which is scoped by subject_id (uuid FK) — so the spec
+  // MUST resolve subjects.code → id first and reuse it via `in`. Filtering
+  // curriculum_topics by grade + chapter_number alone would over-count across
+  // all subjects sharing a chapter number.
+  it('topics -> curriculum_topics SSoT, subject-scoped via subjects.code→id join (two-step)', () => {
+    const spec = buildGeneratedContentFilterSpec('topics', REF);
+    expect(spec.auditMethod).toBe('generated_content_scan');
     expect(spec.steps).toHaveLength(2);
-    expect(spec.steps[0].table).toBe('curriculum_topics');
-    expect(spec.steps[0].captureIdsAs).toBe('topicIds');
-    expect(spec.steps[1].table).toBe('concept_edges');
-    const edgeFilter = spec.steps[1].filters[0];
+    // step 0: resolve subjects.code → id, capture it
+    expect(spec.steps[0].table).toBe('subjects');
+    expect(spec.steps[0].captureIdsAs).toBe('subjectIds');
+    expect(spec.steps[0].filters).toContainEqual({ column: 'code', op: 'eq', value: 'science' });
+    // step 1: curriculum_topics scoped by grade + chapter + is_active + subject_id IN captured
+    expect(spec.steps[1].table).toBe('curriculum_topics');
+    const filters = spec.steps[1].filters;
+    expect(filters).toContainEqual({ column: 'grade', op: 'eq', value: '6' });
+    expect(filters).toContainEqual({ column: 'chapter_number', op: 'eq', value: 4 });
+    expect(filters).toContainEqual({ column: 'is_active', op: 'eq', value: true });
+    expect(filters).toContainEqual({ column: 'subject_id', op: 'in', value: null, valueFrom: 'subjectIds' });
+    // the LAST step (row count) must be curriculum_topics, not subjects
+    expect(spec.steps[spec.steps.length - 1].table).toBe('curriculum_topics');
+  });
+
+  it('concept_graph_links -> three-step: subject id → subject-scoped curriculum_topics → concept_edges either-endpoint match', () => {
+    const spec = buildGeneratedContentFilterSpec('concept_graph_links', REF);
+    expect(spec.steps).toHaveLength(3);
+    // step 0: subject id resolution (the subject-scoping fix)
+    expect(spec.steps[0].table).toBe('subjects');
+    expect(spec.steps[0].captureIdsAs).toBe('subjectIds');
+    // step 1: curriculum_topics projection, now subject-scoped
+    expect(spec.steps[1].table).toBe('curriculum_topics');
+    expect(spec.steps[1].captureIdsAs).toBe('topicIds');
+    expect(spec.steps[1].filters).toContainEqual({ column: 'subject_id', op: 'in', value: null, valueFrom: 'subjectIds' });
+    // step 2: concept_edges either-endpoint match
+    expect(spec.steps[2].table).toBe('concept_edges');
+    const edgeFilter = spec.steps[2].filters[0];
     expect(edgeFilter.op).toBe('either_in');
     expect(edgeFilter.columns).toEqual(['from_topic_id', 'to_topic_id']);
     expect(edgeFilter.valueFrom).toBe('topicIds');
@@ -313,7 +362,7 @@ describe('buildGeneratedContentFilterSpec (pure query builder)', () => {
 });
 
 describe('routeSuspectedMissing', () => {
-  it('routes labels to their dimension by keyword; unrouted labels land on topics', () => {
+  it('routes labels to their dimension by keyword; unrouted labels land on headings (chunk-pass catch-all)', () => {
     const routed = routeSuspectedMissing([
       'Activity 4.5 referenced but not present',
       'Fig. 4.2 missing (numbering gap)',
@@ -323,7 +372,24 @@ describe('routeSuspectedMissing', () => {
     expect(routed.get('activities')).toEqual(['Activity 4.5 referenced but not present']);
     expect(routed.get('diagrams')).toEqual(['Fig. 4.2 missing (numbering gap)']);
     expect(routed.get('exercises')).toEqual(['Exercise section truncated after Q7']);
-    expect(routed.get('topics')).toEqual(['something completely unclassifiable']);
+    // catch-all is 'headings' now (topics left the chunk-pass lane 2026-07-04)
+    expect(routed.get('headings')).toEqual(['something completely unclassifiable']);
+    expect(routed.get('topics')).toBeUndefined();
+  });
+
+  it('never routes labels to topics/concepts (they left the chunk-pass lane — a routed label would vanish)', () => {
+    const routed = routeSuspectedMissing([
+      'new concept referenced but not developed',
+      'topic heading missing',
+    ]);
+    // no routing target may be a non-chunk-pass dimension
+    expect(routed.has('concepts')).toBe(false);
+    expect(routed.has('topics')).toBe(false);
+    // both fall through to the headings catch-all instead of being dropped
+    expect(routed.get('headings')).toEqual([
+      'new concept referenced but not developed',
+      'topic heading missing',
+    ]);
   });
 });
 
@@ -408,11 +474,14 @@ describe('buildChunkPassRows (row assembly, P13)', () => {
     { suspectedMissing: ['Fig. 4.2 missing (numbering gap)'] },
   );
 
-  it('emits exactly the 22 chunk_pass rows with method chunk_pass', () => {
+  it('emits exactly the 20 chunk_pass rows with method chunk_pass (topics/concepts moved to the SSoT scan lane)', () => {
     const rows = buildChunkPassRows({ syllabusId: 'syl-1', findings, chunks });
-    expect(rows).toHaveLength(22);
+    expect(rows).toHaveLength(20);
     expect(rows.every((r) => r.audit_method === 'chunk_pass')).toBe(true);
     expect(rows.every((r) => r.syllabus_id === 'syl-1')).toBe(true);
+    // topics/concepts are no longer emitted as chunk_pass rows
+    expect(rows.some((r) => r.dimension === 'topics')).toBe(false);
+    expect(rows.some((r) => r.dimension === 'concepts')).toBe(false);
   });
 
   it('wires found/expected/coverage together (diagram gap 4.1->4.3 => expected 3, found 2 => 66.67%)', () => {

@@ -8,9 +8,11 @@
  * returned near-empty skeletons (443-1017 output tokens) and the strict
  * "own line" counting rules discarded OCR-flattened structural markers.
  * v2 changes all three failure axes:
- * - SCOPE: only the 10 SEMANTIC dimensions reach the model. The 12 structural
- *   dimensions are counted exactly in code (structural-scan.ts) and
- *   contamination is computed in code (contamination.ts).
+ * - SCOPE: only the 8 SEMANTIC dimensions reach the model. The 12 structural
+ *   dimensions are counted exactly in code (structural-scan.ts), `topics` and
+ *   `concepts` are deterministic SSoT counts (curriculum_topics /
+ *   chapter_concepts, see coverage.ts), and contamination is computed in code
+ *   (contamination.ts).
  * - CONTEXT: chunks are BATCHED (≤ MAX_CHUNKS_PER_BATCH per call, ~10k tokens)
  *   so the model never sees a context it collapses under.
  * - OUTPUT: each batch returns ITEMS (short labels, ≤40 chars) per dimension,
@@ -55,10 +57,6 @@ export function batchChunks<T>(chunks: T[], size: number = MAX_CHUNKS_PER_BATCH)
  * labels are what make cross-batch dedupe work).
  */
 const SEMANTIC_DIMENSION_RULES: Record<SemanticDimension, string> = {
-  topics:
-    'topics: one item per major theme/section-topic the batch text actually DEVELOPS (not merely mentions). Label = the topic name, e.g. "properties of materials".',
-  concepts:
-    'concepts: one item per distinct named concept developed in the text. Use the KNOWN CONCEPTS list as a cross-check, but list only concepts present in THIS batch\'s chunks — a known concept absent from the chunks must NOT be listed. Label = the concept name.',
   learning_objectives:
     'learning_objectives: one item per explicit objective/outcome statement ("In this chapter you will learn...", "After studying... you will be able to..."). Label = a short paraphrase of the objective, e.g. "classify materials by lustre". None stated → empty list.',
   definitions:
@@ -77,7 +75,7 @@ const SEMANTIC_DIMENSION_RULES: Record<SemanticDimension, string> = {
     'image_explanations: one item per prose passage that explains what a figure/image SHOWS beyond its bare caption. Label = "fig N.M explanation" when the figure is numbered, else a 2-4 word subject.',
 };
 
-/** The exact JSON skeleton the model must return (10 semantic dims). */
+/** The exact JSON skeleton the model must return (8 semantic dims). */
 export function buildSemanticOutputContract(): string {
   const dims = SEMANTIC_DIMENSIONS.map((d) => `"${d}":{"items":[],"evidence_chunk_ids":[]}`).join(',');
   return `{"dimensions":{${dims}},"metadata_garbled":false,"suspected_missing":[]}`;

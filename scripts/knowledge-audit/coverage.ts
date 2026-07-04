@@ -184,15 +184,42 @@ export function buildQuestionBankFilterSpec(
 }
 
 /**
+ * curriculum_topics is scoped by subject_id (uuid FK → subjects.id), NOT by a
+ * subject-code column (chapter_concepts, by contrast, stores the code directly).
+ * So any curriculum_topics scan MUST resolve subjects.code → subjects.id first
+ * and reuse the captured id via an `in` filter. Filtering curriculum_topics on
+ * grade + chapter_number alone (no subject) over-counts across ALL subjects that
+ * happen to share a chapter number — the latent bug this helper closes.
+ */
+function subjectIdLookupStep(ref: ChapterRef): ScanStep {
+  return {
+    table: 'subjects',
+    select: 'id',
+    captureIdsAs: 'subjectIds',
+    filters: [{ column: 'code', op: 'eq', value: ref.subject }],
+  };
+}
+
+/**
  * Generated-content scan specs (audit_method='generated_content_scan'):
  * - revision_notes:      chapter_concepts deck rows for the chapter (the
  *                        curated concept cards ARE the platform's revision notes)
+ * - concepts:            chapter_concepts SSoT count — identical filter shape to
+ *                        revision_notes (grade + subject CODE + chapter +
+ *                        is_active). The curated concept rows ARE the single
+ *                        source of truth for how many concepts a chapter has;
+ *                        moved off the semantic LLM lane 2026-07-04.
+ * - topics:              curriculum_topics SSoT count, SUBJECT-SCOPED via the
+ *                        subjects.code → subjects.id join (curriculum_topics has
+ *                        no subject-code column). Moved off the semantic LLM lane
+ *                        2026-07-04.
  * - flashcards:          spaced_repetition_cards for the chapter (note:
  *                        student-scoped instances — counts card instances, not
  *                        unique templates)
  * - concept_graph_links: concept_edges touching the chapter's curriculum_topics
- *                        (two-step: project topic ids, then count edges whose
- *                        from_topic_id OR to_topic_id is in that set)
+ *                        (three-step: resolve subject id, project subject-scoped
+ *                        topic ids, then count edges whose from_topic_id OR
+ *                        to_topic_id is in that set)
  * - mind_maps:           NO on-platform source yet — empty spec, found 0 + note
  */
 export function buildGeneratedContentFilterSpec(
@@ -201,6 +228,11 @@ export function buildGeneratedContentFilterSpec(
 ): ScanSpec {
   switch (dimension) {
     case 'revision_notes':
+    case 'concepts':
+      // Both count chapter_concepts rows for the chapter (subject CODE column,
+      // no join): revision_notes because the curated concept cards ARE the
+      // revision notes; concepts because those same curated rows are the SSoT
+      // count of the chapter's concepts.
       return {
         dimension,
         auditMethod: 'generated_content_scan',
@@ -213,6 +245,25 @@ export function buildGeneratedContentFilterSpec(
               { column: 'subject', op: 'eq', value: ref.subject },
               { column: 'chapter_number', op: 'eq', value: ref.chapterNumber },
               { column: 'is_active', op: 'eq', value: true },
+            ],
+          },
+        ],
+      };
+    case 'topics':
+      // curriculum_topics SSoT count, subject-scoped via subjects.code → id.
+      return {
+        dimension,
+        auditMethod: 'generated_content_scan',
+        steps: [
+          subjectIdLookupStep(ref),
+          {
+            table: 'curriculum_topics',
+            select: 'id',
+            filters: [
+              { column: 'grade', op: 'eq', value: ref.grade },
+              { column: 'chapter_number', op: 'eq', value: ref.chapterNumber },
+              { column: 'is_active', op: 'eq', value: true },
+              { column: 'subject_id', op: 'in', value: null, valueFrom: 'subjectIds' },
             ],
           },
         ],
@@ -240,6 +291,7 @@ export function buildGeneratedContentFilterSpec(
         dimension,
         auditMethod: 'generated_content_scan',
         steps: [
+          subjectIdLookupStep(ref),
           {
             table: 'curriculum_topics',
             select: 'id',
@@ -248,6 +300,7 @@ export function buildGeneratedContentFilterSpec(
               { column: 'grade', op: 'eq', value: ref.grade },
               { column: 'chapter_number', op: 'eq', value: ref.chapterNumber },
               { column: 'is_active', op: 'eq', value: true },
+              { column: 'subject_id', op: 'in', value: null, valueFrom: 'subjectIds' },
             ],
           },
           {
@@ -290,19 +343,22 @@ const SUSPECTED_ROUTES: Array<{ pattern: RegExp; dimension: Dimension }> = [
   { pattern: /caption/i, dimension: 'captions' },
   { pattern: /keyword/i, dimension: 'keywords' },
   { pattern: /objective/i, dimension: 'learning_objectives' },
-  { pattern: /concept/i, dimension: 'concepts' },
 ];
 
 /**
  * Route chapter-level suspected_missing labels to their dimension rows by
- * keyword. Unrouted labels land on 'topics' (structural catch-all) so nothing
- * is silently dropped.
+ * keyword. Unrouted labels land on 'headings' (the chunk-pass structural
+ * catch-all) so nothing is silently dropped. NOTE: 'topics' and 'concepts' are
+ * NO LONGER chunk-pass dimensions (they moved to the generated_content_scan SSoT
+ * lane 2026-07-04), so they cannot be routing targets — buildChunkPassRows never
+ * emits rows for them, and a label routed there would vanish. The former
+ * /concept/i → 'concepts' route was removed for the same reason.
  */
 export function routeSuspectedMissing(entries: string[]): Map<Dimension, string[]> {
   const out = new Map<Dimension, string[]>();
   for (const entry of entries) {
     const route = SUSPECTED_ROUTES.find((r) => r.pattern.test(entry));
-    const dim: Dimension = route ? route.dimension : 'topics';
+    const dim: Dimension = route ? route.dimension : 'headings';
     const arr = out.get(dim) ?? [];
     arr.push(entry);
     out.set(dim, arr);

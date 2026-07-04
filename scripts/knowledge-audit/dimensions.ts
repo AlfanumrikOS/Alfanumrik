@@ -7,13 +7,22 @@
  * supabase/migrations/20260703000300_chapter_asset_inventory.sql.
  *
  * The 31 dimensions split into three measurement lanes:
- *   - CHUNK_PASS (22): counted by the Claude chunk pass over rag_content_chunks
+ *   - CHUNK_PASS (20): counted by the Claude chunk pass over rag_content_chunks
  *     (audit_method='chunk_pass').
  *   - QUESTION_BANK_SCAN (5): counted from question_bank rows for the chapter
  *     (audit_method='question_bank_scan').
- *   - GENERATED_CONTENT_SCAN (4): counted from platform-generated content
- *     tables — chapter_concepts, concept_edges (via curriculum_topics
- *     projection), spaced_repetition_cards (audit_method='generated_content_scan').
+ *   - GENERATED_CONTENT_SCAN (6): counted deterministically from the platform's
+ *     curated SSoT tables — chapter_concepts (revision_notes AND concepts),
+ *     curriculum_topics (topics + the concept_graph_links projection),
+ *     concept_edges, spaced_repetition_cards
+ *     (audit_method='generated_content_scan').
+ *
+ * TAXONOMY ADJUDICATION (assessment, 2026-07-04): `topics` and `concepts` MOVED
+ * off the noisy semantic LLM lane onto deterministic SSoT counts. The curated
+ * curriculum_topics / chapter_concepts tables ARE the single source of truth for
+ * how many topics/concepts a chapter has — re-enumerating them from OCR-flattened
+ * chunk prose duplicated that data (and did it badly). Counting the SSoT rows
+ * directly honors "never duplicate data" and removes two unbounded LLM guesses.
  *
  * Pure module — no I/O, importable by vitest.
  */
@@ -22,10 +31,8 @@ export const CHUNK_PASS_DIMENSIONS = [
   // structural
   'pages',
   'headings',
-  'topics',
   'subtopics',
   // conceptual
-  'concepts',
   'learning_objectives',
   'definitions',
   'formulae',
@@ -57,9 +64,12 @@ export const CHUNK_PASS_DIMENSIONS = [
  *   (Fig./Table/Activity/Example N.M), exercise question numbering, N.M
  *   headings, summary/keyword blocks. No LLM involvement; overlap-safe by
  *   identifier dedupe.
- * - SEMANTIC_DIMENSIONS (10): require semantic judgement — enumerated by the
+ * - SEMANTIC_DIMENSIONS (8): require semantic judgement — enumerated by the
  *   batched LLM pass (≤15 chunks/call) which returns ITEMS (short labels),
  *   deduped code-side across batches (prompt.ts + parse-semantic.ts).
+ *   (`topics` and `concepts` were REMOVED from this lane on 2026-07-04 — they
+ *   are now deterministic SSoT counts in GENERATED_CONTENT_SCAN, not LLM
+ *   enumerations.)
  *
  * Both lanes still upsert with audit_method='chunk_pass'.
  */
@@ -79,8 +89,6 @@ export const STRUCTURAL_DIMENSIONS = [
 ] as const;
 
 export const SEMANTIC_DIMENSIONS = [
-  'topics',
-  'concepts',
   'learning_objectives',
   'definitions',
   'formulae',
@@ -107,6 +115,11 @@ export const GENERATED_CONTENT_SCAN_DIMENSIONS = [
   'mind_maps',
   'flashcards',
   'concept_graph_links',
+  // Deterministic SSoT counts (assessment adjudication 2026-07-04): moved off
+  // the semantic LLM lane. topics = COUNT(curriculum_topics, subject-scoped);
+  // concepts = COUNT(chapter_concepts, subject-scoped).
+  'topics',
+  'concepts',
 ] as const;
 
 export const ALL_DIMENSIONS = [
