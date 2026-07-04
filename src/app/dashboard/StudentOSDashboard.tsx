@@ -15,8 +15,11 @@
  *   3. PRIMARY hero  — <TodaysMission>, the single dominant CTA + WHY line.
  *   4. Growth strip  — <GrowthStrip>, the "what improved" positive signal.
  *
- * BELOW THE FOLD (demoted glance panels — retained AS-IS, Phase 3b rebuilds):
+ * BELOW THE FOLD (Phase 3b — read-only glance panels on canonical primitives):
  *   <MasterySnapshot> · <BoardScoreWidget> · <RevisionRail> · <SubjectRoadmaps>.
+ *   Every secondary/interactive action (full revision CTA, roadmap taps, board
+ *   recovery) is demoted into the "More ways to study" disclosure or made
+ *   non-primary, so the above-the-fold keeps a single primary action.
  *
  * This is a PRESENTATION layer over unchanged engines. No scoring/XP/mastery
  * formula is computed here — every number comes from the existing snapshot /
@@ -31,7 +34,9 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
+import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
 import { getNextTopics, getPendingParentLinks } from '@/lib/supabase';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
@@ -47,6 +52,13 @@ import RevisionRail from '@/components/dashboard/os/RevisionRail';
 import SubjectRoadmaps from '@/components/dashboard/os/SubjectRoadmaps';
 import BoardScoreWidget from '@/components/dashboard/os/BoardScoreWidget';
 import PendingLinkApproval, { type PendingLink } from '@/components/dashboard/PendingLinkApproval';
+
+// Full spaced-repetition CTA — demoted behind the "More ways to study"
+// disclosure (self-suppresses to null when nothing is due).
+const ReviewsDueCard = dynamic(() => import('@/components/dashboard/ReviewsDueCard'), {
+  ssr: false,
+  loading: () => null,
+});
 
 export default function StudentOSDashboard() {
   const router = useRouter();
@@ -68,6 +80,12 @@ export default function StudentOSDashboard() {
   useCosmicLightSurface();
 
   const [todaysTopic, setTodaysTopic] = useState<CurriculumTopic | undefined>();
+
+  // "More ways to study" disclosure — holds the demoted secondary interactions
+  // (full revision CTA + interactive roadmap taps) so the above-the-fold surface
+  // keeps a single primary action.
+  const [studyMoreOpen, setStudyMoreOpen] = useState(false);
+  const studyMorePanelId = 'os-study-more-panel';
 
   // Recovery affordance for the "logged-in but student momentarily null" state
   // (symptom of an AuthContext race; root cause fixed separately). Re-runs the
@@ -214,22 +232,24 @@ export default function StudentOSDashboard() {
       </div>
 
       <Badge
+        role="img"
         tone="warning"
         variant="soft"
         icon={<span aria-hidden="true">🔥</span>}
         aria-label={isHi ? `${streak} दिन की लय` : `${streak}-day streak`}
       >
-        <span className="tabular-nums">{streak}</span>
+        <span aria-hidden="true" className="tabular-nums">{streak}</span>
       </Badge>
 
       <Badge
+        role="img"
         tone="warning"
         variant="soft"
         icon={<span aria-hidden="true">⚡</span>}
         aria-label={isHi ? `कुल ${totalXp} XP` : `${totalXp} total XP`}
       >
-        <span className="tabular-nums">{totalXp.toLocaleString('en-IN')}</span>
-        <span className="ms-1 opacity-70">XP</span>
+        <span aria-hidden="true" className="tabular-nums">{totalXp.toLocaleString('en-IN')}</span>
+        <span aria-hidden="true" className="ms-1 opacity-70">XP</span>
       </Badge>
 
       <IconButton
@@ -278,9 +298,10 @@ export default function StudentOSDashboard() {
           totalXp={totalXp}
         />
 
-        {/* ═══ BELOW THE FOLD — demoted glance panels (Phase 3b rebuilds) ═══
-            Retained AS-IS for now; visually demoted behind a divider so the
-            above-the-fold keeps a single primary CTA. */}
+        {/* ═══ BELOW THE FOLD — read-only glance panels (Phase 3b) ═══
+            Rebuilt on canonical primitives. These are GLANCES only — every
+            interactive/secondary action is demoted into the disclosure below,
+            so the above-the-fold keeps a single primary CTA. */}
         <section
           aria-label={isHi ? 'तुम्हारी प्रगति एक नज़र में' : 'Your progress at a glance'}
           className="mt-3 flex flex-col gap-5 border-t border-surface-3 pt-5"
@@ -292,13 +313,59 @@ export default function StudentOSDashboard() {
 
           <RevisionRail isHi={isHi} studentId={student.id} />
 
-          {/* Subject roadmaps — the mastery-centric skill trees. */}
+          {/* Read-only per-subject roadmap glance (accuracy rings, no taps). */}
           <SubjectRoadmaps
             isHi={isHi}
             studentId={student.id}
             subjectCodeByName={subjectCodeByName}
           />
         </section>
+
+        {/* ═══ "More ways to study" — collapsible disclosure holding the demoted
+            secondary interactions (full revision CTA + interactive roadmap
+            taps). A real <button> toggle with aria-expanded/aria-controls;
+            chevron motion is reduced-motion aware. ═══ */}
+        <div className="mt-1">
+          <button
+            type="button"
+            aria-expanded={studyMoreOpen}
+            aria-controls={studyMorePanelId}
+            onClick={() => setStudyMoreOpen((v) => !v)}
+            className="flex h-12 w-full items-center justify-between rounded-xl border border-surface-3 bg-surface-1 px-4 text-fluid-sm font-semibold text-foreground transition-colors duration-150 ease-out hover:bg-surface-2 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+          >
+            <span>{isHi ? 'पढ़ाई के और तरीके' : 'More ways to study'}</span>
+            <span
+              aria-hidden="true"
+              className={cn(
+                'inline-flex transition-transform duration-200 ease-out motion-reduce:transition-none',
+                studyMoreOpen && 'rotate-180',
+              )}
+            >
+              ⌄
+            </span>
+          </button>
+
+          <div
+            id={studyMorePanelId}
+            hidden={!studyMoreOpen}
+            className="mt-4 flex flex-col gap-5"
+          >
+            {studyMoreOpen && (
+              <>
+                {/* Full spaced-repetition CTA (self-hides when nothing is due). */}
+                <ReviewsDueCard />
+
+                {/* Interactive per-chapter roadmap taps → Foxy. */}
+                <SubjectRoadmaps
+                  interactive
+                  isHi={isHi}
+                  studentId={student.id}
+                  subjectCodeByName={subjectCodeByName}
+                />
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </AppShell>
   );

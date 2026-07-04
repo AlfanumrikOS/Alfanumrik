@@ -19,6 +19,8 @@ import {
   countBuckets,
   roadmapStatusForRow,
   masteryPercent,
+  accuracyPercent,
+  aggregateAccuracyPercent,
   groupBySubject,
   weakestStartedTopic,
   type MasteryOverviewRow,
@@ -97,6 +99,42 @@ describe('masteryPercent — clamps 0..1 → 0..100', () => {
   });
   it('null probability → 0', () => {
     expect(masteryPercent(row({ mastery_probability: null }))).toBe(0);
+  });
+});
+
+describe('accuracyPercent — P1-canonical per-topic accuracy (C1)', () => {
+  it('is round(correct/attempts*100), the same formula quiz results use', () => {
+    expect(accuracyPercent(row({ attempts: 10, correct_attempts: 7 }))).toBe(70);
+    expect(accuracyPercent(row({ attempts: 3, correct_attempts: 1 }))).toBe(33); // not 33.33
+    expect(accuracyPercent(row({ attempts: 4, correct_attempts: 4 }))).toBe(100);
+  });
+  it('no divide-by-zero: 0 attempts → 0 (never NaN)', () => {
+    expect(accuracyPercent(row({ attempts: 0, correct_attempts: 0 }))).toBe(0);
+    expect(accuracyPercent(row({}))).toBe(0); // missing fields default to 0
+  });
+});
+
+describe('aggregateAccuracyPercent — Σcorrect/Σattempts across rows (C1)', () => {
+  it('sums correct + attempts BEFORE dividing (weighted, not a mean of ratios)', () => {
+    // Σcorrect = 4+1+2 = 7, Σattempts = 4+2+4 = 10 → 70%. A naive mean of the
+    // per-row ratios (100% + 50% + 50%)/3 = 67% is the bug this guards.
+    const rows = [
+      row({ topic_id: 'a', attempts: 4, correct_attempts: 4 }),
+      row({ topic_id: 'b', attempts: 2, correct_attempts: 1 }),
+      row({ topic_id: 'c', attempts: 4, correct_attempts: 2 }),
+    ];
+    expect(aggregateAccuracyPercent(rows)).toBe(70);
+  });
+  it('rows with no attempts contribute nothing (and never divide-by-zero)', () => {
+    const rows = [
+      row({ topic_id: 'a', attempts: 10, correct_attempts: 5 }),
+      row({ topic_id: 'b', mastery_level: 'not_started', attempts: 0, correct_attempts: 0 }),
+    ];
+    expect(aggregateAccuracyPercent(rows)).toBe(50);
+    expect(aggregateAccuracyPercent([])).toBe(0);
+    expect(
+      aggregateAccuracyPercent([row({ attempts: 0, correct_attempts: 0 })]),
+    ).toBe(0);
   });
 });
 

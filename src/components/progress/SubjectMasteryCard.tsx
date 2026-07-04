@@ -93,7 +93,8 @@ function VelocitySparkline({ datapoints }: { datapoints: Array<{ date: string; m
 
 /* ── Mastery level classifier ── */
 function classifyMastery(pct: number): 'mastered' | 'developing' | 'beginner' {
-  if (pct >= 75) return 'mastered';
+  if (pct >= 70) return 'mastered'; // C3/DD-14: aligned to canonical >=70 high cutoff
+
   if (pct >= 40) return 'developing';
   return 'beginner';
 }

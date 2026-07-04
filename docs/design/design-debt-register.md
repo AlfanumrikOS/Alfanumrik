@@ -24,7 +24,7 @@ Severity: HIGH (blocks consistency / a11y / correctness at scale) · MED
 | DD-11 | Converge ~134 Wonder Blocks consumers onto the canonical primitives; retire the legacy single-file set. | HIGH | Open | Phases 3–13 |
 | DD-12 | `--on-accent` **+ paired on-surface tokens ADDED this phase** (`--on-accent`, `--surface-inverse`/`--on-surface-inverse`(-muted), `--surface-accent`/`--on-surface-accent` in `:root`, cosmic, inert-dark; AA-verified — design-system.md §8.1). Remaining: `TONE_SOLID_FG` still uses the `white` keyword → repoint to `var(--on-accent)`; consumer migration pending. | LOW | Open | dark-mode wave |
 | DD-13 | `/dev/*` namespace is publicly reachable in prod — decide a `NODE_ENV` / route-exclusion policy. | MED | Open | Phase 2–3 |
-| DD-14 | `SubjectMasteryCard.classifyMastery` uses a 75 threshold vs the canonical 70 mastery-band — resolve the drift. | MED | Open | Phase 3 |
+| DD-18 | Dashboard authed browser QA (D1 double-sidebar, DD-16 contrast, overflow, single-CTA discipline) unverified in the placeholder-Supabase env — needs a real student session / preview deploy to confirm the Phase 3a/3b glance panels + disclosure render correctly end-to-end. | MED | Open | Preview / QA |
 | DD-16 | ~468 hardcoded light-text sites (`text-white` + inline `color:#fff`) are decoupled from their backgrounds → invisible white-on-cream text when a decorative/scoped bg fails to paint (e.g. Foxy `.foxy-header-premium`), across all roles. **Paired on-surface token layer now exists** (§8.1); read-only inventory at `docs/design/light-text-migration-inventory.md` (regen: `scripts/design/light-text-inventory.mjs`) categorizes sites SAFE/RISKY/NEEDS_REVIEW. Scripted migration scheduled across the page phases (RISKY/NEEDS_REVIEW first); guard via a lint rule rejecting raw `text-white`/`color:#fff` + visual-regression. | HIGH | Open | Page phases |
 
 ## Closed
@@ -33,3 +33,4 @@ Severity: HIGH (blocks consistency / a11y / correctness at scale) · MED
 |---|---|---|---|---|
 | DD-01 | Visual-regression harness for the primitive library. | — | Closed | Done — REG-237. |
 | DD-08 | REG-237 test coverage for the harness. | — | Closed | Done. |
+| DD-14 | `SubjectMasteryCard.classifyMastery` uses a 75 threshold vs the canonical 70 mastery-band. | MED | Closed | Phase 3b (C3) — reconciled 75→70 to match the canonical `bandForValue` >=70 high cutoff. Presentation only, no scoring change. |
