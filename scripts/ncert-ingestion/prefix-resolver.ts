@@ -269,13 +269,83 @@ export function resolveNcertFilename(
   };
 }
 
-// ─── Multi-book chapter namespacing ──────────────────────────────────────────
-// Within a (grade, subject_code) group, multiple physical books (e.g. First
-// Flight + Footprints for English, or Geography vol 1/2/3) must not overwrite
-// each other on chapter_number. We assign each distinct (prefix, bookNumber)
-// pair a stable volume index and, for multi-volume subjects only, offset the
-// chapter number by (volumeIndex + 1) * 100. Single-volume subjects keep their
-// natural chapter number so they still line up with cbse_syllabus.chapter_number.
+// ─── Multi-book chapter namespacing (MANIFEST-ALIGNED) ───────────────────────
+// Within a (grade, subject_code) group, multiple physical NCERT books (e.g.
+// Statistics + Indian Economic Development for grade-11 Economics, or Physics
+// Part 1 + Part 2) compose ONE subject. The coverage SSoT `public.cbse_syllabus`
+// numbers every subject CONTINUOUSLY 1..N across its books (Statistics 1-9,
+// Indian Economic Development 10-20, …), and `recompute_syllabus_status()`
+// joins chunks→syllabus on EXACT (grade_short, subject_code, chapter_number).
+//
+// So the chapter_number we emit MUST land in that same continuous 1..N space or
+// it orphans (joins zero syllabus rows → no coverage). The previous scheme
+// emitted (volumeIndex+1)*100 + chapter (101, 201, …), which matched 0 manifest
+// rows for every multi-book subject — assessment REJECT.
+//
+// The fix: a per-(grade, subject) BOOK-ORDER table. Each book carries a `base`
+// = the count of manifest chapters in all PRECEDING books of that subject, so
+// book K's chapter c maps to `base_K + c`. Bases are DERIVED from and VALIDATED
+// against the authoritative manifest (seed 20260624000100 + live cbse_syllabus):
+// the sum of a subject's book chapter-counts equals the manifest's 1..N for that
+// (grade, subject); manifest chapter order follows physical book order.
+//
+// Books present in the corpus but NOT part of a subject's manifest decomposition
+// (supplementary readers, workbooks, practical-work volumes — e.g. Footprints,
+// Words & Expressions, Practical Work in Geography), and multi-book groups whose
+// bucket book-structure could not be reconciled with the manifest with high
+// confidence (GATED subjects), are routed to a high orphan namespace (>= 900):
+// they are never mislabeled onto a real chapter and never collide, they simply
+// carry no coverage — which is correct, the manifest has no row for them.
+//
+// NOTE: the manifest is CONTINUOUS by design. We do NOT seed offset rows into
+// cbse_syllabus. The pre-existing "Chapter 101/201/…/304" pollution rows in prod
+// (an artifact of the old *100 scheme) are a SEPARATE architect/ops cleanup.
+
+export interface BookSlot {
+  prefix: string;   // 4-letter book code, e.g. 'kest'
+  book: number;     // volume digit from the filename
+  base: number;     // manifest chapters in all preceding books of this subject
+}
+
+/**
+ * BOOK-ORDER table, keyed by `${grade}|${subject_code}`. Ordered by manifest
+ * position. A subject is listed ONLY when its bucket book-structure was
+ * reconciled with the manifest with high confidence. Subjects NOT listed fall
+ * through to the default rule (single volume → natural number; un-vetted
+ * multi-volume → orphan/GATE). `base` values are manifest-derived (see the
+ * per-subject validation in the ingestion runbook / the acceptance-gate script).
+ */
+export const BOOK_ORDER: Readonly<Record<string, ReadonlyArray<BookSlot>>> = {
+  // ── Tier 1: bucket book-count sums EXACTLY to the manifest 1..N ────────────
+  '7|math':             [{ prefix: 'gegp', book: 1, base: 0 }, { prefix: 'gegp', book: 2, base: 8 }],
+  '7|social_studies':   [{ prefix: 'gees', book: 1, base: 0 }, { prefix: 'gees', book: 2, base: 12 }],
+  '8|math':             [{ prefix: 'hegp', book: 1, base: 0 }, { prefix: 'hegp', book: 2, base: 7 }],
+  '12|accountancy':     [{ prefix: 'leac', book: 1, base: 0 }, { prefix: 'leac', book: 2, base: 4 }],
+  '12|math':            [{ prefix: 'lemh', book: 1, base: 0 }, { prefix: 'lemh', book: 2, base: 6 }],
+
+  // ── Tier 2: manifest book boundary reliable, manifest order == book order ──
+  //    (base = manifest chapter count of the preceding book)
+  '11|economics':       [{ prefix: 'kest', book: 1, base: 0 }, { prefix: 'keec', book: 1, base: 9 }],   // Statistics 1-9, Indian Econ Dev 10-20
+  '11|physics':         [{ prefix: 'keph', book: 1, base: 0 }, { prefix: 'keph', book: 2, base: 8 }],   // Part 1 (1-8), Part 2 (9-15)
+  '11|political_science':[{ prefix: 'keps', book: 1, base: 0 }, { prefix: 'keps', book: 2, base: 10 }], // Political Theory 1-10, Indian Constitution 11-20
+  '12|business_studies':[{ prefix: 'lebs', book: 1, base: 0 }, { prefix: 'lebs', book: 2, base: 8 }],   // Part 1 (1-8), Part 2 (9-12)
+  '12|chemistry':       [{ prefix: 'lech', book: 1, base: 0 }, { prefix: 'lech', book: 2, base: 9 }],   // Part 1 (1-9), Part 2 (10-16)
+  '12|economics':       [{ prefix: 'leec', book: 1, base: 0 }, { prefix: 'leec', book: 2, base: 7 }],   // Micro 1-7, Macro 8-14
+  '12|geography':       [{ prefix: 'legy', book: 1, base: 0 }, { prefix: 'legy', book: 2, base: 12 }],  // Human Geography 1-12, India 13-23; legy vol 3 (practical) → orphan
+  '12|history_sr':      [{ prefix: 'lehs', book: 1, base: 0 }, { prefix: 'lehs', book: 2, base: 4 }, { prefix: 'lehs', book: 3, base: 9 }], // Themes I (1-4), II (5-9), III (10-15)
+  '12|physics':         [{ prefix: 'leph', book: 1, base: 0 }, { prefix: 'leph', book: 2, base: 8 }],   // Part 1 (1-8), Part 2 (9-15)
+  '12|political_science':[{ prefix: 'leps', book: 1, base: 0 }, { prefix: 'leps', book: 2, base: 9 }],  // Contemporary World Politics 1-9, Politics in India 10-18
+
+  // ── Partial: only the manifest's first book is mapped; other bucket books ──
+  //    (supplementary readers / uncertain later-book counts) → orphan.
+  '9|english':          [{ prefix: 'iebe', book: 1, base: 0 }],  // Beehive 1-9; Moments (iemo), Words & Expressions (iewe) → orphan
+  '10|english':         [{ prefix: 'jeff', book: 1, base: 0 }],  // First Flight 1-9; Footprints (jefp), Words & Expressions (jewe) → orphan
+  '11|accountancy':     [{ prefix: 'keac', book: 1, base: 0 }],  // Financial Accounting I 1-7; Part II (keac vol 2) count uncertain → orphan
+};
+
+// Chapter numbers >= this are the orphan namespace: never a real cbse_syllabus
+// row (real manifest maxima are < 50), never colliding with 1..N content.
+export const SUPPLEMENTARY_BASE = 900;
 
 export interface NamespaceInput {
   prefix: string;
@@ -284,21 +354,58 @@ export interface NamespaceInput {
 }
 
 /**
- * Deterministically assign a collision-free chapter_number for a resolved file,
- * given the set of all (prefix, bookNumber) volumes present in its
- * (grade, subject) group. `volumes` must be the full, de-duplicated list.
+ * A deterministic, collision-free chapter_number in the ORPHAN namespace for a
+ * file that is not part of its subject's manifest decomposition (supplementary
+ * book or GATED group). Distinct volumes get disjoint 50-wide bands so two
+ * out-of-manifest volumes never overwrite each other; nothing here ever lands
+ * on a real (<50) or pollution (<=304) chapter number.
+ */
+function supplementaryNumber(
+  file: NamespaceInput,
+  distinct: ReadonlyArray<{ prefix: string; bookNumber: number }>
+): number {
+  const idx = distinct.findIndex(
+    v => v.prefix === file.prefix && v.bookNumber === file.bookNumber
+  );
+  const volumeIndex = idx < 0 ? 0 : idx;
+  return SUPPLEMENTARY_BASE + volumeIndex * 50 + file.chapterInBook;
+}
+
+/**
+ * Deterministically assign a manifest-aligned chapter_number for a resolved
+ * file, given the set of all (prefix, bookNumber) volumes present in its
+ * (grade, subject) group. `volumes` must be the full (pre-dedupe) list.
+ *
+ *  - subject in BOOK_ORDER, book listed  → base + chapterInBook (real 1..N)
+ *  - subject in BOOK_ORDER, book absent   → orphan (supplementary reader)
+ *  - subject not in BOOK_ORDER, 1 volume  → natural chapterInBook
+ *  - subject not in BOOK_ORDER, >1 volume → orphan (un-vetted multi-book = GATE)
+ *
+ * grade + subject_code are derived from the filename prefix itself (char 0 →
+ * grade, full prefix → subject), so the signature is unchanged.
  */
 export function namespacedChapterNumber(
   file: NamespaceInput,
   volumes: ReadonlyArray<{ prefix: string; bookNumber: number }>
 ): number {
+  const grade = GRADE_BY_CLASS_CHAR[file.prefix[0]];
+  const subject = PREFIX_SUBJECT_MAP[file.prefix];
   const distinct = dedupeVolumes(volumes);
-  if (distinct.length <= 1) return file.chapterInBook;
-  const idx = distinct.findIndex(
-    v => v.prefix === file.prefix && v.bookNumber === file.bookNumber
-  );
-  const volumeIndex = idx < 0 ? 0 : idx;
-  return (volumeIndex + 1) * 100 + file.chapterInBook;
+  const table = grade && subject ? BOOK_ORDER[`${grade}|${subject}`] : undefined;
+
+  if (table) {
+    const slot = table.find(s => s.prefix === file.prefix && s.book === file.bookNumber);
+    if (slot) return slot.base + file.chapterInBook;
+    // Book is present in the corpus but not part of the manifest decomposition
+    // (supplementary reader / workbook / practical volume) → orphan.
+    return supplementaryNumber(file, distinct);
+  }
+
+  // No manifest decomposition for this group.
+  if (distinct.length <= 1) return file.chapterInBook; // single volume: natural
+  // Un-vetted multi-book group → GATE: orphan rather than risk a colliding or
+  // mislabeled number against the manifest's continuous space.
+  return supplementaryNumber(file, distinct);
 }
 
 /** Stable, sorted, de-duplicated (prefix, bookNumber) list. */

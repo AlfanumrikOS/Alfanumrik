@@ -26,6 +26,8 @@ import {
   GRADE_BY_CLASS_CHAR,
   PREFIX_SUBJECT_MAP,
   SUBJECT_DISPLAY,
+  BOOK_ORDER,
+  SUPPLEMENTARY_BASE,
   type ResolveFailure,
 } from '../../scripts/ncert-ingestion/prefix-resolver';
 import { findMojibakeOffenders } from '../../scripts/ncert-ingestion/mojibake';
@@ -192,44 +194,134 @@ describe('extractChapterParts — volume + chapter', () => {
   });
 });
 
-describe('namespacedChapterNumber — collision-free multi-book', () => {
+describe('namespacedChapterNumber — MANIFEST-ALIGNED continuous 1..N', () => {
+  // The coverage SSoT `cbse_syllabus` numbers every subject CONTINUOUSLY 1..N
+  // across its books, and `recompute_syllabus_status()` joins chunks->syllabus
+  // on EXACT (grade, subject, chapter_number). The previous (volumeIndex+1)*100
+  // scheme (101, 201, …) matched ZERO manifest rows for every multi-book subject
+  // -> orphan chunks, no coverage (assessment REJECT). The chapter_number now
+  // lands in that same continuous space via the per-subject BOOK_ORDER table
+  // (base = manifest chapters in all preceding books), validated against the
+  // live manifest by the ingestion acceptance-gate (34 -> 137 real gap-row flips).
+
   it('leaves single-volume subjects at their natural chapter number', () => {
     const vols = [{ prefix: 'jesc', bookNumber: 1 }];
     expect(namespacedChapterNumber({ prefix: 'jesc', bookNumber: 1, chapterInBook: 5 }, vols)).toBe(5);
   });
 
-  it('namespaces English reader vs supplementary so ch1 does not overwrite ch1', () => {
-    // First Flight (jeff) + Footprints (jefp), both volume 1, both chapter 1.
+  it('maps a two-book subject into ONE continuous 1..N span (grade-11 Economics)', () => {
+    // Manifest: Statistics for Economics (kest) = chapters 1-9, Indian Economic
+    // Development (keec) = chapters 10-20. Book ORDER is manifest order (kest
+    // first), NOT alphabetical prefix order — so it must come from the table.
+    const vols = [
+      { prefix: 'keec', bookNumber: 1 },
+      { prefix: 'kest', bookNumber: 1 },
+    ];
+    // Statistics book maps to the natural low span.
+    expect(namespacedChapterNumber({ prefix: 'kest', bookNumber: 1, chapterInBook: 1 }, vols)).toBe(1);
+    expect(namespacedChapterNumber({ prefix: 'kest', bookNumber: 1, chapterInBook: 9 }, vols)).toBe(9);
+    // Indian Econ Dev continues at 10 (base 9), NEVER at 101/201.
+    expect(namespacedChapterNumber({ prefix: 'keec', bookNumber: 1, chapterInBook: 1 }, vols)).toBe(10);
+    expect(namespacedChapterNumber({ prefix: 'keec', bookNumber: 1, chapterInBook: 8 }, vols)).toBe(17);
+  });
+
+  it('maps same-prefix Part 1 / Part 2 volumes cumulatively (grade-11 Physics)', () => {
+    // keph vol1 = Part 1 (chapters 1-8), keph vol2 = Part 2 (chapters 9-15).
+    const vols = [
+      { prefix: 'keph', bookNumber: 1 },
+      { prefix: 'keph', bookNumber: 2 },
+    ];
+    expect(namespacedChapterNumber({ prefix: 'keph', bookNumber: 1, chapterInBook: 7 }, vols)).toBe(7);
+    // Part 2 chapter 1 continues at manifest chapter 9 (base 8), not at 201.
+    expect(namespacedChapterNumber({ prefix: 'keph', bookNumber: 2, chapterInBook: 1 }, vols)).toBe(9);
+    expect(namespacedChapterNumber({ prefix: 'keph', bookNumber: 2, chapterInBook: 7 }, vols)).toBe(15);
+  });
+
+  it('maps a three-book subject cumulatively (grade-12 History — Themes I/II/III)', () => {
+    // lehs vol1 = Part I (1-4), vol2 = Part II (5-9, base 4), vol3 = Part III (10-15, base 9).
+    const vols = [
+      { prefix: 'lehs', bookNumber: 1 },
+      { prefix: 'lehs', bookNumber: 2 },
+      { prefix: 'lehs', bookNumber: 3 },
+    ];
+    expect(namespacedChapterNumber({ prefix: 'lehs', bookNumber: 1, chapterInBook: 4 }, vols)).toBe(4);
+    expect(namespacedChapterNumber({ prefix: 'lehs', bookNumber: 2, chapterInBook: 1 }, vols)).toBe(5);
+    expect(namespacedChapterNumber({ prefix: 'lehs', bookNumber: 3, chapterInBook: 1 }, vols)).toBe(10);
+    // All distinct, all in the real (<50) manifest span.
+    const nums = [
+      namespacedChapterNumber({ prefix: 'lehs', bookNumber: 1, chapterInBook: 1 }, vols),
+      namespacedChapterNumber({ prefix: 'lehs', bookNumber: 2, chapterInBook: 1 }, vols),
+      namespacedChapterNumber({ prefix: 'lehs', bookNumber: 3, chapterInBook: 1 }, vols),
+    ];
+    expect(new Set(nums).size).toBe(3);
+    expect(nums.every(n => n < SUPPLEMENTARY_BASE)).toBe(true);
+  });
+
+  it('maps the manifest book but ORPHANS the supplementary reader (grade-10 English)', () => {
+    // The manifest models grade-10 English as First Flight (jeff, 11 chapters)
+    // ONLY. Footprints without Feet (jefp) and the workbook (jewe) are NOT in
+    // the manifest, so they must NOT overwrite First Flight's 1..N and must NOT
+    // collide with each other — they go to the orphan namespace (>= 900).
     const vols = [
       { prefix: 'jeff', bookNumber: 1 },
       { prefix: 'jefp', bookNumber: 1 },
+      { prefix: 'jewe', bookNumber: 2 },
     ];
-    const ff = namespacedChapterNumber({ prefix: 'jeff', bookNumber: 1, chapterInBook: 1 }, vols);
+    // First Flight lands on real continuous chapters 1..9.
+    expect(namespacedChapterNumber({ prefix: 'jeff', bookNumber: 1, chapterInBook: 1 }, vols)).toBe(1);
+    expect(namespacedChapterNumber({ prefix: 'jeff', bookNumber: 1, chapterInBook: 9 }, vols)).toBe(9);
+    // Footprints + workbook orphan (>= 900), never on a First Flight chapter,
+    // and in disjoint bands so they never overwrite each other.
     const fp = namespacedChapterNumber({ prefix: 'jefp', bookNumber: 1, chapterInBook: 1 }, vols);
-    expect(ff).not.toBe(fp);
-    // Lock the exact scheme, not just "differ": once a group is multi-volume the
-    // FIRST book is ALSO offset (100 + ch), never left at its natural number.
-    // dedupeVolumes sorts jeff < jefp, so jeff=index0 -> 101, jefp=index1 -> 201.
-    expect(ff).toBe(101);
-    expect(fp).toBe(201);
+    const we = namespacedChapterNumber({ prefix: 'jewe', bookNumber: 2, chapterInBook: 1 }, vols);
+    expect(fp).toBeGreaterThanOrEqual(SUPPLEMENTARY_BASE);
+    expect(we).toBeGreaterThanOrEqual(SUPPLEMENTARY_BASE);
+    expect(fp).not.toBe(we);
   });
 
-  it('namespaces multi-volume Geography (vol1/2/3) collision-free', () => {
+  it('GATES an un-vetted multi-book subject to the orphan namespace (grade-10 Hindi)', () => {
+    // grade-10 Hindi has 5 bucket books (Kshitij/Sparsh/Kritika/Sanchayan/
+    // Vyakaran) whose counts + ordering could not be reconciled with the
+    // manifest's continuous 1..N with confidence. Rather than emit a wrong /
+    // colliding chapter_number, every book is GATED to the orphan namespace.
+    expect(BOOK_ORDER['10|hindi']).toBeUndefined();
     const vols = [
-      { prefix: 'legy', bookNumber: 1 },
-      { prefix: 'legy', bookNumber: 2 },
-      { prefix: 'legy', bookNumber: 3 },
+      { prefix: 'jhks', bookNumber: 1 },
+      { prefix: 'jhsp', bookNumber: 1 },
     ];
-    const nums = [
-      namespacedChapterNumber({ prefix: 'legy', bookNumber: 1, chapterInBook: 1 }, vols),
-      namespacedChapterNumber({ prefix: 'legy', bookNumber: 2, chapterInBook: 1 }, vols),
-      namespacedChapterNumber({ prefix: 'legy', bookNumber: 3, chapterInBook: 1 }, vols),
-    ];
-    expect(new Set(nums).size).toBe(3); // all distinct
-    // Exact scheme: (volumeIndex + 1) * 100 + chapterInBook.
-    expect(nums).toEqual([101, 201, 301]);
-    // Chapter offset rides through: legy vol2 ch9 -> 209.
-    expect(namespacedChapterNumber({ prefix: 'legy', bookNumber: 2, chapterInBook: 9 }, vols)).toBe(209);
+    const a = namespacedChapterNumber({ prefix: 'jhks', bookNumber: 1, chapterInBook: 1 }, vols);
+    const b = namespacedChapterNumber({ prefix: 'jhsp', bookNumber: 1, chapterInBook: 1 }, vols);
+    expect(a).toBeGreaterThanOrEqual(SUPPLEMENTARY_BASE);
+    expect(b).toBeGreaterThanOrEqual(SUPPLEMENTARY_BASE);
+    expect(a).not.toBe(b); // GATED books still never overwrite each other
+  });
+
+  it('never emits a *100 offset for any multi-book subject (regression pin)', () => {
+    // Explicit guard against the rejected scheme: no mapping may produce 101/201.
+    const econ = [{ prefix: 'kest', bookNumber: 1 }, { prefix: 'keec', bookNumber: 1 }];
+    for (const ch of [1, 2, 3]) {
+      expect(namespacedChapterNumber({ prefix: 'keec', bookNumber: 1, chapterInBook: ch }, econ)).toBeLessThan(100);
+      expect(namespacedChapterNumber({ prefix: 'kest', bookNumber: 1, chapterInBook: ch }, econ)).toBeLessThan(100);
+    }
+  });
+
+  it('BOOK_ORDER bases are cumulative and manifest-derived (no *100)', () => {
+    for (const [key, slots] of Object.entries(BOOK_ORDER)) {
+      // First listed book always starts at base 0 (natural low span).
+      expect(slots[0].base).toBe(0);
+      for (const s of slots) {
+        // Bases live in the real continuous span, never the orphan namespace.
+        expect(s.base).toBeGreaterThanOrEqual(0);
+        expect(s.base).toBeLessThan(SUPPLEMENTARY_BASE);
+        // A book's base is never a *100 offset artifact.
+        expect(s.base % 100 === 1).toBe(false);
+      }
+      // Bases are non-decreasing in manifest order.
+      for (let i = 1; i < slots.length; i++) {
+        expect(slots[i].base).toBeGreaterThanOrEqual(slots[i - 1].base);
+      }
+      expect(key).toMatch(/^\d+\|[a-z_]+$/);
+    }
   });
 
   it('dedupeVolumes is stable + sorted', () => {
