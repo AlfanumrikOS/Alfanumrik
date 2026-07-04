@@ -45,6 +45,41 @@ export interface IngestRowSample {
   chapter_title?: string | null;
 }
 
+export interface MojibakeOffender {
+  index: number;
+  field: string;
+  sample: string;
+}
+
+/**
+ * Non-throwing counterpart to {@link assertNoMojibake}. Returns the list of
+ * offending fields (empty when clean, or when the subject is non-Indic).
+ *
+ * Used by the STORAGE ingestion path, which must not abort the whole batch run
+ * when one legacy-font Hindi/Sanskrit PDF extracts as Krutidev garbage. Instead
+ * the caller SKIPS that file, logs it, and moves on — never writing mojibake
+ * into rag_content_chunks (which would poison Foxy citations + chapter
+ * dropdowns). Re-extraction via pdftotext + Devanagari font mapping (or OCR) is
+ * a separate follow-up.
+ */
+export function findMojibakeOffenders(
+  rows: IngestRowSample[],
+  subjectLanguage: string
+): MojibakeOffender[] {
+  if (!INDIC_SUBJECT_LANGUAGES.has(subjectLanguage.toLowerCase())) return [];
+
+  const offenders: MojibakeOffender[] = [];
+  rows.forEach((row, i) => {
+    for (const field of ['title', 'chapter_title', 'chunk_text'] as const) {
+      const value = row[field];
+      if (typeof value === 'string' && isDevanagariMojibake(value)) {
+        offenders.push({ index: i, field, sample: value.slice(0, 60) });
+      }
+    }
+  });
+  return offenders;
+}
+
 /**
  * Throws if any row's title/chunk_text/chapter_title looks like Krutidev
  * mojibake AND the subject is in our Indic language allow-list. Used by the
