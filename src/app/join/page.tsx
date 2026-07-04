@@ -5,13 +5,14 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { authHeader } from '@/lib/api/auth-header';
 import { setPendingInvite } from '@/lib/school/pending-invite';
+import { Skeleton } from '@/components/ui';
 import {
   Card,
   Button,
   Input,
+  Field,
   Badge,
-  Skeleton,
-} from '@/components/ui';
+} from '@/components/ui/primitives';
 
 /* ─────────────────────────────────────────────────────────────
    BILINGUAL HELPER (P7)
@@ -115,7 +116,7 @@ function JoinPageContent() {
   if (authLoading) {
     return (
       <div
-        className="min-h-dvh flex items-center justify-center px-4 font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
+        className="flex min-h-dvh items-center justify-center px-4"
         style={{ background: 'var(--bg)' }}
       >
         <div className="w-full max-w-sm space-y-4">
@@ -130,20 +131,20 @@ function JoinPageContent() {
 
   return (
     <div
-      className="min-h-dvh flex flex-col items-center justify-center px-4 py-8 font-['Plus_Jakarta_Sans',system-ui,sans-serif]"
+      className="flex min-h-dvh flex-col items-center justify-center px-4 py-8"
       style={{ background: 'var(--bg)' }}
     >
       <div className="w-full max-w-sm">
         {/* Header */}
-        <div className="text-center mb-8">
-          <div className="text-5xl mb-4" aria-hidden="true">🦊</div>
+        <div className="mb-8 text-center">
+          <div className="mb-4 text-5xl" aria-hidden="true">🦊</div>
           <h1
-            className="text-2xl font-bold"
-            style={{ fontFamily: 'Sora, system-ui, sans-serif', color: 'var(--text-1)' }}
+            className="text-fluid-2xl font-bold text-foreground"
+            style={{ fontFamily: 'Sora, system-ui, sans-serif' }}
           >
             {t(isHi, 'Join Your School', 'अपने स्कूल से जुड़ें')}
           </h1>
-          <p className="text-sm text-[var(--text-3)] mt-2">
+          <p className="mt-2 text-fluid-sm text-muted-foreground">
             {t(
               isHi,
               'Enter the invite code from your school',
@@ -154,40 +155,37 @@ function JoinPageContent() {
 
         {/* Result state: Success */}
         {result && result.success ? (
-          <Card accent="#16A34A" className="text-center">
-            <div className="py-4 space-y-4">
+          <Card variant="elevated" className="text-center">
+            <div className="space-y-4 px-5 py-6">
               <div className="text-4xl" aria-hidden="true">🎉</div>
 
               <div>
-                <h2 className="text-lg font-bold text-[var(--text-1)]">
+                <h2 className="text-fluid-lg font-bold text-foreground">
                   {result.authenticated
                     ? t(isHi, 'Welcome!', 'स्वागत है!')
                     : t(isHi, 'Almost there!', 'लगभग पूरा!')}
                 </h2>
-                <p className="text-sm text-[var(--text-2)] mt-2">
+                <p className="mt-2 text-fluid-sm text-muted-foreground">
                   {result.message}
                 </p>
               </div>
 
               {/* School & role info */}
-              <div className="flex items-center justify-center gap-2 flex-wrap">
+              <div className="flex flex-wrap items-center justify-center gap-2">
                 {result.school && (
-                  <Badge color="#7C3AED" size="md">
+                  <Badge tone="brand" variant="soft">
                     {result.school.name}
                   </Badge>
                 )}
                 {result.role && (
-                  <Badge
-                    color={result.role === 'teacher' ? '#0891B2' : '#F97316'}
-                    size="md"
-                  >
+                  <Badge tone={result.role === 'teacher' ? 'info' : 'warning'} variant="soft">
                     {result.role === 'teacher'
                       ? t(isHi, 'Teacher', 'शिक्षक')
                       : t(isHi, 'Student', 'छात्र')}
                   </Badge>
                 )}
                 {result.class_name && (
-                  <Badge color="#16A34A" size="md">
+                  <Badge tone="success" variant="soft">
                     {result.class_name}
                     {result.class_grade ? ` (Gr. ${result.class_grade})` : ''}
                   </Badge>
@@ -242,16 +240,14 @@ function JoinPageContent() {
         ) : (
           /* Input state: Enter code */
           <div className="space-y-4">
-            <div>
-              <label
-                htmlFor="invite-code"
-                className="text-xs text-[var(--text-3)] mb-1.5 block ml-1 font-medium"
-              >
-                {t(isHi, 'Invite Code / आमंत्रण कोड', 'Invite Code / आमंत्रण कोड')}
-              </label>
-              <input
-                id="invite-code"
+            <Field
+              htmlFor="invite-code"
+              label={t(isHi, 'Invite Code / आमंत्रण कोड', 'Invite Code / आमंत्रण कोड')}
+              error={error || undefined}
+            >
+              <Input
                 type="text"
+                size="lg"
                 value={code}
                 onChange={(e) => {
                   setCode(e.target.value.toUpperCase());
@@ -262,38 +258,17 @@ function JoinPageContent() {
                 maxLength={8}
                 autoComplete="off"
                 autoFocus
-                className="input-base text-center text-2xl font-bold tracking-[0.2em]"
-                style={{
-                  fontFamily: 'monospace',
-                  height: '56px',
-                  letterSpacing: '0.2em',
-                  ...(error
-                    ? {
-                        borderColor: '#DC2626',
-                        boxShadow: '0 0 0 2px rgba(220,38,38,0.1)',
-                      }
-                    : {}),
-                }}
-                aria-invalid={error ? 'true' : undefined}
-                aria-describedby={error ? 'code-error' : undefined}
+                className="text-center text-2xl font-bold"
+                style={{ fontFamily: 'monospace', letterSpacing: '0.2em' }}
               />
-            </div>
-
-            {error && (
-              <p
-                id="code-error"
-                className="text-sm text-red-500 text-center font-medium"
-                role="alert"
-              >
-                {error}
-              </p>
-            )}
+            </Field>
 
             <Button
               variant="primary"
               fullWidth
               size="lg"
               onClick={handleJoin}
+              loading={submitting}
               disabled={submitting || code.trim().length < 3}
             >
               {submitting
@@ -303,7 +278,7 @@ function JoinPageContent() {
 
             {/* Login link */}
             {!isLoggedIn && (
-              <p className="text-center text-xs text-[var(--text-3)]">
+              <p className="text-center text-fluid-xs text-muted-foreground">
                 {t(
                   isHi,
                   "Don't have a code? ",
@@ -322,8 +297,8 @@ function JoinPageContent() {
         )}
 
         {/* Footer: Powered by Alfanumrik */}
-        <div className="text-center mt-8">
-          <p className="text-xs text-[var(--text-3)]">
+        <div className="mt-8 text-center">
+          <p className="text-fluid-xs text-muted-foreground">
             {t(isHi, 'Powered by', 'द्वारा संचालित')}{' '}
             <span className="font-semibold" style={{ color: 'var(--purple)' }}>
               Alfanumrik
