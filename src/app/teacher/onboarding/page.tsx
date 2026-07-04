@@ -6,6 +6,16 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useTeacherAllowedSubjects } from '@/lib/useTeacherAllowedSubjects';
 import { VALID_GRADES } from '@/lib/identity';
+import {
+  Card,
+  Field,
+  Input,
+  Select,
+  Button,
+  Alert,
+  EmptyState,
+  ProgressBar,
+} from '@/components/ui/primitives';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -14,80 +24,7 @@ const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
 const GRADES = [...VALID_GRADES];
 const SECTIONS = ['', 'A', 'B', 'C', 'D', 'E'];
-
-const pageStyle: React.CSSProperties = {
-  minHeight: '100dvh',
-  backgroundColor: 'var(--bg)',
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  justifyContent: 'flex-start',
-  padding: '24px 16px 60px',
-  // fontFamily removed — global font-sans on <html> (globals.css) handles this
-};
-
-const cardStyle: React.CSSProperties = {
-  backgroundColor: '#fff',
-  borderRadius: 20,
-  boxShadow: '0 8px 40px rgba(0,0,0,0.08)',
-  padding: '36px 32px',
-  width: '100%',
-  maxWidth: 480,
-};
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '11px 14px',
-  backgroundColor: '#F8F6F2',
-  border: '1.5px solid #E8E0D5',
-  borderRadius: 10,
-  color: '#1A1A2E',
-  fontSize: 14,
-  outline: 'none',
-  boxSizing: 'border-box',
-  fontFamily: 'inherit',
-};
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 13,
-  color: '#6B7280',
-  display: 'block',
-  marginBottom: 5,
-  fontWeight: 500,
-};
-
-const btnPrimary: React.CSSProperties = {
-  width: '100%',
-  padding: '14px 24px',
-  background: 'linear-gradient(135deg, var(--orange), var(--orange-dark, #EA580C))',
-  color: '#fff',
-  border: 'none',
-  borderRadius: 12,
-  fontSize: 16,
-  fontWeight: 700,
-  cursor: 'pointer',
-  letterSpacing: 0.2,
-};
-
-// Progress dots
-function Dots({ step, total }: { step: number; total: number }) {
-  return (
-    <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 32 }}>
-      {Array.from({ length: total }, (_, i) => (
-        <div
-          key={i}
-          style={{
-            width: i < step ? 28 : 10,
-            height: 10,
-            borderRadius: 5,
-            backgroundColor: i < step ? 'var(--orange)' : '#E8E0D5',
-            transition: 'all 0.3s ease',
-          }}
-        />
-      ))}
-    </div>
-  );
-}
+const TOTAL_STEPS = 4;
 
 export default function TeacherOnboardingPage() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
@@ -185,9 +122,12 @@ export default function TeacherOnboardingPage() {
 
   if (authLoading) {
     return (
-      <div style={{ ...pageStyle, justifyContent: 'center' }}>
-        <div style={{ width: 40, height: 40, border: '3px solid #E8E0D5', borderTopColor: 'var(--orange)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <div className="mesh-bg flex min-h-dvh flex-col items-center justify-center px-4 py-6">
+        <div
+          aria-hidden="true"
+          className="h-10 w-10 animate-spin rounded-full border-4 border-surface-3 motion-reduce:animate-none"
+          style={{ borderTopColor: 'var(--orange)' }}
+        />
       </div>
     );
   }
@@ -196,29 +136,38 @@ export default function TeacherOnboardingPage() {
   const subjectMeta = subjects.find(s => s.code === formSubject);
 
   return (
-    <div style={pageStyle}>
+    <div className="mesh-bg flex min-h-dvh flex-col items-center px-4 pb-16 pt-6">
       <style>{`
-        @keyframes spin{to{transform:rotate(360deg)}}
         @keyframes fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
         @keyframes bounceIn{0%{transform:scale(0.5);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
       `}</style>
 
-      {/* Logo */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 32 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 10, background: 'linear-gradient(135deg, var(--orange), var(--purple))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>A</div>
-        <span style={{ fontSize: 20, fontWeight: 700, color: '#1A1A2E' }}>Alfanumrik</span>
+      {/* Brand mark */}
+      <div className="mb-8 flex items-center gap-2.5">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-accent text-fluid-lg font-bold text-on-accent">
+          A
+        </div>
+        <span className="text-fluid-xl font-bold text-foreground">Alfanumrik</span>
       </div>
 
-      <Dots step={step} total={4} />
+      {/* Step indicator — text label makes progress deuteranopia-safe */}
+      <div className="mb-8 w-full max-w-[480px]">
+        <ProgressBar
+          value={(step / TOTAL_STEPS) * 100}
+          tone="brand"
+          showValue
+          label={tt(isHi, `Step ${step} of ${TOTAL_STEPS}`, `चरण ${step} / ${TOTAL_STEPS}`)}
+        />
+      </div>
 
       {/* Step 1 — Welcome */}
       {step === 1 && (
-        <div style={{ ...cardStyle, animation: 'fadeIn 0.35s ease' }}>
-          <div style={{ fontSize: 48, textAlign: 'center', marginBottom: 16 }}>👋</div>
-          <h1 style={{ fontSize: 26, fontWeight: 700, color: '#1A1A2E', margin: '0 0 8px', textAlign: 'center' }}>
+        <Card variant="elevated" className="w-full max-w-[480px] p-8" style={{ animation: 'fadeIn 0.35s ease' }}>
+          <div className="mb-4 text-center text-5xl" aria-hidden="true">👋</div>
+          <h1 className="mb-2 text-center text-fluid-2xl font-bold text-foreground">
             {tt(isHi, `Welcome, ${teacherName}!`, `स्वागत है, ${teacherName}!`)}
           </h1>
-          <p style={{ fontSize: 15, color: '#6B7280', textAlign: 'center', margin: '0 0 28px', lineHeight: 1.6 }}>
+          <p className="mb-7 text-center text-fluid-sm leading-relaxed text-muted-foreground">
             {tt(isHi,
               "Let's set up your classroom on Alfanumrik in just a few steps.",
               'आइए कुछ ही चरणों में Alfanumrik पर आपकी कक्षा सेट अप करें।'
@@ -226,177 +175,164 @@ export default function TeacherOnboardingPage() {
           </p>
 
           {/* Profile summary */}
-          <div style={{ backgroundColor: 'var(--bg)', borderRadius: 12, padding: '16px 18px', marginBottom: 28, border: '1px solid #E8E0D5' }}>
-            <p style={{ fontSize: 13, color: '#9CA3AF', margin: '0 0 10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          <div className="mb-7 rounded-xl border border-surface-3 bg-surface-2 px-4 py-4">
+            <p className="mb-2.5 text-fluid-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {tt(isHi, 'Your Profile', 'आपकी प्रोफ़ाइल')}
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
-                <span style={{ color: '#6B7280' }}>{tt(isHi, 'Name', 'नाम')}</span>
-                <span style={{ color: '#1A1A2E', fontWeight: 600 }}>{teacherName}</span>
-              </div>
+            <div className="flex items-center justify-between text-fluid-sm">
+              <span className="text-muted-foreground">{tt(isHi, 'Name', 'नाम')}</span>
+              <span className="font-semibold text-foreground">{teacherName}</span>
             </div>
           </div>
 
-          <button onClick={() => setStep(2)} style={btnPrimary}>
+          <Button variant="primary" size="lg" fullWidth onClick={() => setStep(2)}>
             {tt(isHi, "Let's get started →", 'शुरू करें →')}
-          </button>
-        </div>
+          </Button>
+        </Card>
       )}
 
       {/* Step 2 — Create First Class */}
       {step === 2 && (
-        <div style={{ ...cardStyle, animation: 'fadeIn 0.35s ease' }}>
-          <h2 style={{ fontSize: 22, fontWeight: 700, color: '#1A1A2E', margin: '0 0 6px' }}>
+        <Card variant="elevated" className="w-full max-w-[480px] p-8" style={{ animation: 'fadeIn 0.35s ease' }}>
+          <h2 className="mb-1.5 text-fluid-xl font-bold text-foreground">
             {tt(isHi, 'Create your first class', 'अपनी पहली कक्षा बनाएं')}
           </h2>
-          <p style={{ fontSize: 14, color: '#9CA3AF', margin: '0 0 24px' }}>
+          <p className="mb-6 text-fluid-sm text-muted-foreground">
             {tt(isHi, 'Students will join using the class code generated below.', 'छात्र नीचे बनाए गए कक्षा कोड का उपयोग करके जुड़ेंगे।')}
           </p>
 
-          {/* Class Name */}
-          <label style={{ display: 'block', marginBottom: 14 }}>
-            <span style={labelStyle}>{tt(isHi, 'Class Name', 'कक्षा का नाम')}</span>
-            <input
-              type="text"
-              placeholder={tt(isHi, 'e.g. 10-A Science', 'जैसे 10-A विज्ञान')}
-              value={formName}
-              onChange={e => setFormName(e.target.value)}
-              style={inputStyle}
-            />
-          </label>
+          <div className="flex flex-col gap-4">
+            {/* Class Name */}
+            <Field htmlFor="class-name" label={tt(isHi, 'Class Name', 'कक्षा का नाम')}>
+              <Input
+                id="class-name"
+                type="text"
+                placeholder={tt(isHi, 'e.g. 10-A Science', 'जैसे 10-A विज्ञान')}
+                value={formName}
+                onChange={e => setFormName(e.target.value)}
+              />
+            </Field>
 
-          {/* Grade + Section */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-            <label>
-              <span style={labelStyle}>{tt(isHi, 'Grade', 'कक्षा')}</span>
-              <select value={formGrade} onChange={e => setFormGrade(e.target.value)} style={inputStyle}>
-                {GRADES.map(g => (
-                  <option key={g} value={g}>{tt(isHi, `Grade ${g}`, `कक्षा ${g}`)}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span style={labelStyle}>{tt(isHi, 'Section', 'सेक्शन')}</span>
-              <select value={formSection} onChange={e => setFormSection(e.target.value)} style={inputStyle}>
-                {SECTIONS.map(s => (
-                  <option key={s} value={s}>{s || tt(isHi, 'None', 'कोई नहीं')}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          {/* Subject */}
-          <label style={{ display: 'block', marginBottom: 20 }}>
-            <span style={labelStyle}>{tt(isHi, 'Subject', 'विषय')}</span>
-            <select value={formSubject} onChange={e => setFormSubject(e.target.value)} style={inputStyle}>
-              {subjects.map(s => (
-                <option key={s.code} value={s.code}>{s.icon} {s.name}</option>
-              ))}
-            </select>
-          </label>
-
-          {formError && (
-            <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: '#DC2626', fontSize: 13 }}>
-              {formError}
+            {/* Grade + Section */}
+            <div className="grid grid-cols-2 gap-3">
+              <Field htmlFor="class-grade" label={tt(isHi, 'Grade', 'कक्षा')}>
+                <Select id="class-grade" value={formGrade} onChange={e => setFormGrade(e.target.value)}>
+                  {GRADES.map(g => (
+                    <option key={g} value={g}>{tt(isHi, `Grade ${g}`, `कक्षा ${g}`)}</option>
+                  ))}
+                </Select>
+              </Field>
+              <Field htmlFor="class-section" label={tt(isHi, 'Section', 'सेक्शन')}>
+                <Select id="class-section" value={formSection} onChange={e => setFormSection(e.target.value)}>
+                  {SECTIONS.map(s => (
+                    <option key={s} value={s}>{s || tt(isHi, 'None', 'कोई नहीं')}</option>
+                  ))}
+                </Select>
+              </Field>
             </div>
-          )}
 
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button
-              onClick={() => setStep(1)}
-              style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', color: '#9CA3AF', border: '1.5px solid #E8E0D5', borderRadius: 10, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}
-            >
-              {tt(isHi, '← Back', '← वापस')}
-            </button>
-            <button
-              onClick={handleCreateClass}
-              disabled={creating || !formName.trim()}
-              style={{
-                flex: 2, padding: '12px', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: creating || !formName.trim() ? 'default' : 'pointer',
-                background: creating || !formName.trim() ? 'var(--surface-2)' : 'linear-gradient(135deg, var(--orange), var(--orange-dark, #EA580C))',
-                color: creating || !formName.trim() ? '#9CA3AF' : '#fff', border: 'none',
-              }}
-            >
-              {creating
-                ? tt(isHi, 'Creating...', 'बना रहे हैं...')
-                : tt(isHi, `Create ${subjectMeta?.name || 'Class'} →`, `${subjectMeta?.name || 'कक्षा'} बनाएं →`)
-              }
-            </button>
+            {/* Subject */}
+            <Field htmlFor="class-subject" label={tt(isHi, 'Subject', 'विषय')}>
+              <Select id="class-subject" value={formSubject} onChange={e => setFormSubject(e.target.value)}>
+                {subjects.map(s => (
+                  <option key={s.code} value={s.code}>{s.icon} {s.name}</option>
+                ))}
+              </Select>
+            </Field>
+
+            {formError && <Alert tone="danger">{formError}</Alert>}
+
+            <div className="flex gap-3">
+              <Button variant="ghost" onClick={() => setStep(1)} className="flex-1">
+                {tt(isHi, '← Back', '← वापस')}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleCreateClass}
+                disabled={creating || !formName.trim()}
+                loading={creating}
+                className="flex-[2]"
+              >
+                {creating
+                  ? tt(isHi, 'Creating...', 'बना रहे हैं...')
+                  : tt(isHi, `Create ${subjectMeta?.name || 'Class'} →`, `${subjectMeta?.name || 'कक्षा'} बनाएं →`)
+                }
+              </Button>
+            </div>
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Step 3 — Share class code */}
       {step === 3 && (
-        <div style={{ ...cardStyle, animation: 'fadeIn 0.35s ease' }}>
-          <div style={{ fontSize: 40, textAlign: 'center', marginBottom: 12 }}>🎉</div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, color: '#1A1A2E', margin: '0 0 6px', textAlign: 'center' }}>
+        <Card variant="elevated" className="w-full max-w-[480px] p-8" style={{ animation: 'fadeIn 0.35s ease' }}>
+          <div className="mb-3 text-center text-4xl" aria-hidden="true">🎉</div>
+          <h2 className="mb-1.5 text-center text-fluid-xl font-bold text-foreground">
             {tt(isHi, 'Class created!', 'कक्षा बनाई गई!')}
           </h2>
-          <p style={{ fontSize: 14, color: '#9CA3AF', margin: '0 0 28px', textAlign: 'center' }}>
+          <p className="mb-7 text-center text-fluid-sm text-muted-foreground">
             {tt(isHi, 'Share this code with your students so they can join.', 'यह कोड अपने छात्रों के साथ साझा करें ताकि वे जुड़ सकें।')}
           </p>
 
           {/* Big code display */}
-          <div style={{ backgroundColor: 'var(--bg)', border: '2px dashed var(--orange)', borderRadius: 16, padding: '28px 20px', textAlign: 'center', marginBottom: 24 }}>
-            <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 8px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>
+          <div className="mb-6 rounded-2xl border border-dashed border-surface-3 bg-surface-2 px-5 py-7 text-center">
+            <p className="mb-2 text-fluid-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {tt(isHi, 'Class Code', 'कक्षा कोड')}
             </p>
-            <div style={{ fontSize: 40, fontWeight: 800, color: 'var(--orange)', fontFamily: 'monospace', letterSpacing: 6 }}>
+            <div className="font-mono text-fluid-4xl font-extrabold tracking-[0.35em] text-primary">
               {classCode || '------'}
             </div>
           </div>
 
           {/* Action buttons */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
-            <button
-              onClick={copyCode}
-              style={{ ...btnPrimary, background: 'linear-gradient(135deg,#1D4ED8,#2563EB)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-            >
-              📋 {tt(isHi, 'Copy Code', 'कोड कॉपी करें')}
-            </button>
-            <button
-              onClick={whatsappShare}
-              style={{ ...btnPrimary, background: 'linear-gradient(135deg,#25D366,#128C7E)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-            >
-              📲 {tt(isHi, 'Share on WhatsApp', 'WhatsApp पर साझा करें')}
-            </button>
+          <div className="mb-6 flex flex-col gap-3">
+            <Button variant="secondary" fullWidth onClick={copyCode} leadingIcon="📋">
+              {tt(isHi, 'Copy Code', 'कोड कॉपी करें')}
+            </Button>
+            <Button variant="secondary" fullWidth onClick={whatsappShare} leadingIcon="📲">
+              {tt(isHi, 'Share on WhatsApp', 'WhatsApp पर साझा करें')}
+            </Button>
           </div>
 
-          <p style={{ fontSize: 13, color: '#9CA3AF', textAlign: 'center', margin: '0 0 20px', lineHeight: 1.6 }}>
+          <p className="mb-5 text-center text-fluid-xs leading-relaxed text-muted-foreground">
             {tt(isHi,
               'Students open the Alfanumrik app, tap "Join Class" and enter this code.',
               'छात्र Alfanumrik ऐप खोलें, "कक्षा में शामिल हों" टैप करें और यह कोड दर्ज करें।'
             )}
           </p>
 
-          <button onClick={() => setStep(4)} style={btnPrimary}>
+          <Button variant="primary" size="lg" fullWidth onClick={() => setStep(4)}>
             {tt(isHi, 'Continue →', 'जारी रखें →')}
-          </button>
-        </div>
+          </Button>
+        </Card>
       )}
 
       {/* Step 4 — Done */}
       {step === 4 && (
-        <div style={{ ...cardStyle, textAlign: 'center', animation: 'fadeIn 0.35s ease' }}>
-          <div style={{ fontSize: 72, marginBottom: 16, animation: 'bounceIn 0.6s ease' }}>✅</div>
-          <h2 style={{ fontSize: 26, fontWeight: 700, color: '#1A1A2E', margin: '0 0 10px' }}>
-            {tt(isHi, "You're all set!", 'आप तैयार हैं!')}
-          </h2>
-          <p style={{ fontSize: 16, color: '#059669', fontWeight: 600, margin: '0 0 8px' }}>
-            {tt(isHi, 'Your class is ready!', 'आपकी कक्षा तैयार है!')}
-          </p>
-          <p style={{ fontSize: 14, color: '#9CA3AF', margin: '0 0 36px', lineHeight: 1.7, maxWidth: 340, marginLeft: 'auto', marginRight: 'auto' }}>
-            {tt(isHi,
-              'Head to your dashboard to track student progress, view mastery heatmaps, and create assignments.',
-              'छात्रों की प्रगति ट्रैक करने, मास्टरी हीटमैप देखने और असाइनमेंट बनाने के लिए अपने डैशबोर्ड पर जाएं।'
-            )}
-          </p>
-          <button onClick={handleFinish} style={btnPrimary}>
-            {tt(isHi, 'Go to Dashboard →', 'डैशबोर्ड पर जाएं →')}
-          </button>
-        </div>
+        <Card variant="elevated" className="w-full max-w-[480px] p-8" style={{ animation: 'fadeIn 0.35s ease' }}>
+          <EmptyState
+            icon={<span style={{ animation: 'bounceIn 0.6s ease' }}>✅</span>}
+            title={tt(isHi, "You're all set!", 'आप तैयार हैं!')}
+            description={
+              <>
+                <span className="block text-fluid-base font-semibold text-success">
+                  {tt(isHi, 'Your class is ready!', 'आपकी कक्षा तैयार है!')}
+                </span>
+                <span className="mt-2 block">
+                  {tt(isHi,
+                    'Head to your dashboard to track student progress, view mastery heatmaps, and create assignments.',
+                    'छात्रों की प्रगति ट्रैक करने, मास्टरी हीटमैप देखने और असाइनमेंट बनाने के लिए अपने डैशबोर्ड पर जाएं।'
+                  )}
+                </span>
+              </>
+            }
+            action={
+              <Button variant="primary" size="lg" fullWidth onClick={handleFinish}>
+                {tt(isHi, 'Go to Dashboard →', 'डैशबोर्ड पर जाएं →')}
+              </Button>
+            }
+          />
+        </Card>
       )}
     </div>
   );
