@@ -745,6 +745,18 @@ describe('Section 5b — QuizResults SRS card writes (source_id = question id, g
     expect(code).toMatch(/\.in\('source_id', questionIds\)/);
   });
 
+  it('writes a per-question composite dedupe key into topic — never the bloom level', () => {
+    // topic = `${subject}:${chapter}:${question_id}`. The old
+    // `topic: q.bloom_level` shape + idx_src_u UNIQUE (student_id, topic,
+    // card_type) WHERE topic IS NOT NULL capped every student at 6 lifetime
+    // review cards across ALL subjects (one per Bloom level,
+    // first-writer-wins) and let NULL-bloom cards duplicate unboundedly.
+    expect(code).toMatch(
+      /topic: `\$\{selectedSubject\}:\$\{q\.chapter_number \?\? 'na'\}:\$\{q\.id\}`/,
+    );
+    expect(code).not.toMatch(/topic: q\.bloom_level/);
+  });
+
   it('retries row-by-row when the batch insert hits the partial-unique-index conflict', () => {
     expect(code).toMatch(/for \(const card of cardsToInsert\)/);
   });
