@@ -149,6 +149,14 @@
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
   --shadow-glow: 0 0 24px rgba(232, 88, 28, 0.15);
 
+  /* ─── Overlay scrim (Phase 2 Batch B2) ───────────────────────────────────
+     The dimming backdrop behind modals / drawers / bottom-sheets. Anchored to
+     the warm brand ink (26,18,7 = --text-1 #1A1207, matching --shadow-edge) so
+     the scrim reads as a warm dark veil rather than a cold pure-black. Declared
+     in the token layer (like --border / --shadow-*, which are also rgba() here)
+     so components reference ONLY var(--scrim) and never a raw literal. */
+  --scrim: rgba(26, 18, 7, 0.45);
+
   /* ─── Radius scale (Phase 1 — was UNDEFINED, a real bug) ──────────────────
      tailwind.config.js maps rounded-sm/md/lg/xl/2xl → var(--radius-sm..2xl),
      but those tokens never existed, so `rounded-xl` (used ~670×) etc. resolved
@@ -243,6 +251,9 @@
   --shadow-md: 0 2px 12px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
   --shadow-glow: 0 0 24px rgba(232, 88, 28, 0.25);
+
+  /* Deeper, near-black scrim on the dark surfaces (Phase 2 Batch B2). */
+  --scrim: rgba(0, 0, 0, 0.62);
 }
 
 /* ─── Base ────────────────────────────────────────────────── */

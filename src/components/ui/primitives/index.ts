@@ -57,4 +57,42 @@ export {
 } from './Radio';
 export { Switch, type SwitchProps } from './Switch';
 
+/* ── Overlay primitives (Batch B2) ── */
+export {
+  Dialog,
+  DialogTitle,
+  DialogBody,
+  DialogFooter,
+  ConfirmDialog,
+  type DialogProps,
+  type DialogSize,
+  type DialogTitleProps,
+  type ConfirmDialogProps,
+} from './Dialog';
+export {
+  Drawer,
+  type DrawerProps,
+  type DrawerSide,
+  type DrawerSize,
+} from './Drawer';
+export {
+  BottomSheet,
+  type BottomSheetProps,
+} from './BottomSheet';
+export { Tooltip, type TooltipProps, type TooltipSide } from './Tooltip';
+
+/* Shared overlay foundation (Portal / Scrim / focus-trap / scroll-lock / …). */
+export {
+  Portal,
+  Scrim,
+  useScrollLock,
+  useFocusTrap,
+  useEscapeKey,
+  usePresence,
+  type PortalProps,
+  type ScrimProps,
+  type UseFocusTrapOptions,
+  type UsePresenceResult,
+} from './overlay';
+
 export { type Tone, type ActionVariant, type ControlSize } from './tokens';

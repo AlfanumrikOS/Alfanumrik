@@ -372,3 +372,51 @@ and `rounded-md`/`rounded-full` on the check/radio boxes. No control forces a
 serif face, so Devanagari renders correctly (proven by the `lang="hi"` sample on
 `/dev/ui`). All copy (label / hint / error / placeholder / required + optional
 words) is passed in — bilingual-safe (P7).
+
+> **DD-15.** Override a `Field` control's id via **`Field htmlFor`**, never on the
+> control itself — put `id` on the `<Input>`/`<Select>` and the `<label htmlFor>`
+> keeps pointing at the auto-generated id, so label association silently desyncs.
+
+## 12. Overlay Primitives (Batch B2)
+
+**Status:** Phase 2 Batch B2 — the canonical overlay layer, same conventions as
+§10/§11 (token-only, `forwardRef` where a DOM ref is meaningful, a11y-by-default,
+copy via props/children — P7). Same import path (`@/components/ui/primitives`)
+and the same additive coexistence rule: the existing bespoke modals (UpgradeModal,
+SubscriptionConfirm, foxy/ReportIssueModal, admin-ui/DetailDrawer,
+achievements/LevelUpModal, ui/toast) are untouched — they migrate onto this set
+later. Source: `src/components/ui/primitives/{Dialog,Drawer,BottomSheet,Tooltip}.tsx`
++ the shared foundation in `primitives/overlay/`. Showcase: `/dev/ui` → "Overlays".
+
+**New token.** `--scrim` was added to the token layer (light: warm-ink
+`rgba(26,18,7,.45)`; dark: `rgba(0,0,0,.62)`) — it was genuinely missing. It is
+declared in `globals.css` alongside `--border`/`--shadow-*` (which are also rgba
+in the token layer) so overlays reference **only** `var(--scrim)`, never a raw
+literal. The z-index rungs (`--z-overlay` scrim, `--z-modal` dialog/drawer/sheet,
+`--z-tooltip`) already existed.
+
+### Shared foundation (`primitives/overlay/`)
+
+One substrate, reused by all four overlays — **no duplication**:
+
+| Piece | Responsibility |
+|---|---|
+| `Portal` | Renders into `document.body` (SSR-safe: mounts only after hydration) so overlays escape ancestor `overflow`/`transform` clipping. |
+| `useScrollLock(active)` | Locks `<body>` scroll while open. **Ref-counted** at module scope so nested/stacked overlays only unlock on the LAST release; compensates for scrollbar width to avoid layout jump. |
+| `useFocusTrap(active, ref, opts)` | From scratch (no library). Focuses `initialFocusRef` or the first focusable on open; wraps Tab/Shift+Tab inside the panel; **restores focus to the trigger** on close. |
+| `useEscapeKey(active, onEscape)` | Capture-phase Escape → close; stops propagation so one Escape closes only the frontmost overlay in a stack. |
+| `usePresence(open, ms)` | Drives enter/exit: mounts immediately on open (flips `visible` next frame), plays the exit transition then unmounts. `prefers-reduced-motion` ⇒ instant. |
+| `Scrim` | Token-driven backdrop (`var(--scrim)` on `--z-overlay`), optional click-to-dismiss + blur, reduced-motion fade. |
+
+### Per-overlay a11y contract
+
+| Primitive | Contract |
+|---|---|
+| `Dialog` / `ConfirmDialog` | Centered; `role="dialog"` `aria-modal="true"`; `aria-labelledby`←`DialogTitle`, `aria-describedby`←`DialogBody` (both auto-registered via context; falls back to `aria-label`); focus trap + restore; Escape + scrim-click close (both individually disable-able — `ConfirmDialog destructive` hardens both off); scroll-lock; sizes sm/md/lg. `ConfirmDialog` focuses **Cancel** first. |
+| `Drawer` | Left/right side sheet; identical dialog semantics (`role="dialog"` `aria-modal`, `aria-labelledby`/`-describedby` from `title`/`description`); slide-X transition (reduced-motion aware); token-driven width (sm/md/lg via Tailwind `max-w` scale); optional close `IconButton` (needs `closeLabel`); Escape + scrim close. |
+| `BottomSheet` | **Primary mobile pattern.** Bottom-anchored, snaps to content height (`maxHeight: 90dvh`), `safe-area-inset-bottom` padding via `.safe-bottom`. Full dialog a11y contract. Visible **drag handle is a real `<button>`** (keyboard/click close fallback) that also affords **swipe-to-dismiss** via pointer events (no lib): drag down past ~110px (or flick) closes, short drag snaps back; `touch-none` on the handle. Escape + scrim close too. |
+| `Tooltip` | Supplementary hint. Shows on **hover AND keyboard focus**; wires `aria-describedby` trigger→`role="tooltip"` node; **touch**: tap shows / tap-away hides; positioned top/bottom/left/right, **flips + clamps** to stay in the viewport (body-portalled, `fixed`); reduced-motion fade; **never uses the native `title` attribute** (no browser dialog). Tooltips are supplementary — never the ONLY way to reach information. |
+
+**Bilingual (P7).** Every overlay takes its copy through props/children —
+titles, descriptions, button labels, `closeLabel`/`handleLabel`, and tooltip
+`content`. Nothing is hardcoded; callers localise via `AuthContext.isHi`.

@@ -8,7 +8,7 @@
    design system can be reviewed at a glance. Responsive (375 → 1280).
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Button,
   IconButton,
@@ -33,6 +33,14 @@ import {
   Radio,
   RadioGroup,
   Switch,
+  Dialog,
+  DialogTitle,
+  DialogBody,
+  DialogFooter,
+  ConfirmDialog,
+  Drawer,
+  BottomSheet,
+  Tooltip,
   type Tone,
   type ActionVariant,
   type ControlSize,
@@ -62,6 +70,159 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       </span>
       <div className="flex flex-wrap items-center gap-3">{children}</div>
     </div>
+  );
+}
+
+function OverlaysSection() {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [destructiveOpen, setDestructiveOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const dialogPrimaryRef = useRef<HTMLButtonElement>(null);
+
+  return (
+    <Section
+      title="Overlays (Batch B2)"
+      note="Portal + focus-trap + scroll-lock + scrim foundation. Open one and Tab — focus is trapped; close and focus returns to the trigger button."
+    >
+      <Row label="Dialog">
+        <Button onClick={() => setDialogOpen(true)}>Open dialog</Button>
+        <Dialog
+          open={dialogOpen}
+          onClose={() => setDialogOpen(false)}
+          initialFocusRef={dialogPrimaryRef}
+        >
+          <DialogTitle>Enable exam mode?</DialogTitle>
+          <DialogBody>
+            Exam mode counts down and disables hints. Focus is trapped in this
+            dialog — Tab cycles the two buttons only. Press Escape or click the
+            scrim to dismiss.
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button ref={dialogPrimaryRef} onClick={() => setDialogOpen(false)}>
+              Start exam
+            </Button>
+          </DialogFooter>
+        </Dialog>
+      </Row>
+
+      <Row label="Confirm">
+        <Button variant="secondary" onClick={() => setConfirmOpen(true)}>
+          Confirm action
+        </Button>
+        <ConfirmDialog
+          open={confirmOpen}
+          onClose={() => setConfirmOpen(false)}
+          onConfirm={() => setConfirmOpen(false)}
+          title="Submit quiz?"
+          description="You have 2 unanswered questions. Submit anyway?"
+          confirmLabel="Submit"
+          cancelLabel="Keep going"
+        />
+
+        <Button variant="danger" onClick={() => setDestructiveOpen(true)}>
+          Delete (destructive)
+        </Button>
+        <ConfirmDialog
+          open={destructiveOpen}
+          onClose={() => setDestructiveOpen(false)}
+          onConfirm={() => {
+            setDeleting(true);
+            setTimeout(() => {
+              setDeleting(false);
+              setDestructiveOpen(false);
+            }, 900);
+          }}
+          title="Delete this class?"
+          description="This permanently removes the class and all enrollments. Destructive confirms disable Escape + scrim close, so you must choose explicitly."
+          confirmLabel="Delete class"
+          cancelLabel="Cancel"
+          destructive
+          loading={deleting}
+        />
+      </Row>
+
+      <Row label="Drawer">
+        <Button variant="secondary" onClick={() => setDrawerOpen(true)}>
+          Open drawer (right)
+        </Button>
+        <Drawer
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          title="Filters"
+          description="Refine the leaderboard."
+          closeLabel="Close filters"
+          footer={
+            <Button fullWidth onClick={() => setDrawerOpen(false)}>
+              Apply
+            </Button>
+          }
+        >
+          <div className="flex flex-col gap-4">
+            <RadioGroup
+              name="drawer-grade"
+              label="Grade"
+              defaultValue="9"
+              options={[
+                { value: '6', label: 'Grade 6' },
+                { value: '9', label: 'Grade 9' },
+                { value: '12', label: 'Grade 12' },
+              ]}
+            />
+            <Switch label="Only my class" />
+          </div>
+        </Drawer>
+      </Row>
+
+      <Row label="Bottom sheet">
+        <Button variant="secondary" onClick={() => setSheetOpen(true)}>
+          Open bottom sheet
+        </Button>
+        <BottomSheet
+          open={sheetOpen}
+          onClose={() => setSheetOpen(false)}
+          title="Quick actions"
+          description="Drag the handle down to dismiss (touch), or use the handle button / Escape."
+          handleLabel="Close sheet"
+          footer={
+            <Button fullWidth onClick={() => setSheetOpen(false)}>
+              Done
+            </Button>
+          }
+        >
+          <ul className="flex flex-col gap-2">
+            {['Share progress', 'Download report', 'Report an issue'].map((item) => (
+              <li key={item}>
+                <Button variant="ghost" fullWidth onClick={() => setSheetOpen(false)}>
+                  {item}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </BottomSheet>
+      </Row>
+
+      <Row label="Tooltip">
+        <Tooltip content="Experience points earned today" side="top">
+          <Button variant="secondary">Hover / focus me (top)</Button>
+        </Tooltip>
+        <Tooltip content="Opens on keyboard focus too" side="bottom">
+          <Button variant="ghost">Tab to me (bottom)</Button>
+        </Tooltip>
+        <Tooltip content="Tap shows, tap-away hides" side="right">
+          <IconButton
+            label="Info"
+            variant="secondary"
+            icon={<span aria-hidden="true" className="font-bold">i</span>}
+          />
+        </Tooltip>
+      </Row>
+    </Section>
   );
 }
 
@@ -471,6 +632,8 @@ export default function UiShowcasePage() {
             </CardBody>
           </Card>
         </Section>
+
+        <OverlaysSection />
       </div>
     </main>
   );
