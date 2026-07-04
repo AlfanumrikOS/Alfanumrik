@@ -313,3 +313,62 @@ light tones, `white` on danger/brand — warning never renders gold-as-text).
 `--on-accent` / `--fg-on-primary` token. Batch A uses the CSS `white` keyword
 as the on-accent foreground (validated by §8 for the primary CTA). Add a named
 token when the dark mode work lands, then repoint `TONE_SOLID_FG`.
+
+---
+
+## 11. Form Primitives (Batch B1)
+
+**Status:** Phase 2 Batch B1 — the canonical form-control layer, built on the
+exact conventions of §10 (variant/size props, `tokens.ts` shared maps,
+`forwardRef`, token-only, a11y-by-default). Same import path
+(`@/components/ui/primitives`, `primitives` namespace on the barrel) and the
+same coexistence rule — additive over the legacy dialects, nothing removed.
+Source: `src/components/ui/primitives/{Field,Input,Textarea,Select,Checkbox,Radio,Switch}.tsx`.
+Showcase: `/dev/ui` → "Form Primitives".
+
+**Shared control tokens** (added to `primitives/tokens.ts`, reused by the
+text-entry controls): `CONTROL_TEXT_SIZE` (height + type per `ControlSize` —
+`md` = 48px touch, `sm` = 44px minimum), `CONTROL_TEXT_BASE` (surface + border +
+focus-ring base), `CONTROL_INVALID` (danger border + ring, applied from the
+resolved `aria-invalid`). No new CSS custom property was required.
+
+### The Field contract (accessibility backbone)
+
+`Field` is the composite wrapper every text-entry control sits inside. It owns
+the id graph and pushes it down through **`FieldContext`**, which
+`Input` / `Textarea` / `Select` read via the exported **`useFieldControl()`**
+hook. `<Field label="…"><Input/></Field>` therefore wires, with zero prop
+threading:
+
+- `id` on the control ⇄ `htmlFor` on the `<label>` (auto-generated with
+  `useId` unless `htmlFor` is passed);
+- `aria-describedby` = `"<id>-hint <id>-error"` (only the parts that exist);
+- `aria-invalid=true` whenever `error` is set (the error `<p>` is
+  `role="alert"` and carries an icon — the state is **never colour-only**);
+- `required` on the control + a shape marker (`*` glyph) + an SR-only word
+  (`requiredText`, localisable) on the label — required is **not** signalled by
+  colour alone;
+- `disabled` propagated to the control.
+Explicit props on the control always beat the context (escape hatch). `optional`
++ `optionalText` render a localisable "(optional)" affordance.
+
+### Per-control a11y + API
+
+| Primitive | Key props | A11y contract |
+|---|---|---|
+| `Field` | `label`, `htmlFor?`, `hint?`, `error?`, `required?`, `optional?`, `optionalText?`, `disabled?`, `requiredText?`, `errorIcon?` | Associates `<label>`↔control; builds `aria-describedby`; sets `aria-invalid`; error is `role="alert"` + icon; required = glyph + SR word |
+| `Input` | `size` (sm/md/lg), `leadingAdornment?`, `trailingAdornment?`, all native `<input>` attrs | Native input; consumes Field context; 48px (md) target; adornments are `aria-hidden` + `pointer-events-none`; danger border/ring on invalid |
+| `Textarea` | `minRows` (default 3), native `<textarea>` attrs | Native textarea; consumes Field context; vertical-only resize (360px-safe); invalid styling |
+| `Select` | `size`, `placeholder?` (disabled hidden sentinel option), `options?` or `children`, native `<select>` attrs | **Native** `<select>` (mobile-correct + a11y-safe; no custom listbox this batch); token chevron is `aria-hidden`; consumes Field context |
+| `Checkbox` | `label`, `hint?`, `error?`, `indeterminate?`, native attrs | Native checkbox; whole `<label>` ≥44px hit area (visual box 20px); focus-ring on box; `indeterminate` set on the DOM node + dash glyph; own `aria-describedby` |
+| `Radio` | `label`, native attrs | Single native radio; ≥44px label hit area; dot via `peer-checked` |
+| `RadioGroup` | `name` (required), `label` (legend), `options`, `value?`/`defaultValue?`, `onChange?`, `hint?`, `error?`, `required?`, `orientation?`, `requiredText?` | `<fieldset>` + `<legend>` grouping → native roving focus + arrow-key nav; `aria-describedby`/`aria-invalid`/`aria-required` on the fieldset; vertical or horizontal |
+| `Switch` | `label`, `labelPosition?` (start/end), native attrs | Native `<input type="checkbox" role="switch">` → free keyboard toggle + on/off announcement; ≥44px label; thumb travel is `motion-reduce`-aware |
+
+**Design decisions.** Native controls under the hood everywhere (best a11y +
+mobile picker behaviour); a custom `Select` listbox is deliberately out of scope.
+Radius is `rounded-lg` on text controls (control-family cohesion with `Button`)
+and `rounded-md`/`rounded-full` on the check/radio boxes. No control forces a
+serif face, so Devanagari renders correctly (proven by the `lang="hi"` sample on
+`/dev/ui`). All copy (label / hint / error / placeholder / required + optional
+words) is passed in — bilingual-safe (P7).

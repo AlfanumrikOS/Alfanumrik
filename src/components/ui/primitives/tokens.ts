@@ -16,6 +16,35 @@ export type ActionVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 /** Control sizes shared across interactive primitives. */
 export type ControlSize = 'sm' | 'md' | 'lg';
 
+/**
+ * Height + horizontal padding + type size for text-entry controls
+ * (Input, Select, and the single-line metrics Textarea reuses).
+ * md is the default and gives a 48px touch target on mobile; sm still
+ * clears the 44px WCAG minimum (design-system.md §5, §10).
+ */
+export const CONTROL_TEXT_SIZE: Record<ControlSize, string> = {
+  sm: 'h-11 text-fluid-sm',
+  md: 'h-12 text-fluid-base',
+  lg: 'h-14 text-fluid-md',
+};
+
+/**
+ * Shared base appearance for text-entry controls (Input / Textarea / Select).
+ * Token-only: semantic surface + border + focus ring. The invalid (danger)
+ * border/ring is applied conditionally by each control from its resolved
+ * `aria-invalid` — never colour-only (an alert icon + message carry the state).
+ */
+export const CONTROL_TEXT_BASE =
+  'w-full rounded-lg border border-surface-3 bg-surface-1 text-foreground ' +
+  'placeholder:text-muted-foreground ' +
+  'transition-colors duration-150 ease-out motion-reduce:transition-none ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 ' +
+  'disabled:cursor-not-allowed disabled:bg-surface-2 disabled:opacity-60';
+
+/** Danger border + ring applied when a control resolves aria-invalid=true. */
+export const CONTROL_INVALID =
+  'border-danger focus-visible:ring-danger';
+
 /** Tone → semantic CSS var (the fill / accent hue for that tone). */
 export const TONE_VAR: Record<Tone, string> = {
   neutral: 'var(--text-3)',

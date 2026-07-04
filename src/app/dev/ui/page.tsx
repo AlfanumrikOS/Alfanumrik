@@ -25,6 +25,14 @@ import {
   SkeletonText,
   SkeletonCircle,
   EmptyState,
+  Field,
+  Input,
+  Textarea,
+  Select,
+  Checkbox,
+  Radio,
+  RadioGroup,
+  Switch,
   type Tone,
   type ActionVariant,
   type ControlSize,
@@ -66,6 +74,11 @@ export default function UiShowcasePage() {
       else next.add(k);
       return next;
     });
+
+  // Forms — controlled demo state
+  const [difficulty, setDifficulty] = useState('medium');
+  const [notify, setNotify] = useState(true);
+  const [agree, setAgree] = useState(false);
 
   return (
     <main className="min-h-dvh" style={{ background: 'var(--bg)' }}>
@@ -252,6 +265,211 @@ export default function UiShowcasePage() {
               <EmptyState compact icon={<span>📭</span>} title="Inbox zero" description="No new notifications." />
             </Card>
           </div>
+        </Section>
+
+        {/* ══════════════════════════════════════════════════════════
+            FORM PRIMITIVES (Batch B1)
+            ══════════════════════════════════════════════════════════ */}
+        <div className="border-t border-surface-3 pt-8">
+          <p className="text-fluid-xs font-semibold uppercase tracking-widest text-muted-foreground">Batch B1</p>
+          <h2 className="mt-1 text-fluid-3xl font-bold text-foreground">Form Primitives</h2>
+          <p className="mt-2 text-fluid-md text-muted-foreground">
+            Field wires label + hint + error + aria automatically. Every control is native under the hood.
+          </p>
+        </div>
+
+        {/* ── Input ── */}
+        <Section title="Input" note="Field auto-wires id / aria-describedby / aria-invalid; default · filled · hint · error · disabled · required · adornments">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Full name">
+              <Input placeholder="e.g. Aarav Sharma" />
+            </Field>
+            <Field label="Email" hint="We never share your email.">
+              <Input type="email" defaultValue="aarav@example.com" />
+            </Field>
+            <Field label="School code" required requiredText="required">
+              <Input placeholder="6-digit code" inputMode="numeric" />
+            </Field>
+            <Field label="Password" error="At least 8 characters.">
+              <Input type="password" defaultValue="abc" />
+            </Field>
+            <Field label="Disabled" disabled>
+              <Input placeholder="Not editable" />
+            </Field>
+            <Field label="Weight" hint="Metric.">
+              <Input type="number" trailingAdornment="kg" defaultValue={42} />
+            </Field>
+            <Field label="Search">
+              <Input type="search" leadingAdornment={<span>🔍</span>} placeholder="Find a chapter" />
+            </Field>
+            <Field label="Sizes">
+              <div className="flex flex-col gap-2">
+                <Input size="sm" placeholder="sm" />
+                <Input size="md" placeholder="md (48px)" />
+                <Input size="lg" placeholder="lg" />
+              </div>
+            </Field>
+          </div>
+        </Section>
+
+        {/* ── Textarea ── */}
+        <Section title="Textarea" note="min-rows, vertical-only resize, error state">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Feedback" hint="Tell us what could be better.">
+              <Textarea placeholder="Your answer…" minRows={3} />
+            </Field>
+            <Field label="Explanation" required error="This field is required.">
+              <Textarea minRows={4} />
+            </Field>
+          </div>
+        </Section>
+
+        {/* ── Select ── */}
+        <Section title="Select" note="native select + token chevron; placeholder option; error state">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Subject" hint="Pick one to start.">
+              <Select
+                placeholder="Choose a subject…"
+                options={[
+                  { value: 'math', label: 'Mathematics' },
+                  { value: 'sci', label: 'Science' },
+                  { value: 'sst', label: 'Social Science' },
+                ]}
+              />
+            </Field>
+            <Field label="Grade" required error="Please select your grade.">
+              <Select placeholder="Select grade…">
+                <option value="6">Grade 6</option>
+                <option value="7">Grade 7</option>
+                <option value="8">Grade 8</option>
+              </Select>
+            </Field>
+            <Field label="Disabled" disabled>
+              <Select placeholder="Unavailable" />
+            </Field>
+          </div>
+        </Section>
+
+        {/* ── Checkbox ── */}
+        <Section title="Checkbox" note="44px hit area, indeterminate, hint/error, disabled">
+          <div className="flex flex-col gap-2">
+            <Checkbox label="Email me weekly progress reports" defaultChecked />
+            <Checkbox label="Enable practice reminders" hint="A gentle nudge each evening." />
+            <Checkbox label="Select all chapters" indeterminate />
+            <Checkbox label="I agree to the terms" error="You must accept to continue." />
+            <Checkbox label="Unavailable option" disabled />
+          </div>
+        </Section>
+
+        {/* ── Radio / RadioGroup ── */}
+        <Section title="Radio / RadioGroup" note="fieldset + legend grouping; native roving focus; vertical & horizontal">
+          <div className="grid gap-6 sm:grid-cols-2">
+            <RadioGroup
+              name="difficulty"
+              label="Difficulty"
+              hint="You can change this any time."
+              value={difficulty}
+              onChange={setDifficulty}
+              options={[
+                { value: 'easy', label: 'Easy' },
+                { value: 'medium', label: 'Medium' },
+                { value: 'hard', label: 'Hard' },
+              ]}
+            />
+            <RadioGroup
+              name="mode"
+              label="Mode"
+              required
+              orientation="horizontal"
+              error="Choose a mode to begin."
+              options={[
+                { value: 'practice', label: 'Practice' },
+                { value: 'exam', label: 'Exam' },
+                { value: 'timed', label: 'Timed', disabled: true },
+              ]}
+            />
+          </div>
+        </Section>
+
+        {/* ── Switch ── */}
+        <Section title="Switch" note="role=switch, native checkbox, reduced-motion thumb travel">
+          <div className="flex flex-col gap-2">
+            <Switch label="Sound effects" checked={notify} onChange={(e) => setNotify(e.target.checked)} />
+            <Switch label="Dark mode (CEO-gated)" disabled />
+            <Switch label="Label first" labelPosition="start" defaultChecked />
+          </div>
+        </Section>
+
+        {/* ── Realistic sample form ── */}
+        <Section title="Sample form" note="Field composition end-to-end — labels, hints, required, submit">
+          <Card variant="elevated" className="max-w-md">
+            <CardHeader>
+              <h3 className="text-fluid-lg font-bold text-foreground">Create your profile</h3>
+            </CardHeader>
+            <CardBody>
+              <form
+                className="flex flex-col gap-4"
+                onSubmit={(e) => e.preventDefault()}
+              >
+                <Field label="Display name" required>
+                  <Input placeholder="What should Foxy call you?" />
+                </Field>
+                <Field label="Grade" required hint="CBSE grades 6–12.">
+                  <Select
+                    placeholder="Select grade…"
+                    options={[
+                      { value: '6', label: 'Grade 6' },
+                      { value: '9', label: 'Grade 9' },
+                      { value: '12', label: 'Grade 12' },
+                    ]}
+                  />
+                </Field>
+                <Field label="Learning goal" optional optionalText="(optional)">
+                  <Textarea minRows={2} placeholder="e.g. Ace my board exams" />
+                </Field>
+                <Checkbox
+                  label="I agree to the terms & privacy policy"
+                  checked={agree}
+                  onChange={(e) => setAgree(e.target.checked)}
+                />
+                <Button type="submit" fullWidth disabled={!agree}>
+                  Create profile
+                </Button>
+              </form>
+            </CardBody>
+          </Card>
+        </Section>
+
+        {/* ── Hindi / Devanagari wiring proof ── */}
+        <Section title="Bilingual (Hindi)" note="lang='hi' — proves Devanagari renders + label/hint/error wiring is copy-agnostic (P7)">
+          <Card variant="flat" lang="hi" className="max-w-md">
+            <CardBody className="flex flex-col gap-4">
+              <Field label="पूरा नाम" required requiredText="आवश्यक" hint="अपना नाम हिंदी या अंग्रेज़ी में लिखें।">
+                <Input placeholder="जैसे: आरव शर्मा" />
+              </Field>
+              <Field label="कक्षा" required error="कृपया अपनी कक्षा चुनें।">
+                <Select
+                  placeholder="कक्षा चुनें…"
+                  options={[
+                    { value: '6', label: 'कक्षा 6' },
+                    { value: '9', label: 'कक्षा 9' },
+                    { value: '12', label: 'कक्षा 12' },
+                  ]}
+                />
+              </Field>
+              <RadioGroup
+                name="hi-difficulty"
+                label="कठिनाई स्तर"
+                defaultValue="medium"
+                options={[
+                  { value: 'easy', label: 'आसान' },
+                  { value: 'medium', label: 'मध्यम' },
+                  { value: 'hard', label: 'कठिन' },
+                ]}
+              />
+              <Switch label="ध्वनि प्रभाव चालू करें" defaultChecked />
+            </CardBody>
+          </Card>
         </Section>
       </div>
     </main>

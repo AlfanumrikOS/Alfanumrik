@@ -42,4 +42,19 @@ export {
 } from './Skeleton';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
 
+/* ── Form primitives (Batch B1) ── */
+export { Field, useFieldControl, type FieldProps, type FieldContextValue } from './Field';
+export { Input, type InputProps } from './Input';
+export { Textarea, type TextareaProps } from './Textarea';
+export { Select, type SelectProps, type SelectOption } from './Select';
+export { Checkbox, type CheckboxProps } from './Checkbox';
+export {
+  Radio,
+  RadioGroup,
+  type RadioProps,
+  type RadioGroupProps,
+  type RadioGroupOption,
+} from './Radio';
+export { Switch, type SwitchProps } from './Switch';
+
 export { type Tone, type ActionVariant, type ControlSize } from './tokens';
