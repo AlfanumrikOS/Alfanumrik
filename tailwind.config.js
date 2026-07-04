@@ -19,21 +19,26 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Plus Jakarta Sans', 'Sora', 'system-ui', 'sans-serif'],
-        heading: ['Sora', 'Plus Jakarta Sans', 'sans-serif'],
+        // Devanagari fallbacks appended to every stack (P7). The self-hosted
+        // next/font vars (--font-noto-*-deva, mounted on <html> by
+        // momentum-fonts.ts) win first; the literal family names catch a
+        // system-installed copy. Latin runs still resolve the primary face.
+        sans: ['Plus Jakarta Sans', 'Sora', 'var(--font-noto-sans-deva)', 'Noto Sans Devanagari', 'system-ui', 'sans-serif'],
+        heading: ['Sora', 'Plus Jakarta Sans', 'var(--font-noto-sans-deva)', 'Noto Sans Devanagari', 'sans-serif'],
         // Alfa Momentum triad (Wave 0). `display` = premium editorial
         // headlines (Fraunces); Fraunces lacks Devanagari glyphs, so the
-        // sans fallbacks keep Hindi (isHi) headings legible. `data` = the
-        // numeric/stat/XP/score voice (Sora). `heading` kept for back-compat.
-        display: ['Fraunces', 'Georgia', 'serif'],
-        data: ['Sora', 'system-ui', 'sans-serif'],
+        // Noto Devanagari fallbacks keep Hindi (isHi) headings legible. `data`
+        // = the numeric/stat/XP/score voice (Sora). `heading` kept for back-compat.
+        display: ['Fraunces', 'var(--font-noto-serif-deva)', 'Noto Serif Devanagari', 'Georgia', 'serif'],
+        data: ['Sora', 'var(--font-noto-sans-deva)', 'Noto Sans Devanagari', 'system-ui', 'sans-serif'],
       },
       colors: {
         brand: {
-          // Unified to the real runtime token (--orange in globals.css). The
-          // old #F97316 was config-only drift; #E8581C is the canonical brand
-          // signal across the app. (Alfa Momentum Wave 0.)
-          orange: '#E8581C',
+          // Repointed to the runtime token so `bg-brand-orange` follows the
+          // active theme (burnt-orange on default/Atlas light, violet under
+          // data-design="cosmic") instead of freezing at a literal. Resolves to
+          // #E8581C on the shipping light theme — identical to the old literal.
+          orange: 'var(--orange)',
           purple: '#7C3AED',
           cream: '#FBF8F4',
           warm: '#FEF3E2',

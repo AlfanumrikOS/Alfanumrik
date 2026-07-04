@@ -97,6 +97,22 @@
   --mastery-mid: var(--gold);       /* 40–69% — developing */
   --mastery-high: var(--green);     /* >= 70% — strong */
 
+  /* ─── Light-surface fallbacks for tokens previously cosmic-only (Phase 1) ──
+     --secondary / --xp-color / --streak-color / --level-up (and the
+     Tailwind-referenced --danger-light) were declared ONLY inside the cosmic
+     scope, so on the shipping default-light theme they resolved to nothing —
+     any `bg-secondary` / `text-xp` / `bg-streak` / `bg-level-up` / `danger.light`
+     utility was a silent no-op (transparent / inherited). These base values make
+     those consumers render on light too; the cosmic block still redeclares them
+     under its higher-specificity selector, so cosmic surfaces are unchanged.
+     xp/streak/level-up are ACCENT hues (badges, fills, large numerals/icons),
+     not body-text-on-surface pairs — see the design-system contrast table. */
+  --secondary: var(--purple);       /* secondary brand action — violet #7C3AED */
+  --xp-color: var(--gold);          /* XP accent — marigold #F5A623 */
+  --streak-color: var(--orange);    /* streak flame — burnt-orange #E8581C */
+  --level-up: var(--purple);        /* level-up celebration — violet #7C3AED */
+  --danger-light: #FCE4E4;          /* soft red wash behind danger text/badges */
+
   /* Surfaces — warm cream base */
   --bg: #FBF8F4;
   --bg-rgb: 251, 248, 244;          /* for rgba(var(--bg-rgb) / <alpha>) — used by glass + sticky headers */
@@ -109,14 +125,19 @@
   --border-mid: rgba(0, 0, 0, 0.12);
   --border-strong: rgba(0, 0, 0, 0.18);
 
-  /* Text — Contrast-checked against --bg (#FBF8F4)
-     text-1 on bg: 15.2:1 (AAA) — primary text
-     text-2 on bg: 6.8:1 (AA)  — secondary text
-     text-3 on bg: 4.5:1 (AA)  — tertiary/hint text (was 3.8:1, fixed)
-     Indian students study outdoors & in harsh sunlight — contrast matters more */
+  /* Text — Contrast-checked against ALL warm surfaces, not just --bg (Phase 1).
+     The old --text-3 #7D7264 passed on --bg (#FBF8F4, 4.5:1) but FAILED AA on
+     the darker recessed surfaces it also lands on — surface-2 #F5F0EA (4.15:1)
+     and surface-3 #EDE6DC (3.80:1) — where it's used as muted-foreground and as
+     input placeholder text. Darkened to #6B6053 so it clears AA on the WORST
+     case (surface-3):
+       text-1 #1A1207 on bg: 15.2:1 (AAA) — primary text
+       text-2 #4A3F2E on bg:  8.9:1 (AAA) — secondary text
+       text-3 #6B6053 on surface-3: 4.95:1 (AA) / on bg: 5.6:1 (AA)
+     Indian students study outdoors & in harsh sunlight — contrast matters more. */
   --text-1: #1A1207;
   --text-2: #4A3F2E;
-  --text-3: #7D7264;
+  --text-3: #6B6053;
 
   /* Shadows — subtle dark-ink depth on warm cream. tailwind.config.js already
      references these names (shadow-sm/md/lg/glow); they were undefined until
@@ -127,6 +148,30 @@
   --shadow-md: 0 2px 12px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
   --shadow-glow: 0 0 24px rgba(232, 88, 28, 0.15);
+
+  /* ─── Radius scale (Phase 1 — was UNDEFINED, a real bug) ──────────────────
+     tailwind.config.js maps rounded-sm/md/lg/xl/2xl → var(--radius-sm..2xl),
+     but those tokens never existed, so `rounded-xl` (used ~670×) etc. resolved
+     to the guaranteed-invalid value and computed to border-radius:0 — square
+     corners app-wide. These values mirror stock Tailwind's numeric scale, which
+     is exactly what every author typing `rounded-xl` intended, restoring the
+     designed rounding. (Cosmic keeps its own --r-* scale on its own selectors.) */
+  --radius-sm:  0.125rem;   /* 2px  — chips, tags */
+  --radius-md:  0.375rem;   /* 6px  — inputs, small controls */
+  --radius-lg:  0.5rem;     /* 8px  — buttons, list rows */
+  --radius-xl:  0.75rem;    /* 12px — cards */
+  --radius-2xl: 1rem;       /* 16px — panels, sheets, hero cards */
+
+  /* ─── Primary-CTA gradient stops (Phase 1 — WCAG AA fix) ──────────────────
+     .btn-primary used to gradient var(--orange) #E8581C → var(--orange-light)
+     #FF7A3D under WHITE text: 3.59:1 and 2.59:1 — both FAIL AA. --orange is the
+     global brand signal (used in hundreds of places) so it must NOT change;
+     instead the button reads these dedicated stops, both AA-safe with #fff:
+       #CB4710 → white = 4.72:1 (AA)   #C2440F → white = 5.09:1 (AA)
+     Still a warm burnt-orange CTA. The cosmic scope redeclares these to its
+     violet pair so the cosmic button renders exactly as before. */
+  --btn-primary-from: #CB4710;
+  --btn-primary-to:   #C2440F;   /* == --accent-warm-strong */
 
   /* Layout */
   --sidebar-width: 240px;
@@ -785,7 +830,9 @@ select.input-base option { background: var(--surface-1); color: var(--text-1); }
   font-size: 15px;
   cursor: pointer;
   border: none;
-  background: linear-gradient(135deg, var(--orange), var(--orange-light));
+  /* AA-safe warm gradient — see --btn-primary-from/to (both ≥4.5:1 with #fff).
+     The old var(--orange)→var(--orange-light) pair failed WCAG AA on white. */
+  background: linear-gradient(135deg, var(--btn-primary-from), var(--btn-primary-to));
   color: #fff;
   transition: all 0.2s ease;
   box-shadow: 0 4px 16px rgba(232, 88, 28, 0.25);
@@ -920,10 +967,17 @@ img, video, iframe, canvas, svg {
   .grid-actions { gap: 10px !important; }
 }
 
-/* ─── Minimum Font Size for Readability ────────────────────── */
-/* Enforces 12px minimum on secondary text for outdoor/sunlight use */
-.text-\[10px\] { font-size: 11px !important; }
-.text-\[9px\] { font-size: 11px !important; }
+/* ─── Minimum Font Size for Readability (12px floor — Phase 1) ─────────────
+   The design system sets a hard 12px lower bound on the type scale (--text-2xs
+   now clamps to 12px). Sub-12px content is almost always micro-labelling that
+   used Tailwind arbitrary sizes (text-[9px]/[10px]/[11px], ~850 usages) which
+   bypass the scale. Rather than delete the guard (which would let 9–11px text
+   through on budget phones in harsh sunlight), we raise the floor from the old
+   11px pin to the 12px system minimum. Larger, never smaller — no layout breaks,
+   only more legible micro-labels. */
+.text-\[9px\],
+.text-\[10px\],
+.text-\[11px\] { font-size: 12px !important; }
 
 /* ─── Hindi / Devanagari Line-Height ────────────────────────
    Devanagari script's top matra (vowel diacritic) extends above
@@ -1290,7 +1344,7 @@ img, video, iframe, canvas, svg {
        coefficient = (max - min) / (1440 - 360) × 100
      so the value lands at min at 360px and max at 1440px, growing
      smoothly between. */
-  --text-2xs:    clamp(0.6875rem, 0.66rem + 0.12vw, 0.75rem);    /* 11→12px */
+  --text-2xs:    0.75rem;                                        /* 12px floor (Phase 1: was 11→12px; 12px is the hard type-scale minimum) */
   --text-xs:     clamp(0.75rem, 0.71rem + 0.18vw, 0.8125rem);    /* 12→13px */
   --text-sm:     clamp(0.8125rem, 0.77rem + 0.22vw, 0.875rem);   /* 13→14px */
   --text-base:   clamp(0.9375rem, 0.89rem + 0.24vw, 1rem);       /* 15→16px */
@@ -1319,6 +1373,24 @@ img, video, iframe, canvas, svg {
   --space-fluid-10: clamp(3rem, 2.5rem + 2.5vw, 4.5rem);          /* 48→72px */
   --space-fluid-11: clamp(4rem, 3.32rem + 3.33vw, 6rem);          /* 64→96px */
   --space-fluid-12: clamp(5rem, 4rem + 5vw, 8rem);                /* 80→128px */
+
+  /* ── Fixed 4px-base spacing scale (Phase 1 — was UNDEFINED) ───────────────
+     tailwind.config.js maps spacing sp-1..16 → var(--space-1..16), but those
+     tokens never existed, so `p-sp-4` / `gap-sp-2` were silent no-ops. (These
+     utilities currently have ZERO usages in src/, so defining them is a pure,
+     risk-free bug fix.) Values follow the 4px base grid — sp-N == N×4px == the
+     stock Tailwind `p-N` number — so the sp-* utilities behave exactly as an
+     author expects. The fluid --space-fluid-* scale above stays the preferred
+     choice for responsive gaps; sp-* exists for fixed, deterministic spacing. */
+  --space-1:  0.25rem;   /* 4px  */
+  --space-2:  0.5rem;    /* 8px  */
+  --space-3:  0.75rem;   /* 12px */
+  --space-4:  1rem;      /* 16px */
+  --space-5:  1.25rem;   /* 20px */
+  --space-6:  1.5rem;    /* 24px */
+  --space-8:  2rem;      /* 32px */
+  --space-12: 3rem;      /* 48px */
+  --space-16: 4rem;      /* 64px */
 
   /* ── Touch-target minimums ─────────────────────────────────── */
   --tap-min: 44px;       /* Apple HIG minimum */
@@ -3009,6 +3081,11 @@ html[data-design="cosmic"] {
   --orange: var(--violet);
   --orange-light: var(--violet-2);
   --orange-rgb: 139, 126, 255;
+  /* .btn-primary reads these; on cosmic they track the violet brand so the
+     cosmic primary button renders exactly as before Phase 1 (was
+     var(--orange)→var(--orange-light), which is violet under this scope). */
+  --btn-primary-from: var(--orange);
+  --btn-primary-to: var(--orange-light);
   --purple: var(--violet);
   --purple-light: var(--violet-2);
   --purple-rgb: 139, 126, 255;
