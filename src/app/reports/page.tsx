@@ -6,7 +6,19 @@ import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { computeMonthlyReportMetrics, type MonthlyReportData, type ExamChapter } from '@/lib/cognitive-engine';
 import { REPORT_MONTHS_COUNT } from '@/lib/constants';
-import { Card, Button, ProgressBar, SectionHeader, StatCard, LoadingFoxy } from '@/components/ui';
+import { SectionHeader, StatCard } from '@/components/ui';
+import {
+  Card,
+  Button,
+  Badge,
+  Chip,
+  Alert,
+  ProgressBar,
+  ProgressRing,
+  EmptyState,
+  Skeleton,
+  type Tone,
+} from '@/components/ui/primitives';
 
 /* ── DB Row Types ── */
 interface QuizRow {
@@ -49,50 +61,11 @@ function getLastNMonths(n: number): { label: string; value: string; start: strin
   return months;
 }
 
-/* ── Circular Progress ── */
-function CircularProgress({ value, size = 80, color = 'var(--orange)', label }: {
-  value: number; size?: number; color?: string; label?: string;
-}) {
-  const pct = Math.min(100, Math.max(0, value));
-  const radius = (size - 8) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (pct / 100) * circumference;
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <svg width={size} height={size} className="transform -rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--surface-2)" strokeWidth={6} />
-        <circle
-          cx={size / 2} cy={size / 2} r={radius} fill="none"
-          stroke={color} strokeWidth={6} strokeLinecap="round"
-          strokeDasharray={circumference} strokeDashoffset={offset}
-          style={{ transition: 'stroke-dashoffset 0.5s ease' }}
-        />
-        <text
-          x={size / 2} y={size / 2}
-          textAnchor="middle" dominantBaseline="central"
-          fill="var(--text-1)" fontSize={size * 0.22} fontWeight={700}
-          transform={`rotate(90, ${size / 2}, ${size / 2})`}
-        >
-          {Math.round(pct)}%
-        </text>
-      </svg>
-      {label && <span className="text-[10px] text-[var(--text-3)] font-medium">{label}</span>}
-    </div>
-  );
-}
-
-/* ── Horizontal Bar ── */
-function HBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
-  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
-  return (
-    <div className="flex items-center gap-2 mb-1.5">
-      <span className="text-[11px] text-[var(--text-3)] w-24 truncate shrink-0">{label}</span>
-      <div className="flex-1 h-3 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
-        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color, transition: 'width 0.4s ease' }} />
-      </div>
-      <span className="text-[11px] font-semibold w-10 text-right" style={{ color }}>{Math.round(value)}%</span>
-    </div>
-  );
+/** Quiz-score % → primitive tone (presentation only; the number is server-read). */
+function scoreTone(score: number): Tone {
+  if (score >= 80) return 'success';
+  if (score >= 50) return 'warning';
+  return 'danger';
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -125,7 +98,6 @@ export default function MonthlyReportsPage() {
     const fetchReport = async () => {
       setLoading(true);
       try {
-        // Try monthly_reports table first
         const { data: report } = await supabase
           .from('monthly_reports')
           .select('*')
@@ -143,7 +115,6 @@ export default function MonthlyReportsPage() {
           return;
         }
 
-        // Compute from raw data — parallel fetch (was sequential)
         const [{ data: quizzes }, { data: profiles }, { data: masteryRows }] = await Promise.all([
           supabase
             .from('quiz_sessions')
@@ -173,7 +144,6 @@ export default function MonthlyReportsPage() {
         }));
         setQuizScores(quizLabels);
 
-        // Weekly accuracies (split into ~4 weeks)
         const weeklyAccuracies: number[] = [];
         for (let w = 0; w < 4; w++) {
           const weekStart = new Date(monthInfo.start);
@@ -193,7 +163,6 @@ export default function MonthlyReportsPage() {
           }
         }
 
-        // Active days
         const activeDaysSet = new Set(quizList.map((q: QuizRow) => q.completed_at?.substring(0, 10)));
         const activeDaysCount = activeDaysSet.size;
         const endDate = new Date(monthInfo.end);
@@ -212,7 +181,7 @@ export default function MonthlyReportsPage() {
 
         const chapters: ExamChapter[] = masteries.map((m, i) => ({
           chapterNumber: i + 1,
-          chapterTitle: m.topic,  // topic is mapped from subject above
+          chapterTitle: m.topic,
           marksWeightage: 10,
           difficultyWeight: 1,
           studentMastery: m.mastery,
@@ -242,23 +211,27 @@ export default function MonthlyReportsPage() {
     fetchReport();
   }, [student?.id, selectedMonth, months, daysTotal]);
 
-  /* ── Print handler ── */
-  const handlePrint = () => {
-    window.print();
-  };
+  const handlePrint = () => window.print();
 
-  if (isLoading || !student) return <LoadingFoxy />;
-
-  const maxBarScore = 100;
+  if (isLoading || !student) {
+    return (
+      <div className="mesh-bg min-h-dvh pb-nav">
+        <main className="app-container space-y-4 py-6" aria-busy="true" aria-label={isHi ? 'लोड हो रहा है' : 'Loading'}>
+          <Skeleton className="h-10 w-40" radius="lg" />
+          <Skeleton className="h-40 w-full" radius="lg" />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <>
-      {/* Print-specific styles */}
+      {/* Print-specific styles — surface token, not a raw literal. */}
       <style>{`
         @media print {
           .no-print { display: none !important; }
           .print-only { display: block !important; }
-          body { background: #fff !important; }
+          body { background: var(--surface-1) !important; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
         .print-only { display: none; }
@@ -267,114 +240,115 @@ export default function MonthlyReportsPage() {
       <div className="mesh-bg min-h-dvh pb-nav">
         <header className="page-header">
           <div className="page-header-inner flex items-center gap-3">
-            <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] no-print">&larr;</button>
-            <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="no-print inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              aria-label={isHi ? 'वापस जाएं' : 'Go back'}
+            >
+              <span aria-hidden="true">←</span>
+            </button>
+            <h1 className="text-fluid-lg font-bold text-foreground" style={{ fontFamily: 'var(--font-display)' }}>
               {isHi ? 'मासिक रिपोर्ट' : 'Monthly Reports'}
             </h1>
           </div>
         </header>
 
         <main className="app-container py-6 space-y-4">
-          {/* ── Month Selector ── */}
-          <div className="flex gap-2 overflow-x-auto pb-1 no-print">
+          {/* Month Selector — selectable Chips */}
+          <div className="no-print flex gap-2 overflow-x-auto pb-1">
             {months.map((m) => (
-              <button
+              <Chip
                 key={m.value}
+                selected={selectedMonth === m.value}
                 onClick={() => setSelectedMonth(m.value)}
-                className="shrink-0 px-4 py-2 rounded-full text-xs font-semibold transition-all"
-                style={{
-                  background: selectedMonth === m.value ? 'var(--orange)' : 'var(--surface-2)',
-                  color: selectedMonth === m.value ? '#fff' : 'var(--text-3)',
-                }}
+                className="shrink-0"
               >
                 {m.label}
-              </button>
+              </Chip>
             ))}
           </div>
 
           {/* Print header */}
           <div className="print-only" style={{ textAlign: 'center', marginBottom: 16 }}>
-            <h2 style={{ fontSize: 20, fontWeight: 800 }}>Monthly Report - {months.find(m => m.value === selectedMonth)?.label}</h2>
-            <p style={{ color: '#64748B', fontSize: 13 }}>{student.name} | Alfanumrik</p>
+            <h2 className="text-fluid-xl font-bold text-foreground">
+              Monthly Report — {months.find((m) => m.value === selectedMonth)?.label}
+            </h2>
+            <p className="text-fluid-sm text-muted-foreground">{student.name} | Alfanumrik</p>
           </div>
 
           {loading && (
-            <Card className="!p-8 text-center">
-              <div className="text-4xl mb-2 animate-float">&#x1F4CA;</div>
-              <div className="text-sm text-[var(--text-3)]">
-                {isHi ? 'रिपोर्ट लोड हो रही है...' : 'Loading report...'}
+            <Card className="p-4">
+              <div className="space-y-3" aria-busy="true" aria-label={isHi ? 'रिपोर्ट लोड हो रही है' : 'Loading report'}>
+                <Skeleton className="h-24 w-full" radius="lg" />
+                <Skeleton className="h-16 w-full" radius="lg" />
               </div>
             </Card>
           )}
 
           {!loading && !reportData && (
-            <Card className="!p-8 text-center">
-              <div className="text-4xl mb-2">&#x1F4AD;</div>
-              <div className="text-sm font-semibold mb-1">
-                {isHi ? 'इस महीने का कोई डेटा नहीं' : 'No data for this month'}
-              </div>
-              <div className="text-xs text-[var(--text-3)]">
-                {isHi ? 'Quiz दो और डेटा यहाँ दिखेगा!' : 'Take some quizzes and data will appear here!'}
-              </div>
+            <Card className="p-2">
+              <EmptyState
+                icon="💭"
+                title={isHi ? 'इस महीने का कोई डेटा नहीं' : 'No data for this month'}
+                description={isHi ? 'Quiz दो और डेटा यहाँ दिखेगा!' : 'Take some quizzes and data will appear here!'}
+              />
             </Card>
           )}
 
           {!loading && reportData && (
             <>
-              {/* ══════════════════════════════════════════════════
-                 LEARNING METRICS
-                 ══════════════════════════════════════════════════ */}
+              {/* ── LEARNING METRICS ── */}
               <div>
-                <SectionHeader icon="&#x1F4D6;">{isHi ? 'सीखने के मापदंड' : 'Learning Metrics'}</SectionHeader>
-                <Card className="!p-4">
-                  <div className="flex items-center justify-around mb-4">
-                    <CircularProgress
-                      value={reportData.conceptMasteryPct}
-                      color="var(--orange)"
-                      label={isHi ? 'अवधारणा महारत' : 'Concept Mastery'}
-                    />
-                    <CircularProgress
-                      value={reportData.retentionScore}
-                      color="var(--teal)"
-                      label={isHi ? '7-दिन स्मृति' : '7-Day Retention'}
-                    />
+                <SectionHeader icon="📖">{isHi ? 'सीखने के मापदंड' : 'Learning Metrics'}</SectionHeader>
+                <Card className="p-4">
+                  <div className="mb-4 flex items-center justify-around">
+                    <div className="flex flex-col items-center gap-1">
+                      <ProgressRing
+                        value={reportData.conceptMasteryPct}
+                        size={80}
+                        strokeWidth={6}
+                        tone="brand"
+                        ariaLabel={`${isHi ? 'अवधारणा महारत' : 'Concept Mastery'}: ${reportData.conceptMasteryPct}%`}
+                      />
+                      <span className="text-fluid-2xs font-medium text-muted-foreground">
+                        {isHi ? 'अवधारणा महारत' : 'Concept Mastery'}
+                      </span>
+                    </div>
+                    <div className="flex flex-col items-center gap-1">
+                      <ProgressRing
+                        value={reportData.retentionScore}
+                        size={80}
+                        strokeWidth={6}
+                        tone="info"
+                        ariaLabel={`${isHi ? '7-दिन स्मृति' : '7-Day Retention'}: ${reportData.retentionScore}%`}
+                      />
+                      <span className="text-fluid-2xs font-medium text-muted-foreground">
+                        {isHi ? '7-दिन स्मृति' : '7-Day Retention'}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Strong chapters */}
                   {reportData.strongChapters.length > 0 && (
                     <div className="mb-3">
-                      <div className="text-[11px] font-semibold mb-1" style={{ color: '#16A34A' }}>
+                      <div className="mb-1 text-fluid-xs font-semibold text-foreground">
                         {isHi ? 'मजबूत अध्याय' : 'Strong Chapters'}
                       </div>
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1.5">
                         {reportData.strongChapters.map((ch) => (
-                          <span
-                            key={ch}
-                            className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                            style={{ background: '#16A34A18', color: '#16A34A', border: '1px solid #16A34A30' }}
-                          >
-                            {ch}
-                          </span>
+                          <Badge key={ch} tone="success">{ch}</Badge>
                         ))}
                       </div>
                     </div>
                   )}
 
-                  {/* Weak chapters */}
                   {reportData.weakChapters.length > 0 && (
                     <div>
-                      <div className="text-[11px] font-semibold mb-1" style={{ color: '#EF4444' }}>
-                        {isHi ? 'कमज़ोर अध्याय' : 'Weak Chapters'}
+                      <div className="mb-1 text-fluid-xs font-semibold text-foreground">
+                        {isHi ? 'मज़बूत करने वाले अध्याय' : 'Chapters to strengthen'}
                       </div>
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1.5">
                         {reportData.weakChapters.map((ch) => (
-                          <span
-                            key={ch}
-                            className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                            style={{ background: '#EF444418', color: '#EF4444', border: '1px solid #EF444430' }}
-                          >
-                            {ch}
-                          </span>
+                          <Badge key={ch} tone="warning">{ch}</Badge>
                         ))}
                       </div>
                     </div>
@@ -382,53 +356,51 @@ export default function MonthlyReportsPage() {
                 </Card>
               </div>
 
-              {/* ══════════════════════════════════════════════════
-                 PERFORMANCE METRICS
-                 ══════════════════════════════════════════════════ */}
+              {/* ── PERFORMANCE METRICS ── */}
               <div>
-                <SectionHeader icon="&#x1F3AF;">{isHi ? 'प्रदर्शन मापदंड' : 'Performance Metrics'}</SectionHeader>
-                <Card className="!p-4">
-                  {/* Quiz scores - horizontal bars */}
+                <SectionHeader icon="🎯">{isHi ? 'प्रदर्शन मापदंड' : 'Performance Metrics'}</SectionHeader>
+                <Card className="p-4">
                   {quizScores.length > 0 && (
                     <div className="mb-4">
-                      <div className="text-xs font-semibold text-[var(--text-2)] mb-2">
+                      <div className="mb-2 text-fluid-xs font-semibold text-foreground">
                         {isHi ? 'क्विज़ अंक' : 'Quiz Scores'}
                       </div>
-                      {quizScores.slice(-6).map((q, i) => (
-                        <HBar
-                          key={i}
-                          label={q.label}
-                          value={q.score}
-                          max={maxBarScore}
-                          color={q.score >= 80 ? '#16A34A' : q.score >= 50 ? '#F59E0B' : '#EF4444'}
-                        />
-                      ))}
+                      <div className="space-y-2">
+                        {quizScores.slice(-6).map((q, i) => (
+                          <ProgressBar
+                            key={i}
+                            value={q.score}
+                            tone={scoreTone(q.score)}
+                            size="sm"
+                            label={q.label}
+                            showValue
+                          />
+                        ))}
+                      </div>
                     </div>
                   )}
 
-                  {/* Accuracy trend - 4 week bar chart */}
                   {reportData.accuracyTrend.length > 0 && (
                     <div className="mb-4">
-                      <div className="text-xs font-semibold text-[var(--text-2)] mb-2">
+                      <div className="mb-2 text-fluid-xs font-semibold text-foreground">
                         {isHi ? 'साप्ताहिक सटीकता' : 'Weekly Accuracy Trend'}
                       </div>
-                      <div className="flex items-end gap-2 h-20">
+                      <div className="flex h-20 items-end gap-2">
                         {reportData.accuracyTrend.map((val, i) => {
                           const h = Math.max(4, (val / 100) * 100);
+                          const tone = val >= 70 ? 'var(--success)' : val >= 40 ? 'var(--warning)' : 'var(--danger)';
                           return (
-                            <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                              <span className="text-[9px] font-semibold text-[var(--text-3)]">
+                            <div key={i} className="flex flex-1 flex-col items-center gap-1">
+                              <span className="text-fluid-2xs font-semibold tabular-nums text-muted-foreground">
                                 {Math.round(val)}%
                               </span>
                               <div
-                                className="w-full rounded-t-md"
-                                style={{
-                                  height: `${h}%`,
-                                  background: val >= 70 ? 'var(--green)' : val >= 40 ? 'var(--orange)' : '#EF4444',
-                                  transition: 'height 0.4s ease',
-                                }}
+                                className="w-full rounded-t-md transition-all duration-500 ease-out motion-reduce:transition-none"
+                                style={{ height: `${h}%`, backgroundColor: tone }}
+                                role="img"
+                                aria-label={`W${i + 1}: ${Math.round(val)}%`}
                               />
-                              <span className="text-[9px] text-[var(--text-3)]">W{i + 1}</span>
+                              <span className="text-fluid-2xs text-muted-foreground">W{i + 1}</span>
                             </div>
                           );
                         })}
@@ -436,14 +408,13 @@ export default function MonthlyReportsPage() {
                     </div>
                   )}
 
-                  {/* Time efficiency */}
-                  <div className="flex items-center gap-3 p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
-                    <span className="text-lg">&#x23F1;</span>
+                  <div className="flex items-center gap-3 rounded-xl bg-surface-2 p-3">
+                    <span aria-hidden="true" className="text-fluid-lg">⏱</span>
                     <div>
-                      <div className="text-xs text-[var(--text-3)]">
+                      <div className="text-fluid-xs text-muted-foreground">
                         {isHi ? 'समय दक्षता' : 'Time Efficiency'}
                       </div>
-                      <div className="text-sm font-bold">
+                      <div className="text-fluid-sm font-bold tabular-nums text-foreground">
                         {reportData.timeEfficiency.toFixed(2)} {isHi ? 'प्रश्न/मिनट' : 'questions/min'}
                       </div>
                     </div>
@@ -451,118 +422,109 @@ export default function MonthlyReportsPage() {
                 </Card>
               </div>
 
-              {/* ══════════════════════════════════════════════════
-                 EXAM READINESS
-                 ══════════════════════════════════════════════════ */}
+              {/* ── EXAM READINESS ── */}
               <div>
-                <SectionHeader icon="&#x1F393;">{isHi ? 'परीक्षा तत्परता' : 'Exam Readiness'}</SectionHeader>
-                <Card className="!p-4">
-                  <div className="grid grid-cols-2 gap-3 mb-3">
-                    <div className="text-center p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
-                      <div className="text-[10px] text-[var(--text-3)] mb-1">
+                <SectionHeader icon="🎓">{isHi ? 'परीक्षा तत्परता' : 'Exam Readiness'}</SectionHeader>
+                <Card className="p-4">
+                  <div className="mb-3 grid grid-cols-2 gap-3">
+                    <div className="rounded-xl bg-surface-2 p-3 text-center">
+                      <div className="mb-1 text-fluid-2xs text-muted-foreground">
                         {isHi ? 'अनुमानित अंक' : 'Predicted Score'}
                       </div>
-                      <div className="text-xl font-bold" style={{ color: 'var(--orange)' }}>
+                      <div className="text-fluid-xl font-bold tabular-nums" style={{ color: 'var(--primary)' }}>
                         {reportData.predictedScore}
                       </div>
-                      <div className="text-[9px] text-[var(--text-3)]">/80</div>
+                      <div className="text-fluid-2xs text-muted-foreground">/80</div>
                     </div>
-                    <div className="text-center p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
-                      <div className="text-[10px] text-[var(--text-3)] mb-1">
+                    <div className="rounded-xl bg-surface-2 p-3 text-center">
+                      <div className="mb-1 text-fluid-2xs text-muted-foreground">
                         {isHi ? 'सिलेबस पूरा' : 'Syllabus Complete'}
                       </div>
-                      <div className="text-xl font-bold" style={{ color: 'var(--teal)' }}>
+                      <div className="text-fluid-xl font-bold tabular-nums" style={{ color: 'var(--info)' }}>
                         {reportData.syllabusCompletionPct}%
                       </div>
                     </div>
                   </div>
                   <ProgressBar
                     value={reportData.syllabusCompletionPct}
-                    color="var(--teal)"
+                    tone="info"
+                    size="sm"
                     label={isHi ? 'सिलेबस प्रगति' : 'Syllabus Progress'}
-                    showPercent
-                    height={6}
+                    showValue
                   />
                 </Card>
               </div>
 
-              {/* ══════════════════════════════════════════════════
-                 STUDY CONSISTENCY
-                 ══════════════════════════════════════════════════ */}
+              {/* ── STUDY CONSISTENCY ── */}
               <div>
-                <SectionHeader icon="&#x1F525;">{isHi ? 'अध्ययन नियमितता' : 'Study Consistency'}</SectionHeader>
-                <Card className="!p-4">
+                <SectionHeader icon="🔥">{isHi ? 'अध्ययन नियमितता' : 'Study Consistency'}</SectionHeader>
+                <Card className="p-4">
                   <div className="grid-stats">
                     <StatCard
-                      icon="&#x1F4C5;"
+                      icon="📅"
                       value={`${daysActive}/${daysTotal}`}
                       label={isHi ? 'सक्रिय दिन' : 'Days Active'}
-                      color="var(--green)"
+                      color="var(--success)"
                     />
                     <StatCard
-                      icon="&#x23F1;"
+                      icon="⏱"
                       value={`${reportData.totalStudyMinutes}m`}
                       label={isHi ? 'कुल समय' : 'Study Minutes'}
-                      color="var(--teal)"
+                      color="var(--info)"
                     />
                     <StatCard
-                      icon="&#x2753;"
+                      icon="❓"
                       value={reportData.totalQuestionsAttempted}
                       label={isHi ? 'प्रश्न' : 'Questions'}
-                      color="var(--purple)"
+                      color="var(--secondary)"
                     />
                   </div>
                   <div className="mt-3">
                     <ProgressBar
                       value={reportData.studyConsistencyPct}
-                      color="var(--orange)"
+                      tone="brand"
+                      size="sm"
                       label={isHi ? 'नियमितता' : 'Consistency'}
-                      showPercent
-                      height={6}
+                      showValue
                     />
                   </div>
                 </Card>
               </div>
 
-              {/* ══════════════════════════════════════════════════
-                 IMPROVEMENTS & ACHIEVEMENTS
-                 ══════════════════════════════════════════════════ */}
+              {/* ── IMPROVEMENTS & ACHIEVEMENTS ── */}
               {(reportData.improvementAreas.length > 0 || reportData.achievements.length > 0) && (
                 <div>
-                  <SectionHeader icon="&#x1F31F;">{isHi ? 'सुधार और उपलब्धियाँ' : 'Improvements & Achievements'}</SectionHeader>
-                  <Card className="!p-4">
+                  <SectionHeader icon="🌟">{isHi ? 'सुधार और उपलब्धियाँ' : 'Improvements & Achievements'}</SectionHeader>
+                  <div className="space-y-3">
                     {reportData.achievements.length > 0 && (
-                      <div className="mb-3">
-                        <div className="text-xs font-semibold mb-2" style={{ color: '#16A34A' }}>
-                          {isHi ? 'उपलब्धियाँ' : 'Achievements'}
-                        </div>
-                        {reportData.achievements.map((a, i) => (
-                          <div key={i} className="flex items-center gap-2 mb-1.5">
-                            <span className="text-sm">&#x2705;</span>
-                            <span className="text-xs text-[var(--text-2)]">{a}</span>
-                          </div>
-                        ))}
-                      </div>
+                      <Alert tone="success" title={isHi ? 'उपलब्धियाँ' : 'Achievements'}>
+                        <ul className="space-y-1.5">
+                          {reportData.achievements.map((a, i) => (
+                            <li key={i} className="flex items-start gap-2">
+                              <span aria-hidden="true">✓</span>
+                              <span>{a}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </Alert>
                     )}
-
                     {reportData.improvementAreas.length > 0 && (
-                      <div>
-                        <div className="text-xs font-semibold mb-2" style={{ color: '#F59E0B' }}>
-                          {isHi ? 'सुधार के क्षेत्र' : 'Areas to Improve'}
-                        </div>
-                        {reportData.improvementAreas.map((a, i) => (
-                          <div key={i} className="flex items-center gap-2 mb-1.5">
-                            <span className="text-sm">&#x1F4A1;</span>
-                            <span className="text-xs text-[var(--text-2)]">{a}</span>
-                          </div>
-                        ))}
-                      </div>
+                      <Alert tone="info" title={isHi ? 'सुधार के क्षेत्र' : 'Areas to Improve'}>
+                        <ul className="space-y-1.5">
+                          {reportData.improvementAreas.map((a, i) => (
+                            <li key={i} className="flex items-start gap-2">
+                              <span aria-hidden="true">💡</span>
+                              <span>{a}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </Alert>
                     )}
-                  </Card>
+                  </div>
                 </div>
               )}
 
-              {/* ── Download PDF Button ── */}
+              {/* Download PDF */}
               <div className="no-print">
                 <Button variant="primary" fullWidth onClick={handlePrint}>
                   {isHi ? 'PDF डाउनलोड करो' : 'Download PDF'}
@@ -571,9 +533,6 @@ export default function MonthlyReportsPage() {
             </>
           )}
         </main>
-        <div className="no-print">
-          
-        </div>
       </div>
     </>
   );
