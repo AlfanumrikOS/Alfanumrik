@@ -22,9 +22,10 @@ Severity: HIGH (blocks consistency / a11y / correctness at scale) · MED
 | DD-09 | Landing page V1/V2 fork — delete V1 after the cutover. | MED | Open | Phase 13 |
 | DD-10 | Audit `<img>` / media inside `rounded-*` cards for missing `overflow-hidden` (corner bleed). | MED | Open | Phase 3 |
 | DD-11 | Converge ~134 Wonder Blocks consumers onto the canonical primitives; retire the legacy single-file set. | HIGH | Open | Phases 3–13 |
-| DD-12 | Add `--on-accent` / `--fg-on-primary` token; `TONE_SOLID_FG` is theme-static today → dark-mode AA risk. | LOW | Open | dark-mode wave |
+| DD-12 | `--on-accent` **+ paired on-surface tokens ADDED this phase** (`--on-accent`, `--surface-inverse`/`--on-surface-inverse`(-muted), `--surface-accent`/`--on-surface-accent` in `:root`, cosmic, inert-dark; AA-verified — design-system.md §8.1). Remaining: `TONE_SOLID_FG` still uses the `white` keyword → repoint to `var(--on-accent)`; consumer migration pending. | LOW | Open | dark-mode wave |
 | DD-13 | `/dev/*` namespace is publicly reachable in prod — decide a `NODE_ENV` / route-exclusion policy. | MED | Open | Phase 2–3 |
 | DD-14 | `SubjectMasteryCard.classifyMastery` uses a 75 threshold vs the canonical 70 mastery-band — resolve the drift. | MED | Open | Phase 3 |
+| DD-16 | ~468 hardcoded light-text sites (`text-white` + inline `color:#fff`) are decoupled from their backgrounds → invisible white-on-cream text when a decorative/scoped bg fails to paint (e.g. Foxy `.foxy-header-premium`), across all roles. **Paired on-surface token layer now exists** (§8.1); read-only inventory at `docs/design/light-text-migration-inventory.md` (regen: `scripts/design/light-text-inventory.mjs`) categorizes sites SAFE/RISKY/NEEDS_REVIEW. Scripted migration scheduled across the page phases (RISKY/NEEDS_REVIEW first); guard via a lint rule rejecting raw `text-white`/`color:#fff` + visual-regression. | HIGH | Open | Page phases |
 
 ## Closed
 

@@ -201,6 +201,41 @@
   --z-tooltip: 80;
   --z-overlay: 90;
   --z-skip:    9999;
+
+  /* ─── Paired on-surface / on-accent tokens (Phase 2 — legibility invariant) ─
+     WHY: ~468 hardcoded light-text sites (inline color:#fff + text-white) assume
+     a companion dark/gradient background paints. When that decorative background
+     fails, the text renders white-on-cream = invisible (DD-16). These paired
+     tokens make legibility an INVARIANT OF THE SURFACE: a foreground token is
+     defined *with* the surface it must sit on and is AA-verified against it, so a
+     consumer never has to guess whether #fff is safe. Every pair below is
+     computed sRGB WCAG 2.1 (body ≥4.5:1, large/UI ≥3:1) — see design-system.md §8.
+
+     CONTRACT: text on surface X MUST use --on-X. NEVER a bare #fff / text-white
+     on a decorative background. In particular #fff is AA on the darkened CTA
+     stops (--btn-primary-from/to) but only 3.59:1 on the bare brand --orange
+     (#E8581C) — a FAIL — so --on-accent pairs with the CTA gradient, NOT --orange.
+
+     ── Dark inverse chrome (Foxy-style headers, dark panels) ────────────────── */
+  --surface-inverse:            #241A2E;   /* warm-dark chrome; == Foxy header
+                                              gradient darker base (#241a2e→#16263f) */
+  --on-surface-inverse:         #F4ECDB;   /* 14.16:1 on --surface-inverse (AAA);
+                                              12.92:1 across the full Foxy gradient */
+  --on-surface-inverse-muted:   #C9BCA6;   /*  8.89:1 on --surface-inverse (AAA);
+                                              8.12:1 across the full Foxy gradient */
+
+  /* ── Primary-action (CTA) foreground ──────────────────────────────────────
+     PAIRS WITH: --btn-primary-from #CB4710 (4.72:1 AA) / --btn-primary-to
+     #C2440F (5.09:1 AA). Does NOT certify #fff on bare --orange #E8581C (3.59:1
+     FAIL) — use this token only on the action/CTA surface. */
+  --on-accent:                  #FFFFFF;
+
+  /* ── Branded / gradient header surface (optional, AA-safe) ─────────────────
+     The AA-safe warm CTA gradient reused as a decorative header fill so its
+     foreground is guaranteed legible; --on-surface-accent is verified against
+     the LIGHTER (worst-case) stop #CB4710 = 4.72:1 (AA). */
+  --surface-accent:             linear-gradient(135deg, var(--btn-primary-from), var(--btn-primary-to));
+  --on-surface-accent:          #FFFFFF;
 }
 
 /* ─── Alfanumrik Dark Theme (Phase 1 — 2026-05-11) ────────────
@@ -254,6 +289,22 @@
 
   /* Deeper, near-black scrim on the dark surfaces (Phase 2 Batch B2). */
   --scrim: rgba(0, 0, 0, 0.62);
+
+  /* ─── Paired on-surface / on-accent tokens (INERT dark-scope values) ───────
+     Declared so a future CEO-approved dark activation resolves these names
+     coherently. This block is FROZEN (sentinel selector the app never writes),
+     so these values are inert today. Dark keeps the inverse chrome DARK (its
+     Foxy-style consumers are dark-by-identity): an even-darker chrome carries
+     the same warm-cream foreground pair, all AAA:
+       --on-surface-inverse #F4ECDB on #0A0812 = 16.91:1 (AAA)
+       --on-surface-inverse-muted #C9BCA6 on #0A0812 = 10.63:1 (AAA)
+     Brand CTA stops don't change in dark, so --on-accent stays #fff (AA). */
+  --surface-inverse:            #0A0812;
+  --on-surface-inverse:         #F4ECDB;
+  --on-surface-inverse-muted:   #C9BCA6;
+  --on-accent:                  #FFFFFF;
+  --surface-accent:             linear-gradient(135deg, var(--btn-primary-from), var(--btn-primary-to));
+  --on-surface-accent:          #FFFFFF;
 }
 
 /* ─── Base ────────────────────────────────────────────────── */
@@ -3135,6 +3186,24 @@ html[data-design="cosmic"] {
   --shadow-atlas-1: 0 1px 3px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05);
   --shadow-atlas-2: 0 8px 28px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06);
   --shadow-edge: inset 0 -1px 0 rgba(255,255,255,0.04);
+
+  /* ─── Paired on-surface / on-accent tokens (cosmic values) ─────────────────
+     Same NAMES as the light :root layer so cosmic surfaces resolve them
+     coherently; reuses cosmic's existing dark palette. Cosmic is already dark,
+     so "inverse chrome" is an elevated cosmic surface carrying cosmic ink:
+       --on-surface-inverse (--text #F4F1FF) on --bg-elev #15214A = 14.00:1 (AAA)
+       --on-surface-inverse-muted (--text-2 #C7CAE6) on #15214A  =  9.66:1 (AAA)
+     --on-accent stays #fff to MATCH cosmic's pre-existing .btn-primary rendering
+     (white on the violet CTA gradient #8B7EFF→#6B5AE6, 3.22–4.96:1 → large/UI
+     button text ≥3:1). The canonical BODY-AA guarantee for --on-accent lives on
+     the LIGHT theme's warm CTA stops; cosmic's violet CTA is pre-existing and
+     out of scope for this phase. */
+  --surface-inverse:            var(--bg-elev);
+  --on-surface-inverse:         var(--text);
+  --on-surface-inverse-muted:   var(--text-2);
+  --on-accent:                  #FFFFFF;
+  --surface-accent:             linear-gradient(135deg, var(--btn-primary-from), var(--btn-primary-to));
+  --on-surface-accent:          #FFFFFF;
 
   /* paint the page in cosmic dark + ambient nebula */
   background:

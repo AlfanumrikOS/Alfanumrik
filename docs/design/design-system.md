@@ -257,6 +257,64 @@ Body text needs ≥ 4.5:1; large text / UI ≥ 3:1. AAA ≥ 7:1.
 - Hairline `--border` (8% ink) is decorative, not a sole state indicator; where a
   border is the *only* affordance cue, use `--border-strong` (≥3:1).
 
+### 8.1 Paired on-surface / on-accent tokens (Phase 2 — legibility invariant)
+
+**The pairing contract.** Text rendered on a surface `X` MUST use its paired
+foreground token `--on-X`. **Never** put a bare `#fff` / `text-white` (or any
+hardcoded light literal) on a decorative background that might not paint. A
+foreground is defined *with* the surface it sits on and AA-verified against it,
+so legibility is an invariant of the surface — not a per-consumer guess. This
+closes the class of bug in DD-16 (≈468 decoupled light-text sites that go
+invisible white-on-cream when their companion dark/gradient background fails).
+
+**Critical gotcha.** `#fff` is AA on the *darkened* CTA stops but NOT on the bare
+brand orange:
+
+| Foreground | Background | Ratio | Verdict |
+|---|---|---|---|
+| `#fff` (`--on-accent`) | `--btn-primary-from` #CB4710 | 4.72:1 | AA |
+| `#fff` (`--on-accent`) | `--btn-primary-to` #C2440F | 5.09:1 | AA |
+| `#fff` | bare `--orange` #E8581C | **3.59:1** | **FAIL — never do this** |
+
+So `--on-accent` pairs with the **action/CTA surface** (`.btn-primary` gradient /
+`--surface-accent` / Tailwind `bg-surface-accent`), never with `bg-brand-orange`.
+
+**Paired-token table (computed sRGB WCAG 2.1).** Each on-token is verified
+against the surface it pairs with (light `:root` values unless noted):
+
+| Foreground token | Value | Pairs with surface | Ratio | Verdict |
+|---|---|---|---|---|
+| `--on-surface-inverse` | #F4ECDB | `--surface-inverse` #241A2E | 14.16:1 | AAA |
+| `--on-surface-inverse` | #F4ECDB | Foxy gradient lighter stop #16263F | 12.92:1 | AAA |
+| `--on-surface-inverse-muted` | #C9BCA6 | `--surface-inverse` #241A2E | 8.89:1 | AAA |
+| `--on-surface-inverse-muted` | #C9BCA6 | Foxy gradient lighter stop #16263F | 8.12:1 | AAA |
+| `--on-accent` | #FFFFFF | `--btn-primary-from` #CB4710 (worst case) | 4.72:1 | AA |
+| `--on-accent` | #FFFFFF | `--btn-primary-to` #C2440F | 5.09:1 | AA |
+| `--on-surface-accent` | #FFFFFF | `--surface-accent` (gradient, worst stop #CB4710) | 4.72:1 | AA |
+
+`--surface-inverse` #241A2E is the darker base of the existing Foxy header
+gradient (`#241a2e → #16263f`); both on-inverse tokens clear AAA across the
+*entire* gradient range, so they are safe on any Foxy-style dark chrome.
+
+**Cross-scope resolution (same names, AA-verified per scope):**
+
+| Scope | `--surface-inverse` | `--on-surface-inverse` | Ratio | `--on-accent` |
+|---|---|---|---|---|
+| `:root` (light) | #241A2E | #F4ECDB | 14.16:1 AAA | #fff on CTA (AA) |
+| `html[data-design="cosmic"]` | `--bg-elev` #15214A | `--text` #F4F1FF | 14.00:1 AAA | #fff, matches cosmic's existing violet CTA (large/UI ≥3:1) |
+| frozen dark (inert) | #0A0812 | #F4ECDB | 16.91:1 AAA | #fff on CTA (AA) |
+
+The cosmic `--on-accent` = `#fff` deliberately mirrors cosmic's pre-existing
+`.btn-primary` rendering (white on the violet gradient #8B7EFF→#6B5AE6, 3.22–4.96:1
+— button UI text, ≥3:1). The canonical **body-AA** guarantee for `--on-accent`
+lives on the light theme's warm CTA stops; cosmic's violet CTA is pre-existing
+and out of scope for this token layer.
+
+**Tailwind utilities:** `bg-surface-inverse` + `text-on-inverse` /
+`text-on-inverse-muted`; `bg-surface-accent` + `text-on-surface-accent`;
+`text-on-accent` for CTA labels. Consumer migration of the 468 decoupled sites
+is later page-phase work (DD-16); this phase ships only the token + utility layer.
+
 ---
 
 ## 9. What Phase 1 did NOT do (Phase 2+)
@@ -309,10 +367,11 @@ light tones, `white` on danger/brand — warning never renders gold-as-text).
 | `Skeleton` / `SkeletonText` / `SkeletonCircle` | `radius` · `lines` · `size`; sizing via passthrough classes | composable (not fixed shapes); no shimmer under reduced-motion |
 | `EmptyState` | `icon`, `title`, `description`, `action`, `compact` | generalizes admin `NoDataState`; `role=status` |
 
-**Known missing token (Phase 2 follow-up):** there is no semantic
-`--on-accent` / `--fg-on-primary` token. Batch A uses the CSS `white` keyword
-as the on-accent foreground (validated by §8 for the primary CTA). Add a named
-token when the dark mode work lands, then repoint `TONE_SOLID_FG`.
+**`--on-accent` token (added — see §8.1):** the semantic `--on-accent`
+foreground token now exists (light `:root`, cosmic, and inert dark scopes), paired
+and AA-verified against the `--btn-primary-*` CTA gradient. `TONE_SOLID_FG` still
+uses the CSS `white` keyword; repointing it to `var(--on-accent)` is a follow-up
+tracked in DD-12 (consumer migration is deferred to the page phases).
 
 ---
 
