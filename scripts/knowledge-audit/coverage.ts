@@ -69,7 +69,10 @@ const SERIES_PATTERNS: Partial<Record<Dimension, RegExp>> = {
   activities: /\bActivity\s+(\d{1,2})\.(\d{1,3})\b/gi,
   diagrams: /\bFig(?:ure)?\.?\s*(\d{1,2})\.(\d{1,3})\b/gi,
   tables: /\bTable\s+(\d{1,2})\.(\d{1,3})\b/gi,
-  examples: /\bExample\s+(\d{1,2})\.(\d{1,3})\b/gi,
+  // Case-sensitive on the capital E (matches structural-scan.ts, assessment
+  // pre-pilot condition 2026-07-04): prose "for example 2.5 litres" must not
+  // inflate the EXPECTED denominator either.
+  examples: /\b(?:Example|EXAMPLE)\s+(\d{1,2})\.(\d{1,3})\b/g,
 };
 
 /**

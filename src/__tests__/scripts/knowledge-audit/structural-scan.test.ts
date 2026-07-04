@@ -227,6 +227,26 @@ describe('examples: bare "Example N" + solution-marker variants', () => {
     );
     expect(scan.findings.solved_examples.found_count).toBe(1);
   });
+
+  // Assessment pre-pilot condition 1 (2026-07-04): the bare form is
+  // case-SENSITIVE on the capital E — NCERT prints "Example" capitalized,
+  // while prose "for example 2 marks" is always lowercase.
+  it('prose "for example 2 marks are awarded" is NOT counted; "Example 3" IS', () => {
+    const prose = runStructuralScan(
+      [chunk('c1', 'In the board exam, for example 2 marks are awarded for each correct step.')],
+      6,
+    );
+    expect(prose.findings.examples.found_count).toBe(0);
+    const real = runStructuralScan([chunk('c1', 'Example 3 : Find the value of x in the figure.')], 6);
+    expect(real.findings.examples.found_count).toBe(1);
+  });
+
+  it('dotted form carries the same guard: prose "for example 2.5 litres" NOT counted; all-caps "EXAMPLE 6.1" still counted', () => {
+    const prose = runStructuralScan([chunk('c1', 'A vessel holds, for example 2.5 litres of water.')], 6);
+    expect(prose.findings.examples.found_count).toBe(0);
+    const caps = runStructuralScan([chunk('c1', 'EXAMPLE 6.1 Find the centre of mass of the rod.')], 6);
+    expect(caps.findings.examples.found_count).toBe(1);
+  });
 });
 
 describe('exercises: found-counter vs continuity expectation (machinery moved from coverage.ts)', () => {
@@ -296,6 +316,36 @@ describe('keywords / summary / pages / TitleCase edge behavior', () => {
 
   it('numbered "6.6 Summary" header is recognized', () => {
     const scan = runStructuralScan([chunk('c1', '6.6 Summary In this chapter you studied lines, angles and their properties in detail.')], 6);
+    expect(scan.findings.summary.found_count).toBe(1);
+  });
+
+  // Assessment pre-pilot condition 2 (2026-07-04): math NCERT prints an
+  // unnumbered title-case "Summary" head — must be detected, but guarded
+  // against prose ("in summary, ...", "the Summary of the chapter").
+  it('title-case standalone "Summary" block is detected (math NCERT unnumbered head)', () => {
+    const scan = runStructuralScan(
+      [chunk('c1', 'the angles were computed in detail. Summary In this chapter, you have studied lines, angles and their properties.')],
+      6,
+    );
+    expect(scan.findings.summary.found_count).toBe(1);
+  });
+
+  it('prose "in summary, we learned" and "the Summary of the chapter" never count as blocks', () => {
+    const scan = runStructuralScan(
+      [chunk('c1', 'And so, in summary, we learned that materials differ. Read the Summary of the chapter before the test.')],
+      6,
+    );
+    expect(scan.findings.summary.found_count).toBe(0);
+  });
+
+  it('OCR-flattened title-case Summary duplicated by overlap still fingerprint-dedupes to 1', () => {
+    const scan = runStructuralScan(
+      [
+        chunk('c1', 'measured carefully. Summary Two distinct points determine a unique line in the plane.'),
+        chunk('c2', 'Summary Two distinct points determine a unique line in the plane.'),
+      ],
+      6,
+    );
     expect(scan.findings.summary.found_count).toBe(1);
   });
 

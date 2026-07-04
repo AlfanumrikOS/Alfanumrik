@@ -30,9 +30,11 @@
  * - headings:        distinct "N.M Title" (inline) + conservative TitleCase
  *                    standalone lines
  * - subtopics:       distinct "N.M.K Title"
- * - summary:         distinct summary blocks (SUMMARY / "What have we learnt" /
- *                    "What you have learnt" / Points to Ponder), deduped by
- *                    following-text fingerprint (overlap-safe)
+ * - summary:         distinct summary blocks (SUMMARY / guarded title-case
+ *                    standalone "Summary" / numbered "N.M Summary" / "What
+ *                    have we learnt" / "What you have learnt" / Points to
+ *                    Ponder), deduped by following-text fingerprint
+ *                    (overlap-safe)
  * - keywords:        enumerable terms in Keywords / New Terms blocks
  * - pages:           distinct explicit page markers (normally none → 0)
  *
@@ -68,9 +70,17 @@ const SOLUTION_WINDOW_CHARS = 2000;
 const FIG_RE = /\bFig(?:ure)?\.?\s*(\d{1,2})\.(\d{1,3})\b/gi;
 const TABLE_RE = /\bTable\s+(\d{1,2})\.(\d{1,3})\b/gi;
 const ACTIVITY_RE = /\bActivity\s+(\d{1,2})\.(\d{1,3})\b/gi;
-const EXAMPLE_DOTTED_RE = /\bExample\s+(\d{1,2})\.(\d{1,3})\b/gi;
+/**
+ * Case-SENSITIVE on the capital E (assessment pre-pilot condition,
+ * 2026-07-04): NCERT prints "Example" capitalized (or all-caps "EXAMPLE" in
+ * some OCR captures), while prose like "for example 2 marks are awarded" is
+ * always lowercase — the previous /i flag counted that prose as an example.
+ * Applied to BOTH forms: the dotted regex had the identical over-count on
+ * prose like "for example 2.5 litres".
+ */
+const EXAMPLE_DOTTED_RE = /\b(?:Example|EXAMPLE)\s+(\d{1,2})\.(\d{1,3})\b/g;
 /** Bare "Example N" (old maths NCERT style) — must not re-match "Example N.M". */
-const EXAMPLE_BARE_RE = /\bExample\s+(\d{1,3})\b(?!\.\d)/gi;
+const EXAMPLE_BARE_RE = /\b(?:Example|EXAMPLE)\s+(\d{1,3})\b(?!\.\d)/g;
 const SOLUTION_MARKER_RE = /\bSolution\b|\bSol\.(?=\s)|∴|\bAnswer\s*:/;
 
 /** Fresh regex per use — the module-level ones are /g. */
@@ -312,6 +322,23 @@ function scanSubtopics(chunks: AuditChunk[]): { ids: Set<string>; byMajor: Map<n
 const SUMMARY_HEADER_RES = [
   /\bSUMMARY\b/g, // all-caps only — lowercase "in summary" prose must not fire
   /\b\d{1,2}\.\d{1,2}\s+Summary\b/g, // numbered "6.6 Summary"
+  /**
+   * Title-case standalone "Summary" (assessment pre-pilot condition,
+   * 2026-07-04): math NCERT prints an UNNUMBERED title-case "Summary" head —
+   * without this pattern those books score summary=0 and contamination
+   * signal (b) (second summary block ⇒ merged sources) can never fire.
+   * Prose guard — the token must be standalone-ish:
+   *  - lookbehind (?<![a-z][ \t]): NOT preceded by a lowercase word on the
+   *    same line ("in summary", "the Summary of ..." are rejected; a
+   *    preceding newline, digit ("6.6 Summary" — deduped with the numbered
+   *    pattern by fingerprint), sentence-ending punctuation, or chunk start
+   *    all pass);
+   *  - lookahead (?![ \t]*[a-z]): NOT followed by a lowercase continuation
+   *    ("Summary of what we did" is prose; a real Summary block continues
+   *    with a Capitalized sentence, a numbered bullet, or a newline).
+   * Case-sensitive (no /i) so lowercase "summary" never fires at all.
+   */
+  /(?<![a-z][ \t])\bSummary\b(?![ \t]*[a-z])/g,
   /\bWhat\s+have\s+we\s+learnt\b/gi,
   /\bWhat\s+you\s+have\s+learnt\b/gi,
   /\bPoints\s+to\s+Ponder\b/gi,
