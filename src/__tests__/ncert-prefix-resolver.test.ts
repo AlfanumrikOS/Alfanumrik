@@ -146,6 +146,21 @@ describe('resolveNcertFilename — unknown / ambiguous / asset -> null', () => {
     expect(resolveNcertFilename('jemh1cc.jpg')).toBeNull();
     expect(resolveNcertFilename('readme.txt')).toBeNull();
   });
+
+  it('returns null with reason no_chapter_number for a mapped prefix at chapter 0', () => {
+    // keec100.pdf: prefix `keec` (Economics cl11) IS mapped and the stem is
+    // chapter-shaped (alpha+digits), so it survives the asset guard — the ONLY
+    // way it fails is the third branch: extractChapterParts -> null (chapter 00).
+    // This pins the `no_chapter_number` ResolveFailure reason end-to-end, which
+    // the asset/unknown-prefix cases above never reach.
+    const fail = { value: null as ResolveFailure | null };
+    expect(resolveNcertFilename('keec100.pdf', fail)).toBeNull();
+    expect(fail.value?.reason).toBe('no_chapter_number');
+    expect(fail.value?.prefix).toBe('keec');
+    // A single-volume digit-tail at chapter 0 fails the same way.
+    expect(resolveNcertFilename('jesc00.pdf', fail)).toBeNull();
+    expect(fail.value?.reason).toBe('no_chapter_number');
+  });
 });
 
 describe('isSkippableAsset', () => {
@@ -192,6 +207,11 @@ describe('namespacedChapterNumber — collision-free multi-book', () => {
     const ff = namespacedChapterNumber({ prefix: 'jeff', bookNumber: 1, chapterInBook: 1 }, vols);
     const fp = namespacedChapterNumber({ prefix: 'jefp', bookNumber: 1, chapterInBook: 1 }, vols);
     expect(ff).not.toBe(fp);
+    // Lock the exact scheme, not just "differ": once a group is multi-volume the
+    // FIRST book is ALSO offset (100 + ch), never left at its natural number.
+    // dedupeVolumes sorts jeff < jefp, so jeff=index0 -> 101, jefp=index1 -> 201.
+    expect(ff).toBe(101);
+    expect(fp).toBe(201);
   });
 
   it('namespaces multi-volume Geography (vol1/2/3) collision-free', () => {
@@ -200,12 +220,16 @@ describe('namespacedChapterNumber — collision-free multi-book', () => {
       { prefix: 'legy', bookNumber: 2 },
       { prefix: 'legy', bookNumber: 3 },
     ];
-    const nums = new Set([
+    const nums = [
       namespacedChapterNumber({ prefix: 'legy', bookNumber: 1, chapterInBook: 1 }, vols),
       namespacedChapterNumber({ prefix: 'legy', bookNumber: 2, chapterInBook: 1 }, vols),
       namespacedChapterNumber({ prefix: 'legy', bookNumber: 3, chapterInBook: 1 }, vols),
-    ]);
-    expect(nums.size).toBe(3); // all distinct
+    ];
+    expect(new Set(nums).size).toBe(3); // all distinct
+    // Exact scheme: (volumeIndex + 1) * 100 + chapterInBook.
+    expect(nums).toEqual([101, 201, 301]);
+    // Chapter offset rides through: legy vol2 ch9 -> 209.
+    expect(namespacedChapterNumber({ prefix: 'legy', bookNumber: 2, chapterInBook: 9 }, vols)).toBe(209);
   });
 
   it('dedupeVolumes is stable + sorted', () => {
