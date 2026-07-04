@@ -252,32 +252,108 @@ const EXCLUDED_TITLE_LINES =
   /^(summary|keywords?|new terms|exercises?|intext questions?|what (have we|you have) learnt\??|points to ponder|let us enhance our learning|notes for the teacher)$/i;
 
 /**
- * Conservative TitleCase standalone-line heading heuristic (unnumbered heads):
+ * Conservative TitleCase standalone-line heading predicate (unnumbered heads):
  * 2-6 words, every word Capitalized or a stopword, no digits, no terminal
- * punctuation, ≤60 chars, not a known non-heading block label. Deduped by
- * normalized text. Deliberately strict — misses are cheaper than junk.
+ * punctuation, ≤60 chars, not a known non-heading block label. Deliberately
+ * strict — misses are cheaper than junk. Shared by the heading heuristic and
+ * the named-subtopic fallback.
  */
+function isTitleCaseHeadingLine(line: string): boolean {
+  if (line.length < 3 || line.length > 60) return false;
+  if (/\d/.test(line)) return false;
+  if (/[.?!,;:]$/.test(line)) return false;
+  if (EXCLUDED_TITLE_LINES.test(line)) return false;
+  const words = line.split(/\s+/);
+  if (words.length < 2 || words.length > 6) return false;
+  let caps = 0;
+  for (const w of words) {
+    if (/^[A-Z][A-Za-z-]*$/.test(w)) caps++;
+    else if (TITLE_STOPWORDS.has(w.toLowerCase())) continue;
+    else return false;
+  }
+  return caps >= 2;
+}
+
+const titleKey = (line: string) => line.trim().toLowerCase().replace(/\s+/g, ' ');
+
 function scanTitleCaseHeadings(chunks: AuditChunk[]): { keys: Set<string>; evidence: string[] } {
   const keys = new Set<string>();
   const evidence: string[] = [];
   for (const c of chunks) {
     for (const rawLine of c.chunk_text.split('\n')) {
       const line = rawLine.trim();
-      if (line.length < 3 || line.length > 60) continue;
-      if (/\d/.test(line)) continue;
-      if (/[.?!,;:]$/.test(line)) continue;
-      if (EXCLUDED_TITLE_LINES.test(line)) continue;
-      const words = line.split(/\s+/);
-      if (words.length < 2 || words.length > 6) continue;
-      let caps = 0;
-      let ok = true;
-      for (const w of words) {
-        if (/^[A-Z][A-Za-z-]*$/.test(w)) caps++;
-        else if (TITLE_STOPWORDS.has(w.toLowerCase())) continue;
-        else { ok = false; break; }
+      if (!isTitleCaseHeadingLine(line)) continue;
+      const key = titleKey(line);
+      if (!keys.has(key)) {
+        keys.add(key);
+        if (!evidence.includes(c.chunk_id)) evidence.push(c.chunk_id);
       }
-      if (!ok || caps < 2) continue;
-      const key = line.toLowerCase().replace(/\s+/g, ' ');
+    }
+  }
+  return { keys, evidence };
+}
+
+// ─── Named sub-section fallback (new-syllabus books without N.M.K numbering) ──
+
+/**
+ * A standalone line that appears in MORE than this many chunks is a running
+ * page header/footer (e.g. the chapter title stamped on every page), never a
+ * one-off sub-section heading. 2 tolerates a single sliding-window overlap
+ * duplicate.
+ */
+const MAX_SUBHEADING_CHUNK_FREQ = 2;
+
+/** Offset of the first REAL numbered N.M heading in a chunk (not a series label), or -1. */
+function firstNumberedHeadingOffset(text: string): number {
+  for (const m of text.matchAll(fresh(HEADING_RE))) {
+    if (isSeriesLabelled(text, m.index ?? 0)) continue;
+    return m.index ?? 0;
+  }
+  return -1;
+}
+
+/**
+ * BUG 2 fix (Wave-1 pilot re-run, 2026-07-04): the 2024 "Curiosity" NCERT books
+ * (grade 6+) largely drop `N.M.K` decimal sub-numbering, so the decimal regex
+ * under-counts subtopics (pilot: 2 vs truth 4 for g6 science ch2). This
+ * fallback derives extra subtopics from NAMED (unnumbered) TitleCase
+ * sub-section headings that sit BELOW a numbered main heading, conservatively:
+ *  - conservative TitleCase shape (isTitleCaseHeadingLine);
+ *  - the line sits AFTER the chunk's first real N.M heading (a sub-section is
+ *    nested under a section);
+ *  - it is not a running header/footer (chunk-frequency ≤ MAX_SUBHEADING_CHUNK_FREQ,
+ *    which drops the chapter-title stamp);
+ *  - no tab (tab-delimited lines are table rows, not headings).
+ * Numbered N.M / N.M.K lines can never match here (they contain digits), so
+ * this never double-counts a numbered subtopic. Deduped by normalized text.
+ */
+function scanNamedSubsections(chunks: AuditChunk[]): { keys: Set<string>; evidence: string[] } {
+  const chunkFreq = new Map<string, number>();
+  for (const c of chunks) {
+    const seen = new Set<string>();
+    for (const rawLine of c.chunk_text.split('\n')) {
+      const key = titleKey(rawLine);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      chunkFreq.set(key, (chunkFreq.get(key) ?? 0) + 1);
+    }
+  }
+
+  const keys = new Set<string>();
+  const evidence: string[] = [];
+  for (const c of chunks) {
+    const headingOffset = firstNumberedHeadingOffset(c.chunk_text);
+    if (headingOffset < 0) continue; // no section in this chunk ⇒ nothing to nest under
+    let offset = 0;
+    for (const rawLine of c.chunk_text.split('\n')) {
+      const lineStart = offset;
+      offset += rawLine.length + 1; // +1 for the split newline
+      if (lineStart <= headingOffset) continue; // must sit BELOW the main heading
+      if (rawLine.includes('\t')) continue; // table row, not a heading
+      const line = rawLine.trim();
+      if (!isTitleCaseHeadingLine(line)) continue;
+      const key = titleKey(line);
+      if ((chunkFreq.get(key) ?? 0) > MAX_SUBHEADING_CHUNK_FREQ) continue; // running header
       if (!keys.has(key)) {
         keys.add(key);
         if (!evidence.includes(c.chunk_id)) evidence.push(c.chunk_id);
@@ -371,9 +447,61 @@ function scanSummaryBlocks(chunks: AuditChunk[]): { count: number; evidence: str
 // ─── Keywords blocks (enumerable terms) ──────────────────────────────────────
 
 const KEYWORD_HEADER_RE = /\bK(?:EYWORDS?|eywords?)\b|\bNew\s+Terms\b|\bNEW\s+TERMS\b/g;
-/** Where a keyword list stops: the next block header or a blank line. */
+/**
+ * Where a keyword list stops: the next REAL block header (Wave-1 pilot re-run
+ * fix, 2026-07-04). The old rule ALSO stopped at the first blank line and
+ * capped the window at 600 chars. On new-gen "Curiosity" NCERT (grade 6, 2024)
+ * the Keywords box is rendered as a boxed sidebar whose header is separated
+ * from its term list by an intervening "More to know!" prose sidebar — the
+ * real ~24-term list begins ~600 chars AFTER the "Keywords" token, so the old
+ * window truncated inside the prose and counted only a handful of stray
+ * capitalized fragments (pilot: 3 vs truth 24). The blank-line terminator is
+ * gone (OCR term lists routinely contain blank lines) and the window is
+ * widened; over-splitting prose into fake terms is prevented by isKeywordTerm.
+ */
 const KEYWORD_BLOCK_END_RE =
-  /\bLet us enhance our learning\b|\bEXERCISES?\b|\bSUMMARY\b|\bIntext\s+Questions?\b|\bWhat\s+have\s+we\s+learnt\b|\bWhat\s+you\s+have\s+learnt\b|\bPoints\s+to\s+Ponder\b|\n\s*\n/i;
+  /\bLet us enhance our learning\b|\bEXERCISES?\b|\bSUMMARY\b|\bIntext\s+Questions?\b|\bWhat\s+have\s+we\s+learnt\b|\bWhat\s+you\s+have\s+learnt\b|\bPoints\s+to\s+Ponder\b/i;
+/** Widened from 600 → 2500 so the term list (past an intervening sidebar) is reached; still bounded (chunks are ≤ ~3k chars). */
+const KEYWORD_WINDOW_CHARS = 2500;
+/**
+ * Term separators: newline / tab / comma / semicolon / bullet / pipe / slash /
+ * en-dash / em-dash / a run of 2+ spaces (column gutter). Single spaces are
+ * PRESERVED so multi-word terms like "Dicot plants" / "Sacred groves" survive.
+ */
+const KEYWORD_SPLIT_RE = /[\n\t,;•|/–—]|\s{2,}/;
+/**
+ * Prose-fragment killers: a real glossary term is a noun phrase, never a
+ * sentence fragment. A candidate whose first OR last word is one of these
+ * function/verb words is discarded ("More to" → trailing "to"; "and animals"
+ * → leading "and"; "Sacred groves are" → trailing "are").
+ */
+const KEYWORD_STOPWORDS = new Set([
+  'a', 'an', 'the', 'of', 'and', 'or', 'to', 'in', 'on', 'for', 'with', 'from', 'by', 'as', 'at', 'into', 'than', 'then',
+  'is', 'are', 'was', 'were', 'be', 'been', 'being', 'has', 'have', 'had', 'will', 'would', 'can', 'could', 'may', 'might',
+  'must', 'shall', 'should', 'do', 'does', 'did', 'this', 'that', 'these', 'those', 'it', 'its', 'they', 'them', 'their',
+  'we', 'you', 'our', 'his', 'her', 'so', 'but', 'if', 'when', 'which', 'who', 'what', 'how', 'not', 'no', 'all', 'some',
+]);
+
+/**
+ * Is `raw` a plausible enumerable glossary term (vs a prose fragment)?
+ * Conservative by design — misses (a dropped term) are cheaper than junk (a
+ * prose line miscounted as a keyword). Rules: 2-40 chars, no sentence
+ * punctuation, 1-4 words, every word alphabetic (letters + internal
+ * hyphen/apostrophe), first char a capital (glossary terms are TitleCase),
+ * and neither the first nor the last word a function/verb stopword.
+ */
+function isKeywordTerm(raw: string): boolean {
+  const term = raw.trim();
+  if (term.length < 2 || term.length > 40) return false;
+  if (/[.?!:]/.test(term)) return false; // sentence punctuation ⇒ prose
+  if (!/^[A-Z]/.test(term)) return false; // TitleCase term
+  const words = term.split(/\s+/);
+  if (words.length < 1 || words.length > 4) return false;
+  for (const w of words) if (!/^[A-Za-z][A-Za-z'-]*$/.test(w)) return false; // reject digits / stray glyphs
+  if (KEYWORD_STOPWORDS.has(words[0].toLowerCase())) return false;
+  if (KEYWORD_STOPWORDS.has(words[words.length - 1].toLowerCase())) return false;
+  return true;
+}
 
 function scanKeywords(chunks: AuditChunk[]): { count: number; evidence: string[]; blocksSeen: number } {
   const terms = new Set<string>();
@@ -382,15 +510,12 @@ function scanKeywords(chunks: AuditChunk[]): { count: number; evidence: string[]
   for (const c of chunks) {
     for (const m of c.chunk_text.matchAll(fresh(KEYWORD_HEADER_RE))) {
       blocksSeen++;
-      let window = c.chunk_text.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 600);
+      let window = c.chunk_text.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + KEYWORD_WINDOW_CHARS);
       const end = window.match(KEYWORD_BLOCK_END_RE);
       if (end && end.index !== undefined) window = window.slice(0, end.index);
-      for (const rawTerm of window.split(/[/,;•|\n]/)) {
-        const term = rawTerm.trim();
-        if (term.length < 2 || term.length > 40) continue;
-        if (!/^[A-Z]/.test(term)) continue;
-        if (term.split(/\s+/).length > 4) continue;
-        terms.add(term.toLowerCase());
+      for (const rawTerm of window.split(KEYWORD_SPLIT_RE)) {
+        if (!isKeywordTerm(rawTerm)) continue;
+        terms.add(rawTerm.trim().toLowerCase());
       }
       if (!evidence.includes(c.chunk_id)) evidence.push(c.chunk_id);
     }
@@ -549,6 +674,13 @@ export function runStructuralScan(chunks: AuditChunk[], chapterNumber: number): 
   const examples = scanExamples(chunks);
   const headings = scanHeadings(chunks);
   const subtopics = scanSubtopics(chunks);
+  // BUG 2 fix: when a chapter uses FEWER numbered N.M.K subtopics than it has
+  // numbered N.M sections (the new-syllabus "Curiosity" signature — sections
+  // exist but their sub-sections are named, not decimal-numbered), fall back to
+  // conservative named sub-section headings and ADD them to the numbered count.
+  const useNamedSubtopicFallback = subtopics.ids.size < headings.numbered.ids.size;
+  const namedSubtopics = useNamedSubtopicFallback ? scanNamedSubsections(chunks) : { keys: new Set<string>(), evidence: [] };
+  const subtopicCount = subtopics.ids.size + namedSubtopics.keys.size;
   const summary = scanSummaryBlocks(chunks);
   const keywords = scanKeywords(chunks);
   const pages = scanPages(chunks);
@@ -571,9 +703,12 @@ export function runStructuralScan(chunks: AuditChunk[], chapterNumber: number): 
       notes: det(`${headings.numbered.ids.size} numbered N.M headings + ${headings.titleCase.keys.size} TitleCase-line headings`),
     },
     subtopics: {
-      found_count: subtopics.ids.size,
-      evidence_chunk_ids: capEvidence(subtopics.evidence),
-      notes: det(`${subtopics.ids.size} distinct N.M.K subtopic numbers`),
+      found_count: subtopicCount,
+      evidence_chunk_ids: capEvidence([...subtopics.evidence, ...namedSubtopics.evidence]),
+      notes: det(
+        `${subtopics.ids.size} distinct N.M.K subtopic numbers` +
+          (useNamedSubtopicFallback ? ` + ${namedSubtopics.keys.size} named sub-section headings (fallback: fewer numbered subtopics than sections)` : ''),
+      ),
     },
     examples: {
       found_count: examples.acc.ids.size,

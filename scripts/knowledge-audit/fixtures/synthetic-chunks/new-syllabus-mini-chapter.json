@@ -1,0 +1,30 @@
+{
+  "description": "Synthetic NEW-SYLLABUS ('Curiosity' 2024 NCERT style) mini-chapter authored to MIRROR the real prod format that broke the Wave-1 pilot re-run (grade 6 science ch2), WITHOUT copying any corpus text — all sentences and terms are invented. Two structural signatures are reproduced: (1) a boxed 'Keywords' header separated from its ~20-term list by an intervening prose sidebar ('Did you know?' + a titled note), with terms rendered as newline-separated 1-2 word TitleCase entries (the old 600-char window truncated inside the sidebar and counted ~3 stray fragments); (2) named-but-unnumbered TitleCase sub-section headings ('Natural Materials' / 'Synthetic Materials') that sit below a numbered main heading, alongside two conventional N.M.K numbered subtopics under a different section (the decimal-only regex under-counted these). Authored ground truth in `truth`.",
+  "chapter_number": 3,
+  "chapter_title": "Materials and Their Properties",
+  "chunks": [
+    {
+      "chunk_id": "ns-c1",
+      "chunk_text": "3.1 Kinds Of Materials\nEverything around us is made of some material.\nNatural Materials\nWood, cotton and stone are obtained from nature.\nSynthetic Materials\nPlastic and nylon are made by people in factories.",
+      "content_type": "content"
+    },
+    {
+      "chunk_id": "ns-c2",
+      "chunk_text": "3.2 Grouping Materials\nMaterials can be sorted into groups.\n3.2.1 Grouping By Appearance\nSome materials are shiny while others are dull.\n3.2.2 Grouping By Hardness\nSome materials are hard and some are soft.",
+      "content_type": "content"
+    },
+    {
+      "chunk_id": "ns-c3",
+      "chunk_text": "3.3 Materials In Daily Life\nWe use many materials every day.\nSpoons, plates and clothes are examples of useful things.\nKeywords\nDid you\nknow?\nUseful Facts About Materials: A Short Note\nMany materials can be recycled and used again. Recycling\nsaves resources and reduces waste in our surroundings.\nThis simple habit protects the environment for everyone.\nMaterial\nSubstance\nNatural material\nSynthetic material\nMetal\nNon-metal\nHardness\nLustre\nTransparency\nSolubility\nDensity\nRecycling\nBiodegradable\nInsulator\nConductor\nElasticity\nMalleable\nAlloy\nCorrosion\nOre",
+      "content_type": "content"
+    }
+  ],
+  "truth": {
+    "keywords": 20,
+    "subtopics": 4,
+    "subtopics_numbered": 2,
+    "subtopics_named": 2,
+    "headings": 5,
+    "headings_numbered": 3
+  }
+}

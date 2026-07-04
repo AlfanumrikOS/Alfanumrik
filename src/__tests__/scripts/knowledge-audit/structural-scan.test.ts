@@ -45,6 +45,7 @@ function chunk(id: string, text: string, type: string | null = null): AuditChunk
 
 const clean = loadFixture('clean-mini-chapter.json');
 const contaminated = loadFixture('contaminated-mini-chapter.json');
+const newSyllabus = loadFixture('new-syllabus-mini-chapter.json');
 
 describe('dimension partition (v2 split)', () => {
   it('STRUCTURAL (12) + SEMANTIC (10) exactly partition the 22 chunk-pass dimensions', () => {
@@ -364,6 +365,107 @@ describe('keywords / summary / pages / TitleCase edge behavior', () => {
     ].join('\n');
     const scan = runStructuralScan([chunk('c1', text)], 4);
     expect(scan.findings.headings.found_count).toBe(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wave-1 pilot re-run accuracy fixes (2026-07-04): keyword under-split +
+// new-syllabus (unnumbered) subtopic fallback. Synthetic fixture MIRRORS the
+// real g6-science-ch2 format (boxed Keywords header separated from its term
+// list by an intervening prose sidebar; named TitleCase sub-sections below a
+// numbered heading) without copying any corpus text.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('runStructuralScan — new-syllabus mini-chapter (pilot re-run fixes, EXACT counts)', () => {
+  const scan = runStructuralScan(newSyllabus.chunks, newSyllabus.chapter_number);
+  const count = (d: (typeof STRUCTURAL_DIMENSIONS)[number]) => scan.findings[d].found_count;
+
+  it('BUG 1: reaches the ~20-term list PAST the intervening prose sidebar (old 600-char window counted ~3)', () => {
+    expect(count('keywords')).toBe(newSyllabus.truth.keywords); // 20
+  });
+
+  it('BUG 1: prose sidebar between "Keywords" and the list is NOT split into fake terms', () => {
+    // If prose leaked, the count would exceed the authored 20 real terms.
+    expect(count('keywords')).toBeLessThanOrEqual(newSyllabus.truth.keywords as number);
+  });
+
+  it('BUG 2: subtopics = 2 numbered N.M.K + 2 named sub-section fallback = 4', () => {
+    expect(count('subtopics')).toBe(newSyllabus.truth.subtopics); // 4
+    expect(scan.findings.subtopics.notes).toMatch(/named sub-section headings \(fallback/);
+  });
+
+  it('BUG 2: named-subtopic terms from the Keywords box do NOT leak into subtopics', () => {
+    // Keyword terms are single words or "Cap lowercase" pairs → never TitleCase
+    // sub-headings; only the two genuine "Cap Cap" sub-heads are added.
+    expect(count('subtopics')).toBe(4);
+  });
+
+  it('headings still count the 3 numbered N.M sections + 2 named TitleCase heads = 5', () => {
+    expect(count('headings')).toBe(newSyllabus.truth.headings); // 5
+  });
+
+  it('evidence stays chunk-id-only within the input set (P13)', () => {
+    const ids = new Set(newSyllabus.chunks.map((c) => c.chunk_id));
+    for (const id of scan.findings.keywords.evidence_chunk_ids) expect(ids.has(id)).toBe(true);
+    for (const id of scan.findings.subtopics.evidence_chunk_ids) expect(ids.has(id)).toBe(true);
+  });
+});
+
+describe('keyword under-split guards (BUG 1)', () => {
+  it('a prose paragraph with NO keyword header → 0 keywords (no false-split)', () => {
+    const prose =
+      'Materials around us have many properties. Metals, Glass and Plastic behave differently when heated or bent. Scientists study these Properties carefully.';
+    const scan = runStructuralScan([chunk('c1', prose)], 3);
+    expect(scan.findings.keywords.found_count).toBe(0);
+  });
+
+  it('whitespace/newline-separated TitleCase list after a header is fully captured (not just the first line)', () => {
+    const scan = runStructuralScan(
+      [chunk('c1', 'Keywords\nLustre\nDensity\nSolubility\nHardness\nElasticity\nConductor')],
+      3,
+    );
+    expect(scan.findings.keywords.found_count).toBe(6);
+  });
+
+  it('multi-word terms survive (single space preserved); "More to" / "know?" prose lines rejected', () => {
+    const scan = runStructuralScan(
+      [chunk('c1', 'Keywords\nMore to\nknow?\nNatural fibre\nSynthetic fibre\nBiodegradable')],
+      3,
+    );
+    // "Natural fibre" + "Synthetic fibre" + "Biodegradable" = 3; "More to" (trailing stopword) and "know?" (punctuation) rejected.
+    expect(scan.findings.keywords.found_count).toBe(3);
+  });
+});
+
+describe('named-subtopic fallback guards (BUG 2)', () => {
+  it('fallback does NOT trigger when numbered N.M.K subtopics >= numbered N.M sections', () => {
+    const scan = runStructuralScan(
+      [
+        chunk('c1', '4.1 Section One\n4.1.1 Sub One\nText here about the topic.\nAlpha Beta\nSome prose sentence.'),
+      ],
+      4,
+    );
+    // numbered subtopics (1) is NOT < numbered headings (1) → fallback off →
+    // the standalone "Alpha Beta" TitleCase line is NOT counted as a subtopic.
+    expect(scan.findings.subtopics.found_count).toBe(1);
+  });
+
+  it('a running header/footer (same TitleCase line in >2 chunks) is NOT counted as a named subtopic', () => {
+    const runningHeader = 'Materials And Their Properties';
+    const mk = (id: string) =>
+      chunk(id, `3.1 Some Section Heading\nSome introductory prose sentence here.\n${runningHeader}\nMore prose follows.`);
+    const scan = runStructuralScan([mk('c1'), mk('c2'), mk('c3')], 3);
+    // The running header appears below the heading in 3 chunks (freq 3 > 2) →
+    // excluded; no other named sub-heads exist → subtopics stays 0.
+    expect(scan.findings.subtopics.found_count).toBe(0);
+  });
+
+  it('tab-delimited table rows below a heading are NOT counted as named subtopics', () => {
+    const scan = runStructuralScan(
+      [chunk('c1', '3.1 Grouping Materials\nSome prose about grouping.\nMetal \tNon-metal \tAlloy\nEnd of section.')],
+      3,
+    );
+    expect(scan.findings.subtopics.found_count).toBe(0);
   });
 });
 
