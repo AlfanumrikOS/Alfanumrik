@@ -1,6 +1,7 @@
 'use client';
 
 import { useSubjectLookup } from '@/lib/useSubjectLookup';
+import { Button, IconButton } from '@/components/ui/primitives';
 
 /* ═══════════════════════════════════════════════════════════════
    ConversationHeader — Active conversation context bar
@@ -8,7 +9,9 @@ import { useSubjectLookup } from '@/lib/useSubjectLookup';
    ═══════════════════════════════════════════════════════════════ */
 
 // Fallback for the brief first-paint window before useAllowedSubjects resolves.
-const FALLBACK_SUBJECT = { name: 'Science', icon: '\u269B', color: '#10B981' };
+// Colour is intentionally omitted \u2014 the context badge is now driven by the
+// brand token (var(--primary) via color-mix), not a per-subject hex.
+const FALLBACK_SUBJECT = { name: 'Science', icon: '\u269B' };
 
 interface ConversationHeaderProps {
   title: string;
@@ -48,7 +51,7 @@ export function ConversationHeader({
   const lookupSubject = useSubjectLookup();
   const resolved = lookupSubject(subject);
   const cfg = resolved
-    ? { name: resolved.name, icon: resolved.icon, color: resolved.color }
+    ? { name: resolved.name, icon: resolved.icon }
     : FALLBACK_SUBJECT;
   const modeInfo = MODE_LABELS[mode] || MODE_LABELS.ask;
 
@@ -61,50 +64,50 @@ export function ConversationHeader({
       }}
     >
       {/* Sidebar toggle (mobile) */}
-      <button
+      <IconButton
+        label={isHi ? '\u091A\u0948\u091F \u0939\u093F\u0938\u094D\u091F\u094D\u0930\u0940' : 'Chat history'}
+        variant="secondary"
+        size="sm"
         onClick={onOpenSidebar}
-        className="lg:hidden w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all active:scale-95"
-        style={{
-          background: 'var(--surface-2)',
-          border: '1px solid var(--border)',
-        }}
-        aria-label={isHi ? '\u091A\u0948\u091F \u0939\u093F\u0938\u094D\u091F\u094D\u0930\u0940' : 'Chat history'}
-      >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ color: 'var(--text-3)' }}>
-          <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-      </button>
+        className="lg:hidden"
+        icon={
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        }
+      />
 
-      {/* Persistent context badge — subject > chapter > mode */}
+      {/* Persistent context badge — subject > chapter > mode. Brand-tinted
+          surface (color-mix on var(--primary)); ink text guarantees AA. */}
       <div
-        className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl shrink-0 max-w-[55%] sm:max-w-none"
+        className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl shrink-0 max-w-[55%] sm:max-w-none border"
         style={{
-          background: `${cfg.color}10`,
-          border: `1.5px solid ${cfg.color}25`,
+          background: 'color-mix(in srgb, var(--primary) 8%, var(--surface-1))',
+          borderColor: 'color-mix(in srgb, var(--primary) 25%, transparent)',
         }}
       >
-        <span className="text-xs shrink-0" style={{ color: cfg.color }}>{cfg.icon}</span>
+        <span className="text-xs shrink-0" aria-hidden="true">{cfg.icon}</span>
         <span
           className="text-[10px] font-bold truncate"
-          style={{ color: cfg.color }}
+          style={{ color: 'var(--text-1)' }}
         >
           {cfg.name}
         </span>
         {(topicTitle || chapterNumber) && (
           <>
-            <span className="text-[9px] shrink-0" style={{ color: `${cfg.color}80` }}>&gt;</span>
+            <span className="text-[9px] shrink-0" style={{ color: 'var(--text-3)' }} aria-hidden="true">&gt;</span>
             <span
               className="text-[10px] font-semibold truncate"
-              style={{ color: cfg.color }}
+              style={{ color: 'var(--text-1)' }}
             >
               {chapterNumber ? `Ch.${chapterNumber}` : ''}{chapterNumber && topicTitle ? ': ' : ''}{topicTitle || ''}
             </span>
           </>
         )}
-        <span className="text-[9px] shrink-0 mx-0.5" style={{ color: `${cfg.color}50` }}>|</span>
+        <span className="text-[9px] shrink-0 mx-0.5" style={{ color: 'var(--text-3)' }} aria-hidden="true">|</span>
         <span
           className="text-[9px] font-bold shrink-0"
-          style={{ color: cfg.color }}
+          style={{ color: 'var(--primary)' }}
         >
           {modeInfo.icon} {isHi ? modeInfo.hi : modeInfo.en}
         </span>
@@ -127,17 +130,15 @@ export function ConversationHeader({
       </div>
 
       {/* New chat button */}
-      <button
+      <Button
+        variant="secondary"
+        size="sm"
         onClick={onNewChat}
-        className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
-        style={{
-          background: 'var(--surface-2)',
-          color: 'var(--text-3)',
-          border: '1px solid var(--border)',
-        }}
+        className="shrink-0"
+        leadingIcon={<span aria-hidden="true">+</span>}
       >
-        + {isHi ? '\u0928\u0908 \u091A\u0948\u091F' : 'New Chat'}
-      </button>
+        {isHi ? '\u0928\u0908 \u091A\u0948\u091F' : 'New Chat'}
+      </Button>
     </div>
   );
 }
