@@ -6,26 +6,26 @@
  * AtlasDashboard renders otherwise (see page.tsx for the flag dispatch).
  *
  * Design philosophy: decision-first, mastery-centric. The page answers "what
- * should I do right now?" before anything else.
+ * should I do right now?" before anything else. Phase 3a rebuilt the frame on
+ * canonical primitives (DD-16) with strict above-the-fold discipline.
  *
- *   1. Compact header rail   — greeting + StreakBadge + XP (demoted, glanceable).
- *   2. PRIMARY hero          — <TodaysMission> wrapping the existing
- *                              DailyRhythmQueue as the single dominant CTA.
- *   3. <MasterySnapshot>     — Mastered / Learning / Needs-Revision buckets.
- *   4. <BoardScoreWidget>    — BoardScore™ predictive board-exam marks (ff_board_score_v1).
- *   5. <RevisionRail>        — secondary spaced-repetition surface (reuses
- *                              ReviewsDueCard + useReviewCards).
- *   6. <SubjectRoadmaps>     — per-subject skill trees (SkillTree primitive).
+ * ABOVE THE FOLD (exactly ONE primary action):
+ *   1. Header rail   — Avatar + greeting + Badge(streak/XP) + language toggle.
+ *   2. Pending link  — <PendingLinkApproval> consent (self-hides when empty).
+ *   3. PRIMARY hero  — <TodaysMission>, the single dominant CTA + WHY line.
+ *   4. Growth strip  — <GrowthStrip>, the "what improved" positive signal.
+ *
+ * BELOW THE FOLD (demoted glance panels — retained AS-IS, Phase 3b rebuilds):
+ *   <MasterySnapshot> · <BoardScoreWidget> · <RevisionRail> · <SubjectRoadmaps>.
  *
  * This is a PRESENTATION layer over unchanged engines. No scoring/XP/mastery
  * formula is computed here — every number comes from the existing snapshot /
- * useMasteryOverview / rhythm outputs. Rendered under Cosmic-LIGHT + student
+ * useMasteryOverview / today outputs. Rendered under Cosmic-LIGHT + student
  * palette via useCosmicLightSurface (dark mode is killed for this surface).
  *
- * Responsive (AppShell variant="split"):
- *   - mobile : single priority stack + MobileNav bottom nav.
- *   - tablet : left rail (mastery snapshot) + content (mission + roadmaps).
- *   - desktop: adds right aside (revision rail / quick links).
+ * Shell (D1 fix): AppShell variant="mobile" reserves NO left rail — the global
+ * DesktopSidebar is the sole left rail (variant="split" previously
+ * double-rendered a left column). Single content column at every width.
  *
  * Bilingual via AuthContext.isHi. Loading / empty handled per child.
  */
@@ -38,9 +38,10 @@ import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { useCosmicLightSurface } from '@/lib/use-cosmic-light-surface';
 import { DashboardSkeleton } from '@/components/Skeleton';
 import { AppShell } from '@/components/responsive';
-import { StreakBadge } from '@/components/ui';
+import { Avatar, Badge, Button, IconButton } from '@/components/ui/primitives';
 import type { CurriculumTopic } from '@/lib/types';
 import TodaysMission from '@/components/dashboard/os/TodaysMission';
+import GrowthStrip from '@/components/dashboard/os/GrowthStrip';
 import MasterySnapshot from '@/components/dashboard/os/MasterySnapshot';
 import RevisionRail from '@/components/dashboard/os/RevisionRail';
 import SubjectRoadmaps from '@/components/dashboard/os/SubjectRoadmaps';
@@ -149,24 +150,22 @@ export default function StudentOSDashboard() {
   if (isLoggedIn && !student) {
     return (
       <div
-        className="min-h-[60vh] flex flex-col items-center justify-center gap-4 px-6 text-center"
+        className="flex flex-col items-center justify-center gap-4 px-6 text-center"
+        style={{ minHeight: '60vh' }}
         role="alert"
       >
         <p
-          className="text-base font-semibold max-w-xs"
-          style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}
+          className="max-w-xs text-fluid-base font-semibold text-foreground"
+          style={{ fontFamily: 'var(--font-display)' }}
         >
           {isHi
             ? 'हम आपकी प्रोफ़ाइल लोड नहीं कर पाए। पुनः प्रयास करें।'
             : "We couldn't load your profile. Tap to retry."}
         </p>
-        <button
-          type="button"
+        <Button
+          variant="primary"
+          loading={retrying}
           onClick={() => void handleRetry()}
-          disabled={retrying}
-          aria-busy={retrying}
-          className="text-sm font-bold px-5 py-2.5 rounded-full transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-60"
-          style={{ background: 'var(--accent-warm, #E8581C)', color: '#fff', minHeight: 44 }}
         >
           {retrying
             ? isHi
@@ -175,7 +174,7 @@ export default function StudentOSDashboard() {
             : isHi
               ? 'पुनः प्रयास करें'
               : 'Retry'}
-        </button>
+        </Button>
       </div>
     );
   }
@@ -195,79 +194,73 @@ export default function StudentOSDashboard() {
   const subjectCodeByName: Record<string, string> = {};
   for (const s of allowedSubjects) subjectCodeByName[s.name] = s.code;
 
-  // Compact header rail — greeting + streak + demoted XP + language toggle.
+  // Compact header rail — avatar + greeting + glanceable streak/XP badges +
+  // language toggle. All chrome (colour, on-accent, 44px, focus) is owned by
+  // the canonical primitives; this rail carries no hardcoded colours (DD-16).
   const headerRail = (
-    <div className="flex items-center gap-3 px-4 py-4 w-full">
-      <div className="flex-1 min-w-0">
+    <div className="flex w-full items-center gap-3 px-4 py-4">
+      <Avatar name={firstName} alt={firstName} size="md" />
+
+      <div className="min-w-0 flex-1">
         <p
-          className="text-xl font-extrabold truncate"
-          style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}
+          className="truncate text-fluid-lg font-extrabold text-foreground"
+          style={{ fontFamily: 'var(--font-display)' }}
         >
           {isHi ? `नमस्ते, ${firstName}` : `Hi, ${firstName}`}
         </p>
-        <p className="text-sm" style={{ color: 'var(--text-3)' }}>
+        <p className="text-fluid-sm text-muted-foreground">
           {isHi ? 'आज क्या सीखें?' : 'What will you master today?'}
         </p>
       </div>
 
-      <StreakBadge count={streak} compact />
+      <Badge
+        tone="warning"
+        variant="soft"
+        icon={<span aria-hidden="true">🔥</span>}
+        aria-label={isHi ? `${streak} दिन की लय` : `${streak}-day streak`}
+      >
+        <span className="tabular-nums">{streak}</span>
+      </Badge>
 
-      {/* XP demoted to a small glanceable warm chip. Warm tints route through
-          the stable --accent-warm channel (--orange-rgb is violet here). */}
-      <span
-        className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full"
-        style={{
-          background: 'rgb(var(--accent-warm-rgb) / 0.08)',
-          color: 'var(--accent-warm, #E8581C)',
-          border: '1px solid rgb(var(--accent-warm-rgb) / 0.18)',
-        }}
+      <Badge
+        tone="warning"
+        variant="soft"
+        icon={<span aria-hidden="true">⚡</span>}
         aria-label={isHi ? `कुल ${totalXp} XP` : `${totalXp} total XP`}
       >
-        <span style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono)' }}>
-          {totalXp.toLocaleString('en-IN')}
-        </span>
-        <span style={{ opacity: 0.7 }}>XP</span>
-      </span>
+        <span className="tabular-nums">{totalXp.toLocaleString('en-IN')}</span>
+        <span className="ms-1 opacity-70">XP</span>
+      </Badge>
 
-      <button
-        type="button"
+      <IconButton
+        variant="ghost"
+        size="sm"
+        label={isHi ? 'Switch to English' : 'हिन्दी में बदलें'}
+        icon={<span className="text-fluid-xs font-bold">{isHi ? 'EN' : 'हि'}</span>}
         onClick={() => setLanguage(language === 'hi' ? 'en' : 'hi')}
-        aria-label={isHi ? 'Switch to English' : 'हिन्दी में बदलें'}
-        className="text-xs font-bold px-2.5 py-1 rounded-full transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-        style={{ background: 'var(--surface-2)', color: 'var(--text-2)', minHeight: 32 }}
-      >
-        {isHi ? 'EN' : 'हि'}
-      </button>
+      />
     </div>
   );
 
   return (
+    // D1 fix: content-only shell. The global DesktopSidebar is the SOLE left
+    // rail; AppShell no longer renders its own rail/aside (variant="split" was
+    // double-rendering a left column). MasterySnapshot + RevisionRail move into
+    // the demoted below-fold region until Phase 3b rebuilds those glance panels.
     <AppShell
-      variant="split"
+      variant="mobile"
       className="student-os-shell"
       header={headerRail}
       oneHandToggle
-      rail={
-        // Tablet+ left rail: the mastery snapshot lives here so "where am I?"
-        // sits alongside "what now?".
-        <div className="p-2">
-          <MasterySnapshot isHi={isHi} studentId={student.id} />
-        </div>
-      }
-      aside={
-        // Desktop-only right aside: the secondary revision surface.
-        <div className="p-2">
-          <RevisionRail isHi={isHi} studentId={student.id} />
-        </div>
-      }
     >
       <div className="flex flex-col gap-5 px-4 pt-2 pb-6">
-        {/* 0. Pending parent-link consent — first actionable thing the child
-            sees when a parent has requested a link. Self-hides when empty
-            (bilingual handled inside the component, P7). */}
+        {/* ═══ ABOVE THE FOLD — exactly ONE primary action ═══ */}
+
+        {/* Pending parent-link consent — first actionable thing the child sees
+            when a parent has requested a link. Self-hides when empty (P7). */}
         <PendingLinkApproval links={pendingLinks} onApproved={loadPendingLinks} isHi={isHi} />
 
-        {/* 1. PRIMARY hero — single dominant CTA. */}
+        {/* PRIMARY hero — the single dominant "do this now". */}
         <TodaysMission
           isHi={isHi}
           studentName={student.name}
@@ -276,29 +269,36 @@ export default function StudentOSDashboard() {
           todaysTopic={todaysTopic}
         />
 
-        {/* 2. Mastery snapshot — repeated in the content column on mobile
-            (the rail is hidden below tablet), hidden on tablet+ where the rail
-            shows it. CSS handles the visibility so there's no duplicate render
-            cost beyond markup. */}
-        <div className="student-os-snapshot-inline lg:hidden">
-          <MasterySnapshot isHi={isHi} studentId={student.id} />
-        </div>
-
-        {/* 3. BoardScore™ — self-gating via ff_board_score_v1 (widget renders
-             a 'Coming Soon' teaser when flag is OFF, full prediction when ON). */}
-        <BoardScoreWidget isHi={isHi} studentId={student.id} />
-
-        {/* 4. Revision rail — inline on mobile/tablet, in the aside on desktop. */}
-        <div className="student-os-revision-inline xl:hidden">
-          <RevisionRail isHi={isHi} studentId={student.id} />
-        </div>
-
-        {/* 5. Subject roadmaps — the mastery-centric skill trees. */}
-        <SubjectRoadmaps
+        {/* GROWTH strip — the "what improved" positive signal, directly under
+            the primary action. Read-only over server values (P1/P2 untouched). */}
+        <GrowthStrip
           isHi={isHi}
           studentId={student.id}
-          subjectCodeByName={subjectCodeByName}
+          streak={streak}
+          totalXp={totalXp}
         />
+
+        {/* ═══ BELOW THE FOLD — demoted glance panels (Phase 3b rebuilds) ═══
+            Retained AS-IS for now; visually demoted behind a divider so the
+            above-the-fold keeps a single primary CTA. */}
+        <section
+          aria-label={isHi ? 'तुम्हारी प्रगति एक नज़र में' : 'Your progress at a glance'}
+          className="mt-3 flex flex-col gap-5 border-t border-surface-3 pt-5"
+        >
+          <MasterySnapshot isHi={isHi} studentId={student.id} />
+
+          {/* BoardScore™ self-gates via ff_board_score_v1 (teaser when OFF). */}
+          <BoardScoreWidget isHi={isHi} studentId={student.id} />
+
+          <RevisionRail isHi={isHi} studentId={student.id} />
+
+          {/* Subject roadmaps — the mastery-centric skill trees. */}
+          <SubjectRoadmaps
+            isHi={isHi}
+            studentId={student.id}
+            subjectCodeByName={subjectCodeByName}
+          />
+        </section>
       </div>
     </AppShell>
   );

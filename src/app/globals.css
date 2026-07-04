@@ -3291,6 +3291,17 @@ html[data-design="cosmic"][data-theme="light"] {
   --accent-warm: #E8581C;
   --accent-warm-strong: #C2440F;   /* darker warm stop for CTA gradients */
 
+  /* Primary-action CTA reads burnt-orange on the cream surface — this block's
+     own stated intent ("burnt-orange is THE brand signal for PRIMARY actions").
+     The base cosmic block (html[data-design="cosmic"]) remaps --btn-primary-*
+     to violet for the dark Foxy/Learn surfaces; re-pin them to the AA-verified
+     warm stops HERE so the canonical Button/IconButton variant="primary" owns a
+     warm on-accent pairing at the surface layer — no per-component --orange
+     override needed. Mirrors the :root warm stops (#CB4710 4.72:1 / #C2440F
+     ≥4.5:1 with #FFFFFF). This is the DD-16 paired-token fix for the CTA. */
+  --btn-primary-from: #CB4710;
+  --btn-primary-to: #C2440F;
+
   /* Semantic mastery/status palette — saturated for the cream light surface
      (the inherited mint/coral/saffron pastels wash out on #F4F1EA). */
   --green: #15803D;        /* mastered / strong */

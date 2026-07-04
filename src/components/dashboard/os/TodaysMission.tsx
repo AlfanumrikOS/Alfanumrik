@@ -3,16 +3,21 @@
 /**
  * TodaysMission — the PRIMARY hero of the Alfa OS dashboard (ff_student_os_v1).
  *
- * Decision-first design: this is the single dominant CTA on the page. It fetches
- * the learner-loop queue from /api/v2/today (gated by ff_today_home_v1, which IS
- * enabled globally) via the shared useTodayQueue hook. This replaces the former
- * DailyRhythmQueue which fetched /api/rhythm/today (gated by
- * ff_pedagogy_v2_daily_rhythm — OFF in production), meaning the hero was empty
- * for all students. The always-present "Begin lesson" CTA provides a direct
- * shortcut when the queue is loading or empty.
+ * Rebuilt on canonical primitives (Phase 3a, DD-16): a single dominant action.
+ * Card(elevated) shell + Button variant="primary" size="lg" fullWidth as the
+ * ONE "do this now", with at most two visually-subordinate ghost-Button rows
+ * beneath it. The former PremiumCard/GlowButton bespoke shells and the
+ * --orange→--accent-warm per-component override are GONE — the cosmic-light
+ * surface now pins --btn-primary-* warm, so Button owns its own AA on-accent
+ * (white-on-burnt-orange) pairing.
  *
- * No engine logic here — queue ordering lives in the resolver. This supplies
- * the editorial chrome + queue display + fallback CTA. Bilingual via isHi.
+ * Data contract UNCHANGED: still reads the learner-loop queue from
+ * `/api/v2/today` via useTodayQueue. `estMinutes` are presentation badges, not
+ * timing/scoring values (P1/P2 untouched — nothing is recomputed here).
+ *
+ * A WHY line under the hero title verbalises `primary.reason` (bilingual) so
+ * the student understands *why* this is next. States: loading→Skeleton;
+ * cold-start / empty→EmptyState-style card; error→Alert + retry. Bilingual (P7).
  */
 
 import { useRouter } from 'next/navigation';
@@ -21,19 +26,17 @@ import { useTodayQueue } from '@/lib/today/use-today-queue';
 import { todayIcon } from '@/lib/today/icon-map';
 import { todayCopy, deepLinkToHref } from '@/lib/today/copy';
 import { ALWAYS_NATIVE_SCRIPT } from '@/lib/today/render';
-import { PremiumCard, GlowButton } from '@/components/ui';
+import {
+  Card,
+  CardBody,
+  Button,
+  Badge,
+  Alert,
+  EmptyState,
+  Skeleton,
+} from '@/components/ui/primitives';
 import type { CurriculumTopic } from '@/lib/types';
 import type { TodayQueueItem } from '@/lib/today/types';
-
-/* Stable warm-orange tints. --orange-rgb is remapped to VIOLET under the
-   cosmic-light student surface, so warm tints route through --accent-warm-rgb
-   (re-pinned to burnt orange 232,88,28 in :root AND the cosmic-light block). */
-const WARM_06 = 'rgb(var(--accent-warm-rgb) / 0.06)';
-const WARM_10 = 'rgb(var(--accent-warm-rgb) / 0.10)';
-const WARM_15 = 'rgb(var(--accent-warm-rgb) / 0.15)';
-const WARM_20 = 'rgb(var(--accent-warm-rgb) / 0.20)';
-const WARM_25 = 'rgb(var(--accent-warm-rgb) / 0.25)';
-const WARM = 'var(--accent-warm, #E8581C)';
 
 interface TodaysMissionProps {
   isHi: boolean;
@@ -48,44 +51,88 @@ function capitalize(s: string | null | undefined): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/** Hindi and Sanskrit are always shown in native Devanagari script — this is
- *  the culturally correct form in Indian education regardless of UI language.
- *  Uses the shared ALWAYS_NATIVE_SCRIPT constant from render.ts (single source of truth). */
+/** Hindi / Sanskrit always render in native Devanagari (culturally correct in
+ *  Indian education regardless of UI language). Single source: render.ts. */
 function displaySubjectName(code: string): string {
   return ALWAYS_NATIVE_SCRIPT[code.toLowerCase()] ?? capitalize(code);
 }
 
-/**
- * Build the " · Chapter Title" suffix for subtitles. Uses Hindi title when
- * `isHi` is true and a Hindi title is available; falls back to the English
- * title. Returns '' when no title is present (graceful degradation).
- */
+/** Build the " · Chapter Title" subtitle suffix (Hindi title when available). */
 function chapterSuffix(item: TodayQueueItem, isHi: boolean): string {
-  const title = isHi
-    ? (item.chapterTitleHi ?? item.chapterTitle)
-    : item.chapterTitle;
+  const title = isHi ? (item.chapterTitleHi ?? item.chapterTitle) : item.chapterTitle;
   return title ? ` · ${title}` : '';
+}
+
+/** Interpolation bag shared by the label/subtitle copy keys. */
+function copyVars(item: TodayQueueItem, isHi: boolean, subjectCode: string): Record<string, string> {
+  return {
+    subject: displaySubjectName((item.meta?.subjectCode as string) ?? subjectCode),
+    chapterTitle: chapterSuffix(item, isHi),
+    dueCount: String(item.meta?.dueCount ?? ''),
+    days: String(item.meta?.daysSinceLastTouch ?? ''),
+    progress: String(Math.round(((item.meta?.progressPct as number) ?? 0) * 100)),
+    chapter: String(item.meta?.chapterNumber ?? ''),
+    n: String(item.estMinutes),
+  };
+}
+
+/**
+ * The WHY line — verbalise the resolver's `reason` so the student understands
+ * why this action is next. Bilingual (P7). Returns null for unknown reasons so
+ * the hero degrades gracefully (no line rather than a raw reason string).
+ */
+function whyLine(item: TodayQueueItem, isHi: boolean): string | null {
+  const n = String(item.meta?.daysSinceLastTouch ?? '');
+  const dueCount = String(item.meta?.dueCount ?? '');
+  const pct = String(Math.round(((item.meta?.progressPct as number) ?? 0) * 100));
+
+  switch (item.reason) {
+    case 'decay_above_threshold':
+      return isHi
+        ? `यह आपने ${n} दिन पहले सीखा था — एक झटपट दोहराव इसे पक्का रखेगा।`
+        : `You learned this ${n} days ago — a quick refresh keeps it locked in.`;
+    case 'reviews_stacking':
+      return isHi
+        ? `${dueCount} दोहराव तैयार हैं — जब तक ताज़ा हैं, निपटा लो।`
+        : `${dueCount} reviews are ready — clear them while they're fresh.`;
+    case 'todays_zpd':
+      return isHi
+        ? 'तुम्हारे स्तर के लिए बिलकुल सही — आगे बढ़ने का सटीक मौका।'
+        : 'Pitched just right for your level — the sweet spot to grow.';
+    case 'teacher_assigned':
+      return isHi ? 'तुम्हारे शिक्षक ने यह तुम्हारे लिए चुना है।' : 'Your teacher picked this for you.';
+    case 'weakest_topic_practice':
+      return isHi
+        ? 'तुम्हारा सबसे कम सटीकता वाला अध्याय — सुधरने की सबसे ज़्यादा गुंजाइश।'
+        : 'Your lowest-accuracy chapter — biggest room to climb.';
+    case 'in_progress_lesson':
+      return isHi ? `तुम ${pct}% पूरा कर चुके हो — अब मज़बूती से खत्म करो।` : `You're ${pct}% through — finish strong.`;
+    case 'no_signals_yet':
+      return isHi ? 'चलो तुम्हारा शुरुआती बिंदु ढूंढें (10 मिनट)।' : "Let's find your starting point (10 min).";
+    default:
+      return null;
+  }
 }
 
 export default function TodaysMission({
   isHi,
-  studentName,
+  // studentName is part of the stable prop contract (parent passes student.name)
+  // but the greeting now lives in the dashboard header rail, so it is unused here.
   grade,
   subjectCode,
   todaysTopic,
 }: TodaysMissionProps) {
   const router = useRouter();
   const { student } = useAuth();
-  const { data: queueData, isLoading: queueLoading, error: queueError, mutate: retryQueue } =
-    useTodayQueue(student?.id);
-  const firstName = studentName.split(' ')[0] || studentName;
+  const {
+    data: queueData,
+    isLoading: queueLoading,
+    error: queueError,
+    mutate: retryQueue,
+  } = useTodayQueue(student?.id);
 
-  // The queue block must never silently collapse. After loading resolves, we
-  // either have queue items, or we show an actionable empty/error card — never
-  // nothing. `queueData` is null on a 404 (flag off / no profile); `queueError`
-  // is set on a 5xx/network failure. Both fall through to the same friendly,
-  // actionable card (P7 bilingual) so the hero never reads as "broken".
   const hasQueueItems = !!queueData && queueData.queue.length > 0;
+  const isColdStart = hasQueueItems && queueData!.primary.type === 'cold_start_diagnostic';
   const showEmptyState = !queueLoading && !hasQueueItems;
 
   const beginLesson = () => {
@@ -96,260 +143,167 @@ export default function TodaysMission({
     }
   };
 
+  const eyebrow = (
+    <Badge tone="warning" variant="soft" icon={<span aria-hidden="true">●</span>}>
+      {isHi ? 'आज का मिशन' : "Today's mission"}
+      {grade ? (isHi ? ` · कक्षा ${grade}` : ` · Class ${grade}`) : ''}
+    </Badge>
+  );
+
   return (
-    <PremiumCard
-      glow
-      gradient
-      className="os-mission p-5 md:p-6 rounded-3xl"
-    >
-      {/* Soft warm corner glow — the hero's signature warmth, kept warm via the
-          stable --accent-warm channel (NOT the violet-remapped --orange-rgb). */}
-      <div
-        className="pointer-events-none absolute -top-12 -left-10 w-48 h-48 rounded-full opacity-70"
-        aria-hidden="true"
-        style={{
-          background: `radial-gradient(circle, ${WARM_15} 0%, transparent 70%)`,
-        }}
-      />
-      <div className="relative" aria-label={isHi ? 'आज का मिशन' : "Today's mission"}>
-        <p
-          className="text-[11px] font-bold uppercase tracking-[0.16em] mb-2"
-          style={{ color: WARM }}
-        >
-          <span aria-hidden="true" className="streak-flame mr-1.5">●</span>
-          {isHi ? 'आज का मिशन' : "Today's mission"}
-          {grade && (
-            <>
-              {' · '}
-              {isHi ? `कक्षा ${grade}` : `Class ${grade}`}
-            </>
-          )}
-        </p>
+    <Card variant="elevated" className="os-mission">
+      <CardBody
+        className="flex flex-col gap-3 p-5 md:p-6"
+        aria-label={isHi ? 'आज का मिशन' : "Today's mission"}
+      >
+        <div>{eyebrow}</div>
 
-        <h1
-          className="text-2xl md:text-[1.7rem] font-bold leading-[1.15] tracking-[-0.01em]"
-          style={{ fontFamily: 'var(--font-serif)', color: 'var(--text-1)' }}
-        >
-          {todaysTopic?.title
-            ? todaysTopic.title
-            : isHi
-              ? `चलो शुरू करें, ${firstName}`
-              : `Let's get going, ${firstName}`}
-        </h1>
-
-      {/* Learner-loop queue — powered by /api/v2/today */}
-      <div className="mt-3 flex flex-col gap-2">
+        {/* ── Loading ─────────────────────────────────────────────── */}
         {queueLoading && (
           <div
-            className="h-20 rounded-2xl animate-pulse"
-            style={{ background: 'var(--surface-2)' }}
-            aria-hidden="true"
+            className="flex flex-col gap-3"
+            aria-busy="true"
+            aria-label={isHi ? 'लोड हो रहा है' : 'Loading'}
+          >
+            <Skeleton className="h-7 w-2/3" />
+            <Skeleton className="h-4 w-full" radius="sm" />
+            <Skeleton className="h-14 w-full" radius="lg" />
+          </div>
+        )}
+
+        {/* ── Error ───────────────────────────────────────────────── */}
+        {!queueLoading && queueError && !hasQueueItems && (
+          <Alert
+            data-testid="mission-empty-state"
+            tone="warning"
+            title={isHi ? 'अभी योजना लोड नहीं हो पाई' : "Couldn't load your plan"}
+            action={
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => retryQueue()}
+                data-testid="mission-empty-retry"
+              >
+                {isHi ? 'फिर से कोशिश करें' : 'Try again'}
+              </Button>
+            }
+          >
+            {isHi ? 'एक पल में फिर से कोशिश करते हैं।' : "Let's try again in a moment."}
+          </Alert>
+        )}
+
+        {/* ── Cold-start diagnostic (dominant onboarding card) ─────── */}
+        {isColdStart && (
+          <EmptyState
+            compact
+            icon={<span aria-hidden="true">🧭</span>}
+            title={isHi ? 'अपना डायग्नोस्टिक शुरू करें' : 'Start your diagnostic'}
+            description={
+              isHi
+                ? '10 मिनट · Foxy आपकी पर्सनलाइज्ड स्टडी प्लान बनाएगा'
+                : '10 min · Foxy will personalise your study plan'
+            }
+            action={
+              <Button
+                variant="primary"
+                size="lg"
+                onClick={() => router.push(deepLinkToHref(queueData!.primary.deepLink))}
+                trailingIcon={<span aria-hidden="true">→</span>}
+                data-testid="mission-primary-action"
+              >
+                {isHi ? 'शुरू करें' : 'Begin diagnostic'}
+              </Button>
+            }
           />
         )}
-        {!queueLoading && queueData && queueData.queue.length > 0 && (
-          <>
-            {/* Cold-start: dominant full-width card instead of the normal queue */}
-            {queueData.primary.type === 'cold_start_diagnostic' ? (
-              <button
-                type="button"
-                onClick={() => router.push(deepLinkToHref(queueData.primary.deepLink))}
-                className="w-full text-center rounded-2xl px-5 py-5 transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
-                style={{
-                  background: `linear-gradient(135deg, ${WARM_10}, ${WARM_06})`,
-                  border: `1.5px solid ${WARM_25}`,
-                }}
-                data-testid="mission-primary-action"
-                aria-label={isHi ? 'डायग्नोस्टिक शुरू करें' : 'Begin diagnostic'}
-              >
-                <div className="text-4xl mb-2" aria-hidden="true">🧭</div>
-                <p
-                  className="text-lg font-bold mb-1"
-                  style={{ color: 'var(--text-1)', fontFamily: 'var(--font-serif)' }}
-                >
-                  {isHi ? 'डायग्नोस्टिक शुरू करें' : 'Start your diagnostic'}
-                </p>
-                <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>
-                  {isHi
-                    ? '10 मिनट · Foxy आपका पर्सनलाइज्ड प्लान बनाएगा'
-                    : '10 min · Foxy will personalise your study plan'}
-                </p>
-                <span
-                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold text-white"
-                  style={{
-                    background: `linear-gradient(135deg, ${WARM}, var(--accent-warm-strong, #C2440F))`,
-                    boxShadow: 'var(--shadow-glow)',
-                  }}
-                >
-                  {isHi ? 'शुरू करें' : 'Begin diagnostic'} →
-                </span>
-              </button>
-            ) : (
-              <>
-                {/* Primary action */}
-                <button
-                  type="button"
-                  onClick={() => router.push(deepLinkToHref(queueData.primary.deepLink))}
-                  className="w-full text-left flex items-center gap-3 rounded-2xl px-4 py-3 transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
-                  style={{
-                    background: WARM_06,
-                    border: `1px solid ${WARM_15}`,
-                    boxShadow: 'var(--shadow-sm)',
-                  }}
-                  data-testid="mission-primary-action"
-                >
-                  <span className="text-2xl" aria-hidden="true">
-                    {todayIcon(queueData.primary.iconHint)}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>
-                      {todayCopy(queueData.primary.labelKey, isHi)}
-                    </p>
-                    <p className="text-xs truncate" style={{ color: 'var(--text-3)' }}>
-                      {todayCopy(queueData.primary.subtitleKey, isHi, {
-                        subject: displaySubjectName((queueData.primary.meta?.subjectCode as string) ?? subjectCode),
-                        chapterTitle: chapterSuffix(queueData.primary, isHi),
-                        dueCount: String(queueData.primary.meta?.dueCount ?? ''),
-                        days: String(queueData.primary.meta?.daysSinceLastTouch ?? ''),
-                        progress: String(Math.round(((queueData.primary.meta?.progressPct as number) ?? 0) * 100)),
-                        chapter: String(queueData.primary.meta?.chapterNumber ?? ''),
-                        n: String(queueData.primary.estMinutes),
-                      })}
-                    </p>
-                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>
-                      ~{queueData.primary.estMinutes} {isHi ? 'मिनट' : 'min'}
-                    </p>
-                  </div>
-                  <span className="text-sm" style={{ color: 'var(--text-3)' }}>→</span>
-                </button>
 
-                {/* Secondary actions (up to 2 more) */}
-                {queueData.queue.slice(1, 3).map((item) => (
-                  <button
-                    key={item.rank}
-                    type="button"
-                    onClick={() => router.push(deepLinkToHref(item.deepLink))}
-                    className="w-full text-left flex items-center gap-3 rounded-2xl px-4 py-2.5 transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
-                    style={{
-                      background: 'var(--surface-2)',
-                      border: '1px solid var(--border)',
-                    }}
-                  >
-                    <span className="text-lg" aria-hidden="true">{todayIcon(item.iconHint)}</span>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-xs font-semibold truncate block" style={{ color: 'var(--text-2)' }}>
-                        {todayCopy(item.labelKey, isHi)}
-                      </span>
-                      <span className="text-[10px] truncate block" style={{ color: 'var(--text-3)' }}>
-                        {todayCopy(item.subtitleKey, isHi, {
-                          subject: displaySubjectName((item.meta?.subjectCode as string) ?? subjectCode),
-                          chapterTitle: chapterSuffix(item, isHi),
-                          dueCount: String(item.meta?.dueCount ?? ''),
-                          days: String(item.meta?.daysSinceLastTouch ?? ''),
-                          progress: String(Math.round(((item.meta?.progressPct as number) ?? 0) * 100)),
-                          chapter: String(item.meta?.chapterNumber ?? ''),
-                          n: String(item.estMinutes),
-                        })}
-                      </span>
-                    </div>
-                    <span className="text-xs" style={{ color: 'var(--text-3)' }}>
-                      ~{item.estMinutes}m
-                    </span>
-                  </button>
-                ))}
-              </>
+        {/* ── Normal queue: ONE hero action + WHY + ≤2 subordinate ── */}
+        {hasQueueItems && !isColdStart && (
+          <>
+            <h1
+              className="text-fluid-2xl font-bold leading-tight text-foreground"
+              style={{ fontFamily: 'var(--font-serif)' }}
+            >
+              {todayCopy(queueData!.primary.labelKey, isHi)}
+            </h1>
+
+            <p className="text-fluid-sm text-muted-foreground">
+              {todayCopy(
+                queueData!.primary.subtitleKey,
+                isHi,
+                copyVars(queueData!.primary, isHi, subjectCode),
+              )}
+            </p>
+
+            {whyLine(queueData!.primary, isHi) && (
+              <p className="text-fluid-sm font-medium text-foreground">
+                {whyLine(queueData!.primary, isHi)}
+              </p>
             )}
+
+            {/* THE single primary action */}
+            <Button
+              variant="primary"
+              size="lg"
+              fullWidth
+              onClick={() => router.push(deepLinkToHref(queueData!.primary.deepLink))}
+              leadingIcon={<span aria-hidden="true">{todayIcon(queueData!.primary.iconHint)}</span>}
+              trailingIcon={<span aria-hidden="true">→</span>}
+              data-testid="mission-primary-action"
+            >
+              {isHi
+                ? `शुरू करें · ~${queueData!.primary.estMinutes} मिनट`
+                : `Start · ~${queueData!.primary.estMinutes} min`}
+            </Button>
+
+            {/* Up to two visually-subordinate secondary actions */}
+            {queueData!.queue.slice(1, 3).map((item) => (
+              <Button
+                key={item.rank}
+                variant="ghost"
+                fullWidth
+                className="justify-between border border-surface-3"
+                onClick={() => router.push(deepLinkToHref(item.deepLink))}
+                leadingIcon={<span aria-hidden="true">{todayIcon(item.iconHint)}</span>}
+                trailingIcon={
+                  <span className="shrink-0 text-fluid-xs text-muted-foreground">
+                    ~{item.estMinutes}m
+                  </span>
+                }
+              >
+                <span className="block min-w-0 truncate text-left">
+                  {todayCopy(item.labelKey, isHi)}
+                </span>
+              </Button>
+            ))}
           </>
         )}
 
-        {/* Empty / error fallback — never collapse to nothing. Renders an
-            actionable, friendly card (P7 bilingual) routing to /learn. Error
-            and empty share this card; raw error text is never shown. A subtle
-            retry re-runs the SWR fetch when the failure was an error. */}
-        {showEmptyState && (
-          <div
-            className="rounded-2xl px-4 py-4"
-            style={{
-              background: `linear-gradient(135deg, ${WARM_06}, ${WARM_10})`,
-              border: `1.5px solid ${WARM_15}`,
-            }}
-            data-testid="mission-empty-state"
-            role="status"
-          >
-            <div className="text-3xl mb-2" aria-hidden="true">🦊</div>
-            <p className="text-base font-bold" style={{ color: 'var(--text-1)' }}>
-              {isHi
-                ? 'तुम्हारा सीखने का रास्ता तैयार हो रहा है'
-                : 'Your learning path is getting ready'}
-            </p>
-            <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
-              {isHi
-                ? 'शुरू करने के लिए एक पाठ चुनो।'
-                : 'Pick a lesson to begin.'}
-            </p>
-            <div className="mt-2.5 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => router.push('/learn')}
-                className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-bold transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2"
-                style={{
-                  background: WARM_10,
-                  border: `1px solid ${WARM_20}`,
-                  color: WARM,
-                }}
-                data-testid="mission-empty-cta"
-              >
-                {isHi ? 'पाठ चुनो' : 'Pick a lesson'}
-                <span aria-hidden="true">→</span>
-              </button>
-              {queueError && (
-                <button
-                  type="button"
-                  onClick={() => retryQueue()}
-                  className="text-xs font-semibold underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 rounded"
-                  style={{ color: 'var(--text-3)' }}
-                  data-testid="mission-empty-retry"
+        {/* ── Empty (no queue, no error): getting-ready + pick a lesson ── */}
+        {showEmptyState && !queueError && (
+          <div data-testid="mission-empty-state">
+            <EmptyState
+              compact
+              icon={<span aria-hidden="true">🦊</span>}
+              title={
+                isHi ? 'तुम्हारा सीखने का रास्ता तैयार हो रहा है' : 'Your learning path is getting ready'
+              }
+              description={isHi ? 'शुरू करने के लिए एक पाठ चुनो।' : 'Pick a lesson to begin.'}
+              action={
+                <Button
+                  variant="primary"
+                  size="lg"
+                  onClick={beginLesson}
+                  trailingIcon={<span aria-hidden="true">→</span>}
+                  data-testid="mission-empty-cta"
                 >
-                  {isHi ? 'फिर से कोशिश करें' : 'Try again'}
-                </button>
-              )}
-            </div>
+                  {isHi ? 'पाठ चुनो' : 'Pick a lesson'}
+                </Button>
+              }
+            />
           </div>
         )}
-      </div>
-
-        {/* Always-present primary CTA — the single dominant warm action.
-            GlowButton paints from --orange / --orange-light, which are VIOLET
-            under the cosmic-light surface. We scope-override those two tokens to
-            the stable warm channel on this wrapper ONLY, so the button renders
-            burnt-orange (with its CSS-only shimmer) without touching GlowButton
-            or the global cosmic remap. */}
-        <div
-          className="mt-4"
-          style={{
-            ['--orange' as string]: 'var(--accent-warm, #E8581C)',
-            ['--orange-light' as string]: 'var(--accent-warm-strong, #C2440F)',
-          }}
-        >
-          <GlowButton
-            size="lg"
-            fullWidth
-            onClick={beginLesson}
-            className="md:w-auto"
-            icon={<span aria-hidden="true">▶</span>}
-          >
-            <span>
-              {todaysTopic
-                ? isHi
-                  ? `पाठ शुरू करो · ${displaySubjectName(subjectCode)}`
-                  : `Begin lesson · ${displaySubjectName(subjectCode)}`
-                : isHi
-                  ? 'आज का पाठ चुनो'
-                  : "Pick today's lesson"}
-            </span>
-            <span aria-hidden="true" className="ml-1">→</span>
-          </GlowButton>
-        </div>
-      </div>
-    </PremiumCard>
+      </CardBody>
+    </Card>
   );
 }
