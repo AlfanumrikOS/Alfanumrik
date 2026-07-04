@@ -41,14 +41,52 @@ import {
   Drawer,
   BottomSheet,
   Tooltip,
+  ToastProvider,
+  useToast,
+  Alert,
+  Tabs,
+  TabList,
+  Tab,
+  TabPanel,
+  Table,
+  Avatar,
+  AvatarGroup,
   type Tone,
   type ActionVariant,
   type ControlSize,
+  type AlertTone,
+  type AvatarSize,
+  type TableColumn,
 } from '@/components/ui/primitives';
 
 const ACTION_VARIANTS: ActionVariant[] = ['primary', 'secondary', 'ghost', 'danger'];
 const SIZES: ControlSize[] = ['sm', 'md', 'lg'];
 const TONES: Tone[] = ['neutral', 'success', 'warning', 'danger', 'info', 'brand'];
+const ALERT_TONES: AlertTone[] = ['info', 'success', 'warning', 'danger'];
+const AVATAR_SIZES: AvatarSize[] = ['xs', 'sm', 'md', 'lg', 'xl'];
+
+interface DemoStudent {
+  id: string;
+  name: string;
+  grade: string;
+  xp: number;
+  streak: number;
+}
+
+const DEMO_STUDENTS: DemoStudent[] = [
+  { id: 's1', name: 'Aarav Sharma', grade: '9', xp: 1240, streak: 7 },
+  { id: 's2', name: 'Diya Patel', grade: '9', xp: 980, streak: 3 },
+  { id: 's3', name: 'Kabir Singh', grade: '10', xp: 1560, streak: 12 },
+  { id: 's4', name: 'Ananya Rao', grade: '8', xp: 640, streak: 0 },
+  { id: 's5', name: 'Vivaan Gupta', grade: '10', xp: 2100, streak: 21 },
+];
+
+const STUDENT_COLUMNS: TableColumn<DemoStudent>[] = [
+  { id: 'name', header: 'Student', accessor: (r) => r.name, isRowHeader: true },
+  { id: 'grade', header: 'Grade', accessor: (r) => r.grade },
+  { id: 'xp', header: 'XP', accessor: (r) => r.xp.toLocaleString(), align: 'end' },
+  { id: 'streak', header: 'Streak', accessor: (r) => `${r.streak}🔥`, align: 'end' },
+];
 
 function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
@@ -223,6 +261,222 @@ function OverlaysSection() {
         </Tooltip>
       </Row>
     </Section>
+  );
+}
+
+function ToastDemo() {
+  const toast = useToast();
+  return (
+    <Row label="fire">
+      <Button variant="secondary" onClick={() => toast.success('Progress saved.')}>
+        Success
+      </Button>
+      <Button variant="secondary" onClick={() => toast.error('Could not submit — retrying.')}>
+        Error (assertive)
+      </Button>
+      <Button variant="secondary" onClick={() => toast.warning('You have 2 unanswered questions.')}>
+        Warning
+      </Button>
+      <Button
+        variant="secondary"
+        onClick={() =>
+          toast.info('Foxy added 3 new practice sets.', {
+            action: (
+              <button type="button" className="text-fluid-xs font-bold text-primary underline">
+                View
+              </button>
+            ),
+          })
+        }
+      >
+        Info + action
+      </Button>
+      <Button variant="ghost" onClick={() => toast.info('This one is sticky — dismiss it manually.', { duration: 0 })}>
+        Sticky
+      </Button>
+    </Row>
+  );
+}
+
+function AlertsSection() {
+  const [dismissed, setDismissed] = useState(false);
+
+  return (
+    <Section
+      title="Alert (Batch B3)"
+      note="Inline status banner. danger/warning = role=alert; info/success = role=status. Distinct glyph per tone (non-colour signal); ink text is AA on every tone."
+    >
+      <div className="flex flex-col gap-3">
+        {ALERT_TONES.map((tone) => (
+          <Alert key={tone} tone={tone} title={`${tone} banner`}>
+            This is an inline {tone} message. The glyph, not the colour, carries the meaning.
+          </Alert>
+        ))}
+        <Alert tone="success" title="With an action">
+          Your report is ready.
+          <span className="mt-2 block">
+            <Button size="sm" variant="secondary">Download</Button>
+          </span>
+        </Alert>
+        {!dismissed && (
+          <Alert
+            tone="warning"
+            title="Dismissible"
+            onDismiss={() => setDismissed(true)}
+            dismissLabel="Dismiss warning"
+          >
+            Close me with the button — the aria-label is passed in (P7).
+          </Alert>
+        )}
+        {dismissed && (
+          <Button size="sm" variant="ghost" onClick={() => setDismissed(false)}>
+            Restore dismissed alert
+          </Button>
+        )}
+        <Alert tone="info" lang="hi" title="सूचना">
+          यह एक द्विभाषी अलर्ट है — सारा टेक्स्ट props से आता है।
+        </Alert>
+      </div>
+    </Section>
+  );
+}
+
+function FeedbackNavDataSection() {
+  return (
+    <>
+      <div className="border-t border-surface-3 pt-8">
+        <p className="text-fluid-xs font-semibold uppercase tracking-widest text-muted-foreground">Batch B3</p>
+        <h2 className="mt-1 text-fluid-3xl font-bold text-foreground">Feedback, Navigation &amp; Data</h2>
+        <p className="mt-2 text-fluid-md text-muted-foreground">
+          Toast (one live region), Alert, Tabs (roving arrow-key nav), Table (sticky first column on mobile), Avatar.
+          This completes the canonical primitive library.
+        </p>
+      </div>
+
+      {/* ── Toast ── */}
+      <Section
+        title="Toast (Batch B3)"
+        note="One aria-live region, auto-dismiss that PAUSES on hover/focus, manual dismiss, stacking with a cap. Provider is mounted here only — never app-wide from a shared chunk."
+      >
+        <ToastProvider regionLabel="Notifications" dismissLabel="Dismiss notification" max={4}>
+          <ToastDemo />
+        </ToastProvider>
+      </Section>
+
+      {/* ── Alert ── */}
+      <AlertsSection />
+
+      {/* ── Tabs ── */}
+      <Section
+        title="Tabs (Batch B3)"
+        note="role=tablist/tab/tabpanel, aria-selected + aria-controls, roving tabindex. Focus a tab and use ←/→/Home/End. TabList scrolls horizontally on overflow."
+      >
+        <Tabs defaultValue="overview">
+          <TabList aria-label="Student report views">
+            <Tab value="overview">Overview</Tab>
+            <Tab value="mastery">Mastery</Tab>
+            <Tab value="activity">Activity</Tab>
+            <Tab value="locked" disabled>
+              Locked
+            </Tab>
+          </TabList>
+          <TabPanel value="overview">
+            <p className="text-fluid-sm text-muted-foreground">
+              Overview panel. Arrow keys move + activate; the disabled tab is skipped.
+            </p>
+          </TabPanel>
+          <TabPanel value="mastery">
+            <p className="text-fluid-sm text-muted-foreground">Mastery panel content.</p>
+          </TabPanel>
+          <TabPanel value="activity">
+            <p className="text-fluid-sm text-muted-foreground">Activity panel content.</p>
+          </TabPanel>
+          <TabPanel value="locked">
+            <p className="text-fluid-sm text-muted-foreground">Unreachable while disabled.</p>
+          </TabPanel>
+        </Tabs>
+      </Section>
+
+      {/* ── Table ── */}
+      <Section
+        title="Table (Batch B3)"
+        note="Semantic <table>, <th scope=col/row>, token zebra. Mobile: horizontal scroll with a sticky first column (narrow the viewport to see it pin). Loading = Skeleton rows; empty = EmptyState."
+      >
+        <div className="flex flex-col gap-6">
+          <Table
+            aria-label="Students in your class"
+            caption="Grade 8–10 · this week"
+            columns={STUDENT_COLUMNS}
+            data={DEMO_STUDENTS}
+            getRowKey={(r) => r.id}
+          />
+          <div>
+            <p className="mb-2 text-fluid-xs font-semibold uppercase tracking-wide text-muted-foreground">Loading</p>
+            <Table
+              aria-label="Students loading"
+              columns={STUDENT_COLUMNS}
+              data={[]}
+              getRowKey={(r) => r.id}
+              loading
+              loadingRows={4}
+            />
+          </div>
+          <div>
+            <p className="mb-2 text-fluid-xs font-semibold uppercase tracking-wide text-muted-foreground">Empty</p>
+            <Table
+              aria-label="Students empty"
+              columns={STUDENT_COLUMNS}
+              data={[]}
+              getRowKey={(r) => r.id}
+              empty={{
+                icon: <span>📭</span>,
+                title: 'No students yet',
+                description: 'Invite students to see them here.',
+              }}
+            />
+          </div>
+        </div>
+      </Section>
+
+      {/* ── Avatar ── */}
+      <Section
+        title="Avatar (Batch B3)"
+        note="Image with initials fallback on load error; alt required (or decorative); status dot with non-colour aria-label backup; AvatarGroup with +N overflow."
+      >
+        <Row label="sizes">
+          {AVATAR_SIZES.map((s) => (
+            <Avatar key={s} size={s} name="Aarav Sharma" alt="Aarav Sharma" />
+          ))}
+        </Row>
+        <Row label="fallback">
+          <Avatar name="Diya Patel" alt="Diya Patel" src="https://invalid.example/nope.png" />
+          <Avatar alt="Kabir Singh" name="Kabir Singh" />
+          <Avatar alt="Unknown" />
+          <Avatar shape="square" name="Ananya Rao" alt="Ananya Rao" />
+        </Row>
+        <Row label="status">
+          <Avatar name="Aarav" alt="Aarav" status="online" statusLabel="Online" />
+          <Avatar name="Diya" alt="Diya" status="away" statusLabel="Away" />
+          <Avatar name="Kabir" alt="Kabir" status="busy" statusLabel="Busy" />
+          <Avatar name="Ananya" alt="Ananya" status="offline" statusLabel="Offline" />
+        </Row>
+        <Row label="group">
+          <AvatarGroup aria-label="Class members" max={3}>
+            <Avatar name="Aarav Sharma" alt="Aarav Sharma" />
+            <Avatar name="Diya Patel" alt="Diya Patel" />
+            <Avatar name="Kabir Singh" alt="Kabir Singh" />
+            <Avatar name="Ananya Rao" alt="Ananya Rao" />
+            <Avatar name="Vivaan Gupta" alt="Vivaan Gupta" />
+          </AvatarGroup>
+        </Row>
+        <Row label="hindi">
+          <span lang="hi" className="inline-flex items-center gap-2">
+            <Avatar name="आरव शर्मा" alt="आरव शर्मा" status="online" statusLabel="ऑनलाइन" />
+            <span className="text-fluid-sm text-muted-foreground">आरव शर्मा</span>
+          </span>
+        </Row>
+      </Section>
+    </>
   );
 }
 
@@ -634,6 +888,8 @@ export default function UiShowcasePage() {
         </Section>
 
         <OverlaysSection />
+
+        <FeedbackNavDataSection />
       </div>
     </main>
   );

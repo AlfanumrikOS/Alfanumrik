@@ -81,6 +81,41 @@ export {
 } from './BottomSheet';
 export { Tooltip, type TooltipProps, type TooltipSide } from './Tooltip';
 
+/* ── Feedback / Navigation / Data primitives (Batch B3) ── */
+export {
+  ToastProvider,
+  useToast,
+  type ToastApi,
+  type ToastOptions,
+  type ToastProviderProps,
+  type ToastTone,
+} from './Toast';
+export { Alert, type AlertProps, type AlertTone } from './Alert';
+export {
+  Tabs,
+  TabList,
+  Tab,
+  TabPanel,
+  type TabsProps,
+  type TabListProps,
+  type TabProps,
+  type TabPanelProps,
+} from './Tabs';
+export {
+  Table,
+  type TableProps,
+  type TableColumn,
+  type TableAlign,
+} from './Table';
+export {
+  Avatar,
+  AvatarGroup,
+  type AvatarProps,
+  type AvatarGroupProps,
+  type AvatarSize,
+  type AvatarStatus,
+} from './Avatar';
+
 /* Shared overlay foundation (Portal / Scrim / focus-trap / scroll-lock / …). */
 export {
   Portal,

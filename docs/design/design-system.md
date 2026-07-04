@@ -264,8 +264,15 @@ foreground token `--on-X`. **Never** put a bare `#fff` / `text-white` (or any
 hardcoded light literal) on a decorative background that might not paint. A
 foreground is defined *with* the surface it sits on and AA-verified against it,
 so legibility is an invariant of the surface — not a per-consumer guess. This
-closes the class of bug in DD-16 (≈468 decoupled light-text sites that go
+closes the class of bug in DD-16 (≈482 decoupled light-text sites that go
 invisible white-on-cream when their companion dark/gradient background fails).
+
+> **Cosmic-LIGHT note.** Under `html[data-design="cosmic"]` in its LIGHT variant,
+> `--surface-inverse` resolves to a *light* surface (`--bg-elev`), so semantically
+> it is not "dark chrome" there — the paired `--on-surface-inverse` foreground
+> still holds its AA contract against whatever `--surface-inverse` resolves to. No
+> consumers depend on `bg-surface-inverse` reading as dark today; the pairing is
+> what matters, not the absolute luminance.
 
 **Critical gotcha.** `#fff` is AA on the *darkened* CTA stops but NOT on the bare
 brand orange:
@@ -312,7 +319,7 @@ and out of scope for this token layer.
 
 **Tailwind utilities:** `bg-surface-inverse` + `text-on-inverse` /
 `text-on-inverse-muted`; `bg-surface-accent` + `text-on-surface-accent`;
-`text-on-accent` for CTA labels. Consumer migration of the 468 decoupled sites
+`text-on-accent` for CTA labels. Consumer migration of the 482 decoupled sites
 is later page-phase work (DD-16); this phase ships only the token + utility layer.
 
 ---
@@ -479,3 +486,47 @@ One substrate, reused by all four overlays — **no duplication**:
 **Bilingual (P7).** Every overlay takes its copy through props/children —
 titles, descriptions, button labels, `closeLabel`/`handleLabel`, and tooltip
 `content`. Nothing is hardcoded; callers localise via `AuthContext.isHi`.
+
+## 13. Feedback / Navigation / Data Primitives (Batch B3)
+
+**Status:** Phase 2 Batch B3 — the FINAL primitive batch. Same conventions as
+§10–§12 (token-only, `forwardRef` where a DOM ref is meaningful, a11y-by-default,
+copy via props/children — P7). Same import path (`@/components/ui/primitives`) and
+the same additive coexistence rule: the fragmented toast dialects (wonder-blocks
+toast, `ui/toast`), `admin-ui/DataTable`, `StatusBadge`, etc. are untouched — they
+migrate onto this canonical set LATER. Source:
+`src/components/ui/primitives/{Toast,Alert,Tabs,Table,Avatar}.tsx`. Showcase:
+`/dev/ui` → "Feedback, Navigation & Data". No new CSS custom property was required
+(`--z-toast` / `--z-tooltip` already existed).
+
+### Per-primitive API + a11y contract
+
+| Primitive | Key API | A11y contract |
+|---|---|---|
+| `ToastProvider` + `useToast()` | mount `<ToastProvider regionLabel dismissLabel defaultDuration? max?>` once; `useToast()` → `toast.success/error/warning/info(message, opts)` + `show/dismiss/dismissAll`. `opts`: `duration` (0 = sticky), `action`, `dismissLabel`, `icon`. | **ONE** persistent live region (portalled on `--z-toast`), `aria-live="polite"`; an **error** toast carries `role="alert"` (assertive). Auto-dismiss **pauses on hover AND focus** (focus-within) so a message is never lost mid-read. Manual dismiss `IconButton` (aria-label via `dismissLabel`). Stacks newest-first, capped at `max` (oldest fall off). Distinct glyph per tone (non-colour signal); ink text on opaque surface = AA. Reduced-motion ⇒ no slide. **Provider is opt-in per tree — never auto-mounted app-wide from a shared layout chunk.** |
+| `Alert` | `tone` (info/success/warning/danger), `title?`, `icon?`, `action?`, `onDismiss?`, `dismissLabel?`, children | Inline (not floating) banner. `role="alert"` for danger/warning (interrupt), `role="status"` for info/success. Distinct default glyph per tone (overridable) = non-colour signal. Ink text on a pale tone tint (`color-mix` over the opaque surface, like Badge soft) → AA on every tone; the tone hue is an accent + hairline border, **never warning-gold-as-text**. Optional dismiss `IconButton` (aria-label via `dismissLabel`). |
+| `Tabs` / `TabList` / `Tab` / `TabPanel` | `Tabs`: `value?`/`defaultValue`/`onValueChange`, `orientation?`. `TabList`: required `aria-label`. `Tab`/`TabPanel`: `value`. Controlled + uncontrolled. | `role="tablist"`/`"tab"`/`"tabpanel"`; `aria-selected`, `aria-controls` (tab→panel), `aria-labelledby` (panel→tab); `aria-orientation`. **Roving tabindex** (active tab `0`, rest `-1`). Arrow keys (`←/→` horizontal, `↑/↓` vertical) move **and** activate, skipping disabled; `Home`/`End` jump. Active-tab underline via `border-primary` token, reduced-motion aware. TabList **scrolls horizontally** on overflow (no clip); tabs are `h-11` (≥44px). |
+| `Table` | `columns` (`{ id, header, cell?/accessor?, align?, isRowHeader?, width? }`), `data`, `getRowKey`, `caption?`/`aria-label?`, `zebra?`, `stickyFirstColumn?`, `loading?`, `loadingRows?`, `empty?` (EmptyState props), `onRowClick?` | Semantic `<table>` with `<caption>` **or** `aria-label`. `<th scope="col">` per header; a column flagged `isRowHeader` renders `<th scope="row">` so every row keeps a header association. Token borders + optional zebra. **Loading** → `Skeleton` rows (header preserved); **empty** → `EmptyState` spanning the grid. |
+| `Avatar` / `AvatarGroup` | `Avatar`: `src?`, `alt` (required unless `decorative`), `name?` (seeds initials), `size`, `shape?`, `status?`, `statusLabel?`, `decorative?`. `AvatarGroup`: `max`, `size`, `aria-label`, `overflowLabel?`, children. | Real `<img>` when `src` loads; on load **error** (or no `src`) falls back to initials from `name`/`alt` (Latin **and** Devanagari safe). `alt` required for a meaningful avatar; `decorative` ⇒ whole node `aria-hidden`. Status dot has a **non-colour backup** (`role="img"` + aria-label/title `statusLabel`), never colour-only. `AvatarGroup` stacks with `ring-surface-1` separators + a "+N" overflow counter (`overflowLabel` localises). |
+
+### Table mobile strategy (chosen)
+
+**Horizontal scroll inside a bounded container (`overflow-x-auto`) with a STICKY
+FIRST COLUMN** — chosen over a stacked-card fallback. The first column pins
+(`sticky left-0`, opaque zebra-matched background so scrolled content never bleeds
+through) while the remaining columns scroll, keeping each row's identity visible.
+Because the pinned cell is still a real `<th scope="row">` / first `<td>`, the
+header→cell association survives — no `<th>` is ever dropped (the failure mode of a
+naive card fallback). `stickyFirstColumn` defaults to `true`.
+
+**Bilingual (P7).** Every B3 primitive takes its copy through props/children —
+toast `message`/`regionLabel`/`dismissLabel`, alert `title`/`dismissLabel`, tab
+labels, table headers/`caption`, avatar `alt`/`name`/`statusLabel`, group
+`aria-label`/`overflowLabel`. Nothing is hardcoded; callers localise via
+`AuthContext.isHi`.
+
+> **Batch B3 completes the canonical primitive library.** Full set:
+> **A** — Button, IconButton, Card, Badge, Chip, ProgressBar, ProgressRing/MasteryRing, Skeleton, EmptyState;
+> **B1** — Field, Input, Textarea, Select, Checkbox, Radio/RadioGroup, Switch;
+> **B2** — Dialog/ConfirmDialog, Drawer, BottomSheet, Tooltip (+ the `overlay/` foundation);
+> **B3** — Toast (ToastProvider + useToast), Alert, Tabs, Table, Avatar/AvatarGroup.
