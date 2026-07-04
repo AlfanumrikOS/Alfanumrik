@@ -185,6 +185,47 @@ describe('selectChaptersToIngest — idempotent resume', () => {
     expect(secondPass).toHaveLength(1);
     expect(coverageKey(secondPass[0])).toBe('11|economics|10');
   });
+
+  // SAFETY-CRITICAL: production's --only-missing path (storage-ingest.ts
+  // applyScoping) ALWAYS passes BOTH syllabusChapters (the manifest eligibility
+  // gate) AND existingCoverage together. The resume test above omits the
+  // syllabus gate, so it only exercises the fallback "exclude-covered" semantic.
+  // This pins the resume invariant under the EXACT production filter shape:
+  // across a mid-run kill the newly-covered chapter drops, an orphan stays
+  // excluded on every pass, and only the un-completed gap chapter re-targets.
+  it('resumes correctly under the full production filter shape (syllabus gate + covered)', () => {
+    const orphan: Chapter = { grade: '11', subjectCode: 'economics', chapterNumber: 902, file: 'orphan.pdf' };
+    const corpus = [...CHAPTERS, orphan];
+    // Manifest registry = every real chapter; the orphan (902) has NO row.
+    const syllabus = new Set<string>(CHAPTERS.map(coverageKey));
+
+    // First scoped pass: nothing covered. Orphan excluded by the syllabus gate.
+    const firstPass = selectChaptersToIngest(corpus, {
+      grades: ['11'], subjects: ['economics'],
+      onlyMissing: true, existingCoverage: new Set(), syllabusChapters: syllabus,
+    });
+    expect(firstPass.map(coverageKey).sort()).toEqual(['11|economics|1', '11|economics|10']);
+    expect(firstPass.some(c => coverageKey(c) === '11|economics|902')).toBe(false);
+
+    // Killed after ch1 landed chunks -> covered set grows.
+    const coveredAfterKill = new Set<string>(['11|economics|1']);
+    const secondPass = selectChaptersToIngest(corpus, {
+      grades: ['11'], subjects: ['economics'],
+      onlyMissing: true, existingCoverage: coveredAfterKill, syllabusChapters: syllabus,
+    });
+    // Only the un-completed gap chapter re-targets; orphan STILL excluded.
+    expect(secondPass).toHaveLength(1);
+    expect(coverageKey(secondPass[0])).toBe('11|economics|10');
+    expect(secondPass.some(c => coverageKey(c) === '11|economics|902')).toBe(false);
+
+    // Fully covered -> a third resume is a clean no-op (nothing to re-ingest).
+    const coveredAll = new Set<string>(['11|economics|1', '11|economics|10']);
+    const thirdPass = selectChaptersToIngest(corpus, {
+      grades: ['11'], subjects: ['economics'],
+      onlyMissing: true, existingCoverage: coveredAll, syllabusChapters: syllabus,
+    });
+    expect(thirdPass).toHaveLength(0);
+  });
 });
 
 describe('selectChaptersToIngest — payload passthrough', () => {
@@ -194,9 +235,44 @@ describe('selectChaptersToIngest — payload passthrough', () => {
     expect(out[0].file).toBe('fegp101.pdf');
   });
 
-  it('does not mutate the input array', () => {
-    const copy = [...CHAPTERS];
-    selectChaptersToIngest(CHAPTERS, { grades: ['11'], onlyMissing: true, existingCoverage: new Set(['11|physics|1']) });
-    expect(CHAPTERS).toEqual(copy);
+  // The selector is a pure filter: it must return a NEW array and touch none of
+  // its inputs. A shallow `[...CHAPTERS]` + toEqual can't prove this — the copy
+  // shares element references, so an in-place property mutation would show on
+  // BOTH sides and pass falsely, and it never looks at the passed Sets at all.
+  // This pins non-mutation deeply: input array (order + identity), each element
+  // object, AND both passed Sets stay byte-for-byte unchanged.
+  it('mutates neither the input array, its element objects, nor the passed Sets', () => {
+    // Deep, independent snapshot BEFORE — structuredClone breaks the shared
+    // element references so a property write on an input object is detectable.
+    const arrayBefore = structuredClone(CHAPTERS);
+    const elementRefs = [...CHAPTERS]; // identity/order guard (same references)
+    const existingCoverage = new Set<string>(['11|physics|1']);
+    const syllabusChapters = new Set<string>(CHAPTERS.map(coverageKey));
+    const coverageBefore = [...existingCoverage].sort();
+    const syllabusBefore = [...syllabusChapters].sort();
+
+    const out = selectChaptersToIngest(CHAPTERS, {
+      grades: ['11'],
+      onlyMissing: true,
+      existingCoverage,
+      syllabusChapters,
+    });
+
+    // Returns a brand-new array, not the input reference.
+    expect(out).not.toBe(CHAPTERS);
+
+    // Input array: length, order, element identity, and deep contents unchanged.
+    expect(CHAPTERS).toHaveLength(arrayBefore.length);
+    expect(CHAPTERS).toEqual(arrayBefore);
+    CHAPTERS.forEach((c, i) => {
+      expect(c).toBe(elementRefs[i]);   // no element swapped/reordered
+      expect(c).toEqual(arrayBefore[i]); // no in-place property mutation
+    });
+
+    // Passed Sets are read-only inputs — size AND contents must be untouched.
+    expect(existingCoverage.size).toBe(1);
+    expect([...existingCoverage].sort()).toEqual(coverageBefore);
+    expect(syllabusChapters.size).toBe(CHAPTERS.length);
+    expect([...syllabusChapters].sort()).toEqual(syllabusBefore);
   });
 });
