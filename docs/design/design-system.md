@@ -262,6 +262,54 @@ Body text needs ≥ 4.5:1; large text / UI ≥ 3:1. AAA ≥ 7:1.
 ## 9. What Phase 1 did NOT do (Phase 2+)
 
 - The 24 component primitives (Button, Card, Field, StatRing, …) — Phase 2.
+  **Batch A of these shipped — see §10.**
 - Collapsing the cosmic/Atlas/momentum dialects into pure Tier-2 consumers.
 - Splitting `@supabase/*` out of first paint to restore the 160kB shared cap.
 - Generalising high-contrast + activating dark (CEO-gated).
+
+---
+
+## 10. Component Primitives (Batch A)
+
+**Status:** Phase 2 Batch A — the canonical primitive layer. Every future page
+imports from here. **Import path:** `@/components/ui/primitives` (also surfaced
+as the `primitives` namespace on the `@/components/ui` barrel). Source files:
+`src/components/ui/primitives/*`. Showcase: `/dev/ui` (dev-only, not in nav).
+
+> **Coexistence rule.** The legacy single-file "Wonder Blocks" set (moved to
+> `src/components/ui/wonder-blocks.tsx`) keeps the root `@/components/ui` names
+> (`Button`, `Card`, …) until its ~134 consumers migrate. The canonical set uses
+> the same names with a stricter API, so it lives on the `/primitives` subpath
+> until promotion. Do NOT clobber the legacy root names in this phase.
+
+**Every primitive is:** token-driven (zero inline hex / `rgb()` / arbitrary
+Tailwind values — semantic Tier-2 tokens + the `.text-fluid-*` scale + `sp-*` /
+`--radius-*` / elevation scales only), accessible by default (≥44px touch
+targets — `h-11`/`h-12`/`h-14`; visible `focus-visible:ring-2 ring-primary`;
+real semantics; `prefers-reduced-motion` via `motion-reduce:*`; a non-colour
+backup on every colour-coded state), and bilingual-safe (all copy via
+props/`children` — P7).
+
+Shared types (`primitives/tokens.ts`):
+`Tone = neutral | success | warning | danger | info | brand`;
+`ActionVariant = primary | secondary | ghost | danger`;
+`ControlSize = sm | md | lg`. Solid tone foregrounds are AA-picked (ink on the
+light tones, `white` on danger/brand — warning never renders gold-as-text).
+
+| Primitive | Key props | Variants / sizes / tones |
+|---|---|---|
+| `Button` | `variant`, `size`, `loading`, `disabled`, `fullWidth`, `leadingIcon`, `trailingIcon` | variant: primary (`--btn-primary-*` gradient) / secondary / ghost / danger · size sm/md/lg |
+| `IconButton` | `label` (required aria-label), `icon`, `variant`, `size`, `loading` | same variants/sizes; square `h/w-11/12/14` |
+| `Card` + `CardHeader`/`CardBody`/`CardFooter` | `variant`, `onClick` | flat / elevated / interactive (keyboard-focusable when clickable); `overflow-hidden` media-safe |
+| `Badge` | `tone`, `variant`, `icon` | soft (ink on tint, always AA) / solid; 6 tones |
+| `Chip` | `selected`, `tone`, `icon`, `onClick`, `disabled` | selectable filter; `aria-pressed` = non-colour state signal |
+| `ProgressBar` | `value`, `tone`, `size`, `label`, `showValue`, `ariaLabel` | determinate; `role=progressbar`; sm/md track |
+| `ProgressRing` | `value`, `size`, `strokeWidth`, `tone`, `children`, `ariaLabel` | circular determinate; reduced-motion aware |
+| `MasteryRing` | `value`, `size`, `strokeWidth`, `showLabel`, `bandLabel` | bands low `▲ At risk` / mid `◐ Developing` / high `● Strong` — **required icon + label backup** (deuteranopia-safe); `bandLabel(key)` for Hindi |
+| `Skeleton` / `SkeletonText` / `SkeletonCircle` | `radius` · `lines` · `size`; sizing via passthrough classes | composable (not fixed shapes); no shimmer under reduced-motion |
+| `EmptyState` | `icon`, `title`, `description`, `action`, `compact` | generalizes admin `NoDataState`; `role=status` |
+
+**Known missing token (Phase 2 follow-up):** there is no semantic
+`--on-accent` / `--fg-on-primary` token. Batch A uses the CSS `white` keyword
+as the on-accent foreground (validated by §8 for the primary CTA). Add a named
+token when the dark mode work lands, then repoint `TONE_SOLID_FG`.
