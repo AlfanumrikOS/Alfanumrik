@@ -11,6 +11,11 @@
  * UI, rate-limiting, and double-rate guards are copied verbatim — this
  * is a presentation refactor, not an engine change.
  *
+ * Phase 8 rebuild: presentation now rides the canonical primitives
+ * (Button grading controls + Skeleton loader) and token-only colour. The
+ * SM-2 grade values (0/3/4/5), rate-limit guard, double-rate guard, the
+ * POST to /api/learner/review/grade, and every data-testid are UNCHANGED.
+ *
  * Auto-hides (renders null) when there are 0 cards due. The parent
  * page is responsible for showing the empty-state nudge in that case.
  */
@@ -18,6 +23,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { getReviewCards as getDomainReviewCards } from '@/lib/domains/profile';
+import { Button, Skeleton } from '@/components/ui/primitives';
 
 interface ReviewCard {
   id: string;
@@ -37,11 +43,14 @@ interface ReviewCard {
   last_review_date: string | null;
 }
 
+// SM-2 grade values are load-bearing (again=0 / hard=3 / good=4 / easy=5) —
+// only the presentation `toneVar` is a token. Each label carries an emoji AND a
+// word so the rating is legible without colour (WCAG 1.4.1).
 const QUALITY_BUTTONS = [
-  { q: 0, label: '😵 Forgot', labelHi: '😵 भूल गया', color: '#DC2626' },
-  { q: 3, label: '😐 Hard',   labelHi: '😐 कठिन',   color: '#D97706' },
-  { q: 4, label: '🙂 Good',   labelHi: '🙂 ठीक',    color: '#0891B2' },
-  { q: 5, label: '😎 Easy',   labelHi: '😎 आसान',   color: '#16A34A' },
+  { q: 0, label: '😵 Forgot', labelHi: '😵 भूल गया', toneVar: 'var(--danger)' },
+  { q: 3, label: '😐 Hard',   labelHi: '😐 कठिन',   toneVar: 'var(--warning)' },
+  { q: 4, label: '🙂 Good',   labelHi: '🙂 ठीक',    toneVar: 'var(--info)' },
+  { q: 5, label: '😎 Easy',   labelHi: '😎 आसान',   toneVar: 'var(--success)' },
 ] as const;
 
 const MAX_REVIEWS_PER_MINUTE = 20;
@@ -124,8 +133,10 @@ export default function QuickRecallSection({ onLoaded, onGraded }: QuickRecallSe
 
   if (loading) {
     return (
-      <div className="text-center py-6 text-sm text-[var(--text-3)]">
-        {isHi ? 'कार्ड लोड हो रहे हैं...' : 'Loading cards...'}
+      <div className="space-y-4" aria-busy="true">
+        <span className="sr-only">{isHi ? 'कार्ड लोड हो रहे हैं...' : 'Loading cards...'}</span>
+        <Skeleton className="h-5 w-40" />
+        <Skeleton radius="lg" className="h-[200px] w-full" />
       </div>
     );
   }
@@ -136,79 +147,83 @@ export default function QuickRecallSection({ onLoaded, onGraded }: QuickRecallSe
   return (
     <section data-testid="refresh-section-a" className="space-y-4">
       <header className="flex items-center justify-between">
-        <h2 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+        <h2 className="text-fluid-base font-bold text-foreground" style={{ fontFamily: 'var(--font-display)' }}>
           {isHi ? '⚡ झटपट याद' : '⚡ Quick Recall'}
         </h2>
-        <span className="text-xs text-[var(--text-3)] font-medium">
+        <span className="text-fluid-xs font-medium tabular-nums text-muted-foreground">
           {currentIdx + 1}/{cards.length}
         </span>
       </header>
 
-      <div className="text-center text-xs text-[var(--text-3)]">
+      <div className="text-center text-fluid-xs text-muted-foreground">
         {card.subject} · {card.chapter_title || card.topic}
       </div>
 
+      {/* Whole card taps to flip (a real <button>, keyboard-native). The hint
+          control lives OUTSIDE the flip button below — no nested interactives. */}
       <button
         onClick={() => setFlipped(!flipped)}
-        className="w-full min-h-[200px] rounded-2xl p-6 flex flex-col items-center justify-center text-center transition-all active:scale-[0.98]"
+        aria-pressed={flipped}
+        className="flex min-h-[200px] w-full flex-col items-center justify-center rounded-xl border p-6 text-center transition-all duration-200 ease-out active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
         style={{
           background: flipped
-            ? 'linear-gradient(135deg, rgba(8,145,178,0.06), rgba(22,163,74,0.06))'
+            ? 'color-mix(in srgb, var(--info) 7%, var(--surface-1))'
             : 'var(--surface-1)',
-          border: `1.5px solid ${flipped ? 'var(--teal, #0891B2)' : 'var(--border)'}`,
+          borderColor: flipped ? 'var(--info)' : 'var(--border)',
         }}
       >
-        {flipped ? (
-          <>
-            <div className="text-xs text-[var(--text-3)] mb-3 uppercase tracking-wider font-semibold">
-              {isHi ? 'उत्तर' : 'Answer'}
-            </div>
-            <div className="text-base leading-relaxed" style={{ whiteSpace: 'pre-wrap' }}>
-              {card.back_text}
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="text-xs text-[var(--text-3)] mb-3 uppercase tracking-wider font-semibold">
-              {isHi ? 'प्रश्न' : 'Question'}
-            </div>
-            <div className="text-lg font-semibold leading-relaxed" style={{ whiteSpace: 'pre-wrap' }}>
-              {card.front_text}
-            </div>
-            {!showHint && card.hint && (
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowHint(true); }}
-                className="mt-4 text-xs px-4 py-1.5 rounded-full"
-                style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}
-              >
-                💡 {isHi ? 'संकेत' : 'Hint'}
-              </button>
-            )}
-            {showHint && card.hint && (
-              <div className="mt-4 text-sm p-3 rounded-xl" style={{ background: 'rgba(245,166,35,0.08)' }}>
-                💡 {card.hint}
-              </div>
-            )}
-          </>
-        )}
+        <span className="mb-3 text-fluid-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {flipped ? (isHi ? 'उत्तर' : 'Answer') : (isHi ? 'प्रश्न' : 'Question')}
+        </span>
+        <span
+          className={flipped ? 'text-fluid-base leading-relaxed text-foreground' : 'text-fluid-md font-semibold leading-relaxed text-foreground'}
+          style={{ whiteSpace: 'pre-wrap' }}
+        >
+          {flipped ? card.back_text : card.front_text}
+        </span>
       </button>
+
+      {!flipped && card.hint && !showHint && (
+        <div className="flex justify-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowHint(true)}
+            leadingIcon={<span>💡</span>}
+            className="rounded-full text-muted-foreground"
+          >
+            {isHi ? 'संकेत' : 'Hint'}
+          </Button>
+        </div>
+      )}
+      {!flipped && card.hint && showHint && (
+        <div
+          className="rounded-xl p-3 text-center text-fluid-sm text-foreground"
+          style={{ background: 'color-mix(in srgb, var(--warning) 10%, var(--surface-1))' }}
+        >
+          💡 {card.hint}
+        </div>
+      )}
 
       {flipped && (
         <div className="grid grid-cols-4 gap-2">
           {QUALITY_BUTTONS.map((btn) => (
-            <button
+            <Button
               key={btn.q}
+              variant="secondary"
+              size="sm"
+              fullWidth
               onClick={() => rateCard(btn.q)}
               data-testid={`refresh-quality-${btn.q}`}
-              className="py-3 rounded-xl text-xs font-semibold transition-all active:scale-95"
+              className="whitespace-normal px-1 text-fluid-xs leading-tight"
               style={{
-                background: `${btn.color}10`,
-                border: `1.5px solid ${btn.color}30`,
-                color: btn.color,
+                backgroundColor: `color-mix(in srgb, ${btn.toneVar} 12%, var(--surface-1))`,
+                borderColor: `color-mix(in srgb, ${btn.toneVar} 34%, transparent)`,
+                color: 'var(--text-1)',
               }}
             >
               {isHi ? btn.labelHi : btn.label}
-            </button>
+            </Button>
           ))}
         </div>
       )}

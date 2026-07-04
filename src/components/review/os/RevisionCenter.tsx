@@ -24,12 +24,12 @@
 import { useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useCosmicLightSurface } from '@/lib/use-cosmic-light-surface';
-import { Skeleton } from '@/components/ui';
+import { Skeleton } from '@/components/ui/primitives';
 import RevisionHeader from './RevisionHeader';
 import StartRevisionCTA from './StartRevisionCTA';
 import { useRevisionOverview } from './useRevisionOverview';
 
-const sectionLoading = () => <Skeleton height={120} rounded="rounded-2xl" />;
+const sectionLoading = () => <Skeleton radius="lg" className="h-[120px] w-full" />;
 const DueBuckets = dynamic(() => import('./DueBuckets'), { ssr: false, loading: sectionLoading });
 const RevisionSchedule = dynamic(() => import('./RevisionSchedule'), {
   ssr: false,

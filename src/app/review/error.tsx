@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { captureException } from '@sentry/nextjs';
+import { Button } from '@/components/ui/primitives';
 
 export default function ReviewError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
@@ -27,17 +28,12 @@ export default function ReviewError({ error, reset }: { error: Error & { digest?
             : 'Your progress is safe. Try again.'}
         </p>
         <div className="flex gap-3 justify-center">
-          <button
-            onClick={reset}
-            className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white"
-            style={{ background: 'var(--orange)' }}
-          >
+          <Button variant="primary" onClick={reset}>
             {isHi ? 'फिर कोशिश करें' : 'Retry'}
-          </button>
+          </Button>
           <Link
             href="/dashboard"
-            className="px-6 py-2.5 rounded-xl text-sm font-semibold"
-            style={{ border: '1px solid var(--border)', color: 'var(--text-2)' }}
+            className="inline-flex h-12 items-center rounded-lg border border-surface-3 bg-surface-2 px-5 text-fluid-base font-semibold text-foreground transition-colors hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
           >
             {isHi ? 'डैशबोर्ड' : 'Dashboard'}
           </Link>
